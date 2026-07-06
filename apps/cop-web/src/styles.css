@@ -7329,6 +7329,17 @@ dd {
   border-top: 1px solid rgba(142, 157, 170, 0.16);
 }
 
+.weather-camera-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.weather-camera-actions .mini-button {
+  text-decoration: none;
+}
+
 .weather-camera-attribution {
   padding: 0 10px 10px;
   color: #dff8ff;

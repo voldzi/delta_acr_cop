@@ -6,7 +6,12 @@ import sensible from "@fastify/sensible";
 import underPressure from "@fastify/under-pressure";
 import websocket from "@fastify/websocket";
 import { AiGateway, type AiCopQuery, type AiCopResponse, type AiModelPreference } from "@cop/ai-gateway";
-import { createCopObjectFromEvent, type CanonicalEventEnvelope, type ObservedObject, type SourceSystem } from "@cop/canonical-model";
+import {
+  createCopObjectFromEvent,
+  type CanonicalEventEnvelope,
+  type ObservedObject,
+  type SourceSystem
+} from "@cop/canonical-model";
 import { ContractValidators, formatValidationErrors } from "@cop/ingest-contracts";
 import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
 import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
@@ -53,10 +58,27 @@ import {
   type AiMapSearchContext,
   type AiMapSearchResult
 } from "./ai-map-search.js";
-import { AiContextIndex, type AiContextGeoFilter, type AiContextIndexRefreshResult, type AiContextTimeWindow, type AiIndexedContext } from "./ai-context-index.js";
+import {
+  AiContextIndex,
+  type AiContextGeoFilter,
+  type AiContextIndexRefreshResult,
+  type AiContextTimeWindow,
+  type AiIndexedContext
+} from "./ai-context-index.js";
 import { buildAiPromptContextCompression } from "./ai-context-compression.js";
-import { aiIntentSuppressesRoutineCivilAir, buildAiRetrievalQuery, inferAiRetrievalIntent, isRoutineCivilAirText, type AiRetrievalIntent } from "./ai-retrieval-intent.js";
-import { AiSemanticRetriever, createSemanticDocuments, type AiSemanticContext, type AiSemanticDocument } from "./ai-semantic-retrieval.js";
+import {
+  aiIntentSuppressesRoutineCivilAir,
+  buildAiRetrievalQuery,
+  inferAiRetrievalIntent,
+  isRoutineCivilAirText,
+  type AiRetrievalIntent
+} from "./ai-retrieval-intent.js";
+import {
+  AiSemanticRetriever,
+  createSemanticDocuments,
+  type AiSemanticContext,
+  type AiSemanticDocument
+} from "./ai-semantic-retrieval.js";
 import { createCopStreamBusFromEnv, type CopStreamBus } from "./cop-stream-bus.js";
 import { CopStreamBroadcaster, type CopStreamMessage } from "./cop-stream.js";
 import { buildConflictEvidenceIndex, withConflictEvidence, type ObjectConflictEvidence } from "./conflict-evidence.js";
@@ -214,11 +236,7 @@ import {
   type SimSearchDataSource,
   type SimSearchEntitiesResponse
 } from "./sim-search-data-source.js";
-import {
-  createRoutingSourceFromEnv,
-  type RoutingRouteRequest,
-  type RoutingSource
-} from "./routing-source.js";
+import { createRoutingSourceFromEnv, type RoutingRouteRequest, type RoutingSource } from "./routing-source.js";
 import {
   buildSketchDrawingCollection,
   createSketchDrawingStoreFromEnv,
@@ -244,7 +262,12 @@ import {
 } from "./tak-gateway-source.js";
 import { appendAudit, createInitialState } from "./state.js";
 import { createTrackHistoryStoreFromEnv, type TrackHistoryStore } from "./track-history-store.js";
-import { appendTrackHistory, parseTrackHistoryQuery, queryTrackHistory, type TrackHistoryQuery } from "./temporal-history.js";
+import {
+  appendTrackHistory,
+  parseTrackHistoryQuery,
+  queryTrackHistory,
+  type TrackHistoryQuery
+} from "./temporal-history.js";
 import { createTrackLifecycleConfig, selectCurrentTracks, type TrackLifecycleConfig } from "./track-lifecycle.js";
 import type { AlertAcknowledgement, CopState, SourceHealthOverride, TrackHistoryPoint } from "./types.js";
 import {
@@ -403,12 +426,14 @@ type McpJsonRpcId = string | number | null;
 
 const copMcpTools: CopMcpToolDefinition[] = [
   {
-    description: "Build a compact, policy-filtered situation summary for an area from COP map providers. The tool returns sources, uncertainty and confidence; it never changes state.",
+    description:
+      "Build a compact, policy-filtered situation summary for an area from COP map providers. The tool returns sources, uncertainty and confidence; it never changes state.",
     inputSchema: {
       additionalProperties: false,
       properties: {
         bbox: {
-          description: "Bounding box as [west,south,east,north] or {west,south,east,north}. Defaults to the flood PoC area.",
+          description:
+            "Bounding box as [west,south,east,north] or {west,south,east,north}. Defaults to the flood PoC area.",
           oneOf: [
             {
               items: { type: "number" },
@@ -450,12 +475,14 @@ const copMcpTools: CopMcpToolDefinition[] = [
     toolId: "cop.area.summary"
   },
   {
-    description: "Explain deterministic fusion priorities for an area by correlating COP map evidence across providers. The tool returns evidence, confidence and uncertainty; it never creates or updates incidents.",
+    description:
+      "Explain deterministic fusion priorities for an area by correlating COP map evidence across providers. The tool returns evidence, confidence and uncertainty; it never creates or updates incidents.",
     inputSchema: {
       additionalProperties: false,
       properties: {
         bbox: {
-          description: "Bounding box as [west,south,east,north] or {west,south,east,north}. Defaults to the flood PoC area.",
+          description:
+            "Bounding box as [west,south,east,north] or {west,south,east,north}. Defaults to the flood PoC area.",
           oneOf: [
             {
               items: { type: "number" },
@@ -510,7 +537,8 @@ const copMcpTools: CopMcpToolDefinition[] = [
     toolId: "cop.federation.nodes.list"
   },
   {
-    description: "List current COP source health for AI and operator diagnostics. The tool returns structured source status, warnings and freshness metrics; it never changes source configuration.",
+    description:
+      "List current COP source health for AI and operator diagnostics. The tool returns structured source status, warnings and freshness metrics; it never changes source configuration.",
     inputSchema: {
       additionalProperties: false,
       properties: {
@@ -590,7 +618,10 @@ const floodDemoBbox = {
 export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const maxCommunityAttachmentBytes = readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024);
   const app = Fastify({
-    bodyLimit: readPositiveInteger(process.env.COP_API_BODY_LIMIT_BYTES, Math.max(1024 * 1024, maxCommunityAttachmentBytes * 2)),
+    bodyLimit: readPositiveInteger(
+      process.env.COP_API_BODY_LIMIT_BYTES,
+      Math.max(1024 * 1024, maxCommunityAttachmentBytes * 2)
+    ),
     logger: options.logger ?? false
   });
   const state = options.state ?? createInitialState();
@@ -609,13 +640,25 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const aiContextIndexRefreshSeconds = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_REFRESH_SECONDS, 120);
   const aiContextIndexMaxAgeMs = aiContextIndexRefreshSeconds * 1000;
   const aiContextIndexQueryLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_QUERY_LIMIT, 8);
-  const aiContextIndexLookbackSeconds = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_LOOKBACK_SECONDS, 7 * 24 * 3600);
+  const aiContextIndexLookbackSeconds = readPositiveInteger(
+    process.env.COP_AI_CONTEXT_INDEX_LOOKBACK_SECONDS,
+    7 * 24 * 3600
+  );
   const aiContextIndexDefaultRadiusKm = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_DEFAULT_RADIUS_KM, 30);
   const aiContextIndexObjectLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_OBJECT_LIMIT, 250);
-  const aiContextIndexCommunityReportLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_COMMUNITY_REPORT_LIMIT, 250);
+  const aiContextIndexCommunityReportLimit = readPositiveInteger(
+    process.env.COP_AI_CONTEXT_INDEX_COMMUNITY_REPORT_LIMIT,
+    250
+  );
   const aiContextIndexIncidentLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_INCIDENT_LIMIT, 200);
-  const aiContextIndexSimSearchEntityLimit = readPositiveInteger(process.env.COP_AI_CONTEXT_INDEX_SIM_SEARCH_ENTITY_LIMIT, 1000);
-  const aiSemanticRetrievalCandidateLimit = readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_CANDIDATE_LIMIT, 36);
+  const aiContextIndexSimSearchEntityLimit = readPositiveInteger(
+    process.env.COP_AI_CONTEXT_INDEX_SIM_SEARCH_ENTITY_LIMIT,
+    1000
+  );
+  const aiSemanticRetrievalCandidateLimit = readPositiveInteger(
+    process.env.COP_AI_SEMANTIC_RETRIEVAL_CANDIDATE_LIMIT,
+    36
+  );
   const aiSemanticRetrievalTimeoutMs = readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_TIMEOUT_MS, 20000);
   const aiGatewayRequestTimeoutMs = readPositiveInteger(process.env.COP_AI_REQUEST_TIMEOUT_MS, 70000);
   const aiChatAgentJobTtlMs = readPositiveInteger(process.env.COP_AI_CHAT_AGENT_JOB_TTL_SECONDS, 20 * 60) * 1000;
@@ -656,7 +699,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const weatherRadarFramesCache = new Map<string, WeatherRadarFramesCacheEntry>();
   const edgeReplayCursors = new Map<string, EdgeReplayCursorRecord>();
   let federationRuntimeStoreStatus: DependencyStatus = federationRuntimeStore ? "degraded" : "disabled";
-  let federationRuntimeStoreDetail = federationRuntimeStore ? `${federationRuntimeStore.name}: initializing` : "in-memory only";
+  let federationRuntimeStoreDetail = federationRuntimeStore
+    ? `${federationRuntimeStore.name}: initializing`
+    : "in-memory only";
   let trackHistoryStoreStatus: DependencyStatus = trackHistoryStore ? "degraded" : "disabled";
   let trackHistoryStoreDetail = trackHistoryStore ? `${trackHistoryStore.name}: initializing` : "in-memory only";
   let userProfileStoreStatus: DependencyStatus = "degraded";
@@ -807,15 +852,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       timestamp: new Date().toISOString()
     }),
     dependencies: async () => {
-      const messaging = await withDependencyTimeout(
-        "csm-messaging-provider",
-        messagingDependency(),
-        {
-          detail: `Messaging provider dependency check timed out after ${healthDependencyTimeoutMs()} ms.`,
-          name: "csm-messaging-provider",
-          status: "degraded"
-        }
-      );
+      const messaging = await withDependencyTimeout("csm-messaging-provider", messagingDependency(), {
+        detail: `Messaging provider dependency check timed out after ${healthDependencyTimeoutMs()} ms.`,
+        name: "csm-messaging-provider",
+        status: "degraded"
+      });
       const aiGatewayDependency = await withDependencyTimeout(
         "ai-gateway",
         aiGateway.health().then((status) => ({
@@ -833,47 +874,65 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return {
         status: "ok",
         dependencies: [
-        { name: "source-registry", status: "ok" },
-        { name: "in-memory-cop-state", status: "ok" },
-        { name: "cop-stream-bus", status: streamBusDependencyStatus(), detail: streamBusDependencyDetail() },
-        { name: "federation-runtime-store", status: federationRuntimeStoreStatus, detail: federationRuntimeStoreDependencyDetail() },
-        { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
-        { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
-        { name: "community-report-store", status: communityReportStoreStatus, detail: communityReportStoreDependencyDetail() },
-        { name: "incident-store", status: incidentStoreStatus, detail: incidentStoreDependencyDetail() },
-        { name: "sketch-drawing-store", status: sketchDrawingStoreStatus, detail: sketchDrawingStoreDependencyDetail() },
-        { name: "media-storage", status: mediaStorageStatus, detail: mediaStorageDependencyDetail() },
-        { name: "mobile-device-store", status: mobileDeviceStoreStatus, detail: mobileDeviceStoreDependencyDetail() },
-        { name: "place-geocoder", status: placeGeocoder ? "ok" : "disabled", detail: placeGeocoder?.diagnostics?.() ?? "disabled" },
-        aiContextIndexDependency(),
-        messaging,
-        ...(flightDataSource ? [flightDataDependency()] : []),
-        ...(situationDataSource ? [situationDataDependency()] : []),
-        ...(routingSource ? [routingDependency()] : []),
-        ...(safetyDataSource ? [safetyDataDependency()] : []),
-        ...(simSearchDataSource ? [simSearchDataDependency()] : []),
-        ...(missionArenaSource ? [missionArenaDependency()] : []),
-        ...(takGatewaySource ? [takGatewayDependency()] : []),
-        aiGatewayDependency
-      ]
+          { name: "source-registry", status: "ok" },
+          { name: "in-memory-cop-state", status: "ok" },
+          { name: "cop-stream-bus", status: streamBusDependencyStatus(), detail: streamBusDependencyDetail() },
+          {
+            name: "federation-runtime-store",
+            status: federationRuntimeStoreStatus,
+            detail: federationRuntimeStoreDependencyDetail()
+          },
+          { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
+          { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
+          {
+            name: "community-report-store",
+            status: communityReportStoreStatus,
+            detail: communityReportStoreDependencyDetail()
+          },
+          { name: "incident-store", status: incidentStoreStatus, detail: incidentStoreDependencyDetail() },
+          {
+            name: "sketch-drawing-store",
+            status: sketchDrawingStoreStatus,
+            detail: sketchDrawingStoreDependencyDetail()
+          },
+          { name: "media-storage", status: mediaStorageStatus, detail: mediaStorageDependencyDetail() },
+          { name: "mobile-device-store", status: mobileDeviceStoreStatus, detail: mobileDeviceStoreDependencyDetail() },
+          {
+            name: "place-geocoder",
+            status: placeGeocoder ? "ok" : "disabled",
+            detail: placeGeocoder?.diagnostics?.() ?? "disabled"
+          },
+          aiContextIndexDependency(),
+          messaging,
+          ...(flightDataSource ? [flightDataDependency()] : []),
+          ...(situationDataSource ? [situationDataDependency()] : []),
+          ...(routingSource ? [routingDependency()] : []),
+          ...(safetyDataSource ? [safetyDataDependency()] : []),
+          ...(simSearchDataSource ? [simSearchDataDependency()] : []),
+          ...(missionArenaSource ? [missionArenaDependency()] : []),
+          ...(takGatewaySource ? [takGatewayDependency()] : []),
+          aiGatewayDependency
+        ]
       };
     },
     metrics: async (_request, reply) => {
       const currentObjects = selectCurrentTracks(state.objects.values(), now(), trackLifecycle);
       const trackHistoryPointCount = await countTrackHistoryPoints();
       const persistedCurrentTrackCount = await countPersistedCurrentTracks();
-      return reply.type("text/plain").send(buildCopPrometheusMetrics({
-        currentObjectCount: currentObjects.length,
-        eventCount: state.events.size,
-        persistedCurrentTrackCount,
-        safetyCache: safetyDataSource?.cacheStats?.(),
-        situationCache: situationDataSource?.cacheStats?.(),
-        sourceCount: state.sources.size,
-        streamBusMetrics: streamBus.metrics,
-        streamMetrics: streamBroadcaster.metrics,
-        takGatewayCache: takGatewaySource?.cacheStats?.(),
-        trackHistoryPointCount
-      }));
+      return reply.type("text/plain").send(
+        buildCopPrometheusMetrics({
+          currentObjectCount: currentObjects.length,
+          eventCount: state.events.size,
+          persistedCurrentTrackCount,
+          safetyCache: safetyDataSource?.cacheStats?.(),
+          situationCache: situationDataSource?.cacheStats?.(),
+          sourceCount: state.sources.size,
+          streamBusMetrics: streamBus.metrics,
+          streamMetrics: streamBroadcaster.metrics,
+          takGatewayCache: takGatewaySource?.cacheStats?.(),
+          trackHistoryPointCount
+        })
+      );
     }
   });
 
@@ -1200,7 +1259,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   function activeCommunityReportStore(): CommunityReportStore {
-    return communityReportStore && communityReportStoreStatus === "ok" ? communityReportStore : communityReportFallbackStore;
+    return communityReportStore && communityReportStoreStatus === "ok"
+      ? communityReportStore
+      : communityReportFallbackStore;
   }
 
   function activeIncidentStore(): IncidentStore {
@@ -1231,7 +1292,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const requestNow = now();
     try {
       const result = await flightDataSource.poll(requestNow);
-      state.sources.set(flightDataSource.sourceSystem.sourceSystemId, withFlightDataHealth(activeFlightDataSourceSystem(), result.health));
+      state.sources.set(
+        flightDataSource.sourceSystem.sourceSystemId,
+        withFlightDataHealth(activeFlightDataSourceSystem(), result.health)
+      );
       const acceptedObjects: ObservedObject[] = [];
       for (const event of result.events) {
         if (state.events.has(event.eventId)) {
@@ -1252,7 +1316,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       });
     } catch (error) {
       const health = unavailableFlightDataHealth(error, requestNow);
-      state.sources.set(flightDataSource.sourceSystem.sourceSystemId, withFlightDataHealth(activeFlightDataSourceSystem(), health));
+      state.sources.set(
+        flightDataSource.sourceSystem.sourceSystemId,
+        withFlightDataHealth(activeFlightDataSourceSystem(), health)
+      );
       appendAudit(state, "FLIGHT_DATA_POLL_FAILED", {
         error: errorMessage(error),
         sourceSystemId: flightDataSource.sourceSystem.sourceSystemId,
@@ -1326,9 +1393,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const subject = defaultSystemSubject();
     const simSearchMapFeatures = await readSimSearchMapFeaturesForAiIndex(requestNow);
     const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
-    const readableObjects = prioritizeObjectsForAi(selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
-      .filter((object) => canReadObject(subject, object)))
-      .slice(0, aiContextIndexObjectLimit);
+    const readableObjects = prioritizeObjectsForAi(
+      selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle).filter((object) =>
+        canReadObject(subject, object)
+      )
+    ).slice(0, aiContextIndexObjectLimit);
     const decoratedObjects = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
     const alerts = buildCopAlerts({
       acknowledgements: new Map(),
@@ -1339,16 +1408,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     })
       .filter((alert) => alert.status === "ACTIVE")
       .slice(0, 80);
-    const communityReports = (await listCommunityReports({
-      limit: aiContextIndexCommunityReportLimit,
-      statuses: ["submitted", "published"]
-    }))
+    const communityReports = (
+      await listCommunityReports({
+        limit: aiContextIndexCommunityReportLimit,
+        statuses: ["submitted", "published"]
+      })
+    )
       .filter((report) => report.visibility !== "private")
       .slice(0, aiContextIndexCommunityReportLimit);
-    const incidents = (await listIncidents({
-      limit: aiContextIndexIncidentLimit,
-      statuses: ["active", "candidate", "monitoring"]
-    })).slice(0, aiContextIndexIncidentLimit);
+    const incidents = (
+      await listIncidents({
+        limit: aiContextIndexIncidentLimit,
+        statuses: ["active", "candidate", "monitoring"]
+      })
+    ).slice(0, aiContextIndexIncidentLimit);
     return {
       alerts: alerts.map(summarizeAlertForAi),
       communityReports: communityReports.map(summarizeCommunityReportForAi),
@@ -1368,10 +1441,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     let remaining = aiContextIndexSimSearchEntityLimit;
     try {
       for (let page = 0; page < 8 && remaining > 0; page += 1) {
-        const response = await simSearchDataSource.fetchEntities({
-          ...(cursor ? { cursor } : {}),
-          limit: Math.min(remaining, simSearchDataSource.config.indexLimit || remaining)
-        }, requestNow);
+        const response = await simSearchDataSource.fetchEntities(
+          {
+            ...(cursor ? { cursor } : {}),
+            limit: Math.min(remaining, simSearchDataSource.config.indexLimit || remaining)
+          },
+          requestNow
+        );
         responses.push(response);
         remaining -= response.results.length;
         cursor = response.nextCursor;
@@ -1395,11 +1471,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         warnings: Array.from(new Set(responses.flatMap((response) => response.warnings)))
       };
       const health = buildSimSearchDataHealth(combined, requestNow);
-      state.sources.set(simSearchDataSource.sourceSystem.sourceSystemId, withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health));
+      state.sources.set(
+        simSearchDataSource.sourceSystem.sourceSystemId,
+        withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health)
+      );
       return summarizeSimSearchResponseForAi(combined, undefined);
     } catch (error) {
       const health = unavailableSimSearchDataHealth(error, requestNow);
-      state.sources.set(simSearchDataSource.sourceSystem.sourceSystemId, withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health));
+      state.sources.set(
+        simSearchDataSource.sourceSystem.sourceSystemId,
+        withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health)
+      );
       app.log.warn({ error }, "AI context index SIM search-data entity refresh failed.");
       return [];
     }
@@ -1419,11 +1501,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       try {
         await refreshAiContextIndex("lazy-query", input.requestNow);
       } catch (error) {
-        appendAudit(state, "AI_CONTEXT_INDEX_REFRESH_FAILED", {
-          actorSubjectId: input.actor.subjectId,
-          error: errorMessage(error),
-          requestId: input.requestId
-        }, input.correlationId);
+        appendAudit(
+          state,
+          "AI_CONTEXT_INDEX_REFRESH_FAILED",
+          {
+            actorSubjectId: input.actor.subjectId,
+            error: errorMessage(error),
+            requestId: input.requestId
+          },
+          input.correlationId
+        );
         app.log.warn({ error }, "AI context index lazy refresh failed.");
       }
     }
@@ -1437,19 +1524,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       ...(input.retrievalIntent ? { retrievalIntent: input.retrievalIntent } : {}),
       timeWindow
     });
-    appendAudit(state, "AI_CONTEXT_INDEX_TOOL_INVOKED", {
-      actorSubjectId: input.actor.subjectId,
-      candidateDocumentCount: indexedContext.toolCall.candidateDocumentCount,
-      geo: indexedContext.query.geo,
-      invocationId: indexedContext.toolCall.invocationId,
-      matchedDocumentCount: indexedContext.toolCall.matchedDocumentCount,
-      requestId: input.requestId,
-      retrievalIntent: input.retrievalIntent,
-      status: indexedContext.toolCall.status,
-      timeWindow: indexedContext.query.timeWindow,
-      toolId: indexedContext.toolCall.toolId,
-      warnings: indexedContext.toolCall.warnings
-    }, input.correlationId);
+    appendAudit(
+      state,
+      "AI_CONTEXT_INDEX_TOOL_INVOKED",
+      {
+        actorSubjectId: input.actor.subjectId,
+        candidateDocumentCount: indexedContext.toolCall.candidateDocumentCount,
+        geo: indexedContext.query.geo,
+        invocationId: indexedContext.toolCall.invocationId,
+        matchedDocumentCount: indexedContext.toolCall.matchedDocumentCount,
+        requestId: input.requestId,
+        retrievalIntent: input.retrievalIntent,
+        status: indexedContext.toolCall.status,
+        timeWindow: indexedContext.query.timeWindow,
+        toolId: indexedContext.toolCall.toolId,
+        warnings: indexedContext.toolCall.warnings
+      },
+      input.correlationId
+    );
     return indexedContext;
   }
 
@@ -1468,12 +1560,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     );
   }
 
-  async function queryCopAssistantForAi(aiRequest: AiCopQuery, requestNow: Date, operation: "chat-agent" | "situation-summary"): Promise<AiCopResponse> {
+  async function queryCopAssistantForAi(
+    aiRequest: AiCopQuery,
+    requestNow: Date,
+    operation: "chat-agent" | "situation-summary"
+  ): Promise<AiCopResponse> {
     try {
       return await withTimeoutFallback(
         aiGateway.queryCopAssistant(aiRequest),
         aiGatewayRequestTimeoutMs,
-        () => aiGatewayFallbackResponse(aiRequest, requestNow, operation, `AI provider timed out after ${aiGatewayRequestTimeoutMs} ms.`),
+        () =>
+          aiGatewayFallbackResponse(
+            aiRequest,
+            requestNow,
+            operation,
+            `AI provider timed out after ${aiGatewayRequestTimeoutMs} ms.`
+          ),
         "AI provider returned after the COP request timeout."
       );
     } catch (error) {
@@ -1496,27 +1598,32 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         settled = true;
         resolve(fallback());
       }, timeoutMs);
-      promise.then((value) => {
-        if (settled) {
-          app.log.warn({ timeoutMs }, lateCompletionMessage);
-          return;
-        }
-        settled = true;
-        clearTimeout(timeout);
-        resolve(value);
-      }).catch((error: unknown) => {
-        if (settled) {
-          app.log.warn({ error, timeoutMs }, lateCompletionMessage);
-          return;
-        }
-        settled = true;
-        clearTimeout(timeout);
-        reject(error);
-      });
+      promise
+        .then((value) => {
+          if (settled) {
+            app.log.warn({ timeoutMs }, lateCompletionMessage);
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          resolve(value);
+        })
+        .catch((error: unknown) => {
+          if (settled) {
+            app.log.warn({ error, timeoutMs }, lateCompletionMessage);
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          reject(error);
+        });
     });
   }
 
-  function emptyAiSemanticContext(input: { generatedAt: Date; query: string; retrievalIntent?: AiRetrievalIntent }, warning: string): AiSemanticContext {
+  function emptyAiSemanticContext(
+    input: { generatedAt: Date; query: string; retrievalIntent?: AiRetrievalIntent },
+    warning: string
+  ): AiSemanticContext {
     return {
       citations: [],
       contractVersion: "cop-ai-semantic-context-v1",
@@ -1553,7 +1660,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   }
 
-  function updateAiChatAgentJob(jobId: string, update: Partial<AiChatAgentJobRecord>, requestNow = now()): AiChatAgentJobRecord | undefined {
+  function updateAiChatAgentJob(
+    jobId: string,
+    update: Partial<AiChatAgentJobRecord>,
+    requestNow = now()
+  ): AiChatAgentJobRecord | undefined {
     const current = aiChatAgentJobs.get(jobId);
     if (!current) {
       return undefined;
@@ -1622,16 +1733,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  function limitAiSemanticDocuments(documents: AiSemanticDocument[], limit: number, retrievalIntent: AiRetrievalIntent): AiSemanticDocument[] {
+  function limitAiSemanticDocuments(
+    documents: AiSemanticDocument[],
+    limit: number,
+    retrievalIntent: AiRetrievalIntent
+  ): AiSemanticDocument[] {
     const max = Math.max(1, Math.trunc(limit));
     if (documents.length <= max) {
       return prioritizeAiSemanticDocuments(documents, retrievalIntent);
     }
-    return prioritizeAiSemanticDocuments(documents, retrievalIntent)
-      .slice(0, max);
+    return prioritizeAiSemanticDocuments(documents, retrievalIntent).slice(0, max);
   }
 
-  function prioritizeAiSemanticDocuments(documents: AiSemanticDocument[], retrievalIntent: AiRetrievalIntent): AiSemanticDocument[] {
+  function prioritizeAiSemanticDocuments(
+    documents: AiSemanticDocument[],
+    retrievalIntent: AiRetrievalIntent
+  ): AiSemanticDocument[] {
     return documents
       .map((document, index) => ({
         document,
@@ -1665,19 +1782,29 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         score += 0.28;
         break;
     }
-    if (/(povod|flood|voda|water|řek|rek|hladin|fire|požár|pozar|kouř|kour|medical|zdravot|infrastruktur|bridge|most|traffic|doprav|polic|police|security|bezpeč|bezpec|incident|evaku|hazard|rizik)/u.test(text)) {
+    if (
+      /(povod|flood|voda|water|řek|rek|hladin|fire|požár|pozar|kouř|kour|medical|zdravot|infrastruktur|bridge|most|traffic|doprav|polic|police|security|bezpeč|bezpec|incident|evaku|hazard|rizik)/u.test(
+        text
+      )
+    ) {
       score += 0.45;
     }
     if (/(critical|kritick|warning|výstrah|vystrah|active|aktiv|submitted|published|monitoring)/u.test(text)) {
       score += 0.16;
     }
-    if (retrievalIntent.categories.includes("flood-water") && /(povod|flood|voda|water|řek|rek|hladin|hydro)/u.test(text)) {
+    if (
+      retrievalIntent.categories.includes("flood-water") &&
+      /(povod|flood|voda|water|řek|rek|hladin|hydro)/u.test(text)
+    ) {
       score += 0.24;
     }
     if (retrievalIntent.categories.includes("fire") && /(fire|požár|pozar|kouř|kour|hotspot|firms)/u.test(text)) {
       score += 0.22;
     }
-    if (retrievalIntent.categories.includes("security-police") && /(polic|security|bezpeč|bezpec|kráde|krade|zlod|crime)/u.test(text)) {
+    if (
+      retrievalIntent.categories.includes("security-police") &&
+      /(polic|security|bezpeč|bezpec|kráde|krade|zlod|crime)/u.test(text)
+    ) {
       score += 0.2;
     }
     if (aiIntentSuppressesRoutineCivilAir(retrievalIntent) && isRoutineCivilAirText(text)) {
@@ -1694,9 +1821,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     operation: "chat-agent" | "situation-summary",
     reason: string
   ): AiCopResponse {
-    const mapSearchFallback = operation === "chat-agent"
-      ? aiMapSearchFallbackResponse(aiRequest, requestNow, reason)
-      : undefined;
+    const mapSearchFallback =
+      operation === "chat-agent" ? aiMapSearchFallbackResponse(aiRequest, requestNow, reason) : undefined;
     if (mapSearchFallback) {
       return mapSearchFallback;
     }
@@ -1730,26 +1856,34 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   }
 
-  async function resolveAiContextGeoFilter(body: Record<string, unknown>, query: string, requestNow: Date): Promise<AiContextGeoFilter | undefined> {
+  async function resolveAiContextGeoFilter(
+    body: Record<string, unknown>,
+    query: string,
+    requestNow: Date
+  ): Promise<AiContextGeoFilter | undefined> {
     const explicitGeo = parseAiContextGeoFilter(body);
     if (explicitGeo) {
       return explicitGeo;
     }
     const usesImplicitCurrentArea = aiQuestionUsesImplicitCurrentArea(query);
-    const placeQuery = aiContextPlaceFromBody(body)
-      ?? (usesImplicitCurrentArea ? undefined : aiPlaceQueryFromQuestion(query))
-      ?? inferAiMapSearchIntent(query, body).placeQuery;
+    const placeQuery =
+      aiContextPlaceFromBody(body) ??
+      (usesImplicitCurrentArea ? undefined : aiPlaceQueryFromQuestion(query)) ??
+      inferAiMapSearchIntent(query, body).placeQuery;
     if (!placeQuery || !placeGeocoder) {
       return undefined;
     }
     try {
       let place: PlaceGeocodeResult | undefined;
       for (const candidate of aiPlaceGeocoderQueryCandidates(placeQuery)) {
-        const response = await placeGeocoder.search({
-          language: aiLanguage(body.language),
-          limit: 1,
-          query: candidate
-        }, requestNow);
+        const response = await placeGeocoder.search(
+          {
+            language: aiLanguage(body.language),
+            limit: 1,
+            query: candidate
+          },
+          requestNow
+        );
         place = response.items[0];
         if (place) {
           break;
@@ -1798,7 +1932,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         addFirstVariant(first.replace(/ě$/iu, "a"));
       }
     }
-    return Array.from(candidates).filter((candidate) => candidate.length >= 3).slice(0, 4);
+    return Array.from(candidates)
+      .filter((candidate) => candidate.length >= 3)
+      .slice(0, 4);
   }
 
   function shouldAnswerAiChatAgentWithMapSearchResult(
@@ -1816,16 +1952,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   function parseAiContextGeoFilter(body: Record<string, unknown>): AiContextGeoFilter | undefined {
     const geoContext = isRecord(body.geoContext) ? body.geoContext : {};
     const bbox = parseMapQueryBbox(geoContext.bbox ?? body.bbox);
-    const location = firstRecord(
-      geoContext.currentLocation,
-      geoContext.location,
-      body.currentLocation,
-      body.location
-    );
+    const location = firstRecord(geoContext.currentLocation, geoContext.location, body.currentLocation, body.location);
     const lat = location ? optionalFiniteNumber(location.lat ?? location.latitude, -90, 90) : undefined;
-    const lon = location ? optionalFiniteNumber(location.lon ?? location.lng ?? location.longitude, -180, 180) : undefined;
+    const lon = location
+      ? optionalFiniteNumber(location.lon ?? location.lng ?? location.longitude, -180, 180)
+      : undefined;
     const radiusKm = location
-      ? optionalFiniteNumber(location.radiusKm ?? location.radius ?? geoContext.radiusKm ?? body.radiusKm, 0.1, 500) ?? aiContextIndexDefaultRadiusKm
+      ? (optionalFiniteNumber(location.radiusKm ?? location.radius ?? geoContext.radiusKm ?? body.radiusKm, 0.1, 500) ??
+        aiContextIndexDefaultRadiusKm)
       : undefined;
     if (!bbox && (lat === undefined || lon === undefined || radiusKm === undefined)) {
       return undefined;
@@ -1833,7 +1967,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return {
       ...(bbox ? { bbox } : {}),
       ...(lat !== undefined && lon !== undefined && radiusKm !== undefined ? { center: { lat, lon, radiusKm } } : {}),
-      ...(optionalText(geoContext.label ?? location?.label ?? body.locationLabel) ? { label: optionalText(geoContext.label ?? location?.label ?? body.locationLabel) } : {}),
+      ...(optionalText(geoContext.label ?? location?.label ?? body.locationLabel)
+        ? { label: optionalText(geoContext.label ?? location?.label ?? body.locationLabel) }
+        : {}),
       source: "body"
     };
   }
@@ -1883,13 +2019,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const sourceSystems = simSearchSourceSystemsForAiMapSearchIntent(intent);
       const query = compactRecord({
         ...(bbox ? { bbox } : {}),
-        ...(geoFilter?.center ? {
-          center: {
-            lat: geoFilter.center.lat,
-            lon: geoFilter.center.lon
-          },
-          radiusM: Math.round(clampNumber(geoFilter.center.radiusKm ?? 30, 1, 250) * 1000)
-        } : {}),
+        ...(geoFilter?.center
+          ? {
+              center: {
+                lat: geoFilter.center.lat,
+                lon: geoFilter.center.lon
+              },
+              radiusM: Math.round(clampNumber(geoFilter.center.radiusKm ?? 30, 1, 250) * 1000)
+            }
+          : {}),
         ...(entityTypes ? { entityTypes } : {}),
         ...(sourceSystems ? { sourceSystems } : {}),
         includeStale: false,
@@ -1900,7 +2038,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       try {
         const response = await simSearchDataSource.query(query, input.requestNow);
         const health = buildSimSearchDataHealth(response, input.requestNow);
-        state.sources.set(simSearchDataSource.sourceSystem.sourceSystemId, withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health));
+        state.sources.set(
+          simSearchDataSource.sourceSystem.sourceSystemId,
+          withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health)
+        );
         warnings.push(...response.warnings);
         const simResults = summarizeSimSearchResponseForAi(response, geoFilter);
         mapResults.push(...simResults);
@@ -1916,7 +2057,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         });
       } catch (error) {
         const health = unavailableSimSearchDataHealth(error, input.requestNow);
-        state.sources.set(simSearchDataSource.sourceSystem.sourceSystemId, withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health));
+        state.sources.set(
+          simSearchDataSource.sourceSystem.sourceSystemId,
+          withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health)
+        );
         app.log.warn({ error, requestId: input.requestId }, "AI SIM search-data lookup failed.");
         warnings.push(`SIM search-data vyhledávání selhalo: ${errorMessage(error)}`);
         appendAudit(state, "AI_SIM_SEARCH_DATA_TOOL_FAILED", {
@@ -1944,28 +2088,35 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             situation: providers.situation,
             tak: providers.tak
           });
-          const queryableLayers = catalog.layers.filter((layer) =>
-            catalogLayerAvailableForMapQuery(layer) && catalogLayerQueryableForFeatureQuery(layer)
+          const queryableLayers = catalog.layers.filter(
+            (layer) => catalogLayerAvailableForMapQuery(layer) && catalogLayerQueryableForFeatureQuery(layer)
           );
-          const catalogMatchedLayers = queryableLayers.filter((layer) => aiMapCatalogLayerMatchesMapSearchIntent(layer, intent));
-          const selectedLayers = intent.layerIds.length > 0
-            ? queryableLayers.filter((layer) => intent.layerIds.includes(layer.layerId))
-            : catalogMatchedLayers.length > 0
-              ? catalogMatchedLayers
-              : queryableLayers;
-          const unknownLayerIds = intent.layerIds.length > 0
-            ? intent.layerIds.filter((layerId) => !catalog.layers.some((layer) => layer.layerId === layerId))
-            : [];
-          const unavailableLayerIds = intent.layerIds.length > 0
-            ? intent.layerIds.filter((layerId) =>
-                catalog.layers.some((layer) => layer.layerId === layerId && !catalogLayerAvailableForMapQuery(layer))
-              )
-            : [];
+          const catalogMatchedLayers = queryableLayers.filter((layer) =>
+            aiMapCatalogLayerMatchesMapSearchIntent(layer, intent)
+          );
+          const selectedLayers =
+            intent.layerIds.length > 0
+              ? queryableLayers.filter((layer) => intent.layerIds.includes(layer.layerId))
+              : catalogMatchedLayers.length > 0
+                ? catalogMatchedLayers
+                : queryableLayers;
+          const unknownLayerIds =
+            intent.layerIds.length > 0
+              ? intent.layerIds.filter((layerId) => !catalog.layers.some((layer) => layer.layerId === layerId))
+              : [];
+          const unavailableLayerIds =
+            intent.layerIds.length > 0
+              ? intent.layerIds.filter((layerId) =>
+                  catalog.layers.some((layer) => layer.layerId === layerId && !catalogLayerAvailableForMapQuery(layer))
+                )
+              : [];
           if (selectedLayers.length === 0) {
             warnings.push("Pro dotaz nebyla k dispozici žádná použitelná mapová vrstva.");
           }
           if (intent.layerIds.length === 0 && catalogMatchedLayers.length === 0 && queryableLayers.length > 0) {
-            warnings.push("Dotaz nebyl navázán na konkrétní katalogovou vrstvu; prohledány dostupné mapové vrstvy v zadaném okolí.");
+            warnings.push(
+              "Dotaz nebyl navázán na konkrétní katalogovou vrstvu; prohledány dostupné mapové vrstvy v zadaném okolí."
+            );
           }
           if (unknownLayerIds.length > 0) {
             warnings.push(`Neznámé mapové vrstvy ignorovány: ${unknownLayerIds.join(", ")}.`);
@@ -1982,7 +2133,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             limit: 120
           };
           const providerQueries = buildProviderFeatureQueries(selectedLayers, query);
-          const [situationCollection, safetyCollection, flightCollection, communityCollection, missionArenaCollection, takCollection] = await Promise.all([
+          const [
+            situationCollection,
+            safetyCollection,
+            flightCollection,
+            communityCollection,
+            missionArenaCollection,
+            takCollection
+          ] = await Promise.all([
             readSituationMapQuery(providerQueries.situation, input.requestNow, input.actor, selectedLayers),
             readSafetyMapQuery(providerQueries.safety, input.requestNow),
             readFlightReferenceMapQuery(providerQueries.flight, input.requestNow),
@@ -1996,13 +2154,23 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           warnings.push(...mapFeatureCollectionWarnings(communityCollection));
           warnings.push(...mapFeatureCollectionWarnings(missionArenaCollection));
           warnings.push(...mapFeatureCollectionWarnings(takCollection));
-          mapResults.push(...(situationCollection?.features ?? [])
-            .filter((feature) => aiSituationFeatureMatchesMapSearchIntent(feature, intent))
-            .map((feature) => summarizeSituationMapFeatureForAi(feature, geoFilter)));
-          mapResults.push(...summarizeMapFeatureCollectionForAi(safetyCollection, geoFilter, intent, "sim.safety-data"));
-          mapResults.push(...summarizeMapFeatureCollectionForAi(flightCollection, geoFilter, intent, "sim.flight-data"));
-          mapResults.push(...summarizeMapFeatureCollectionForAi(communityCollection, geoFilter, intent, "cop.community"));
-          mapResults.push(...summarizeMapFeatureCollectionForAi(missionArenaCollection, geoFilter, intent, "csm.mission-arena"));
+          mapResults.push(
+            ...(situationCollection?.features ?? [])
+              .filter((feature) => aiSituationFeatureMatchesMapSearchIntent(feature, intent))
+              .map((feature) => summarizeSituationMapFeatureForAi(feature, geoFilter))
+          );
+          mapResults.push(
+            ...summarizeMapFeatureCollectionForAi(safetyCollection, geoFilter, intent, "sim.safety-data")
+          );
+          mapResults.push(
+            ...summarizeMapFeatureCollectionForAi(flightCollection, geoFilter, intent, "sim.flight-data")
+          );
+          mapResults.push(
+            ...summarizeMapFeatureCollectionForAi(communityCollection, geoFilter, intent, "cop.community")
+          );
+          mapResults.push(
+            ...summarizeMapFeatureCollectionForAi(missionArenaCollection, geoFilter, intent, "csm.mission-arena")
+          );
           mapResults.push(...summarizeMapFeatureCollectionForAi(takCollection, geoFilter, intent, "sim.tak-gateway"));
         } catch (error) {
           app.log.warn({ error, requestId: input.requestId }, "AI map search failed.");
@@ -2011,17 +2179,25 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
     }
 
-    if (mapResults.length === 0 && placeGeocoder && bbox && (intent.categoryIds.length > 0 || intent.searchTerms.length > 0)) {
+    if (
+      mapResults.length === 0 &&
+      placeGeocoder &&
+      bbox &&
+      (intent.categoryIds.length > 0 || intent.searchTerms.length > 0)
+    ) {
       const fallbackQueries = aiMapGeocoderFallbackQueries(intent);
       for (const fallbackQuery of fallbackQueries) {
         try {
-          const placeResponse = await placeGeocoder.search({
-            bbox,
-            bounded: true,
-            language: aiLanguage(input.body.language),
-            limit: 8,
-            query: fallbackQuery
-          }, input.requestNow);
+          const placeResponse = await placeGeocoder.search(
+            {
+              bbox,
+              bounded: true,
+              language: aiLanguage(input.body.language),
+              limit: 8,
+              query: fallbackQuery
+            },
+            input.requestNow
+          );
           warnings.push(...placeResponse.warnings);
           const placeResults = placeResponse.items
             .filter((place) => aiGeocodedPlaceMatchesMapSearchIntent(place, intent))
@@ -2058,7 +2234,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             toolId: "cop.geocoder.search"
           });
         } catch (error) {
-          app.log.warn({ error, query: fallbackQuery, requestId: input.requestId }, "AI geocoder map-search fallback failed.");
+          app.log.warn(
+            { error, query: fallbackQuery, requestId: input.requestId },
+            "AI geocoder map-search fallback failed."
+          );
           warnings.push(`Geocoder fallback selhal: ${errorMessage(error)}`);
           appendAudit(state, "AI_GEOCODER_MAP_SEARCH_FALLBACK_FAILED", {
             error: errorMessage(error),
@@ -2072,24 +2251,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
     if (intent.placeQuery && placeGeocoder) {
       try {
-        const placeResponse = await placeGeocoder.search({
-          language: aiLanguage(input.body.language),
-          limit: 3,
-          query: intent.placeQuery
-        }, input.requestNow);
+        const placeResponse = await placeGeocoder.search(
+          {
+            language: aiLanguage(input.body.language),
+            limit: 3,
+            query: intent.placeQuery
+          },
+          input.requestNow
+        );
         warnings.push(...placeResponse.warnings);
         mapResults.push(...placeResponse.items.map((place) => summarizeGeocodedPlaceForAi(place, geoFilter)));
       } catch (error) {
-        app.log.warn({ error, placeQuery: intent.placeQuery, requestId: input.requestId }, "AI place map search failed.");
+        app.log.warn(
+          { error, placeQuery: intent.placeQuery, requestId: input.requestId },
+          "AI place map search failed."
+        );
         warnings.push(`Geokódování místa selhalo: ${errorMessage(error)}`);
       }
     } else if (intent.placeQuery && !placeGeocoder) {
       warnings.push("Geocoder pro vyhledávání míst je vypnutý.");
     }
 
-    const results = dedupeAiMapSearchResults(mapResults)
-      .sort(aiMapSearchResultCompare)
-      .slice(0, 12);
+    const results = dedupeAiMapSearchResults(mapResults).sort(aiMapSearchResultCompare).slice(0, 12);
     const status = results.length > 0 ? (warnings.length > 0 ? "degraded" : "ok") : "empty";
     const context: AiMapSearchContext = {
       contractVersion: "cop-ai-map-search-v1",
@@ -2138,8 +2321,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const intent = inferAiMapSearchIntent(question, body);
     const explicitGeoFilter = parseAiContextGeoFilter(body);
-    return Boolean(explicitGeoFilter?.bbox || explicitGeoFilter?.center)
-      && (intent.requested || intent.layerIds.length > 0 || intent.categoryIds.length > 0);
+    return (
+      Boolean(explicitGeoFilter?.bbox || explicitGeoFilter?.center) &&
+      (intent.requested || intent.layerIds.length > 0 || intent.categoryIds.length > 0)
+    );
   }
 
   function aiMapGeocoderFallbackQueries(intent: ReturnType<typeof inferAiMapSearchIntent>): string[] {
@@ -2178,11 +2363,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return Array.from(queries).slice(0, 6);
   }
 
-  function aiGeocodedPlaceMatchesMapSearchIntent(place: PlaceGeocodeResult, intent: ReturnType<typeof inferAiMapSearchIntent>): boolean {
+  function aiGeocodedPlaceMatchesMapSearchIntent(
+    place: PlaceGeocodeResult,
+    intent: ReturnType<typeof inferAiMapSearchIntent>
+  ): boolean {
     if (intent.categoryIds.length === 0) {
       return true;
     }
-    const haystack = [place.displayName, place.subtitle, place.kind].filter(Boolean).join(" ")
+    const haystack = [place.displayName, place.subtitle, place.kind]
+      .filter(Boolean)
+      .join(" ")
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/gu, "")
       .toLocaleLowerCase("cs-CZ");
@@ -2193,7 +2383,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         case "fire_station":
           return haystack.includes("hasic") || haystack.includes("pozarn") || /\b(fire)\b/u.test(haystack);
         case "ambulance_station":
-          return haystack.includes("zachran") || haystack.includes("ambulanc") || haystack.includes("nemocnic") || /\b(hospital|medical)\b/u.test(haystack);
+          return (
+            haystack.includes("zachran") ||
+            haystack.includes("ambulanc") ||
+            haystack.includes("nemocnic") ||
+            /\b(hospital|medical)\b/u.test(haystack)
+          );
         case "shelter":
           return /\b(kryt|shelter|evakuac|assembly)\b/u.test(haystack);
         case "defibrillator":
@@ -2358,7 +2553,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  async function upsertUserProfile(profile: Omit<UserProfileRecord, "createdAt" | "updatedAt">): Promise<UserProfileRecord> {
+  async function upsertUserProfile(
+    profile: Omit<UserProfileRecord, "createdAt" | "updatedAt">
+  ): Promise<UserProfileRecord> {
     try {
       return await activeUserProfileStore().upsertProfile(profile);
     } catch (error) {
@@ -2376,7 +2573,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  async function acknowledgeAlertForActor(actor: AuthenticatedActor, acknowledgement: AlertAcknowledgement): Promise<void> {
+  async function acknowledgeAlertForActor(
+    actor: AuthenticatedActor,
+    acknowledgement: AlertAcknowledgement
+  ): Promise<void> {
     try {
       await activeUserProfileStore().acknowledgeAlert(actor.subjectId, acknowledgement);
     } catch (error) {
@@ -2385,7 +2585,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  async function createCommunityReport(input: Parameters<CommunityReportStore["createReport"]>[0], requestNow: Date): Promise<CommunityReportRecord> {
+  async function createCommunityReport(
+    input: Parameters<CommunityReportStore["createReport"]>[0],
+    requestNow: Date
+  ): Promise<CommunityReportRecord> {
     try {
       return await activeCommunityReportStore().createReport(input, requestNow);
     } catch (error) {
@@ -2412,7 +2615,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  async function submitCommunityReport(reportId: string, actor: AuthenticatedActor, requestNow: Date): Promise<CommunityReportRecord | null> {
+  async function submitCommunityReport(
+    reportId: string,
+    actor: AuthenticatedActor,
+    requestNow: Date
+  ): Promise<CommunityReportRecord | null> {
     try {
       return await activeCommunityReportStore().submitReport(reportId, actor.subjectId, requestNow);
     } catch (error) {
@@ -2421,7 +2628,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  async function updateCommunityReport(reportId: string, actor: AuthenticatedActor, input: Parameters<CommunityReportStore["updateReport"]>[2], requestNow: Date): Promise<CommunityReportRecord | null> {
+  async function updateCommunityReport(
+    reportId: string,
+    actor: AuthenticatedActor,
+    input: Parameters<CommunityReportStore["updateReport"]>[2],
+    requestNow: Date
+  ): Promise<CommunityReportRecord | null> {
     try {
       return await activeCommunityReportStore().updateReport(reportId, actor.subjectId, input, requestNow);
     } catch (error) {
@@ -2430,7 +2642,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  async function deleteCommunityReport(reportId: string, actor: AuthenticatedActor, requestNow: Date): Promise<boolean> {
+  async function deleteCommunityReport(
+    reportId: string,
+    actor: AuthenticatedActor,
+    requestNow: Date
+  ): Promise<boolean> {
     try {
       return await activeCommunityReportStore().deleteReport(reportId, actor.subjectId, requestNow);
     } catch (error) {
@@ -2439,7 +2655,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  async function deleteCommunityReportForDemoScenario(reportId: string, demoScenarioId: string, requestNow: Date): Promise<boolean> {
+  async function deleteCommunityReportForDemoScenario(
+    reportId: string,
+    demoScenarioId: string,
+    requestNow: Date
+  ): Promise<boolean> {
     try {
       return await activeCommunityReportStore().deleteReportForDemoScenario(reportId, demoScenarioId, requestNow);
     } catch (error) {
@@ -2466,7 +2686,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  async function updateCommunityAttachmentMetadata(input: Parameters<CommunityReportStore["updateAttachmentMetadata"]>[0]) {
+  async function updateCommunityAttachmentMetadata(
+    input: Parameters<CommunityReportStore["updateAttachmentMetadata"]>[0]
+  ) {
     try {
       return await activeCommunityReportStore().updateAttachmentMetadata(input);
     } catch (error) {
@@ -2628,7 +2850,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   }
 
-  async function enqueueSpatialVideoConversion(reportId: string, attachment: CommunityReportAttachmentRecord, requestNow: Date): Promise<CommunityReportAttachmentRecord> {
+  async function enqueueSpatialVideoConversion(
+    reportId: string,
+    attachment: CommunityReportAttachmentRecord,
+    requestNow: Date
+  ): Promise<CommunityReportAttachmentRecord> {
     if (!mediaConversionManager) {
       return attachment;
     }
@@ -2639,7 +2865,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         requestNow
       });
     } catch (error) {
-      app.log.error({ error, attachmentId: attachment.attachmentId, reportId }, "Spatial video conversion enqueue failed.");
+      app.log.error(
+        { error, attachmentId: attachment.attachmentId, reportId },
+        "Spatial video conversion enqueue failed."
+      );
       return attachment;
     }
   }
@@ -2687,7 +2916,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return false;
   }
 
-  async function deleteCommunityGroupForDemoScenario(groupId: string, demoScenarioId: string, requestNow: Date): Promise<boolean> {
+  async function deleteCommunityGroupForDemoScenario(
+    groupId: string,
+    demoScenarioId: string,
+    requestNow: Date
+  ): Promise<boolean> {
     try {
       return await activeCommunityReportStore().deleteGroupForDemoScenario(groupId, demoScenarioId, requestNow);
     } catch (error) {
@@ -2698,14 +2931,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   async function requestCommunityGroupMembership(groupId: string, actor: AuthenticatedActor, requestNow: Date) {
     try {
-      return await activeCommunityReportStore().requestGroupMembership(groupId, actorToCommunityActor(actor), requestNow);
+      return await activeCommunityReportStore().requestGroupMembership(
+        groupId,
+        actorToCommunityActor(actor),
+        requestNow
+      );
     } catch (error) {
       markCommunityReportStoreDegraded(error);
       return communityReportFallbackStore.requestGroupMembership(groupId, actorToCommunityActor(actor), requestNow);
     }
   }
 
-  async function leaveCommunityGroup(groupId: string, actor: AuthenticatedActor, requestNow: Date): Promise<LeaveCommunityGroupResult> {
+  async function leaveCommunityGroup(
+    groupId: string,
+    actor: AuthenticatedActor,
+    requestNow: Date
+  ): Promise<LeaveCommunityGroupResult> {
     let lastManager = false;
     for (const subjectId of actorCommunitySubjectAliases(actor)) {
       const communityActor = {
@@ -2747,7 +2988,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         subjectId
       };
       try {
-        const result = await activeCommunityReportStore().removeGroupMember(groupId, communityActor, memberSubjectId, requestNow);
+        const result = await activeCommunityReportStore().removeGroupMember(
+          groupId,
+          communityActor,
+          memberSubjectId,
+          requestNow
+        );
         if (result.status === "left") {
           return result;
         }
@@ -2756,7 +3002,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         }
       } catch (error) {
         markCommunityReportStoreDegraded(error);
-        const result = await communityReportFallbackStore.removeGroupMember(groupId, communityActor, memberSubjectId, requestNow);
+        const result = await communityReportFallbackStore.removeGroupMember(
+          groupId,
+          communityActor,
+          memberSubjectId,
+          requestNow
+        );
         if (result.status === "left") {
           return result;
         }
@@ -2768,7 +3019,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return { status: lastManager ? "last_manager" : "not_found" };
   }
 
-  async function updateCommunityGroupMetadata(input: Parameters<CommunityReportStore["updateGroupMetadata"]>[0], requestNow: Date) {
+  async function updateCommunityGroupMetadata(
+    input: Parameters<CommunityReportStore["updateGroupMetadata"]>[0],
+    requestNow: Date
+  ) {
     try {
       return await activeCommunityReportStore().updateGroupMetadata(input, requestNow);
     } catch (error) {
@@ -2799,13 +3053,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!config.enabled) {
       warnings.push("AI Matrix bot is disabled by COP_AI_MATRIX_BOT_ENABLED.");
     } else if (!conversationId) {
-      warnings.push("AI Matrix bot consent is stored; Matrix membership will be provisioned after the group is linked to a conversation.");
+      warnings.push(
+        "AI Matrix bot consent is stored; Matrix membership will be provisioned after the group is linked to a conversation."
+      );
     } else {
-      const sync = await messagingProvider.addConversationMembers(actor, requestNow, conversationId, [{
-        displayName: config.displayName,
-        role: "bot",
-        userId: config.userId
-      }]);
+      const sync = await messagingProvider.addConversationMembers(actor, requestNow, conversationId, [
+        {
+          displayName: config.displayName,
+          role: "bot",
+          userId: config.userId
+        }
+      ]);
       warnings.push(...sync.warnings);
       if (!sync.conversation) {
         status = "member_sync_failed";
@@ -2813,9 +3071,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         roomId = sync.conversation.matrix?.roomId ?? roomId;
         if (!roomId) {
           status = "pending_room_binding";
-          warnings.push("AI Matrix bot is a conversation member; Matrix invite will be sent when the encrypted room is bound.");
+          warnings.push(
+            "AI Matrix bot is a conversation member; Matrix invite will be sent when the encrypted room is bound."
+          );
         } else {
-          const bootstrap = await messagingProvider.fetchMatrixBootstrap(aiMatrixBotActor(config), requestNow, config.deviceId);
+          const bootstrap = await messagingProvider.fetchMatrixBootstrap(
+            aiMatrixBotActor(config),
+            requestNow,
+            config.deviceId
+          );
           warnings.push(...bootstrap.warnings);
           matrixUserId = bootstrap.userId;
           if (!aiMatrixBotBootstrapReady(bootstrap)) {
@@ -2829,50 +3093,61 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
     }
 
-    const nextGroup = await updateCommunityGroupMetadata({
-      actor: actorToCommunityActor(actor),
-      groupId: group.groupId,
-      metadata: {
-        ...group.metadata,
-        chat: {
-          ...chat,
-          aiAssistant: {
-            ...aiAssistant,
-            enabled: true,
-            label: config.displayName,
-            mode: "cop-context",
-            matrixBot: compactRecord({
-              deviceId: config.deviceId,
-              displayName: config.displayName,
-              joinedAt: status === "joined" ? requestNow.toISOString() : undefined,
-              matrixUserId,
-              membership: status === "joined" ? "join" : status === "pending_room_binding" ? "pending_room" : status,
-              roomId,
-              status,
+    const nextGroup = await updateCommunityGroupMetadata(
+      {
+        actor: actorToCommunityActor(actor),
+        groupId: group.groupId,
+        metadata: {
+          ...group.metadata,
+          chat: {
+            ...chat,
+            aiAssistant: {
+              ...aiAssistant,
+              enabled: true,
+              label: config.displayName,
+              mode: "cop-context",
+              matrixBot: compactRecord({
+                deviceId: config.deviceId,
+                displayName: config.displayName,
+                joinedAt: status === "joined" ? requestNow.toISOString() : undefined,
+                matrixUserId,
+                membership: status === "joined" ? "join" : status === "pending_room_binding" ? "pending_room" : status,
+                roomId,
+                status,
+                updatedAt: requestNow.toISOString(),
+                userId: config.userId,
+                warnings: Array.from(new Set(warnings.map(sanitizeAiMatrixBotWarning))).slice(0, 6)
+              }),
+              e2ee: aiMatrixBotE2eeMetadata(status, requestNow),
               updatedAt: requestNow.toISOString(),
-              userId: config.userId,
-              warnings: Array.from(new Set(warnings.map(sanitizeAiMatrixBotWarning))).slice(0, 6)
-            }),
-            e2ee: aiMatrixBotE2eeMetadata(status, requestNow),
-            updatedAt: requestNow.toISOString(),
-            updatedBy: actor.subjectId
+              updatedBy: actor.subjectId
+            }
           }
         }
-      }
-    }, requestNow);
-    appendAudit(state, "AI_MATRIX_BOT_PROVISIONED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      botStatus: status,
-      conversationId,
-      groupId: group.groupId,
-      matrixBotUserId: config.userId,
-      roomId
-    }, correlationId);
+      },
+      requestNow
+    );
+    appendAudit(
+      state,
+      "AI_MATRIX_BOT_PROVISIONED",
+      {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        botStatus: status,
+        conversationId,
+        groupId: group.groupId,
+        matrixBotUserId: config.userId,
+        roomId
+      },
+      correlationId
+    );
     return nextGroup ?? group;
   }
 
-  async function upsertCommunityGroupMember(input: Parameters<CommunityReportStore["upsertGroupMember"]>[0], requestNow: Date) {
+  async function upsertCommunityGroupMember(
+    input: Parameters<CommunityReportStore["upsertGroupMember"]>[0],
+    requestNow: Date
+  ) {
     try {
       return await activeCommunityReportStore().upsertGroupMember(input, requestNow);
     } catch (error) {
@@ -2888,11 +3163,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const groups = await listCommunityGroups({
       subjectId: actor.subjectId
     });
-    return new Set(groups.flatMap((group) =>
-      group.members.some((member) => member.subjectId === actor.subjectId && member.status === "active")
-        ? [group.groupId]
-        : []
-    ));
+    return new Set(
+      groups.flatMap((group) =>
+        group.members.some((member) => member.subjectId === actor.subjectId && member.status === "active")
+          ? [group.groupId]
+          : []
+      )
+    );
   }
 
   async function validateSketchDrawingWriteScope(
@@ -2905,7 +3182,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const group = await readCommunityGroup(input.groupId);
       if (!group || !canUseCommunityGroupForReport(group, actor)) {
-        return { code: "FORBIDDEN", message: "Current user cannot publish a sketch drawing into the selected group.", status: 403 };
+        return {
+          code: "FORBIDDEN",
+          message: "Current user cannot publish a sketch drawing into the selected group.",
+          status: 403
+        };
       }
     }
     if (input.visibility === "event" && !input.eventId) {
@@ -2920,13 +3201,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     actor: AuthenticatedActor
   ): Promise<{ code: "FORBIDDEN" | "VALIDATION_ERROR"; message: string; status: 400 | 403 } | null> {
     const nextVisibility = input.visibility ?? current.properties.visibility;
-    const nextGroupId = input.groupId === null ? undefined : input.groupId ?? current.properties.groupId;
-    const nextEventId = input.eventId === null ? undefined : input.eventId ?? current.properties.eventId;
-    return validateSketchDrawingWriteScope({
-      ...(nextEventId ? { eventId: nextEventId } : {}),
-      ...(nextGroupId ? { groupId: nextGroupId } : {}),
-      visibility: nextVisibility
-    }, actor);
+    const nextGroupId = input.groupId === null ? undefined : (input.groupId ?? current.properties.groupId);
+    const nextEventId = input.eventId === null ? undefined : (input.eventId ?? current.properties.eventId);
+    return validateSketchDrawingWriteScope(
+      {
+        ...(nextEventId ? { eventId: nextEventId } : {}),
+        ...(nextGroupId ? { groupId: nextGroupId } : {}),
+        visibility: nextVisibility
+      },
+      actor
+    );
   }
 
   async function listSketchDrawings(query: SketchDrawingQuery): Promise<SketchDrawingFeature[]> {
@@ -2979,12 +3263,27 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  async function deleteSketchDrawingForDemoScenario(drawingId: string, demoScenarioId: string, actor: AuthenticatedActor, requestNow: Date): Promise<boolean> {
+  async function deleteSketchDrawingForDemoScenario(
+    drawingId: string,
+    demoScenarioId: string,
+    actor: AuthenticatedActor,
+    requestNow: Date
+  ): Promise<boolean> {
     try {
-      return await activeSketchDrawingStore().deleteForDemoScenario(drawingId, demoScenarioId, actorToSketchActor(actor), requestNow);
+      return await activeSketchDrawingStore().deleteForDemoScenario(
+        drawingId,
+        demoScenarioId,
+        actorToSketchActor(actor),
+        requestNow
+      );
     } catch (error) {
       markSketchDrawingStoreDegraded(error);
-      return sketchDrawingFallbackStore.deleteForDemoScenario(drawingId, demoScenarioId, actorToSketchActor(actor), requestNow);
+      return sketchDrawingFallbackStore.deleteForDemoScenario(
+        drawingId,
+        demoScenarioId,
+        actorToSketchActor(actor),
+        requestNow
+      );
     }
   }
 
@@ -2993,27 +3292,33 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     groups: CommunityGroupRecord[];
     reports: CommunityReportRecord[];
   }> {
-    const groups = (await listCommunityGroups({
-      includePublic: true,
-      subjectId: actor.subjectId
-    })).filter(isFloodDemoGroup);
-    const reports = (await listCommunityReports({
-      bbox: floodDemoBbox,
-      includeOwnDrafts: true,
-      limit: 500,
-      statuses: ["draft", "submitted", "published"],
-      subjectId: actor.subjectId
-    })).filter(isFloodDemoReport);
+    const groups = (
+      await listCommunityGroups({
+        includePublic: true,
+        subjectId: actor.subjectId
+      })
+    ).filter(isFloodDemoGroup);
+    const reports = (
+      await listCommunityReports({
+        bbox: floodDemoBbox,
+        includeOwnDrafts: true,
+        limit: 500,
+        statuses: ["draft", "submitted", "published"],
+        subjectId: actor.subjectId
+      })
+    ).filter(isFloodDemoReport);
     const actorGroupIds = await readCommunityActorGroupIds(actor);
     for (const group of groups) {
       actorGroupIds.add(group.groupId);
     }
-    const drawings = (await listSketchDrawings({
-      allowedGroupIds: Array.from(actorGroupIds),
-      bbox: floodDemoBbox,
-      limit: 500,
-      subjectId: actor.subjectId
-    })).filter(isFloodDemoDrawing);
+    const drawings = (
+      await listSketchDrawings({
+        allowedGroupIds: Array.from(actorGroupIds),
+        bbox: floodDemoBbox,
+        limit: 500,
+        subjectId: actor.subjectId
+      })
+    ).filter(isFloodDemoDrawing);
     return { drawings, groups, reports };
   }
 
@@ -3035,7 +3340,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         description: "Předpřipravená ukázka povodňové situace pro PoC a klientskou prezentaci.",
         eventId: floodDemoEventId,
         label: "Povodeň - Středočeský kraj",
-        status: objects.groups.length > 0 || objects.reports.length > 0 || objects.drawings.length > 0 ? "ready" : "empty",
+        status:
+          objects.groups.length > 0 || objects.reports.length > 0 || objects.drawings.length > 0 ? "ready" : "empty",
         summary: {
           drawingCount: objects.drawings.length,
           groupCount: objects.groups.length,
@@ -3057,18 +3363,21 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       repairedReports: 0
     };
     if (!group) {
-      group = await createCommunityGroup({
-        anchorLocation: {
-          lat: 50.0755,
-          lon: 14.4378,
-          source: "manual"
+      group = await createCommunityGroup(
+        {
+          anchorLocation: {
+            lat: 50.0755,
+            lon: 14.4378,
+            source: "manual"
+          },
+          createdBy: actorToCommunityActor(actor),
+          description: "Demo skupina pro koordinaci povodňové situace, hlášení z terénu a sdílená média.",
+          metadata: floodDemoGroupMetadata(actor),
+          name: "DEMO Povodeň - Středočeský kraj",
+          visibility: "public"
         },
-        createdBy: actorToCommunityActor(actor),
-        description: "Demo skupina pro koordinaci povodňové situace, hlášení z terénu a sdílená média.",
-        metadata: floodDemoGroupMetadata(actor),
-        name: "DEMO Povodeň - Středočeský kraj",
-        visibility: "public"
-      }, requestNow);
+        requestNow
+      );
       operation.createdGroups += 1;
     }
     group = await refreshFloodDemoGroupMetadata(group, actor, requestNow);
@@ -3085,20 +3394,26 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         if (await deleteCommunityReportForDemoScenario(existingReport.reportId, floodDemoScenarioId, requestNow)) {
           operation.repairedReports += 1;
         } else {
-          app.log.warn({ reportId: existingReport.reportId, title: existingReport.title }, "Demo flood report repair skipped because stale report could not be deleted.");
+          app.log.warn(
+            { reportId: existingReport.reportId, title: existingReport.title },
+            "Demo flood report repair skipped because stale report could not be deleted."
+          );
           continue;
         }
       }
-      const report = await createCommunityReport({
-        category: seed.category,
-        createdBy: actorToCommunityActor(actor),
-        description: seed.description,
-        location: seed.location,
-        observedAt: seed.observedAt,
-        properties: seed.properties,
-        title: seed.title,
-        visibility: seed.visibility
-      }, requestNow);
+      const report = await createCommunityReport(
+        {
+          category: seed.category,
+          createdBy: actorToCommunityActor(actor),
+          description: seed.description,
+          location: seed.location,
+          observedAt: seed.observedAt,
+          properties: seed.properties,
+          title: seed.title,
+          visibility: seed.visibility
+        },
+        requestNow
+      );
       operation.createdAttachments += await ensureFloodDemoReportAttachments(report, seed, actor, requestNow);
       await submitCommunityReport(report.reportId, actor, requestNow);
       operation.createdReports += 1;
@@ -3109,19 +3424,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (drawingLabels.has(seed.label ?? "")) {
         continue;
       }
-      await createSketchDrawing({
-        actor: actorToSketchActor(actor),
-        eventId: floodDemoEventId,
-        geometry: seed.geometry,
-        groupId: group.groupId,
-        kind: seed.kind,
-        label: seed.label,
-        locked: false,
-        properties: seed.properties,
-        style: seed.style,
-        symbol: seed.symbol,
-        visibility: seed.visibility
-      }, requestNow);
+      await createSketchDrawing(
+        {
+          actor: actorToSketchActor(actor),
+          eventId: floodDemoEventId,
+          geometry: seed.geometry,
+          groupId: group.groupId,
+          kind: seed.kind,
+          label: seed.label,
+          locked: false,
+          properties: seed.properties,
+          style: seed.style,
+          symbol: seed.symbol,
+          visibility: seed.visibility
+        },
+        requestNow
+      );
       operation.createdDrawings += 1;
     }
 
@@ -3140,10 +3458,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     actor: AuthenticatedActor,
     requestNow: Date
   ): Promise<number> {
-    const existingFileNames = new Set(report.attachments
-      .filter((attachment) => attachment.status === "uploaded")
-      .map((attachment) => attachment.fileName)
-      .filter((value): value is string => Boolean(value)));
+    const existingFileNames = new Set(
+      report.attachments
+        .filter((attachment) => attachment.status === "uploaded")
+        .map((attachment) => attachment.fileName)
+        .filter((value): value is string => Boolean(value))
+    );
     let created = 0;
     for (const attachmentSeed of seed.attachments ?? []) {
       if (existingFileNames.has(attachmentSeed.fileName)) {
@@ -3189,11 +3509,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     actor: AuthenticatedActor,
     requestNow: Date
   ): Promise<CommunityGroupRecord> {
-    const updated = await updateCommunityGroupMetadata({
-      actor: actorToCommunityActor(actor),
-      groupId: group.groupId,
-      metadata: floodDemoGroupMetadata(actor)
-    }, requestNow);
+    const updated = await updateCommunityGroupMetadata(
+      {
+        actor: actorToCommunityActor(actor),
+        groupId: group.groupId,
+        metadata: floodDemoGroupMetadata(actor)
+      },
+      requestNow
+    );
     return updated ?? group;
   }
 
@@ -3208,17 +3531,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (updated.members.some((member) => member.subjectId === profile.subjectId)) {
         continue;
       }
-      const next = await upsertCommunityGroupMember({
-        actor: actorToCommunityActor(actor),
-        groupId: updated.groupId,
-        member: {
-          displayName: profile.displayName,
-          subjectId: profile.subjectId,
-          username: profile.username
+      const next = await upsertCommunityGroupMember(
+        {
+          actor: actorToCommunityActor(actor),
+          groupId: updated.groupId,
+          member: {
+            displayName: profile.displayName,
+            subjectId: profile.subjectId,
+            username: profile.username
+          },
+          role: "member",
+          status: "active"
         },
-        role: "member",
-        status: "active"
-      }, requestNow);
+        requestNow
+      );
       if (next) {
         updated = next;
       }
@@ -3350,7 +3676,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  function takeQueuedCurrentTrackPersistence(limit: number): Array<{ event: CanonicalEventEnvelope; object: ObservedObject }> {
+  function takeQueuedCurrentTrackPersistence(
+    limit: number
+  ): Array<{ event: CanonicalEventEnvelope; object: ObservedObject }> {
     const batch: Array<{ event: CanonicalEventEnvelope; object: ObservedObject }> = [];
     for (const [objectId, value] of pendingCurrentTrackPersistence.entries()) {
       batch.push(value);
@@ -3447,9 +3775,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     requestNow: Date;
   }): Promise<CopAlert[]> {
     const subject = defaultSystemSubject();
-    const readableObjects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle, includeExpired).filter((object) =>
-      canReadObject(subject, object)
-    );
+    const readableObjects = selectCurrentTracks(
+      state.objects.values(),
+      requestNow,
+      trackLifecycle,
+      includeExpired
+    ).filter((object) => canReadObject(subject, object));
     const objectsWithEvidence = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
     const profile = await readUserProfile(actor);
     const alerts = buildCopAlerts({
@@ -3465,13 +3796,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   async function buildMobileSnapshot(actor: AuthenticatedActor, requestNow: Date, query: MobileSnapshotQuery) {
     const subject = defaultSystemSubject();
-    const readableObjects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle, query.includeExpired).filter((object) =>
-      canReadObject(subject, object)
-    );
+    const readableObjects = selectCurrentTracks(
+      state.objects.values(),
+      requestNow,
+      trackLifecycle,
+      query.includeExpired
+    ).filter((object) => canReadObject(subject, object));
     const decoratedObjects = await decorateObjectsWithConflictEvidence(readableObjects, requestNow, query.historyQuery);
-    const objectIds = query.historyQuery.objectIds && query.historyQuery.objectIds.length > 0
-      ? query.historyQuery.objectIds
-      : decoratedObjects.map((object) => object.objectId);
+    const objectIds =
+      query.historyQuery.objectIds && query.historyQuery.objectIds.length > 0
+        ? query.historyQuery.objectIds
+        : decoratedObjects.map((object) => object.objectId);
     const historyItems = (await readTrackHistory({ ...query.historyQuery, objectIds }, requestNow))
       .map((item) => ({
         ...item,
@@ -3539,12 +3874,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     warnings: string[];
   }> {
     if (!decision.shouldSend) {
-      appendAudit(state, "NOTIFICATION_DECISION_SKIPPED", {
-        decisionId: decision.decisionId,
-        reason: decision.reason,
-        source: decision.notification.source,
-        type: decision.notification.type
-      }, correlationId);
+      appendAudit(
+        state,
+        "NOTIFICATION_DECISION_SKIPPED",
+        {
+          decisionId: decision.decisionId,
+          reason: decision.reason,
+          source: decision.notification.source,
+          type: decision.notification.type
+        },
+        correlationId
+      );
       return {
         decisionId: decision.decisionId,
         idempotencyKey: decision.idempotencyKey,
@@ -3554,15 +3894,25 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       };
     }
 
-    const result = await messagingProvider.sendNotification(actor, requestNow, decision.idempotencyKey, decision.notification);
-    appendAudit(state, "NOTIFICATION_DISPATCH_REQUESTED", {
-      decisionId: decision.decisionId,
-      idempotencyKey: decision.idempotencyKey,
-      notificationId: result.notificationId ?? null,
-      providerStatus: result.status,
-      source: decision.notification.source,
-      type: decision.notification.type
-    }, correlationId);
+    const result = await messagingProvider.sendNotification(
+      actor,
+      requestNow,
+      decision.idempotencyKey,
+      decision.notification
+    );
+    appendAudit(
+      state,
+      "NOTIFICATION_DISPATCH_REQUESTED",
+      {
+        decisionId: decision.decisionId,
+        idempotencyKey: decision.idempotencyKey,
+        notificationId: result.notificationId ?? null,
+        providerStatus: result.status,
+        source: decision.notification.source,
+        type: decision.notification.type
+      },
+      correlationId
+    );
     return {
       decisionId: decision.decisionId,
       idempotencyKey: decision.idempotencyKey,
@@ -3603,14 +3953,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return reply;
     }
 
-    const profile = await readUserProfile(actor) ?? await upsertUserProfile({
-      alertPreferences: {},
-      displayName: actor.displayName,
-      ...(actor.email ? { email: actor.email } : {}),
-      preferences: {},
-      subjectId: actor.subjectId,
-      username: actor.username
-    });
+    const profile =
+      (await readUserProfile(actor)) ??
+      (await upsertUserProfile({
+        alertPreferences: {},
+        displayName: actor.displayName,
+        ...(actor.email ? { email: actor.email } : {}),
+        preferences: {},
+        subjectId: actor.subjectId,
+        username: actor.username
+      }));
     return {
       actor,
       alertPreferences: profile?.alertPreferences ?? {},
@@ -3864,7 +4216,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const dispatch = query.dryRun
       ? []
-      : await Promise.all(decisions.map((decision) => dispatchNotificationDecision(actor, decision, requestNow, correlationId)));
+      : await Promise.all(
+          decisions.map((decision) => dispatchNotificationDecision(actor, decision, requestNow, correlationId))
+        );
     return {
       contractVersion: "cop-notification-evaluation-v1",
       decisions,
@@ -3983,20 +4337,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const requestNow = now();
-      const group = await createCommunityGroup({
-        anchorLocation: groupRequest.anchorLocation,
-        createdBy: actorToCommunityActor(actor),
-        description: groupRequest.description,
-        metadata: groupRequest.metadata,
-        name: groupRequest.name,
-        visibility: groupRequest.visibility
-      }, requestNow);
-      appendAudit(state, "COMMUNITY_GROUP_CREATED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        groupId: group.groupId,
-        visibility: group.visibility
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      const group = await createCommunityGroup(
+        {
+          anchorLocation: groupRequest.anchorLocation,
+          createdBy: actorToCommunityActor(actor),
+          description: groupRequest.description,
+          metadata: groupRequest.metadata,
+          name: groupRequest.name,
+          visibility: groupRequest.visibility
+        },
+        requestNow
+      );
+      appendAudit(
+        state,
+        "COMMUNITY_GROUP_CREATED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          groupId: group.groupId,
+          visibility: group.visibility
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return reply.code(201).send(group);
     },
 
@@ -4005,7 +4367,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
-      const params = request.params as { groupId: string; };
+      const params = request.params as { groupId: string };
       const group = await readCommunityGroup(params.groupId);
       if (!group || !canReadCommunityGroup(group, actor)) {
         return sendError(reply, 404, "NOT_FOUND", "Community group was not found.", crypto.randomUUID());
@@ -4018,7 +4380,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
-      const params = request.params as { groupId: string; };
+      const params = request.params as { groupId: string };
       const metadata = normalizeCommunityGroupMetadataRequest(request.body);
       if (!metadata) {
         return sendError(
@@ -4040,22 +4402,36 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const requestNow = now();
-      const group = await updateCommunityGroupMetadata({
-        actor: actorToCommunityActor(actor),
-        groupId: params.groupId,
-        metadata
-      }, requestNow);
+      const group = await updateCommunityGroupMetadata(
+        {
+          actor: actorToCommunityActor(actor),
+          groupId: params.groupId,
+          metadata
+        },
+        requestNow
+      );
       if (!group) {
-        return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be updated by current user.", correlationId);
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Community group was not found or cannot be updated by current user.",
+          correlationId
+        );
       }
       const responseGroup = metadataEnablesAiAssistant(metadata)
         ? await provisionAiMatrixBotForGroup(group, actor, requestNow, correlationId)
         : group;
-      appendAudit(state, "COMMUNITY_GROUP_METADATA_UPDATED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        groupId: responseGroup.groupId
-      }, correlationId);
+      appendAudit(
+        state,
+        "COMMUNITY_GROUP_METADATA_UPDATED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          groupId: responseGroup.groupId
+        },
+        correlationId
+      );
       return responseGroup;
     },
 
@@ -4064,16 +4440,27 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
-      const params = request.params as { groupId: string; };
+      const params = request.params as { groupId: string };
       const requestNow = now();
-      if (!await deleteCommunityGroup(params.groupId, actor, requestNow)) {
-        return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be managed by current user.", correlationIdFrom(request.headers["x-correlation-id"]));
+      if (!(await deleteCommunityGroup(params.groupId, actor, requestNow))) {
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Community group was not found or cannot be managed by current user.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
-      appendAudit(state, "COMMUNITY_GROUP_DELETED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        groupId: params.groupId
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      appendAudit(
+        state,
+        "COMMUNITY_GROUP_DELETED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          groupId: params.groupId
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return reply.code(204).send();
     },
 
@@ -4082,17 +4469,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
-      const params = request.params as { groupId: string; };
+      const params = request.params as { groupId: string };
       const requestNow = now();
       const group = await requestCommunityGroupMembership(params.groupId, actor, requestNow);
       if (!group) {
         return sendError(reply, 404, "NOT_FOUND", "Community group was not found.", crypto.randomUUID());
       }
-      appendAudit(state, "COMMUNITY_GROUP_JOIN_REQUESTED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        groupId: group.groupId
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      appendAudit(
+        state,
+        "COMMUNITY_GROUP_JOIN_REQUESTED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          groupId: group.groupId
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return group;
     },
 
@@ -4101,19 +4493,36 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
-      const params = request.params as { groupId: string; };
+      const params = request.params as { groupId: string };
       const result = await leaveCommunityGroup(params.groupId, actor, now());
       if (result.status === "not_found") {
-        return sendError(reply, 404, "NOT_FOUND", "Community group was not found or current user is not an active member.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Community group was not found or current user is not an active member.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
       if (result.status === "last_manager") {
-        return sendError(reply, 409, "COMMUNITY_GROUP_LAST_MANAGER", "The last active group owner or admin cannot leave the group.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(
+          reply,
+          409,
+          "COMMUNITY_GROUP_LAST_MANAGER",
+          "The last active group owner or admin cannot leave the group.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
-      appendAudit(state, "COMMUNITY_GROUP_LEFT", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        groupId: result.group.groupId
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      appendAudit(
+        state,
+        "COMMUNITY_GROUP_LEFT",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          groupId: result.group.groupId
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return result.group;
     },
 
@@ -4122,24 +4531,47 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
-      const params = request.params as { groupId: string; subjectId: string; };
+      const params = request.params as { groupId: string; subjectId: string };
       const memberSubjectId = optionalTrimmedString(params.subjectId, 160);
       if (!memberSubjectId) {
-        return sendError(reply, 400, "VALIDATION_ERROR", "Community group member subjectId is required.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Community group member subjectId is required.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
       const result = await removeCommunityGroupMember(params.groupId, actor, memberSubjectId, now());
       if (result.status === "not_found") {
-        return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be managed by current user.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Community group was not found or cannot be managed by current user.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
       if (result.status === "last_manager") {
-        return sendError(reply, 409, "COMMUNITY_GROUP_LAST_MANAGER", "The last active group owner or admin cannot be removed from the group.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(
+          reply,
+          409,
+          "COMMUNITY_GROUP_LAST_MANAGER",
+          "The last active group owner or admin cannot be removed from the group.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
-      appendAudit(state, "COMMUNITY_GROUP_MEMBER_REMOVED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        groupId: result.group.groupId,
-        memberSubjectId
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      appendAudit(
+        state,
+        "COMMUNITY_GROUP_MEMBER_REMOVED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          groupId: result.group.groupId,
+          memberSubjectId
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return result.group;
     },
 
@@ -4148,7 +4580,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
-      const params = request.params as { groupId: string; };
+      const params = request.params as { groupId: string };
       const memberRequest = normalizeCommunityGroupMemberRequest(request.body);
       if (!memberRequest) {
         return sendError(
@@ -4174,28 +4606,42 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
 
       const requestNow = now();
-      const group = await upsertCommunityGroupMember({
-        actor: actorToCommunityActor(actor),
-        groupId: params.groupId,
-        member: {
-          displayName: resolvedMember.member.displayName,
-          subjectId: resolvedMember.member.subjectId,
-          username: resolvedMember.member.username
+      const group = await upsertCommunityGroupMember(
+        {
+          actor: actorToCommunityActor(actor),
+          groupId: params.groupId,
+          member: {
+            displayName: resolvedMember.member.displayName,
+            subjectId: resolvedMember.member.subjectId,
+            username: resolvedMember.member.username
+          },
+          role: resolvedMember.member.role,
+          status: resolvedMember.member.status
         },
-        role: resolvedMember.member.role,
-        status: resolvedMember.member.status
-      }, requestNow);
+        requestNow
+      );
       if (!group) {
-        return sendError(reply, 404, "NOT_FOUND", "Community group was not found or cannot be managed by current user.", crypto.randomUUID());
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Community group was not found or cannot be managed by current user.",
+          crypto.randomUUID()
+        );
       }
-      appendAudit(state, "COMMUNITY_GROUP_MEMBER_UPSERTED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        groupId: group.groupId,
-        memberResolution: resolvedMember.resolution,
-        memberSubjectId: resolvedMember.member.subjectId,
-        status: resolvedMember.member.status
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      appendAudit(
+        state,
+        "COMMUNITY_GROUP_MEMBER_UPSERTED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          groupId: group.groupId,
+          memberResolution: resolvedMember.resolution,
+          memberSubjectId: resolvedMember.member.subjectId,
+          status: resolvedMember.member.status
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return group;
     }
   });
@@ -4241,17 +4687,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const accessError = await validateSketchDrawingWriteScope(input, actor);
     if (accessError) {
-      return sendError(reply, accessError.status, accessError.code, accessError.message, correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        accessError.status,
+        accessError.code,
+        accessError.message,
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
     const requestNow = now();
     const drawing = await createSketchDrawing(input, requestNow);
-    appendAudit(state, "SKETCH_DRAWING_CREATED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      drawingId: drawing.id,
-      kind: drawing.properties.kind,
-      visibility: drawing.properties.visibility
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    appendAudit(
+      state,
+      "SKETCH_DRAWING_CREATED",
+      {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        drawingId: drawing.id,
+        kind: drawing.properties.kind,
+        visibility: drawing.properties.visibility
+      },
+      correlationIdFrom(request.headers["x-correlation-id"])
+    );
     return reply.code(201).send(drawing);
   });
 
@@ -4261,7 +4718,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const drawing = await readSketchDrawing(params.drawingId);
     const actorGroupIds = await readCommunityActorGroupIds(actor);
     if (!drawing || !canReadSketchDrawingResponse(drawing, actor, actorGroupIds)) {
-      return sendError(reply, 404, "NOT_FOUND", "Sketch drawing was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Sketch drawing was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
     return drawing;
   });
@@ -4274,7 +4737,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const params = request.params as { drawingId: string };
     const current = await readSketchDrawing(params.drawingId);
     if (!current || current.properties.ownerSubjectId !== actor.subjectId) {
-      return sendError(reply, 404, "NOT_FOUND", "Sketch drawing was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Sketch drawing was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
     const input = normalizeUpdateSketchDrawingRequest(request.body);
     if (!input) {
@@ -4288,19 +4757,36 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const accessError = await validateSketchDrawingUpdateScope(input, current, actor);
     if (accessError) {
-      return sendError(reply, accessError.status, accessError.code, accessError.message, correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        accessError.status,
+        accessError.code,
+        accessError.message,
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
     const requestNow = now();
     const updated = await updateSketchDrawing(params.drawingId, actor, input, requestNow);
     if (!updated) {
-      return sendError(reply, 404, "NOT_FOUND", "Sketch drawing was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Sketch drawing was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
-    appendAudit(state, "SKETCH_DRAWING_UPDATED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      drawingId: updated.id,
-      revision: updated.properties.revision
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    appendAudit(
+      state,
+      "SKETCH_DRAWING_UPDATED",
+      {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        drawingId: updated.id,
+        revision: updated.properties.revision
+      },
+      correlationIdFrom(request.headers["x-correlation-id"])
+    );
     return updated;
   });
 
@@ -4312,13 +4798,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const params = request.params as { drawingId: string };
     const deleted = await deleteSketchDrawing(params.drawingId, actor, now());
     if (!deleted) {
-      return sendError(reply, 404, "NOT_FOUND", "Sketch drawing was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Sketch drawing was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
-    appendAudit(state, "SKETCH_DRAWING_DELETED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      drawingId: params.drawingId
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    appendAudit(
+      state,
+      "SKETCH_DRAWING_DELETED",
+      {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        drawingId: params.drawingId
+      },
+      correlationIdFrom(request.headers["x-correlation-id"])
+    );
     return reply.code(204).send();
   });
 
@@ -4383,14 +4880,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const requestNow = now();
     const incident = await createIncident(input, requestNow);
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    appendAudit(state, "INCIDENT_CREATED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      category: incident.category,
-      incidentId: incident.incidentId,
-      severity: incident.severity,
-      status: incident.status
-    }, correlationId);
+    appendAudit(
+      state,
+      "INCIDENT_CREATED",
+      {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        category: incident.category,
+        incidentId: incident.incidentId,
+        severity: incident.severity,
+        status: incident.status
+      },
+      correlationId
+    );
     await publishIncidentDomainEvent("incident.created", incident, actor, correlationId);
     return reply.code(201).send(incident);
   });
@@ -4402,7 +4904,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const params = request.params as { incidentId: string };
     const incident = await readIncident(params.incidentId);
     if (!incident) {
-      return sendError(reply, 404, "NOT_FOUND", "Incident was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Incident was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
     return incident;
   });
@@ -4426,15 +4934,26 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const requestNow = now();
     const incident = await updateIncident(params.incidentId, actor, input, requestNow);
     if (!incident) {
-      return sendError(reply, 404, "NOT_FOUND", "Incident was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Incident was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    appendAudit(state, "INCIDENT_UPDATED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      incidentId: incident.incidentId,
-      status: incident.status
-    }, correlationId);
+    appendAudit(
+      state,
+      "INCIDENT_UPDATED",
+      {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        incidentId: incident.incidentId,
+        status: incident.status
+      },
+      correlationId
+    );
     await publishIncidentDomainEvent("incident.updated", incident, actor, correlationId);
     return incident;
   });
@@ -4446,7 +4965,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const params = request.params as { incidentId: string };
     const incident = await readIncident(params.incidentId);
     if (!incident) {
-      return sendError(reply, 404, "NOT_FOUND", "Incident was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Incident was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
     const requestNow = now();
     const query = parseIncidentTaskQuery(params.incidentId, request.query as Record<string, unknown>);
@@ -4467,7 +4992,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const params = request.params as { incidentId: string };
     const incident = await readIncident(params.incidentId);
     if (!incident) {
-      return sendError(reply, 404, "NOT_FOUND", "Incident was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Incident was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
     const input = normalizeCreateIncidentTaskRequest(params.incidentId, request.body, actor);
     if (!input) {
@@ -4482,14 +5013,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const requestNow = now();
     const task = await createIncidentTask(input, requestNow);
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    appendAudit(state, "INCIDENT_TASK_CREATED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      incidentId: task.incidentId,
-      priority: task.priority,
-      status: task.status,
-      taskId: task.taskId
-    }, correlationId);
+    appendAudit(
+      state,
+      "INCIDENT_TASK_CREATED",
+      {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        incidentId: task.incidentId,
+        priority: task.priority,
+        status: task.status,
+        taskId: task.taskId
+      },
+      correlationId
+    );
     await publishIncidentTaskDomainEvent("task.created", task, actor, correlationId);
     return reply.code(201).send(task);
   });
@@ -4502,7 +5038,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const params = request.params as { incidentId: string; taskId: string };
     const current = await readIncidentTask(params.taskId);
     if (!current || current.incidentId !== params.incidentId) {
-      return sendError(reply, 404, "NOT_FOUND", "Incident task was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Incident task was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
     const input = normalizeUpdateIncidentTaskRequest(request.body);
     if (!input) {
@@ -4517,16 +5059,27 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const requestNow = now();
     const task = await updateIncidentTask(params.taskId, actor, input, requestNow);
     if (!task) {
-      return sendError(reply, 404, "NOT_FOUND", "Incident task was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Incident task was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    appendAudit(state, "INCIDENT_TASK_UPDATED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      incidentId: task.incidentId,
-      status: task.status,
-      taskId: task.taskId
-    }, correlationId);
+    appendAudit(
+      state,
+      "INCIDENT_TASK_UPDATED",
+      {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        incidentId: task.incidentId,
+        status: task.status,
+        taskId: task.taskId
+      },
+      correlationId
+    );
     if (input.status && input.status !== current.status) {
       await publishIncidentTaskDomainEvent("task.status.changed", task, actor, correlationId);
     }
@@ -4543,10 +5096,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const body = isRecord(request.body) ? request.body : {};
     const preferences = hasOwn(body, "preferences")
       ? normalizeUserPreferences(body.preferences)
-      : existing?.preferences ?? {};
+      : (existing?.preferences ?? {});
     const alertPreferences = hasOwn(body, "alertPreferences")
       ? normalizeAlertPreferences(body.alertPreferences)
-      : existing?.alertPreferences ?? {};
+      : (existing?.alertPreferences ?? {});
 
     const profile = await upsertUserProfile({
       alertPreferences,
@@ -4556,11 +5109,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       subjectId: actor.subjectId,
       username: actor.username
     });
-    appendAudit(state, "USER_PROFILE_UPDATED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      preferenceKeys: Object.keys(preferences).sort()
-    }, correlationIdFrom(request.headers["x-correlation-id"]));
+    appendAudit(
+      state,
+      "USER_PROFILE_UPDATED",
+      {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        preferenceKeys: Object.keys(preferences).sort()
+      },
+      correlationIdFrom(request.headers["x-correlation-id"])
+    );
 
     return {
       actor,
@@ -4571,16 +5129,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   });
 
   registerMobileRoutes(app, {
-    appleAppSiteAssociation: async (_request, reply) => reply
-      .header("content-type", "application/json")
-      .send(appleAppSiteAssociation()),
+    appleAppSiteAssociation: async (_request, reply) =>
+      reply.header("content-type", "application/json").send(appleAppSiteAssociation()),
     bootstrap: async (request, reply) => {
       const actor = requireActor(request, reply);
       if (!actor) {
         return reply;
       }
       const requestNow = now();
-      return buildMobileBootstrap(actor, requestNow, parseMobileSnapshotQuery(request.query as Record<string, unknown>));
+      return buildMobileBootstrap(
+        actor,
+        requestNow,
+        parseMobileSnapshotQuery(request.query as Record<string, unknown>)
+      );
     },
     deviceRegister: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -4599,15 +5160,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const device = await activeMobileDeviceStore().upsertDevice(registration, "paired", requestNow.toISOString());
-      appendAudit(state, "MOBILE_DEVICE_REGISTERED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        appVersion: registration.appVersion,
-        capabilities: registration.capabilities,
-        deviceId: registration.deviceId,
-        platform: registration.platform,
-        pushTokenRegistered: registration.pushTokenRegistered
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      appendAudit(
+        state,
+        "MOBILE_DEVICE_REGISTERED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          appVersion: registration.appVersion,
+          capabilities: registration.capabilities,
+          deviceId: registration.deviceId,
+          platform: registration.platform,
+          pushTokenRegistered: registration.pushTokenRegistered
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return reply.code(202).send({
         actor,
         contractVersion: "cop-mobile-devices-v1",
@@ -4634,13 +5200,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const device = await activeMobileDeviceStore().revokeDevice(actor.subjectId, deviceId, now().toISOString());
       if (!device) {
-        return sendError(reply, 404, "NOT_FOUND", "Mobile device was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Mobile device was not found.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
-      appendAudit(state, "MOBILE_DEVICE_REVOKED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        deviceId
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      appendAudit(
+        state,
+        "MOBILE_DEVICE_REVOKED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          deviceId
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return reply.code(202).send({
         actor,
         contractVersion: "cop-mobile-devices-v1",
@@ -4685,29 +5262,41 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const requestNow = now();
       const normalized = normalizeMobileMeshBundle(request.body, actor, requestNow);
       if (!normalized.valid) {
-        appendAudit(state, "MOBILE_MESH_BUNDLE_REJECTED", {
-          actorAuthMode: actor.authMode,
-          actorSubjectId: actor.subjectId,
-          reason: normalized.reason
-        }, correlationIdFrom(request.headers["x-correlation-id"]));
-        return reply.code(422).send(mobileMeshAckResponse({
-          envelopeId: normalized.envelopeId ?? "invalid",
-          receivedAt: requestNow.toISOString(),
-          status: "rejected",
-          subjectId: actor.subjectId,
-          updatedAt: requestNow.toISOString()
-        }));
+        appendAudit(
+          state,
+          "MOBILE_MESH_BUNDLE_REJECTED",
+          {
+            actorAuthMode: actor.authMode,
+            actorSubjectId: actor.subjectId,
+            reason: normalized.reason
+          },
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+        return reply.code(422).send(
+          mobileMeshAckResponse({
+            envelopeId: normalized.envelopeId ?? "invalid",
+            receivedAt: requestNow.toISOString(),
+            status: "rejected",
+            subjectId: actor.subjectId,
+            updatedAt: requestNow.toISOString()
+          })
+        );
       }
       try {
         const result = await activeMobileDeviceStore().ingestMeshBundle(normalized.input);
-        appendAudit(state, "MOBILE_MESH_BUNDLE_INGESTED", {
-          actorAuthMode: actor.authMode,
-          actorSubjectId: actor.subjectId,
-          bundleType: normalized.input.bundleType ?? "unknown",
-          deviceId: normalized.input.deviceId ?? "unknown",
-          envelopeId: normalized.input.envelopeId,
-          status: result.record.status
-        }, correlationIdFrom(request.headers["x-correlation-id"]));
+        appendAudit(
+          state,
+          "MOBILE_MESH_BUNDLE_INGESTED",
+          {
+            actorAuthMode: actor.authMode,
+            actorSubjectId: actor.subjectId,
+            bundleType: normalized.input.bundleType ?? "unknown",
+            deviceId: normalized.input.deviceId ?? "unknown",
+            envelopeId: normalized.input.envelopeId,
+            status: result.record.status
+          },
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
         return reply.code(result.duplicate ? 200 : 202).send(mobileMeshAckResponse(result.record));
       } catch (error) {
         markMobileDeviceStoreDegraded(error);
@@ -4732,14 +5321,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const params = request.params as { code: string };
       const code = normalizeMobilePairingCode(params.code);
       if (!code) {
-        return reply
-          .code(400)
-          .type("text/html; charset=utf-8")
-          .send(mobilePairFallbackHtml("", true));
+        return reply.code(400).type("text/html; charset=utf-8").send(mobilePairFallbackHtml("", true));
       }
-      return reply
-        .type("text/html; charset=utf-8")
-        .send(mobilePairFallbackHtml(code, false));
+      return reply.type("text/html; charset=utf-8").send(mobilePairFallbackHtml(code, false));
     },
     pairingClaim: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -4761,22 +5345,50 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const current = await activeMobileDeviceStore().getPairingSession(code, requestNow.toISOString());
       if (!current) {
-        return sendError(reply, 404, "NOT_FOUND", "Mobile pairing session was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Mobile pairing session was not found.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
       if (current.createdBy.subjectId !== actor.subjectId) {
-        return sendError(reply, 403, "FORBIDDEN", "Mobile pairing code belongs to another user.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(
+          reply,
+          403,
+          "FORBIDDEN",
+          "Mobile pairing code belongs to another user.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
-      const session = await activeMobileDeviceStore().claimPairingSession(code, mobilePairingActor(actor), registration, requestNow.toISOString());
-      if (!session || session.status !== "claimed") {
-        return sendError(reply, 409, "PAIRING_NOT_CLAIMABLE", "Mobile pairing session is no longer claimable.", correlationIdFrom(request.headers["x-correlation-id"]));
-      }
-      appendAudit(state, "MOBILE_PAIRING_SESSION_CLAIMED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
+      const session = await activeMobileDeviceStore().claimPairingSession(
         code,
-        deviceId: registration.deviceId,
-        platform: registration.platform
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+        mobilePairingActor(actor),
+        registration,
+        requestNow.toISOString()
+      );
+      if (!session || session.status !== "claimed") {
+        return sendError(
+          reply,
+          409,
+          "PAIRING_NOT_CLAIMABLE",
+          "Mobile pairing session is no longer claimable.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      appendAudit(
+        state,
+        "MOBILE_PAIRING_SESSION_CLAIMED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          code,
+          deviceId: registration.deviceId,
+          platform: registration.platform
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return mobilePairingSessionResponse(session, request);
     },
     pairingConfirm: async (request, reply) => {
@@ -4798,26 +5410,60 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const requestNow = now();
       const current = await activeMobileDeviceStore().getPairingSession(code, requestNow.toISOString());
       if (!current) {
-        return sendError(reply, 404, "NOT_FOUND", "Mobile pairing session was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Mobile pairing session was not found.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
       if (current.createdBy.subjectId !== actor.subjectId) {
-        return sendError(reply, 403, "FORBIDDEN", "Mobile pairing code belongs to another user.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(
+          reply,
+          403,
+          "FORBIDDEN",
+          "Mobile pairing code belongs to another user.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
       if (current.status !== "claimed" || !current.claimedDevice || current.claimedBy?.subjectId !== actor.subjectId) {
-        return sendError(reply, 409, "PAIRING_NOT_CONFIRMABLE", "Mobile pairing session must be claimed by the same user before confirmation.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(
+          reply,
+          409,
+          "PAIRING_NOT_CONFIRMABLE",
+          "Mobile pairing session must be claimed by the same user before confirmation.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
       const confirmed = await activeMobileDeviceStore().confirmPairingSession(code, requestNow.toISOString());
       if (!confirmed || confirmed.status !== "confirmed" || !confirmed.claimedDevice) {
-        return sendError(reply, 409, "PAIRING_NOT_CONFIRMABLE", "Mobile pairing session could not be confirmed.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(
+          reply,
+          409,
+          "PAIRING_NOT_CONFIRMABLE",
+          "Mobile pairing session could not be confirmed.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
-      const device = await activeMobileDeviceStore().upsertDevice(confirmed.claimedDevice, "paired", requestNow.toISOString(), code);
-      appendAudit(state, "MOBILE_PAIRING_SESSION_CONFIRMED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        code,
-        deviceId: device.deviceId,
-        platform: device.platform
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      const device = await activeMobileDeviceStore().upsertDevice(
+        confirmed.claimedDevice,
+        "paired",
+        requestNow.toISOString(),
+        code
+      );
+      appendAudit(
+        state,
+        "MOBILE_PAIRING_SESSION_CONFIRMED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          code,
+          deviceId: device.deviceId,
+          platform: device.platform
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return mobilePairingSessionResponse(confirmed, request, device);
     },
     pairingCreate: async (request, reply) => {
@@ -4834,12 +5480,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           expiresAt,
           now: requestNow.toISOString()
         });
-        appendAudit(state, "MOBILE_PAIRING_SESSION_CREATED", {
-          actorAuthMode: actor.authMode,
-          actorSubjectId: actor.subjectId,
-          code: session.code,
-          expiresAt: session.expiresAt
-        }, correlationIdFrom(request.headers["x-correlation-id"]));
+        appendAudit(
+          state,
+          "MOBILE_PAIRING_SESSION_CREATED",
+          {
+            actorAuthMode: actor.authMode,
+            actorSubjectId: actor.subjectId,
+            code: session.code,
+            expiresAt: session.expiresAt
+          },
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
         return reply.code(201).send(mobilePairingSessionResponse(session, request));
       } catch (error) {
         markMobileDeviceStoreDegraded(error);
@@ -4870,7 +5521,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const session = await activeMobileDeviceStore().getPairingSession(code, now().toISOString());
       if (!session || !canViewMobilePairingSession(actor, session)) {
-        return sendError(reply, 404, "NOT_FOUND", "Mobile pairing session was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Mobile pairing session was not found.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
       return mobilePairingSessionResponse(session, request);
     }
@@ -4912,16 +5569,27 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (requestedGroupId) {
         const group = await readCommunityGroup(requestedGroupId);
         if (!group || !canUseCommunityGroupForReport(group, actor)) {
-          return sendError(reply, 403, "FORBIDDEN", "Current user cannot publish into the selected community group.", crypto.randomUUID());
+          return sendError(
+            reply,
+            403,
+            "FORBIDDEN",
+            "Current user cannot publish into the selected community group.",
+            crypto.randomUUID()
+          );
         }
       }
       const report = await createCommunityReport(input, requestNow);
-      appendAudit(state, "COMMUNITY_REPORT_CREATED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        category: report.category,
-        reportId: report.reportId
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      appendAudit(
+        state,
+        "COMMUNITY_REPORT_CREATED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          category: report.category,
+          reportId: report.reportId
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return reply.code(201).send(communityReportResponseItem(report, requestNow, actor, new Set()));
     },
 
@@ -4930,7 +5598,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
-      const params = request.params as { reportId: string; };
+      const params = request.params as { reportId: string };
       const update = normalizeCommunityReportUpdate(request.body);
       if (!update) {
         return sendError(
@@ -4945,7 +5613,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (requestedGroupId) {
         const group = await readCommunityGroup(requestedGroupId);
         if (!group || !canUseCommunityGroupForReport(group, actor)) {
-          return sendError(reply, 403, "FORBIDDEN", "Current user cannot publish into the selected community group.", crypto.randomUUID());
+          return sendError(
+            reply,
+            403,
+            "FORBIDDEN",
+            "Current user cannot publish into the selected community group.",
+            crypto.randomUUID()
+          );
         }
       }
       const requestNow = now();
@@ -4953,17 +5627,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!report) {
         return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
       }
-      appendAudit(state, "COMMUNITY_REPORT_UPDATED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        reportId: report.reportId
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      appendAudit(
+        state,
+        "COMMUNITY_REPORT_UPDATED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          reportId: report.reportId
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return communityReportResponseItem(report, requestNow, actor, await readCommunityActorGroupIds(actor));
     },
 
     getReport: async (request, reply) => {
       const actor = actorFromRequest(request);
-      const params = request.params as { reportId: string; };
+      const params = request.params as { reportId: string };
       const report = await readCommunityReport(params.reportId);
       if (!report || !canReadCommunityReport(report, actor)) {
         return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
@@ -4976,16 +5655,21 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
-      const params = request.params as { reportId: string; };
+      const params = request.params as { reportId: string };
       const deleted = await deleteCommunityReport(params.reportId, actor, now());
       if (!deleted) {
         return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
       }
-      appendAudit(state, "COMMUNITY_REPORT_DELETED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        reportId: params.reportId
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      appendAudit(
+        state,
+        "COMMUNITY_REPORT_DELETED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          reportId: params.reportId
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return reply.code(204).send();
     },
 
@@ -4994,28 +5678,43 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
-      const params = request.params as { reportId: string; };
+      const params = request.params as { reportId: string };
       const requestNow = now();
       const report = await submitCommunityReport(params.reportId, actor, requestNow);
       if (!report) {
         return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
       }
-      appendAudit(state, "COMMUNITY_REPORT_SUBMITTED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        attachmentCount: report.attachments.length,
-        category: report.category,
-        reportId: report.reportId
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
-      try {
-        await dispatchCommunityReportNotification(actor, report, requestNow, correlationIdFrom(request.headers["x-correlation-id"]));
-      } catch (error) {
-        appendAudit(state, "COMMUNITY_REPORT_NOTIFICATION_FAILED", {
+      appendAudit(
+        state,
+        "COMMUNITY_REPORT_SUBMITTED",
+        {
           actorAuthMode: actor.authMode,
           actorSubjectId: actor.subjectId,
-          error: errorMessage(error),
+          attachmentCount: report.attachments.length,
+          category: report.category,
           reportId: report.reportId
-        }, correlationIdFrom(request.headers["x-correlation-id"]));
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+      try {
+        await dispatchCommunityReportNotification(
+          actor,
+          report,
+          requestNow,
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      } catch (error) {
+        appendAudit(
+          state,
+          "COMMUNITY_REPORT_NOTIFICATION_FAILED",
+          {
+            actorAuthMode: actor.authMode,
+            actorSubjectId: actor.subjectId,
+            error: errorMessage(error),
+            reportId: report.reportId
+          },
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
         app.log.warn({ error, reportId: report.reportId }, "Community report notification dispatch failed.");
       }
       return communityReportResponseItem(report, requestNow, actor, new Set());
@@ -5035,7 +5734,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
-      const params = request.params as { reportId: string; };
+      const params = request.params as { reportId: string };
       const report = await readCommunityReport(params.reportId);
       if (!report || report.createdBy.subjectId !== actor.subjectId) {
         return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
@@ -5052,13 +5751,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const requestNow = now();
       const attachmentId = crypto.randomUUID();
-      const upload = await mediaStorage.createUploadSlot({
-        attachmentId,
-        byteSize: attachmentRequest.byteSize,
-        contentType: attachmentRequest.contentType,
-        fileName: attachmentRequest.fileName,
-        reportId: report.reportId
-      }, requestNow);
+      const upload = await mediaStorage.createUploadSlot(
+        {
+          attachmentId,
+          byteSize: attachmentRequest.byteSize,
+          contentType: attachmentRequest.contentType,
+          fileName: attachmentRequest.fileName,
+          reportId: report.reportId
+        },
+        requestNow
+      );
       const attachment = await createCommunityAttachment({
         attachmentId,
         bucket: upload.bucket,
@@ -5075,15 +5777,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         subjectId: actor.subjectId,
         uploadExpiresAt: upload.expiresAt
       });
-      appendAudit(state, "COMMUNITY_ATTACHMENT_UPLOAD_CREATED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        attachmentId,
-        byteSize: attachment.byteSize,
-        contentType: attachment.contentType,
-        kind: attachment.kind,
-        reportId: report.reportId
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      appendAudit(
+        state,
+        "COMMUNITY_ATTACHMENT_UPLOAD_CREATED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          attachmentId,
+          byteSize: attachment.byteSize,
+          contentType: attachment.contentType,
+          kind: attachment.kind,
+          reportId: report.reportId
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       return reply.code(201).send({
         attachment,
         upload
@@ -5095,12 +5802,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
-      const params = request.params as { attachmentId: string; reportId: string; };
+      const params = request.params as { attachmentId: string; reportId: string };
       const body = isRecord(request.body) ? request.body : {};
       const requestNow = now();
       const attachment = await completeCommunityAttachment({
         attachmentId: params.attachmentId,
-        byteSize: optionalFiniteNumber(body.byteSize, 1, readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024)),
+        byteSize: optionalFiniteNumber(
+          body.byteSize,
+          1,
+          readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024)
+        ),
         checksumSha256: optionalChecksumSha256(body.checksumSha256),
         completedAt: requestNow.toISOString(),
         reportId: params.reportId,
@@ -5109,12 +5820,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!attachment) {
         return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
       }
-      appendAudit(state, "COMMUNITY_ATTACHMENT_UPLOAD_COMPLETED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        attachmentId: attachment.attachmentId,
-        reportId: attachment.reportId
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      appendAudit(
+        state,
+        "COMMUNITY_ATTACHMENT_UPLOAD_COMPLETED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          attachmentId: attachment.attachmentId,
+          reportId: attachment.reportId
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       const convertedAttachment = await enqueueSpatialVideoConversion(params.reportId, attachment, requestNow);
       return communityAttachmentResponseItem(convertedAttachment, params.reportId, true, actor, requestNow);
     },
@@ -5133,13 +5849,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
-      const params = request.params as { attachmentId: string; reportId: string; };
+      const params = request.params as { attachmentId: string; reportId: string };
       const report = await readCommunityReport(params.reportId);
       const attachment = report?.attachments.find((item) => item.attachmentId === params.attachmentId);
       if (!report || report.createdBy.subjectId !== actor.subjectId || !attachment) {
         return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
       }
-      const uploadBody = normalizeCommunityAttachmentUploadBody(request.body, attachment.byteSize, maxCommunityAttachmentBytes);
+      const uploadBody = normalizeCommunityAttachmentUploadBody(
+        request.body,
+        attachment.byteSize,
+        maxCommunityAttachmentBytes
+      );
       if (!uploadBody) {
         return sendError(
           reply,
@@ -5151,11 +5871,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const checksumSha256 = createHash("sha256").update(uploadBody.body).digest("hex");
       const requestNow = now();
-      await mediaStorage.putObject({
-        body: uploadBody.body,
-        contentType: attachment.contentType,
-        objectKey: attachment.objectKey
-      }, requestNow);
+      await mediaStorage.putObject(
+        {
+          body: uploadBody.body,
+          contentType: attachment.contentType,
+          objectKey: attachment.objectKey
+        },
+        requestNow
+      );
       const completed = await completeCommunityAttachment({
         attachmentId: attachment.attachmentId,
         byteSize: uploadBody.body.length,
@@ -5167,14 +5890,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!completed) {
         return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
       }
-      appendAudit(state, "COMMUNITY_ATTACHMENT_PROXY_UPLOADED", {
-        actorAuthMode: actor.authMode,
-        actorSubjectId: actor.subjectId,
-        attachmentId: attachment.attachmentId,
-        byteSize: uploadBody.body.length,
-        contentType: attachment.contentType,
-        reportId: report.reportId
-      }, correlationIdFrom(request.headers["x-correlation-id"]));
+      appendAudit(
+        state,
+        "COMMUNITY_ATTACHMENT_PROXY_UPLOADED",
+        {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          attachmentId: attachment.attachmentId,
+          byteSize: uploadBody.body.length,
+          contentType: attachment.contentType,
+          reportId: report.reportId
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
       const convertedAttachment = await enqueueSpatialVideoConversion(report.reportId, completed, requestNow);
       return communityAttachmentResponseItem(convertedAttachment, report.reportId, true, actor, requestNow);
     },
@@ -5190,21 +5918,31 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const actor = actorFromRequest(request);
-      const params = request.params as { attachmentId: string; reportId: string; };
+      const params = request.params as { attachmentId: string; reportId: string };
       const report = await readCommunityReport(params.reportId);
       if (!report) {
         return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
       }
-      const attachment = report.attachments.find((item) => item.attachmentId === params.attachmentId && item.status === "uploaded");
+      const attachment = report.attachments.find(
+        (item) => item.attachmentId === params.attachmentId && item.status === "uploaded"
+      );
       if (!attachment) {
         return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
       }
       const requestNow = now();
-      const hasValidTicket = hasValidCommunityMediaTicket(request.query, {
-        attachmentId: params.attachmentId,
-        reportId: params.reportId
-      }, requestNow);
-      if (!hasValidTicket && (!canReadCommunityReport(report, actor) || !canReadCommunityAttachment(report, attachment, actor, await readCommunityActorGroupIds(actor)))) {
+      const hasValidTicket = hasValidCommunityMediaTicket(
+        request.query,
+        {
+          attachmentId: params.attachmentId,
+          reportId: params.reportId
+        },
+        requestNow
+      );
+      if (
+        !hasValidTicket &&
+        (!canReadCommunityReport(report, actor) ||
+          !canReadCommunityAttachment(report, attachment, actor, await readCommunityActorGroupIds(actor)))
+      ) {
         return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
       }
       const readUrl = await mediaStorage.createReadUrl({ objectKey: attachment.objectKey }, requestNow);
@@ -5213,7 +5951,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         headers: range ? { range } : undefined
       });
       if (!mediaResponse.ok && mediaResponse.status !== 206) {
-        return sendError(reply, 502, "MEDIA_STORAGE_ERROR", `Media storage returned HTTP ${mediaResponse.status}.`, crypto.randomUUID());
+        return sendError(
+          reply,
+          502,
+          "MEDIA_STORAGE_ERROR",
+          `Media storage returned HTTP ${mediaResponse.status}.`,
+          crypto.randomUUID()
+        );
       }
       const contentLength = mediaResponse.headers.get("content-length");
       const contentRange = mediaResponse.headers.get("content-range");
@@ -5246,27 +5990,61 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const actor = actorFromRequest(request);
-      const params = request.params as { attachmentId: string; derivativeId: string; reportId: string; };
+      const params = request.params as { attachmentId: string; derivativeId: string; reportId: string };
       const report = await readCommunityReport(params.reportId);
       if (!report || params.derivativeId !== "xr-sbs") {
-        return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Community report attachment derivative was not found.",
+          crypto.randomUUID()
+        );
       }
-      const attachment = report.attachments.find((item) => item.attachmentId === params.attachmentId && item.status === "uploaded");
+      const attachment = report.attachments.find(
+        (item) => item.attachmentId === params.attachmentId && item.status === "uploaded"
+      );
       if (!attachment) {
-        return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Community report attachment derivative was not found.",
+          crypto.randomUUID()
+        );
       }
       const requestNow = now();
-      const hasValidTicket = hasValidCommunityMediaTicket(request.query, {
-        attachmentId: params.attachmentId,
-        derivativeId: params.derivativeId,
-        reportId: params.reportId
-      }, requestNow);
-      if (!hasValidTicket && (!canReadCommunityReport(report, actor) || !canReadCommunityAttachment(report, attachment, actor, await readCommunityActorGroupIds(actor)))) {
-        return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
+      const hasValidTicket = hasValidCommunityMediaTicket(
+        request.query,
+        {
+          attachmentId: params.attachmentId,
+          derivativeId: params.derivativeId,
+          reportId: params.reportId
+        },
+        requestNow
+      );
+      if (
+        !hasValidTicket &&
+        (!canReadCommunityReport(report, actor) ||
+          !canReadCommunityAttachment(report, attachment, actor, await readCommunityActorGroupIds(actor)))
+      ) {
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Community report attachment derivative was not found.",
+          crypto.randomUUID()
+        );
       }
       const derivative = readSpatialDerivative(attachment);
       if (!derivative || derivative.status !== "ready" || !derivative.objectKey) {
-        return sendError(reply, 404, "NOT_FOUND", "Community report attachment derivative was not found.", crypto.randomUUID());
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Community report attachment derivative was not found.",
+          crypto.randomUUID()
+        );
       }
       const readUrl = await mediaStorage.createReadUrl({ objectKey: derivative.objectKey }, requestNow);
       const range = typeof request.headers.range === "string" ? request.headers.range : undefined;
@@ -5274,7 +6052,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         headers: range ? { range } : undefined
       });
       if (!mediaResponse.ok && mediaResponse.status !== 206) {
-        return sendError(reply, 502, "MEDIA_STORAGE_ERROR", `Media storage returned HTTP ${mediaResponse.status}.`, crypto.randomUUID());
+        return sendError(
+          reply,
+          502,
+          "MEDIA_STORAGE_ERROR",
+          `Media storage returned HTTP ${mediaResponse.status}.`,
+          crypto.randomUUID()
+        );
       }
       const contentLength = mediaResponse.headers.get("content-length");
       const contentRange = mediaResponse.headers.get("content-range");
@@ -5313,12 +6097,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   app.get("/api/v1/flight-data/airports", async (request, reply) => {
     const requestNow = now();
     if (!flightDataSource?.fetchAirports) {
-      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Flight airport reference source is disabled.", crypto.randomUUID());
+      return sendError(
+        reply,
+        503,
+        "SOURCE_UNAVAILABLE",
+        "Flight airport reference source is disabled.",
+        crypto.randomUUID()
+      );
     }
     const query = parseFlightAirportQuery(request.query as Record<string, unknown>);
     try {
       return {
-        ...await flightDataSource.fetchAirports(query, requestNow),
+        ...(await flightDataSource.fetchAirports(query, requestNow)),
         serverTimestamp: requestNow.toISOString()
       };
     } catch (error) {
@@ -5360,7 +6150,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const requestedUrl = optionalTrimmedString(query.url, 2048);
     const rasterUrl = parseRasterOverlayUrl(requestedUrl, situationDataBaseUrl);
     if (!rasterUrl) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Raster overlay request requires a valid allowlisted raster URL or SIM clean radar path.", correlationId);
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Raster overlay request requires a valid allowlisted raster URL or SIM clean radar path.",
+        correlationId
+      );
     }
     if (!isAllowedRasterOverlayUrl(rasterUrl)) {
       return sendError(reply, 403, "FORBIDDEN", "Raster overlay host is not allowed.", correlationId);
@@ -5369,11 +6165,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     try {
       const rasterResponse = await fetchRasterOverlay(rasterUrl);
       if (!rasterResponse.ok) {
-        return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", `Raster overlay provider returned HTTP ${rasterResponse.status}.`, correlationId);
+        return sendError(
+          reply,
+          502,
+          "UPSTREAM_UNAVAILABLE",
+          `Raster overlay provider returned HTTP ${rasterResponse.status}.`,
+          correlationId
+        );
       }
-      const contentType = rasterResponse.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+      const contentType =
+        rasterResponse.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
       if (!contentType.startsWith("image/")) {
-        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Raster overlay provider did not return an image.", correlationId);
+        return sendError(
+          reply,
+          502,
+          "UPSTREAM_INVALID_RESPONSE",
+          "Raster overlay provider did not return an image.",
+          correlationId
+        );
       }
 
       const contentLength = Number(rasterResponse.headers.get("content-length"));
@@ -5403,7 +6212,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const product = optionalRadarProduct(query.product) ?? "merge1h";
     const hours = boundedQueryInteger(query.hours, 6, 1, 24);
     const limit = boundedQueryInteger(query.limit, 24, 1, 48);
-    const cacheSeconds = boundedInteger(readPositiveInteger(process.env.COP_WEATHER_RADAR_FRAMES_CACHE_SECONDS, 120), 60, 300);
+    const cacheSeconds = boundedInteger(
+      readPositiveInteger(process.env.COP_WEATHER_RADAR_FRAMES_CACHE_SECONDS, 120),
+      60,
+      300
+    );
     const cacheKey = `${product}:${hours}:${limit}`;
     const requestNowMs = Date.now();
     const cached = weatherRadarFramesCache.get(cacheKey);
@@ -5439,7 +6252,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const requestedUrl = optionalTrimmedString(query.url, 2048);
     const upstreamUrl = parseWeatherCameraResourceUrl(requestedUrl, situationDataBaseUrl);
     if (!upstreamUrl) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Weather camera proxy requires a valid SIM camera detail or snapshot URL.", correlationId);
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Weather camera proxy requires a valid SIM camera detail or snapshot URL.",
+        correlationId
+      );
     }
     if (!isAllowedWeatherCameraUrl(upstreamUrl)) {
       return sendError(reply, 403, "FORBIDDEN", "Weather camera host is not allowed.", correlationId);
@@ -5448,22 +6267,47 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     try {
       const cameraResponse = await fetchWeatherCameraResource(upstreamUrl);
       if (!cameraResponse.ok) {
-        return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", `Weather camera provider returned HTTP ${cameraResponse.status}.`, correlationId);
+        return sendError(
+          reply,
+          502,
+          "UPSTREAM_UNAVAILABLE",
+          `Weather camera provider returned HTTP ${cameraResponse.status}.`,
+          correlationId
+        );
       }
-      const contentType = cameraResponse.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+      const contentType =
+        cameraResponse.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
       const isJson = contentType === "application/json" || contentType.endsWith("+json");
       const isImage = contentType.startsWith("image/");
       if (!isJson && !isImage) {
-        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Weather camera provider did not return JSON or image content.", correlationId);
+        return sendError(
+          reply,
+          502,
+          "UPSTREAM_INVALID_RESPONSE",
+          "Weather camera provider did not return JSON or image content.",
+          correlationId
+        );
       }
 
       const contentLength = Number(cameraResponse.headers.get("content-length"));
       if (Number.isFinite(contentLength) && contentLength > weatherCameraMaxBytes) {
-        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Weather camera response is too large.", correlationId);
+        return sendError(
+          reply,
+          502,
+          "UPSTREAM_INVALID_RESPONSE",
+          "Weather camera response is too large.",
+          correlationId
+        );
       }
       const body = Buffer.from(await cameraResponse.arrayBuffer());
       if (body.byteLength > weatherCameraMaxBytes) {
-        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Weather camera response is too large.", correlationId);
+        return sendError(
+          reply,
+          502,
+          "UPSTREAM_INVALID_RESPONSE",
+          "Weather camera response is too large.",
+          correlationId
+        );
       }
 
       const cacheSeconds = isImage
@@ -5490,7 +6334,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const query = request.query as Record<string, unknown>;
     const historyHours = boundedQueryInteger(query.historyHours, 48, 1, 168);
     const forecastHours = boundedQueryInteger(query.forecastHours, 24, 0, 72);
-    const upstreamUrl = new URL(`weather-stations/${encodeURIComponent(stationId)}/detail`, `${trimTrailingSlash(situationDataBaseUrl)}/`);
+    const upstreamUrl = new URL(
+      `weather-stations/${encodeURIComponent(stationId)}/detail`,
+      `${trimTrailingSlash(situationDataBaseUrl)}/`
+    );
     upstreamUrl.searchParams.set("historyHours", String(historyHours));
     upstreamUrl.searchParams.set("forecastHours", String(forecastHours));
     if (optionalTrimmedString(query.nocache, 8) === "1") {
@@ -5499,9 +6346,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
     try {
       const body = await fetchWeatherStationDetailResource(upstreamUrl, situationDataSource?.config.timeoutMs);
-      return reply
-        .header("Cache-Control", "public, max-age=30, stale-while-revalidate=60")
-        .send(body);
+      return reply.header("Cache-Control", "public, max-age=30, stale-while-revalidate=60").send(body);
     } catch (error) {
       app.log.warn({ error, stationId, upstreamUrl: upstreamUrl.toString() }, "Weather station detail request failed.");
       return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
@@ -5516,7 +6361,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendError(reply, 400, "VALIDATION_ERROR", "Weather forecast area detail requires areaId.", correlationId);
     }
     const query = request.query as Record<string, unknown>;
-    const upstreamUrl = new URL(`weather-forecast/areas/${encodeURIComponent(areaId)}`, `${trimTrailingSlash(situationDataBaseUrl)}/`);
+    const upstreamUrl = new URL(
+      `weather-forecast/areas/${encodeURIComponent(areaId)}`,
+      `${trimTrailingSlash(situationDataBaseUrl)}/`
+    );
     const nowcastHours = optionalBoundedQueryInteger(query.nowcastHours, 0, 48);
     const forecastHours = optionalBoundedQueryInteger(query.forecastHours, 1, 168);
     const dailyDays = optionalBoundedQueryInteger(query.dailyDays, 1, 14);
@@ -5535,11 +6383,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
     try {
       const body = await fetchWeatherForecastAreaDetailResource(upstreamUrl, situationDataSource?.config.timeoutMs);
-      return reply
-        .header("Cache-Control", "public, max-age=60, stale-while-revalidate=180")
-        .send(body);
+      return reply.header("Cache-Control", "public, max-age=60, stale-while-revalidate=180").send(body);
     } catch (error) {
-      app.log.warn({ areaId, error, upstreamUrl: upstreamUrl.toString() }, "Weather forecast area detail request failed.");
+      app.log.warn(
+        { areaId, error, upstreamUrl: upstreamUrl.toString() },
+        "Weather forecast area detail request failed."
+      );
       return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
     }
   });
@@ -5553,7 +6402,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const query = request.query as Record<string, unknown>;
     const source = optionalTransitSourceId(query.source);
-    const upstreamUrl = new URL(`transit/vehicles/${encodeURIComponent(featureId)}`, `${trimTrailingSlash(situationDataBaseUrl)}/`);
+    const upstreamUrl = new URL(
+      `transit/vehicles/${encodeURIComponent(featureId)}`,
+      `${trimTrailingSlash(situationDataBaseUrl)}/`
+    );
     if (source) {
       upstreamUrl.searchParams.set("source", source);
     }
@@ -5563,9 +6415,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
     try {
       const body = await fetchTransitVehicleDetailResource(upstreamUrl, situationDataSource?.config.timeoutMs);
-      return reply
-        .header("Cache-Control", "public, max-age=5, stale-while-revalidate=15")
-        .send(body);
+      return reply.header("Cache-Control", "public, max-age=5, stale-while-revalidate=15").send(body);
     } catch (error) {
       app.log.warn({ error, featureId, upstreamUrl: upstreamUrl.toString() }, "Transit vehicle detail request failed.");
       return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
@@ -5578,12 +6428,21 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const systemId = optionalTransitPathId(params.systemId, 120);
     const stopId = optionalTransitPathId(params.stopId, 180);
     if (!systemId || !stopId) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Transit stop detail requires systemId and stopId.", correlationId);
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Transit stop detail requires systemId and stopId.",
+        correlationId
+      );
     }
     const query = request.query as Record<string, unknown>;
     const source = optionalTransitSourceId(query.source);
     const departuresLimit = boundedQueryInteger(query.departuresLimit, 8, 1, 50);
-    const upstreamUrl = new URL(`transit/stops/${encodeURIComponent(systemId)}/${encodeURIComponent(stopId)}`, `${trimTrailingSlash(situationDataBaseUrl)}/`);
+    const upstreamUrl = new URL(
+      `transit/stops/${encodeURIComponent(systemId)}/${encodeURIComponent(stopId)}`,
+      `${trimTrailingSlash(situationDataBaseUrl)}/`
+    );
     if (source) {
       upstreamUrl.searchParams.set("source", source);
     }
@@ -5594,35 +6453,63 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
     try {
       const body = await fetchTransitStopDetailResource(upstreamUrl, situationDataSource?.config.timeoutMs);
-      return reply
-        .header("Cache-Control", "public, max-age=15, stale-while-revalidate=30")
-        .send(body);
+      return reply.header("Cache-Control", "public, max-age=15, stale-while-revalidate=30").send(body);
     } catch (error) {
-      app.log.warn({ error, stopId, systemId, upstreamUrl: upstreamUrl.toString() }, "Transit stop detail request failed.");
+      app.log.warn(
+        { error, stopId, systemId, upstreamUrl: upstreamUrl.toString() },
+        "Transit stop detail request failed."
+      );
       return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
     }
   });
 
   app.get("/api/v1/geocode/search", async (request, reply) => {
     if (!placeGeocoder) {
-      return sendError(reply, 503, "GEOCODER_UNAVAILABLE", "Place geocoder is disabled.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        503,
+        "GEOCODER_UNAVAILABLE",
+        "Place geocoder is disabled.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
     const query = request.query as Record<string, unknown>;
     const q = optionalTrimmedString(query.q ?? query.query, 160);
     if (!q || q.length < 3) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Geocode search requires q with at least 3 characters.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Geocode search requires q with at least 3 characters.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
     try {
       const bbox = parseMapQueryBbox(query.bbox ?? query.viewbox);
-      return await placeGeocoder.search({
-        ...(bbox ? { bbox, bounded: optionalTrimmedString(query.bounded, 8) === "1" || optionalTrimmedString(query.bounded, 8) === "true" } : {}),
-        language: optionalTrimmedString(query.language, 40),
-        limit: optionalFiniteNumber(query.limit, 1, 8),
-        query: q
-      }, now());
+      return await placeGeocoder.search(
+        {
+          ...(bbox
+            ? {
+                bbox,
+                bounded:
+                  optionalTrimmedString(query.bounded, 8) === "1" || optionalTrimmedString(query.bounded, 8) === "true"
+              }
+            : {}),
+          language: optionalTrimmedString(query.language, 40),
+          limit: optionalFiniteNumber(query.limit, 1, 8),
+          query: q
+        },
+        now()
+      );
     } catch (error) {
       app.log.warn({ error, q }, "Place geocode search failed.");
-      return sendError(reply, 502, "GEOCODER_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        502,
+        "GEOCODER_UPSTREAM_UNAVAILABLE",
+        errorMessage(error),
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
   });
 
@@ -5631,7 +6518,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const actor = actorFromRequest(request);
     const query = parseMapQueryRequest(request.body);
     if (!query) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Map query requires bbox=[west,south,east,north] and layerIds[].", crypto.randomUUID());
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Map query requires bbox=[west,south,east,north] and layerIds[].",
+        crypto.randomUUID()
+      );
     }
 
     const includeDiagnostics = Boolean(actor) && query.includeDiagnostics;
@@ -5648,18 +6541,31 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       situation: providers.situation,
       tak: providers.tak
     });
-    const selectedLayers = catalog.layers.filter((layer) => query.layerIds.includes(layer.layerId) && catalogLayerAvailableForMapQuery(layer));
+    const selectedLayers = catalog.layers.filter(
+      (layer) => query.layerIds.includes(layer.layerId) && catalogLayerAvailableForMapQuery(layer)
+    );
     const knownLayerIds = new Set(catalog.layers.map((layer) => layer.layerId));
-    const disabledLayerIds = query.layerIds.filter((layerId) => catalog.layers.some((layer) => layer.layerId === layerId && !catalogLayerAvailableForMapQuery(layer)));
+    const disabledLayerIds = query.layerIds.filter((layerId) =>
+      catalog.layers.some((layer) => layer.layerId === layerId && !catalogLayerAvailableForMapQuery(layer))
+    );
     const unknownLayerIds = query.layerIds.filter((layerId) => !knownLayerIds.has(layerId));
     const providerQueries = buildProviderFeatureQueries(selectedLayers, query);
     const warnings = [
       ...catalog.warnings,
       ...(disabledLayerIds.length > 0 ? [`Disabled map layers ignored: ${disabledLayerIds.join(", ")}.`] : []),
-      ...(unknownLayerIds.length > 0 ? [`Unknown or unauthorized map layers ignored: ${unknownLayerIds.join(", ")}.`] : [])
+      ...(unknownLayerIds.length > 0
+        ? [`Unknown or unauthorized map layers ignored: ${unknownLayerIds.join(", ")}.`]
+        : [])
     ];
 
-    const [situationCollection, safetyCollection, flightCollection, communityCollection, missionArenaCollection, takCollection] = await Promise.all([
+    const [
+      situationCollection,
+      safetyCollection,
+      flightCollection,
+      communityCollection,
+      missionArenaCollection,
+      takCollection
+    ] = await Promise.all([
       readSituationMapQuery(providerQueries.situation, requestNow, actor, selectedLayers),
       readSafetyMapQuery(providerQueries.safety, requestNow),
       readFlightReferenceMapQuery(providerQueries.flight, requestNow),
@@ -5668,12 +6574,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       includePartner ? readTakMapQuery(providerQueries.tak, requestNow) : Promise.resolve(undefined)
     ]);
 
-    const featureCount = (situationCollection?.summary.featureCount ?? 0)
-      + (safetyCollection?.summary.featureCount ?? 0)
-      + (flightCollection?.summary.featureCount ?? 0)
-      + (communityCollection?.summary.featureCount ?? 0)
-      + (missionArenaCollection?.summary.featureCount ?? 0)
-      + (takCollection?.summary.featureCount ?? 0);
+    const featureCount =
+      (situationCollection?.summary.featureCount ?? 0) +
+      (safetyCollection?.summary.featureCount ?? 0) +
+      (flightCollection?.summary.featureCount ?? 0) +
+      (communityCollection?.summary.featureCount ?? 0) +
+      (missionArenaCollection?.summary.featureCount ?? 0) +
+      (takCollection?.summary.featureCount ?? 0);
     return {
       contractVersion: "cop-map-query-v1",
       community: communityCollection,
@@ -5738,7 +6645,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return sendError(reply, 503, "ROUTING_UNAVAILABLE", "SIM routing source is disabled.", correlationId);
       }
       if (!isRecord(request.body)) {
-        return sendError(reply, 400, "VALIDATION_ERROR", "Routing alternatives requires a JSON object body.", correlationId);
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Routing alternatives requires a JSON object body.",
+          correlationId
+        );
       }
       try {
         return await routingSource.alternatives(request.body as unknown as RoutingRouteRequest, requestNow);
@@ -5758,7 +6671,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return sendError(reply, 503, "ROUTING_UNAVAILABLE", "SIM routing source is disabled.", correlationId);
       }
       if (!isRecord(request.body)) {
-        return sendError(reply, 400, "VALIDATION_ERROR", "Routing isochrone requires a JSON object body.", correlationId);
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Routing isochrone requires a JSON object body.",
+          correlationId
+        );
       }
       try {
         return await routingSource.isochrone(request.body, requestNow);
@@ -5774,7 +6693,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return sendError(reply, 503, "ROUTING_UNAVAILABLE", "SIM routing source is disabled.", correlationId);
       }
       if (!isRecord(request.body)) {
-        return sendError(reply, 400, "VALIDATION_ERROR", "Routing nearest-access requires a JSON object body.", correlationId);
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Routing nearest-access requires a JSON object body.",
+          correlationId
+        );
       }
       try {
         return await routingSource.nearestAccess(request.body, requestNow);
@@ -5794,11 +6719,23 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendError(reply, 400, "VALIDATION_ERROR", "Hydro station detail requires stationId.", correlationId);
     }
     if (!safetyDataSource?.fetchHydroStationDetail) {
-      return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Safety hydro station detail source is disabled.", correlationId);
+      return sendError(
+        reply,
+        503,
+        "SOURCE_UNAVAILABLE",
+        "Safety hydro station detail source is disabled.",
+        correlationId
+      );
     }
     const query = parseSafetyHydroStationDetailQuery(request.query as Record<string, unknown>);
     if (!query) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Hydro station detail query supports optional from, to and series=H,Q,TH,H_F,Q_F.", correlationId);
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Hydro station detail query supports optional from, to and series=H,Q,TH,H_F,Q_F.",
+        correlationId
+      );
     }
     try {
       return await safetyDataSource.fetchHydroStationDetail(stationId, query, requestNow);
@@ -5817,7 +6754,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const profile = parseRadioProfile(request.body);
       if (!profile) {
-        return sendError(reply, 400, "VALIDATION_ERROR", "Radio profile requires name, frequencyMhz, antennaHeightM, receiverHeightM and maxRadiusM with non-sensitive fields only.", correlationId);
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Radio profile requires name, frequencyMhz, antennaHeightM, receiverHeightM and maxRadiusM with non-sensitive fields only.",
+          correlationId
+        );
       }
       try {
         return await situationDataSource.createRadioProfile(profile, requestNow);
@@ -5834,7 +6777,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const body = parseRadioLinkCheckRequest(request.body);
       if (!body) {
-        return sendError(reply, 400, "VALIDATION_ERROR", "Radio link-check requires from/to coordinates and a profileId or valid custom profile.", correlationId);
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Radio link-check requires from/to coordinates and a profileId or valid custom profile.",
+          correlationId
+        );
       }
       try {
         return await situationDataSource.runRadioLinkCheck(body, requestNow);
@@ -5862,14 +6811,26 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const params = request.params as { towerId: string };
       const towerId = parseMobileTowerId(params.towerId);
       if (!towerId) {
-        return sendError(reply, 400, "VALIDATION_ERROR", "Mobile tower viewshed requires a valid towerId.", correlationId);
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Mobile tower viewshed requires a valid towerId.",
+          correlationId
+        );
       }
       if (!situationDataSource?.fetchMobileTowerViewshed) {
         return sendError(reply, 503, "SOURCE_UNAVAILABLE", "Mobile tower viewshed source is disabled.", correlationId);
       }
       const query = parseMobileTowerViewshedQuery(request.query as Record<string, unknown>);
       if (!query) {
-        return sendError(reply, 400, "VALIDATION_ERROR", "Mobile tower viewshed supports technology=2G|4G|5G, radiusM, azimuthStepDeg and distanceStepM.", correlationId);
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Mobile tower viewshed supports technology=2G|4G|5G, radiusM, azimuthStepDeg and distanceStepM.",
+          correlationId
+        );
       }
       try {
         return await situationDataSource.fetchMobileTowerViewshed(towerId, query, requestNow);
@@ -5877,7 +6838,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         app.log.warn({ error, towerId }, "Mobile tower viewshed failed.");
         const upstreamStatus = upstreamHttpStatus(error);
         if (upstreamStatus === 400 || upstreamStatus === 404) {
-          return sendError(reply, upstreamStatus, "MOBILE_TOWER_VIEWSHED_UNAVAILABLE", "Pro tento typ objektu není výpočet dostupný.", correlationId);
+          return sendError(
+            reply,
+            upstreamStatus,
+            "MOBILE_TOWER_VIEWSHED_UNAVAILABLE",
+            "Pro tento typ objektu není výpočet dostupný.",
+            correlationId
+          );
         }
         return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
       }
@@ -5890,7 +6857,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const body = parseRadioCoverageRequest(request.body);
       if (!body) {
-        return sendError(reply, 400, "VALIDATION_ERROR", "Radio coverage requires station coordinates and a profileId or valid custom profile.", correlationId);
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Radio coverage requires station coordinates and a profileId or valid custom profile.",
+          correlationId
+        );
       }
       try {
         return await situationDataSource.runRadioCoverage(body, requestNow);
@@ -5907,7 +6880,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const body = parseRadioSiteSearchRequest(request.body);
       if (!body) {
-        return sendError(reply, 400, "VALIDATION_ERROR", "Radio site-search requires a bbox, at least one target and a profileId or valid custom profile.", correlationId);
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Radio site-search requires a bbox, at least one target and a profileId or valid custom profile.",
+          correlationId
+        );
       }
       try {
         return await situationDataSource.runRadioSiteSearch(body, requestNow);
@@ -5997,7 +6976,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return appendDomainDeadLetter(state, input);
   }
 
-  async function queryRuntimeDomainEvents(query: ReturnType<typeof parseDomainEventReplayQuery>): Promise<DomainEventReplayResult> {
+  async function queryRuntimeDomainEvents(
+    query: ReturnType<typeof parseDomainEventReplayQuery>
+  ): Promise<DomainEventReplayResult> {
     if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
       try {
         return await federationRuntimeStore.queryEvents(query);
@@ -6147,11 +7128,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const timestamp = (input.now ?? now()).toISOString();
     const previous = edgeReplayCursors.get(input.nodeId);
     const cursor: EdgeReplayCursorRecord = {
-      ackedAt: input.lastAckedOffset >= (previous?.lastAckedOffset ?? 0) ? timestamp : previous?.ackedAt ?? timestamp,
+      ackedAt: input.lastAckedOffset >= (previous?.lastAckedOffset ?? 0) ? timestamp : (previous?.ackedAt ?? timestamp),
       lastAckedOffset: Math.max(previous?.lastAckedOffset ?? 0, input.lastAckedOffset),
       lastReplayAt: timestamp,
       nodeId: input.nodeId,
-      ...(input.updatedBy ? { updatedBy: input.updatedBy } : previous?.updatedBy ? { updatedBy: previous.updatedBy } : {})
+      ...(input.updatedBy
+        ? { updatedBy: input.updatedBy }
+        : previous?.updatedBy
+          ? { updatedBy: previous.updatedBy }
+          : {})
     };
     edgeReplayCursors.set(input.nodeId, cursor);
     return cursor;
@@ -6167,7 +7152,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const params = request.params as { nodeId: string };
     const node = await getFederatedNode(params.nodeId);
     if (!node) {
-      return sendError(reply, 404, "NOT_FOUND", "Federated node was not found.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Federated node was not found.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
     }
     return node;
   });
@@ -6178,14 +7169,21 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const previous = await getFederatedNode(params.nodeId);
     const result = updateFederatedNodeHeartbeat(state, params.nodeId, request.body, now());
     if (!result.ok || !result.node) {
-      return sendError(reply, 400, "VALIDATION_ERROR", result.message ?? "Federated node heartbeat is invalid.", correlationId);
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        result.message ?? "Federated node heartbeat is invalid.",
+        correlationId
+      );
     }
     await upsertFederatedNode(result.node);
-    const eventType = result.node.health === "offline"
-      ? "node.disconnected"
-      : previous?.health === "offline"
-        ? "node.reconnected"
-        : undefined;
+    const eventType =
+      result.node.health === "offline"
+        ? "node.disconnected"
+        : previous?.health === "offline"
+          ? "node.reconnected"
+          : undefined;
     if (eventType) {
       await publishRuntimeDomainEvent({
         classification: { level: "INTERNAL", releasability: ["CIVIL"] },
@@ -6203,11 +7201,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         type: eventType
       });
     }
-    appendAudit(state, "FEDERATED_NODE_HEARTBEAT", {
-      health: result.node.health,
-      nodeId: result.node.nodeId,
-      nodeRole: result.node.nodeRole
-    }, correlationId);
+    appendAudit(
+      state,
+      "FEDERATED_NODE_HEARTBEAT",
+      {
+        health: result.node.health,
+        nodeId: result.node.nodeId,
+        nodeRole: result.node.nodeRole
+      },
+      correlationId
+    );
     return reply.code(previous ? 200 : 201).send(result.node);
   });
 
@@ -6222,10 +7225,21 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         message: parsed.message ?? "Domain event payload does not match contract.",
         now: now()
       });
-      appendAudit(state, "DOMAIN_EVENT_REJECTED", {
-        reason: "validation"
-      }, correlationId);
-      return sendError(reply, 400, "VALIDATION_ERROR", parsed.message ?? "Domain event payload does not match contract.", correlationId);
+      appendAudit(
+        state,
+        "DOMAIN_EVENT_REJECTED",
+        {
+          reason: "validation"
+        },
+        correlationId
+      );
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        parsed.message ?? "Domain event payload does not match contract.",
+        correlationId
+      );
     }
     const producerNode = await getFederatedNode(parsed.input.producerNodeId);
     if (!producerNode) {
@@ -6236,20 +7250,36 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         message: "Domain event producer node is not registered.",
         now: now()
       });
-      appendAudit(state, "DOMAIN_EVENT_REJECTED", {
-        producerNodeId: parsed.input.producerNodeId,
-        reason: "unknown-producer-node"
-      }, correlationId);
-      return sendError(reply, 422, "UNKNOWN_PRODUCER_NODE", "Domain event producer node is not registered.", correlationId);
+      appendAudit(
+        state,
+        "DOMAIN_EVENT_REJECTED",
+        {
+          producerNodeId: parsed.input.producerNodeId,
+          reason: "unknown-producer-node"
+        },
+        correlationId
+      );
+      return sendError(
+        reply,
+        422,
+        "UNKNOWN_PRODUCER_NODE",
+        "Domain event producer node is not registered.",
+        correlationId
+      );
     }
     const { event } = await publishRuntimeDomainEvent(parsed.input);
-    appendAudit(state, "DOMAIN_EVENT_PUBLISHED", {
-      channel: event.channel,
-      eventId: event.id,
-      eventType: event.type,
-      producerNodeId: event.data.producerNodeId,
-      replayOffset: event.replayOffset
-    }, correlationId);
+    appendAudit(
+      state,
+      "DOMAIN_EVENT_PUBLISHED",
+      {
+        channel: event.channel,
+        eventId: event.id,
+        eventType: event.type,
+        producerNodeId: event.data.producerNodeId,
+        replayOffset: event.replayOffset
+      },
+      correlationId
+    );
     return reply.code(202).send({
       accepted: true,
       channel: event.channel,
@@ -6265,26 +7295,45 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : "";
     const events = Array.isArray(body?.events) ? body.events : undefined;
     if (!nodeId || !events) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Edge outbox flush requires nodeId and events array.", correlationId);
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Edge outbox flush requires nodeId and events array.",
+        correlationId
+      );
     }
     if (events.length > 100) {
-      return sendError(reply, 413, "BATCH_TOO_LARGE", "Edge outbox flush supports at most 100 events per request.", correlationId);
+      return sendError(
+        reply,
+        413,
+        "BATCH_TOO_LARGE",
+        "Edge outbox flush supports at most 100 events per request.",
+        correlationId
+      );
     }
     const node = await getFederatedNode(nodeId);
     if (!node || node.nodeRole !== "edge-node") {
-      return sendError(reply, 422, "UNKNOWN_EDGE_NODE", "Edge outbox node is not registered as an edge-node.", correlationId);
+      return sendError(
+        reply,
+        422,
+        "UNKNOWN_EDGE_NODE",
+        "Edge outbox node is not registered as an edge-node.",
+        correlationId
+      );
     }
 
     const results: EdgeOutboxFlushItemResult[] = [];
     for (const [index, rawEvent] of events.entries()) {
       const rawRecord = isRecord(rawEvent) ? rawEvent : undefined;
-      const clientEventId = typeof rawRecord?.clientEventId === "string"
-        ? rawRecord.clientEventId.trim()
-        : typeof rawRecord?.eventId === "string"
-          ? rawRecord.eventId.trim()
-          : typeof rawRecord?.id === "string"
-            ? rawRecord.id.trim()
-            : undefined;
+      const clientEventId =
+        typeof rawRecord?.clientEventId === "string"
+          ? rawRecord.clientEventId.trim()
+          : typeof rawRecord?.eventId === "string"
+            ? rawRecord.eventId.trim()
+            : typeof rawRecord?.id === "string"
+              ? rawRecord.id.trim()
+              : undefined;
       const normalizedEvent = rawRecord
         ? {
             ...rawRecord,
@@ -6333,12 +7382,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const acceptedCount = results.filter((item) => item.status === "accepted").length;
     const duplicateCount = results.filter((item) => item.status === "duplicate").length;
     const rejectedCount = results.filter((item) => item.status === "rejected").length;
-    appendAudit(state, "EDGE_OUTBOX_FLUSHED", {
-      acceptedCount,
-      duplicateCount,
-      nodeId,
-      rejectedCount
-    }, correlationId);
+    appendAudit(
+      state,
+      "EDGE_OUTBOX_FLUSHED",
+      {
+        acceptedCount,
+        duplicateCount,
+        nodeId,
+        rejectedCount
+      },
+      correlationId
+    );
     return reply.code(rejectedCount > 0 && acceptedCount === 0 && duplicateCount === 0 ? 207 : 202).send({
       acceptedCount,
       contractVersion: "cop-edge-outbox-flush-v1",
@@ -6357,7 +7411,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const node = await getFederatedNode(params.nodeId);
     if (!node || node.nodeRole !== "edge-node") {
-      return sendError(reply, 422, "UNKNOWN_EDGE_NODE", "Replay cursor is available only for registered edge-node.", correlationId);
+      return sendError(
+        reply,
+        422,
+        "UNKNOWN_EDGE_NODE",
+        "Replay cursor is available only for registered edge-node.",
+        correlationId
+      );
     }
     const cursor = await getRuntimeEdgeCursor(node.nodeId);
     return {
@@ -6376,12 +7436,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const node = await getFederatedNode(params.nodeId);
     if (!node || node.nodeRole !== "edge-node") {
-      return sendError(reply, 422, "UNKNOWN_EDGE_NODE", "Replay cursor can be acknowledged only by registered edge-node.", correlationId);
+      return sendError(
+        reply,
+        422,
+        "UNKNOWN_EDGE_NODE",
+        "Replay cursor can be acknowledged only by registered edge-node.",
+        correlationId
+      );
     }
     const body = isRecord(request.body) ? request.body : {};
     const offset = Number(body.lastAckedOffset);
     if (!Number.isInteger(offset) || offset < 0) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Replay cursor acknowledgement requires lastAckedOffset as a non-negative integer.", correlationId);
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        "Replay cursor acknowledgement requires lastAckedOffset as a non-negative integer.",
+        correlationId
+      );
     }
     const actor = actorFromRequest(request);
     const cursor = await updateRuntimeEdgeCursor({
@@ -6390,11 +7462,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       now: now(),
       updatedBy: actor?.subjectId ?? "cop-api"
     });
-    appendAudit(state, "EDGE_REPLAY_CURSOR_ACKED", {
-      actorSubjectId: actor?.subjectId,
-      lastAckedOffset: cursor.lastAckedOffset,
-      nodeId: node.nodeId
-    }, correlationId);
+    appendAudit(
+      state,
+      "EDGE_REPLAY_CURSOR_ACKED",
+      {
+        actorSubjectId: actor?.subjectId,
+        lastAckedOffset: cursor.lastAckedOffset,
+        nodeId: node.nodeId
+      },
+      correlationId
+    );
     return {
       contractVersion: "cop-edge-replay-cursor-v1",
       cursor,
@@ -6407,7 +7484,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const node = await getFederatedNode(params.nodeId);
     if (!node || node.nodeRole !== "edge-node") {
-      return sendError(reply, 422, "UNKNOWN_EDGE_NODE", "Replay is available only for registered edge-node.", correlationId);
+      return sendError(
+        reply,
+        422,
+        "UNKNOWN_EDGE_NODE",
+        "Replay is available only for registered edge-node.",
+        correlationId
+      );
     }
 
     const cursor = await getRuntimeEdgeCursor(node.nodeId);
@@ -6431,15 +7514,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return false;
     });
     const highestScannedOffset = Math.max(query.fromOffset ?? 0, ...result.items.map((event) => event.replayOffset));
-    appendAudit(state, "EDGE_DOMAIN_EVENTS_REPLAYED", {
-      blockedByClassification: blockedByClassification.length,
-      blockedByReleasePolicy: blockedByReleasePolicy.length,
-      deliveredCount: items.length,
-      fromOffset: query.fromOffset ?? 0,
-      highestScannedOffset,
-      nodeId: node.nodeId,
-      scannedCount: result.items.length
-    }, correlationId);
+    appendAudit(
+      state,
+      "EDGE_DOMAIN_EVENTS_REPLAYED",
+      {
+        blockedByClassification: blockedByClassification.length,
+        blockedByReleasePolicy: blockedByReleasePolicy.length,
+        deliveredCount: items.length,
+        fromOffset: query.fromOffset ?? 0,
+        highestScannedOffset,
+        nodeId: node.nodeId,
+        scannedCount: result.items.length
+      },
+      correlationId
+    );
     return {
       contractVersion: "cop-edge-domain-event-replay-v1",
       cursor: cursor ?? {
@@ -6507,40 +7595,64 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendError(reply, 404, "NOT_FOUND", "Domain event dead-letter record was not found.", correlationId);
     }
     const body = isRecord(request.body) ? request.body : undefined;
-    const candidate = body && isRecord(body.event)
-      ? body.event
-      : body && Object.keys(body).length > 0
-        ? body
-        : deadLetter.body;
+    const candidate =
+      body && isRecord(body.event) ? body.event : body && Object.keys(body).length > 0 ? body : deadLetter.body;
     const parsed = parseDomainEventPublishRequest(candidate, correlationId);
     if (!parsed.ok || !parsed.input) {
-      appendAudit(state, "DOMAIN_EVENT_DLQ_REDRIVE_REJECTED", {
-        deadLetterId: deadLetter.deadLetterId,
-        reason: "validation"
-      }, correlationId);
-      return sendError(reply, 400, "VALIDATION_ERROR", parsed.message ?? "Dead-letter re-drive event payload does not match contract.", correlationId);
+      appendAudit(
+        state,
+        "DOMAIN_EVENT_DLQ_REDRIVE_REJECTED",
+        {
+          deadLetterId: deadLetter.deadLetterId,
+          reason: "validation"
+        },
+        correlationId
+      );
+      return sendError(
+        reply,
+        400,
+        "VALIDATION_ERROR",
+        parsed.message ?? "Dead-letter re-drive event payload does not match contract.",
+        correlationId
+      );
     }
     const producerNode = await getFederatedNode(parsed.input.producerNodeId);
     if (!producerNode) {
-      appendAudit(state, "DOMAIN_EVENT_DLQ_REDRIVE_REJECTED", {
-        deadLetterId: deadLetter.deadLetterId,
-        producerNodeId: parsed.input.producerNodeId,
-        reason: "unknown-producer-node"
-      }, correlationId);
-      return sendError(reply, 422, "UNKNOWN_PRODUCER_NODE", "Dead-letter re-drive producer node is not registered.", correlationId);
+      appendAudit(
+        state,
+        "DOMAIN_EVENT_DLQ_REDRIVE_REJECTED",
+        {
+          deadLetterId: deadLetter.deadLetterId,
+          producerNodeId: parsed.input.producerNodeId,
+          reason: "unknown-producer-node"
+        },
+        correlationId
+      );
+      return sendError(
+        reply,
+        422,
+        "UNKNOWN_PRODUCER_NODE",
+        "Dead-letter re-drive producer node is not registered.",
+        correlationId
+      );
     }
     const actor = actorFromRequest(request);
     const result = await redriveRuntimeDomainDeadLetter(deadLetter.deadLetterId, parsed.input, {
       now: now(),
       resolvedBy: actor?.subjectId ?? "cop-api"
     });
-    appendAudit(state, "DOMAIN_EVENT_DLQ_REDRIVEN", {
-      actorSubjectId: actor?.subjectId,
-      deadLetterId: result.deadLetter.deadLetterId,
-      eventId: result.event.id,
-      replayOffset: result.event.replayOffset,
-      status: result.status
-    }, correlationId);
+    appendAudit(
+      state,
+      "DOMAIN_EVENT_DLQ_REDRIVEN",
+      {
+        actorSubjectId: actor?.subjectId,
+        deadLetterId: result.deadLetter.deadLetterId,
+        eventId: result.event.id,
+        replayOffset: result.event.replayOffset,
+        status: result.status
+      },
+      correlationId
+    );
     return reply.code(202).send({
       contractVersion: "cop-domain-event-dlq-redrive-v1",
       correlationId,
@@ -6562,10 +7674,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!deadLetter) {
       return sendError(reply, 404, "NOT_FOUND", "Domain event dead-letter record was not found.", correlationId);
     }
-    appendAudit(state, "DOMAIN_EVENT_DLQ_RESOLVED", {
-      actorSubjectId: actor?.subjectId,
-      deadLetterId: deadLetter.deadLetterId
-    }, correlationId);
+    appendAudit(
+      state,
+      "DOMAIN_EVENT_DLQ_RESOLVED",
+      {
+        actorSubjectId: actor?.subjectId,
+        deadLetterId: deadLetter.deadLetterId
+      },
+      correlationId
+    );
     return {
       contractVersion: "cop-domain-event-dlq-resolve-v1",
       correlationId,
@@ -6687,8 +7804,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   app.post("/api/v1/ingest/batches", async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    const body = request.body as { batchId?: string; contractVersion?: string; sourceSystemId?: string; events?: unknown[] };
-    if (!body.batchId || body.contractVersion !== "cop-ingest-v1" || !body.sourceSystemId || !Array.isArray(body.events)) {
+    const body = request.body as {
+      batchId?: string;
+      contractVersion?: string;
+      sourceSystemId?: string;
+      events?: unknown[];
+    };
+    if (
+      !body.batchId ||
+      body.contractVersion !== "cop-ingest-v1" ||
+      !body.sourceSystemId ||
+      !Array.isArray(body.events)
+    ) {
       return sendError(reply, 400, "VALIDATION_ERROR", "Batch payload does not match contract.", correlationId);
     }
 
@@ -6728,7 +7855,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const includeExpired = query.includeExpired === "true";
     const requestNow = now();
     const subject = defaultSystemSubject();
-    const readableItems = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle, includeExpired).filter((object) => {
+    const readableItems = selectCurrentTracks(
+      state.objects.values(),
+      requestNow,
+      trackLifecycle,
+      includeExpired
+    ).filter((object) => {
       const decision = evaluateReadPolicy(subject, {
         classification: "UNCLASSIFIED",
         synthetic: object.synthetic
@@ -6745,13 +7877,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const includeExpired = rawQuery.includeExpired === "true";
     const requestNow = now();
     const subject = defaultSystemSubject();
-    const currentObjects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle, includeExpired).filter((object) =>
-      canReadObject(subject, object)
-    );
+    const currentObjects = selectCurrentTracks(
+      state.objects.values(),
+      requestNow,
+      trackLifecycle,
+      includeExpired
+    ).filter((object) => canReadObject(subject, object));
     const requestedObjectIds = new Set(query.objectIds ?? []);
-    const scopedObjects = requestedObjectIds.size > 0
-      ? currentObjects.filter((object) => requestedObjectIds.has(object.objectId))
-      : currentObjects;
+    const scopedObjects =
+      requestedObjectIds.size > 0
+        ? currentObjects.filter((object) => requestedObjectIds.has(object.objectId))
+        : currentObjects;
     const evidenceIndex = await buildConflictEvidenceForObjects(scopedObjects, requestNow, query);
     return {
       items: Array.from(evidenceIndex.values()),
@@ -6796,7 +7932,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
     const alert = currentAlerts.find((candidate) => candidate.alertId === params.alertId);
     if (!alert) {
-      return sendError(reply, 404, "NOT_FOUND", "Alert was not found in current COP alert evidence.", crypto.randomUUID());
+      return sendError(
+        reply,
+        404,
+        "NOT_FOUND",
+        "Alert was not found in current COP alert evidence.",
+        crypto.randomUUID()
+      );
     }
 
     const acknowledgement = {
@@ -6904,7 +8046,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     reply.raw.write("retry: 5000\n\n");
     const unsubscribe = streamBroadcaster.subscribe(writeMessage);
     const snapshotNow = now();
-    writeMessage(streamBroadcaster.createSnapshot(subscriptionId, await readableCurrentTracks(subject, snapshotNow), snapshotNow));
+    writeMessage(
+      streamBroadcaster.createSnapshot(subscriptionId, await readableCurrentTracks(subject, snapshotNow), snapshotNow)
+    );
     const initialBackpressure = streamBroadcaster.createBackpressure(now());
     if (initialBackpressure) {
       writeMessage(initialBackpressure);
@@ -6975,8 +8119,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         formatValidationErrors(validation.errors)
       );
     }
-    const response = await aiGateway.queryCopAssistant(validation.data as Parameters<AiGateway["queryCopAssistant"]>[0]);
-    appendAudit(state, `AI_REQUEST_${response.status}`, { requestId: response.requestId, provider: response.provider }, correlationId);
+    const response = await aiGateway.queryCopAssistant(
+      validation.data as Parameters<AiGateway["queryCopAssistant"]>[0]
+    );
+    appendAudit(
+      state,
+      `AI_REQUEST_${response.status}`,
+      { requestId: response.requestId, provider: response.provider },
+      correlationId
+    );
     return response;
   });
 
@@ -6991,29 +8142,37 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const subject = defaultSystemSubject();
     const maxObjects = readBoundedInteger(body.maxObjects, 40, 1, 80);
     const includeAlerts = body.includeAlerts !== false;
-    const readableObjects = prioritizeObjectsForAi(selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
-      .filter((object) => canReadObject(subject, object)))
-      .slice(0, maxObjects);
+    const readableObjects = prioritizeObjectsForAi(
+      selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle).filter((object) =>
+        canReadObject(subject, object)
+      )
+    ).slice(0, maxObjects);
     const decoratedObjects = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
     const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
     const alerts = includeAlerts
-      ? (await buildAlertItems({
-          actor,
-          includeAcknowledged: false,
-          includeExpired: false,
-          requestNow
-        })).slice(0, 25)
+      ? (
+          await buildAlertItems({
+            actor,
+            includeAcknowledged: false,
+            includeExpired: false,
+            requestNow
+          })
+        ).slice(0, 25)
       : [];
-    const communityReports = (await listCommunityReports({
-      limit: 40,
-      statuses: ["submitted", "published"]
-    }))
+    const communityReports = (
+      await listCommunityReports({
+        limit: 40,
+        statuses: ["submitted", "published"]
+      })
+    )
       .filter((report) => canReadCommunityReport(report, actor))
       .slice(0, 20);
-    const incidents = (await listIncidents({
-      limit: 20,
-      statuses: ["active", "candidate", "monitoring"]
-    })).slice(0, 20);
+    const incidents = (
+      await listIncidents({
+        limit: 20,
+        statuses: ["active", "candidate", "monitoring"]
+      })
+    ).slice(0, 20);
     const aiObjects = decoratedObjects.map(summarizeObjectForAi);
     const aiAlerts = alerts.map(summarizeAlertForAi);
     const aiCommunityReports = communityReports.map(summarizeCommunityReportForAi);
@@ -7034,18 +8193,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       aiCommunityReports.length ? `komunitní hlášení ${aiCommunityReports.length}` : "",
       aiAlerts.length ? `výstrahy ${aiAlerts.length}` : "",
       aiObjects.length ? `objekty ${aiObjects.length}` : ""
-    ].filter(Boolean).join(" ");
+    ]
+      .filter(Boolean)
+      .join(" ");
     const retrievalIntent = inferAiRetrievalIntent(summaryQuery);
     const retrievalQuery = buildAiRetrievalQuery(summaryQuery, retrievalIntent);
     const semanticStartedAt = Date.now();
     const semanticContext = await retrieveAiSemanticContext({
-      documents: limitAiSemanticDocuments(createSemanticDocuments({
-        alerts: aiAlerts,
-        communityReports: aiCommunityReports,
-        incidents: aiIncidents,
-        objects: aiObjects,
-        sourceHealth: aiSourceHealth
-      }), aiSemanticRetrievalCandidateLimit, retrievalIntent),
+      documents: limitAiSemanticDocuments(
+        createSemanticDocuments({
+          alerts: aiAlerts,
+          communityReports: aiCommunityReports,
+          incidents: aiIncidents,
+          objects: aiObjects,
+          sourceHealth: aiSourceHealth
+        }),
+        aiSemanticRetrievalCandidateLimit,
+        retrievalIntent
+      ),
       generatedAt: requestNow,
       limit: 12,
       query: retrievalQuery,
@@ -7154,16 +8319,21 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       requestContext: aiRequest.context ?? {},
       semanticContext
     });
-    appendAudit(state, `AI_SITUATION_SUMMARY_${response.status}`, {
-      ...aiAuditMetadata(response, actor),
-      indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
-      indexedStatus: indexedContext.semanticContext.status,
-      indexedToolInvocationId: indexedContext.toolCall.invocationId,
-      pipelineObservability,
-      retrievalIntent,
-      semanticDocumentCount: semanticContext.includedDocumentCount,
-      semanticStatus: semanticContext.status
-    }, correlationId);
+    appendAudit(
+      state,
+      `AI_SITUATION_SUMMARY_${response.status}`,
+      {
+        ...aiAuditMetadata(response, actor),
+        indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
+        indexedStatus: indexedContext.semanticContext.status,
+        indexedToolInvocationId: indexedContext.toolCall.invocationId,
+        pipelineObservability,
+        retrievalIntent,
+        semanticDocumentCount: semanticContext.includedDocumentCount,
+        semanticStatus: semanticContext.status
+      },
+      correlationId
+    );
     return response;
   });
 
@@ -7175,13 +8345,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const authorization = headerAsString(request.headers.authorization);
     if (!authorization) {
-      return sendError(
-        reply,
-        401,
-        "UNAUTHORIZED",
-        "Authenticated operator identity is required.",
-        correlationId
-      );
+      return sendError(reply, 401, "UNAUTHORIZED", "Authenticated operator identity is required.", correlationId);
     }
     const body = isRecord(request.body) ? request.body : {};
     const question = optionalTrimmedString(body.question, 2000);
@@ -7207,14 +8371,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       updatedAt: requestNow.toISOString()
     };
     aiChatAgentJobs.set(jobId, job);
-    appendAudit(state, "AI_CHAT_AGENT_JOB_QUEUED", {
-      actorAuthMode: actor.authMode,
-      actorSubjectId: actor.subjectId,
-      conversationId: optionalText(body.conversationId),
-      groupId: optionalText(body.groupId),
-      jobId,
-      requestId: job.requestId
-    }, correlationId);
+    appendAudit(
+      state,
+      "AI_CHAT_AGENT_JOB_QUEUED",
+      {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        conversationId: optionalText(body.conversationId),
+        groupId: optionalText(body.groupId),
+        jobId,
+        requestId: job.requestId
+      },
+      correlationId
+    );
     startAiChatAgentJob({
       authorization,
       body: {
@@ -7237,33 +8406,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const params = isRecord(request.params) ? request.params : {};
     const jobId = optionalUuid(params.jobId);
     if (!jobId) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "AI chat agent jobId must be a UUID.",
-        correlationId
-      );
+      return sendError(reply, 400, "VALIDATION_ERROR", "AI chat agent jobId must be a UUID.", correlationId);
     }
     pruneAiChatAgentJobs();
     const job = aiChatAgentJobs.get(jobId);
     if (!job) {
-      return sendError(
-        reply,
-        404,
-        "NOT_FOUND",
-        "AI chat agent job was not found or has expired.",
-        correlationId
-      );
+      return sendError(reply, 404, "NOT_FOUND", "AI chat agent job was not found or has expired.", correlationId);
     }
     if (job.actorSubjectId !== actor.subjectId) {
-      return sendError(
-        reply,
-        403,
-        "FORBIDDEN",
-        "Current user cannot read this AI chat agent job.",
-        correlationId
-      );
+      return sendError(reply, 403, "FORBIDDEN", "Current user cannot read this AI chat agent job.", correlationId);
     }
     return aiChatAgentJobPayload(job);
   });
@@ -7289,13 +8440,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const rawGroupId = optionalText(body.groupId);
     const groupId = rawGroupId ? optionalUuid(rawGroupId) : undefined;
     if (rawGroupId && !groupId) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "AI chat agent groupId must be a UUID.",
-        correlationId
-      );
+      return sendError(reply, 400, "VALIDATION_ERROR", "AI chat agent groupId must be a UUID.", correlationId);
     }
     const group = groupId ? await readCommunityGroup(groupId) : null;
     if (groupId && (!group || !canUseCommunityGroupForReport(group, actor))) {
@@ -7321,21 +8466,27 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const requestId = aiRequestId(body.requestId);
     const subject = defaultSystemSubject();
     const maxObjects = readBoundedInteger(body.maxObjects, 30, 1, 60);
-    const readableObjects = prioritizeObjectsForAi(selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle)
-      .filter((object) => canReadObject(subject, object)))
-      .slice(0, maxObjects);
+    const readableObjects = prioritizeObjectsForAi(
+      selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle).filter((object) =>
+        canReadObject(subject, object)
+      )
+    ).slice(0, maxObjects);
     const decoratedObjects = await decorateObjectsWithConflictEvidence(readableObjects, requestNow);
     const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
-    const alerts = (await buildAlertItems({
-      actor,
-      includeAcknowledged: false,
-      includeExpired: false,
-      requestNow
-    })).slice(0, 20);
-    const communityReports = (await listCommunityReports({
-      limit: 40,
-      statuses: ["submitted", "published"]
-    }))
+    const alerts = (
+      await buildAlertItems({
+        actor,
+        includeAcknowledged: false,
+        includeExpired: false,
+        requestNow
+      })
+    ).slice(0, 20);
+    const communityReports = (
+      await listCommunityReports({
+        limit: 40,
+        statuses: ["submitted", "published"]
+      })
+    )
       .filter((report) => canReadCommunityReport(report, actor))
       .slice(0, 20);
     const incidents = (await listIncidents({ limit: 20 })).slice(0, 20);
@@ -7365,15 +8516,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const retrievalQuery = buildAiRetrievalQuery(question, retrievalIntent);
     const semanticStartedAt = Date.now();
     const semanticContext = await retrieveAiSemanticContext({
-      documents: limitAiSemanticDocuments(createSemanticDocuments({
-        alerts: aiAlerts,
-        chatContext,
-        communityReports: aiCommunityReports,
-        incidents: aiIncidents,
-        mapFeatures: aiMapFeatures,
-        objects: aiObjects,
-        sourceHealth: aiSourceHealth
-      }), aiSemanticRetrievalCandidateLimit, retrievalIntent),
+      documents: limitAiSemanticDocuments(
+        createSemanticDocuments({
+          alerts: aiAlerts,
+          chatContext,
+          communityReports: aiCommunityReports,
+          incidents: aiIncidents,
+          mapFeatures: aiMapFeatures,
+          objects: aiObjects,
+          sourceHealth: aiSourceHealth
+        }),
+        aiSemanticRetrievalCandidateLimit,
+        retrievalIntent
+      ),
       generatedAt: requestNow,
       limit: 12,
       query: retrievalQuery,
@@ -7416,7 +8571,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const scope = {
       objectCount: readableObjects.length,
       alertCount: alerts.length,
-      chatMessageCount: chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
+      chatMessageCount:
+        chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
       communityReportCount: communityReports.length,
       incidentCount: incidents.length,
       mapSearchResultCount: aiMapSearch?.results.length ?? 0,
@@ -7487,14 +8643,27 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
     const deterministicMapSearchResponse = shouldAnswerAiChatAgentWithMapSearchResult(question, body, aiMapSearch)
-      ? aiMapSearchFallbackResponse(aiRequest, requestNow, "Explicit COP map search resolved by the read-only map tool.")
+      ? aiMapSearchFallbackResponse(
+          aiRequest,
+          requestNow,
+          "Explicit COP map search resolved by the read-only map tool."
+        )
       : undefined;
-    const deterministicEmptyMapSearchResponse = !deterministicMapSearchResponse && shouldAnswerAiChatAgentWithEmptyMapSearchResult(question, body, aiMapSearch)
-      ? aiMapSearchNoResultFallbackResponse(aiRequest, requestNow, "Explicit COP map search returned no matching object.")
-      : undefined;
+    const deterministicEmptyMapSearchResponse =
+      !deterministicMapSearchResponse && shouldAnswerAiChatAgentWithEmptyMapSearchResult(question, body, aiMapSearch)
+        ? aiMapSearchNoResultFallbackResponse(
+            aiRequest,
+            requestNow,
+            "Explicit COP map search returned no matching object."
+          )
+        : undefined;
     const providerStartedAt = Date.now();
-    const providerResponse = deterministicMapSearchResponse ?? deterministicEmptyMapSearchResponse ?? await queryCopAssistantForAi(aiRequest, requestNow, "chat-agent");
-    const providerDurationMs = deterministicMapSearchResponse || deterministicEmptyMapSearchResponse ? 0 : Date.now() - providerStartedAt;
+    const providerResponse =
+      deterministicMapSearchResponse ??
+      deterministicEmptyMapSearchResponse ??
+      (await queryCopAssistantForAi(aiRequest, requestNow, "chat-agent"));
+    const providerDurationMs =
+      deterministicMapSearchResponse || deterministicEmptyMapSearchResponse ? 0 : Date.now() - providerStartedAt;
     const pipelineObservability = buildAiPipelineObservability({
       compressedContext,
       contextCompression: promptContext.contextCompression,
@@ -7513,19 +8682,25 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       requestContext: aiRequest.context ?? {},
       semanticContext
     });
-    appendAudit(state, `AI_CHAT_AGENT_${response.status}`, {
-      ...aiAuditMetadata(response, actor),
-      chatMessageCount: chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
-      conversationId: optionalText(body.conversationId),
-      groupId: group?.groupId,
-      indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
-      indexedStatus: indexedContext.semanticContext.status,
-      indexedToolInvocationId: indexedContext.toolCall.invocationId,
-      pipelineObservability,
-      retrievalIntent,
-      semanticDocumentCount: semanticContext.includedDocumentCount,
-      semanticStatus: semanticContext.status
-    }, correlationId);
+    appendAudit(
+      state,
+      `AI_CHAT_AGENT_${response.status}`,
+      {
+        ...aiAuditMetadata(response, actor),
+        chatMessageCount:
+          chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
+        conversationId: optionalText(body.conversationId),
+        groupId: group?.groupId,
+        indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
+        indexedStatus: indexedContext.semanticContext.status,
+        indexedToolInvocationId: indexedContext.toolCall.invocationId,
+        pipelineObservability,
+        retrievalIntent,
+        semanticDocumentCount: semanticContext.includedDocumentCount,
+        semanticStatus: semanticContext.status
+      },
+      correlationId
+    );
     return response;
   });
 
@@ -7678,14 +8853,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
 
     const durationMs = Date.now() - startedAt;
-    appendAudit(state, "MCP_TOOL_INVOKED", {
-      actorSubjectId: actor?.subjectId,
-      durationMs,
-      invocationId,
-      mode: tool.mode,
-      status: "ok",
-      toolId: tool.toolId
-    }, correlationId);
+    appendAudit(
+      state,
+      "MCP_TOOL_INVOKED",
+      {
+        actorSubjectId: actor?.subjectId,
+        durationMs,
+        invocationId,
+        mode: tool.mode,
+        status: "ok",
+        toolId: tool.toolId
+      },
+      correlationId
+    );
     await publishRuntimeDomainEvent({
       channel: "cop.ai.audit",
       classification: {
@@ -7747,18 +8927,31 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       situation: providers.situation,
       tak: providers.tak
     });
-    const selectedLayers = catalog.layers.filter((layer) => query.layerIds.includes(layer.layerId) && catalogLayerAvailableForMapQuery(layer));
+    const selectedLayers = catalog.layers.filter(
+      (layer) => query.layerIds.includes(layer.layerId) && catalogLayerAvailableForMapQuery(layer)
+    );
     const knownLayerIds = new Set(catalog.layers.map((layer) => layer.layerId));
-    const disabledLayerIds = query.layerIds.filter((layerId) => catalog.layers.some((layer) => layer.layerId === layerId && !catalogLayerAvailableForMapQuery(layer)));
+    const disabledLayerIds = query.layerIds.filter((layerId) =>
+      catalog.layers.some((layer) => layer.layerId === layerId && !catalogLayerAvailableForMapQuery(layer))
+    );
     const unknownLayerIds = query.layerIds.filter((layerId) => !knownLayerIds.has(layerId));
     const providerQueries = buildProviderFeatureQueries(selectedLayers, query);
     const warnings = [
       ...catalog.warnings,
       ...(disabledLayerIds.length > 0 ? [`Disabled map layers ignored: ${disabledLayerIds.join(", ")}.`] : []),
-      ...(unknownLayerIds.length > 0 ? [`Unknown or unauthorized map layers ignored: ${unknownLayerIds.join(", ")}.`] : [])
+      ...(unknownLayerIds.length > 0
+        ? [`Unknown or unauthorized map layers ignored: ${unknownLayerIds.join(", ")}.`]
+        : [])
     ];
 
-    const [situationCollection, safetyCollection, flightCollection, communityCollection, missionArenaCollection, takCollection] = await Promise.all([
+    const [
+      situationCollection,
+      safetyCollection,
+      flightCollection,
+      communityCollection,
+      missionArenaCollection,
+      takCollection
+    ] = await Promise.all([
       readSituationMapQuery(providerQueries.situation, requestNow, actor, selectedLayers),
       readSafetyMapQuery(providerQueries.safety, requestNow),
       readFlightReferenceMapQuery(providerQueries.flight, requestNow),
@@ -7802,7 +8995,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   function buildCopSourcesHealthToolResult(input: Record<string, unknown>): Record<string, unknown> {
     const requestNow = now();
     const includeDisabled = parseBooleanQuery(input.includeDisabled);
-    const healthFilter = optionalString(input.health, ["DEGRADED", "DISABLED", "ONLINE", "QUIET", "STALE", "UNAVAILABLE", "WAITING"]);
+    const healthFilter = optionalString(input.health, [
+      "DEGRADED",
+      "DISABLED",
+      "ONLINE",
+      "QUIET",
+      "STALE",
+      "UNAVAILABLE",
+      "WAITING"
+    ]);
     const items = buildSourceHealthItems(state, requestNow, trackLifecycle)
       .filter((item) => includeDisabled || item.health !== "DISABLED")
       .filter((item) => !healthFilter || item.health === healthFilter)
@@ -7871,7 +9072,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return mcpJsonRpcError(null, -32600, "Invalid Request", "JSON-RPC id must be a string, number or null.");
     }
     if (message.jsonrpc !== "2.0" || typeof message.method !== "string") {
-      return id === undefined ? undefined : mcpJsonRpcError(id, -32600, "Invalid Request", "Expected JSON-RPC 2.0 MCP request.");
+      return id === undefined
+        ? undefined
+        : mcpJsonRpcError(id, -32600, "Invalid Request", "Expected JSON-RPC 2.0 MCP request.");
     }
     if (id === undefined && message.method !== "notifications/initialized") {
       return undefined;
@@ -7986,7 +9189,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  async function readMapCatalogProviders(requestNow: Date, actor: AuthenticatedActor | null, includePartner: boolean): Promise<{
+  async function readMapCatalogProviders(
+    requestNow: Date,
+    actor: AuthenticatedActor | null,
+    includePartner: boolean
+  ): Promise<{
     flight: NonNullable<BuildMapCatalogInput["flight"]>;
     missionArena: NonNullable<BuildMapCatalogInput["missionArena"]>;
     safety: NonNullable<BuildMapCatalogInput["safety"]>;
@@ -7994,31 +9201,21 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     tak?: NonNullable<BuildMapCatalogInput["tak"]>;
   }> {
     const [situation, safety, flight, missionArena, tak] = await Promise.all([
-      withCatalogProviderTimeout(
-        "sim.situation-data",
-        readSituationCatalogProvider(requestNow, actor),
-        () => unavailableSituationCatalogProvider("Situation data")
+      withCatalogProviderTimeout("sim.situation-data", readSituationCatalogProvider(requestNow, actor), () =>
+        unavailableSituationCatalogProvider("Situation data")
       ),
-      withCatalogProviderTimeout(
-        "sim.safety-data",
-        readSafetyCatalogProvider(requestNow),
-        () => unavailableSafetyCatalogProvider("Safety data")
+      withCatalogProviderTimeout("sim.safety-data", readSafetyCatalogProvider(requestNow), () =>
+        unavailableSafetyCatalogProvider("Safety data")
       ),
-      withCatalogProviderTimeout(
-        "sim.flight-data",
-        readFlightCatalogProvider(requestNow),
-        () => unavailableFlightCatalogProvider("Flight data")
+      withCatalogProviderTimeout("sim.flight-data", readFlightCatalogProvider(requestNow), () =>
+        unavailableFlightCatalogProvider("Flight data")
       ),
-      withCatalogProviderTimeout(
-        "csm.mission-arena",
-        readMissionArenaCatalogProvider(requestNow),
-        () => unavailableMissionArenaCatalogProvider("Mission Arena")
+      withCatalogProviderTimeout("csm.mission-arena", readMissionArenaCatalogProvider(requestNow), () =>
+        unavailableMissionArenaCatalogProvider("Mission Arena")
       ),
       includePartner
-        ? withCatalogProviderTimeout(
-            "sim.tak-gateway",
-            readTakCatalogProvider(requestNow),
-            () => unavailableTakCatalogProvider("TAK Gateway")
+        ? withCatalogProviderTimeout("sim.tak-gateway", readTakCatalogProvider(requestNow), () =>
+            unavailableTakCatalogProvider("TAK Gateway")
           )
         : Promise.resolve(undefined)
     ]);
@@ -8031,11 +9228,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   }
 
-  function withCatalogProviderTimeout<T>(
-    providerId: string,
-    operation: Promise<T>,
-    fallback: () => T
-  ): Promise<T> {
+  function withCatalogProviderTimeout<T>(providerId: string, operation: Promise<T>, fallback: () => T): Promise<T> {
     const timeoutMs = mapCatalogProviderTimeoutMs();
     return new Promise<T>((resolve) => {
       let settled = false;
@@ -8064,7 +9257,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           }
           settled = true;
           clearTimeout(timeout);
-          app.log.warn({ error, providerId }, "Map catalog provider rejected before timeout; returning degraded catalog slice.");
+          app.log.warn(
+            { error, providerId },
+            "Map catalog provider rejected before timeout; returning degraded catalog slice."
+          );
           appendAudit(state, "MAP_CATALOG_PROVIDER_REJECTED", { error: errorMessage(error), providerId });
           resolve(fallback());
         }
@@ -8138,7 +9334,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       ]);
       const sources = filterSituationSourcesForActor(rawSources, actor);
       const health = buildSituationDataHealth(layers, requestNow, taxonomy);
-      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      state.sources.set(
+        situationDataSource.sourceSystem.sourceSystemId,
+        withSituationDataHealth(activeSituationDataSourceSystem(), health)
+      );
       return {
         catalog,
         layers,
@@ -8147,7 +9346,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       };
     } catch (error) {
       const health = unavailableSituationDataHealth(error, requestNow);
-      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      state.sources.set(
+        situationDataSource.sourceSystem.sourceSystemId,
+        withSituationDataHealth(activeSituationDataSourceSystem(), health)
+      );
       appendAudit(state, "MAP_CATALOG_SITUATION_PROVIDER_FAILED", {
         error: errorMessage(error),
         sourceSystemId: situationDataSource.sourceSystem.sourceSystemId
@@ -8181,7 +9383,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         readSafetyTaxonomy(requestNow)
       ]);
       const health = buildSafetyDataHealth(layers, requestNow, observability, taxonomy);
-      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      state.sources.set(
+        safetyDataSource.sourceSystem.sourceSystemId,
+        withSafetyDataHealth(activeSafetyDataSourceSystem(), health)
+      );
       return {
         catalog,
         layers,
@@ -8190,7 +9395,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       };
     } catch (error) {
       const health = unavailableSafetyDataHealth(error, requestNow);
-      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      state.sources.set(
+        safetyDataSource.sourceSystem.sourceSystemId,
+        withSafetyDataHealth(activeSafetyDataSourceSystem(), health)
+      );
       appendAudit(state, "MAP_CATALOG_SAFETY_PROVIDER_FAILED", {
         error: errorMessage(error),
         sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
@@ -8266,7 +9474,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         takGatewaySource.fetchSources(requestNow)
       ]);
       const health = buildTakGatewayHealth(layers, requestNow);
-      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      state.sources.set(
+        takGatewaySource.sourceSystem.sourceSystemId,
+        withTakGatewayHealth(activeTakGatewaySourceSystem(), health)
+      );
       return {
         catalog,
         layers,
@@ -8275,7 +9486,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       };
     } catch (error) {
       const health = unavailableTakGatewayHealth(error, requestNow);
-      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      state.sources.set(
+        takGatewaySource.sourceSystem.sourceSystemId,
+        withTakGatewayHealth(activeTakGatewaySourceSystem(), health)
+      );
       appendAudit(state, "MAP_CATALOG_TAK_PROVIDER_FAILED", {
         error: errorMessage(error),
         sourceSystemId: takGatewaySource.sourceSystem.sourceSystemId
@@ -8305,7 +9519,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         missionArenaSource.fetchSources(requestNow)
       ]);
       const health = buildMissionArenaHealth(layers, requestNow);
-      state.sources.set(missionArenaSource.sourceSystem.sourceSystemId, withMissionArenaHealth(activeMissionArenaSourceSystem(), health));
+      state.sources.set(
+        missionArenaSource.sourceSystem.sourceSystemId,
+        withMissionArenaHealth(activeMissionArenaSourceSystem(), health)
+      );
       return {
         layers,
         sources,
@@ -8313,7 +9530,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       };
     } catch (error) {
       const health = unavailableMissionArenaHealth(error, requestNow);
-      state.sources.set(missionArenaSource.sourceSystem.sourceSystemId, withMissionArenaHealth(activeMissionArenaSourceSystem(), health));
+      state.sources.set(
+        missionArenaSource.sourceSystem.sourceSystemId,
+        withMissionArenaHealth(activeMissionArenaSourceSystem(), health)
+      );
       appendAudit(state, "MAP_CATALOG_MISSION_ARENA_PROVIDER_FAILED", {
         error: errorMessage(error),
         sourceSystemId: missionArenaSource.sourceSystem.sourceSystemId
@@ -8359,24 +9579,36 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
 
     try {
-      const actorFilteredCollection = filterSituationCollectionForActor(await situationDataSource.fetchFeatures(sanitized.query, requestNow), actor, sanitized.warnings);
+      const actorFilteredCollection = filterSituationCollectionForActor(
+        await situationDataSource.fetchFeatures(sanitized.query, requestNow),
+        actor,
+        sanitized.warnings
+      );
       const collection = filterSituationCollectionForCatalogLayers(actorFilteredCollection, selectedLayers);
       const health = buildSituationDataHealth(collection, requestNow);
-      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      state.sources.set(
+        situationDataSource.sourceSystem.sourceSystemId,
+        withSituationDataHealth(activeSituationDataSourceSystem(), health)
+      );
       return {
         ...collection,
         sourceHealth: health
       };
     } catch (error) {
       const health = unavailableSituationDataHealth(error, requestNow);
-      state.sources.set(situationDataSource.sourceSystem.sourceSystemId, withSituationDataHealth(activeSituationDataSourceSystem(), health));
+      state.sources.set(
+        situationDataSource.sourceSystem.sourceSystemId,
+        withSituationDataHealth(activeSituationDataSourceSystem(), health)
+      );
       appendAudit(state, "MAP_QUERY_SITUATION_PROVIDER_FAILED", {
         error: errorMessage(error),
         sourceSystemId: situationDataSource.sourceSystem.sourceSystemId
       });
       app.log.warn({ error }, "Situation data map query failed.");
       return {
-        ...emptySituationFeatureCollection(sanitized.query, requestNow, [health.lastError ?? "Situation data features are unavailable."]),
+        ...emptySituationFeatureCollection(sanitized.query, requestNow, [
+          health.lastError ?? "Situation data features are unavailable."
+        ]),
         sourceHealth: health
       };
     }
@@ -8404,27 +9636,38 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         readSafetyObservability(requestNow)
       ]);
       const health = buildSafetyDataHealth(collection, requestNow, observability);
-      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      state.sources.set(
+        safetyDataSource.sourceSystem.sourceSystemId,
+        withSafetyDataHealth(activeSafetyDataSourceSystem(), health)
+      );
       return {
         ...collection,
         sourceHealth: health
       };
     } catch (error) {
       const health = unavailableSafetyDataHealth(error, requestNow);
-      state.sources.set(safetyDataSource.sourceSystem.sourceSystemId, withSafetyDataHealth(activeSafetyDataSourceSystem(), health));
+      state.sources.set(
+        safetyDataSource.sourceSystem.sourceSystemId,
+        withSafetyDataHealth(activeSafetyDataSourceSystem(), health)
+      );
       appendAudit(state, "MAP_QUERY_SAFETY_PROVIDER_FAILED", {
         error: errorMessage(error),
         sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
       });
       app.log.warn({ error }, "Safety data map query failed.");
       return {
-        ...emptySafetyFeatureCollection(query, requestNow, [health.lastError ?? "Safety data features are unavailable."]),
+        ...emptySafetyFeatureCollection(query, requestNow, [
+          health.lastError ?? "Safety data features are unavailable."
+        ]),
         sourceHealth: health
       };
     }
   }
 
-  async function readFlightReferenceMapQuery(query: FlightReferenceFeatureQuery | undefined, requestNow: Date): Promise<(FlightReferenceFeatureCollection & { sourceHealth?: SourceHealthOverride }) | undefined> {
+  async function readFlightReferenceMapQuery(
+    query: FlightReferenceFeatureQuery | undefined,
+    requestNow: Date
+  ): Promise<(FlightReferenceFeatureCollection & { sourceHealth?: SourceHealthOverride }) | undefined> {
     if (!query) {
       return undefined;
     }
@@ -8456,37 +9699,51 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         },
         warnings: collection.warnings
       };
-      state.sources.set(flightDataSource.sourceSystem.sourceSystemId, withFlightDataHealth(activeFlightDataSourceSystem(), health));
+      state.sources.set(
+        flightDataSource.sourceSystem.sourceSystemId,
+        withFlightDataHealth(activeFlightDataSourceSystem(), health)
+      );
       return {
         ...collection,
         sourceHealth: health
       };
     } catch (error) {
       const health = unavailableFlightDataHealth(error, requestNow);
-      state.sources.set(flightDataSource.sourceSystem.sourceSystemId, withFlightDataHealth(activeFlightDataSourceSystem(), health));
+      state.sources.set(
+        flightDataSource.sourceSystem.sourceSystemId,
+        withFlightDataHealth(activeFlightDataSourceSystem(), health)
+      );
       appendAudit(state, "MAP_QUERY_FLIGHT_REFERENCE_PROVIDER_FAILED", {
         error: errorMessage(error),
         sourceSystemId: flightDataSource.sourceSystem.sourceSystemId
       });
       app.log.warn({ error }, "Flight reference map query failed.");
       return {
-        ...emptyFlightReferenceFeatureCollection(query, requestNow, [health.lastError ?? "Flight reference features are unavailable."]),
+        ...emptyFlightReferenceFeatureCollection(query, requestNow, [
+          health.lastError ?? "Flight reference features are unavailable."
+        ]),
         sourceHealth: health
       };
     }
   }
 
-  async function readCommunityMapQuery(query: CommunityMapFeatureQuery | undefined, requestNow: Date, actor: AuthenticatedActor | null) {
+  async function readCommunityMapQuery(
+    query: CommunityMapFeatureQuery | undefined,
+    requestNow: Date,
+    actor: AuthenticatedActor | null
+  ) {
     if (!query) {
       return undefined;
     }
     try {
-      const reports = (await listCommunityReports({
-        bbox: query.bbox,
-        includeOwnDrafts: Boolean(actor),
-        limit: query.limit,
-        ...(actor ? { subjectId: actor.subjectId } : {})
-      })).filter((report) => canReadCommunityReport(report, actor));
+      const reports = (
+        await listCommunityReports({
+          bbox: query.bbox,
+          includeOwnDrafts: Boolean(actor),
+          limit: query.limit,
+          ...(actor ? { subjectId: actor.subjectId } : {})
+        })
+      ).filter((report) => canReadCommunityReport(report, actor));
       const actorGroupIds = await readCommunityActorGroupIds(actor);
       return {
         ...communityReportsFeatureCollection(
@@ -8510,7 +9767,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  async function readMissionArenaMapQuery(query: MissionArenaFeatureQuery | undefined, requestNow: Date): Promise<(MissionArenaFeatureCollection & { sourceHealth?: SourceHealthOverride }) | undefined> {
+  async function readMissionArenaMapQuery(
+    query: MissionArenaFeatureQuery | undefined,
+    requestNow: Date
+  ): Promise<(MissionArenaFeatureCollection & { sourceHealth?: SourceHealthOverride }) | undefined> {
     if (!query) {
       return undefined;
     }
@@ -8529,21 +9789,29 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     try {
       const collection = await missionArenaSource.fetchFeatures(query, requestNow);
       const health = buildMissionArenaHealth(collection, requestNow);
-      state.sources.set(missionArenaSource.sourceSystem.sourceSystemId, withMissionArenaHealth(activeMissionArenaSourceSystem(), health));
+      state.sources.set(
+        missionArenaSource.sourceSystem.sourceSystemId,
+        withMissionArenaHealth(activeMissionArenaSourceSystem(), health)
+      );
       return {
         ...collection,
         sourceHealth: health
       };
     } catch (error) {
       const health = unavailableMissionArenaHealth(error, requestNow);
-      state.sources.set(missionArenaSource.sourceSystem.sourceSystemId, withMissionArenaHealth(activeMissionArenaSourceSystem(), health));
+      state.sources.set(
+        missionArenaSource.sourceSystem.sourceSystemId,
+        withMissionArenaHealth(activeMissionArenaSourceSystem(), health)
+      );
       appendAudit(state, "MAP_QUERY_MISSION_ARENA_PROVIDER_FAILED", {
         error: errorMessage(error),
         sourceSystemId: missionArenaSource.sourceSystem.sourceSystemId
       });
       app.log.warn({ error }, "Mission Arena map query failed.");
       return {
-        ...emptyMissionArenaFeatureCollection(query, requestNow, [health.lastError ?? "Mission Arena features are unavailable."]),
+        ...emptyMissionArenaFeatureCollection(query, requestNow, [
+          health.lastError ?? "Mission Arena features are unavailable."
+        ]),
         sourceHealth: health
       };
     }
@@ -8568,28 +9836,41 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     try {
       const collection = await takGatewaySource.fetchFeatures(query, requestNow);
       const health = buildTakGatewayHealth(collection, requestNow);
-      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      state.sources.set(
+        takGatewaySource.sourceSystem.sourceSystemId,
+        withTakGatewayHealth(activeTakGatewaySourceSystem(), health)
+      );
       return {
         ...collection,
         sourceHealth: health
       };
     } catch (error) {
       const health = unavailableTakGatewayHealth(error, requestNow);
-      state.sources.set(takGatewaySource.sourceSystem.sourceSystemId, withTakGatewayHealth(activeTakGatewaySourceSystem(), health));
+      state.sources.set(
+        takGatewaySource.sourceSystem.sourceSystemId,
+        withTakGatewayHealth(activeTakGatewaySourceSystem(), health)
+      );
       appendAudit(state, "MAP_QUERY_TAK_PROVIDER_FAILED", {
         error: errorMessage(error),
         sourceSystemId: takGatewaySource.sourceSystem.sourceSystemId
       });
       app.log.warn({ error }, "TAK Gateway map query failed.");
       return {
-        ...emptyTakGatewayFeatureCollection(query, requestNow, [health.lastError ?? "TAK Gateway features are unavailable."]),
+        ...emptyTakGatewayFeatureCollection(query, requestNow, [
+          health.lastError ?? "TAK Gateway features are unavailable."
+        ]),
         sourceHealth: health
       };
     }
   }
 
-  async function readableCurrentTracks(subject: ReturnType<typeof defaultSystemSubject>, requestNow: Date): Promise<ObservedObject[]> {
-    const objects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle).filter((object) => canReadObject(subject, object));
+  async function readableCurrentTracks(
+    subject: ReturnType<typeof defaultSystemSubject>,
+    requestNow: Date
+  ): Promise<ObservedObject[]> {
+    const objects = selectCurrentTracks(state.objects.values(), requestNow, trackLifecycle).filter((object) =>
+      canReadObject(subject, object)
+    );
     return decorateObjectsWithConflictEvidence(objects, requestNow);
   }
 
@@ -8627,20 +9908,43 @@ async function handleIngestEvent(
   const headerSource = headerAsString(headers["x-source-system-id"]);
   const sourceCheck = validateSourceForRequest(state, headerSource, event.source.sourceSystemId, correlationId);
   if (!sourceCheck.valid) {
-    appendAudit(state, "INGEST_REJECTED", { reason: sourceCheck.code, sourceSystemId: event.source.sourceSystemId }, correlationId);
+    appendAudit(
+      state,
+      "INGEST_REJECTED",
+      { reason: sourceCheck.code, sourceSystemId: event.source.sourceSystemId },
+      correlationId
+    );
     return sendError(reply, sourceCheck.statusCode, sourceCheck.code, sourceCheck.message, correlationId);
   }
 
   if (!sourceCheck.source.allowedEventTypes.includes(event.eventType)) {
-    return sendError(reply, 422, "EVENT_TYPE_NOT_ALLOWED", "Source is not allowed to publish this event type.", correlationId);
+    return sendError(
+      reply,
+      422,
+      "EVENT_TYPE_NOT_ALLOWED",
+      "Source is not allowed to publish this event type.",
+      correlationId
+    );
   }
 
   if (!sourceCheck.source.allowedObjectTypes.includes(event.payload.objectType)) {
-    return sendError(reply, 422, "OBJECT_TYPE_NOT_ALLOWED", "Source is not allowed to publish this object type.", correlationId);
+    return sendError(
+      reply,
+      422,
+      "OBJECT_TYPE_NOT_ALLOWED",
+      "Source is not allowed to publish this object type.",
+      correlationId
+    );
   }
 
   if (sourceCheck.source.synthetic && event.simulation?.synthetic !== true) {
-    return sendError(reply, 422, "SYNTHETIC_FLAG_REQUIRED", "Synthetic source must mark events as synthetic.", correlationId);
+    return sendError(
+      reply,
+      422,
+      "SYNTHETIC_FLAG_REQUIRED",
+      "Synthetic source must mark events as synthetic.",
+      correlationId
+    );
   }
 
   const key = headerAsString(headers["x-idempotency-key"]);
@@ -8652,7 +9956,13 @@ async function handleIngestEvent(
   const previous = state.idempotency.get(key);
   if (previous && previous.hash !== hash) {
     appendAudit(state, "IDEMPOTENCY_CONFLICT", { eventId: event.eventId }, correlationId);
-    return sendError(reply, 409, "IDEMPOTENCY_CONFLICT", "Idempotency key was reused with different content.", correlationId);
+    return sendError(
+      reply,
+      409,
+      "IDEMPOTENCY_CONFLICT",
+      "Idempotency key was reused with different content.",
+      correlationId
+    );
   }
   if (previous) {
     return reply.code(202).send(previous.response);
@@ -8671,7 +9981,12 @@ async function handleIngestEvent(
     correlationId
   };
   state.idempotency.set(key, { hash, response });
-  appendAudit(state, "INGEST_ACCEPTED", { eventId: event.eventId, sourceSystemId: event.source.sourceSystemId }, correlationId);
+  appendAudit(
+    state,
+    "INGEST_ACCEPTED",
+    { eventId: event.eventId, sourceSystemId: event.source.sourceSystemId },
+    correlationId
+  );
   return reply.code(202).send(response);
 }
 
@@ -8799,12 +10114,16 @@ function readSourceHealthFromAttributes(value: unknown): SourceHealthOverride | 
     lastPollAt: typeof value.lastPollAt === "string" ? value.lastPollAt : undefined,
     lastSuccessAt: typeof value.lastSuccessAt === "string" ? value.lastSuccessAt : undefined,
     summary: isRecord(value.summary) ? value.summary : undefined,
-    warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
+    warnings: Array.isArray(value.warnings)
+      ? value.warnings.filter((warning): warning is string => typeof warning === "string")
+      : undefined
   };
 }
 
 function isSourceHealthOverride(value: unknown): value is SourceHealthOverride["health"] {
-  return value === "DEGRADED" || value === "ONLINE" || value === "STALE" || value === "UNAVAILABLE" || value === "WAITING";
+  return (
+    value === "DEGRADED" || value === "ONLINE" || value === "STALE" || value === "UNAVAILABLE" || value === "WAITING"
+  );
 }
 
 interface MapFeatureQueryRequest {
@@ -8943,12 +10262,18 @@ function buildCopAreaSummaryPayload(input: CopAreaSummaryPayloadInput): Record<s
   const sourceIds = Array.from(new Set(providerSlices.flatMap((slice) => slice.sourceIds))).sort();
   const featureCount = providerSlices.reduce((sum, slice) => sum + slice.featureCount, 0);
   const staleFeatureCount = providerSlices.reduce((sum, slice) => sum + slice.staleFeatureCount, 0);
-  const providerWarnings = providerSlices.flatMap((slice) => slice.warnings.map((warning) => `${slice.label}: ${warning}`));
-  const uncertainties = Array.from(new Set([
-    ...input.warnings,
-    ...providerWarnings,
-    ...providerSlices.flatMap((slice) => slice.health && slice.health !== "ONLINE" ? [`${slice.label} health is ${slice.health}.`] : [])
-  ])).slice(0, 20);
+  const providerWarnings = providerSlices.flatMap((slice) =>
+    slice.warnings.map((warning) => `${slice.label}: ${warning}`)
+  );
+  const uncertainties = Array.from(
+    new Set([
+      ...input.warnings,
+      ...providerWarnings,
+      ...providerSlices.flatMap((slice) =>
+        slice.health && slice.health !== "ONLINE" ? [`${slice.label} health is ${slice.health}.`] : []
+      )
+    ])
+  ).slice(0, 20);
   const criticalCount = allCandidates.filter((feature) => feature.severity === "critical").length;
   const warningCount = allCandidates.filter((feature) => feature.severity === "warning").length;
   return {
@@ -8992,34 +10317,63 @@ function buildCopAreaSummaryPayload(input: CopAreaSummaryPayloadInput): Record<s
 
 function areaSummaryFeatureCandidate(providerId: string, feature: unknown): AreaSummaryFeatureCandidate[] {
   const properties = areaSummaryFeatureProperties(feature);
-  const label = areaSummaryText(properties, ["headline", "label", "title", "name", "areaName", "sourceName", "featureId"]);
+  const label = areaSummaryText(properties, [
+    "headline",
+    "label",
+    "title",
+    "name",
+    "areaName",
+    "sourceName",
+    "featureId"
+  ]);
   if (!label) {
     return [];
   }
-  const severity = normalizeAreaSummarySeverity(properties.severity ?? properties.hazardSeverity ?? properties.floodStage ?? properties.status);
+  const severity = normalizeAreaSummarySeverity(
+    properties.severity ?? properties.hazardSeverity ?? properties.floodStage ?? properties.status
+  );
   const location = areaSummaryFeatureLocation(feature, properties);
-  return [{
-    ...(areaSummaryText(properties, ["category"]) ? { category: areaSummaryText(properties, ["category"]) } : {}),
-    ...(optionalFiniteNumber(properties.confidence, 0, 1) !== undefined ? { confidence: optionalFiniteNumber(properties.confidence, 0, 1) } : {}),
-    ...(areaSummaryText(properties, ["recommendedAction", "description", "summary"], 240) ? { detail: areaSummaryText(properties, ["recommendedAction", "description", "summary"], 240) } : {}),
-    ...(areaSummaryText(properties, ["featureId", "reportId", "stationId"], 160) ? { featureId: areaSummaryText(properties, ["featureId", "reportId", "stationId"], 160) } : {}),
-    label,
-    ...(areaSummaryText(properties, ["layer", "layerId"], 120) ? { layer: areaSummaryText(properties, ["layer", "layerId"], 120) } : {}),
-    ...(location ? { location } : {}),
-    ...(areaSummaryText(properties, ["observedAt", "updatedAt", "effectiveAt", "validFrom"], 80) ? { observedAt: areaSummaryText(properties, ["observedAt", "updatedAt", "effectiveAt", "validFrom"], 80) } : {}),
-    providerId,
-    severity,
-    ...(areaSummaryText(properties, ["sourceId", "source"], 120) ? { sourceId: areaSummaryText(properties, ["sourceId", "source"], 120) } : {}),
-    stale: properties.stale === true,
-    ...(areaSummaryText(properties, ["validUntil", "expiresAt", "forecastUntil"], 80) ? { validUntil: areaSummaryText(properties, ["validUntil", "expiresAt", "forecastUntil"], 80) } : {})
-  }];
+  return [
+    {
+      ...(areaSummaryText(properties, ["category"]) ? { category: areaSummaryText(properties, ["category"]) } : {}),
+      ...(optionalFiniteNumber(properties.confidence, 0, 1) !== undefined
+        ? { confidence: optionalFiniteNumber(properties.confidence, 0, 1) }
+        : {}),
+      ...(areaSummaryText(properties, ["recommendedAction", "description", "summary"], 240)
+        ? { detail: areaSummaryText(properties, ["recommendedAction", "description", "summary"], 240) }
+        : {}),
+      ...(areaSummaryText(properties, ["featureId", "reportId", "stationId"], 160)
+        ? { featureId: areaSummaryText(properties, ["featureId", "reportId", "stationId"], 160) }
+        : {}),
+      label,
+      ...(areaSummaryText(properties, ["layer", "layerId"], 120)
+        ? { layer: areaSummaryText(properties, ["layer", "layerId"], 120) }
+        : {}),
+      ...(location ? { location } : {}),
+      ...(areaSummaryText(properties, ["observedAt", "updatedAt", "effectiveAt", "validFrom"], 80)
+        ? { observedAt: areaSummaryText(properties, ["observedAt", "updatedAt", "effectiveAt", "validFrom"], 80) }
+        : {}),
+      providerId,
+      severity,
+      ...(areaSummaryText(properties, ["sourceId", "source"], 120)
+        ? { sourceId: areaSummaryText(properties, ["sourceId", "source"], 120) }
+        : {}),
+      stale: properties.stale === true,
+      ...(areaSummaryText(properties, ["validUntil", "expiresAt", "forecastUntil"], 80)
+        ? { validUntil: areaSummaryText(properties, ["validUntil", "expiresAt", "forecastUntil"], 80) }
+        : {})
+    }
+  ];
 }
 
 function areaSummaryFeatureProperties(feature: unknown): Record<string, unknown> {
   return isRecord(feature) && isRecord(feature.properties) ? feature.properties : {};
 }
 
-function areaSummaryFeatureLocation(feature: unknown, properties: Record<string, unknown>): AreaSummaryLocation | undefined {
+function areaSummaryFeatureLocation(
+  feature: unknown,
+  properties: Record<string, unknown>
+): AreaSummaryLocation | undefined {
   const propertyLocation = areaSummaryLocationFromProperties(properties);
   if (propertyLocation) {
     return propertyLocation;
@@ -9155,13 +10509,17 @@ function areaSummarySourceIds(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  return Array.from(new Set(value.flatMap((source) => {
-    if (!isRecord(source)) {
-      return [];
-    }
-    const sourceId = optionalTrimmedString(source.sourceId, 160);
-    return sourceId ? [sourceId] : [];
-  }))).sort();
+  return Array.from(
+    new Set(
+      value.flatMap((source) => {
+        if (!isRecord(source)) {
+          return [];
+        }
+        const sourceId = optionalTrimmedString(source.sourceId, 160);
+        return sourceId ? [sourceId] : [];
+      })
+    )
+  ).sort();
 }
 
 function areaSummaryStringArray(value: unknown): string[] {
@@ -9241,7 +10599,10 @@ function buildCopAreaFusionPayload(input: CopAreaFusionPayloadInput): Record<str
     confidence: areaFusionOverallConfidence(priorities, uncertainties),
     contractVersion: "cop-area-fusion-v1",
     generatedAt: input.generatedAt,
-    headline: areaFusionHeadline(priorities, Number.isFinite(summaryFeatureCount) ? summaryFeatureCount : evidence.length),
+    headline: areaFusionHeadline(
+      priorities,
+      Number.isFinite(summaryFeatureCount) ? summaryFeatureCount : evidence.length
+    ),
     priorities,
     scope: isRecord(input.areaSummary.scope) ? input.areaSummary.scope : {},
     sourceSummary: {
@@ -9282,22 +10643,32 @@ function areaFusionEvidenceFromCandidate(candidate: unknown, index: number): Are
   const layer = optionalTrimmedString(candidate.layer, 120);
   const sourceId = optionalTrimmedString(candidate.sourceId, 120);
   const location = areaFusionLocationFromCandidate(candidate);
-  return [{
-    ...(optionalTrimmedString(candidate.category, 120) ? { category: optionalTrimmedString(candidate.category, 120) } : {}),
-    ...(optionalFiniteNumber(candidate.confidence, 0, 1) !== undefined ? { confidence: optionalFiniteNumber(candidate.confidence, 0, 1) } : {}),
-    ...(optionalTrimmedString(candidate.detail, 240) ? { detail: optionalTrimmedString(candidate.detail, 240) } : {}),
-    evidenceId: featureId ?? areaFusionStableId("evidence", { index, label, layer, providerId }),
-    ...(featureId ? { featureId } : {}),
-    label,
-    ...(layer ? { layer } : {}),
-    ...(location ? { location } : {}),
-    ...(optionalTrimmedString(candidate.observedAt, 80) ? { observedAt: optionalTrimmedString(candidate.observedAt, 80) } : {}),
-    providerId,
-    severity: normalizeAreaSummarySeverity(candidate.severity),
-    ...(sourceId ? { sourceId } : {}),
-    stale: candidate.stale === true,
-    ...(optionalTrimmedString(candidate.validUntil, 80) ? { validUntil: optionalTrimmedString(candidate.validUntil, 80) } : {})
-  }];
+  return [
+    {
+      ...(optionalTrimmedString(candidate.category, 120)
+        ? { category: optionalTrimmedString(candidate.category, 120) }
+        : {}),
+      ...(optionalFiniteNumber(candidate.confidence, 0, 1) !== undefined
+        ? { confidence: optionalFiniteNumber(candidate.confidence, 0, 1) }
+        : {}),
+      ...(optionalTrimmedString(candidate.detail, 240) ? { detail: optionalTrimmedString(candidate.detail, 240) } : {}),
+      evidenceId: featureId ?? areaFusionStableId("evidence", { index, label, layer, providerId }),
+      ...(featureId ? { featureId } : {}),
+      label,
+      ...(layer ? { layer } : {}),
+      ...(location ? { location } : {}),
+      ...(optionalTrimmedString(candidate.observedAt, 80)
+        ? { observedAt: optionalTrimmedString(candidate.observedAt, 80) }
+        : {}),
+      providerId,
+      severity: normalizeAreaSummarySeverity(candidate.severity),
+      ...(sourceId ? { sourceId } : {}),
+      stale: candidate.stale === true,
+      ...(optionalTrimmedString(candidate.validUntil, 80)
+        ? { validUntil: optionalTrimmedString(candidate.validUntil, 80) }
+        : {})
+    }
+  ];
 }
 
 function areaFusionLocationFromCandidate(candidate: Record<string, unknown>): AreaSummaryLocation | undefined {
@@ -9317,10 +10688,7 @@ function buildAreaFusionPriorities(evidence: AreaFusionEvidence[], limit: number
       groups.push([item]);
     }
   }
-  return groups
-    .map(buildAreaFusionPriority)
-    .sort(compareAreaFusionPriorities)
-    .slice(0, limit);
+  return groups.map(buildAreaFusionPriority).sort(compareAreaFusionPriorities).slice(0, limit);
 }
 
 function areaFusionCanJoinGroup(group: AreaFusionEvidence[], item: AreaFusionEvidence): boolean {
@@ -9331,7 +10699,10 @@ function areaFusionCanJoinGroup(group: AreaFusionEvidence[], item: AreaFusionEvi
   const categoryMatch = areaFusionCategoryKey(lead) === areaFusionCategoryKey(item);
   const severityClose = Math.abs(areaSummarySeverityRank(lead.severity) - areaSummarySeverityRank(item.severity)) <= 1;
   if (lead.location && item.location) {
-    return areaFusionHaversineMeters(lead.location.lat, lead.location.lon, item.location.lat, item.location.lon) <= 3_000 && (categoryMatch || severityClose);
+    return (
+      areaFusionHaversineMeters(lead.location.lat, lead.location.lon, item.location.lat, item.location.lon) <= 3_000 &&
+      (categoryMatch || severityClose)
+    );
   }
   return categoryMatch && severityClose;
 }
@@ -9340,7 +10711,8 @@ function buildAreaFusionPriority(group: AreaFusionEvidence[]): AreaFusionPriorit
   const sortedEvidence = [...group].sort(compareAreaFusionEvidence);
   const top = sortedEvidence[0] ?? group[0];
   const severity = sortedEvidence.reduce<AreaSummarySeverity>(
-    (highest, item) => areaSummarySeverityRank(item.severity) > areaSummarySeverityRank(highest) ? item.severity : highest,
+    (highest, item) =>
+      areaSummarySeverityRank(item.severity) > areaSummarySeverityRank(highest) ? item.severity : highest,
     "info"
   );
   const providerCount = new Set(sortedEvidence.map((item) => item.providerId)).size;
@@ -9360,7 +10732,10 @@ function buildAreaFusionPriority(group: AreaFusionEvidence[]): AreaFusionPriorit
       providerCount,
       staleEvidenceCount
     },
-    priorityId: areaFusionStableId("fusion", sortedEvidence.map((item) => item.evidenceId)),
+    priorityId: areaFusionStableId(
+      "fusion",
+      sortedEvidence.map((item) => item.evidenceId)
+    ),
     recommendedAction: areaFusionRecommendedAction(severity),
     severity,
     sourceRefs: sortedEvidence.map(areaFusionSourceRef),
@@ -9415,7 +10790,7 @@ function areaFusionPriorityConfidence(evidence: AreaFusionEvidence[], severity: 
 }
 
 function areaFusionCentroid(evidence: AreaFusionEvidence[]): AreaSummaryLocation | undefined {
-  const locations = evidence.flatMap((item) => item.location ? [item.location] : []);
+  const locations = evidence.flatMap((item) => (item.location ? [item.location] : []));
   if (locations.length === 0) {
     return undefined;
   }
@@ -9489,16 +10864,18 @@ function areaFusionSourceRef(evidence: AreaFusionEvidence): Record<string, unkno
 function areaFusionUncertainties(areaSummary: Record<string, unknown>, evidence: AreaFusionEvidence[]): string[] {
   const base = areaSummaryStringArray(areaSummary.uncertainties);
   const locatedEvidenceCount = evidence.filter((item) => item.location).length;
-  const geometryWarning = evidence.length > 0 && locatedEvidenceCount === 0
-    ? ["Fúze nemá k dispozici přesnou polohu vybraných podkladů; prostorová korelace je omezená."]
-    : [];
-  const staleWarning = evidence.some((item) => item.stale)
-    ? ["Některé podklady jsou označené jako zastaralé."]
-    : [];
+  const geometryWarning =
+    evidence.length > 0 && locatedEvidenceCount === 0
+      ? ["Fúze nemá k dispozici přesnou polohu vybraných podkladů; prostorová korelace je omezená."]
+      : [];
+  const staleWarning = evidence.some((item) => item.stale) ? ["Některé podklady jsou označené jako zastaralé."] : [];
   return Array.from(new Set([...base, ...geometryWarning, ...staleWarning])).slice(0, 20);
 }
 
-function areaFusionOverallConfidence(priorities: AreaFusionPriority[], uncertainties: string[]): "high" | "low" | "medium" {
+function areaFusionOverallConfidence(
+  priorities: AreaFusionPriority[],
+  uncertainties: string[]
+): "high" | "low" | "medium" {
   if (priorities.length === 0 || uncertainties.length >= 5) {
     return "low";
   }
@@ -9515,9 +10892,7 @@ function areaFusionHeadline(priorities: AreaFusionPriority[], featureCount: numb
       ? `Ve vybrané oblasti je ${featureCount} objektů, ale žádná silná fúzní priorita.`
       : "Ve vybrané oblasti nejsou z dostupných podkladů odvozené fúzní priority.";
   }
-  return priorities.length > 1
-    ? `${top.title}; dalších priorit: ${priorities.length - 1}.`
-    : top.title;
+  return priorities.length > 1 ? `${top.title}; dalších priorit: ${priorities.length - 1}.` : top.title;
 }
 
 function areaFusionStableId(prefix: string, payload: unknown): string {
@@ -9540,7 +10915,7 @@ function areaFusionHaversineMeters(lat1: number, lon1: number, lat2: number, lon
 }
 
 function areaFusionToRadians(degrees: number): number {
-  return degrees * Math.PI / 180;
+  return (degrees * Math.PI) / 180;
 }
 
 function compareSourceHealthItems(a: SourceHealthItem, b: SourceHealthItem): number {
@@ -9565,10 +10940,13 @@ function sourceHealthRank(health: SourceHealthItem["health"]): number {
 }
 
 function buildSourceHealthSummary(items: SourceHealthItem[]): Record<string, unknown> {
-  const healthCounts = items.reduce<Record<string, number>>((counts, item) => ({
-    ...counts,
-    [item.health]: (counts[item.health] ?? 0) + 1
-  }), {});
+  const healthCounts = items.reduce<Record<string, number>>(
+    (counts, item) => ({
+      ...counts,
+      [item.health]: (counts[item.health] ?? 0) + 1
+    }),
+    {}
+  );
   return {
     count: items.length,
     currentTrackCount: items.reduce((sum, item) => sum + item.currentTracks, 0),
@@ -9651,7 +11029,9 @@ function normalizeMobileTowerId(value: string | undefined): string | null {
   if (!value) {
     return null;
   }
-  const legacyFeatureMatch = value.match(/^mobile:osm_postgis:(node|way|relation|area):([^:]+)(?::communications_tower)?$/iu);
+  const legacyFeatureMatch = value.match(
+    /^mobile:osm_postgis:(node|way|relation|area):([^:]+)(?::communications_tower)?$/iu
+  );
   if (legacyFeatureMatch?.[1] && legacyFeatureMatch[2]) {
     return `${legacyFeatureMatch[1].toLowerCase()}:${legacyFeatureMatch[2]}`;
   }
@@ -9690,7 +11070,13 @@ function parseRadioProfile(value: unknown): RadioProfile | null {
   const antennaHeightM = optionalFiniteNumber(value.antennaHeightM, 0.1, 120);
   const receiverHeightM = optionalFiniteNumber(value.receiverHeightM, 0.1, 120);
   const maxRadiusM = optionalFiniteNumber(value.maxRadiusM, 100, 100000);
-  if (!name || frequencyMhz === undefined || antennaHeightM === undefined || receiverHeightM === undefined || maxRadiusM === undefined) {
+  if (
+    !name ||
+    frequencyMhz === undefined ||
+    antennaHeightM === undefined ||
+    receiverHeightM === undefined ||
+    maxRadiusM === undefined
+  ) {
     return null;
   }
   const antennaGainDbi = optionalFiniteNumber(value.antennaGainDbi, -20, 60);
@@ -9749,10 +11135,12 @@ function parseRadioSiteSearchRequest(value: unknown): RadioSiteSearchRequest | n
   const base = parseRadioRequestBase(value);
   const searchArea = parseRadioSearchArea(value.searchArea);
   const targets = Array.isArray(value.targets)
-    ? value.targets.flatMap((target) => {
-        const point = parseRadioPoint(target);
-        return point ? [point] : [];
-      }).slice(0, 20)
+    ? value.targets
+        .flatMap((target) => {
+          const point = parseRadioPoint(target);
+          return point ? [point] : [];
+        })
+        .slice(0, 20)
     : [];
   if (!base || !searchArea || targets.length === 0) {
     return null;
@@ -9833,12 +11221,13 @@ function containsForbiddenRadioField(value: unknown): boolean {
   if (!isRecord(value)) {
     return false;
   }
-  return Object.entries(value).some(([key, nested]) =>
-    forbiddenRadioFieldPattern.test(key) || containsForbiddenRadioField(nested)
+  return Object.entries(value).some(
+    ([key, nested]) => forbiddenRadioFieldPattern.test(key) || containsForbiddenRadioField(nested)
   );
 }
 
-const forbiddenRadioFieldPattern = /^(?:callsign|comsec|crypto|classified|encryption|freqplan|frequencyplan|hopping|key|keys|notes?|rfplan|secret|tactical|utajovane|utajeni)$/iu;
+const forbiddenRadioFieldPattern =
+  /^(?:callsign|comsec|crypto|classified|encryption|freqplan|frequencyplan|hopping|key|keys|notes?|rfplan|secret|tactical|utajovane|utajeni)$/iu;
 
 function boundedOptionalInteger(value: unknown, fallback: number, min: number, max: number): number | null {
   if (value === undefined || value === null || value === "") {
@@ -9876,9 +11265,10 @@ function normalizeSafetyNotificationEvaluationRequest(value: Record<string, unkn
   const requestedLayers = normalizeMapQueryStringList(value.layers ?? value.layerIds)
     .filter(isSafetyLayerId)
     .filter((layerId) => layerId !== "boundary_admin");
-  const layers = requestedLayers.length > 0
-    ? requestedLayers
-    : ["weather_alerts", "warnings", "fire", "flood"] satisfies SafetyLayerId[];
+  const layers =
+    requestedLayers.length > 0
+      ? requestedLayers
+      : (["weather_alerts", "warnings", "fire", "flood"] satisfies SafetyLayerId[]);
   const audience = normalizeNotificationAudience(value.audience);
   const currentLocation = normalizeNotificationLocation(value.currentLocation);
   return {
@@ -9911,12 +11301,10 @@ function normalizeNotificationAudience(value: unknown): CopNotificationAudience 
 }
 
 function normalizeAudienceIds(value: unknown): string[] | undefined {
-  const values = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? value.split(",")
-      : [];
-  const normalized = Array.from(new Set(values.flatMap((item) => typeof item === "string" && item.trim() ? [item.trim().slice(0, 160)] : []))).slice(0, 100);
+  const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+  const normalized = Array.from(
+    new Set(values.flatMap((item) => (typeof item === "string" && item.trim() ? [item.trim().slice(0, 160)] : [])))
+  ).slice(0, 100);
   return normalized.length > 0 ? normalized : undefined;
 }
 
@@ -9938,22 +11326,29 @@ function normalizeNotificationLocation(value: unknown): { lat: number; lon: numb
 
 function normalizeMapQueryStringList(value: unknown): string[] {
   const raw = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
-  return Array.from(new Set(raw.flatMap((item) => typeof item === "string" && item.trim() ? [item.trim()] : []))).slice(0, 128);
+  return Array.from(
+    new Set(raw.flatMap((item) => (typeof item === "string" && item.trim() ? [item.trim()] : [])))
+  ).slice(0, 128);
 }
 
 function normalizeMapQueryFilters(value: unknown): Record<string, Record<string, unknown>> {
   if (!isRecord(value)) {
     return {};
   }
-  return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => {
-    if (!key.trim() || !isRecord(entry)) {
-      return [];
-    }
-    return [[key.trim(), entry]];
-  }));
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, entry]) => {
+      if (!key.trim() || !isRecord(entry)) {
+        return [];
+      }
+      return [[key.trim(), entry]];
+    })
+  );
 }
 
-function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeatureQueryRequest): ProviderFeatureQueries {
+function buildProviderFeatureQueries(
+  layers: MapCatalogLayer[],
+  request: MapFeatureQueryRequest
+): ProviderFeatureQueries {
   const situationLayers = new Set<SituationLayerId>();
   const situationSources = new Set<string>();
   const safetyLayers = new Set<SafetyLayerId>();
@@ -9965,8 +11360,8 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
   let situationTechnology: string | undefined;
 
   for (const layer of layers) {
-    const supportedFeatureQuery = layer.query.mode === "bbox"
-      || (layer.query.mode === "grid" && layer.query.providerId === "sim.situation-data");
+    const supportedFeatureQuery =
+      layer.query.mode === "bbox" || (layer.query.mode === "grid" && layer.query.providerId === "sim.situation-data");
     if (!supportedFeatureQuery) {
       continue;
     }
@@ -9980,7 +11375,10 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
       for (const sourceId of layer.query.providerSourceIds ?? []) {
         situationSources.add(sourceId);
       }
-      situationTechnology = situationTechnology ?? readMapQueryTechnology(request.filters[layer.layerId]) ?? readDefaultTechnologyFilter(layer);
+      situationTechnology =
+        situationTechnology ??
+        readMapQueryTechnology(request.filters[layer.layerId]) ??
+        readDefaultTechnologyFilter(layer);
     } else if (layer.query.providerId === "sim.safety-data") {
       for (const layerId of layer.query.providerLayerIds ?? []) {
         if (isSafetyLayerId(layerId)) {
@@ -10040,7 +11438,7 @@ function buildProviderFeatureQueries(layers: MapCatalogLayer[], request: MapFeat
             layerIds: Array.from(communityLayerIds),
             limit: request.limit
           }
-      }
+        }
       : {}),
     ...(missionArenaLayers.size > 0
       ? {
@@ -10088,14 +11486,18 @@ function catalogLayerAvailableForMapQuery(layer: MapCatalogLayer): boolean {
 }
 
 function catalogLayerQueryableForFeatureQuery(layer: MapCatalogLayer): boolean {
-  return layer.query.mode === "bbox" || (layer.query.mode === "grid" && layer.query.providerId === "sim.situation-data");
+  return (
+    layer.query.mode === "bbox" || (layer.query.mode === "grid" && layer.query.providerId === "sim.situation-data")
+  );
 }
 
 function mapFeatureCollectionWarnings(collection: unknown): string[] {
   if (!isRecord(collection) || !Array.isArray(collection.warnings)) {
     return [];
   }
-  return collection.warnings.filter((warning): warning is string => typeof warning === "string" && warning.trim() !== "");
+  return collection.warnings.filter(
+    (warning): warning is string => typeof warning === "string" && warning.trim() !== ""
+  );
 }
 
 function readMapQueryTechnology(value: Record<string, unknown> | undefined): string | undefined {
@@ -10120,39 +11522,42 @@ function isCoverageTechnology(value: unknown): value is string {
 }
 
 function isSituationLayerId(value: string): value is SituationLayerId {
-  return value === "air_quality"
-    || value === "air_quality_grid"
-    || value === "boundary_admin"
-    || value === "boundary_country"
-    || value === "boundary_district"
-    || value === "boundary_municipality"
-    || value === "boundary_orp"
-    || value === "boundary_region"
-    || value === "community_places"
-    || value === "fire"
-    || value === "flood"
-    || value === "ground"
-    || value === "mobile"
-    || value === "mobile_coverage"
-    || value === "mobile_network"
-    || value === "place_settlements"
-    || value === "trail_poi"
-    || value === "trail_routes"
-    || value === "traffic"
-    || value === "warnings"
-    || value === "weather_alerts"
-    || value === "weather_forecast_area"
-    || value === "weather_webcams"
-    || value === "weather"
-    || value === "weather_humidity_grid"
-    || value === "weather_precipitation_grid"
-    || value === "weather_pressure_grid"
-    || value === "weather_radar_nowcast"
-    || value === "weather_radar_precipitation"
-    || value === "weather_radar_reflectivity"
-    || value === "weather_temperature_grid"
-    || value === "weather_thunderstorm_risk"
-    || value === "weather_wind_field";
+  return (
+    value === "air_quality" ||
+    value === "air_quality_grid" ||
+    value === "boundary_admin" ||
+    value === "boundary_country" ||
+    value === "boundary_district" ||
+    value === "boundary_municipality" ||
+    value === "boundary_orp" ||
+    value === "boundary_region" ||
+    value === "community_places" ||
+    value === "fire" ||
+    value === "flood" ||
+    value === "ground" ||
+    value === "mobile" ||
+    value === "mobile_coverage" ||
+    value === "mobile_network" ||
+    value === "outdoor_webcams" ||
+    value === "place_settlements" ||
+    value === "trail_poi" ||
+    value === "trail_routes" ||
+    value === "traffic" ||
+    value === "warnings" ||
+    value === "weather_alerts" ||
+    value === "weather_forecast_area" ||
+    value === "weather_webcams" ||
+    value === "weather" ||
+    value === "weather_humidity_grid" ||
+    value === "weather_precipitation_grid" ||
+    value === "weather_pressure_grid" ||
+    value === "weather_radar_nowcast" ||
+    value === "weather_radar_precipitation" ||
+    value === "weather_radar_reflectivity" ||
+    value === "weather_temperature_grid" ||
+    value === "weather_thunderstorm_risk" ||
+    value === "weather_wind_field"
+  );
 }
 
 function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | undefined {
@@ -10222,28 +11627,40 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "public.outdoor.community_places":
     case "outdoor.community.places":
       return "community_places";
+    case "outdoor.webcams":
+    case "outdoor_webcams":
+    case "public.outdoor.webcams":
+      return "outdoor_webcams";
     default:
       return undefined;
   }
 }
 
 function isSafetyLayerId(value: string): value is SafetyLayerId {
-  return value === "boundary_admin" || value === "fire" || value === "flood" || value === "warnings" || value === "weather_alerts";
+  return (
+    value === "boundary_admin" ||
+    value === "fire" ||
+    value === "flood" ||
+    value === "warnings" ||
+    value === "weather_alerts"
+  );
 }
 
 function isSafetyDataSourceId(value: string): value is SafetyDataSourceId {
-  return value === "admin_boundaries"
-    || value === "chmi_alerts"
-    || value === "chmi_hydro"
-    || value === "fire_hotspots"
-    || value === "fire_incidents"
-    || value === "gdacs_alerts"
-    || value === "hzs_incidents"
-    || value === "municipal_alerts"
-    || value === "mock"
-    || value === "nasa_firms"
-    || value === "road_srti_lod"
-    || value === "weather_alerts";
+  return (
+    value === "admin_boundaries" ||
+    value === "chmi_alerts" ||
+    value === "chmi_hydro" ||
+    value === "fire_hotspots" ||
+    value === "fire_incidents" ||
+    value === "gdacs_alerts" ||
+    value === "hzs_incidents" ||
+    value === "municipal_alerts" ||
+    value === "mock" ||
+    value === "nasa_firms" ||
+    value === "road_srti_lod" ||
+    value === "weather_alerts"
+  );
 }
 
 function isFlightReferenceLayerId(value: string): value is FlightReferenceLayerId {
@@ -10276,16 +11693,18 @@ function parseFlightAirportQuery(value: Record<string, unknown>): FlightAirportQ
   };
 }
 
-function sanitizeSituationQueryForActor(query: SituationFeatureQuery, actor: AuthenticatedActor | null): { blocked: boolean; query: SituationFeatureQuery; warnings: string[] } {
+function sanitizeSituationQueryForActor(
+  query: SituationFeatureQuery,
+  actor: AuthenticatedActor | null
+): { blocked: boolean; query: SituationFeatureQuery; warnings: string[] } {
   const sources = query.sources;
   if (!sources || sources.length === 0) {
     return { blocked: false, query, warnings: [] };
   }
   const allowedSources = sources.filter((sourceId) => canReadSituationSource(sourceId, actor));
   const blockedSources = sources.filter((sourceId) => !allowedSources.includes(sourceId));
-  const warnings = blockedSources.length > 0
-    ? [`Restricted situation source hidden: ${blockedSources.join(", ")}.`]
-    : [];
+  const warnings =
+    blockedSources.length > 0 ? [`Restricted situation source hidden: ${blockedSources.join(", ")}.`] : [];
   if (allowedSources.length === 0) {
     return {
       blocked: true,
@@ -10327,16 +11746,19 @@ function filterSituationCollectionForCatalogLayers(
   collection: SituationFeatureCollection,
   selectedLayers: MapCatalogLayer[]
 ): SituationFeatureCollection {
-  const situationLayers = selectedLayers.filter((layer) =>
-    (layer.query.mode === "bbox" || layer.query.mode === "grid")
-    && layer.query.providerId === "sim.situation-data"
+  const situationLayers = selectedLayers.filter(
+    (layer) =>
+      (layer.query.mode === "bbox" || layer.query.mode === "grid") && layer.query.providerId === "sim.situation-data"
   );
   if (situationLayers.length === 0) {
     return collection;
   }
-  const features = collection.features.filter((feature) => situationLayers.some((layer) => situationFeatureMatchesCatalogLayer(feature, layer)));
+  const features = collection.features.filter((feature) =>
+    situationLayers.some((layer) => situationFeatureMatchesCatalogLayer(feature, layer))
+  );
   const sourceIds = new Set(features.map((feature) => feature.properties.sourceId));
-  const sources = sourceIds.size > 0 ? collection.sources.filter((source) => sourceIds.has(source.sourceId)) : collection.sources;
+  const sources =
+    sourceIds.size > 0 ? collection.sources.filter((source) => sourceIds.has(source.sourceId)) : collection.sources;
   const warnings = collection.warnings;
   return {
     ...collection,
@@ -10362,9 +11784,10 @@ function situationFeatureMatchesCatalogLayer(feature: SituationFeature, layer: M
     const normalizedProviderLayerIds = providerLayerIds
       .map(situationLayerIdFromProviderLayerId)
       .filter((value): value is SituationLayerId => Boolean(value));
-    const rawLayerMatch = providerLayerIds.includes(feature.properties.layer)
-      || providerLayerIds.includes(feature.properties.layerId ?? "")
-      || providerLayerIds.includes(feature.properties.providerLayerId ?? "");
+    const rawLayerMatch =
+      providerLayerIds.includes(feature.properties.layer) ||
+      providerLayerIds.includes(feature.properties.layerId ?? "") ||
+      providerLayerIds.includes(feature.properties.providerLayerId ?? "");
     const normalizedLayerMatch = normalizedProviderLayerIds.includes(feature.properties.layer);
     if (!rawLayerMatch && !normalizedLayerMatch) {
       return false;
@@ -10375,24 +11798,32 @@ function situationFeatureMatchesCatalogLayer(feature: SituationFeature, layer: M
     return false;
   }
   const categoryIds = layer.query.categoryIds ?? [];
-  if (categoryIds.length > 0 && !categoryIds.map(normalizeSituationCategoryId).includes(normalizeSituationCategoryId(feature.properties.category))) {
+  if (
+    categoryIds.length > 0 &&
+    !categoryIds.map(normalizeSituationCategoryId).includes(normalizeSituationCategoryId(feature.properties.category))
+  ) {
     return false;
   }
   return true;
 }
 
 function isMobileNetworkCoverageFallbackForCatalogLayer(feature: SituationFeature, layer: MapCatalogLayer): boolean {
-  return layer.layerId === "public.mobile.network"
-    && (layer.query.providerLayerIds ?? []).includes("mobile_network")
-    && feature.properties.layer === "mobile_coverage"
-    && feature.properties.sourceId === "mobile_coverage_model";
+  return (
+    layer.layerId === "public.mobile.network" &&
+    (layer.query.providerLayerIds ?? []).includes("mobile_network") &&
+    feature.properties.layer === "mobile_coverage" &&
+    feature.properties.sourceId === "mobile_coverage_model"
+  );
 }
 
 function normalizeSituationCategoryId(value: string): string {
   return value.toLowerCase().replace(/[\s.-]+/g, "_");
 }
 
-function filterSituationSourcesForActor(sources: SituationSourceDescriptor[], actor: AuthenticatedActor | null): SituationSourceDescriptor[] {
+function filterSituationSourcesForActor(
+  sources: SituationSourceDescriptor[],
+  actor: AuthenticatedActor | null
+): SituationSourceDescriptor[] {
   return sources.filter((source) => canReadSituationSource(source.sourceId, actor));
 }
 
@@ -10421,7 +11852,10 @@ function canReadObject(subject: ReturnType<typeof defaultSystemSubject>, object:
   return canReadBySyntheticFlag(subject, object.synthetic);
 }
 
-function canReadBySyntheticFlag(subject: ReturnType<typeof defaultSystemSubject>, synthetic: boolean | undefined): boolean {
+function canReadBySyntheticFlag(
+  subject: ReturnType<typeof defaultSystemSubject>,
+  synthetic: boolean | undefined
+): boolean {
   const decision = evaluateReadPolicy(subject, {
     classification: "UNCLASSIFIED",
     synthetic
@@ -10429,7 +11863,10 @@ function canReadBySyntheticFlag(subject: ReturnType<typeof defaultSystemSubject>
   return decision.allowed;
 }
 
-function filterStreamMessage(subject: ReturnType<typeof defaultSystemSubject>, message: CopStreamMessage): CopStreamMessage | null {
+function filterStreamMessage(
+  subject: ReturnType<typeof defaultSystemSubject>,
+  message: CopStreamMessage
+): CopStreamMessage | null {
   if (message.type === "heartbeat" || message.type === "backpressure" || message.type === "reconnect_required") {
     return message;
   }
@@ -10462,7 +11899,10 @@ function alertSeverityRank(severity: CopAlert["severity"]): number {
   return 1;
 }
 
-function parseCommunityReportQuery(query: Record<string, unknown>, actor: AuthenticatedActor | null): CommunityReportQuery {
+function parseCommunityReportQuery(
+  query: Record<string, unknown>,
+  actor: AuthenticatedActor | null
+): CommunityReportQuery {
   return {
     ...(parseBboxQuery(query.bbox) ? { bbox: parseBboxQuery(query.bbox) } : {}),
     ...(parseCommunityCategories(query.category ?? query.categories).length > 0
@@ -10511,7 +11951,9 @@ function normalizeCreateCommunityReport(
       subjectId: actor.subjectId,
       username: actor.username
     },
-    ...(optionalTrimmedString(value.description, 2000) ? { description: optionalTrimmedString(value.description, 2000) } : {}),
+    ...(optionalTrimmedString(value.description, 2000)
+      ? { description: optionalTrimmedString(value.description, 2000) }
+      : {}),
     location,
     observedAt: optionalIsoTimestamp(value.observedAt, requestNow) ?? requestNow.toISOString(),
     properties,
@@ -10528,14 +11970,14 @@ function normalizeCommunityReportUpdate(value: unknown): Parameters<CommunityRep
   const location = normalizeCommunityLocation(value.location, "manual");
   const title = optionalTrimmedString(value.title, 120);
   const description = hasOwn(value, "description")
-    ? optionalTrimmedString(value.description, 2000) ?? null
+    ? (optionalTrimmedString(value.description, 2000) ?? null)
     : undefined;
   const hazardSeverity = isCommunityReportHazardSeverity(value.hazardSeverity)
     ? value.hazardSeverity
     : isCommunityReportHazardSeverity(value.severity)
       ? value.severity
       : undefined;
-  const validUntil = hasOwn(value, "validUntil") ? optionalIsoTimestamp(value.validUntil) ?? null : undefined;
+  const validUntil = hasOwn(value, "validUntil") ? (optionalIsoTimestamp(value.validUntil) ?? null) : undefined;
   const properties = {
     ...normalizedJsonRecord(value.properties, 8000),
     ...(hazardSeverity ? { hazardSeverity } : {}),
@@ -10571,11 +12013,13 @@ function actorToIncidentActor(actor: AuthenticatedActor): IncidentActor {
 }
 
 function actorCommunitySubjectAliases(actor: AuthenticatedActor): string[] {
-  return Array.from(new Set([
-    actor.subjectId,
-    actor.username,
-    actor.email
-  ].map((value) => value?.trim()).filter((value): value is string => Boolean(value))));
+  return Array.from(
+    new Set(
+      [actor.subjectId, actor.username, actor.email]
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value))
+    )
+  );
 }
 
 function actorToSketchActor(actor: AuthenticatedActor) {
@@ -10688,8 +12132,18 @@ function floodDemoReportSeeds(groupId: string, requestNow: Date) {
   return [
     {
       attachments: [
-        floodDemoAttachmentSeed("photo", "IMG_4821.jpg", "Rozliv u silnice", "Voda zasahuje okraj komunikace u Roztok."),
-        floodDemoAttachmentSeed("document", "Situacni_zprava_Roztoky.pdf", "Koordinační PDF", "Souhrn opatření, kontakty a doporučená trasa.")
+        floodDemoAttachmentSeed(
+          "photo",
+          "IMG_4821.jpg",
+          "Rozliv u silnice",
+          "Voda zasahuje okraj komunikace u Roztok."
+        ),
+        floodDemoAttachmentSeed(
+          "document",
+          "Situacni_zprava_Roztoky.pdf",
+          "Koordinační PDF",
+          "Souhrn opatření, kontakty a doporučená trasa."
+        )
       ],
       category: "flood" as const,
       description: "Voda postupně zaplavuje podjezd. Příjezd je vhodný jen pro složky s vyšší průjezdností.",
@@ -10707,8 +12161,18 @@ function floodDemoReportSeeds(groupId: string, requestNow: Date) {
     },
     {
       attachments: [
-        floodDemoAttachmentSeed("photo", "Most_Zbraslav.jpg", "Poškozený most", "Viditelné narušení krajnice a omezený průjezd."),
-        floodDemoAttachmentSeed("video", "Most_Zbraslav_prutok.mp4", "Průtok u mostu", "Krátké video dokumentuje rychlost proudění.")
+        floodDemoAttachmentSeed(
+          "photo",
+          "Most_Zbraslav.jpg",
+          "Poškozený most",
+          "Viditelné narušení krajnice a omezený průjezd."
+        ),
+        floodDemoAttachmentSeed(
+          "video",
+          "Most_Zbraslav_prutok.mp4",
+          "Průtok u mostu",
+          "Krátké video dokumentuje rychlost proudění."
+        )
       ],
       category: "bridge_damage" as const,
       description: "Most má poškozený kraj vozovky a je nutné jej označit jako rizikové místo.",
@@ -10726,8 +12190,18 @@ function floodDemoReportSeeds(groupId: string, requestNow: Date) {
     },
     {
       attachments: [
-        floodDemoAttachmentSeed("photo", "Nabrezi_uzavirka.jpg", "Uzavřené nábřeží", "Stojící voda a naplaveniny na vozovce."),
-        floodDemoAttachmentSeed("document", "Objizdna_trasa.pdf", "Objízdná trasa", "Stručný přehled navržené objízdné trasy.")
+        floodDemoAttachmentSeed(
+          "photo",
+          "Nabrezi_uzavirka.jpg",
+          "Uzavřené nábřeží",
+          "Stojící voda a naplaveniny na vozovce."
+        ),
+        floodDemoAttachmentSeed(
+          "document",
+          "Objizdna_trasa.pdf",
+          "Objízdná trasa",
+          "Stručný přehled navržené objízdné trasy."
+        )
       ],
       category: "road_blockage" as const,
       description: "Nábřeží je neprůjezdné kvůli stojící vodě a naplaveninám.",
@@ -10762,11 +12236,12 @@ function floodDemoAttachmentSeed(kind: CommunityAttachmentKind, fileName: string
 }
 
 function floodDemoPreviewDataUrl(kind: CommunityAttachmentKind, title: string, subtitle: string): string {
-  const palette = kind === "photo"
-    ? { accent: "#0891b2", bg: "#dff7f2", fg: "#083344", icon: "IMG" }
-    : kind === "video"
-      ? { accent: "#dc2626", bg: "#fee2e2", fg: "#450a0a", icon: "▶" }
-      : { accent: "#2563eb", bg: "#dbeafe", fg: "#172554", icon: "PDF" };
+  const palette =
+    kind === "photo"
+      ? { accent: "#0891b2", bg: "#dff7f2", fg: "#083344", icon: "IMG" }
+      : kind === "video"
+        ? { accent: "#dc2626", bg: "#fee2e2", fg: "#450a0a", icon: "▶" }
+        : { accent: "#2563eb", bg: "#dbeafe", fg: "#172554", icon: "PDF" };
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640">
 <defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="${palette.bg}" offset="0"/><stop stop-color="#ffffff" offset="1"/></linearGradient></defs>
 <rect width="960" height="640" fill="url(#g)"/>
@@ -10781,20 +12256,21 @@ function floodDemoPreviewDataUrl(kind: CommunityAttachmentKind, title: string, s
 }
 
 function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function isFloodDemoReportSeedCurrent(report: CommunityReportRecord, seed: { properties: Record<string, unknown> }): boolean {
-  return report.properties.demoScenarioId === seed.properties.demoScenarioId
-    && report.properties.eventId === seed.properties.eventId
-    && report.properties.groupId === seed.properties.groupId
-    && report.properties.groupName === seed.properties.groupName
-    && report.properties.hazardSeverity === seed.properties.hazardSeverity
-    && report.properties.recommendedAction === seed.properties.recommendedAction;
+function isFloodDemoReportSeedCurrent(
+  report: CommunityReportRecord,
+  seed: { properties: Record<string, unknown> }
+): boolean {
+  return (
+    report.properties.demoScenarioId === seed.properties.demoScenarioId &&
+    report.properties.eventId === seed.properties.eventId &&
+    report.properties.groupId === seed.properties.groupId &&
+    report.properties.groupName === seed.properties.groupName &&
+    report.properties.hazardSeverity === seed.properties.hazardSeverity &&
+    report.properties.recommendedAction === seed.properties.recommendedAction
+  );
 }
 
 function floodDemoDrawingSeeds(groupId: string): Array<Omit<CreateSketchDrawingInput, "actor">> {
@@ -10802,14 +12278,16 @@ function floodDemoDrawingSeeds(groupId: string): Array<Omit<CreateSketchDrawingI
     {
       eventId: floodDemoEventId,
       geometry: {
-        coordinates: [[
-          [14.245, 50.195],
-          [14.49, 50.215],
-          [14.56, 50.08],
-          [14.36, 49.99],
-          [14.18, 50.06],
-          [14.245, 50.195]
-        ]],
+        coordinates: [
+          [
+            [14.245, 50.195],
+            [14.49, 50.215],
+            [14.56, 50.08],
+            [14.36, 49.99],
+            [14.18, 50.06],
+            [14.245, 50.195]
+          ]
+        ],
         type: "Polygon"
       },
       groupId,
@@ -10905,16 +12383,19 @@ function userDirectoryEntry(profile: UserProfileRecord) {
   };
 }
 
-async function resolveCommunityGroupMemberIdentity(member: {
-  displayName: string;
-  role: CommunityGroupMemberRole;
-  status: CommunityGroupMemberStatus;
-  subjectId: string;
-  username: string;
-}, directory: {
-  readProfile: (subjectId: string) => Promise<UserProfileRecord | null>;
-  searchProfiles: (query: string, limit?: number) => Promise<UserProfileRecord[]>;
-}): Promise<
+async function resolveCommunityGroupMemberIdentity(
+  member: {
+    displayName: string;
+    role: CommunityGroupMemberRole;
+    status: CommunityGroupMemberStatus;
+    subjectId: string;
+    username: string;
+  },
+  directory: {
+    readProfile: (subjectId: string) => Promise<UserProfileRecord | null>;
+    searchProfiles: (query: string, limit?: number) => Promise<UserProfileRecord[]>;
+  }
+): Promise<
   | {
       member: {
         displayName: string;
@@ -10957,7 +12438,8 @@ async function resolveCommunityGroupMemberIdentity(member: {
 
   if (looksLikeHumanLogin(member.subjectId)) {
     return {
-      error: "Community group member must resolve to a known COP user profile. Sign in as that user once or use the user search endpoint before adding the member."
+      error:
+        "Community group member must resolve to a known COP user profile. Sign in as that user once or use the user search endpoint before adding the member."
     };
   }
 
@@ -10967,16 +12449,20 @@ async function resolveCommunityGroupMemberIdentity(member: {
   };
 }
 
-async function resolveProfileByHandle(handle: string, directory: {
-  searchProfiles: (query: string, limit?: number) => Promise<UserProfileRecord[]>;
-}): Promise<UserProfileRecord | null> {
+async function resolveProfileByHandle(
+  handle: string,
+  directory: {
+    searchProfiles: (query: string, limit?: number) => Promise<UserProfileRecord[]>;
+  }
+): Promise<UserProfileRecord | null> {
   const normalized = handle.trim().toLowerCase();
-  const matches = (await directory.searchProfiles(handle, 10)).filter((profile) =>
-    profile.username.toLowerCase() === normalized ||
-    profile.email?.toLowerCase() === normalized ||
-    profile.displayName.toLowerCase() === normalized
+  const matches = (await directory.searchProfiles(handle, 10)).filter(
+    (profile) =>
+      profile.username.toLowerCase() === normalized ||
+      profile.email?.toLowerCase() === normalized ||
+      profile.displayName.toLowerCase() === normalized
   );
-  return matches.length === 1 ? matches[0] ?? null : null;
+  return matches.length === 1 ? (matches[0] ?? null) : null;
 }
 
 function looksLikeHumanLogin(value: string): boolean {
@@ -10998,8 +12484,12 @@ function normalizeCommunityGroupRequest(value: unknown): {
     return null;
   }
   return {
-    ...(normalizeCommunityLocation(value.anchorLocation, "manual") ? { anchorLocation: normalizeCommunityLocation(value.anchorLocation, "manual") } : {}),
-    ...(optionalTrimmedString(value.description, 500) ? { description: optionalTrimmedString(value.description, 500) } : {}),
+    ...(normalizeCommunityLocation(value.anchorLocation, "manual")
+      ? { anchorLocation: normalizeCommunityLocation(value.anchorLocation, "manual") }
+      : {}),
+    ...(optionalTrimmedString(value.description, 500)
+      ? { description: optionalTrimmedString(value.description, 500) }
+      : {}),
     ...(isRecord(value.metadata) ? { metadata: normalizedJsonRecord(value.metadata, 4000) } : {}),
     name,
     visibility: isCommunityGroupVisibility(value.visibility) ? value.visibility : "private"
@@ -11038,7 +12528,11 @@ function normalizeCommunityGroupMemberRequest(value: unknown): {
   };
 }
 
-function normalizeSketchDrawingQuery(value: unknown, actor: AuthenticatedActor | null, actorGroupIds: Set<string>): SketchDrawingQuery | null {
+function normalizeSketchDrawingQuery(
+  value: unknown,
+  actor: AuthenticatedActor | null,
+  actorGroupIds: Set<string>
+): SketchDrawingQuery | null {
   if (!isRecord(value)) {
     return {
       allowedGroupIds: Array.from(actorGroupIds),
@@ -11059,7 +12553,10 @@ function normalizeSketchDrawingQuery(value: unknown, actor: AuthenticatedActor |
   };
 }
 
-function normalizeCreateSketchDrawingRequest(value: unknown, actor: AuthenticatedActor): CreateSketchDrawingInput | null {
+function normalizeCreateSketchDrawingRequest(
+  value: unknown,
+  actor: AuthenticatedActor
+): CreateSketchDrawingInput | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -11093,8 +12590,8 @@ function normalizeUpdateSketchDrawingRequest(value: unknown): UpdateSketchDrawin
   const geometry = hasOwn(value, "geometry") ? normalizeSketchGeometry(value.geometry) : undefined;
   const kind = hasOwn(value, "kind") ? normalizeSketchDrawingKind(value.kind) : undefined;
   const visibility = hasOwn(value, "visibility") ? normalizeSketchDrawingVisibility(value.visibility) : undefined;
-  const groupId = hasOwn(value, "groupId") ? optionalUuid(value.groupId) ?? null : undefined;
-  const eventId = hasOwn(value, "eventId") ? optionalTrimmedString(value.eventId, 160) ?? null : undefined;
+  const groupId = hasOwn(value, "groupId") ? (optionalUuid(value.groupId) ?? null) : undefined;
+  const eventId = hasOwn(value, "eventId") ? (optionalTrimmedString(value.eventId, 160) ?? null) : undefined;
   const update: UpdateSketchDrawingInput = {
     ...(eventId !== undefined ? { eventId } : {}),
     ...(geometry ? { geometry } : {}),
@@ -11111,14 +12608,14 @@ function normalizeUpdateSketchDrawingRequest(value: unknown): UpdateSketchDrawin
 }
 
 function normalizeSketchDrawingKind(value: unknown): SketchDrawingKind | undefined {
-  return value === "arrow"
-    || value === "circle"
-    || value === "line"
-    || value === "marker"
-    || value === "measurement"
-    || value === "point"
-    || value === "polygon"
-    || value === "text"
+  return value === "arrow" ||
+    value === "circle" ||
+    value === "line" ||
+    value === "marker" ||
+    value === "measurement" ||
+    value === "point" ||
+    value === "polygon" ||
+    value === "text"
     ? value
     : undefined;
 }
@@ -11150,11 +12647,12 @@ function normalizeSketchGeometry(value: unknown): SketchGeometry | undefined {
       }
       const first = coordinates[0];
       const last = coordinates.at(-1);
-      const closed = first && last && first[0] === last[0] && first[1] === last[1]
-        ? coordinates
-        : first
-          ? [...coordinates, first]
-          : coordinates;
+      const closed =
+        first && last && first[0] === last[0] && first[1] === last[1]
+          ? coordinates
+          : first
+            ? [...coordinates, first]
+            : coordinates;
       return closed.length >= 4 ? [closed] : [];
     });
     return rings.length > 0 ? { coordinates: rings, type: "Polygon" } : undefined;
@@ -11162,14 +12660,20 @@ function normalizeSketchGeometry(value: unknown): SketchGeometry | undefined {
   return undefined;
 }
 
-function normalizeCoordinateList(value: unknown, minLength: number, maxLength: number): Array<[number, number]> | undefined {
+function normalizeCoordinateList(
+  value: unknown,
+  minLength: number,
+  maxLength: number
+): Array<[number, number]> | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
-  const coordinates = value.flatMap((item) => {
-    const coordinate = normalizeCoordinate(item);
-    return coordinate ? [coordinate] : [];
-  }).slice(0, maxLength);
+  const coordinates = value
+    .flatMap((item) => {
+      const coordinate = normalizeCoordinate(item);
+      return coordinate ? [coordinate] : [];
+    })
+    .slice(0, maxLength);
   return coordinates.length >= minLength ? coordinates : undefined;
 }
 
@@ -11190,8 +12694,12 @@ function normalizeSketchStyle(value: unknown): Partial<CreateSketchDrawingInput[
   }
   return {
     ...(normalizeCssColor(value.fill) ? { fill: normalizeCssColor(value.fill) } : {}),
-    ...(optionalFiniteNumber(value.lineWidth, 1, 12) !== undefined ? { lineWidth: optionalFiniteNumber(value.lineWidth, 1, 12) } : {}),
-    ...(optionalFiniteNumber(value.opacity, 0.05, 1) !== undefined ? { opacity: optionalFiniteNumber(value.opacity, 0.05, 1) } : {}),
+    ...(optionalFiniteNumber(value.lineWidth, 1, 12) !== undefined
+      ? { lineWidth: optionalFiniteNumber(value.lineWidth, 1, 12) }
+      : {}),
+    ...(optionalFiniteNumber(value.opacity, 0.05, 1) !== undefined
+      ? { opacity: optionalFiniteNumber(value.opacity, 0.05, 1) }
+      : {}),
     ...(normalizeCssColor(value.stroke) ? { stroke: normalizeCssColor(value.stroke) } : {})
   };
 }
@@ -11215,7 +12723,11 @@ function normalizeCssColor(value: unknown): string | undefined {
   return /^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/iu.test(normalized) ? normalized : undefined;
 }
 
-function canReadSketchDrawingResponse(drawing: SketchDrawingFeature, actor: AuthenticatedActor | null, actorGroupIds: Set<string>): boolean {
+function canReadSketchDrawingResponse(
+  drawing: SketchDrawingFeature,
+  actor: AuthenticatedActor | null,
+  actorGroupIds: Set<string>
+): boolean {
   if (drawing.properties.visibility === "public") {
     return true;
   }
@@ -11339,10 +12851,13 @@ function normalizeWebPushCapabilities(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
-  const capabilities = Array.from(new Set(value
-    .map((item) => optionalTrimmedString(item, 64))
-    .filter((item): item is string => typeof item === "string" && /^[A-Za-z0-9_.:-]{1,64}$/u.test(item))))
-    .slice(0, 20);
+  const capabilities = Array.from(
+    new Set(
+      value
+        .map((item) => optionalTrimmedString(item, 64))
+        .filter((item): item is string => typeof item === "string" && /^[A-Za-z0-9_.:-]{1,64}$/u.test(item))
+    )
+  ).slice(0, 20);
   return capabilities.length ? capabilities : undefined;
 }
 
@@ -11373,10 +12888,14 @@ function normalizeMatrixIdentityResolutionRequest(value: unknown): string[] | nu
   if (!isRecord(value) || containsMessagingPlaintextKey(value) || !Array.isArray(value.userIds)) {
     return null;
   }
-  const userIds = Array.from(new Set(value.userIds
-    .map((item) => optionalTrimmedString(item, 160))
-    .filter((item): item is string => Boolean(item))
-    .slice(0, 100)));
+  const userIds = Array.from(
+    new Set(
+      value.userIds
+        .map((item) => optionalTrimmedString(item, 160))
+        .filter((item): item is string => Boolean(item))
+        .slice(0, 100)
+    )
+  );
   return userIds.length > 0 ? userIds : null;
 }
 
@@ -11409,8 +12928,11 @@ function containsMessagingPlaintextKey(value: unknown): boolean {
   if (!isRecord(value)) {
     return false;
   }
-  return Object.entries(value).some(([key, nested]) =>
-    messagingPlaintextKeys.has(key) || messagingPlaintextKeys.has(key.toLowerCase()) || containsMessagingPlaintextKey(nested)
+  return Object.entries(value).some(
+    ([key, nested]) =>
+      messagingPlaintextKeys.has(key) ||
+      messagingPlaintextKeys.has(key.toLowerCase()) ||
+      containsMessagingPlaintextKey(nested)
   );
 }
 
@@ -11428,12 +12950,18 @@ function normalizeMessagingMembers(value: unknown): MessagingConversationCreateR
     }
     const userId = optionalTrimmedString(item.userId ?? item.id, 128);
     return userId
-      ? [{
-          ...(normalizeMessagingAvatarUrl(item.avatarUrl ?? item.avatar_url) ? { avatarUrl: normalizeMessagingAvatarUrl(item.avatarUrl ?? item.avatar_url) } : {}),
-          ...(optionalTrimmedString(item.displayName, 160) ? { displayName: optionalTrimmedString(item.displayName, 160) } : {}),
-          ...(optionalTrimmedString(item.role, 32) ? { role: optionalTrimmedString(item.role, 32) } : {}),
-          userId
-        }]
+      ? [
+          {
+            ...(normalizeMessagingAvatarUrl(item.avatarUrl ?? item.avatar_url)
+              ? { avatarUrl: normalizeMessagingAvatarUrl(item.avatarUrl ?? item.avatar_url) }
+              : {}),
+            ...(optionalTrimmedString(item.displayName, 160)
+              ? { displayName: optionalTrimmedString(item.displayName, 160) }
+              : {}),
+            ...(optionalTrimmedString(item.role, 32) ? { role: optionalTrimmedString(item.role, 32) } : {}),
+            userId
+          }
+        ]
       : [];
   });
   return members.length ? members.slice(0, 100) : undefined;
@@ -11467,15 +12995,20 @@ function normalizeMessagingMapLinks(value: unknown): MessagingMapLink[] | undefi
     if (!targetId) {
       return [];
     }
-    const bbox = Array.isArray(item.bbox) && item.bbox.length === 4
-      ? item.bbox.flatMap((coordinate) => typeof coordinate === "number" && Number.isFinite(coordinate) ? [coordinate] : [])
-      : undefined;
-    return [{
-      ...(bbox?.length === 4 ? { bbox } : {}),
-      ...(optionalTrimmedString(item.label, 160) ? { label: optionalTrimmedString(item.label, 160) } : {}),
-      ...(optionalTrimmedString(item.layerId, 160) ? { layerId: optionalTrimmedString(item.layerId, 160) } : {}),
-      targetId
-    }];
+    const bbox =
+      Array.isArray(item.bbox) && item.bbox.length === 4
+        ? item.bbox.flatMap((coordinate) =>
+            typeof coordinate === "number" && Number.isFinite(coordinate) ? [coordinate] : []
+          )
+        : undefined;
+    return [
+      {
+        ...(bbox?.length === 4 ? { bbox } : {}),
+        ...(optionalTrimmedString(item.label, 160) ? { label: optionalTrimmedString(item.label, 160) } : {}),
+        ...(optionalTrimmedString(item.layerId, 160) ? { layerId: optionalTrimmedString(item.layerId, 160) } : {}),
+        targetId
+      }
+    ];
   });
   return links.length ? links.slice(0, 25) : undefined;
 }
@@ -11497,7 +13030,9 @@ function normalizeMessagingMetadata(value: unknown): MessagingConversationCreate
   return Object.keys(metadata).length ? metadata : undefined;
 }
 
-function normalizeMessagingMetadataValue(value: unknown): string | number | boolean | null | Array<string | number | boolean | null> | undefined {
+function normalizeMessagingMetadataValue(
+  value: unknown
+): string | number | boolean | null | Array<string | number | boolean | null> | undefined {
   if (value === null || typeof value === "boolean") {
     return value;
   }
@@ -11531,16 +13066,28 @@ function normalizeCommunityAttachmentRequest(value: unknown): {
     return null;
   }
   const contentType = optionalTrimmedString(value.contentType, 120)?.toLowerCase();
-  const byteSize = optionalFiniteNumber(value.byteSize, 1, readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024));
-  const kind = isCommunityAttachmentKind(value.kind) ? value.kind : contentType ? kindFromContentType(contentType) : undefined;
+  const byteSize = optionalFiniteNumber(
+    value.byteSize,
+    1,
+    readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024)
+  );
+  const kind = isCommunityAttachmentKind(value.kind)
+    ? value.kind
+    : contentType
+      ? kindFromContentType(contentType)
+      : undefined;
   if (!contentType || byteSize === undefined || !kind || !isAllowedCommunityContentType(contentType, kind)) {
     return null;
   }
   return {
     byteSize,
     ...(optionalIsoTimestamp(value.capturedAt) ? { capturedAt: optionalIsoTimestamp(value.capturedAt) } : {}),
-    ...(normalizeCommunityLocation(value.captureLocation, "photo_exif") ? { captureLocation: normalizeCommunityLocation(value.captureLocation, "photo_exif") } : {}),
-    ...(optionalChecksumSha256(value.checksumSha256) ? { checksumSha256: optionalChecksumSha256(value.checksumSha256) } : {}),
+    ...(normalizeCommunityLocation(value.captureLocation, "photo_exif")
+      ? { captureLocation: normalizeCommunityLocation(value.captureLocation, "photo_exif") }
+      : {}),
+    ...(optionalChecksumSha256(value.checksumSha256)
+      ? { checksumSha256: optionalChecksumSha256(value.checksumSha256) }
+      : {}),
     contentType,
     ...(optionalTrimmedString(value.fileName, 160) ? { fileName: optionalTrimmedString(value.fileName, 160) } : {}),
     kind,
@@ -11548,7 +13095,11 @@ function normalizeCommunityAttachmentRequest(value: unknown): {
   };
 }
 
-function normalizeCommunityAttachmentUploadBody(value: unknown, declaredByteSize: number, maxByteSize: number): { body: Buffer } | null {
+function normalizeCommunityAttachmentUploadBody(
+  value: unknown,
+  declaredByteSize: number,
+  maxByteSize: number
+): { body: Buffer } | null {
   if (Buffer.isBuffer(value)) {
     if (value.length < 1 || value.length > maxByteSize || value.length !== declaredByteSize) {
       return null;
@@ -11558,11 +13109,12 @@ function normalizeCommunityAttachmentUploadBody(value: unknown, declaredByteSize
   if (!isRecord(value)) {
     return null;
   }
-  const rawData = typeof value.dataBase64 === "string"
-    ? value.dataBase64
-    : typeof value.base64 === "string"
-      ? value.base64
-      : undefined;
+  const rawData =
+    typeof value.dataBase64 === "string"
+      ? value.dataBase64
+      : typeof value.base64 === "string"
+        ? value.base64
+        : undefined;
   if (!rawData) {
     return null;
   }
@@ -11592,20 +13144,21 @@ function canReadCommunityReport(report: CommunityReportRecord, actor: Authentica
 }
 
 function canReadCommunityGroup(group: CommunityGroupRecord, actor: AuthenticatedActor): boolean {
-  return group.visibility === "public" || group.members.some((member) =>
-    member.subjectId === actor.subjectId
-    && (member.status === "active" || member.status === "pending")
+  return (
+    group.visibility === "public" ||
+    group.members.some(
+      (member) => member.subjectId === actor.subjectId && (member.status === "active" || member.status === "pending")
+    )
   );
 }
 
 function canUseCommunityGroupForReport(group: CommunityGroupRecord, actor: AuthenticatedActor): boolean {
-  return group.members.some((member) =>
-    member.subjectId === actor.subjectId
-    && member.status === "active"
-  );
+  return group.members.some((member) => member.subjectId === actor.subjectId && member.status === "active");
 }
 
-function communityReportGroupId(report: Pick<CommunityReportRecord, "properties"> | { properties?: Record<string, unknown> }): string | undefined {
+function communityReportGroupId(
+  report: Pick<CommunityReportRecord, "properties"> | { properties?: Record<string, unknown> }
+): string | undefined {
   return optionalUuid(report.properties?.groupId);
 }
 
@@ -11642,9 +13195,15 @@ function canReadCommunityAttachment(
   return access.groupIds.some((groupId) => actorGroupIds.has(groupId));
 }
 
-function communityAttachmentAccessPolicy(attachment: { metadata?: Record<string, unknown> }): CommunityAttachmentAccessPolicy {
+function communityAttachmentAccessPolicy(attachment: {
+  metadata?: Record<string, unknown>;
+}): CommunityAttachmentAccessPolicy {
   const access = isRecord(attachment.metadata?.access) ? attachment.metadata.access : {};
-  const mode = isCommunityAttachmentAccessMode(access.audience) ? access.audience : isCommunityAttachmentAccessMode(access.mode) ? access.mode : "public";
+  const mode = isCommunityAttachmentAccessMode(access.audience)
+    ? access.audience
+    : isCommunityAttachmentAccessMode(access.mode)
+      ? access.mode
+      : "public";
   return {
     groupIds: normalizeCsv(access.groupIds).slice(0, 50),
     mode,
@@ -11702,7 +13261,10 @@ function communityAttachmentResponseItem(
     ...attachment,
     ...communityAttachmentDerivativeResponse(attachment, reportId, canReadMedia, actor, requestNow),
     ...(attachment.status === "uploaded" && canReadMedia
-      ? { contentUrl: demoContentUrl ?? communityAttachmentContentUrl(reportId, attachment.attachmentId, actor, requestNow) }
+      ? {
+          contentUrl:
+            demoContentUrl ?? communityAttachmentContentUrl(reportId, attachment.attachmentId, actor, requestNow)
+        }
       : {})
   };
 }
@@ -11719,19 +13281,29 @@ function communityAttachmentDerivativeResponse(
     return {};
   }
   return {
-    derivatives: [{
-      ...(typeof derivative.byteSize === "number" ? { byteSize: derivative.byteSize } : {}),
-      ...(derivative.contentType ? { contentType: derivative.contentType } : {}),
-      ...(canReadMedia && derivative.status === "ready"
-        ? { contentUrl: communityAttachmentDerivativeContentUrl(reportId, attachment.attachmentId, derivative.derivativeId, actor, requestNow) }
-        : {}),
-      derivativeId: derivative.derivativeId,
-      ...(derivative.error ? { error: derivative.error } : {}),
-      kind: "video",
-      layout: derivative.layout,
-      status: derivative.status,
-      updatedAt: derivative.updatedAt
-    }]
+    derivatives: [
+      {
+        ...(typeof derivative.byteSize === "number" ? { byteSize: derivative.byteSize } : {}),
+        ...(derivative.contentType ? { contentType: derivative.contentType } : {}),
+        ...(canReadMedia && derivative.status === "ready"
+          ? {
+              contentUrl: communityAttachmentDerivativeContentUrl(
+                reportId,
+                attachment.attachmentId,
+                derivative.derivativeId,
+                actor,
+                requestNow
+              )
+            }
+          : {}),
+        derivativeId: derivative.derivativeId,
+        ...(derivative.error ? { error: derivative.error } : {}),
+        kind: "video",
+        layout: derivative.layout,
+        status: derivative.status,
+        updatedAt: derivative.updatedAt
+      }
+    ]
   };
 }
 
@@ -11831,22 +13403,26 @@ function hasValidCommunityMediaTicket(
     return false;
   }
   const nowSeconds = Math.floor(requestNow.getTime() / 1000);
-  return payload.v === 1
-    && payload.exp >= nowSeconds
-    && payload.reportId === expected.reportId
-    && payload.attachmentId === expected.attachmentId
-    && (payload.derivativeId ?? "") === (expected.derivativeId ?? "");
+  return (
+    payload.v === 1 &&
+    payload.exp >= nowSeconds &&
+    payload.reportId === expected.reportId &&
+    payload.attachmentId === expected.attachmentId &&
+    (payload.derivativeId ?? "") === (expected.derivativeId ?? "")
+  );
 }
 
 function parseCommunityMediaTicketPayload(encodedPayload: string): CommunityMediaTicketPayload | null {
   try {
     const parsed = JSON.parse(base64UrlDecode(encodedPayload).toString("utf8")) as unknown;
-    if (!isRecord(parsed)
-      || parsed.v !== 1
-      || typeof parsed.exp !== "number"
-      || typeof parsed.reportId !== "string"
-      || typeof parsed.attachmentId !== "string"
-      || (hasOwn(parsed, "derivativeId") && typeof parsed.derivativeId !== "string")) {
+    if (
+      !isRecord(parsed) ||
+      parsed.v !== 1 ||
+      typeof parsed.exp !== "number" ||
+      typeof parsed.reportId !== "string" ||
+      typeof parsed.attachmentId !== "string" ||
+      (hasOwn(parsed, "derivativeId") && typeof parsed.derivativeId !== "string")
+    ) {
       return null;
     }
     return {
@@ -11867,9 +13443,7 @@ function signCommunityMediaTicket(encodedPayload: string): string {
 }
 
 function communityMediaTicketSecret(): string {
-  return process.env.COP_MEDIA_ACCESS_TOKEN_SECRET
-    ?? process.env.COP_LAB_TOKEN
-    ?? "dev-community-media-ticket-secret";
+  return process.env.COP_MEDIA_ACCESS_TOKEN_SECRET ?? process.env.COP_LAB_TOKEN ?? "dev-community-media-ticket-secret";
 }
 
 function base64UrlEncode(value: Buffer): string {
@@ -11877,7 +13451,7 @@ function base64UrlEncode(value: Buffer): string {
 }
 
 function base64UrlDecode(value: string): Buffer {
-  const padded = `${value}${"=".repeat((4 - value.length % 4) % 4)}`;
+  const padded = `${value}${"=".repeat((4 - (value.length % 4)) % 4)}`;
   return Buffer.from(padded.replace(/-/gu, "+").replace(/_/gu, "/"), "base64");
 }
 
@@ -11898,9 +13472,13 @@ function communityReportsFeatureCollection(
         attachmentCount: report.attachments.length,
         attachments: communityFeatureAttachments(report, actor, actorGroupIds, requestNow),
         category: report.category,
-        confidence: report.location.accuracyM ? Math.max(0.35, Math.min(0.95, 1 - report.location.accuracyM / 1000)) : 0.7,
+        confidence: report.location.accuracyM
+          ? Math.max(0.35, Math.min(0.95, 1 - report.location.accuracyM / 1000))
+          : 0.7,
         description: report.description ?? null,
-        documentCount: report.attachments.filter((attachment) => attachment.kind === "document" && attachment.status === "uploaded").length,
+        documentCount: report.attachments.filter(
+          (attachment) => attachment.kind === "document" && attachment.status === "uploaded"
+        ).length,
         featureId: `community:${report.reportId}`,
         groupId: typeof report.properties.groupId === "string" ? report.properties.groupId : null,
         groupName: typeof report.properties.groupName === "string" ? report.properties.groupName : null,
@@ -11909,14 +13487,18 @@ function communityReportsFeatureCollection(
         layer: "community",
         locationAccuracyM: report.location.accuracyM ?? null,
         observedAt: report.observedAt,
-        photoCount: report.attachments.filter((attachment) => attachment.kind === "photo" && attachment.status === "uploaded").length,
+        photoCount: report.attachments.filter(
+          (attachment) => attachment.kind === "photo" && attachment.status === "uploaded"
+        ).length,
         reportId: report.reportId,
         severity: communityReportSeverity(report),
         sourceId: "community_reports",
         status: report.status,
         stale: isCommunityReportStale(report, requestNow),
         validUntil: communityReportValidUntil(report) ?? null,
-        videoCount: report.attachments.filter((attachment) => attachment.kind === "video" && attachment.status === "uploaded").length,
+        videoCount: report.attachments.filter(
+          (attachment) => attachment.kind === "video" && attachment.status === "uploaded"
+        ).length,
         visibility: report.visibility
       },
       type: "Feature" as const
@@ -11977,11 +13559,12 @@ function communityFeatureAttachments(
         contentType: attachment.contentType,
         ...(canReadMedia
           ? {
-              contentUrl: typeof existingContentUrl === "string" && existingContentUrl
-                ? existingContentUrl
-                : demoContentUrl
-                  ? demoContentUrl
-                  : communityAttachmentContentUrl(report.reportId, attachment.attachmentId, actor, requestNow)
+              contentUrl:
+                typeof existingContentUrl === "string" && existingContentUrl
+                  ? existingContentUrl
+                  : demoContentUrl
+                    ? demoContentUrl
+                    : communityAttachmentContentUrl(report.reportId, attachment.attachmentId, actor, requestNow)
             }
           : {}),
         ...communityAttachmentDerivativeResponse(attachment, report.reportId, canReadMedia, actor, requestNow),
@@ -12124,7 +13707,11 @@ function normalizeUpdateIncidentRequest(value: unknown): IncidentUpdateInput | n
   return Object.keys(update).length > 0 ? update : null;
 }
 
-function normalizeCreateIncidentTaskRequest(incidentId: string, value: unknown, actor: AuthenticatedActor): CreateIncidentTaskInput | null {
+function normalizeCreateIncidentTaskRequest(
+  incidentId: string,
+  value: unknown,
+  actor: AuthenticatedActor
+): CreateIncidentTaskInput | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -12183,7 +13770,10 @@ function normalizeUpdateIncidentTaskRequest(value: unknown): IncidentTaskUpdateI
   return Object.keys(update).length > 0 ? update : null;
 }
 
-function normalizeIncidentLocation(value: unknown, fallbackSource: IncidentLocationSource): IncidentLocation | undefined {
+function normalizeIncidentLocation(
+  value: unknown,
+  fallbackSource: IncidentLocationSource
+): IncidentLocation | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
@@ -12246,10 +13836,13 @@ function normalizeIncidentSourceRef(value: unknown): IncidentSourceRef | undefin
 
 function normalizeCsv(value: unknown): string[] {
   const items = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
-  return Array.from(new Set(items.flatMap((item) => typeof item === "string" ? [item.trim()] : []).filter(Boolean)));
+  return Array.from(new Set(items.flatMap((item) => (typeof item === "string" ? [item.trim()] : [])).filter(Boolean)));
 }
 
-function normalizeCommunityLocation(value: unknown, fallbackSource: CommunityLocationSource): CommunityReportLocation | undefined {
+function normalizeCommunityLocation(
+  value: unknown,
+  fallbackSource: CommunityLocationSource
+): CommunityReportLocation | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
@@ -12259,7 +13852,9 @@ function normalizeCommunityLocation(value: unknown, fallbackSource: CommunityLoc
     return undefined;
   }
   return {
-    ...(optionalFiniteNumber(value.accuracyM, 0, 100000) !== undefined ? { accuracyM: optionalFiniteNumber(value.accuracyM, 0, 100000) } : {}),
+    ...(optionalFiniteNumber(value.accuracyM, 0, 100000) !== undefined
+      ? { accuracyM: optionalFiniteNumber(value.accuracyM, 0, 100000) }
+      : {}),
     lat,
     lon,
     source: isCommunityLocationSource(value.source) ? value.source : fallbackSource
@@ -12334,7 +13929,12 @@ function communitySeverity(category: CommunityReportCategory): "advisory" | "war
   if (category === "fire" || category === "flood" || category === "medical") {
     return "critical";
   }
-  if (category === "bridge_damage" || category === "road_blockage" || category === "infrastructure_damage" || category === "hazard") {
+  if (
+    category === "bridge_damage" ||
+    category === "road_blockage" ||
+    category === "infrastructure_damage" ||
+    category === "hazard"
+  ) {
     return "warning";
   }
   return "advisory";
@@ -12356,27 +13956,31 @@ function communityCategoryLabel(category: CommunityReportCategory): string {
 }
 
 function isCommunityReportCategory(value: unknown): value is CommunityReportCategory {
-  return value === "fire"
-    || value === "flood"
-    || value === "bridge_damage"
-    || value === "road_blockage"
-    || value === "infrastructure_damage"
-    || value === "medical"
-    || value === "utility_outage"
-    || value === "hazard"
-    || value === "other";
+  return (
+    value === "fire" ||
+    value === "flood" ||
+    value === "bridge_damage" ||
+    value === "road_blockage" ||
+    value === "infrastructure_damage" ||
+    value === "medical" ||
+    value === "utility_outage" ||
+    value === "hazard" ||
+    value === "other"
+  );
 }
 
 function isIncidentCategory(value: unknown): value is IncidentCategory {
-  return value === "community"
-    || value === "fire"
-    || value === "flood"
-    || value === "infrastructure"
-    || value === "medical"
-    || value === "other"
-    || value === "security"
-    || value === "traffic"
-    || value === "weather";
+  return (
+    value === "community" ||
+    value === "fire" ||
+    value === "flood" ||
+    value === "infrastructure" ||
+    value === "medical" ||
+    value === "other" ||
+    value === "security" ||
+    value === "traffic" ||
+    value === "weather"
+  );
 }
 
 function isIncidentSeverity(value: unknown): value is IncidentSeverity {
@@ -12384,12 +13988,14 @@ function isIncidentSeverity(value: unknown): value is IncidentSeverity {
 }
 
 function isIncidentStatus(value: unknown): value is IncidentStatus {
-  return value === "active"
-    || value === "candidate"
-    || value === "closed"
-    || value === "monitoring"
-    || value === "rejected"
-    || value === "resolved";
+  return (
+    value === "active" ||
+    value === "candidate" ||
+    value === "closed" ||
+    value === "monitoring" ||
+    value === "rejected" ||
+    value === "resolved"
+  );
 }
 
 function isIncidentLocationSource(value: unknown): value is IncidentLocationSource {
@@ -12397,11 +14003,13 @@ function isIncidentLocationSource(value: unknown): value is IncidentLocationSour
 }
 
 function isIncidentSourceRefKind(value: unknown): value is IncidentSourceRefKind {
-  return value === "alert"
-    || value === "community_report"
-    || value === "manual"
-    || value === "provider_feature"
-    || value === "sketch";
+  return (
+    value === "alert" ||
+    value === "community_report" ||
+    value === "manual" ||
+    value === "provider_feature" ||
+    value === "sketch"
+  );
 }
 
 function isIncidentTaskPriority(value: unknown): value is IncidentTaskPriority {
@@ -12409,11 +14017,15 @@ function isIncidentTaskPriority(value: unknown): value is IncidentTaskPriority {
 }
 
 function isIncidentTaskStatus(value: unknown): value is IncidentTaskStatus {
-  return value === "blocked" || value === "cancelled" || value === "done" || value === "in_progress" || value === "open";
+  return (
+    value === "blocked" || value === "cancelled" || value === "done" || value === "in_progress" || value === "open"
+  );
 }
 
 function isCommunityReportStatus(value: unknown): value is CommunityReportStatus {
-  return value === "draft" || value === "submitted" || value === "published" || value === "hidden" || value === "rejected";
+  return (
+    value === "draft" || value === "submitted" || value === "published" || value === "hidden" || value === "rejected"
+  );
 }
 
 function isCommunityVisibility(value: unknown): value is CommunityReportVisibility {
@@ -12437,7 +14049,13 @@ function isCommunityAttachmentAccessMode(value: unknown): value is CommunityAtta
 }
 
 function isCommunityLocationSource(value: unknown): value is CommunityLocationSource {
-  return value === "device" || value === "manual" || value === "media_metadata" || value === "photo_exif" || value === "unknown";
+  return (
+    value === "device" ||
+    value === "manual" ||
+    value === "media_metadata" ||
+    value === "photo_exif" ||
+    value === "unknown"
+  );
 }
 
 function isCommunityAttachmentKind(value: unknown): value is CommunityAttachmentKind {
@@ -12446,11 +14064,12 @@ function isCommunityAttachmentKind(value: unknown): value is CommunityAttachment
 
 function contentDispositionHeader(value: string): string {
   const fileName = sanitizeContentDispositionFileName(value);
-  const fallback = fileName
-    .replace(/[^\x20-\x7E]/gu, "_")
-    .replace(/["\\;]/gu, "_")
-    .trim()
-    .slice(0, 160) || "attachment";
+  const fallback =
+    fileName
+      .replace(/[^\x20-\x7E]/gu, "_")
+      .replace(/["\\;]/gu, "_")
+      .trim()
+      .slice(0, 160) || "attachment";
   return `inline; filename="${fallback}"; filename*=UTF-8''${encodeRfc5987FileName(fileName)}`;
 }
 
@@ -12514,10 +14133,14 @@ function normalizeMobileDeviceRegistration(
   const pushToken = optionalTrimmedString(value.pushToken, 4096);
   return {
     appVersion,
-    ...(optionalTrimmedString(value.buildNumber, 40) ? { buildNumber: optionalTrimmedString(value.buildNumber, 40) } : {}),
+    ...(optionalTrimmedString(value.buildNumber, 40)
+      ? { buildNumber: optionalTrimmedString(value.buildNumber, 40) }
+      : {}),
     capabilities: normalizeStringList(value.capabilities, 16, 80),
     deviceId,
-    ...(optionalTrimmedString(value.deviceModel, 80) ? { deviceModel: optionalTrimmedString(value.deviceModel, 80) } : {}),
+    ...(optionalTrimmedString(value.deviceModel, 80)
+      ? { deviceModel: optionalTrimmedString(value.deviceModel, 80) }
+      : {}),
     deviceSessionId: crypto.randomUUID(),
     ...(optionalTrimmedString(value.osVersion, 40) ? { osVersion: optionalTrimmedString(value.osVersion, 40) } : {}),
     platform,
@@ -12552,17 +14175,20 @@ function normalizeMobileMeshBundle(
     return { reason: "payload_not_object", valid: false };
   }
   const envelope = isRecord(value.envelope) ? value.envelope : value;
-  const contractVersion = optionalTrimmedString(value.contractVersion, 80) ?? optionalTrimmedString(envelope.contractVersion, 80);
+  const contractVersion =
+    optionalTrimmedString(value.contractVersion, 80) ?? optionalTrimmedString(envelope.contractVersion, 80);
   const envelopeId = normalizeMobileMeshEnvelopeId(value.envelopeId ?? value.id ?? envelope.envelopeId ?? envelope.id);
-  const encrypted = value.encrypted === true
-    || envelope.encrypted === true
-    || optionalTrimmedString(value.ciphertext, 12000) !== undefined
-    || optionalTrimmedString(envelope.ciphertext, 12000) !== undefined
-    || (isRecord(value.payload) && value.payload.encrypted === true);
-  const signed = optionalTrimmedString(value.signature, 4096) !== undefined
-    || optionalTrimmedString(envelope.signature, 4096) !== undefined
-    || Array.isArray(value.signatures) && value.signatures.length > 0
-    || Array.isArray(envelope.signatures) && envelope.signatures.length > 0;
+  const encrypted =
+    value.encrypted === true ||
+    envelope.encrypted === true ||
+    optionalTrimmedString(value.ciphertext, 12000) !== undefined ||
+    optionalTrimmedString(envelope.ciphertext, 12000) !== undefined ||
+    (isRecord(value.payload) && value.payload.encrypted === true);
+  const signed =
+    optionalTrimmedString(value.signature, 4096) !== undefined ||
+    optionalTrimmedString(envelope.signature, 4096) !== undefined ||
+    (Array.isArray(value.signatures) && value.signatures.length > 0) ||
+    (Array.isArray(envelope.signatures) && envelope.signatures.length > 0);
   if (contractVersion !== "csm-mesh-v1") {
     return { envelopeId, reason: "unsupported_contract_version", valid: false };
   }
@@ -12572,7 +14198,9 @@ function normalizeMobileMeshBundle(
   if (!encrypted || !signed) {
     return { envelopeId, reason: "bundle_must_be_encrypted_and_signed", valid: false };
   }
-  const bundleType = normalizeMobileMeshBundleType(value.type ?? value.payloadType ?? envelope.type ?? envelope.payloadType);
+  const bundleType = normalizeMobileMeshBundleType(
+    value.type ?? value.payloadType ?? envelope.type ?? envelope.payloadType
+  );
   const deviceId = normalizeMobileDeviceId(value.deviceId ?? envelope.deviceId);
   const expiresAt = optionalIsoDateString(value.expiresAt ?? envelope.expiresAt);
   const payloadSizeBytes = mobileMeshPayloadSizeBytes(value);
@@ -12646,17 +14274,19 @@ function mobilePairingSessionResponse(
     pairing: {
       claimedAt: session.claimedAt ?? null,
       claimedBy: session.claimedBy ?? null,
-      claimedDevice: session.claimedDevice ? {
-        appVersion: session.claimedDevice.appVersion,
-        buildNumber: session.claimedDevice.buildNumber ?? null,
-        capabilities: session.claimedDevice.capabilities,
-        deviceId: session.claimedDevice.deviceId,
-        deviceModel: session.claimedDevice.deviceModel ?? null,
-        matrixDeviceId: session.claimedDevice.matrixDeviceId ?? null,
-        osVersion: session.claimedDevice.osVersion ?? null,
-        platform: session.claimedDevice.platform,
-        pushTokenRegistered: session.claimedDevice.pushTokenRegistered
-      } : null,
+      claimedDevice: session.claimedDevice
+        ? {
+            appVersion: session.claimedDevice.appVersion,
+            buildNumber: session.claimedDevice.buildNumber ?? null,
+            capabilities: session.claimedDevice.capabilities,
+            deviceId: session.claimedDevice.deviceId,
+            deviceModel: session.claimedDevice.deviceModel ?? null,
+            matrixDeviceId: session.claimedDevice.matrixDeviceId ?? null,
+            osVersion: session.claimedDevice.osVersion ?? null,
+            platform: session.claimedDevice.platform,
+            pushTokenRegistered: session.claimedDevice.pushTokenRegistered
+          }
+        : null,
       code: session.code,
       confirmedAt: session.confirmedAt ?? null,
       createdAt: session.createdAt,
@@ -12802,7 +14432,8 @@ function mobileEndpoints() {
     bootstrap: "/api/v1/mobile/bootstrap",
     communityReportAttachmentComplete: "/api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete",
     communityReportAttachmentCreate: "/api/v1/community/reports/{reportId}/attachments",
-    communityReportAttachmentDerivativeContent: "/api/v1/community/reports/{reportId}/attachments/{attachmentId}/derivatives/{derivativeId}/content",
+    communityReportAttachmentDerivativeContent:
+      "/api/v1/community/reports/{reportId}/attachments/{attachmentId}/derivatives/{derivativeId}/content",
     communityReportAttachmentUpload: "/api/v1/community/reports/{reportId}/attachments/{attachmentId}/upload",
     communityReportDelete: "/api/v1/community/reports/{reportId}",
     communityReportDetail: "/api/v1/community/reports/{reportId}",
@@ -12887,7 +14518,7 @@ function normalizeStringList(value: unknown, maxItems: number, maxLength: number
     return [];
   }
   return value
-    .flatMap((item) => typeof item === "string" ? [item.trim().slice(0, maxLength)] : [])
+    .flatMap((item) => (typeof item === "string" ? [item.trim().slice(0, maxLength)] : []))
     .filter(Boolean)
     .slice(0, maxItems);
 }
@@ -12896,7 +14527,9 @@ function parseCoordinatePair(value: string | undefined, fallback: [number, numbe
   const [lonRaw, latRaw] = (value ?? "").split(",");
   const lon = Number(lonRaw);
   const lat = Number(latRaw);
-  return Number.isFinite(lon) && Number.isFinite(lat) ? [clampNumber(lon, -180, 180), clampNumber(lat, -90, 90)] : fallback;
+  return Number.isFinite(lon) && Number.isFinite(lat)
+    ? [clampNumber(lon, -180, 180), clampNumber(lat, -90, 90)]
+    : fallback;
 }
 
 function normalizeUserPreferences(value: unknown): Record<string, unknown> {
@@ -12924,11 +14557,25 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     proximityAlertEnabled: optionalBoolean(value.proximityAlertEnabled),
     publicFlightSymbolMode: optionalString(value.publicFlightSymbolMode, ["civil", "standard"]),
     refreshSeconds: optionalFiniteNumber(value.refreshSeconds, 1, 60),
-    selectedLayer: optionalString(value.selectedLayer, ["air-situation", "sim-air", "uav", "friendly", "foreign", "public-flights", "data-quality"]),
+    selectedLayer: optionalString(value.selectedLayer, [
+      "air-situation",
+      "sim-air",
+      "uav",
+      "friendly",
+      "foreign",
+      "public-flights",
+      "data-quality"
+    ]),
     showAlertAreas: optionalBoolean(value.showAlertAreas),
     showHistory: optionalBoolean(value.showHistory),
     showPrediction: optionalBoolean(value.showPrediction),
-    safetyLayerIds: optionalStringArray(value.safetyLayerIds, ["boundary_admin", "fire", "flood", "warnings", "weather_alerts"]),
+    safetyLayerIds: optionalStringArray(value.safetyLayerIds, [
+      "boundary_admin",
+      "fire",
+      "flood",
+      "warnings",
+      "weather_alerts"
+    ]),
     situationLayerIds: optionalStringArray(value.situationLayerIds, [
       "weather",
       "weather_temperature_grid",
@@ -12957,7 +14604,15 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     ]),
     situationSourceIds: normalizeStringList(value.situationSourceIds, 32, 80),
     takLayerIds: optionalStringArray(value.takLayerIds, ["mobile", "ground", "traffic"]),
-    trackLayerIds: optionalStringArray(value.trackLayerIds, ["air-situation", "sim-air", "uav", "friendly", "foreign", "public-flights", "data-quality"]),
+    trackLayerIds: optionalStringArray(value.trackLayerIds, [
+      "air-situation",
+      "sim-air",
+      "uav",
+      "friendly",
+      "foreign",
+      "public-flights",
+      "data-quality"
+    ]),
     trackHistoryDisplayMode: optionalString(value.trackHistoryDisplayMode, ["all", "selected"]),
     trackHistoryLimit: optionalFiniteNumber(value.trackHistoryLimit, 1, 1000),
     trackHistoryWindowSeconds: optionalFiniteNumber(value.trackHistoryWindowSeconds, 1, 3600),
@@ -13072,14 +14727,16 @@ function normalizeAoiPolygonRing(value: unknown): Array<Array<[number, number]>>
   if (!Array.isArray(value)) {
     return [];
   }
-  const points = value.flatMap((coordinate): Array<[number, number]> => {
-    if (!Array.isArray(coordinate) || coordinate.length < 2) {
-      return [];
-    }
-    const lon = optionalFiniteNumber(coordinate[0], -180, 180);
-    const lat = optionalFiniteNumber(coordinate[1], -90, 90);
-    return lon === undefined || lat === undefined ? [] : [[lon, lat]];
-  }).slice(0, 160);
+  const points = value
+    .flatMap((coordinate): Array<[number, number]> => {
+      if (!Array.isArray(coordinate) || coordinate.length < 2) {
+        return [];
+      }
+      const lon = optionalFiniteNumber(coordinate[0], -180, 180);
+      const lat = optionalFiniteNumber(coordinate[1], -90, 90);
+      return lon === undefined || lat === undefined ? [] : [[lon, lat]];
+    })
+    .slice(0, 160);
   if (points.length < 3) {
     return [];
   }
@@ -13123,7 +14780,9 @@ function normalizeMapViewPreference(value: unknown): Record<string, unknown> | u
 
 function compactRecord(value: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null && !(Array.isArray(entry) && entry.length === 0))
+    Object.entries(value).filter(
+      ([, entry]) => entry !== undefined && entry !== null && !(Array.isArray(entry) && entry.length === 0)
+    )
   );
 }
 
@@ -13176,9 +14835,7 @@ function resolveSituationDataRelativeUrl(value: string, situationDataBaseUrl: st
   if (!value.startsWith("/api/v1/weather-radar/clean/") && !value.startsWith("/weather-radar/clean/")) {
     return null;
   }
-  const normalizedPath = value.startsWith("/api/v1/")
-    ? value.slice("/api/v1/".length)
-    : value.replace(/^\/+/, "");
+  const normalizedPath = value.startsWith("/api/v1/") ? value.slice("/api/v1/".length) : value.replace(/^\/+/, "");
   try {
     return new URL(normalizedPath, `${trimTrailingSlash(situationDataBaseUrl)}/`);
   } catch {
@@ -13229,9 +14886,7 @@ function resolveSituationDataCameraRelativeUrl(value: string, situationDataBaseU
 
 function isWeatherCameraPath(pathname: string): boolean {
   const normalized = pathname.toLowerCase();
-  return normalized.includes("webcam")
-    || normalized.includes("camera")
-    || normalized.startsWith("weather/");
+  return normalized.includes("webcam") || normalized.includes("camera") || normalized.startsWith("weather/");
 }
 
 function isAllowedWeatherCameraUrl(url: URL, env: Record<string, string | undefined> = process.env): boolean {
@@ -13239,18 +14894,22 @@ function isAllowedWeatherCameraUrl(url: URL, env: Record<string, string | undefi
   if (hostname === "chmi.cz" || hostname.endsWith(".chmi.cz")) {
     return false;
   }
-  const allowedHosts = new Set((env.COP_WEATHER_CAMERA_ALLOWED_HOSTS ?? defaultWeatherCameraAllowedHosts)
-    .split(",")
-    .map((host) => host.trim().toLowerCase())
-    .filter(Boolean));
+  const allowedHosts = new Set(
+    (env.COP_WEATHER_CAMERA_ALLOWED_HOSTS ?? defaultWeatherCameraAllowedHosts)
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean)
+  );
   return allowedHosts.has(hostname);
 }
 
 function isAllowedRasterOverlayUrl(url: URL, env: Record<string, string | undefined> = process.env): boolean {
-  const allowedHosts = new Set((env.COP_RASTER_OVERLAY_ALLOWED_HOSTS ?? defaultRasterOverlayAllowedHosts)
-    .split(",")
-    .map((host) => host.trim().toLowerCase())
-    .filter(Boolean));
+  const allowedHosts = new Set(
+    (env.COP_RASTER_OVERLAY_ALLOWED_HOSTS ?? defaultRasterOverlayAllowedHosts)
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean)
+  );
   if (!allowedHosts.has(url.hostname.toLowerCase())) {
     return false;
   }
@@ -13452,12 +15111,14 @@ function optionalUuid(value: unknown): string | undefined {
 }
 
 function isCopAlertType(value: unknown): value is CopAlert["type"] {
-  return value === "AOI_ENTRY"
-    || value === "LOW_CONFIDENCE"
-    || value === "SOURCE_DEGRADED"
-    || value === "TRACK_CONFLICT"
-    || value === "TRACK_LOST"
-    || value === "TRACK_STALE";
+  return (
+    value === "AOI_ENTRY" ||
+    value === "LOW_CONFIDENCE" ||
+    value === "SOURCE_DEGRADED" ||
+    value === "TRACK_CONFLICT" ||
+    value === "TRACK_LOST" ||
+    value === "TRACK_STALE"
+  );
 }
 
 function isCopAlertSeverity(value: unknown): value is CopAlert["severity"] {
@@ -13479,7 +15140,10 @@ function mcpJsonRpcId(value: unknown): McpJsonRpcId | undefined {
   return undefined;
 }
 
-function mcpJsonRpcResult(id: McpJsonRpcId | undefined, result: Record<string, unknown>): Record<string, unknown> | undefined {
+function mcpJsonRpcResult(
+  id: McpJsonRpcId | undefined,
+  result: Record<string, unknown>
+): Record<string, unknown> | undefined {
   if (id === undefined) {
     return undefined;
   }
@@ -13511,7 +15175,8 @@ function mcpJsonRpcError(
 }
 
 function aiRequestId(value: unknown): string {
-  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  return typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
     ? value
     : crypto.randomUUID();
 }
@@ -13533,7 +15198,10 @@ function aiPlaceQueryFromQuestion(question: string): string | undefined {
       continue;
     }
     const place = rawPlace
-      .replace(/\b(?:vytvoř|vytvor|udělej|udelej|shrň|shrn|situational|awareness|prosím|prosim|co\b|jaká\b|jaka\b|jaký\b|jaky\b).*$/iu, "")
+      .replace(
+        /\b(?:vytvoř|vytvor|udělej|udelej|shrň|shrn|situational|awareness|prosím|prosim|co\b|jaká\b|jaka\b|jaký\b|jaky\b).*$/iu,
+        ""
+      )
       .trim();
     if (place.length >= 3 && !isAiGenericPlaceQuery(place)) {
       return place.slice(0, 120);
@@ -13549,7 +15217,9 @@ function isAiGenericPlaceQuery(value: string): boolean {
     .replace(/\s+/gu, " ")
     .trim()
     .toLocaleLowerCase("cs-CZ");
-  return /^(cop|chatu?|skupine|mistnosti|aplikaci|kontextu|mape|okoli|okolo|pobliz|blizko|kolem|tady|zde|moje okoli|moji polohy|me polohy|aktualni polohy|nearby|around|near me)$/u.test(normalized);
+  return /^(cop|chatu?|skupine|mistnosti|aplikaci|kontextu|mape|okoli|okolo|pobliz|blizko|kolem|tady|zde|moje okoli|moji polohy|me polohy|aktualni polohy|nearby|around|near me)$/u.test(
+    normalized
+  );
 }
 
 function aiQuestionUsesImplicitCurrentArea(question: string): boolean {
@@ -13559,8 +15229,11 @@ function aiQuestionUsesImplicitCurrentArea(question: string): boolean {
     .replace(/\s+/gu, " ")
     .trim()
     .toLocaleLowerCase("cs-CZ");
-  return /\b(v okoli|okoli me|okoli moji polohy|okoli me polohy|pobliz me|pobliz moji polohy|blizko me|blizko moji polohy|kolem me|kolem moji polohy|u me|u moji polohy|moje okoli|near me|nearby|around me|current location)\b/u.test(normalized)
-    || /\bv okoli(?:\s*(?:\?|\.|!|,|;|$)|\s+(?:a|nebo|ted|nyni|moji|me|aktualni)\b)/u.test(normalized);
+  return (
+    /\b(v okoli|okoli me|okoli moji polohy|okoli me polohy|pobliz me|pobliz moji polohy|blizko me|blizko moji polohy|kolem me|kolem moji polohy|u me|u moji polohy|moje okoli|near me|nearby|around me|current location)\b/u.test(
+      normalized
+    ) || /\bv okoli(?:\s*(?:\?|\.|!|,|;|$)|\s+(?:a|nebo|ted|nyni|moji|me|aktualni)\b)/u.test(normalized)
+  );
 }
 
 function aiModelPreference(value: unknown): AiModelPreference | undefined {
@@ -13583,7 +15256,8 @@ interface AiPrioritySignal {
   category?: string;
   citation: string;
   entityId: string;
-  entityType: "alert" | "chatMessage" | "communityReport" | "incident" | "mapFeature" | "observedObject" | "sourceHealth";
+  entityType:
+    "alert" | "chatMessage" | "communityReport" | "incident" | "mapFeature" | "observedObject" | "sourceHealth";
   location?: {
     lat: number;
     lon: number;
@@ -13598,15 +15272,18 @@ interface AiPrioritySignal {
 }
 
 function prioritizeObjectsForAi(objects: ObservedObject[]): ObservedObject[] {
-  return [...objects].sort((left, right) =>
-    aiObservedObjectPriorityScore(right) - aiObservedObjectPriorityScore(left)
-    || timestampMillis(right.lastUpdatedAt) - timestampMillis(left.lastUpdatedAt)
-    || left.objectId.localeCompare(right.objectId)
+  return [...objects].sort(
+    (left, right) =>
+      aiObservedObjectPriorityScore(right) - aiObservedObjectPriorityScore(left) ||
+      timestampMillis(right.lastUpdatedAt) - timestampMillis(left.lastUpdatedAt) ||
+      left.objectId.localeCompare(right.objectId)
   );
 }
 
 function aiObservedObjectPriorityScore(object: ObservedObject): number {
-  const text = `${object.objectType} ${object.domain} ${object.status} ${object.dataQuality ?? ""}`.toLocaleLowerCase("cs-CZ");
+  const text = `${object.objectType} ${object.domain} ${object.status} ${object.dataQuality ?? ""}`.toLocaleLowerCase(
+    "cs-CZ"
+  );
   let score = 0;
   if (object.status === "ACTIVE") {
     score += 0.1;
@@ -13640,7 +15317,9 @@ function buildAiPriorityContext(input: {
 }): Record<string, unknown> {
   const signals = [
     ...(input.incidents ?? []).map((record) => aiPrioritySignalFromRecord("incident", record, "incidentId")),
-    ...(input.communityReports ?? []).map((record) => aiPrioritySignalFromRecord("communityReport", record, "reportId")),
+    ...(input.communityReports ?? []).map((record) =>
+      aiPrioritySignalFromRecord("communityReport", record, "reportId")
+    ),
     ...(input.alerts ?? []).map((record) => aiPrioritySignalFromRecord("alert", record, "alertId")),
     ...(input.mapFeatures ?? []).map((record) => aiPrioritySignalFromRecord("mapFeature", record, "mapFeatureId")),
     ...(input.objects ?? []).map((record) => aiPrioritySignalFromRecord("observedObject", record, "objectId")),
@@ -13648,7 +15327,10 @@ function buildAiPriorityContext(input: {
     ...aiPrioritySignalsFromChat(input.chatContext)
   ]
     .filter((signal): signal is AiPrioritySignal => Boolean(signal))
-    .sort((left, right) => right.priorityScore - left.priorityScore || timestampMillis(right.updatedAt) - timestampMillis(left.updatedAt))
+    .sort(
+      (left, right) =>
+        right.priorityScore - left.priorityScore || timestampMillis(right.updatedAt) - timestampMillis(left.updatedAt)
+    )
     .slice(0, 16)
     .map((signal, index) => ({
       ...signal,
@@ -13657,17 +15339,19 @@ function buildAiPriorityContext(input: {
   const mapSnapshotCandidates = signals
     .filter((signal) => signal.location)
     .slice(0, 12)
-    .map((signal) => compactRecord({
-      category: signal.category,
-      citation: signal.citation,
-      entityId: signal.entityId,
-      entityType: signal.entityType,
-      label: signal.title,
-      location: signal.location,
-      priorityScore: signal.priorityScore,
-      severity: signal.severity,
-      status: signal.status
-    }));
+    .map((signal) =>
+      compactRecord({
+        category: signal.category,
+        citation: signal.citation,
+        entityId: signal.entityId,
+        entityType: signal.entityType,
+        label: signal.title,
+        location: signal.location,
+        priorityScore: signal.priorityScore,
+        severity: signal.severity,
+        status: signal.status
+      })
+    );
   return compactRecord({
     contractVersion: "cop-ai-priority-context-v1",
     focusOrder: [
@@ -13681,7 +15365,8 @@ function buildAiPriorityContext(input: {
       "active-alerts",
       "air-tracks-only-if-relevant"
     ],
-    guidance: "Treat stale civil air-track diagnostics as low priority unless directly relevant to safety, a user question, or a data-coverage caveat.",
+    guidance:
+      "Treat stale civil air-track diagnostics as low priority unless directly relevant to safety, a user question, or a data-coverage caveat.",
     counts: compactRecord({
       alerts: input.alerts?.length ?? 0,
       chatMessages: Array.isArray(input.chatContext?.messages) ? input.chatContext.messages.length : 0,
@@ -13692,15 +15377,17 @@ function buildAiPriorityContext(input: {
       sourceHealth: input.sourceHealth?.length ?? 0
     }),
     categoryCounts: aiCategoryCounts(signals),
-    citations: signals.map((signal) => compactRecord({
-      citationId: signal.citation,
-      entityId: signal.entityId,
-      entityType: signal.entityType,
-      label: signal.title,
-      location: signal.location,
-      sourceSystemIds: signal.sourceSystemIds,
-      updatedAt: signal.updatedAt
-    })),
+    citations: signals.map((signal) =>
+      compactRecord({
+        citationId: signal.citation,
+        entityId: signal.entityId,
+        entityType: signal.entityType,
+        label: signal.title,
+        location: signal.location,
+        sourceSystemIds: signal.sourceSystemIds,
+        updatedAt: signal.updatedAt
+      })
+    ),
     mapSnapshot: compactRecord({
       bbox: bboxForSignals(signals),
       candidates: mapSnapshotCandidates,
@@ -13710,14 +15397,17 @@ function buildAiPriorityContext(input: {
   });
 }
 
-function withAiResponseEvidence(response: AiCopResponse, input: {
-  indexedContext: AiIndexedContext;
-  mapSearch?: AiMapSearchContext;
-  observability?: Record<string, unknown>;
-  priorityContext: Record<string, unknown>;
-  requestContext: Record<string, unknown>;
-  semanticContext: AiSemanticContext;
-}): AiCopResponse {
+function withAiResponseEvidence(
+  response: AiCopResponse,
+  input: {
+    indexedContext: AiIndexedContext;
+    mapSearch?: AiMapSearchContext;
+    observability?: Record<string, unknown>;
+    priorityContext: Record<string, unknown>;
+    requestContext: Record<string, unknown>;
+    semanticContext: AiSemanticContext;
+  }
+): AiCopResponse {
   const structured = isRecord(response.result.structured) ? response.result.structured : {};
   const mapActions = aiMapActionsFromMapSearchContext(input.mapSearch);
   return {
@@ -13727,15 +15417,19 @@ function withAiResponseEvidence(response: AiCopResponse, input: {
       structured: {
         ...structured,
         ...(mapActions.length > 0 ? { mapActions } : {}),
-        ...(input.mapSearch ? { mapSearch: compactRecord({
-          contractVersion: input.mapSearch.contractVersion,
-          generatedAt: input.mapSearch.generatedAt,
-          query: input.mapSearch.query,
-          resultCount: input.mapSearch.results.length,
-          results: input.mapSearch.results.slice(0, 5),
-          toolCall: input.mapSearch.toolCall,
-          warnings: input.mapSearch.warnings
-        }) } : {}),
+        ...(input.mapSearch
+          ? {
+              mapSearch: compactRecord({
+                contractVersion: input.mapSearch.contractVersion,
+                generatedAt: input.mapSearch.generatedAt,
+                query: input.mapSearch.query,
+                resultCount: input.mapSearch.results.length,
+                results: input.mapSearch.results.slice(0, 5),
+                toolCall: input.mapSearch.toolCall,
+                warnings: input.mapSearch.warnings
+              })
+            }
+          : {}),
         evidence: compactRecord({
           contractVersion: "cop-ai-response-evidence-v1",
           indexed: compactRecord({
@@ -13792,9 +15486,15 @@ function buildAiPipelineObservability(input: {
       ratio: compressionRatio(uncompressedContextBytes, compressedContextBytes),
       uncompressedContextBytes,
       ...compactRecord({
-        includedCounts: isRecord(input.contextCompression.includedCounts) ? input.contextCompression.includedCounts : undefined,
-        omittedCounts: isRecord(input.contextCompression.omittedCounts) ? input.contextCompression.omittedCounts : undefined,
-        originalCounts: isRecord(input.contextCompression.originalCounts) ? input.contextCompression.originalCounts : undefined
+        includedCounts: isRecord(input.contextCompression.includedCounts)
+          ? input.contextCompression.includedCounts
+          : undefined,
+        omittedCounts: isRecord(input.contextCompression.omittedCounts)
+          ? input.contextCompression.omittedCounts
+          : undefined,
+        originalCounts: isRecord(input.contextCompression.originalCounts)
+          ? input.contextCompression.originalCounts
+          : undefined
       })
     }),
     contractVersion: "cop-ai-pipeline-observability-v1",
@@ -13824,27 +15524,36 @@ function aiEvidencePriorityCitations(priorityContext: Record<string, unknown>): 
   return citations
     .filter(isRecord)
     .slice(0, 12)
-    .map((citation) => compactRecord({
-      citationId: optionalText(citation.citationId),
-      entityId: optionalText(citation.entityId),
-      entityType: optionalText(citation.entityType),
-      label: optionalText(citation.label),
-      location: aiEvidenceLocation(citation.location),
-      sourceSystemIds: Array.isArray(citation.sourceSystemIds) ? citation.sourceSystemIds.filter((item): item is string => typeof item === "string").slice(0, 8) : undefined,
-      updatedAt: optionalText(citation.updatedAt)
-    }));
+    .map((citation) =>
+      compactRecord({
+        citationId: optionalText(citation.citationId),
+        entityId: optionalText(citation.entityId),
+        entityType: optionalText(citation.entityType),
+        label: optionalText(citation.label),
+        location: aiEvidenceLocation(citation.location),
+        sourceSystemIds: Array.isArray(citation.sourceSystemIds)
+          ? citation.sourceSystemIds.filter((item): item is string => typeof item === "string").slice(0, 8)
+          : undefined,
+        updatedAt: optionalText(citation.updatedAt)
+      })
+    );
 }
 
-function aiEvidenceSemanticCitations(citations: AiSemanticContext["citations"], expectedPrefix: "I" | "S"): Record<string, unknown>[] {
-  return citations.slice(0, 12).map((citation) => compactRecord({
-    citationId: citation.citationId.startsWith(expectedPrefix) ? citation.citationId : undefined,
-    entityId: citation.entityId,
-    entityType: citation.entityType,
-    label: citation.label,
-    location: citation.position,
-    sourceSystemIds: citation.sourceSystemIds?.slice(0, 8),
-    updatedAt: citation.updatedAt
-  }));
+function aiEvidenceSemanticCitations(
+  citations: AiSemanticContext["citations"],
+  expectedPrefix: "I" | "S"
+): Record<string, unknown>[] {
+  return citations.slice(0, 12).map((citation) =>
+    compactRecord({
+      citationId: citation.citationId.startsWith(expectedPrefix) ? citation.citationId : undefined,
+      entityId: citation.entityId,
+      entityType: citation.entityType,
+      label: citation.label,
+      location: citation.position,
+      sourceSystemIds: citation.sourceSystemIds?.slice(0, 8),
+      updatedAt: citation.updatedAt
+    })
+  );
 }
 
 function aiEvidenceLocation(value: unknown): { lat: number; lon: number } | undefined {
@@ -13863,14 +15572,16 @@ function aiPrioritySignalFromRecord(
   if (!entityId) {
     return undefined;
   }
-  const title = optionalText(record.title)
-    ?? optionalText(record.displayName)
-    ?? optionalText(record.objectType)
-    ?? entityId;
+  const title =
+    optionalText(record.title) ?? optionalText(record.displayName) ?? optionalText(record.objectType) ?? entityId;
   const category = optionalText(record.category) ?? optionalText(record.type);
   const severity = optionalText(record.severity);
   const status = optionalText(record.status) ?? optionalText(record.health);
-  const updatedAt = optionalText(record.updatedAt) ?? optionalText(record.lastUpdatedAt) ?? optionalText(record.observedAt) ?? optionalText(record.submittedAt);
+  const updatedAt =
+    optionalText(record.updatedAt) ??
+    optionalText(record.lastUpdatedAt) ??
+    optionalText(record.observedAt) ??
+    optionalText(record.submittedAt);
   const priorityScore = optionalFiniteNumber(record.priorityScore, 0, 1) ?? aiPriorityScore(entityType, record);
   return {
     category,
@@ -13909,17 +15620,21 @@ function aiPrioritySignalsFromChat(chatContext: Record<string, unknown> | undefi
       updatedAt: optionalText(item.timestamp)
     };
     const priorityScore = aiPriorityScore("chatMessage", record);
-    return priorityScore > 0.2 ? [{
-      category: "chat",
-      citation: "P0",
-      entityId,
-      entityType: "chatMessage" as const,
-      priorityScore,
-      reason: "Relevant visible chat context supplied by the client.",
-      status: "visible",
-      title: `${sender}: ${body.slice(0, 80)}`,
-      updatedAt: optionalText(item.timestamp)
-    }] : [];
+    return priorityScore > 0.2
+      ? [
+          {
+            category: "chat",
+            citation: "P0",
+            entityId,
+            entityType: "chatMessage" as const,
+            priorityScore,
+            reason: "Relevant visible chat context supplied by the client.",
+            status: "visible",
+            title: `${sender}: ${body.slice(0, 80)}`,
+            updatedAt: optionalText(item.timestamp)
+          }
+        ]
+      : [];
   });
 }
 
@@ -13929,7 +15644,10 @@ function aiPriorityScore(entityType: AiPrioritySignal["entityType"], record: Rec
   score += aiSeverityScore(optionalText(record.severity));
   score += aiStatusScore(optionalText(record.status) ?? optionalText(record.health));
   score += aiCategoryScore(optionalText(record.category) ?? optionalText(record.type), text);
-  if ((optionalText(record.domain) ?? "").toLocaleLowerCase("cs-CZ") === "air" || /track_stale|stale track|civil.*flight|letadl/u.test(text)) {
+  if (
+    (optionalText(record.domain) ?? "").toLocaleLowerCase("cs-CZ") === "air" ||
+    /track_stale|stale track|civil.*flight|letadl/u.test(text)
+  ) {
     score -= /critical|warning|conflict|lost|incident/u.test(text) ? 0.06 : 0.22;
   }
   if (/low_confidence|zastaral|stale/u.test(text)) {
@@ -14005,7 +15723,11 @@ function aiCategoryScore(category: string | undefined, text: string): number {
   if (/(security|polic|kráde|krade|zlod|crime|bezpeč)/u.test(value)) {
     return 0.2;
   }
-  if (/(medical|zdravot|zran|evaku|bridge|most|road|silnic|infrastructure|utility|outage|výpad|vypad|hazard|nebezpe)/u.test(value)) {
+  if (
+    /(medical|zdravot|zran|evaku|bridge|most|road|silnic|infrastructure|utility|outage|výpad|vypad|hazard|nebezpe)/u.test(
+      value
+    )
+  ) {
     return 0.16;
   }
   if (/(traffic|doprav|weather|vítr|vitr|bouř|bour)/u.test(value)) {
@@ -14040,9 +15762,7 @@ function aiLocationFromRecord(value: unknown): { lat: number; lon: number } | un
   }
   const lat = optionalFiniteNumber(value.lat, -90, 90);
   const lon = optionalFiniteNumber(value.lon, -180, 180);
-  return lat !== undefined && lon !== undefined
-    ? { lat: roundCoordinate(lat), lon: roundCoordinate(lon) }
-    : undefined;
+  return lat !== undefined && lon !== undefined ? { lat: roundCoordinate(lat), lon: roundCoordinate(lon) } : undefined;
 }
 
 function aiSourceSystemIds(record: Record<string, unknown>): string[] | undefined {
@@ -14059,7 +15779,7 @@ function aiSourceRefs(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.flatMap((item) => isRecord(item) ? aiStringList(item.sourceId) : []);
+  return value.flatMap((item) => (isRecord(item) ? aiStringList(item.sourceId) : []));
 }
 
 function aiStringList(value: unknown): string[] {
@@ -14069,7 +15789,7 @@ function aiStringList(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.flatMap((item) => typeof item === "string" && item.trim() ? [item.trim()] : []);
+  return value.flatMap((item) => (typeof item === "string" && item.trim() ? [item.trim()] : []));
 }
 
 function aiCategoryCounts(signals: AiPrioritySignal[]): Record<string, number> {
@@ -14081,8 +15801,10 @@ function aiCategoryCounts(signals: AiPrioritySignal[]): Record<string, number> {
   return counts;
 }
 
-function bboxForSignals(signals: AiPrioritySignal[]): { east: number; north: number; south: number; west: number } | undefined {
-  const points = signals.flatMap((signal) => signal.location ? [signal.location] : []);
+function bboxForSignals(
+  signals: AiPrioritySignal[]
+): { east: number; north: number; south: number; west: number } | undefined {
+  const points = signals.flatMap((signal) => (signal.location ? [signal.location] : []));
   if (points.length === 0) {
     return undefined;
   }
@@ -14119,7 +15841,10 @@ function summarizeObjectForAi(object: ObservedObject): Record<string, unknown> {
           lon: roundCoordinate(object.position.lon)
         }
       : undefined,
-    sourceSystemIds: object.provenance?.map((item) => item.sourceSystemId).filter(Boolean).slice(0, 5),
+    sourceSystemIds: object.provenance
+      ?.map((item) => item.sourceSystemId)
+      .filter(Boolean)
+      .slice(0, 5),
     speedMps: object.speedMps ?? object.movement?.speedMps ?? undefined,
     status: object.status,
     synthetic: object.synthetic,
@@ -14146,9 +15871,11 @@ function summarizeAlertForAi(alert: CopAlert): Record<string, unknown> {
 function summarizeCommunityReportForAi(report: CommunityReportRecord): Record<string, unknown> {
   return compactRecord({
     attachmentCount: report.attachments.filter((attachment) => attachment.status === "uploaded").length,
-    attachmentKinds: Array.from(new Set(report.attachments
-      .filter((attachment) => attachment.status === "uploaded")
-      .map((attachment) => attachment.kind))).slice(0, 5),
+    attachmentKinds: Array.from(
+      new Set(
+        report.attachments.filter((attachment) => attachment.status === "uploaded").map((attachment) => attachment.kind)
+      )
+    ).slice(0, 5),
     category: report.category,
     description: report.description?.slice(0, 600),
     location: {
@@ -14182,13 +15909,15 @@ function summarizeIncidentForAi(incident: IncidentRecord): Record<string, unknow
       source: incident.location.source
     },
     severity: incident.severity,
-    sourceRefs: incident.sourceRefs.slice(0, 8).map((sourceRef) => compactRecord({
-      id: sourceRef.id,
-      kind: sourceRef.kind,
-      observedAt: sourceRef.observedAt,
-      sourceId: sourceRef.sourceId,
-      title: sourceRef.title
-    })),
+    sourceRefs: incident.sourceRefs.slice(0, 8).map((sourceRef) =>
+      compactRecord({
+        id: sourceRef.id,
+        kind: sourceRef.kind,
+        observedAt: sourceRef.observedAt,
+        sourceId: sourceRef.sourceId,
+        title: sourceRef.title
+      })
+    ),
     status: incident.status,
     title: incident.title,
     updatedAt: incident.updatedAt
@@ -14251,12 +15980,14 @@ function summarizeAiChatMessageForAi(value: unknown): Record<string, unknown> | 
   }
   const ai = isRecord(record.ai) ? record.ai : undefined;
   return compactRecord({
-    ai: ai ? compactRecord({
-      auditId: optionalTrimmedString(ai.auditId, 160),
-      provider: optionalTrimmedString(ai.provider, 80),
-      status: optionalTrimmedString(ai.status, 40),
-      type: optionalTrimmedString(ai.type, 80)
-    }) : undefined,
+    ai: ai
+      ? compactRecord({
+          auditId: optionalTrimmedString(ai.auditId, 160),
+          provider: optionalTrimmedString(ai.provider, 80),
+          status: optionalTrimmedString(ai.status, 40),
+          type: optionalTrimmedString(ai.type, 80)
+        })
+      : undefined,
     body,
     eventId: optionalTrimmedString(record.eventId, 160),
     kind: optionalTrimmedString(record.kind, 40),
@@ -14291,19 +16022,23 @@ function summarizeGroupAiAssistantForAi(group: CommunityGroupRecord): Record<str
   const e2ee = isRecord(aiAssistant.e2ee) ? aiAssistant.e2ee : {};
   return compactRecord({
     enabled: aiAssistant.enabled === true,
-    e2ee: Object.keys(e2ee).length ? compactRecord({
-      keyModel: optionalText(e2ee.keyModel),
-      roomKeyPolicy: optionalText(e2ee.roomKeyPolicy),
-      serverReadsHistory: e2ee.serverReadsHistory === true,
-      status: optionalText(e2ee.status)
-    }) : undefined,
+    e2ee: Object.keys(e2ee).length
+      ? compactRecord({
+          keyModel: optionalText(e2ee.keyModel),
+          roomKeyPolicy: optionalText(e2ee.roomKeyPolicy),
+          serverReadsHistory: e2ee.serverReadsHistory === true,
+          status: optionalText(e2ee.status)
+        })
+      : undefined,
     label: optionalText(aiAssistant.label),
-    matrixBot: Object.keys(matrixBot).length ? compactRecord({
-      membership: optionalText(matrixBot.membership),
-      roomId: optionalText(matrixBot.roomId),
-      status: optionalText(matrixBot.status),
-      userId: optionalText(matrixBot.userId)
-    }) : undefined,
+    matrixBot: Object.keys(matrixBot).length
+      ? compactRecord({
+          membership: optionalText(matrixBot.membership),
+          roomId: optionalText(matrixBot.roomId),
+          status: optionalText(matrixBot.status),
+          userId: optionalText(matrixBot.userId)
+        })
+      : undefined,
     mode: optionalText(aiAssistant.mode),
     updatedAt: optionalText(aiAssistant.updatedAt)
   });
@@ -14338,11 +16073,13 @@ function aiMatrixBotBootstrapReady(bootstrap: MessagingMatrixBootstrap): bootstr
   homeserverBaseUrl: string;
   userId: string;
 } {
-  return bootstrap.chatAvailable === true
-    && bootstrap.tokenAvailable === true
-    && Boolean(bootstrap.accessToken)
-    && Boolean(bootstrap.homeserverBaseUrl)
-    && Boolean(bootstrap.userId);
+  return (
+    bootstrap.chatAvailable === true &&
+    bootstrap.tokenAvailable === true &&
+    Boolean(bootstrap.accessToken) &&
+    Boolean(bootstrap.homeserverBaseUrl) &&
+    Boolean(bootstrap.userId)
+  );
 }
 
 async function joinMatrixRoomAsAiBot(
@@ -14353,15 +16090,18 @@ async function joinMatrixRoomAsAiBot(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${bootstrap.homeserverBaseUrl.replace(/\/+$/u, "")}/_matrix/client/v3/join/${encodeURIComponent(roomId)}`, {
-      body: JSON.stringify({ reason: "COP AI agent explicit room consent" }),
-      headers: {
-        Authorization: `Bearer ${bootstrap.accessToken}`,
-        "Content-Type": "application/json"
-      },
-      method: "POST",
-      signal: controller.signal
-    });
+    const response = await fetch(
+      `${bootstrap.homeserverBaseUrl.replace(/\/+$/u, "")}/_matrix/client/v3/join/${encodeURIComponent(roomId)}`,
+      {
+        body: JSON.stringify({ reason: "COP AI agent explicit room consent" }),
+        headers: {
+          Authorization: `Bearer ${bootstrap.accessToken}`,
+          "Content-Type": "application/json"
+        },
+        method: "POST",
+        signal: controller.signal
+      }
+    );
     if (response.ok) {
       return { joined: true, warnings: [] };
     }
@@ -14397,9 +16137,11 @@ function aiAssistantConsentGranted(metadata: Record<string, unknown>): boolean {
     return true;
   }
   const consent = isRecord(aiAssistant.consent) ? aiAssistant.consent : {};
-  return consent.granted === true
-    && optionalText(consent.scope) === "matrix-room-member"
-    && optionalText(consent.termsVersion) === "cop-ai-room-agent-consent-v1";
+  return (
+    consent.granted === true &&
+    optionalText(consent.scope) === "matrix-room-member" &&
+    optionalText(consent.termsVersion) === "cop-ai-room-agent-consent-v1"
+  );
 }
 
 function metadataEnablesAiAssistant(metadata: Record<string, unknown>): boolean {
@@ -14506,9 +16248,11 @@ function errorMessageFromResponse(value: unknown): string | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
-  return optionalTrimmedString(value.message, 500)
-    ?? optionalTrimmedString(value.error, 500)
-    ?? optionalTrimmedString(value.detail, 500);
+  return (
+    optionalTrimmedString(value.message, 500) ??
+    optionalTrimmedString(value.error, 500) ??
+    optionalTrimmedString(value.detail, 500)
+  );
 }
 
 function errorMessage(error: unknown): string {

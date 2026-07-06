@@ -8112,32 +8112,41 @@ function SelectedSituationDataCard({
   feature: SituationFeature;
 }) {
   const status = situationFeatureStatusModel(feature);
+  const outdoorCamera = isOutdoorWebcamFeature(feature);
   const weatherCamera = isWeatherWebcamFeature(feature);
   const weatherForecastArea = isWeatherForecastAreaFeature(feature);
   const weatherContext =
-    isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature) && !weatherCamera && !weatherForecastArea;
+    isWeatherContextFeature(feature) &&
+    !isAviationWeatherFeature(feature) &&
+    !weatherCamera &&
+    !outdoorCamera &&
+    !weatherForecastArea;
   const rows: Array<[string, React.ReactNode]> = [
     [
       "Název",
       weatherForecastArea
         ? weatherForecastAreaTitle(feature)
-        : weatherCamera
+        : outdoorCamera
           ? weatherWebcamTitle(feature)
-          : weatherContext
-            ? weatherFeatureHeadline(feature)
-            : (feature.properties.headline ?? feature.properties.label)
+          : weatherCamera
+            ? weatherWebcamTitle(feature)
+            : weatherContext
+              ? weatherFeatureHeadline(feature)
+              : (feature.properties.headline ?? feature.properties.label)
     ],
     ["Vrstva", situationDisplayLayerLabel(feature)],
     ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
     [
-      weatherContext || weatherCamera || weatherForecastArea ? "Typ" : "Kategorie",
+      weatherContext || weatherCamera || outdoorCamera || weatherForecastArea ? "Typ" : "Kategorie",
       weatherForecastArea
         ? "Plošná předpověď"
-        : weatherCamera
-          ? "Webkamera"
-          : weatherContext
-            ? weatherFeatureTypeLabel(feature)
-            : feature.properties.category
+        : outdoorCamera
+          ? "Turistická webkamera"
+          : weatherCamera
+            ? "Webkamera"
+            : weatherContext
+              ? weatherFeatureTypeLabel(feature)
+              : feature.properties.category
     ],
     ["Zdroj", feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)],
     ["Aktualizace", formatShortDateTime(feature.properties.observedAt)]
@@ -8168,6 +8177,7 @@ function SelectedSituationDataCard({
       ) : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {weatherForecastArea ? <WeatherForecastAreaSummary feature={feature} /> : null}
+      {outdoorCamera ? <WeatherWebcamSummary feature={feature} /> : null}
       {weatherCamera ? <WeatherWebcamSummary feature={feature} /> : null}
       {weatherContext ? <WeatherContextSummary feature={feature} /> : null}
     </ObjectDetailSection>
@@ -9221,15 +9231,15 @@ function WeatherWebcamSummary({ feature }: { feature: SituationFeature }) {
       <DataMetric label="Místo" value={locationLabel} tone="neutral" />
       <DataMetric
         label="Náhled"
-        value={camera.snapshotUrl ? "dostupný" : "čeká na detail"}
-        tone={camera.snapshotUrl ? "ok" : "neutral"}
+        value={camera.snapshotAvailable === false ? "neověřený" : camera.snapshotUrl ? "dostupný" : "čeká na detail"}
+        tone={camera.snapshotAvailable === false ? "neutral" : camera.snapshotUrl ? "ok" : "neutral"}
       />
       <DataMetric
         label="Detail"
         value={camera.detailUrl ? "dostupný" : "n/a"}
         tone={camera.detailUrl ? "ok" : "neutral"}
       />
-      <DataMetric label="Atribuce" value="ČHMÚ" tone="neutral" />
+      <DataMetric label="Atribuce" value={camera.attribution ?? "ČHMÚ"} tone="neutral" />
     </div>
   );
 }
@@ -9288,10 +9298,12 @@ function WeatherWebcamPreview({ authToken, feature }: { authToken: string | unde
   const cameras = React.useMemo(() => weatherWebcamCandidates(fallbackCamera, detail), [detail, fallbackCamera]);
   const activeIndex = Math.min(selectedIndex, Math.max(0, cameras.length - 1));
   const activeCamera = cameras[activeIndex] ?? fallbackCamera;
-  const snapshotUrl = weatherCameraProxyUrl(activeCamera.snapshotUrl);
+  const snapshotUrl =
+    activeCamera.snapshotAvailable === false ? undefined : weatherCameraProxyUrl(activeCamera.snapshotUrl);
   const locationLabel = weatherWebcamLocationLabel(feature, detail) ?? weatherWebcamTitle(feature);
   const locationCoordinates = weatherWebcamLocationCoordinates(feature, detail);
   const activeCameraLabel = weatherCameraDisplayLabel(activeCamera, locationLabel, activeIndex);
+  const attribution = activeCamera.attribution ?? fallbackCamera.attribution ?? "Český hydrometeorologický ústav";
 
   React.useEffect(() => {
     setImageFailed(false);
@@ -9347,9 +9359,73 @@ function WeatherWebcamPreview({ authToken, feature }: { authToken: string | unde
             </figcaption>
           </figure>
         ) : !loading ? (
-          <div className="weather-camera-empty">Snapshot zatím není v datech dostupný.</div>
+          <div className="weather-camera-empty">
+            {activeCamera.snapshotAvailable === false
+              ? "Automatický náhled není ověřen/dostupný."
+              : "Snapshot zatím není v datech dostupný."}
+          </div>
         ) : null}
-        <div className="weather-camera-attribution">Zdroj: Český hydrometeorologický ústav</div>
+        <div className="weather-camera-attribution">Zdroj: {attribution}</div>
+      </div>
+    </ObjectDetailSection>
+  );
+}
+
+function OutdoorWebcamPreview({ feature }: { feature: SituationFeature }) {
+  const camera = React.useMemo(() => weatherWebcamMetadata(feature), [feature]);
+  const [imageFailed, setImageFailed] = React.useState(false);
+  const snapshotUrl = camera.snapshotAvailable === false ? undefined : weatherCameraProxyUrl(camera.snapshotUrl);
+  const locationLabel = weatherWebcamTitle(feature);
+  const attribution = camera.attribution ?? "Atribuce není v datech uvedena.";
+  const providerPageUrl = safeExternalUrl(camera.providerPageUrl);
+  const detailUrl = safeExternalUrl(camera.detailUrl);
+
+  React.useEffect(() => {
+    setImageFailed(false);
+  }, [snapshotUrl]);
+
+  return (
+    <ObjectDetailSection title="Turistická webkamera">
+      <div className="weather-camera-window outdoor-camera-window">
+        <div className="weather-camera-window-header">
+          <span>
+            <Camera size={15} /> {locationLabel}
+          </span>
+          <span className="situation-badge">reference static_json</span>
+        </div>
+        <div className="weather-camera-meta">
+          <span>Poloha</span>
+          <strong>{formatSituationCoordinates(feature)}</strong>
+          <span>Stav náhledu</span>
+          <strong>
+            {camera.snapshotAvailable === false ? "neověřený/nedostupný" : snapshotUrl ? "dostupný" : "není v datech"}
+          </strong>
+        </div>
+        {snapshotUrl && !imageFailed ? (
+          <figure className="weather-camera-frame">
+            <img alt={locationLabel} onError={() => setImageFailed(true)} src={snapshotUrl} />
+            <figcaption>
+              {[camera.observedAt ? formatShortDateTime(camera.observedAt) : undefined, camera.direction]
+                .filter(Boolean)
+                .join(" · ") || "Náhled z ověřeného provider zdroje"}
+            </figcaption>
+          </figure>
+        ) : (
+          <div className="weather-camera-empty">Automatický náhled není ověřen/dostupný.</div>
+        )}
+        <div className="weather-camera-actions">
+          {providerPageUrl ? (
+            <a className="mini-button" href={providerPageUrl} rel="noreferrer" target="_blank">
+              <ExternalLink size={14} /> Originální stránka
+            </a>
+          ) : null}
+          {detailUrl ? (
+            <a className="mini-button" href={detailUrl} rel="noreferrer" target="_blank">
+              <ExternalLink size={14} /> Detail
+            </a>
+          ) : null}
+        </div>
+        <div className="weather-camera-attribution">Atribuce: {attribution}</div>
       </div>
     </ObjectDetailSection>
   );
@@ -14750,22 +14826,29 @@ function SituationFeatureDetail({
   const status = situationFeatureStatusModel(feature);
   const isCommunityReport = properties.layer === "community" && typeof properties.reportId === "string";
   const trafficPresentation = properties.layer === "traffic" ? resolveTransportPresentation(feature) : null;
+  const outdoorCamera = isOutdoorWebcamFeature(feature);
   const weatherCamera = isWeatherWebcamFeature(feature);
   const weatherForecastArea = isWeatherForecastAreaFeature(feature);
   const weatherContext =
-    isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature) && !weatherCamera && !weatherForecastArea;
+    isWeatherContextFeature(feature) &&
+    !isAviationWeatherFeature(feature) &&
+    !outdoorCamera &&
+    !weatherCamera &&
+    !weatherForecastArea;
   const floodDetail = properties.layer === "flood";
   const title = isMissionArenaFeature(feature)
     ? missionArenaDetailTitle(feature)
-    : weatherForecastArea
-      ? weatherForecastAreaTitle(feature)
-      : weatherCamera
-        ? weatherWebcamTitle(feature)
-        : weatherContext
-          ? weatherFeatureHeadline(feature)
-          : trafficPresentation
-            ? [trafficPresentation.label, trafficPresentation.routeShortName].filter(Boolean).join(" ")
-            : (properties.headline ?? properties.label);
+    : outdoorCamera
+      ? weatherWebcamTitle(feature)
+      : weatherForecastArea
+        ? weatherForecastAreaTitle(feature)
+        : weatherCamera
+          ? weatherWebcamTitle(feature)
+          : weatherContext
+            ? weatherFeatureHeadline(feature)
+            : trafficPresentation
+              ? [trafficPresentation.label, trafficPresentation.routeShortName].filter(Boolean).join(" ")
+              : (properties.headline ?? properties.label);
   const legacyCommunityGroup =
     isCommunityReport && typeof properties.groupName === "string" && properties.groupName.trim()
       ? properties.groupName.trim()
@@ -14774,15 +14857,17 @@ function SituationFeatureDetail({
     isCommunityReport && typeof properties.groupId === "string" ? properties.groupId : undefined;
   const subtitle = weatherForecastArea
     ? weatherForecastAreaSubtitle(feature)
-    : weatherContext
-      ? weatherFeatureSubtitle(feature)
-      : weatherCamera
-        ? weatherWebcamSubtitle(feature)
-        : isCommunityReport
-          ? [legacyCommunityGroup ? `skupina: ${legacyCommunityGroup}` : undefined, properties.reportId]
-              .filter(Boolean)
-              .join(" · ")
-          : properties.featureId;
+    : outdoorCamera
+      ? "turistická webkamera · referenční kontext"
+      : weatherContext
+        ? weatherFeatureSubtitle(feature)
+        : weatherCamera
+          ? weatherWebcamSubtitle(feature)
+          : isCommunityReport
+            ? [legacyCommunityGroup ? `skupina: ${legacyCommunityGroup}` : undefined, properties.reportId]
+                .filter(Boolean)
+                .join(" · ")
+            : properties.featureId;
   return (
     <div className="object-detail situation-feature-detail">
       <div className="object-header">
@@ -14831,14 +14916,16 @@ function SituationFeatureDetail({
             ...(!isCommunityReport && !floodDetail
               ? [
                   [
-                    weatherContext || weatherCamera || weatherForecastArea ? "Typ" : "Kategorie",
+                    weatherContext || weatherCamera || outdoorCamera || weatherForecastArea ? "Typ" : "Kategorie",
                     weatherForecastArea
                       ? "Plošná předpověď"
-                      : weatherCamera
-                        ? "Webkamera"
-                        : weatherContext
-                          ? weatherFeatureTypeLabel(feature)
-                          : properties.category
+                      : outdoorCamera
+                        ? "Turistická webkamera"
+                        : weatherCamera
+                          ? "Webkamera"
+                          : weatherContext
+                            ? weatherFeatureTypeLabel(feature)
+                            : properties.category
                   ] as [string, React.ReactNode]
                 ]
               : []),
@@ -14855,7 +14942,12 @@ function SituationFeatureDetail({
                   ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />]
                 ] as Array<[string, React.ReactNode]>)
               : []),
-            ...(isCommunityReport || weatherContext || weatherCamera || weatherForecastArea || floodDetail
+            ...(isCommunityReport ||
+            weatherContext ||
+            weatherCamera ||
+            outdoorCamera ||
+            weatherForecastArea ||
+            floodDetail
               ? []
               : ([
                   ["Účinné od", formatShortDateTime(properties.effectiveAt)],
@@ -14959,6 +15051,7 @@ function SituationFeatureDetail({
         <TrailDetailSection feature={feature} />
       ) : null}
       {properties.layer === "community_places" ? <CommunityPlaceDetailSection feature={feature} /> : null}
+      {outdoorCamera ? <OutdoorWebcamPreview feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {weatherForecastArea ? (
         <ObjectDetailSection title="Předpověď počasí">
@@ -15008,6 +15101,7 @@ function SituationFeatureDetail({
       <div className="object-flags">
         <span className="situation-badge">KONTEXT</span>
         {properties.layer === "community_places" ? <span className="situation-badge">OSM REFERENCE</span> : null}
+        {properties.layer === "outdoor_webcams" ? <span className="situation-badge">TURISTICKÁ REFERENCE</span> : null}
         {isSafetyLayerId(properties.layer) ? <span className="warning-badge">VÝSTRAŽNÁ VRSTVA</span> : null}
         {properties.layer === "mobile_network" && isMobileNetworkModelEstimate(properties) ? (
           <span className="warning-badge">MODELOVÝ ODHAD</span>
@@ -17521,6 +17615,7 @@ function situationLayerLabel(layerId: SituationLayerId): string {
     mobile_coverage: "Model mobilní sítě",
     mobile_network: "Mobilní síť",
     mission_arena: "Mission Arena",
+    outdoor_webcams: "Turistické webkamery",
     place_settlements: "Sídla",
     trail_poi: "Outdoor body",
     trail_routes: "Turistické trasy",
@@ -17982,10 +18077,13 @@ function isWeatherContextFeature(feature: SituationFeature): boolean {
 }
 
 interface WeatherCameraInfo {
+  attribution?: string;
   detailUrl?: string;
   direction?: string;
   label?: string;
   observedAt?: string;
+  providerPageUrl?: string;
+  snapshotAvailable?: boolean;
   snapshotUrl?: string;
 }
 
@@ -18006,6 +18104,9 @@ interface WeatherWebcamDetailCacheEntry {
 }
 
 function isWeatherWebcamFeature(feature: SituationFeature): boolean {
+  if (isOutdoorWebcamFeature(feature)) {
+    return false;
+  }
   const camera = weatherWebcamProviderMetadata(feature);
   const category = normalizeSituationCategory(feature.properties.category);
   const providerLayerId = stringProperty(feature.properties.providerLayerId);
@@ -18021,6 +18122,20 @@ function isWeatherWebcamFeature(feature: SituationFeature): boolean {
   );
 }
 
+function isOutdoorWebcamFeature(feature: SituationFeature): boolean {
+  const category = normalizeSituationCategory(feature.properties.category);
+  const providerLayerId = stringProperty(feature.properties.providerLayerId);
+  return (
+    feature.properties.layer === "outdoor_webcams" ||
+    feature.properties.layerId === "public.outdoor.webcams" ||
+    providerLayerId === "outdoor.webcams" ||
+    providerLayerId === "outdoor_webcams" ||
+    providerLayerId === "public.outdoor.webcams" ||
+    category === "outdoor_webcam" ||
+    category === "tourism_webcam"
+  );
+}
+
 function weatherWebcamProviderMetadata(feature: SituationFeature): Record<string, unknown> {
   const providerProperties = isRecord(feature.properties.providerProperties)
     ? feature.properties.providerProperties
@@ -18031,6 +18146,7 @@ function weatherWebcamProviderMetadata(feature: SituationFeature): Record<string
 function weatherWebcamMetadata(feature: SituationFeature): WeatherCameraInfo {
   const camera = weatherWebcamProviderMetadata(feature);
   return {
+    attribution: stringProperty(camera.attribution),
     detailUrl: stringProperty(camera.detailUrl) ?? feature.properties.detailUrl,
     direction: stringProperty(camera.direction) ?? stringProperty(camera.orientation),
     label:
@@ -18039,8 +18155,11 @@ function weatherWebcamMetadata(feature: SituationFeature): WeatherCameraInfo {
       stringProperty(camera.title) ??
       feature.properties.headline ??
       feature.properties.label ??
-      "Webkamera ČHMÚ",
+      (isOutdoorWebcamFeature(feature) ? "Turistická webkamera" : "Webkamera ČHMÚ"),
     observedAt: stringProperty(camera.observedAt) ?? feature.properties.observedAt,
+    providerPageUrl:
+      stringProperty(camera.providerPageUrl) ?? stringProperty(camera.pageUrl) ?? stringProperty(camera.sourceUrl),
+    snapshotAvailable: booleanProperty(camera.snapshotAvailable),
     snapshotUrl:
       stringProperty(camera.snapshotUrl) ??
       stringProperty(camera.imageUrl) ??
@@ -18093,10 +18212,14 @@ function normalizeWeatherCameraInfo(value: unknown, fallbackLabel: string): Weat
     return null;
   }
   return {
+    attribution: stringProperty(value.attribution),
     detailUrl,
     direction: stringProperty(value.direction) ?? stringProperty(value.orientation),
     label,
     observedAt: stringProperty(value.observedAt) ?? stringProperty(value.updatedAt) ?? stringProperty(value.timestamp),
+    providerPageUrl:
+      stringProperty(value.providerPageUrl) ?? stringProperty(value.pageUrl) ?? stringProperty(value.sourceUrl),
+    snapshotAvailable: booleanProperty(value.snapshotAvailable),
     snapshotUrl
   };
 }
@@ -18237,6 +18360,22 @@ function weatherCameraProxyUrl(value: string | undefined): string | undefined {
     return `${apiBase}${url}`;
   }
   return `${apiBase}/api/v1/weather/webcam-proxy?url=${encodeURIComponent(url)}`;
+}
+
+function safeExternalUrl(value: string | undefined): string | undefined {
+  const url = stringProperty(value);
+  if (!url) {
+    return undefined;
+  }
+  if (url.startsWith("/")) {
+    return url;
+  }
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === "https:" || protocol === "http:" ? url : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function isBlockedWeatherCameraHost(value: string): boolean {
@@ -19382,6 +19521,9 @@ function catalogLayerHint(layer: MapCatalogLayer, operable: boolean): string {
   if (layer.layerId === "public.outdoor.community_places") {
     return "Referenční OSM body, ne ověřený operační stav";
   }
+  if (layer.layerId === "public.outdoor.webcams") {
+    return "Kurátorované turistické webkamery s originální atribucí";
+  }
   if (layer.layerId === "public.weather.temperature_grid") {
     return "Plošná teplotní vrstva";
   }
@@ -19415,6 +19557,9 @@ function catalogLayerProviderLabel(layer: MapCatalogLayer): string {
       (layer.query.providerSourceIds ?? []).includes("community_context")
     ) {
       return "Komunitní kontext";
+    }
+    if (layer.layerId === "public.outdoor.webcams") {
+      return "Turistické webkamery";
     }
     if (
       layer.groupId === "risks.weather" ||
@@ -20424,6 +20569,7 @@ function isSituationLayerId(value: string): value is SituationLayerId {
     value === "mobile_coverage" ||
     value === "mobile_network" ||
     value === "mission_arena" ||
+    value === "outdoor_webcams" ||
     value === "place_settlements" ||
     value === "trail_poi" ||
     value === "trail_routes" ||
@@ -20499,6 +20645,10 @@ function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | 
     case "outdoor.community.places":
     case "public.outdoor.community_places":
       return "community_places";
+    case "outdoor.webcams":
+    case "outdoor_webcams":
+    case "public.outdoor.webcams":
+      return "outdoor_webcams";
     case "weather.wind":
     case "weather.wind_field":
     case "public.weather.wind_field":

@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPublicFlightAggregateSourceSystem, createPublicSafetyAggregateSourceSystem, createPublicSituationAggregateSourceSystem, createTakGatewaySourceSystem } from "@cop/canonical-model";
+import {
+  createPublicFlightAggregateSourceSystem,
+  createPublicSafetyAggregateSourceSystem,
+  createPublicSituationAggregateSourceSystem,
+  createTakGatewaySourceSystem
+} from "@cop/canonical-model";
 import { buildServer } from "./server.js";
 import type {
   SafetyDataPublicConfig,
@@ -69,30 +74,50 @@ describe("map catalog route", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
       catalogVersion: string;
-      layers: Array<{ defaultVisible?: boolean; groupId?: string; label?: string; layerId: string; minZoom?: number; query?: { maxFeatures?: number; providerLayerIds?: string[]; providerSourceIds?: string[] }; role?: string; selectable?: boolean }>;
+      layers: Array<{
+        defaultVisible?: boolean;
+        groupId?: string;
+        label?: string;
+        layerId: string;
+        minZoom?: number;
+        query?: { maxFeatures?: number; providerLayerIds?: string[]; providerSourceIds?: string[] };
+        role?: string;
+        selectable?: boolean;
+      }>;
       providers: Array<{ providerId: string; status: string }>;
-      sources: Array<{ feedsCatalogLayerIds?: string[]; selectableInMap: boolean; sourceId: string; sourceRole: string; usedByCatalogLayerIds?: string[] }>;
+      sources: Array<{
+        feedsCatalogLayerIds?: string[];
+        selectableInMap: boolean;
+        sourceId: string;
+        sourceRole: string;
+        usedByCatalogLayerIds?: string[];
+      }>;
     };
     expect(body.catalogVersion).toBe("map-catalog-v1");
-    expect(body.providers).toEqual(expect.arrayContaining([
-      expect.objectContaining({ providerId: "sim.situation-data", status: "online" }),
-      expect.objectContaining({ providerId: "sim.safety-data", status: "online" })
-    ]));
+    expect(body.providers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ providerId: "sim.situation-data", status: "online" }),
+        expect.objectContaining({ providerId: "sim.safety-data", status: "online" })
+      ])
+    );
     expect(body.providers.map((provider) => provider.providerId)).not.toContain("sim.tak-gateway");
-    expect(body.layers.map((layer) => layer.layerId)).toEqual(expect.arrayContaining([
-      "public.mobile.network",
-      "public.weather.current",
-      "public.weather.observations",
-      "public.weather.forecast_area",
-      "public.weather.webcams",
-      "public.safety.air_quality",
-      "public.boundary.admin",
-      "public.safety.fire",
-      "public.safety.weather_alerts",
-      "public.safety.warnings",
-      "public.outdoor.community_places",
-      "reference.infrastructure.healthcare"
-    ]));
+    expect(body.layers.map((layer) => layer.layerId)).toEqual(
+      expect.arrayContaining([
+        "public.mobile.network",
+        "public.weather.current",
+        "public.weather.observations",
+        "public.weather.forecast_area",
+        "public.weather.webcams",
+        "public.outdoor.webcams",
+        "public.safety.air_quality",
+        "public.boundary.admin",
+        "public.safety.fire",
+        "public.safety.weather_alerts",
+        "public.safety.warnings",
+        "public.outdoor.community_places",
+        "reference.infrastructure.healthcare"
+      ])
+    );
     expect(body.layers.map((layer) => layer.layerId)).not.toContain("diagnostic.mobile.coverage");
     expect(body.layers.map((layer) => layer.layerId)).not.toContain("partner.tak.mobile");
 
@@ -154,6 +179,17 @@ describe("map catalog route", () => {
       minZoom: 4,
       selectable: true
     });
+    expect(body.layers.find((layer) => layer.layerId === "public.outdoor.webcams")).toMatchObject({
+      groupId: "outdoor",
+      label: "Turistické webkamery",
+      query: {
+        maxFeatures: 500,
+        providerLayerIds: ["outdoor_webcams"],
+        providerSourceIds: ["chmi_weather_webcams"]
+      },
+      role: "reference",
+      selectable: true
+    });
     expect(body.layers.find((layer) => layer.layerId === "public.safety.flood")).toMatchObject({
       label: "Vodní stavy a průtoky",
       minZoom: 4,
@@ -175,39 +211,48 @@ describe("map catalog route", () => {
       selectable: true
     });
 
-    expect(body.sources).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        feedsCatalogLayerIds: ["public.mobile.network"],
-        selectableInMap: true,
-        sourceId: "mobile_network_model",
-        sourceRole: "aggregate"
-      }),
-      expect.objectContaining({
-        selectableInMap: false,
-        sourceId: "mobile_coverage_model",
-        sourceRole: "input",
-        usedByCatalogLayerIds: ["public.mobile.network"]
-      }),
-      expect.objectContaining({
-        selectableInMap: false,
-        sourceId: "ctu_nettest",
-        sourceRole: "input",
-        usedByCatalogLayerIds: ["public.mobile.network"]
-      }),
-      expect.objectContaining({
-        selectableInMap: false,
-        sourceId: "osm_postgis",
-        sourceRole: "reference",
-        usedByCatalogLayerIds: expect.arrayContaining(["public.mobile.network"])
-      }),
-      expect.objectContaining({
-        feedsCatalogLayerIds: ["public.outdoor.community_places"],
-        selectableInMap: true,
-        sourceId: "community_context",
-        sourceRole: "reference",
-        usedByCatalogLayerIds: ["public.outdoor.community_places"]
-      })
-    ]));
+    expect(body.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          feedsCatalogLayerIds: ["public.mobile.network"],
+          selectableInMap: true,
+          sourceId: "mobile_network_model",
+          sourceRole: "aggregate"
+        }),
+        expect.objectContaining({
+          selectableInMap: false,
+          sourceId: "mobile_coverage_model",
+          sourceRole: "input",
+          usedByCatalogLayerIds: ["public.mobile.network"]
+        }),
+        expect.objectContaining({
+          selectableInMap: false,
+          sourceId: "ctu_nettest",
+          sourceRole: "input",
+          usedByCatalogLayerIds: ["public.mobile.network"]
+        }),
+        expect.objectContaining({
+          selectableInMap: false,
+          sourceId: "osm_postgis",
+          sourceRole: "reference",
+          usedByCatalogLayerIds: expect.arrayContaining(["public.mobile.network"])
+        }),
+        expect.objectContaining({
+          feedsCatalogLayerIds: ["public.outdoor.community_places"],
+          selectableInMap: true,
+          sourceId: "community_context",
+          sourceRole: "reference",
+          usedByCatalogLayerIds: ["public.outdoor.community_places"]
+        }),
+        expect.objectContaining({
+          feedsCatalogLayerIds: expect.arrayContaining(["public.weather.webcams", "public.outdoor.webcams"]),
+          selectableInMap: true,
+          sourceId: "chmi_weather_webcams",
+          sourceRole: "final",
+          usedByCatalogLayerIds: expect.arrayContaining(["public.weather.webcams", "public.outdoor.webcams"])
+        })
+      ])
+    );
   });
 
   it("translates provider catalogs into selectable public layers without exposing technical inputs", async () => {
@@ -224,125 +269,166 @@ describe("map catalog route", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
-      layers: Array<{ availability?: string; defaultVisible?: boolean; disabledReason?: string; enabled?: boolean; groupId: string; kind?: string; label: string; layerId: string; minZoom?: number; query?: { categoryIds?: string[]; maxFeatures?: number; mode?: string; providerLayerIds?: string[]; providerSourceIds?: string[] }; selectable?: boolean }>;
-      sources: Array<{ availability?: string; disabledReason?: string; enabled?: boolean; feedsCatalogLayerIds?: string[]; selectableInMap: boolean; sourceId: string; sourceRole: string; usedByCatalogLayerIds?: string[] }>;
+      layers: Array<{
+        availability?: string;
+        defaultVisible?: boolean;
+        disabledReason?: string;
+        enabled?: boolean;
+        groupId: string;
+        kind?: string;
+        label: string;
+        layerId: string;
+        minZoom?: number;
+        query?: {
+          categoryIds?: string[];
+          maxFeatures?: number;
+          mode?: string;
+          providerLayerIds?: string[];
+          providerSourceIds?: string[];
+        };
+        selectable?: boolean;
+      }>;
+      sources: Array<{
+        availability?: string;
+        disabledReason?: string;
+        enabled?: boolean;
+        feedsCatalogLayerIds?: string[];
+        selectableInMap: boolean;
+        sourceId: string;
+        sourceRole: string;
+        usedByCatalogLayerIds?: string[];
+      }>;
     };
-    expect(body.layers).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        groupId: "communications",
-        label: "BTS / komunikační stožáry",
-        layerId: "reference.infrastructure.communications",
-        minZoom: 4,
-        query: expect.objectContaining({
-          categoryIds: ["communications_tower"],
-          providerLayerIds: ["mobile"],
-          providerSourceIds: ["osm_postgis"]
+    expect(body.layers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          groupId: "communications",
+          label: "BTS / komunikační stožáry",
+          layerId: "reference.infrastructure.communications",
+          minZoom: 4,
+          query: expect.objectContaining({
+            categoryIds: ["communications_tower"],
+            providerLayerIds: ["mobile"],
+            providerSourceIds: ["osm_postgis"]
+          }),
+          selectable: true
         }),
-        selectable: true
-      }),
-      expect.objectContaining({
-        groupId: "communications",
-        label: "Mobilní síť",
-        layerId: "public.mobile.network",
-        minZoom: 4,
-        query: expect.objectContaining({
-          providerLayerIds: ["mobile_network"],
-          providerSourceIds: ["mobile_network_model"]
+        expect.objectContaining({
+          groupId: "communications",
+          label: "Mobilní síť",
+          layerId: "public.mobile.network",
+          minZoom: 4,
+          query: expect.objectContaining({
+            providerLayerIds: ["mobile_network"],
+            providerSourceIds: ["mobile_network_model"]
+          }),
+          selectable: true
         }),
-        selectable: true
-      }),
-      expect.objectContaining({
-        groupId: "risks.weather",
-        kind: "grid_field",
-        layerId: "public.weather.temperature_grid",
-        query: expect.objectContaining({
-          mode: "grid",
-          providerLayerIds: ["weather.temperature_grid"],
-          providerSourceIds: ["chmi_weather_stations"]
+        expect.objectContaining({
+          groupId: "risks.weather",
+          kind: "grid_field",
+          layerId: "public.weather.temperature_grid",
+          query: expect.objectContaining({
+            mode: "grid",
+            providerLayerIds: ["weather.temperature_grid"],
+            providerSourceIds: ["chmi_weather_stations"]
+          }),
+          selectable: true
         }),
-        selectable: true
-      }),
-      expect.objectContaining({
-        groupId: "risks.weather",
-        label: "Kamery",
-        layerId: "public.weather.webcams",
-        minZoom: 4,
-        query: expect.objectContaining({
-          providerLayerIds: ["weather_webcams"],
-          providerSourceIds: ["chmi_weather_webcams"]
+        expect.objectContaining({
+          groupId: "risks.weather",
+          label: "Kamery",
+          layerId: "public.weather.webcams",
+          minZoom: 4,
+          query: expect.objectContaining({
+            providerLayerIds: ["weather_webcams"],
+            providerSourceIds: ["chmi_weather_webcams"]
+          }),
+          selectable: true
         }),
-        selectable: true
-      }),
-      expect.objectContaining({
-        groupId: "transport",
-        label: "Veřejná doprava Praha/PID",
-        layerId: "public.traffic.transit.pid",
-        minZoom: 6,
-        query: expect.objectContaining({
-          maxFeatures: 5000,
-          providerLayerIds: ["traffic"],
-          providerSourceIds: ["pid_gtfs_rt"]
+        expect.objectContaining({
+          groupId: "outdoor",
+          label: "Turistické webkamery",
+          layerId: "public.outdoor.webcams",
+          query: expect.objectContaining({
+            maxFeatures: 500,
+            providerLayerIds: ["outdoor_webcams"],
+            providerSourceIds: ["chmi_weather_webcams"]
+          }),
+          selectable: true,
+          styleProfile: "outdoor-webcam-point-v1"
         }),
-        selectable: true
-      }),
-      expect.objectContaining({
-        groupId: "transport",
-        label: "Veřejná doprava Brno/IDS JMK",
-        layerId: "public.traffic.transit.idsjmk",
-        minZoom: 6,
-        query: expect.objectContaining({
-          maxFeatures: 5000,
-          providerLayerIds: ["traffic"],
-          providerSourceIds: ["idsjmk_vehicle_positions"]
+        expect.objectContaining({
+          groupId: "transport",
+          label: "Veřejná doprava Praha/PID",
+          layerId: "public.traffic.transit.pid",
+          minZoom: 6,
+          query: expect.objectContaining({
+            maxFeatures: 5000,
+            providerLayerIds: ["traffic"],
+            providerSourceIds: ["pid_gtfs_rt"]
+          }),
+          selectable: true
         }),
-        refreshSeconds: 20,
-        selectable: true
-      }),
-      expect.objectContaining({
-        groupId: "transport",
-        label: "Vlaky",
-        layerId: "public.traffic.transit.trains",
-        minZoom: 6,
-        query: expect.objectContaining({
-          maxFeatures: 5000,
-          providerLayerIds: ["traffic"],
-          providerSourceIds: ["spravazeleznic_trains"]
+        expect.objectContaining({
+          groupId: "transport",
+          label: "Veřejná doprava Brno/IDS JMK",
+          layerId: "public.traffic.transit.idsjmk",
+          minZoom: 6,
+          query: expect.objectContaining({
+            maxFeatures: 5000,
+            providerLayerIds: ["traffic"],
+            providerSourceIds: ["idsjmk_vehicle_positions"]
+          }),
+          refreshSeconds: 20,
+          selectable: true
         }),
-        refreshSeconds: 900,
-        selectable: true
-      }),
-      expect.objectContaining({
-        groupId: "transport",
-        label: "Zastávky veřejné dopravy",
-        layerId: "public.traffic.transit_stops",
-        minZoom: 11,
-        query: expect.objectContaining({
-          maxFeatures: 5000,
-          providerLayerIds: ["traffic"],
-          providerSourceIds: ["public_transit_static"]
+        expect.objectContaining({
+          groupId: "transport",
+          label: "Vlaky",
+          layerId: "public.traffic.transit.trains",
+          minZoom: 6,
+          query: expect.objectContaining({
+            maxFeatures: 5000,
+            providerLayerIds: ["traffic"],
+            providerSourceIds: ["spravazeleznic_trains"]
+          }),
+          refreshSeconds: 900,
+          selectable: true
         }),
-        refreshSeconds: 21600,
-        selectable: true
-      }),
-      expect.objectContaining({
-        groupId: "outdoor",
-        label: "Komunitní kontext",
-        layerId: "public.outdoor.community_places",
-        minZoom: 12,
-        query: expect.objectContaining({
-          maxFeatures: 5000,
-          providerLayerIds: ["community_places"],
-          providerSourceIds: ["community_context"]
+        expect.objectContaining({
+          groupId: "transport",
+          label: "Zastávky veřejné dopravy",
+          layerId: "public.traffic.transit_stops",
+          minZoom: 11,
+          query: expect.objectContaining({
+            maxFeatures: 5000,
+            providerLayerIds: ["traffic"],
+            providerSourceIds: ["public_transit_static"]
+          }),
+          refreshSeconds: 21600,
+          selectable: true
         }),
-        selectable: true,
-        styleProfile: "community-place-osm-v1"
-      }),
-      expect.objectContaining({
-        groupId: "outdoor",
-        layerId: "public.outdoor.community_reports",
-        selectable: false
-      })
-    ]));
+        expect.objectContaining({
+          groupId: "outdoor",
+          label: "Komunitní kontext",
+          layerId: "public.outdoor.community_places",
+          minZoom: 12,
+          query: expect.objectContaining({
+            maxFeatures: 5000,
+            providerLayerIds: ["community_places"],
+            providerSourceIds: ["community_context"]
+          }),
+          selectable: true,
+          styleProfile: "community-place-osm-v1"
+        }),
+        expect.objectContaining({
+          groupId: "outdoor",
+          layerId: "public.outdoor.community_reports",
+          selectable: false
+        })
+      ])
+    );
     expect(body.layers.find((layer) => layer.layerId === "public.weather.wind_field")).toMatchObject({
       availability: "disabled",
       defaultVisible: false,
@@ -358,27 +444,30 @@ describe("map catalog route", () => {
       selectableInMap: false
     });
     expect(body.layers.map((layer) => layer.layerId)).not.toContain("diagnostic.mobile.coverage");
-    expect(body.sources).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        feedsCatalogLayerIds: expect.arrayContaining(["reference.infrastructure.communications"]),
-        selectableInMap: false,
-        sourceId: "osm_postgis",
-        sourceRole: "reference"
-      }),
-      expect.objectContaining({
-        feedsCatalogLayerIds: ["public.weather.webcams"],
-        selectableInMap: true,
-        sourceId: "chmi_weather_webcams",
-        sourceRole: "final"
-      }),
-      expect.objectContaining({
-        feedsCatalogLayerIds: expect.arrayContaining(["public.outdoor.community_places"]),
-        selectableInMap: true,
-        sourceId: "community_context",
-        sourceRole: "reference",
-        usedByCatalogLayerIds: expect.arrayContaining(["public.outdoor.community_places"])
-      })
-    ]));
+    expect(body.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          feedsCatalogLayerIds: expect.arrayContaining(["reference.infrastructure.communications"]),
+          selectableInMap: false,
+          sourceId: "osm_postgis",
+          sourceRole: "reference"
+        }),
+        expect.objectContaining({
+          feedsCatalogLayerIds: expect.arrayContaining(["public.weather.webcams", "public.outdoor.webcams"]),
+          selectableInMap: true,
+          sourceId: "chmi_weather_webcams",
+          sourceRole: "final",
+          usedByCatalogLayerIds: expect.arrayContaining(["public.weather.webcams", "public.outdoor.webcams"])
+        }),
+        expect.objectContaining({
+          feedsCatalogLayerIds: expect.arrayContaining(["public.outdoor.community_places"]),
+          selectableInMap: true,
+          sourceId: "community_context",
+          sourceRole: "reference",
+          usedByCatalogLayerIds: expect.arrayContaining(["public.outdoor.community_places"])
+        })
+      ])
+    );
     expect(body.sources.map((source) => source.sourceId)).not.toContain("mobile_coverage_model");
   });
 
@@ -397,8 +486,18 @@ describe("map catalog route", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
-      layers: Array<{ compatibilityOnly?: boolean; layerId: string; preferredProviderId?: string; query: { maxFeatures?: number; providerId: string; providerLayerIds?: string[]; providerSourceIds?: string[] } }>;
-      sources: Array<{ compatibilityOnly?: boolean; feedsCatalogLayerIds?: string[]; providerId: string; sourceId: string }>;
+      layers: Array<{
+        compatibilityOnly?: boolean;
+        layerId: string;
+        preferredProviderId?: string;
+        query: { maxFeatures?: number; providerId: string; providerLayerIds?: string[]; providerSourceIds?: string[] };
+      }>;
+      sources: Array<{
+        compatibilityOnly?: boolean;
+        feedsCatalogLayerIds?: string[];
+        providerId: string;
+        sourceId: string;
+      }>;
     };
     const fireLayer = body.layers.find((layer) => layer.layerId === "public.safety.fire");
     expect(fireLayer).toMatchObject({
@@ -428,15 +527,19 @@ describe("map catalog route", () => {
         providerSourceIds: ["hzs_incidents", "municipal_alerts"]
       }
     });
-    const chmiSource = body.sources.find((source) => source.providerId === "sim.safety-data" && source.sourceId === "chmi_alerts");
+    const chmiSource = body.sources.find(
+      (source) => source.providerId === "sim.safety-data" && source.sourceId === "chmi_alerts"
+    );
     expect(chmiSource?.feedsCatalogLayerIds).toEqual(["public.safety.weather_alerts", "public.safety.fire"]);
-    expect(body.sources).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        compatibilityOnly: true,
-        providerId: "sim.situation-data",
-        sourceId: "safety_data"
-      })
-    ]));
+    expect(body.sources).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          compatibilityOnly: true,
+          providerId: "sim.situation-data",
+          sourceId: "safety_data"
+        })
+      ])
+    );
   });
 
   it("returns a degraded catalog when a provider catalog does not answer", async () => {
@@ -462,10 +565,12 @@ describe("map catalog route", () => {
       providers: Array<{ providerId: string; status: string }>;
       warnings: string[];
     };
-    expect(body.providers).toEqual(expect.arrayContaining([
-      expect.objectContaining({ providerId: "sim.situation-data", status: "unavailable" }),
-      expect.objectContaining({ providerId: "sim.safety-data", status: "online" })
-    ]));
+    expect(body.providers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ providerId: "sim.situation-data", status: "unavailable" }),
+        expect.objectContaining({ providerId: "sim.safety-data", status: "online" })
+      ])
+    );
     expect(body.layers.map((layer) => layer.layerId)).toContain("public.safety.warnings");
     expect(body.warnings.join(" ")).toContain("Situation data catalog provider timed out");
   });
@@ -489,13 +594,17 @@ describe("map catalog route", () => {
     const body = response.json() as {
       dependencies: Array<{ detail?: string; name: string; status: string }>;
     };
-    expect(body.dependencies).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        name: "csm-messaging-provider",
-        status: "degraded"
-      })
-    ]));
-    expect(body.dependencies.find((dependency) => dependency.name === "csm-messaging-provider")?.detail).toContain("timed out");
+    expect(body.dependencies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "csm-messaging-provider",
+          status: "degraded"
+        })
+      ])
+    );
+    expect(body.dependencies.find((dependency) => dependency.name === "csm-messaging-provider")?.detail).toContain(
+      "timed out"
+    );
   });
 
   it("adds diagnostic and partner groups only for authenticated catalog requests", async () => {
@@ -513,13 +622,15 @@ describe("map catalog route", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    const body = response.json() as { groups: Array<{ groupId: string }>; layers: Array<{ layerId: string }>; providers: Array<{ providerId: string }> };
+    const body = response.json() as {
+      groups: Array<{ groupId: string }>;
+      layers: Array<{ layerId: string }>;
+      providers: Array<{ providerId: string }>;
+    };
     expect(body.groups.map((group) => group.groupId)).toEqual(expect.arrayContaining(["diagnostic", "partner"]));
-    expect(body.layers.map((layer) => layer.layerId)).toEqual(expect.arrayContaining([
-      "diagnostic.mobile.coverage",
-      "diagnostic.mobile.ctu_measurements",
-      "partner.tak.mobile"
-    ]));
+    expect(body.layers.map((layer) => layer.layerId)).toEqual(
+      expect.arrayContaining(["diagnostic.mobile.coverage", "diagnostic.mobile.ctu_measurements", "partner.tak.mobile"])
+    );
     expect(body.providers.map((provider) => provider.providerId)).toContain("sim.tak-gateway");
   });
 
@@ -556,7 +667,9 @@ describe("map catalog route", () => {
       tak?: TakGatewayFeatureCollection;
       warnings: string[];
     };
-    expect(body.query.layerIds).toEqual(expect.arrayContaining(["public.mobile.network", "public.safety.warnings", "public.safety.flood"]));
+    expect(body.query.layerIds).toEqual(
+      expect.arrayContaining(["public.mobile.network", "public.safety.warnings", "public.safety.flood"])
+    );
     expect(body.query.layerIds).toHaveLength(3);
     expect(body.situation?.query).toMatchObject({
       layers: ["mobile_network"],
@@ -687,7 +800,10 @@ describe("map catalog route", () => {
   it("maps unsupported mobile viewshed objects to a user-facing unavailable state", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
     const situationDataSource = new FakeSituationDataSource();
-    situationDataSource.towerViewshedError = Object.assign(new Error("404 Not Found for /mobile-coverage/towers/node:missing/viewshed"), { status: 404 });
+    situationDataSource.towerViewshedError = Object.assign(
+      new Error("404 Not Found for /mobile-coverage/towers/node:missing/viewshed"),
+      { status: 404 }
+    );
     const app = buildServer({
       now: () => new Date("2026-06-27T10:00:00Z"),
       situationDataSource
@@ -883,7 +999,11 @@ describe("map catalog route", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    const body = response.json() as { query: { layerIds: string[] }; situation?: SituationFeatureCollection; warnings: string[] };
+    const body = response.json() as {
+      query: { layerIds: string[] };
+      situation?: SituationFeatureCollection;
+      warnings: string[];
+    };
     expect(body.query.layerIds).toEqual([]);
     expect(body.situation).toBeUndefined();
     expect(body.warnings.join(" ")).toContain("Disabled map layers ignored: public.weather.wind_field.");
@@ -946,6 +1066,36 @@ describe("map catalog route", () => {
     });
     expect(body.situation?.query).toMatchObject({
       layers: ["weather_webcams"],
+      sources: ["chmi_weather_webcams"]
+    });
+  });
+
+  it("queries tourist webcams with the dedicated SIM outdoor_webcams layer", async () => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const situationDataSource = new FakeSituationDataSource();
+    const app = buildServer({
+      now: () => new Date("2026-05-22T08:00:00Z"),
+      situationDataSource
+    });
+
+    const response = await app.inject({
+      body: {
+        bbox: [12.0, 48.5, 18.9, 51.2],
+        layerIds: ["public.outdoor.webcams"],
+        limit: 500
+      },
+      method: "POST",
+      url: "/api/v1/map/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { situation?: SituationFeatureCollection };
+    expect(situationDataSource.lastFeatureQuery).toMatchObject({
+      layers: ["outdoor_webcams"],
+      sources: ["chmi_weather_webcams"]
+    });
+    expect(body.situation?.query).toMatchObject({
+      layers: ["outdoor_webcams"],
       sources: ["chmi_weather_webcams"]
     });
   });
@@ -1078,19 +1228,29 @@ describe("map catalog route", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    const body = response.json() as { flight?: FlightReferenceFeatureCollection; query: { layerIds: string[] }; summary: { featureCount: number } };
+    const body = response.json() as {
+      flight?: FlightReferenceFeatureCollection;
+      query: { layerIds: string[] };
+      summary: { featureCount: number };
+    };
     expect(body.query.layerIds).toEqual(["flight.reference.airports", "flight.reference.airspaces"]);
     expect(body.flight?.query.layers).toEqual(["flight.airports", "flight.airspaces"]);
-    expect(body.flight?.features.map((feature) => feature.properties.layer)).toEqual(["flight_airports", "flight_airspaces"]);
+    expect(body.flight?.features.map((feature) => feature.properties.layer)).toEqual([
+      "flight_airports",
+      "flight_airspaces"
+    ]);
     expect(body.summary.featureCount).toBe(2);
   });
 
   it("proxies allowed raster overlay images through COP instead of exposing provider URLs to clients", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
-    const fetchMock = vi.fn(async () => new Response(new Uint8Array([137, 80, 78, 71]), {
-      headers: { "content-type": "image/png" },
-      status: 200
-    }));
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(new Uint8Array([137, 80, 78, 71]), {
+          headers: { "content-type": "image/png" },
+          status: 200
+        })
+    );
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
       situationDataSource: new FakeSituationDataSource(),
@@ -1106,28 +1266,33 @@ describe("map catalog route", () => {
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toContain("image/png");
     expect(response.headers["cache-control"]).toContain("public");
-    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/weather-radar/clean/merge1h/sample.png", expect.objectContaining({
-      headers: expect.objectContaining({
-        accept: expect.stringContaining("image/png")
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://sim.zeleznalady.cz/situation-data/api/v1/weather-radar/clean/merge1h/sample.png",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          accept: expect.stringContaining("image/png")
+        })
       })
-    }));
+    );
   });
 
   it("fetches the weather radar frame catalog through the server-side SIM provider", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
-    const fetchMock = vi.fn(async () => Response.json({
-      products: [
-        {
-          frames: [
-            {
-              cleanUrl: "/api/v1/weather-radar/clean/merge1h/frame.png",
-              observedAt: "2026-06-06T08:45:00Z"
-            }
-          ],
-          product: "merge1h"
-        }
-      ]
-    }));
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        products: [
+          {
+            frames: [
+              {
+                cleanUrl: "/api/v1/weather-radar/clean/merge1h/frame.png",
+                observedAt: "2026-06-06T08:45:00Z"
+              }
+            ],
+            product: "merge1h"
+          }
+        ]
+      })
+    );
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
       situationDataSource: new FakeSituationDataSource(),
@@ -1152,37 +1317,42 @@ describe("map catalog route", () => {
         }
       ]
     });
-    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/weather-radar/frames?product=merge1h&hours=6&limit=2", expect.objectContaining({
-      headers: expect.objectContaining({
-        accept: "application/json"
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://sim.zeleznalady.cz/situation-data/api/v1/weather-radar/frames?product=merge1h&hours=6&limit=2",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          accept: "application/json"
+        })
       })
-    }));
+    );
   });
 
   it("proxies CHMI weather station detail through the server-side SIM provider", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
-    const fetchMock = vi.fn(async () => Response.json({
-      charts: [
-        {
-          id: "temperature",
-          series: [
-            {
-              label: "měření",
-              points: [{ time: "2026-06-28T08:00:00Z", value: 23.4 }]
-            }
-          ],
-          title: "Teplota"
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        charts: [
+          {
+            id: "temperature",
+            series: [
+              {
+                label: "měření",
+                points: [{ time: "2026-06-28T08:00:00Z", value: 23.4 }]
+              }
+            ],
+            title: "Teplota"
+          }
+        ],
+        current: {
+          display: {
+            badgeLabel: "měření",
+            conditionMode: "unclassified",
+            iconKey: "measurement",
+            label: "Milešovka 23.4 °C"
+          }
         }
-      ],
-      current: {
-        display: {
-          badgeLabel: "měření",
-          conditionMode: "unclassified",
-          iconKey: "measurement",
-          label: "Milešovka 23.4 °C"
-        }
-      }
-    }));
+      })
+    );
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
       situationDataSource: new FakeSituationDataSource(),
@@ -1202,29 +1372,34 @@ describe("map catalog route", () => {
         }
       }
     });
-    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/weather-stations/0-20000-0-11406/detail?historyHours=48&forecastHours=24", expect.objectContaining({
-      headers: expect.objectContaining({
-        accept: "application/json"
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://sim.zeleznalady.cz/situation-data/api/v1/weather-stations/0-20000-0-11406/detail?historyHours=48&forecastHours=24",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          accept: "application/json"
+        })
       })
-    }));
+    );
   });
 
   it("proxies weather forecast area detail through the server-side SIM provider", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
-    const fetchMock = vi.fn(async () => Response.json({
-      areaId: "cz-praha",
-      charts: [],
-      contractVersion: "sim-weather-forecast-area-detail-v1",
-      current: {
-        display: {
-          badgeLabel: "déšť",
-          iconKey: "rain",
-          primaryValue: "19 °C",
-          title: "Praha"
-        }
-      },
-      summary: "Plošná předpověď pro Prahu"
-    }));
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        areaId: "cz-praha",
+        charts: [],
+        contractVersion: "sim-weather-forecast-area-detail-v1",
+        current: {
+          display: {
+            badgeLabel: "déšť",
+            iconKey: "rain",
+            primaryValue: "19 °C",
+            title: "Praha"
+          }
+        },
+        summary: "Plošná předpověď pro Prahu"
+      })
+    );
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
       situationDataSource: new FakeSituationDataSource(),
@@ -1245,47 +1420,52 @@ describe("map catalog route", () => {
       },
       summary: "Plošná předpověď pro Prahu"
     });
-    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/weather-forecast/areas/cz-praha?nowcastHours=6&forecastHours=48&dailyDays=5", expect.objectContaining({
-      headers: expect.objectContaining({
-        accept: "application/json"
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://sim.zeleznalady.cz/situation-data/api/v1/weather-forecast/areas/cz-praha?nowcastHours=6&forecastHours=48&dailyDays=5",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          accept: "application/json"
+        })
       })
-    }));
+    );
   });
 
   it("proxies public transit vehicle detail through the server-side SIM provider", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
-    const fetchMock = vi.fn(async () => Response.json({
-      contractVersion: "sim-public-transit-vehicle-detail-v1",
-      current: {
-        delaySeconds: 0,
-        display: {
-          badgeLabel: "včas",
-          label: "103 → Březiněves",
-          subtitle: "poslední zpráva před 33 s"
-        },
-        headingDeg: 12,
-        observedAt: "2026-06-30T15:17:49Z"
-      },
-      featureId: "traffic:pid_gtfs_rt:vehicle-8096",
-      route: {
-        destination: "Březiněves",
-        routeShortName: "103",
-        transportMode: "bus"
-      },
-      stops: [
-        {
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        contractVersion: "sim-public-transit-vehicle-detail-v1",
+        current: {
           delaySeconds: 0,
-          plannedDeparture: "2026-06-30T15:19:49Z",
-          sequence: 1,
-          stopId: "U123",
-          stopName: "Štěpničná"
+          display: {
+            badgeLabel: "včas",
+            label: "103 → Březiněves",
+            subtitle: "poslední zpráva před 33 s"
+          },
+          headingDeg: 12,
+          observedAt: "2026-06-30T15:17:49Z"
+        },
+        featureId: "traffic:pid_gtfs_rt:vehicle-8096",
+        route: {
+          destination: "Březiněves",
+          routeShortName: "103",
+          transportMode: "bus"
+        },
+        stops: [
+          {
+            delaySeconds: 0,
+            plannedDeparture: "2026-06-30T15:19:49Z",
+            sequence: 1,
+            stopId: "U123",
+            stopName: "Štěpničná"
+          }
+        ],
+        vehicle: {
+          id: "8096",
+          operator: "ČSAD Střední Čechy"
         }
-      ],
-      vehicle: {
-        id: "8096",
-        operator: "ČSAD Střední Čechy"
-      }
-    }));
+      })
+    );
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
       situationDataSource: new FakeSituationDataSource(),
@@ -1313,44 +1493,49 @@ describe("map catalog route", () => {
         }
       ]
     });
-    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/transit/vehicles/traffic%3Apid_gtfs_rt%3Avehicle-8096?source=pid_gtfs_rt", expect.objectContaining({
-      headers: expect.objectContaining({
-        accept: "application/json"
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://sim.zeleznalady.cz/situation-data/api/v1/transit/vehicles/traffic%3Apid_gtfs_rt%3Avehicle-8096?source=pid_gtfs_rt",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          accept: "application/json"
+        })
       })
-    }));
+    );
   });
 
   it("proxies public transit stop detail through the server-side SIM provider", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
-    const fetchMock = vi.fn(async () => Response.json({
-      contractVersion: "sim-public-transit-stop-detail-v1",
-      departures: [
-        {
-          delaySeconds: 0,
-          destination: "Březiněves",
-          plannedDeparture: "2026-07-01T08:15:00Z",
-          routeShortName: "103",
-          status: "on_time",
-          transportMode: "bus"
-        }
-      ],
-      routes: [
-        {
-          destination: "Březiněves",
-          routeId: "pid-route-103",
-          routeShortName: "103",
-          transportMode: "bus"
-        }
-      ],
-      stop: {
-        stopId: "U123",
-        stopName: "Na Fabiance",
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        contractVersion: "sim-public-transit-stop-detail-v1",
+        departures: [
+          {
+            delaySeconds: 0,
+            destination: "Březiněves",
+            plannedDeparture: "2026-07-01T08:15:00Z",
+            routeShortName: "103",
+            status: "on_time",
+            transportMode: "bus"
+          }
+        ],
+        routes: [
+          {
+            destination: "Březiněves",
+            routeId: "pid-route-103",
+            routeShortName: "103",
+            transportMode: "bus"
+          }
+        ],
+        stop: {
+          stopId: "U123",
+          stopName: "Na Fabiance",
+          systemId: "pid",
+          zoneId: "P"
+        },
         systemId: "pid",
-        zoneId: "P"
-      },
-      systemId: "pid",
-      warnings: []
-    }));
+        warnings: []
+      })
+    );
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
       situationDataSource: new FakeSituationDataSource(),
@@ -1373,23 +1558,28 @@ describe("map catalog route", () => {
         stopName: "Na Fabiance"
       }
     });
-    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/transit/stops/pid/U123?source=public_transit_static&departuresLimit=8", expect.objectContaining({
-      headers: expect.objectContaining({
-        accept: "application/json"
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://sim.zeleznalady.cz/situation-data/api/v1/transit/stops/pid/U123?source=public_transit_static&departuresLimit=8",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          accept: "application/json"
+        })
       })
-    }));
+    );
   });
 
   it("proxies CHMI webcam detail through an allowlisted SIM URL", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
-    const fetchMock = vi.fn(async () => Response.json({
-      cameras: [
-        {
-          label: "Praha-Libuš",
-          snapshotUrl: "/situation-data/api/v1/weather/webcams/praha/snapshot.jpg"
-        }
-      ]
-    }));
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        cameras: [
+          {
+            label: "Praha-Libuš",
+            snapshotUrl: "/situation-data/api/v1/weather/webcams/praha/snapshot.jpg"
+          }
+        ]
+      })
+    );
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
       situationDataSource: new FakeSituationDataSource(),
@@ -1410,11 +1600,14 @@ describe("map catalog route", () => {
         }
       ]
     });
-    expect(fetchMock).toHaveBeenCalledWith("https://sim.zeleznalady.cz/situation-data/api/v1/weather/webcams/praha", expect.objectContaining({
-      headers: expect.objectContaining({
-        accept: expect.stringContaining("application/json")
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://sim.zeleznalady.cz/situation-data/api/v1/weather/webcams/praha",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          accept: expect.stringContaining("application/json")
+        })
       })
-    }));
+    );
   });
 
   it("rejects webcam proxy requests for direct CHMI upstream hosts", async () => {
@@ -1497,31 +1690,152 @@ class FakeSituationDataSource implements SituationDataSource {
 
   async fetchLayers(_requestNow: Date): Promise<SituationLayerDescriptor[]> {
     return [
-      { defaultVisible: true, expectedCadenceSeconds: 600, geometryTypes: ["Point"], label: "Weather", layerId: "weather" },
-      { defaultVisible: false, expectedCadenceSeconds: 600, geometryTypes: ["Polygon", "MultiPolygon"], label: "Předpověď počasí", layerId: "weather_forecast_area" },
-      { defaultVisible: false, expectedCadenceSeconds: 600, geometryTypes: ["Point"], label: "ČHMÚ webkamery", layerId: "weather_webcams" },
-      { defaultVisible: false, expectedCadenceSeconds: 900, geometryTypes: ["Point"], label: "Air quality", layerId: "air_quality" },
-      { defaultVisible: false, expectedCadenceSeconds: 3600, geometryTypes: ["Polygon"], label: "Unified mobile network", layerId: "mobile_network" },
-      { defaultVisible: false, expectedCadenceSeconds: 21600, geometryTypes: ["Polygon"], label: "Mobile coverage", layerId: "mobile_coverage" },
-      { defaultVisible: false, expectedCadenceSeconds: 3600, geometryTypes: ["Point"], label: "Mobile measurements", layerId: "mobile" },
-      { defaultVisible: false, expectedCadenceSeconds: 21600, geometryTypes: ["Point", "LineString", "Polygon"], label: "Ground", layerId: "ground" },
-      { defaultVisible: false, expectedCadenceSeconds: 21600, geometryTypes: ["Point"], label: "Community places", layerId: "community_places" },
-      { defaultVisible: false, expectedCadenceSeconds: 20, geometryTypes: ["Point"], label: "Traffic", layerId: "traffic" }
+      {
+        defaultVisible: true,
+        expectedCadenceSeconds: 600,
+        geometryTypes: ["Point"],
+        label: "Weather",
+        layerId: "weather"
+      },
+      {
+        defaultVisible: false,
+        expectedCadenceSeconds: 600,
+        geometryTypes: ["Polygon", "MultiPolygon"],
+        label: "Předpověď počasí",
+        layerId: "weather_forecast_area"
+      },
+      {
+        defaultVisible: false,
+        expectedCadenceSeconds: 600,
+        geometryTypes: ["Point"],
+        label: "ČHMÚ webkamery",
+        layerId: "weather_webcams"
+      },
+      {
+        defaultVisible: false,
+        expectedCadenceSeconds: 21600,
+        geometryTypes: ["Point"],
+        label: "Turistické webkamery",
+        layerId: "outdoor_webcams"
+      },
+      {
+        defaultVisible: false,
+        expectedCadenceSeconds: 900,
+        geometryTypes: ["Point"],
+        label: "Air quality",
+        layerId: "air_quality"
+      },
+      {
+        defaultVisible: false,
+        expectedCadenceSeconds: 3600,
+        geometryTypes: ["Polygon"],
+        label: "Unified mobile network",
+        layerId: "mobile_network"
+      },
+      {
+        defaultVisible: false,
+        expectedCadenceSeconds: 21600,
+        geometryTypes: ["Polygon"],
+        label: "Mobile coverage",
+        layerId: "mobile_coverage"
+      },
+      {
+        defaultVisible: false,
+        expectedCadenceSeconds: 3600,
+        geometryTypes: ["Point"],
+        label: "Mobile measurements",
+        layerId: "mobile"
+      },
+      {
+        defaultVisible: false,
+        expectedCadenceSeconds: 21600,
+        geometryTypes: ["Point", "LineString", "Polygon"],
+        label: "Ground",
+        layerId: "ground"
+      },
+      {
+        defaultVisible: false,
+        expectedCadenceSeconds: 21600,
+        geometryTypes: ["Point"],
+        label: "Community places",
+        layerId: "community_places"
+      },
+      {
+        defaultVisible: false,
+        expectedCadenceSeconds: 20,
+        geometryTypes: ["Point"],
+        label: "Traffic",
+        layerId: "traffic"
+      }
     ];
   }
 
   async fetchSources(_requestNow: Date): Promise<SituationSourceDescriptor[]> {
     return [
       { enabled: true, label: "Open-Meteo", layers: ["weather"], sourceId: "open_meteo", updateCadenceSeconds: 600 },
-      { enabled: true, label: "ČHMÚ měřené počasí", layers: ["weather"], sourceId: "chmi_weather_stations", updateCadenceSeconds: 600 },
-      { enabled: true, label: "Plošná předpověď počasí", layers: ["weather_forecast_area"], sourceId: "weather_forecast", updateCadenceSeconds: 600 },
-      { enabled: true, label: "ČHMÚ webkamery", layers: ["weather_webcams"], sourceId: "chmi_weather_webcams", updateCadenceSeconds: 600 },
-      { enabled: true, label: "ČHMÚ kvalita ovzduší", layers: ["air_quality"], sourceId: "chmi_air_quality", updateCadenceSeconds: 900 },
-      { enabled: true, label: "Unified mobile network assessment", layers: ["mobile_network"], sourceId: "mobile_network_model", updateCadenceSeconds: 3600 },
-      { enabled: true, label: "Mobile coverage estimate model", layers: ["mobile_coverage"], sourceId: "mobile_coverage_model", updateCadenceSeconds: 21600 },
-      { enabled: true, label: "CTU NetTest mobile measurements", layers: ["mobile"], sourceId: "ctu_nettest", updateCadenceSeconds: 3600 },
-      { enabled: true, label: "Local OpenStreetMap PostGIS context", layers: ["ground", "mobile"], sourceId: "osm_postgis", updateCadenceSeconds: 21600 },
-      { enabled: true, label: "Community context", layers: ["community_places"], sourceId: "community_context", updateCadenceSeconds: 21600 },
+      {
+        enabled: true,
+        label: "ČHMÚ měřené počasí",
+        layers: ["weather"],
+        sourceId: "chmi_weather_stations",
+        updateCadenceSeconds: 600
+      },
+      {
+        enabled: true,
+        label: "Plošná předpověď počasí",
+        layers: ["weather_forecast_area"],
+        sourceId: "weather_forecast",
+        updateCadenceSeconds: 600
+      },
+      {
+        enabled: true,
+        label: "ČHMÚ webkamery",
+        layers: ["weather_webcams", "outdoor_webcams"],
+        sourceId: "chmi_weather_webcams",
+        updateCadenceSeconds: 600
+      },
+      {
+        enabled: true,
+        label: "ČHMÚ kvalita ovzduší",
+        layers: ["air_quality"],
+        sourceId: "chmi_air_quality",
+        updateCadenceSeconds: 900
+      },
+      {
+        enabled: true,
+        label: "Unified mobile network assessment",
+        layers: ["mobile_network"],
+        sourceId: "mobile_network_model",
+        updateCadenceSeconds: 3600
+      },
+      {
+        enabled: true,
+        label: "Mobile coverage estimate model",
+        layers: ["mobile_coverage"],
+        sourceId: "mobile_coverage_model",
+        updateCadenceSeconds: 21600
+      },
+      {
+        enabled: true,
+        label: "CTU NetTest mobile measurements",
+        layers: ["mobile"],
+        sourceId: "ctu_nettest",
+        updateCadenceSeconds: 3600
+      },
+      {
+        enabled: true,
+        label: "Local OpenStreetMap PostGIS context",
+        layers: ["ground", "mobile"],
+        sourceId: "osm_postgis",
+        updateCadenceSeconds: 21600
+      },
+      {
+        enabled: true,
+        label: "Community context",
+        layers: ["community_places"],
+        sourceId: "community_context",
+        updateCadenceSeconds: 21600
+      },
       { enabled: true, label: "PID GTFS-RT", layers: ["traffic"], sourceId: "pid_gtfs_rt", updateCadenceSeconds: 20 }
     ];
   }
@@ -1541,7 +1855,11 @@ class FakeSituationDataSource implements SituationDataSource {
     };
   }
 
-  async fetchMobileTowerViewshed(towerId: string, query: MobileTowerViewshedQuery, requestNow: Date): Promise<MobileTowerViewshedResponse> {
+  async fetchMobileTowerViewshed(
+    towerId: string,
+    query: MobileTowerViewshedQuery,
+    requestNow: Date
+  ): Promise<MobileTowerViewshedResponse> {
     this.lastTowerViewshed = { query, towerId };
     if (this.towerViewshedError) {
       throw this.towerViewshedError;
@@ -1551,13 +1869,15 @@ class FakeSituationDataSource implements SituationDataSource {
       features: [
         {
           geometry: {
-            coordinates: [[
-              [14.0, 50.0],
-              [14.1, 50.0],
-              [14.1, 50.1],
-              [14.0, 50.1],
-              [14.0, 50.0]
-            ]],
+            coordinates: [
+              [
+                [14.0, 50.0],
+                [14.1, 50.0],
+                [14.1, 50.1],
+                [14.0, 50.1],
+                [14.0, 50.0]
+              ]
+            ],
             type: "Polygon"
           },
           properties: {
@@ -1626,13 +1946,15 @@ class FakeSituationDataSource implements SituationDataSource {
       features: [
         {
           geometry: {
-            coordinates: [[
-              [14.0, 50.0],
-              [14.05, 50.0],
-              [14.05, 50.05],
-              [14.0, 50.05],
-              [14.0, 50.0]
-            ]],
+            coordinates: [
+              [
+                [14.0, 50.0],
+                [14.05, 50.0],
+                [14.05, 50.05],
+                [14.0, 50.05],
+                [14.0, 50.0]
+              ]
+            ],
             type: "Polygon"
           },
           properties: {
@@ -1789,7 +2111,12 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
             mode: "bbox",
             providerId: "sim.situation-data",
             providerLayerIds: ["traffic"],
-            providerSourceIds: ["pid_gtfs_rt", "idsjmk_vehicle_positions", "spravazeleznic_trains", "public_transit_static"],
+            providerSourceIds: [
+              "pid_gtfs_rt",
+              "idsjmk_vehicle_positions",
+              "spravazeleznic_trains",
+              "public_transit_static"
+            ],
             streamId: "features"
           },
           recommendedCatalogLayerId: "public.traffic.transit",
@@ -2102,13 +2429,15 @@ class FakeMobileNetworkCoverageFallbackSource extends FakeProviderCatalogSituati
       features: [
         {
           geometry: {
-            coordinates: [[
-              [14.2, 49.95],
-              [14.3, 49.95],
-              [14.3, 50.05],
-              [14.2, 50.05],
-              [14.2, 49.95]
-            ]],
+            coordinates: [
+              [
+                [14.2, 49.95],
+                [14.3, 49.95],
+                [14.3, 50.05],
+                [14.2, 50.05],
+                [14.2, 49.95]
+              ]
+            ],
             type: "Polygon"
           },
           properties: {
@@ -2299,7 +2628,10 @@ class FakeFlightDataSource implements FlightDataSource {
     };
   }
 
-  async fetchReferenceFeatures(query: FlightReferenceFeatureQuery, requestNow: Date): Promise<FlightReferenceFeatureCollection> {
+  async fetchReferenceFeatures(
+    query: FlightReferenceFeatureQuery,
+    requestNow: Date
+  ): Promise<FlightReferenceFeatureCollection> {
     const features: FlightReferenceFeature[] = [
       {
         geometry: { coordinates: [14.259911, 50.100874], type: "Point" },
@@ -2320,7 +2652,17 @@ class FakeFlightDataSource implements FlightDataSource {
         type: "Feature"
       },
       {
-        geometry: { coordinates: [[[14.4, 50.1], [14.5, 50.1], [14.5, 50.2], [14.4, 50.1]]], type: "Polygon" },
+        geometry: {
+          coordinates: [
+            [
+              [14.4, 50.1],
+              [14.5, 50.1],
+              [14.5, 50.2],
+              [14.4, 50.1]
+            ]
+          ],
+          type: "Polygon"
+        },
         id: "airspace:LKD1",
         properties: {
           category: "airspace_danger",
@@ -2345,10 +2687,26 @@ class FakeFlightDataSource implements FlightDataSource {
       features: selectedFeatures,
       generatedAt: requestNow.toISOString(),
       query,
-      source: { generatedAt: requestNow.toISOString(), sourceId: "flight-data-api", sourceType: "PUBLIC_FLIGHT_REFERENCE" },
+      source: {
+        generatedAt: requestNow.toISOString(),
+        sourceId: "flight-data-api",
+        sourceType: "PUBLIC_FLIGHT_REFERENCE"
+      },
       sources: [
-        { enabled: true, label: "OurAirports", layers: ["flight.airports"], sourceId: "ourairports", updateCadenceSeconds: 3600 },
-        { enabled: true, label: "Czech AIP/eAIP airspaces", layers: ["flight.airspaces"], sourceId: "czech_aip_airspaces", updateCadenceSeconds: 3600 }
+        {
+          enabled: true,
+          label: "OurAirports",
+          layers: ["flight.airports"],
+          sourceId: "ourairports",
+          updateCadenceSeconds: 3600
+        },
+        {
+          enabled: true,
+          label: "Czech AIP/eAIP airspaces",
+          layers: ["flight.airspaces"],
+          sourceId: "czech_aip_airspaces",
+          updateCadenceSeconds: 3600
+        }
       ],
       summary: {
         featureCount: selectedFeatures.length,
@@ -2385,18 +2743,48 @@ class FakeSafetyDataSource implements SafetyDataSource {
 
   async fetchLayers(_requestNow: Date): Promise<SafetyLayerDescriptor[]> {
     return [
-      { defaultVisible: true, expectedCadenceSeconds: 300, geometryTypes: ["Point", "Polygon"], label: "Warnings", layerId: "warnings" },
+      {
+        defaultVisible: true,
+        expectedCadenceSeconds: 300,
+        geometryTypes: ["Point", "Polygon"],
+        label: "Warnings",
+        layerId: "warnings"
+      },
       { defaultVisible: true, expectedCadenceSeconds: 600, geometryTypes: ["Point"], label: "Flood", layerId: "flood" }
     ];
   }
 
   async fetchSources(_requestNow: Date): Promise<SafetySourceDescriptor[]> {
     return [
-      { enabled: true, label: "CHMI Alerts", layers: ["weather_alerts", "fire"], sourceId: "chmi_alerts", updateCadenceSeconds: 300 },
+      {
+        enabled: true,
+        label: "CHMI Alerts",
+        layers: ["weather_alerts", "fire"],
+        sourceId: "chmi_alerts",
+        updateCadenceSeconds: 300
+      },
       { enabled: true, label: "CHMI Hydro", layers: ["flood"], sourceId: "chmi_hydro", updateCadenceSeconds: 600 },
-      { enabled: true, label: "GDACS Alerts", layers: ["fire", "flood"], sourceId: "gdacs_alerts", updateCadenceSeconds: 300 },
-      { enabled: true, label: "HZS incidents", layers: ["warnings", "fire"], sourceId: "hzs_incidents", updateCadenceSeconds: 300 },
-      { enabled: true, label: "Municipal alerts", layers: ["warnings", "fire"], sourceId: "municipal_alerts", updateCadenceSeconds: 300 }
+      {
+        enabled: true,
+        label: "GDACS Alerts",
+        layers: ["fire", "flood"],
+        sourceId: "gdacs_alerts",
+        updateCadenceSeconds: 300
+      },
+      {
+        enabled: true,
+        label: "HZS incidents",
+        layers: ["warnings", "fire"],
+        sourceId: "hzs_incidents",
+        updateCadenceSeconds: 300
+      },
+      {
+        enabled: true,
+        label: "Municipal alerts",
+        layers: ["warnings", "fire"],
+        sourceId: "municipal_alerts",
+        updateCadenceSeconds: 300
+      }
     ];
   }
 
@@ -2421,7 +2809,11 @@ class FakeSafetyDataSource implements SafetyDataSource {
     };
   }
 
-  async fetchHydroStationDetail(stationId: string, query: SafetyHydroStationDetailQuery, requestNow: Date): Promise<unknown> {
+  async fetchHydroStationDetail(
+    stationId: string,
+    query: SafetyHydroStationDetailQuery,
+    requestNow: Date
+  ): Promise<unknown> {
     return {
       chart: {
         currentTime: requestNow.toISOString(),
@@ -2641,13 +3033,25 @@ class FakeTakGatewaySource implements TakGatewaySource {
 
   async fetchLayers(_requestNow: Date): Promise<TakGatewayLayerDescriptor[]> {
     return [
-      { defaultVisible: false, expectedCadenceSeconds: 15, geometryTypes: ["Point"], label: "Mobile units", layerId: "mobile" }
+      {
+        defaultVisible: false,
+        expectedCadenceSeconds: 15,
+        geometryTypes: ["Point"],
+        label: "Mobile units",
+        layerId: "mobile"
+      }
     ];
   }
 
   async fetchSources(_requestNow: Date): Promise<TakGatewaySourceDescriptor[]> {
     return [
-      { enabled: true, label: "TAK/CoT gateway", layers: ["mobile", "ground", "traffic"], sourceId: "tak_gateway", updateCadenceSeconds: 15 }
+      {
+        enabled: true,
+        label: "TAK/CoT gateway",
+        layers: ["mobile", "ground", "traffic"],
+        sourceId: "tak_gateway",
+        updateCadenceSeconds: 15
+      }
     ];
   }
 

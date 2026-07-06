@@ -5,7 +5,17 @@ import type { MissionArenaLayerDescriptor, MissionArenaSourceDescriptor } from "
 import type { ProviderCatalogLayer, ProviderCatalogSource, ProviderMapCatalog } from "./provider-map-catalog.js";
 
 export type MapCatalogAudience = "admin" | "authenticated" | "diagnostic" | "partner" | "public";
-export type MapCatalogLayerKind = "aggregate" | "grid_field" | "mvt_tiles" | "raster_overlay" | "raster_tiles" | "static_reference" | "track_stream" | "user_objects" | "vector_features" | "vector_field";
+export type MapCatalogLayerKind =
+  | "aggregate"
+  | "grid_field"
+  | "mvt_tiles"
+  | "raster_overlay"
+  | "raster_tiles"
+  | "static_reference"
+  | "track_stream"
+  | "user_objects"
+  | "vector_features"
+  | "vector_field";
 export type MapCatalogLayerRole = "diagnostic" | "overlay" | "partner" | "primary" | "reference" | "user";
 export type MapCatalogSourceRole = "aggregate" | "diagnostic" | "final" | "input" | "mock" | "projection" | "reference";
 
@@ -151,6 +161,7 @@ const PUBLIC_TRANSIT_STOPS_LAYER_ID = "public.traffic.transit_stops";
 const PUBLIC_TRAIL_ROUTES_LAYER_ID = "public.trails.routes";
 const PUBLIC_TRAIL_POI_LAYER_ID = "public.trails.poi";
 const PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID = "public.outdoor.community_places";
+const PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID = "public.outdoor.webcams";
 
 interface PublicTransitLayerVariant {
   layerId: string;
@@ -172,28 +183,56 @@ export function buildMapCatalog(input: BuildMapCatalogInput): MapCatalogResponse
     : [];
   const rawSources = [
     ...buildCopSources(),
-    ...(input.safety?.catalog ? buildProviderCatalogSources(input.safety.catalog, includeDiagnostics, includePartner) : buildSafetySources(input.safety?.sources ?? [])),
+    ...(input.safety?.catalog
+      ? buildProviderCatalogSources(input.safety.catalog, includeDiagnostics, includePartner)
+      : buildSafetySources(input.safety?.sources ?? [])),
     ...(input.situation?.catalog
-      ? [...buildProviderCatalogSources(input.situation.catalog, includeDiagnostics, includePartner), ...situationCompatibilitySources]
+      ? [
+          ...buildProviderCatalogSources(input.situation.catalog, includeDiagnostics, includePartner),
+          ...situationCompatibilitySources
+        ]
       : buildSituationSources(input.situation?.sources ?? [])),
-    ...(input.flight?.catalog ? buildProviderCatalogSources(input.flight.catalog, includeDiagnostics, includePartner) : []),
+    ...(input.flight?.catalog
+      ? buildProviderCatalogSources(input.flight.catalog, includeDiagnostics, includePartner)
+      : []),
     ...buildMissionArenaSources(input.missionArena?.sources ?? []),
-    ...(includePartner ? (input.tak?.catalog ? buildProviderCatalogSources(input.tak.catalog, includeDiagnostics, includePartner) : buildTakSources(input.tak?.sources ?? [])) : [])
+    ...(includePartner
+      ? input.tak?.catalog
+        ? buildProviderCatalogSources(input.tak.catalog, includeDiagnostics, includePartner)
+        : buildTakSources(input.tak?.sources ?? [])
+      : [])
   ];
   const rawLayers = [
-    ...(input.safety?.catalog ? buildProviderCatalogLayers(input.safety.catalog, includeDiagnostics, includePartner) : buildSafetyLayers(input.safety?.layers ?? [], input.safety?.sources ?? [])),
+    ...(input.safety?.catalog
+      ? buildProviderCatalogLayers(input.safety.catalog, includeDiagnostics, includePartner)
+      : buildSafetyLayers(input.safety?.layers ?? [], input.safety?.sources ?? [])),
     ...(input.situation?.catalog
-      ? [...buildProviderCatalogLayers(input.situation.catalog, includeDiagnostics, includePartner), ...situationCompatibilityLayers]
+      ? [
+          ...buildProviderCatalogLayers(input.situation.catalog, includeDiagnostics, includePartner),
+          ...situationCompatibilityLayers
+        ]
       : buildSituationLayers(input.situation?.layers ?? [], input.situation?.sources ?? [])),
     ...buildCopOwnedLayers(),
-    ...(input.flight?.catalog ? buildProviderCatalogLayers(input.flight.catalog, includeDiagnostics, includePartner) : []),
+    ...(input.flight?.catalog
+      ? buildProviderCatalogLayers(input.flight.catalog, includeDiagnostics, includePartner)
+      : []),
     ...buildMissionArenaLayers(input.missionArena?.layers ?? [], input.missionArena?.sources ?? []),
-    ...(includePartner ? (input.tak?.catalog ? buildProviderCatalogLayers(input.tak.catalog, includeDiagnostics, includePartner) : buildTakLayers(input.tak?.layers ?? [], input.tak?.sources ?? [])) : []),
+    ...(includePartner
+      ? input.tak?.catalog
+        ? buildProviderCatalogLayers(input.tak.catalog, includeDiagnostics, includePartner)
+        : buildTakLayers(input.tak?.layers ?? [], input.tak?.sources ?? [])
+      : []),
     ...(includeDiagnostics ? buildDiagnosticLayers(input.situation?.layers ?? [], input.situation?.sources ?? []) : [])
   ];
   const layers = dedupeLayers(filterCompatibilityLayers(rawLayers, providers));
   const sources = dedupeSources(filterCompatibilitySources(rawSources, layers, providers));
-  const warnings = [input.flight?.warning, input.missionArena?.warning, input.safety?.warning, input.situation?.warning, input.tak?.warning].filter((warning): warning is string => Boolean(warning));
+  const warnings = [
+    input.flight?.warning,
+    input.missionArena?.warning,
+    input.safety?.warning,
+    input.situation?.warning,
+    input.tak?.warning
+  ].filter((warning): warning is string => Boolean(warning));
 
   return {
     catalogVersion: "map-catalog-v1",
@@ -278,22 +317,32 @@ function defaultGroups(includeDiagnostics: boolean, includePartner: boolean): Ma
   ];
 }
 
-function buildProviderCatalogLayers(catalog: ProviderMapCatalog, includeDiagnostics: boolean, includePartner: boolean): MapCatalogLayer[] {
+function buildProviderCatalogLayers(
+  catalog: ProviderMapCatalog,
+  includeDiagnostics: boolean,
+  includePartner: boolean
+): MapCatalogLayer[] {
   return catalog.layers
     .filter((layer) => shouldIncludeCatalogAudience(layer.audience, includeDiagnostics, includePartner))
     .flatMap((layer) => providerCatalogLayerToMapLayer(catalog.providerId, layer));
 }
 
-function publicTransitLayerVariants(providerLayerIds: string[], providerSourceIds: string[], fallbackRefreshSeconds: number | undefined): PublicTransitLayerVariant[] {
+function publicTransitLayerVariants(
+  providerLayerIds: string[],
+  providerSourceIds: string[],
+  fallbackRefreshSeconds: number | undefined
+): PublicTransitLayerVariant[] {
   const normalizedProviderLayerIds = providerLayerIdsForPublicTransitVariant(providerLayerIds);
   if (providerSourceIds.length === 0) {
-    return [{
-      layerId: PUBLIC_TRANSIT_BASE_LAYER_ID,
-      providerLayerIds: normalizedProviderLayerIds,
-      refreshSeconds: publicTransitRefreshSecondsForLayerId(PUBLIC_TRANSIT_BASE_LAYER_ID) ?? fallbackRefreshSeconds,
-      sourceIds: [],
-      styleProfile: publicTransitStyleProfileForLayerId(PUBLIC_TRANSIT_BASE_LAYER_ID)
-    }];
+    return [
+      {
+        layerId: PUBLIC_TRANSIT_BASE_LAYER_ID,
+        providerLayerIds: normalizedProviderLayerIds,
+        refreshSeconds: publicTransitRefreshSecondsForLayerId(PUBLIC_TRANSIT_BASE_LAYER_ID) ?? fallbackRefreshSeconds,
+        sourceIds: [],
+        styleProfile: publicTransitStyleProfileForLayerId(PUBLIC_TRANSIT_BASE_LAYER_ID)
+      }
+    ];
   }
   const variants = new Map<string, PublicTransitLayerVariant>();
   for (const sourceId of providerSourceIds) {
@@ -323,13 +372,23 @@ function publicTransitCatalogLayerIdForSourceId(sourceId: string): string {
   if (isPublicTransitStaticSourceId(normalized)) {
     return PUBLIC_TRANSIT_STOPS_LAYER_ID;
   }
-  if (normalized === "spravazeleznic_trains" || normalized.includes("spravazeleznic") || normalized.includes("rail") || normalized.includes("train")) {
+  if (
+    normalized === "spravazeleznic_trains" ||
+    normalized.includes("spravazeleznic") ||
+    normalized.includes("rail") ||
+    normalized.includes("train")
+  ) {
     return PUBLIC_TRANSIT_TRAINS_LAYER_ID;
   }
   if (normalized === "pid_gtfs_rt" || normalized.startsWith("pid_") || normalized.includes("_pid_")) {
     return PUBLIC_TRANSIT_PID_LAYER_ID;
   }
-  if (normalized === "idsjmk_vehicle_positions" || normalized === "ids_jmk_vehicle_positions" || normalized.includes("idsjmk") || normalized.includes("ids_jmk")) {
+  if (
+    normalized === "idsjmk_vehicle_positions" ||
+    normalized === "ids_jmk_vehicle_positions" ||
+    normalized.includes("idsjmk") ||
+    normalized.includes("ids_jmk")
+  ) {
     return PUBLIC_TRANSIT_IDSJMK_LAYER_ID;
   }
   return PUBLIC_TRANSIT_BASE_LAYER_ID;
@@ -337,17 +396,19 @@ function publicTransitCatalogLayerIdForSourceId(sourceId: string): string {
 
 function isPublicTransitSourceId(sourceId: string): boolean {
   const normalized = sourceId.toLowerCase();
-  return isPublicTransitStaticSourceId(normalized)
-    || normalized === "pid_gtfs_rt"
-    || normalized.startsWith("pid_")
-    || normalized.includes("gtfs")
-    || normalized.includes("transit")
-    || normalized.includes("vehicle_position")
-    || normalized.includes("idsjmk")
-    || normalized.includes("ids_jmk")
-    || normalized.includes("spravazeleznic")
-    || normalized.includes("rail")
-    || normalized.includes("train");
+  return (
+    isPublicTransitStaticSourceId(normalized) ||
+    normalized === "pid_gtfs_rt" ||
+    normalized.startsWith("pid_") ||
+    normalized.includes("gtfs") ||
+    normalized.includes("transit") ||
+    normalized.includes("vehicle_position") ||
+    normalized.includes("idsjmk") ||
+    normalized.includes("ids_jmk") ||
+    normalized.includes("spravazeleznic") ||
+    normalized.includes("rail") ||
+    normalized.includes("train")
+  );
 }
 
 function isPublicTransitCatalogLayerId(layerId: string): boolean {
@@ -355,10 +416,12 @@ function isPublicTransitCatalogLayerId(layerId: string): boolean {
 }
 
 function isPublicTransitVehicleCatalogLayerId(layerId: string): boolean {
-  return layerId === PUBLIC_TRANSIT_BASE_LAYER_ID
-    || layerId === PUBLIC_TRANSIT_PID_LAYER_ID
-    || layerId === PUBLIC_TRANSIT_IDSJMK_LAYER_ID
-    || layerId === PUBLIC_TRANSIT_TRAINS_LAYER_ID;
+  return (
+    layerId === PUBLIC_TRANSIT_BASE_LAYER_ID ||
+    layerId === PUBLIC_TRANSIT_PID_LAYER_ID ||
+    layerId === PUBLIC_TRANSIT_IDSJMK_LAYER_ID ||
+    layerId === PUBLIC_TRANSIT_TRAINS_LAYER_ID
+  );
 }
 
 function publicTransitRefreshSecondsForLayerId(layerId: string): number | undefined {
@@ -393,6 +456,10 @@ function isOutdoorCommunityPlacesCatalogLayerId(layerId: string): boolean {
   return layerId === PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID;
 }
 
+function isOutdoorWebcamsCatalogLayerId(layerId: string): boolean {
+  return layerId === PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID;
+}
+
 function trailStyleProfileForLayerId(layerId: string): string | undefined {
   if (layerId === PUBLIC_TRAIL_ROUTES_LAYER_ID) {
     return "trail-route-osm-v1";
@@ -410,13 +477,26 @@ function outdoorCommunityStyleProfileForLayerId(layerId: string): string | undef
   return undefined;
 }
 
+function outdoorWebcamStyleProfileForLayerId(layerId: string): string | undefined {
+  if (layerId === PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID) {
+    return "outdoor-webcam-point-v1";
+  }
+  return undefined;
+}
+
 function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatalogLayer): MapCatalogLayer[] {
   const providerLayerIds = layer.query?.providerLayerIds?.filter(Boolean) ?? [];
-  const rawProviderSourceIds = layer.query?.providerSourceIds?.filter(Boolean) ?? layer.sourceIds?.filter(Boolean) ?? [];
-  const providerSourceIds = sanitizeProviderCatalogLayerSourceIds(providerId, layer.recommendedCatalogLayerId, rawProviderSourceIds);
-  const variants = providerId === "sim.situation-data" && layer.recommendedCatalogLayerId === PUBLIC_TRANSIT_BASE_LAYER_ID
-    ? publicTransitLayerVariants(providerLayerIds, providerSourceIds, layer.refreshSeconds)
-    : [{ layerId: layer.recommendedCatalogLayerId, providerLayerIds, sourceIds: providerSourceIds }];
+  const rawProviderSourceIds =
+    layer.query?.providerSourceIds?.filter(Boolean) ?? layer.sourceIds?.filter(Boolean) ?? [];
+  const providerSourceIds = sanitizeProviderCatalogLayerSourceIds(
+    providerId,
+    layer.recommendedCatalogLayerId,
+    rawProviderSourceIds
+  );
+  const variants =
+    providerId === "sim.situation-data" && layer.recommendedCatalogLayerId === PUBLIC_TRANSIT_BASE_LAYER_ID
+      ? publicTransitLayerVariants(providerLayerIds, providerSourceIds, layer.refreshSeconds)
+      : [{ layerId: layer.recommendedCatalogLayerId, providerLayerIds, sourceIds: providerSourceIds }];
   return variants.map((variant) => providerCatalogLayerVariantToMapLayer(providerId, layer, variant));
 }
 
@@ -429,12 +509,11 @@ function providerCatalogLayerVariantToMapLayer(
   const providerLayerIds = variant.providerLayerIds;
   const providerSourceIds = variant.sourceIds;
   const refreshSeconds = variant.refreshSeconds ?? layer.refreshSeconds;
-  const highVolumeBboxLayer = isPublicTransitCatalogLayerId(catalogLayerId)
-    || isTrailCatalogLayerId(catalogLayerId)
-    || isOutdoorCommunityPlacesCatalogLayerId(catalogLayerId);
-  const cacheTtlSeconds = highVolumeBboxLayer
-    ? refreshSeconds ?? layer.cacheTtlSeconds
-    : layer.cacheTtlSeconds;
+  const highVolumeBboxLayer =
+    isPublicTransitCatalogLayerId(catalogLayerId) ||
+    isTrailCatalogLayerId(catalogLayerId) ||
+    isOutdoorCommunityPlacesCatalogLayerId(catalogLayerId);
+  const cacheTtlSeconds = highVolumeBboxLayer ? (refreshSeconds ?? layer.cacheTtlSeconds) : layer.cacheTtlSeconds;
   const variantLayer: ProviderCatalogLayer = {
     ...layer,
     recommendedCatalogLayerId: catalogLayerId,
@@ -444,10 +523,12 @@ function providerCatalogLayerVariantToMapLayer(
       providerSourceIds
     },
     sourceIds: providerSourceIds,
-    styleProfile: variant.styleProfile
-      ?? trailStyleProfileForLayerId(catalogLayerId)
-      ?? outdoorCommunityStyleProfileForLayerId(catalogLayerId)
-      ?? (catalogLayerId === PUBLIC_TRANSIT_STOPS_LAYER_ID ? "traffic-public-transit-stops-v1" : layer.styleProfile)
+    styleProfile:
+      variant.styleProfile ??
+      trailStyleProfileForLayerId(catalogLayerId) ??
+      outdoorCommunityStyleProfileForLayerId(catalogLayerId) ??
+      outdoorWebcamStyleProfileForLayerId(catalogLayerId) ??
+      (catalogLayerId === PUBLIC_TRANSIT_STOPS_LAYER_ID ? "traffic-public-transit-stops-v1" : layer.styleProfile)
   };
   const mode = normalizeQueryMode(layer.query?.mode);
   const role = roleForCatalogLayer(variantLayer);
@@ -459,10 +540,7 @@ function providerCatalogLayerVariantToMapLayer(
     catalogLayerId,
     variantLayer.sourceIds?.filter(Boolean) ?? providerSourceIds
   );
-  const categoryIds = uniqueStrings([
-    ...(layer.query?.categoryIds ?? []),
-    ...(layer.query?.categoryFilter ?? [])
-  ]);
+  const categoryIds = uniqueStrings([...(layer.query?.categoryIds ?? []), ...(layer.query?.categoryFilter ?? [])]);
   return {
     audience,
     ...(layer.availability ? { availability: layer.availability } : {}),
@@ -484,7 +562,9 @@ function providerCatalogLayerVariantToMapLayer(
     preferredProviderId: layer.preferredProviderId,
     provenance: {
       sourceIds: uniqueStrings(provenanceSourceIds.map((sourceId) => `${providerId}:${sourceId}`)),
-      ...(layer.technicalInputs && layer.technicalInputs.length > 0 ? { technicalInputs: layer.technicalInputs.map((sourceId) => `${providerId}:${sourceId}`) } : {})
+      ...(layer.technicalInputs && layer.technicalInputs.length > 0
+        ? { technicalInputs: layer.technicalInputs.map((sourceId) => `${providerId}:${sourceId}`) }
+        : {})
     },
     query: {
       ...(categoryIds.length > 0 ? { categoryIds } : {}),
@@ -530,6 +610,9 @@ function maxFeaturesForCatalogLayer(layer: ProviderCatalogLayer): number | undef
   if (isOutdoorCommunityPlacesCatalogLayerId(layer.recommendedCatalogLayerId)) {
     return Math.max(layer.query?.maxFeatures ?? 0, 5000);
   }
+  if (isOutdoorWebcamsCatalogLayerId(layer.recommendedCatalogLayerId)) {
+    return Math.max(layer.query?.maxFeatures ?? 0, 500);
+  }
   return layer.query?.maxFeatures;
 }
 
@@ -555,12 +638,17 @@ function roleForCatalogLayer(layer: ProviderCatalogLayer): MapCatalogLayerRole {
 
 function geometryTypesForCatalogLayer(layer: ProviderCatalogLayer): string[] | undefined {
   const geometryTypes = nonEmpty(layer.geometryTypes) ?? [];
-  if (layer.recommendedCatalogLayerId === "public.safety.fire" || layer.recommendedCatalogLayerId === "public.safety.weather_alerts") {
+  if (
+    layer.recommendedCatalogLayerId === "public.safety.fire" ||
+    layer.recommendedCatalogLayerId === "public.safety.weather_alerts"
+  ) {
     return uniqueStrings([...geometryTypes, "Polygon", "MultiPolygon"]);
   }
-  if (layer.recommendedCatalogLayerId === "public.boundary.admin"
-    || layer.recommendedCatalogLayerId.startsWith("public.boundary.")
-    || layer.recommendedCatalogLayerId === "public.place.settlements") {
+  if (
+    layer.recommendedCatalogLayerId === "public.boundary.admin" ||
+    layer.recommendedCatalogLayerId.startsWith("public.boundary.") ||
+    layer.recommendedCatalogLayerId === "public.place.settlements"
+  ) {
     return uniqueStrings([...geometryTypes, "Polygon", "MultiPolygon"]);
   }
   if (layer.recommendedCatalogLayerId === PUBLIC_TRAIL_ROUTES_LAYER_ID) {
@@ -572,22 +660,25 @@ function geometryTypesForCatalogLayer(layer: ProviderCatalogLayer): string[] | u
   if (layer.recommendedCatalogLayerId === PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID) {
     return uniqueStrings([...geometryTypes, "Point"]);
   }
+  if (layer.recommendedCatalogLayerId === PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID) {
+    return uniqueStrings([...geometryTypes, "Point"]);
+  }
   return geometryTypes.length > 0 ? geometryTypes : undefined;
 }
 
 function minZoomForCatalogLayer(layer: ProviderCatalogLayer): number | undefined {
   const layerId = layer.recommendedCatalogLayerId;
   if (
-    layerId === "public.mobile.network"
-    || layerId === "reference.infrastructure.communications"
-    || layerId === "public.weather.webcams"
-    || layerId === "public.weather.observations"
-    || layerId === "public.weather.temperature_grid"
-    || layerId === "public.weather.wind_field"
-    || layerId === "public.weather.precipitation_grid"
-    || layerId === "public.weather.humidity_grid"
-    || layerId === "public.weather.pressure_grid"
-    || layerId === "public.safety.flood"
+    layerId === "public.mobile.network" ||
+    layerId === "reference.infrastructure.communications" ||
+    layerId === "public.weather.webcams" ||
+    layerId === "public.weather.observations" ||
+    layerId === "public.weather.temperature_grid" ||
+    layerId === "public.weather.wind_field" ||
+    layerId === "public.weather.precipitation_grid" ||
+    layerId === "public.weather.humidity_grid" ||
+    layerId === "public.weather.pressure_grid" ||
+    layerId === "public.safety.flood"
   ) {
     return Math.min(layer.minZoom ?? 4, 4);
   }
@@ -606,38 +697,63 @@ function minZoomForCatalogLayer(layer: ProviderCatalogLayer): number | undefined
   if (layerId === PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID) {
     return Math.max(layer.minZoom ?? 12, 12);
   }
+  if (layerId === PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID) {
+    return Math.max(layer.minZoom ?? 10, 10);
+  }
   return layer.minZoom;
 }
 
-function buildProviderCatalogSources(catalog: ProviderMapCatalog, includeDiagnostics: boolean, includePartner: boolean): MapCatalogSource[] {
+function buildProviderCatalogSources(
+  catalog: ProviderMapCatalog,
+  includeDiagnostics: boolean,
+  includePartner: boolean
+): MapCatalogSource[] {
   return catalog.sources
     .filter((source) => shouldIncludeCatalogAudience(source.audience, includeDiagnostics, includePartner))
     .flatMap((source) => providerCatalogSourceToMapSource(catalog.providerId, source));
 }
 
 function providerCatalogSourceToMapSource(providerId: string, source: ProviderCatalogSource): MapCatalogSource[] {
-  const publicTransitLayerId = providerId === "sim.situation-data" && isPublicTransitSourceId(source.sourceId) ? publicTransitCatalogLayerIdForSourceId(source.sourceId) : undefined;
+  const publicTransitLayerId =
+    providerId === "sim.situation-data" && isPublicTransitSourceId(source.sourceId)
+      ? publicTransitCatalogLayerIdForSourceId(source.sourceId)
+      : undefined;
   const isOsmPostgisSource = providerId === "sim.situation-data" && source.sourceId === "osm_postgis";
   const isCommunityContextSource = providerId === "sim.situation-data" && source.sourceId === "community_context";
+  const isChmiWebcamSource = providerId === "sim.situation-data" && source.sourceId === "chmi_weather_webcams";
   const feedsCatalogLayerIds = sanitizeProviderCatalogSourceFeedLayerIds(
     providerId,
     source.sourceId,
     nonEmpty(source.feedsCatalogLayerIds) ?? nonEmpty(source.feedsLayerIds)
   );
   const enabled = source.enabled === true && source.availability !== "disabled";
-  const usedByCatalogLayerIds = providerId === "sim.situation-data" && isPublicTransitCatalogLayerId(publicTransitLayerId ?? "")
-    ? [publicTransitLayerId!]
-    : isOsmPostgisSource
-      ? uniqueStrings([...(source.usedByCatalogLayerIds ?? []), PUBLIC_TRAIL_ROUTES_LAYER_ID, PUBLIC_TRAIL_POI_LAYER_ID])
-      : isCommunityContextSource
-      ? uniqueStrings([...(source.usedByCatalogLayerIds ?? []), PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID])
-      : source.usedByCatalogLayerIds;
+  const usedByCatalogLayerIds =
+    providerId === "sim.situation-data" && isPublicTransitCatalogLayerId(publicTransitLayerId ?? "")
+      ? [publicTransitLayerId!]
+      : isOsmPostgisSource
+        ? uniqueStrings([
+            ...(source.usedByCatalogLayerIds ?? []),
+            PUBLIC_TRAIL_ROUTES_LAYER_ID,
+            PUBLIC_TRAIL_POI_LAYER_ID
+          ])
+        : isCommunityContextSource
+          ? uniqueStrings([...(source.usedByCatalogLayerIds ?? []), PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID])
+          : isChmiWebcamSource
+            ? uniqueStrings([
+                ...(source.usedByCatalogLayerIds ?? []),
+                "public.weather.webcams",
+                PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID
+              ])
+            : source.usedByCatalogLayerIds;
   return [
     {
       audience: normalizeAudience(source.audience),
       ...(source.availability ? { availability: source.availability } : {}),
       cacheTtlSeconds: source.cacheTtlSeconds,
-      ...(source.compatibilityOnly === true || (normalizeSourceRole(source.sourceRole) === "projection" && Boolean(source.preferredProviderId)) ? { compatibilityOnly: true } : {}),
+      ...(source.compatibilityOnly === true ||
+      (normalizeSourceRole(source.sourceRole) === "projection" && Boolean(source.preferredProviderId))
+        ? { compatibilityOnly: true }
+        : {}),
       ...(source.disabledReason ? { disabledReason: source.disabledReason } : {}),
       enabled,
       feedsCatalogLayerIds,
@@ -654,7 +770,11 @@ function providerCatalogSourceToMapSource(providerId: string, source: ProviderCa
   ];
 }
 
-function sanitizeProviderCatalogSourceFeedLayerIds(providerId: string, sourceId: string, layerIds: string[] | undefined): string[] | undefined {
+function sanitizeProviderCatalogSourceFeedLayerIds(
+  providerId: string,
+  sourceId: string,
+  layerIds: string[] | undefined
+): string[] | undefined {
   if (providerId === "sim.situation-data" && isPublicTransitSourceId(sourceId)) {
     const publicTransitLayerId = publicTransitCatalogLayerIdForSourceId(sourceId);
     if (isPublicTransitCatalogLayerId(publicTransitLayerId)) {
@@ -667,6 +787,9 @@ function sanitizeProviderCatalogSourceFeedLayerIds(providerId: string, sourceId:
   if (providerId === "sim.situation-data" && sourceId === "community_context") {
     return uniqueStrings([...(layerIds ?? []), PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID]);
   }
+  if (providerId === "sim.situation-data" && sourceId === "chmi_weather_webcams") {
+    return uniqueStrings([...(layerIds ?? []), "public.weather.webcams", PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID]);
+  }
   if (providerId !== "sim.safety-data") {
     return layerIds;
   }
@@ -678,7 +801,8 @@ function sanitizeProviderCatalogSourceFeedLayerIds(providerId: string, sourceId:
 
 function normalizeProviderFilters(filters: ProviderCatalogLayer["filters"]): MapCatalogFilter[] | undefined {
   const normalized = (filters ?? []).flatMap((filter): MapCatalogFilter[] => {
-    const type = filter.type === "select" || filter.type === "toggle" || filter.type === "multi_select" ? filter.type : undefined;
+    const type =
+      filter.type === "select" || filter.type === "toggle" || filter.type === "multi_select" ? filter.type : undefined;
     if (!type) {
       return [];
     }
@@ -695,7 +819,11 @@ function normalizeProviderFilters(filters: ProviderCatalogLayer["filters"]): Map
   return normalized.length > 0 ? normalized : undefined;
 }
 
-function shouldIncludeCatalogAudience(value: string | undefined, includeDiagnostics: boolean, includePartner: boolean): boolean {
+function shouldIncludeCatalogAudience(
+  value: string | undefined,
+  includeDiagnostics: boolean,
+  includePartner: boolean
+): boolean {
   const audience = normalizeAudience(value);
   if (audience === "diagnostic" || audience === "admin") {
     return includeDiagnostics;
@@ -715,6 +843,7 @@ const curatedCatalogLayerLabels: Record<string, string> = {
   "public.trails.routes": "Turistické trasy",
   "public.trails.poi": "Outdoor body",
   "public.outdoor.community_places": "Komunitní kontext",
+  "public.outdoor.webcams": "Turistické webkamery",
   "public.safety.air_quality": "Kvalita ovzduší",
   "public.safety.flood": "Vodní stavy a průtoky",
   "public.weather.current": "Počasí ve středu mapy",
@@ -737,7 +866,10 @@ const curatedCatalogLayerDescriptions: Record<string, string> = {
   "public.traffic.transit_stops": "Statické zastávky veřejné dopravy ze SIM katalogu.",
   "public.trails.routes": "Turistické, pěší, cyklistické a MTB trasy z normalizovaných OSM dat.",
   "public.trails.poi": "Outdoor body zájmu jako přístřešky, voda, kempování, servis a nouzové body z OSM.",
-  "public.outdoor.community_places": "Referenční OSM komunitní kontext: WC, voda, přístřeší, AED, lékárny, úřady a další veřejné body. Nejde o ověřený operační stav.",
+  "public.outdoor.community_places":
+    "Referenční OSM komunitní kontext: WC, voda, přístřeší, AED, lékárny, úřady a další veřejné body. Nejde o ověřený operační stav.",
+  "public.outdoor.webcams":
+    "Kurátorované turistické webkamery s odkazem na originální stránky providerů. Nejde o meteorologickou výstrahu ani potvrzený operační stav.",
   "public.safety.flood": "Hydrologické stanice, vodní stavy, průtoky a stupně povodňové aktivity."
 };
 
@@ -842,25 +974,57 @@ function groupIdForCatalogLayer(layer: ProviderCatalogLayer): string {
 }
 
 function normalizeQueryMode(value: string | undefined): MapCatalogQuery["mode"] {
-  return value === "grid" || value === "internal" || value === "stream" || value === "tile" || value === "bbox" ? value : "bbox";
+  return value === "grid" || value === "internal" || value === "stream" || value === "tile" || value === "bbox"
+    ? value
+    : "bbox";
 }
 
 function normalizeLayerRole(value: string | undefined): MapCatalogLayerRole {
-  return value === "diagnostic" || value === "overlay" || value === "partner" || value === "primary" || value === "reference" || value === "user" ? value : "reference";
+  return value === "diagnostic" ||
+    value === "overlay" ||
+    value === "partner" ||
+    value === "primary" ||
+    value === "reference" ||
+    value === "user"
+    ? value
+    : "reference";
 }
 
 function normalizeAudience(value: string | undefined): MapCatalogAudience {
-  return value === "admin" || value === "authenticated" || value === "diagnostic" || value === "partner" || value === "public" ? value : "public";
+  return value === "admin" ||
+    value === "authenticated" ||
+    value === "diagnostic" ||
+    value === "partner" ||
+    value === "public"
+    ? value
+    : "public";
 }
 
 function normalizeLayerKind(value: string | undefined): MapCatalogLayerKind {
-  return value === "aggregate" || value === "grid_field" || value === "mvt_tiles" || value === "raster_overlay" || value === "raster_tiles" || value === "static_reference" || value === "track_stream" || value === "user_objects" || value === "vector_features" || value === "vector_field"
+  return value === "aggregate" ||
+    value === "grid_field" ||
+    value === "mvt_tiles" ||
+    value === "raster_overlay" ||
+    value === "raster_tiles" ||
+    value === "static_reference" ||
+    value === "track_stream" ||
+    value === "user_objects" ||
+    value === "vector_features" ||
+    value === "vector_field"
     ? value
     : "vector_features";
 }
 
 function normalizeSourceRole(value: string | undefined): MapCatalogSourceRole {
-  return value === "aggregate" || value === "diagnostic" || value === "final" || value === "input" || value === "mock" || value === "projection" || value === "reference" ? value : "reference";
+  return value === "aggregate" ||
+    value === "diagnostic" ||
+    value === "final" ||
+    value === "input" ||
+    value === "mock" ||
+    value === "projection" ||
+    value === "reference"
+    ? value
+    : "reference";
 }
 
 function streamIdForCatalogLayer(value: string | undefined): string {
@@ -949,18 +1113,42 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
       kind: "vector_features",
       label: "Požáry",
       layerId: "public.safety.fire",
-      legal: legalFromSource(findSource(sources, "chmi_alerts") ?? findSource(sources, "gdacs_alerts") ?? findSource(sources, "hzs_incidents") ?? findSource(sources, "municipal_alerts") ?? findSource(sources, "nasa_firms") ?? findSource(sources, "fire_hotspots") ?? findSource(sources, "fire_incidents")),
+      legal: legalFromSource(
+        findSource(sources, "chmi_alerts") ??
+          findSource(sources, "gdacs_alerts") ??
+          findSource(sources, "hzs_incidents") ??
+          findSource(sources, "municipal_alerts") ??
+          findSource(sources, "nasa_firms") ??
+          findSource(sources, "fire_hotspots") ??
+          findSource(sources, "fire_incidents")
+      ),
       maxZoom: 18,
       minZoom: 5,
       provenance: {
-        sourceIds: ["sim.safety-data:chmi_alerts", "sim.safety-data:gdacs_alerts", "sim.safety-data:hzs_incidents", "sim.safety-data:municipal_alerts", "sim.safety-data:nasa_firms", "sim.safety-data:fire_hotspots", "sim.safety-data:fire_incidents"]
+        sourceIds: [
+          "sim.safety-data:chmi_alerts",
+          "sim.safety-data:gdacs_alerts",
+          "sim.safety-data:hzs_incidents",
+          "sim.safety-data:municipal_alerts",
+          "sim.safety-data:nasa_firms",
+          "sim.safety-data:fire_hotspots",
+          "sim.safety-data:fire_incidents"
+        ]
       },
       query: {
         maxFeatures: 250,
         mode: "bbox",
         providerId: "sim.safety-data",
         providerLayerIds: ["fire"],
-        providerSourceIds: ["chmi_alerts", "gdacs_alerts", "hzs_incidents", "municipal_alerts", "nasa_firms", "fire_hotspots", "fire_incidents"],
+        providerSourceIds: [
+          "chmi_alerts",
+          "gdacs_alerts",
+          "hzs_incidents",
+          "municipal_alerts",
+          "nasa_firms",
+          "fire_hotspots",
+          "fire_incidents"
+        ],
         streamId: "features"
       },
       refreshSeconds: fireLayer?.expectedCadenceSeconds ?? 600,
@@ -972,7 +1160,8 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
       audience: "public",
       cacheTtlSeconds: 300,
       defaultVisible: weatherAlertsLayer?.defaultVisible ?? false,
-      description: weatherAlertsLayer?.description ?? "Meteorologické výstrahy podle území, typu nebezpečí a platnosti.",
+      description:
+        weatherAlertsLayer?.description ?? "Meteorologické výstrahy podle území, typu nebezpečí a platnosti.",
       geometryTypes: weatherAlertsLayer?.geometryTypes ?? ["Polygon", "MultiPolygon"],
       groupId: "risks.weather",
       kind: "vector_features",
@@ -1029,7 +1218,10 @@ function buildSafetyLayers(layers: SafetyLayerDescriptor[], sources: SafetySourc
   ];
 }
 
-function buildSituationLayers(layers: SituationLayerDescriptor[], sources: SituationSourceDescriptor[]): MapCatalogLayer[] {
+function buildSituationLayers(
+  layers: SituationLayerDescriptor[],
+  sources: SituationSourceDescriptor[]
+): MapCatalogLayer[] {
   const weatherLayer = findLayer(layers, "weather");
   const trafficLayer = findLayer(layers, "traffic");
   const mobileLayer = findLayer(layers, "mobile_network");
@@ -1059,7 +1251,8 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
         providerSourceIds: ["open_meteo"],
         streamId: "features"
       },
-      refreshSeconds: findSource(sources, "open_meteo")?.updateCadenceSeconds ?? weatherLayer?.expectedCadenceSeconds ?? 600,
+      refreshSeconds:
+        findSource(sources, "open_meteo")?.updateCadenceSeconds ?? weatherLayer?.expectedCadenceSeconds ?? 600,
       role: "reference",
       selectable: false,
       styleProfile: "weather-current-v1"
@@ -1125,6 +1318,7 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
     },
     buildWeatherForecastAreaCatalogLayer(sources),
     buildWeatherWebcamCatalogLayer(sources),
+    buildOutdoorWebcamCatalogLayer(sources),
     {
       audience: "public",
       cacheTtlSeconds: 900,
@@ -1173,12 +1367,18 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
       kind: "vector_features",
       label: "Mobilní síť",
       layerId: "public.mobile.network",
-      legal: legalFromSource(findSource(sources, "mobile_network_model"), ["Modelový odhad, ne garantované pokrytí ani potvrzený výpadek operátora."]),
+      legal: legalFromSource(findSource(sources, "mobile_network_model"), [
+        "Modelový odhad, ne garantované pokrytí ani potvrzený výpadek operátora."
+      ]),
       maxZoom: 18,
       minZoom: 4,
       provenance: {
         sourceIds: ["sim.situation-data:mobile_network_model"],
-        technicalInputs: ["sim.situation-data:mobile_coverage_model", "sim.situation-data:ctu_nettest", "sim.situation-data:osm_postgis"]
+        technicalInputs: [
+          "sim.situation-data:mobile_coverage_model",
+          "sim.situation-data:ctu_nettest",
+          "sim.situation-data:osm_postgis"
+        ]
       },
       query: {
         maxFeatures: 250,
@@ -1188,7 +1388,8 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
         providerSourceIds: ["mobile_network_model"],
         streamId: "features"
       },
-      refreshSeconds: findSource(sources, "mobile_network_model")?.updateCadenceSeconds ?? mobileLayer?.expectedCadenceSeconds ?? 600,
+      refreshSeconds:
+        findSource(sources, "mobile_network_model")?.updateCadenceSeconds ?? mobileLayer?.expectedCadenceSeconds ?? 600,
       role: "overlay",
       selectable: true,
       styleProfile: "mobile-network-quality-v1"
@@ -1199,9 +1400,10 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
       if (stopSources.length === 0) {
         return undefined;
       }
-      const refreshSeconds = minPositiveNumber(stopSources.map((source) => source.updateCadenceSeconds))
-        ?? publicTransitRefreshSecondsForLayerId(PUBLIC_TRANSIT_STOPS_LAYER_ID)
-        ?? 21_600;
+      const refreshSeconds =
+        minPositiveNumber(stopSources.map((source) => source.updateCadenceSeconds)) ??
+        publicTransitRefreshSecondsForLayerId(PUBLIC_TRANSIT_STOPS_LAYER_ID) ??
+        21_600;
       return {
         audience: "public",
         cacheTtlSeconds: refreshSeconds,
@@ -1238,7 +1440,10 @@ function buildSituationLayers(layers: SituationLayerDescriptor[], sources: Situa
   ].filter((layer): layer is MapCatalogLayer => Boolean(layer));
 }
 
-function buildSituationCatalogCompatibilityLayers(catalog: ProviderMapCatalog, sources: SituationSourceDescriptor[]): MapCatalogLayer[] {
+function buildSituationCatalogCompatibilityLayers(
+  catalog: ProviderMapCatalog,
+  sources: SituationSourceDescriptor[]
+): MapCatalogLayer[] {
   return [
     catalog.layers.some((layer) => layer.recommendedCatalogLayerId === "public.weather.forecast_area")
       ? undefined
@@ -1246,6 +1451,9 @@ function buildSituationCatalogCompatibilityLayers(catalog: ProviderMapCatalog, s
     catalog.layers.some((layer) => layer.recommendedCatalogLayerId === "public.weather.webcams")
       ? undefined
       : buildWeatherWebcamCatalogLayer(sources),
+    catalog.layers.some((layer) => layer.recommendedCatalogLayerId === PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID)
+      ? undefined
+      : buildOutdoorWebcamCatalogLayer(sources),
     catalog.layers.some((layer) => layer.recommendedCatalogLayerId === PUBLIC_TRAIL_ROUTES_LAYER_ID)
       ? undefined
       : buildTrailRoutesCompatibilityLayer(sources),
@@ -1255,12 +1463,15 @@ function buildSituationCatalogCompatibilityLayers(catalog: ProviderMapCatalog, s
     catalog.layers.some((layer) => layer.recommendedCatalogLayerId === PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID)
       ? undefined
       : findSource(sources, "community_context")
-      ? buildCommunityPlacesCompatibilityLayer(sources)
-      : undefined
+        ? buildCommunityPlacesCompatibilityLayer(sources)
+        : undefined
   ].filter((layer): layer is MapCatalogLayer => Boolean(layer));
 }
 
-function buildSituationCatalogCompatibilitySources(catalog: ProviderMapCatalog, sources: SituationSourceDescriptor[]): MapCatalogSource[] {
+function buildSituationCatalogCompatibilitySources(
+  catalog: ProviderMapCatalog,
+  sources: SituationSourceDescriptor[]
+): MapCatalogSource[] {
   const compatibilitySources: MapCatalogSource[] = [];
   if (!catalog.sources.some((source) => source.sourceId === "weather_forecast")) {
     const source = findSource(sources, "weather_forecast");
@@ -1286,13 +1497,14 @@ function buildSituationCatalogCompatibilitySources(catalog: ProviderMapCatalog, 
       audience: "public",
       cacheTtlSeconds: source?.updateCadenceSeconds ?? 600,
       enabled,
-      feedsCatalogLayerIds: ["public.weather.webcams"],
+      feedsCatalogLayerIds: ["public.weather.webcams", PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID],
       label: source?.label ?? "ČHMÚ webkamery",
       providerId: "sim.situation-data",
       selectableInMap: enabled,
       sourceId: "chmi_weather_webcams",
       sourceRole: "final",
       updateCadenceSeconds: source?.updateCadenceSeconds ?? 600,
+      usedByCatalogLayerIds: ["public.weather.webcams", PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID],
       visibleInDiagnostics: true
     });
   }
@@ -1385,15 +1597,50 @@ function buildWeatherWebcamCatalogLayer(sources: SituationSourceDescriptor[]): M
   };
 }
 
+function buildOutdoorWebcamCatalogLayer(sources: SituationSourceDescriptor[]): MapCatalogLayer {
+  const source = findSource(sources, "chmi_weather_webcams");
+  const refreshSeconds = source?.updateCadenceSeconds ?? 21_600;
+  return {
+    audience: "public",
+    cacheTtlSeconds: refreshSeconds,
+    defaultVisible: false,
+    description:
+      curatedCatalogLayerDescriptions[PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID] ?? "Kurátorované turistické webkamery.",
+    geometryTypes: ["Point"],
+    groupId: "outdoor",
+    kind: "vector_features",
+    label: curatedCatalogLayerLabels[PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID] ?? "Turistické webkamery",
+    layerId: PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID,
+    legal: legalFromSource(source, [
+      "Atribuce je uvedena u každé kamery.",
+      "WebCamLive proxy obrázky nejsou runtime zdroj."
+    ]),
+    maxZoom: 18,
+    minZoom: 10,
+    provenance: {
+      sourceIds: ["sim.situation-data:chmi_weather_webcams"]
+    },
+    query: {
+      maxFeatures: 500,
+      mode: "bbox",
+      providerId: "sim.situation-data",
+      providerLayerIds: ["outdoor_webcams"],
+      providerSourceIds: ["chmi_weather_webcams"],
+      streamId: "features"
+    },
+    refreshSeconds,
+    role: "reference",
+    selectable: true,
+    styleProfile: "outdoor-webcam-point-v1"
+  };
+}
+
 function buildTrailCompatibilityLayers(sources: SituationSourceDescriptor[]): MapCatalogLayer[] {
   const osm = findSource(sources, "osm_postgis");
   if (!osm || osm.enabled === false) {
     return [];
   }
-  return [
-    buildTrailRoutesCompatibilityLayer(sources),
-    buildTrailPoiCompatibilityLayer(sources)
-  ];
+  return [buildTrailRoutesCompatibilityLayer(sources), buildTrailPoiCompatibilityLayer(sources)];
 }
 
 function buildTrailRoutesCompatibilityLayer(sources: SituationSourceDescriptor[]): MapCatalogLayer {
@@ -1402,7 +1649,9 @@ function buildTrailRoutesCompatibilityLayer(sources: SituationSourceDescriptor[]
     audience: "public",
     cacheTtlSeconds: 21_600,
     defaultVisible: false,
-    description: curatedCatalogLayerDescriptions[PUBLIC_TRAIL_ROUTES_LAYER_ID] ?? "Turistické, pěší, cyklistické a MTB trasy z normalizovaných OSM dat.",
+    description:
+      curatedCatalogLayerDescriptions[PUBLIC_TRAIL_ROUTES_LAYER_ID] ??
+      "Turistické, pěší, cyklistické a MTB trasy z normalizovaných OSM dat.",
     geometryTypes: ["LineString", "MultiLineString"],
     groupId: "outdoor",
     kind: "vector_features",
@@ -1433,7 +1682,9 @@ function buildTrailPoiCompatibilityLayer(sources: SituationSourceDescriptor[]): 
     audience: "public",
     cacheTtlSeconds: 21_600,
     defaultVisible: false,
-    description: curatedCatalogLayerDescriptions[PUBLIC_TRAIL_POI_LAYER_ID] ?? "Outdoor body zájmu jako přístřešky, voda, kempování, servis a nouzové body z OSM.",
+    description:
+      curatedCatalogLayerDescriptions[PUBLIC_TRAIL_POI_LAYER_ID] ??
+      "Outdoor body zájmu jako přístřešky, voda, kempování, servis a nouzové body z OSM.",
     geometryTypes: ["Point"],
     groupId: "outdoor",
     kind: "vector_features",
@@ -1473,7 +1724,8 @@ function buildCommunityPlacesCompatibilityLayer(sources: SituationSourceDescript
     audience: "public",
     cacheTtlSeconds: refreshSeconds,
     defaultVisible: false,
-    description: curatedCatalogLayerDescriptions[PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID] ?? "Referenční OSM komunitní kontext.",
+    description:
+      curatedCatalogLayerDescriptions[PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID] ?? "Referenční OSM komunitní kontext.",
     filters: [
       {
         filterId: "providerProperties.community.categoryGroup",
@@ -1505,7 +1757,10 @@ function buildCommunityPlacesCompatibilityLayer(sources: SituationSourceDescript
   };
 }
 
-function buildInfrastructureLayers(groundLayer: SituationLayerDescriptor | undefined, sources: SituationSourceDescriptor[]): MapCatalogLayer[] {
+function buildInfrastructureLayers(
+  groundLayer: SituationLayerDescriptor | undefined,
+  sources: SituationSourceDescriptor[]
+): MapCatalogLayer[] {
   const osm = findSource(sources, "osm_postgis");
   const base = {
     audience: "public" as const,
@@ -1537,7 +1792,15 @@ function buildInfrastructureLayers(groundLayer: SituationLayerDescriptor | undef
       label: "Záchranná infrastruktura",
       layerId: "reference.infrastructure.emergency",
       provenance: { sourceIds: ["sim.situation-data:osm_postgis"] },
-      query: infrastructureQuery(["fire_station", "police", "ambulance_station", "shelter", "defibrillator", "siren", "assembly_point"]),
+      query: infrastructureQuery([
+        "fire_station",
+        "police",
+        "ambulance_station",
+        "shelter",
+        "defibrillator",
+        "siren",
+        "assembly_point"
+      ]),
       styleProfile: "infrastructure-emergency-v1"
     },
     {
@@ -1570,7 +1833,10 @@ function infrastructureQuery(categoryIds: string[]): MapCatalogQuery {
   };
 }
 
-function buildDiagnosticLayers(layers: SituationLayerDescriptor[], sources: SituationSourceDescriptor[]): MapCatalogLayer[] {
+function buildDiagnosticLayers(
+  layers: SituationLayerDescriptor[],
+  sources: SituationSourceDescriptor[]
+): MapCatalogLayer[] {
   const coverageLayer = findLayer(layers, "mobile_coverage");
   const mobileLayer = findLayer(layers, "mobile");
   return [
@@ -1607,7 +1873,10 @@ function buildDiagnosticLayers(layers: SituationLayerDescriptor[], sources: Situ
         providerSourceIds: ["mobile_coverage_model"],
         streamId: "features"
       },
-      refreshSeconds: findSource(sources, "mobile_coverage_model")?.updateCadenceSeconds ?? coverageLayer?.expectedCadenceSeconds ?? 21600,
+      refreshSeconds:
+        findSource(sources, "mobile_coverage_model")?.updateCadenceSeconds ??
+        coverageLayer?.expectedCadenceSeconds ??
+        21600,
       role: "diagnostic",
       selectable: false,
       styleProfile: "mobile-coverage-technical-v1"
@@ -1636,7 +1905,8 @@ function buildDiagnosticLayers(layers: SituationLayerDescriptor[], sources: Situ
         providerSourceIds: ["ctu_nettest"],
         streamId: "features"
       },
-      refreshSeconds: findSource(sources, "ctu_nettest")?.updateCadenceSeconds ?? mobileLayer?.expectedCadenceSeconds ?? 3600,
+      refreshSeconds:
+        findSource(sources, "ctu_nettest")?.updateCadenceSeconds ?? mobileLayer?.expectedCadenceSeconds ?? 3600,
       role: "diagnostic",
       selectable: false,
       styleProfile: "mobile-measurements-technical-v1"
@@ -1646,11 +1916,25 @@ function buildDiagnosticLayers(layers: SituationLayerDescriptor[], sources: Situ
 
 function buildTakLayers(layers: TakGatewayLayerDescriptor[], sources: TakGatewaySourceDescriptor[]): MapCatalogLayer[] {
   const source = findSource(sources, "tak_gateway");
-  return ([
-    ["mobile", "partner.tak.mobile", "Partnerské jednotky", "Pohyblivé partnerské body z TAK/CoT.", "tak-mobile-v1"],
-    ["ground", "partner.tak.ground", "Partnerské body", "Statické nebo pomalu se měnící partnerské body.", "tak-ground-v1"],
-    ["traffic", "partner.tak.traffic", "Partnerský provoz", "Partnerské transportní a provozní značky.", "tak-traffic-v1"]
-  ] as const).map(([providerLayerId, layerId, label, description, styleProfile]) => {
+  return (
+    [
+      ["mobile", "partner.tak.mobile", "Partnerské jednotky", "Pohyblivé partnerské body z TAK/CoT.", "tak-mobile-v1"],
+      [
+        "ground",
+        "partner.tak.ground",
+        "Partnerské body",
+        "Statické nebo pomalu se měnící partnerské body.",
+        "tak-ground-v1"
+      ],
+      [
+        "traffic",
+        "partner.tak.traffic",
+        "Partnerský provoz",
+        "Partnerské transportní a provozní značky.",
+        "tak-traffic-v1"
+      ]
+    ] as const
+  ).map(([providerLayerId, layerId, label, description, styleProfile]) => {
     const layer = findLayer(layers, providerLayerId);
     return {
       audience: "partner" as const,
@@ -1684,7 +1968,10 @@ function buildTakLayers(layers: TakGatewayLayerDescriptor[], sources: TakGateway
   });
 }
 
-function buildMissionArenaLayers(layers: MissionArenaLayerDescriptor[], sources: MissionArenaSourceDescriptor[]): MapCatalogLayer[] {
+function buildMissionArenaLayers(
+  layers: MissionArenaLayerDescriptor[],
+  sources: MissionArenaSourceDescriptor[]
+): MapCatalogLayer[] {
   const layer = findLayer(layers, "presentation.mission_arena");
   const source = findSource(sources, "mission_arena_runtime");
   if (!layer && !source) {
@@ -1695,7 +1982,9 @@ function buildMissionArenaLayers(layers: MissionArenaLayerDescriptor[], sources:
       audience: "public",
       cacheTtlSeconds: source?.updateCadenceSeconds ?? layer?.expectedCadenceSeconds ?? 5,
       defaultVisible: layer?.defaultVisible ?? false,
-      description: layer?.description ?? "Prezentační stav Mission Arena eventu. COP skóre nepočítá, pouze zobrazuje poskytnutý stav.",
+      description:
+        layer?.description ??
+        "Prezentační stav Mission Arena eventu. COP skóre nepočítá, pouze zobrazuje poskytnutý stav.",
       geometryTypes: layer?.geometryTypes ?? ["Point", "Polygon"],
       groupId: "presentation",
       kind: "vector_features",
@@ -2024,20 +2313,56 @@ function buildSituationSources(sources: SituationSourceDescriptor[]): MapCatalog
   });
 }
 
-function classifySituationSource(sourceId: string): Pick<MapCatalogSource, "audience" | "feedsCatalogLayerIds" | "selectableInMap" | "sourceRole" | "usedByCatalogLayerIds"> {
+function classifySituationSource(
+  sourceId: string
+): Pick<
+  MapCatalogSource,
+  "audience" | "feedsCatalogLayerIds" | "selectableInMap" | "sourceRole" | "usedByCatalogLayerIds"
+> {
   switch (sourceId) {
     case "open_meteo":
-      return { audience: "public", feedsCatalogLayerIds: ["public.weather.current"], selectableInMap: false, sourceRole: "reference" };
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: ["public.weather.current"],
+        selectableInMap: false,
+        sourceRole: "reference"
+      };
     case "aviation_weather":
-      return { audience: "public", feedsCatalogLayerIds: ["public.weather.aviation"], selectableInMap: true, sourceRole: "final" };
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: ["public.weather.aviation"],
+        selectableInMap: true,
+        sourceRole: "final"
+      };
     case "chmi_weather_stations":
-      return { audience: "public", feedsCatalogLayerIds: ["public.weather.observations"], selectableInMap: true, sourceRole: "final" };
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: ["public.weather.observations"],
+        selectableInMap: true,
+        sourceRole: "final"
+      };
     case "weather_forecast":
-      return { audience: "public", feedsCatalogLayerIds: ["public.weather.forecast_area"], selectableInMap: true, sourceRole: "final" };
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: ["public.weather.forecast_area"],
+        selectableInMap: true,
+        sourceRole: "final"
+      };
     case "chmi_weather_webcams":
-      return { audience: "public", feedsCatalogLayerIds: ["public.weather.webcams"], selectableInMap: true, sourceRole: "final" };
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: ["public.weather.webcams", PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID],
+        selectableInMap: true,
+        sourceRole: "final",
+        usedByCatalogLayerIds: ["public.weather.webcams", PUBLIC_OUTDOOR_WEBCAMS_LAYER_ID]
+      };
     case "chmi_air_quality":
-      return { audience: "public", feedsCatalogLayerIds: ["public.safety.air_quality"], selectableInMap: true, sourceRole: "final" };
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: ["public.safety.air_quality"],
+        selectableInMap: true,
+        sourceRole: "final"
+      };
     case "community_context":
       return {
         audience: "public",
@@ -2047,11 +2372,28 @@ function classifySituationSource(sourceId: string): Pick<MapCatalogSource, "audi
         usedByCatalogLayerIds: [PUBLIC_OUTDOOR_COMMUNITY_PLACES_LAYER_ID]
       };
     case "mobile_network_model":
-      return { audience: "public", feedsCatalogLayerIds: ["public.mobile.network"], selectableInMap: true, sourceRole: "aggregate" };
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: ["public.mobile.network"],
+        selectableInMap: true,
+        sourceRole: "aggregate"
+      };
     case "mobile_coverage_model":
-      return { audience: "diagnostic", feedsCatalogLayerIds: ["diagnostic.mobile.coverage"], selectableInMap: false, sourceRole: "input", usedByCatalogLayerIds: ["public.mobile.network"] };
+      return {
+        audience: "diagnostic",
+        feedsCatalogLayerIds: ["diagnostic.mobile.coverage"],
+        selectableInMap: false,
+        sourceRole: "input",
+        usedByCatalogLayerIds: ["public.mobile.network"]
+      };
     case "ctu_nettest":
-      return { audience: "diagnostic", feedsCatalogLayerIds: ["diagnostic.mobile.ctu_measurements"], selectableInMap: false, sourceRole: "input", usedByCatalogLayerIds: ["public.mobile.network"] };
+      return {
+        audience: "diagnostic",
+        feedsCatalogLayerIds: ["diagnostic.mobile.ctu_measurements"],
+        selectableInMap: false,
+        sourceRole: "input",
+        usedByCatalogLayerIds: ["public.mobile.network"]
+      };
     case "osm_postgis":
       return {
         audience: "public",
@@ -2067,29 +2409,79 @@ function classifySituationSource(sourceId: string): Pick<MapCatalogSource, "audi
         usedByCatalogLayerIds: ["public.mobile.network", PUBLIC_TRAIL_ROUTES_LAYER_ID, PUBLIC_TRAIL_POI_LAYER_ID]
       };
     case "osm_overpass":
-      return { audience: "diagnostic", feedsCatalogLayerIds: ["diagnostic.osm.overpass"], selectableInMap: false, sourceRole: "diagnostic" };
+      return {
+        audience: "diagnostic",
+        feedsCatalogLayerIds: ["diagnostic.osm.overpass"],
+        selectableInMap: false,
+        sourceRole: "diagnostic"
+      };
     case "pid_gtfs_rt":
-      return { audience: "public", feedsCatalogLayerIds: [PUBLIC_TRANSIT_PID_LAYER_ID], selectableInMap: true, sourceRole: "final" };
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: [PUBLIC_TRANSIT_PID_LAYER_ID],
+        selectableInMap: true,
+        sourceRole: "final"
+      };
     case "public_transit_static":
-      return { audience: "public", feedsCatalogLayerIds: [PUBLIC_TRANSIT_STOPS_LAYER_ID], selectableInMap: true, sourceRole: "reference" };
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: [PUBLIC_TRANSIT_STOPS_LAYER_ID],
+        selectableInMap: true,
+        sourceRole: "reference"
+      };
     case "spravazeleznic_trains":
-      return { audience: "public", feedsCatalogLayerIds: [PUBLIC_TRANSIT_TRAINS_LAYER_ID], selectableInMap: true, sourceRole: "final" };
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: [PUBLIC_TRANSIT_TRAINS_LAYER_ID],
+        selectableInMap: true,
+        sourceRole: "final"
+      };
     case "ids_jmk_gtfs_rt":
     case "idsjmk_gtfs_rt":
     case "ids_jmk_vehicle_positions":
     case "idsjmk_vehicle_positions":
-      return { audience: "public", feedsCatalogLayerIds: [PUBLIC_TRANSIT_IDSJMK_LAYER_ID], selectableInMap: true, sourceRole: "final" };
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: [PUBLIC_TRANSIT_IDSJMK_LAYER_ID],
+        selectableInMap: true,
+        sourceRole: "final"
+      };
     case "transit_vehicle_positions":
     case "transit_gtfs_rt":
-      return { audience: "public", feedsCatalogLayerIds: [PUBLIC_TRANSIT_BASE_LAYER_ID], selectableInMap: true, sourceRole: "final" };
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: [PUBLIC_TRANSIT_BASE_LAYER_ID],
+        selectableInMap: true,
+        sourceRole: "final"
+      };
     case "safety_data":
-      return { audience: "public", feedsCatalogLayerIds: ["public.safety.warnings", "public.safety.flood", "public.safety.fire", "public.safety.weather_alerts"], selectableInMap: false, sourceRole: "projection" };
+      return {
+        audience: "public",
+        feedsCatalogLayerIds: [
+          "public.safety.warnings",
+          "public.safety.flood",
+          "public.safety.fire",
+          "public.safety.weather_alerts"
+        ],
+        selectableInMap: false,
+        sourceRole: "projection"
+      };
     case "ardos_partner":
-      return { audience: "partner", feedsCatalogLayerIds: ["partner.ardos"], selectableInMap: false, sourceRole: "final" };
+      return {
+        audience: "partner",
+        feedsCatalogLayerIds: ["partner.ardos"],
+        selectableInMap: false,
+        sourceRole: "final"
+      };
     case "mock":
       return { audience: "diagnostic", feedsCatalogLayerIds: undefined, selectableInMap: false, sourceRole: "mock" };
     default:
-      return { audience: "diagnostic", feedsCatalogLayerIds: undefined, selectableInMap: false, sourceRole: "diagnostic" };
+      return {
+        audience: "diagnostic",
+        feedsCatalogLayerIds: undefined,
+        selectableInMap: false,
+        sourceRole: "diagnostic"
+      };
   }
 }
 
@@ -2125,10 +2517,15 @@ function buildTakSources(sources: TakGatewaySourceDescriptor[]): MapCatalogSourc
   }));
 }
 
-function legalFromSource(source: { license?: Record<string, unknown> } | undefined, notes: string[] = []): MapCatalogLayer["legal"] | undefined {
+function legalFromSource(
+  source: { license?: Record<string, unknown> } | undefined,
+  notes: string[] = []
+): MapCatalogLayer["legal"] | undefined {
   const license = source?.license;
   const attribution = typeof license?.attribution === "string" ? license.attribution : undefined;
-  const licenseNotes = Array.isArray(license?.notes) ? license.notes.filter((item): item is string => typeof item === "string") : [];
+  const licenseNotes = Array.isArray(license?.notes)
+    ? license.notes.filter((item): item is string => typeof item === "string")
+    : [];
   if (!attribution && licenseNotes.length === 0 && notes.length === 0) {
     return undefined;
   }
@@ -2138,9 +2535,15 @@ function legalFromSource(source: { license?: Record<string, unknown> } | undefin
   };
 }
 
-function buildPublicTransitVehicleCompatibilityLayers(trafficLayer: SituationLayerDescriptor | undefined, sources: SituationSourceDescriptor[]): MapCatalogLayer[] {
+function buildPublicTransitVehicleCompatibilityLayers(
+  trafficLayer: SituationLayerDescriptor | undefined,
+  sources: SituationSourceDescriptor[]
+): MapCatalogLayer[] {
   const trafficSources = publicTransitVehicleSources(sources);
-  const fallbackSources = trafficSources.length > 0 ? trafficSources : [{ sourceId: "pid_gtfs_rt", updateCadenceSeconds: 20 } as SituationSourceDescriptor];
+  const fallbackSources =
+    trafficSources.length > 0
+      ? trafficSources
+      : [{ sourceId: "pid_gtfs_rt", updateCadenceSeconds: 20 } as SituationSourceDescriptor];
   const groups = new Map<string, SituationSourceDescriptor[]>();
   for (const source of fallbackSources) {
     const layerId = publicTransitCatalogLayerIdForSourceId(source.sourceId);
@@ -2153,15 +2556,19 @@ function buildPublicTransitVehicleCompatibilityLayers(trafficLayer: SituationLay
   }
   return Array.from(groups.entries()).map(([layerId, groupedSources]) => {
     const sourceIds = groupedSources.map((source) => source.sourceId);
-    const refreshSeconds = minPositiveNumber(groupedSources.map((source) => source.updateCadenceSeconds))
-      ?? publicTransitRefreshSecondsForLayerId(layerId)
-      ?? trafficLayer?.expectedCadenceSeconds
-      ?? 60;
+    const refreshSeconds =
+      minPositiveNumber(groupedSources.map((source) => source.updateCadenceSeconds)) ??
+      publicTransitRefreshSecondsForLayerId(layerId) ??
+      trafficLayer?.expectedCadenceSeconds ??
+      60;
     return {
       audience: "public",
       cacheTtlSeconds: refreshSeconds,
       defaultVisible: trafficLayer?.defaultVisible ?? false,
-      description: curatedCatalogLayerDescriptions[layerId] ?? trafficLayer?.description ?? "Živá poloha vozidel veřejné dopravy ze SIM.",
+      description:
+        curatedCatalogLayerDescriptions[layerId] ??
+        trafficLayer?.description ??
+        "Živá poloha vozidel veřejné dopravy ze SIM.",
       geometryTypes: trafficLayer?.geometryTypes ?? ["Point", "LineString"],
       groupId: "transport",
       kind: "vector_features",
@@ -2206,23 +2613,27 @@ function publicTransitVehicleSources(sources: SituationSourceDescriptor[]): Situ
       return true;
     }
     const sourceId = source.sourceId.toLowerCase();
-    return sourceId.includes("gtfs")
-      || sourceId.includes("transit")
-      || sourceId.includes("vehicle_position")
-      || sourceId.includes("pid_")
-      || sourceId.includes("ids_jmk")
-      || sourceId.includes("idsjmk")
-      || sourceId.includes("spravazeleznic")
-      || sourceId.includes("rail")
-      || sourceId.includes("train");
+    return (
+      sourceId.includes("gtfs") ||
+      sourceId.includes("transit") ||
+      sourceId.includes("vehicle_position") ||
+      sourceId.includes("pid_") ||
+      sourceId.includes("ids_jmk") ||
+      sourceId.includes("idsjmk") ||
+      sourceId.includes("spravazeleznic") ||
+      sourceId.includes("rail") ||
+      sourceId.includes("train")
+    );
   });
 }
 
 function isPublicTransitStaticSourceId(sourceId: string): boolean {
   const normalized = sourceId.toLowerCase();
-  return normalized === "public_transit_static"
-    || normalized.includes("transit_static")
-    || normalized.includes("gtfs_static");
+  return (
+    normalized === "public_transit_static" ||
+    normalized.includes("transit_static") ||
+    normalized.includes("gtfs_static")
+  );
 }
 
 function findSource<T extends { sourceId: string }>(sources: T[], sourceId: string): T | undefined {
@@ -2239,30 +2650,44 @@ function uniqueStrings(values: string[]): string[] {
 
 function filterCompatibilityLayers(layers: MapCatalogLayer[], providers: MapCatalogProvider[]): MapCatalogLayer[] {
   return layers.filter((layer) => {
-    if (layer.compatibilityOnly !== true || !layer.preferredProviderId || !providerIsOnline(providers, layer.preferredProviderId)) {
+    if (
+      layer.compatibilityOnly !== true ||
+      !layer.preferredProviderId ||
+      !providerIsOnline(providers, layer.preferredProviderId)
+    ) {
       return true;
     }
-    return !layers.some((candidate) =>
-      candidate.layerId === layer.layerId
-      && candidate.query.providerId === layer.preferredProviderId
-      && candidate.compatibilityOnly !== true
+    return !layers.some(
+      (candidate) =>
+        candidate.layerId === layer.layerId &&
+        candidate.query.providerId === layer.preferredProviderId &&
+        candidate.compatibilityOnly !== true
     );
   });
 }
 
-function filterCompatibilitySources(sources: MapCatalogSource[], layers: MapCatalogLayer[], providers: MapCatalogProvider[]): MapCatalogSource[] {
+function filterCompatibilitySources(
+  sources: MapCatalogSource[],
+  layers: MapCatalogLayer[],
+  providers: MapCatalogProvider[]
+): MapCatalogSource[] {
   return sources.filter((source) => {
-    if (source.compatibilityOnly !== true || !source.preferredProviderId || !providerIsOnline(providers, source.preferredProviderId)) {
+    if (
+      source.compatibilityOnly !== true ||
+      !source.preferredProviderId ||
+      !providerIsOnline(providers, source.preferredProviderId)
+    ) {
       return true;
     }
     const feedsCatalogLayerIds = source.feedsCatalogLayerIds ?? [];
     if (feedsCatalogLayerIds.length === 0) {
       return false;
     }
-    return layers.some((layer) =>
-      layer.compatibilityOnly === true
-      && layer.query.providerId === source.providerId
-      && feedsCatalogLayerIds.includes(layer.layerId)
+    return layers.some(
+      (layer) =>
+        layer.compatibilityOnly === true &&
+        layer.query.providerId === source.providerId &&
+        feedsCatalogLayerIds.includes(layer.layerId)
     );
   });
 }
@@ -2331,7 +2756,9 @@ function mergeCatalogLayers(existing: MapCatalogLayer, next: MapCatalogLayer): M
 }
 
 function minPositiveNumber(values: Array<number | undefined>): number | undefined {
-  const finiteValues = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+  const finiteValues = values.filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0
+  );
   return finiteValues.length > 0 ? Math.min(...finiteValues) : undefined;
 }
 

@@ -482,6 +482,73 @@ describe("COP map data helpers", () => {
     expect(collection.features[0]?.properties.riskFeature).toBeUndefined();
   });
 
+  it("renders outdoor webcams as camera points without classifying them as weather webcams", () => {
+    const collection = situationFeaturesToFeatureCollection(
+      {
+        contractVersion: "cop-situation-source-v1",
+        features: [
+          {
+            geometry: { coordinates: [15.12, 49.76], type: "Point" },
+            properties: {
+              category: "outdoor_webcam",
+              confidence: 0.9,
+              featureId: "outdoor:webcam:krkonose",
+              label: "Krkonose - vyhlidka",
+              layer: "outdoor_webcams",
+              layerId: "public.outdoor.webcams",
+              observedAt: "2026-07-06T08:00:00Z",
+              providerLayerId: "outdoor_webcams",
+              providerProperties: {
+                camera: {
+                  attribution: "Horske stredisko",
+                  label: "Krkonose - vyhlidka",
+                  providerPageUrl: "https://example.com/webcam",
+                  snapshotAvailable: false
+                }
+              },
+              sourceId: "chmi_weather_webcams",
+              stale: false
+            },
+            type: "Feature"
+          }
+        ],
+        generatedAt: "2026-07-06T08:00:00Z",
+        query: {
+          bbox: { east: 16, north: 51, south: 49, west: 13 },
+          layers: ["outdoor_webcams"],
+          limit: 500,
+          sources: ["chmi_weather_webcams"]
+        },
+        source: {
+          sourceId: "situation-data-api",
+          sourceType: "PUBLIC_SITUATION_AGGREGATE"
+        },
+        sources: [],
+        summary: {
+          featureCount: 1,
+          sourceCount: 1,
+          staleFeatureCount: 0,
+          warningCount: 0
+        },
+        type: "FeatureCollection",
+        warnings: []
+      },
+      "outdoor:webcam:krkonose"
+    );
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      mapPointSuppressed: true,
+      selected: true,
+      situationStatusLabel: "KAMERA",
+      situationStatusTone: "info",
+      weatherCamera: true,
+      weatherCameraLabel: "Krkonose - vyhlidka",
+      weatherObservation: false
+    });
+    expect(collection.features[0]?.properties.mapLabel).toBeUndefined();
+    expect(collection.features[0]?.properties.riskFeature).toBeUndefined();
+  });
+
   it("renders SIM weather forecast areas as dedicated forecast polygons", () => {
     const collection = situationFeaturesToFeatureCollection({
       contractVersion: "cop-situation-source-v1",

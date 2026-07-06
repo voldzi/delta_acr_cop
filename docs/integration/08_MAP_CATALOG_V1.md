@@ -31,18 +31,18 @@ technical variant, a low-density fallback or a future advanced product.
 
 Current weather curation:
 
-| Provider layer purpose | Public COP behavior |
-| --- | --- |
-| Current weather summary | kept as non-selectable reference `public.weather.current` for diagnostics and fallback details |
-| ČHMÚ station observations | main selectable weather layer `public.weather.observations`, shown to users as `Počasí` |
-| Forecast areas | selectable as `public.weather.forecast_area` with SIM-prepared forecast polygons, presentation symbols, labels and meteogram detail |
-| ČHMÚ weather webcams | selectable as `public.weather.webcams` with camera point icons and preview through COP proxy |
-| ČHMÚ radar precipitation overlay | selectable as `public.weather.radar_precipitation` |
-| Air quality station observations | selectable as `public.safety.air_quality` |
-| Radar reflectivity / nowcast variants | kept in catalog, hidden from basic public selection until timeline/animation UI is ready |
-| Temperature, precipitation, humidity and pressure grid layers | selectable advanced weather overlays |
-| Wind vector field | selectable advanced weather overlay |
-| Air-quality grid fallback | kept in catalog, hidden from basic public selection until SIM provides dense stable tiles or a documented grid endpoint |
+| Provider layer purpose                                        | Public COP behavior                                                                                                                 |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Current weather summary                                       | kept as non-selectable reference `public.weather.current` for diagnostics and fallback details                                      |
+| ČHMÚ station observations                                     | main selectable weather layer `public.weather.observations`, shown to users as `Počasí`                                             |
+| Forecast areas                                                | selectable as `public.weather.forecast_area` with SIM-prepared forecast polygons, presentation symbols, labels and meteogram detail |
+| ČHMÚ weather webcams                                          | selectable as `public.weather.webcams` with camera point icons and preview through COP proxy                                        |
+| ČHMÚ radar precipitation overlay                              | selectable as `public.weather.radar_precipitation`                                                                                  |
+| Air quality station observations                              | selectable as `public.safety.air_quality`                                                                                           |
+| Radar reflectivity / nowcast variants                         | kept in catalog, hidden from basic public selection until timeline/animation UI is ready                                            |
+| Temperature, precipitation, humidity and pressure grid layers | selectable advanced weather overlays                                                                                                |
+| Wind vector field                                             | selectable advanced weather overlay                                                                                                 |
+| Air-quality grid fallback                                     | kept in catalog, hidden from basic public selection until SIM provides dense stable tiles or a documented grid endpoint             |
 
 Native clients should use the `selectable` flag for the normal user-facing
 layer picker and may expose non-selectable public layers only in an explicit
@@ -137,21 +137,21 @@ sim.safety-data:chmi_alerts
 
 Examples:
 
-| Provider source | sourceRole | Normal COP handling |
-| --- | --- | --- |
-| `mobile_network_model` | `final` / `aggregate` | user layer `public.mobile.network` |
-| `mobile_coverage_model` | `input` / `diagnostic` | diagnostics, optional technical overlay |
-| `ctu_nettest` | `input` | diagnostics and provenance |
-| `osm_postgis` communications towers | `reference` / `input` | neutral reference infrastructure; never final mobile status |
-| `chmi_alerts` | `final` | user layers `public.safety.weather_alerts` and `public.safety.fire` for ČHMÚ fire danger; must not feed `public.safety.warnings` |
-| `gdacs_alerts` | `final` | global GDACS crisis context; `FL` maps to `public.safety.flood`, `WF` maps to `public.safety.fire` |
-| `hzs_incidents` | `final` | current HZS incidents; fires also feed `public.safety.fire`, other incident types feed `public.safety.warnings` |
-| `municipal_alerts` | `final` | municipal and regional crisis feeds in `public.safety.warnings`; fires can also feed `public.safety.fire`; fallback points must be labelled as authority locations |
-| `road_srti_lod` | `final` | NDIC/ŘSD SRTI road safety events; do not publish as public crisis warnings |
-| `nasa_firms` / `fire_hotspots` / `fire_incidents` | `final` | user layer `public.safety.fire` |
-| `weather_alerts` | `final` | user layer `public.safety.weather_alerts` |
-| `admin_boundaries` | `reference` | user layer `public.boundary.admin` |
-| `safety_data` projection in situation-data | `projection` | compatibility only; COP should prefer safety-data |
+| Provider source                                   | sourceRole             | Normal COP handling                                                                                                                                                |
+| ------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mobile_network_model`                            | `final` / `aggregate`  | user layer `public.mobile.network`                                                                                                                                 |
+| `mobile_coverage_model`                           | `input` / `diagnostic` | diagnostics, optional technical overlay                                                                                                                            |
+| `ctu_nettest`                                     | `input`                | diagnostics and provenance                                                                                                                                         |
+| `osm_postgis` communications towers               | `reference` / `input`  | neutral reference infrastructure; never final mobile status                                                                                                        |
+| `chmi_alerts`                                     | `final`                | user layers `public.safety.weather_alerts` and `public.safety.fire` for ČHMÚ fire danger; must not feed `public.safety.warnings`                                   |
+| `gdacs_alerts`                                    | `final`                | global GDACS crisis context; `FL` maps to `public.safety.flood`, `WF` maps to `public.safety.fire`                                                                 |
+| `hzs_incidents`                                   | `final`                | current HZS incidents; fires also feed `public.safety.fire`, other incident types feed `public.safety.warnings`                                                    |
+| `municipal_alerts`                                | `final`                | municipal and regional crisis feeds in `public.safety.warnings`; fires can also feed `public.safety.fire`; fallback points must be labelled as authority locations |
+| `road_srti_lod`                                   | `final`                | NDIC/ŘSD SRTI road safety events; do not publish as public crisis warnings                                                                                         |
+| `nasa_firms` / `fire_hotspots` / `fire_incidents` | `final`                | user layer `public.safety.fire`                                                                                                                                    |
+| `weather_alerts`                                  | `final`                | user layer `public.safety.weather_alerts`                                                                                                                          |
+| `admin_boundaries`                                | `reference`            | user layer `public.boundary.admin`                                                                                                                                 |
+| `safety_data` projection in situation-data        | `projection`           | compatibility only; COP should prefer safety-data                                                                                                                  |
 
 Compatibility provider metadata:
 
@@ -255,9 +255,7 @@ Response:
       },
       "legal": {
         "attribution": "Czech Telecommunication Office / CTU-NetTest; OpenStreetMap contributors where tower hints are used",
-        "notes": [
-          "Modelový odhad, ne garantované pokrytí ani potvrzený výpadek operátora."
-        ]
+        "notes": ["Modelový odhad, ne garantované pokrytí ani potvrzený výpadek operátora."]
       }
     }
   ]
@@ -337,11 +335,7 @@ Request:
 {
   "bbox": [13.85, 49.65, 15.35, 50.45],
   "zoom": 10,
-  "layerIds": [
-    "public.safety.warnings",
-    "public.mobile.network",
-    "reference.infrastructure.healthcare"
-  ],
+  "layerIds": ["public.safety.warnings", "public.mobile.network", "reference.infrastructure.healthcare"],
   "filters": {
     "public.mobile.network": {
       "technology": ["4G", "5G"]
@@ -553,55 +547,56 @@ Provider-native fields may be preserved under:
 
 ## Current Layer Mapping
 
-| Catalog layerId | User label | Provider query |
-| --- | --- | --- |
-| `public.safety.warnings` | Krizové výstrahy | `sim.safety-data` layer `warnings`, sources `hzs_incidents`, `municipal_alerts` |
-| `public.safety.flood` | Vodní stavy a průtoky | `sim.safety-data` layer `flood`, sources `chmi_hydro`, `gdacs_alerts` |
-| `public.safety.fire` | Požáry | `sim.safety-data` layer `fire`, sources `chmi_alerts`, `gdacs_alerts`, `hzs_incidents`, `municipal_alerts`, `nasa_firms`, `fire_hotspots`, `fire_incidents` |
-| `public.safety.weather_alerts` | Meteorologické výstrahy | `sim.safety-data` layer `weather_alerts`, source `chmi_alerts` |
-| `public.boundary.admin` | Správní hranice | `sim.safety-data` layer `boundary_admin`, source `admin_boundaries` |
-| `public.boundary.country` | Stát | `sim.situation-data` layer `boundary_country`, source `osm_postgis` |
-| `public.boundary.region` | Kraje | `sim.situation-data` layer `boundary_region`, source `osm_postgis` |
-| `public.boundary.district` | Okresy | `sim.situation-data` layer `boundary_district`, source `osm_postgis` |
-| `public.boundary.orp` | ORP | `sim.situation-data` layer `boundary_orp`, source `osm_postgis` |
-| `public.boundary.municipality` | Obce | `sim.situation-data` layer `boundary_municipality`, source `osm_postgis` |
-| `public.place.settlements` | Sídla | `sim.situation-data` layer `place_settlements`, source `osm_postgis` |
-| `public.weather.current` | Počasí ve středu mapy | `sim.situation-data` layer `weather`, source `open_meteo`; non-selectable reference/fallback layer |
-| `public.weather.observations` | Počasí | `sim.situation-data` layer `weather`, source `chmi_weather_stations`; primary public weather layer |
-| `public.weather.forecast_area` | Předpověď počasí | `sim.situation-data` layer `weather_forecast_area`, source `weather_forecast`; polygon forecast areas with SIM presentation symbol/label, risk fill and `providerProperties.weatherForecast.detailUrl` |
-| `public.weather.webcams` | Kamery | `sim.situation-data` layer `weather_webcams`, source `chmi_weather_webcams`; samostatná kamerová vrstva používající `properties.providerProperties.camera.detailUrl` nebo `snapshotUrl` přes COP proxy |
-| `public.weather.aviation` | Letištní počasí | `sim.situation-data` layer `weather`, source `aviation_weather` |
-| `public.safety.air_quality` | Kvalita ovzduší | `sim.situation-data` layer `air_quality`, source `chmi_air_quality` |
-| `public.weather.temperature_grid` | Teplota | `sim.situation-data` layer `weather_temperature_grid`, source `chmi_weather_stations` |
-| `public.weather.wind_field` | Vítr | `sim.situation-data` layer `weather_wind_field`, source `chmi_weather_stations` |
-| `public.weather.precipitation_grid` | Srážky | `sim.situation-data` layer `weather_precipitation_grid`, source `chmi_weather_stations`; hodnota je `mm/10min` |
-| `public.weather.humidity_grid` | Vlhkost | `sim.situation-data` layer `weather_humidity_grid`, source `chmi_weather_stations` |
-| `public.weather.pressure_grid` | Tlak | `sim.situation-data` layer `weather_pressure_grid`, source `chmi_weather_stations` |
-| `public.weather.radar_reflectivity` | Radarová odrazivost | `sim.situation-data` layer `weather_radar_reflectivity`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru |
-| `public.weather.radar_precipitation` | Radarové srážky | `sim.situation-data` layer `weather_radar_precipitation`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru |
-| `public.weather.radar_nowcast` | Radarový nowcast | `sim.situation-data` layer `weather_radar_nowcast`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru |
-| `public.safety.thunderstorm_risk` | Bouřkové riziko | `sim.situation-data` layer `weather_thunderstorm_risk`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru |
-| `public.safety.air_quality_grid` | Kvalita ovzduší - plocha | `sim.situation-data` layer `air_quality_grid`, source `chmi_air_quality` |
-| `public.mobile.network` | Mobilní síť | `sim.situation-data` layer `mobile_network`, source `mobile_network_model` |
-| `public.traffic.transit` | Veřejná doprava | `sim.situation-data` layer `traffic`, sources `pid_gtfs_rt`, `ids_jmk*` a další SIM transit adaptéry z katalogu |
-| `public.trails.routes` | Turistické trasy | `sim.situation-data` layer `trail_routes`, source `osm_postgis`; LineString/MultiLineString turistické, pěší, cyklistické a MTB trasy |
-| `public.trails.poi` | Outdoor body | `sim.situation-data` layer `trail_poi`, source `osm_postgis`; body typu nocleh, tábořiště, přístřešek, voda, jídlo, servis, půjčovna, doprava a nouzový bod |
-| `public.outdoor.community_places` | Komunitní kontext | `sim.situation-data` layer `community_places`, source `community_context`; provider layer `outdoor.community.places`; referenční OSM komunitní body jako WC, voda, sprchy, nabíjení, AED, lékárny, přístřeší, knihovny a úřady |
-| `reference.infrastructure.healthcare` | Zdravotnictví | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `hospital`, `clinic`, `doctors`, `pharmacy` |
-| `reference.infrastructure.emergency` | Záchranná infrastruktura | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `fire_station`, `police`, `ambulance_station`, `shelter` |
-| `reference.infrastructure.communications` | BTS / komunikační stožáry | `sim.situation-data` layer `mobile`, source `osm_postgis`, category `communications_tower` |
-| `flight.public.tracks` | Veřejné lety | `sim.flight-data` tracks |
-| `flight.sim.tracks` | Simulace | COP current track stream, synthetic SIM air objects |
-| `flight.reference.airports` | Letiště | `sim.flight-data` airports |
-| `flight.reference.airspaces` | Letecké prostory | `sim.flight-data` airspaces |
-| `partner.tak.mobile` | Partnerské jednotky | `sim.tak-gateway` layer `mobile` |
-| `partner.tak.ground` | Partnerské body | `sim.tak-gateway` layer `ground` |
-| `partner.tak.traffic` | Partnerský provoz | `sim.tak-gateway` layer `traffic` |
-| `user.zone.alerts` | Uživatelské zóny | COP user profile/community store |
-| `user.community.reports` | Hlášení uživatelů | COP community report store |
-| `user.sketch.drawings` | Zákresy | COP sketch drawing store |
-| `diagnostic.mobile.coverage` | Technický odhad pokrytí | `sim.situation-data` layer `mobile_coverage`, source `mobile_coverage_model` |
-| `diagnostic.mobile.ctu_measurements` | ČTÚ měření | `sim.situation-data` layer `mobile`, source `ctu_nettest` |
+| Catalog layerId                           | User label                | Provider query                                                                                                                                                                                                                 |
+| ----------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `public.safety.warnings`                  | Krizové výstrahy          | `sim.safety-data` layer `warnings`, sources `hzs_incidents`, `municipal_alerts`                                                                                                                                                |
+| `public.safety.flood`                     | Vodní stavy a průtoky     | `sim.safety-data` layer `flood`, sources `chmi_hydro`, `gdacs_alerts`                                                                                                                                                          |
+| `public.safety.fire`                      | Požáry                    | `sim.safety-data` layer `fire`, sources `chmi_alerts`, `gdacs_alerts`, `hzs_incidents`, `municipal_alerts`, `nasa_firms`, `fire_hotspots`, `fire_incidents`                                                                    |
+| `public.safety.weather_alerts`            | Meteorologické výstrahy   | `sim.safety-data` layer `weather_alerts`, source `chmi_alerts`                                                                                                                                                                 |
+| `public.boundary.admin`                   | Správní hranice           | `sim.safety-data` layer `boundary_admin`, source `admin_boundaries`                                                                                                                                                            |
+| `public.boundary.country`                 | Stát                      | `sim.situation-data` layer `boundary_country`, source `osm_postgis`                                                                                                                                                            |
+| `public.boundary.region`                  | Kraje                     | `sim.situation-data` layer `boundary_region`, source `osm_postgis`                                                                                                                                                             |
+| `public.boundary.district`                | Okresy                    | `sim.situation-data` layer `boundary_district`, source `osm_postgis`                                                                                                                                                           |
+| `public.boundary.orp`                     | ORP                       | `sim.situation-data` layer `boundary_orp`, source `osm_postgis`                                                                                                                                                                |
+| `public.boundary.municipality`            | Obce                      | `sim.situation-data` layer `boundary_municipality`, source `osm_postgis`                                                                                                                                                       |
+| `public.place.settlements`                | Sídla                     | `sim.situation-data` layer `place_settlements`, source `osm_postgis`                                                                                                                                                           |
+| `public.weather.current`                  | Počasí ve středu mapy     | `sim.situation-data` layer `weather`, source `open_meteo`; non-selectable reference/fallback layer                                                                                                                             |
+| `public.weather.observations`             | Počasí                    | `sim.situation-data` layer `weather`, source `chmi_weather_stations`; primary public weather layer                                                                                                                             |
+| `public.weather.forecast_area`            | Předpověď počasí          | `sim.situation-data` layer `weather_forecast_area`, source `weather_forecast`; polygon forecast areas with SIM presentation symbol/label, risk fill and `providerProperties.weatherForecast.detailUrl`                         |
+| `public.weather.webcams`                  | Kamery                    | `sim.situation-data` layer `weather_webcams`, source `chmi_weather_webcams`; samostatná kamerová vrstva používající `properties.providerProperties.camera.detailUrl` nebo `snapshotUrl` přes COP proxy                         |
+| `public.outdoor.webcams`                  | Turistické webkamery      | `sim.situation-data` layer `outdoor_webcams`, source `chmi_weather_webcams`; kurátorované turistické webkamery v submenu Turistika / Outdoor, oddělené od meteorologických kamer                                               |
+| `public.weather.aviation`                 | Letištní počasí           | `sim.situation-data` layer `weather`, source `aviation_weather`                                                                                                                                                                |
+| `public.safety.air_quality`               | Kvalita ovzduší           | `sim.situation-data` layer `air_quality`, source `chmi_air_quality`                                                                                                                                                            |
+| `public.weather.temperature_grid`         | Teplota                   | `sim.situation-data` layer `weather_temperature_grid`, source `chmi_weather_stations`                                                                                                                                          |
+| `public.weather.wind_field`               | Vítr                      | `sim.situation-data` layer `weather_wind_field`, source `chmi_weather_stations`                                                                                                                                                |
+| `public.weather.precipitation_grid`       | Srážky                    | `sim.situation-data` layer `weather_precipitation_grid`, source `chmi_weather_stations`; hodnota je `mm/10min`                                                                                                                 |
+| `public.weather.humidity_grid`            | Vlhkost                   | `sim.situation-data` layer `weather_humidity_grid`, source `chmi_weather_stations`                                                                                                                                             |
+| `public.weather.pressure_grid`            | Tlak                      | `sim.situation-data` layer `weather_pressure_grid`, source `chmi_weather_stations`                                                                                                                                             |
+| `public.weather.radar_reflectivity`       | Radarová odrazivost       | `sim.situation-data` layer `weather_radar_reflectivity`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru                                                                                         |
+| `public.weather.radar_precipitation`      | Radarové srážky           | `sim.situation-data` layer `weather_radar_precipitation`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru                                                                                        |
+| `public.weather.radar_nowcast`            | Radarový nowcast          | `sim.situation-data` layer `weather_radar_nowcast`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru                                                                                              |
+| `public.safety.thunderstorm_risk`         | Bouřkové riziko           | `sim.situation-data` layer `weather_thunderstorm_risk`, source `chmi_weather_radar`; `raster_overlay`, geometrie je jen rozsah rastru                                                                                          |
+| `public.safety.air_quality_grid`          | Kvalita ovzduší - plocha  | `sim.situation-data` layer `air_quality_grid`, source `chmi_air_quality`                                                                                                                                                       |
+| `public.mobile.network`                   | Mobilní síť               | `sim.situation-data` layer `mobile_network`, source `mobile_network_model`                                                                                                                                                     |
+| `public.traffic.transit`                  | Veřejná doprava           | `sim.situation-data` layer `traffic`, sources `pid_gtfs_rt`, `ids_jmk*` a další SIM transit adaptéry z katalogu                                                                                                                |
+| `public.trails.routes`                    | Turistické trasy          | `sim.situation-data` layer `trail_routes`, source `osm_postgis`; LineString/MultiLineString turistické, pěší, cyklistické a MTB trasy                                                                                          |
+| `public.trails.poi`                       | Outdoor body              | `sim.situation-data` layer `trail_poi`, source `osm_postgis`; body typu nocleh, tábořiště, přístřešek, voda, jídlo, servis, půjčovna, doprava a nouzový bod                                                                    |
+| `public.outdoor.community_places`         | Komunitní kontext         | `sim.situation-data` layer `community_places`, source `community_context`; provider layer `outdoor.community.places`; referenční OSM komunitní body jako WC, voda, sprchy, nabíjení, AED, lékárny, přístřeší, knihovny a úřady |
+| `reference.infrastructure.healthcare`     | Zdravotnictví             | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `hospital`, `clinic`, `doctors`, `pharmacy`                                                                                                              |
+| `reference.infrastructure.emergency`      | Záchranná infrastruktura  | `sim.situation-data` layer `ground`, source `osm_postgis`, categories `fire_station`, `police`, `ambulance_station`, `shelter`                                                                                                 |
+| `reference.infrastructure.communications` | BTS / komunikační stožáry | `sim.situation-data` layer `mobile`, source `osm_postgis`, category `communications_tower`                                                                                                                                     |
+| `flight.public.tracks`                    | Veřejné lety              | `sim.flight-data` tracks                                                                                                                                                                                                       |
+| `flight.sim.tracks`                       | Simulace                  | COP current track stream, synthetic SIM air objects                                                                                                                                                                            |
+| `flight.reference.airports`               | Letiště                   | `sim.flight-data` airports                                                                                                                                                                                                     |
+| `flight.reference.airspaces`              | Letecké prostory          | `sim.flight-data` airspaces                                                                                                                                                                                                    |
+| `partner.tak.mobile`                      | Partnerské jednotky       | `sim.tak-gateway` layer `mobile`                                                                                                                                                                                               |
+| `partner.tak.ground`                      | Partnerské body           | `sim.tak-gateway` layer `ground`                                                                                                                                                                                               |
+| `partner.tak.traffic`                     | Partnerský provoz         | `sim.tak-gateway` layer `traffic`                                                                                                                                                                                              |
+| `user.zone.alerts`                        | Uživatelské zóny          | COP user profile/community store                                                                                                                                                                                               |
+| `user.community.reports`                  | Hlášení uživatelů         | COP community report store                                                                                                                                                                                                     |
+| `user.sketch.drawings`                    | Zákresy                   | COP sketch drawing store                                                                                                                                                                                                       |
+| `diagnostic.mobile.coverage`              | Technický odhad pokrytí   | `sim.situation-data` layer `mobile_coverage`, source `mobile_coverage_model`                                                                                                                                                   |
+| `diagnostic.mobile.ctu_measurements`      | ČTÚ měření                | `sim.situation-data` layer `mobile`, source `ctu_nettest`                                                                                                                                                                      |
 
 ČHMÚ webkamery jsou jen vizuální kontext počasí a jsou oddělené od vrstvy
 `public.weather.observations`. COP je nezapočítává jako výstrahy, neotevírá
@@ -629,7 +624,19 @@ Detail komunitního bodu čte
 `access`, `wheelchair`, `fee`, `payment` a `website`, viditelně zobrazuje
 `communityStatus=reference_only` a vysvětlení, že jde o referenci z OSM a
 aktuální stav není ověřený. Komunitní body nesmí vstupovat do krizových výstrah
-ani prioritního safety pruhu. Katalogová vrstva
+ani prioritního safety pruhu.
+
+Vrstva `public.outdoor.webcams` používá styl `outdoor-webcam-point-v1` a
+ikonu webkamery. Detail čte `providerProperties.camera.detailUrl`,
+`providerProperties.camera.providerPageUrl`,
+`providerProperties.camera.snapshotAvailable` a
+`providerProperties.camera.attribution`. Pokud je `snapshotAvailable=false`,
+COP nesmí volat snapshot endpoint a zobrazí informaci, že automatický náhled
+není ověřen/dostupný, plus odkaz na originální stránku providera. Atribuce
+musí být v detailu viditelná vždy. Tato vrstva patří do Turistika / Outdoor,
+ne do Počasí; meteorologické kamery zůstávají v `public.weather.webcams`.
+
+Katalogová vrstva
 `public.outdoor.community_reports` je rezervovaná pro budoucí uživatelská
 hlášení/fotky/návrhy změn a zůstává pro běžné uživatele neaktivní
 (`selectable=false`), dokud nebude hotová Keycloak identita, moderace, retence
@@ -652,14 +659,14 @@ source ids returned by SIM catalog.
 
 Vehicle point features use the normalized fields from SIM:
 
-| Field | Meaning in COP |
-| --- | --- |
-| `transportMode` | Icon family such as bus, tram, metro, train, trolleybus, ferry or funicular. |
-| `routeShortName` | Compact line label rendered inside the vehicle marker. |
-| `headingDeg` | Vehicle heading used to rotate the marker arrow. |
-| `delaySeconds` | Delay badge and detail status. |
-| `destination`, `currentStatus`, `speedMps`, `vehicleId`, `tripId`, `operator` | Detail panel values. |
-| `providerProperties.transit.detailUrl` | SIM detail endpoint for current stop list, trip context and service alerts. COP proxies it through `/api/v1/transit/vehicles/{featureId}/detail`. |
+| Field                                                                         | Meaning in COP                                                                                                                                    |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `transportMode`                                                               | Icon family such as bus, tram, metro, train, trolleybus, ferry or funicular.                                                                      |
+| `routeShortName`                                                              | Compact line label rendered inside the vehicle marker.                                                                                            |
+| `headingDeg`                                                                  | Vehicle heading used to rotate the marker arrow.                                                                                                  |
+| `delaySeconds`                                                                | Delay badge and detail status.                                                                                                                    |
+| `destination`, `currentStatus`, `speedMps`, `vehicleId`, `tripId`, `operator` | Detail panel values.                                                                                                                              |
+| `providerProperties.transit.detailUrl`                                        | SIM detail endpoint for current stop list, trip context and service alerts. COP proxies it through `/api/v1/transit/vehicles/{featureId}/detail`. |
 
 The detail response follows `sim-transit-vehicle-detail-v1`. COP reads the
 normalized `vehicle`, `trip`, `stopTimes`, `routeShape`, `quality.warnings` and
@@ -675,22 +682,22 @@ SIM point geometry is authoritative.
 
 COP consumes the current SIM safety-data read model without parsing provider-native payloads. Public safety features should carry these normalized fields when available:
 
-| Field | Meaning in COP |
-| --- | --- |
-| `typeCode` | Authoritative machine type of the safety phenomenon, for example `weather.temperature.high`, `weather.fire_danger`, `hydro.flood.warning` or `air_quality.pm10.smog`. COP must prefer this field over legacy text fields such as `headline`, `event` or `hazardType` when classifying the feature. |
-| `sourceCode`, `sourceSystem` | Provider-native source code and code system, for example ČHMÚ/SIVS `I.2`, `VII.1`, `SMOGSIT.PM10` or CAP fallback `AWARENESS.5`. |
-| `localized.cs`, `localized.en` | Localized title, detail and recommendation text. COP uses `localized.cs` for Czech UI and notifications; `localized.en` is optional for bilingual clients. |
-| `providerProperties.taxonomy` | SIM canonical taxonomy fallback for `typeCode`, `sourceCode` and `sourceSystem` when top-level fields are absent. |
-| `providerProperties.presentation` | Presentation metadata. COP should use `iconKey`, `styleKey` and `detailTemplate` for map symbols, detail panels and concise UI labels. |
-| `providerProperties.notification` | Notification policy metadata. COP must respect `eligible=false` as a hard block for push notification candidates, while the feature may still be displayed on the map. |
-| `status`, `severity` | Current state and severity. They influence color and urgency, but they do not replace `typeCode`. |
-| `validFrom`, `validUntil`, `updatedAt` | Alert validity and freshness. |
-| `source`, `sourceName`, `basis` | Source/provenance summary. Raw provider URLs may stay in `basis`, but UI should translate known tokens. |
-| `geometryMode` | `admin_boundary` means the alert is polygonized from an administrative boundary; `representative_point` is a controlled fallback. |
-| `areaName`, `adminLevel`, `affectedAreas` | Human-readable area context. |
-| `fireStatus`, `sourceIncident` | Fire-specific state and source classification. `typeCode=weather.fire_danger` or `sourceIncident=CHMI_CAP_FIRE_DANGER` means fire danger conditions, not a confirmed fire. |
-| `riverName`, `stationId`, `waterLevelCm`, `discharge`, `waterTemperatureC`, `floodStage`, `trend`, `basin`, `catchmentAreaKm2` | Hydrology-specific fields for `public.safety.flood`. |
-| `detailUrl`, `timelineUrl`, `forecastAvailable`, `forecastUntil` | Hydrology detail/timeline metadata. COP derives `stationId` and query from SIM `detailUrl`, calls COP proxy `/api/v1/safety/hydro/stations/{stationId}/observations`, and renders H/Q/TH history, H_F/Q_F forecast, drought and SPA thresholds. |
+| Field                                                                                                                          | Meaning in COP                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `typeCode`                                                                                                                     | Authoritative machine type of the safety phenomenon, for example `weather.temperature.high`, `weather.fire_danger`, `hydro.flood.warning` or `air_quality.pm10.smog`. COP must prefer this field over legacy text fields such as `headline`, `event` or `hazardType` when classifying the feature. |
+| `sourceCode`, `sourceSystem`                                                                                                   | Provider-native source code and code system, for example ČHMÚ/SIVS `I.2`, `VII.1`, `SMOGSIT.PM10` or CAP fallback `AWARENESS.5`.                                                                                                                                                                   |
+| `localized.cs`, `localized.en`                                                                                                 | Localized title, detail and recommendation text. COP uses `localized.cs` for Czech UI and notifications; `localized.en` is optional for bilingual clients.                                                                                                                                         |
+| `providerProperties.taxonomy`                                                                                                  | SIM canonical taxonomy fallback for `typeCode`, `sourceCode` and `sourceSystem` when top-level fields are absent.                                                                                                                                                                                  |
+| `providerProperties.presentation`                                                                                              | Presentation metadata. COP should use `iconKey`, `styleKey` and `detailTemplate` for map symbols, detail panels and concise UI labels.                                                                                                                                                             |
+| `providerProperties.notification`                                                                                              | Notification policy metadata. COP must respect `eligible=false` as a hard block for push notification candidates, while the feature may still be displayed on the map.                                                                                                                             |
+| `status`, `severity`                                                                                                           | Current state and severity. They influence color and urgency, but they do not replace `typeCode`.                                                                                                                                                                                                  |
+| `validFrom`, `validUntil`, `updatedAt`                                                                                         | Alert validity and freshness.                                                                                                                                                                                                                                                                      |
+| `source`, `sourceName`, `basis`                                                                                                | Source/provenance summary. Raw provider URLs may stay in `basis`, but UI should translate known tokens.                                                                                                                                                                                            |
+| `geometryMode`                                                                                                                 | `admin_boundary` means the alert is polygonized from an administrative boundary; `representative_point` is a controlled fallback.                                                                                                                                                                  |
+| `areaName`, `adminLevel`, `affectedAreas`                                                                                      | Human-readable area context.                                                                                                                                                                                                                                                                       |
+| `fireStatus`, `sourceIncident`                                                                                                 | Fire-specific state and source classification. `typeCode=weather.fire_danger` or `sourceIncident=CHMI_CAP_FIRE_DANGER` means fire danger conditions, not a confirmed fire.                                                                                                                         |
+| `riverName`, `stationId`, `waterLevelCm`, `discharge`, `waterTemperatureC`, `floodStage`, `trend`, `basin`, `catchmentAreaKm2` | Hydrology-specific fields for `public.safety.flood`.                                                                                                                                                                                                                                               |
+| `detailUrl`, `timelineUrl`, `forecastAvailable`, `forecastUntil`                                                               | Hydrology detail/timeline metadata. COP derives `stationId` and query from SIM `detailUrl`, calls COP proxy `/api/v1/safety/hydro/stations/{stationId}/observations`, and renders H/Q/TH history, H_F/Q_F forecast, drought and SPA thresholds.                                                    |
 
 For ČHMÚ CAP alerts COP renders `Polygon`/`MultiPolygon` as the primary representation. If SIM returns `geometryMode=representative_point`, COP may still show the point, but the detail must make clear that the original administrative geometry was unavailable.
 

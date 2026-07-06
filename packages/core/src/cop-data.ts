@@ -328,6 +328,7 @@ export type SituationLayerId =
   | "mobile_coverage"
   | "mobile_network"
   | "mission_arena"
+  | "outdoor_webcams"
   | "place_settlements"
   | "trail_poi"
   | "trail_routes"
@@ -348,7 +349,18 @@ export type SituationLayerId =
   | "weather_wind_field";
 export type SafetyLayerId = "boundary_admin" | "fire" | "flood" | "warnings" | "weather_alerts";
 export type TakLayerId = "ground" | "mobile" | "traffic";
-export type SafetyDataSourceId = "admin_boundaries" | "chmi_alerts" | "chmi_hydro" | "fire_hotspots" | "fire_incidents" | "gdacs_alerts" | "hzs_incidents" | "mock" | "nasa_firms" | "road_srti_lod" | "weather_alerts";
+export type SafetyDataSourceId =
+  | "admin_boundaries"
+  | "chmi_alerts"
+  | "chmi_hydro"
+  | "fire_hotspots"
+  | "fire_incidents"
+  | "gdacs_alerts"
+  | "hzs_incidents"
+  | "mock"
+  | "nasa_firms"
+  | "road_srti_lod"
+  | "weather_alerts";
 
 export interface MapBounds {
   east: number;
@@ -425,15 +437,20 @@ export interface SketchDrawingPayload {
 export interface SketchPaletteResponse {
   contractVersion: "cop-sketch-palettes-v1";
   generatedAt: string;
-  modes: Partial<Record<SketchPaletteMode, {
-    label: string;
-    symbols: Array<{
-      iconId: string;
-      label: string;
-      sidc?: string;
-      tone?: string;
-    }>;
-  }>>;
+  modes: Partial<
+    Record<
+      SketchPaletteMode,
+      {
+        label: string;
+        symbols: Array<{
+          iconId: string;
+          label: string;
+          sidc?: string;
+          tone?: string;
+        }>;
+      }
+    >
+  >;
 }
 
 export interface SituationLayer {
@@ -1084,13 +1101,7 @@ export interface RadioLinkCheckResponse {
 }
 
 export type RoutingProfileId =
-  | "car"
-  | "emergency_vehicle"
-  | "evacuation_walking"
-  | "large_emergency_vehicle"
-  | "offroad_4x4"
-  | "walking"
-  | string;
+  "car" | "emergency_vehicle" | "evacuation_walking" | "large_emergency_vehicle" | "offroad_4x4" | "walking" | string;
 
 export interface RoutingPoint {
   label?: string;
@@ -1743,7 +1754,17 @@ export interface TakFeatureOptions {
 }
 
 export type MapCatalogAudience = "admin" | "authenticated" | "diagnostic" | "partner" | "public";
-export type MapCatalogLayerKind = "aggregate" | "grid_field" | "mvt_tiles" | "raster_overlay" | "raster_tiles" | "static_reference" | "track_stream" | "user_objects" | "vector_features" | "vector_field";
+export type MapCatalogLayerKind =
+  | "aggregate"
+  | "grid_field"
+  | "mvt_tiles"
+  | "raster_overlay"
+  | "raster_tiles"
+  | "static_reference"
+  | "track_stream"
+  | "user_objects"
+  | "vector_features"
+  | "vector_field";
 export type MapCatalogLayerRole = "diagnostic" | "overlay" | "partner" | "primary" | "reference" | "user";
 export type MapCatalogSourceRole = "aggregate" | "diagnostic" | "final" | "input" | "mock" | "projection" | "reference";
 
@@ -1939,7 +1960,8 @@ export interface SourceHealthItem {
 export type CopAlertSeverity = "critical" | "info" | "warning";
 export type CopAlertStatus = "ACKNOWLEDGED" | "ACTIVE";
 export type AoiRuleAffiliationScope = "all" | "friend" | "hostile" | "unknown";
-export type CopAlertType = "AOI_ENTRY" | "LOW_CONFIDENCE" | "SOURCE_DEGRADED" | "TRACK_CONFLICT" | "TRACK_LOST" | "TRACK_STALE";
+export type CopAlertType =
+  "AOI_ENTRY" | "LOW_CONFIDENCE" | "SOURCE_DEGRADED" | "TRACK_CONFLICT" | "TRACK_LOST" | "TRACK_STALE";
 
 export interface CopActor {
   authMode: "lab" | "oidc";
@@ -2291,7 +2313,15 @@ export interface CopDashboardFilters {
 }
 
 export type CopLayer = "air-situation" | "sim-air" | "uav" | "friendly" | "foreign" | "public-flights" | "data-quality";
-export const copLayerIds: CopLayer[] = ["air-situation", "sim-air", "uav", "friendly", "foreign", "public-flights", "data-quality"];
+export const copLayerIds: CopLayer[] = [
+  "air-situation",
+  "sim-air",
+  "uav",
+  "friendly",
+  "foreign",
+  "public-flights",
+  "data-quality"
+];
 
 export async function fetchCopDashboardData(
   apiBase: string,
@@ -2323,7 +2353,9 @@ export async function fetchCopDashboardData(
     sourceHealth: sourceHealth?.items ?? [],
     streamHealth,
     objects: tracks.items ?? [],
-    trackHistory: history?.items ? Object.fromEntries(history.items.map((item) => [item.objectId, item.points])) : undefined
+    trackHistory: history?.items
+      ? Object.fromEntries(history.items.map((item) => [item.objectId, item.points]))
+      : undefined
   };
 }
 
@@ -2337,15 +2369,7 @@ export async function fetchCopAlerts(apiBase: string, token: string | undefined)
 }
 
 export type IncidentCategory =
-  | "community"
-  | "fire"
-  | "flood"
-  | "infrastructure"
-  | "medical"
-  | "other"
-  | "security"
-  | "traffic"
-  | "weather";
+  "community" | "fire" | "flood" | "infrastructure" | "medical" | "other" | "security" | "traffic" | "weather";
 export type IncidentSeverity = "advisory" | "critical" | "info" | "warning";
 export type IncidentStatus = "active" | "candidate" | "closed" | "monitoring" | "rejected" | "resolved";
 export type IncidentLocationSource = "community_report" | "fusion" | "manual" | "provider";
@@ -2544,7 +2568,11 @@ export async function fetchIncidentFusionSuggestions(
   });
 }
 
-export async function fetchIncidents(apiBase: string, token: string | undefined, options: IncidentListOptions = {}): Promise<IncidentListResponse> {
+export async function fetchIncidents(
+  apiBase: string,
+  token: string | undefined,
+  options: IncidentListOptions = {}
+): Promise<IncidentListResponse> {
   const query = new URLSearchParams();
   appendMapBoundsQuery(query, options.bbox);
   if (options.categories?.length) {
@@ -2565,7 +2593,11 @@ export async function fetchIncidents(apiBase: string, token: string | undefined,
   });
 }
 
-export async function createIncident(apiBase: string, token: string, payload: IncidentCreatePayload): Promise<IncidentRecord> {
+export async function createIncident(
+  apiBase: string,
+  token: string,
+  payload: IncidentCreatePayload
+): Promise<IncidentRecord> {
   return fetchJson<IncidentRecord>(`${apiBase}/api/v1/incidents`, {
     body: JSON.stringify(payload),
     headers: {
@@ -2576,7 +2608,12 @@ export async function createIncident(apiBase: string, token: string, payload: In
   });
 }
 
-export async function updateIncident(apiBase: string, token: string, incidentId: string, payload: IncidentUpdatePayload): Promise<IncidentRecord> {
+export async function updateIncident(
+  apiBase: string,
+  token: string,
+  incidentId: string,
+  payload: IncidentUpdatePayload
+): Promise<IncidentRecord> {
   return fetchJson<IncidentRecord>(`${apiBase}/api/v1/incidents/${encodeURIComponent(incidentId)}`, {
     body: JSON.stringify(payload),
     headers: {
@@ -2601,9 +2638,12 @@ export async function fetchIncidentTasks(
     query.set("limit", String(options.limit));
   }
   const suffix = query.toString() ? `?${query.toString()}` : "";
-  return fetchJson<IncidentTaskListResponse>(`${apiBase}/api/v1/incidents/${encodeURIComponent(incidentId)}/tasks${suffix}`, {
-    headers: authHeaders(token)
-  });
+  return fetchJson<IncidentTaskListResponse>(
+    `${apiBase}/api/v1/incidents/${encodeURIComponent(incidentId)}/tasks${suffix}`,
+    {
+      headers: authHeaders(token)
+    }
+  );
 }
 
 export async function createIncidentTask(
@@ -2629,17 +2669,24 @@ export async function updateIncidentTask(
   taskId: string,
   payload: IncidentTaskUpdatePayload
 ): Promise<IncidentTaskRecord> {
-  return fetchJson<IncidentTaskRecord>(`${apiBase}/api/v1/incidents/${encodeURIComponent(incidentId)}/tasks/${encodeURIComponent(taskId)}`, {
-    body: JSON.stringify(payload),
-    headers: {
-      ...(authHeaders(token) ?? {}),
-      "Content-Type": "application/json"
-    },
-    method: "PATCH"
-  });
+  return fetchJson<IncidentTaskRecord>(
+    `${apiBase}/api/v1/incidents/${encodeURIComponent(incidentId)}/tasks/${encodeURIComponent(taskId)}`,
+    {
+      body: JSON.stringify(payload),
+      headers: {
+        ...(authHeaders(token) ?? {}),
+        "Content-Type": "application/json"
+      },
+      method: "PATCH"
+    }
+  );
 }
 
-export async function fetchMapCatalog(apiBase: string, token: string | undefined, options: MapCatalogOptions = {}): Promise<MapCatalogResponse> {
+export async function fetchMapCatalog(
+  apiBase: string,
+  token: string | undefined,
+  options: MapCatalogOptions = {}
+): Promise<MapCatalogResponse> {
   const query = new URLSearchParams();
   if (options.includeDiagnostics) {
     query.set("includeDiagnostics", "true");
@@ -2827,7 +2874,11 @@ export async function fetchRadioProfiles(apiBase: string, token: string | undefi
   });
 }
 
-export async function createRadioProfile(apiBase: string, token: string | undefined, profile: RadioProfile): Promise<RadioProfilesResponse> {
+export async function createRadioProfile(
+  apiBase: string,
+  token: string | undefined,
+  profile: RadioProfile
+): Promise<RadioProfilesResponse> {
   return fetchJson<RadioProfilesResponse>(`${apiBase}/api/v1/radio/profiles`, {
     body: JSON.stringify(profile),
     headers: {
@@ -2900,8 +2951,9 @@ export async function runEmergencyRoute(
 
 function safetyHydroStationDetailRequest(detailUrl: string): { query: URLSearchParams; stationId: string } {
   const url = new URL(detailUrl, "https://cop.local");
-  const match = /^(?:\/safety-data)?\/api\/v1\/hydro\/stations\/([^/]+)\/observations$/u.exec(url.pathname)
-    ?? /^\/api\/v1\/safety\/hydro\/stations\/([^/]+)\/observations$/u.exec(url.pathname);
+  const match =
+    /^(?:\/safety-data)?\/api\/v1\/hydro\/stations\/([^/]+)\/observations$/u.exec(url.pathname) ??
+    /^\/api\/v1\/safety\/hydro\/stations\/([^/]+)\/observations$/u.exec(url.pathname);
   const stationId = match?.[1] ? decodeURIComponent(match[1]) : undefined;
   if (!stationId) {
     throw new Error("Neplatná adresa detailu hydrologické stanice.");
@@ -2914,8 +2966,9 @@ function safetyHydroStationDetailRequest(detailUrl: string): { query: URLSearchP
 
 function weatherStationDetailRequest(detailUrl: string): { query: URLSearchParams; stationId: string } {
   const url = new URL(detailUrl, "https://cop.local");
-  const match = /^(?:\/situation-data)?\/api\/v1\/weather-stations\/([^/]+)\/detail$/u.exec(url.pathname)
-    ?? /^\/api\/v1\/weather-stations\/([^/]+)\/detail$/u.exec(url.pathname);
+  const match =
+    /^(?:\/situation-data)?\/api\/v1\/weather-stations\/([^/]+)\/detail$/u.exec(url.pathname) ??
+    /^\/api\/v1\/weather-stations\/([^/]+)\/detail$/u.exec(url.pathname);
   const stationId = match?.[1] ? decodeURIComponent(match[1]) : undefined;
   if (!stationId) {
     throw new Error("Neplatná adresa detailu meteorologické stanice.");
@@ -2928,13 +2981,14 @@ function weatherStationDetailRequest(detailUrl: string): { query: URLSearchParam
 
 function weatherForecastAreaDetailRequest(detailUrl: string): { areaId: string; query: URLSearchParams } {
   const url = new URL(detailUrl, "https://cop.local");
-  const match = /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)$/u.exec(url.pathname)
-    ?? /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)\/detail$/u.exec(url.pathname)
-    ?? /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)\/meteogram$/u.exec(url.pathname)
-    ?? /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)\/charts$/u.exec(url.pathname)
-    ?? /^\/api\/v1\/weather-forecast\/areas\/([^/]+)\/detail$/u.exec(url.pathname)
-    ?? /^\/api\/v1\/weather-forecast\/areas\/([^/]+)\/meteogram$/u.exec(url.pathname)
-    ?? /^\/api\/v1\/weather-forecast\/areas\/([^/]+)\/charts$/u.exec(url.pathname);
+  const match =
+    /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)$/u.exec(url.pathname) ??
+    /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)\/detail$/u.exec(url.pathname) ??
+    /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)\/meteogram$/u.exec(url.pathname) ??
+    /^(?:\/situation-data)?\/api\/v1\/weather-forecast\/areas\/([^/]+)\/charts$/u.exec(url.pathname) ??
+    /^\/api\/v1\/weather-forecast\/areas\/([^/]+)\/detail$/u.exec(url.pathname) ??
+    /^\/api\/v1\/weather-forecast\/areas\/([^/]+)\/meteogram$/u.exec(url.pathname) ??
+    /^\/api\/v1\/weather-forecast\/areas\/([^/]+)\/charts$/u.exec(url.pathname);
   const areaId = match?.[1] ? decodeURIComponent(match[1]) : undefined;
   if (!areaId) {
     throw new Error("Neplatná adresa detailu plošné předpovědi počasí.");
@@ -2945,7 +2999,10 @@ function weatherForecastAreaDetailRequest(detailUrl: string): { areaId: string; 
   };
 }
 
-function transitVehicleDetailRequest(detailUrl: string | undefined, fallback: { featureId: string; sourceId?: string }): { featureId: string; query: URLSearchParams } {
+function transitVehicleDetailRequest(
+  detailUrl: string | undefined,
+  fallback: { featureId: string; sourceId?: string }
+): { featureId: string; query: URLSearchParams } {
   const query = new URLSearchParams();
   if (!detailUrl) {
     if (fallback.sourceId) {
@@ -2954,8 +3011,9 @@ function transitVehicleDetailRequest(detailUrl: string | undefined, fallback: { 
     return { featureId: fallback.featureId, query };
   }
   const url = new URL(detailUrl, "https://cop.local");
-  const match = /^(?:\/situation-data)?\/api\/v1\/transit\/vehicles\/([^/]+)$/u.exec(url.pathname)
-    ?? /^\/api\/v1\/transit\/vehicles\/([^/]+)\/detail$/u.exec(url.pathname);
+  const match =
+    /^(?:\/situation-data)?\/api\/v1\/transit\/vehicles\/([^/]+)$/u.exec(url.pathname) ??
+    /^\/api\/v1\/transit\/vehicles\/([^/]+)\/detail$/u.exec(url.pathname);
   const featureId = match?.[1] ? decodeURIComponent(match[1]) : fallback.featureId;
   if (!featureId) {
     throw new Error("Neplatná adresa detailu vozidla veřejné dopravy.");
@@ -2967,7 +3025,10 @@ function transitVehicleDetailRequest(detailUrl: string | undefined, fallback: { 
   return { featureId, query };
 }
 
-function transitStopDetailRequest(detailUrl: string | undefined, fallback: { sourceId?: string; stopId?: string; systemId?: string }): { query: URLSearchParams; stopId: string; systemId: string } {
+function transitStopDetailRequest(
+  detailUrl: string | undefined,
+  fallback: { sourceId?: string; stopId?: string; systemId?: string }
+): { query: URLSearchParams; stopId: string; systemId: string } {
   const query = new URLSearchParams();
   if (!detailUrl) {
     if (fallback.sourceId) {
@@ -2979,8 +3040,9 @@ function transitStopDetailRequest(detailUrl: string | undefined, fallback: { sou
     return { query, stopId: fallback.stopId, systemId: fallback.systemId };
   }
   const url = new URL(detailUrl, "https://cop.local");
-  const match = /^(?:\/situation-data)?\/api\/v1\/transit\/stops\/([^/]+)\/([^/]+)$/u.exec(url.pathname)
-    ?? /^\/api\/v1\/transit\/stops\/([^/]+)\/([^/]+)\/detail$/u.exec(url.pathname);
+  const match =
+    /^(?:\/situation-data)?\/api\/v1\/transit\/stops\/([^/]+)\/([^/]+)$/u.exec(url.pathname) ??
+    /^\/api\/v1\/transit\/stops\/([^/]+)\/([^/]+)\/detail$/u.exec(url.pathname);
   const systemId = match?.[1] ? decodeURIComponent(match[1]) : fallback.systemId;
   const stopId = match?.[2] ? decodeURIComponent(match[2]) : fallback.stopId;
   if (!systemId || !stopId) {
@@ -3039,7 +3101,11 @@ export async function fetchSketchDrawings(
 export async function createSketchDrawing(
   apiBase: string,
   token: string,
-  payload: SketchDrawingPayload & { geometry: SketchGeometry; kind: SketchDrawingKind; visibility: SketchDrawingVisibility }
+  payload: SketchDrawingPayload & {
+    geometry: SketchGeometry;
+    kind: SketchDrawingKind;
+    visibility: SketchDrawingVisibility;
+  }
 ): Promise<SketchDrawingFeature> {
   return fetchJson<SketchDrawingFeature>(`${apiBase}/api/v1/sketch/drawings`, {
     body: JSON.stringify(payload),
@@ -3073,7 +3139,9 @@ export async function deleteSketchDrawing(apiBase: string, token: string, drawin
     method: "DELETE"
   });
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText || "API request failed"} for ${apiBase}/api/v1/sketch/drawings/${encodeURIComponent(drawingId)}`);
+    throw new Error(
+      `${response.status} ${response.statusText || "API request failed"} for ${apiBase}/api/v1/sketch/drawings/${encodeURIComponent(drawingId)}`
+    );
   }
 }
 
@@ -3120,7 +3188,12 @@ export async function fetchUserProfile(apiBase: string, token: string): Promise<
   });
 }
 
-export async function searchUserDirectory(apiBase: string, token: string, query: string, limit = 8): Promise<UserDirectorySearchResponse> {
+export async function searchUserDirectory(
+  apiBase: string,
+  token: string,
+  query: string,
+  limit = 8
+): Promise<UserDirectorySearchResponse> {
   const params = new URLSearchParams({
     limit: String(limit),
     q: query
@@ -3147,7 +3220,11 @@ export async function saveUserProfile(
   });
 }
 
-export async function createMobilePairingSession(apiBase: string, token: string, ttlSeconds = 600): Promise<MobilePairingSessionResponse> {
+export async function createMobilePairingSession(
+  apiBase: string,
+  token: string,
+  ttlSeconds = 600
+): Promise<MobilePairingSessionResponse> {
   return fetchJson<MobilePairingSessionResponse>(`${apiBase}/api/v1/mobile/pairing/sessions`, {
     body: JSON.stringify({ ttlSeconds }),
     headers: {
@@ -3158,21 +3235,35 @@ export async function createMobilePairingSession(apiBase: string, token: string,
   });
 }
 
-export async function fetchMobilePairingSession(apiBase: string, token: string, code: string): Promise<MobilePairingSessionResponse> {
-  return fetchJson<MobilePairingSessionResponse>(`${apiBase}/api/v1/mobile/pairing/sessions/${encodeURIComponent(code)}`, {
-    headers: {
-      Authorization: `Bearer ${token}`
+export async function fetchMobilePairingSession(
+  apiBase: string,
+  token: string,
+  code: string
+): Promise<MobilePairingSessionResponse> {
+  return fetchJson<MobilePairingSessionResponse>(
+    `${apiBase}/api/v1/mobile/pairing/sessions/${encodeURIComponent(code)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
     }
-  });
+  );
 }
 
-export async function confirmMobilePairingSession(apiBase: string, token: string, code: string): Promise<MobilePairingSessionResponse> {
-  return fetchJson<MobilePairingSessionResponse>(`${apiBase}/api/v1/mobile/pairing/sessions/${encodeURIComponent(code)}/confirm`, {
-    headers: {
-      Authorization: `Bearer ${token}`
-    },
-    method: "POST"
-  });
+export async function confirmMobilePairingSession(
+  apiBase: string,
+  token: string,
+  code: string
+): Promise<MobilePairingSessionResponse> {
+  return fetchJson<MobilePairingSessionResponse>(
+    `${apiBase}/api/v1/mobile/pairing/sessions/${encodeURIComponent(code)}/confirm`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      method: "POST"
+    }
+  );
 }
 
 export async function fetchMobileDevices(apiBase: string, token: string): Promise<MobileDevicesResponse> {
@@ -3183,7 +3274,11 @@ export async function fetchMobileDevices(apiBase: string, token: string): Promis
   });
 }
 
-export async function revokeMobileDevice(apiBase: string, token: string, deviceId: string): Promise<MobileDevicesResponse> {
+export async function revokeMobileDevice(
+  apiBase: string,
+  token: string,
+  deviceId: string
+): Promise<MobileDevicesResponse> {
   return fetchJson<MobileDevicesResponse>(`${apiBase}/api/v1/mobile/devices/${encodeURIComponent(deviceId)}`, {
     headers: {
       Authorization: `Bearer ${token}`
@@ -3192,7 +3287,12 @@ export async function revokeMobileDevice(apiBase: string, token: string, deviceI
   });
 }
 
-export async function acknowledgeCopAlert(apiBase: string, token: string, alertId: string, note?: string): Promise<CopAlert> {
+export async function acknowledgeCopAlert(
+  apiBase: string,
+  token: string,
+  alertId: string,
+  note?: string
+): Promise<CopAlert> {
   return fetchJson<CopAlert>(`${apiBase}/api/v1/cop/alerts/${encodeURIComponent(alertId)}/acknowledge`, {
     body: JSON.stringify(note ? { note } : {}),
     headers: {
@@ -3203,7 +3303,11 @@ export async function acknowledgeCopAlert(apiBase: string, token: string, alertI
   });
 }
 
-export async function createAiSituationSummary(apiBase: string, token: string, options: AiSituationSummaryOptions = {}): Promise<AiCopResponse> {
+export async function createAiSituationSummary(
+  apiBase: string,
+  token: string,
+  options: AiSituationSummaryOptions = {}
+): Promise<AiCopResponse> {
   return fetchJson<AiCopResponse>(`${apiBase}/api/v1/ai/situation-summary`, {
     body: JSON.stringify(options),
     headers: {
@@ -3214,7 +3318,11 @@ export async function createAiSituationSummary(apiBase: string, token: string, o
   });
 }
 
-export async function queryAiChatAgent(apiBase: string, token: string, options: AiChatAgentQueryOptions): Promise<AiCopResponse> {
+export async function queryAiChatAgent(
+  apiBase: string,
+  token: string,
+  options: AiChatAgentQueryOptions
+): Promise<AiCopResponse> {
   return fetchJson<AiCopResponse>(`${apiBase}/api/v1/ai/chat-agent/query`, {
     body: JSON.stringify(options),
     headers: {
@@ -3225,7 +3333,11 @@ export async function queryAiChatAgent(apiBase: string, token: string, options: 
   });
 }
 
-export async function startAiChatAgentJob(apiBase: string, token: string, options: AiChatAgentQueryOptions): Promise<AiChatAgentJobResponse> {
+export async function startAiChatAgentJob(
+  apiBase: string,
+  token: string,
+  options: AiChatAgentQueryOptions
+): Promise<AiChatAgentJobResponse> {
   return fetchJson<AiChatAgentJobResponse>(`${apiBase}/api/v1/ai/chat-agent/jobs`, {
     body: JSON.stringify(options),
     headers: {
@@ -3236,19 +3348,30 @@ export async function startAiChatAgentJob(apiBase: string, token: string, option
   });
 }
 
-export async function fetchAiChatAgentJob(apiBase: string, token: string, jobId: string): Promise<AiChatAgentJobResponse> {
+export async function fetchAiChatAgentJob(
+  apiBase: string,
+  token: string,
+  jobId: string
+): Promise<AiChatAgentJobResponse> {
   return fetchJson<AiChatAgentJobResponse>(`${apiBase}/api/v1/ai/chat-agent/jobs/${encodeURIComponent(jobId)}`, {
     headers: authHeaders(token)
   });
 }
 
-export async function fetchMessagingStatus(apiBase: string, token: string | undefined): Promise<MessagingStatusResponse> {
+export async function fetchMessagingStatus(
+  apiBase: string,
+  token: string | undefined
+): Promise<MessagingStatusResponse> {
   return fetchJson<MessagingStatusResponse>(`${apiBase}/api/v1/messaging/status`, {
     headers: authHeaders(token)
   });
 }
 
-export async function fetchMessagingBootstrap(apiBase: string, token: string, deviceId: string): Promise<MessagingBootstrapResponse> {
+export async function fetchMessagingBootstrap(
+  apiBase: string,
+  token: string,
+  deviceId: string
+): Promise<MessagingBootstrapResponse> {
   return fetchJson<MessagingBootstrapResponse>(`${apiBase}/api/v1/messaging/bootstrap`, {
     body: JSON.stringify({ deviceId }),
     headers: {
@@ -3259,7 +3382,10 @@ export async function fetchMessagingBootstrap(apiBase: string, token: string, de
   });
 }
 
-export async function fetchMessagingConversations(apiBase: string, token: string): Promise<MessagingConversationListResponse> {
+export async function fetchMessagingConversations(
+  apiBase: string,
+  token: string
+): Promise<MessagingConversationListResponse> {
   return fetchJson<MessagingConversationListResponse>(`${apiBase}/api/v1/messaging/conversations`, {
     headers: authHeaders(token)
   });
@@ -3271,20 +3397,32 @@ export async function fetchDemoScenarios(apiBase: string, token: string): Promis
   });
 }
 
-export async function fetchDemoScenarioStatus(apiBase: string, token: string, scenarioId: string): Promise<DemoScenarioResponse> {
+export async function fetchDemoScenarioStatus(
+  apiBase: string,
+  token: string,
+  scenarioId: string
+): Promise<DemoScenarioResponse> {
   return fetchJson<DemoScenarioResponse>(`${apiBase}/api/v1/demo/scenarios/${encodeURIComponent(scenarioId)}/status`, {
     headers: authHeaders(token)
   });
 }
 
-export async function seedDemoScenario(apiBase: string, token: string, scenarioId: string): Promise<DemoScenarioResponse> {
+export async function seedDemoScenario(
+  apiBase: string,
+  token: string,
+  scenarioId: string
+): Promise<DemoScenarioResponse> {
   return fetchJson<DemoScenarioResponse>(`${apiBase}/api/v1/demo/scenarios/${encodeURIComponent(scenarioId)}/seed`, {
     headers: authHeaders(token),
     method: "POST"
   });
 }
 
-export async function resetDemoScenario(apiBase: string, token: string, scenarioId: string): Promise<DemoScenarioResponse> {
+export async function resetDemoScenario(
+  apiBase: string,
+  token: string,
+  scenarioId: string
+): Promise<DemoScenarioResponse> {
   return fetchJson<DemoScenarioResponse>(`${apiBase}/api/v1/demo/scenarios/${encodeURIComponent(scenarioId)}/reset`, {
     headers: authHeaders(token),
     method: "POST"
@@ -3401,7 +3539,10 @@ export async function createCommunityReport(
   });
 }
 
-export async function fetchCommunityGroups(apiBase: string, token: string): Promise<{ items: CommunityGroup[]; serverTimestamp: string }> {
+export async function fetchCommunityGroups(
+  apiBase: string,
+  token: string
+): Promise<{ items: CommunityGroup[]; serverTimestamp: string }> {
   return fetchJson<{ items: CommunityGroup[]; serverTimestamp: string }>(`${apiBase}/api/v1/community/groups`, {
     headers: authHeaders(token)
   });
@@ -3434,7 +3575,9 @@ export async function deleteCommunityGroup(apiBase: string, token: string, group
     method: "DELETE"
   });
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText || "API request failed"} for ${apiBase}/api/v1/community/groups/${encodeURIComponent(groupId)}`);
+    throw new Error(
+      `${response.status} ${response.statusText || "API request failed"} for ${apiBase}/api/v1/community/groups/${encodeURIComponent(groupId)}`
+    );
   }
 }
 
@@ -3494,11 +3637,17 @@ export async function deleteCommunityReport(apiBase: string, token: string, repo
     method: "DELETE"
   });
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText || "API request failed"} for ${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}`);
+    throw new Error(
+      `${response.status} ${response.statusText || "API request failed"} for ${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}`
+    );
   }
 }
 
-export async function requestCommunityGroupJoin(apiBase: string, token: string, groupId: string): Promise<CommunityGroup> {
+export async function requestCommunityGroupJoin(
+  apiBase: string,
+  token: string,
+  groupId: string
+): Promise<CommunityGroup> {
   return fetchJson<CommunityGroup>(`${apiBase}/api/v1/community/groups/${encodeURIComponent(groupId)}/join-request`, {
     headers: authHeaders(token),
     method: "POST"
@@ -3512,7 +3661,12 @@ export async function leaveCommunityGroup(apiBase: string, token: string, groupI
   });
 }
 
-export async function removeCommunityGroupMember(apiBase: string, token: string, groupId: string, subjectId: string): Promise<CommunityGroup> {
+export async function removeCommunityGroupMember(
+  apiBase: string,
+  token: string,
+  groupId: string,
+  subjectId: string
+): Promise<CommunityGroup> {
   return fetchJson<CommunityGroup>(
     `${apiBase}/api/v1/community/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(subjectId)}`,
     {
@@ -3611,9 +3765,10 @@ export async function uploadCommunityAttachmentViaApi(
   });
   if (!response.ok) {
     const statusText = response.statusText || "API request failed";
-    const sizeHint = response.status === 413
-      ? ` Soubor má ${formatBytes(file.size)}; zvyšte COP_MEDIA_MAX_ATTACHMENT_BYTES a nginx client_max_body_size.`
-      : "";
+    const sizeHint =
+      response.status === 413
+        ? ` Soubor má ${formatBytes(file.size)}; zvyšte COP_MEDIA_MAX_ATTACHMENT_BYTES a nginx client_max_body_size.`
+        : "";
     throw new Error(`${response.status} ${statusText} for ${uploadUrl}.${sizeHint}`);
   }
   return (await response.json()) as CommunityReportAttachment;
@@ -3714,7 +3869,11 @@ function uploadFileWithProgress(
   });
 }
 
-export async function submitCommunityReport(apiBase: string, token: string, reportId: string): Promise<CommunityReport> {
+export async function submitCommunityReport(
+  apiBase: string,
+  token: string,
+  reportId: string
+): Promise<CommunityReport> {
   return fetchJson<CommunityReport>(`${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}/submit`, {
     headers: {
       Authorization: `Bearer ${token}`
@@ -3723,7 +3882,11 @@ export async function submitCommunityReport(apiBase: string, token: string, repo
   });
 }
 
-export function connectCopStream(apiBase: string, token: string | undefined, handlers: CopStreamHandlers): CopStreamConnection | null {
+export function connectCopStream(
+  apiBase: string,
+  token: string | undefined,
+  handlers: CopStreamHandlers
+): CopStreamConnection | null {
   if (typeof ReadableStream === "undefined") {
     return null;
   }
@@ -3778,7 +3941,9 @@ export function filterObjectsByLayer(objects: CopObject[], layer: CopLayer): Cop
 }
 
 export function filterObjectsByLayers(objects: CopObject[], layers: CopLayer[]): CopObject[] {
-  const normalizedLayers = layers.filter((layer, index) => copLayerIds.includes(layer) && layers.indexOf(layer) === index);
+  const normalizedLayers = layers.filter(
+    (layer, index) => copLayerIds.includes(layer) && layers.indexOf(layer) === index
+  );
   if (normalizedLayers.length === 0) {
     return [];
   }
@@ -3859,7 +4024,12 @@ async function fetchOptionalJson<T>(url: string, init?: RequestInit): Promise<T 
   }
 }
 
-async function readCopStream(apiBase: string, token: string | undefined, signal: AbortSignal, handlers: CopStreamHandlers): Promise<void> {
+async function readCopStream(
+  apiBase: string,
+  token: string | undefined,
+  signal: AbortSignal,
+  handlers: CopStreamHandlers
+): Promise<void> {
   const response = await fetch(joinApiPath(apiBase, "/api/v1/stream/cop/live"), {
     headers: {
       Accept: "text/event-stream",

@@ -6767,7 +6767,7 @@ function buildSituationRenderProperties(
       situationStatusTone: status.tone
     };
   }
-  if (isWeatherWebcamFeature(feature)) {
+  if (isMapWebcamFeature(feature)) {
     const label = formatWeatherWebcamLabel(feature);
     return {
       mapPointSuppressed: true,
@@ -7278,6 +7278,9 @@ function weatherForecastSubtitle(feature: SituationFeature, presentation: Record
 }
 
 function isWeatherWebcamFeature(feature: SituationFeature): boolean {
+  if (isOutdoorWebcamFeature(feature)) {
+    return false;
+  }
   const camera = weatherWebcamProviderMetadata(feature);
   const category = normalizeSituationCategory(feature.properties.category);
   const providerLayerId = stringProperty(feature.properties.providerLayerId);
@@ -7291,6 +7294,24 @@ function isWeatherWebcamFeature(feature: SituationFeature): boolean {
     category === "webcam" ||
     Boolean(stringProperty(camera.detailUrl) || stringProperty(camera.snapshotUrl))
   );
+}
+
+function isOutdoorWebcamFeature(feature: SituationFeature): boolean {
+  const category = normalizeSituationCategory(feature.properties.category);
+  const providerLayerId = stringProperty(feature.properties.providerLayerId);
+  return (
+    feature.properties.layer === "outdoor_webcams" ||
+    feature.properties.layerId === "public.outdoor.webcams" ||
+    providerLayerId === "outdoor.webcams" ||
+    providerLayerId === "outdoor_webcams" ||
+    providerLayerId === "public.outdoor.webcams" ||
+    category === "outdoor_webcam" ||
+    category === "tourism_webcam"
+  );
+}
+
+function isMapWebcamFeature(feature: SituationFeature): boolean {
+  return isWeatherWebcamFeature(feature) || isOutdoorWebcamFeature(feature);
 }
 
 function weatherWebcamProviderMetadata(feature: SituationFeature): Record<string, unknown> {
@@ -7308,7 +7329,7 @@ function formatWeatherWebcamLabel(feature: SituationFeature): string {
     stringProperty(camera.title) ??
     feature.properties.headline ??
     feature.properties.label ??
-    "Webkamera ČHMÚ";
+    (isOutdoorWebcamFeature(feature) ? "Turistická webkamera" : "Webkamera ČHMÚ");
   return normalizeWeatherWebcamDisplayLabel(label);
 }
 

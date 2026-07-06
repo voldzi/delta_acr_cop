@@ -24,6 +24,7 @@ export type SituationLayerId =
   | "mobile"
   | "mobile_coverage"
   | "mobile_network"
+  | "outdoor_webcams"
   | "place_settlements"
   | "trail_poi"
   | "trail_routes"
@@ -318,7 +319,11 @@ export interface SituationDataSource {
   fetchCatalog?(requestNow: Date): Promise<ProviderMapCatalog>;
   fetchFeatures(query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection>;
   fetchLayers(requestNow: Date): Promise<SituationLayerDescriptor[]>;
-  fetchMobileTowerViewshed?(towerId: string, query: MobileTowerViewshedQuery, requestNow: Date): Promise<MobileTowerViewshedResponse>;
+  fetchMobileTowerViewshed?(
+    towerId: string,
+    query: MobileTowerViewshedQuery,
+    requestNow: Date
+  ): Promise<MobileTowerViewshedResponse>;
   createRadioProfile?(profile: RadioProfile, requestNow: Date): Promise<RadioProfilesResponse>;
   fetchRadioProfiles?(requestNow: Date): Promise<RadioProfilesResponse>;
   runRadioCoverage?(request: RadioCoverageRequest, requestNow: Date): Promise<RadioFeatureCollectionResponse>;
@@ -349,6 +354,7 @@ const defaultConfig: SituationDataSourceConfig = {
     mobile: 15 * 60 * 1000,
     mobile_coverage: 10 * 60 * 1000,
     mobile_network: 10 * 60 * 1000,
+    outdoor_webcams: 6 * 60 * 60 * 1000,
     trail_poi: 6 * 60 * 60 * 1000,
     trail_routes: 6 * 60 * 60 * 1000,
     traffic: 20 * 1000,
@@ -404,6 +410,7 @@ const allowedLayerIds: SituationLayerId[] = [
   "mobile",
   "mobile_network",
   "mobile_coverage",
+  "outdoor_webcams",
   "trail_routes",
   "trail_poi",
   "traffic",
@@ -421,67 +428,262 @@ const allowedLayerIds: SituationLayerId[] = [
   "place_settlements"
 ];
 
-export function createSituationDataSourceConfigFromEnv(env: Record<string, string | undefined> = process.env): SituationDataSourceConfig {
+export function createSituationDataSourceConfigFromEnv(
+  env: Record<string, string | undefined> = process.env
+): SituationDataSourceConfig {
   const cacheTtlMs = readInteger(env.COP_SITUATION_DATA_CACHE_TTL_MS, defaultConfig.cacheTtlMs, 1000, 300000);
   return {
     baseUrl: trimTrailingSlash(env.COP_SITUATION_DATA_BASE_URL ?? defaultConfig.baseUrl),
-    cacheMaxEntries: readInteger(env.COP_SITUATION_DATA_CACHE_MAX_ENTRIES, defaultConfig.cacheMaxEntries ?? 5000, 1, 100000),
+    cacheMaxEntries: readInteger(
+      env.COP_SITUATION_DATA_CACHE_MAX_ENTRIES,
+      defaultConfig.cacheMaxEntries ?? 5000,
+      1,
+      100000
+    ),
     cacheTtlMs,
     enabled: readBoolean(env.COP_SITUATION_DATA_ENABLED, defaultConfig.enabled),
     layerCacheTtlMs: {
-      air_quality: readInteger(env.COP_SITUATION_DATA_AIR_QUALITY_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      air_quality_grid: readInteger(env.COP_SITUATION_DATA_AIR_QUALITY_GRID_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      boundary_admin: readInteger(env.COP_SITUATION_DATA_BOUNDARY_ADMIN_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      boundary_country: readInteger(env.COP_SITUATION_DATA_BOUNDARY_COUNTRY_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      boundary_district: readInteger(env.COP_SITUATION_DATA_BOUNDARY_DISTRICT_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      boundary_municipality: readInteger(env.COP_SITUATION_DATA_BOUNDARY_MUNICIPALITY_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      boundary_orp: readInteger(env.COP_SITUATION_DATA_BOUNDARY_ORP_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      boundary_region: readInteger(env.COP_SITUATION_DATA_BOUNDARY_REGION_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      community_places: readInteger(env.COP_SITUATION_DATA_COMMUNITY_PLACES_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      air_quality: readInteger(
+        env.COP_SITUATION_DATA_AIR_QUALITY_CACHE_TTL_MS,
+        15 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      air_quality_grid: readInteger(
+        env.COP_SITUATION_DATA_AIR_QUALITY_GRID_CACHE_TTL_MS,
+        15 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      boundary_admin: readInteger(
+        env.COP_SITUATION_DATA_BOUNDARY_ADMIN_CACHE_TTL_MS,
+        6 * 60 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      boundary_country: readInteger(
+        env.COP_SITUATION_DATA_BOUNDARY_COUNTRY_CACHE_TTL_MS,
+        6 * 60 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      boundary_district: readInteger(
+        env.COP_SITUATION_DATA_BOUNDARY_DISTRICT_CACHE_TTL_MS,
+        6 * 60 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      boundary_municipality: readInteger(
+        env.COP_SITUATION_DATA_BOUNDARY_MUNICIPALITY_CACHE_TTL_MS,
+        6 * 60 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      boundary_orp: readInteger(
+        env.COP_SITUATION_DATA_BOUNDARY_ORP_CACHE_TTL_MS,
+        6 * 60 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      boundary_region: readInteger(
+        env.COP_SITUATION_DATA_BOUNDARY_REGION_CACHE_TTL_MS,
+        6 * 60 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      community_places: readInteger(
+        env.COP_SITUATION_DATA_COMMUNITY_PLACES_CACHE_TTL_MS,
+        6 * 60 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
       fire: readInteger(env.COP_SITUATION_DATA_FIRE_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       flood: readInteger(env.COP_SITUATION_DATA_FLOOD_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       ground: readInteger(env.COP_SITUATION_DATA_GROUND_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       mobile: readInteger(env.COP_SITUATION_DATA_MOBILE_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      mobile_coverage: readInteger(env.COP_SITUATION_DATA_MOBILE_COVERAGE_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      mobile_network: readInteger(env.COP_SITUATION_DATA_MOBILE_NETWORK_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      trail_poi: readInteger(env.COP_SITUATION_DATA_TRAIL_POI_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      trail_routes: readInteger(env.COP_SITUATION_DATA_TRAIL_ROUTES_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
+      mobile_coverage: readInteger(
+        env.COP_SITUATION_DATA_MOBILE_COVERAGE_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      mobile_network: readInteger(
+        env.COP_SITUATION_DATA_MOBILE_NETWORK_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      outdoor_webcams: readInteger(
+        env.COP_SITUATION_DATA_OUTDOOR_WEBCAMS_CACHE_TTL_MS,
+        6 * 60 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      trail_poi: readInteger(
+        env.COP_SITUATION_DATA_TRAIL_POI_CACHE_TTL_MS,
+        6 * 60 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      trail_routes: readInteger(
+        env.COP_SITUATION_DATA_TRAIL_ROUTES_CACHE_TTL_MS,
+        6 * 60 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
       traffic: readInteger(env.COP_SITUATION_DATA_TRAFFIC_CACHE_TTL_MS, cacheTtlMs, 1000, 5 * 60 * 1000),
       warnings: readInteger(env.COP_SITUATION_DATA_WARNINGS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather: readInteger(env.COP_SITUATION_DATA_WEATHER_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_alerts: readInteger(env.COP_SITUATION_DATA_WEATHER_ALERTS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_forecast_area: readInteger(env.COP_SITUATION_DATA_WEATHER_FORECAST_AREA_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_webcams: readInteger(env.COP_SITUATION_DATA_WEATHER_WEBCAMS_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_humidity_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_HUMIDITY_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_precipitation_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_PRECIPITATION_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_pressure_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_PRESSURE_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_radar_nowcast: readInteger(env.COP_SITUATION_DATA_WEATHER_RADAR_NOWCAST_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_radar_precipitation: readInteger(env.COP_SITUATION_DATA_WEATHER_RADAR_PRECIPITATION_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_radar_reflectivity: readInteger(env.COP_SITUATION_DATA_WEATHER_RADAR_REFLECTIVITY_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_temperature_grid: readInteger(env.COP_SITUATION_DATA_WEATHER_TEMPERATURE_GRID_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_thunderstorm_risk: readInteger(env.COP_SITUATION_DATA_WEATHER_THUNDERSTORM_RISK_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_wind_field: readInteger(env.COP_SITUATION_DATA_WEATHER_WIND_FIELD_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
+      weather_alerts: readInteger(
+        env.COP_SITUATION_DATA_WEATHER_ALERTS_CACHE_TTL_MS,
+        5 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      weather_forecast_area: readInteger(
+        env.COP_SITUATION_DATA_WEATHER_FORECAST_AREA_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      weather_webcams: readInteger(
+        env.COP_SITUATION_DATA_WEATHER_WEBCAMS_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      weather_humidity_grid: readInteger(
+        env.COP_SITUATION_DATA_WEATHER_HUMIDITY_GRID_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      weather_precipitation_grid: readInteger(
+        env.COP_SITUATION_DATA_WEATHER_PRECIPITATION_GRID_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      weather_pressure_grid: readInteger(
+        env.COP_SITUATION_DATA_WEATHER_PRESSURE_GRID_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      weather_radar_nowcast: readInteger(
+        env.COP_SITUATION_DATA_WEATHER_RADAR_NOWCAST_CACHE_TTL_MS,
+        5 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      weather_radar_precipitation: readInteger(
+        env.COP_SITUATION_DATA_WEATHER_RADAR_PRECIPITATION_CACHE_TTL_MS,
+        5 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      weather_radar_reflectivity: readInteger(
+        env.COP_SITUATION_DATA_WEATHER_RADAR_REFLECTIVITY_CACHE_TTL_MS,
+        5 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      weather_temperature_grid: readInteger(
+        env.COP_SITUATION_DATA_WEATHER_TEMPERATURE_GRID_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      weather_thunderstorm_risk: readInteger(
+        env.COP_SITUATION_DATA_WEATHER_THUNDERSTORM_RISK_CACHE_TTL_MS,
+        5 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      weather_wind_field: readInteger(
+        env.COP_SITUATION_DATA_WEATHER_WIND_FIELD_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      )
     },
     maxLimit: readInteger(env.COP_SITUATION_DATA_MAX_LIMIT, defaultConfig.maxLimit, 1, 5000),
     sourceCacheTtlMs: {
       ardos_partner: readInteger(env.COP_SITUATION_DATA_ARDOS_CACHE_TTL_MS, 10 * 1000, 1000, 5 * 60 * 1000),
-      aviation_weather: readInteger(env.COP_SITUATION_DATA_AVIATION_WEATHER_CACHE_TTL_MS, 120 * 1000, 1000, 24 * 60 * 60 * 1000),
-      chmi_air_quality: readInteger(env.COP_SITUATION_DATA_CHMI_AIR_QUALITY_CACHE_TTL_MS, 15 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      chmi_weather_radar: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_RADAR_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      chmi_weather_stations: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_STATIONS_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      chmi_weather_webcams: readInteger(env.COP_SITUATION_DATA_CHMI_WEATHER_WEBCAMS_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      community_context: readInteger(env.COP_SITUATION_DATA_COMMUNITY_CONTEXT_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      weather_forecast: readInteger(env.COP_SITUATION_DATA_WEATHER_FORECAST_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      mobile_coverage_model: readInteger(env.COP_SITUATION_DATA_MOBILE_COVERAGE_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      mobile_network_model: readInteger(env.COP_SITUATION_DATA_MOBILE_NETWORK_MODEL_CACHE_TTL_MS, 10 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
-      osm_postgis: readInteger(env.COP_SITUATION_DATA_OSM_POSTGIS_CACHE_TTL_MS, 6 * 60 * 60 * 1000, 1000, 24 * 60 * 60 * 1000)
+      aviation_weather: readInteger(
+        env.COP_SITUATION_DATA_AVIATION_WEATHER_CACHE_TTL_MS,
+        120 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      chmi_air_quality: readInteger(
+        env.COP_SITUATION_DATA_CHMI_AIR_QUALITY_CACHE_TTL_MS,
+        15 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      chmi_weather_radar: readInteger(
+        env.COP_SITUATION_DATA_CHMI_WEATHER_RADAR_CACHE_TTL_MS,
+        5 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      chmi_weather_stations: readInteger(
+        env.COP_SITUATION_DATA_CHMI_WEATHER_STATIONS_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      chmi_weather_webcams: readInteger(
+        env.COP_SITUATION_DATA_CHMI_WEATHER_WEBCAMS_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      community_context: readInteger(
+        env.COP_SITUATION_DATA_COMMUNITY_CONTEXT_CACHE_TTL_MS,
+        6 * 60 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      weather_forecast: readInteger(
+        env.COP_SITUATION_DATA_WEATHER_FORECAST_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      mobile_coverage_model: readInteger(
+        env.COP_SITUATION_DATA_MOBILE_COVERAGE_MODEL_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      mobile_network_model: readInteger(
+        env.COP_SITUATION_DATA_MOBILE_NETWORK_MODEL_CACHE_TTL_MS,
+        10 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      ),
+      osm_postgis: readInteger(
+        env.COP_SITUATION_DATA_OSM_POSTGIS_CACHE_TTL_MS,
+        6 * 60 * 60 * 1000,
+        1000,
+        24 * 60 * 60 * 1000
+      )
     },
-    staleIfErrorMs: readInteger(env.COP_SITUATION_DATA_STALE_IF_ERROR_MS, defaultConfig.staleIfErrorMs ?? 600000, 0, 24 * 60 * 60 * 1000),
+    staleIfErrorMs: readInteger(
+      env.COP_SITUATION_DATA_STALE_IF_ERROR_MS,
+      defaultConfig.staleIfErrorMs ?? 600000,
+      0,
+      24 * 60 * 60 * 1000
+    ),
     timeoutMs: readInteger(env.COP_SITUATION_DATA_TIMEOUT_MS, defaultConfig.timeoutMs, 1000, 60000)
   };
 }
 
-export function createSituationDataSourceFromEnv(env: Record<string, string | undefined> = process.env): SituationDataSource | undefined {
+export function createSituationDataSourceFromEnv(
+  env: Record<string, string | undefined> = process.env
+): SituationDataSource | undefined {
   const config = createSituationDataSourceConfigFromEnv(env);
   return config.enabled ? new SituationDataSourceAdapter(config) : undefined;
 }
@@ -583,7 +785,11 @@ export class SituationDataSourceAdapter implements SituationDataSource {
     return this.fetchMobileNetworkCoverageFallback(normalizedQuery, collection, requestNow);
   }
 
-  async fetchMobileTowerViewshed(towerId: string, query: MobileTowerViewshedQuery, requestNow: Date): Promise<MobileTowerViewshedResponse> {
+  async fetchMobileTowerViewshed(
+    towerId: string,
+    query: MobileTowerViewshedQuery,
+    requestNow: Date
+  ): Promise<MobileTowerViewshedResponse> {
     return fetchMobileTowerViewshed(this.config, towerId, query, requestNow);
   }
 
@@ -607,12 +813,18 @@ export class SituationDataSourceAdapter implements SituationDataSource {
     return runRadioSiteSearch(this.config, request, requestNow);
   }
 
-  private async fetchFeaturesUnchunked(normalizedQuery: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
+  private async fetchFeaturesUnchunked(
+    normalizedQuery: SituationFeatureQuery,
+    requestNow: Date
+  ): Promise<SituationFeatureCollection> {
     const upstreamQuery = canonicalizeSituationFeatureQuery(normalizedQuery);
     const cacheKey = situationFeatureCacheKey(upstreamQuery);
-    const ttlMs = cacheTtlMsForSources(normalizedQuery.sources, this.config)
-      ?? cacheTtlMsForLayers(normalizedQuery.layers, this.config);
-    const cached = await this.featureCache.getOrLoad(cacheKey, ttlMs, () => fetchSituationFeatures(this.config, upstreamQuery, requestNow));
+    const ttlMs =
+      cacheTtlMsForSources(normalizedQuery.sources, this.config) ??
+      cacheTtlMsForLayers(normalizedQuery.layers, this.config);
+    const cached = await this.featureCache.getOrLoad(cacheKey, ttlMs, () =>
+      fetchSituationFeatures(this.config, upstreamQuery, requestNow)
+    );
     return projectSituationFeatureCollection(cached.value, normalizedQuery, {
       cacheKey,
       cacheStatus: cached.status,
@@ -621,31 +833,53 @@ export class SituationDataSourceAdapter implements SituationDataSource {
     });
   }
 
-  private async fetchChunkedMobileNetworkFeatures(normalizedQuery: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
+  private async fetchChunkedMobileNetworkFeatures(
+    normalizedQuery: SituationFeatureQuery,
+    requestNow: Date
+  ): Promise<SituationFeatureCollection> {
     const nonMobileLayers = normalizedQuery.layers.filter((layer) => layer !== "mobile_network");
     const mobileSources = normalizedQuery.sources?.filter((source) => source === "mobile_network_model");
     const nonMobileSources = normalizedQuery.sources?.filter((source) => source !== "mobile_network_model");
     const mobileChunks = splitBbox(normalizedQuery.bbox, mobileNetworkChunkDegrees);
-    const perChunkLimit = Math.max(1, Math.min(this.config.maxLimit, Math.ceil(normalizedQuery.limit / mobileChunks.length) + mobileNetworkChunkLimitSlack));
+    const perChunkLimit = Math.max(
+      1,
+      Math.min(
+        this.config.maxLimit,
+        Math.ceil(normalizedQuery.limit / mobileChunks.length) + mobileNetworkChunkLimitSlack
+      )
+    );
     const [nonMobileCollection, ...mobileCollections] = await Promise.all([
       nonMobileLayers.length > 0
-        ? this.fetchFeaturesUnchunked({
-            ...normalizedQuery,
-            layers: nonMobileLayers,
-            ...(nonMobileSources && nonMobileSources.length > 0 ? { sources: nonMobileSources } : {})
-          }, requestNow)
-        : Promise.resolve(emptySituationFeatureCollection({
-            ...normalizedQuery,
-            layers: [],
-            ...(nonMobileSources && nonMobileSources.length > 0 ? { sources: nonMobileSources } : {})
-          }, requestNow)),
-      ...mobileChunks.map((bbox) => this.fetchFeaturesUnchunked({
-        bbox,
-        layers: ["mobile_network"],
-        limit: perChunkLimit,
-        ...(mobileSources && mobileSources.length > 0 ? { sources: mobileSources } : {}),
-        ...(normalizedQuery.technology ? { technology: normalizedQuery.technology } : {})
-      }, requestNow))
+        ? this.fetchFeaturesUnchunked(
+            {
+              ...normalizedQuery,
+              layers: nonMobileLayers,
+              ...(nonMobileSources && nonMobileSources.length > 0 ? { sources: nonMobileSources } : {})
+            },
+            requestNow
+          )
+        : Promise.resolve(
+            emptySituationFeatureCollection(
+              {
+                ...normalizedQuery,
+                layers: [],
+                ...(nonMobileSources && nonMobileSources.length > 0 ? { sources: nonMobileSources } : {})
+              },
+              requestNow
+            )
+          ),
+      ...mobileChunks.map((bbox) =>
+        this.fetchFeaturesUnchunked(
+          {
+            bbox,
+            layers: ["mobile_network"],
+            limit: perChunkLimit,
+            ...(mobileSources && mobileSources.length > 0 ? { sources: mobileSources } : {}),
+            ...(normalizedQuery.technology ? { technology: normalizedQuery.technology } : {})
+          },
+          requestNow
+        )
+      )
     ]);
 
     return mergeSituationFeatureCollections([nonMobileCollection, ...mobileCollections], normalizedQuery, requestNow);
@@ -657,13 +891,16 @@ export class SituationDataSourceAdapter implements SituationDataSource {
     requestNow: Date
   ): Promise<SituationFeatureCollection> {
     const fallbackLimit = Math.max(1, normalizedQuery.limit - primaryCollection.features.length);
-    const fallbackCollection = await this.fetchFeaturesUnchunked({
-      bbox: normalizedQuery.bbox,
-      layers: ["mobile_coverage"],
-      limit: fallbackLimit,
-      sources: ["mobile_coverage_model"],
-      ...(normalizedQuery.technology ? { technology: normalizedQuery.technology } : {})
-    }, requestNow);
+    const fallbackCollection = await this.fetchFeaturesUnchunked(
+      {
+        bbox: normalizedQuery.bbox,
+        layers: ["mobile_coverage"],
+        limit: fallbackLimit,
+        sources: ["mobile_coverage_model"],
+        ...(normalizedQuery.technology ? { technology: normalizedQuery.technology } : {})
+      },
+      requestNow
+    );
     if (fallbackCollection.features.length === 0) {
       return primaryCollection;
     }
@@ -769,7 +1006,9 @@ class ManagedSituationCache<T> {
   private evictIfNeeded(): void {
     const maxEntries = Math.max(1, this.options.maxEntries);
     while (this.entries.size > maxEntries) {
-      const oldest = Array.from(this.entries.entries()).sort((a, b) => a[1].lastAccessedAtMs - b[1].lastAccessedAtMs)[0];
+      const oldest = Array.from(this.entries.entries()).sort(
+        (a, b) => a[1].lastAccessedAtMs - b[1].lastAccessedAtMs
+      )[0];
       if (!oldest) {
         return;
       }
@@ -804,7 +1043,8 @@ export function buildSituationDataHealth(
   const warningCount = warnings.length || reportedWarningCount;
   const operationalWarningCount = warnings.filter(isOperationalSituationWarning).length;
   const hasUnclassifiedWarnings = warnings.length === 0 && reportedWarningCount > 0;
-  const health: SourceHealthOverride["health"] = response.summary.staleFeatureCount > 0
+  const health: SourceHealthOverride["health"] =
+    response.summary.staleFeatureCount > 0
       ? "STALE"
       : operationalWarningCount > 0 || hasUnclassifiedWarnings
         ? "DEGRADED"
@@ -833,17 +1073,19 @@ function isOperationalSituationWarning(warning: string): boolean {
     return false;
   }
   if (
-    normalized.includes("operator_feed_unavailable")
-    || normalized.includes("no_operator_bts_status")
-    || /operator.*feed.*unavailable/.test(normalized)
-    || /bts.*status.*unavailable/.test(normalized)
-    || normalized.includes("modelový odhad")
-    || normalized.includes("model-only")
-    || normalized.includes("inferred assessment")
+    normalized.includes("operator_feed_unavailable") ||
+    normalized.includes("no_operator_bts_status") ||
+    /operator.*feed.*unavailable/.test(normalized) ||
+    /bts.*status.*unavailable/.test(normalized) ||
+    normalized.includes("modelový odhad") ||
+    normalized.includes("model-only") ||
+    normalized.includes("inferred assessment")
   ) {
     return false;
   }
-  return /\b(unavailable|failed|failure|timeout|timed out|error|refused|stale|disabled|invalid|unauthorized|forbidden|degraded|empty|missing)\b/.test(normalized);
+  return /\b(unavailable|failed|failure|timeout|timed out|error|refused|stale|disabled|invalid|unauthorized|forbidden|degraded|empty|missing)\b/.test(
+    normalized
+  );
 }
 
 export function unavailableSituationDataHealth(error: unknown, requestNow: Date): SourceHealthOverride {
@@ -857,7 +1099,11 @@ export function unavailableSituationDataHealth(error: unknown, requestNow: Date)
   };
 }
 
-export function emptySituationFeatureCollection(query: SituationFeatureQuery, requestNow: Date, warnings: string[] = []): SituationFeatureCollection {
+export function emptySituationFeatureCollection(
+  query: SituationFeatureQuery,
+  requestNow: Date,
+  warnings: string[] = []
+): SituationFeatureCollection {
   return {
     contractVersion: "cop-situation-source-v1",
     features: [],
@@ -880,21 +1126,30 @@ export function emptySituationFeatureCollection(query: SituationFeatureQuery, re
   };
 }
 
-export function parseSituationFeatureQuery(rawQuery: Record<string, unknown>, config: SituationDataSourceConfig): SituationFeatureQuery | null {
+export function parseSituationFeatureQuery(
+  rawQuery: Record<string, unknown>,
+  config: SituationDataSourceConfig
+): SituationFeatureQuery | null {
   const bbox = typeof rawQuery.bbox === "string" ? parseSituationBbox(rawQuery.bbox) : null;
   if (!bbox) {
     return null;
   }
-  return normalizeSituationFeatureQuery({
-    bbox,
-    layers: parseSituationLayers(typeof rawQuery.layers === "string" ? rawQuery.layers : undefined),
-    limit: optionalNumber(rawQuery.limit) ?? config.maxLimit,
-    sources: parseSituationSources(rawQuery),
-    technology: parseCoverageTechnology(rawQuery.technology ?? rawQuery.technologies)
-  }, config);
+  return normalizeSituationFeatureQuery(
+    {
+      bbox,
+      layers: parseSituationLayers(typeof rawQuery.layers === "string" ? rawQuery.layers : undefined),
+      limit: optionalNumber(rawQuery.limit) ?? config.maxLimit,
+      sources: parseSituationSources(rawQuery),
+      technology: parseCoverageTechnology(rawQuery.technology ?? rawQuery.technologies)
+    },
+    config
+  );
 }
 
-export function normalizeSituationFeatureQuery(query: SituationFeatureQuery, config: SituationDataSourceConfig): SituationFeatureQuery {
+export function normalizeSituationFeatureQuery(
+  query: SituationFeatureQuery,
+  config: SituationDataSourceConfig
+): SituationFeatureQuery {
   return {
     bbox: {
       east: clampNumber(query.bbox.east, -180, 180),
@@ -902,9 +1157,10 @@ export function normalizeSituationFeatureQuery(query: SituationFeatureQuery, con
       south: clampNumber(query.bbox.south, -90, 90),
       west: clampNumber(query.bbox.west, -180, 180)
     },
-    layers: query.layers.filter(isSituationLayerId).length > 0
-      ? uniqueLayers(query.layers.filter(isSituationLayerId))
-      : ["weather"],
+    layers:
+      query.layers.filter(isSituationLayerId).length > 0
+        ? uniqueLayers(query.layers.filter(isSituationLayerId))
+        : ["weather"],
     limit: Math.round(clampNumber(query.limit, 1, config.maxLimit)),
     ...(query.sources && query.sources.length > 0 ? { sources: uniqueStrings(query.sources) } : {}),
     ...(query.technology ? { technology: normalizeCoverageTechnology(query.technology) } : {})
@@ -953,16 +1209,22 @@ function projectSituationFeatureCollection(
   requestQuery: SituationFeatureQuery,
   options: ProjectSituationFeatureCollectionOptions
 ): SituationFeatureCollection {
-  const features = collection.features.filter((feature) =>
-    requestQuery.layers.includes(feature.properties.layer)
-    && (!requestQuery.sources || requestQuery.sources.includes(feature.properties.sourceId))
-    && (!requestQuery.technology || !isTechnologyFilteredLayer(feature.properties.layer) || feature.properties.technology === requestQuery.technology)
-    && isFeatureInBbox(feature, requestQuery.bbox)
+  const features = collection.features.filter(
+    (feature) =>
+      requestQuery.layers.includes(feature.properties.layer) &&
+      (!requestQuery.sources || requestQuery.sources.includes(feature.properties.sourceId)) &&
+      (!requestQuery.technology ||
+        !isTechnologyFilteredLayer(feature.properties.layer) ||
+        feature.properties.technology === requestQuery.technology) &&
+      isFeatureInBbox(feature, requestQuery.bbox)
   );
-  const sources = collection.sources.filter((source) => !requestQuery.sources || requestQuery.sources.includes(source.sourceId));
-  const warnings = options.cacheStatus === "stale"
-    ? [...collection.warnings, "COP served stale situation-data cache because SIM refresh failed."]
-    : collection.warnings;
+  const sources = collection.sources.filter(
+    (source) => !requestQuery.sources || requestQuery.sources.includes(source.sourceId)
+  );
+  const warnings =
+    options.cacheStatus === "stale"
+      ? [...collection.warnings, "COP served stale situation-data cache because SIM refresh failed."]
+      : collection.warnings;
   return {
     ...collection,
     cache: {
@@ -1006,7 +1268,10 @@ function shouldUseChunkedMobileNetworkQuery(query: SituationFeatureQuery): boole
   return splitBbox(query.bbox, mobileNetworkChunkDegrees).length <= mobileNetworkMaxChunks;
 }
 
-function shouldUseMobileNetworkCoverageFallback(query: SituationFeatureQuery, collection: SituationFeatureCollection): boolean {
+function shouldUseMobileNetworkCoverageFallback(
+  query: SituationFeatureQuery,
+  collection: SituationFeatureCollection
+): boolean {
   if (!query.layers.includes("mobile_network")) {
     return false;
   }
@@ -1046,7 +1311,9 @@ function mergeSituationFeatureCollections(
   const featuresById = new Map<string, SituationFeature>();
   for (const collection of collections) {
     for (const feature of collection.features) {
-      const id = String(feature.properties.featureId || feature.id || `${feature.properties.layer}:${featuresById.size}`);
+      const id = String(
+        feature.properties.featureId || feature.id || `${feature.properties.layer}:${featuresById.size}`
+      );
       if (!featuresById.has(id) && isFeatureInBbox(feature, query.bbox)) {
         featuresById.set(id, feature);
       }
@@ -1085,11 +1352,17 @@ function mergeSituationFeatureCollections(
 }
 
 async function fetchSituationCatalog(config: SituationDataSourceConfig, requestNow: Date): Promise<ProviderMapCatalog> {
-  return normalizeProviderMapCatalog(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/catalog`), config, requestNow), "sim.situation-data");
+  return normalizeProviderMapCatalog(
+    await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/catalog`), config, requestNow),
+    "sim.situation-data"
+  );
 }
 
 async function fetchSituationTaxonomy(config: SituationDataSourceConfig, requestNow: Date): Promise<ProviderTaxonomy> {
-  return normalizeProviderTaxonomy(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/taxonomy`), config, requestNow), "sim.situation-data");
+  return normalizeProviderTaxonomy(
+    await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/taxonomy`), config, requestNow),
+    "sim.situation-data"
+  );
 }
 
 function taxonomyHealthSummary(taxonomy: ProviderTaxonomy | undefined): Record<string, unknown> {
@@ -1128,17 +1401,23 @@ function situationSourcesFromProviderCatalog(catalog: ProviderMapCatalog): Situa
   return catalog.sources.map((source) => ({
     enabled: source.enabled,
     label: source.label,
-    layers: source.layers?.filter(isSituationLayerId) ?? catalog.layers
-      .filter((layer) => layer.query?.providerSourceIds?.includes(source.sourceId))
-      .flatMap((layer) => layer.query?.providerLayerIds ?? [])
-      .filter(isSituationLayerId),
+    layers:
+      source.layers?.filter(isSituationLayerId) ??
+      catalog.layers
+        .filter((layer) => layer.query?.providerSourceIds?.includes(source.sourceId))
+        .flatMap((layer) => layer.query?.providerLayerIds ?? [])
+        .filter(isSituationLayerId),
     mode: source.sourceRole,
     sourceId: source.sourceId,
     updateCadenceSeconds: source.updateCadenceSeconds
   }));
 }
 
-async function fetchSituationFeatures(config: SituationDataSourceConfig, query: SituationFeatureQuery, requestNow: Date): Promise<SituationFeatureCollection> {
+async function fetchSituationFeatures(
+  config: SituationDataSourceConfig,
+  query: SituationFeatureQuery,
+  requestNow: Date
+): Promise<SituationFeatureCollection> {
   const url = new URL(`${trimTrailingSlash(config.baseUrl)}/features`);
   url.searchParams.set("bbox", `${query.bbox.west},${query.bbox.south},${query.bbox.east},${query.bbox.north}`);
   url.searchParams.set("layers", query.layers.join(","));
@@ -1158,46 +1437,76 @@ async function fetchMobileTowerViewshed(
   query: MobileTowerViewshedQuery,
   requestNow: Date
 ): Promise<MobileTowerViewshedResponse> {
-  const url = new URL(`${trimTrailingSlash(config.baseUrl)}/mobile-coverage/towers/${encodeURIComponent(towerId)}/viewshed`);
+  const url = new URL(
+    `${trimTrailingSlash(config.baseUrl)}/mobile-coverage/towers/${encodeURIComponent(towerId)}/viewshed`
+  );
   url.searchParams.set("technology", query.technology);
   url.searchParams.set("radiusM", String(query.radiusM));
   url.searchParams.set("azimuthStepDeg", String(query.azimuthStepDeg));
   url.searchParams.set("distanceStepM", String(query.distanceStepM));
-  return normalizeMobileTowerViewshedResponse(await fetchJson(url, config, requestNow, {
-    timeoutMs: Math.max(config.timeoutMs, MOBILE_TOWER_VIEWSHED_TIMEOUT_MS)
-  }));
+  return normalizeMobileTowerViewshedResponse(
+    await fetchJson(url, config, requestNow, {
+      timeoutMs: Math.max(config.timeoutMs, MOBILE_TOWER_VIEWSHED_TIMEOUT_MS)
+    })
+  );
 }
 
 async function fetchRadioProfiles(config: SituationDataSourceConfig, requestNow: Date): Promise<RadioProfilesResponse> {
-  return normalizeRadioProfilesResponse(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/profiles`), config, requestNow));
+  return normalizeRadioProfilesResponse(
+    await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/profiles`), config, requestNow)
+  );
 }
 
-async function createRadioProfile(config: SituationDataSourceConfig, profile: RadioProfile, requestNow: Date): Promise<RadioProfilesResponse> {
-  return normalizeRadioProfilesResponse(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/profiles`), config, requestNow, {
-    body: JSON.stringify(profile),
-    method: "POST"
-  }));
+async function createRadioProfile(
+  config: SituationDataSourceConfig,
+  profile: RadioProfile,
+  requestNow: Date
+): Promise<RadioProfilesResponse> {
+  return normalizeRadioProfilesResponse(
+    await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/profiles`), config, requestNow, {
+      body: JSON.stringify(profile),
+      method: "POST"
+    })
+  );
 }
 
-async function runRadioCoverage(config: SituationDataSourceConfig, request: RadioCoverageRequest, requestNow: Date): Promise<RadioFeatureCollectionResponse> {
-  return normalizeRadioFeatureCollectionResponse(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/coverage`), config, requestNow, {
-    body: JSON.stringify(request),
-    method: "POST"
-  }));
+async function runRadioCoverage(
+  config: SituationDataSourceConfig,
+  request: RadioCoverageRequest,
+  requestNow: Date
+): Promise<RadioFeatureCollectionResponse> {
+  return normalizeRadioFeatureCollectionResponse(
+    await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/coverage`), config, requestNow, {
+      body: JSON.stringify(request),
+      method: "POST"
+    })
+  );
 }
 
-async function runRadioLinkCheck(config: SituationDataSourceConfig, request: RadioLinkCheckRequest, requestNow: Date): Promise<RadioLinkCheckResponse> {
-  return normalizeRadioLinkCheckResponse(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/link-check`), config, requestNow, {
-    body: JSON.stringify(request),
-    method: "POST"
-  }));
+async function runRadioLinkCheck(
+  config: SituationDataSourceConfig,
+  request: RadioLinkCheckRequest,
+  requestNow: Date
+): Promise<RadioLinkCheckResponse> {
+  return normalizeRadioLinkCheckResponse(
+    await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/link-check`), config, requestNow, {
+      body: JSON.stringify(request),
+      method: "POST"
+    })
+  );
 }
 
-async function runRadioSiteSearch(config: SituationDataSourceConfig, request: RadioSiteSearchRequest, requestNow: Date): Promise<RadioFeatureCollectionResponse> {
-  return normalizeRadioFeatureCollectionResponse(await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/site-search`), config, requestNow, {
-    body: JSON.stringify(request),
-    method: "POST"
-  }));
+async function runRadioSiteSearch(
+  config: SituationDataSourceConfig,
+  request: RadioSiteSearchRequest,
+  requestNow: Date
+): Promise<RadioFeatureCollectionResponse> {
+  return normalizeRadioFeatureCollectionResponse(
+    await fetchJson(new URL(`${trimTrailingSlash(config.baseUrl)}/radio/site-search`), config, requestNow, {
+      body: JSON.stringify(request),
+      method: "POST"
+    })
+  );
 }
 
 type FetchJsonInit = RequestInit & { timeoutMs?: number };
@@ -1212,7 +1521,12 @@ class SituationDataHttpError extends Error {
   }
 }
 
-async function fetchJson(url: URL, config: SituationDataSourceConfig, requestNow: Date, init: FetchJsonInit = {}): Promise<unknown> {
+async function fetchJson(
+  url: URL,
+  config: SituationDataSourceConfig,
+  requestNow: Date,
+  init: FetchJsonInit = {}
+): Promise<unknown> {
   const controller = new AbortController();
   const { timeoutMs, ...requestInit } = init;
   const timeout = setTimeout(() => controller.abort(), timeoutMs ?? config.timeoutMs);
@@ -1240,11 +1554,7 @@ function normalizeRadioProfilesResponse(value: unknown): RadioProfilesResponse {
   if (!isRecord(value)) {
     throw new Error("Radio profiles response is not an object.");
   }
-  const rawProfiles = Array.isArray(value.profiles)
-    ? value.profiles
-    : Array.isArray(value.items)
-      ? value.items
-      : [];
+  const rawProfiles = Array.isArray(value.profiles) ? value.profiles : Array.isArray(value.items) ? value.items : [];
   return {
     contractVersion: optionalString(value.contractVersion),
     generatedAt: optionalString(value.generatedAt),
@@ -1262,22 +1572,30 @@ function normalizeRadioProfile(value: unknown): RadioProfile[] {
   const antennaHeightM = numberValue(value.antennaHeightM);
   const receiverHeightM = numberValue(value.receiverHeightM);
   const maxRadiusM = numberValue(value.maxRadiusM);
-  if (!name || frequencyMhz === undefined || antennaHeightM === undefined || receiverHeightM === undefined || maxRadiusM === undefined) {
+  if (
+    !name ||
+    frequencyMhz === undefined ||
+    antennaHeightM === undefined ||
+    receiverHeightM === undefined ||
+    maxRadiusM === undefined
+  ) {
     return [];
   }
-  return [{
-    antennaGainDbi: numberValue(value.antennaGainDbi),
-    antennaHeightM,
-    frequencyMhz,
-    maxRadiusM,
-    name,
-    profileId: optionalString(value.profileId),
-    receiverHeightM,
-    receiverSensitivityDbm: numberValue(value.receiverSensitivityDbm),
-    requiredFresnelClearancePct: numberValue(value.requiredFresnelClearancePct),
-    systemLossDb: numberValue(value.systemLossDb),
-    txPowerW: numberValue(value.txPowerW)
-  }];
+  return [
+    {
+      antennaGainDbi: numberValue(value.antennaGainDbi),
+      antennaHeightM,
+      frequencyMhz,
+      maxRadiusM,
+      name,
+      profileId: optionalString(value.profileId),
+      receiverHeightM,
+      receiverSensitivityDbm: numberValue(value.receiverSensitivityDbm),
+      requiredFresnelClearancePct: numberValue(value.requiredFresnelClearancePct),
+      systemLossDb: numberValue(value.systemLossDb),
+      txPowerW: numberValue(value.txPowerW)
+    }
+  ];
 }
 
 function normalizeRadioFeatureCollectionResponse(value: unknown): RadioFeatureCollectionResponse {
@@ -1319,7 +1637,9 @@ function normalizeRadioLinkCheckResponse(value: unknown): RadioLinkCheckResponse
   };
 }
 
-function deriveRadioLinkCheckMetrics(samples: Array<Record<string, unknown>> | undefined): Partial<RadioLinkCheckResponse> {
+function deriveRadioLinkCheckMetrics(
+  samples: Array<Record<string, unknown>> | undefined
+): Partial<RadioLinkCheckResponse> {
   if (!samples || samples.length === 0) {
     return { linkStatus: "unknown" };
   }
@@ -1344,18 +1664,24 @@ function deriveRadioLinkCheckMetrics(samples: Array<Record<string, unknown>> | u
   const lastLon = numberValue(last?.lon);
   const lastLat = numberValue(last?.lat);
   const hasBlockedLineOfSight = samples.some((sample) => sample.lineOfSightClear === false);
-  const requiredExtraAntennaHeightM = minFresnelClearanceM !== undefined && minFresnelClearanceM < 0 ? Math.abs(minFresnelClearanceM) : undefined;
-  const maxObstructionM = minTerrainClearanceM !== undefined && minTerrainClearanceM < 0 ? Math.abs(minTerrainClearanceM) : undefined;
-  const fresnelClearancePct = minFresnelClearanceM === undefined
-    ? undefined
-    : Math.max(0, Math.min(100, minFresnelClearanceM >= 0 ? 100 : 60 + minFresnelClearanceM * 10));
-  const linkStatus = minFresnelClearanceM === undefined
-    ? hasBlockedLineOfSight ? "obstructed" : "unknown"
-    : minFresnelClearanceM >= 0 && !hasBlockedLineOfSight
-      ? "clear"
-      : minFresnelClearanceM >= -5
-        ? "marginal"
-        : "obstructed";
+  const requiredExtraAntennaHeightM =
+    minFresnelClearanceM !== undefined && minFresnelClearanceM < 0 ? Math.abs(minFresnelClearanceM) : undefined;
+  const maxObstructionM =
+    minTerrainClearanceM !== undefined && minTerrainClearanceM < 0 ? Math.abs(minTerrainClearanceM) : undefined;
+  const fresnelClearancePct =
+    minFresnelClearanceM === undefined
+      ? undefined
+      : Math.max(0, Math.min(100, minFresnelClearanceM >= 0 ? 100 : 60 + minFresnelClearanceM * 10));
+  const linkStatus =
+    minFresnelClearanceM === undefined
+      ? hasBlockedLineOfSight
+        ? "obstructed"
+        : "unknown"
+      : minFresnelClearanceM >= 0 && !hasBlockedLineOfSight
+        ? "clear"
+        : minFresnelClearanceM >= -5
+          ? "marginal"
+          : "obstructed";
   return {
     ...(firstLon !== undefined && firstLat !== undefined && lastLon !== undefined && lastLat !== undefined
       ? { azimuthDeg: bearingDeg(firstLon, firstLat, lastLon, lastLat) }
@@ -1369,12 +1695,12 @@ function deriveRadioLinkCheckMetrics(samples: Array<Record<string, unknown>> | u
 }
 
 function bearingDeg(fromLon: number, fromLat: number, toLon: number, toLat: number): number {
-  const phi1 = fromLat * Math.PI / 180;
-  const phi2 = toLat * Math.PI / 180;
-  const deltaLon = (toLon - fromLon) * Math.PI / 180;
+  const phi1 = (fromLat * Math.PI) / 180;
+  const phi2 = (toLat * Math.PI) / 180;
+  const deltaLon = ((toLon - fromLon) * Math.PI) / 180;
   const y = Math.sin(deltaLon) * Math.cos(phi2);
   const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLon);
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
 function warningStrings(value: unknown): string[] {
@@ -1387,7 +1713,11 @@ function numberValue(value: unknown): number | undefined {
 }
 
 function normalizeMobileTowerViewshedResponse(value: unknown): MobileTowerViewshedResponse {
-  if (!isRecord(value) || value.contractVersion !== "sim-mobile-coverage-tower-viewshed-v1" || value.type !== "FeatureCollection") {
+  if (
+    !isRecord(value) ||
+    value.contractVersion !== "sim-mobile-coverage-tower-viewshed-v1" ||
+    value.type !== "FeatureCollection"
+  ) {
     throw new Error("Mobile tower viewshed response does not match sim-mobile-coverage-tower-viewshed-v1.");
   }
   return {
@@ -1398,7 +1728,9 @@ function normalizeMobileTowerViewshedResponse(value: unknown): MobileTowerViewsh
     summary: isRecord(value.summary) ? value.summary : undefined,
     tower: isRecord(value.tower) ? value.tower : undefined,
     type: "FeatureCollection",
-    warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : []
+    warnings: Array.isArray(value.warnings)
+      ? value.warnings.filter((warning): warning is string => typeof warning === "string")
+      : []
   };
 }
 
@@ -1420,11 +1752,18 @@ function normalizeMobileTowerViewshedFeature(value: unknown): MobileTowerViewshe
   ];
 }
 
-function normalizeSituationFeatureCollection(value: unknown, fallbackQuery: SituationFeatureQuery): SituationFeatureCollection {
+function normalizeSituationFeatureCollection(
+  value: unknown,
+  fallbackQuery: SituationFeatureQuery
+): SituationFeatureCollection {
   if (!isRecord(value) || value.contractVersion !== "cop-situation-source-v1" || value.type !== "FeatureCollection") {
     throw new Error("Situation data response does not match cop-situation-source-v1.");
   }
-  if (!isRecord(value.source) || value.source.sourceId !== "situation-data-api" || value.source.sourceType !== "PUBLIC_SITUATION_AGGREGATE") {
+  if (
+    !isRecord(value.source) ||
+    value.source.sourceId !== "situation-data-api" ||
+    value.source.sourceType !== "PUBLIC_SITUATION_AGGREGATE"
+  ) {
     throw new Error("Situation data source descriptor is not valid.");
   }
   return {
@@ -1440,7 +1779,9 @@ function normalizeSituationFeatureCollection(value: unknown, fallbackQuery: Situ
     sources: Array.isArray(value.sources) ? value.sources.flatMap(normalizeSituationSourceDescriptor) : [],
     summary: normalizeSituationSummary(value.summary, Array.isArray(value.features) ? value.features.length : 0),
     type: "FeatureCollection",
-    warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : []
+    warnings: Array.isArray(value.warnings)
+      ? value.warnings.filter((warning): warning is string => typeof warning === "string")
+      : []
   };
 }
 
@@ -1453,7 +1794,9 @@ function normalizeSituationLayer(value: unknown): SituationLayerDescriptor[] {
       defaultVisible: value.defaultVisible === true,
       description: optionalString(value.description),
       expectedCadenceSeconds: optionalNumber(value.expectedCadenceSeconds),
-      geometryTypes: Array.isArray(value.geometryTypes) ? value.geometryTypes.filter((item): item is string => typeof item === "string") : undefined,
+      geometryTypes: Array.isArray(value.geometryTypes)
+        ? value.geometryTypes.filter((item): item is string => typeof item === "string")
+        : undefined,
       label: value.label,
       layerId: value.layerId
     }
@@ -1491,7 +1834,8 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     return null;
   }
   const providerProperties = isRecord(value.providerProperties) ? value.providerProperties : undefined;
-  const taxonomy = providerProperties && isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : undefined;
+  const taxonomy =
+    providerProperties && isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : undefined;
   return {
     assumptions: isRecord(value.assumptions) ? value.assumptions : undefined,
     btsStatus: optionalString(value.btsStatus),
@@ -1525,12 +1869,16 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     rendering: isRecord(value.rendering) ? value.rendering : undefined,
     resolutionM: optionalNumber(value.resolutionM),
     severity: optionalString(value.severity),
-    sourceCode: optionalString(value.sourceCode) ?? optionalString(providerProperties?.sourceCode) ?? optionalString(taxonomy?.sourceCode),
+    sourceCode:
+      optionalString(value.sourceCode) ??
+      optionalString(providerProperties?.sourceCode) ??
+      optionalString(taxonomy?.sourceCode),
     sourceId,
-    sourceSystem: optionalString(value.sourceSystem)
-      ?? optionalString(providerProperties?.sourceSystem)
-      ?? optionalString(taxonomy?.codeSystem)
-      ?? optionalString(taxonomy?.sourceSystem),
+    sourceSystem:
+      optionalString(value.sourceSystem) ??
+      optionalString(providerProperties?.sourceSystem) ??
+      optionalString(taxonomy?.codeSystem) ??
+      optionalString(taxonomy?.sourceSystem),
     sourceName: optionalString(value.sourceName),
     stale: typeof value.stale === "boolean" ? value.stale : undefined,
     status: optionalString(value.status),
@@ -1539,7 +1887,10 @@ function normalizeSituationProperties(value: Record<string, unknown>): Situation
     sourceRevision: optionalString(value.sourceRevision),
     tags: isRecord(value.tags) ? value.tags : undefined,
     technology: normalizeCoverageTechnology(value.technology),
-    typeCode: optionalString(value.typeCode) ?? optionalString(providerProperties?.typeCode) ?? optionalString(taxonomy?.typeCode),
+    typeCode:
+      optionalString(value.typeCode) ??
+      optionalString(providerProperties?.typeCode) ??
+      optionalString(taxonomy?.typeCode),
     validUntil: optionalString(value.validUntil)
   };
 }
@@ -1563,7 +1914,10 @@ function normalizeSituationSourceDescriptor(value: unknown): SituationSourceDesc
   ];
 }
 
-function normalizeSituationSummary(value: unknown, fallbackFeatureCount: number): SituationFeatureCollection["summary"] {
+function normalizeSituationSummary(
+  value: unknown,
+  fallbackFeatureCount: number
+): SituationFeatureCollection["summary"] {
   const summary = isRecord(value) ? value : {};
   return {
     featureCount: optionalNumber(summary.featureCount) ?? fallbackFeatureCount,
@@ -1586,7 +1940,9 @@ function normalizeResponseQuery(value: unknown, fallback: SituationFeatureQuery)
     },
     layers: Array.isArray(value.layers) ? value.layers.filter(isSituationLayerId) : fallback.layers,
     limit: optionalNumber(value.limit) ?? fallback.limit,
-    sources: Array.isArray(value.sources) ? value.sources.filter((source): source is string => typeof source === "string") : fallback.sources,
+    sources: Array.isArray(value.sources)
+      ? value.sources.filter((source): source is string => typeof source === "string")
+      : fallback.sources,
     technology: normalizeCoverageTechnology(value.technology) ?? fallback.technology
   };
 }
@@ -1679,17 +2035,25 @@ function parseSituationLayers(value: string | undefined): SituationLayerId[] {
   if (!value) {
     return ["weather"];
   }
-  const layers = value.split(",").map((item) => item.trim()).filter(isSituationLayerId);
+  const layers = value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(isSituationLayerId);
   return layers.length > 0 ? uniqueLayers(layers) : ["weather"];
 }
 
 function parseSituationSources(rawQuery: Record<string, unknown>): string[] | undefined {
-  const raw = typeof rawQuery.source === "string"
-    ? rawQuery.source
-    : typeof rawQuery.sources === "string"
-      ? rawQuery.sources
-      : undefined;
-  const sources = raw?.split(",").map((item) => item.trim()).filter(Boolean) ?? [];
+  const raw =
+    typeof rawQuery.source === "string"
+      ? rawQuery.source
+      : typeof rawQuery.sources === "string"
+        ? rawQuery.sources
+        : undefined;
+  const sources =
+    raw
+      ?.split(",")
+      .map((item) => item.trim())
+      .filter(Boolean) ?? [];
   return sources.length > 0 ? uniqueStrings(sources) : undefined;
 }
 
