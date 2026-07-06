@@ -74,16 +74,18 @@ export default function NewChatDialog({
             <X size={20} />
           </button>
         </header>
-        {!memberActive ? <div className="dialog-tabs">
-          <button className={directActive ? "active" : ""} onClick={() => onModeChange("direct")} type="button">
-            <MessageCircle size={17} />
-            Chat
-          </button>
-          <button className={!directActive ? "active" : ""} onClick={() => onModeChange("group")} type="button">
-            <Users size={17} />
-            Skupina
-          </button>
-        </div> : null}
+        {!memberActive ? (
+          <div className="dialog-tabs">
+            <button className={directActive ? "active" : ""} onClick={() => onModeChange("direct")} type="button">
+              <MessageCircle size={17} />
+              Chat
+            </button>
+            <button className={!directActive ? "active" : ""} onClick={() => onModeChange("group")} type="button">
+              <Users size={17} />
+              Skupina
+            </button>
+          </div>
+        ) : null}
 
         {directActive ? (
           <>
@@ -99,17 +101,25 @@ export default function NewChatDialog({
               />
             </label>
             <button className="dialog-action-row" onClick={() => onModeChange("group")} type="button">
-              <span><Users size={20} /></span>
+              <span>
+                <Users size={20} />
+              </span>
               <strong>Nová skupina</strong>
             </button>
             <button className="dialog-action-row ai-action" onClick={onCreateAiAgentChat} type="button">
-              <span><Avatar label="COP AI Assistant" small variant="ai" /></span>
+              <span>
+                <Avatar label="COP AI Assistant" small variant="ai" />
+              </span>
               <strong>Chat s AI agentem</strong>
             </button>
             <div className="dialog-list">
               {searchLoading ? <DialogHint icon={<Loader2 className="spin" size={18} />} text="Vyhledávám" /> : null}
-              {!searchLoading && directQuery.trim().length < 2 ? <DialogHint icon={<Search size={18} />} text="Zadejte alespoň dvě písmena" /> : null}
-              {!searchLoading && directQuery.trim().length >= 2 && directSuggestions.length === 0 ? <DialogHint icon={<UserPlus size={18} />} text="Nikdo nenalezen" /> : null}
+              {!searchLoading && directQuery.trim().length < 2 ? (
+                <DialogHint icon={<Search size={18} />} text="Zadejte alespoň dvě písmena" />
+              ) : null}
+              {!searchLoading && directQuery.trim().length >= 2 && directSuggestions.length === 0 ? (
+                <DialogHint icon={<UserPlus size={18} />} text="Nikdo nenalezen" />
+              ) : null}
               {directSuggestions.map((user) => (
                 <button className="contact-row" key={user.subjectId} onClick={() => onCreateDirect(user)} type="button">
                   <Avatar label={user.displayName || user.username} />
@@ -135,7 +145,9 @@ export default function NewChatDialog({
               />
             </label>
             <div className="dialog-list">
-              {memberQuery.trim().length < 2 ? <DialogHint icon={<Search size={18} />} text="Zadejte alespoň dvě písmena" /> : null}
+              {memberQuery.trim().length < 2 ? (
+                <DialogHint icon={<Search size={18} />} text="Zadejte alespoň dvě písmena" />
+              ) : null}
               {memberSuggestions.map((user) => (
                 <MemberSuggestionButton
                   key={user.subjectId}
@@ -161,7 +173,12 @@ export default function NewChatDialog({
                 onChange={(event) => onGroupNameChange(event.target.value)}
               />
             </label>
-            <button className="primary-dialog-action" disabled={!canChat || !newGroupName.trim()} onClick={onCreateGroup} type="button">
+            <button
+              className="primary-dialog-action"
+              disabled={!canChat || !newGroupName.trim()}
+              onClick={onCreateGroup}
+              type="button"
+            >
               Vytvořit skupinu
             </button>
             <label className="dialog-search compact">
@@ -203,16 +220,11 @@ function MemberSuggestionButton({
   onAddMember: (user: UserDirectoryEntry) => void;
 }) {
   return (
-    <button
-      className="contact-row"
-      disabled={alreadyMember || pending}
-      onClick={() => onAddMember(user)}
-      type="button"
-    >
+    <button className="contact-row" disabled={alreadyMember || pending} onClick={() => onAddMember(user)} type="button">
       <Avatar label={user.displayName || user.username} />
       <span>
         <strong>{user.displayName || user.username}</strong>
-        <small>{alreadyMember ? "Už je ve skupině" : pending ? "Přidávám..." : user.email ?? user.username}</small>
+        <small>{alreadyMember ? "Už je ve skupině" : pending ? "Přidávám..." : (user.email ?? user.username)}</small>
       </span>
       {pending ? <Loader2 className="spin" size={17} /> : null}
     </button>

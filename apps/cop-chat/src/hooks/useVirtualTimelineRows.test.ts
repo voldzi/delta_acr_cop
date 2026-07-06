@@ -15,7 +15,11 @@ function message(index: number): MatrixTimelineMessage {
 }
 
 function rows(count: number): TimelineRow[] {
-  return Array.from({ length: count }, (_, index) => ({ grouped: index > 0, kind: "message", message: message(index) }));
+  return Array.from({ length: count }, (_, index) => ({
+    grouped: index > 0,
+    kind: "message",
+    message: message(index)
+  }));
 }
 
 describe("computeVirtualTimelineWindow", () => {

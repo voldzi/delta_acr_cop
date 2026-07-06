@@ -61,7 +61,9 @@ describe("current-location (web -> chat)", () => {
   });
 
   it("rejects malformed current locations", () => {
-    expect(() => encodeChatCurrentLocation({ lat: Number.NaN, lon: 17 })).toThrow("Current location requires finite coordinates.");
+    expect(() => encodeChatCurrentLocation({ lat: Number.NaN, lon: 17 })).toThrow(
+      "Current location requires finite coordinates."
+    );
     expect(decodeChatCurrentLocation({ location: { lat: 91, lon: 17 }, type: "cop-chat:current-location" })).toBeNull();
     expect(decodeChatCurrentLocation({ location: { lat: 50, lon: 17 }, type: "other" })).toBeNull();
   });

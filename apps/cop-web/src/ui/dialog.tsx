@@ -49,9 +49,7 @@ export function ModalDialog({
           <div className="ui-dialog-header">
             <div>
               {eyebrow ? <span>{eyebrow}</span> : null}
-              <DialogPrimitive.Title className="ui-dialog-title">
-                {title}
-              </DialogPrimitive.Title>
+              <DialogPrimitive.Title className="ui-dialog-title">{title}</DialogPrimitive.Title>
               {description ? (
                 <DialogPrimitive.Description className="ui-dialog-description">
                   {description}

@@ -15,10 +15,7 @@ export function formatTrackLabel(object: CopObject): string {
   return formatTrackIdentity(flightData, object.objectId) ?? object.objectId;
 }
 
-export function formatTrackIdentity(
-  flightData: FlightDataAttributes | undefined,
-  objectId?: string
-): string | null {
+export function formatTrackIdentity(flightData: FlightDataAttributes | undefined, objectId?: string): string | null {
   const trackKeyKind = normalizeTrackKeyKind(flightData?.trackKeyKind);
   const trackKey = cleanTrackLabel(flightData?.trackKey);
   const trackId = cleanTrackLabel(flightData?.trackId) ?? cleanTrackLabel(objectId);
@@ -73,7 +70,10 @@ export function compactTrackIdentifier(value: string | null | undefined): string
   if (!cleaned) {
     return null;
   }
-  const parts = cleaned.split(":").map((part) => part.trim()).filter(Boolean);
+  const parts = cleaned
+    .split(":")
+    .map((part) => part.trim())
+    .filter(Boolean);
   return parts.at(-1) ?? cleaned;
 }
 

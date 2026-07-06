@@ -218,7 +218,13 @@ import {
   type WeatherRadarFrame
 } from "./cop-data";
 import type { CreateSketchDrawingRequest, SketchToolMode, UpdateSketchDrawingRequest } from "./CopMap";
-import { buildObjectDetailModel, type ConfidenceFactor, type LineageStep, type ObjectConflict, type ObjectHistoryEntry } from "./object-detail";
+import {
+  buildObjectDetailModel,
+  type ConfidenceFactor,
+  type LineageStep,
+  type ObjectConflict,
+  type ObjectHistoryEntry
+} from "./object-detail";
 import { buildProximityAlerts, type ProximityAlert, type UserLocation } from "./proximity-alerts";
 import { buildSafetyAreaAlertMatches, type SafetyAreaAlertMatch } from "./safety-area-alerts";
 import {
@@ -245,7 +251,15 @@ import {
   publishChatUnreadCount,
   readStoredChatUnreadCount
 } from "@cop/messaging/runtime";
-import { decodeChatCenterLocation, decodeCopMapFocusSearch, encodeChatCurrentLocation, encodeChatSelect, encodeChatShareTransit, type ChatCenterLocationMessage, type ChatTransitSharePayload } from "@cop/messaging/bridge";
+import {
+  decodeChatCenterLocation,
+  decodeCopMapFocusSearch,
+  encodeChatCurrentLocation,
+  encodeChatSelect,
+  encodeChatShareTransit,
+  type ChatCenterLocationMessage,
+  type ChatTransitSharePayload
+} from "@cop/messaging/bridge";
 import {
   countHistoryPoints,
   getReplayTimestamp,
@@ -569,21 +583,102 @@ interface RadioLosResult {
   warnings: string[];
 }
 
-const radioLosDisclaimer = "Výsledek je modelový odhad podle DEM a zadaných parametrů rádia. Nezahrnuje budovy, vegetaci, rušení, reálné vytížení sítě ani utajené/operátorské RF parametry.";
+const radioLosDisclaimer =
+  "Výsledek je modelový odhad podle DEM a zadaných parametrů rádia. Nezahrnuje budovy, vegetaci, rušení, reálné vytížení sítě ani utajené/operátorské RF parametry.";
 
-const fallbackRadioProfile: RadioProfile = { antennaHeightM: 1.5, frequencyMhz: 446, maxRadiusM: 5000, name: "PMR446 ruční stanice", profileId: "pmr446_handheld", receiverHeightM: 1.5, txPowerW: 0.5 };
+const fallbackRadioProfile: RadioProfile = {
+  antennaHeightM: 1.5,
+  frequencyMhz: 446,
+  maxRadiusM: 5000,
+  name: "PMR446 ruční stanice",
+  profileId: "pmr446_handheld",
+  receiverHeightM: 1.5,
+  txPowerW: 0.5
+};
 
 const defaultRadioProfiles: RadioProfile[] = [
   fallbackRadioProfile,
-  { antennaHeightM: 2, frequencyMhz: 27, maxRadiusM: 15000, name: "CB handheld/vehicle", profileId: "cb_vehicle", receiverHeightM: 2, txPowerW: 4 },
-  { antennaHeightM: 1.5, frequencyMhz: 145, maxRadiusM: 15000, name: "HAM VHF handheld", profileId: "ham_vhf_handheld", receiverHeightM: 1.5, txPowerW: 5 },
-  { antennaHeightM: 1.5, frequencyMhz: 433, maxRadiusM: 10000, name: "HAM UHF handheld", profileId: "ham_uhf_handheld", receiverHeightM: 1.5, txPowerW: 5 },
-  { antennaHeightM: 10, frequencyMhz: 145, maxRadiusM: 40000, name: "HAM VHF base", profileId: "ham_vhf_base", receiverHeightM: 10, txPowerW: 25 },
-  { antennaHeightM: 5, frequencyMhz: 2400, maxRadiusM: 10000, name: "WiFi 2.4 GHz PtP", profileId: "wifi_24_ptp", receiverHeightM: 5, txPowerW: 0.1 },
-  { antennaHeightM: 1.5, frequencyMhz: 390, maxRadiusM: 12000, name: "TETRA generic handheld", profileId: "tetra_generic_handheld", receiverHeightM: 1.5, txPowerW: 1 },
-  { antennaHeightM: 2, frequencyMhz: 50, maxRadiusM: 25000, name: "Generic VHF manpack", profileId: "generic_vhf_manpack", receiverHeightM: 2, txPowerW: 5 },
-  { antennaHeightM: 3, frequencyMhz: 50, maxRadiusM: 40000, name: "Generic VHF vehicle", profileId: "generic_vhf_vehicle", receiverHeightM: 3, txPowerW: 25 },
-  { antennaHeightM: 10, frequencyMhz: 50, maxRadiusM: 60000, name: "Generic elevated relay", profileId: "generic_elevated_relay", receiverHeightM: 10, txPowerW: 25 }
+  {
+    antennaHeightM: 2,
+    frequencyMhz: 27,
+    maxRadiusM: 15000,
+    name: "CB handheld/vehicle",
+    profileId: "cb_vehicle",
+    receiverHeightM: 2,
+    txPowerW: 4
+  },
+  {
+    antennaHeightM: 1.5,
+    frequencyMhz: 145,
+    maxRadiusM: 15000,
+    name: "HAM VHF handheld",
+    profileId: "ham_vhf_handheld",
+    receiverHeightM: 1.5,
+    txPowerW: 5
+  },
+  {
+    antennaHeightM: 1.5,
+    frequencyMhz: 433,
+    maxRadiusM: 10000,
+    name: "HAM UHF handheld",
+    profileId: "ham_uhf_handheld",
+    receiverHeightM: 1.5,
+    txPowerW: 5
+  },
+  {
+    antennaHeightM: 10,
+    frequencyMhz: 145,
+    maxRadiusM: 40000,
+    name: "HAM VHF base",
+    profileId: "ham_vhf_base",
+    receiverHeightM: 10,
+    txPowerW: 25
+  },
+  {
+    antennaHeightM: 5,
+    frequencyMhz: 2400,
+    maxRadiusM: 10000,
+    name: "WiFi 2.4 GHz PtP",
+    profileId: "wifi_24_ptp",
+    receiverHeightM: 5,
+    txPowerW: 0.1
+  },
+  {
+    antennaHeightM: 1.5,
+    frequencyMhz: 390,
+    maxRadiusM: 12000,
+    name: "TETRA generic handheld",
+    profileId: "tetra_generic_handheld",
+    receiverHeightM: 1.5,
+    txPowerW: 1
+  },
+  {
+    antennaHeightM: 2,
+    frequencyMhz: 50,
+    maxRadiusM: 25000,
+    name: "Generic VHF manpack",
+    profileId: "generic_vhf_manpack",
+    receiverHeightM: 2,
+    txPowerW: 5
+  },
+  {
+    antennaHeightM: 3,
+    frequencyMhz: 50,
+    maxRadiusM: 40000,
+    name: "Generic VHF vehicle",
+    profileId: "generic_vhf_vehicle",
+    receiverHeightM: 3,
+    txPowerW: 25
+  },
+  {
+    antennaHeightM: 10,
+    frequencyMhz: 50,
+    maxRadiusM: 60000,
+    name: "Generic elevated relay",
+    profileId: "generic_elevated_relay",
+    receiverHeightM: 10,
+    txPowerW: 25
+  }
 ];
 
 const defaultRadioPoint: RadioPoint = { antennaHeightM: 1.5, lat: 50.08, lon: 14.42, receiverHeightM: 1.5 };
@@ -615,7 +710,9 @@ export function App() {
   const [streamHealth, setStreamHealth] = React.useState<CopStreamHealth | null>(null);
   const [serverAlerts, setServerAlerts] = React.useState<CopAlert[]>([]);
   const [objects, setObjects] = React.useState<CopObject[]>([]);
-  const [selectedLayer, setSelectedLayer] = React.useState<CopLayer>(() => readInitialLayer(initialPreferences.selectedLayer));
+  const [selectedLayer, setSelectedLayer] = React.useState<CopLayer>(() =>
+    readInitialLayer(initialPreferences.selectedLayer)
+  );
   const [visibleTrackLayerIds, setVisibleTrackLayerIds] = React.useState<CopLayer[]>(() =>
     normalizeTrackLayerIds(initialPreferences.trackLayerIds, readInitialLayer(initialPreferences.selectedLayer))
   );
@@ -625,7 +722,9 @@ export function App() {
   const [affiliationScope, setAffiliationScope] = React.useState<AffiliationScope>(() =>
     readInitialAffiliationScope(initialPreferences.affiliationScope)
   );
-  const [domainScope, setDomainScope] = React.useState<DomainScope>(() => readInitialDomainScope(initialPreferences.domainScope));
+  const [domainScope, setDomainScope] = React.useState<DomainScope>(() =>
+    readInitialDomainScope(initialPreferences.domainScope)
+  );
   const [searchQuery, setSearchQuery] = React.useState("");
   const [mapSearchQuery, setMapSearchQuery] = React.useState("");
   const [mapSearchDocked, setMapSearchDocked] = React.useState(() => readMapSearchDocked());
@@ -668,11 +767,23 @@ export function App() {
   });
   const [radioStation, setRadioStation] = React.useState<RadioPoint>(defaultRadioPoint);
   const [radioLinkFrom, setRadioLinkFrom] = React.useState<RadioPoint>(defaultRadioPoint);
-  const [radioLinkTo, setRadioLinkTo] = React.useState<RadioPoint>({ antennaHeightM: 1.5, lat: 50.11, lon: 14.51, receiverHeightM: 1.5 });
-  const [radioSearchTargets, setRadioSearchTargets] = React.useState<RadioPoint[]>([{ lat: 50.08, lon: 14.42, receiverHeightM: 1.5 }]);
+  const [radioLinkTo, setRadioLinkTo] = React.useState<RadioPoint>({
+    antennaHeightM: 1.5,
+    lat: 50.11,
+    lon: 14.51,
+    receiverHeightM: 1.5
+  });
+  const [radioSearchTargets, setRadioSearchTargets] = React.useState<RadioPoint[]>([
+    { lat: 50.08, lon: 14.42, receiverHeightM: 1.5 }
+  ]);
   const [radioGridStepM, setRadioGridStepM] = React.useState(250);
   const [radioRadiusM, setRadioRadiusM] = React.useState(5000);
-  const [radioResult, setRadioResult] = React.useState<RadioLosResult>({ mode: "coverage", status: "idle", title: "Radio LoS", warnings: [] });
+  const [radioResult, setRadioResult] = React.useState<RadioLosResult>({
+    mode: "coverage",
+    status: "idle",
+    title: "Radio LoS",
+    warnings: []
+  });
   const [radioOverlay, setRadioOverlay] = React.useState<RadioLosMapOverlay | null>(null);
   const [radioPointPickTarget, setRadioPointPickTarget] = React.useState<RadioPointPickTarget | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = React.useState<string | null>(null);
@@ -682,14 +793,18 @@ export function App() {
   const [streamStatus, setStreamStatus] = React.useState<CopStreamStatus>("connecting");
   const [streamTelemetry, setStreamTelemetry] = React.useState<StreamTelemetry>(() => createInitialStreamTelemetry());
   const [streamReconnectAttempt, setStreamReconnectAttempt] = React.useState(0);
-  const [browserOnline, setBrowserOnline] = React.useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+  const [browserOnline, setBrowserOnline] = React.useState(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine
+  );
   const [autoRefresh, setAutoRefresh] = React.useState(() => readInitialAutoRefresh(initialPreferences.autoRefresh));
   const [refreshSeconds, setRefreshSeconds] = React.useState<RefreshSeconds>(() =>
     readInitialRefreshSeconds(normalizeRefreshSeconds(initialPreferences.refreshSeconds ?? defaultRefreshSeconds))
   );
   const [replayRunning, setReplayRunning] = React.useState(false);
   const [replayPosition, setReplayPosition] = React.useState(100);
-  const [showHistory, setShowHistory] = React.useState(() => readInitialMapToggle("history", initialPreferences.showHistory ?? false));
+  const [showHistory, setShowHistory] = React.useState(() =>
+    readInitialMapToggle("history", initialPreferences.showHistory ?? false)
+  );
   const [showPrediction, setShowPrediction] = React.useState(() =>
     readInitialMapToggle("prediction", initialPreferences.showPrediction ?? false)
   );
@@ -704,9 +819,15 @@ export function App() {
   const [mapBasemapMode, setMapBasemapMode] = React.useState<MapBasemapMode>(() =>
     normalizeMapBasemapMode(initialPreferences.mapBasemapMode)
   );
-  const [predictionMinutes, setPredictionMinutes] = React.useState(() => clamp(initialPreferences.predictionMinutes ?? 10, 2, 20));
-  const [predictionMode, setPredictionMode] = React.useState<PredictionMode>(() => readInitialPredictionMode(initialPreferences.predictionMode));
-  const [trackHistoryLimit, setTrackHistoryLimit] = React.useState(() => readInitialHistoryLimit(initialPreferences.trackHistoryLimit));
+  const [predictionMinutes, setPredictionMinutes] = React.useState(() =>
+    clamp(initialPreferences.predictionMinutes ?? 10, 2, 20)
+  );
+  const [predictionMode, setPredictionMode] = React.useState<PredictionMode>(() =>
+    readInitialPredictionMode(initialPreferences.predictionMode)
+  );
+  const [trackHistoryLimit, setTrackHistoryLimit] = React.useState(() =>
+    readInitialHistoryLimit(initialPreferences.trackHistoryLimit)
+  );
   const [trackHistoryWindowSeconds, setTrackHistoryWindowSeconds] = React.useState(() =>
     readInitialHistoryWindowSeconds(initialPreferences.trackHistoryWindowSeconds)
   );
@@ -722,9 +843,11 @@ export function App() {
   );
   const [zoneCreationMode, setZoneCreationMode] = React.useState(false);
   const [editingZoneId, setEditingZoneId] = React.useState<string | null>(null);
-  const [autoFit, setAutoFit] = React.useState(initialMapFocus ? false : initialPreferences.autoFit ?? true);
+  const [autoFit, setAutoFit] = React.useState(initialMapFocus ? false : (initialPreferences.autoFit ?? true));
   const [mapView, setMapView] = React.useState<MapViewState | undefined>(() =>
-    initialMapFocus ? mapViewFromCopMapFocus(initialMapFocus, initialPreferences.mapView) : normalizeMapView(initialPreferences.mapView)
+    initialMapFocus
+      ? mapViewFromCopMapFocus(initialMapFocus, initialPreferences.mapView)
+      : normalizeMapView(initialPreferences.mapView)
   );
   const [mapBounds, setMapBounds] = React.useState<MapBounds>(defaultMapBounds);
   const [focusViewRequest, setFocusViewRequest] = React.useState(0);
@@ -744,7 +867,9 @@ export function App() {
   const [situationFeatures, setSituationFeatures] = React.useState<SituationFeatureCollectionResponse | null>(null);
   const [situationStatus, setSituationStatus] = React.useState<SituationLayerStatus>("loading");
   const [situationWarnings, setSituationWarnings] = React.useState<string[]>([]);
-  const [weatherWebcamDetailCache, setWeatherWebcamDetailCache] = React.useState<Record<string, WeatherWebcamDetailCacheEntry>>({});
+  const [weatherWebcamDetailCache, setWeatherWebcamDetailCache] = React.useState<
+    Record<string, WeatherWebcamDetailCacheEntry>
+  >({});
   const [situationRasterRefreshTick, setSituationRasterRefreshTick] = React.useState(0);
   const [weatherRadarFrames, setWeatherRadarFrames] = React.useState<WeatherRadarFrame[]>([]);
   const [weatherRadarFrameIndex, setWeatherRadarFrameIndex] = React.useState(0);
@@ -767,7 +892,9 @@ export function App() {
   const [communityFeatures, setCommunityFeatures] = React.useState<CommunityFeatureCollectionResponse | null>(null);
   const [communityStatus, setCommunityStatus] = React.useState<SituationLayerStatus>("online");
   const [communityWarnings, setCommunityWarnings] = React.useState<string[]>([]);
-  const [missionArenaFeatures, setMissionArenaFeatures] = React.useState<MissionArenaFeatureCollectionResponse | null>(null);
+  const [missionArenaFeatures, setMissionArenaFeatures] = React.useState<MissionArenaFeatureCollectionResponse | null>(
+    null
+  );
   const [missionArenaStatus, setMissionArenaStatus] = React.useState<SituationLayerStatus>("disabled");
   const [missionArenaWarnings, setMissionArenaWarnings] = React.useState<string[]>([]);
   const [sketchDrawings, setSketchDrawings] = React.useState<SketchDrawingFeature[]>([]);
@@ -776,7 +903,9 @@ export function App() {
   const [sketchStatus, setSketchStatus] = React.useState<SituationLayerStatus>("disabled");
   const [sketchWarnings, setSketchWarnings] = React.useState<string[]>([]);
   const [communityReportOpen, setCommunityReportOpen] = React.useState(false);
-  const [communityReportDraft, setCommunityReportDraft] = React.useState<CommunityReportDraft>(() => createCommunityReportDraft());
+  const [communityReportDraft, setCommunityReportDraft] = React.useState<CommunityReportDraft>(() =>
+    createCommunityReportDraft()
+  );
   const [communityReportSubmitting, setCommunityReportSubmitting] = React.useState(false);
   const [communityReportError, setCommunityReportError] = React.useState<string | null>(null);
   const [communityReportSuccess, setCommunityReportSuccess] = React.useState<string | null>(null);
@@ -787,7 +916,9 @@ export function App() {
   const [loginPromptReason, setLoginPromptReason] = React.useState<LoginPromptReason | null>(null);
   const [accountChangeNotice, setAccountChangeNotice] = React.useState<AccountChangeNotice | null>(null);
   const [takLayers, setTakLayers] = React.useState<TakLayer[]>([]);
-  const [visibleTakLayerIds, setVisibleTakLayerIds] = React.useState<TakLayerId[]>(() => normalizeTakLayerIds(initialPreferences.takLayerIds));
+  const [visibleTakLayerIds, setVisibleTakLayerIds] = React.useState<TakLayerId[]>(() =>
+    normalizeTakLayerIds(initialPreferences.takLayerIds)
+  );
   const [takFeatures, setTakFeatures] = React.useState<TakFeatureCollectionResponse | null>(null);
   const [takStatus, setTakStatus] = React.useState<SituationLayerStatus>("disabled");
   const [takWarnings, setTakWarnings] = React.useState<string[]>([]);
@@ -796,11 +927,21 @@ export function App() {
   const [selectedSituationFeatureStableKey, setSelectedSituationFeatureStableKey] = React.useState<string | null>(null);
   const [userLocation, setUserLocation] = React.useState<UserLocation | null>(null);
   const [emergencyRoute, setEmergencyRoute] = React.useState<RoutingRouteResponse | null>(null);
-  const [emergencyRouteStatus, setEmergencyRouteStatus] = React.useState<"error" | "idle" | "loading" | "ready">("idle");
+  const [emergencyRouteStatus, setEmergencyRouteStatus] = React.useState<"error" | "idle" | "loading" | "ready">(
+    "idle"
+  );
   const [emergencyRouteMessage, setEmergencyRouteMessage] = React.useState<string | null>(null);
-  const [pendingRouteTarget, setPendingRouteTarget] = React.useState<{ label?: string; lat: number; lon: number } | null>(() =>
+  const [pendingRouteTarget, setPendingRouteTarget] = React.useState<{
+    label?: string;
+    lat: number;
+    lon: number;
+  } | null>(() =>
     initialMapFocus?.action === "route"
-      ? { ...(initialMapFocus.label ? { label: initialMapFocus.label } : {}), lat: initialMapFocus.lat, lon: initialMapFocus.lon }
+      ? {
+          ...(initialMapFocus.label ? { label: initialMapFocus.label } : {}),
+          lat: initialMapFocus.lat,
+          lon: initialMapFocus.lon
+        }
       : null
   );
   const [focusUserLocationRequest, setFocusUserLocationRequest] = React.useState(0);
@@ -812,12 +953,16 @@ export function App() {
         : "Poloha není zaměřená."
   );
   const [isLocating, setIsLocating] = React.useState(false);
-  const [proximityAlertEnabled, setProximityAlertEnabled] = React.useState(initialPreferences.proximityAlertEnabled ?? false);
+  const [proximityAlertEnabled, setProximityAlertEnabled] = React.useState(
+    initialPreferences.proximityAlertEnabled ?? false
+  );
   const [safetyAreaPopup, setSafetyAreaPopup] = React.useState<SafetyAreaAlertMatch | null>(null);
   const [alertRadiusKm, setAlertRadiusKm] = React.useState(() => clamp(initialPreferences.alertRadiusKm ?? 10, 1, 50));
   const [viewProfiles, setViewProfiles] = React.useState<ViewProfile[]>(() => readViewProfiles(userStorageScope));
   const [lastProfileName, setLastProfileName] = React.useState<string | null>(null);
-  const [alertPreferences, setAlertPreferences] = React.useState<AlertPreferences>(() => initialAlertPreferences.alertPreferences);
+  const [alertPreferences, setAlertPreferences] = React.useState<AlertPreferences>(
+    () => initialAlertPreferences.alertPreferences
+  );
   const aoiRules = React.useMemo(() => alertPreferences.aoiRules ?? [], [alertPreferences.aoiRules]);
   const [, setLocalAlertPreferencesUpdatedAt] = React.useState<string | null>(() => initialAlertPreferences.updatedAt);
   const [profileSyncStatus, setProfileSyncStatus] = React.useState<ProfileSyncStatus>("loading");
@@ -861,11 +1006,14 @@ export function App() {
     return () => window.removeEventListener("keydown", handleTomatoShortcut);
   }, []);
 
-  React.useEffect(() => () => {
-    if (tomatoBrandClickResetRef.current !== null) {
-      window.clearTimeout(tomatoBrandClickResetRef.current);
-    }
-  }, []);
+  React.useEffect(
+    () => () => {
+      if (tomatoBrandClickResetRef.current !== null) {
+        window.clearTimeout(tomatoBrandClickResetRef.current);
+      }
+    },
+    []
+  );
 
   React.useEffect(() => {
     mapCatalogRef.current = mapCatalog;
@@ -880,7 +1028,12 @@ export function App() {
       }
     };
     const handleChatMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin || !event.data || typeof event.data !== "object" || Array.isArray(event.data)) {
+      if (
+        event.origin !== window.location.origin ||
+        !event.data ||
+        typeof event.data !== "object" ||
+        Array.isArray(event.data)
+      ) {
         return;
       }
       const data = event.data as { count?: unknown; lat?: unknown; lon?: unknown; type?: unknown };
@@ -1013,7 +1166,9 @@ export function App() {
     catalogSelectionInitializedRef.current = true;
     setVisibleCatalogLayerIds((current) => {
       const next = normalizeCatalogLayerIds([...current, ...layerIds]);
-      return next.length === current.length && next.every((layerId, index) => layerId === current[index]) ? current : next;
+      return next.length === current.length && next.every((layerId, index) => layerId === current[index])
+        ? current
+        : next;
     });
     const firstLayer = mapCatalog.layers.find((layer) => layerIds.includes(layer.layerId));
     if (firstLayer) {
@@ -1250,9 +1405,11 @@ export function App() {
             return;
           }
           setAuthRefreshRetry((current) => current + 1);
-          setAuthSession((current) => current.status === "authenticated"
-            ? { ...current, error: "Obnova přihlášení se dočasně nepodařila, zkusím to znovu." }
-            : current);
+          setAuthSession((current) =>
+            current.status === "authenticated"
+              ? { ...current, error: "Obnova přihlášení se dočasně nepodařila, zkusím to znovu." }
+              : current
+          );
           setAuthDiagnostics(readAuthDiagnostics());
         })
         .catch((error: unknown) => {
@@ -1268,9 +1425,15 @@ export function App() {
             return;
           }
           setAuthRefreshRetry((current) => current + 1);
-          setAuthSession((current) => current.status === "authenticated"
-            ? { ...current, error: error instanceof Error ? error.message : "Obnova přihlášení se dočasně nepodařila, zkusím to znovu." }
-            : current);
+          setAuthSession((current) =>
+            current.status === "authenticated"
+              ? {
+                  ...current,
+                  error:
+                    error instanceof Error ? error.message : "Obnova přihlášení se dočasně nepodařila, zkusím to znovu."
+                }
+              : current
+          );
           setAuthDiagnostics(readAuthDiagnostics());
         });
     }, refreshDelayMs);
@@ -1301,33 +1464,45 @@ export function App() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [communityReportSubmitting]);
 
-  const applyDashboardData = React.useCallback((data: CopDashboardData, observedAt: Date) => {
-    setHealth(data.health);
-    setSources(data.sources);
-    setSourceHealth(data.sourceHealth);
-    setStreamHealth(data.streamHealth ?? null);
-    setServerAlerts(data.alerts);
-    setObjects(data.objects);
-    setTrackHistory((current) =>
-      data.trackHistory
-        ? trimTrackHistory(data.trackHistory, trackHistoryLimit, trackHistoryWindowSeconds, observedAt.toISOString())
-        : mergeTrackHistory(current, data.objects, observedAt.toISOString(), trackHistoryLimit, trackHistoryWindowSeconds)
-    );
-    setLastLoadedAt(observedAt.toLocaleTimeString("cs-CZ"));
-  }, [trackHistoryLimit, trackHistoryWindowSeconds]);
+  const applyDashboardData = React.useCallback(
+    (data: CopDashboardData, observedAt: Date) => {
+      setHealth(data.health);
+      setSources(data.sources);
+      setSourceHealth(data.sourceHealth);
+      setStreamHealth(data.streamHealth ?? null);
+      setServerAlerts(data.alerts);
+      setObjects(data.objects);
+      setTrackHistory((current) =>
+        data.trackHistory
+          ? trimTrackHistory(data.trackHistory, trackHistoryLimit, trackHistoryWindowSeconds, observedAt.toISOString())
+          : mergeTrackHistory(
+              current,
+              data.objects,
+              observedAt.toISOString(),
+              trackHistoryLimit,
+              trackHistoryWindowSeconds
+            )
+      );
+      setLastLoadedAt(observedAt.toLocaleTimeString("cs-CZ"));
+    },
+    [trackHistoryLimit, trackHistoryWindowSeconds]
+  );
 
-  const persistOfflineSnapshot = React.useCallback((data: CopDashboardData, savedAt = new Date().toISOString()) => {
-    const snapshot = writeCopOfflineSnapshot(data, userStorageScope, savedAt);
-    if (!snapshot) {
-      return;
-    }
-    setOfflineSnapshotState({
-      kind: "available",
-      objectCount: snapshot.objectCount,
-      savedAt: snapshot.savedAt,
-      sourceCount: snapshot.sourceCount
-    });
-  }, [userStorageScope]);
+  const persistOfflineSnapshot = React.useCallback(
+    (data: CopDashboardData, savedAt = new Date().toISOString()) => {
+      const snapshot = writeCopOfflineSnapshot(data, userStorageScope, savedAt);
+      if (!snapshot) {
+        return;
+      }
+      setOfflineSnapshotState({
+        kind: "available",
+        objectCount: snapshot.objectCount,
+        savedAt: snapshot.savedAt,
+        sourceCount: snapshot.sourceCount
+      });
+    },
+    [userStorageScope]
+  );
 
   React.useEffect(() => {
     if (!isOidcEnabled(authConfig)) {
@@ -1344,7 +1519,9 @@ export function App() {
       }
       authInFlight = true;
       authInFlightForCallback = hasCallback;
-      setAuthSession((current) => current.status === "authenticated" && !hasCallback ? current : { ...current, status: "authenticating" });
+      setAuthSession((current) =>
+        current.status === "authenticated" && !hasCallback ? current : { ...current, status: "authenticating" }
+      );
       initializeAuth(authConfig)
         .then((nextSession) => {
           if (!cancelled) {
@@ -1429,7 +1606,16 @@ export function App() {
       loadInFlightRef.current = false;
       setIsLoading(false);
     }
-  }, [applyDashboardData, authToken, browserOnline, dataAccessReady, persistOfflineSnapshot, trackHistoryLimit, trackHistoryWindowSeconds, userStorageScope]);
+  }, [
+    applyDashboardData,
+    authToken,
+    browserOnline,
+    dataAccessReady,
+    persistOfflineSnapshot,
+    trackHistoryLimit,
+    trackHistoryWindowSeconds,
+    userStorageScope
+  ]);
 
   const loadAlerts = React.useCallback(async () => {
     if (!authToken) {
@@ -1455,7 +1641,7 @@ export function App() {
     } catch (error) {
       setDemoScenarioError(error instanceof Error ? error.message : "Stav PoC scénáře se nepodařilo načíst.");
     } finally {
-      setDemoScenarioBusy((current) => current === "loading" ? null : current);
+      setDemoScenarioBusy((current) => (current === "loading" ? null : current));
     }
   }, [authToken]);
 
@@ -1482,7 +1668,9 @@ export function App() {
       setDemoScenarioError("PoC scénář vyžaduje přihlášeného operátora.");
       return;
     }
-    const confirmed = window.confirm("Vyčistit PoC demo data? Smažou se demo skupiny, hlášení a zákresy pro tento scénář.");
+    const confirmed = window.confirm(
+      "Vyčistit PoC demo data? Smažou se demo skupiny, hlášení a zákresy pro tento scénář."
+    );
     if (!confirmed) {
       return;
     }
@@ -1625,7 +1813,9 @@ export function App() {
       }
     });
     if (!connection) {
-      setStreamTelemetry((current) => updateStreamTelemetryForError(current, new Error("Readable stream is not available.")));
+      setStreamTelemetry((current) =>
+        updateStreamTelemetryForError(current, new Error("Readable stream is not available."))
+      );
       setStreamStatus("degraded");
       scheduleReconnect();
       return () => {
@@ -1665,9 +1855,12 @@ export function App() {
     if (!authToken) {
       return;
     }
-    const timer = window.setInterval(() => {
-      void loadAlerts();
-    }, Math.max(refreshSeconds, 5) * 1000);
+    const timer = window.setInterval(
+      () => {
+        void loadAlerts();
+      },
+      Math.max(refreshSeconds, 5) * 1000
+    );
     return () => window.clearInterval(timer);
   }, [authToken, loadAlerts, refreshSeconds]);
 
@@ -1682,7 +1875,9 @@ export function App() {
       setCommunityStatus("disabled");
       setCommunityWarnings(["Pro načtení komunitních hlášení je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
       setMissionArenaStatus("disabled");
-      setMissionArenaWarnings(["Pro načtení Mission Arena vrstvy je potřeba přihlášení nebo zapnutý veřejný režim čtení."]);
+      setMissionArenaWarnings([
+        "Pro načtení Mission Arena vrstvy je potřeba přihlášení nebo zapnutý veřejný režim čtení."
+      ]);
       setTakLayers([]);
       setTakSources([]);
       setTakStatus("disabled");
@@ -1718,7 +1913,9 @@ export function App() {
         setFlightWarnings(sourceQualityWarnings(catalog.warnings));
         setCommunityWarnings(sourceQualityWarnings(catalog.warnings));
         setMissionArenaWarnings(sourceQualityWarnings(catalog.warnings));
-        setTakWarnings(authToken ? sourceQualityWarnings(catalog.warnings) : ["Partnerské vrstvy vyžadují přihlášení."]);
+        setTakWarnings(
+          authToken ? sourceQualityWarnings(catalog.warnings) : ["Partnerské vrstvy vyžadují přihlášení."]
+        );
         setSituationStatus(providerStatusFromCatalog(catalog, "sim.situation-data"));
         setSafetyStatus(providerStatusFromCatalog(catalog, "sim.safety-data"));
         setFlightStatus(providerStatusFromCatalog(catalog, "sim.flight-data"));
@@ -1751,9 +1948,7 @@ export function App() {
           }
         }
         if (initialPreferences.safetyLayerIds === undefined) {
-          const defaultLayers = nextSafetyLayers
-            .filter((layer) => layer.defaultVisible)
-            .map((layer) => layer.layerId);
+          const defaultLayers = nextSafetyLayers.filter((layer) => layer.defaultVisible).map((layer) => layer.layerId);
           if (defaultLayers.length > 0) {
             setVisibleSafetyLayerIds(normalizeSafetyLayerIds(defaultLayers));
           }
@@ -1788,7 +1983,14 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiBase, authToken, dataAccessReady, initialPreferences.safetyLayerIds, initialPreferences.situationLayerIds, language]);
+  }, [
+    apiBase,
+    authToken,
+    dataAccessReady,
+    initialPreferences.safetyLayerIds,
+    initialPreferences.situationLayerIds,
+    language
+  ]);
 
   const effectiveVisibleCatalogLayerIds = React.useMemo(
     () => withOutlineBoundaryLayer(visibleCatalogLayerIds, mapBasemapMode, mapCatalog),
@@ -1796,7 +1998,9 @@ export function App() {
   );
   const visibleCatalogLayerKey = visibleCatalogLayerIds.join(",");
   const effectiveVisibleCatalogLayerKey = effectiveVisibleCatalogLayerIds.join(",");
-  const outlineBoundaryLayerEnabled = effectiveVisibleCatalogLayerIds.includes("public.boundary.admin") && !visibleCatalogLayerIds.includes("public.boundary.admin");
+  const outlineBoundaryLayerEnabled =
+    effectiveVisibleCatalogLayerIds.includes("public.boundary.admin") &&
+    !visibleCatalogLayerIds.includes("public.boundary.admin");
   const situationRasterRefreshSeconds = React.useMemo(
     () => selectedSituationRasterRefreshSeconds(mapCatalog, effectiveVisibleCatalogLayerIds),
     [effectiveVisibleCatalogLayerKey, mapCatalog]
@@ -1846,7 +2050,7 @@ export function App() {
       return;
     }
     let cancelled = false;
-    setWeatherRadarPlaybackStatus((current) => current === "online" ? "online" : "loading");
+    setWeatherRadarPlaybackStatus((current) => (current === "online" ? "online" : "loading"));
     fetchWeatherRadarFrames(apiBase, authToken, { hours: 6, limit: 24, product: "merge1h" })
       .then((response) => {
         if (cancelled) {
@@ -1854,7 +2058,7 @@ export function App() {
         }
         const frames = normalizeWeatherRadarFrames(response);
         setWeatherRadarFrames(frames);
-        setWeatherRadarFrameIndex((current) => frames.length === 0 ? 0 : Math.min(current, frames.length - 1));
+        setWeatherRadarFrameIndex((current) => (frames.length === 0 ? 0 : Math.min(current, frames.length - 1)));
         setWeatherRadarPlaybackStatus(frames.length > 0 ? "online" : "degraded");
       })
       .catch(() => {
@@ -1891,7 +2095,10 @@ export function App() {
       })
       .filter(({ feature, key }) => {
         const entry = weatherWebcamDetailCache[key];
-        return !entry || (entry.status === "ready" && !entry.locationLabel && isGenericWeatherWebcamLabel(weatherWebcamTitle(feature)));
+        return (
+          !entry ||
+          (entry.status === "ready" && !entry.locationLabel && isGenericWeatherWebcamLabel(weatherWebcamTitle(feature)))
+        );
       })
       .slice(0, 60);
     if (candidates.length === 0) {
@@ -1979,7 +2186,11 @@ export function App() {
     if (!mapCatalog) {
       return;
     }
-    const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.situation-data", effectiveVisibleCatalogLayerIds);
+    const catalogLayerIds = catalogLayerIdsForProviderSelection(
+      mapCatalog,
+      "sim.situation-data",
+      effectiveVisibleCatalogLayerIds
+    );
     if (catalogLayerIds.length === 0) {
       situationFeatureRequestRef.current = null;
       setSituationFeatures(null);
@@ -1987,7 +2198,11 @@ export function App() {
       setSituationWarnings([]);
       return;
     }
-    const requestGroups = buildSituationMapRequestGroups(catalogLayerIds, mapView?.zoom, hasMobileCatalogSelection(catalogLayerIds) ? coverageTechnology : undefined);
+    const requestGroups = buildSituationMapRequestGroups(
+      catalogLayerIds,
+      mapView?.zoom,
+      hasMobileCatalogSelection(catalogLayerIds) ? coverageTechnology : undefined
+    );
     const requestKey = stableSituationRequestKey(requestGroups);
     const previousRequest = situationFeatureRequestRef.current;
     if (previousRequest?.key === requestKey && mapBoundsContainedBy(previousRequest.bounds, mapBounds)) {
@@ -1997,13 +2212,17 @@ export function App() {
 
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      setSituationStatus((current) => current === "online" ? "online" : "loading");
-      Promise.all(requestGroups.map((group) => fetchMapFeatures(apiBase, authToken, {
-        bbox: queryBounds,
-        filters: group.filters,
-        layerIds: group.layerIds,
-        limit: group.limit,
-      })))
+      setSituationStatus((current) => (current === "online" ? "online" : "loading"));
+      Promise.all(
+        requestGroups.map((group) =>
+          fetchMapFeatures(apiBase, authToken, {
+            bbox: queryBounds,
+            filters: group.filters,
+            layerIds: group.layerIds,
+            limit: group.limit
+          })
+        )
+      )
         .then((responses) => {
           if (cancelled) {
             return;
@@ -2012,11 +2231,13 @@ export function App() {
           setSituationFeatures(collection);
           situationFeatureRequestRef.current = collection ? { bounds: queryBounds, key: requestKey } : null;
           const responseWarnings = uniqueStrings(responses.flatMap((response) => response.warnings));
-          setSituationWarnings(sourceQualityWarnings([
-            ...responseWarnings,
-            ...(collection?.warnings ?? []),
-            ...(collection?.sourceHealth?.warnings ?? [])
-          ]));
+          setSituationWarnings(
+            sourceQualityWarnings([
+              ...responseWarnings,
+              ...(collection?.warnings ?? []),
+              ...(collection?.sourceHealth?.warnings ?? [])
+            ])
+          );
           setSituationStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
         })
         .catch((error: unknown) => {
@@ -2033,7 +2254,18 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [apiBase, authToken, coverageTechnology, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom, situationRasterRefreshTick]);
+  }, [
+    apiBase,
+    authToken,
+    coverageTechnology,
+    dataAccessReady,
+    effectiveVisibleCatalogLayerIds,
+    effectiveVisibleCatalogLayerKey,
+    mapBounds,
+    mapCatalog,
+    mapView?.zoom,
+    situationRasterRefreshTick
+  ]);
 
   React.useEffect(() => {
     if (!autoRefresh || !dataAccessReady || !mapBounds || !mapCatalog || trafficRefreshPlans.length === 0) {
@@ -2049,34 +2281,42 @@ export function App() {
         mapView?.zoom,
         hasMobileCatalogSelection(layerIds) ? coverageTechnology : undefined
       );
-      void Promise.all(requestGroups.map((group) => fetchMapFeatures(apiBase, authToken, {
-        bbox: queryBounds,
-        filters: group.filters,
-        layerIds: group.layerIds,
-        limit: group.limit,
-      })))
+      void Promise.all(
+        requestGroups.map((group) =>
+          fetchMapFeatures(apiBase, authToken, {
+            bbox: queryBounds,
+            filters: group.filters,
+            layerIds: group.layerIds,
+            limit: group.limit
+          })
+        )
+      )
         .then((responses) => {
           const collection = mergeSituationMapFeatureResponses(responses);
           setSituationFeatures((current) => replaceTrafficFeaturesInSituationCollection(current, collection, layerIds));
           const responseWarnings = uniqueStrings(responses.flatMap((response) => response.warnings));
-          setSituationWarnings((current) => sourceQualityWarnings(uniqueStrings([
-            ...current,
-            ...responseWarnings,
-            ...(collection?.warnings ?? []),
-            ...(collection?.sourceHealth?.warnings ?? [])
-          ])));
+          setSituationWarnings((current) =>
+            sourceQualityWarnings(
+              uniqueStrings([
+                ...current,
+                ...responseWarnings,
+                ...(collection?.warnings ?? []),
+                ...(collection?.sourceHealth?.warnings ?? [])
+              ])
+            )
+          );
         })
         .catch((error: unknown) => {
-          setSituationWarnings((current) => sourceQualityWarnings(uniqueStrings([
-            ...current,
-            error instanceof Error ? error.message : "Dopravní vrstva není dostupná."
-          ])));
+          setSituationWarnings((current) =>
+            sourceQualityWarnings(
+              uniqueStrings([...current, error instanceof Error ? error.message : "Dopravní vrstva není dostupná."])
+            )
+          );
         });
     };
-    const timers = trafficRefreshPlans.map((plan) => window.setInterval(
-      () => refreshTrafficLayers(plan.layerIds),
-      plan.refreshSeconds * 1000
-    ));
+    const timers = trafficRefreshPlans.map((plan) =>
+      window.setInterval(() => refreshTrafficLayers(plan.layerIds), plan.refreshSeconds * 1000)
+    );
     return () => {
       timers.forEach((timer) => window.clearInterval(timer));
     };
@@ -2099,7 +2339,9 @@ export function App() {
     if (!dataAccessReady) {
       return;
     }
-    const catalogLayerIds = mapCatalog ? catalogLayerIdsForProviderSelection(mapCatalog, "sim.safety-data", effectiveVisibleCatalogLayerIds) : [];
+    const catalogLayerIds = mapCatalog
+      ? catalogLayerIdsForProviderSelection(mapCatalog, "sim.safety-data", effectiveVisibleCatalogLayerIds)
+      : [];
     if (catalogLayerIds.length === 0) {
       setSafetyFeatures(null);
       setSafetyStatus("disabled");
@@ -2121,7 +2363,7 @@ export function App() {
       if (!mapCatalog) {
         return;
       }
-      setSafetyStatus((current) => current === "online" ? "online" : "loading");
+      setSafetyStatus((current) => (current === "online" ? "online" : "loading"));
       fetchMapFeatures(apiBase, authToken, {
         bbox: mapBounds,
         layerIds: catalogLayerIds,
@@ -2133,11 +2375,13 @@ export function App() {
           }
           const collection = response.safety ?? null;
           setSafetyFeatures(collection);
-          setSafetyWarnings(sourceQualityWarnings([
-            ...response.warnings,
-            ...(collection?.warnings ?? []),
-            ...(collection?.sourceHealth?.warnings ?? [])
-          ]));
+          setSafetyWarnings(
+            sourceQualityWarnings([
+              ...response.warnings,
+              ...(collection?.warnings ?? []),
+              ...(collection?.sourceHealth?.warnings ?? [])
+            ])
+          );
           setSafetyStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
         })
         .catch((error: unknown) => {
@@ -2153,7 +2397,16 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [apiBase, authToken, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom]);
+  }, [
+    apiBase,
+    authToken,
+    dataAccessReady,
+    effectiveVisibleCatalogLayerIds,
+    effectiveVisibleCatalogLayerKey,
+    mapBounds,
+    mapCatalog,
+    mapView?.zoom
+  ]);
 
   const watchedAreaSafetyBounds = React.useMemo(() => buildWatchedAreaSafetyBounds(aoiRules), [aoiRules]);
 
@@ -2216,14 +2469,18 @@ export function App() {
       if (!mapCatalog) {
         return;
       }
-      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.flight-data", effectiveVisibleCatalogLayerIds);
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(
+        mapCatalog,
+        "sim.flight-data",
+        effectiveVisibleCatalogLayerIds
+      );
       if (catalogLayerIds.length === 0) {
         setFlightFeatures(null);
         setFlightStatus("disabled");
         setFlightWarnings([]);
         return;
       }
-      setFlightStatus((current) => current === "online" ? "online" : "loading");
+      setFlightStatus((current) => (current === "online" ? "online" : "loading"));
       fetchMapFeatures(apiBase, authToken, {
         bbox: mapBounds,
         layerIds: catalogLayerIds,
@@ -2235,11 +2492,13 @@ export function App() {
           }
           const collection = response.flight ?? null;
           setFlightFeatures(collection);
-          setFlightWarnings(sourceQualityWarnings([
-            ...response.warnings,
-            ...(collection?.warnings ?? []),
-            ...(collection?.sourceHealth?.warnings ?? [])
-          ]));
+          setFlightWarnings(
+            sourceQualityWarnings([
+              ...response.warnings,
+              ...(collection?.warnings ?? []),
+              ...(collection?.sourceHealth?.warnings ?? [])
+            ])
+          );
           setFlightStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
         })
         .catch((error: unknown) => {
@@ -2255,7 +2514,17 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [apiBase, authToken, communityRefreshNonce, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom]);
+  }, [
+    apiBase,
+    authToken,
+    communityRefreshNonce,
+    dataAccessReady,
+    effectiveVisibleCatalogLayerIds,
+    effectiveVisibleCatalogLayerKey,
+    mapBounds,
+    mapCatalog,
+    mapView?.zoom
+  ]);
 
   React.useEffect(() => {
     if (!authToken) {
@@ -2277,14 +2546,18 @@ export function App() {
       if (!mapCatalog) {
         return;
       }
-      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "sim.tak-gateway", effectiveVisibleCatalogLayerIds);
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(
+        mapCatalog,
+        "sim.tak-gateway",
+        effectiveVisibleCatalogLayerIds
+      );
       if (catalogLayerIds.length === 0) {
         setTakFeatures(null);
         setTakStatus("disabled");
         setTakWarnings([]);
         return;
       }
-      setTakStatus((current) => current === "online" ? "online" : "loading");
+      setTakStatus((current) => (current === "online" ? "online" : "loading"));
       fetchMapFeatures(apiBase, authToken, {
         bbox: mapBounds,
         includePartner: true,
@@ -2297,11 +2570,13 @@ export function App() {
           }
           const collection = response.tak ?? null;
           setTakFeatures(collection);
-          setTakWarnings(sourceQualityWarnings([
-            ...response.warnings,
-            ...(collection?.warnings ?? []),
-            ...(collection?.sourceHealth?.warnings ?? [])
-          ]));
+          setTakWarnings(
+            sourceQualityWarnings([
+              ...response.warnings,
+              ...(collection?.warnings ?? []),
+              ...(collection?.sourceHealth?.warnings ?? [])
+            ])
+          );
           setTakStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
         })
         .catch((error: unknown) => {
@@ -2317,7 +2592,15 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [apiBase, authToken, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom]);
+  }, [
+    apiBase,
+    authToken,
+    effectiveVisibleCatalogLayerIds,
+    effectiveVisibleCatalogLayerKey,
+    mapBounds,
+    mapCatalog,
+    mapView?.zoom
+  ]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -2338,14 +2621,18 @@ export function App() {
       if (!mapCatalog) {
         return;
       }
-      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "cop.community", effectiveVisibleCatalogLayerIds);
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(
+        mapCatalog,
+        "cop.community",
+        effectiveVisibleCatalogLayerIds
+      );
       if (catalogLayerIds.length === 0) {
         setCommunityFeatures(null);
         setCommunityStatus("disabled");
         setCommunityWarnings([]);
         return;
       }
-      setCommunityStatus((current) => current === "online" ? "online" : "loading");
+      setCommunityStatus((current) => (current === "online" ? "online" : "loading"));
       fetchMapFeatures(apiBase, authToken, {
         bbox: mapBounds,
         layerIds: catalogLayerIds,
@@ -2357,10 +2644,7 @@ export function App() {
           }
           const collection = response.community ?? null;
           setCommunityFeatures(collection);
-          setCommunityWarnings(sourceQualityWarnings([
-            ...response.warnings,
-            ...(collection?.warnings ?? [])
-          ]));
+          setCommunityWarnings(sourceQualityWarnings([...response.warnings, ...(collection?.warnings ?? [])]));
           setCommunityStatus("online");
         })
         .catch((error: unknown) => {
@@ -2376,7 +2660,16 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [apiBase, authToken, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog, mapView?.zoom]);
+  }, [
+    apiBase,
+    authToken,
+    dataAccessReady,
+    effectiveVisibleCatalogLayerIds,
+    effectiveVisibleCatalogLayerKey,
+    mapBounds,
+    mapCatalog,
+    mapView?.zoom
+  ]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -2391,14 +2684,18 @@ export function App() {
       if (!mapCatalog) {
         return;
       }
-      const catalogLayerIds = catalogLayerIdsForProviderSelection(mapCatalog, "csm.mission-arena", effectiveVisibleCatalogLayerIds);
+      const catalogLayerIds = catalogLayerIdsForProviderSelection(
+        mapCatalog,
+        "csm.mission-arena",
+        effectiveVisibleCatalogLayerIds
+      );
       if (catalogLayerIds.length === 0) {
         setMissionArenaFeatures(null);
         setMissionArenaStatus("disabled");
         setMissionArenaWarnings([]);
         return;
       }
-      setMissionArenaStatus((current) => current === "online" ? "online" : "loading");
+      setMissionArenaStatus((current) => (current === "online" ? "online" : "loading"));
       fetchMapFeatures(apiBase, authToken, {
         bbox: mapBounds,
         layerIds: catalogLayerIds,
@@ -2410,11 +2707,13 @@ export function App() {
           }
           const collection = response.missionArena ?? null;
           setMissionArenaFeatures(collection);
-          setMissionArenaWarnings(sourceQualityWarnings([
-            ...response.warnings,
-            ...(collection?.warnings ?? []),
-            ...(collection?.sourceHealth?.warnings ?? [])
-          ]));
+          setMissionArenaWarnings(
+            sourceQualityWarnings([
+              ...response.warnings,
+              ...(collection?.warnings ?? []),
+              ...(collection?.sourceHealth?.warnings ?? [])
+            ])
+          );
           setMissionArenaStatus(collection ? situationStatusFromHealth(collection.sourceHealth?.health) : "online");
         })
         .catch((error: unknown) => {
@@ -2430,7 +2729,15 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [apiBase, authToken, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds, mapCatalog]);
+  }, [
+    apiBase,
+    authToken,
+    dataAccessReady,
+    effectiveVisibleCatalogLayerIds,
+    effectiveVisibleCatalogLayerKey,
+    mapBounds,
+    mapCatalog
+  ]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -2450,7 +2757,7 @@ export function App() {
 
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      setSketchStatus((current) => current === "online" ? "online" : "loading");
+      setSketchStatus((current) => (current === "online" ? "online" : "loading"));
       fetchSketchDrawings(apiBase, authToken, {
         bbox: mapBounds,
         limit: 500
@@ -2476,7 +2783,14 @@ export function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [apiBase, authToken, dataAccessReady, effectiveVisibleCatalogLayerIds, effectiveVisibleCatalogLayerKey, mapBounds]);
+  }, [
+    apiBase,
+    authToken,
+    dataAccessReady,
+    effectiveVisibleCatalogLayerIds,
+    effectiveVisibleCatalogLayerKey,
+    mapBounds
+  ]);
 
   React.useEffect(() => {
     if (!dataAccessReady || !health || offlineSnapshotState.kind === "active" || streamStatus !== "live") {
@@ -2577,7 +2891,15 @@ export function App() {
     [animatedSituationFeatures, weatherWebcamDetailCache]
   );
   const baseCombinedSituationFeatures = React.useMemo(
-    () => mergeSituationSafetyFlightCommunityMissionAndTakFeatures(enrichedSituationFeatures, safetyFeatures, flightFeatures, communityFeatures, missionArenaFeatures, takFeatures),
+    () =>
+      mergeSituationSafetyFlightCommunityMissionAndTakFeatures(
+        enrichedSituationFeatures,
+        safetyFeatures,
+        flightFeatures,
+        communityFeatures,
+        missionArenaFeatures,
+        takFeatures
+      ),
     [communityFeatures, enrichedSituationFeatures, flightFeatures, missionArenaFeatures, safetyFeatures, takFeatures]
   );
   const selectedBaseSituationFeature = findSelectedSituationFeature(
@@ -2585,15 +2907,31 @@ export function App() {
     selectedSituationFeatureId,
     selectedSituationFeatureStableKey
   );
-  const mobileTowerViewshed = useMobileTowerViewshed(apiBase, authToken, selectedBaseSituationFeature, coverageTechnology);
+  const mobileTowerViewshed = useMobileTowerViewshed(
+    apiBase,
+    authToken,
+    selectedBaseSituationFeature,
+    coverageTechnology
+  );
   const selectedRadioProfile = React.useMemo(
-    () => radioProfiles.find((profile) => (profile.profileId ?? profile.name) === radioProfileId) ?? radioProfiles[0] ?? fallbackRadioProfile,
+    () =>
+      radioProfiles.find((profile) => (profile.profileId ?? profile.name) === radioProfileId) ??
+      radioProfiles[0] ??
+      fallbackRadioProfile,
     [radioProfileId, radioProfiles]
   );
   const radioInputOverlay = React.useMemo(
-    () => activeWorkspace === "radio"
-      ? buildRadioInputOverlay(radioMode, radioStation, radioLinkFrom, radioLinkTo, radioSearchTargets, selectedRadioProfile)
-      : null,
+    () =>
+      activeWorkspace === "radio"
+        ? buildRadioInputOverlay(
+            radioMode,
+            radioStation,
+            radioLinkFrom,
+            radioLinkTo,
+            radioSearchTargets,
+            selectedRadioProfile
+          )
+        : null,
     [activeWorkspace, radioLinkFrom, radioLinkTo, radioMode, radioSearchTargets, radioStation, selectedRadioProfile]
   );
   const baseMapSituationFeatures = React.useMemo(() => {
@@ -2606,7 +2944,9 @@ export function App() {
     selectedSituationFeatureId,
     selectedSituationFeatureStableKey
   );
-  const [retainedSelectedTransitFeature, setRetainedSelectedTransitFeature] = React.useState<SituationFeature | null>(null);
+  const [retainedSelectedTransitFeature, setRetainedSelectedTransitFeature] = React.useState<SituationFeature | null>(
+    null
+  );
   React.useEffect(() => {
     if (mapSelectedSituationFeature && isTransitVehicleSelectionKey(selectedSituationFeatureStableKey)) {
       setRetainedSelectedTransitFeature(mapSelectedSituationFeature);
@@ -2617,26 +2957,39 @@ export function App() {
     }
   }, [mapSelectedSituationFeature, selectedSituationFeatureStableKey]);
   const combinedSituationFeatures = React.useMemo(
-    () => appendRetainedSelectedTransitFeature(
+    () =>
+      appendRetainedSelectedTransitFeature(
+        baseMapSituationFeatures,
+        retainedSelectedTransitFeature,
+        selectedSituationFeatureId,
+        selectedSituationFeatureStableKey
+      ),
+    [
       baseMapSituationFeatures,
       retainedSelectedTransitFeature,
       selectedSituationFeatureId,
       selectedSituationFeatureStableKey
-    ),
-    [baseMapSituationFeatures, retainedSelectedTransitFeature, selectedSituationFeatureId, selectedSituationFeatureStableKey]
+    ]
   );
   const liveSelectedSituationFeature = findSelectedSituationFeature(
     combinedSituationFeatures,
     selectedSituationFeatureId,
     selectedSituationFeatureStableKey
   );
-  const selectedSituationFeature = liveSelectedSituationFeature
-    ?? (isTransitVehicleSelectionKey(selectedSituationFeatureStableKey) ? retainedSelectedTransitFeature : null);
+  const selectedSituationFeature =
+    liveSelectedSituationFeature ??
+    (isTransitVehicleSelectionKey(selectedSituationFeatureStableKey) ? retainedSelectedTransitFeature : null);
   const selectedTransitRouteRequest = React.useMemo(() => {
-    const presentation = selectedSituationFeature?.properties.layer === "traffic"
-      ? resolveTransportPresentation(selectedSituationFeature)
-      : null;
-    if (!selectedSituationFeature || !presentation || presentation.kind === "road_event" || presentation.kind === "stop") {
+    const presentation =
+      selectedSituationFeature?.properties.layer === "traffic"
+        ? resolveTransportPresentation(selectedSituationFeature)
+        : null;
+    if (
+      !selectedSituationFeature ||
+      !presentation ||
+      presentation.kind === "road_event" ||
+      presentation.kind === "stop"
+    ) {
       return null;
     }
     return {
@@ -2646,7 +2999,8 @@ export function App() {
       stableKey: transportSelectionKey(selectedSituationFeature) ?? selectedSituationFeature.properties.featureId
     };
   }, [selectedSituationFeature]);
-  const [selectedTransitRouteDetail, setSelectedTransitRouteDetail] = React.useState<TransitVehicleDetailResponse | null>(null);
+  const [selectedTransitRouteDetail, setSelectedTransitRouteDetail] =
+    React.useState<TransitVehicleDetailResponse | null>(null);
   const selectedTransitRouteDetailKeyRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (!selectedTransitRouteRequest) {
@@ -2684,24 +3038,62 @@ export function App() {
     selectedTransitRouteRequest?.sourceId,
     selectedTransitRouteRequest?.stableKey
   ]);
-  const visibleFlightLayerCount = React.useMemo(() => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
-  const visibleCommunityLayerCount = React.useMemo(() => countVisibleCommunityLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
-  const visibleMissionArenaLayerCount = React.useMemo(() => countVisibleMissionArenaLayers(mapCatalog, visibleCatalogLayerIds), [mapCatalog, visibleCatalogLayerIds]);
+  const visibleFlightLayerCount = React.useMemo(
+    () => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds),
+    [mapCatalog, visibleCatalogLayerIds]
+  );
+  const visibleCommunityLayerCount = React.useMemo(
+    () => countVisibleCommunityLayers(mapCatalog, visibleCatalogLayerIds),
+    [mapCatalog, visibleCatalogLayerIds]
+  );
+  const visibleMissionArenaLayerCount = React.useMemo(
+    () => countVisibleMissionArenaLayers(mapCatalog, visibleCatalogLayerIds),
+    [mapCatalog, visibleCatalogLayerIds]
+  );
   const visibleSketchLayerEnabled = visibleCatalogLayerIds.includes("user.sketch.drawings");
-  const visibleSituationContextEnabled = visibleSituationLayerIds.length > 0
-    || visibleSafetyLayerIds.length > 0
-    || visibleTakLayerIds.length > 0
-    || visibleFlightLayerCount > 0
-    || visibleCommunityLayerCount > 0
-    || visibleMissionArenaLayerCount > 0
-    || visibleSketchLayerEnabled
-    || outlineBoundaryLayerEnabled;
+  const visibleSituationContextEnabled =
+    visibleSituationLayerIds.length > 0 ||
+    visibleSafetyLayerIds.length > 0 ||
+    visibleTakLayerIds.length > 0 ||
+    visibleFlightLayerCount > 0 ||
+    visibleCommunityLayerCount > 0 ||
+    visibleMissionArenaLayerCount > 0 ||
+    visibleSketchLayerEnabled ||
+    outlineBoundaryLayerEnabled;
   const mapLayerLabel = React.useMemo(
-    () => buildMapLayerLabel(visibleTrackLayerIds, visibleSituationLayerIds, visibleSafetyLayerIds, visibleTakLayerIds, visibleFlightLayerCount, visibleCommunityLayerCount, visibleMissionArenaLayerCount, outlineBoundaryLayerEnabled, visibleSketchLayerEnabled ? sketchDrawings.length : 0),
-    [outlineBoundaryLayerEnabled, sketchDrawings.length, visibleCommunityLayerCount, visibleFlightLayerCount, visibleMissionArenaLayerCount, visibleSafetyLayerIds, visibleSituationLayerIds, visibleSketchLayerEnabled, visibleTakLayerIds, visibleTrackLayerIds]
+    () =>
+      buildMapLayerLabel(
+        visibleTrackLayerIds,
+        visibleSituationLayerIds,
+        visibleSafetyLayerIds,
+        visibleTakLayerIds,
+        visibleFlightLayerCount,
+        visibleCommunityLayerCount,
+        visibleMissionArenaLayerCount,
+        outlineBoundaryLayerEnabled,
+        visibleSketchLayerEnabled ? sketchDrawings.length : 0
+      ),
+    [
+      outlineBoundaryLayerEnabled,
+      sketchDrawings.length,
+      visibleCommunityLayerCount,
+      visibleFlightLayerCount,
+      visibleMissionArenaLayerCount,
+      visibleSafetyLayerIds,
+      visibleSituationLayerIds,
+      visibleSketchLayerEnabled,
+      visibleTakLayerIds,
+      visibleTrackLayerIds
+    ]
   );
   const mapLayerDetailLabel = React.useMemo(
-    () => buildCatalogLayerSummary(mapCatalog, effectiveVisibleCatalogLayerIds, catalogLayerFeatureCount, catalogLayerStatus),
+    () =>
+      buildCatalogLayerSummary(
+        mapCatalog,
+        effectiveVisibleCatalogLayerIds,
+        catalogLayerFeatureCount,
+        catalogLayerStatus
+      ),
     [
       communityFeatures,
       communityStatus,
@@ -2733,7 +3125,9 @@ export function App() {
       }),
     [loadError, objectsForDisplay, replayActive, sources, visibleObjects]
   );
-  const explicitlySelectedObject = selectedObjectId ? visibleObjects.find((object) => object.objectId === selectedObjectId) ?? null : null;
+  const explicitlySelectedObject = selectedObjectId
+    ? (visibleObjects.find((object) => object.objectId === selectedObjectId) ?? null)
+    : null;
   const selectedObject = explicitlySelectedObject ?? visibleObjects[0] ?? null;
   const localMapSearchResults = React.useMemo(
     () => buildMapSearchResults(visibleObjectsSearchScope, combinedSituationFeatures?.features ?? [], mapSearchQuery),
@@ -2794,9 +3188,25 @@ export function App() {
   const proximityAlerts = React.useMemo(
     () =>
       proximityAlertEnabled && !replayActive
-        ? buildProximityAlerts(baseFilteredObjects, userLocation, replayTrackHistory, alertRadiusKm, predictionMinutes, predictionMode)
+        ? buildProximityAlerts(
+            baseFilteredObjects,
+            userLocation,
+            replayTrackHistory,
+            alertRadiusKm,
+            predictionMinutes,
+            predictionMode
+          )
         : [],
-    [alertRadiusKm, baseFilteredObjects, predictionMinutes, predictionMode, proximityAlertEnabled, replayActive, replayTrackHistory, userLocation]
+    [
+      alertRadiusKm,
+      baseFilteredObjects,
+      predictionMinutes,
+      predictionMode,
+      proximityAlertEnabled,
+      replayActive,
+      replayTrackHistory,
+      userLocation
+    ]
   );
   const publicSafetyAlertFeatures = React.useMemo(
     () => filterPublicSafetyAlertFeatures(combinedSituationFeatures?.features ?? []),
@@ -2810,7 +3220,10 @@ export function App() {
     () => buildSafetyAreaAlertMatches(safetyAreaSourceFeatures, aoiRules),
     [aoiRules, safetyAreaSourceFeatures]
   );
-  const alertSummary = React.useMemo(() => summarizeSafetyAlerts(publicSafetyAlertFeatures), [publicSafetyAlertFeatures]);
+  const alertSummary = React.useMemo(
+    () => summarizeSafetyAlerts(publicSafetyAlertFeatures),
+    [publicSafetyAlertFeatures]
+  );
   const technicalAlertSummary = React.useMemo(() => summarizeTechnicalAlerts(serverAlerts), [serverAlerts]);
   const priorityAlertSummary = React.useMemo(
     () =>
@@ -2827,193 +3240,200 @@ export function App() {
   const mapAlerts = React.useMemo<CopAlert[]>(() => [], []);
   const primaryAoiRule = aoiRules[0] ?? null;
 
-  const applyPreferenceSettings = React.useCallback((settings: PreferenceSettings, options: { focusMap?: boolean } = {}) => {
-    if (settings.activeWorkspace !== undefined) {
-      setActiveWorkspace(normalizeWorkspaceModule(settings.activeWorkspace));
-    }
-    if (settings.selectedLayer !== undefined) {
-      const nextLayer = readInitialLayer(settings.selectedLayer);
-      setSelectedLayer(nextLayer);
-      if (settings.trackLayerIds === undefined) {
-        setVisibleTrackLayerIds([nextLayer]);
+  const applyPreferenceSettings = React.useCallback(
+    (settings: PreferenceSettings, options: { focusMap?: boolean } = {}) => {
+      if (settings.activeWorkspace !== undefined) {
+        setActiveWorkspace(normalizeWorkspaceModule(settings.activeWorkspace));
       }
-    }
-    if (settings.trackLayerIds !== undefined) {
-      const fallbackLayer = settings.selectedLayer !== undefined ? readInitialLayer(settings.selectedLayer) : undefined;
-      const nextTrackLayerIds = normalizeTrackLayerIds(settings.trackLayerIds, fallbackLayer);
-      setVisibleTrackLayerIds(nextTrackLayerIds);
-      setSelectedLayer(nextTrackLayerIds[0] ?? fallbackLayer ?? "air-situation");
-    }
-    if (settings.affiliationScope !== undefined) {
-      setAffiliationScope(readInitialAffiliationScope(settings.affiliationScope));
-    }
-    if (settings.domainScope !== undefined) {
-      setDomainScope(readInitialDomainScope(settings.domainScope));
-    }
-    if (settings.includeSynthetic !== undefined) {
-      setIncludeSynthetic(settings.includeSynthetic);
-    }
-    if (settings.language !== undefined) {
-      setLanguage(normalizeAppLanguage(settings.language));
-    }
-    if (settings.minConfidence !== undefined) {
-      setMinConfidence(clamp(settings.minConfidence, 0, 1));
-    }
-    if ("operatorProfile" in settings && settings.operatorProfile !== undefined) {
-      setOperatorProfile(settings.operatorProfile);
-    }
-    if (settings.autoRefresh !== undefined) {
-      setAutoRefresh(settings.autoRefresh);
-    }
-    if (settings.refreshSeconds !== undefined) {
-      setRefreshSeconds(normalizeRefreshSeconds(settings.refreshSeconds));
-    }
-    if (settings.showHistory !== undefined) {
-      setShowHistory(settings.showHistory);
-    }
-    if (settings.trackHistoryDisplayMode !== undefined) {
-      setTrackHistoryDisplayMode(normalizeTrackHistoryDisplayMode(settings.trackHistoryDisplayMode));
-    }
-    if (settings.publicFlightSymbolMode !== undefined) {
-      setPublicFlightSymbolMode(normalizePublicFlightSymbolMode(settings.publicFlightSymbolMode));
-    }
-    if (settings.showPrediction !== undefined) {
-      setShowPrediction(settings.showPrediction);
-    }
-    if (settings.mapClusterEnabled !== undefined) {
-      setMapClusterEnabled(settings.mapClusterEnabled);
-    }
-    if (settings.mapBasemapMode !== undefined) {
-      setMapBasemapMode(normalizeMapBasemapMode(settings.mapBasemapMode));
-    }
-    if (settings.catalogLayerIds !== undefined) {
-      catalogSelectionInitializedRef.current = true;
-      setVisibleCatalogLayerIds(normalizeCatalogLayerIds(settings.catalogLayerIds));
-    }
-    if (settings.situationLayerIds !== undefined) {
-      setVisibleSituationLayerIds(normalizeSituationLayerIds(settings.situationLayerIds));
-    }
-    if (settings.situationSourceIds !== undefined) {
-      setVisibleSituationSourceIds(normalizeSourceIds(settings.situationSourceIds));
-    }
-    if (settings.situationCoverageTechnology !== undefined) {
-      setCoverageTechnology(normalizeCoverageTechnology(settings.situationCoverageTechnology));
-    }
-    if (settings.safetyLayerIds !== undefined) {
-      setVisibleSafetyLayerIds(normalizeSafetyLayerIds(settings.safetyLayerIds));
-    }
-    if (settings.takLayerIds !== undefined) {
-      setVisibleTakLayerIds(normalizeTakLayerIds(settings.takLayerIds));
-    }
-    if (settings.predictionMinutes !== undefined) {
-      setPredictionMinutes(clamp(settings.predictionMinutes, 2, 20));
-    }
-    if (settings.predictionMode !== undefined) {
-      setPredictionMode(readInitialPredictionMode(settings.predictionMode));
-    }
-    if (settings.trackHistoryLimit !== undefined) {
-      setTrackHistoryLimit(readInitialHistoryLimit(settings.trackHistoryLimit));
-    }
-    if (settings.trackHistoryWindowSeconds !== undefined) {
-      setTrackHistoryWindowSeconds(normalizeHistoryWindowSeconds(settings.trackHistoryWindowSeconds));
-    }
-    if (settings.proximityAlertEnabled !== undefined) {
-      setProximityAlertEnabled(settings.proximityAlertEnabled);
-    }
-    if (settings.alertRadiusKm !== undefined) {
-      setAlertRadiusKm(clamp(settings.alertRadiusKm, 1, 50));
-    }
-    if (settings.autoFit !== undefined) {
-      setAutoFit(settings.autoFit);
-    }
-    if ("workspaceLayout" in settings && settings.workspaceLayout !== undefined) {
-      setWorkspaceLayout(normalizeWorkspaceLayout(settings.workspaceLayout));
-    }
-    if ("workspaceSkin" in settings && settings.workspaceSkin !== undefined) {
-      setWorkspaceSkin(normalizeWorkspaceSkin(settings.workspaceSkin));
-    }
+      if (settings.selectedLayer !== undefined) {
+        const nextLayer = readInitialLayer(settings.selectedLayer);
+        setSelectedLayer(nextLayer);
+        if (settings.trackLayerIds === undefined) {
+          setVisibleTrackLayerIds([nextLayer]);
+        }
+      }
+      if (settings.trackLayerIds !== undefined) {
+        const fallbackLayer =
+          settings.selectedLayer !== undefined ? readInitialLayer(settings.selectedLayer) : undefined;
+        const nextTrackLayerIds = normalizeTrackLayerIds(settings.trackLayerIds, fallbackLayer);
+        setVisibleTrackLayerIds(nextTrackLayerIds);
+        setSelectedLayer(nextTrackLayerIds[0] ?? fallbackLayer ?? "air-situation");
+      }
+      if (settings.affiliationScope !== undefined) {
+        setAffiliationScope(readInitialAffiliationScope(settings.affiliationScope));
+      }
+      if (settings.domainScope !== undefined) {
+        setDomainScope(readInitialDomainScope(settings.domainScope));
+      }
+      if (settings.includeSynthetic !== undefined) {
+        setIncludeSynthetic(settings.includeSynthetic);
+      }
+      if (settings.language !== undefined) {
+        setLanguage(normalizeAppLanguage(settings.language));
+      }
+      if (settings.minConfidence !== undefined) {
+        setMinConfidence(clamp(settings.minConfidence, 0, 1));
+      }
+      if ("operatorProfile" in settings && settings.operatorProfile !== undefined) {
+        setOperatorProfile(settings.operatorProfile);
+      }
+      if (settings.autoRefresh !== undefined) {
+        setAutoRefresh(settings.autoRefresh);
+      }
+      if (settings.refreshSeconds !== undefined) {
+        setRefreshSeconds(normalizeRefreshSeconds(settings.refreshSeconds));
+      }
+      if (settings.showHistory !== undefined) {
+        setShowHistory(settings.showHistory);
+      }
+      if (settings.trackHistoryDisplayMode !== undefined) {
+        setTrackHistoryDisplayMode(normalizeTrackHistoryDisplayMode(settings.trackHistoryDisplayMode));
+      }
+      if (settings.publicFlightSymbolMode !== undefined) {
+        setPublicFlightSymbolMode(normalizePublicFlightSymbolMode(settings.publicFlightSymbolMode));
+      }
+      if (settings.showPrediction !== undefined) {
+        setShowPrediction(settings.showPrediction);
+      }
+      if (settings.mapClusterEnabled !== undefined) {
+        setMapClusterEnabled(settings.mapClusterEnabled);
+      }
+      if (settings.mapBasemapMode !== undefined) {
+        setMapBasemapMode(normalizeMapBasemapMode(settings.mapBasemapMode));
+      }
+      if (settings.catalogLayerIds !== undefined) {
+        catalogSelectionInitializedRef.current = true;
+        setVisibleCatalogLayerIds(normalizeCatalogLayerIds(settings.catalogLayerIds));
+      }
+      if (settings.situationLayerIds !== undefined) {
+        setVisibleSituationLayerIds(normalizeSituationLayerIds(settings.situationLayerIds));
+      }
+      if (settings.situationSourceIds !== undefined) {
+        setVisibleSituationSourceIds(normalizeSourceIds(settings.situationSourceIds));
+      }
+      if (settings.situationCoverageTechnology !== undefined) {
+        setCoverageTechnology(normalizeCoverageTechnology(settings.situationCoverageTechnology));
+      }
+      if (settings.safetyLayerIds !== undefined) {
+        setVisibleSafetyLayerIds(normalizeSafetyLayerIds(settings.safetyLayerIds));
+      }
+      if (settings.takLayerIds !== undefined) {
+        setVisibleTakLayerIds(normalizeTakLayerIds(settings.takLayerIds));
+      }
+      if (settings.predictionMinutes !== undefined) {
+        setPredictionMinutes(clamp(settings.predictionMinutes, 2, 20));
+      }
+      if (settings.predictionMode !== undefined) {
+        setPredictionMode(readInitialPredictionMode(settings.predictionMode));
+      }
+      if (settings.trackHistoryLimit !== undefined) {
+        setTrackHistoryLimit(readInitialHistoryLimit(settings.trackHistoryLimit));
+      }
+      if (settings.trackHistoryWindowSeconds !== undefined) {
+        setTrackHistoryWindowSeconds(normalizeHistoryWindowSeconds(settings.trackHistoryWindowSeconds));
+      }
+      if (settings.proximityAlertEnabled !== undefined) {
+        setProximityAlertEnabled(settings.proximityAlertEnabled);
+      }
+      if (settings.alertRadiusKm !== undefined) {
+        setAlertRadiusKm(clamp(settings.alertRadiusKm, 1, 50));
+      }
+      if (settings.autoFit !== undefined) {
+        setAutoFit(settings.autoFit);
+      }
+      if ("workspaceLayout" in settings && settings.workspaceLayout !== undefined) {
+        setWorkspaceLayout(normalizeWorkspaceLayout(settings.workspaceLayout));
+      }
+      if ("workspaceSkin" in settings && settings.workspaceSkin !== undefined) {
+        setWorkspaceSkin(normalizeWorkspaceSkin(settings.workspaceSkin));
+      }
 
-    const normalizedMapView = normalizeMapView(settings.mapView);
-    if (normalizedMapView) {
-      setMapView(normalizedMapView);
-      if (settings.autoFit === undefined) {
-        setAutoFit(false);
+      const normalizedMapView = normalizeMapView(settings.mapView);
+      if (normalizedMapView) {
+        setMapView(normalizedMapView);
+        if (settings.autoFit === undefined) {
+          setAutoFit(false);
+        }
+        if (options.focusMap) {
+          setFocusViewRequest((current) => current + 1);
+        }
       }
-      if (options.focusMap) {
-        setFocusViewRequest((current) => current + 1);
-      }
-    }
-  }, []);
+    },
+    []
+  );
 
-  const currentPreferences = React.useMemo<UserPreferences>(() => ({
-    activeWorkspace,
-    affiliationScope,
-    alertRadiusKm,
-    autoFit,
-    autoRefresh,
-    catalogLayerIds: visibleCatalogLayerIds,
-    domainScope,
-    includeSynthetic,
-    language,
-    mapClusterEnabled,
-    mapBasemapMode,
-    mapView,
-    minConfidence,
-    operatorProfile,
-    predictionMinutes,
-    predictionMode,
-    proximityAlertEnabled,
-    publicFlightSymbolMode,
-    refreshSeconds,
-    safetyLayerIds: visibleSafetyLayerIds,
-    selectedLayer,
-    situationCoverageTechnology: coverageTechnology,
-    showHistory,
-    showPrediction,
-    situationLayerIds: visibleSituationLayerIds,
-    situationSourceIds: visibleSituationSourceIds,
-    takLayerIds: visibleTakLayerIds,
-    trackLayerIds: visibleTrackLayerIds,
-    trackHistoryDisplayMode,
-    trackHistoryLimit,
-    trackHistoryWindowSeconds,
-    workspaceLayout,
-    workspaceSkin
-  }), [
-    activeWorkspace,
-    affiliationScope,
-    alertRadiusKm,
-    autoFit,
-    autoRefresh,
-    domainScope,
-    includeSynthetic,
-    language,
-    mapBasemapMode,
-    mapClusterEnabled,
-    mapView,
-    minConfidence,
-    operatorProfile,
-    predictionMinutes,
-    predictionMode,
-    proximityAlertEnabled,
-    publicFlightSymbolMode,
-    refreshSeconds,
-    visibleSafetyLayerIds,
-    visibleCatalogLayerIds,
-    selectedLayer,
-    coverageTechnology,
-    showHistory,
-    showPrediction,
-    visibleSituationLayerIds,
-    visibleSituationSourceIds,
-    visibleTakLayerIds,
-    visibleTrackLayerIds,
-    trackHistoryDisplayMode,
-    trackHistoryLimit,
-    trackHistoryWindowSeconds,
-    workspaceLayout,
-    workspaceSkin
-  ]);
+  const currentPreferences = React.useMemo<UserPreferences>(
+    () => ({
+      activeWorkspace,
+      affiliationScope,
+      alertRadiusKm,
+      autoFit,
+      autoRefresh,
+      catalogLayerIds: visibleCatalogLayerIds,
+      domainScope,
+      includeSynthetic,
+      language,
+      mapClusterEnabled,
+      mapBasemapMode,
+      mapView,
+      minConfidence,
+      operatorProfile,
+      predictionMinutes,
+      predictionMode,
+      proximityAlertEnabled,
+      publicFlightSymbolMode,
+      refreshSeconds,
+      safetyLayerIds: visibleSafetyLayerIds,
+      selectedLayer,
+      situationCoverageTechnology: coverageTechnology,
+      showHistory,
+      showPrediction,
+      situationLayerIds: visibleSituationLayerIds,
+      situationSourceIds: visibleSituationSourceIds,
+      takLayerIds: visibleTakLayerIds,
+      trackLayerIds: visibleTrackLayerIds,
+      trackHistoryDisplayMode,
+      trackHistoryLimit,
+      trackHistoryWindowSeconds,
+      workspaceLayout,
+      workspaceSkin
+    }),
+    [
+      activeWorkspace,
+      affiliationScope,
+      alertRadiusKm,
+      autoFit,
+      autoRefresh,
+      domainScope,
+      includeSynthetic,
+      language,
+      mapBasemapMode,
+      mapClusterEnabled,
+      mapView,
+      minConfidence,
+      operatorProfile,
+      predictionMinutes,
+      predictionMode,
+      proximityAlertEnabled,
+      publicFlightSymbolMode,
+      refreshSeconds,
+      visibleSafetyLayerIds,
+      visibleCatalogLayerIds,
+      selectedLayer,
+      coverageTechnology,
+      showHistory,
+      showPrediction,
+      visibleSituationLayerIds,
+      visibleSituationSourceIds,
+      visibleTakLayerIds,
+      visibleTrackLayerIds,
+      trackHistoryDisplayMode,
+      trackHistoryLimit,
+      trackHistoryWindowSeconds,
+      workspaceLayout,
+      workspaceSkin
+    ]
+  );
 
   React.useEffect(() => {
     profileHydratedRef.current = false;
@@ -3062,7 +3482,10 @@ export function App() {
         const serverPreferences = normalizeUserPreferences(profile.preferences);
         const serverAlertPreferences = normalizeAlertPreferences(profile.alertPreferences ?? {});
         const localAlertPreferences = readLocalAlertPreferences(userStorageScope);
-        const localAlertPreferencesWin = shouldPreferLocalAlertPreferences(localAlertPreferences.updatedAt, profile.updatedAt);
+        const localAlertPreferencesWin = shouldPreferLocalAlertPreferences(
+          localAlertPreferences.updatedAt,
+          profile.updatedAt
+        );
         const nextAlertPreferences = localAlertPreferencesWin
           ? localAlertPreferences.alertPreferences
           : serverAlertPreferences;
@@ -3074,9 +3497,14 @@ export function App() {
           setLocalAlertPreferencesUpdatedAt(mirrorUpdatedAt);
         }
         const localPreferences = readUserPreferences(userStorageScope);
-        const hydratedPreferences = mergeHydratedUserPreferences(serverPreferences, localPreferences, currentPreferences);
+        const hydratedPreferences = mergeHydratedUserPreferences(
+          serverPreferences,
+          localPreferences,
+          currentPreferences
+        );
         const hasHydratedPreferences = Object.keys(hydratedPreferences).length > 0;
-        const shouldMirrorPreferences = hasHydratedPreferences && !sameUserPreferences(hydratedPreferences, serverPreferences);
+        const shouldMirrorPreferences =
+          hasHydratedPreferences && !sameUserPreferences(hydratedPreferences, serverPreferences);
         setServerProfileUpdatedAt(profile.updatedAt);
         let savedProfile: Awaited<ReturnType<typeof saveUserProfile>> | null = null;
         if (hasHydratedPreferences) {
@@ -3093,7 +3521,11 @@ export function App() {
         if (savedProfile && !cancelled) {
           const savedUpdatedAt = savedProfile.updatedAt ?? new Date().toISOString();
           setServerProfileUpdatedAt(savedProfile.updatedAt);
-          writeLocalAlertPreferences(savedProfile.alertPreferences ?? nextAlertPreferences, userStorageScope, savedUpdatedAt);
+          writeLocalAlertPreferences(
+            savedProfile.alertPreferences ?? nextAlertPreferences,
+            userStorageScope,
+            savedUpdatedAt
+          );
           setLocalAlertPreferencesUpdatedAt(savedUpdatedAt);
         }
         if (!cancelled) {
@@ -3123,11 +3555,14 @@ export function App() {
     userStorageScope
   ]);
 
-  React.useEffect(() => () => {
-    if (profileSaveTimerRef.current !== undefined) {
-      window.clearTimeout(profileSaveTimerRef.current);
-    }
-  }, []);
+  React.useEffect(
+    () => () => {
+      if (profileSaveTimerRef.current !== undefined) {
+        window.clearTimeout(profileSaveTimerRef.current);
+      }
+    },
+    []
+  );
 
   React.useEffect(() => {
     if (skipNextAlertPreferenceWriteRef.current) {
@@ -3170,22 +3605,15 @@ export function App() {
           setProfileSyncError(error instanceof Error ? error.message : "Uložení profilu selhalo.");
         });
     }, 650);
-  }, [
-    alertPreferences,
-    authToken,
-    currentPreferences,
-    profileAccessReady,
-    userStorageScope
-  ]);
+  }, [alertPreferences, authToken, currentPreferences, profileAccessReady, userStorageScope]);
 
   React.useEffect(() => {
     const focus = initialMapFeatureFocusRef.current;
     if (!focus?.featureId) {
       return;
     }
-    const focusedFeature = focus.featureKind === "feature"
-      ? findSituationFeatureForMapFocus(combinedSituationFeatures, focus)
-      : null;
+    const focusedFeature =
+      focus.featureKind === "feature" ? findSituationFeatureForMapFocus(combinedSituationFeatures, focus) : null;
     if (focusedFeature) {
       setSelectedSituationFeatureId(focusedFeature.properties.featureId);
       setSelectedSituationFeatureStableKey(stableSituationFeatureSelectionKey(focusedFeature));
@@ -3211,7 +3639,13 @@ export function App() {
     if (!selectedSituationFeatureId) {
       return;
     }
-    if (findSelectedSituationFeature(combinedSituationFeatures, selectedSituationFeatureId, selectedSituationFeatureStableKey)) {
+    if (
+      findSelectedSituationFeature(
+        combinedSituationFeatures,
+        selectedSituationFeatureId,
+        selectedSituationFeatureStableKey
+      )
+    ) {
       return;
     }
     if (selectedSituationFeatureStableKey) {
@@ -3270,7 +3704,9 @@ export function App() {
       }
     });
 
-    const nextAlert = proximityAlerts.find((alert) => !notifiedProximityAlertsRef.current.has(`${alert.type}:${alert.object.objectId}`));
+    const nextAlert = proximityAlerts.find(
+      (alert) => !notifiedProximityAlertsRef.current.has(`${alert.type}:${alert.object.objectId}`)
+    );
     if (!nextAlert) {
       return;
     }
@@ -3457,7 +3893,11 @@ export function App() {
       return;
     }
     enableSketchLayer();
-    const payload: SketchDrawingPayload & { geometry: CreateSketchDrawingRequest["geometry"]; kind: CreateSketchDrawingRequest["kind"]; visibility: NonNullable<CreateSketchDrawingRequest["visibility"]> } = {
+    const payload: SketchDrawingPayload & {
+      geometry: CreateSketchDrawingRequest["geometry"];
+      kind: CreateSketchDrawingRequest["kind"];
+      visibility: NonNullable<CreateSketchDrawingRequest["visibility"]>;
+    } = {
       geometry: input.geometry,
       kind: input.kind,
       label: input.label,
@@ -3502,14 +3942,16 @@ export function App() {
       return;
     }
     const drawing = sketchDrawings.find((candidate) => candidate.id === drawingId);
-    const confirmed = typeof window === "undefined" || window.confirm(`Smazat zákres${drawing ? ` "${drawing.properties.label}"` : ""}?`);
+    const confirmed =
+      typeof window === "undefined" ||
+      window.confirm(`Smazat zákres${drawing ? ` "${drawing.properties.label}"` : ""}?`);
     if (!confirmed) {
       return;
     }
     try {
       await deleteSketchDrawing(apiBase, token, drawingId);
       setSketchDrawings((current) => current.filter((candidate) => candidate.id !== drawingId));
-      setSelectedSketchDrawingId((current) => current === drawingId ? null : current);
+      setSelectedSketchDrawingId((current) => (current === drawingId ? null : current));
       setSketchWarnings([]);
     } catch (error) {
       setSketchStatus("degraded");
@@ -3684,20 +4126,26 @@ export function App() {
     const providerSourceIds = new Set(layer.query.providerSourceIds ?? []);
     const categoryIds = new Set(layer.query.categoryIds ?? []);
     if (layer.query.providerId === "sim.situation-data") {
-      return (situationFeatures?.features ?? []).filter((feature) =>
-        providerLayerIds.has(feature.properties.layer)
-        && (providerSourceIds.size === 0 || providerSourceIds.has(feature.properties.sourceId))
-        && (categoryIds.size === 0 || categoryIds.has(feature.properties.category))
+      return (situationFeatures?.features ?? []).filter(
+        (feature) =>
+          providerLayerIds.has(feature.properties.layer) &&
+          (providerSourceIds.size === 0 || providerSourceIds.has(feature.properties.sourceId)) &&
+          (categoryIds.size === 0 || categoryIds.has(feature.properties.category))
       ).length;
     }
     if (layer.query.providerId === "sim.safety-data") {
-      return (safetyFeatures?.features ?? []).filter((feature) => providerLayerIds.has(feature.properties.layer)).length;
+      return (safetyFeatures?.features ?? []).filter((feature) => providerLayerIds.has(feature.properties.layer))
+        .length;
     }
     if (layer.query.providerId === "sim.flight-data") {
       const streamLayer = flightReferenceLayerIdForStream(layer.query.streamId);
-      return (flightFeatures?.features ?? []).filter((feature) =>
-        (providerLayerIds.size > 0 && feature.properties.providerLayerId && providerLayerIds.has(feature.properties.providerLayerId))
-        || (streamLayer !== undefined && flightReferenceQueryLayersToSituationLayers([streamLayer]).includes(feature.properties.layer))
+      return (flightFeatures?.features ?? []).filter(
+        (feature) =>
+          (providerLayerIds.size > 0 &&
+            feature.properties.providerLayerId &&
+            providerLayerIds.has(feature.properties.providerLayerId)) ||
+          (streamLayer !== undefined &&
+            flightReferenceQueryLayersToSituationLayers([streamLayer]).includes(feature.properties.layer))
       ).length;
     }
     if (layer.query.providerId === "cop.community") {
@@ -3771,40 +4219,42 @@ export function App() {
     }
   }
 
-  const runEmergencyRouteFromLocation = React.useCallback(async (
-    location: UserLocation,
-    target: { label?: string; lat: number; lon: number }
-  ) => {
-    setEmergencyRouteStatus("loading");
-    setEmergencyRouteMessage(`Počítám zásahovou trasu k cíli ${target.label ?? "vybraný bod"}...`);
-    try {
-      const response = await runEmergencyRoute(apiBase, authToken, {
-        avoid: ["flood", "road_closure"],
-        from: {
-          ...(typeof location.accuracyM === "number" ? { label: `Moje poloha (±${Math.round(location.accuracyM)} m)` } : { label: "Moje poloha" }),
-          lat: location.lat,
-          lon: location.lon
-        },
-        profileId: "emergency_vehicle",
-        to: {
-          ...(target.label ? { label: target.label } : {}),
-          lat: target.lat,
-          lon: target.lon
-        }
-      });
-      setEmergencyRoute(response);
-      setEmergencyRouteStatus("ready");
-      const primary = response.routes[0];
-      const summary = formatEmergencyRouteSummary(primary, response.quality);
-      setEmergencyRouteMessage(summary);
-      setLocationStatus(summary);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Zásahovou trasu se nepodařilo vypočítat.";
-      setEmergencyRouteStatus("error");
-      setEmergencyRouteMessage(message);
-      setLocationStatus(message);
-    }
-  }, [apiBase, authToken]);
+  const runEmergencyRouteFromLocation = React.useCallback(
+    async (location: UserLocation, target: { label?: string; lat: number; lon: number }) => {
+      setEmergencyRouteStatus("loading");
+      setEmergencyRouteMessage(`Počítám zásahovou trasu k cíli ${target.label ?? "vybraný bod"}...`);
+      try {
+        const response = await runEmergencyRoute(apiBase, authToken, {
+          avoid: ["flood", "road_closure"],
+          from: {
+            ...(typeof location.accuracyM === "number"
+              ? { label: `Moje poloha (±${Math.round(location.accuracyM)} m)` }
+              : { label: "Moje poloha" }),
+            lat: location.lat,
+            lon: location.lon
+          },
+          profileId: "emergency_vehicle",
+          to: {
+            ...(target.label ? { label: target.label } : {}),
+            lat: target.lat,
+            lon: target.lon
+          }
+        });
+        setEmergencyRoute(response);
+        setEmergencyRouteStatus("ready");
+        const primary = response.routes[0];
+        const summary = formatEmergencyRouteSummary(primary, response.quality);
+        setEmergencyRouteMessage(summary);
+        setLocationStatus(summary);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Zásahovou trasu se nepodařilo vypočítat.";
+        setEmergencyRouteStatus("error");
+        setEmergencyRouteMessage(message);
+        setLocationStatus(message);
+      }
+    },
+    [apiBase, authToken]
+  );
 
   function locateUser(routeTarget?: { label?: string; lat: number; lon: number }) {
     const requestedRouteTarget = routeTarget ?? pendingRouteTarget;
@@ -3856,17 +4306,20 @@ export function App() {
     );
   }
 
-  const requestEmergencyRouteToPoint = React.useCallback(async (target: { label?: string; lat: number; lon: number }) => {
-    if (!userLocation) {
-      setPendingRouteTarget(target);
-      setEmergencyRouteStatus("loading");
-      setEmergencyRouteMessage("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
-      setLocationStatus("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
-      locateUser(target);
-      return;
-    }
-    await runEmergencyRouteFromLocation(userLocation, target);
-  }, [runEmergencyRouteFromLocation, userLocation]);
+  const requestEmergencyRouteToPoint = React.useCallback(
+    async (target: { label?: string; lat: number; lon: number }) => {
+      if (!userLocation) {
+        setPendingRouteTarget(target);
+        setEmergencyRouteStatus("loading");
+        setEmergencyRouteMessage("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
+        setLocationStatus("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
+        locateUser(target);
+        return;
+      }
+      await runEmergencyRouteFromLocation(userLocation, target);
+    },
+    [runEmergencyRouteFromLocation, userLocation]
+  );
 
   React.useEffect(() => {
     if (!pendingRouteTarget) {
@@ -3895,9 +4348,12 @@ export function App() {
       setSelectedSituationFeatureStableKey(null);
     } else if (result.kind === "feature" && result.featureId) {
       setSelectedSituationFeatureId(result.featureId);
-      setSelectedSituationFeatureStableKey(stableSituationFeatureSelectionKey(
-        combinedSituationFeatures?.features.find((feature) => feature.properties.featureId === result.featureId) ?? null
-      ));
+      setSelectedSituationFeatureStableKey(
+        stableSituationFeatureSelectionKey(
+          combinedSituationFeatures?.features.find((feature) => feature.properties.featureId === result.featureId) ??
+            null
+        )
+      );
       setSelectedObjectId(null);
     } else if (result.kind === "place") {
       setSelectedObjectId(null);
@@ -3908,7 +4364,8 @@ export function App() {
       bearing: mapView?.bearing ?? 0,
       center: result.center,
       pitch: mapView?.pitch ?? 0,
-      zoom: result.kind === "place" ? result.zoom ?? 10 : Math.max(mapView?.zoom ?? 10, result.kind === "track" ? 11 : 10)
+      zoom:
+        result.kind === "place" ? (result.zoom ?? 10) : Math.max(mapView?.zoom ?? 10, result.kind === "track" ? 11 : 10)
     });
     setFocusViewRequest((current) => current + 1);
   }
@@ -4112,7 +4569,9 @@ export function App() {
         location: communityReportDraft.location,
         observedAt: new Date().toISOString(),
         title: communityReportDraft.title.trim(),
-        validUntil: communityReportDraft.validUntil ? new Date(communityReportDraft.validUntil).toISOString() : undefined,
+        validUntil: communityReportDraft.validUntil
+          ? new Date(communityReportDraft.validUntil).toISOString()
+          : undefined,
         visibility: "community"
       } as const;
       linkedGroup = communityReportDraft.reportId
@@ -4121,9 +4580,9 @@ export function App() {
       const report = communityReportDraft.reportId
         ? await updateCommunityReport(apiBase, authToken, communityReportDraft.reportId, reportPayload)
         : await createCommunityReport(apiBase, authToken, {
-          ...reportPayload,
-          ...(linkedGroup ? { groupId: linkedGroup.groupId, groupName: linkedGroup.name } : {})
-        });
+            ...reportPayload,
+            ...(linkedGroup ? { groupId: linkedGroup.groupId, groupName: linkedGroup.name } : {})
+          });
       reportCreated = true;
       for (const [fileIndex, file] of filesToUpload.entries()) {
         const contentType = normalizeCommunityFileContentType(file);
@@ -4145,7 +4604,13 @@ export function App() {
           contentType,
           fileName: file.name || undefined,
           kind,
-          metadata: buildCommunityAttachmentMetadata(file, contentType, kind, communityReportDraft.videoSpatialMode, communityReportAccessPolicy(communityReportDraft))
+          metadata: buildCommunityAttachmentMetadata(
+            file,
+            contentType,
+            kind,
+            communityReportDraft.videoSpatialMode,
+            communityReportAccessPolicy(communityReportDraft)
+          )
         });
         await uploadCommunityAttachmentFile(apiBase, authToken, report.reportId, file, slot, (progress) => {
           setCommunityUploadProgress(uploadProgressFromAttachment(file, fileIndex, filesToUpload.length, progress));
@@ -4190,9 +4655,11 @@ export function App() {
         requestEmbeddedChatSelection(linkedGroup.groupId);
       }
       enableCommunityReportCatalogLayers();
-      setLocationStatus(chatLinkMetadataWarning
-        ? "Hlášení bylo uloženo. Chatová skupina vznikla, ale metadata vazby se nepodařilo doplnit."
-        : "Hlášení bylo uloženo.");
+      setLocationStatus(
+        chatLinkMetadataWarning
+          ? "Hlášení bylo uloženo. Chatová skupina vznikla, ale metadata vazby se nepodařilo doplnit."
+          : "Hlášení bylo uloženo."
+      );
     } catch (error) {
       if (linkedGroup && !reportCreated) {
         try {
@@ -4242,7 +4709,11 @@ export function App() {
     });
   }
 
-  async function persistCommunityReportChatGroupLink(token: string, group: CommunityGroup, report: CommunityReport): Promise<void> {
+  async function persistCommunityReportChatGroupLink(
+    token: string,
+    group: CommunityGroup,
+    report: CommunityReport
+  ): Promise<void> {
     await updateCommunityGroupMetadata(apiBase, token, group.groupId, {
       createdFrom: "cop-community-report",
       featureId: `community:${report.reportId}`,
@@ -4294,7 +4765,9 @@ export function App() {
       mediaAccessMode: "public",
       reportId: properties.reportId,
       title: properties.label ?? properties.headline ?? "",
-      validUntil: properties.validUntil ? toDateTimeLocalValue(new Date(properties.validUntil)) : toDateTimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000))
+      validUntil: properties.validUntil
+        ? toDateTimeLocalValue(new Date(properties.validUntil))
+        : toDateTimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000))
     });
     setCommunityReportError(null);
     setCommunityReportSuccess(null);
@@ -4407,36 +4880,54 @@ export function App() {
   const showRadioControls = activeWorkspace === "radio";
   const openIncidentTaskStatuses = React.useMemo<IncidentTaskStatus[]>(() => ["open", "in_progress", "blocked"], []);
 
-  const radioRequestBase = React.useCallback(() => radioUseCustomProfile
-    ? { profile: radioCustomProfile }
-    : { profileId: selectedRadioProfile.profileId ?? radioProfileId },
+  const radioRequestBase = React.useCallback(
+    () =>
+      radioUseCustomProfile
+        ? { profile: radioCustomProfile }
+        : { profileId: selectedRadioProfile.profileId ?? radioProfileId },
     [radioCustomProfile, radioProfileId, radioUseCustomProfile, selectedRadioProfile]
   );
   const radioReferencePoint = React.useCallback((): RadioPoint => {
     if (userLocation) {
-      return { antennaHeightM: selectedRadioProfile.antennaHeightM, lat: userLocation.lat, lon: userLocation.lon, receiverHeightM: selectedRadioProfile.receiverHeightM };
+      return {
+        antennaHeightM: selectedRadioProfile.antennaHeightM,
+        lat: userLocation.lat,
+        lon: userLocation.lon,
+        receiverHeightM: selectedRadioProfile.receiverHeightM
+      };
     }
     const center = mapView?.center ?? [(mapBounds.west + mapBounds.east) / 2, (mapBounds.south + mapBounds.north) / 2];
-    return { antennaHeightM: selectedRadioProfile.antennaHeightM, lat: center[1], lon: center[0], receiverHeightM: selectedRadioProfile.receiverHeightM };
+    return {
+      antennaHeightM: selectedRadioProfile.antennaHeightM,
+      lat: center[1],
+      lon: center[0],
+      receiverHeightM: selectedRadioProfile.receiverHeightM
+    };
   }, [mapBounds, mapView?.center, selectedRadioProfile, userLocation]);
 
-  const resetRadioComputation = React.useCallback((mode = radioMode) => {
-    setRadioOverlay(null);
-    setRadioResult({ mode, status: "idle", title: "Radio LoS", warnings: [] });
-  }, [radioMode]);
+  const resetRadioComputation = React.useCallback(
+    (mode = radioMode) => {
+      setRadioOverlay(null);
+      setRadioResult({ mode, status: "idle", title: "Radio LoS", warnings: [] });
+    },
+    [radioMode]
+  );
 
-  const applyRadioPointToTarget = React.useCallback((target: RadioPointPickTarget, point: RadioPoint) => {
-    if (target === "station") {
-      setRadioStation(point);
-    } else if (target === "from") {
-      setRadioLinkFrom(point);
-    } else if (target === "to") {
-      setRadioLinkTo(point);
-    } else {
-      setRadioSearchTargets([point]);
-    }
-    resetRadioComputation();
-  }, [resetRadioComputation]);
+  const applyRadioPointToTarget = React.useCallback(
+    (target: RadioPointPickTarget, point: RadioPoint) => {
+      if (target === "station") {
+        setRadioStation(point);
+      } else if (target === "from") {
+        setRadioLinkFrom(point);
+      } else if (target === "to") {
+        setRadioLinkTo(point);
+      } else {
+        setRadioSearchTargets([point]);
+      }
+      resetRadioComputation();
+    },
+    [resetRadioComputation]
+  );
 
   const loadRadioProfiles = React.useCallback(async () => {
     setRadioProfilesStatus("loading");
@@ -4445,11 +4936,19 @@ export function App() {
       const response: RadioProfilesResponse = await fetchRadioProfiles(apiBase, authToken);
       const profiles = response.profiles.length > 0 ? response.profiles : defaultRadioProfiles;
       setRadioProfiles(profiles);
-      setRadioProfileId((current) => profiles.some((profile) => (profile.profileId ?? profile.name) === current) ? current : profiles[0]?.profileId ?? profiles[0]?.name ?? current);
+      setRadioProfileId((current) =>
+        profiles.some((profile) => (profile.profileId ?? profile.name) === current)
+          ? current
+          : (profiles[0]?.profileId ?? profiles[0]?.name ?? current)
+      );
       setRadioProfilesStatus("loaded");
     } catch (error) {
       setRadioProfiles(defaultRadioProfiles);
-      setRadioProfilesError(error instanceof Error ? humanizeApiError(error.message) : "Katalog rádiových profilů není dostupný, používám lokální výchozí šablony.");
+      setRadioProfilesError(
+        error instanceof Error
+          ? humanizeApiError(error.message)
+          : "Katalog rádiových profilů není dostupný, používám lokální výchozí šablony."
+      );
       setRadioProfilesStatus("error");
     }
   }, [apiBase, authToken]);
@@ -4461,10 +4960,13 @@ export function App() {
     void loadRadioProfiles();
   }, [loadRadioProfiles, radioProfilesStatus, showRadioControls]);
 
-  const applyRadioPointFromContext = React.useCallback((target: RadioPointPickTarget) => {
-    applyRadioPointToTarget(target, radioReferencePoint());
-    setRadioPointPickTarget(null);
-  }, [applyRadioPointToTarget, radioReferencePoint]);
+  const applyRadioPointFromContext = React.useCallback(
+    (target: RadioPointPickTarget) => {
+      applyRadioPointToTarget(target, radioReferencePoint());
+      setRadioPointPickTarget(null);
+    },
+    [applyRadioPointToTarget, radioReferencePoint]
+  );
 
   const startRadioPointPick = React.useCallback((target: RadioPointPickTarget) => {
     setActiveWorkspace("radio");
@@ -4472,43 +4974,67 @@ export function App() {
     setMobileSketchOpen(false);
     setCommunityReportLocationPickMode(false);
     setZoneCreationMode(false);
-    setRadioPointPickTarget((current) => current === target ? null : target);
+    setRadioPointPickTarget((current) => (current === target ? null : target));
   }, []);
 
-  const handleRadioPointPicked = React.useCallback((center: { lat: number; lon: number }) => {
-    if (!radioPointPickTarget) {
-      return;
-    }
-    const currentPoint = radioPointForTarget(radioPointPickTarget, radioStation, radioLinkFrom, radioLinkTo, radioSearchTargets);
-    applyRadioPointToTarget(radioPointPickTarget, radioPointFromMapClick(currentPoint, center));
-    setRadioPointPickTarget(null);
-  }, [applyRadioPointToTarget, radioLinkFrom, radioLinkTo, radioPointPickTarget, radioSearchTargets, radioStation]);
+  const handleRadioPointPicked = React.useCallback(
+    (center: { lat: number; lon: number }) => {
+      if (!radioPointPickTarget) {
+        return;
+      }
+      const currentPoint = radioPointForTarget(
+        radioPointPickTarget,
+        radioStation,
+        radioLinkFrom,
+        radioLinkTo,
+        radioSearchTargets
+      );
+      applyRadioPointToTarget(radioPointPickTarget, radioPointFromMapClick(currentPoint, center));
+      setRadioPointPickTarget(null);
+    },
+    [applyRadioPointToTarget, radioLinkFrom, radioLinkTo, radioPointPickTarget, radioSearchTargets, radioStation]
+  );
 
-  const updateRadioMode = React.useCallback((mode: RadioLosMode) => {
-    setRadioMode(mode);
-    setRadioPointPickTarget(null);
-    resetRadioComputation(mode);
-  }, [resetRadioComputation]);
+  const updateRadioMode = React.useCallback(
+    (mode: RadioLosMode) => {
+      setRadioMode(mode);
+      setRadioPointPickTarget(null);
+      resetRadioComputation(mode);
+    },
+    [resetRadioComputation]
+  );
 
-  const updateRadioStation = React.useCallback((point: RadioPoint) => {
-    setRadioStation(point);
-    resetRadioComputation();
-  }, [resetRadioComputation]);
+  const updateRadioStation = React.useCallback(
+    (point: RadioPoint) => {
+      setRadioStation(point);
+      resetRadioComputation();
+    },
+    [resetRadioComputation]
+  );
 
-  const updateRadioLinkFrom = React.useCallback((point: RadioPoint) => {
-    setRadioLinkFrom(point);
-    resetRadioComputation();
-  }, [resetRadioComputation]);
+  const updateRadioLinkFrom = React.useCallback(
+    (point: RadioPoint) => {
+      setRadioLinkFrom(point);
+      resetRadioComputation();
+    },
+    [resetRadioComputation]
+  );
 
-  const updateRadioLinkTo = React.useCallback((point: RadioPoint) => {
-    setRadioLinkTo(point);
-    resetRadioComputation();
-  }, [resetRadioComputation]);
+  const updateRadioLinkTo = React.useCallback(
+    (point: RadioPoint) => {
+      setRadioLinkTo(point);
+      resetRadioComputation();
+    },
+    [resetRadioComputation]
+  );
 
-  const updateRadioSearchTargets = React.useCallback((targets: RadioPoint[]) => {
-    setRadioSearchTargets(targets);
-    resetRadioComputation();
-  }, [resetRadioComputation]);
+  const updateRadioSearchTargets = React.useCallback(
+    (targets: RadioPoint[]) => {
+      setRadioSearchTargets(targets);
+      resetRadioComputation();
+    },
+    [resetRadioComputation]
+  );
 
   const saveCustomRadioProfile = React.useCallback(async () => {
     setRadioProfilesStatus("loading");
@@ -4521,7 +5047,9 @@ export function App() {
       setRadioUseCustomProfile(false);
       setRadioProfilesStatus("loaded");
     } catch (error) {
-      setRadioProfilesError(error instanceof Error ? humanizeApiError(error.message) : "Vlastní profil se nepodařilo uložit.");
+      setRadioProfilesError(
+        error instanceof Error ? humanizeApiError(error.message) : "Vlastní profil se nepodařilo uložit."
+      );
       setRadioProfilesStatus("error");
     }
   }, [apiBase, authToken, radioCustomProfile, radioProfileId]);
@@ -4542,7 +5070,13 @@ export function App() {
         const response = await runRadioCoverage(apiBase, authToken, request);
         const features = radioFeatureCollectionToSituationFeatures(response, radioMode, selectedRadioProfile);
         setRadioOverlay({ features, mode: radioMode, title: "Pokrytí z bodu", warnings: response.warnings });
-        setRadioResult({ collection: response, mode: radioMode, status: "loaded", title: "Pokrytí z bodu", warnings: response.warnings });
+        setRadioResult({
+          collection: response,
+          mode: radioMode,
+          status: "loaded",
+          title: "Pokrytí z bodu",
+          warnings: response.warnings
+        });
         return;
       }
       if (radioMode === "site") {
@@ -4557,7 +5091,13 @@ export function App() {
         const response = await runRadioSiteSearch(apiBase, authToken, request);
         const features = radioFeatureCollectionToSituationFeatures(response, radioMode, selectedRadioProfile);
         setRadioOverlay({ features, mode: radioMode, title: "Kandidátní stanoviště", warnings: response.warnings });
-        setRadioResult({ collection: response, mode: radioMode, status: "loaded", title: "Kandidátní stanoviště", warnings: response.warnings });
+        setRadioResult({
+          collection: response,
+          mode: radioMode,
+          status: "loaded",
+          title: "Kandidátní stanoviště",
+          warnings: response.warnings
+        });
         return;
       }
       const request: RadioLinkCheckRequest = {
@@ -4568,12 +5108,29 @@ export function App() {
       };
       const response = await runRadioLinkCheck(apiBase, authToken, request);
       const linkFeature = radioLinkCheckToSituationFeature(response, request, selectedRadioProfile);
-      setRadioOverlay({ features: [linkFeature], mode: radioMode, title: "Spojení bod-bod", warnings: response.warnings });
-      setRadioResult({ link: response, mode: radioMode, status: "loaded", title: "Spojení bod-bod", warnings: response.warnings });
+      setRadioOverlay({
+        features: [linkFeature],
+        mode: radioMode,
+        title: "Spojení bod-bod",
+        warnings: response.warnings
+      });
+      setRadioResult({
+        link: response,
+        mode: radioMode,
+        status: "loaded",
+        title: "Spojení bod-bod",
+        warnings: response.warnings
+      });
     } catch (error) {
       const message = error instanceof Error ? humanizeApiError(error.message) : "Radio LoS výpočet selhal.";
       setRadioOverlay(null);
-      setRadioResult({ error: message, mode: radioMode, status: "error", title: radioLosModeLabel(radioMode), warnings: [] });
+      setRadioResult({
+        error: message,
+        mode: radioMode,
+        status: "error",
+        title: radioLosModeLabel(radioMode),
+        warnings: []
+      });
     }
   }, [
     apiBase,
@@ -4590,19 +5147,22 @@ export function App() {
     selectedRadioProfile
   ]);
 
-  const loadIncidentTasks = React.useCallback(async (incidentId: string, token = authToken) => {
-    if (!token) {
-      return;
-    }
-    const response = await fetchIncidentTasks(apiBase, token, incidentId, {
-      limit: 20,
-      statuses: openIncidentTaskStatuses
-    });
-    setIncidentTasksById((current) => ({
-      ...current,
-      [incidentId]: response.items
-    }));
-  }, [apiBase, authToken, openIncidentTaskStatuses]);
+  const loadIncidentTasks = React.useCallback(
+    async (incidentId: string, token = authToken) => {
+      if (!token) {
+        return;
+      }
+      const response = await fetchIncidentTasks(apiBase, token, incidentId, {
+        limit: 20,
+        statuses: openIncidentTaskStatuses
+      });
+      setIncidentTasksById((current) => ({
+        ...current,
+        [incidentId]: response.items
+      }));
+    },
+    [apiBase, authToken, openIncidentTaskStatuses]
+  );
 
   const loadIncidentWorkflow = React.useCallback(async () => {
     if (!authToken) {
@@ -4633,26 +5193,34 @@ export function App() {
         })
       ]);
       const nextIncidents = incidentResponse.items;
-      const nextSelectedIncidentId = selectedIncidentId && nextIncidents.some((incident) => incident.incidentId === selectedIncidentId)
-        ? selectedIncidentId
-        : nextIncidents[0]?.incidentId ?? null;
+      const nextSelectedIncidentId =
+        selectedIncidentId && nextIncidents.some((incident) => incident.incidentId === selectedIncidentId)
+          ? selectedIncidentId
+          : (nextIncidents[0]?.incidentId ?? null);
 
       setIncidentSuggestions(suggestionResponse.items);
       setIncidents(nextIncidents);
       setSelectedIncidentId(nextSelectedIncidentId);
-      setIncidentWorkflowStatus(`Načteno ${nextIncidents.length} incidentů a ${suggestionResponse.items.length} návrhů.`);
+      setIncidentWorkflowStatus(
+        `Načteno ${nextIncidents.length} incidentů a ${suggestionResponse.items.length} návrhů.`
+      );
 
-      const taskIncidentIds = [...new Set([
-        nextSelectedIncidentId,
-        ...nextIncidents.slice(0, 2).map((incident) => incident.incidentId)
-      ].filter((incidentId): incidentId is string => Boolean(incidentId)))];
-      const taskPairs = await Promise.all(taskIncidentIds.map(async (incidentId) => {
-        const response = await fetchIncidentTasks(apiBase, authToken, incidentId, {
-          limit: 20,
-          statuses: openIncidentTaskStatuses
-        });
-        return [incidentId, response.items] as const;
-      }));
+      const taskIncidentIds = [
+        ...new Set(
+          [nextSelectedIncidentId, ...nextIncidents.slice(0, 2).map((incident) => incident.incidentId)].filter(
+            (incidentId): incidentId is string => Boolean(incidentId)
+          )
+        )
+      ];
+      const taskPairs = await Promise.all(
+        taskIncidentIds.map(async (incidentId) => {
+          const response = await fetchIncidentTasks(apiBase, authToken, incidentId, {
+            limit: 20,
+            statuses: openIncidentTaskStatuses
+          });
+          return [incidentId, response.items] as const;
+        })
+      );
       setIncidentTasksById((current) => ({
         ...current,
         ...Object.fromEntries(taskPairs)
@@ -4671,122 +5239,149 @@ export function App() {
     void loadIncidentWorkflow();
   }, [loadIncidentWorkflow, showAlertControls]);
 
-  const handleSelectIncident = React.useCallback((incidentId: string) => {
-    setSelectedIncidentId(incidentId);
-    setIncidentTaskDraft("");
-    void loadIncidentTasks(incidentId);
-  }, [loadIncidentTasks]);
-
-  const handleAcceptIncidentSuggestion = React.useCallback(async (suggestion: IncidentFusionSuggestion) => {
-    if (!authToken) {
-      setIncidentWorkflowError("Přijetí návrhu vyžaduje přihlášení.");
-      return;
-    }
-    setIncidentWorkflowLoading(true);
-    setIncidentWorkflowError(null);
-    try {
-      const incident = await createIncident(apiBase, authToken, {
-        category: suggestion.category,
-        confidence: suggestion.confidence,
-        description: suggestion.description ?? suggestion.explanation,
-        location: {
-          ...suggestion.location,
-          source: "fusion"
-        },
-        properties: {
-          ...suggestion.properties,
-          fusionSuggestionId: suggestion.suggestionId,
-          reportIds: suggestion.reportIds
-        },
-        provenance: [{
-          explanation: suggestion.explanation,
-          kind: "fusion_suggestion",
-          metrics: suggestion.metrics,
-          suggestionId: suggestion.suggestionId
-        }],
-        severity: suggestion.severity,
-        sourceRefs: suggestion.sourceRefs,
-        status: "active",
-        title: suggestion.title
-      });
-      setIncidents((current) => [incident, ...current.filter((candidate) => candidate.incidentId !== incident.incidentId)]);
-      setIncidentSuggestions((current) => current.filter((candidate) => candidate.suggestionId !== suggestion.suggestionId));
-      setSelectedIncidentId(incident.incidentId);
-      setIncidentWorkflowStatus("Návrh byl převeden na aktivní incident.");
-      void loadIncidentTasks(incident.incidentId, authToken);
-    } catch (error) {
-      setIncidentWorkflowError(error instanceof Error ? error.message : "Návrh se nepodařilo přijmout.");
-    } finally {
-      setIncidentWorkflowLoading(false);
-    }
-  }, [apiBase, authToken, loadIncidentTasks]);
-
-  const handleUpdateIncidentStatus = React.useCallback(async (incidentId: string, status: IncidentStatus) => {
-    if (!authToken) {
-      setIncidentWorkflowError("Změna incidentu vyžaduje přihlášení.");
-      return;
-    }
-    setIncidentWorkflowError(null);
-    try {
-      const incident = await updateIncident(apiBase, authToken, incidentId, { status });
-      setIncidents((current) => current.map((candidate) => candidate.incidentId === incident.incidentId ? incident : candidate));
-      setIncidentWorkflowStatus(`Incident je nyní ${incidentStatusLabel(status).toLowerCase()}.`);
-    } catch (error) {
-      setIncidentWorkflowError(error instanceof Error ? error.message : "Incident se nepodařilo aktualizovat.");
-    }
-  }, [apiBase, authToken]);
-
-  const handleCreateIncidentTask = React.useCallback(async (incidentId: string, title: string) => {
-    if (!authToken) {
-      setIncidentWorkflowError("Založení úkolu vyžaduje přihlášení.");
-      return;
-    }
-    const normalizedTitle = title.trim();
-    if (!normalizedTitle) {
-      return;
-    }
-    setIncidentWorkflowError(null);
-    try {
-      const task = await createIncidentTask(apiBase, authToken, incidentId, {
-        priority: "normal",
-        status: "open",
-        title: normalizedTitle
-      });
-      setIncidentTasksById((current) => ({
-        ...current,
-        [incidentId]: [task, ...(current[incidentId] ?? [])]
-      }));
+  const handleSelectIncident = React.useCallback(
+    (incidentId: string) => {
+      setSelectedIncidentId(incidentId);
       setIncidentTaskDraft("");
-      setIncidentWorkflowStatus("Úkol byl založen.");
-    } catch (error) {
-      setIncidentWorkflowError(error instanceof Error ? error.message : "Úkol se nepodařilo založit.");
-    }
-  }, [apiBase, authToken]);
+      void loadIncidentTasks(incidentId);
+    },
+    [loadIncidentTasks]
+  );
 
-  const handleUpdateIncidentTaskStatus = React.useCallback(async (incidentId: string, taskId: string, status: IncidentTaskStatus) => {
-    if (!authToken) {
-      setIncidentWorkflowError("Změna úkolu vyžaduje přihlášení.");
-      return;
-    }
-    setIncidentWorkflowError(null);
-    try {
-      const task = await updateIncidentTask(apiBase, authToken, incidentId, taskId, { status });
-      setIncidentTasksById((current) => ({
-        ...current,
-        [incidentId]: (current[incidentId] ?? []).map((candidate) => candidate.taskId === task.taskId ? task : candidate)
-      }));
-      setIncidentWorkflowStatus("Úkol byl aktualizován.");
-    } catch (error) {
-      setIncidentWorkflowError(error instanceof Error ? error.message : "Úkol se nepodařilo aktualizovat.");
-    }
-  }, [apiBase, authToken]);
+  const handleAcceptIncidentSuggestion = React.useCallback(
+    async (suggestion: IncidentFusionSuggestion) => {
+      if (!authToken) {
+        setIncidentWorkflowError("Přijetí návrhu vyžaduje přihlášení.");
+        return;
+      }
+      setIncidentWorkflowLoading(true);
+      setIncidentWorkflowError(null);
+      try {
+        const incident = await createIncident(apiBase, authToken, {
+          category: suggestion.category,
+          confidence: suggestion.confidence,
+          description: suggestion.description ?? suggestion.explanation,
+          location: {
+            ...suggestion.location,
+            source: "fusion"
+          },
+          properties: {
+            ...suggestion.properties,
+            fusionSuggestionId: suggestion.suggestionId,
+            reportIds: suggestion.reportIds
+          },
+          provenance: [
+            {
+              explanation: suggestion.explanation,
+              kind: "fusion_suggestion",
+              metrics: suggestion.metrics,
+              suggestionId: suggestion.suggestionId
+            }
+          ],
+          severity: suggestion.severity,
+          sourceRefs: suggestion.sourceRefs,
+          status: "active",
+          title: suggestion.title
+        });
+        setIncidents((current) => [
+          incident,
+          ...current.filter((candidate) => candidate.incidentId !== incident.incidentId)
+        ]);
+        setIncidentSuggestions((current) =>
+          current.filter((candidate) => candidate.suggestionId !== suggestion.suggestionId)
+        );
+        setSelectedIncidentId(incident.incidentId);
+        setIncidentWorkflowStatus("Návrh byl převeden na aktivní incident.");
+        void loadIncidentTasks(incident.incidentId, authToken);
+      } catch (error) {
+        setIncidentWorkflowError(error instanceof Error ? error.message : "Návrh se nepodařilo přijmout.");
+      } finally {
+        setIncidentWorkflowLoading(false);
+      }
+    },
+    [apiBase, authToken, loadIncidentTasks]
+  );
+
+  const handleUpdateIncidentStatus = React.useCallback(
+    async (incidentId: string, status: IncidentStatus) => {
+      if (!authToken) {
+        setIncidentWorkflowError("Změna incidentu vyžaduje přihlášení.");
+        return;
+      }
+      setIncidentWorkflowError(null);
+      try {
+        const incident = await updateIncident(apiBase, authToken, incidentId, { status });
+        setIncidents((current) =>
+          current.map((candidate) => (candidate.incidentId === incident.incidentId ? incident : candidate))
+        );
+        setIncidentWorkflowStatus(`Incident je nyní ${incidentStatusLabel(status).toLowerCase()}.`);
+      } catch (error) {
+        setIncidentWorkflowError(error instanceof Error ? error.message : "Incident se nepodařilo aktualizovat.");
+      }
+    },
+    [apiBase, authToken]
+  );
+
+  const handleCreateIncidentTask = React.useCallback(
+    async (incidentId: string, title: string) => {
+      if (!authToken) {
+        setIncidentWorkflowError("Založení úkolu vyžaduje přihlášení.");
+        return;
+      }
+      const normalizedTitle = title.trim();
+      if (!normalizedTitle) {
+        return;
+      }
+      setIncidentWorkflowError(null);
+      try {
+        const task = await createIncidentTask(apiBase, authToken, incidentId, {
+          priority: "normal",
+          status: "open",
+          title: normalizedTitle
+        });
+        setIncidentTasksById((current) => ({
+          ...current,
+          [incidentId]: [task, ...(current[incidentId] ?? [])]
+        }));
+        setIncidentTaskDraft("");
+        setIncidentWorkflowStatus("Úkol byl založen.");
+      } catch (error) {
+        setIncidentWorkflowError(error instanceof Error ? error.message : "Úkol se nepodařilo založit.");
+      }
+    },
+    [apiBase, authToken]
+  );
+
+  const handleUpdateIncidentTaskStatus = React.useCallback(
+    async (incidentId: string, taskId: string, status: IncidentTaskStatus) => {
+      if (!authToken) {
+        setIncidentWorkflowError("Změna úkolu vyžaduje přihlášení.");
+        return;
+      }
+      setIncidentWorkflowError(null);
+      try {
+        const task = await updateIncidentTask(apiBase, authToken, incidentId, taskId, { status });
+        setIncidentTasksById((current) => ({
+          ...current,
+          [incidentId]: (current[incidentId] ?? []).map((candidate) =>
+            candidate.taskId === task.taskId ? task : candidate
+          )
+        }));
+        setIncidentWorkflowStatus("Úkol byl aktualizován.");
+      } catch (error) {
+        setIncidentWorkflowError(error instanceof Error ? error.message : "Úkol se nepodařilo aktualizovat.");
+      }
+    },
+    [apiBase, authToken]
+  );
 
   const catalogGroupViews = React.useMemo(() => buildCatalogGroupViews(mapCatalog), [mapCatalog]);
   const activeCatalogGroup = catalogGroupViews.find((view) => view.group.groupId === activeCatalogGroupId) ?? null;
   const priorityAlert = priorityAlertSummary.primary;
   const operationTitle = priorityAlert?.title ?? "Bez prioritní výstrahy v okolí";
   const operationBadge = priorityAlert?.badge ?? "Klid v okolí";
-  const priorityAlertAdditionalLabel = priorityAlertSummary.additionalCount > 0 ? `+${priorityAlertSummary.additionalCount} dalších` : "";
+  const priorityAlertAdditionalLabel =
+    priorityAlertSummary.additionalCount > 0 ? `+${priorityAlertSummary.additionalCount} dalších` : "";
   const effectiveOperatorProfile = React.useMemo(
     () => mergeOperatorProfile(authSession, operatorProfile),
     [authSession, operatorProfile]
@@ -4819,7 +5414,13 @@ export function App() {
       } as React.CSSProperties;
     }
     return style;
-  }, [messagingDockWidth, messagingOpen, messagingPinned, workspaceLayout.leftPanelWidth, workspaceLayout.rightPanelWidth]);
+  }, [
+    messagingDockWidth,
+    messagingOpen,
+    messagingPinned,
+    workspaceLayout.leftPanelWidth,
+    workspaceLayout.rightPanelWidth
+  ]);
 
   function openTomatoEasterEggFromBrand() {
     if (tomatoBrandClickResetRef.current !== null) {
@@ -4838,43 +5439,54 @@ export function App() {
     }, 1400);
   }
 
-  const mobileDetailSheetForSelection = React.useCallback((isSelected: boolean): MobileSheet =>
-    isSelected || !mobileSheetViewport ? null : "detail", [mobileSheetViewport]);
+  const mobileDetailSheetForSelection = React.useCallback(
+    (isSelected: boolean): MobileSheet => (isSelected || !mobileSheetViewport ? null : "detail"),
+    [mobileSheetViewport]
+  );
 
-  const handleMapSelectObject = React.useCallback((object: CopObject) => {
-    const isSelected = selectedObjectId === object.objectId;
-    setSelectedObjectId(isSelected ? null : object.objectId);
-    setSelectedSituationFeatureId(null);
-    setSelectedSituationFeatureStableKey(null);
-    setSelectedSketchDrawingId(null);
-    setMobileSketchOpen(false);
-    setMobileSheet(mobileDetailSheetForSelection(isSelected));
-  }, [mobileDetailSheetForSelection, selectedObjectId]);
+  const handleMapSelectObject = React.useCallback(
+    (object: CopObject) => {
+      const isSelected = selectedObjectId === object.objectId;
+      setSelectedObjectId(isSelected ? null : object.objectId);
+      setSelectedSituationFeatureId(null);
+      setSelectedSituationFeatureStableKey(null);
+      setSelectedSketchDrawingId(null);
+      setMobileSketchOpen(false);
+      setMobileSheet(mobileDetailSheetForSelection(isSelected));
+    },
+    [mobileDetailSheetForSelection, selectedObjectId]
+  );
 
-  const handleMapSelectSituationFeature = React.useCallback((feature: SituationFeature) => {
-    if (isMobileTowerViewshedOverlayFeature(feature)) {
-      return;
-    }
-    const isSelected = selectedSituationFeatureId === feature.properties.featureId;
-    setSelectedSituationFeatureId(isSelected ? null : feature.properties.featureId);
-    setSelectedSituationFeatureStableKey(isSelected ? null : stableSituationFeatureSelectionKey(feature));
-    setSelectedObjectId(null);
-    setSelectedSketchDrawingId(null);
-    setMobileSketchOpen(false);
-    setMobileSheet(mobileDetailSheetForSelection(isSelected));
-  }, [mobileDetailSheetForSelection, selectedSituationFeatureId]);
+  const handleMapSelectSituationFeature = React.useCallback(
+    (feature: SituationFeature) => {
+      if (isMobileTowerViewshedOverlayFeature(feature)) {
+        return;
+      }
+      const isSelected = selectedSituationFeatureId === feature.properties.featureId;
+      setSelectedSituationFeatureId(isSelected ? null : feature.properties.featureId);
+      setSelectedSituationFeatureStableKey(isSelected ? null : stableSituationFeatureSelectionKey(feature));
+      setSelectedObjectId(null);
+      setSelectedSketchDrawingId(null);
+      setMobileSketchOpen(false);
+      setMobileSheet(mobileDetailSheetForSelection(isSelected));
+    },
+    [mobileDetailSheetForSelection, selectedSituationFeatureId]
+  );
 
-  const handleOpenSafetyAreaAlert = React.useCallback((alert: SafetyAreaAlertMatch) => {
-    const feature = alert.feature;
-    setActiveWorkspace("map");
-    setSelectedSituationFeatureId(feature.properties.featureId);
-    setSelectedSituationFeatureStableKey(stableSituationFeatureSelectionKey(feature));
-    setSelectedObjectId(null);
-    setSelectedSketchDrawingId(null);
-    setMobileSketchOpen(false);
-    setMobileSheet(mobileDetailSheetForSelection(false));
-    setSafetyAreaPopup(null);
-  }, [mobileDetailSheetForSelection]);
+  const handleOpenSafetyAreaAlert = React.useCallback(
+    (alert: SafetyAreaAlertMatch) => {
+      const feature = alert.feature;
+      setActiveWorkspace("map");
+      setSelectedSituationFeatureId(feature.properties.featureId);
+      setSelectedSituationFeatureStableKey(stableSituationFeatureSelectionKey(feature));
+      setSelectedObjectId(null);
+      setSelectedSketchDrawingId(null);
+      setMobileSketchOpen(false);
+      setMobileSheet(mobileDetailSheetForSelection(false));
+      setSafetyAreaPopup(null);
+    },
+    [mobileDetailSheetForSelection]
+  );
 
   const handleMapClearSelection = React.useCallback(() => {
     setSelectedObjectId(null);
@@ -4914,48 +5526,51 @@ export function App() {
     setActiveWorkspace("map");
   }, []);
 
-  const beginWorkspacePanelResize = React.useCallback((side: "left" | "right", event: React.PointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    const startX = event.clientX;
-    const startWidth = side === "left" ? workspaceLayout.leftPanelWidth : workspaceLayout.rightPanelWidth;
-    const range = side === "left" ? workspaceLeftWidthRange : workspaceRightWidthRange;
-    let pendingWidth = startWidth;
-    let finalWidth = startWidth;
-    let frameId: number | null = null;
-    const applyWidth = () => {
-      frameId = null;
-      finalWidth = clamp(pendingWidth, range.min, range.max);
-      shellRef.current?.style.setProperty(
-        side === "left" ? "--workspace-left-width" : "--workspace-right-width",
-        `${finalWidth}px`
-      );
-    };
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      const delta = moveEvent.clientX - startX;
-      pendingWidth = side === "left" ? startWidth + delta : startWidth - delta;
-      if (frameId === null) {
-        frameId = window.requestAnimationFrame(applyWidth);
-      }
-    };
-    const finishResize = () => {
-      if (frameId !== null) {
-        window.cancelAnimationFrame(frameId);
-        applyWidth();
-      }
-      setWorkspaceResizeActive(false);
-      updateWorkspaceLayout(side === "left" ? { leftPanelWidth: finalWidth } : { rightPanelWidth: finalWidth });
-      document.documentElement.classList.remove("layout-resizing");
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", finishResize);
-      window.removeEventListener("pointercancel", finishResize);
-    };
-    setWorkspaceResizeActive(true);
-    document.documentElement.classList.add("layout-resizing");
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", finishResize, { once: true });
-    window.addEventListener("pointercancel", finishResize, { once: true });
-  }, [updateWorkspaceLayout, workspaceLayout.leftPanelWidth, workspaceLayout.rightPanelWidth]);
+  const beginWorkspacePanelResize = React.useCallback(
+    (side: "left" | "right", event: React.PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      const startX = event.clientX;
+      const startWidth = side === "left" ? workspaceLayout.leftPanelWidth : workspaceLayout.rightPanelWidth;
+      const range = side === "left" ? workspaceLeftWidthRange : workspaceRightWidthRange;
+      let pendingWidth = startWidth;
+      let finalWidth = startWidth;
+      let frameId: number | null = null;
+      const applyWidth = () => {
+        frameId = null;
+        finalWidth = clamp(pendingWidth, range.min, range.max);
+        shellRef.current?.style.setProperty(
+          side === "left" ? "--workspace-left-width" : "--workspace-right-width",
+          `${finalWidth}px`
+        );
+      };
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        const delta = moveEvent.clientX - startX;
+        pendingWidth = side === "left" ? startWidth + delta : startWidth - delta;
+        if (frameId === null) {
+          frameId = window.requestAnimationFrame(applyWidth);
+        }
+      };
+      const finishResize = () => {
+        if (frameId !== null) {
+          window.cancelAnimationFrame(frameId);
+          applyWidth();
+        }
+        setWorkspaceResizeActive(false);
+        updateWorkspaceLayout(side === "left" ? { leftPanelWidth: finalWidth } : { rightPanelWidth: finalWidth });
+        document.documentElement.classList.remove("layout-resizing");
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", finishResize);
+        window.removeEventListener("pointercancel", finishResize);
+      };
+      setWorkspaceResizeActive(true);
+      document.documentElement.classList.add("layout-resizing");
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", finishResize, { once: true });
+      window.addEventListener("pointercancel", finishResize, { once: true });
+    },
+    [updateWorkspaceLayout, workspaceLayout.leftPanelWidth, workspaceLayout.rightPanelWidth]
+  );
 
   React.useEffect(() => {
     if (activeCatalogGroupId && !catalogGroupViews.some((view) => view.group.groupId === activeCatalogGroupId)) {
@@ -4971,11 +5586,7 @@ export function App() {
   }, [activeCatalogGroupId, catalogGroupViews, mobileSheet]);
 
   return (
-    <main
-      className={shellClassName}
-      ref={shellRef}
-      style={shellStyle}
-    >
+    <main className={shellClassName} ref={shellRef} style={shellStyle}>
       <header className="topbar">
         <div className="brand">
           <button
@@ -4994,7 +5605,10 @@ export function App() {
             <p>Rizika v okolí, výstrahy a sdílené informace</p>
           </div>
         </div>
-        <div className={clsx("mission-strip", "priority-alert-strip", priorityAlert?.tone ?? "ok")} aria-label="Prioritní výstraha v okolí">
+        <div
+          className={clsx("mission-strip", "priority-alert-strip", priorityAlert?.tone ?? "ok")}
+          aria-label="Prioritní výstraha v okolí"
+        >
           <span>{operationBadge}</span>
           <strong>{operationTitle}</strong>
           {priorityAlertAdditionalLabel ? <small>{priorityAlertAdditionalLabel}</small> : null}
@@ -5017,7 +5631,9 @@ export function App() {
             onClick={() => {
               const url = window.location.href;
               if (navigator.share) {
-                void navigator.share({ title: "Civilní situační mapa", url }).catch(() => navigator.clipboard?.writeText(url));
+                void navigator
+                  .share({ title: "Civilní situační mapa", url })
+                  .catch(() => navigator.clipboard?.writeText(url));
                 return;
               }
               void navigator.clipboard?.writeText(url);
@@ -5062,7 +5678,12 @@ export function App() {
               </>
             )}
           </button>
-          <button className="operator-button help-entry-button" onClick={() => setHelpSection("overview")} title="Otevřít manuál" type="button">
+          <button
+            className="operator-button help-entry-button"
+            onClick={() => setHelpSection("overview")}
+            title="Otevřít manuál"
+            type="button"
+          >
             <BookOpen size={18} />
             <span>
               Manuál
@@ -5093,668 +5714,856 @@ export function App() {
           onStartReport={startCommunityReportCapture}
         />
 
-      <section className={workspaceClassName}>
-        {workspaceLayout.leftPanelMode !== "hidden" ? (
-        <aside className={`panel left-panel ${showMapLayerControls ? "map-catalog-panel" : ""}`}>
-          {workspaceLayout.leftPanelMode === "collapsed" ? (
-            <CollapsedPanelRail
-              icon={<Layers size={18} />}
-              label={showMapLayerControls ? "Vrstvy" : workspace.label}
-              onExpand={() => updateWorkspaceLayout({ leftPanelMode: "open" })}
-            />
-          ) : (
-            <>
-          <MobileSheetPullHandle label="Stáhnout panel vrstev" onClose={() => setMobileSheet(null)} />
-          {!showMapLayerControls ? (
-            <>
-              <div className="refresh-row compact">
-                <span>Poslední aktualizace</span>
-                <strong>{lastLoadedAt ?? "čekám na data"}</strong>
-              </div>
-              {loadError ? <div className="error-banner">API chyba: {loadError}. Poslední platná data zůstávají zobrazena.</div> : null}
-              <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} />
-            </>
-          ) : null}
-
-          {showMapLayerControls ? (
-            <CatalogLayerMenu
-              activeGroup={activeCatalogGroup}
-              groups={catalogGroupViews}
-              loadError={loadError}
-              statusLabel={missionModeLabel(operatingMode, offlineSnapshotState)}
-              onCloseDrawer={() => {
-                if (mobileSheet === "layers") {
-                  setMobileSheet(null);
-                }
-                setActiveCatalogGroupId(null);
-              }}
-              onGroupSelect={(groupId) => setActiveCatalogGroupId((current) => mobileSheet === "layers" ? groupId : current === groupId ? null : groupId)}
-              getFeatureCount={catalogLayerFeatureCount}
-              getLayerStatus={catalogLayerStatus}
-              isLayerEnabled={isCatalogLayerEnabled}
-              isLayerOperable={isCatalogLayerOperable}
-              onToggleLayer={toggleCatalogLayer}
-              coverageTechnology={coverageTechnology}
-              onCoverageTechnologyChange={setCoverageTechnology}
-              userZones={aoiRules}
-              zoneCreationMode={zoneCreationMode}
-              editingZoneId={editingZoneId}
-              onUserZoneColorChange={handleAoiRuleColorChange}
-              onUserZoneCreateFromMap={handleCreateAoiRuleFromMap}
-              onUserZoneCreateFromUserLocation={handleCreateAoiRuleFromUserLocation}
-              onUserZoneDelete={handleAoiRuleDelete}
-              onUserZoneEnabledChange={handleAoiRuleEnabledChange}
-              onUserZoneEdit={handleStartAoiRuleEdit}
-              onUserZoneRadiusChange={handleAoiRuleRadiusChange}
-              onUserZoneStartDrawing={() => {
-                setEditingZoneId(null);
-                setZoneCreationMode((current) => !current);
-              }}
-            />
-          ) : null}
-          {showMapLayerControls ? <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} /> : null}
-          {showMapLayerControls && activeWorkspace === "map" && mapSearchDocked ? (
-            <MapGlobalSearch
-              docked
-              isSearchingPlaces={placeSearchLoading}
-              placeSearchError={placeSearchError}
-              query={mapSearchQuery}
-              results={mapSearchResults}
-              onChange={setMapSearchQuery}
-              onClear={() => setMapSearchQuery("")}
-              onDockChange={(nextDocked) => {
-                setMapSearchDocked(nextDocked);
-                writeMapSearchDocked(nextDocked);
-              }}
-              onSelect={(result) => {
-                selectMapSearchResult(result);
-                setMapSearchQuery("");
-              }}
-            />
-          ) : null}
-
-          {showDataControls ? (
-            <>
-              <ViewProfilesPanel
-                activeProfileName={lastProfileName}
-                canSave={profileAccessReady}
-                profiles={viewProfiles}
-                userScope={userStorageScope}
-                onApply={applyViewProfile}
-                onSave={saveCurrentViewProfile}
-              />
-
-              <div className="mission-metrics">
-                <MetricTile label="Vlastní" value={metrics.friendlyCount} tone="friend" />
-                <MetricTile label="Rizikové" value={metrics.foreignCount} tone="hostile" />
-                <MetricTile label="Jistota" value={`${metrics.avgConfidence}%`} tone={metrics.avgConfidence >= 75 ? "ok" : "warn"} />
-                <MetricTile label="Výstrahy" value={alertSummary.total} tone={alertSummary.total > 0 ? "warn" : "ok"} />
-              </div>
-
-              <PanelTitle icon={<Layers size={17} />} title="Datové pohledy" />
-              <LayerSourceTree
-                metrics={metrics}
-                scopedObjects={scopedObjects}
-                selectedLayerIds={visibleTrackLayerIds}
-                onToggleTrackLayer={toggleTrackLayer}
-              />
-
-              <div className="control-block">
-                <PanelTitle icon={<SlidersHorizontal size={17} />} title="Filtry dat" />
-                <ObjectSearchControl
-                  resultCount={visibleObjects.length}
-                  totalCount={visibleObjectsSearchScope.length}
-                  value={searchQuery}
-                  onChange={setSearchQuery}
+        <section className={workspaceClassName}>
+          {workspaceLayout.leftPanelMode !== "hidden" ? (
+            <aside className={`panel left-panel ${showMapLayerControls ? "map-catalog-panel" : ""}`}>
+              {workspaceLayout.leftPanelMode === "collapsed" ? (
+                <CollapsedPanelRail
+                  icon={<Layers size={18} />}
+                  label={showMapLayerControls ? "Vrstvy" : workspace.label}
+                  onExpand={() => updateWorkspaceLayout({ leftPanelMode: "open" })}
                 />
-                <label className="toggle-row">
-                  <input type="checkbox" checked={includeSynthetic} onChange={(event) => setIncludeSynthetic(event.target.checked)} />
-                  Zobrazit simulovaná data
-                </label>
-                <label className="range-label">
-                  Minimální jistota dat
-                  <input type="range" min="0" max="1" step="0.05" value={minConfidence} onChange={(event) => setMinConfidence(Number(event.target.value))} />
-                  <span>{Math.round(minConfidence * 100)} %</span>
-                </label>
-                <SegmentedControl
-                  label="Vztah"
-                  options={[
-                    ["all", "Vše"],
-                    ["friend", "Vlastní"],
-                    ["hostile", "Rizikové"],
-                    ["unknown", "Neznámé"]
-                  ]}
-                  value={affiliationScope}
-                  onChange={(value) => setAffiliationScope(value as AffiliationScope)}
-                />
-                <SegmentedControl
-                  label="Doména"
-                  options={[
-                    ["all", "Vše"],
-                    ["AIR", "Vzduch"],
-                    ["LAND", "Země"],
-                    ["RESCUE", "Záchrana"]
-                  ]}
-                  value={domainScope}
-                  onChange={(value) => setDomainScope(value as DomainScope)}
-                />
-              </div>
-            </>
-          ) : null}
+              ) : (
+                <>
+                  <MobileSheetPullHandle label="Stáhnout panel vrstev" onClose={() => setMobileSheet(null)} />
+                  {!showMapLayerControls ? (
+                    <>
+                      <div className="refresh-row compact">
+                        <span>Poslední aktualizace</span>
+                        <strong>{lastLoadedAt ?? "čekám na data"}</strong>
+                      </div>
+                      {loadError ? (
+                        <div className="error-banner">
+                          API chyba: {loadError}. Poslední platná data zůstávají zobrazena.
+                        </div>
+                      ) : null}
+                      <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} />
+                    </>
+                  ) : null}
 
-          {showAlertControls ? (
-            <div className="workspace-module-card">
-              <PanelTitle icon={<AlertTriangle size={17} />} title="Výstrahy" />
-              <ReadinessRow label="SIM safety výstrahy" value={String(alertSummary.total)} tone={alertSummary.total > 0 ? "warn" : "ok"} />
-              <ReadinessRow label="Kritické" value={String(alertSummary.critical)} tone={alertSummary.critical > 0 ? "warn" : "ok"} />
-              <ReadinessRow label="Varování" value={String(alertSummary.warning)} tone={alertSummary.warning > 0 ? "warn" : "ok"} />
-              <ReadinessRow label="Zapnuté vrstvy" value={visibleSafetyLayerIds.length > 0 ? String(visibleSafetyLayerIds.length) : "vypnuto"} tone={visibleSafetyLayerIds.length > 0 ? "ok" : "neutral"} />
-              <ReadinessRow label="Stav zdroje" value={formatSafetyReadiness(safetyStatus, safetyFeatures)} tone={situationStatusTone(safetyStatus)} />
-              <button className="mini-button wide" onClick={() => void load()} type="button">
-                <RefreshCw size={14} />
-                Obnovit safety data
-              </button>
-              <button className="mini-button wide" onClick={() => openSettings("awareness")} type="button">
-                <Settings size={14} />
-                Nastavení výstrah
-              </button>
-            </div>
-          ) : null}
+                  {showMapLayerControls ? (
+                    <CatalogLayerMenu
+                      activeGroup={activeCatalogGroup}
+                      groups={catalogGroupViews}
+                      loadError={loadError}
+                      statusLabel={missionModeLabel(operatingMode, offlineSnapshotState)}
+                      onCloseDrawer={() => {
+                        if (mobileSheet === "layers") {
+                          setMobileSheet(null);
+                        }
+                        setActiveCatalogGroupId(null);
+                      }}
+                      onGroupSelect={(groupId) =>
+                        setActiveCatalogGroupId((current) =>
+                          mobileSheet === "layers" ? groupId : current === groupId ? null : groupId
+                        )
+                      }
+                      getFeatureCount={catalogLayerFeatureCount}
+                      getLayerStatus={catalogLayerStatus}
+                      isLayerEnabled={isCatalogLayerEnabled}
+                      isLayerOperable={isCatalogLayerOperable}
+                      onToggleLayer={toggleCatalogLayer}
+                      coverageTechnology={coverageTechnology}
+                      onCoverageTechnologyChange={setCoverageTechnology}
+                      userZones={aoiRules}
+                      zoneCreationMode={zoneCreationMode}
+                      editingZoneId={editingZoneId}
+                      onUserZoneColorChange={handleAoiRuleColorChange}
+                      onUserZoneCreateFromMap={handleCreateAoiRuleFromMap}
+                      onUserZoneCreateFromUserLocation={handleCreateAoiRuleFromUserLocation}
+                      onUserZoneDelete={handleAoiRuleDelete}
+                      onUserZoneEnabledChange={handleAoiRuleEnabledChange}
+                      onUserZoneEdit={handleStartAoiRuleEdit}
+                      onUserZoneRadiusChange={handleAoiRuleRadiusChange}
+                      onUserZoneStartDrawing={() => {
+                        setEditingZoneId(null);
+                        setZoneCreationMode((current) => !current);
+                      }}
+                    />
+                  ) : null}
+                  {showMapLayerControls ? (
+                    <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} />
+                  ) : null}
+                  {showMapLayerControls && activeWorkspace === "map" && mapSearchDocked ? (
+                    <MapGlobalSearch
+                      docked
+                      isSearchingPlaces={placeSearchLoading}
+                      placeSearchError={placeSearchError}
+                      query={mapSearchQuery}
+                      results={mapSearchResults}
+                      onChange={setMapSearchQuery}
+                      onClear={() => setMapSearchQuery("")}
+                      onDockChange={(nextDocked) => {
+                        setMapSearchDocked(nextDocked);
+                        writeMapSearchDocked(nextDocked);
+                      }}
+                      onSelect={(result) => {
+                        selectMapSearchResult(result);
+                        setMapSearchQuery("");
+                      }}
+                    />
+                  ) : null}
 
-          {showReplayControls ? (
-            <div className="workspace-module-card">
-              <PanelTitle icon={<History size={17} />} title="Zpětné přehrání" />
-              <ReadinessRow label="Stav" value={formatReplayStatus(replayTimestamp, replayWindow, replayActive)} tone={replayActive ? "warn" : "neutral"} />
-              <ReadinessRow label="Historie" value={`${trackHistoryWindowSeconds} s / ${historyPointCount} bodů`} tone={showHistory ? "ok" : "neutral"} />
-              <ReadinessRow label="Predikce" value={showPrediction ? predictionModeLabel(predictionMode) : "vypnuto"} tone={showPrediction ? "ok" : "neutral"} />
-              <div className="module-action-row">
-                <button className="mini-button" disabled={!replayWindow} onClick={toggleReplayPlayback} type="button">
-                  {replayRunning ? <Pause size={14} /> : <Play size={14} />}
-                  {replayRunning ? "Pozastavit" : "Spustit"}
-                </button>
-                <button className="mini-button" onClick={() => openSettings("map")} type="button">
-                  <Settings size={14} />
-                  Režim
-                </button>
-              </div>
-            </div>
-          ) : null}
+                  {showDataControls ? (
+                    <>
+                      <ViewProfilesPanel
+                        activeProfileName={lastProfileName}
+                        canSave={profileAccessReady}
+                        profiles={viewProfiles}
+                        userScope={userStorageScope}
+                        onApply={applyViewProfile}
+                        onSave={saveCurrentViewProfile}
+                      />
 
-          {showRadioControls ? (
-            <RadioLosControls
-              customProfile={radioCustomProfile}
-              gridStepM={radioGridStepM}
-              linkFrom={radioLinkFrom}
-              linkTo={radioLinkTo}
-              mode={radioMode}
-              profileId={radioProfileId}
-              profiles={radioProfiles}
-              profilesError={radioProfilesError}
-              profilesStatus={radioProfilesStatus}
-              radiusM={radioRadiusM}
-              result={radioResult}
-              mapPickTarget={radioPointPickTarget}
-              searchTargets={radioSearchTargets}
-              station={radioStation}
-              useCustomProfile={radioUseCustomProfile}
-              onApplyContext={applyRadioPointFromContext}
-              onCustomProfileChange={setRadioCustomProfile}
-              onGridStepMChange={setRadioGridStepM}
-              onLinkFromChange={updateRadioLinkFrom}
-              onLinkToChange={updateRadioLinkTo}
-              onModeChange={updateRadioMode}
-              onProfileIdChange={setRadioProfileId}
-              onRadiusMChange={setRadioRadiusM}
-              onRefreshProfiles={() => void loadRadioProfiles()}
-              onRun={() => void runRadioLos()}
-              onSaveCustomProfile={() => void saveCustomRadioProfile()}
-              onSearchTargetsChange={updateRadioSearchTargets}
-              onStartMapPick={startRadioPointPick}
-              onStationChange={updateRadioStation}
-              onUseCustomProfileChange={setRadioUseCustomProfile}
-            />
-          ) : null}
+                      <div className="mission-metrics">
+                        <MetricTile label="Vlastní" value={metrics.friendlyCount} tone="friend" />
+                        <MetricTile label="Rizikové" value={metrics.foreignCount} tone="hostile" />
+                        <MetricTile
+                          label="Jistota"
+                          value={`${metrics.avgConfidence}%`}
+                          tone={metrics.avgConfidence >= 75 ? "ok" : "warn"}
+                        />
+                        <MetricTile
+                          label="Výstrahy"
+                          value={alertSummary.total}
+                          tone={alertSummary.total > 0 ? "warn" : "ok"}
+                        />
+                      </div>
 
-          {showSourceControls ? (
-            <>
-              <div className="source-list">
-                <PanelTitle icon={<ShieldCheck size={17} />} title="Datové zdroje" />
-                {sources.map((source) => (
-                  <div className="source-row" key={source.sourceSystemId}>
-                    <span className={`dot ${source.status === "ACTIVE" ? "ok" : "warn"}`} />
-                    <div>
-                      <strong>{source.displayName}</strong>
-                      <small>{source.sourceSystemId}</small>
+                      <PanelTitle icon={<Layers size={17} />} title="Datové pohledy" />
+                      <LayerSourceTree
+                        metrics={metrics}
+                        scopedObjects={scopedObjects}
+                        selectedLayerIds={visibleTrackLayerIds}
+                        onToggleTrackLayer={toggleTrackLayer}
+                      />
+
+                      <div className="control-block">
+                        <PanelTitle icon={<SlidersHorizontal size={17} />} title="Filtry dat" />
+                        <ObjectSearchControl
+                          resultCount={visibleObjects.length}
+                          totalCount={visibleObjectsSearchScope.length}
+                          value={searchQuery}
+                          onChange={setSearchQuery}
+                        />
+                        <label className="toggle-row">
+                          <input
+                            type="checkbox"
+                            checked={includeSynthetic}
+                            onChange={(event) => setIncludeSynthetic(event.target.checked)}
+                          />
+                          Zobrazit simulovaná data
+                        </label>
+                        <label className="range-label">
+                          Minimální jistota dat
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.05"
+                            value={minConfidence}
+                            onChange={(event) => setMinConfidence(Number(event.target.value))}
+                          />
+                          <span>{Math.round(minConfidence * 100)} %</span>
+                        </label>
+                        <SegmentedControl
+                          label="Vztah"
+                          options={[
+                            ["all", "Vše"],
+                            ["friend", "Vlastní"],
+                            ["hostile", "Rizikové"],
+                            ["unknown", "Neznámé"]
+                          ]}
+                          value={affiliationScope}
+                          onChange={(value) => setAffiliationScope(value as AffiliationScope)}
+                        />
+                        <SegmentedControl
+                          label="Doména"
+                          options={[
+                            ["all", "Vše"],
+                            ["AIR", "Vzduch"],
+                            ["LAND", "Země"],
+                            ["RESCUE", "Záchrana"]
+                          ]}
+                          value={domainScope}
+                          onChange={(value) => setDomainScope(value as DomainScope)}
+                        />
+                      </div>
+                    </>
+                  ) : null}
+
+                  {showAlertControls ? (
+                    <div className="workspace-module-card">
+                      <PanelTitle icon={<AlertTriangle size={17} />} title="Výstrahy" />
+                      <ReadinessRow
+                        label="SIM safety výstrahy"
+                        value={String(alertSummary.total)}
+                        tone={alertSummary.total > 0 ? "warn" : "ok"}
+                      />
+                      <ReadinessRow
+                        label="Kritické"
+                        value={String(alertSummary.critical)}
+                        tone={alertSummary.critical > 0 ? "warn" : "ok"}
+                      />
+                      <ReadinessRow
+                        label="Varování"
+                        value={String(alertSummary.warning)}
+                        tone={alertSummary.warning > 0 ? "warn" : "ok"}
+                      />
+                      <ReadinessRow
+                        label="Zapnuté vrstvy"
+                        value={visibleSafetyLayerIds.length > 0 ? String(visibleSafetyLayerIds.length) : "vypnuto"}
+                        tone={visibleSafetyLayerIds.length > 0 ? "ok" : "neutral"}
+                      />
+                      <ReadinessRow
+                        label="Stav zdroje"
+                        value={formatSafetyReadiness(safetyStatus, safetyFeatures)}
+                        tone={situationStatusTone(safetyStatus)}
+                      />
+                      <button className="mini-button wide" onClick={() => void load()} type="button">
+                        <RefreshCw size={14} />
+                        Obnovit safety data
+                      </button>
+                      <button className="mini-button wide" onClick={() => openSettings("awareness")} type="button">
+                        <Settings size={14} />
+                        Nastavení výstrah
+                      </button>
                     </div>
-                    <em>{sourceRegistryStatusLabel(source.status)}</em>
+                  ) : null}
+
+                  {showReplayControls ? (
+                    <div className="workspace-module-card">
+                      <PanelTitle icon={<History size={17} />} title="Zpětné přehrání" />
+                      <ReadinessRow
+                        label="Stav"
+                        value={formatReplayStatus(replayTimestamp, replayWindow, replayActive)}
+                        tone={replayActive ? "warn" : "neutral"}
+                      />
+                      <ReadinessRow
+                        label="Historie"
+                        value={`${trackHistoryWindowSeconds} s / ${historyPointCount} bodů`}
+                        tone={showHistory ? "ok" : "neutral"}
+                      />
+                      <ReadinessRow
+                        label="Predikce"
+                        value={showPrediction ? predictionModeLabel(predictionMode) : "vypnuto"}
+                        tone={showPrediction ? "ok" : "neutral"}
+                      />
+                      <div className="module-action-row">
+                        <button
+                          className="mini-button"
+                          disabled={!replayWindow}
+                          onClick={toggleReplayPlayback}
+                          type="button"
+                        >
+                          {replayRunning ? <Pause size={14} /> : <Play size={14} />}
+                          {replayRunning ? "Pozastavit" : "Spustit"}
+                        </button>
+                        <button className="mini-button" onClick={() => openSettings("map")} type="button">
+                          <Settings size={14} />
+                          Režim
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {showRadioControls ? (
+                    <RadioLosControls
+                      customProfile={radioCustomProfile}
+                      gridStepM={radioGridStepM}
+                      linkFrom={radioLinkFrom}
+                      linkTo={radioLinkTo}
+                      mode={radioMode}
+                      profileId={radioProfileId}
+                      profiles={radioProfiles}
+                      profilesError={radioProfilesError}
+                      profilesStatus={radioProfilesStatus}
+                      radiusM={radioRadiusM}
+                      result={radioResult}
+                      mapPickTarget={radioPointPickTarget}
+                      searchTargets={radioSearchTargets}
+                      station={radioStation}
+                      useCustomProfile={radioUseCustomProfile}
+                      onApplyContext={applyRadioPointFromContext}
+                      onCustomProfileChange={setRadioCustomProfile}
+                      onGridStepMChange={setRadioGridStepM}
+                      onLinkFromChange={updateRadioLinkFrom}
+                      onLinkToChange={updateRadioLinkTo}
+                      onModeChange={updateRadioMode}
+                      onProfileIdChange={setRadioProfileId}
+                      onRadiusMChange={setRadioRadiusM}
+                      onRefreshProfiles={() => void loadRadioProfiles()}
+                      onRun={() => void runRadioLos()}
+                      onSaveCustomProfile={() => void saveCustomRadioProfile()}
+                      onSearchTargetsChange={updateRadioSearchTargets}
+                      onStartMapPick={startRadioPointPick}
+                      onStationChange={updateRadioStation}
+                      onUseCustomProfileChange={setRadioUseCustomProfile}
+                    />
+                  ) : null}
+
+                  {showSourceControls ? (
+                    <>
+                      <div className="source-list">
+                        <PanelTitle icon={<ShieldCheck size={17} />} title="Datové zdroje" />
+                        {sources.map((source) => (
+                          <div className="source-row" key={source.sourceSystemId}>
+                            <span className={`dot ${source.status === "ACTIVE" ? "ok" : "warn"}`} />
+                            <div>
+                              <strong>{source.displayName}</strong>
+                              <small>{source.sourceSystemId}</small>
+                            </div>
+                            <em>{sourceRegistryStatusLabel(source.status)}</em>
+                          </div>
+                        ))}
+                        {sources.length === 0 ? (
+                          <div className="empty-mini">Datové zdroje zatím nejsou dostupné.</div>
+                        ) : null}
+                      </div>
+
+                      <StreamHealthPanel health={streamHealth} telemetry={streamTelemetry} />
+                      <SourceHealthCenter items={sourceHealth} />
+                    </>
+                  ) : null}
+                </>
+              )}
+              {workspaceLayout.leftPanelMode === "open" && !showMapLayerControls ? (
+                <button
+                  aria-label="Změnit šířku levého panelu"
+                  className="panel-resize-handle right"
+                  onPointerDown={(event) => beginWorkspacePanelResize("left", event)}
+                  title="Táhnutím změnit šířku panelu"
+                  type="button"
+                />
+              ) : null}
+            </aside>
+          ) : null}
+
+          <section className={`center-column center-column-${activeWorkspace}`}>
+            <section className="map-stage">
+              {activeWorkspace === "map" && !mapSearchDocked ? (
+                <MapGlobalSearch
+                  docked={false}
+                  isSearchingPlaces={placeSearchLoading}
+                  placeSearchError={placeSearchError}
+                  query={mapSearchQuery}
+                  results={mapSearchResults}
+                  onChange={setMapSearchQuery}
+                  onClear={() => setMapSearchQuery("")}
+                  onDockChange={(nextDocked) => {
+                    setMapSearchDocked(nextDocked);
+                    writeMapSearchDocked(nextDocked);
+                  }}
+                  onSelect={(result) => {
+                    selectMapSearchResult(result);
+                    setMapSearchQuery("");
+                  }}
+                />
+              ) : null}
+              {activeWorkspace === "map" && weatherRadarSelected && weatherRadarFrames.length > 1 ? (
+                <div className="weather-radar-playback-panel" aria-label="Přehrávání radarových snímků">
+                  <button
+                    className="icon-chip"
+                    onClick={() => setWeatherRadarPlaybackEnabled((current) => !current)}
+                    type="button"
+                  >
+                    {weatherRadarPlaybackEnabled ? <Pause size={15} /> : <Play size={15} />}
+                  </button>
+                  <span>Radar {formatWeatherRadarFrameTime(weatherRadarCurrentFrame)}</span>
+                  <button
+                    className="icon-chip"
+                    disabled={weatherRadarPlaybackStatus === "loading"}
+                    onClick={() => setWeatherRadarFrameCatalogTick((current) => current + 1)}
+                    type="button"
+                  >
+                    <RefreshCw size={15} />
+                  </button>
+                </div>
+              ) : null}
+              <React.Suspense fallback={<div className="empty-state compact">Načítám mapu...</div>}>
+                <CopMap
+                  alerts={mapAlerts}
+                  aoiRules={aoiRules}
+                  editingZoneId={editingZoneId}
+                  clusterTracks={mapClusterEnabled}
+                  objects={visibleObjects}
+                  emptyMessage={mapEmptyMessage}
+                  emergencyRoute={emergencyRoute}
+                  emergencyRouteMessage={emergencyRouteMessage}
+                  emergencyRouteStatus={emergencyRouteStatus}
+                  selectedSituationFeatureId={selectedSituationFeatureId ?? undefined}
+                  selectedSituationFeatureStableKey={selectedSituationFeatureStableKey ?? undefined}
+                  selectedObjectId={explicitlySelectedObject?.objectId}
+                  showHistory={showHistory}
+                  showPrediction={showPrediction}
+                  trackHistoryDisplayMode={trackHistoryDisplayMode}
+                  trackHistory={replayTrackHistory}
+                  publicFlightSymbolMode={publicFlightSymbolMode}
+                  mapBasemapMode={mapBasemapMode}
+                  mapInteractionSuspended={(Boolean(mobileSheet) || settingsOpen) && !radioPointPickTarget}
+                  mapResizeSuspended={workspaceResizeActive}
+                  mobileSketchControlsOpen={mobileSketchOpen}
+                  predictionMinutes={predictionMinutes}
+                  predictionMode={predictionMode}
+                  autoFit={autoFit}
+                  alertRadiusKm={alertRadiusKm}
+                  focusView={mapView}
+                  focusViewRequest={focusViewRequest}
+                  focusUserLocationRequest={focusUserLocationRequest}
+                  hasProximityAlerts={proximityAlerts.length > 0}
+                  hasSituationContextEnabled={visibleSituationContextEnabled}
+                  initialView={mapView}
+                  mapLayerDetailLabel={mapLayerDetailLabel}
+                  mapLayerLabel={mapLayerLabel}
+                  situationFeatures={combinedSituationFeatures}
+                  selectedTransitRouteDetail={selectedTransitRouteDetail}
+                  selectedTransitRouteShape={transitRouteShapeForMap(selectedTransitRouteDetail)}
+                  onBoundsChange={setMapBounds}
+                  onSelectObject={handleMapSelectObject}
+                  onSelectSituationFeature={handleMapSelectSituationFeature}
+                  onAutoFitChange={setAutoFit}
+                  onClearEmergencyRoute={() => {
+                    setEmergencyRoute(null);
+                    setEmergencyRouteStatus("idle");
+                    setEmergencyRouteMessage(null);
+                  }}
+                  onClearSelection={handleMapClearSelection}
+                  onCancelZoneCreation={() => setZoneCreationMode(false)}
+                  onCancelZoneEditing={() => setEditingZoneId(null)}
+                  onCreateZonePolygon={handleCreateAoiRuleFromPolygon}
+                  onUpdateZonePolygon={handleAoiRulePolygonUpdate}
+                  onPickReportLocation={handleCommunityReportLocationPicked}
+                  onPickRadioPoint={handleRadioPointPicked}
+                  onRequestRouteToPoint={(target) => void requestEmergencyRouteToPoint(target)}
+                  onCreateSketchDrawing={handleCreateSketchDrawing}
+                  onDeleteSketchDrawing={handleDeleteSketchDrawing}
+                  onSelectSketchDrawing={handleMapSelectSketchDrawing}
+                  onSketchModeChange={handleMapSketchModeChange}
+                  onUpdateSketchDrawing={handleUpdateSketchDrawing}
+                  onRequestUserLocation={locateUser}
+                  onViewChange={setMapView}
+                  radioPointPickActive={Boolean(radioPointPickTarget)}
+                  radioPointPickLabel={
+                    radioPointPickTarget ? radioPointPickTargetLabel(radioPointPickTarget) : undefined
+                  }
+                  reportLocationPickActive={communityReportLocationPickMode}
+                  selectedSketchDrawingId={selectedSketchDrawingId}
+                  showAlertAreas={false}
+                  showProximityAlertRadius={proximityAlertEnabled}
+                  sketchDrawings={visibleSketchLayerEnabled ? sketchDrawings : []}
+                  sketchMode={sketchMode}
+                  userLocation={userLocation}
+                  zoneCreationActive={zoneCreationMode}
+                />
+              </React.Suspense>
+            </section>
+
+            {activeWorkspace === "map" ? null : activeWorkspace === "data" ? (
+              <section className="operations-deck data-operations-deck">
+                <div className="track-board data-track-board">
+                  <div className="deck-header">
+                    <PanelTitle icon={<ListFilter size={17} />} title="Datové objekty" />
+                    <span>
+                      {formatObjectSearchCount(visibleObjects.length, visibleObjectsSearchScope.length, searchQuery)}
+                    </span>
                   </div>
-                ))}
-                {sources.length === 0 ? <div className="empty-mini">Datové zdroje zatím nejsou dostupné.</div> : null}
-              </div>
-
-              <StreamHealthPanel health={streamHealth} telemetry={streamTelemetry} />
-              <SourceHealthCenter items={sourceHealth} />
-            </>
-          ) : null}
-            </>
-          )}
-          {workspaceLayout.leftPanelMode === "open" && !showMapLayerControls ? (
-            <button
-              aria-label="Změnit šířku levého panelu"
-              className="panel-resize-handle right"
-              onPointerDown={(event) => beginWorkspacePanelResize("left", event)}
-              title="Táhnutím změnit šířku panelu"
-              type="button"
-            />
-          ) : null}
-        </aside>
-        ) : null}
-
-        <section className={`center-column center-column-${activeWorkspace}`}>
-          <section className="map-stage">
-            {activeWorkspace === "map" && !mapSearchDocked ? (
-              <MapGlobalSearch
-                docked={false}
-                isSearchingPlaces={placeSearchLoading}
-                placeSearchError={placeSearchError}
-                query={mapSearchQuery}
-                results={mapSearchResults}
-                onChange={setMapSearchQuery}
-                onClear={() => setMapSearchQuery("")}
-                onDockChange={(nextDocked) => {
-                  setMapSearchDocked(nextDocked);
-                  writeMapSearchDocked(nextDocked);
+                  <ObjectSearchControl
+                    compact
+                    resultCount={visibleObjects.length}
+                    totalCount={visibleObjectsSearchScope.length}
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                  />
+                  <React.Suspense fallback={<div className="empty-state compact">Načítám datovou tabulku...</div>}>
+                    <TrackTable
+                      objects={visibleObjects}
+                      selectedObjectId={explicitlySelectedObject?.objectId}
+                      onSelect={(objectId) => {
+                        const isSelected = selectedObjectId === objectId;
+                        setSelectedObjectId(isSelected ? null : objectId);
+                        setSelectedSituationFeatureId(null);
+                        setSelectedSituationFeatureStableKey(null);
+                        setMobileSheet(mobileDetailSheetForSelection(isSelected));
+                      }}
+                    />
+                  </React.Suspense>
+                </div>
+                <DataWorkspaceBoard
+                  authToken={authToken}
+                  metrics={metrics}
+                  objects={visibleObjects}
+                  selectedObject={selectedObject ?? null}
+                  selectedSituationFeature={selectedSituationFeature}
+                  situationFeatures={combinedSituationFeatures}
+                  onOpenSettings={() => openSettings("data")}
+                />
+              </section>
+            ) : showRadioControls ? (
+              <RadioLosWorkspaceBoard
+                overlay={radioOverlay}
+                result={radioResult}
+                selectedProfile={selectedRadioProfile}
+                onClear={() => {
+                  setRadioOverlay(null);
+                  setRadioResult({ mode: radioMode, status: "idle", title: "Radio LoS", warnings: [] });
                 }}
-                onSelect={(result) => {
-                  selectMapSearchResult(result);
-                  setMapSearchQuery("");
-                }}
+                onRun={() => void runRadioLos()}
               />
-            ) : null}
-            {activeWorkspace === "map" && weatherRadarSelected && weatherRadarFrames.length > 1 ? (
-              <div className="weather-radar-playback-panel" aria-label="Přehrávání radarových snímků">
-                <button
-                  className="icon-chip"
-                  onClick={() => setWeatherRadarPlaybackEnabled((current) => !current)}
-                  type="button"
-                >
-                  {weatherRadarPlaybackEnabled ? <Pause size={15} /> : <Play size={15} />}
-                </button>
-                <span>
-                  Radar {formatWeatherRadarFrameTime(weatherRadarCurrentFrame)}
-                </span>
-                <button
-                  className="icon-chip"
-                  disabled={weatherRadarPlaybackStatus === "loading"}
-                  onClick={() => setWeatherRadarFrameCatalogTick((current) => current + 1)}
-                  type="button"
-                >
-                  <RefreshCw size={15} />
-                </button>
-              </div>
-            ) : null}
-            <React.Suspense fallback={<div className="empty-state compact">Načítám mapu...</div>}>
-              <CopMap
-                alerts={mapAlerts}
-                aoiRules={aoiRules}
-                editingZoneId={editingZoneId}
-                clusterTracks={mapClusterEnabled}
-                objects={visibleObjects}
-                emptyMessage={mapEmptyMessage}
-                emergencyRoute={emergencyRoute}
-                emergencyRouteMessage={emergencyRouteMessage}
-                emergencyRouteStatus={emergencyRouteStatus}
-                selectedSituationFeatureId={selectedSituationFeatureId ?? undefined}
-                selectedSituationFeatureStableKey={selectedSituationFeatureStableKey ?? undefined}
-                selectedObjectId={explicitlySelectedObject?.objectId}
-                showHistory={showHistory}
-                showPrediction={showPrediction}
-                trackHistoryDisplayMode={trackHistoryDisplayMode}
-                trackHistory={replayTrackHistory}
-                publicFlightSymbolMode={publicFlightSymbolMode}
-                mapBasemapMode={mapBasemapMode}
-                mapInteractionSuspended={(Boolean(mobileSheet) || settingsOpen) && !radioPointPickTarget}
-                mapResizeSuspended={workspaceResizeActive}
-                mobileSketchControlsOpen={mobileSketchOpen}
-                predictionMinutes={predictionMinutes}
-                predictionMode={predictionMode}
-                autoFit={autoFit}
-                alertRadiusKm={alertRadiusKm}
-                focusView={mapView}
-                focusViewRequest={focusViewRequest}
-                focusUserLocationRequest={focusUserLocationRequest}
-                hasProximityAlerts={proximityAlerts.length > 0}
-                hasSituationContextEnabled={visibleSituationContextEnabled}
-                initialView={mapView}
-                mapLayerDetailLabel={mapLayerDetailLabel}
-                mapLayerLabel={mapLayerLabel}
-                situationFeatures={combinedSituationFeatures}
-                selectedTransitRouteDetail={selectedTransitRouteDetail}
-                selectedTransitRouteShape={transitRouteShapeForMap(selectedTransitRouteDetail)}
-                onBoundsChange={setMapBounds}
-                onSelectObject={handleMapSelectObject}
-                onSelectSituationFeature={handleMapSelectSituationFeature}
-                onAutoFitChange={setAutoFit}
-                onClearEmergencyRoute={() => {
-                  setEmergencyRoute(null);
-                  setEmergencyRouteStatus("idle");
-                  setEmergencyRouteMessage(null);
-                }}
-                onClearSelection={handleMapClearSelection}
-                onCancelZoneCreation={() => setZoneCreationMode(false)}
-                onCancelZoneEditing={() => setEditingZoneId(null)}
-                onCreateZonePolygon={handleCreateAoiRuleFromPolygon}
-                onUpdateZonePolygon={handleAoiRulePolygonUpdate}
-                onPickReportLocation={handleCommunityReportLocationPicked}
-                onPickRadioPoint={handleRadioPointPicked}
-                onRequestRouteToPoint={(target) => void requestEmergencyRouteToPoint(target)}
-                onCreateSketchDrawing={handleCreateSketchDrawing}
-                onDeleteSketchDrawing={handleDeleteSketchDrawing}
-                onSelectSketchDrawing={handleMapSelectSketchDrawing}
-                onSketchModeChange={handleMapSketchModeChange}
-                onUpdateSketchDrawing={handleUpdateSketchDrawing}
-                onRequestUserLocation={locateUser}
-                onViewChange={setMapView}
-                radioPointPickActive={Boolean(radioPointPickTarget)}
-                radioPointPickLabel={radioPointPickTarget ? radioPointPickTargetLabel(radioPointPickTarget) : undefined}
-                reportLocationPickActive={communityReportLocationPickMode}
-                selectedSketchDrawingId={selectedSketchDrawingId}
-                showAlertAreas={false}
-                showProximityAlertRadius={proximityAlertEnabled}
-                sketchDrawings={visibleSketchLayerEnabled ? sketchDrawings : []}
-                sketchMode={sketchMode}
-                userLocation={userLocation}
-                zoneCreationActive={zoneCreationMode}
-              />
-            </React.Suspense>
+            ) : showSourceControls ? (
+              <section className="operations-deck source-operations-deck">
+                <div className="source-operations-board">
+                  <div className="deck-header">
+                    <PanelTitle icon={<RadioTower size={17} />} title="Stav zdrojů" />
+                    <span>{sourceHealth.length} zdrojů</span>
+                  </div>
+                  <ReadinessRow
+                    label="Letecká data"
+                    value={sourceHealthSummary(sourceHealth, "flight")}
+                    tone={sourceHealthTone(sourceHealth, "flight")}
+                  />
+                  <ReadinessRow
+                    label="Situační vrstvy"
+                    value={formatSituationReadiness(situationStatus, situationFeatures)}
+                    tone={situationStatusTone(situationStatus)}
+                  />
+                  <ReadinessRow
+                    label="Výstražné vrstvy"
+                    value={formatSafetyReadiness(safetyStatus, safetyFeatures)}
+                    tone={situationStatusTone(safetyStatus)}
+                  />
+                  <ReadinessRow
+                    label="Datové zdroje"
+                    value={`${sources.length} zdrojů`}
+                    tone={sources.length > 0 ? "ok" : "neutral"}
+                  />
+                  <ReadinessRow
+                    label="Technické události"
+                    value={String(technicalAlertSummary.total)}
+                    tone={technicalAlertSummary.total > 0 ? "warn" : "ok"}
+                  />
+                  <ReadinessRow
+                    label="Konflikty evidence"
+                    value={String(technicalAlertSummary.conflicts)}
+                    tone={technicalAlertSummary.conflicts > 0 ? "warn" : "ok"}
+                  />
+                  <ReadinessRow
+                    label="Lifecycle stop"
+                    value={String(technicalAlertSummary.lifecycle)}
+                    tone={technicalAlertSummary.lifecycle > 0 ? "warn" : "ok"}
+                  />
+                  <ReadinessRow
+                    label="Nízká jistota"
+                    value={String(technicalAlertSummary.lowConfidence)}
+                    tone={technicalAlertSummary.lowConfidence > 0 ? "warn" : "ok"}
+                  />
+                  <ReadinessRow
+                    label="Degradace zdrojů"
+                    value={String(technicalAlertSummary.sourceDegraded)}
+                    tone={technicalAlertSummary.sourceDegraded > 0 ? "warn" : "ok"}
+                  />
+                </div>
+                <div className="source-operations-board">
+                  <div className="deck-header">
+                    <PanelTitle icon={<Activity size={17} />} title="Živé spojení" />
+                    <span>{streamStatusLabel(streamStatus)}</span>
+                  </div>
+                  <ReadinessRow
+                    label="Stav"
+                    value={streamReadinessLabel(streamStatus, streamTelemetry)}
+                    tone={streamStatusTone(streamStatus)}
+                  />
+                  <ReadinessRow
+                    label="Odezva"
+                    value={formatStreamLatency(streamTelemetry.latencyMs)}
+                    tone={streamLatencyTone(streamTelemetry)}
+                  />
+                  <ReadinessRow
+                    label="Poslední signál"
+                    value={formatStreamObservation(streamTelemetry.lastHeartbeatAt)}
+                    tone={streamHeartbeatTone(streamTelemetry)}
+                  />
+                  <ReadinessRow
+                    label="Zátěž"
+                    value={formatBackpressureState(streamHealth, streamTelemetry)}
+                    tone={streamServerTone(streamHealth, streamTelemetry)}
+                  />
+                </div>
+              </section>
+            ) : showAlertControls ? (
+              <section className="operations-deck alert-operations-deck">
+                <SafetyAlertBoard
+                  features={publicSafetyAlertFeatures}
+                  onSelectFeature={(featureId) => {
+                    const isSelected = selectedSituationFeatureId === featureId;
+                    setSelectedSituationFeatureId(isSelected ? null : featureId);
+                    setSelectedSituationFeatureStableKey(
+                      isSelected
+                        ? null
+                        : stableSituationFeatureSelectionKey(
+                            combinedSituationFeatures?.features.find(
+                              (feature) => feature.properties.featureId === featureId
+                            ) ?? null
+                          )
+                    );
+                    setSelectedObjectId(null);
+                    setMobileSheet(mobileDetailSheetForSelection(isSelected));
+                  }}
+                />
+                <IncidentWorkflowBoard
+                  authenticated={profileAccessReady}
+                  error={incidentWorkflowError}
+                  incidents={incidents}
+                  loading={incidentWorkflowLoading}
+                  selectedIncidentId={selectedIncidentId}
+                  statusMessage={incidentWorkflowStatus}
+                  suggestions={incidentSuggestions}
+                  taskDraft={incidentTaskDraft}
+                  tasksByIncidentId={incidentTasksById}
+                  onAcceptSuggestion={(suggestion) => void handleAcceptIncidentSuggestion(suggestion)}
+                  onCreateTask={(incidentId, title) => void handleCreateIncidentTask(incidentId, title)}
+                  onRefresh={() => void loadIncidentWorkflow()}
+                  onSelectIncident={handleSelectIncident}
+                  onTaskDraftChange={setIncidentTaskDraft}
+                  onUpdateIncidentStatus={(incidentId, status) => void handleUpdateIncidentStatus(incidentId, status)}
+                  onUpdateTaskStatus={(incidentId, taskId, status) =>
+                    void handleUpdateIncidentTaskStatus(incidentId, taskId, status)
+                  }
+                />
+                <PersonalAlertBoard
+                  alerts={proximityAlerts}
+                  alertRadiusKm={alertRadiusKm}
+                  enabled={proximityAlertEnabled}
+                  onOpenSettings={() => openSettings("awareness")}
+                />
+              </section>
+            ) : (
+              <section className="operations-deck">
+                <div className="track-board">
+                  <div className="deck-header">
+                    <PanelTitle icon={<ListFilter size={17} />} title="Objekty" />
+                    <span>
+                      {formatObjectSearchCount(visibleObjects.length, visibleObjectsSearchScope.length, searchQuery)}
+                    </span>
+                  </div>
+                  <ObjectSearchControl
+                    compact
+                    resultCount={visibleObjects.length}
+                    totalCount={visibleObjectsSearchScope.length}
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                  />
+                  <React.Suspense fallback={<div className="empty-state compact">Načítám datovou tabulku...</div>}>
+                    <TrackTable
+                      objects={visibleObjects}
+                      selectedObjectId={explicitlySelectedObject?.objectId}
+                      onSelect={(objectId) => {
+                        const isSelected = selectedObjectId === objectId;
+                        setSelectedObjectId(isSelected ? null : objectId);
+                        setSelectedSituationFeatureId(null);
+                        setSelectedSituationFeatureStableKey(null);
+                        setMobileSheet(mobileDetailSheetForSelection(isSelected));
+                      }}
+                    />
+                  </React.Suspense>
+                </div>
+                <div className="replay-board">
+                  <div className="deck-header">
+                    <PanelTitle icon={<History size={17} />} title="Zpětné přehrání" />
+                    <div className="deck-actions">
+                      <button
+                        className="mini-button"
+                        disabled={!replayWindow}
+                        onClick={toggleReplayPlayback}
+                        type="button"
+                      >
+                        {replayRunning ? <Pause size={14} /> : <Play size={14} />}
+                        {replayRunning ? "Pozastavit" : "Spustit"}
+                      </button>
+                      <button
+                        className="mini-button"
+                        disabled={!replayWindow || replayPosition >= 100}
+                        onClick={jumpToLive}
+                        type="button"
+                      >
+                        Živě
+                      </button>
+                    </div>
+                  </div>
+                  <div className={`timeline ${replayActive ? "replay-active" : ""}`}>
+                    <Clock3 size={18} />
+                    <div className="timeline-rail" aria-label="Replay position">
+                      <span style={{ width: `${replayPosition}%` }} />
+                      <input
+                        aria-label="Pozice replaye"
+                        disabled={!replayWindow}
+                        max="100"
+                        min="0"
+                        onChange={(event) => {
+                          setReplayRunning(false);
+                          setReplayPosition(Number(event.target.value));
+                        }}
+                        step="1"
+                        type="range"
+                        value={replayPosition}
+                      />
+                    </div>
+                    <strong>{formatReplayStatus(replayTimestamp, replayWindow, replayActive)}</strong>
+                  </div>
+                  <div className="timeline-meta">
+                    <span>{visibleObjects.length} tracků</span>
+                    <span>{historyPointCount} bodů historie</span>
+                    <span>{replayWindow ? `${replayWindow.durationSeconds}s okno` : "bez historie"}</span>
+                  </div>
+                  <EventStream events={eventStream} />
+                </div>
+              </section>
+            )}
           </section>
 
-          {activeWorkspace === "map" ? null : activeWorkspace === "data" ? (
-            <section className="operations-deck data-operations-deck">
-              <div className="track-board data-track-board">
-                <div className="deck-header">
-                  <PanelTitle icon={<ListFilter size={17} />} title="Datové objekty" />
-                  <span>{formatObjectSearchCount(visibleObjects.length, visibleObjectsSearchScope.length, searchQuery)}</span>
-                </div>
-                <ObjectSearchControl
-                  compact
-                  resultCount={visibleObjects.length}
-                  totalCount={visibleObjectsSearchScope.length}
-                  value={searchQuery}
-                  onChange={setSearchQuery}
+          {workspaceLayout.rightPanelMode !== "hidden" ? (
+            <aside className="panel right-panel">
+              {workspaceLayout.rightPanelMode === "collapsed" ? (
+                <CollapsedPanelRail
+                  icon={<Database size={18} />}
+                  label={selectedSituationFeature || selectedObject ? "Detail" : "Info"}
+                  onExpand={() => updateWorkspaceLayout({ rightPanelMode: "open" })}
                 />
-                <React.Suspense fallback={<div className="empty-state compact">Načítám datovou tabulku...</div>}>
-                  <TrackTable
-                    objects={visibleObjects}
-                    selectedObjectId={explicitlySelectedObject?.objectId}
-                    onSelect={(objectId) => {
-                      const isSelected = selectedObjectId === objectId;
-                      setSelectedObjectId(isSelected ? null : objectId);
-                      setSelectedSituationFeatureId(null);
-                      setSelectedSituationFeatureStableKey(null);
-                      setMobileSheet(mobileDetailSheetForSelection(isSelected));
-                    }}
+              ) : (
+                <>
+                  <MobileSheetPullHandle label="Stáhnout detail" onClose={() => setMobileSheet(null)} />
+                  {activeWorkspace !== "map" ? (
+                    <div className="workspace-context-card">
+                      <span>Workspace</span>
+                      <strong>{workspace.label}</strong>
+                      <p>{workspace.description}</p>
+                    </div>
+                  ) : null}
+
+                  <PanelTitle
+                    icon={<Database size={17} />}
+                    title={selectedSituationFeature ? "Detail prvku" : "Detail objektu"}
                   />
-                </React.Suspense>
-              </div>
-              <DataWorkspaceBoard
-                authToken={authToken}
-                metrics={metrics}
-                objects={visibleObjects}
-                selectedObject={selectedObject ?? null}
-                selectedSituationFeature={selectedSituationFeature}
-                situationFeatures={combinedSituationFeatures}
-                onOpenSettings={() => openSettings("data")}
-              />
-            </section>
-          ) : showRadioControls ? (
-            <RadioLosWorkspaceBoard
-              overlay={radioOverlay}
-              result={radioResult}
-              selectedProfile={selectedRadioProfile}
-              onClear={() => {
-                setRadioOverlay(null);
-                setRadioResult({ mode: radioMode, status: "idle", title: "Radio LoS", warnings: [] });
-              }}
-              onRun={() => void runRadioLos()}
-            />
-          ) : showSourceControls ? (
-            <section className="operations-deck source-operations-deck">
-              <div className="source-operations-board">
-                <div className="deck-header">
-                  <PanelTitle icon={<RadioTower size={17} />} title="Stav zdrojů" />
-                  <span>{sourceHealth.length} zdrojů</span>
-                </div>
-                <ReadinessRow label="Letecká data" value={sourceHealthSummary(sourceHealth, "flight")} tone={sourceHealthTone(sourceHealth, "flight")} />
-                <ReadinessRow label="Situační vrstvy" value={formatSituationReadiness(situationStatus, situationFeatures)} tone={situationStatusTone(situationStatus)} />
-                <ReadinessRow label="Výstražné vrstvy" value={formatSafetyReadiness(safetyStatus, safetyFeatures)} tone={situationStatusTone(safetyStatus)} />
-                <ReadinessRow label="Datové zdroje" value={`${sources.length} zdrojů`} tone={sources.length > 0 ? "ok" : "neutral"} />
-                <ReadinessRow label="Technické události" value={String(technicalAlertSummary.total)} tone={technicalAlertSummary.total > 0 ? "warn" : "ok"} />
-                <ReadinessRow label="Konflikty evidence" value={String(technicalAlertSummary.conflicts)} tone={technicalAlertSummary.conflicts > 0 ? "warn" : "ok"} />
-                <ReadinessRow label="Lifecycle stop" value={String(technicalAlertSummary.lifecycle)} tone={technicalAlertSummary.lifecycle > 0 ? "warn" : "ok"} />
-                <ReadinessRow label="Nízká jistota" value={String(technicalAlertSummary.lowConfidence)} tone={technicalAlertSummary.lowConfidence > 0 ? "warn" : "ok"} />
-                <ReadinessRow label="Degradace zdrojů" value={String(technicalAlertSummary.sourceDegraded)} tone={technicalAlertSummary.sourceDegraded > 0 ? "warn" : "ok"} />
-              </div>
-              <div className="source-operations-board">
-                <div className="deck-header">
-                  <PanelTitle icon={<Activity size={17} />} title="Živé spojení" />
-                  <span>{streamStatusLabel(streamStatus)}</span>
-                </div>
-                <ReadinessRow label="Stav" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
-                <ReadinessRow label="Odezva" value={formatStreamLatency(streamTelemetry.latencyMs)} tone={streamLatencyTone(streamTelemetry)} />
-                <ReadinessRow label="Poslední signál" value={formatStreamObservation(streamTelemetry.lastHeartbeatAt)} tone={streamHeartbeatTone(streamTelemetry)} />
-                <ReadinessRow label="Zátěž" value={formatBackpressureState(streamHealth, streamTelemetry)} tone={streamServerTone(streamHealth, streamTelemetry)} />
-              </div>
-            </section>
-          ) : showAlertControls ? (
-            <section className="operations-deck alert-operations-deck">
-              <SafetyAlertBoard
-                features={publicSafetyAlertFeatures}
-                onSelectFeature={(featureId) => {
-                  const isSelected = selectedSituationFeatureId === featureId;
-                  setSelectedSituationFeatureId(isSelected ? null : featureId);
-                  setSelectedSituationFeatureStableKey(isSelected
-                    ? null
-                    : stableSituationFeatureSelectionKey(combinedSituationFeatures?.features.find((feature) => feature.properties.featureId === featureId) ?? null));
-                  setSelectedObjectId(null);
-                  setMobileSheet(mobileDetailSheetForSelection(isSelected));
-                }}
-              />
-              <IncidentWorkflowBoard
-                authenticated={profileAccessReady}
-                error={incidentWorkflowError}
-                incidents={incidents}
-                loading={incidentWorkflowLoading}
-                selectedIncidentId={selectedIncidentId}
-                statusMessage={incidentWorkflowStatus}
-                suggestions={incidentSuggestions}
-                taskDraft={incidentTaskDraft}
-                tasksByIncidentId={incidentTasksById}
-                onAcceptSuggestion={(suggestion) => void handleAcceptIncidentSuggestion(suggestion)}
-                onCreateTask={(incidentId, title) => void handleCreateIncidentTask(incidentId, title)}
-                onRefresh={() => void loadIncidentWorkflow()}
-                onSelectIncident={handleSelectIncident}
-                onTaskDraftChange={setIncidentTaskDraft}
-                onUpdateIncidentStatus={(incidentId, status) => void handleUpdateIncidentStatus(incidentId, status)}
-                onUpdateTaskStatus={(incidentId, taskId, status) => void handleUpdateIncidentTaskStatus(incidentId, taskId, status)}
-              />
-              <PersonalAlertBoard
-                alerts={proximityAlerts}
-                alertRadiusKm={alertRadiusKm}
-                enabled={proximityAlertEnabled}
-                onOpenSettings={() => openSettings("awareness")}
-              />
-            </section>
-          ) : (
-            <section className="operations-deck">
-              <div className="track-board">
-                <div className="deck-header">
-                  <PanelTitle icon={<ListFilter size={17} />} title="Objekty" />
-                  <span>{formatObjectSearchCount(visibleObjects.length, visibleObjectsSearchScope.length, searchQuery)}</span>
-                </div>
-                <ObjectSearchControl
-                  compact
-                  resultCount={visibleObjects.length}
-                  totalCount={visibleObjectsSearchScope.length}
-                  value={searchQuery}
-                  onChange={setSearchQuery}
-                />
-                <React.Suspense fallback={<div className="empty-state compact">Načítám datovou tabulku...</div>}>
-                  <TrackTable
-                    objects={visibleObjects}
-                    selectedObjectId={explicitlySelectedObject?.objectId}
-                    onSelect={(objectId) => {
-                      const isSelected = selectedObjectId === objectId;
-                      setSelectedObjectId(isSelected ? null : objectId);
-                      setSelectedSituationFeatureId(null);
-                      setSelectedSituationFeatureStableKey(null);
-                      setMobileSheet(mobileDetailSheetForSelection(isSelected));
-                    }}
-                  />
-                </React.Suspense>
-              </div>
-              <div className="replay-board">
-                <div className="deck-header">
-                  <PanelTitle icon={<History size={17} />} title="Zpětné přehrání" />
-                  <div className="deck-actions">
-                    <button className="mini-button" disabled={!replayWindow} onClick={toggleReplayPlayback} type="button">
-                      {replayRunning ? <Pause size={14} /> : <Play size={14} />}
-                      {replayRunning ? "Pozastavit" : "Spustit"}
-                    </button>
-                    <button className="mini-button" disabled={!replayWindow || replayPosition >= 100} onClick={jumpToLive} type="button">
-                      Živě
-                    </button>
-                  </div>
-                </div>
-                <div className={`timeline ${replayActive ? "replay-active" : ""}`}>
-                  <Clock3 size={18} />
-                  <div className="timeline-rail" aria-label="Replay position">
-                    <span style={{ width: `${replayPosition}%` }} />
-                    <input
-                      aria-label="Pozice replaye"
-                      disabled={!replayWindow}
-                      max="100"
-                      min="0"
-                      onChange={(event) => {
-                        setReplayRunning(false);
-                        setReplayPosition(Number(event.target.value));
+                  {selectedSituationFeature ? (
+                    <SituationFeatureDetail
+                      apiBase={apiBase}
+                      authToken={authToken}
+                      feature={selectedSituationFeature}
+                      mobileTowerViewshed={mobileTowerViewshed}
+                      onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
+                      onEditReport={(feature) => editCommunityReportFeature(feature)}
+                      onOpenChat={(feature) => openCommunityReportChat(feature)}
+                      onShareTransit={shareTransitToEmbeddedChat}
+                      onOpenGallery={(attachments, index, title, subtitle) => {
+                        const galleryAttachments = buildCommunityGalleryAttachments(
+                          communityFeatures,
+                          selectedSituationFeature,
+                          attachments
+                        );
+                        const selectedAttachmentId = attachments[index]?.attachmentId;
+                        const galleryIndex = Math.max(
+                          0,
+                          galleryAttachments.findIndex((attachment) => attachment.attachmentId === selectedAttachmentId)
+                        );
+                        setCommunityGallery({
+                          attachments: galleryAttachments,
+                          index: galleryIndex,
+                          subtitle,
+                          title
+                        });
                       }}
-                      step="1"
-                      type="range"
-                      value={replayPosition}
                     />
-                  </div>
-                  <strong>
-                    {formatReplayStatus(replayTimestamp, replayWindow, replayActive)}
-                  </strong>
-                </div>
-                <div className="timeline-meta">
-                  <span>{visibleObjects.length} tracků</span>
-                  <span>{historyPointCount} bodů historie</span>
-                  <span>{replayWindow ? `${replayWindow.durationSeconds}s okno` : "bez historie"}</span>
-                </div>
-                <EventStream events={eventStream} />
-              </div>
-            </section>
-          )}
+                  ) : selectedObject ? (
+                    <ObjectDetail
+                      historyPoints={replayTrackHistory[selectedObject.objectId] ?? []}
+                      object={selectedObject}
+                      replayActive={replayActive}
+                      sourceHealth={sourceHealth}
+                    />
+                  ) : (
+                    <div className="empty-state">
+                      Zatím nejsou k dispozici žádné viditelné objekty. Zapněte vrstvy nebo vyberte oblast s dostupnými
+                      daty.
+                    </div>
+                  )}
+
+                  {activeWorkspace === "data" || activeWorkspace === "sources" ? (
+                    <div className="readiness-box">
+                      <PanelTitle icon={<Gauge size={17} />} title="Stav dat" />
+                      <ReadinessRow
+                        label="Datové zdroje"
+                        value={metrics.activeSources > 0 ? "aktivní" : "čekají"}
+                        tone={metrics.activeSources > 0 ? "ok" : "warn"}
+                      />
+                      <ReadinessRow
+                        label="Spojení"
+                        value={operatingModeLabel(operatingMode)}
+                        tone={operatingModeTone(operatingMode)}
+                      />
+                      <ReadinessRow
+                        label="Uložený náhled"
+                        value={formatOfflineSnapshotState(offlineSnapshotState)}
+                        tone={offlineSnapshotTone(offlineSnapshotState)}
+                      />
+                      <ReadinessRow
+                        label="Cvičná data"
+                        value={includeSynthetic ? "zobrazena" : "skryta"}
+                        tone={includeSynthetic ? "ok" : "neutral"}
+                      />
+                      <ReadinessRow
+                        label="Veřejné lety"
+                        value={String(metrics.publicFlightCount)}
+                        tone={metrics.publicFlightCount > 0 ? "ok" : "neutral"}
+                      />
+                      <ReadinessRow
+                        label="Situační vrstvy"
+                        value={formatSituationReadiness(situationStatus, situationFeatures)}
+                        tone={situationStatusTone(situationStatus)}
+                      />
+                      <ReadinessRow
+                        label="Výstražné vrstvy"
+                        value={formatSafetyReadiness(safetyStatus, safetyFeatures)}
+                        tone={situationStatusTone(safetyStatus)}
+                      />
+                      <ReadinessRow
+                        label="Živé spojení"
+                        value={streamReadinessLabel(streamStatus, streamTelemetry)}
+                        tone={streamStatusTone(streamStatus)}
+                      />
+                    </div>
+                  ) : null}
+
+                  {activeWorkspace === "data" ? (
+                    <div className="ai-box">
+                      <PanelTitle icon={<Bot size={17} />} title="AI assistant" />
+                      <p>
+                        {profileAccessReady
+                          ? aiResult
+                          : "AI asistent je přihlášená funkce. Veřejný režim zobrazuje data bez účtu, ale neposílá osobní ani provozní dotazy."}
+                      </p>
+                      {profileAccessReady ? (
+                        <button className="primary-button" onClick={askAi}>
+                          <Sparkles size={16} />
+                          Zkontrolovat kvalitu dat
+                        </button>
+                      ) : (
+                        <span className="auth-hint">Přihlášení najdete v horní liště.</span>
+                      )}
+                    </div>
+                  ) : null}
+                </>
+              )}
+              {workspaceLayout.rightPanelMode === "open" ? (
+                <button
+                  aria-label="Změnit šířku pravého panelu"
+                  className="panel-resize-handle left"
+                  onPointerDown={(event) => beginWorkspacePanelResize("right", event)}
+                  title="Táhnutím změnit šířku detailu"
+                  type="button"
+                />
+              ) : null}
+            </aside>
+          ) : null}
         </section>
-
-        {workspaceLayout.rightPanelMode !== "hidden" ? (
-        <aside className="panel right-panel">
-          {workspaceLayout.rightPanelMode === "collapsed" ? (
-            <CollapsedPanelRail
-              icon={<Database size={18} />}
-              label={selectedSituationFeature || selectedObject ? "Detail" : "Info"}
-              onExpand={() => updateWorkspaceLayout({ rightPanelMode: "open" })}
-            />
-          ) : (
-            <>
-          <MobileSheetPullHandle label="Stáhnout detail" onClose={() => setMobileSheet(null)} />
-          {activeWorkspace !== "map" ? (
-            <div className="workspace-context-card">
-              <span>Workspace</span>
-              <strong>{workspace.label}</strong>
-              <p>{workspace.description}</p>
-            </div>
-          ) : null}
-
-          <PanelTitle icon={<Database size={17} />} title={selectedSituationFeature ? "Detail prvku" : "Detail objektu"} />
-          {selectedSituationFeature ? (
-            <SituationFeatureDetail
-              apiBase={apiBase}
-              authToken={authToken}
-              feature={selectedSituationFeature}
-              mobileTowerViewshed={mobileTowerViewshed}
-              onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
-              onEditReport={(feature) => editCommunityReportFeature(feature)}
-              onOpenChat={(feature) => openCommunityReportChat(feature)}
-              onShareTransit={shareTransitToEmbeddedChat}
-              onOpenGallery={(attachments, index, title, subtitle) => {
-                const galleryAttachments = buildCommunityGalleryAttachments(communityFeatures, selectedSituationFeature, attachments);
-                const selectedAttachmentId = attachments[index]?.attachmentId;
-                const galleryIndex = Math.max(0, galleryAttachments.findIndex((attachment) => attachment.attachmentId === selectedAttachmentId));
-                setCommunityGallery({
-                  attachments: galleryAttachments,
-                  index: galleryIndex,
-                  subtitle,
-                  title
-                });
-              }}
-            />
-          ) : selectedObject ? (
-            <ObjectDetail
-              historyPoints={replayTrackHistory[selectedObject.objectId] ?? []}
-              object={selectedObject}
-              replayActive={replayActive}
-              sourceHealth={sourceHealth}
-            />
-          ) : (
-            <div className="empty-state">Zatím nejsou k dispozici žádné viditelné objekty. Zapněte vrstvy nebo vyberte oblast s dostupnými daty.</div>
-          )}
-
-          {activeWorkspace === "data" || activeWorkspace === "sources" ? (
-            <div className="readiness-box">
-              <PanelTitle icon={<Gauge size={17} />} title="Stav dat" />
-              <ReadinessRow label="Datové zdroje" value={metrics.activeSources > 0 ? "aktivní" : "čekají"} tone={metrics.activeSources > 0 ? "ok" : "warn"} />
-              <ReadinessRow label="Spojení" value={operatingModeLabel(operatingMode)} tone={operatingModeTone(operatingMode)} />
-              <ReadinessRow label="Uložený náhled" value={formatOfflineSnapshotState(offlineSnapshotState)} tone={offlineSnapshotTone(offlineSnapshotState)} />
-              <ReadinessRow label="Cvičná data" value={includeSynthetic ? "zobrazena" : "skryta"} tone={includeSynthetic ? "ok" : "neutral"} />
-              <ReadinessRow label="Veřejné lety" value={String(metrics.publicFlightCount)} tone={metrics.publicFlightCount > 0 ? "ok" : "neutral"} />
-              <ReadinessRow label="Situační vrstvy" value={formatSituationReadiness(situationStatus, situationFeatures)} tone={situationStatusTone(situationStatus)} />
-              <ReadinessRow label="Výstražné vrstvy" value={formatSafetyReadiness(safetyStatus, safetyFeatures)} tone={situationStatusTone(safetyStatus)} />
-              <ReadinessRow label="Živé spojení" value={streamReadinessLabel(streamStatus, streamTelemetry)} tone={streamStatusTone(streamStatus)} />
-            </div>
-          ) : null}
-
-          {activeWorkspace === "data" ? (
-          <div className="ai-box">
-            <PanelTitle icon={<Bot size={17} />} title="AI assistant" />
-            <p>{profileAccessReady ? aiResult : "AI asistent je přihlášená funkce. Veřejný režim zobrazuje data bez účtu, ale neposílá osobní ani provozní dotazy."}</p>
-            {profileAccessReady ? (
-              <button className="primary-button" onClick={askAi}>
-                <Sparkles size={16} />
-                Zkontrolovat kvalitu dat
-              </button>
-            ) : (
-              <span className="auth-hint">Přihlášení najdete v horní liště.</span>
-            )}
-          </div>
-          ) : null}
-            </>
-          )}
-          {workspaceLayout.rightPanelMode === "open" ? (
-            <button
-              aria-label="Změnit šířku pravého panelu"
-              className="panel-resize-handle left"
-              onPointerDown={(event) => beginWorkspacePanelResize("right", event)}
-              title="Táhnutím změnit šířku detailu"
-              type="button"
-            />
-          ) : null}
-        </aside>
-        ) : null}
-      </section>
-
       </section>
 
       {mobileSheet === "layers" ? (
@@ -5814,9 +6623,16 @@ export function App() {
               onOpenChat={(feature) => openCommunityReportChat(feature)}
               onShareTransit={shareTransitToEmbeddedChat}
               onOpenGallery={(attachments, index, title, subtitle) => {
-                const galleryAttachments = buildCommunityGalleryAttachments(communityFeatures, selectedSituationFeature, attachments);
+                const galleryAttachments = buildCommunityGalleryAttachments(
+                  communityFeatures,
+                  selectedSituationFeature,
+                  attachments
+                );
                 const selectedAttachmentId = attachments[index]?.attachmentId;
-                const galleryIndex = Math.max(0, galleryAttachments.findIndex((attachment) => attachment.attachmentId === selectedAttachmentId));
+                const galleryIndex = Math.max(
+                  0,
+                  galleryAttachments.findIndex((attachment) => attachment.attachmentId === selectedAttachmentId)
+                );
                 setCommunityGallery({
                   attachments: galleryAttachments,
                   index: galleryIndex,
@@ -5863,7 +6679,7 @@ export function App() {
           if (mobileSheet !== "layers" && !activeCatalogGroupId && firstCatalogGroupId) {
             setActiveCatalogGroupId(firstCatalogGroupId);
           }
-          setMobileSheet((current) => current === "layers" ? null : "layers");
+          setMobileSheet((current) => (current === "layers" ? null : "layers"));
         }}
         onMap={() => {
           setSettingsOpen(false);
@@ -5898,30 +6714,29 @@ export function App() {
         }}
       />
 
-      {workspaceLayout.statusbarVisible ? <footer className="app-statusbar" aria-label="Provozní stav aplikace">
-        {activeWorkspace === "map" ? (
-          <WorkspaceLayoutControls
-            layout={workspaceLayout}
-            onChange={updateWorkspaceLayout}
-          />
-        ) : null}
-        <span className={streamStatusTone(streamStatus)}>
-          <Activity size={15} />
-          Spojení {streamStatusLabel(streamStatus)}
-        </span>
-        <span className={operatingModeTone(operatingMode)}>
-          <Wifi size={15} />
-          Režim {operatingModeLabel(operatingMode)}
-        </span>
-        <span>
-          <Clock3 size={15} />
-          Poslední aktualizace {lastLoadedAt ?? "čekám"}
-        </span>
-        <span>
-          <ShieldCheck size={15} />
-          Verze 0.1.0
-        </span>
-      </footer> : null}
+      {workspaceLayout.statusbarVisible ? (
+        <footer className="app-statusbar" aria-label="Provozní stav aplikace">
+          {activeWorkspace === "map" ? (
+            <WorkspaceLayoutControls layout={workspaceLayout} onChange={updateWorkspaceLayout} />
+          ) : null}
+          <span className={streamStatusTone(streamStatus)}>
+            <Activity size={15} />
+            Spojení {streamStatusLabel(streamStatus)}
+          </span>
+          <span className={operatingModeTone(operatingMode)}>
+            <Wifi size={15} />
+            Režim {operatingModeLabel(operatingMode)}
+          </span>
+          <span>
+            <Clock3 size={15} />
+            Poslední aktualizace {lastLoadedAt ?? "čekám"}
+          </span>
+          <span>
+            <ShieldCheck size={15} />
+            Verze 0.1.0
+          </span>
+        </footer>
+      ) : null}
 
       {settingsOpen ? (
         <SettingsDrawer
@@ -6043,11 +6858,7 @@ export function App() {
       ) : null}
 
       {helpSection ? (
-        <ManualDialog
-          section={helpSection}
-          onClose={() => setHelpSection(null)}
-          onSectionChange={setHelpSection}
-        />
+        <ManualDialog section={helpSection} onClose={() => setHelpSection(null)} onSectionChange={setHelpSection} />
       ) : null}
 
       {communityReportOpen ? (
@@ -6073,15 +6884,17 @@ export function App() {
         <CommunityMediaGallery
           gallery={communityGallery}
           onClose={() => setCommunityGallery(null)}
-          onMove={(direction) => setCommunityGallery((current) => {
-            if (!current) {
-              return current;
-            }
-            return {
-              ...current,
-              index: (current.index + direction + current.attachments.length) % current.attachments.length
-            };
-          })}
+          onMove={(direction) =>
+            setCommunityGallery((current) => {
+              if (!current) {
+                return current;
+              }
+              return {
+                ...current,
+                index: (current.index + direction + current.attachments.length) % current.attachments.length
+              };
+            })
+          }
         />
       ) : null}
       {tomatoGameOpen ? <TomatoGameDialog onClose={() => setTomatoGameOpen(false)} /> : null}
@@ -6127,7 +6940,13 @@ function TomatoGameDialog({ onClose }: { onClose: () => void }) {
             <strong>Rajčatová sklizeň</strong>
           </div>
           <div className="tomato-game-actions">
-            <a className="icon-button" href={tomatoGameUrl} rel="noreferrer" target="_blank" title="Otevřít hru samostatně">
+            <a
+              className="icon-button"
+              href={tomatoGameUrl}
+              rel="noreferrer"
+              target="_blank"
+              title="Otevřít hru samostatně"
+            >
               <ExternalLink size={17} />
             </a>
             <button className="icon-button" onClick={onClose} title="Zavřít" type="button">
@@ -6179,7 +6998,8 @@ function MobilePairLandingOverlay({ code }: { code: string }) {
         </div>
         <h2>Spárovat CSM Messenger</h2>
         <p>
-          Odkaz obsahuje jen krátkodobý pairing kód. Přístupové tokeny, recovery klíče ani Matrix klíče se přes COP REST nepředávají.
+          Odkaz obsahuje jen krátkodobý pairing kód. Přístupové tokeny, recovery klíče ani Matrix klíče se přes COP REST
+          nepředávají.
         </p>
         <code>{code}</code>
         <div className="settings-button-row">
@@ -6274,152 +7094,173 @@ function CommunityReportDialog({
 }: CommunityReportDialogProps) {
   return (
     <ModalDialog
-      actions={(
+      actions={
         <>
-          <button className="ghost-button" disabled={isSubmitting} onClick={onClose} type="button">Zrušit</button>
+          <button className="ghost-button" disabled={isSubmitting} onClick={onClose} type="button">
+            Zrušit
+          </button>
           <button className="primary-button" disabled={isSubmitting} onClick={onSubmit} type="button">
             {isSubmitting ? "Ukládám..." : draft.reportId ? "Uložit změny" : "Uložit hlášení"}
           </button>
         </>
-      )}
+      }
       className="report-dialog"
       closeDisabled={isSubmitting}
-      description={draft.reportId ? "Upravte text, polohu, platnost, přístup a přílohy uloženého hlášení." : "Vložte ověřené hlášení s polohou, platností rizika a volitelnými přílohami."}
+      description={
+        draft.reportId
+          ? "Upravte text, polohu, platnost, přístup a přílohy uloženého hlášení."
+          : "Vložte ověřené hlášení s polohou, platností rizika a volitelnými přílohami."
+      }
       eyebrow="Komunitní hlášení"
       onClose={onClose}
       title={draft.reportId ? "Upravit hlášení" : "Nahlásit událost v okolí"}
     >
+      <div className="report-form-grid">
+        <label>
+          Typ události
+          <SelectField<CommunityReportCategory>
+            ariaLabel="Typ události"
+            options={communityReportCategoryOptions}
+            value={draft.category}
+            onValueChange={(category) => onChange((current) => ({ ...current, category }))}
+          />
+        </label>
+        <label>
+          Odhad rizika
+          <SelectField<CommunityReportHazardSeverity>
+            ariaLabel="Odhad rizika"
+            options={communityHazardSeverityOptions}
+            value={draft.hazardSeverity}
+            onValueChange={(hazardSeverity) => onChange((current) => ({ ...current, hazardSeverity }))}
+          />
+        </label>
+      </div>
 
-        <div className="report-form-grid">
-          <label>
-            Typ události
-            <SelectField<CommunityReportCategory>
-              ariaLabel="Typ události"
-              options={communityReportCategoryOptions}
-              value={draft.category}
-              onValueChange={(category) => onChange((current) => ({ ...current, category }))}
-            />
-          </label>
-          <label>
-            Odhad rizika
-            <SelectField<CommunityReportHazardSeverity>
-              ariaLabel="Odhad rizika"
-              options={communityHazardSeverityOptions}
-              value={draft.hazardSeverity}
-              onValueChange={(hazardSeverity) => onChange((current) => ({ ...current, hazardSeverity }))}
-            />
-          </label>
-        </div>
+      <label className="report-field">
+        Název
+        <input
+          maxLength={120}
+          placeholder="Např. Požár u lesa"
+          value={draft.title}
+          onChange={(event) => onChange((current) => ({ ...current, title: event.target.value }))}
+        />
+      </label>
 
-        <label className="report-field">
-          Název
+      <label className="report-field">
+        Popis
+        <textarea
+          maxLength={2000}
+          placeholder="Stručně popište, co je vidět a proč je to důležité."
+          value={draft.description}
+          onChange={(event) => onChange((current) => ({ ...current, description: event.target.value }))}
+        />
+      </label>
+
+      <div className="report-form-grid">
+        <label>
+          Platnost rizika
           <input
-            maxLength={120}
-            placeholder="Např. Požár u lesa"
-            value={draft.title}
-            onChange={(event) => onChange((current) => ({ ...current, title: event.target.value }))}
+            type="datetime-local"
+            value={draft.validUntil}
+            onChange={(event) => onChange((current) => ({ ...current, validUntil: event.target.value }))}
           />
         </label>
-
-        <label className="report-field">
-          Popis
-          <textarea
-            maxLength={2000}
-            placeholder="Stručně popište, co je vidět a proč je to důležité."
-            value={draft.description}
-            onChange={(event) => onChange((current) => ({ ...current, description: event.target.value }))}
-          />
-        </label>
-
-        <div className="report-form-grid">
-          <label>
-            Platnost rizika
-            <input
-              type="datetime-local"
-              value={draft.validUntil}
-              onChange={(event) => onChange((current) => ({ ...current, validUntil: event.target.value }))}
-            />
-          </label>
-          <div className="report-coordinate-box">
-            <span>Poloha</span>
-            <strong>{formatReportLocation(draft.location)}</strong>
-          </div>
+        <div className="report-coordinate-box">
+          <span>Poloha</span>
+          <strong>{formatReportLocation(draft.location)}</strong>
         </div>
-        {draft.mediaLocationHint ? <div className="report-dialog-message success">{draft.mediaLocationHint}</div> : null}
+      </div>
+      {draft.mediaLocationHint ? <div className="report-dialog-message success">{draft.mediaLocationHint}</div> : null}
 
-        <div className="report-location-actions">
-          <button className="mini-button" onClick={onLocationFromUser} type="button">Moje poloha</button>
-          <button className="mini-button" onClick={onLocationFromMap} type="button">Střed mapy</button>
-          <button className="mini-button" onClick={onLocationFromMapClick} type="button">Vybrat v mapě</button>
+      <div className="report-location-actions">
+        <button className="mini-button" onClick={onLocationFromUser} type="button">
+          Moje poloha
+        </button>
+        <button className="mini-button" onClick={onLocationFromMap} type="button">
+          Střed mapy
+        </button>
+        <button className="mini-button" onClick={onLocationFromMapClick} type="button">
+          Vybrat v mapě
+        </button>
+      </div>
+
+      <section className="report-access-panel">
+        <div className="report-access-header">
+          <strong>Přístup k přílohám</strong>
+          <span>{communityMediaAccessLabel(draft.mediaAccessMode)}</span>
         </div>
-
-        <section className="report-access-panel">
-          <div className="report-access-header">
-            <strong>Přístup k přílohám</strong>
-            <span>{communityMediaAccessLabel(draft.mediaAccessMode)}</span>
-          </div>
-          <span className="report-field-hint">
-            Hlášení zůstane mapový objekt. Skupiny a konverzace řeší samostatná aplikace Chat.
-          </span>
-          <SelectField<CommunityMediaAccessMode>
-            ariaLabel="Přístup k médiím"
-            options={communityMediaAccessOptions}
-            value={draft.mediaAccessMode}
-            onValueChange={(mediaAccessMode) => onChange((current) => ({ ...current, mediaAccessMode }))}
-          />
-          {draft.mediaAccessMode === "users" ? (
-            <label className="report-field">
-              Uživatelé
-              <textarea
-                maxLength={1200}
-                placeholder="Každý řádek jeden subjectId uživatele. Později zde bude adresář kontaktů."
-                value={draft.mediaAccessUserSubjectIds}
-                onChange={(event) => onChange((current) => ({ ...current, mediaAccessUserSubjectIds: event.target.value }))}
-              />
-            </label>
-          ) : null}
-          <span className="report-field-hint">
-            Text hlášení a stupeň výstrahy se zobrazují v mapě. Fotky, PDF a videa respektují zvolený přístup.
-          </span>
-        </section>
-
-        <label className="report-field">
-          Přílohy
-          <input
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,video/mp4,video/quicktime"
-            multiple
-            type="file"
-            onChange={(event) => onFilesSelected(Array.from(event.target.files ?? []))}
-          />
-        </label>
-        {draft.files.some(isCommunityVideoFile) ? (
+        <span className="report-field-hint">
+          Hlášení zůstane mapový objekt. Skupiny a konverzace řeší samostatná aplikace Chat.
+        </span>
+        <SelectField<CommunityMediaAccessMode>
+          ariaLabel="Přístup k médiím"
+          options={communityMediaAccessOptions}
+          value={draft.mediaAccessMode}
+          onValueChange={(mediaAccessMode) => onChange((current) => ({ ...current, mediaAccessMode }))}
+        />
+        {draft.mediaAccessMode === "users" ? (
           <label className="report-field">
-            Režim videa
-            <SelectField<CommunityVideoSpatialMode>
-              ariaLabel="Režim videa"
-              options={communityVideoSpatialOptions}
-              value={draft.videoSpatialMode}
-              onValueChange={(videoSpatialMode) => onChange((current) => ({ ...current, videoSpatialMode }))}
+            Uživatelé
+            <textarea
+              maxLength={1200}
+              placeholder="Každý řádek jeden subjectId uživatele. Později zde bude adresář kontaktů."
+              value={draft.mediaAccessUserSubjectIds}
+              onChange={(event) =>
+                onChange((current) => ({ ...current, mediaAccessUserSubjectIds: event.target.value }))
+              }
             />
-            <span className="report-field-hint">
-              Side-by-side a over-under se přehrají v XR přímo. iPhone Spatial MOV se uloží jako originál a server připraví 3D XR kopii.
-            </span>
           </label>
         ) : null}
-        <div className="report-attachment-list">
-          {draft.files.length === 0 ? (
-            <span>Bez příloh. Lze vložit fotografii, PDF nebo video.</span>
-          ) : draft.files.map((file) => (
+        <span className="report-field-hint">
+          Text hlášení a stupeň výstrahy se zobrazují v mapě. Fotky, PDF a videa respektují zvolený přístup.
+        </span>
+      </section>
+
+      <label className="report-field">
+        Přílohy
+        <input
+          accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,video/mp4,video/quicktime"
+          multiple
+          type="file"
+          onChange={(event) => onFilesSelected(Array.from(event.target.files ?? []))}
+        />
+      </label>
+      {draft.files.some(isCommunityVideoFile) ? (
+        <label className="report-field">
+          Režim videa
+          <SelectField<CommunityVideoSpatialMode>
+            ariaLabel="Režim videa"
+            options={communityVideoSpatialOptions}
+            value={draft.videoSpatialMode}
+            onValueChange={(videoSpatialMode) => onChange((current) => ({ ...current, videoSpatialMode }))}
+          />
+          <span className="report-field-hint">
+            Side-by-side a over-under se přehrají v XR přímo. iPhone Spatial MOV se uloží jako originál a server
+            připraví 3D XR kopii.
+          </span>
+        </label>
+      ) : null}
+      <div className="report-attachment-list">
+        {draft.files.length === 0 ? (
+          <span>Bez příloh. Lze vložit fotografii, PDF nebo video.</span>
+        ) : (
+          draft.files.map((file) => (
             <div className="report-attachment-row" key={`${file.name}-${file.size}-${file.lastModified}`}>
               <span>{file.name || "Soubor"}</span>
-              <strong>{communityAttachmentKindLabel(communityAttachmentKindFromContentType(normalizeCommunityFileContentType(file)))} · {formatFileSize(file.size)}</strong>
+              <strong>
+                {communityAttachmentKindLabel(
+                  communityAttachmentKindFromContentType(normalizeCommunityFileContentType(file))
+                )}{" "}
+                · {formatFileSize(file.size)}
+              </strong>
             </div>
-          ))}
-        </div>
+          ))
+        )}
+      </div>
 
-        {uploadProgress ? <CommunityUploadProgressPanel progress={uploadProgress} /> : null}
-        {error ? <div className="report-dialog-message error">{error}</div> : null}
-        {success ? <div className="report-dialog-message success">{success}</div> : null}
+      {uploadProgress ? <CommunityUploadProgressPanel progress={uploadProgress} /> : null}
+      {error ? <div className="report-dialog-message error">{error}</div> : null}
+      {success ? <div className="report-dialog-message success">{success}</div> : null}
     </ModalDialog>
   );
 }
@@ -6444,8 +7285,12 @@ function CommunityUploadProgressPanel({ progress }: { progress: CommunityUploadU
         <span style={{ width: `${percent}%` }} />
       </div>
       <div className="community-upload-progress-meta">
-        <span>{progress.fileIndex} / {progress.fileCount} · {progress.fileName}</span>
-        <span>{formatFileSize(progress.loadedBytes)} / {formatFileSize(progress.totalBytes)}</span>
+        <span>
+          {progress.fileIndex} / {progress.fileCount} · {progress.fileName}
+        </span>
+        <span>
+          {formatFileSize(progress.loadedBytes)} / {formatFileSize(progress.totalBytes)}
+        </span>
       </div>
       <small>Nezavírejte stránku, dokud ukládání neskončí.</small>
     </div>
@@ -6466,7 +7311,7 @@ function CommunityMediaGallery({
   const xrVideoUrl = attachment ? buildXrVideoUrl(attachment) : null;
   const xrDerivativeStatus = attachment ? communityAttachmentXrDerivativeStatus(attachment) : null;
   const previewUrl = attachment ? communityAttachmentPreviewUrl(attachment) : undefined;
-  const photoUrl = attachment?.kind === "photo" ? attachment.contentUrl ?? previewUrl : undefined;
+  const photoUrl = attachment?.kind === "photo" ? (attachment.contentUrl ?? previewUrl) : undefined;
   const videoPosterUrl = attachment?.kind === "video" ? previewUrl : undefined;
   const documentPreviewUrl = attachment?.kind === "document" ? previewUrl : undefined;
   if (!attachment) {
@@ -6479,7 +7324,10 @@ function CommunityMediaGallery({
           <div>
             <span>{gallery.subtitle ?? "Komunitní média"}</span>
             <strong>{gallery.title}</strong>
-            <small>{gallery.index + 1} / {gallery.attachments.length} · {attachment.fileName ?? communityAttachmentKindLabel(attachment.kind)}</small>
+            <small>
+              {gallery.index + 1} / {gallery.attachments.length} ·{" "}
+              {attachment.fileName ?? communityAttachmentKindLabel(attachment.kind)}
+            </small>
           </div>
           <button aria-label="Zavřít galerii" className="icon-button" onClick={onClose} type="button">
             <X size={20} />
@@ -6487,11 +7335,16 @@ function CommunityMediaGallery({
         </header>
         <div className="community-gallery-stage">
           {gallery.attachments.length > 1 ? (
-            <button aria-label="Předchozí médium" className="community-gallery-nav prev" onClick={() => onMove(-1)} type="button">‹</button>
+            <button
+              aria-label="Předchozí médium"
+              className="community-gallery-nav prev"
+              onClick={() => onMove(-1)}
+              type="button"
+            >
+              ‹
+            </button>
           ) : null}
-          {photoUrl ? (
-            <img alt={attachment.fileName ?? "Fotografie hlášení"} src={photoUrl} />
-          ) : null}
+          {photoUrl ? <img alt={attachment.fileName ?? "Fotografie hlášení"} src={photoUrl} /> : null}
           {attachment.contentUrl && attachment.kind === "video" ? (
             <video controls playsInline preload="metadata" src={attachment.contentUrl} />
           ) : null}
@@ -6519,15 +7372,32 @@ function CommunityMediaGallery({
             </div>
           ) : null}
           {gallery.attachments.length > 1 ? (
-            <button aria-label="Další médium" className="community-gallery-nav next" onClick={() => onMove(1)} type="button">›</button>
+            <button
+              aria-label="Další médium"
+              className="community-gallery-nav next"
+              onClick={() => onMove(1)}
+              type="button"
+            >
+              ›
+            </button>
           ) : null}
         </div>
         <footer className="community-gallery-footer">
-          <span>{communityAttachmentKindLabel(attachment.kind)} · {formatFileSize(attachment.byteSize)}</span>
+          <span>
+            {communityAttachmentKindLabel(attachment.kind)} · {formatFileSize(attachment.byteSize)}
+          </span>
           {attachment.kind === "video" ? <span>{communityAttachmentSpatialLabel(spatialMode)}</span> : null}
           {xrDerivativeStatus ? <span>{xrDerivativeStatus}</span> : null}
-          {xrVideoUrl ? <a className="mini-button" href={xrVideoUrl} rel="noreferrer" target="_blank">Otevřít 3D v XR</a> : null}
-          {attachment.contentUrl ? <a className="mini-button" href={attachment.contentUrl} rel="noreferrer" target="_blank">Otevřít soubor</a> : null}
+          {xrVideoUrl ? (
+            <a className="mini-button" href={xrVideoUrl} rel="noreferrer" target="_blank">
+              Otevřít 3D v XR
+            </a>
+          ) : null}
+          {attachment.contentUrl ? (
+            <a className="mini-button" href={attachment.contentUrl} rel="noreferrer" target="_blank">
+              Otevřít soubor
+            </a>
+          ) : null}
         </footer>
       </section>
     </div>
@@ -6542,7 +7412,10 @@ function ProximityAlertList({ alerts }: { alerts: ProximityAlert[] }) {
   return (
     <div className="proximity-alert-list">
       {alerts.slice(0, 4).map((alert) => (
-        <div className={`proximity-alert ${alert.type === "inside-radius" ? "critical" : "warning"}`} key={`${alert.type}-${alert.object.objectId}`}>
+        <div
+          className={`proximity-alert ${alert.type === "inside-radius" ? "critical" : "warning"}`}
+          key={`${alert.type}-${alert.object.objectId}`}
+        >
           <AlertTriangle size={15} />
           <div>
             <strong>{alert.object.objectId}</strong>
@@ -6703,7 +7576,10 @@ function loginPromptContent(reason: LoginPromptReason): { benefits: string[]; de
       };
     case "chat":
       return {
-        benefits: ["Konverzace bude navázaná na ověřenou identitu.", "Skupiny a média budou respektovat přístupová práva."],
+        benefits: [
+          "Konverzace bude navázaná na ověřenou identitu.",
+          "Skupiny a média budou respektovat přístupová práva."
+        ],
         description: "Zprávy, skupiny a chráněná média jsou přístupné jen ověřeným uživatelům.",
         title: "Přihlaste se pro konverzace"
       };
@@ -6715,14 +7591,21 @@ function loginPromptContent(reason: LoginPromptReason): { benefits: string[]; de
       };
     case "report":
       return {
-        benefits: ["Hlášení bude obsahovat autora, polohu a platnost.", "Přílohy se uloží s řízeným přístupem podle zvolené viditelnosti."],
-        description: "Vlastní hlášení může obsahovat fotky, video, PDF a citlivou polohu, proto je potřeba ověřený účet.",
+        benefits: [
+          "Hlášení bude obsahovat autora, polohu a platnost.",
+          "Přílohy se uloží s řízeným přístupem podle zvolené viditelnosti."
+        ],
+        description:
+          "Vlastní hlášení může obsahovat fotky, video, PDF a citlivou polohu, proto je potřeba ověřený účet.",
         title: "Přihlaste se pro vložení hlášení"
       };
     case "account":
     default:
       return {
-        benefits: ["Odemkne se ukládání profilu a osobních zón.", "Zpřístupní se konverzace, hlášení a chráněná média."],
+        benefits: [
+          "Odemkne se ukládání profilu a osobních zón.",
+          "Zpřístupní se konverzace, hlášení a chráněná média."
+        ],
         description: "Přihlášení doplní veřejný režim o osobní a komunitní funkce.",
         title: "Přihlášení k aplikaci"
       };
@@ -6768,9 +7651,15 @@ function SafetyAlertBoard({
                   <strong>{priorityFeatureTitle(feature)}</strong>
                   <span>{status.label}</span>
                 </div>
-                <p>{feature.properties.description ?? feature.properties.recommendedAction ?? "Oficiální safety vrstva ze SIM."}</p>
+                <p>
+                  {feature.properties.description ??
+                    feature.properties.recommendedAction ??
+                    "Oficiální safety vrstva ze SIM."}
+                </p>
                 <div className="alert-row-meta">
-                  <button type="button" onClick={() => onSelectFeature(feature.properties.featureId)}>{feature.properties.featureId}</button>
+                  <button type="button" onClick={() => onSelectFeature(feature.properties.featureId)}>
+                    {feature.properties.featureId}
+                  </button>
                   <span>{priorityFeatureBadge(feature)}</span>
                   <span>{sourceDisplayName(feature.properties.sourceId)}</span>
                   <span>{formatShortDateTime(observedAt)}</span>
@@ -6819,8 +7708,9 @@ function IncidentWorkflowBoard({
   onUpdateIncidentStatus: (incidentId: string, status: IncidentStatus) => void;
   onUpdateTaskStatus: (incidentId: string, taskId: string, status: IncidentTaskStatus) => void;
 }) {
-  const selectedIncident = incidents.find((incident) => incident.incidentId === selectedIncidentId) ?? incidents[0] ?? null;
-  const selectedTasks = selectedIncident ? tasksByIncidentId[selectedIncident.incidentId] ?? [] : [];
+  const selectedIncident =
+    incidents.find((incident) => incident.incidentId === selectedIncidentId) ?? incidents[0] ?? null;
+  const selectedTasks = selectedIncident ? (tasksByIncidentId[selectedIncident.incidentId] ?? []) : [];
 
   return (
     <div className="incident-workflow-board">
@@ -6849,13 +7739,17 @@ function IncidentWorkflowBoard({
               <span>{suggestions.length}</span>
             </div>
             <div className="incident-suggestion-list">
-              {suggestions.length === 0 ? <div className="empty-mini">Žádné nové návrhy z hlášení v aktuálním pohledu.</div> : null}
+              {suggestions.length === 0 ? (
+                <div className="empty-mini">Žádné nové návrhy z hlášení v aktuálním pohledu.</div>
+              ) : null}
               {suggestions.map((suggestion) => (
                 <article className="incident-suggestion-card" key={suggestion.suggestionId}>
                   <div>
                     <div className="incident-card-title">
                       <strong>{suggestion.title}</strong>
-                      <span className={`incident-pill ${suggestion.severity}`}>{incidentSeverityLabel(suggestion.severity)}</span>
+                      <span className={`incident-pill ${suggestion.severity}`}>
+                        {incidentSeverityLabel(suggestion.severity)}
+                      </span>
                     </div>
                     <p>{suggestion.explanation}</p>
                     <div className="incident-meta">
@@ -6891,7 +7785,10 @@ function IncidentWorkflowBoard({
                   <span className={`incident-severity-dot ${incident.severity}`} aria-hidden="true" />
                   <span>
                     <strong>{incident.title}</strong>
-                    <small>{incidentCategoryLabel(incident.category)} · {incidentStatusLabel(incident.status)} · {formatIncidentConfidence(incident.confidence)}</small>
+                    <small>
+                      {incidentCategoryLabel(incident.category)} · {incidentStatusLabel(incident.status)} ·{" "}
+                      {formatIncidentConfidence(incident.confidence)}
+                    </small>
                   </span>
                   <span>{formatShortDateTime(incident.updatedAt)}</span>
                 </button>
@@ -6907,7 +7804,9 @@ function IncidentWorkflowBoard({
                     <span className="section-eyebrow">Vybraný incident</span>
                     <strong>{selectedIncident.title}</strong>
                   </div>
-                  <span className={`incident-pill ${selectedIncident.severity}`}>{incidentSeverityLabel(selectedIncident.severity)}</span>
+                  <span className={`incident-pill ${selectedIncident.severity}`}>
+                    {incidentSeverityLabel(selectedIncident.severity)}
+                  </span>
                 </div>
                 <p>{selectedIncident.description ?? "Bez doplňujícího popisu."}</p>
                 <div className="incident-status-actions">
@@ -6948,16 +7847,26 @@ function IncidentWorkflowBoard({
                     <article className="incident-task-row" key={task.taskId}>
                       <div>
                         <strong>{task.title}</strong>
-                        <span>{incidentTaskPriorityLabel(task.priority)} · {incidentTaskStatusLabel(task.status)}</span>
+                        <span>
+                          {incidentTaskPriorityLabel(task.priority)} · {incidentTaskStatusLabel(task.status)}
+                        </span>
                       </div>
                       <div className="incident-task-actions">
                         {task.status !== "in_progress" && task.status !== "done" ? (
-                          <button className="mini-button" onClick={() => onUpdateTaskStatus(selectedIncident.incidentId, task.taskId, "in_progress")} type="button">
+                          <button
+                            className="mini-button"
+                            onClick={() => onUpdateTaskStatus(selectedIncident.incidentId, task.taskId, "in_progress")}
+                            type="button"
+                          >
                             Rozpracovat
                           </button>
                         ) : null}
                         {task.status !== "done" ? (
-                          <button className="mini-button" onClick={() => onUpdateTaskStatus(selectedIncident.incidentId, task.taskId, "done")} type="button">
+                          <button
+                            className="mini-button"
+                            onClick={() => onUpdateTaskStatus(selectedIncident.incidentId, task.taskId, "done")}
+                            type="button"
+                          >
                             <CheckCircle2 size={14} />
                             Hotovo
                           </button>
@@ -7038,7 +7947,11 @@ function DataWorkspaceBoard({
 
       <div className="data-summary-grid">
         <DataMetric label="Objekty" value={String(objects.length)} tone="neutral" />
-        <DataMetric label="Nízká jistota" value={String(metrics.lowConfidenceCount)} tone={metrics.lowConfidenceCount > 0 ? "warn" : "ok"} />
+        <DataMetric
+          label="Nízká jistota"
+          value={String(metrics.lowConfidenceCount)}
+          tone={metrics.lowConfidenceCount > 0 ? "warn" : "ok"}
+        />
         <DataMetric label="Neaktuální" value={String(staleOrLostCount)} tone={staleOrLostCount > 0 ? "warn" : "ok"} />
         <DataMetric label="Kontext" value={String(contextCount)} tone={contextCount > 0 ? "ok" : "neutral"} />
       </div>
@@ -7048,7 +7961,9 @@ function DataWorkspaceBoard({
       ) : selectedObject ? (
         <SelectedObjectDataCard object={selectedObject} />
       ) : (
-        <div className="empty-mini">Vyber objekt nebo situační prvek v mapě/tabulce. Tady se zobrazí stav, kvalita a zdrojová data.</div>
+        <div className="empty-mini">
+          Vyber objekt nebo situační prvek v mapě/tabulce. Tady se zobrazí stav, kvalita a zdrojová data.
+        </div>
       )}
     </div>
   );
@@ -7061,7 +7976,10 @@ function SelectedObjectDataCard({ object }: { object: CopObject }) {
       <DetailGrid
         rows={[
           ["ID", object.objectId],
-          ["Stav", <StatusBadge key="status" label={objectStatusLabel(object.status)} tone={objectStatusTone(object.status)} />],
+          [
+            "Stav",
+            <StatusBadge key="status" label={objectStatusLabel(object.status)} tone={objectStatusTone(object.status)} />
+          ],
           ["Typ", `${object.objectType} / ${object.domain}`],
           ["Jistota", formatOptionalPercent(object.confidence)],
           ["Zdroj", provenance?.sourceSystemId ?? "n/a"],
@@ -7072,16 +7990,41 @@ function SelectedObjectDataCard({ object }: { object: CopObject }) {
   );
 }
 
-function SelectedSituationDataCard({ authToken, feature }: { authToken: string | undefined; feature: SituationFeature }) {
+function SelectedSituationDataCard({
+  authToken,
+  feature
+}: {
+  authToken: string | undefined;
+  feature: SituationFeature;
+}) {
   const status = situationFeatureStatusModel(feature);
   const weatherCamera = isWeatherWebcamFeature(feature);
   const weatherForecastArea = isWeatherForecastAreaFeature(feature);
-  const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature) && !weatherCamera && !weatherForecastArea;
+  const weatherContext =
+    isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature) && !weatherCamera && !weatherForecastArea;
   const rows: Array<[string, React.ReactNode]> = [
-    ["Název", weatherForecastArea ? weatherForecastAreaTitle(feature) : weatherCamera ? weatherWebcamTitle(feature) : weatherContext ? weatherFeatureHeadline(feature) : feature.properties.headline ?? feature.properties.label],
+    [
+      "Název",
+      weatherForecastArea
+        ? weatherForecastAreaTitle(feature)
+        : weatherCamera
+          ? weatherWebcamTitle(feature)
+          : weatherContext
+            ? weatherFeatureHeadline(feature)
+            : (feature.properties.headline ?? feature.properties.label)
+    ],
     ["Vrstva", situationDisplayLayerLabel(feature)],
     ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />],
-    [weatherContext || weatherCamera || weatherForecastArea ? "Typ" : "Kategorie", weatherForecastArea ? "Plošná předpověď" : weatherCamera ? "Webkamera" : weatherContext ? weatherFeatureTypeLabel(feature) : feature.properties.category],
+    [
+      weatherContext || weatherCamera || weatherForecastArea ? "Typ" : "Kategorie",
+      weatherForecastArea
+        ? "Plošná předpověď"
+        : weatherCamera
+          ? "Webkamera"
+          : weatherContext
+            ? weatherFeatureTypeLabel(feature)
+            : feature.properties.category
+    ],
     ["Zdroj", feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)],
     ["Aktualizace", formatShortDateTime(feature.properties.observedAt)]
   ];
@@ -7095,12 +8038,20 @@ function SelectedSituationDataCard({ authToken, feature }: { authToken: string |
   return (
     <ObjectDetailSection title="Vybraný situační prvek">
       <DetailGrid rows={rows} />
-      {feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network" ? <MobileCoverageSummary feature={feature} /> : null}
+      {feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network" ? (
+        <MobileCoverageSummary feature={feature} />
+      ) : null}
       {isCommunicationTowerFeature(feature) ? <CommunicationTowerSummary feature={feature} /> : null}
-      {feature.properties.layer === "mobile" && !isTakGatewayFeature(feature) && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
+      {feature.properties.layer === "mobile" &&
+      !isTakGatewayFeature(feature) &&
+      !isCommunicationTowerFeature(feature) ? (
+        <MobileNetworkStatusSummary feature={feature} />
+      ) : null}
       {feature.properties.layer === "traffic" ? <TrafficSummary feature={feature} /> : null}
       <SafetyAlertMetadataSection feature={feature} />
-      {isSafetyLayerId(feature.properties.layer) ? <SafetyRiskSummary apiBase={apiBase} authToken={authToken} feature={feature} /> : null}
+      {isSafetyLayerId(feature.properties.layer) ? (
+        <SafetyRiskSummary apiBase={apiBase} authToken={authToken} feature={feature} />
+      ) : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {weatherForecastArea ? <WeatherForecastAreaSummary feature={feature} /> : null}
       {weatherCamera ? <WeatherWebcamSummary feature={feature} /> : null}
@@ -7118,15 +8069,20 @@ function SafetyAlertMetadataSection({ feature }: { feature: SituationFeature }) 
   const taxonomy = isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : {};
   const tags = safetyAlertTags(feature);
   const metrics = isRecord(properties.metrics) ? properties.metrics : {};
-  const sourceName = properties.sourceName
-    ?? recordString(providerProperties, "sourceName")
-    ?? sourceDisplayName(properties.sourceId);
+  const sourceName =
+    properties.sourceName ?? recordString(providerProperties, "sourceName") ?? sourceDisplayName(properties.sourceId);
   const locationInterpretation = safetyAlertLocationInterpretation(feature);
   const locationConfidence = recordNumber(metrics, "locationConfidence");
   const rows: Array<[string, React.ReactNode]> = [
     ["Titulek", properties.headline ?? properties.label ?? "n/a"],
-    ["Jev", recordString(tags, "hazardType") ?? recordString(providerProperties, "hazardType") ?? properties.category ?? "n/a"],
-    ["Typ", properties.typeCode ?? recordString(taxonomy, "typeCode") ?? recordString(providerProperties, "typeCode") ?? "n/a"],
+    [
+      "Jev",
+      recordString(tags, "hazardType") ?? recordString(providerProperties, "hazardType") ?? properties.category ?? "n/a"
+    ],
+    [
+      "Typ",
+      properties.typeCode ?? recordString(taxonomy, "typeCode") ?? recordString(providerProperties, "typeCode") ?? "n/a"
+    ],
     ["Stav", properties.status ?? recordString(tags, "status") ?? "n/a"],
     ["Pozorováno", formatShortDateTime(properties.observedAt)],
     ["Platí do", formatShortDateTime(properties.validUntil ?? properties.expiresAt)],
@@ -7151,8 +8107,10 @@ function SafetyAlertMetadataSection({ feature }: { feature: SituationFeature }) 
 }
 
 function isCrisisSafetyAlertFeature(feature: SituationFeature): boolean {
-  return (feature.properties.layer === "warnings" || feature.properties.layer === "fire")
-    && (feature.properties.sourceId === "hzs_incidents" || feature.properties.sourceId === "municipal_alerts");
+  return (
+    (feature.properties.layer === "warnings" || feature.properties.layer === "fire") &&
+    (feature.properties.sourceId === "hzs_incidents" || feature.properties.sourceId === "municipal_alerts")
+  );
 }
 
 function safetyAlertTags(feature: SituationFeature): Record<string, unknown> {
@@ -7180,9 +8138,10 @@ function safetyAlertLocationInterpretation(feature: SituationFeature): { text: s
   }
   if (locationPrecision === "authority_fallback_point") {
     return {
-      text: feature.properties.sourceId === "municipal_alerts"
-        ? "Poloha je bod vydávající autority, ne přesné místo události."
-        : "Poloha je bod autority, ne přesné místo události.",
+      text:
+        feature.properties.sourceId === "municipal_alerts"
+          ? "Poloha je bod vydávající autority, ne přesné místo události."
+          : "Poloha je bod autority, ne přesné místo události.",
       warning: true
     };
   }
@@ -7264,7 +8223,8 @@ function mobileNetworkDisplayData(properties: SituationFeature["properties"]): M
     modelVersion: mobileStringField(properties, provider, "modelVersion"),
     notices: mobileStringArrayField(properties, provider, "notices"),
     operator: mobileStringField(properties, provider, "operator"),
-    operatorStatusAvailable: booleanProperty(properties.operatorStatusAvailable) ?? booleanProperty(provider.operatorStatusAvailable),
+    operatorStatusAvailable:
+      booleanProperty(properties.operatorStatusAvailable) ?? booleanProperty(provider.operatorStatusAvailable),
     quality: mobileStringField(properties, provider, "quality"),
     readModel: booleanProperty(properties.readModel) ?? booleanProperty(provider.readModel),
     resolutionM: numberProperty(properties.resolutionM) ?? numberProperty(provider.resolutionM),
@@ -7275,11 +8235,19 @@ function mobileNetworkDisplayData(properties: SituationFeature["properties"]): M
   };
 }
 
-function mobileStringField(properties: SituationFeature["properties"], provider: Record<string, unknown>, key: keyof SituationFeature["properties"]): string | undefined {
+function mobileStringField(
+  properties: SituationFeature["properties"],
+  provider: Record<string, unknown>,
+  key: keyof SituationFeature["properties"]
+): string | undefined {
   return stringProperty(properties[key]) ?? stringProperty(provider[key]);
 }
 
-function mobileStringArrayField(properties: SituationFeature["properties"], provider: Record<string, unknown>, key: keyof SituationFeature["properties"]): string[] | undefined {
+function mobileStringArrayField(
+  properties: SituationFeature["properties"],
+  provider: Record<string, unknown>,
+  key: keyof SituationFeature["properties"]
+): string[] | undefined {
   const direct = properties[key];
   if (Array.isArray(direct)) {
     return direct.map((item) => stringProperty(item)).filter((item): item is string => Boolean(item));
@@ -7295,8 +8263,10 @@ function formatMobileTerrainState(assumptions: Record<string, unknown>): string 
   const terrainApplied = booleanProperty(assumptions.terrainApplied);
   const terrainDataAvailable = booleanProperty(assumptions.terrainDataAvailable);
   const model = stringProperty(assumptions.propagationModel);
-  const appliedLabel = terrainApplied === true ? "terén aplikován" : terrainApplied === false ? "terén neaplikován" : "stav terénu n/a";
-  const dataLabel = terrainDataAvailable === true ? "DEM dostupný" : terrainDataAvailable === false ? "DEM nedostupný" : "DEM n/a";
+  const appliedLabel =
+    terrainApplied === true ? "terén aplikován" : terrainApplied === false ? "terén neaplikován" : "stav terénu n/a";
+  const dataLabel =
+    terrainDataAvailable === true ? "DEM dostupný" : terrainDataAvailable === false ? "DEM nedostupný" : "DEM n/a";
   return [appliedLabel, dataLabel, model].filter(Boolean).join(" · ");
 }
 
@@ -7304,21 +8274,49 @@ function formatMobileAntennaAssumptions(assumptions: Record<string, unknown>): s
   const antennaHeight = numberProperty(assumptions.antennaHeightM);
   const receiverHeight = numberProperty(assumptions.receiverHeightM);
   const landCoverAware = booleanProperty(assumptions.landCoverAware);
-  return [
-    antennaHeight !== undefined ? `BTS ${antennaHeight} m` : undefined,
-    receiverHeight !== undefined ? `klient ${receiverHeight} m` : undefined,
-    landCoverAware === true ? "land-cover zohledněn" : landCoverAware === false ? "bez land-cover" : undefined
-  ].filter(Boolean).join(" · ") || "n/a";
+  return (
+    [
+      antennaHeight !== undefined ? `BTS ${antennaHeight} m` : undefined,
+      receiverHeight !== undefined ? `klient ${receiverHeight} m` : undefined,
+      landCoverAware === true ? "land-cover zohledněn" : landCoverAware === false ? "bez land-cover" : undefined
+    ]
+      .filter(Boolean)
+      .join(" · ") || "n/a"
+  );
 }
 
 function MobileNetworkStatusSummary({ feature }: { feature: SituationFeature }) {
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   return (
     <div className="mobile-status-summary">
-      <DataMetric label="Download" value={formatOptionalNumber(recordNumber(metrics, "downloadMbps"), " Mbps")} tone={mobileMetricTone(recordNumber(metrics, "downloadMbps"), 15, 5, true)} />
-      <DataMetric label="Upload" value={formatOptionalNumber(recordNumber(metrics, "uploadMbps"), " Mbps")} tone={mobileMetricTone(recordNumber(metrics, "uploadMbps"), 5, 1.5, true)} />
-      <DataMetric label="Latence" value={formatOptionalNumber(recordNumber(metrics, "latencyMs"), " ms")} tone={mobileMetricTone(recordNumber(metrics, "latencyMs"), 75, 150, false)} />
-      <DataMetric label="Signál" value={formatOptionalNumber(recordNumber(metrics, "lteRsrpDbm") ?? recordNumber(metrics, "signalStrengthDbm"), " dBm")} tone={mobileMetricTone(recordNumber(metrics, "lteRsrpDbm") ?? recordNumber(metrics, "signalStrengthDbm"), -100, -110, true)} />
+      <DataMetric
+        label="Download"
+        value={formatOptionalNumber(recordNumber(metrics, "downloadMbps"), " Mbps")}
+        tone={mobileMetricTone(recordNumber(metrics, "downloadMbps"), 15, 5, true)}
+      />
+      <DataMetric
+        label="Upload"
+        value={formatOptionalNumber(recordNumber(metrics, "uploadMbps"), " Mbps")}
+        tone={mobileMetricTone(recordNumber(metrics, "uploadMbps"), 5, 1.5, true)}
+      />
+      <DataMetric
+        label="Latence"
+        value={formatOptionalNumber(recordNumber(metrics, "latencyMs"), " ms")}
+        tone={mobileMetricTone(recordNumber(metrics, "latencyMs"), 75, 150, false)}
+      />
+      <DataMetric
+        label="Signál"
+        value={formatOptionalNumber(
+          recordNumber(metrics, "lteRsrpDbm") ?? recordNumber(metrics, "signalStrengthDbm"),
+          " dBm"
+        )}
+        tone={mobileMetricTone(
+          recordNumber(metrics, "lteRsrpDbm") ?? recordNumber(metrics, "signalStrengthDbm"),
+          -100,
+          -110,
+          true
+        )}
+      />
     </div>
   );
 }
@@ -7335,7 +8333,11 @@ function TrafficSummary({ feature }: { feature: SituationFeature }) {
         <DataMetric label="Název" value={presentation.stopName ?? presentation.mapLabel} tone="neutral" />
         <DataMetric label="Systém" value={presentation.systemId ?? presentation.operator ?? "n/a"} tone="neutral" />
         <DataMetric label="Zóna" value={presentation.zoneId ?? "n/a"} tone="neutral" />
-        <DataMetric label="Detail" value={presentation.detailUrl ? "dostupný" : "n/a"} tone={presentation.detailUrl ? "ok" : "neutral"} />
+        <DataMetric
+          label="Detail"
+          value={presentation.detailUrl ? "dostupný" : "n/a"}
+          tone={presentation.detailUrl ? "ok" : "neutral"}
+        />
       </div>
     );
   }
@@ -7345,7 +8347,11 @@ function TrafficSummary({ feature }: { feature: SituationFeature }) {
       <DataMetric label="Linka" value={presentation.routeShortName ?? "n/a"} tone="neutral" />
       <DataMetric label="Stav" value={formatTransportCurrentStatus(presentation.currentStatus)} tone="neutral" />
       <DataMetric label="Rychlost" value={formatTransportSpeed(presentation.speedMps)} tone="neutral" />
-      <DataMetric label="Zpoždění" value={formatTransportDelay(presentation.delaySeconds)} tone={trafficDelayTone(presentation.delaySeconds)} />
+      <DataMetric
+        label="Zpoždění"
+        value={formatTransportDelay(presentation.delaySeconds)}
+        tone={trafficDelayTone(presentation.delaySeconds)}
+      />
     </div>
   );
 }
@@ -7376,17 +8382,30 @@ function TrafficDetailSection({
     setLoading(true);
     setDetailError(null);
     try {
-      setDetail(await fetchTransitVehicleDetail(apiBase, authToken, presentation?.detailUrl, {
-        featureId: feature.properties.featureId,
-        sourceId: feature.properties.sourceId
-      }));
+      setDetail(
+        await fetchTransitVehicleDetail(apiBase, authToken, presentation?.detailUrl, {
+          featureId: feature.properties.featureId,
+          sourceId: feature.properties.sourceId
+        })
+      );
     } catch (error) {
       setDetail(null);
-      setDetailError(error instanceof Error ? humanizeApiError(error.message) : "Detail vozidla veřejné dopravy se nepodařilo načíst.");
+      setDetailError(
+        error instanceof Error
+          ? humanizeApiError(error.message)
+          : "Detail vozidla veřejné dopravy se nepodařilo načíst."
+      );
     } finally {
       setLoading(false);
     }
-  }, [apiBase, authToken, feature.properties.featureId, feature.properties.sourceId, isTransitVehicle, presentation?.detailUrl]);
+  }, [
+    apiBase,
+    authToken,
+    feature.properties.featureId,
+    feature.properties.sourceId,
+    isTransitVehicle,
+    presentation?.detailUrl
+  ]);
 
   const loadStopDetail = React.useCallback(async () => {
     if (!isTransitStop) {
@@ -7395,18 +8414,33 @@ function TrafficDetailSection({
     setLoading(true);
     setDetailError(null);
     try {
-      setStopDetail(await fetchTransitStopDetail(apiBase, authToken, presentation?.detailUrl, {
-        sourceId: feature.properties.sourceId,
-        stopId: presentation?.stopId,
-        systemId: presentation?.systemId ?? presentation?.operator
-      }));
+      setStopDetail(
+        await fetchTransitStopDetail(apiBase, authToken, presentation?.detailUrl, {
+          sourceId: feature.properties.sourceId,
+          stopId: presentation?.stopId,
+          systemId: presentation?.systemId ?? presentation?.operator
+        })
+      );
     } catch (error) {
       setStopDetail(null);
-      setDetailError(error instanceof Error ? humanizeApiError(error.message) : "Detail zastávky veřejné dopravy se nepodařilo načíst.");
+      setDetailError(
+        error instanceof Error
+          ? humanizeApiError(error.message)
+          : "Detail zastávky veřejné dopravy se nepodařilo načíst."
+      );
     } finally {
       setLoading(false);
     }
-  }, [apiBase, authToken, feature.properties.sourceId, isTransitStop, presentation?.detailUrl, presentation?.operator, presentation?.stopId, presentation?.systemId]);
+  }, [
+    apiBase,
+    authToken,
+    feature.properties.sourceId,
+    isTransitStop,
+    presentation?.detailUrl,
+    presentation?.operator,
+    presentation?.stopId,
+    presentation?.systemId
+  ]);
 
   React.useEffect(() => {
     setDetail(null);
@@ -7442,15 +8476,32 @@ function TrafficDetailSection({
       {isTransitVehicle || isTransitStop ? (
         <div className="traffic-detail-header">
           <div>
-            <strong>{isTransitStop ? stopDisplay.title : detailDisplay.title ?? [presentation.label, presentation.routeShortName].filter(Boolean).join(" ")}</strong>
-            <span>{isTransitStop ? stopDisplay.subtitle : detailDisplay.subtitle ?? presentation.destination ?? "Živá poloha vozidla ze SIM"}</span>
+            <strong>
+              {isTransitStop
+                ? stopDisplay.title
+                : (detailDisplay.title ?? [presentation.label, presentation.routeShortName].filter(Boolean).join(" "))}
+            </strong>
+            <span>
+              {isTransitStop
+                ? stopDisplay.subtitle
+                : (detailDisplay.subtitle ?? presentation.destination ?? "Živá poloha vozidla ze SIM")}
+            </span>
           </div>
           <div className="traffic-detail-actions">
-            <button className="mini-button" disabled={loading} onClick={() => void (isTransitStop ? loadStopDetail() : loadDetail())} type="button">
+            <button
+              className="mini-button"
+              disabled={loading}
+              onClick={() => void (isTransitStop ? loadStopDetail() : loadDetail())}
+              type="button"
+            >
               {loading ? "Načítám" : "Obnovit"}
             </button>
             {isTransitVehicle && onShareTransit ? (
-              <button className="mini-button primary" onClick={() => onShareTransit(buildTransitSharePayload(feature, presentation, detail))} type="button">
+              <button
+                className="mini-button primary"
+                onClick={() => onShareTransit(buildTransitSharePayload(feature, presentation, detail))}
+                type="button"
+              >
                 Sdílet do chatu
               </button>
             ) : null}
@@ -7458,44 +8509,128 @@ function TrafficDetailSection({
         </div>
       ) : null}
       <DetailGrid
-        rows={isTransitStop ? [
-          ["Typ", "Zastávka"],
-          ["Název", stopDetail?.stop?.stopName ?? stopDetail?.stop?.name ?? presentation.stopName ?? presentation.mapLabel],
-          ["Systém", stopDetail?.stop?.systemId ?? stopDetail?.systemId ?? presentation.systemId ?? presentation.operator ?? "n/a"],
-          ["Zóna", stopDetail?.stop?.zoneId ?? presentation.zoneId ?? "n/a"],
-          ["Linky", formatTransitStopRoutes(stopRoutes)],
-          ["Nejbližší odjezd", formatTransitStopDeparture(stopDepartures[0])],
-          ["Detail dat", formatTransitStopQuality(stopDetail)]
-        ] : [
-          ["Typ", presentation.label],
-          ["Linka", route?.routeShortName ?? trip?.routeShortName ?? vehicle?.routeShortName ?? presentation.routeShortName ?? "n/a"],
-          ["Směr", route?.destination ?? route?.direction ?? trip?.destination ?? trip?.headsign ?? vehicle?.destination ?? presentation.destination ?? "n/a"],
-          ["Stav", detailDisplay.badgeLabel ?? formatTransportCurrentStatus(detail?.current?.status ?? vehicle?.currentStatus ?? vehicle?.status ?? trip?.status ?? presentation.currentStatus)],
-          ["Zpoždění", formatTransportDelay(detail?.current?.delaySeconds ?? vehicle?.delaySeconds ?? presentation.delaySeconds)],
-          ["Rychlost", formatTransportSpeed(detail?.current?.speedMps ?? vehiclePosition?.speedMps ?? presentation.speedMps)],
-          ["Směr pohybu", formatTransportHeading(detail?.current?.headingDeg ?? vehiclePosition?.headingDeg ?? presentation.headingDeg)],
-          ["Poslední zpráva", formatShortDateTime(detail?.current?.observedAt ?? vehiclePosition?.observedAt ?? vehicle?.observedAt ?? feature.properties.observedAt)],
-          ["Obsazenost", formatTransportOccupancy(vehicle?.occupancyStatus ?? presentation.occupancyStatus, vehicle?.occupancyPercent ?? presentation.occupancyPercent)],
-          ["Sekvence zastávky", formatOptionalInteger(vehicle?.currentStopSequence ?? presentation.stopSequence)],
-          ["Vozidlo", vehicle?.label ?? vehicle?.id ?? vehicle?.vehicleId ?? trip?.vehicleId ?? presentation.vehicleId ?? "n/a"],
-          ["Spoj", trip?.tripId ?? presentation.tripId ?? "n/a"],
-          ["Dopravce", vehicle?.operator ?? presentation.operator ?? "n/a"],
-          ["Detail dat", formatTransitQuality(detail)],
-          ["Trasa", formatTransitRouteShape(detail)]
-        ]}
+        rows={
+          isTransitStop
+            ? [
+                ["Typ", "Zastávka"],
+                [
+                  "Název",
+                  stopDetail?.stop?.stopName ?? stopDetail?.stop?.name ?? presentation.stopName ?? presentation.mapLabel
+                ],
+                [
+                  "Systém",
+                  stopDetail?.stop?.systemId ??
+                    stopDetail?.systemId ??
+                    presentation.systemId ??
+                    presentation.operator ??
+                    "n/a"
+                ],
+                ["Zóna", stopDetail?.stop?.zoneId ?? presentation.zoneId ?? "n/a"],
+                ["Linky", formatTransitStopRoutes(stopRoutes)],
+                ["Nejbližší odjezd", formatTransitStopDeparture(stopDepartures[0])],
+                ["Detail dat", formatTransitStopQuality(stopDetail)]
+              ]
+            : [
+                ["Typ", presentation.label],
+                [
+                  "Linka",
+                  route?.routeShortName ??
+                    trip?.routeShortName ??
+                    vehicle?.routeShortName ??
+                    presentation.routeShortName ??
+                    "n/a"
+                ],
+                [
+                  "Směr",
+                  route?.destination ??
+                    route?.direction ??
+                    trip?.destination ??
+                    trip?.headsign ??
+                    vehicle?.destination ??
+                    presentation.destination ??
+                    "n/a"
+                ],
+                [
+                  "Stav",
+                  detailDisplay.badgeLabel ??
+                    formatTransportCurrentStatus(
+                      detail?.current?.status ??
+                        vehicle?.currentStatus ??
+                        vehicle?.status ??
+                        trip?.status ??
+                        presentation.currentStatus
+                    )
+                ],
+                [
+                  "Zpoždění",
+                  formatTransportDelay(
+                    detail?.current?.delaySeconds ?? vehicle?.delaySeconds ?? presentation.delaySeconds
+                  )
+                ],
+                [
+                  "Rychlost",
+                  formatTransportSpeed(detail?.current?.speedMps ?? vehiclePosition?.speedMps ?? presentation.speedMps)
+                ],
+                [
+                  "Směr pohybu",
+                  formatTransportHeading(
+                    detail?.current?.headingDeg ?? vehiclePosition?.headingDeg ?? presentation.headingDeg
+                  )
+                ],
+                [
+                  "Poslední zpráva",
+                  formatShortDateTime(
+                    detail?.current?.observedAt ??
+                      vehiclePosition?.observedAt ??
+                      vehicle?.observedAt ??
+                      feature.properties.observedAt
+                  )
+                ],
+                [
+                  "Obsazenost",
+                  formatTransportOccupancy(
+                    vehicle?.occupancyStatus ?? presentation.occupancyStatus,
+                    vehicle?.occupancyPercent ?? presentation.occupancyPercent
+                  )
+                ],
+                ["Sekvence zastávky", formatOptionalInteger(vehicle?.currentStopSequence ?? presentation.stopSequence)],
+                [
+                  "Vozidlo",
+                  vehicle?.label ??
+                    vehicle?.id ??
+                    vehicle?.vehicleId ??
+                    trip?.vehicleId ??
+                    presentation.vehicleId ??
+                    "n/a"
+                ],
+                ["Spoj", trip?.tripId ?? presentation.tripId ?? "n/a"],
+                ["Dopravce", vehicle?.operator ?? presentation.operator ?? "n/a"],
+                ["Detail dat", formatTransitQuality(detail)],
+                ["Trasa", formatTransitRouteShape(detail)]
+              ]
+        }
       />
       {detailError ? <div className="situation-warning">{detailError}</div> : null}
-      {loading && !detail && !stopDetail ? <div className="empty-mini">Načítám detail veřejné dopravy ze SIM...</div> : null}
+      {loading && !detail && !stopDetail ? (
+        <div className="empty-mini">Načítám detail veřejné dopravy ze SIM...</div>
+      ) : null}
       {isTransitStop && stopRoutes.length > 0 ? <TransitStopRouteList routes={stopRoutes} /> : null}
       {isTransitStop && stopDepartures.length > 0 ? <TransitStopDepartureList departures={stopDepartures} /> : null}
       {isTransitVehicle && stops.length > 0 ? <TransitStopList stops={stops} /> : null}
-      {(isTransitVehicle || isTransitStop) && warnings.map((warning) => <div className="situation-warning" key={warning}>{warning}</div>)}
+      {(isTransitVehicle || isTransitStop) &&
+        warnings.map((warning) => (
+          <div className="situation-warning" key={warning}>
+            {warning}
+          </div>
+        ))}
     </ObjectDetailSection>
   );
 }
 
 function TrailDetailSection({ feature }: { feature: SituationFeature }) {
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const display = isRecord(providerProperties.display) ? providerProperties.display : {};
   const attribution = recordString(display, "attribution") ?? "OpenStreetMap contributors, licence ODbL 1.0";
 
@@ -7527,10 +8662,11 @@ function TrailDetailSection({ feature }: { feature: SituationFeature }) {
   if (feature.properties.layer === "trail_poi") {
     const trailPoi = isRecord(providerProperties.trailPoi) ? providerProperties.trailPoi : {};
     const mayDisplayContact = booleanProperty(trailPoi.mayDisplayContact);
-    const categoryLabel = localizedTextValue(trailPoi.categoryLabelLocalized)
-      ?? recordString(trailPoi, "category")
-      ?? feature.properties.category
-      ?? "n/a";
+    const categoryLabel =
+      localizedTextValue(trailPoi.categoryLabelLocalized) ??
+      recordString(trailPoi, "category") ??
+      feature.properties.category ??
+      "n/a";
 
     return (
       <ObjectDetailSection title="Outdoor bod">
@@ -7553,18 +8689,22 @@ function TrailDetailSection({ feature }: { feature: SituationFeature }) {
 }
 
 function CommunityPlaceDetailSection({ feature }: { feature: SituationFeature }) {
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const community = isRecord(providerProperties.community) ? providerProperties.community : {};
   const tags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
   const display = isRecord(providerProperties.display) ? providerProperties.display : {};
-  const categoryLabel = localizedTextValue(community.categoryLabelLocalized)
-    ?? recordString(community, "categoryLabel")
-    ?? recordString(display, "label")
-    ?? feature.properties.category
-    ?? "n/a";
-  const status = recordString(community, "communityStatus")
-    ?? recordString(providerProperties, "communityStatus")
-    ?? "reference_only";
+  const categoryLabel =
+    localizedTextValue(community.categoryLabelLocalized) ??
+    recordString(community, "categoryLabel") ??
+    recordString(display, "label") ??
+    feature.properties.category ??
+    "n/a";
+  const status =
+    recordString(community, "communityStatus") ??
+    recordString(providerProperties, "communityStatus") ??
+    "reference_only";
   return (
     <ObjectDetailSection title="Komunitní kontext">
       <DetailGrid
@@ -7588,7 +8728,11 @@ function CommunityPlaceDetailSection({ feature }: { feature: SituationFeature })
   );
 }
 
-function communityRecordText(primary: Record<string, unknown>, fallback: Record<string, unknown>, ...keys: string[]): string {
+function communityRecordText(
+  primary: Record<string, unknown>,
+  fallback: Record<string, unknown>,
+  ...keys: string[]
+): string {
   for (const key of keys) {
     const value = primary[key] ?? fallback[key];
     if (typeof value === "string" && value.trim()) {
@@ -7598,7 +8742,7 @@ function communityRecordText(primary: Record<string, unknown>, fallback: Record<
       return String(value);
     }
     if (Array.isArray(value)) {
-      const items = value.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean);
+      const items = value.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
       if (items.length > 0) {
         return items.join(", ");
       }
@@ -7637,7 +8781,10 @@ function TransitStopList({ stops }: { stops: TransitStopTime[] }) {
     <div className="traffic-stop-list">
       <h3>Zastávky</h3>
       {stops.slice(0, 8).map((stop, index) => (
-        <div className="traffic-stop-row" key={`${stop.stopId ?? stop.stopName ?? stop.name ?? "stop"}-${stop.sequence ?? stop.stopSequence ?? index}`}>
+        <div
+          className="traffic-stop-row"
+          key={`${stop.stopId ?? stop.stopName ?? stop.name ?? "stop"}-${stop.sequence ?? stop.stopSequence ?? index}`}
+        >
           <span>{stop.sequence ?? stop.stopSequence ?? index + 1}</span>
           <strong>{stop.stopName ?? stop.name ?? stop.stopId ?? "Zastávka"}</strong>
           <em>{formatTransitStopTime(stop)}</em>
@@ -7667,7 +8814,10 @@ function TransitStopDepartureList({ departures }: { departures: TransitStopDepar
     <div className="traffic-stop-list">
       <h3>Nejbližší odjezdy</h3>
       {departures.slice(0, 8).map((departure, index) => (
-        <div className="traffic-stop-row" key={`${departure.tripId ?? departure.routeShortName ?? "departure"}-${departure.plannedDeparture ?? departure.realtimeDeparture ?? index}`}>
+        <div
+          className="traffic-stop-row"
+          key={`${departure.tripId ?? departure.routeShortName ?? "departure"}-${departure.plannedDeparture ?? departure.realtimeDeparture ?? index}`}
+        >
           <span>{departure.routeShortName ?? formatTransitMode(departure.transportMode ?? "route")}</span>
           <strong>{departure.destination ?? departure.headsign ?? "směr n/a"}</strong>
           <em>{formatTransitStopDeparture(departure)}</em>
@@ -7688,17 +8838,25 @@ function buildTransitSharePayload(
   const route = detail?.route;
   const current = detail?.current;
   const nextStop = transitNextStopName(detail);
-  const observedAt = current?.observedAt ?? vehicle?.position?.observedAt ?? vehicle?.observedAt ?? feature.properties.observedAt;
+  const observedAt =
+    current?.observedAt ?? vehicle?.position?.observedAt ?? vehicle?.observedAt ?? feature.properties.observedAt;
   return {
     ...(presentation.detailUrl ? { detailUrl: presentation.detailUrl } : {}),
-    destination: route?.destination ?? route?.direction ?? trip?.destination ?? trip?.headsign ?? vehicle?.destination ?? presentation.destination,
+    destination:
+      route?.destination ??
+      route?.direction ??
+      trip?.destination ??
+      trip?.headsign ??
+      vehicle?.destination ??
+      presentation.destination,
     featureId: feature.properties.featureId,
     label: [presentation.label, presentation.routeShortName].filter(Boolean).join(" "),
     ...(coordinates ? { lat: coordinates.lat, lon: coordinates.lon } : {}),
     ...(nextStop ? { nextStopName: nextStop } : {}),
     ...(observedAt ? { observedAt } : {}),
     operator: vehicle?.operator ?? presentation.operator,
-    routeShortName: route?.routeShortName ?? trip?.routeShortName ?? vehicle?.routeShortName ?? presentation.routeShortName,
+    routeShortName:
+      route?.routeShortName ?? trip?.routeShortName ?? vehicle?.routeShortName ?? presentation.routeShortName,
     sourceId: feature.properties.sourceId,
     status: current?.status ?? vehicle?.currentStatus ?? vehicle?.status ?? trip?.status ?? presentation.currentStatus,
     transportMode: vehicle?.transportMode ?? route?.transportMode ?? presentation.kind,
@@ -7707,12 +8865,16 @@ function buildTransitSharePayload(
   };
 }
 
-function transitStopDetailDisplay(detail: TransitStopDetailResponse | null, presentation: NonNullable<ReturnType<typeof resolveTransportPresentation>>): { subtitle: string; title: string } {
+function transitStopDetailDisplay(
+  detail: TransitStopDetailResponse | null,
+  presentation: NonNullable<ReturnType<typeof resolveTransportPresentation>>
+): { subtitle: string; title: string } {
   const display = detail?.stop?.display;
   const stopName = detail?.stop?.stopName ?? detail?.stop?.name ?? presentation.stopName ?? presentation.mapLabel;
   const system = detail?.stop?.systemId ?? detail?.systemId ?? presentation.systemId ?? presentation.operator;
   const zone = detail?.stop?.zoneId ?? presentation.zoneId;
-  const fallbackSubtitle = [system, zone ? `zóna ${zone}` : undefined].filter(Boolean).join(" · ") || "Statická zastávka ze SIM";
+  const fallbackSubtitle =
+    [system, zone ? `zóna ${zone}` : undefined].filter(Boolean).join(" · ") || "Statická zastávka ze SIM";
   return {
     subtitle: display?.subtitle ?? fallbackSubtitle,
     title: display?.title ?? display?.label ?? stopName
@@ -7728,7 +8890,9 @@ function transitNextStopName(detail: TransitVehicleDetailResponse | null): strin
     const status = String(stop.status ?? stop.relationToVehicle ?? "").toLocaleLowerCase("cs-CZ");
     return status.includes("upcoming") || status.includes("next");
   });
-  return upcoming?.stopName ?? upcoming?.name ?? upcoming?.stopId ?? stops[0]?.stopName ?? stops[0]?.name ?? stops[0]?.stopId;
+  return (
+    upcoming?.stopName ?? upcoming?.name ?? upcoming?.stopId ?? stops[0]?.stopName ?? stops[0]?.name ?? stops[0]?.stopId
+  );
 }
 
 function transitStopDepartures(detail: TransitStopDetailResponse | null): TransitStopDeparture[] {
@@ -7751,18 +8915,22 @@ function transitStopDetailWarnings(detail: TransitStopDetailResponse | null): st
   }
   const qualityWarnings = Array.isArray(detail.quality?.warnings) ? detail.quality.warnings : [];
   const warnings = Array.isArray(detail.warnings) ? detail.warnings : [];
-  return [...qualityWarnings, ...warnings].filter((warning): warning is string => typeof warning === "string" && warning.trim().length > 0);
+  return [...qualityWarnings, ...warnings].filter(
+    (warning): warning is string => typeof warning === "string" && warning.trim().length > 0
+  );
 }
 
 function formatTransitStopRoutes(routes: TransitStopRoute[]): string {
   if (routes.length === 0) {
     return "n/a";
   }
-  return routes
-    .slice(0, 6)
-    .map((route) => route.routeShortName ?? route.routeLongName ?? route.routeId)
-    .filter(Boolean)
-    .join(", ") || "n/a";
+  return (
+    routes
+      .slice(0, 6)
+      .map((route) => route.routeShortName ?? route.routeLongName ?? route.routeId)
+      .filter(Boolean)
+      .join(", ") || "n/a"
+  );
 }
 
 function formatTransitStopDeparture(departure: TransitStopDeparture | undefined): string {
@@ -7770,7 +8938,10 @@ function formatTransitStopDeparture(departure: TransitStopDeparture | undefined)
     return "n/a";
   }
   const time = formatShortDateTime(departure.realtimeDeparture ?? departure.plannedDeparture);
-  const delay = typeof departure.delaySeconds === "number" && Number.isFinite(departure.delaySeconds) ? formatTransportDelay(departure.delaySeconds) : undefined;
+  const delay =
+    typeof departure.delaySeconds === "number" && Number.isFinite(departure.delaySeconds)
+      ? formatTransportDelay(departure.delaySeconds)
+      : undefined;
   const status = departure.status ? formatTransportCurrentStatus(departure.status) : undefined;
   return [time !== "n/a" ? time : undefined, delay, status].filter(Boolean).join(" · ") || "n/a";
 }
@@ -7796,14 +8967,32 @@ function pointCoordinates(feature: SituationFeature): { lat: number; lon: number
   return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
 }
 
-function transitDetailDisplay(detail: TransitVehicleDetailResponse | null): { badgeLabel?: string; subtitle?: string; title?: string } {
+function transitDetailDisplay(detail: TransitVehicleDetailResponse | null): {
+  badgeLabel?: string;
+  subtitle?: string;
+  title?: string;
+} {
   const display = detail?.current?.display;
   const routeName = detail?.route?.routeShortName ?? detail?.trip?.routeShortName ?? detail?.vehicle?.routeShortName;
   const mode = detail?.vehicle?.transportMode ?? detail?.route?.transportMode;
   return {
-    badgeLabel: display?.badgeLabel ?? display?.primaryValue ?? formatTransportCurrentStatus(detail?.current?.status ?? detail?.vehicle?.currentStatus ?? detail?.vehicle?.status ?? detail?.trip?.status),
-    subtitle: display?.subtitle ?? display?.secondaryValue ?? detail?.trip?.destination ?? detail?.trip?.headsign ?? detail?.vehicle?.destination ?? detail?.route?.destination,
-    title: display?.title ?? display?.label ?? ([mode ? formatTransitMode(mode) : undefined, routeName].filter(Boolean).join(" ") || undefined)
+    badgeLabel:
+      display?.badgeLabel ??
+      display?.primaryValue ??
+      formatTransportCurrentStatus(
+        detail?.current?.status ?? detail?.vehicle?.currentStatus ?? detail?.vehicle?.status ?? detail?.trip?.status
+      ),
+    subtitle:
+      display?.subtitle ??
+      display?.secondaryValue ??
+      detail?.trip?.destination ??
+      detail?.trip?.headsign ??
+      detail?.vehicle?.destination ??
+      detail?.route?.destination,
+    title:
+      display?.title ??
+      display?.label ??
+      ([mode ? formatTransitMode(mode) : undefined, routeName].filter(Boolean).join(" ") || undefined)
   };
 }
 
@@ -7815,10 +9004,10 @@ function transitDetailStops(detail: TransitVehicleDetailResponse | null): Transi
   const stops = Array.isArray(detail.stopTimes)
     ? detail.stopTimes
     : Array.isArray(detail.stops)
-    ? detail.stops
-    : isRecord(fallback) && Array.isArray(fallback.stops)
-      ? fallback.stops as TransitStopTime[]
-      : [];
+      ? detail.stops
+      : isRecord(fallback) && Array.isArray(fallback.stops)
+        ? (fallback.stops as TransitStopTime[])
+        : [];
   return stops.filter((stop): stop is TransitStopTime => isRecord(stop));
 }
 
@@ -7826,7 +9015,10 @@ function formatTransitStopTime(stop: TransitStopTime): string {
   const arrival = stop.realtimeArrival ?? stop.scheduledArrival ?? stop.plannedArrival;
   const departure = stop.realtimeDeparture ?? stop.scheduledDeparture ?? stop.plannedDeparture;
   const time = formatShortDateTime(arrival ?? departure);
-  const delay = typeof stop.delaySeconds === "number" && Number.isFinite(stop.delaySeconds) ? formatTransportDelay(stop.delaySeconds) : undefined;
+  const delay =
+    typeof stop.delaySeconds === "number" && Number.isFinite(stop.delaySeconds)
+      ? formatTransportDelay(stop.delaySeconds)
+      : undefined;
   const status = stop.status ? stop.status.replace(/_/g, " ") : undefined;
   return [time !== "n/a" ? time : undefined, delay, status].filter(Boolean).join(" · ") || "n/a";
 }
@@ -7893,13 +9085,18 @@ function transitDetailWarnings(detail: TransitVehicleDetailResponse | null): str
   if (!detail) {
     return [];
   }
-  const serviceAlerts = (detail.serviceAlerts ?? [])
-    .map((alert) => isRecord(alert) ? recordString(alert, "headline") ?? recordString(alert, "description") ?? recordString(alert, "summary") : undefined);
-  return Array.from(new Set([
-    ...(detail.warnings ?? []),
-    ...(detail.quality?.warnings ?? []),
-    ...serviceAlerts
-  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0)));
+  const serviceAlerts = (detail.serviceAlerts ?? []).map((alert) =>
+    isRecord(alert)
+      ? (recordString(alert, "headline") ?? recordString(alert, "description") ?? recordString(alert, "summary"))
+      : undefined
+  );
+  return Array.from(
+    new Set(
+      [...(detail.warnings ?? []), ...(detail.quality?.warnings ?? []), ...serviceAlerts].filter(
+        (value): value is string => typeof value === "string" && value.trim().length > 0
+      )
+    )
+  );
 }
 
 function WeatherWebcamSummary({ feature }: { feature: SituationFeature }) {
@@ -7908,8 +9105,16 @@ function WeatherWebcamSummary({ feature }: { feature: SituationFeature }) {
   return (
     <div className="mobile-status-summary weather-camera-summary">
       <DataMetric label="Místo" value={locationLabel} tone="neutral" />
-      <DataMetric label="Náhled" value={camera.snapshotUrl ? "dostupný" : "čeká na detail"} tone={camera.snapshotUrl ? "ok" : "neutral"} />
-      <DataMetric label="Detail" value={camera.detailUrl ? "dostupný" : "n/a"} tone={camera.detailUrl ? "ok" : "neutral"} />
+      <DataMetric
+        label="Náhled"
+        value={camera.snapshotUrl ? "dostupný" : "čeká na detail"}
+        tone={camera.snapshotUrl ? "ok" : "neutral"}
+      />
+      <DataMetric
+        label="Detail"
+        value={camera.detailUrl ? "dostupný" : "n/a"}
+        tone={camera.detailUrl ? "ok" : "neutral"}
+      />
       <DataMetric label="Atribuce" value="ČHMÚ" tone="neutral" />
     </div>
   );
@@ -7982,7 +9187,9 @@ function WeatherWebcamPreview({ authToken, feature }: { authToken: string | unde
     <ObjectDetailSection title="Náhled kamery">
       <div className="weather-camera-window">
         <div className="weather-camera-window-header">
-          <span><Camera size={15} /> {activeCameraLabel}</span>
+          <span>
+            <Camera size={15} /> {activeCameraLabel}
+          </span>
           {detailUrl ? (
             <button className="mini-button" disabled={loading} onClick={() => void loadDetail()} type="button">
               {loading ? "Načítám" : "Obnovit"}
@@ -8017,7 +9224,12 @@ function WeatherWebcamPreview({ authToken, feature }: { authToken: string | unde
           <figure className="weather-camera-frame">
             <img alt={activeCameraLabel} onError={() => setImageFailed(true)} src={snapshotUrl} />
             <figcaption>
-              {[activeCamera.observedAt ? formatShortDateTime(activeCamera.observedAt) : undefined, activeCamera.direction].filter(Boolean).join(" · ") || "Aktuální dostupný snapshot"}
+              {[
+                activeCamera.observedAt ? formatShortDateTime(activeCamera.observedAt) : undefined,
+                activeCamera.direction
+              ]
+                .filter(Boolean)
+                .join(" · ") || "Aktuální dostupný snapshot"}
             </figcaption>
           </figure>
         ) : !loading ? (
@@ -8044,7 +9256,11 @@ function CommunicationTowerSummary({ feature }: { feature: SituationFeature }) {
       <DataMetric label="Typ" value={stringProperty(tags.towerType) ?? "communication"} tone="neutral" />
       <DataMetric label="OSM" value={formatOsmReference(tags)} tone="neutral" />
       <DataMetric label="Podklad" value="OSM reference" tone="neutral" />
-      <DataMetric label="Stav BTS" value={formatCommunicationTowerStatus(feature.properties.btsStatus)} tone="neutral" />
+      <DataMetric
+        label="Stav BTS"
+        value={formatCommunicationTowerStatus(feature.properties.btsStatus)}
+        tone="neutral"
+      />
       <DataMetric label="Jistota" value={formatOptionalPercent(feature.properties.confidence)} tone="neutral" />
     </div>
   );
@@ -8055,10 +9271,30 @@ function AviationWeatherSummary({ feature }: { feature: SituationFeature }) {
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
   return (
     <div className="mobile-status-summary">
-      <DataMetric label="Kategorie" value={stringProperty(tags.flightCategory) ?? "n/a"} tone={aviationCategoryTone(stringProperty(tags.flightCategory))} />
-      <DataMetric label="Vítr" value={formatWind(recordNumber(metrics, "windDirectionDeg"), recordNumber(metrics, "windSpeedMps"), recordNumber(metrics, "windSpeedKt"))} tone="neutral" />
-      <DataMetric label="Teplota" value={formatOptionalNumber(recordNumber(metrics, "temperatureC"), " °C")} tone="neutral" />
-      <DataMetric label="QNH" value={formatOptionalNumber(recordNumber(metrics, "altimeterHpa"), " hPa")} tone="neutral" />
+      <DataMetric
+        label="Kategorie"
+        value={stringProperty(tags.flightCategory) ?? "n/a"}
+        tone={aviationCategoryTone(stringProperty(tags.flightCategory))}
+      />
+      <DataMetric
+        label="Vítr"
+        value={formatWind(
+          recordNumber(metrics, "windDirectionDeg"),
+          recordNumber(metrics, "windSpeedMps"),
+          recordNumber(metrics, "windSpeedKt")
+        )}
+        tone="neutral"
+      />
+      <DataMetric
+        label="Teplota"
+        value={formatOptionalNumber(recordNumber(metrics, "temperatureC"), " °C")}
+        tone="neutral"
+      />
+      <DataMetric
+        label="QNH"
+        value={formatOptionalNumber(recordNumber(metrics, "altimeterHpa"), " hPa")}
+        tone="neutral"
+      />
     </div>
   );
 }
@@ -8096,25 +9332,26 @@ function EmbeddedCopChatPanel({
     if (!selection?.id || !iframeRef.current?.contentWindow) {
       return;
     }
-    iframeRef.current.contentWindow.postMessage(
-      encodeChatSelect(selection.id),
-      window.location.origin
-    );
+    iframeRef.current.contentWindow.postMessage(encodeChatSelect(selection.id), window.location.origin);
   }, [selection?.id, selection?.nonce]);
 
   React.useEffect(() => {
     if (!transitShare || !iframeRef.current?.contentWindow) {
       return;
     }
-    iframeRef.current.contentWindow.postMessage(
-      encodeChatShareTransit(transitShare.transit),
-      window.location.origin
-    );
+    iframeRef.current.contentWindow.postMessage(encodeChatShareTransit(transitShare.transit), window.location.origin);
   }, [transitShare?.nonce]);
 
   React.useEffect(() => {
     postCurrentLocationToChat();
-  }, [mapView?.center?.[0], mapView?.center?.[1], userLocation?.accuracyM, userLocation?.lat, userLocation?.lon, userLocation?.updatedAt]);
+  }, [
+    mapView?.center?.[0],
+    mapView?.center?.[1],
+    userLocation?.accuracyM,
+    userLocation?.lat,
+    userLocation?.lon,
+    userLocation?.updatedAt
+  ]);
 
   function postCurrentLocationToChat() {
     const target = iframeRef.current?.contentWindow;
@@ -8142,9 +9379,12 @@ function EmbeddedCopChatPanel({
     if (!location) {
       return;
     }
-    target.postMessage(encodeChatCurrentLocation({
-      ...location
-    }), window.location.origin);
+    target.postMessage(
+      encodeChatCurrentLocation({
+        ...location
+      }),
+      window.location.origin
+    );
   }
 
   function beginDockResize(event: React.PointerEvent<HTMLDivElement>) {
@@ -8286,7 +9526,9 @@ function WorkspaceNavigator({
       <button className="workspace-tab" onClick={onOpenMessaging} title="Otevřít komunikaci" type="button">
         <MessageCircle size={16} />
         <span>Komunikace</span>
-        {chatUnreadCount > 0 ? <strong className="nav-unread-badge">{formatUnreadBadge(chatUnreadCount)}</strong> : null}
+        {chatUnreadCount > 0 ? (
+          <strong className="nav-unread-badge">{formatUnreadBadge(chatUnreadCount)}</strong>
+        ) : null}
       </button>
       <button className="workspace-tab" onClick={onStartReport} title="Vložit nové hlášení" type="button">
         <Plus size={16} />
@@ -8382,7 +9624,11 @@ function RadioLosControls({
       <div className="radio-profile-picker">
         <label>
           Profil rádia
-          <select disabled={useCustomProfile} value={profileId} onChange={(event) => onProfileIdChange(event.target.value)}>
+          <select
+            disabled={useCustomProfile}
+            value={profileId}
+            onChange={(event) => onProfileIdChange(event.target.value)}
+          >
             {profiles.map((profile) => (
               <option key={profile.profileId ?? profile.name} value={profile.profileId ?? profile.name}>
                 {profile.name}
@@ -8390,22 +9636,27 @@ function RadioLosControls({
             ))}
           </select>
         </label>
-        <button className="mini-button compact-text" disabled={profilesStatus === "loading"} onClick={onRefreshProfiles} type="button">
+        <button
+          className="mini-button compact-text"
+          disabled={profilesStatus === "loading"}
+          onClick={onRefreshProfiles}
+          type="button"
+        >
           <RefreshCw size={13} />
           Profily
         </button>
       </div>
       {profilesError ? <div className="error-banner compact">{profilesError}</div> : null}
       <label className="toggle-row">
-        <input checked={useCustomProfile} onChange={(event) => onUseCustomProfileChange(event.target.checked)} type="checkbox" />
+        <input
+          checked={useCustomProfile}
+          onChange={(event) => onUseCustomProfileChange(event.target.checked)}
+          type="checkbox"
+        />
         Vlastní rádio bez citlivých údajů
       </label>
       {useCustomProfile ? (
-        <RadioProfileEditor
-          profile={customProfile}
-          onChange={onCustomProfileChange}
-          onSave={onSaveCustomProfile}
-        />
+        <RadioProfileEditor profile={customProfile} onChange={onCustomProfileChange} onSave={onSaveCustomProfile} />
       ) : null}
 
       {mode === "coverage" ? (
@@ -8416,12 +9667,23 @@ function RadioLosControls({
               <MapPin size={13} />
               Použít polohu
             </button>
-            <button className={`mini-button ${mapPickTarget === "station" ? "active" : ""}`} onClick={() => onStartMapPick("station")} type="button">
+            <button
+              className={`mini-button ${mapPickTarget === "station" ? "active" : ""}`}
+              onClick={() => onStartMapPick("station")}
+              type="button"
+            >
               <Crosshair size={13} />
               Vybrat v mapě
             </button>
           </div>
-          <RadioNumberInput label="Poloměr" suffix="m" value={radiusM} min={100} max={100000} onChange={onRadiusMChange} />
+          <RadioNumberInput
+            label="Poloměr"
+            suffix="m"
+            value={radiusM}
+            min={100}
+            max={100000}
+            onChange={onRadiusMChange}
+          />
         </>
       ) : null}
 
@@ -8432,7 +9694,11 @@ function RadioLosControls({
             <MapPin size={13} />
             Odkud = aktuální poloha/střed mapy
           </button>
-          <button className={`mini-button wide ${mapPickTarget === "from" ? "active" : ""}`} onClick={() => onStartMapPick("from")} type="button">
+          <button
+            className={`mini-button wide ${mapPickTarget === "from" ? "active" : ""}`}
+            onClick={() => onStartMapPick("from")}
+            type="button"
+          >
             <Crosshair size={13} />
             Vybrat „odkud“ v mapě
           </button>
@@ -8441,7 +9707,11 @@ function RadioLosControls({
             <Crosshair size={13} />
             Kam = aktuální poloha/střed mapy
           </button>
-          <button className={`mini-button wide ${mapPickTarget === "to" ? "active" : ""}`} onClick={() => onStartMapPick("to")} type="button">
+          <button
+            className={`mini-button wide ${mapPickTarget === "to" ? "active" : ""}`}
+            onClick={() => onStartMapPick("to")}
+            type="button"
+          >
             <Crosshair size={13} />
             Vybrat „kam“ v mapě
           </button>
@@ -8455,11 +9725,22 @@ function RadioLosControls({
             <Crosshair size={13} />
             Cíl = aktuální poloha/střed mapy
           </button>
-          <button className={`mini-button wide ${mapPickTarget === "site-target" ? "active" : ""}`} onClick={() => onStartMapPick("site-target")} type="button">
+          <button
+            className={`mini-button wide ${mapPickTarget === "site-target" ? "active" : ""}`}
+            onClick={() => onStartMapPick("site-target")}
+            type="button"
+          >
             <Crosshair size={13} />
             Vybrat cíl v mapě
           </button>
-          <RadioNumberInput label="Krok mřížky" suffix="m" value={gridStepM} min={50} max={5000} onChange={onGridStepMChange} />
+          <RadioNumberInput
+            label="Krok mřížky"
+            suffix="m"
+            value={gridStepM}
+            min={50}
+            max={5000}
+            onChange={onGridStepMChange}
+          />
           <p className="radio-los-hint">Prohledává se aktuálně zobrazený výřez mapy.</p>
         </>
       ) : null}
@@ -8473,7 +9754,11 @@ function RadioLosControls({
   );
 }
 
-function RadioProfileEditor({ profile, onChange, onSave }: {
+function RadioProfileEditor({
+  profile,
+  onChange,
+  onSave
+}: {
   profile: RadioProfile;
   onChange: (profile: RadioProfile) => void;
   onSave: () => void;
@@ -8485,10 +9770,38 @@ function RadioProfileEditor({ profile, onChange, onSave }: {
         Název
         <input value={profile.name} onChange={(event) => update({ name: event.target.value })} />
       </label>
-      <RadioNumberInput label="Frekvence" suffix="MHz" value={profile.frequencyMhz} min={1} max={6000} onChange={(frequencyMhz) => update({ frequencyMhz })} />
-      <RadioNumberInput label="Výška TX antény" suffix="m" value={profile.antennaHeightM} min={0.1} max={120} onChange={(antennaHeightM) => update({ antennaHeightM })} />
-      <RadioNumberInput label="Výška RX antény" suffix="m" value={profile.receiverHeightM} min={0.1} max={120} onChange={(receiverHeightM) => update({ receiverHeightM })} />
-      <RadioNumberInput label="Max. poloměr" suffix="m" value={profile.maxRadiusM} min={100} max={100000} onChange={(maxRadiusM) => update({ maxRadiusM })} />
+      <RadioNumberInput
+        label="Frekvence"
+        suffix="MHz"
+        value={profile.frequencyMhz}
+        min={1}
+        max={6000}
+        onChange={(frequencyMhz) => update({ frequencyMhz })}
+      />
+      <RadioNumberInput
+        label="Výška TX antény"
+        suffix="m"
+        value={profile.antennaHeightM}
+        min={0.1}
+        max={120}
+        onChange={(antennaHeightM) => update({ antennaHeightM })}
+      />
+      <RadioNumberInput
+        label="Výška RX antény"
+        suffix="m"
+        value={profile.receiverHeightM}
+        min={0.1}
+        max={120}
+        onChange={(receiverHeightM) => update({ receiverHeightM })}
+      />
+      <RadioNumberInput
+        label="Max. poloměr"
+        suffix="m"
+        value={profile.maxRadiusM}
+        min={100}
+        max={100000}
+        onChange={(maxRadiusM) => update({ maxRadiusM })}
+      />
       <button className="mini-button wide" onClick={onSave} type="button">
         <Save size={13} />
         Uložit profil v SIM
@@ -8497,19 +9810,56 @@ function RadioProfileEditor({ profile, onChange, onSave }: {
   );
 }
 
-function RadioPointEditor({ label, point, onChange }: { label: string; point: RadioPoint; onChange: (point: RadioPoint) => void }) {
+function RadioPointEditor({
+  label,
+  point,
+  onChange
+}: {
+  label: string;
+  point: RadioPoint;
+  onChange: (point: RadioPoint) => void;
+}) {
   const update = (patch: Partial<RadioPoint>) => onChange({ ...point, ...patch });
   return (
     <div className="radio-point-editor">
       <strong>{label}</strong>
-      <RadioNumberInput label="Lon" value={point.lon} min={-180} max={180} step={0.00001} onChange={(lon) => update({ lon })} />
-      <RadioNumberInput label="Lat" value={point.lat} min={-90} max={90} step={0.00001} onChange={(lat) => update({ lat })} />
-      <RadioNumberInput label="Výška antény" suffix="m" value={point.antennaHeightM ?? point.receiverHeightM ?? 1.5} min={0.1} max={120} onChange={(antennaHeightM) => update({ antennaHeightM, receiverHeightM: antennaHeightM })} />
+      <RadioNumberInput
+        label="Lon"
+        value={point.lon}
+        min={-180}
+        max={180}
+        step={0.00001}
+        onChange={(lon) => update({ lon })}
+      />
+      <RadioNumberInput
+        label="Lat"
+        value={point.lat}
+        min={-90}
+        max={90}
+        step={0.00001}
+        onChange={(lat) => update({ lat })}
+      />
+      <RadioNumberInput
+        label="Výška antény"
+        suffix="m"
+        value={point.antennaHeightM ?? point.receiverHeightM ?? 1.5}
+        min={0.1}
+        max={120}
+        onChange={(antennaHeightM) => update({ antennaHeightM, receiverHeightM: antennaHeightM })}
+      />
     </div>
   );
 }
 
-function RadioNumberInput({ label, max, min, onChange, step = 1, suffix, value }: {
+function RadioNumberInput({
+  label,
+  max,
+  min,
+  onChange,
+  step = 1,
+  suffix,
+  value
+}: {
   label: string;
   max: number;
   min: number;
@@ -8536,7 +9886,13 @@ function RadioNumberInput({ label, max, min, onChange, step = 1, suffix, value }
   );
 }
 
-function RadioLosWorkspaceBoard({ overlay, result, selectedProfile, onClear, onRun }: {
+function RadioLosWorkspaceBoard({
+  overlay,
+  result,
+  selectedProfile,
+  onClear,
+  onRun
+}: {
   overlay: RadioLosMapOverlay | null;
   result: RadioLosResult;
   selectedProfile: RadioProfile;
@@ -8548,20 +9904,39 @@ function RadioLosWorkspaceBoard({ overlay, result, selectedProfile, onClear, onR
       <div className="source-operations-board radio-result-board">
         <div className="deck-header">
           <PanelTitle icon={<RadioTower size={17} />} title="Radio LoS výsledek" />
-          <span>{result.status === "loaded" ? "hotovo" : result.status === "loading" ? "počítám" : "čeká na spuštění"}</span>
+          <span>
+            {result.status === "loaded" ? "hotovo" : result.status === "loading" ? "počítám" : "čeká na spuštění"}
+          </span>
         </div>
-        <ReadinessRow label="Režim" value={radioLosModeLabel(result.mode)} tone={result.status === "error" ? "warn" : "neutral"} />
+        <ReadinessRow
+          label="Režim"
+          value={radioLosModeLabel(result.mode)}
+          tone={result.status === "error" ? "warn" : "neutral"}
+        />
         <ReadinessRow label="Profil" value={selectedProfile.name} tone="neutral" />
-        {overlay ? <ReadinessRow label="Prvky na mapě" value={String(overlay.features.length)} tone={overlay.features.length > 0 ? "ok" : "warn"} /> : null}
+        {overlay ? (
+          <ReadinessRow
+            label="Prvky na mapě"
+            value={String(overlay.features.length)}
+            tone={overlay.features.length > 0 ? "ok" : "warn"}
+          />
+        ) : null}
         {result.link ? <RadioLinkSummary link={result.link} /> : null}
         {result.error ? <div className="error-banner">{result.error}</div> : null}
         {result.warnings.length > 0 ? (
           <div className="radio-warning-list">
-            {result.warnings.slice(0, 4).map((warning) => <span key={warning}>{warning}</span>)}
+            {result.warnings.slice(0, 4).map((warning) => (
+              <span key={warning}>{warning}</span>
+            ))}
           </div>
         ) : null}
         <div className="module-action-row">
-          <button className="mini-button primary-lite" disabled={result.status === "loading"} onClick={onRun} type="button">
+          <button
+            className="mini-button primary-lite"
+            disabled={result.status === "loading"}
+            onClick={onRun}
+            type="button"
+          >
             <Play size={14} />
             Přepočítat
           </button>
@@ -8585,11 +9960,27 @@ function RadioLosWorkspaceBoard({ overlay, result, selectedProfile, onClear, onR
 function RadioLinkSummary({ link }: { link: RadioLinkCheckResponse }) {
   return (
     <div className="radio-link-summary">
-      <ReadinessRow label="Stav spojení" value={radioLinkStatusLabel(link.linkStatus)} tone={link.linkStatus === "clear" ? "ok" : link.linkStatus === "obstructed" ? "warn" : "neutral"} />
+      <ReadinessRow
+        label="Stav spojení"
+        value={radioLinkStatusLabel(link.linkStatus)}
+        tone={link.linkStatus === "clear" ? "ok" : link.linkStatus === "obstructed" ? "warn" : "neutral"}
+      />
       <ReadinessRow label="Vzdálenost" value={formatMeters(link.distanceM)} tone="neutral" />
-      <ReadinessRow label="Azimut" value={link.azimuthDeg !== undefined ? `${Math.round(link.azimuthDeg)}°` : "n/a"} tone="neutral" />
-      <ReadinessRow label="Fresnel" value={link.fresnelClearancePct !== undefined ? `${Math.round(link.fresnelClearancePct)} %` : "n/a"} tone={(link.fresnelClearancePct ?? 0) >= 60 ? "ok" : "warn"} />
-      <ReadinessRow label="Potřebné zvýšení" value={formatMeters(link.requiredExtraAntennaHeightM)} tone={(link.requiredExtraAntennaHeightM ?? 0) > 0 ? "warn" : "ok"} />
+      <ReadinessRow
+        label="Azimut"
+        value={link.azimuthDeg !== undefined ? `${Math.round(link.azimuthDeg)}°` : "n/a"}
+        tone="neutral"
+      />
+      <ReadinessRow
+        label="Fresnel"
+        value={link.fresnelClearancePct !== undefined ? `${Math.round(link.fresnelClearancePct)} %` : "n/a"}
+        tone={(link.fresnelClearancePct ?? 0) >= 60 ? "ok" : "warn"}
+      />
+      <ReadinessRow
+        label="Potřebné zvýšení"
+        value={formatMeters(link.requiredExtraAntennaHeightM)}
+        tone={(link.requiredExtraAntennaHeightM ?? 0) > 0 ? "warn" : "ok"}
+      />
     </div>
   );
 }
@@ -8621,7 +10012,11 @@ function MobileBottomNav({
 }) {
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobilní navigace">
-      <button className={!activeSheet && !messagingOpen && !settingsOpen && !sketchOpen ? "active" : ""} onClick={onMap} type="button">
+      <button
+        className={!activeSheet && !messagingOpen && !settingsOpen && !sketchOpen ? "active" : ""}
+        onClick={onMap}
+        type="button"
+      >
         <Layers size={18} />
         <span>Mapa</span>
       </button>
@@ -8636,7 +10031,9 @@ function MobileBottomNav({
       <button className={messagingOpen ? "active" : ""} onClick={onChat} type="button">
         <MessageCircle size={18} />
         <span>Chat</span>
-        {chatUnreadCount > 0 ? <strong className="nav-unread-badge">{formatUnreadBadge(chatUnreadCount)}</strong> : null}
+        {chatUnreadCount > 0 ? (
+          <strong className="nav-unread-badge">{formatUnreadBadge(chatUnreadCount)}</strong>
+        ) : null}
       </button>
       <button className="report" onClick={onReport} type="button">
         <Plus size={19} />
@@ -8668,42 +10065,45 @@ function MobileSheetSurface({
     event.stopPropagation();
   }, []);
 
-  const handleGripPointerDown = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    startYRef.current = event.clientY;
-    setDragOffset(0);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      if (startYRef.current === null) {
+  const handleGripPointerDown = React.useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (event.pointerType === "mouse" && event.button !== 0) {
         return;
       }
-      moveEvent.preventDefault();
-      const nextOffset = Math.max(0, moveEvent.clientY - startYRef.current);
-      setDragOffset(Math.min(140, nextOffset));
-    };
-
-    const finishDrag = (upEvent: PointerEvent) => {
-      const startY = startYRef.current;
-      const deltaY = startY === null ? 0 : upEvent.clientY - startY;
-      startYRef.current = null;
+      event.preventDefault();
+      event.stopPropagation();
+      startYRef.current = event.clientY;
       setDragOffset(0);
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", finishDrag);
-      window.removeEventListener("pointercancel", finishDrag);
-      if (deltaY > 78) {
-        onClose();
-      }
-    };
+      event.currentTarget.setPointerCapture?.(event.pointerId);
 
-    window.addEventListener("pointermove", handlePointerMove, { passive: false });
-    window.addEventListener("pointerup", finishDrag, { once: true });
-    window.addEventListener("pointercancel", finishDrag, { once: true });
-  }, [onClose]);
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        if (startYRef.current === null) {
+          return;
+        }
+        moveEvent.preventDefault();
+        const nextOffset = Math.max(0, moveEvent.clientY - startYRef.current);
+        setDragOffset(Math.min(140, nextOffset));
+      };
+
+      const finishDrag = (upEvent: PointerEvent) => {
+        const startY = startYRef.current;
+        const deltaY = startY === null ? 0 : upEvent.clientY - startY;
+        startYRef.current = null;
+        setDragOffset(0);
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", finishDrag);
+        window.removeEventListener("pointercancel", finishDrag);
+        if (deltaY > 78) {
+          onClose();
+        }
+      };
+
+      window.addEventListener("pointermove", handlePointerMove, { passive: false });
+      window.addEventListener("pointerup", finishDrag, { once: true });
+      window.addEventListener("pointercancel", finishDrag, { once: true });
+    },
+    [onClose]
+  );
 
   return (
     <div
@@ -8748,9 +10148,7 @@ function MobileSheetSurface({
             <span>Zavřít</span>
           </button>
         </header>
-        <div className="mobile-sheet-content">
-          {children}
-        </div>
+        <div className="mobile-sheet-content">{children}</div>
       </section>
     </div>
   );
@@ -8770,7 +10168,7 @@ function ViewProfilesPanel({
   userScope: string;
   onApply: (profile: ViewProfile) => void;
   onSave: () => void;
-  }) {
+}) {
   return (
     <div className="view-profile-box">
       <div className="view-profile-header">
@@ -8807,7 +10205,17 @@ function ViewProfilesPanel({
   );
 }
 
-function StatusItem({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: string; tone: "ok" | "warn" | "neutral" }) {
+function StatusItem({
+  icon,
+  label,
+  value,
+  tone
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tone: "ok" | "warn" | "neutral";
+}) {
   return (
     <div className={`status-item ${tone}`}>
       {icon}
@@ -9073,7 +10481,9 @@ function formatServerClientCount(health: CopStreamHealth | null, telemetry: Stre
 
 function formatBackpressureState(health: CopStreamHealth | null, telemetry: StreamTelemetry): string {
   if (health) {
-    return health.metrics.backpressureActive ? `aktivní · obnova ${formatRetryMs(health.metrics.recommendedRetryMs)}` : "v pořádku";
+    return health.metrics.backpressureActive
+      ? `aktivní · obnova ${formatRetryMs(health.metrics.recommendedRetryMs)}`
+      : "v pořádku";
   }
   if (telemetry.lastBackpressureAt) {
     return `zaznamenáno ${formatStreamObservation(telemetry.lastBackpressureAt)}`;
@@ -9119,7 +10529,15 @@ function formatStreamTime(value: string): string {
   return timestamp.toLocaleTimeString("cs-CZ");
 }
 
-function MetricTile({ label, value, tone }: { label: string; value: string | number; tone: "friend" | "hostile" | "ok" | "warn" }) {
+function MetricTile({
+  label,
+  value,
+  tone
+}: {
+  label: string;
+  value: string | number;
+  tone: "friend" | "hostile" | "ok" | "warn";
+}) {
   return (
     <div className={`metric-tile ${tone}`}>
       <span>{label}</span>
@@ -9144,7 +10562,9 @@ function SourceHealthCenter({ items }: { items: SourceHealthItem[] }) {
             <dl>
               <div>
                 <dt>Objekty</dt>
-                <dd>{item.currentTracks}/{item.totalTracks}</dd>
+                <dd>
+                  {item.currentTracks}/{item.totalTracks}
+                </dd>
               </div>
               <div>
                 <dt>Události</dt>
@@ -9170,7 +10590,9 @@ function SourceHealthCenter({ items }: { items: SourceHealthItem[] }) {
               <div className="source-health-warnings">
                 {item.detail ? <span>{item.detail}</span> : null}
                 {item.lastError ? <span>{item.lastError}</span> : null}
-                {item.warnings?.slice(0, 2).map((warning) => <span key={warning}>{warning}</span>)}
+                {item.warnings?.slice(0, 2).map((warning) => (
+                  <span key={warning}>{warning}</span>
+                ))}
               </div>
             ) : null}
           </div>
@@ -9186,11 +10608,27 @@ function StreamHealthPanel({ health, telemetry }: { health: CopStreamHealth | nu
     <div className="source-health-box stream-health-box">
       <PanelTitle icon={<Activity size={17} />} title="Živé spojení" />
       <ReadinessRow label="Stav služby" value={health?.status ?? "čeká"} tone={streamServerTone(health, telemetry)} />
-      <ReadinessRow label="Připojení" value={formatServerClientCount(health, telemetry)} tone={streamServerTone(health, telemetry)} />
+      <ReadinessRow
+        label="Připojení"
+        value={formatServerClientCount(health, telemetry)}
+        tone={streamServerTone(health, telemetry)}
+      />
       <ReadinessRow label="Datové zprávy" value={formatStreamMessageTotals(health)} tone="neutral" />
-      <ReadinessRow label="Poslední změna" value={formatStreamObservation(metrics?.lastDeltaAt ?? null)} tone={metrics?.lastDeltaAt ? "ok" : "neutral"} />
-      <ReadinessRow label="Zátěž" value={formatBackpressureState(health, telemetry)} tone={streamServerTone(health, telemetry)} />
-      <ReadinessRow label="Chyby zápisu" value={formatStreamWriteErrors(health, telemetry)} tone={streamWriteErrorsTone(health, telemetry)} />
+      <ReadinessRow
+        label="Poslední změna"
+        value={formatStreamObservation(metrics?.lastDeltaAt ?? null)}
+        tone={metrics?.lastDeltaAt ? "ok" : "neutral"}
+      />
+      <ReadinessRow
+        label="Zátěž"
+        value={formatBackpressureState(health, telemetry)}
+        tone={streamServerTone(health, telemetry)}
+      />
+      <ReadinessRow
+        label="Chyby zápisu"
+        value={formatStreamWriteErrors(health, telemetry)}
+        tone={streamWriteErrorsTone(health, telemetry)}
+      />
     </div>
   );
 }
@@ -9376,17 +10814,27 @@ function SettingsDrawer({
             <section className="settings-section">
               <PanelTitle icon={<Layers size={17} />} title="Zobrazení mapy" />
               <label className="toggle-row">
-                <input type="checkbox" checked={mapClusterEnabled} onChange={(event) => onMapClusterEnabledChange(event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={mapClusterEnabled}
+                  onChange={(event) => onMapClusterEnabledChange(event.target.checked)}
+                />
                 Shlukovat objekty při oddálení
               </label>
-              <p className="settings-help">Kliknutí na shluk mapu přiblíží a ukáže náhled objektů uvnitř. Po dalším přiblížení se shluky rozpadají do menších skupin a jednotlivých stop.</p>
+              <p className="settings-help">
+                Kliknutí na shluk mapu přiblíží a ukáže náhled objektů uvnitř. Po dalším přiblížení se shluky rozpadají
+                do menších skupin a jednotlivých stop.
+              </p>
               <SegmentedControl
                 label="Mapový podklad"
                 options={mapBasemapModeOptions}
                 value={mapBasemapMode}
                 onChange={(value) => onMapBasemapModeChange(value as MapBasemapMode)}
               />
-              <p className="settings-help">Civilní a rizikový podklad tlumí detailní OSM mapu. Režim Hranice automaticky přidá správní hranice ze SIM a použije výrazně zjednodušený podklad.</p>
+              <p className="settings-help">
+                Civilní a rizikový podklad tlumí detailní OSM mapu. Režim Hranice automaticky přidá správní hranice ze
+                SIM a použije výrazně zjednodušený podklad.
+              </p>
               <SegmentedControl
                 label="Symbolika mapy"
                 options={[
@@ -9396,10 +10844,17 @@ function SettingsDrawer({
                 value={publicFlightSymbolMode}
                 onChange={(value) => onPublicFlightSymbolModeChange(value as PublicFlightSymbolMode)}
               />
-              <p className="settings-help">Civilní režim používá oborové ikony pro lety, veřejnou dopravu a civilní vrstvy. Standard drží profesionální/NATO symboliku tam, kde je pro daný objekt dostupná.</p>
+              <p className="settings-help">
+                Civilní režim používá oborové ikony pro lety, veřejnou dopravu a civilní vrstvy. Standard drží
+                profesionální/NATO symboliku tam, kde je pro daný objekt dostupná.
+              </p>
               <PanelTitle icon={<History size={17} />} title="Historie a predikce" />
               <label className="toggle-row">
-                <input type="checkbox" checked={showHistory} onChange={(event) => onShowHistoryChange(event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={showHistory}
+                  onChange={(event) => onShowHistoryChange(event.target.checked)}
+                />
                 Historie trasy
               </label>
               <SegmentedControl
@@ -9424,7 +10879,11 @@ function SettingsDrawer({
                 onChange={(value) => onTrackHistoryLimitChange(Number(value))}
               />
               <label className="toggle-row">
-                <input type="checkbox" checked={showPrediction} onChange={(event) => onShowPredictionChange(event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={showPrediction}
+                  onChange={(event) => onShowPredictionChange(event.target.checked)}
+                />
                 Predikce pohybu
               </label>
               <SegmentedControl
@@ -9452,13 +10911,18 @@ function SettingsDrawer({
             <section className="settings-section">
               <PanelTitle icon={<RefreshCw size={17} />} title="Aktualizace dat" />
               <p className="settings-help">
-                Aplikace se průběžně obnovuje sama. Záložní aktualizace pomáhá po ztrátě spojení, po návratu do prohlížeče a u méně dynamických vrstev.
+                Aplikace se průběžně obnovuje sama. Záložní aktualizace pomáhá po ztrátě spojení, po návratu do
+                prohlížeče a u méně dynamických vrstev.
               </p>
               <p className="settings-help">
                 Při výpadku spojení zůstane dostupný poslední uložený náhled mapy a povolených vrstev.
               </p>
               <label className="toggle-row">
-                <input type="checkbox" checked={autoRefresh} onChange={(event) => onAutoRefreshChange(event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={autoRefresh}
+                  onChange={(event) => onAutoRefreshChange(event.target.checked)}
+                />
                 Povolit záložní aktualizaci
               </label>
               <SegmentedControl
@@ -9468,7 +10932,11 @@ function SettingsDrawer({
                 onChange={(value) => onRefreshSecondsChange(normalizeRefreshSeconds(Number(value)))}
               />
               <label className="toggle-row">
-                <input type="checkbox" checked={includeSynthetic} onChange={(event) => onIncludeSyntheticChange(event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={includeSynthetic}
+                  onChange={(event) => onIncludeSyntheticChange(event.target.checked)}
+                />
                 Zobrazit cvičná data
               </label>
               <PocDemoScenarioPanel
@@ -9481,7 +10949,14 @@ function SettingsDrawer({
               />
               <label className="range-label">
                 Minimální jistota dat
-                <input type="range" min="0" max="1" step="0.05" value={minConfidence} onChange={(event) => onMinConfidenceChange(Number(event.target.value))} />
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={minConfidence}
+                  onChange={(event) => onMinConfidenceChange(Number(event.target.value))}
+                />
                 <span>{Math.round(minConfidence * 100)} %</span>
               </label>
             </section>
@@ -9494,10 +10969,19 @@ function SettingsDrawer({
                 <HelpHint label="Jak nastavit pracovní plochu" onOpen={() => onHelp("layout")} />
               </div>
               <p className="settings-help">
-                Panely lze zmenšit, sbalit do ikony nebo úplně skrýt. Nastavení se ukládá do profilu přihlášeného uživatele a na tomto zařízení funguje i v offline režimu.
+                Panely lze zmenšit, sbalit do ikony nebo úplně skrýt. Nastavení se ukládá do profilu přihlášeného
+                uživatele a na tomto zařízení funguje i v offline režimu.
               </p>
-              <WorkspaceSkinPicker value={workspaceSkin} onChange={onWorkspaceSkinChange} onApplyTemplate={onWorkspaceTemplateApply} />
-              <WorkspaceLayoutEditor layout={workspaceLayout} onChange={onWorkspaceLayoutChange} onHelp={() => onHelp("layout")} />
+              <WorkspaceSkinPicker
+                value={workspaceSkin}
+                onChange={onWorkspaceSkinChange}
+                onApplyTemplate={onWorkspaceTemplateApply}
+              />
+              <WorkspaceLayoutEditor
+                layout={workspaceLayout}
+                onChange={onWorkspaceLayoutChange}
+                onHelp={() => onHelp("layout")}
+              />
             </section>
           ) : null}
 
@@ -9505,10 +10989,17 @@ function SettingsDrawer({
             <section className="settings-section">
               <PanelTitle icon={<MapPin size={17} />} title="Výstrahy a zóny" />
               <label className="toggle-row">
-                <input type="checkbox" checked={proximityAlertEnabled} onChange={(event) => onProximityAlertEnabledChange(event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={proximityAlertEnabled}
+                  onChange={(event) => onProximityAlertEnabledChange(event.target.checked)}
+                />
                 Upozornit na rizika v okolí mojí polohy
               </label>
-              <p className="settings-help">Výstražné oblasti se zobrazují jako samostatné mapové vrstvy v katalogu. Tady nastavujete jen osobní upozornění pro polohu a sledované zóny.</p>
+              <p className="settings-help">
+                Výstražné oblasti se zobrazují jako samostatné mapové vrstvy v katalogu. Tady nastavujete jen osobní
+                upozornění pro polohu a sledované zóny.
+              </p>
               <label className="range-label">
                 Poloměr okolí
                 <input
@@ -9524,10 +11015,17 @@ function SettingsDrawer({
               <div className="settings-subsection">
                 <PanelTitle icon={<AlertTriangle size={17} />} title="Uživatelská zóna" />
                 <label className="toggle-row">
-                  <input type="checkbox" checked={Boolean(aoiRule?.enabled)} onChange={(event) => onAoiRuleEnabledChange(event.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={Boolean(aoiRule?.enabled)}
+                    onChange={(event) => onAoiRuleEnabledChange(event.target.checked)}
+                  />
                   Upozornit na události ve zvolené zóně
                 </label>
-                <p className="settings-help">Zóna je osobní sledovaný prostor. Teď sleduje dostupná situační data a objekty; další krok je komunitní hlášení typu požár, foto a popis.</p>
+                <p className="settings-help">
+                  Zóna je osobní sledovaný prostor. Teď sleduje dostupná situační data a objekty; další krok je
+                  komunitní hlášení typu požár, foto a popis.
+                </p>
                 <label className="range-label">
                   Poloměr zóny
                   <input
@@ -9565,11 +11063,21 @@ function SettingsDrawer({
                 value={language}
                 onChange={(value) => onLanguageChange(value as AppLanguage)}
               />
-              <p className="settings-help">Jazyk se ukládá do profilu uživatele. Zároveň se podle něj dotazuje katalog vrstev a vyhledávání míst.</p>
+              <p className="settings-help">
+                Jazyk se ukládá do profilu uživatele. Zároveň se podle něj dotazuje katalog vrstev a vyhledávání míst.
+              </p>
               <PanelTitle icon={<UserCircle size={17} />} title="Přihlášení" />
-              <ReadinessRow label="Stav" value={authSession.status === "authenticated" ? "přihlášeno" : "veřejný režim"} tone={authSession.status === "authenticated" ? "ok" : "neutral"} />
+              <ReadinessRow
+                label="Stav"
+                value={authSession.status === "authenticated" ? "přihlášeno" : "veřejný režim"}
+                tone={authSession.status === "authenticated" ? "ok" : "neutral"}
+              />
               <ReadinessRow label="Uživatel" value={authSession.profile?.name ?? "nepřihlášen"} tone="neutral" />
-              <ReadinessRow label="Uložení profilu" value={profileSyncLabel(profileSyncStatus)} tone={profileSyncTone(profileSyncStatus)} />
+              <ReadinessRow
+                label="Uložení profilu"
+                value={profileSyncLabel(profileSyncStatus)}
+                tone={profileSyncTone(profileSyncStatus)}
+              />
               <ProfileEditor
                 profile={operatorProfile}
                 session={authSession}
@@ -9577,7 +11085,10 @@ function SettingsDrawer({
                 onHelp={() => onHelp("profile")}
               />
               {authConfig.publicReadEnabled && authSession.status !== "authenticated" ? (
-                <div className="empty-mini">Mapa a veřejné vrstvy jsou dostupné bez přihlášení. Uživatelský profil, hlášení, potvrzení výstrah a AI asistent vyžadují účet.</div>
+                <div className="empty-mini">
+                  Mapa a veřejné vrstvy jsou dostupné bez přihlášení. Uživatelský profil, hlášení, potvrzení výstrah a
+                  AI asistent vyžadují účet.
+                </div>
               ) : null}
               {isOidcEnabled(authConfig) ? (
                 authSession.status === "authenticated" ? (
@@ -9596,7 +11107,9 @@ function SettingsDrawer({
                   </div>
                 )
               ) : (
-                <div className="empty-mini">Přihlášení není v této konfiguraci zapnuté. Aplikace běží v laboratorním režimu.</div>
+                <div className="empty-mini">
+                  Přihlášení není v této konfiguraci zapnuté. Aplikace běží v laboratorním režimu.
+                </div>
               )}
               {profileSyncError ? <div className="error-banner">Profil: {profileSyncError}</div> : null}
               {authSession.error ? <div className="error-banner">Přihlášení: {authSession.error}</div> : null}
@@ -9640,9 +11153,10 @@ function PocDemoScenarioPanel({
   const disabled = busy !== null;
   const status = scenario?.scenario.status ?? "empty";
   const generatedAt = scenario?.generatedAt ? new Date(scenario.generatedAt) : null;
-  const generatedAtLabel = generatedAt && Number.isFinite(generatedAt.getTime())
-    ? generatedAt.toLocaleString("cs-CZ", { day: "2-digit", hour: "2-digit", minute: "2-digit", month: "2-digit" })
-    : null;
+  const generatedAtLabel =
+    generatedAt && Number.isFinite(generatedAt.getTime())
+      ? generatedAt.toLocaleString("cs-CZ", { day: "2-digit", hour: "2-digit", minute: "2-digit", month: "2-digit" })
+      : null;
   return (
     <div className="settings-subsection poc-demo-panel">
       <div className="settings-title-row">
@@ -9653,13 +11167,30 @@ function PocDemoScenarioPanel({
         </button>
       </div>
       <p className="settings-help">
-        Řízený scénář připraví ukázkové skupiny, hlášení a zákresy pro PoC průchod. Reset smaže pouze data označená tímto demo scénářem.
+        Řízený scénář připraví ukázkové skupiny, hlášení a zákresy pro PoC průchod. Reset smaže pouze data označená
+        tímto demo scénářem.
       </p>
       <ReadinessRow label="Scénář" value={scenario?.scenario.label ?? "Povodeň - Středočeský kraj"} tone="neutral" />
-      <ReadinessRow label="Stav" value={status === "ready" ? "připraveno" : "prázdné"} tone={status === "ready" ? "ok" : "neutral"} />
-      <ReadinessRow label="Skupiny" value={String(summary?.groupCount ?? 0)} tone={(summary?.groupCount ?? 0) > 0 ? "ok" : "neutral"} />
-      <ReadinessRow label="Hlášení" value={String(summary?.reportCount ?? 0)} tone={(summary?.reportCount ?? 0) > 0 ? "ok" : "neutral"} />
-      <ReadinessRow label="Zákresy" value={String(summary?.drawingCount ?? 0)} tone={(summary?.drawingCount ?? 0) > 0 ? "ok" : "neutral"} />
+      <ReadinessRow
+        label="Stav"
+        value={status === "ready" ? "připraveno" : "prázdné"}
+        tone={status === "ready" ? "ok" : "neutral"}
+      />
+      <ReadinessRow
+        label="Skupiny"
+        value={String(summary?.groupCount ?? 0)}
+        tone={(summary?.groupCount ?? 0) > 0 ? "ok" : "neutral"}
+      />
+      <ReadinessRow
+        label="Hlášení"
+        value={String(summary?.reportCount ?? 0)}
+        tone={(summary?.reportCount ?? 0) > 0 ? "ok" : "neutral"}
+      />
+      <ReadinessRow
+        label="Zákresy"
+        value={String(summary?.drawingCount ?? 0)}
+        tone={(summary?.drawingCount ?? 0) > 0 ? "ok" : "neutral"}
+      />
       {generatedAtLabel ? <ReadinessRow label="Kontrola" value={generatedAtLabel} tone="neutral" /> : null}
       {error ? <div className="error-banner">PoC demo: {error}</div> : null}
       <div className="settings-button-row">
@@ -9689,27 +11220,47 @@ function WebPushSettingsPanel({
   onEnable: () => void;
   state: WebPushUiState;
 }) {
-  const canEnable = authenticated && state.enabled && state.status !== "unsupported" && state.status !== "permission-denied";
+  const canEnable =
+    authenticated && state.enabled && state.status !== "unsupported" && state.status !== "permission-denied";
   const buttonLabel = state.registered ? "Vypnout v tomto prohlížeči" : "Zapnout v tomto prohlížeči";
 
   return (
     <div className="settings-subsection">
       <PanelTitle icon={<BellRing size={17} />} title="Webové notifikace" />
       <p className="settings-help">
-        Prohlížeč může přijímat výstrahy a zprávy i mimo otevřené okno aplikace. COP registruje jen tento prohlížeč; doručení zajišťuje CSM Messaging.
+        Prohlížeč může přijímat výstrahy a zprávy i mimo otevřené okno aplikace. COP registruje jen tento prohlížeč;
+        doručení zajišťuje CSM Messaging.
       </p>
       <ReadinessRow label="Stav" value={webPushStatusLabel(state)} tone={webPushStatusTone(state)} />
-      <ReadinessRow label="Oprávnění prohlížeče" value={webPushPermissionLabel(state.permission)} tone={state.permission === "granted" ? "ok" : state.permission === "denied" ? "warn" : "neutral"} />
-      <ReadinessRow label="PWA režim" value={state.standalone ? "připnutá aplikace" : "běžný prohlížeč"} tone={state.standalone ? "ok" : "neutral"} />
-      <ReadinessRow label="Service worker" value={state.serviceWorkerReady ? "připraven" : "čeká"} tone={state.serviceWorkerReady ? "ok" : "neutral"} />
+      <ReadinessRow
+        label="Oprávnění prohlížeče"
+        value={webPushPermissionLabel(state.permission)}
+        tone={state.permission === "granted" ? "ok" : state.permission === "denied" ? "warn" : "neutral"}
+      />
+      <ReadinessRow
+        label="PWA režim"
+        value={state.standalone ? "připnutá aplikace" : "běžný prohlížeč"}
+        tone={state.standalone ? "ok" : "neutral"}
+      />
+      <ReadinessRow
+        label="Service worker"
+        value={state.serviceWorkerReady ? "připraven" : "čeká"}
+        tone={state.serviceWorkerReady ? "ok" : "neutral"}
+      />
       {state.subscriptionActive !== undefined ? (
-        <ReadinessRow label="Push odběr" value={state.subscriptionActive ? "aktivní" : "není aktivní"} tone={state.subscriptionActive ? "ok" : state.registered ? "warn" : "neutral"} />
+        <ReadinessRow
+          label="Push odběr"
+          value={state.subscriptionActive ? "aktivní" : "není aktivní"}
+          tone={state.subscriptionActive ? "ok" : state.registered ? "warn" : "neutral"}
+        />
       ) : null}
-      {state.deviceId ? <ReadinessRow label="Zařízení" value="registrovaný prohlížeč" tone={state.registered ? "ok" : "neutral"} /> : null}
-      {!authenticated ? <div className="empty-mini">Webové notifikace vyžadují přihlášení. Mapa zůstává dostupná i bez účtu.</div> : null}
-      {state.warnings.length > 0 ? (
-        <div className="empty-mini">{state.warnings.slice(0, 2).join(" ")}</div>
+      {state.deviceId ? (
+        <ReadinessRow label="Zařízení" value="registrovaný prohlížeč" tone={state.registered ? "ok" : "neutral"} />
       ) : null}
+      {!authenticated ? (
+        <div className="empty-mini">Webové notifikace vyžadují přihlášení. Mapa zůstává dostupná i bez účtu.</div>
+      ) : null}
+      {state.warnings.length > 0 ? <div className="empty-mini">{state.warnings.slice(0, 2).join(" ")}</div> : null}
       <div className="settings-button-row">
         <button
           className={state.registered ? "primary-button secondary" : "primary-button"}
@@ -9754,7 +11305,7 @@ function MobileDevicePairingPanel({
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Zařízení se nepodařilo načíst.");
     } finally {
-      setBusy((current) => current === "loading" ? null : current);
+      setBusy((current) => (current === "loading" ? null : current));
     }
   }, [apiBase, authToken, authenticated]);
 
@@ -9878,15 +11429,25 @@ function MobileDevicePairingPanel({
     <div className="settings-subsection mobile-device-panel">
       <div className="settings-title-row">
         <PanelTitle icon={<Smartphone size={17} />} title="Mobilní zařízení" />
-        <button className="mini-button" disabled={!authenticated || busy === "pairing"} onClick={() => void createSession()} type="button">
+        <button
+          className="mini-button"
+          disabled={!authenticated || busy === "pairing"}
+          onClick={() => void createSession()}
+          type="button"
+        >
           <QrCode size={14} />
           {busy === "pairing" ? "Vytvářím..." : "Spárovat"}
         </button>
       </div>
       <p className="settings-help">
-        Spárování CSM Messenger používá krátkodobý kód. QR ani odkaz neobsahuje přístupový token, recovery key ani Matrix room keys.
+        Spárování CSM Messenger používá krátkodobý kód. QR ani odkaz neobsahuje přístupový token, recovery key ani
+        Matrix room keys.
       </p>
-      {!authenticated ? <div className="empty-mini">Párování iPhonu/iPadu vyžaduje přihlášení stejným COP účtem jako v mobilní aplikaci.</div> : null}
+      {!authenticated ? (
+        <div className="empty-mini">
+          Párování iPhonu/iPadu vyžaduje přihlášení stejným COP účtem jako v mobilní aplikaci.
+        </div>
+      ) : null}
       {error ? <div className="error-banner">Mobilní zařízení: {error}</div> : null}
       {session ? (
         <div className="mobile-pairing-card">
@@ -9914,17 +11475,34 @@ function MobileDevicePairingPanel({
                 </button>
               </div>
               {pairingStatus === "pending" ? (
-                <div className="empty-mini">Čekám, až se odkaz otevře v CSM Messengeru a mobil se přihlásí stejným účtem.</div>
+                <div className="empty-mini">
+                  Čekám, až se odkaz otevře v CSM Messengeru a mobil se přihlásí stejným účtem.
+                </div>
               ) : null}
               {claimedDevice ? (
                 <div className="mobile-device-claim">
                   <ReadinessRow label="Zařízení" value={mobileDeviceTitle(claimedDevice)} tone="ok" />
                   <ReadinessRow label="Aplikace" value={mobileDeviceBuildLabel(claimedDevice)} tone="neutral" />
-                  <ReadinessRow label="Platforma" value={mobileDevicePlatformLabel(claimedDevice.platform)} tone="neutral" />
-                  <ReadinessRow label="Claim" value={session.pairing.claimedAt ? formatMobileDate(session.pairing.claimedAt) : "čeká"} tone="neutral" />
-                  {claimedDevice.capabilities?.length ? <ReadinessRow label="Schopnosti" value={claimedDevice.capabilities.join(", ")} tone="neutral" /> : null}
+                  <ReadinessRow
+                    label="Platforma"
+                    value={mobileDevicePlatformLabel(claimedDevice.platform)}
+                    tone="neutral"
+                  />
+                  <ReadinessRow
+                    label="Claim"
+                    value={session.pairing.claimedAt ? formatMobileDate(session.pairing.claimedAt) : "čeká"}
+                    tone="neutral"
+                  />
+                  {claimedDevice.capabilities?.length ? (
+                    <ReadinessRow label="Schopnosti" value={claimedDevice.capabilities.join(", ")} tone="neutral" />
+                  ) : null}
                   {pairingStatus === "claimed" ? (
-                    <button className="primary-button" disabled={busy === "confirming"} onClick={() => void confirmSession()} type="button">
+                    <button
+                      className="primary-button"
+                      disabled={busy === "confirming"}
+                      onClick={() => void confirmSession()}
+                      type="button"
+                    >
                       <CheckCircle2 size={16} />
                       {busy === "confirming" ? "Potvrzuji..." : "Potvrdit zařízení"}
                     </button>
@@ -9938,34 +11516,49 @@ function MobileDevicePairingPanel({
       <div className="mobile-device-list">
         <div className="mobile-device-list-header">
           <span>Spárovaná zařízení</span>
-          <button className="mini-button" disabled={!authenticated || busy === "loading"} onClick={() => void loadDevices()} type="button">
+          <button
+            className="mini-button"
+            disabled={!authenticated || busy === "loading"}
+            onClick={() => void loadDevices()}
+            type="button"
+          >
             <RefreshCw size={14} />
             Obnovit
           </button>
         </div>
         {devices.length === 0 ? (
-          <div className="empty-mini">{authenticated ? "Zatím není spárované žádné mobilní zařízení." : "Seznam zařízení je dostupný po přihlášení."}</div>
-        ) : devices.map((device) => (
-          <div className="mobile-device-row" key={device.deviceId}>
-            <div>
-              <strong>{mobileDeviceTitle(device)}</strong>
-              <span>{mobileDeviceBuildLabel(device)} · posledně {formatMobileDate(device.lastSeenAt)}</span>
-              {device.capabilities.length ? <small>{device.capabilities.join(", ")}</small> : null}
-            </div>
-            <div className="mobile-device-actions">
-              <span className={`mobile-device-status ${device.status === "paired" ? "ok" : "warn"}`}>{device.status === "paired" ? "aktivní" : "odebrané"}</span>
-              <button
-                className="mini-button danger"
-                disabled={device.status !== "paired" || busy === "revoking"}
-                onClick={() => void revokeDevice(device.deviceId)}
-                type="button"
-              >
-                <Trash2 size={14} />
-                Odebrat
-              </button>
-            </div>
+          <div className="empty-mini">
+            {authenticated
+              ? "Zatím není spárované žádné mobilní zařízení."
+              : "Seznam zařízení je dostupný po přihlášení."}
           </div>
-        ))}
+        ) : (
+          devices.map((device) => (
+            <div className="mobile-device-row" key={device.deviceId}>
+              <div>
+                <strong>{mobileDeviceTitle(device)}</strong>
+                <span>
+                  {mobileDeviceBuildLabel(device)} · posledně {formatMobileDate(device.lastSeenAt)}
+                </span>
+                {device.capabilities.length ? <small>{device.capabilities.join(", ")}</small> : null}
+              </div>
+              <div className="mobile-device-actions">
+                <span className={`mobile-device-status ${device.status === "paired" ? "ok" : "warn"}`}>
+                  {device.status === "paired" ? "aktivní" : "odebrané"}
+                </span>
+                <button
+                  className="mini-button danger"
+                  disabled={device.status !== "paired" || busy === "revoking"}
+                  onClick={() => void revokeDevice(device.deviceId)}
+                  type="button"
+                >
+                  <Trash2 size={14} />
+                  Odebrat
+                </button>
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
@@ -9989,7 +11582,9 @@ function mobilePairingStatusLabel(status: MobilePairingSessionResponse["pairing"
   }
 }
 
-function mobilePairingStatusTone(status: MobilePairingSessionResponse["pairing"]["status"] | undefined): "neutral" | "ok" | "warn" {
+function mobilePairingStatusTone(
+  status: MobilePairingSessionResponse["pairing"]["status"] | undefined
+): "neutral" | "ok" | "warn" {
   if (status === "claimed" || status === "confirmed") {
     return "ok";
   }
@@ -10014,7 +11609,9 @@ function mobileDeviceBuildLabel(device: MobileDeviceDisplay): string {
     `CSM ${device.appVersion}`,
     device.buildNumber ? `build ${device.buildNumber}` : null,
     device.osVersion ? `${mobileDevicePlatformLabel(device.platform)} ${device.osVersion}` : null
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function formatMobileDate(value: string | null | undefined): string {
@@ -10034,9 +11631,12 @@ function formatMobileDate(value: string | null | undefined): string {
 }
 
 function AuthDiagnosticsPanel({ diagnostics, session }: { diagnostics: AuthDiagnostics; session: AuthSession }) {
-  const lastRefresh = [...diagnostics.events].reverse().find((event) =>
-    event.type === "refresh_succeeded" || event.type === "refresh_failed" || event.type === "refresh_started"
-  );
+  const lastRefresh = [...diagnostics.events]
+    .reverse()
+    .find(
+      (event) =>
+        event.type === "refresh_succeeded" || event.type === "refresh_failed" || event.type === "refresh_started"
+    );
   const lastAccountChange = [...diagnostics.events].reverse().find((event) => event.type === "storage_changed");
   const currentStorage = diagnostics.current.storage;
   const currentExpiresAt = session.expiresAt ?? diagnostics.current.expiresAt;
@@ -10047,7 +11647,8 @@ function AuthDiagnosticsPanel({ diagnostics, session }: { diagnostics: AuthDiagn
     <div className="settings-subsection auth-diagnostics-panel">
       <PanelTitle icon={<ShieldCheck size={17} />} title="Kontrola přihlášení" />
       <p className="settings-help">
-        Slouží k ověření, jestli relaci ukončila expirace, neúspěšná obnova, ruční odhlášení nebo změna účtu v jiném okně. Diagnostika neukládá přístupové ani obnovovací tokeny.
+        Slouží k ověření, jestli relaci ukončila expirace, neúspěšná obnova, ruční odhlášení nebo změna účtu v jiném
+        okně. Diagnostika neukládá přístupové ani obnovovací tokeny.
       </p>
       <ReadinessRow
         label="Aktuální relace"
@@ -10073,7 +11674,9 @@ function AuthDiagnosticsPanel({ diagnostics, session }: { diagnostics: AuthDiagn
         <ReadinessRow
           label="Poslední obnova"
           value={authDiagnosticEventLabel(lastRefresh)}
-          tone={lastRefresh.type === "refresh_failed" ? "warn" : lastRefresh.type === "refresh_succeeded" ? "ok" : "neutral"}
+          tone={
+            lastRefresh.type === "refresh_failed" ? "warn" : lastRefresh.type === "refresh_succeeded" ? "ok" : "neutral"
+          }
         />
       ) : null}
       {lastAccountChange ? (
@@ -10183,14 +11786,25 @@ function normalizeWorkspaceLayout(value: WorkspaceLayoutPreferences | undefined)
   return {
     contextRailVisible: value?.contextRailVisible ?? defaultWorkspaceLayout.contextRailVisible,
     leftPanelMode: normalizeWorkspacePanelMode(value?.leftPanelMode, defaultWorkspaceLayout.leftPanelMode),
-    leftPanelWidth: clamp(value?.leftPanelWidth ?? defaultWorkspaceLayout.leftPanelWidth, workspaceLeftWidthRange.min, workspaceLeftWidthRange.max),
+    leftPanelWidth: clamp(
+      value?.leftPanelWidth ?? defaultWorkspaceLayout.leftPanelWidth,
+      workspaceLeftWidthRange.min,
+      workspaceLeftWidthRange.max
+    ),
     rightPanelMode: normalizeWorkspacePanelMode(value?.rightPanelMode, defaultWorkspaceLayout.rightPanelMode),
-    rightPanelWidth: clamp(value?.rightPanelWidth ?? defaultWorkspaceLayout.rightPanelWidth, workspaceRightWidthRange.min, workspaceRightWidthRange.max),
+    rightPanelWidth: clamp(
+      value?.rightPanelWidth ?? defaultWorkspaceLayout.rightPanelWidth,
+      workspaceRightWidthRange.min,
+      workspaceRightWidthRange.max
+    ),
     statusbarVisible: value?.statusbarVisible ?? defaultWorkspaceLayout.statusbarVisible
   };
 }
 
-function normalizeWorkspacePanelMode(value: WorkspacePanelMode | undefined, fallback: WorkspacePanelMode): WorkspacePanelMode {
+function normalizeWorkspacePanelMode(
+  value: WorkspacePanelMode | undefined,
+  fallback: WorkspacePanelMode
+): WorkspacePanelMode {
   return value === "open" || value === "collapsed" || value === "hidden" ? value : fallback;
 }
 
@@ -10246,7 +11860,10 @@ function workspaceTemplatePreferences(templateId: WorkspaceTemplateId): {
   };
 }
 
-function initialOperatorProfile(_session: AuthSession, savedProfile: OperatorProfilePreferences | undefined): OperatorProfilePreferences {
+function initialOperatorProfile(
+  _session: AuthSession,
+  savedProfile: OperatorProfilePreferences | undefined
+): OperatorProfilePreferences {
   return savedProfile ?? {};
 }
 
@@ -10309,14 +11926,27 @@ function mergeOperatorProfile(session: AuthSession, profile: OperatorProfilePref
 
 function operatorInitials(profile: OperatorProfilePreferences): string {
   const source = profile.displayName || profile.email || "CSM";
-  const parts = source.split(/[\s.@_-]+/u).filter(Boolean).slice(0, 2);
+  const parts = source
+    .split(/[\s.@_-]+/u)
+    .filter(Boolean)
+    .slice(0, 2);
   return parts.map((part) => part[0]?.toUpperCase()).join("") || "CS";
 }
 
-function OperatorAvatar({ profile, size = "normal" }: { profile: OperatorProfilePreferences; size?: "normal" | "small" }) {
+function OperatorAvatar({
+  profile,
+  size = "normal"
+}: {
+  profile: OperatorProfilePreferences;
+  size?: "normal" | "small";
+}) {
   return (
     <span className={`operator-avatar ${size}`} aria-hidden="true">
-      {profile.avatarDataUrl ? <img alt="" src={profile.avatarDataUrl} /> : <strong>{operatorInitials(profile)}</strong>}
+      {profile.avatarDataUrl ? (
+        <img alt="" src={profile.avatarDataUrl} />
+      ) : (
+        <strong>{operatorInitials(profile)}</strong>
+      )}
     </span>
   );
 }
@@ -10450,7 +12080,11 @@ function WorkspaceLayoutEditor({
         <span>{layout.rightPanelWidth}px</span>
       </label>
       <label className="toggle-row">
-        <input type="checkbox" checked={layout.statusbarVisible} onChange={(event) => onChange({ statusbarVisible: event.target.checked })} />
+        <input
+          type="checkbox"
+          checked={layout.statusbarVisible}
+          onChange={(event) => onChange({ statusbarVisible: event.target.checked })}
+        />
         Dolní stavový řádek
       </label>
       <div className="settings-button-row">
@@ -10487,21 +12121,29 @@ function ProfileEditor({
   const fileInputId = React.useId();
   const [avatarError, setAvatarError] = React.useState<string | null>(null);
 
-  const update = React.useCallback((patch: Partial<OperatorProfilePreferences>) => {
-    onChange({ ...profile, ...patch });
-  }, [onChange, profile]);
+  const update = React.useCallback(
+    (patch: Partial<OperatorProfilePreferences>) => {
+      onChange({ ...profile, ...patch });
+    },
+    [onChange, profile]
+  );
 
-  const handleAvatarChange = React.useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = "";
-    if (!file) {
-      return;
-    }
-    setAvatarError(null);
-    void readAvatarFile(file)
-      .then((avatarDataUrl) => update({ avatarDataUrl }))
-      .catch((error: unknown) => setAvatarError(error instanceof Error ? error.message : "Avatar se nepodařilo načíst."));
-  }, [update]);
+  const handleAvatarChange = React.useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.currentTarget.files?.[0];
+      event.currentTarget.value = "";
+      if (!file) {
+        return;
+      }
+      setAvatarError(null);
+      void readAvatarFile(file)
+        .then((avatarDataUrl) => update({ avatarDataUrl }))
+        .catch((error: unknown) =>
+          setAvatarError(error instanceof Error ? error.message : "Avatar se nepodařilo načíst.")
+        );
+    },
+    [update]
+  );
 
   return (
     <div className="profile-editor">
@@ -10516,7 +12158,13 @@ function ProfileEditor({
           <span>{profile.role || "Kontakt pro krizovou komunikaci"}</span>
         </div>
       </div>
-      <input id={fileInputId} className="visually-hidden" accept="image/png,image/jpeg,image/webp" type="file" onChange={handleAvatarChange} />
+      <input
+        id={fileInputId}
+        className="visually-hidden"
+        accept="image/png,image/jpeg,image/webp"
+        type="file"
+        onChange={handleAvatarChange}
+      />
       <div className="settings-button-row">
         <label className="mini-button file-like-button" htmlFor={fileInputId}>
           <Image size={14} />
@@ -10531,30 +12179,59 @@ function ProfileEditor({
       {avatarError ? <div className="error-banner">{avatarError}</div> : null}
       <label className="text-field">
         Zobrazované jméno
-        <input value={profile.displayName ?? ""} onChange={(event) => update({ displayName: event.target.value })} placeholder={session.profile?.name ?? "Jméno a příjmení"} />
+        <input
+          value={profile.displayName ?? ""}
+          onChange={(event) => update({ displayName: event.target.value })}
+          placeholder={session.profile?.name ?? "Jméno a příjmení"}
+        />
       </label>
       <label className="text-field">
         Role
-        <input value={profile.role ?? ""} onChange={(event) => update({ role: event.target.value })} placeholder="Dobrovolník, koordinátor, starosta..." />
+        <input
+          value={profile.role ?? ""}
+          onChange={(event) => update({ role: event.target.value })}
+          placeholder="Dobrovolník, koordinátor, starosta..."
+        />
       </label>
       <label className="text-field">
         Organizace
-        <input value={profile.organization ?? ""} onChange={(event) => update({ organization: event.target.value })} placeholder="Obec, jednotka, firma, tým" />
+        <input
+          value={profile.organization ?? ""}
+          onChange={(event) => update({ organization: event.target.value })}
+          placeholder="Obec, jednotka, firma, tým"
+        />
       </label>
       <label className="text-field">
         E-mail
-        <input value={profile.email ?? ""} onChange={(event) => update({ email: event.target.value })} placeholder={session.profile?.email ?? "kontakt@example.cz"} />
+        <input
+          value={profile.email ?? ""}
+          onChange={(event) => update({ email: event.target.value })}
+          placeholder={session.profile?.email ?? "kontakt@example.cz"}
+        />
       </label>
       <label className="text-field">
         Telefon
-        <input value={profile.phone ?? ""} onChange={(event) => update({ phone: event.target.value })} placeholder="+420 ..." />
+        <input
+          value={profile.phone ?? ""}
+          onChange={(event) => update({ phone: event.target.value })}
+          placeholder="+420 ..."
+        />
       </label>
       <label className="text-field">
         Poznámka ke kontaktu
-        <textarea value={profile.contactNote ?? ""} onChange={(event) => update({ contactNote: event.target.value })} placeholder="Kdy a jak mě kontaktovat" rows={3} />
+        <textarea
+          value={profile.contactNote ?? ""}
+          onChange={(event) => update({ contactNote: event.target.value })}
+          placeholder="Kdy a jak mě kontaktovat"
+          rows={3}
+        />
       </label>
       <label className="toggle-row">
-        <input type="checkbox" checked={Boolean(profile.publicContact)} onChange={(event) => update({ publicContact: event.target.checked })} />
+        <input
+          type="checkbox"
+          checked={Boolean(profile.publicContact)}
+          onChange={(event) => update({ publicContact: event.target.checked })}
+        />
         Kontakt může být viditelný členům skupin a incidentů
       </label>
     </div>
@@ -10607,7 +12284,9 @@ function ManualDialog({
           <article>
             <p>{entry.body}</p>
             <ul>
-              {entry.points.map((point) => <li key={point}>{point}</li>)}
+              {entry.points.map((point) => (
+                <li key={point}>{point}</li>
+              ))}
             </ul>
           </article>
         </div>
@@ -10729,40 +12408,43 @@ function MobileSheetPullHandle({ label, onClose }: { label: string; onClose: () 
   const [dragOffset, setDragOffset] = React.useState(0);
   const startYRef = React.useRef<number | null>(null);
 
-  const handlePointerDown = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    startYRef.current = event.clientY;
-    setDragOffset(0);
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      if (startYRef.current === null) {
+  const handlePointerDown = React.useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (event.pointerType === "mouse" && event.button !== 0) {
         return;
       }
-      const nextOffset = Math.max(0, moveEvent.clientY - startYRef.current);
-      setDragOffset(Math.min(96, nextOffset));
-    };
-
-    const finishDrag = (upEvent: PointerEvent) => {
-      const startY = startYRef.current;
-      const deltaY = startY === null ? 0 : upEvent.clientY - startY;
-      startYRef.current = null;
+      event.preventDefault();
+      event.stopPropagation();
+      startYRef.current = event.clientY;
       setDragOffset(0);
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", finishDrag);
-      window.removeEventListener("pointercancel", finishDrag);
-      if (deltaY > 72) {
-        onClose();
-      }
-    };
 
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", finishDrag);
-    window.addEventListener("pointercancel", finishDrag);
-  }, [onClose]);
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        if (startYRef.current === null) {
+          return;
+        }
+        const nextOffset = Math.max(0, moveEvent.clientY - startYRef.current);
+        setDragOffset(Math.min(96, nextOffset));
+      };
+
+      const finishDrag = (upEvent: PointerEvent) => {
+        const startY = startYRef.current;
+        const deltaY = startY === null ? 0 : upEvent.clientY - startY;
+        startYRef.current = null;
+        setDragOffset(0);
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", finishDrag);
+        window.removeEventListener("pointercancel", finishDrag);
+        if (deltaY > 72) {
+          onClose();
+        }
+      };
+
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", finishDrag);
+      window.addEventListener("pointercancel", finishDrag);
+    },
+    [onClose]
+  );
 
   return (
     <button
@@ -10839,23 +12521,29 @@ function CatalogLayerMenu({
 }) {
   const activeLayerCount = groups.reduce((sum, view) => sum + view.layers.filter(isLayerEnabled).length, 0);
   const lastTouchGroupSelectRef = React.useRef<{ groupId: string; at: number } | null>(null);
-  const handleGroupPointerUp = React.useCallback((event: React.PointerEvent<HTMLButtonElement>, groupId: string) => {
-    if (event.pointerType === "mouse") {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    lastTouchGroupSelectRef.current = { groupId, at: Date.now() };
-    onGroupSelect(groupId);
-  }, [onGroupSelect]);
-  const handleGroupClick = React.useCallback((event: React.MouseEvent<HTMLButtonElement>, groupId: string) => {
-    event.stopPropagation();
-    const lastTouchSelect = lastTouchGroupSelectRef.current;
-    if (lastTouchSelect?.groupId === groupId && Date.now() - lastTouchSelect.at < 700) {
-      return;
-    }
-    onGroupSelect(groupId);
-  }, [onGroupSelect]);
+  const handleGroupPointerUp = React.useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>, groupId: string) => {
+      if (event.pointerType === "mouse") {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      lastTouchGroupSelectRef.current = { groupId, at: Date.now() };
+      onGroupSelect(groupId);
+    },
+    [onGroupSelect]
+  );
+  const handleGroupClick = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>, groupId: string) => {
+      event.stopPropagation();
+      const lastTouchSelect = lastTouchGroupSelectRef.current;
+      if (lastTouchSelect?.groupId === groupId && Date.now() - lastTouchSelect.at < 700) {
+        return;
+      }
+      onGroupSelect(groupId);
+    },
+    [onGroupSelect]
+  );
   return (
     <div
       className="catalog-layer-menu"
@@ -10997,7 +12685,11 @@ function CatalogLayerDrawer({
         </div>
       ) : null}
       <div className="catalog-drawer-summary">
-        <ReadinessRow label="Zapnuto" value={`${enabledCount}/${groupView.layers.length}`} tone={enabledCount > 0 ? "ok" : "neutral"} />
+        <ReadinessRow
+          label="Zapnuto"
+          value={`${enabledCount}/${groupView.layers.length}`}
+          tone={enabledCount > 0 ? "ok" : "neutral"}
+        />
       </div>
       {loadError ? <div className="catalog-warning">API chyba: {loadError}</div> : null}
       <div className="catalog-layer-list">
@@ -11052,7 +12744,9 @@ function CatalogLayerDrawer({
                 <em>{getFeatureCount(layer)}</em>
               </div>
               <div className="catalog-layer-meta">
-                <span className={`catalog-status ${enabled ? status : "disabled"}`}>{enabled ? catalogLayerStatusLabel(status) : "vypnuto"}</span>
+                <span className={`catalog-status ${enabled ? status : "disabled"}`}>
+                  {enabled ? catalogLayerStatusLabel(status) : "vypnuto"}
+                </span>
                 <span>{catalogLayerProviderLabel(layer)}</span>
               </div>
               {enabled && layer.filters?.some((filter) => filter.filterId === "technology") ? (
@@ -11106,13 +12800,43 @@ function LayerSourceTree({
 }) {
   const overallSelected = selectedLayerIds.includes("air-situation");
   const streams: Array<{ count: number; description: string; label: string; layerId: CopLayer }> = [
-    { count: scopedObjects.length, description: "Všechny přijaté georeferencované objekty po aktivních filtrech.", label: "Celkový obraz", layerId: "air-situation" },
-    { count: getSimulatedAirCount(scopedObjects), description: "Cvičná letecká situace ze simulačního zdroje.", label: "Simulace", layerId: "sim-air" },
+    {
+      count: scopedObjects.length,
+      description: "Všechny přijaté georeferencované objekty po aktivních filtrech.",
+      label: "Celkový obraz",
+      layerId: "air-situation"
+    },
+    {
+      count: getSimulatedAirCount(scopedObjects),
+      description: "Cvičná letecká situace ze simulačního zdroje.",
+      label: "Simulace",
+      layerId: "sim-air"
+    },
     { count: getUavCount(scopedObjects), description: "Bezpilotní prostředky a UAV.", label: "UAV", layerId: "uav" },
-    { count: metrics.friendlyCount, description: "Vlastní a pravděpodobně vlastní objekty.", label: "Vlastní", layerId: "friendly" },
-    { count: metrics.foreignCount, description: "Rizikové nebo neověřené objekty.", label: "Rizikové", layerId: "foreign" },
-    { count: metrics.publicFlightCount, description: "Veřejná letová data z leteckého zdroje.", label: "Veřejné lety", layerId: "public-flights" },
-    { count: getDataQualityCount(scopedObjects), description: "Objekty s nízkou jistotou nebo datovou nejistotou.", label: "Kvalita dat", layerId: "data-quality" }
+    {
+      count: metrics.friendlyCount,
+      description: "Vlastní a pravděpodobně vlastní objekty.",
+      label: "Vlastní",
+      layerId: "friendly"
+    },
+    {
+      count: metrics.foreignCount,
+      description: "Rizikové nebo neověřené objekty.",
+      label: "Rizikové",
+      layerId: "foreign"
+    },
+    {
+      count: metrics.publicFlightCount,
+      description: "Veřejná letová data z leteckého zdroje.",
+      label: "Veřejné lety",
+      layerId: "public-flights"
+    },
+    {
+      count: getDataQualityCount(scopedObjects),
+      description: "Objekty s nízkou jistotou nebo datovou nejistotou.",
+      label: "Kvalita dat",
+      layerId: "data-quality"
+    }
   ];
 
   return (
@@ -11121,7 +12845,9 @@ function LayerSourceTree({
         <div className="layer-source-header">
           <div>
             <strong>Air situation</strong>
-            <span>{overallSelected ? "Celkový obraz bere všechny streamy" : `${selectedLayerIds.length} streamů zapnuto`}</span>
+            <span>
+              {overallSelected ? "Celkový obraz bere všechny streamy" : `${selectedLayerIds.length} streamů zapnuto`}
+            </span>
           </div>
           <small>{scopedObjects.length} tracků</small>
         </div>
@@ -11197,7 +12923,9 @@ function SituationLayerControls({
 }) {
   const layerItems = layers.length > 0 ? layers : defaultSituationLayers();
   const sourceItems = filterCitizenSituationSources(sources.filter((source) => !isSafetyOnlySituationSource(source)));
-  const technicalSourceItems = filterTechnicalSituationSources(sources.filter((source) => !isSafetyOnlySituationSource(source)));
+  const technicalSourceItems = filterTechnicalSituationSources(
+    sources.filter((source) => !isSafetyOnlySituationSource(source))
+  );
   const effectiveVisibleSourceIds = sanitizeCitizenSituationSourceIds(visibleSourceIds);
   const coverageEnabled = visibleLayerIds.includes("mobile_network");
   return (
@@ -11241,11 +12969,21 @@ function SituationLayerControls({
       {sourceItems.length > 0 ? (
         <div className="situation-source-list">
           {sourceItems.map((source) => {
-            const checked = effectiveVisibleSourceIds.length === 0 || effectiveVisibleSourceIds.includes(source.sourceId);
+            const checked =
+              effectiveVisibleSourceIds.length === 0 || effectiveVisibleSourceIds.includes(source.sourceId);
             const disabled = source.enabled === false;
             return (
-              <label className={`situation-source-toggle ${disabled ? "disabled" : ""}`} key={source.sourceId} title={source.label ?? source.sourceId}>
-                <input checked={!disabled && checked} disabled={disabled} onChange={() => onToggleSource(source.sourceId)} type="checkbox" />
+              <label
+                className={`situation-source-toggle ${disabled ? "disabled" : ""}`}
+                key={source.sourceId}
+                title={source.label ?? source.sourceId}
+              >
+                <input
+                  checked={!disabled && checked}
+                  disabled={disabled}
+                  onChange={() => onToggleSource(source.sourceId)}
+                  type="checkbox"
+                />
                 <span>
                   <strong>{source.label ?? source.sourceId}</strong>
                   <small>{formatSituationSourceHint(source)}</small>
@@ -11271,7 +13009,9 @@ function SituationLayerControls({
       ) : null}
       <ReadinessRow label="Features" value={String(featureCount)} tone={featureCount > 0 ? "ok" : "neutral"} />
       {warnings.slice(0, 2).map((warning) => (
-        <div className="situation-warning" key={warning}>{warning}</div>
+        <div className="situation-warning" key={warning}>
+          {warning}
+        </div>
       ))}
     </div>
   );
@@ -11319,9 +13059,15 @@ function SafetyLayerControls({
         ))}
       </div>
       <ReadinessRow label="Prvky" value={String(featureCount)} tone={featureCount > 0 ? "ok" : "neutral"} />
-      <ReadinessRow label="Zdroje" value={formatSafetySources(sources, config)} tone={sources.some((source) => source.enabled) ? "ok" : "neutral"} />
+      <ReadinessRow
+        label="Zdroje"
+        value={formatSafetySources(sources, config)}
+        tone={sources.some((source) => source.enabled) ? "ok" : "neutral"}
+      />
       {warnings.slice(0, 2).map((warning) => (
-        <div className="situation-warning" key={warning}>{warning}</div>
+        <div className="situation-warning" key={warning}>
+          {warning}
+        </div>
       ))}
     </div>
   );
@@ -11370,7 +13116,9 @@ function TakGatewayLayerControls({
       <ReadinessRow label="Prvky" value={String(featureCount)} tone={featureCount > 0 ? "ok" : "neutral"} />
       <ReadinessRow label="Zdroje" value={formatTakSources(sources)} tone={sourceState} />
       {warnings.slice(0, 2).map((warning) => (
-        <div className="situation-warning" key={warning}>{warning}</div>
+        <div className="situation-warning" key={warning}>
+          {warning}
+        </div>
       ))}
     </div>
   );
@@ -11406,63 +13154,87 @@ function UserZoneLayerControls({
     <div className="user-zone-layer-box">
       <div className="situation-layer-header">
         <PanelTitle icon={<MapPin size={17} />} title="Uživatelské zóny" />
-        <span className={`situation-status ${activeCount > 0 ? "online" : "disabled"}`}>{activeCount > 0 ? `${activeCount} aktivní` : "vypnuto"}</span>
+        <span className={`situation-status ${activeCount > 0 ? "online" : "disabled"}`}>
+          {activeCount > 0 ? `${activeCount} aktivní` : "vypnuto"}
+        </span>
       </div>
-      {zones.length === 0 ? <div className="empty-mini">Zapněte kreslení polygonu a klikáním do mapy vymezte vlastní zónu. Zóny se ukládají do profilu přihlášeného uživatele.</div> : null}
+      {zones.length === 0 ? (
+        <div className="empty-mini">
+          Zapněte kreslení polygonu a klikáním do mapy vymezte vlastní zónu. Zóny se ukládají do profilu přihlášeného
+          uživatele.
+        </div>
+      ) : null}
       <div className="user-zone-list">
         {zones.map((zone) => {
           const isEditing = editingZoneId === zone.id;
           return (
-          <div className={`user-zone-row ${isEditing ? "editing" : ""}`} key={zone.id}>
-            <label className="user-zone-main" title="Zapnutí zóny ji zobrazí v mapě a aktivuje výstrahu pro objekty uvnitř.">
-              <input checked={zone.enabled} onChange={(event) => onEnabledChange(zone.id, event.target.checked)} type="checkbox" />
-              <span style={{ background: normalizeAoiColor(zone.color) }} />
-              <strong>{zone.name}</strong>
-              <small>{formatAoiZoneGeometry(zone)} · {formatAoiCenter(zone)}</small>
-            </label>
-            <div className="zone-color-row" aria-label={`Barva zóny ${zone.name}`}>
-              {zoneColorOptions.map((color) => (
-                <button
-                  aria-label={`Nastavit barvu ${color}`}
-                  aria-pressed={normalizeAoiColor(zone.color) === color}
-                  className={normalizeAoiColor(zone.color) === color ? "active" : ""}
-                  key={color}
-                  onClick={() => onColorChange(zone.id, color)}
-                  style={{ background: color }}
-                  type="button"
-                />
-              ))}
-            </div>
-            {zone.polygon ? null : (
-              <label className="range-label compact">
-                Poloměr
-                <span>{Math.round(zone.radiusKm)} km</span>
+            <div className={`user-zone-row ${isEditing ? "editing" : ""}`} key={zone.id}>
+              <label
+                className="user-zone-main"
+                title="Zapnutí zóny ji zobrazí v mapě a aktivuje výstrahu pro objekty uvnitř."
+              >
                 <input
-                  max="80"
-                  min="1"
-                  onChange={(event) => onRadiusChange(zone.id, Number(event.target.value))}
-                  step="1"
-                  type="range"
-                  value={Math.round(zone.radiusKm)}
+                  checked={zone.enabled}
+                  onChange={(event) => onEnabledChange(zone.id, event.target.checked)}
+                  type="checkbox"
                 />
+                <span style={{ background: normalizeAoiColor(zone.color) }} />
+                <strong>{zone.name}</strong>
+                <small>
+                  {formatAoiZoneGeometry(zone)} · {formatAoiCenter(zone)}
+                </small>
               </label>
-            )}
-            {zone.polygon ? (
-              <button className={`mini-button wide ${isEditing ? "active" : ""}`} onClick={() => onEdit(zone.id)} type="button">
-                <MousePointer2 size={14} />
-                {isEditing ? "Ukončit editaci" : "Upravit v mapě"}
+              <div className="zone-color-row" aria-label={`Barva zóny ${zone.name}`}>
+                {zoneColorOptions.map((color) => (
+                  <button
+                    aria-label={`Nastavit barvu ${color}`}
+                    aria-pressed={normalizeAoiColor(zone.color) === color}
+                    className={normalizeAoiColor(zone.color) === color ? "active" : ""}
+                    key={color}
+                    onClick={() => onColorChange(zone.id, color)}
+                    style={{ background: color }}
+                    type="button"
+                  />
+                ))}
+              </div>
+              {zone.polygon ? null : (
+                <label className="range-label compact">
+                  Poloměr
+                  <span>{Math.round(zone.radiusKm)} km</span>
+                  <input
+                    max="80"
+                    min="1"
+                    onChange={(event) => onRadiusChange(zone.id, Number(event.target.value))}
+                    step="1"
+                    type="range"
+                    value={Math.round(zone.radiusKm)}
+                  />
+                </label>
+              )}
+              {zone.polygon ? (
+                <button
+                  className={`mini-button wide ${isEditing ? "active" : ""}`}
+                  onClick={() => onEdit(zone.id)}
+                  type="button"
+                >
+                  <MousePointer2 size={14} />
+                  {isEditing ? "Ukončit editaci" : "Upravit v mapě"}
+                </button>
+              ) : null}
+              <button className="mini-button danger wide" onClick={() => onDelete(zone.id)} type="button">
+                <Trash2 size={14} />
+                Smazat
               </button>
-            ) : null}
-            <button className="mini-button danger wide" onClick={() => onDelete(zone.id)} type="button">
-              <Trash2 size={14} />
-              Smazat
-            </button>
-          </div>
+            </div>
           );
         })}
       </div>
       <div className="zone-action-grid">
-        <button className={`mini-button wide ${creationMode ? "active" : ""}`} onClick={onStartMapClickCreation} type="button">
+        <button
+          className={`mini-button wide ${creationMode ? "active" : ""}`}
+          onClick={onStartMapClickCreation}
+          type="button"
+        >
           <MousePointer2 size={14} />
           {creationMode ? "Dokreslit v mapě" : "Kreslit polygon"}
         </button>
@@ -11559,11 +13331,14 @@ function MapGlobalSearch({
       if (!dragState) {
         return;
       }
-      const nextPosition = clampMapSearchPosition({
-        left: event.clientX - dragState.parentRect.left - dragState.offsetX,
-        top: event.clientY - dragState.parentRect.top - dragState.offsetY,
-        width: dragState.width
-      }, dragState.parentRect);
+      const nextPosition = clampMapSearchPosition(
+        {
+          left: event.clientX - dragState.parentRect.left - dragState.offsetX,
+          top: event.clientY - dragState.parentRect.top - dragState.offsetY,
+          width: dragState.width
+        },
+        dragState.parentRect
+      );
       persistPosition(nextPosition);
     };
     const finishDrag = () => {
@@ -11597,7 +13372,11 @@ function MapGlobalSearch({
         width: element.getBoundingClientRect().width
       };
       const clamped = clampMapSearchPosition(current, parentRect);
-      if (Math.abs(clamped.left - current.left) > 1 || Math.abs(clamped.top - current.top) > 1 || Math.abs(clamped.width - position.width) > 1) {
+      if (
+        Math.abs(clamped.left - current.left) > 1 ||
+        Math.abs(clamped.top - current.top) > 1 ||
+        Math.abs(clamped.width - position.width) > 1
+      ) {
         persistPosition(clamped);
       }
     };
@@ -11642,98 +13421,128 @@ function MapGlobalSearch({
     <div
       className={`map-global-search ${docked ? "is-docked" : ""} ${collapsedDocked ? "is-collapsed" : ""} ${position && !docked ? "is-moved" : ""} ${isDragging ? "is-dragging" : ""}`}
       ref={containerRef}
-      style={position && !docked ? {
-        left: `${position.left}px`,
-        right: "auto",
-        top: `${position.top}px`,
-        width: `min(${position.width}px, calc(100% - 16px))`
-      } : undefined}
+      style={
+        position && !docked
+          ? {
+              left: `${position.left}px`,
+              right: "auto",
+              top: `${position.top}px`,
+              width: `min(${position.width}px, calc(100% - 16px))`
+            }
+          : undefined
+      }
     >
       {collapsedDocked ? (
-        <button className="map-global-search-launcher" type="button" onClick={() => setDockedExpanded(true)} aria-label="Otevřít hledání v mapě">
+        <button
+          className="map-global-search-launcher"
+          type="button"
+          onClick={() => setDockedExpanded(true)}
+          aria-label="Otevřít hledání v mapě"
+        >
           <Search size={17} />
           <span>Hledání</span>
         </button>
       ) : (
         <>
-      <div className="map-global-search-field">
-        {docked ? (
-          <span className="map-global-search-docked-mark" aria-hidden="true">
-            <Pin size={15} />
-          </span>
-        ) : (
-          <button
-            aria-label="Přesunout hledání"
-            className="map-global-search-drag"
-            onPointerDown={startDrag}
-            title="Přesunout hledání"
-            type="button"
-          >
-            <Move size={15} />
-          </button>
-        )}
-        <Search size={16} />
-        <input
-          aria-label="Hledat v mapě"
-          autoComplete="off"
-          placeholder="Hledat let, BTS, letiště, místo..."
-          value={query}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      </div>
-      <div className="map-global-search-actions">
-        <button
-          className="map-global-search-dock"
-          type="button"
-          aria-label={docked ? "Vrátit hledání nad mapu" : "Připnout hledání vlevo dole"}
-          onClick={() => onDockChange(!docked)}
-          title={docked ? "Vrátit nad mapu" : "Připnout vlevo dole"}
-        >
-          {docked ? <PinOff size={15} /> : <Pin size={15} />}
-        </button>
-        {docked ? (
-          <button className="map-global-search-reset" type="button" aria-label="Skrýt hledání" onClick={() => setDockedExpanded(false)} title="Skrýt hledání">
-            <X size={15} />
-          </button>
-        ) : null}
-        {position && !docked ? (
-          <button className="map-global-search-reset" type="button" aria-label="Vrátit hledání na výchozí místo" onClick={() => persistPosition(null)}>
-            <MousePointer2 size={15} />
-          </button>
-        ) : null}
-        {hasQuery ? (
-          <button className="map-global-search-clear" type="button" aria-label="Vymazat hledání v mapě" onClick={onClear}>
-            <X size={15} />
-          </button>
-        ) : null}
-      </div>
-      {hasQuery ? (
-        <div className="map-global-search-results" role="listbox" aria-label="Výsledky hledání v mapě">
-          {results.length > 0 ? (
-            results.map((result) => (
-              <button className={`map-search-card map-search-card-${result.type}`} key={result.id} type="button" onClick={() => handleResultSelect(result)}>
-                <span className="map-search-type">{result.typeLabel}</span>
-                <span className="map-search-main">
-                  <strong>{result.label}</strong>
-                  <small>{result.subtitle || "Bez doplňujících metadat"}</small>
-                </span>
-                <MapPin size={15} />
+          <div className="map-global-search-field">
+            {docked ? (
+              <span className="map-global-search-docked-mark" aria-hidden="true">
+                <Pin size={15} />
+              </span>
+            ) : (
+              <button
+                aria-label="Přesunout hledání"
+                className="map-global-search-drag"
+                onPointerDown={startDrag}
+                title="Přesunout hledání"
+                type="button"
+              >
+                <Move size={15} />
               </button>
-            ))
-          ) : (
-            <div className={`map-search-empty ${placeSearchError ? "map-search-empty-warning" : ""}`}>
-              {isSearchingPlaces
-                ? "Hledám místa..."
-                : placeSearchError
-                  ? "Vyhledávání míst je dočasně nedostupné."
-                  : "Nic v aktuálních vrstvách ani v místech neodpovídá hledání."}
+            )}
+            <Search size={16} />
+            <input
+              aria-label="Hledat v mapě"
+              autoComplete="off"
+              placeholder="Hledat let, BTS, letiště, místo..."
+              value={query}
+              onChange={(event) => onChange(event.target.value)}
+            />
+          </div>
+          <div className="map-global-search-actions">
+            <button
+              className="map-global-search-dock"
+              type="button"
+              aria-label={docked ? "Vrátit hledání nad mapu" : "Připnout hledání vlevo dole"}
+              onClick={() => onDockChange(!docked)}
+              title={docked ? "Vrátit nad mapu" : "Připnout vlevo dole"}
+            >
+              {docked ? <PinOff size={15} /> : <Pin size={15} />}
+            </button>
+            {docked ? (
+              <button
+                className="map-global-search-reset"
+                type="button"
+                aria-label="Skrýt hledání"
+                onClick={() => setDockedExpanded(false)}
+                title="Skrýt hledání"
+              >
+                <X size={15} />
+              </button>
+            ) : null}
+            {position && !docked ? (
+              <button
+                className="map-global-search-reset"
+                type="button"
+                aria-label="Vrátit hledání na výchozí místo"
+                onClick={() => persistPosition(null)}
+              >
+                <MousePointer2 size={15} />
+              </button>
+            ) : null}
+            {hasQuery ? (
+              <button
+                className="map-global-search-clear"
+                type="button"
+                aria-label="Vymazat hledání v mapě"
+                onClick={onClear}
+              >
+                <X size={15} />
+              </button>
+            ) : null}
+          </div>
+          {hasQuery ? (
+            <div className="map-global-search-results" role="listbox" aria-label="Výsledky hledání v mapě">
+              {results.length > 0 ? (
+                results.map((result) => (
+                  <button
+                    className={`map-search-card map-search-card-${result.type}`}
+                    key={result.id}
+                    type="button"
+                    onClick={() => handleResultSelect(result)}
+                  >
+                    <span className="map-search-type">{result.typeLabel}</span>
+                    <span className="map-search-main">
+                      <strong>{result.label}</strong>
+                      <small>{result.subtitle || "Bez doplňujících metadat"}</small>
+                    </span>
+                    <MapPin size={15} />
+                  </button>
+                ))
+              ) : (
+                <div className={`map-search-empty ${placeSearchError ? "map-search-empty-warning" : ""}`}>
+                  {isSearchingPlaces
+                    ? "Hledám místa..."
+                    : placeSearchError
+                      ? "Vyhledávání míst je dočasně nedostupné."
+                      : "Nic v aktuálních vrstvách ani v místech neodpovídá hledání."}
+                </div>
+              )}
+              {results.length > 0 && placeSearchError ? (
+                <div className="map-search-empty map-search-empty-warning">Vyhledávání míst je dočasně nedostupné.</div>
+              ) : null}
             </div>
-          )}
-          {results.length > 0 && placeSearchError ? (
-            <div className="map-search-empty map-search-empty-warning">Vyhledávání míst je dočasně nedostupné.</div>
           ) : null}
-        </div>
-      ) : null}
         </>
       )}
     </div>
@@ -11849,7 +13658,12 @@ function ObjectSearchControl({
         />
       </label>
       {value.trim() ? (
-        <button className="icon-button object-search-clear" type="button" aria-label="Vymazat hledání" onClick={() => onChange("")}>
+        <button
+          className="icon-button object-search-clear"
+          type="button"
+          aria-label="Vymazat hledání"
+          onClick={() => onChange("")}
+        >
           <X size={15} />
         </button>
       ) : null}
@@ -11910,9 +13724,15 @@ function ObjectDetail({
       <ObjectDetailSection title="Identita">
         <DetailGrid
           rows={[
-            ["Příslušnost", <span className={`affiliation-chip ${model.affiliation.disposition}`}>{model.affiliation.label}</span>],
+            [
+              "Příslušnost",
+              <span className={`affiliation-chip ${model.affiliation.disposition}`}>{model.affiliation.label}</span>
+            ],
             ["Doména", domainDisplayName(object.domain)],
-            ["Stav", replayActive ? `${objectStatusLabel(object.status)} / zpětné přehrání` : objectStatusLabel(object.status)],
+            [
+              "Stav",
+              replayActive ? `${objectStatusLabel(object.status)} / zpětné přehrání` : objectStatusLabel(object.status)
+            ],
             ["Jistota", `${Math.round((object.confidence ?? 0) * 100)} %`]
           ]}
         />
@@ -11933,7 +13753,10 @@ function ObjectDetail({
         <DetailGrid
           rows={[
             ["Režim", "Standardní operační symbol"],
-            ["Vyhodnocení", `${objectTypeDisplayName(object.objectType)} / ${model.affiliation.label} / ${objectStatusLabel(object.status)}`]
+            [
+              "Vyhodnocení",
+              `${objectTypeDisplayName(object.objectType)} / ${model.affiliation.label} / ${objectStatusLabel(object.status)}`
+            ]
           ]}
         />
       </ObjectDetailSection>
@@ -11974,9 +13797,13 @@ function ObjectDetail({
         {object.synthetic ? <span className="synthetic-badge">SIM</span> : null}
         {isPublicFlightObject(object) ? <span className="public-flight-badge">VEŘEJNÝ LET</span> : null}
         {isMockFlightObject(object) ? <span className="warning-badge">CVIČNÁ DATA</span> : null}
-        {object.status === "STALE" || flightData?.quality?.stale ? <span className="warning-badge">STARŠÍ DATA</span> : null}
+        {object.status === "STALE" || flightData?.quality?.stale ? (
+          <span className="warning-badge">STARŠÍ DATA</span>
+        ) : null}
         {(object.confidence ?? 0) < 0.5 ? <span className="warning-badge">NÍZKÁ JISTOTA</span> : null}
-        {model.conflicts.some((conflict) => conflict.severity === "warn") ? <span className="warning-badge">KONFLIKT DAT</span> : null}
+        {model.conflicts.some((conflict) => conflict.severity === "warn") ? (
+          <span className="warning-badge">KONFLIKT DAT</span>
+        ) : null}
       </div>
     </div>
   );
@@ -12043,7 +13870,11 @@ function buildRadioInputOverlay(
   return { features, mode, title: "Vstupní body Radio LoS", warnings: [] };
 }
 
-function radioInputPointToSituationFeature(target: RadioPointPickTarget, point: RadioPoint, profile: RadioProfile): SituationFeature {
+function radioInputPointToSituationFeature(
+  target: RadioPointPickTarget,
+  point: RadioPoint,
+  profile: RadioProfile
+): SituationFeature {
   const label = radioPointTargetLabel(target);
   const featureId = `radio:input:${target}`;
   const coordinateLabel = `${formatRadioCoordinate(point.lat)}, ${formatRadioCoordinate(point.lon)}`;
@@ -12094,7 +13925,10 @@ function radioInputPointToSituationFeature(target: RadioPointPickTarget, point: 
 function radioInputLineToSituationFeature(from: RadioPoint, to: RadioPoint, profile: RadioProfile): SituationFeature {
   return {
     geometry: {
-      coordinates: [[from.lon, from.lat], [to.lon, to.lat]],
+      coordinates: [
+        [from.lon, from.lat],
+        [to.lon, to.lat]
+      ],
       type: "LineString"
     },
     id: "radio:input:link",
@@ -12203,10 +14037,11 @@ function radioFeatureCollectionToSituationFeatures(
     const quality = stringProperty(sourceProperties.quality) ?? radioQualityFromScore(score);
     const confidence = boundedUnit(numberProperty(sourceProperties.confidence) ?? score ?? 0.45);
     const candidateLabel = mode === "site" ? `Kandidát ${index + 1}` : radioLosModeLabel(mode);
-    const label = stringProperty(sourceProperties.label)
-      ?? stringProperty(sourceProperties.name)
-      ?? stringProperty(sourceProperties.summary)
-      ?? candidateLabel;
+    const label =
+      stringProperty(sourceProperties.label) ??
+      stringProperty(sourceProperties.name) ??
+      stringProperty(sourceProperties.summary) ??
+      candidateLabel;
     const layer: SituationLayerId = mode === "site" && feature.geometry.type === "Point" ? "mobile" : "mobile_coverage";
     return {
       geometry: feature.geometry,
@@ -12225,9 +14060,15 @@ function radioFeatureCollectionToSituationFeatures(
         metrics: {
           ...(isRecord(sourceProperties.metrics) ? sourceProperties.metrics : {}),
           ...(score !== undefined ? { score } : {}),
-          ...(numberProperty(sourceProperties.coveredAreaPct) !== undefined ? { coveredAreaPct: numberProperty(sourceProperties.coveredAreaPct) } : {}),
-          ...(numberProperty(sourceProperties.minClearanceM) !== undefined ? { minClearanceM: numberProperty(sourceProperties.minClearanceM) } : {}),
-          ...(numberProperty(sourceProperties.visibleTargetCount) !== undefined ? { visibleTargetCount: numberProperty(sourceProperties.visibleTargetCount) } : {})
+          ...(numberProperty(sourceProperties.coveredAreaPct) !== undefined
+            ? { coveredAreaPct: numberProperty(sourceProperties.coveredAreaPct) }
+            : {}),
+          ...(numberProperty(sourceProperties.minClearanceM) !== undefined
+            ? { minClearanceM: numberProperty(sourceProperties.minClearanceM) }
+            : {}),
+          ...(numberProperty(sourceProperties.visibleTargetCount) !== undefined
+            ? { visibleTargetCount: numberProperty(sourceProperties.visibleTargetCount) }
+            : {})
         },
         modelVersion: stringProperty(sourceProperties.modelVersion) ?? stringProperty(response.metadata?.model),
         providerId: response.providerId ?? "sim.situation-data",
@@ -12259,7 +14100,10 @@ function radioLinkCheckToSituationFeature(
   const quality = radioQualityFromLinkStatus(response.linkStatus);
   return {
     geometry: {
-      coordinates: [[request.from.lon, request.from.lat], [request.to.lon, request.to.lat]],
+      coordinates: [
+        [request.from.lon, request.from.lat],
+        [request.to.lon, request.to.lat]
+      ],
       type: "LineString"
     },
     id: `radio:link:${profile.profileId ?? "custom"}:${request.from.lon}:${request.from.lat}:${request.to.lon}:${request.to.lat}`,
@@ -12424,7 +14268,8 @@ function useMobileTowerViewshed(
           return;
         }
         setState({
-          error: error instanceof Error ? humanizeApiError(error.message) : "Modelovaný dosah BTS se nepodařilo načíst.",
+          error:
+            error instanceof Error ? humanizeApiError(error.message) : "Modelovaný dosah BTS se nepodařilo načíst.",
           status: "error",
           technology,
           towerId
@@ -12460,33 +14305,34 @@ function appendMobileTowerViewshedFeatures(
 
 function mobileTowerViewshedId(feature: SituationFeature): string | undefined {
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
   const mobileCoverage = isRecord(providerProperties.mobileCoverage) ? providerProperties.mobileCoverage : {};
   const explicitTowerId = cleanMobileTowerViewshedId(
-    stringProperty(providerTags.viewshedTowerId)
-    ?? stringProperty(tags.viewshedTowerId)
-    ?? stringProperty(providerProperties.viewshedTowerId)
-    ?? stringProperty(providerTags.towerId)
-    ?? stringProperty(tags.towerId)
-    ?? stringProperty(providerProperties.towerId)
+    stringProperty(providerTags.viewshedTowerId) ??
+      stringProperty(tags.viewshedTowerId) ??
+      stringProperty(providerProperties.viewshedTowerId) ??
+      stringProperty(providerTags.towerId) ??
+      stringProperty(tags.towerId) ??
+      stringProperty(providerProperties.towerId)
   );
   if (explicitTowerId) {
     return explicitTowerId;
   }
   const viewshedUrlTowerId = mobileTowerIdFromViewshedUrl(
-    stringProperty(providerProperties.viewshedUrl)
-    ?? stringProperty(providerTags.viewshedUrl)
-    ?? stringProperty(tags.viewshedUrl)
-    ?? stringProperty(mobileCoverage.viewshedUrl)
-    ?? stringProperty(mobileCoverage.detailUrl)
+    stringProperty(providerProperties.viewshedUrl) ??
+      stringProperty(providerTags.viewshedUrl) ??
+      stringProperty(tags.viewshedUrl) ??
+      stringProperty(mobileCoverage.viewshedUrl) ??
+      stringProperty(mobileCoverage.detailUrl)
   );
   if (viewshedUrlTowerId) {
     return viewshedUrlTowerId;
   }
   const nearestTowerId = cleanMobileTowerViewshedId(
-    stringProperty(providerTags.nearestTowerId)
-    ?? stringProperty(tags.nearestTowerId)
+    stringProperty(providerTags.nearestTowerId) ?? stringProperty(tags.nearestTowerId)
   );
   if (nearestTowerId) {
     return nearestTowerId;
@@ -12519,7 +14365,9 @@ function cleanMobileTowerViewshedId(value: string | undefined): string | undefin
   if (!trimmed) {
     return undefined;
   }
-  const legacyFeatureMatch = trimmed.match(/^mobile:osm_postgis:(node|way|relation|area):([^:]+)(?::communications_tower)?$/iu);
+  const legacyFeatureMatch = trimmed.match(
+    /^mobile:osm_postgis:(node|way|relation|area):([^:]+)(?::communications_tower)?$/iu
+  );
   if (legacyFeatureMatch?.[1] && legacyFeatureMatch[2]) {
     return `${legacyFeatureMatch[1].toLowerCase()}:${legacyFeatureMatch[2]}`;
   }
@@ -12538,66 +14386,84 @@ function mobileTowerViewshedResponseToSituationFeatures(
 ): SituationFeature[] {
   const tower = isRecord(response.tower) ? response.tower : {};
   const summary = isRecord(response.summary) ? response.summary : {};
-  const disclaimer = stringProperty(summary.disclaimer)
-    ?? "Mobilní pokrytí je modelovaný odhad SIM. Stav konkrétní BTS není potvrzen autorizovaným operátorským/NOC feedem.";
+  const disclaimer =
+    stringProperty(summary.disclaimer) ??
+    "Mobilní pokrytí je modelovaný odhad SIM. Stav konkrétní BTS není potvrzen autorizovaným operátorským/NOC feedem.";
   return response.features.flatMap((viewshedFeature, index) => {
     const sourceProperties = viewshedFeature.properties;
     const sourceMetrics = isRecord(sourceProperties.metrics) ? sourceProperties.metrics : {};
     const sourceAssumptions = isRecord(sourceProperties.assumptions) ? sourceProperties.assumptions : {};
-    const confidence = boundedUnit(numberProperty(sourceProperties.confidence) ?? recordNumber(sourceMetrics, "confidence") ?? 0.45);
+    const confidence = boundedUnit(
+      numberProperty(sourceProperties.confidence) ?? recordNumber(sourceMetrics, "confidence") ?? 0.45
+    );
     const quality = stringProperty(sourceProperties.quality) ?? "unknown";
     const metrics = {
       ...sourceMetrics,
-      ...(numberProperty(sourceProperties.estimatedSignalDbm) !== undefined ? { estimatedSignalDbm: numberProperty(sourceProperties.estimatedSignalDbm) } : {}),
-      ...(numberProperty(sourceProperties.terrainPenaltyDb) !== undefined ? { terrainPenaltyDb: numberProperty(sourceProperties.terrainPenaltyDb) } : {}),
-      ...(numberProperty(sourceProperties.terrainMaxObstructionM) !== undefined ? { terrainMaxObstructionM: numberProperty(sourceProperties.terrainMaxObstructionM) } : {})
+      ...(numberProperty(sourceProperties.estimatedSignalDbm) !== undefined
+        ? { estimatedSignalDbm: numberProperty(sourceProperties.estimatedSignalDbm) }
+        : {}),
+      ...(numberProperty(sourceProperties.terrainPenaltyDb) !== undefined
+        ? { terrainPenaltyDb: numberProperty(sourceProperties.terrainPenaltyDb) }
+        : {}),
+      ...(numberProperty(sourceProperties.terrainMaxObstructionM) !== undefined
+        ? { terrainMaxObstructionM: numberProperty(sourceProperties.terrainMaxObstructionM) }
+        : {})
     };
     const assumptions = {
       ...sourceAssumptions,
-      lineOfSightClear: booleanProperty(sourceProperties.lineOfSightClear) ?? booleanProperty(sourceMetrics.lineOfSightClear),
+      lineOfSightClear:
+        booleanProperty(sourceProperties.lineOfSightClear) ?? booleanProperty(sourceMetrics.lineOfSightClear),
       operatorRfPlanAvailable: booleanProperty(sourceAssumptions.operatorRfPlanAvailable) ?? false,
       sectorAware: booleanProperty(sourceAssumptions.sectorAware) ?? false
     };
-    return [{
-      geometry: viewshedFeature.geometry,
-      id: viewshedFeature.id ?? `mobile:tower_viewshed:${towerId}:${technology}:${index}`,
-      properties: {
-        assumptions,
-        btsStatus: stringProperty(tower.btsStatus) ?? towerFeature.properties.btsStatus ?? "operator_feed_unavailable",
-        category: "tower_viewshed",
-        confidence,
-        dataQuality: "model",
-        demSource: stringProperty(sourceProperties.demSource) ?? towerFeature.properties.demSource,
-        disclaimer,
-        estimatedSignalDbm: numberProperty(sourceProperties.estimatedSignalDbm) ?? recordNumber(sourceMetrics, "estimatedSignalDbm"),
-        featureId: `mobile:tower_viewshed:${towerId}:${technology}:${index}`,
-        generatedAt: response.generatedAt,
-        label: `Modelovaný dosah ${technology}`,
-        layer: "mobile_coverage",
-        layerId: "diagnostic.mobile.tower_viewshed",
-        metrics,
-        modelVersion: stringProperty(sourceProperties.modelVersion) ?? towerFeature.properties.modelVersion,
-        observedAt: response.generatedAt,
-        operator: towerFeature.properties.operator,
-        operatorStatusAvailable: booleanProperty(tower.operatorStatusAvailable) ?? towerFeature.properties.operatorStatusAvailable ?? false,
-        providerId: "sim.situation-data",
-        providerLayerId: "mobile.tower_viewshed",
-        quality,
-        sourceId: "mobile_coverage_model",
-        sourceName: "SIM model dosahu BTS",
-        stale: false,
-        status: stringProperty(sourceProperties.status) ?? mobileViewshedStatusFromQuality(quality),
-        summary: stringProperty(sourceProperties.summary) ?? stringProperty(summary.label) ?? `Modelovaný sektor dosahu BTS ${towerId}`,
-        tags: {
-          parentFeatureId: towerFeature.properties.featureId,
-          towerId,
-          viewshedOverlay: "true"
+    return [
+      {
+        geometry: viewshedFeature.geometry,
+        id: viewshedFeature.id ?? `mobile:tower_viewshed:${towerId}:${technology}:${index}`,
+        properties: {
+          assumptions,
+          btsStatus:
+            stringProperty(tower.btsStatus) ?? towerFeature.properties.btsStatus ?? "operator_feed_unavailable",
+          category: "tower_viewshed",
+          confidence,
+          dataQuality: "model",
+          demSource: stringProperty(sourceProperties.demSource) ?? towerFeature.properties.demSource,
+          disclaimer,
+          estimatedSignalDbm:
+            numberProperty(sourceProperties.estimatedSignalDbm) ?? recordNumber(sourceMetrics, "estimatedSignalDbm"),
+          featureId: `mobile:tower_viewshed:${towerId}:${technology}:${index}`,
+          generatedAt: response.generatedAt,
+          label: `Modelovaný dosah ${technology}`,
+          layer: "mobile_coverage",
+          layerId: "diagnostic.mobile.tower_viewshed",
+          metrics,
+          modelVersion: stringProperty(sourceProperties.modelVersion) ?? towerFeature.properties.modelVersion,
+          observedAt: response.generatedAt,
+          operator: towerFeature.properties.operator,
+          operatorStatusAvailable:
+            booleanProperty(tower.operatorStatusAvailable) ?? towerFeature.properties.operatorStatusAvailable ?? false,
+          providerId: "sim.situation-data",
+          providerLayerId: "mobile.tower_viewshed",
+          quality,
+          sourceId: "mobile_coverage_model",
+          sourceName: "SIM model dosahu BTS",
+          stale: false,
+          status: stringProperty(sourceProperties.status) ?? mobileViewshedStatusFromQuality(quality),
+          summary:
+            stringProperty(sourceProperties.summary) ??
+            stringProperty(summary.label) ??
+            `Modelovaný sektor dosahu BTS ${towerId}`,
+          tags: {
+            parentFeatureId: towerFeature.properties.featureId,
+            towerId,
+            viewshedOverlay: "true"
+          },
+          technology,
+          validUntil: towerFeature.properties.validUntil
         },
-        technology,
-        validUntil: towerFeature.properties.validUntil
-      },
-      type: "Feature"
-    } satisfies SituationFeature];
+        type: "Feature"
+      } satisfies SituationFeature
+    ];
   });
 }
 
@@ -12617,8 +14483,9 @@ function mobileViewshedStatusFromQuality(quality: string): string {
 
 function isMobileTowerViewshedOverlayFeature(feature: SituationFeature): boolean {
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  return feature.properties.providerLayerId === "mobile.tower_viewshed"
-    || stringProperty(tags.viewshedOverlay) === "true";
+  return (
+    feature.properties.providerLayerId === "mobile.tower_viewshed" || stringProperty(tags.viewshedOverlay) === "true"
+  );
 }
 
 function boundedUnit(value: number): number {
@@ -12661,10 +14528,12 @@ function useMobileNetworkTechnicalCoverage(
         if (cancelled) {
           return;
         }
-        const candidates = response.situation?.features.filter((candidate) =>
-          candidate.properties.layer === "mobile_coverage"
-          && (!technology || normalizeMobileDetailTechnology(candidate.properties.technology) === technology)
-        ) ?? [];
+        const candidates =
+          response.situation?.features.filter(
+            (candidate) =>
+              candidate.properties.layer === "mobile_coverage" &&
+              (!technology || normalizeMobileDetailTechnology(candidate.properties.technology) === technology)
+          ) ?? [];
         setState({
           feature: candidates[0] ?? null,
           status: "loaded",
@@ -12769,32 +14638,37 @@ function SituationFeatureDetail({
   const trafficPresentation = properties.layer === "traffic" ? resolveTransportPresentation(feature) : null;
   const weatherCamera = isWeatherWebcamFeature(feature);
   const weatherForecastArea = isWeatherForecastAreaFeature(feature);
-  const weatherContext = isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature) && !weatherCamera && !weatherForecastArea;
+  const weatherContext =
+    isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature) && !weatherCamera && !weatherForecastArea;
   const floodDetail = properties.layer === "flood";
   const title = isMissionArenaFeature(feature)
     ? missionArenaDetailTitle(feature)
     : weatherForecastArea
       ? weatherForecastAreaTitle(feature)
-    : weatherCamera
-      ? weatherWebcamTitle(feature)
-    : weatherContext
-      ? weatherFeatureHeadline(feature)
-      : trafficPresentation
-      ? [trafficPresentation.label, trafficPresentation.routeShortName].filter(Boolean).join(" ")
-      : properties.headline ?? properties.label;
-  const legacyCommunityGroup = isCommunityReport && typeof properties.groupName === "string" && properties.groupName.trim()
-    ? properties.groupName.trim()
-    : undefined;
-  const linkedCommunityGroupId = isCommunityReport && typeof properties.groupId === "string" ? properties.groupId : undefined;
+      : weatherCamera
+        ? weatherWebcamTitle(feature)
+        : weatherContext
+          ? weatherFeatureHeadline(feature)
+          : trafficPresentation
+            ? [trafficPresentation.label, trafficPresentation.routeShortName].filter(Boolean).join(" ")
+            : (properties.headline ?? properties.label);
+  const legacyCommunityGroup =
+    isCommunityReport && typeof properties.groupName === "string" && properties.groupName.trim()
+      ? properties.groupName.trim()
+      : undefined;
+  const linkedCommunityGroupId =
+    isCommunityReport && typeof properties.groupId === "string" ? properties.groupId : undefined;
   const subtitle = weatherForecastArea
     ? weatherForecastAreaSubtitle(feature)
     : weatherContext
-    ? weatherFeatureSubtitle(feature)
-    : weatherCamera
-    ? weatherWebcamSubtitle(feature)
-    : isCommunityReport
-      ? [legacyCommunityGroup ? `skupina: ${legacyCommunityGroup}` : undefined, properties.reportId].filter(Boolean).join(" · ")
-      : properties.featureId;
+      ? weatherFeatureSubtitle(feature)
+      : weatherCamera
+        ? weatherWebcamSubtitle(feature)
+        : isCommunityReport
+          ? [legacyCommunityGroup ? `skupina: ${legacyCommunityGroup}` : undefined, properties.reportId]
+              .filter(Boolean)
+              .join(" · ")
+          : properties.featureId;
   return (
     <div className="object-detail situation-feature-detail">
       <div className="object-header">
@@ -12810,74 +14684,117 @@ function SituationFeatureDetail({
 
       {isCommunityReport ? (
         <div className="community-report-actions">
-          {linkedCommunityGroupId ? <button className="mini-button" onClick={() => onOpenChat?.(feature)} type="button">Chat</button> : null}
-          <button className="mini-button" onClick={() => onEditReport?.(feature)} type="button">Upravit</button>
-          <button className="mini-button danger" onClick={() => onDeleteReport?.(properties.reportId as string)} type="button">Smazat</button>
+          {linkedCommunityGroupId ? (
+            <button className="mini-button" onClick={() => onOpenChat?.(feature)} type="button">
+              Chat
+            </button>
+          ) : null}
+          <button className="mini-button" onClick={() => onEditReport?.(feature)} type="button">
+            Upravit
+          </button>
+          <button
+            className="mini-button danger"
+            onClick={() => onDeleteReport?.(properties.reportId as string)}
+            type="button"
+          >
+            Smazat
+          </button>
         </div>
       ) : null}
 
       <ObjectDetailSection title="Kontext">
         <DetailGrid
           rows={[
-            [isCommunityReport ? "Typ" : "Vrstva", isCommunityReport ? communityReportCategoryDisplay(properties.category) : situationLayerLabel(properties.layer)],
-            ...(isCommunityReport && legacyCommunityGroup ? [["Skupina", legacyCommunityGroup] as [string, React.ReactNode]] : []),
-            ...(!isCommunityReport && !floodDetail ? [[weatherContext || weatherCamera || weatherForecastArea ? "Typ" : "Kategorie", weatherForecastArea ? "Plošná předpověď" : weatherCamera ? "Webkamera" : weatherContext ? weatherFeatureTypeLabel(feature) : properties.category] as [string, React.ReactNode]] : []),
+            [
+              isCommunityReport ? "Typ" : "Vrstva",
+              isCommunityReport
+                ? communityReportCategoryDisplay(properties.category)
+                : situationLayerLabel(properties.layer)
+            ],
+            ...(isCommunityReport && legacyCommunityGroup
+              ? [["Skupina", legacyCommunityGroup] as [string, React.ReactNode]]
+              : []),
+            ...(!isCommunityReport && !floodDetail
+              ? [
+                  [
+                    weatherContext || weatherCamera || weatherForecastArea ? "Typ" : "Kategorie",
+                    weatherForecastArea
+                      ? "Plošná předpověď"
+                      : weatherCamera
+                        ? "Webkamera"
+                        : weatherContext
+                          ? weatherFeatureTypeLabel(feature)
+                          : properties.category
+                  ] as [string, React.ReactNode]
+                ]
+              : []),
             ["Zdroj", properties.sourceName ?? sourceDisplayName(properties.sourceId)],
             [isCommunityReport ? "Vloženo" : "Pozorováno", formatShortDateTime(properties.observedAt)],
             [isCommunityReport ? "Platnost" : "Platí do", formatShortDateTime(properties.validUntil)],
             ["Stáří", formatAge(properties.observedAt)],
-            ...(!floodDetail ? [
-              [isCommunityReport ? "Riziko" : "Naléhavost", communitySeverityDisplay(properties.hazardSeverity ?? properties.severity ?? properties.urgency)],
-              ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />]
-            ] as Array<[string, React.ReactNode]> : []),
-            ...(isCommunityReport || weatherContext || weatherCamera || weatherForecastArea || floodDetail ? [] : [
-              ["Účinné od", formatShortDateTime(properties.effectiveAt)],
-              ["Konec platnosti", formatShortDateTime(properties.expiresAt)],
-              ["Jistota", formatOptionalPercent(properties.confidence)],
-              ["Spolehlivost", properties.certainty ?? "n/a"]
-            ] as Array<[string, React.ReactNode]>)
+            ...(!floodDetail
+              ? ([
+                  [
+                    isCommunityReport ? "Riziko" : "Naléhavost",
+                    communitySeverityDisplay(properties.hazardSeverity ?? properties.severity ?? properties.urgency)
+                  ],
+                  ["Stav", <StatusBadge key="status" label={status.label} tone={status.tone} />]
+                ] as Array<[string, React.ReactNode]>)
+              : []),
+            ...(isCommunityReport || weatherContext || weatherCamera || weatherForecastArea || floodDetail
+              ? []
+              : ([
+                  ["Účinné od", formatShortDateTime(properties.effectiveAt)],
+                  ["Konec platnosti", formatShortDateTime(properties.expiresAt)],
+                  ["Jistota", formatOptionalPercent(properties.confidence)],
+                  ["Spolehlivost", properties.certainty ?? "n/a"]
+                ] as Array<[string, React.ReactNode]>))
           ]}
         />
       </ObjectDetailSection>
 
       {isMissionArenaFeature(feature) ? <MissionArenaSummary feature={feature} /> : null}
       <SafetyAlertMetadataSection feature={feature} />
-      {isSafetyLayerId(properties.layer) ? <SafetyRiskSummary apiBase={apiBase} authToken={authToken} feature={feature} /> : null}
+      {isSafetyLayerId(properties.layer) ? (
+        <SafetyRiskSummary apiBase={apiBase} authToken={authToken} feature={feature} />
+      ) : null}
 
       {properties.layer === "mobile_coverage" || properties.layer === "mobile_network" ? (
         <ObjectDetailSection title={properties.layer === "mobile_network" ? "Mobilní síť" : "Model mobilní sítě"}>
           {(() => {
             const mobile = mobileNetworkDisplayData(properties);
             return (
-          <DetailGrid
-            rows={[
-              ["Režim", mobileNetworkOperationalModeLabel(mobile)],
-              ["Podklad", mobileNetworkModelLabel(mobile)],
-              ["Kvalita pokrytí", mobileCoverageQualityModel(mobile.quality).label],
-              ["Stav modelu", formatMobileNetworkStatus(mobile.status)],
-              ["Technologie", mobile.technology ?? "n/a"],
-              ["Operátor", mobile.operator ?? "neznámý"],
-              ["Stav BTS", mobileNetworkBtsStatusLabel(mobile)],
-              ["Operátorský feed", formatAvailability(mobile.operatorStatusAvailable)],
-              ["Jistota", formatOptionalPercent(mobile.confidence)],
-              ["Kvalita dat", mobileNetworkDataQualityLabel(mobile.dataQuality)],
-              ["Rozlišení modelu", formatOptionalNumber(mobile.resolutionM, " m")],
-              ["Model", mobile.modelVersion ?? "n/a"],
-              ["DEM", mobile.demSource ?? "n/a"],
-              ["Terénní model", formatMobileTerrainState(mobile.assumptions)],
-              ["Antény", formatMobileAntennaAssumptions(mobile.assumptions)],
-              ["Datové podklady", mobileNetworkBasisLabels(mobile.basis)],
-              ["Upozornění", mobileNetworkBtsStatusNotice(mobile.basis)],
-              ["Poznámky", formatStringList(mobile.notices)],
-              ["Shrnutí", mobile.summary ?? "n/a"],
-              ["Revize modelu", formatMobileNetworkSourceRevision(mobile.sourceRevision)],
-              ["Vygenerováno", formatShortDateTime(mobile.generatedAt)],
-              ["Poznámka", mobile.disclaimer ?? "n/a"]
-            ]}
-          />
+              <DetailGrid
+                rows={[
+                  ["Režim", mobileNetworkOperationalModeLabel(mobile)],
+                  ["Podklad", mobileNetworkModelLabel(mobile)],
+                  ["Kvalita pokrytí", mobileCoverageQualityModel(mobile.quality).label],
+                  ["Stav modelu", formatMobileNetworkStatus(mobile.status)],
+                  ["Technologie", mobile.technology ?? "n/a"],
+                  ["Operátor", mobile.operator ?? "neznámý"],
+                  ["Stav BTS", mobileNetworkBtsStatusLabel(mobile)],
+                  ["Operátorský feed", formatAvailability(mobile.operatorStatusAvailable)],
+                  ["Jistota", formatOptionalPercent(mobile.confidence)],
+                  ["Kvalita dat", mobileNetworkDataQualityLabel(mobile.dataQuality)],
+                  ["Rozlišení modelu", formatOptionalNumber(mobile.resolutionM, " m")],
+                  ["Model", mobile.modelVersion ?? "n/a"],
+                  ["DEM", mobile.demSource ?? "n/a"],
+                  ["Terénní model", formatMobileTerrainState(mobile.assumptions)],
+                  ["Antény", formatMobileAntennaAssumptions(mobile.assumptions)],
+                  ["Datové podklady", mobileNetworkBasisLabels(mobile.basis)],
+                  ["Upozornění", mobileNetworkBtsStatusNotice(mobile.basis)],
+                  ["Poznámky", formatStringList(mobile.notices)],
+                  ["Shrnutí", mobile.summary ?? "n/a"],
+                  ["Revize modelu", formatMobileNetworkSourceRevision(mobile.sourceRevision)],
+                  ["Vygenerováno", formatShortDateTime(mobile.generatedAt)],
+                  ["Poznámka", mobile.disclaimer ?? "n/a"]
+                ]}
+              />
             );
           })()}
-          <p className="mobile-model-explanation">{mobileNetworkModelExplanation(mobileNetworkDisplayData(properties))}</p>
+          <p className="mobile-model-explanation">
+            {mobileNetworkModelExplanation(mobileNetworkDisplayData(properties))}
+          </p>
         </ObjectDetailSection>
       ) : null}
 
@@ -12889,13 +14806,23 @@ function SituationFeatureDetail({
         <ObjectDetailSection title="Komunikační stožár">
           <DetailGrid
             rows={[
-              ["Typ", stringProperty(isRecord(properties.tags) ? properties.tags.towerType : undefined) ?? "communication"],
+              [
+                "Typ",
+                stringProperty(isRecord(properties.tags) ? properties.tags.towerType : undefined) ?? "communication"
+              ],
               ["OSM", formatOsmReference(isRecord(properties.tags) ? properties.tags : {})],
               ["Podklad", "referenční OSM infrastruktura"],
               ["Stav BTS", formatCommunicationTowerStatus(properties.btsStatus)],
               ["Operátorský stav", properties.operatorStatusAvailable ? "dostupný" : "není dostupný"],
-              ["Licence", stringProperty(isRecord(properties.license) ? properties.license.attribution : undefined) ?? "OpenStreetMap contributors"],
-              ["Poznámka", properties.disclaimer ?? "Jde o referenční OSM infrastrukturu, ne potvrzený realtime stav operátora."]
+              [
+                "Licence",
+                stringProperty(isRecord(properties.license) ? properties.license.attribution : undefined) ??
+                  "OpenStreetMap contributors"
+              ],
+              [
+                "Poznámka",
+                properties.disclaimer ?? "Jde o referenční OSM infrastrukturu, ne potvrzený realtime stav operátora."
+              ]
             ]}
           />
         </ObjectDetailSection>
@@ -12903,9 +14830,20 @@ function SituationFeatureDetail({
       {isCommunicationTowerFeature(feature) && mobileTowerViewshed ? (
         <MobileTowerViewshedSection state={mobileTowerViewshed} />
       ) : null}
-      {properties.layer === "mobile" && !isCommunicationTowerFeature(feature) ? <MobileNetworkStatusSummary feature={feature} /> : null}
-      {properties.layer === "traffic" ? <TrafficDetailSection apiBase={apiBase} authToken={authToken} feature={feature} onShareTransit={onShareTransit} /> : null}
-      {properties.layer === "trail_routes" || properties.layer === "trail_poi" ? <TrailDetailSection feature={feature} /> : null}
+      {properties.layer === "mobile" && !isCommunicationTowerFeature(feature) ? (
+        <MobileNetworkStatusSummary feature={feature} />
+      ) : null}
+      {properties.layer === "traffic" ? (
+        <TrafficDetailSection
+          apiBase={apiBase}
+          authToken={authToken}
+          feature={feature}
+          onShareTransit={onShareTransit}
+        />
+      ) : null}
+      {properties.layer === "trail_routes" || properties.layer === "trail_poi" ? (
+        <TrailDetailSection feature={feature} />
+      ) : null}
       {properties.layer === "community_places" ? <CommunityPlaceDetailSection feature={feature} /> : null}
       {isAviationWeatherFeature(feature) ? <AviationWeatherSummary feature={feature} /> : null}
       {weatherForecastArea ? (
@@ -12918,9 +14856,7 @@ function SituationFeatureDetail({
       {weatherContext ? (
         <ObjectDetailSection title="Počasí">
           <WeatherContextSummary feature={feature} />
-          <DetailGrid
-            rows={weatherContextDetailRows(feature)}
-          />
+          <DetailGrid rows={weatherContextDetailRows(feature)} />
           <WeatherStationDetailPanel apiBase={apiBase} authToken={authToken} feature={feature} />
         </ObjectDetailSection>
       ) : null}
@@ -12939,7 +14875,9 @@ function SituationFeatureDetail({
         <ObjectDetailSection title="Média">
           <CommunityAttachmentPreview
             attachments={properties.attachments}
-            onOpenGallery={(attachments, index) => onOpenGallery?.(attachments, index, properties.label, properties.groupName ?? undefined)}
+            onOpenGallery={(attachments, index) =>
+              onOpenGallery?.(attachments, index, properties.label, properties.groupName ?? undefined)
+            }
           />
         </ObjectDetailSection>
       ) : null}
@@ -12957,9 +14895,13 @@ function SituationFeatureDetail({
         <span className="situation-badge">KONTEXT</span>
         {properties.layer === "community_places" ? <span className="situation-badge">OSM REFERENCE</span> : null}
         {isSafetyLayerId(properties.layer) ? <span className="warning-badge">VÝSTRAŽNÁ VRSTVA</span> : null}
-        {properties.layer === "mobile_network" && isMobileNetworkModelEstimate(properties) ? <span className="warning-badge">MODELOVÝ ODHAD</span> : null}
+        {properties.layer === "mobile_network" && isMobileNetworkModelEstimate(properties) ? (
+          <span className="warning-badge">MODELOVÝ ODHAD</span>
+        ) : null}
         {properties.stale ? <span className="warning-badge">STARŠÍ DATA</span> : null}
-        {properties.severity ? <span className="warning-badge">{communitySeverityDisplay(properties.severity)}</span> : null}
+        {properties.severity ? (
+          <span className="warning-badge">{communitySeverityDisplay(properties.severity)}</span>
+        ) : null}
       </div>
     </div>
   );
@@ -12987,7 +14929,11 @@ function MobileNetworkTechnicalCoverageSection({ state }: { state: MobileTechnic
     return (
       <ObjectDetailSection title="Technický kontext pokrytí">
         <div className="empty-mini">SIM pro tuto buňku nevrátila odpovídající technický LoS/DEM detail.</div>
-        {state.warnings.map((warning) => <div className="situation-warning" key={warning}>{warning}</div>)}
+        {state.warnings.map((warning) => (
+          <div className="situation-warning" key={warning}>
+            {warning}
+          </div>
+        ))}
       </ObjectDetailSection>
     );
   }
@@ -13013,7 +14959,11 @@ function MobileNetworkTechnicalCoverageSection({ state }: { state: MobileTechnic
           ["LoS vzorky", formatOptionalInteger(recordNumber(metrics, "terrainSamples"))]
         ]}
       />
-      {state.warnings.map((warning) => <div className="situation-warning" key={warning}>{warning}</div>)}
+      {state.warnings.map((warning) => (
+        <div className="situation-warning" key={warning}>
+          {warning}
+        </div>
+      ))}
     </ObjectDetailSection>
   );
 }
@@ -13040,14 +14990,17 @@ function MobileTowerViewshedSection({ state }: { state: MobileTowerViewshedState
   const tower = isRecord(state.response.tower) ? state.response.tower : {};
   const summary = isRecord(state.response.summary) ? state.response.summary : {};
   const firstFeature = state.features[0];
-  const firstProperties: Record<string, unknown> = firstFeature ? firstFeature.properties as unknown as Record<string, unknown> : {};
+  const firstProperties: Record<string, unknown> = firstFeature
+    ? (firstFeature.properties as unknown as Record<string, unknown>)
+    : {};
   const firstAssumptions = isRecord(firstProperties.assumptions) ? firstProperties.assumptions : {};
   const metricRecords = state.features
-    .map((feature) => isRecord(feature.properties.metrics) ? feature.properties.metrics : {})
+    .map((feature) => (isRecord(feature.properties.metrics) ? feature.properties.metrics : {}))
     .filter((record) => Object.keys(record).length > 0);
-  const disclaimer = stringProperty(summary.disclaimer)
-    ?? stringProperty(firstProperties.disclaimer)
-    ?? "Mobilní pokrytí je modelový odhad SIM. Stav konkrétní BTS není potvrzen autorizovaným operátorským/NOC feedem.";
+  const disclaimer =
+    stringProperty(summary.disclaimer) ??
+    stringProperty(firstProperties.disclaimer) ??
+    "Mobilní pokrytí je modelový odhad SIM. Stav konkrétní BTS není potvrzen autorizovaným operátorským/NOC feedem.";
 
   return (
     <ObjectDetailSection title="Modelovaný dosah BTS">
@@ -13056,8 +15009,16 @@ function MobileTowerViewshedSection({ state }: { state: MobileTowerViewshedState
           ["Tower ID", state.towerId],
           ["Technologie", state.technology],
           ["Sektory", formatOptionalInteger(state.features.length)],
-          ["Stav BTS", stringProperty(tower.btsStatus) ?? stringProperty(firstProperties.btsStatus) ?? "operator_feed_unavailable"],
-          ["Operátorský feed", formatAvailability(booleanProperty(tower.operatorStatusAvailable) ?? booleanProperty(firstProperties.operatorStatusAvailable))],
+          [
+            "Stav BTS",
+            stringProperty(tower.btsStatus) ?? stringProperty(firstProperties.btsStatus) ?? "operator_feed_unavailable"
+          ],
+          [
+            "Operátorský feed",
+            formatAvailability(
+              booleanProperty(tower.operatorStatusAvailable) ?? booleanProperty(firstProperties.operatorStatusAvailable)
+            )
+          ],
           ["Model", stringProperty(summary.modelVersion) ?? stringProperty(firstProperties.modelVersion) ?? "n/a"],
           ["Sektorový model", formatBooleanLike(firstAssumptions.sectorAware)],
           ["RF plán operátora", formatBooleanLike(firstAssumptions.operatorRfPlanAvailable)],
@@ -13139,8 +15100,14 @@ function MissionArenaSummary({ feature }: { feature: SituationFeature }) {
         <ObjectDetailSection title="Úkol">
           <DetailGrid
             rows={[
-              ["Role", missionArenaRoleDisplayName(stringProperty(task.toRole)) ?? stringProperty(task.toRole) ?? "n/a"],
-              ["Od", missionArenaRoleDisplayName(stringProperty(task.fromRole)) ?? stringProperty(task.fromRole) ?? "n/a"],
+              [
+                "Role",
+                missionArenaRoleDisplayName(stringProperty(task.toRole)) ?? stringProperty(task.toRole) ?? "n/a"
+              ],
+              [
+                "Od",
+                missionArenaRoleDisplayName(stringProperty(task.fromRole)) ?? stringProperty(task.fromRole) ?? "n/a"
+              ],
               ["Priorita", stringProperty(task.priority) ?? "n/a"],
               ["Stav", missionArenaTaskStatusLabel(stringProperty(task.status))],
               ["Text", stringProperty(task.label) ?? properties.label]
@@ -13184,7 +15151,11 @@ function MissionArenaSummary({ feature }: { feature: SituationFeature }) {
             {properties.eventLog.slice(0, 4).map((event, index) => (
               <div className="mission-event-row" key={stringProperty(event.eventId) ?? index}>
                 <strong>{stringProperty(event.label) ?? "Událost"}</strong>
-                <span>{[stringProperty(event.severity), formatShortDateTime(stringProperty(event.observedAt))].filter(Boolean).join(" · ")}</span>
+                <span>
+                  {[stringProperty(event.severity), formatShortDateTime(stringProperty(event.observedAt))]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
               </div>
             ))}
           </div>
@@ -13208,23 +15179,33 @@ function CommunityAttachmentPreview({
         const previewUrl = communityAttachmentPreviewUrl(attachment);
         const xrVideoUrl = buildXrVideoUrl(attachment);
         const xrDerivativeStatus = communityAttachmentXrDerivativeStatus(attachment);
-        const photoUrl = attachment.kind === "photo" ? attachment.contentUrl ?? previewUrl : undefined;
+        const photoUrl = attachment.kind === "photo" ? (attachment.contentUrl ?? previewUrl) : undefined;
         const videoPosterUrl = attachment.kind === "video" ? previewUrl : undefined;
         const documentPreviewUrl = attachment.kind === "document" ? previewUrl : undefined;
         return (
           <div className="community-media-item" key={attachment.attachmentId}>
             <div className="community-media-meta">
               <strong>{attachment.fileName ?? communityAttachmentKindLabel(attachment.kind)}</strong>
-              <span>{communityAttachmentKindLabel(attachment.kind)} · {formatFileSize(attachment.byteSize)}</span>
+              <span>
+                {communityAttachmentKindLabel(attachment.kind)} · {formatFileSize(attachment.byteSize)}
+              </span>
             </div>
             {photoUrl ? (
-              <button className="community-media-open" onClick={() => onOpenGallery?.(attachments, index)} type="button">
+              <button
+                className="community-media-open"
+                onClick={() => onOpenGallery?.(attachments, index)}
+                type="button"
+              >
                 <img alt={attachment.fileName ?? "Fotografie hlášení"} src={photoUrl} />
               </button>
             ) : null}
             {attachment.kind === "video" && (attachment.contentUrl || videoPosterUrl) ? (
               <>
-                <button className="community-media-open community-video-preview-button" onClick={() => onOpenGallery?.(attachments, index)} type="button">
+                <button
+                  className="community-media-open community-video-preview-button"
+                  onClick={() => onOpenGallery?.(attachments, index)}
+                  type="button"
+                >
                   {attachment.contentUrl ? (
                     <video muted playsInline preload="metadata" src={communityVideoPreviewUrl(attachment.contentUrl)} />
                   ) : videoPosterUrl ? (
@@ -13236,26 +15217,44 @@ function CommunityAttachmentPreview({
                   </span>
                 </button>
                 <div className="community-media-actions">
-                  <button className="mini-button community-document-link" onClick={() => onOpenGallery?.(attachments, index)} type="button">
+                  <button
+                    className="mini-button community-document-link"
+                    onClick={() => onOpenGallery?.(attachments, index)}
+                    type="button"
+                  >
                     Přehrát
                   </button>
                   <span className="community-spatial-badge">{communityAttachmentSpatialLabel(spatialMode)}</span>
                   {xrVideoUrl ? (
-                    <a className="mini-button community-document-link" href={xrVideoUrl} target="_blank" rel="noreferrer">
+                    <a
+                      className="mini-button community-document-link"
+                      href={xrVideoUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
                       Otevřít 3D v XR
                     </a>
                   ) : null}
                 </div>
                 {spatialMode === "apple_mv_hevc" ? (
                   <span className="community-video-note">
-                    Originální iPhone spatial MOV je uložený beze změny. {xrDerivativeStatus ?? "3D XR kopie se připraví po uploadu."}
+                    Originální iPhone spatial MOV je uložený beze změny.{" "}
+                    {xrDerivativeStatus ?? "3D XR kopie se připraví po uploadu."}
                   </span>
                 ) : null}
               </>
             ) : null}
             {attachment.kind === "document" ? (
-              <button className="community-document-preview-card" onClick={() => onOpenGallery?.(attachments, index)} type="button">
-                {documentPreviewUrl ? <img alt={attachment.fileName ?? "PDF příloha"} src={documentPreviewUrl} /> : <FileText size={30} />}
+              <button
+                className="community-document-preview-card"
+                onClick={() => onOpenGallery?.(attachments, index)}
+                type="button"
+              >
+                {documentPreviewUrl ? (
+                  <img alt={attachment.fileName ?? "PDF příloha"} src={documentPreviewUrl} />
+                ) : (
+                  <FileText size={30} />
+                )}
                 <span>
                   <strong>{attachment.fileName ?? "PDF příloha"}</strong>
                   <small>{attachment.contentUrl ? "Otevřít PDF" : "Demo náhled dokumentu"}</small>
@@ -13264,7 +15263,9 @@ function CommunityAttachmentPreview({
             ) : null}
             {!attachment.contentUrl && !previewUrl ? (
               <span className="empty-mini">
-                {attachment.accessDenied ? "Médium je dostupné jen oprávněným uživatelům nebo členům skupiny." : "Příloha zatím nemá dostupný náhled."}
+                {attachment.accessDenied
+                  ? "Médium je dostupné jen oprávněným uživatelům nebo členům skupiny."
+                  : "Příloha zatím nemá dostupný náhled."}
               </span>
             ) : null}
           </div>
@@ -13275,7 +15276,8 @@ function CommunityAttachmentPreview({
 }
 
 function formatFlightAircraft(flightData: FlightDataAttributes): string {
-  const designator = recordString(flightData.aircraft, "typeDesignator") ?? recordString(flightData.aircraft, "designator");
+  const designator =
+    recordString(flightData.aircraft, "typeDesignator") ?? recordString(flightData.aircraft, "designator");
   const manufacturer = recordString(flightData.aircraft, "manufacturer");
   const model = recordString(flightData.aircraft, "model");
   return [designator, manufacturer, model].filter(Boolean).join(" / ") || "neuvedeno";
@@ -13289,7 +15291,9 @@ function displayValue(value: string | null | undefined): string {
 function formatFlightProviders(flightData: FlightDataAttributes): string {
   const providers = flightData.providers ?? [];
   if (providers.length > 0) {
-    return providers.map((provider) => provider.label ?? formatFlightSourceId(provider.sourceId) ?? "unknown").join(", ");
+    return providers
+      .map((provider) => provider.label ?? formatFlightSourceId(provider.sourceId) ?? "unknown")
+      .join(", ");
   }
   const sourceIds = flightData.sources?.map((source) => source.sourceId).filter(Boolean) ?? [];
   return sourceIds.length > 0 ? sourceIds.map(formatFlightSourceId).join(", ") : "n/a";
@@ -13300,22 +15304,27 @@ function formatFlightLicenses(flightData: FlightDataAttributes): string {
   if (providerLicenseNames.length > 0) {
     return providerLicenseNames.join(", ");
   }
-  const licenseNames = flightData.providerLicenses?.map((license) => recordString(license, "name")).filter(Boolean) ?? [];
+  const licenseNames =
+    flightData.providerLicenses?.map((license) => recordString(license, "name")).filter(Boolean) ?? [];
   return licenseNames.length > 0 ? licenseNames.join(", ") : "n/a";
 }
 
 function formatFlightQuality(flightData: FlightDataAttributes): string {
-  const confidence = typeof flightData.quality?.confidence === "number" ? `${Math.round(flightData.quality.confidence * 100)} %` : "n/a";
+  const confidence =
+    typeof flightData.quality?.confidence === "number" ? `${Math.round(flightData.quality.confidence * 100)} %` : "n/a";
   const stale = flightData.quality?.stale ? "starší data" : "aktuální";
-  const age = typeof flightData.quality?.positionAgeSeconds === "number" ? `${flightData.quality.positionAgeSeconds}s` : "stáří není dostupné";
+  const age =
+    typeof flightData.quality?.positionAgeSeconds === "number"
+      ? `${flightData.quality.positionAgeSeconds}s`
+      : "stáří není dostupné";
   return `${confidence} / ${stale} / ${age}`;
 }
 
 function isMockFlightObject(object: CopObject): boolean {
   const flightData = object.attributes?.flightData;
   return Boolean(
-    flightData?.providers?.some((provider) => provider.sourceId === "mock" || provider.mode === "mock")
-    || flightData?.sources?.some((source) => source.sourceId === "mock")
+    flightData?.providers?.some((provider) => provider.sourceId === "mock" || provider.mode === "mock") ||
+    flightData?.sources?.some((source) => source.sourceId === "mock")
   );
 }
 
@@ -13326,7 +15335,7 @@ function formatFlightSourceId(sourceId: string | undefined): string {
     mock: "SIM mock",
     opensky: "OpenSky"
   };
-  return sourceId ? labels[sourceId] ?? sourceId : "unknown";
+  return sourceId ? (labels[sourceId] ?? sourceId) : "unknown";
 }
 
 function recordString(value: Record<string, unknown> | undefined, key: string): string | undefined {
@@ -13388,11 +15397,15 @@ function ObjectHistoryList({ history }: { history: ObjectHistoryEntry[] }) {
   return (
     <div className="object-history-list">
       {history.map((entry) => (
-        <div className="object-history-row" key={`${entry.timestamp}-${entry.eventId ?? entry.sourceSystemId ?? "point"}`}>
+        <div
+          className="object-history-row"
+          key={`${entry.timestamp}-${entry.eventId ?? entry.sourceSystemId ?? "point"}`}
+        >
           <strong>{formatShortDateTime(entry.timestamp)}</strong>
           <span>{entry.sourceSystemId ?? "zdroj není dostupný"}</span>
           <small>
-            {entry.status ? objectStatusLabel(entry.status) : "stav není dostupný"} · {entry.confidence === undefined ? "jistota není dostupná" : `${Math.round(entry.confidence * 100)} %`} ·{" "}
+            {entry.status ? objectStatusLabel(entry.status) : "stav není dostupný"} ·{" "}
+            {entry.confidence === undefined ? "jistota není dostupná" : `${Math.round(entry.confidence * 100)} %`} ·{" "}
             {entry.lat.toFixed(3)}, {entry.lon.toFixed(3)}
           </small>
         </div>
@@ -13479,15 +15492,21 @@ function applyOperationalFilters(
   domainScope: DomainScope,
   searchQuery: string
 ): CopObject[] {
-  return applyObjectSearch(objects.filter((object) => {
-    if (affiliationScope !== "all" && getAffiliationPresentation(object.affiliation).disposition !== affiliationScope) {
-      return false;
-    }
-    if (domainScope !== "all" && object.domain !== domainScope) {
-      return false;
-    }
-    return true;
-  }), searchQuery);
+  return applyObjectSearch(
+    objects.filter((object) => {
+      if (
+        affiliationScope !== "all" &&
+        getAffiliationPresentation(object.affiliation).disposition !== affiliationScope
+      ) {
+        return false;
+      }
+      if (domainScope !== "all" && object.domain !== domainScope) {
+        return false;
+      }
+      return true;
+    }),
+    searchQuery
+  );
 }
 
 function applyObjectSearch(objects: CopObject[], searchQuery: string): CopObject[] {
@@ -13538,10 +15557,12 @@ function collectSearchText(value: unknown, depth = 0, output: string[] = []): st
     return output;
   }
   if (typeof value === "object") {
-    Object.entries(value as Record<string, unknown>).slice(0, 24).forEach(([key, item]) => {
-      output.push(key);
-      collectSearchText(item, depth + 1, output);
-    });
+    Object.entries(value as Record<string, unknown>)
+      .slice(0, 24)
+      .forEach(([key, item]) => {
+        output.push(key);
+        collectSearchText(item, depth + 1, output);
+      });
   }
   return output;
 }
@@ -13579,7 +15600,9 @@ function communityReportCategoryLabelForValue(category: CommunityReportCategory)
 }
 
 function communityReportCategoryDisplay(category: unknown): string {
-  return isCommunityReportCategoryValue(category) ? communityReportCategoryLabelForValue(category) : String(category ?? "Hlášení");
+  return isCommunityReportCategoryValue(category)
+    ? communityReportCategoryLabelForValue(category)
+    : String(category ?? "Hlášení");
 }
 
 function communitySeverityDisplay(severity: unknown): string {
@@ -13596,7 +15619,9 @@ function communitySeverityDisplay(severity: unknown): string {
 }
 
 function formatOperationStatusLabel(status: unknown): string {
-  const normalized = String(status ?? "").trim().toLowerCase();
+  const normalized = String(status ?? "")
+    .trim()
+    .toLowerCase();
   const labels: Record<string, string> = {
     active: "aktivní",
     advisory: "informace",
@@ -13610,7 +15635,7 @@ function formatOperationStatusLabel(status: unknown): string {
     stale: "starší data",
     warning: "varování",
     zivě: "živě",
-    "živě": "živě"
+    živě: "živě"
   };
   return labels[normalized] ?? (normalized ? normalized : "čekám");
 }
@@ -13649,9 +15674,7 @@ function createCommunityReportDraft(location = resolveCommunityReportLocation(nu
 function communityReportChatGroupName(title: string): string {
   const normalized = title.trim().replace(/\s+/gu, " ");
   const base = normalized || "Událost v mapě";
-  const prefixed = base.toLocaleLowerCase("cs-CZ").startsWith("událost:")
-    ? base
-    : `Událost: ${base}`;
+  const prefixed = base.toLocaleLowerCase("cs-CZ").startsWith("událost:") ? base : `Událost: ${base}`;
   return truncateText(prefixed, 120);
 }
 
@@ -13659,10 +15682,7 @@ function communityReportChatGroupDescription(draft: CommunityReportDraft): strin
   const category = communityReportCategoryLabelForValue(draft.category);
   const severity = communitySeverityDisplay(draft.hazardSeverity);
   const description = draft.description.trim();
-  return truncateText(
-    [category, severity, description].filter(Boolean).join(" · "),
-    280
-  );
+  return truncateText([category, severity, description].filter(Boolean).join(" · "), 280);
 }
 
 function truncateText(value: string, maxLength: number): string {
@@ -13672,7 +15692,10 @@ function truncateText(value: string, maxLength: number): string {
   return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
-function resolveCommunityReportLocation(userLocation: UserLocation | null, mapView: MapViewState | undefined): CommunityReportLocation {
+function resolveCommunityReportLocation(
+  userLocation: UserLocation | null,
+  mapView: MapViewState | undefined
+): CommunityReportLocation {
   if (userLocation) {
     return {
       ...(typeof userLocation.accuracyM === "number" ? { accuracyM: userLocation.accuracyM } : {}),
@@ -13711,7 +15734,9 @@ function validateCommunityReportDraft(draft: CommunityReportDraft): string | nul
   if (draft.mediaAccessMode === "users" && parseSubjectIdList(draft.mediaAccessUserSubjectIds).length === 0) {
     return "Doplňte alespoň jednoho uživatele pro omezení přístupu k médiím.";
   }
-  const unsupported = draft.files.find((file) => !communityAttachmentKindFromContentType(normalizeCommunityFileContentType(file)));
+  const unsupported = draft.files.find(
+    (file) => !communityAttachmentKindFromContentType(normalizeCommunityFileContentType(file))
+  );
   if (unsupported) {
     return `Soubor ${unsupported.name || "bez názvu"} nemá podporovaný typ. Povolené jsou obrázky, PDF, MP4 a MOV.`;
   }
@@ -13792,11 +15817,13 @@ function buildCommunityAttachmentMetadata(
   if (kind !== "video") {
     return accessMetadata ? { access: accessMetadata } : undefined;
   }
-  const stereoLayout = videoSpatialMode === "side_by_side" || videoSpatialMode === "over_under" ? videoSpatialMode : undefined;
+  const stereoLayout =
+    videoSpatialMode === "side_by_side" || videoSpatialMode === "over_under" ? videoSpatialMode : undefined;
   return {
     ...(accessMetadata ? { access: accessMetadata } : {}),
     spatialVideo: {
-      browserPlayback: videoSpatialMode === "apple_mv_hevc" ? "2d_fallback" : stereoLayout ? "webxr_stereo" : "html5_2d",
+      browserPlayback:
+        videoSpatialMode === "apple_mv_hevc" ? "2d_fallback" : stereoLayout ? "webxr_stereo" : "html5_2d",
       contentType,
       mode: videoSpatialMode,
       source: "user_declared",
@@ -13834,11 +15861,15 @@ function buildCommunityMediaAccessMetadata(access: CommunityMediaAccessPolicy): 
 }
 
 function parseSubjectIdList(value: string): string[] {
-  return Array.from(new Set(value
-    .split(/[\s,;]+/u)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 50)));
+  return Array.from(
+    new Set(
+      value
+        .split(/[\s,;]+/u)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 50)
+    )
+  );
 }
 
 function communityMediaAccessLabel(mode: CommunityMediaAccessMode): string {
@@ -13881,14 +15912,17 @@ function communityVideoPreviewUrl(contentUrl: string): string {
 
 function communityAttachmentPreviewUrl(attachment: { metadata?: Record<string, unknown> }): string | undefined {
   const metadata = attachment.metadata ?? {};
-  const value = stringProperty(metadata.demoPreviewUrl)
-    ?? stringProperty(metadata.previewUrl)
-    ?? stringProperty(metadata.thumbnailUrl)
-    ?? stringProperty(metadata.demoContentUrl);
+  const value =
+    stringProperty(metadata.demoPreviewUrl) ??
+    stringProperty(metadata.previewUrl) ??
+    stringProperty(metadata.thumbnailUrl) ??
+    stringProperty(metadata.demoContentUrl);
   return value && /^(data:image\/|\/api\/v1\/community\/|https:\/\/)/u.test(value) ? value : undefined;
 }
 
-function communityAttachmentXrDerivativeStatus(attachment: { derivatives?: NonNullable<SituationFeature["properties"]["attachments"]>[number]["derivatives"] }): string | null {
+function communityAttachmentXrDerivativeStatus(attachment: {
+  derivatives?: NonNullable<SituationFeature["properties"]["attachments"]>[number]["derivatives"];
+}): string | null {
   const derivative = attachment.derivatives?.find((item) => item.derivativeId === "xr-sbs");
   if (!derivative) {
     return null;
@@ -13907,12 +15941,14 @@ function communityAttachmentXrDerivativeStatus(attachment: { derivatives?: NonNu
   }
 }
 
-function buildXrVideoUrl(attachment: NonNullable<SituationFeature["properties"]["attachments"]>[number]): string | null {
+function buildXrVideoUrl(
+  attachment: NonNullable<SituationFeature["properties"]["attachments"]>[number]
+): string | null {
   if (attachment.kind !== "video") {
     return null;
   }
-  const xrDerivative = attachment.derivatives?.find((derivative) =>
-    derivative.derivativeId === "xr-sbs" && derivative.status === "ready" && derivative.contentUrl
+  const xrDerivative = attachment.derivatives?.find(
+    (derivative) => derivative.derivativeId === "xr-sbs" && derivative.status === "ready" && derivative.contentUrl
   );
   if (xrDerivative?.contentUrl) {
     const params = new URLSearchParams({
@@ -13962,14 +15998,17 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-async function firstMediaLocation(files: File[]): Promise<{ fileName: string; location: CommunityReportLocation } | null> {
+async function firstMediaLocation(
+  files: File[]
+): Promise<{ fileName: string; location: CommunityReportLocation } | null> {
   for (const file of files) {
     const contentType = normalizeCommunityFileContentType(file);
-    const location = contentType === "image/jpeg"
-      ? await extractJpegExifLocation(file)
-      : contentType === "video/quicktime" || contentType === "video/mp4"
-        ? await extractIso6709VideoLocation(file)
-        : null;
+    const location =
+      contentType === "image/jpeg"
+        ? await extractJpegExifLocation(file)
+        : contentType === "video/quicktime" || contentType === "video/mp4"
+          ? await extractIso6709VideoLocation(file)
+          : null;
     if (location) {
       return {
         fileName: file.name || "médium",
@@ -14028,7 +16067,14 @@ function readExifGpsLocation(view: DataView, offset: number, length: number): Co
   };
 }
 
-function readIfdValueOffset(view: DataView, ifdOffset: number, tag: number, littleEndian: boolean, tiff: number, maxOffset: number): number | null {
+function readIfdValueOffset(
+  view: DataView,
+  ifdOffset: number,
+  tag: number,
+  littleEndian: boolean,
+  tiff: number,
+  maxOffset: number
+): number | null {
   if (ifdOffset + 2 > maxOffset) {
     return null;
   }
@@ -14045,7 +16091,13 @@ function readIfdValueOffset(view: DataView, ifdOffset: number, tag: number, litt
   return null;
 }
 
-function readGpsIfd(view: DataView, gpsIfdOffset: number, littleEndian: boolean, tiff: number, maxOffset: number): { lat: number; lon: number } | null {
+function readGpsIfd(
+  view: DataView,
+  gpsIfdOffset: number,
+  littleEndian: boolean,
+  tiff: number,
+  maxOffset: number
+): { lat: number; lon: number } | null {
   if (gpsIfdOffset + 2 > maxOffset) {
     return null;
   }
@@ -14082,7 +16134,13 @@ function readGpsIfd(view: DataView, gpsIfdOffset: number, littleEndian: boolean,
   };
 }
 
-function readExifRationals(view: DataView, offset: number, count: number, littleEndian: boolean, maxOffset: number): number[] | null {
+function readExifRationals(
+  view: DataView,
+  offset: number,
+  count: number,
+  littleEndian: boolean,
+  maxOffset: number
+): number[] | null {
   if (offset + count * 8 > maxOffset) {
     return null;
   }
@@ -14177,8 +16235,12 @@ function buildMetrics(objects: CopObject[], sources: SourceSystem[]): DashboardM
     ? Math.round((confidenceValues.reduce((sum, value) => sum + value, 0) / confidenceValues.length) * 100)
     : 0;
   const lowConfidenceCount = getDataQualityCount(objects);
-  const foreignCount = objects.filter((object) => getAffiliationPresentation(object.affiliation).disposition === "hostile").length;
-  const friendlyCount = objects.filter((object) => getAffiliationPresentation(object.affiliation).disposition === "friend").length;
+  const foreignCount = objects.filter(
+    (object) => getAffiliationPresentation(object.affiliation).disposition === "hostile"
+  ).length;
+  const friendlyCount = objects.filter(
+    (object) => getAffiliationPresentation(object.affiliation).disposition === "friend"
+  ).length;
   return {
     activeSources: sources.filter((source) => source.status === "ACTIVE").length,
     avgConfidence,
@@ -14187,7 +16249,8 @@ function buildMetrics(objects: CopObject[], sources: SourceSystem[]): DashboardM
     lowConfidenceCount,
     publicFlightCount: getPublicFlightCount(objects),
     syntheticCount: objects.filter((object) => object.synthetic).length,
-    warningCount: lowConfidenceCount + objects.filter((object) => object.status === "LOST" || object.status === "STALE").length
+    warningCount:
+      lowConfidenceCount + objects.filter((object) => object.status === "LOST" || object.status === "STALE").length
   };
 }
 
@@ -14231,7 +16294,11 @@ function deduplicateSituationFeatures(features: SituationFeature[]): SituationFe
 }
 
 function situationFeatureDeduplicationKey(feature: SituationFeature): string {
-  return String(feature.properties.featureId ?? feature.id ?? `${feature.properties.layer}:${feature.properties.sourceId}:${JSON.stringify(feature.geometry)}`);
+  return String(
+    feature.properties.featureId ??
+      feature.id ??
+      `${feature.properties.layer}:${feature.properties.sourceId}:${JSON.stringify(feature.geometry)}`
+  );
 }
 
 interface PriorityAlertInput {
@@ -14307,26 +16374,31 @@ function priorityCandidateFromSituationFeature(
     formatPriorityAlertDistance(distanceKm),
     feature.properties.areaName,
     sourceDisplayName(feature.properties.sourceId)
-  ].filter((value) => value && value !== "neznámá vzdálenost").join(" · ");
-  const candidate = createPriorityAlertCandidate({
-    badge: priorityFeatureBadge(feature),
-    confidence: priorityFeatureConfidence(feature),
-    detail,
-    distanceKm,
-    id: `feature:${feature.properties.featureId}`,
-    observedAt: latestTimestamp([
-      feature.properties.observedAt,
-      feature.properties.effectiveAt,
-      feature.properties.validFrom,
-      feature.properties.updatedAt,
-      feature.properties.generatedAt
-    ]),
-    severityRank,
-    sourceKind: "feature",
-    title: priorityFeatureTitle(feature),
-    tone: priorityToneFromSeverityRank(severityRank),
-    validUntil
-  }, now);
+  ]
+    .filter((value) => value && value !== "neznámá vzdálenost")
+    .join(" · ");
+  const candidate = createPriorityAlertCandidate(
+    {
+      badge: priorityFeatureBadge(feature),
+      confidence: priorityFeatureConfidence(feature),
+      detail,
+      distanceKm,
+      id: `feature:${feature.properties.featureId}`,
+      observedAt: latestTimestamp([
+        feature.properties.observedAt,
+        feature.properties.effectiveAt,
+        feature.properties.validFrom,
+        feature.properties.updatedAt,
+        feature.properties.generatedAt
+      ]),
+      severityRank,
+      sourceKind: "feature",
+      title: priorityFeatureTitle(feature),
+      tone: priorityToneFromSeverityRank(severityRank),
+      validUntil
+    },
+    now
+  );
   return candidate ? [candidate] : [];
 }
 
@@ -14338,12 +16410,15 @@ function createPriorityAlertCandidate(
     return null;
   }
   const confidence = clamp(candidate.confidence, 0, 1);
-  const score = priorityAlertScore({
-    confidence,
-    distanceKm: candidate.distanceKm,
-    observedAt: candidate.observedAt,
-    severityRank: candidate.severityRank
-  }, now);
+  const score = priorityAlertScore(
+    {
+      confidence,
+      distanceKm: candidate.distanceKm,
+      observedAt: candidate.observedAt,
+      severityRank: candidate.severityRank
+    },
+    now
+  );
   return { ...candidate, confidence, score };
 }
 
@@ -14451,14 +16526,20 @@ function priorityFeatureSeverityRank(feature: SituationFeature): number {
     }
   }
   if (feature.properties.layer === "fire") {
-    const fireRank = prioritySeverityValueRank(safetyCanonicalTypeCode(feature.properties) ?? feature.properties.fireStatus ?? feature.properties.sourceIncident);
+    const fireRank = prioritySeverityValueRank(
+      safetyCanonicalTypeCode(feature.properties) ?? feature.properties.fireStatus ?? feature.properties.sourceIncident
+    );
     return Math.max(rawRank, fireRank, 2);
   }
   if (feature.properties.layer === "community") {
     return Math.max(rawRank, prioritySeverityValueRank(feature.properties.hazardSeverity), 1);
   }
   if (isWeatherContextFeature(feature)) {
-    return Math.max(rawRank, priorityToneRank(weatherFeatureTone(feature)), feature.properties.layer === "weather_thunderstorm_risk" ? 2 : 0);
+    return Math.max(
+      rawRank,
+      priorityToneRank(weatherFeatureTone(feature)),
+      feature.properties.layer === "weather_thunderstorm_risk" ? 2 : 0
+    );
   }
   if (feature.properties.layer === "warnings" || feature.properties.layer === "weather_alerts") {
     return Math.max(rawRank, priorityToneRank(status.tone), 2);
@@ -14467,11 +16548,16 @@ function priorityFeatureSeverityRank(feature: SituationFeature): number {
 }
 
 function prioritySeverityValueRank(value: unknown): number {
-  const normalized = String(value ?? "").trim().toLowerCase().replace(/[_-]+/g, " ");
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ");
   if (!normalized) {
     return 0;
   }
-  if (["critical", "crit", "severe", "extreme", "danger", "emergency", "high", "very high", "3", "4"].includes(normalized)) {
+  if (
+    ["critical", "crit", "severe", "extreme", "danger", "emergency", "high", "very high", "3", "4"].includes(normalized)
+  ) {
     return 3;
   }
   if (["warning", "warn", "advisory", "watch", "moderate", "medium", "risk", "rising", "2"].includes(normalized)) {
@@ -14480,10 +16566,23 @@ function prioritySeverityValueRank(value: unknown): number {
   if (["info", "information", "notice", "low", "limited", "minor", "1"].includes(normalized)) {
     return 1;
   }
-  if (normalized.includes("critical") || normalized.includes("extreme") || normalized.includes("severe") || normalized.includes("hotspot") || normalized.includes("active")) {
+  if (
+    normalized.includes("critical") ||
+    normalized.includes("extreme") ||
+    normalized.includes("severe") ||
+    normalized.includes("hotspot") ||
+    normalized.includes("active")
+  ) {
     return 3;
   }
-  if (normalized.includes("warning") || normalized.includes("advisory") || normalized.includes("risk") || normalized.includes("fire") || normalized.includes("storm") || normalized.includes("flood")) {
+  if (
+    normalized.includes("warning") ||
+    normalized.includes("advisory") ||
+    normalized.includes("risk") ||
+    normalized.includes("fire") ||
+    normalized.includes("storm") ||
+    normalized.includes("flood")
+  ) {
     return 2;
   }
   return 0;
@@ -14522,10 +16621,12 @@ function priorityFeatureTitle(feature: SituationFeature): string {
   if (isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature)) {
     return weatherFeatureHeadline(feature);
   }
-  return safetyDisplayLabel(feature.properties)
-    ?? feature.properties.areaName
-    ?? feature.properties.label
-    ?? feature.properties.featureId;
+  return (
+    safetyDisplayLabel(feature.properties) ??
+    feature.properties.areaName ??
+    feature.properties.label ??
+    feature.properties.featureId
+  );
 }
 
 function situationFeatureReferencePoint(feature: SituationFeature): { lat: number; lon: number } | undefined {
@@ -14548,7 +16649,10 @@ function situationFeatureDistanceKmFromReference(
   if (feature.geometry.type === "Polygon" && pointInPolygon(reference, feature.geometry.coordinates)) {
     return 0;
   }
-  if (feature.geometry.type === "MultiPolygon" && feature.geometry.coordinates.some((polygon) => pointInPolygon(reference, polygon))) {
+  if (
+    feature.geometry.type === "MultiPolygon" &&
+    feature.geometry.coordinates.some((polygon) => pointInPolygon(reference, polygon))
+  ) {
     return 0;
   }
   const coordinates = collectSituationGeometryPoints(feature.geometry);
@@ -14574,8 +16678,10 @@ function pointInRing(point: { lat: number; lon: number }, ring: number[][]): boo
     if (!current || !previous) {
       continue;
     }
-    const intersects = (current.lat > point.lat) !== (previous.lat > point.lat)
-      && point.lon < ((previous.lon - current.lon) * (point.lat - current.lat)) / (previous.lat - current.lat) + current.lon;
+    const intersects =
+      current.lat > point.lat !== previous.lat > point.lat &&
+      point.lon <
+        ((previous.lon - current.lon) * (point.lat - current.lat)) / (previous.lat - current.lat) + current.lon;
     if (intersects) {
       inside = !inside;
     }
@@ -14586,7 +16692,9 @@ function pointInRing(point: { lat: number; lon: number }, ring: number[][]): boo
 function lonLatFromCoordinate(coordinate: number[] | undefined): { lat: number; lon: number } | undefined {
   const lon = coordinate?.[0];
   const lat = coordinate?.[1];
-  return typeof lat === "number" && Number.isFinite(lat) && typeof lon === "number" && Number.isFinite(lon) ? { lat, lon } : undefined;
+  return typeof lat === "number" && Number.isFinite(lat) && typeof lon === "number" && Number.isFinite(lon)
+    ? { lat, lon }
+    : undefined;
 }
 
 function collectSituationGeometryPoints(geometry: SituationFeature["geometry"]): Array<{ lat: number; lon: number }> {
@@ -14595,21 +16703,23 @@ function collectSituationGeometryPoints(geometry: SituationFeature["geometry"]):
     return Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : [];
   }
   if (geometry.type === "LineString") {
-    return geometry.coordinates.flatMap(([lon, lat]) => Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : []);
+    return geometry.coordinates.flatMap(([lon, lat]) =>
+      Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : []
+    );
   }
   if (geometry.type === "MultiLineString") {
     return geometry.coordinates.flatMap((line) =>
-      line.flatMap(([lon, lat]) => Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : [])
+      line.flatMap(([lon, lat]) => (Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : []))
     );
   }
   if (geometry.type === "Polygon") {
     return geometry.coordinates.flatMap((ring) =>
-      ring.flatMap(([lon, lat]) => Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : [])
+      ring.flatMap(([lon, lat]) => (Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : []))
     );
   }
   return geometry.coordinates.flatMap((polygon) =>
     polygon.flatMap((ring) =>
-      ring.flatMap(([lon, lat]) => Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : [])
+      ring.flatMap(([lon, lat]) => (Number.isFinite(lat) && Number.isFinite(lon) ? [{ lat, lon }] : []))
     )
   );
 }
@@ -14670,14 +16780,41 @@ function mergeSituationSafetyFlightCommunityMissionAndTakFeatures(
   const communityReportFeatures = community?.features ?? [];
   const missionArenaFeatures = missionArena?.features.map(missionArenaFeatureToSituationFeature) ?? [];
   const takGatewayFeatures = tak?.features.map(takFeatureToSituationFeature) ?? [];
-  const features = [...situationFeatures, ...safetyFeatures, ...flightReferenceFeatures, ...communityReportFeatures, ...missionArenaFeatures, ...takGatewayFeatures];
-  const warnings = [...(situation?.warnings ?? []), ...(safety?.warnings ?? []), ...(flight?.warnings ?? []), ...(community?.warnings ?? []), ...(missionArena?.warnings ?? []), ...(tak?.warnings ?? [])];
+  const features = [
+    ...situationFeatures,
+    ...safetyFeatures,
+    ...flightReferenceFeatures,
+    ...communityReportFeatures,
+    ...missionArenaFeatures,
+    ...takGatewayFeatures
+  ];
+  const warnings = [
+    ...(situation?.warnings ?? []),
+    ...(safety?.warnings ?? []),
+    ...(flight?.warnings ?? []),
+    ...(community?.warnings ?? []),
+    ...(missionArena?.warnings ?? []),
+    ...(tak?.warnings ?? [])
+  ];
   return {
     contractVersion: "cop-situation-source-v1",
     features,
-    generatedAt: latestTimestamp([situation?.generatedAt, safety?.generatedAt, flight?.generatedAt, community?.generatedAt, missionArena?.generatedAt, tak?.generatedAt]) ?? new Date().toISOString(),
+    generatedAt:
+      latestTimestamp([
+        situation?.generatedAt,
+        safety?.generatedAt,
+        flight?.generatedAt,
+        community?.generatedAt,
+        missionArena?.generatedAt,
+        tak?.generatedAt
+      ]) ?? new Date().toISOString(),
     query: {
-      bbox: situation?.query.bbox ?? safety?.query.bbox ?? flight?.query.bbox ?? community?.query?.bbox ?? missionArena?.query.bbox ?? tak?.query.bbox ?? { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
+      bbox: situation?.query.bbox ??
+        safety?.query.bbox ??
+        flight?.query.bbox ??
+        community?.query?.bbox ??
+        missionArena?.query.bbox ??
+        tak?.query.bbox ?? { east: 15.35, north: 50.45, south: 49.65, west: 13.85 },
       layers: [
         ...(situation?.query.layers ?? []),
         ...((safety?.query.layers ?? []) as SituationLayerId[]),
@@ -14686,48 +16823,89 @@ function mergeSituationSafetyFlightCommunityMissionAndTakFeatures(
         ...(missionArena ? ["mission_arena" as SituationLayerId] : []),
         ...((tak?.query.layers ?? []) as SituationLayerId[])
       ],
-      limit: Math.max(situation?.query.limit ?? 0, safety?.query.limit ?? 0, flight?.query.limit ?? 0, community?.query?.limit ?? 0, missionArena?.query.limit ?? 0, tak?.query.limit ?? 0, 250)
+      limit: Math.max(
+        situation?.query.limit ?? 0,
+        safety?.query.limit ?? 0,
+        flight?.query.limit ?? 0,
+        community?.query?.limit ?? 0,
+        missionArena?.query.limit ?? 0,
+        tak?.query.limit ?? 0,
+        250
+      )
     },
     source: {
-      generatedAt: latestTimestamp([situation?.source.generatedAt, safety?.source.generatedAt, flight?.source.generatedAt, community?.source.generatedAt, missionArena?.source.generatedAt, tak?.source.generatedAt]),
+      generatedAt: latestTimestamp([
+        situation?.source.generatedAt,
+        safety?.source.generatedAt,
+        flight?.source.generatedAt,
+        community?.source.generatedAt,
+        missionArena?.source.generatedAt,
+        tak?.source.generatedAt
+      ]),
       sourceId: "situation-data-api",
       sourceType: "PUBLIC_SITUATION_AGGREGATE"
     },
-    sourceHealth: situation?.sourceHealth ?? safety?.sourceHealth ?? flight?.sourceHealth ?? missionArena?.sourceHealth ?? tak?.sourceHealth,
+    sourceHealth:
+      situation?.sourceHealth ??
+      safety?.sourceHealth ??
+      flight?.sourceHealth ??
+      missionArena?.sourceHealth ??
+      tak?.sourceHealth,
     sources: [
       ...(situation?.sources ?? []),
-      ...((safety?.sources ?? []).map((source) => ({
+      ...(safety?.sources ?? []).map((source) => ({
         ...source,
         layers: source.layers as SituationLayerId[]
-      }))),
-      ...((flight?.sources ?? []).map((source) => ({
+      })),
+      ...(flight?.sources ?? []).map((source) => ({
         ...source,
         label: source.label ? `Flight data > ${source.label}` : "Flight data",
         layers: flightReferenceQueryLayersToSituationLayers(source.layers ?? [])
-      }))),
-      ...(community ? [{
-        enabled: true,
-        label: "Komunitní hlášení",
-        layers: ["community" as SituationLayerId],
-        sourceId: "community_reports"
-      }] : []),
-      ...(missionArena ? [{
-        enabled: true,
-        label: "Mission Arena",
-        layers: ["mission_arena" as SituationLayerId],
-        sourceId: "mission_arena_runtime"
-      }] : []),
-      ...((tak?.sources ?? []).map((source) => ({
+      })),
+      ...(community
+        ? [
+            {
+              enabled: true,
+              label: "Komunitní hlášení",
+              layers: ["community" as SituationLayerId],
+              sourceId: "community_reports"
+            }
+          ]
+        : []),
+      ...(missionArena
+        ? [
+            {
+              enabled: true,
+              label: "Mission Arena",
+              layers: ["mission_arena" as SituationLayerId],
+              sourceId: "mission_arena_runtime"
+            }
+          ]
+        : []),
+      ...(tak?.sources ?? []).map((source) => ({
         ...source,
         label: source.label ? `TAK Gateway > ${source.label}` : "TAK Gateway",
         layers: source.layers as SituationLayerId[]
-      })))
+      }))
     ],
     summary: {
       featureCount: features.length,
-      sourceCount: (situation?.summary.sourceCount ?? 0) + (safety?.summary.sourceCount ?? 0) + (flight?.summary.sourceCount ?? 0) + (community ? 1 : 0) + (missionArena?.summary.sourceCount ?? 0) + (tak?.summary.sourceCount ?? 0),
+      sourceCount:
+        (situation?.summary.sourceCount ?? 0) +
+        (safety?.summary.sourceCount ?? 0) +
+        (flight?.summary.sourceCount ?? 0) +
+        (community ? 1 : 0) +
+        (missionArena?.summary.sourceCount ?? 0) +
+        (tak?.summary.sourceCount ?? 0),
       staleFeatureCount: features.filter((feature) => feature.properties.stale).length,
-      warningCount: (situation?.summary.warningCount ?? 0) + (safety?.summary.warningCount ?? 0) + (safety?.summary.criticalCount ?? 0) + (flight?.summary.warningCount ?? 0) + (community?.warnings?.length ?? 0) + (missionArena?.summary.warningCount ?? 0) + (tak?.summary.warningCount ?? 0)
+      warningCount:
+        (situation?.summary.warningCount ?? 0) +
+        (safety?.summary.warningCount ?? 0) +
+        (safety?.summary.criticalCount ?? 0) +
+        (flight?.summary.warningCount ?? 0) +
+        (community?.warnings?.length ?? 0) +
+        (missionArena?.summary.warningCount ?? 0) +
+        (tak?.summary.warningCount ?? 0)
     },
     type: "FeatureCollection",
     warnings
@@ -14910,7 +17088,11 @@ function sourceHealthTone(items: SourceHealthItem[], sourceKey: string): "ok" | 
   if (!item) {
     return "neutral";
   }
-  return item.health === "ONLINE" || item.health === "QUIET" ? "ok" : item.health === "WAITING" || item.health === "DISABLED" ? "neutral" : "warn";
+  return item.health === "ONLINE" || item.health === "QUIET"
+    ? "ok"
+    : item.health === "WAITING" || item.health === "DISABLED"
+      ? "neutral"
+      : "warn";
 }
 
 function findSourceHealth(items: SourceHealthItem[], sourceKey: string): SourceHealthItem | undefined {
@@ -15011,17 +17193,20 @@ function closeAoiPolygonRing(points: Array<[number, number]>): Array<[number, nu
 
 function calculateAoiPolygonCenter(polygon: NonNullable<AoiRule["polygon"]>): { lat: number; lon: number } {
   const ring = (polygon.coordinates[0] ?? []).slice(0, -1);
-  const sums = ring.reduce(
-    (accumulator, [lon, lat]) => ({ lat: accumulator.lat + lat, lon: accumulator.lon + lon }),
-    { lat: 0, lon: 0 }
-  );
+  const sums = ring.reduce((accumulator, [lon, lat]) => ({ lat: accumulator.lat + lat, lon: accumulator.lon + lon }), {
+    lat: 0,
+    lon: 0
+  });
   return {
     lat: clamp(sums.lat / Math.max(1, ring.length), -90, 90),
     lon: clamp(sums.lon / Math.max(1, ring.length), -180, 180)
   };
 }
 
-function calculateAoiPolygonRadiusKm(center: { lat: number; lon: number }, polygon: NonNullable<AoiRule["polygon"]>): number {
+function calculateAoiPolygonRadiusKm(
+  center: { lat: number; lon: number },
+  polygon: NonNullable<AoiRule["polygon"]>
+): number {
   const radius = (polygon.coordinates[0] ?? [])
     .slice(0, -1)
     .reduce((maximum, [lon, lat]) => Math.max(maximum, distanceBetweenKm(center, { lat, lon })), 1);
@@ -15052,9 +17237,7 @@ function distanceBetweenKm(a: { lat: number; lon: number }, b: { lat: number; lo
   const deltaLon = degreesToRadians(b.lon - a.lon);
   const startLat = degreesToRadians(a.lat);
   const endLat = degreesToRadians(b.lat);
-  const haversine =
-    Math.sin(deltaLat / 2) ** 2
-    + Math.cos(startLat) * Math.cos(endLat) * Math.sin(deltaLon / 2) ** 2;
+  const haversine = Math.sin(deltaLat / 2) ** 2 + Math.cos(startLat) * Math.cos(endLat) * Math.sin(deltaLon / 2) ** 2;
   return 2 * earthRadiusKm * Math.asin(Math.min(1, Math.sqrt(haversine)));
 }
 
@@ -15176,9 +17359,13 @@ function situationLayerHint(layer: SituationLayer): string {
 }
 
 function formatSituationSourceHint(source: SituationSourceDescriptor): string {
-  const layers = source.layers?.filter((layer) => !isSafetyLayerId(layer)).map(situationLayerLabel).join(", ") || "vrstvy n/a";
+  const layers =
+    source.layers
+      ?.filter((layer) => !isSafetyLayerId(layer))
+      .map(situationLayerLabel)
+      .join(", ") || "vrstvy n/a";
   const cadence = source.updateCadenceSeconds ? `${source.updateCadenceSeconds}s` : "cadence n/a";
-  const state = source.enabled === false ? "vypnuto" : source.mode ?? "live";
+  const state = source.enabled === false ? "vypnuto" : (source.mode ?? "live");
   return `${layers} · ${cadence} · ${state}`;
 }
 
@@ -15294,9 +17481,11 @@ function isTakGatewayFeature(feature: SituationFeature): boolean {
 }
 
 function isMissionArenaFeature(feature: SituationFeature): boolean {
-  return feature.properties.layer === "mission_arena"
-    || feature.properties.layerId === "presentation.mission_arena"
-    || feature.properties.providerId === "csm.mission-arena";
+  return (
+    feature.properties.layer === "mission_arena" ||
+    feature.properties.layerId === "presentation.mission_arena" ||
+    feature.properties.providerId === "csm.mission-arena"
+  );
 }
 
 function missionArenaFeatureRole(feature: SituationFeature): "mission_state" | "task_state" | "team_state" {
@@ -15309,7 +17498,9 @@ function missionArenaDetailTitle(feature: SituationFeature): string {
   const role = missionArenaFeatureRole(feature);
   if (role === "task_state") {
     const task = missionArenaPrimaryTask(feature);
-    return ["Úkol", missionArenaTeamLabel(feature), missionArenaRoleDisplayName(stringProperty(task?.toRole))].filter(Boolean).join(" · ");
+    return ["Úkol", missionArenaTeamLabel(feature), missionArenaRoleDisplayName(stringProperty(task?.toRole))]
+      .filter(Boolean)
+      .join(" · ");
   }
   if (role === "team_state") {
     return [missionArenaTeamLabel(feature) ?? "Tým", feature.properties.missionId].filter(Boolean).join(" · ");
@@ -15369,18 +17560,20 @@ function missionArenaTaskStatusLabel(status: string | undefined): string {
 
 function isCommunicationTowerFeature(feature: SituationFeature): boolean {
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
   const providerLayerId = feature.properties.providerLayerId ?? stringProperty(providerProperties.providerLayerId);
-  return feature.properties.layer === "mobile"
-    && feature.properties.category.toLowerCase().replace(/[\s.-]+/g, "_") === "communications_tower"
-    && (
-      feature.properties.sourceId === "osm_postgis"
-      || feature.properties.layerId === "reference.infrastructure.communications"
-      || providerLayerId === "mobile.osm_postgis.communications"
-      || stringProperty(tags.referenceOnly) === "true"
-      || stringProperty(providerTags.referenceOnly) === "true"
-    );
+  return (
+    feature.properties.layer === "mobile" &&
+    feature.properties.category.toLowerCase().replace(/[\s.-]+/g, "_") === "communications_tower" &&
+    (feature.properties.sourceId === "osm_postgis" ||
+      feature.properties.layerId === "reference.infrastructure.communications" ||
+      providerLayerId === "mobile.osm_postgis.communications" ||
+      stringProperty(tags.referenceOnly) === "true" ||
+      stringProperty(providerTags.referenceOnly) === "true")
+  );
 }
 
 function formatOsmReference(tags: Record<string, unknown>): string {
@@ -15444,7 +17637,10 @@ function situationStatusTone(status: SituationLayerStatus): "neutral" | "ok" | "
   return "neutral";
 }
 
-function formatSituationReadiness(status: SituationLayerStatus, collection: SituationFeatureCollectionResponse | null): string {
+function formatSituationReadiness(
+  status: SituationLayerStatus,
+  collection: SituationFeatureCollectionResponse | null
+): string {
   if (status === "online" && collection) {
     return `${collection.summary.featureCount} features`;
   }
@@ -15454,7 +17650,10 @@ function formatSituationReadiness(status: SituationLayerStatus, collection: Situ
   return situationStatusLabel(status);
 }
 
-function formatSafetyReadiness(status: SituationLayerStatus, collection: SafetyFeatureCollectionResponse | null): string {
+function formatSafetyReadiness(
+  status: SituationLayerStatus,
+  collection: SafetyFeatureCollectionResponse | null
+): string {
   if (status === "online" && collection) {
     return `${collection.summary.featureCount} prvků`;
   }
@@ -15523,14 +17722,25 @@ function formatBooleanLike(value: unknown): string {
 }
 
 function formatGeocodes(value: Array<{ scheme: string; value: string }> | undefined): string {
-  return value && value.length > 0 ? value.slice(0, 6).map((item) => `${item.scheme}:${item.value}`).join(", ") : "n/a";
+  return value && value.length > 0
+    ? value
+        .slice(0, 6)
+        .map((item) => `${item.scheme}:${item.value}`)
+        .join(", ")
+    : "n/a";
 }
 
-function situationFeatureStatusModel(feature: SituationFeature): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } {
+function situationFeatureStatusModel(feature: SituationFeature): {
+  label: string;
+  tone: "neutral" | "ok" | "warn" | "critical";
+} {
   if (isMissionArenaFeature(feature)) {
     const role = missionArenaFeatureRole(feature);
     if (role === "task_state") {
-      return { label: missionArenaTaskStatusLabel(stringProperty(missionArenaPrimaryTask(feature)?.status)), tone: "neutral" };
+      return {
+        label: missionArenaTaskStatusLabel(stringProperty(missionArenaPrimaryTask(feature)?.status)),
+        tone: "neutral"
+      };
     }
     if (role === "team_state") {
       return { label: missionArenaTeamLabel(feature) ?? "TÝM", tone: "neutral" };
@@ -15539,7 +17749,9 @@ function situationFeatureStatusModel(feature: SituationFeature): { label: string
   }
   if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     const coverage = mobileCoverageQualityModel(feature.properties.quality);
-    return feature.properties.stale && coverage.tone === "ok" ? { label: `${coverage.label} · starší data`, tone: "warn" } : coverage;
+    return feature.properties.stale && coverage.tone === "ok"
+      ? { label: `${coverage.label} · starší data`, tone: "warn" }
+      : coverage;
   }
   if (isCommunicationTowerFeature(feature)) {
     return { label: "REFERENČNÍ", tone: "neutral" };
@@ -15563,12 +17775,13 @@ function situationFeatureStatusModel(feature: SituationFeature): { label: string
   }
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  const raw = stringProperty(tags.status)
-    ?? stringProperty(tags.networkStatus)
-    ?? stringProperty(metrics.status)
-    ?? stringProperty(metrics.networkStatus)
-    ?? feature.properties.severity
-    ?? "info";
+  const raw =
+    stringProperty(tags.status) ??
+    stringProperty(tags.networkStatus) ??
+    stringProperty(metrics.status) ??
+    stringProperty(metrics.networkStatus) ??
+    feature.properties.severity ??
+    "info";
   const normalized = raw.toLowerCase();
   if (["critical", "down", "offline", "outage", "failed", "error"].includes(normalized)) {
     return { label: "KRITICKÝ", tone: "critical" };
@@ -15585,7 +17798,10 @@ function situationFeatureStatusModel(feature: SituationFeature): { label: string
   return { label: raw.toUpperCase(), tone: "neutral" };
 }
 
-function mobileCoverageQualityModel(quality: string | undefined): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } {
+function mobileCoverageQualityModel(quality: string | undefined): {
+  label: string;
+  tone: "neutral" | "ok" | "warn" | "critical";
+} {
   const normalized = quality?.trim().toLowerCase();
   if (normalized === "good") {
     return { label: "DOBRÉ", tone: "ok" };
@@ -15631,20 +17847,24 @@ function formatCommunicationTowerStatus(status: string | undefined): string {
 }
 
 function isAviationWeatherFeature(feature: SituationFeature): boolean {
-  return feature.properties.sourceId === "aviation_weather" || feature.properties.category === "aviation_weather_station";
+  return (
+    feature.properties.sourceId === "aviation_weather" || feature.properties.category === "aviation_weather_station"
+  );
 }
 
 function isWeatherContextFeature(feature: SituationFeature): boolean {
-  return feature.properties.layer === "weather"
-    || feature.properties.layer === "weather_temperature_grid"
-    || feature.properties.layer === "weather_wind_field"
-    || feature.properties.layer === "weather_precipitation_grid"
-    || feature.properties.layer === "weather_humidity_grid"
-    || feature.properties.layer === "weather_pressure_grid"
-    || feature.properties.layer === "weather_radar_reflectivity"
-    || feature.properties.layer === "weather_radar_precipitation"
-    || feature.properties.layer === "weather_radar_nowcast"
-    || feature.properties.layer === "weather_thunderstorm_risk";
+  return (
+    feature.properties.layer === "weather" ||
+    feature.properties.layer === "weather_temperature_grid" ||
+    feature.properties.layer === "weather_wind_field" ||
+    feature.properties.layer === "weather_precipitation_grid" ||
+    feature.properties.layer === "weather_humidity_grid" ||
+    feature.properties.layer === "weather_pressure_grid" ||
+    feature.properties.layer === "weather_radar_reflectivity" ||
+    feature.properties.layer === "weather_radar_precipitation" ||
+    feature.properties.layer === "weather_radar_nowcast" ||
+    feature.properties.layer === "weather_thunderstorm_risk"
+  );
 }
 
 interface WeatherCameraInfo {
@@ -15675,18 +17895,22 @@ function isWeatherWebcamFeature(feature: SituationFeature): boolean {
   const camera = weatherWebcamProviderMetadata(feature);
   const category = normalizeSituationCategory(feature.properties.category);
   const providerLayerId = stringProperty(feature.properties.providerLayerId);
-  return feature.properties.layerId === "public.weather.webcams"
-    || feature.properties.sourceId === "chmi_weather_webcams"
-    || providerLayerId === "weather.webcams"
-    || providerLayerId === "weather_webcams"
-    || providerLayerId === "chmi_weather_webcams"
-    || category === "weather_webcam"
-    || category === "webcam"
-    || Boolean(stringProperty(camera.detailUrl) || stringProperty(camera.snapshotUrl));
+  return (
+    feature.properties.layerId === "public.weather.webcams" ||
+    feature.properties.sourceId === "chmi_weather_webcams" ||
+    providerLayerId === "weather.webcams" ||
+    providerLayerId === "weather_webcams" ||
+    providerLayerId === "chmi_weather_webcams" ||
+    category === "weather_webcam" ||
+    category === "webcam" ||
+    Boolean(stringProperty(camera.detailUrl) || stringProperty(camera.snapshotUrl))
+  );
 }
 
 function weatherWebcamProviderMetadata(feature: SituationFeature): Record<string, unknown> {
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   return isRecord(providerProperties.camera) ? providerProperties.camera : {};
 }
 
@@ -15695,17 +17919,19 @@ function weatherWebcamMetadata(feature: SituationFeature): WeatherCameraInfo {
   return {
     detailUrl: stringProperty(camera.detailUrl) ?? feature.properties.detailUrl,
     direction: stringProperty(camera.direction) ?? stringProperty(camera.orientation),
-    label: stringProperty(camera.label)
-      ?? stringProperty(camera.name)
-      ?? stringProperty(camera.title)
-      ?? feature.properties.headline
-      ?? feature.properties.label
-      ?? "Webkamera ČHMÚ",
+    label:
+      stringProperty(camera.label) ??
+      stringProperty(camera.name) ??
+      stringProperty(camera.title) ??
+      feature.properties.headline ??
+      feature.properties.label ??
+      "Webkamera ČHMÚ",
     observedAt: stringProperty(camera.observedAt) ?? feature.properties.observedAt,
-    snapshotUrl: stringProperty(camera.snapshotUrl)
-      ?? stringProperty(camera.imageUrl)
-      ?? stringProperty(camera.previewUrl)
-      ?? stringProperty(camera.url)
+    snapshotUrl:
+      stringProperty(camera.snapshotUrl) ??
+      stringProperty(camera.imageUrl) ??
+      stringProperty(camera.previewUrl) ??
+      stringProperty(camera.url)
   };
 }
 
@@ -15737,16 +17963,18 @@ function normalizeWeatherCameraInfo(value: unknown, fallbackLabel: string): Weat
   if (!isRecord(value)) {
     return null;
   }
-  const snapshotUrl = stringProperty(value.snapshotUrl)
-    ?? stringProperty(value.imageUrl)
-    ?? stringProperty(value.previewUrl)
-    ?? stringProperty(value.url);
+  const snapshotUrl =
+    stringProperty(value.snapshotUrl) ??
+    stringProperty(value.imageUrl) ??
+    stringProperty(value.previewUrl) ??
+    stringProperty(value.url);
   const detailUrl = stringProperty(value.detailUrl);
-  const label = stringProperty(value.label)
-    ?? stringProperty(value.name)
-    ?? stringProperty(value.title)
-    ?? stringProperty(value.cameraId)
-    ?? fallbackLabel;
+  const label =
+    stringProperty(value.label) ??
+    stringProperty(value.name) ??
+    stringProperty(value.title) ??
+    stringProperty(value.cameraId) ??
+    fallbackLabel;
   if (!snapshotUrl && !detailUrl) {
     return null;
   }
@@ -15761,14 +17989,16 @@ function normalizeWeatherCameraInfo(value: unknown, fallbackLabel: string): Weat
 
 function weatherWebcamCandidates(fallback: WeatherCameraInfo, detail: WeatherWebcamDetail | null): WeatherCameraInfo[] {
   const detailCameras = (detail?.cameras ?? []).filter((camera) => camera.snapshotUrl || camera.detailUrl);
-  const candidates = detailCameras.length > 0 ? detailCameras : [fallback].filter((camera) => camera.snapshotUrl || camera.detailUrl);
+  const candidates =
+    detailCameras.length > 0 ? detailCameras : [fallback].filter((camera) => camera.snapshotUrl || camera.detailUrl);
   return uniqueWeatherCameras(candidates);
 }
 
 function uniqueWeatherCameras(candidates: WeatherCameraInfo[]): WeatherCameraInfo[] {
   const seen = new Set<string>();
   return candidates.filter((camera) => {
-    const key = camera.snapshotUrl ?? camera.detailUrl ?? weatherCameraBaseLocationName(camera.label) ?? camera.label ?? "";
+    const key =
+      camera.snapshotUrl ?? camera.detailUrl ?? weatherCameraBaseLocationName(camera.label) ?? camera.label ?? "";
     if (seen.has(key)) {
       return false;
     }
@@ -15805,9 +18035,13 @@ function weatherWebcamDetailCacheKey(feature: SituationFeature): string | undefi
 }
 
 function weatherWebcamLocationLabel(feature: SituationFeature, detail: WeatherWebcamDetail | null): string | undefined {
-  const cameraBaseLabels = Array.from(new Set((detail?.cameras ?? [])
-    .map((camera) => weatherCameraBaseLocationName(camera.label))
-    .filter((value): value is string => Boolean(value))));
+  const cameraBaseLabels = Array.from(
+    new Set(
+      (detail?.cameras ?? [])
+        .map((camera) => weatherCameraBaseLocationName(camera.label))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
   if (cameraBaseLabels.length === 1) {
     return cameraBaseLabels[0];
   }
@@ -15846,7 +18080,9 @@ function applyWeatherWebcamDetailsToSituationFeatures(
     if (!locationLabel) {
       return feature;
     }
-    const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+    const providerProperties = isRecord(feature.properties.providerProperties)
+      ? feature.properties.providerProperties
+      : {};
     const camera = weatherWebcamProviderMetadata(feature);
     changed = true;
     return {
@@ -15873,7 +18109,9 @@ function weatherWebcamSubtitle(feature: SituationFeature): string {
     "vizuální kontext počasí",
     feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId),
     feature.properties.stale ? "starší data" : undefined
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function weatherCameraProxyUrl(value: string | undefined): string | undefined {
@@ -15899,7 +18137,9 @@ function isBlockedWeatherCameraHost(value: string): boolean {
   }
 }
 
-function aviationFlightCategoryModel(feature: SituationFeature): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } | null {
+function aviationFlightCategoryModel(
+  feature: SituationFeature
+): { label: string; tone: "neutral" | "ok" | "warn" | "critical" } | null {
   if (!isAviationWeatherFeature(feature)) {
     return null;
   }
@@ -15931,8 +18171,17 @@ function aviationCategoryTone(category: string | undefined): "neutral" | "ok" | 
   return "neutral";
 }
 
-function formatWind(directionDeg: number | undefined, speedMps: number | undefined, speedKt: number | undefined): string {
-  const speed = speedKt !== undefined ? `${Math.round(speedKt)} kt` : speedMps !== undefined ? `${Math.round(speedMps)} m/s` : undefined;
+function formatWind(
+  directionDeg: number | undefined,
+  speedMps: number | undefined,
+  speedKt: number | undefined
+): string {
+  const speed =
+    speedKt !== undefined
+      ? `${Math.round(speedKt)} kt`
+      : speedMps !== undefined
+        ? `${Math.round(speedMps)} m/s`
+        : undefined;
   if (directionDeg === undefined && !speed) {
     return "n/a";
   }
@@ -15973,7 +18222,12 @@ function objectStatusLabel(status: string): string {
   return status.toLowerCase();
 }
 
-function mobileMetricTone(value: number | undefined, goodThreshold: number, warnThreshold: number, higherIsBetter: boolean): "neutral" | "ok" | "warn" {
+function mobileMetricTone(
+  value: number | undefined,
+  goodThreshold: number,
+  warnThreshold: number,
+  higherIsBetter: boolean
+): "neutral" | "ok" | "warn" {
   if (value === undefined) {
     return "neutral";
   }
@@ -16072,34 +18326,34 @@ function safetyGeometryModeLabel(mode: string | undefined, geometryType: string)
 function safetyCanonicalTypeCode(properties: SituationFeature["properties"]): string | undefined {
   const providerProperties = safetyProviderProperties(properties);
   const taxonomy = safetyProviderTaxonomy(properties);
-  return properties.typeCode
-    ?? stringProperty(providerProperties.typeCode)
-    ?? stringProperty(taxonomy.typeCode);
+  return properties.typeCode ?? stringProperty(providerProperties.typeCode) ?? stringProperty(taxonomy.typeCode);
 }
 
 function safetyCanonicalSourceCode(properties: SituationFeature["properties"]): string | undefined {
   const providerProperties = safetyProviderProperties(properties);
   const taxonomy = safetyProviderTaxonomy(properties);
-  const sourceCode = properties.sourceCode
-    ?? stringProperty(providerProperties.sourceCode)
-    ?? stringProperty(taxonomy.sourceCode);
+  const sourceCode =
+    properties.sourceCode ?? stringProperty(providerProperties.sourceCode) ?? stringProperty(taxonomy.sourceCode);
   if (!sourceCode) {
     return undefined;
   }
-  const sourceSystem = properties.sourceSystem
-    ?? stringProperty(providerProperties.sourceSystem)
-    ?? stringProperty(taxonomy.codeSystem)
-    ?? stringProperty(taxonomy.sourceSystem);
+  const sourceSystem =
+    properties.sourceSystem ??
+    stringProperty(providerProperties.sourceSystem) ??
+    stringProperty(taxonomy.codeSystem) ??
+    stringProperty(taxonomy.sourceSystem);
   return sourceSystem ? `${sourceSystem} ${sourceCode}` : sourceCode;
 }
 
 function safetyCanonicalSourceSystem(properties: SituationFeature["properties"]): string | undefined {
   const providerProperties = safetyProviderProperties(properties);
   const taxonomy = safetyProviderTaxonomy(properties);
-  return properties.sourceSystem
-    ?? stringProperty(providerProperties.sourceSystem)
-    ?? stringProperty(taxonomy.codeSystem)
-    ?? stringProperty(taxonomy.sourceSystem);
+  return (
+    properties.sourceSystem ??
+    stringProperty(providerProperties.sourceSystem) ??
+    stringProperty(taxonomy.codeSystem) ??
+    stringProperty(taxonomy.sourceSystem)
+  );
 }
 
 function safetyProviderProperties(properties: SituationFeature["properties"]): Record<string, unknown> {
@@ -16127,7 +18381,11 @@ function localizedSafetyRecord(properties: SituationFeature["properties"], local
   return isRecord(entry) ? entry : localized;
 }
 
-function localizedSafetyString(properties: SituationFeature["properties"], locale: "cs" | "en", ...keys: string[]): string | undefined {
+function localizedSafetyString(
+  properties: SituationFeature["properties"],
+  locale: "cs" | "en",
+  ...keys: string[]
+): string | undefined {
   const record = localizedSafetyRecord(properties, locale);
   for (const key of keys) {
     const value = stringProperty(record[key]);
@@ -16150,21 +18408,25 @@ function safetyPresentationString(properties: SituationFeature["properties"], ..
 }
 
 function safetyDisplayLabel(properties: SituationFeature["properties"]): string {
-  return localizedSafetyString(properties, "cs", "headline", "title", "label", "name")
-    ?? safetyPresentationString(properties, "label", "title")
-    ?? properties.headline
-    ?? properties.areaName
-    ?? properties.label
-    ?? humanizeSafetyTypeCode(safetyCanonicalTypeCode(properties))
-    ?? safetyCanonicalSourceCode(properties)
-    ?? "Výstraha";
+  return (
+    localizedSafetyString(properties, "cs", "headline", "title", "label", "name") ??
+    safetyPresentationString(properties, "label", "title") ??
+    properties.headline ??
+    properties.areaName ??
+    properties.label ??
+    humanizeSafetyTypeCode(safetyCanonicalTypeCode(properties)) ??
+    safetyCanonicalSourceCode(properties) ??
+    "Výstraha"
+  );
 }
 
 function safetyDetailText(properties: SituationFeature["properties"]): string | undefined {
-  return localizedSafetyString(properties, "cs", "detail", "description", "summary")
-    ?? renderSafetyDetailTemplate(properties)
-    ?? properties.description
-    ?? properties.summary;
+  return (
+    localizedSafetyString(properties, "cs", "detail", "description", "summary") ??
+    renderSafetyDetailTemplate(properties) ??
+    properties.description ??
+    properties.summary
+  );
 }
 
 function renderSafetyDetailTemplate(properties: SituationFeature["properties"]): string | undefined {
@@ -16181,7 +18443,12 @@ function renderSafetyDetailTemplate(properties: SituationFeature["properties"]):
     sourceSystem: safetyCanonicalSourceSystem(properties) ?? "",
     typeCode: safetyCanonicalTypeCode(properties) ?? ""
   };
-  return template.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) => values[key] ?? "").replace(/\s+/g, " ").trim() || undefined;
+  return (
+    template
+      .replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) => values[key] ?? "")
+      .replace(/\s+/g, " ")
+      .trim() || undefined
+  );
 }
 
 function safetyNotificationEligibleLabel(properties: SituationFeature["properties"]): string {
@@ -16206,15 +18473,32 @@ function humanizeSafetyTypeCode(value: string | undefined): string | undefined {
     "weather.fire_danger": "Nebezpečí požáru",
     "weather.temperature.high": "Vysoké teploty"
   };
-  return known[value] ?? value.split(/[._-]+/u).filter(Boolean).join(" ");
+  return (
+    known[value] ??
+    value
+      .split(/[._-]+/u)
+      .filter(Boolean)
+      .join(" ")
+  );
 }
 
 function safetyHazardLabel(value: string | undefined): string {
   const normalized = (value ?? "").toLowerCase().replace(/[_-]/g, " ");
-  if (normalized.includes("air quality") || normalized.includes("pm10") || normalized.includes("no2") || normalized.includes("so2") || normalized.includes("o3")) {
+  if (
+    normalized.includes("air quality") ||
+    normalized.includes("pm10") ||
+    normalized.includes("no2") ||
+    normalized.includes("so2") ||
+    normalized.includes("o3")
+  ) {
     return "Kvalita ovzduší";
   }
-  if (normalized.includes("slippery") || normalized.includes("ice") || normalized.includes("naled") || normalized.includes("ledov")) {
+  if (
+    normalized.includes("slippery") ||
+    normalized.includes("ice") ||
+    normalized.includes("naled") ||
+    normalized.includes("ledov")
+  ) {
     return "Náledí / ledovka";
   }
   if (normalized.includes("snow")) {
@@ -16380,7 +18664,10 @@ function fireConfirmationLabel(typeCode: string | undefined, sourceIncident: str
 }
 
 function fireRiskNotice(properties: SituationFeature["properties"]): string {
-  if (safetyCanonicalTypeCode(properties) === "weather.fire_danger" || properties.sourceIncident === "CHMI_CAP_FIRE_DANGER") {
+  if (
+    safetyCanonicalTypeCode(properties) === "weather.fire_danger" ||
+    properties.sourceIncident === "CHMI_CAP_FIRE_DANGER"
+  ) {
     return "Oficiální výstraha ČHMÚ pro podmínky vzniku a šíření požárů.";
   }
   if (properties.sourceIncident === "NASA_FIRMS_HOTSPOT") {
@@ -16512,7 +18799,10 @@ function formatIncidentTimeSpan(value: number): string {
   return `okno ${(value / 3600).toFixed(value >= 36000 ? 0 : 1)} h`;
 }
 
-function formatEmergencyRouteSummary(route: Record<string, unknown> | undefined, fallbackQuality: Record<string, unknown> | undefined): string {
+function formatEmergencyRouteSummary(
+  route: Record<string, unknown> | undefined,
+  fallbackQuality: Record<string, unknown> | undefined
+): string {
   const distance = formatRouteDistance(numberProperty(route?.distanceM));
   const duration = formatDurationSeconds(numberProperty(route?.durationSeconds));
   const routeQuality = isRecord(route?.quality) ? route.quality : fallbackQuality;
@@ -16521,7 +18811,9 @@ function formatEmergencyRouteSummary(route: Record<string, unknown> | undefined,
   const quality = [
     mode ? (mode === "osm_graph" ? "OSM graf" : `orientační režim ${mode}`) : undefined,
     confidence !== undefined ? `${Math.round(clamp(confidence, 0, 1) * 100)} % jistota` : undefined
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return `Zásahová trasa: ${distance}, ETA ${duration}${quality ? ` · ${quality}` : ""}.`;
 }
 
@@ -16694,15 +18986,15 @@ function formatShortDateTime(value: string | undefined): string {
   const minutes = Number(timeOnly[2]);
   const seconds = Number(timeOnly[3] ?? 0);
   if (
-    !Number.isInteger(hours)
-    || !Number.isInteger(minutes)
-    || !Number.isInteger(seconds)
-    || hours < 0
-    || hours > 23
-    || minutes < 0
-    || minutes > 59
-    || seconds < 0
-    || seconds > 59
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    !Number.isInteger(seconds) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59 ||
+    seconds < 0 ||
+    seconds > 59
   ) {
     return "n/a";
   }
@@ -17004,10 +19296,17 @@ function catalogLayerHint(layer: MapCatalogLayer, operable: boolean): string {
 
 function catalogLayerProviderLabel(layer: MapCatalogLayer): string {
   if (layer.query.providerId === "sim.situation-data") {
-    if (layer.layerId === "public.outdoor.community_places" || (layer.query.providerSourceIds ?? []).includes("community_context")) {
+    if (
+      layer.layerId === "public.outdoor.community_places" ||
+      (layer.query.providerSourceIds ?? []).includes("community_context")
+    ) {
       return "Komunitní kontext";
     }
-    if (layer.groupId === "risks.weather" || layer.layerId.startsWith("public.weather.") || layer.layerId === "public.safety.air_quality") {
+    if (
+      layer.groupId === "risks.weather" ||
+      layer.layerId.startsWith("public.weather.") ||
+      layer.layerId === "public.safety.air_quality"
+    ) {
       if ((layer.query.providerSourceIds ?? []).includes("chmi_weather_radar")) {
         return "ČHMÚ radar";
       }
@@ -17072,9 +19371,7 @@ function readInitialRefreshSeconds(fallback: RefreshSeconds): RefreshSeconds {
 }
 
 function readInitialLayer(value: string | undefined): CopLayer {
-  return copLayerIds.includes((value ?? "") as CopLayer)
-    ? (value as CopLayer)
-    : "air-situation";
+  return copLayerIds.includes((value ?? "") as CopLayer) ? (value as CopLayer) : "air-situation";
 }
 
 function normalizeTrackLayerIds(value: string[] | undefined, fallback: CopLayer = "air-situation"): CopLayer[] {
@@ -17090,7 +19387,17 @@ function isCopLayer(value: string): value is CopLayer {
   return copLayerIds.includes(value as CopLayer);
 }
 
-function buildMapLayerLabel(trackLayerIds: CopLayer[], situationLayerIds: SituationLayerId[], safetyLayerIds: SafetyLayerId[], takLayerIds: TakLayerId[], flightLayerCount = 0, communityLayerCount = 0, missionArenaLayerCount = 0, outlineBoundaryLayerEnabled = false, sketchLayerCount = 0): string {
+function buildMapLayerLabel(
+  trackLayerIds: CopLayer[],
+  situationLayerIds: SituationLayerId[],
+  safetyLayerIds: SafetyLayerId[],
+  takLayerIds: TakLayerId[],
+  flightLayerCount = 0,
+  communityLayerCount = 0,
+  missionArenaLayerCount = 0,
+  outlineBoundaryLayerEnabled = false,
+  sketchLayerCount = 0
+): string {
   const parts: string[] = [];
   if (trackLayerIds.length > 0) {
     parts.push(`${trackLayerIds.length} letecká`);
@@ -17132,8 +19439,9 @@ function buildCatalogLayerSummary(
     return "Zapněte vrstvu v katalogu vlevo";
   }
   const selected = new Set(selectedLayerIds);
-  const layers = selectableCatalogLayers(catalog)
-    .filter((layer) => selected.has(layer.layerId) && isImplementedCatalogLayer(layer));
+  const layers = selectableCatalogLayers(catalog).filter(
+    (layer) => selected.has(layer.layerId) && isImplementedCatalogLayer(layer)
+  );
   if (layers.length === 0) {
     return "Žádná zobrazitelná vrstva není zapnutá";
   }
@@ -17159,12 +19467,17 @@ function buildCatalogLayerSummary(
 }
 
 function readInitialAffiliationScope(value: string | undefined): AffiliationScope {
-  return ["all", "friend", "hostile", "neutral", "unknown"].includes(value ?? "")
-    ? (value as AffiliationScope)
-    : "all";
+  return ["all", "friend", "hostile", "neutral", "unknown"].includes(value ?? "") ? (value as AffiliationScope) : "all";
 }
 
-type CatalogProviderId = "cop.community" | "cop.sketch" | "csm.mission-arena" | "sim.flight-data" | "sim.safety-data" | "sim.situation-data" | "sim.tak-gateway";
+type CatalogProviderId =
+  | "cop.community"
+  | "cop.sketch"
+  | "csm.mission-arena"
+  | "sim.flight-data"
+  | "sim.safety-data"
+  | "sim.situation-data"
+  | "sim.tak-gateway";
 
 function buildCatalogGroupViews(catalog: MapCatalogResponse | null): CatalogGroupView[] {
   if (!catalog) {
@@ -17183,14 +19496,15 @@ function buildCatalogGroupViews(catalog: MapCatalogResponse | null): CatalogGrou
 }
 
 function selectableCatalogLayers(catalog: MapCatalogResponse): MapCatalogLayer[] {
-  return catalog.layers.filter((layer) =>
-    layer.selectable
-    && catalogLayerAvailableForMap(layer)
-    && layer.audience !== "diagnostic"
-    && layer.role !== "diagnostic"
-    && layer.kind !== "mvt_tiles"
-    && layer.kind !== "raster_tiles"
-    && isImplementedCatalogLayer(layer)
+  return catalog.layers.filter(
+    (layer) =>
+      layer.selectable &&
+      catalogLayerAvailableForMap(layer) &&
+      layer.audience !== "diagnostic" &&
+      layer.role !== "diagnostic" &&
+      layer.kind !== "mvt_tiles" &&
+      layer.kind !== "raster_tiles" &&
+      isImplementedCatalogLayer(layer)
   );
 }
 
@@ -17215,19 +19529,21 @@ function catalogLayerSortKey(layer: MapCatalogLayer): number {
 }
 
 function isImplementedCatalogLayer(layer: MapCatalogLayer): boolean {
-  const supportedProviderQuery = layer.query.mode === "bbox"
-    || (layer.query.mode === "grid" && layer.query.providerId === "sim.situation-data");
-  return (supportedProviderQuery
-    && (layer.query.providerId === "cop.community"
-      || layer.query.providerId === "csm.mission-arena"
-      || layer.query.providerId === "sim.flight-data"
-      || layer.query.providerId === "sim.situation-data"
-      || layer.query.providerId === "sim.safety-data"
-      || layer.query.providerId === "sim.tak-gateway"))
-    || layer.layerId === "flight.public.tracks"
-    || layer.layerId === "flight.sim.tracks"
-    || layer.layerId === "user.zone.alerts"
-    || layer.layerId === "user.sketch.drawings";
+  const supportedProviderQuery =
+    layer.query.mode === "bbox" || (layer.query.mode === "grid" && layer.query.providerId === "sim.situation-data");
+  return (
+    (supportedProviderQuery &&
+      (layer.query.providerId === "cop.community" ||
+        layer.query.providerId === "csm.mission-arena" ||
+        layer.query.providerId === "sim.flight-data" ||
+        layer.query.providerId === "sim.situation-data" ||
+        layer.query.providerId === "sim.safety-data" ||
+        layer.query.providerId === "sim.tak-gateway")) ||
+    layer.layerId === "flight.public.tracks" ||
+    layer.layerId === "flight.sim.tracks" ||
+    layer.layerId === "user.zone.alerts" ||
+    layer.layerId === "user.sketch.drawings"
+  );
 }
 
 function defaultVisibleCatalogLayerIds(catalog: MapCatalogResponse): string[] {
@@ -17246,30 +19562,46 @@ function toggleCatalogLayerId(current: string[], layerId: string, enabled: boole
   return Array.from(selected);
 }
 
-function catalogLayerIdsForProviderSelection(catalog: MapCatalogResponse, providerId: CatalogProviderId, selectedLayerIds: string[]): string[] {
+function catalogLayerIdsForProviderSelection(
+  catalog: MapCatalogResponse,
+  providerId: CatalogProviderId,
+  selectedLayerIds: string[]
+): string[] {
   const selected = new Set(selectedLayerIds);
   return catalog.layers
-    .filter((layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer))
-    .filter((layer) => (layer.query.mode === "bbox" || layer.query.mode === "grid") && layer.query.providerId === providerId)
+    .filter(
+      (layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer)
+    )
+    .filter(
+      (layer) => (layer.query.mode === "bbox" || layer.query.mode === "grid") && layer.query.providerId === providerId
+    )
     .map((layer) => layer.layerId);
 }
 
 function safetyAreaAlertCatalogLayerIds(catalog: MapCatalogResponse): string[] {
   return catalog.layers
     .filter((layer) => catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer))
-    .filter((layer) => layer.query.providerId === "sim.safety-data" && (layer.query.mode === "bbox" || layer.query.mode === "grid"))
+    .filter(
+      (layer) =>
+        layer.query.providerId === "sim.safety-data" && (layer.query.mode === "bbox" || layer.query.mode === "grid")
+    )
     .filter((layer) => isSafetyAreaAlertCatalogLayerId(layer.layerId))
     .map((layer) => layer.layerId);
 }
 
 function isSafetyAreaAlertCatalogLayerId(layerId: string): boolean {
-  return layerId === "public.safety.warnings"
-    || layerId === "public.safety.weather_alerts"
-    || layerId === "public.safety.fire"
-    || layerId === "public.safety.flood";
+  return (
+    layerId === "public.safety.warnings" ||
+    layerId === "public.safety.weather_alerts" ||
+    layerId === "public.safety.fire" ||
+    layerId === "public.safety.flood"
+  );
 }
 
-function selectedSituationRasterRefreshSeconds(catalog: MapCatalogResponse | null, selectedLayerIds: string[]): number | undefined {
+function selectedSituationRasterRefreshSeconds(
+  catalog: MapCatalogResponse | null,
+  selectedLayerIds: string[]
+): number | undefined {
   if (!catalog) {
     return undefined;
   }
@@ -17296,7 +19628,9 @@ function selectedTrafficRefreshPlans(
   }
   const selected = new Set(selectedLayerIds);
   const selectedTrafficLayers = catalog.layers
-    .filter((layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer))
+    .filter(
+      (layer) => selected.has(layer.layerId) && catalogLayerAvailableForMap(layer) && isImplementedCatalogLayer(layer)
+    )
     .filter((layer) => layer.query.providerId === "sim.situation-data" && isTrafficCatalogLayerId(layer.layerId));
   if (selectedTrafficLayers.length === 0) {
     return [];
@@ -17334,11 +19668,13 @@ function selectedTrafficRefreshPlans(
     if (refreshSeconds === undefined) {
       return [];
     }
-    return [{
-      key: layer.layerId,
-      layerIds: [layer.layerId],
-      refreshSeconds
-    }];
+    return [
+      {
+        key: layer.layerId,
+        layerIds: [layer.layerId],
+        refreshSeconds
+      }
+    ];
   });
 }
 
@@ -17364,18 +19700,27 @@ function isTrafficVehicleCatalogLayerId(layerId: string): boolean {
 }
 
 function isWeatherRadarCatalogLayerId(layerId: string): boolean {
-  return layerId === "public.weather.radar_reflectivity"
-    || layerId === "public.weather.radar_precipitation"
-    || layerId === "public.weather.radar_nowcast"
-    || layerId === "public.safety.thunderstorm_risk";
+  return (
+    layerId === "public.weather.radar_reflectivity" ||
+    layerId === "public.weather.radar_precipitation" ||
+    layerId === "public.weather.radar_nowcast" ||
+    layerId === "public.safety.thunderstorm_risk"
+  );
 }
 
-function normalizeWeatherRadarFrames(response: { frames?: WeatherRadarFrame[]; products?: Array<{ frames?: WeatherRadarFrame[] }> }): WeatherRadarFrame[] {
+function normalizeWeatherRadarFrames(response: {
+  frames?: WeatherRadarFrame[];
+  products?: Array<{ frames?: WeatherRadarFrame[] }>;
+}): WeatherRadarFrame[] {
   const frames = [
     ...(Array.isArray(response.frames) ? response.frames : []),
-    ...(Array.isArray(response.products) ? response.products.flatMap((product) => Array.isArray(product.frames) ? product.frames : []) : [])
+    ...(Array.isArray(response.products)
+      ? response.products.flatMap((product) => (Array.isArray(product.frames) ? product.frames : []))
+      : [])
   ]
-    .filter((frame) => typeof frame.cleanUrl === "string" && frame.cleanUrl.length > 0 && typeof frame.observedAt === "string")
+    .filter(
+      (frame) => typeof frame.cleanUrl === "string" && frame.cleanUrl.length > 0 && typeof frame.observedAt === "string"
+    )
     .sort((a, b) => Date.parse(a.observedAt ?? "") - Date.parse(b.observedAt ?? ""));
   const seen = new Set<string>();
   return frames.filter((frame) => {
@@ -17400,7 +19745,9 @@ function applyWeatherRadarFrameToSituationFeatures(
     if (!isWeatherRadarSituationFeature(feature)) {
       return feature;
     }
-    const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+    const providerProperties = isRecord(feature.properties.providerProperties)
+      ? feature.properties.providerProperties
+      : {};
     const raster = isRecord(providerProperties.raster) ? providerProperties.raster : {};
     changed = true;
     return {
@@ -17425,11 +19772,13 @@ function applyWeatherRadarFrameToSituationFeatures(
 }
 
 function isWeatherRadarSituationFeature(feature: SituationFeature): boolean {
-  return isWeatherRadarCatalogLayerId(feature.properties.layerId ?? "")
-    || feature.properties.layer === "weather_radar_reflectivity"
-    || feature.properties.layer === "weather_radar_precipitation"
-    || feature.properties.layer === "weather_radar_nowcast"
-    || feature.properties.layer === "weather_thunderstorm_risk";
+  return (
+    isWeatherRadarCatalogLayerId(feature.properties.layerId ?? "") ||
+    feature.properties.layer === "weather_radar_reflectivity" ||
+    feature.properties.layer === "weather_radar_precipitation" ||
+    feature.properties.layer === "weather_radar_nowcast" ||
+    feature.properties.layer === "weather_thunderstorm_risk"
+  );
 }
 
 function formatWeatherRadarFrameTime(frame: WeatherRadarFrame | undefined): string {
@@ -17443,7 +19792,11 @@ function formatWeatherRadarFrameTime(frame: WeatherRadarFrame | undefined): stri
   return date.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
 }
 
-function withOutlineBoundaryLayer(selectedLayerIds: string[], mode: MapBasemapMode, catalog: MapCatalogResponse | null): string[] {
+function withOutlineBoundaryLayer(
+  selectedLayerIds: string[],
+  mode: MapBasemapMode,
+  catalog: MapCatalogResponse | null
+): string[] {
   if (mode !== "outline" || !catalog) {
     return selectedLayerIds;
   }
@@ -17467,11 +19820,12 @@ function countVisibleFlightReferenceLayers(catalog: MapCatalogResponse | null, s
     return 0;
   }
   const selected = new Set(selectedLayerIds);
-  return catalog.layers.filter((layer) =>
-    selected.has(layer.layerId)
-    && isImplementedCatalogLayer(layer)
-    && layer.query.mode === "bbox"
-    && layer.query.providerId === "sim.flight-data"
+  return catalog.layers.filter(
+    (layer) =>
+      selected.has(layer.layerId) &&
+      isImplementedCatalogLayer(layer) &&
+      layer.query.mode === "bbox" &&
+      layer.query.providerId === "sim.flight-data"
   ).length;
 }
 
@@ -17480,11 +19834,12 @@ function countVisibleCommunityLayers(catalog: MapCatalogResponse | null, selecte
     return 0;
   }
   const selected = new Set(selectedLayerIds);
-  return catalog.layers.filter((layer) =>
-    selected.has(layer.layerId)
-    && isImplementedCatalogLayer(layer)
-    && layer.query.mode === "bbox"
-    && layer.query.providerId === "cop.community"
+  return catalog.layers.filter(
+    (layer) =>
+      selected.has(layer.layerId) &&
+      isImplementedCatalogLayer(layer) &&
+      layer.query.mode === "bbox" &&
+      layer.query.providerId === "cop.community"
   ).length;
 }
 
@@ -17493,11 +19848,12 @@ function countVisibleMissionArenaLayers(catalog: MapCatalogResponse | null, sele
     return 0;
   }
   const selected = new Set(selectedLayerIds);
-  return catalog.layers.filter((layer) =>
-    selected.has(layer.layerId)
-    && isImplementedCatalogLayer(layer)
-    && layer.query.mode === "bbox"
-    && layer.query.providerId === "csm.mission-arena"
+  return catalog.layers.filter(
+    (layer) =>
+      selected.has(layer.layerId) &&
+      isImplementedCatalogLayer(layer) &&
+      layer.query.mode === "bbox" &&
+      layer.query.providerId === "csm.mission-arena"
   ).length;
 }
 
@@ -17546,9 +19902,10 @@ function catalogLayerMatchesLegacySelection(
       const situationLayerId = situationLayerIdFromProviderLayerId(layerId);
       return Boolean(situationLayerId && selection.situationLayerIds.includes(situationLayerId));
     });
-    const sourceMatch = selection.situationSourceIds.length === 0
-      || providerSourceIds.length === 0
-      || providerSourceIds.some((sourceId) => selection.situationSourceIds.includes(sourceId));
+    const sourceMatch =
+      selection.situationSourceIds.length === 0 ||
+      providerSourceIds.length === 0 ||
+      providerSourceIds.some((sourceId) => selection.situationSourceIds.includes(sourceId));
     return layerMatch && sourceMatch;
   }
   if (layer.query.providerId === "sim.safety-data") {
@@ -17654,7 +20011,11 @@ function mapCatalogToSituationLayers(catalog: MapCatalogResponse): SituationLaye
   return layers.size > 0 ? Array.from(layers.values()) : defaultSituationLayers();
 }
 
-function mergeSituationLayer(current: SituationLayer | undefined, layerId: SituationLayerId, catalogLayer: MapCatalogLayer): SituationLayer {
+function mergeSituationLayer(
+  current: SituationLayer | undefined,
+  layerId: SituationLayerId,
+  catalogLayer: MapCatalogLayer
+): SituationLayer {
   return {
     defaultVisible: (current?.defaultVisible ?? false) || catalogLayer.defaultVisible,
     description: current?.description ?? catalogLayer.description,
@@ -17719,9 +20080,13 @@ function mapCatalogToSituationSources(catalog: MapCatalogResponse): SituationSou
     .map((source) => ({
       enabled: source.enabled,
       label: source.label,
-      layers: Array.from(new Set(providerLayerIdsForCatalogSource(catalog, source)
-        .map(situationLayerIdFromProviderLayerId)
-        .filter((value): value is SituationLayerId => Boolean(value)))),
+      layers: Array.from(
+        new Set(
+          providerLayerIdsForCatalogSource(catalog, source)
+            .map(situationLayerIdFromProviderLayerId)
+            .filter((value): value is SituationLayerId => Boolean(value))
+        )
+      ),
       sourceId: source.sourceId,
       updateCadenceSeconds: source.updateCadenceSeconds
     }))
@@ -17729,19 +20094,20 @@ function mapCatalogToSituationSources(catalog: MapCatalogResponse): SituationSou
 }
 
 function mapCatalogToSafetySources(catalog: MapCatalogResponse): SafetySourceDescriptor[] {
-  return catalog.sources
-    .flatMap((source): SafetySourceDescriptor[] => {
-      if (source.providerId !== "sim.safety-data" || !source.selectableInMap || !isSafetySourceId(source.sourceId)) {
-        return [];
-      }
-      return [{
+  return catalog.sources.flatMap((source): SafetySourceDescriptor[] => {
+    if (source.providerId !== "sim.safety-data" || !source.selectableInMap || !isSafetySourceId(source.sourceId)) {
+      return [];
+    }
+    return [
+      {
         enabled: source.enabled,
         label: source.label,
         layers: providerLayerIdsForCatalogSource(catalog, source).filter(isSafetyLayerId),
         sourceId: source.sourceId,
         updateCadenceSeconds: source.updateCadenceSeconds
-      }];
-    });
+      }
+    ];
+  });
 }
 
 function mapCatalogToTakSources(catalog: MapCatalogResponse): TakSourceDescriptor[] {
@@ -17758,9 +20124,13 @@ function mapCatalogToTakSources(catalog: MapCatalogResponse): TakSourceDescripto
 
 function providerLayerIdsForCatalogSource(catalog: MapCatalogResponse, source: MapCatalogSource): string[] {
   const catalogLayerIds = new Set([...(source.feedsCatalogLayerIds ?? []), ...(source.usedByCatalogLayerIds ?? [])]);
-  return Array.from(new Set(catalog.layers
-    .filter((layer) => catalogLayerIds.has(layer.layerId))
-    .flatMap((layer) => layer.query.providerLayerIds ?? [])));
+  return Array.from(
+    new Set(
+      catalog.layers
+        .filter((layer) => catalogLayerIds.has(layer.layerId))
+        .flatMap((layer) => layer.query.providerLayerIds ?? [])
+    )
+  );
 }
 
 function mapCatalogLayerIdsForProviderSelection(
@@ -17772,26 +20142,39 @@ function mapCatalogLayerIdsForProviderSelection(
   const selectedLayers = new Set(providerLayerIds);
   const selectedSources = new Set(selectedSourceIds);
   return catalog.layers
-    .filter((layer) => layer.selectable && (layer.query.mode === "bbox" || layer.query.mode === "grid") && layer.query.providerId === providerId)
-    .filter((layer) => (layer.query.providerLayerIds ?? []).some((layerId) => {
-      if (selectedLayers.has(layerId)) {
-        return true;
-      }
-      const situationLayerId = providerId === "sim.situation-data" ? situationLayerIdFromProviderLayerId(layerId) : undefined;
-      return Boolean(situationLayerId && selectedLayers.has(situationLayerId));
-    }))
-    .filter((layer) => selectedSources.size === 0 || (layer.query.providerSourceIds ?? []).some((sourceId) => selectedSources.has(sourceId)))
+    .filter(
+      (layer) =>
+        layer.selectable &&
+        (layer.query.mode === "bbox" || layer.query.mode === "grid") &&
+        layer.query.providerId === providerId
+    )
+    .filter((layer) =>
+      (layer.query.providerLayerIds ?? []).some((layerId) => {
+        if (selectedLayers.has(layerId)) {
+          return true;
+        }
+        const situationLayerId =
+          providerId === "sim.situation-data" ? situationLayerIdFromProviderLayerId(layerId) : undefined;
+        return Boolean(situationLayerId && selectedLayers.has(situationLayerId));
+      })
+    )
+    .filter(
+      (layer) =>
+        selectedSources.size === 0 ||
+        (layer.query.providerSourceIds ?? []).some((sourceId) => selectedSources.has(sourceId))
+    )
     .map((layer) => layer.layerId);
 }
 
-function buildCatalogFeatureFilters(layerIds: string[], technology: CoverageTechnology | undefined): Record<string, Record<string, unknown>> {
+function buildCatalogFeatureFilters(
+  layerIds: string[],
+  technology: CoverageTechnology | undefined
+): Record<string, Record<string, unknown>> {
   if (!technology) {
     return {};
   }
   return Object.fromEntries(
-    layerIds
-      .filter((layerId) => layerId.includes("mobile"))
-      .map((layerId) => [layerId, { technology: [technology] }])
+    layerIds.filter((layerId) => layerId.includes("mobile")).map((layerId) => [layerId, { technology: [technology] }])
   );
 }
 
@@ -17801,23 +20184,27 @@ function mergeGeometryTypes(current: string[] | undefined, next: string[] | unde
 }
 
 function minCadenceSeconds(current: number | undefined, next: number | undefined): number | undefined {
-  const values = [current, next].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const values = [current, next].filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value)
+  );
   return values.length > 0 ? Math.min(...values) : undefined;
 }
 
 function isSafetySourceId(value: string): value is SafetyDataSourceId {
-  return value === "admin_boundaries"
-    || value === "chmi_alerts"
-    || value === "chmi_hydro"
-    || value === "fire_hotspots"
-    || value === "fire_incidents"
-    || value === "gdacs_alerts"
-    || value === "hzs_incidents"
-    || value === "municipal_alerts"
-    || value === "mock"
-    || value === "nasa_firms"
-    || value === "road_srti_lod"
-    || value === "weather_alerts";
+  return (
+    value === "admin_boundaries" ||
+    value === "chmi_alerts" ||
+    value === "chmi_hydro" ||
+    value === "fire_hotspots" ||
+    value === "fire_incidents" ||
+    value === "gdacs_alerts" ||
+    value === "hzs_incidents" ||
+    value === "municipal_alerts" ||
+    value === "mock" ||
+    value === "nasa_firms" ||
+    value === "road_srti_lod" ||
+    value === "weather_alerts"
+  );
 }
 
 function readInitialDomainScope(value: string | undefined): DomainScope {
@@ -17878,7 +20265,9 @@ function readInitialHistoryWindowSeconds(value: number | undefined): number {
 
 function normalizeHistoryWindowSeconds(value: number | undefined): number {
   const normalizedValue = Number(value);
-  return historyWindowOptions.includes(normalizedValue as (typeof historyWindowOptions)[number]) ? normalizedValue : 180;
+  return historyWindowOptions.includes(normalizedValue as (typeof historyWindowOptions)[number])
+    ? normalizedValue
+    : 180;
 }
 
 function normalizeSituationLayerIds(value: string[] | undefined): SituationLayerId[] {
@@ -17892,43 +20281,45 @@ function normalizeSourceIds(value: string[] | undefined): string[] {
 }
 
 function isSituationLayerId(value: string): value is SituationLayerId {
-  return value === "weather"
-    || value === "weather_temperature_grid"
-    || value === "weather_webcams"
-    || value === "weather_wind_field"
-    || value === "weather_precipitation_grid"
-    || value === "weather_humidity_grid"
-    || value === "weather_pressure_grid"
-    || value === "weather_radar_reflectivity"
-    || value === "weather_radar_precipitation"
-    || value === "weather_radar_nowcast"
-    || value === "weather_thunderstorm_risk"
-    || value === "weather_forecast_area"
-    || value === "boundary_admin"
-    || value === "boundary_country"
-    || value === "boundary_region"
-    || value === "boundary_district"
-    || value === "boundary_orp"
-    || value === "boundary_municipality"
-    || value === "community"
-    || value === "community_places"
-    || value === "fire"
-    || value === "flight_airports"
-    || value === "flight_airspaces"
-    || value === "ground"
-    || value === "mobile"
-    || value === "mobile_coverage"
-    || value === "mobile_network"
-    || value === "mission_arena"
-    || value === "place_settlements"
-    || value === "trail_poi"
-    || value === "trail_routes"
-    || value === "traffic"
-    || value === "warnings"
-    || value === "weather_alerts"
-    || value === "flood"
-    || value === "air_quality"
-    || value === "air_quality_grid";
+  return (
+    value === "weather" ||
+    value === "weather_temperature_grid" ||
+    value === "weather_webcams" ||
+    value === "weather_wind_field" ||
+    value === "weather_precipitation_grid" ||
+    value === "weather_humidity_grid" ||
+    value === "weather_pressure_grid" ||
+    value === "weather_radar_reflectivity" ||
+    value === "weather_radar_precipitation" ||
+    value === "weather_radar_nowcast" ||
+    value === "weather_thunderstorm_risk" ||
+    value === "weather_forecast_area" ||
+    value === "boundary_admin" ||
+    value === "boundary_country" ||
+    value === "boundary_region" ||
+    value === "boundary_district" ||
+    value === "boundary_orp" ||
+    value === "boundary_municipality" ||
+    value === "community" ||
+    value === "community_places" ||
+    value === "fire" ||
+    value === "flight_airports" ||
+    value === "flight_airspaces" ||
+    value === "ground" ||
+    value === "mobile" ||
+    value === "mobile_coverage" ||
+    value === "mobile_network" ||
+    value === "mission_arena" ||
+    value === "place_settlements" ||
+    value === "trail_poi" ||
+    value === "trail_routes" ||
+    value === "traffic" ||
+    value === "warnings" ||
+    value === "weather_alerts" ||
+    value === "flood" ||
+    value === "air_quality" ||
+    value === "air_quality_grid"
+  );
 }
 
 function situationLayerIdFromProviderLayerId(value: string): SituationLayerId | undefined {
@@ -18015,7 +20406,13 @@ function normalizeSafetyLayerIds(value: string[] | undefined): SafetyLayerId[] {
 }
 
 function isSafetyLayerId(value: string): value is SafetyLayerId {
-  return value === "warnings" || value === "weather_alerts" || value === "flood" || value === "fire" || value === "boundary_admin";
+  return (
+    value === "warnings" ||
+    value === "weather_alerts" ||
+    value === "flood" ||
+    value === "fire" ||
+    value === "boundary_admin"
+  );
 }
 
 function normalizeTakLayerIds(value: string[] | undefined): TakLayerId[] {
@@ -18044,7 +20441,10 @@ function writeMessagingDockWidth(width: number): void {
     return;
   }
   try {
-    window.localStorage.setItem(messagingDockWidthStorageKey, String(clamp(width, messagingDockWidthRange.min, messagingDockWidthRange.max)));
+    window.localStorage.setItem(
+      messagingDockWidthStorageKey,
+      String(clamp(width, messagingDockWidthRange.min, messagingDockWidthRange.max))
+    );
   } catch {
     // Local storage can be disabled in private/degraded browser contexts.
   }
@@ -18057,12 +20457,15 @@ export function buildStableSituationQueryBounds(bounds: MapBounds): MapBounds {
   const centerLat = (bounds.north + bounds.south) / 2;
   const queryWidth = Math.min(11, Math.max(width * 1.8, 1.2));
   const queryHeight = Math.min(7, Math.max(height * 1.8, 0.9));
-  return snapBoundsToGrid({
-    east: centerLon + queryWidth / 2,
-    north: centerLat + queryHeight / 2,
-    south: centerLat - queryHeight / 2,
-    west: centerLon - queryWidth / 2
-  }, 0.25);
+  return snapBoundsToGrid(
+    {
+      east: centerLon + queryWidth / 2,
+      north: centerLat + queryHeight / 2,
+      south: centerLat - queryHeight / 2,
+      west: centerLon - queryWidth / 2
+    },
+    0.25
+  );
 }
 
 function buildWatchedAreaSafetyBounds(aoiRules: AoiRule[]): MapBounds | null {
@@ -18073,7 +20476,7 @@ function buildWatchedAreaSafetyBounds(aoiRules: AoiRule[]): MapBounds | null {
   const bounds = enabledRules
     .map(aoiRuleBounds)
     .filter((value): value is MapBounds => value !== null)
-    .reduce<MapBounds | null>((merged, next) => merged ? mergeMapBounds(merged, next) : next, null);
+    .reduce<MapBounds | null>((merged, next) => (merged ? mergeMapBounds(merged, next) : next), null);
   return bounds ? snapBoundsToGrid(bounds, 0.1) : null;
 }
 
@@ -18087,7 +20490,7 @@ function aoiRuleBounds(rule: AoiRule): MapBounds | null {
   }
   const radiusKm = clamp(rule.radiusKm, 0.2, 300);
   const latDelta = radiusKm / 111;
-  const lonFactor = Math.max(0.2, Math.abs(Math.cos(rule.lat * Math.PI / 180)));
+  const lonFactor = Math.max(0.2, Math.abs(Math.cos((rule.lat * Math.PI) / 180)));
   const lonDelta = radiusKm / (111 * lonFactor);
   return {
     east: clamp(rule.lon + lonDelta, -180, 180),
@@ -18098,7 +20501,8 @@ function aoiRuleBounds(rule: AoiRule): MapBounds | null {
 }
 
 function aoiPolygonBounds(coordinates: Array<Array<[number, number]>>): MapBounds | null {
-  const points = coordinates.flatMap((ring) => ring)
+  const points = coordinates
+    .flatMap((ring) => ring)
     .filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
   if (points.length === 0) {
     return null;
@@ -18131,10 +20535,12 @@ function mergeMapBounds(a: MapBounds, b: MapBounds): MapBounds {
 
 export function mapBoundsContainedBy(container: MapBounds, bounds: MapBounds): boolean {
   const epsilon = 0.000001;
-  return bounds.west >= container.west - epsilon
-    && bounds.east <= container.east + epsilon
-    && bounds.south >= container.south - epsilon
-    && bounds.north <= container.north + epsilon;
+  return (
+    bounds.west >= container.west - epsilon &&
+    bounds.east <= container.east + epsilon &&
+    bounds.south >= container.south - epsilon &&
+    bounds.north <= container.north + epsilon
+  );
 }
 
 function snapBoundsToGrid(bounds: MapBounds, gridDegrees: number): MapBounds {
@@ -18176,22 +20582,30 @@ export function buildSituationMapRequestGroups(
 }
 
 function stableSituationRequestKey(groups: SituationMapRequestGroup[]): string {
-  return JSON.stringify(groups.map((group) => ({
-    filters: group.filters,
-    layerIds: [...group.layerIds].sort(),
-    limit: group.limit
-  })));
+  return JSON.stringify(
+    groups.map((group) => ({
+      filters: group.filters,
+      layerIds: [...group.layerIds].sort(),
+      limit: group.limit
+    }))
+  );
 }
 
-function mergeSituationMapFeatureResponses(responses: MapFeatureQueryResponse[]): SituationFeatureCollectionResponse | null {
-  const collections = responses.map((response) => response.situation).filter((collection): collection is SituationFeatureCollectionResponse => Boolean(collection));
+function mergeSituationMapFeatureResponses(
+  responses: MapFeatureQueryResponse[]
+): SituationFeatureCollectionResponse | null {
+  const collections = responses
+    .map((response) => response.situation)
+    .filter((collection): collection is SituationFeatureCollectionResponse => Boolean(collection));
   if (collections.length === 0) {
     return null;
   }
   const featureMap = new Map<string, SituationFeature>();
   for (const collection of collections) {
     for (const feature of collection.features) {
-      const key = String(feature.properties.featureId ?? feature.id ?? `${feature.properties.layer}:${JSON.stringify(feature.geometry)}`);
+      const key = String(
+        feature.properties.featureId ?? feature.id ?? `${feature.properties.layer}:${JSON.stringify(feature.geometry)}`
+      );
       featureMap.set(key, feature);
     }
   }
@@ -18217,7 +20631,9 @@ function mergeSituationMapFeatureResponses(responses: MapFeatureQueryResponse[])
     summary: {
       featureCount: features.length,
       sourceCount: sourceMap.size,
-      staleFeatureCount: features.filter((feature) => feature.properties.status === "STALE" || feature.properties.status === "TRACK_STALE").length,
+      staleFeatureCount: features.filter(
+        (feature) => feature.properties.status === "STALE" || feature.properties.status === "TRACK_STALE"
+      ).length,
       warningCount: warnings.length
     },
     warnings
@@ -18235,7 +20651,9 @@ function replaceTrafficFeaturesInSituationCollection(
   if (!current) {
     return traffic;
   }
-  const keptFeatures = current.features.filter((feature) => !trafficFeatureBelongsToCatalogLayers(feature, refreshedLayerIds));
+  const keptFeatures = current.features.filter(
+    (feature) => !trafficFeatureBelongsToCatalogLayers(feature, refreshedLayerIds)
+  );
   const featureMap = new Map<string, SituationFeature>();
   [...keptFeatures, ...traffic.features].forEach((feature) => {
     featureMap.set(situationFeatureMergeKey(feature), feature);
@@ -18259,7 +20677,9 @@ function replaceTrafficFeaturesInSituationCollection(
     summary: {
       featureCount: features.length,
       sourceCount: sourceMap.size,
-      staleFeatureCount: features.filter((feature) => feature.properties.status === "STALE" || feature.properties.status === "TRACK_STALE").length,
+      staleFeatureCount: features.filter(
+        (feature) => feature.properties.status === "STALE" || feature.properties.status === "TRACK_STALE"
+      ).length,
       warningCount: warnings.length
     },
     warnings
@@ -18290,13 +20710,17 @@ function appendRetainedSelectedTransitFeature(
     summary: {
       ...collection.summary,
       featureCount: features.length,
-      staleFeatureCount: features.filter((feature) => feature.properties.status === "STALE" || feature.properties.status === "TRACK_STALE").length
+      staleFeatureCount: features.filter(
+        (feature) => feature.properties.status === "STALE" || feature.properties.status === "TRACK_STALE"
+      ).length
     }
   };
 }
 
 function situationFeatureMergeKey(feature: SituationFeature): string {
-  return String(feature.properties.featureId ?? feature.id ?? `${feature.properties.layer}:${JSON.stringify(feature.geometry)}`);
+  return String(
+    feature.properties.featureId ?? feature.id ?? `${feature.properties.layer}:${JSON.stringify(feature.geometry)}`
+  );
 }
 
 function trafficFeatureBelongsToCatalogLayers(feature: SituationFeature, layerIds: string[]): boolean {
@@ -18313,9 +20737,11 @@ function trafficCatalogLayerIdsForFeature(feature: SituationFeature): string[] {
   const layerId = stringProperty(feature.properties.layerId)?.toLowerCase() ?? "";
   const combined = `${sourceId} ${providerLayerId} ${layerId}`;
   const presentation = resolveTransportPresentation(feature);
-  if (presentation?.kind === "stop"
-    || presentation?.positionKind === "static_stop"
-    || combined.includes("public_transit_static")) {
+  if (
+    presentation?.kind === "stop" ||
+    presentation?.positionKind === "static_stop" ||
+    combined.includes("public_transit_static")
+  ) {
     return ["public.traffic.transit_stops"];
   }
   if (combined.includes("spravazeleznic") || combined.includes("train") || combined.includes("rail")) {
@@ -18347,13 +20773,12 @@ function catalogLayerIdsForMapFocus(catalog: MapCatalogResponse, focus: ChatCent
       return normalizeCatalogLayerIds(exactLayerMatches);
     }
   }
-  const identifiers = new Set([
-    focus.layerId,
-    ...(focus.sourceSystemIds ?? [])
-  ].flatMap((value) => {
-    const token = normalizedMapFocusToken(value);
-    return token && !isBroadMapFocusIdentifierToken(token) ? [token] : [];
-  }));
+  const identifiers = new Set(
+    [focus.layerId, ...(focus.sourceSystemIds ?? [])].flatMap((value) => {
+      const token = normalizedMapFocusToken(value);
+      return token && !isBroadMapFocusIdentifierToken(token) ? [token] : [];
+    })
+  );
   const rawCategory = normalizedMapFocusToken(focus.category);
   const category = rawCategory && !isBroadMapFocusCategoryToken(rawCategory) ? rawCategory : undefined;
   const label = normalizedMapFocusToken(focus.label);
@@ -18372,9 +20797,9 @@ function catalogLayerIdsForMapFocus(catalog: MapCatalogResponse, focus: ChatCent
     .filter((layer) => {
       const haystack = catalogLayerMapFocusHaystack(layer);
       return Boolean(
-        (category && haystack.includes(category))
-        || (sourceName && haystack.includes(sourceName))
-        || (label && label.length >= 4 && haystack.includes(label))
+        (category && haystack.includes(category)) ||
+        (sourceName && haystack.includes(sourceName)) ||
+        (label && label.length >= 4 && haystack.includes(label))
       );
     })
     .map((layer) => layer.layerId);
@@ -18382,15 +20807,17 @@ function catalogLayerIdsForMapFocus(catalog: MapCatalogResponse, focus: ChatCent
 }
 
 function catalogLayerMapFocusTokens(layer: MapCatalogLayer): Set<string> {
-  return new Set([
-    layer.layerId,
-    ...(layer.query.providerLayerIds ?? []),
-    ...(layer.query.providerSourceIds ?? []),
-    ...(layer.provenance?.sourceIds ?? [])
-  ].flatMap((value) => {
-    const token = normalizedMapFocusToken(value);
-    return token && !isBroadMapFocusIdentifierToken(token) ? [token] : [];
-  }));
+  return new Set(
+    [
+      layer.layerId,
+      ...(layer.query.providerLayerIds ?? []),
+      ...(layer.query.providerSourceIds ?? []),
+      ...(layer.provenance?.sourceIds ?? [])
+    ].flatMap((value) => {
+      const token = normalizedMapFocusToken(value);
+      return token && !isBroadMapFocusIdentifierToken(token) ? [token] : [];
+    })
+  );
 }
 
 function catalogLayerMapFocusHaystack(layer: MapCatalogLayer): string {
@@ -18405,7 +20832,9 @@ function catalogLayerMapFocusHaystack(layer: MapCatalogLayer): string {
     ...(layer.query.providerLayerIds ?? []),
     ...(layer.query.providerSourceIds ?? []),
     ...(layer.provenance?.sourceIds ?? [])
-  ].flatMap((value) => normalizedMapFocusToken(value) ? [normalizedMapFocusToken(value) as string] : []).join(" ");
+  ]
+    .flatMap((value) => (normalizedMapFocusToken(value) ? [normalizedMapFocusToken(value) as string] : []))
+    .join(" ");
 }
 
 function findSituationFeatureForMapFocus(
@@ -18415,9 +20844,11 @@ function findSituationFeatureForMapFocus(
   if (!collection) {
     return null;
   }
-  const focusIdentifiers = new Set([
-    focus.featureId
-  ].flatMap((value) => normalizedMapFocusToken(value) ? [normalizedMapFocusToken(value) as string] : []));
+  const focusIdentifiers = new Set(
+    [focus.featureId].flatMap((value) =>
+      normalizedMapFocusToken(value) ? [normalizedMapFocusToken(value) as string] : []
+    )
+  );
   const direct = collection.features.find((feature) =>
     situationFeatureMapFocusIdentifiers(feature).some((identifier) => focusIdentifiers.has(identifier))
   );
@@ -18428,28 +20859,30 @@ function findSituationFeatureForMapFocus(
   const focusCategory = normalizedMapFocusToken(focus.category);
   const focusLayer = normalizedMapFocusToken(focus.layerId);
   const focusLabel = normalizedMapFocusToken(focus.label);
-  return collection.features
-    .map((feature) => {
-      const featureLocation = situationFeaturePointLocation(feature);
-      if (!featureLocation) {
-        return null;
-      }
-      const distanceKm = distanceBetweenKm(focusLocation, featureLocation);
-      if (distanceKm > 10) {
-        return null;
-      }
-      const tokens = new Set(situationFeatureMapFocusIdentifiers(feature));
-      const label = normalizedMapFocusToken(feature.properties.label);
-      const titleMatch = Boolean(focusLabel && label && (label.includes(focusLabel) || focusLabel.includes(label)));
-      const layerMatch = Boolean(focusLayer && tokens.has(focusLayer));
-      const categoryMatch = Boolean(focusCategory && tokens.has(focusCategory));
-      if (!titleMatch && !layerMatch && !categoryMatch) {
-        return null;
-      }
-      return { distanceKm, feature, score: (titleMatch ? 3 : 0) + (layerMatch ? 2 : 0) + (categoryMatch ? 1 : 0) };
-    })
-    .filter((item): item is { distanceKm: number; feature: SituationFeature; score: number } => item !== null)
-    .sort((a, b) => b.score - a.score || a.distanceKm - b.distanceKm)[0]?.feature ?? null;
+  return (
+    collection.features
+      .map((feature) => {
+        const featureLocation = situationFeaturePointLocation(feature);
+        if (!featureLocation) {
+          return null;
+        }
+        const distanceKm = distanceBetweenKm(focusLocation, featureLocation);
+        if (distanceKm > 10) {
+          return null;
+        }
+        const tokens = new Set(situationFeatureMapFocusIdentifiers(feature));
+        const label = normalizedMapFocusToken(feature.properties.label);
+        const titleMatch = Boolean(focusLabel && label && (label.includes(focusLabel) || focusLabel.includes(label)));
+        const layerMatch = Boolean(focusLayer && tokens.has(focusLayer));
+        const categoryMatch = Boolean(focusCategory && tokens.has(focusCategory));
+        if (!titleMatch && !layerMatch && !categoryMatch) {
+          return null;
+        }
+        return { distanceKm, feature, score: (titleMatch ? 3 : 0) + (layerMatch ? 2 : 0) + (categoryMatch ? 1 : 0) };
+      })
+      .filter((item): item is { distanceKm: number; feature: SituationFeature; score: number } => item !== null)
+      .sort((a, b) => b.score - a.score || a.distanceKm - b.distanceKm)[0]?.feature ?? null
+  );
 }
 
 function situationFeatureMapFocusIdentifiers(feature: SituationFeature): string[] {
@@ -18471,7 +20904,7 @@ function situationFeatureMapFocusIdentifiers(feature: SituationFeature): string[
     recordString(properties.providerProperties, "providerEntityId"),
     recordString(properties.providerProperties, "entityId"),
     recordString(properties.providerProperties, "sourceEntityId")
-  ].flatMap((value) => normalizedMapFocusToken(value) ? [normalizedMapFocusToken(value) as string] : []);
+  ].flatMap((value) => (normalizedMapFocusToken(value) ? [normalizedMapFocusToken(value) as string] : []));
 }
 
 function situationFeaturePointLocation(feature: SituationFeature): { lat: number; lon: number } | null {
@@ -18493,25 +20926,29 @@ function normalizedMapFocusToken(value: unknown): string | undefined {
 }
 
 function isBroadMapFocusIdentifierToken(token: string): boolean {
-  return token === "sim.situation-data"
-    || token === "sim.search-data"
-    || token === "sim.safety-data"
-    || token === "sim.tak-gateway"
-    || token === "cop.tracks"
-    || token === "cop.live"
-    || token === "features"
-    || token === "bbox"
-    || token === "stream";
+  return (
+    token === "sim.situation-data" ||
+    token === "sim.search-data" ||
+    token === "sim.safety-data" ||
+    token === "sim.tak-gateway" ||
+    token === "cop.tracks" ||
+    token === "cop.live" ||
+    token === "features" ||
+    token === "bbox" ||
+    token === "stream"
+  );
 }
 
 function isBroadMapFocusCategoryToken(token: string): boolean {
-  return token === "weather"
-    || token === "pocasi"
-    || token === "rain"
-    || token === "precipitation"
-    || token === "storm"
-    || token === "traffic"
-    || token === "mobile";
+  return (
+    token === "weather" ||
+    token === "pocasi" ||
+    token === "rain" ||
+    token === "precipitation" ||
+    token === "storm" ||
+    token === "traffic" ||
+    token === "mobile"
+  );
 }
 
 function findSelectedSituationFeature(
@@ -18554,9 +20991,11 @@ function mapFeatureQueryLimit(layerIds: string[], zoom: number | undefined): num
 }
 
 function isDenseSituationCatalogLayerId(layerId: string): boolean {
-  return layerId.startsWith("reference.infrastructure.")
-    || layerId === "public.mobile.network"
-    || isTrafficCatalogLayerId(layerId);
+  return (
+    layerId.startsWith("reference.infrastructure.") ||
+    layerId === "public.mobile.network" ||
+    isTrafficCatalogLayerId(layerId)
+  );
 }
 
 function shouldSkipSituationFeatureLoad(bounds: MapBounds, zoom: number | undefined): boolean {
@@ -18572,9 +21011,7 @@ function shouldSkipSafetyFeatureLoad(bounds: MapBounds, zoom: number | undefined
 }
 
 function sourceQualityWarnings(warnings: string[]): string[] {
-  const labels = warnings
-    .map(sourceQualityWarningText)
-    .filter((warning) => warning.length > 0);
+  const labels = warnings.map(sourceQualityWarningText).filter((warning) => warning.length > 0);
   return Array.from(new Set(labels));
 }
 
@@ -18585,31 +21022,31 @@ function sourceQualityWarningText(warning: string): string {
   }
   const lower = normalized.toLowerCase();
   if (
-    lower.includes("stale")
-    || lower.includes("expired")
-    || lower.includes("freshness")
-    || lower.includes("age")
-    || lower.includes("cache")
-    || lower.includes("old")
+    lower.includes("stale") ||
+    lower.includes("expired") ||
+    lower.includes("freshness") ||
+    lower.includes("age") ||
+    lower.includes("cache") ||
+    lower.includes("old")
   ) {
     return "Některá data jsou starší. Mapa zůstává dostupná a kvalitu zdroje najdete v panelu Zdroje.";
   }
   if (
-    lower.includes("degraded")
-    || lower.includes("warning")
-    || lower.includes("provider")
-    || lower.includes("source")
-    || lower.includes("partial")
+    lower.includes("degraded") ||
+    lower.includes("warning") ||
+    lower.includes("provider") ||
+    lower.includes("source") ||
+    lower.includes("partial")
   ) {
     return "Některý zdroj běží v omezené kvalitě. Zobrazení pokračuje s dostupnými daty.";
   }
   if (
-    lower.includes("timeout")
-    || lower.includes("aborted")
-    || lower.includes("unavailable")
-    || lower.includes("failed")
-    || lower.includes("fetch")
-    || lower.includes("network")
+    lower.includes("timeout") ||
+    lower.includes("aborted") ||
+    lower.includes("unavailable") ||
+    lower.includes("failed") ||
+    lower.includes("fetch") ||
+    lower.includes("network")
   ) {
     return "Některý zdroj se dočasně nenačetl. Aplikace používá dostupná data.";
   }
@@ -18644,11 +21081,13 @@ class RootErrorBoundary extends React.Component<React.PropsWithChildren, RootErr
         <div className="app-fatal-card">
           <strong>Aplikaci se nepodařilo vykreslit</strong>
           <span>
-            Prohlížeč narazil na chybu při vykreslení mapy. Obnovte stránku; pokud se stav opakuje,
-            odešlete správci název prohlížeče a čas výskytu.
+            Prohlížeč narazil na chybu při vykreslení mapy. Obnovte stránku; pokud se stav opakuje, odešlete správci
+            název prohlížeče a čas výskytu.
           </span>
           <code>{this.state.error.message || "Neznámá chyba"}</code>
-          <button onClick={() => window.location.reload()} type="button">Obnovit aplikaci</button>
+          <button onClick={() => window.location.reload()} type="button">
+            Obnovit aplikaci
+          </button>
         </div>
       </main>
     );
@@ -18662,7 +21101,13 @@ if (rootElement) {
     <React.StrictMode>
       <RootErrorBoundary>
         {isXrRoute ? (
-          <React.Suspense fallback={<main className="xr-shell"><div className="xr-loading">Načítám prostorový režim...</div></main>}>
+          <React.Suspense
+            fallback={
+              <main className="xr-shell">
+                <div className="xr-loading">Načítám prostorový režim...</div>
+              </main>
+            }
+          >
             <XrWorkspace />
           </React.Suspense>
         ) : (

@@ -65,19 +65,23 @@ export function buildObjectDetailModel({
 
   return {
     affiliation: getAffiliationPresentation(object.affiliation),
-    conflicts: conflictsFromServerEvidence(conflictEvidence) ?? detectObjectConflicts(object, historyPoints, sourceHealthItem),
+    conflicts:
+      conflictsFromServerEvidence(conflictEvidence) ?? detectObjectConflicts(object, historyPoints, sourceHealthItem),
     confidenceFactors: buildConfidenceFactors(object, provenance, sourceHealthItem),
-    history: historyPoints.slice(-6).reverse().map((point) => ({
-      confidence: point.confidence,
-      eventId: point.eventId,
-      ingestTimestamp: point.ingestTimestamp,
-      lat: point.lat,
-      lon: point.lon,
-      producerTimestamp: point.producerTimestamp,
-      sourceSystemId: point.sourceSystemId,
-      status: point.status,
-      timestamp: point.timestamp
-    })),
+    history: historyPoints
+      .slice(-6)
+      .reverse()
+      .map((point) => ({
+        confidence: point.confidence,
+        eventId: point.eventId,
+        ingestTimestamp: point.ingestTimestamp,
+        lat: point.lat,
+        lon: point.lon,
+        producerTimestamp: point.producerTimestamp,
+        sourceSystemId: point.sourceSystemId,
+        status: point.status,
+        timestamp: point.timestamp
+      })),
     lineage: buildLineage(object, provenance, sidc, symbol.symbolCode),
     provenance,
     sidc,
@@ -102,7 +106,10 @@ function conflictsFromServerEvidence(evidence: ObjectConflictEvidence | undefine
   }
 
   return evidence.signals.map((signal) => ({
-    detail: signal.sourceSystemIds.length > 0 ? `${signal.detail} Zdroje: ${signal.sourceSystemIds.join(", ")}.` : signal.detail,
+    detail:
+      signal.sourceSystemIds.length > 0
+        ? `${signal.detail} Zdroje: ${signal.sourceSystemIds.join(", ")}.`
+        : signal.detail,
     severity: signal.severity === "warning" ? "warn" : "neutral",
     title: signal.title
   }));
@@ -124,25 +131,37 @@ function buildConfidenceFactors(
     {
       detail: reliabilityExplanation(provenance?.sourceReliability),
       label: "Spolehlivost zdroje",
-      tone: provenance?.sourceReliability && !["E", "F", "UNKNOWN"].includes(provenance.sourceReliability) ? "ok" : "neutral"
+      tone:
+        provenance?.sourceReliability && !["E", "F", "UNKNOWN"].includes(provenance.sourceReliability)
+          ? "ok"
+          : "neutral"
     },
     {
       detail: credibilityExplanation(provenance?.informationCredibility),
       label: "Věrohodnost informace",
-      tone: provenance?.informationCredibility && !["5", "6", "UNKNOWN"].includes(provenance.informationCredibility) ? "ok" : "neutral"
+      tone:
+        provenance?.informationCredibility && !["5", "6", "UNKNOWN"].includes(provenance.informationCredibility)
+          ? "ok"
+          : "neutral"
     },
     {
-      detail: ageSeconds === undefined ? "Objekt nemá časovou značku." : `${ageSeconds}s od poslední aktualizace objektu`,
+      detail:
+        ageSeconds === undefined ? "Objekt nemá časovou značku." : `${ageSeconds}s od poslední aktualizace objektu`,
       label: "Stáří dat",
       tone: ageSeconds === undefined ? "neutral" : ageSeconds > 120 ? "warn" : "ok"
     },
     {
-      detail: sourceHealth ? `Zdroj: ${sourceHealthLabel(sourceHealth.health)}, aktuální objekty: ${sourceHealth.currentTracks}` : "Není navázán provozní stav zdroje.",
+      detail: sourceHealth
+        ? `Zdroj: ${sourceHealthLabel(sourceHealth.health)}, aktuální objekty: ${sourceHealth.currentTracks}`
+        : "Není navázán provozní stav zdroje.",
       label: "Stav zdroje",
       tone: sourceHealth?.health === "ONLINE" ? "ok" : sourceHealth ? "warn" : "neutral"
     },
     {
-      detail: object.synthetic || provenance?.synthetic ? "Cvičný původ je explicitně označen." : "Objekt nemá příznak cvičného původu.",
+      detail:
+        object.synthetic || provenance?.synthetic
+          ? "Cvičný původ je explicitně označen."
+          : "Objekt nemá příznak cvičného původu.",
       label: "Původ",
       tone: object.synthetic || provenance?.synthetic ? "neutral" : "ok"
     }
@@ -162,7 +181,9 @@ function buildLineage(
       status: provenance?.sourceSystemId ?? "zdroj není dostupný"
     },
     {
-      detail: provenance?.adapterVersion ? `${provenance.adapterId ?? "datový adaptér"} ${provenance.adapterVersion}` : provenance?.adapterId ?? "datový adaptér není dostupný",
+      detail: provenance?.adapterVersion
+        ? `${provenance.adapterId ?? "datový adaptér"} ${provenance.adapterVersion}`
+        : (provenance?.adapterId ?? "datový adaptér není dostupný"),
       label: "Zpracování dat",
       status: provenance?.producerTimestamp ?? "čas zdroje n/a"
     },
@@ -273,7 +294,9 @@ function detectObjectConflicts(
   return conflicts;
 }
 
-function latestPositionBySource(points: TrackHistoryPoint[]): Array<{ lat: number; lon: number; sourceSystemId: string }> {
+function latestPositionBySource(
+  points: TrackHistoryPoint[]
+): Array<{ lat: number; lon: number; sourceSystemId: string }> {
   const bySource = new Map<string, { lat: number; lon: number; sourceSystemId: string; timestampMs: number }>();
   points.forEach((point) => {
     if (!point.sourceSystemId) {
@@ -333,7 +356,7 @@ function reliabilityExplanation(value: string | undefined): string {
     F: "F - spolehlivost nelze posoudit",
     UNKNOWN: "spolehlivost neznámá"
   };
-  return value ? labels[value] ?? value : "nedodáno";
+  return value ? (labels[value] ?? value) : "nedodáno";
 }
 
 function credibilityExplanation(value: string | undefined): string {
@@ -346,5 +369,5 @@ function credibilityExplanation(value: string | undefined): string {
     "6": "6 - nelze posoudit",
     UNKNOWN: "věrohodnost neznámá"
   };
-  return value ? labels[value] ?? value : "nedodáno";
+  return value ? (labels[value] ?? value) : "nedodáno";
 }

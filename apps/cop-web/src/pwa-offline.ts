@@ -52,7 +52,11 @@ export function readCopOfflineSnapshot(scope?: string): CopOfflineSnapshot | nul
   }
 }
 
-export function writeCopOfflineSnapshot(data: CopDashboardData, scope?: string, savedAt = new Date().toISOString()): CopOfflineSnapshot | null {
+export function writeCopOfflineSnapshot(
+  data: CopDashboardData,
+  scope?: string,
+  savedAt = new Date().toISOString()
+): CopOfflineSnapshot | null {
   if (typeof window === "undefined" || typeof window.localStorage?.setItem !== "function") {
     return null;
   }
@@ -90,7 +94,12 @@ export function snapshotAgeSeconds(snapshot: Pick<CopOfflineSnapshot, "savedAt">
 }
 
 function normalizeSnapshot(value: unknown): CopOfflineSnapshot | null {
-  if (!isRecord(value) || value.version !== snapshotVersion || typeof value.savedAt !== "string" || !isRecord(value.data)) {
+  if (
+    !isRecord(value) ||
+    value.version !== snapshotVersion ||
+    typeof value.savedAt !== "string" ||
+    !isRecord(value.data)
+  ) {
     return null;
   }
   const data = value.data;
@@ -105,7 +114,9 @@ function normalizeSnapshot(value: unknown): CopOfflineSnapshot | null {
       objects: data.objects as CopDashboardData["objects"],
       sourceHealth: Array.isArray(data.sourceHealth) ? (data.sourceHealth as CopDashboardData["sourceHealth"]) : [],
       sources: data.sources as CopDashboardData["sources"],
-      streamHealth: isRecord(data.streamHealth) ? (data.streamHealth as unknown as CopDashboardData["streamHealth"]) : undefined,
+      streamHealth: isRecord(data.streamHealth)
+        ? (data.streamHealth as unknown as CopDashboardData["streamHealth"])
+        : undefined,
       trackHistory: isRecord(data.trackHistory) ? (data.trackHistory as CopDashboardData["trackHistory"]) : undefined
     },
     objectCount: optionalNonNegativeInteger(value.objectCount) ?? data.objects.length,

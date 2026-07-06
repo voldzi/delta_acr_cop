@@ -1,16 +1,28 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import {
-  createChatAttachmentPreviewDescriptor,
-  inferChatAttachmentPreviewKind
-} from "./AttachmentPreview";
+import { createChatAttachmentPreviewDescriptor, inferChatAttachmentPreviewKind } from "./AttachmentPreview";
 
 describe("AttachmentPreview descriptor extraction", () => {
   it("detects common professional document formats", () => {
     expect(inferChatAttachmentPreviewKind("zprava.pdf", "application/pdf")).toBe("pdf");
-    expect(inferChatAttachmentPreviewKind("plan.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe("docx");
-    expect(inferChatAttachmentPreviewKind("tabulka.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")).toBe("spreadsheet");
-    expect(inferChatAttachmentPreviewKind("brief.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation")).toBe("presentation");
+    expect(
+      inferChatAttachmentPreviewKind(
+        "plan.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      )
+    ).toBe("docx");
+    expect(
+      inferChatAttachmentPreviewKind(
+        "tabulka.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      )
+    ).toBe("spreadsheet");
+    expect(
+      inferChatAttachmentPreviewKind(
+        "brief.pptx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      )
+    ).toBe("presentation");
     expect(inferChatAttachmentPreviewKind("model.archimate", "application/xml")).toBe("archi");
     expect(inferChatAttachmentPreviewKind("stary-plan.doc", "application/msword")).toBe("docx");
   });
@@ -25,7 +37,10 @@ describe("AttachmentPreview descriptor extraction", () => {
     expect(descriptor).toMatchObject({
       headers: ["name", "value"],
       kind: "csv",
-      rows: [["A", "1"], ["B", "2"]]
+      rows: [
+        ["A", "1"],
+        ["B", "2"]
+      ]
     });
   });
 
@@ -98,7 +113,15 @@ describe("AttachmentPreview descriptor extraction", () => {
 
     expect(descriptor).toMatchObject({
       kind: "spreadsheet",
-      sheets: [{ name: "Měření", rows: [["Název", "Hodnota"], ["Teplota", "31"]] }]
+      sheets: [
+        {
+          name: "Měření",
+          rows: [
+            ["Název", "Hodnota"],
+            ["Teplota", "31"]
+          ]
+        }
+      ]
     });
   });
 
@@ -124,7 +147,9 @@ describe("AttachmentPreview descriptor extraction", () => {
 
   it("extracts ArchiMate model summary", async () => {
     const descriptor = await createChatAttachmentPreviewDescriptor({
-      blob: new Blob([`
+      blob: new Blob(
+        [
+          `
         <model xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
           <elements>
             <element identifier="e1" xsi:type="ApplicationComponent"><name>COP</name></element>
@@ -134,7 +159,10 @@ describe("AttachmentPreview descriptor extraction", () => {
             <relationship identifier="r1" source="e1" target="e2" xsi:type="ServingRelationship"><name>poskytuje</name></relationship>
           </relationships>
           <views><view identifier="v1"><name>Architektura</name></view></views>
-        </model>`], { type: "application/xml" }),
+        </model>`
+        ],
+        { type: "application/xml" }
+      ),
       contentType: "application/xml",
       fileName: "cop.archimate"
     });

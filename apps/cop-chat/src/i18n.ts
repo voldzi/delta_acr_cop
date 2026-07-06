@@ -1,11 +1,7 @@
 export type ChatLocale = "cs" | "en";
 
 export type ChatTextKey =
-  | "calls.audioComingSoon"
-  | "calls.audioTitle"
-  | "calls.videoComingSoon"
-  | "calls.videoTitle"
-  | "dialog.loading";
+  "calls.audioComingSoon" | "calls.audioTitle" | "calls.videoComingSoon" | "calls.videoTitle" | "dialog.loading";
 
 const chatDictionaries: Record<ChatLocale, Record<ChatTextKey, string>> = {
   cs: {
@@ -28,6 +24,9 @@ export function resolveChatLocale(language: string | undefined): ChatLocale {
   return language?.toLowerCase().startsWith("en") ? "en" : "cs";
 }
 
-export function chatText(key: ChatTextKey, locale: ChatLocale = resolveChatLocale(globalThis.navigator?.language)): string {
+export function chatText(
+  key: ChatTextKey,
+  locale: ChatLocale = resolveChatLocale(globalThis.navigator?.language)
+): string {
   return chatDictionaries[locale][key] ?? chatDictionaries.cs[key];
 }

@@ -26,10 +26,7 @@ describe("ForwardDialog", () => {
         searchLoading={false}
         selectedCount={2}
         selectedKeys={new Set(["chat:1", "chat:2"])}
-        targets={[
-          target(),
-          target({ key: "chat:2", subtitle: "skupina", title: "DEMO Povodeň" })
-        ]}
+        targets={[target(), target({ key: "chat:2", subtitle: "skupina", title: "DEMO Povodeň" })]}
         workingId={null}
         onClose={vi.fn()}
         onQueryChange={vi.fn()}

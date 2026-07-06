@@ -23,9 +23,11 @@ import { isTransitVehicleSelectionKey } from "./transport-presentation";
 
 describe("COP map data helpers", () => {
   it("treats transient raster overlay tile failures as recoverable", () => {
-    expect(isRecoverableMapError(
-      "AJAXError: (502): /api/v1/map/raster-overlay?url=%2Fapi%2Fv1%2Fweather-radar%2Fclean%2Fmerge1h%2Fframe.png"
-    )).toBe(true);
+    expect(
+      isRecoverableMapError(
+        "AJAXError: (502): /api/v1/map/raster-overlay?url=%2Fapi%2Fv1%2Fweather-radar%2Fclean%2Fmerge1h%2Fframe.png"
+      )
+    ).toBe(true);
     expect(isRecoverableMapError("AJAXError: (500): /api/v1/objects")).toBe(false);
   });
 
@@ -181,7 +183,10 @@ describe("COP map data helpers", () => {
       }
     } satisfies CopObject;
 
-    expect(objectsToTrackFeatureCollection([publicFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]?.properties).toMatchObject({
+    expect(
+      objectsToTrackFeatureCollection([publicFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]
+        ?.properties
+    ).toMatchObject({
       aircraftHeadingDeg: 275,
       civilAircraftKind: "narrow_body_airliner",
       civilAircraftTone: "normal",
@@ -189,8 +194,13 @@ describe("COP map data helpers", () => {
       publicFlight: true,
       symbolColor: "#22c55e"
     });
-    expect(objectsToTrackFeatureCollection([publicFlight], undefined, { publicFlightSymbolMode: "standard" }).features[0]?.properties.displaySymbolKey)
-      .toBe(objectsToTrackFeatureCollection([publicFlight], undefined, { publicFlightSymbolMode: "standard" }).features[0]?.properties.symbolKey);
+    expect(
+      objectsToTrackFeatureCollection([publicFlight], undefined, { publicFlightSymbolMode: "standard" }).features[0]
+        ?.properties.displaySymbolKey
+    ).toBe(
+      objectsToTrackFeatureCollection([publicFlight], undefined, { publicFlightSymbolMode: "standard" }).features[0]
+        ?.properties.symbolKey
+    );
   });
 
   it("colors public flight symbols by operational state", () => {
@@ -216,7 +226,10 @@ describe("COP map data helpers", () => {
       }
     } satisfies CopObject;
 
-    expect(objectsToTrackFeatureCollection([emergencyFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]?.properties).toMatchObject({
+    expect(
+      objectsToTrackFeatureCollection([emergencyFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]
+        ?.properties
+    ).toMatchObject({
       civilAircraftKind: "jumbo_airliner",
       civilAircraftTone: "emergency",
       displaySymbolKey: "cop-civil-aircraft-jumbo_airliner-emergency",
@@ -255,7 +268,10 @@ describe("COP map data helpers", () => {
       }
     } satisfies CopObject;
 
-    expect(objectsToTrackFeatureCollection([presentedFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]?.properties).toMatchObject({
+    expect(
+      objectsToTrackFeatureCollection([presentedFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]
+        ?.properties
+    ).toMatchObject({
       aircraftHeadingDeg: 123,
       civilAircraftKind: "jumbo_airliner",
       civilAircraftTone: "delayed",
@@ -305,67 +321,76 @@ describe("COP map data helpers", () => {
       }
     } satisfies CopObject;
 
-    expect(objectsToTrackFeatureCollection([unknownDelayFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]?.properties).toMatchObject({
+    expect(
+      objectsToTrackFeatureCollection([unknownDelayFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]
+        ?.properties
+    ).toMatchObject({
       civilAircraftTone: "normal",
       symbolColor: "#22c55e"
     });
-    expect(objectsToTrackFeatureCollection([emergencyFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]?.properties).toMatchObject({
+    expect(
+      objectsToTrackFeatureCollection([emergencyFlight], undefined, { publicFlightSymbolMode: "civil" }).features[0]
+        ?.properties
+    ).toMatchObject({
       civilAircraftTone: "emergency",
       symbolColor: "#ef4444"
     });
   });
 
   it("builds context-only situation features without converting them to COP tracks", () => {
-    const collection = situationFeaturesToFeatureCollection({
-      contractVersion: "cop-situation-source-v1",
-      features: [
-        {
-          geometry: { coordinates: [14.42, 50.08], type: "Point" },
-          properties: {
-            category: "weather.current",
-            confidence: 0.9,
-            featureId: "weather:prague",
-            label: "Praha weather",
-            layer: "weather",
-            layerId: "public.weather.current",
-            metrics: {
-              cloudCoverPercent: 82,
-              precipitationMm: 0,
-              temperatureC: 19.4,
-              windDirectionDeg: 230,
-              windSpeedMps: 3.2
+    const collection = situationFeaturesToFeatureCollection(
+      {
+        contractVersion: "cop-situation-source-v1",
+        features: [
+          {
+            geometry: { coordinates: [14.42, 50.08], type: "Point" },
+            properties: {
+              category: "weather.current",
+              confidence: 0.9,
+              featureId: "weather:prague",
+              label: "Praha weather",
+              layer: "weather",
+              layerId: "public.weather.current",
+              metrics: {
+                cloudCoverPercent: 82,
+                precipitationMm: 0,
+                temperatureC: 19.4,
+                windDirectionDeg: 230,
+                windSpeedMps: 3.2
+              },
+              observedAt: "2026-05-20T10:00:00Z",
+              providerLayerId: "weather.open_meteo",
+              sourceId: "open_meteo",
+              stale: false,
+              tags: {
+                mapDisplayHint: "weather_observation_point"
+              }
             },
-            observedAt: "2026-05-20T10:00:00Z",
-            providerLayerId: "weather.open_meteo",
-            sourceId: "open_meteo",
-            stale: false,
-            tags: {
-              mapDisplayHint: "weather_observation_point"
-            }
-          },
-          type: "Feature"
-        }
-      ],
-      generatedAt: "2026-05-20T10:00:00Z",
-      query: {
-        bbox: { east: 15, north: 51, south: 49, west: 13 },
-        layers: ["weather"],
-        limit: 250
+            type: "Feature"
+          }
+        ],
+        generatedAt: "2026-05-20T10:00:00Z",
+        query: {
+          bbox: { east: 15, north: 51, south: 49, west: 13 },
+          layers: ["weather"],
+          limit: 250
+        },
+        source: {
+          sourceId: "situation-data-api",
+          sourceType: "PUBLIC_SITUATION_AGGREGATE"
+        },
+        sources: [],
+        summary: {
+          featureCount: 1,
+          sourceCount: 1,
+          staleFeatureCount: 0,
+          warningCount: 0
+        },
+        type: "FeatureCollection",
+        warnings: []
       },
-      source: {
-        sourceId: "situation-data-api",
-        sourceType: "PUBLIC_SITUATION_AGGREGATE"
-      },
-      sources: [],
-      summary: {
-        featureCount: 1,
-        sourceCount: 1,
-        staleFeatureCount: 0,
-        warningCount: 0
-      },
-      type: "FeatureCollection",
-      warnings: []
-    }, "weather:prague");
+      "weather:prague"
+    );
 
     expect(collection).toMatchObject({
       features: [
@@ -392,54 +417,57 @@ describe("COP map data helpers", () => {
   });
 
   it("renders CHMI weather webcams as camera points, not alerts or weather observations", () => {
-    const collection = situationFeaturesToFeatureCollection({
-      contractVersion: "cop-situation-source-v1",
-      features: [
-        {
-          geometry: { coordinates: [14.42, 50.08], type: "Point" },
-          properties: {
-            category: "weather_webcam",
-            confidence: 0.9,
-            featureId: "weather:webcam:praha",
-            label: "Praha-Libuš",
-            layer: "weather",
-            layerId: "public.weather.webcams",
-            observedAt: "2026-06-25T08:00:00Z",
-            providerLayerId: "weather.webcams",
-            providerProperties: {
-              camera: {
-                detailUrl: "/situation-data/api/v1/weather/webcams/praha-libus",
-                label: "Praha-Libuš",
-                snapshotUrl: "/situation-data/api/v1/weather/webcams/praha-libus/snapshot.jpg"
-              }
+    const collection = situationFeaturesToFeatureCollection(
+      {
+        contractVersion: "cop-situation-source-v1",
+        features: [
+          {
+            geometry: { coordinates: [14.42, 50.08], type: "Point" },
+            properties: {
+              category: "weather_webcam",
+              confidence: 0.9,
+              featureId: "weather:webcam:praha",
+              label: "Praha-Libuš",
+              layer: "weather",
+              layerId: "public.weather.webcams",
+              observedAt: "2026-06-25T08:00:00Z",
+              providerLayerId: "weather.webcams",
+              providerProperties: {
+                camera: {
+                  detailUrl: "/situation-data/api/v1/weather/webcams/praha-libus",
+                  label: "Praha-Libuš",
+                  snapshotUrl: "/situation-data/api/v1/weather/webcams/praha-libus/snapshot.jpg"
+                }
+              },
+              sourceId: "chmi_weather_webcams",
+              stale: false
             },
-            sourceId: "chmi_weather_webcams",
-            stale: false
-          },
-          type: "Feature"
-        }
-      ],
-      generatedAt: "2026-06-25T08:00:00Z",
-      query: {
-        bbox: { east: 15, north: 51, south: 49, west: 13 },
-        layers: ["weather"],
-        limit: 250,
-        sources: ["chmi_weather_webcams"]
+            type: "Feature"
+          }
+        ],
+        generatedAt: "2026-06-25T08:00:00Z",
+        query: {
+          bbox: { east: 15, north: 51, south: 49, west: 13 },
+          layers: ["weather"],
+          limit: 250,
+          sources: ["chmi_weather_webcams"]
+        },
+        source: {
+          sourceId: "situation-data-api",
+          sourceType: "PUBLIC_SITUATION_AGGREGATE"
+        },
+        sources: [],
+        summary: {
+          featureCount: 1,
+          sourceCount: 1,
+          staleFeatureCount: 0,
+          warningCount: 0
+        },
+        type: "FeatureCollection",
+        warnings: []
       },
-      source: {
-        sourceId: "situation-data-api",
-        sourceType: "PUBLIC_SITUATION_AGGREGATE"
-      },
-      sources: [],
-      summary: {
-        featureCount: 1,
-        sourceCount: 1,
-        staleFeatureCount: 0,
-        warningCount: 0
-      },
-      type: "FeatureCollection",
-      warnings: []
-    }, "weather:webcam:praha");
+      "weather:webcam:praha"
+    );
 
     expect(collection.features[0]?.properties).toMatchObject({
       mapPointSuppressed: true,
@@ -460,13 +488,15 @@ describe("COP map data helpers", () => {
       features: [
         {
           geometry: {
-            coordinates: [[
-              [14.2, 50.0],
-              [14.6, 50.0],
-              [14.6, 50.3],
-              [14.2, 50.3],
-              [14.2, 50.0]
-            ]],
+            coordinates: [
+              [
+                [14.2, 50.0],
+                [14.6, 50.0],
+                [14.6, 50.3],
+                [14.2, 50.3],
+                [14.2, 50.0]
+              ]
+            ],
             type: "Polygon"
           },
           properties: {
@@ -534,44 +564,58 @@ describe("COP map data helpers", () => {
       weatherForecastSymbolKey: "cop-weather-condition-rain"
     });
     expect(collection.features[0]?.geometry).toEqual({
-      coordinates: [[
-        [14.2, 50.0],
-        [14.6, 50.0],
-        [14.6, 50.3],
-        [14.2, 50.3],
-        [14.2, 50.0]
-      ]],
+      coordinates: [
+        [
+          [14.2, 50.0],
+          [14.6, 50.0],
+          [14.6, 50.3],
+          [14.2, 50.3],
+          [14.2, 50.0]
+        ]
+      ],
       type: "Polygon"
     });
     expect(collection.features[0]?.properties.weatherObservation).toBeUndefined();
   });
 
   it("builds editable handles for polygon user zones", () => {
-    const collection = aoiRuleToEditFeatureCollection({
-      color: "#8cb6d8",
-      enabled: true,
-      fillOpacity: 0.12,
-      id: "zone-1",
-      lat: 50,
-      lon: 14,
-      name: "Test zone",
-      polygon: {
-        type: "Polygon",
-        coordinates: [[
-          [14.0, 50.0],
-          [14.2, 50.0],
-          [14.2, 50.2],
-          [14.0, 50.0]
-        ]]
+    const collection = aoiRuleToEditFeatureCollection(
+      {
+        color: "#8cb6d8",
+        enabled: true,
+        fillOpacity: 0.12,
+        id: "zone-1",
+        lat: 50,
+        lon: 14,
+        name: "Test zone",
+        polygon: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [14.0, 50.0],
+              [14.2, 50.0],
+              [14.2, 50.2],
+              [14.0, 50.0]
+            ]
+          ]
+        },
+        radiusKm: 10
       },
-      radiusKm: 10
-    }, 1);
+      1
+    );
 
     expect(collection.features).toHaveLength(6);
     expect(collection.features.filter((feature) => feature.properties.kind === "vertex")).toHaveLength(3);
     expect(collection.features.filter((feature) => feature.properties.kind === "midpoint")).toHaveLength(3);
-    expect(collection.features.find((feature) => feature.properties.kind === "vertex" && feature.properties.index === 1)?.properties.selected).toBe(true);
-    expect(collection.features.find((feature) => feature.properties.kind === "midpoint" && feature.properties.insertIndex === 2)?.geometry.coordinates).toEqual([14.2, 50.1]);
+    expect(
+      collection.features.find((feature) => feature.properties.kind === "vertex" && feature.properties.index === 1)
+        ?.properties.selected
+    ).toBe(true);
+    expect(
+      collection.features.find(
+        (feature) => feature.properties.kind === "midpoint" && feature.properties.insertIndex === 2
+      )?.geometry.coordinates
+    ).toEqual([14.2, 50.1]);
   });
 
   it("adds ČHMÚ weather observation and air quality render metadata", () => {
@@ -902,7 +946,9 @@ describe("COP map data helpers", () => {
       warnings: []
     };
 
-    expect(situationFeaturesToFeatureCollection(trafficFeature, undefined, "civil").features[0]?.properties).toMatchObject({
+    expect(
+      situationFeaturesToFeatureCollection(trafficFeature, undefined, "civil").features[0]?.properties
+    ).toMatchObject({
       featureId: "traffic:pid_gtfs_rt:service-3-4069",
       mapLabel: "141",
       situationStatusColor: "#1f6feb",
@@ -912,7 +958,9 @@ describe("COP map data helpers", () => {
       trafficSymbolKey: "cop-transit-bus",
       trafficTransit: true
     });
-    expect(situationFeaturesToFeatureCollection(trafficFeature, undefined, "standard").features[0]?.properties).toMatchObject({
+    expect(
+      situationFeaturesToFeatureCollection(trafficFeature, undefined, "standard").features[0]?.properties
+    ).toMatchObject({
       trafficRouteShortName: "141",
       trafficRouteType: "bus",
       trafficSymbolKey: "cop-transit-bus",
@@ -1082,53 +1130,57 @@ describe("COP map data helpers", () => {
   });
 
   it("renders static public transit stops separately from live vehicles", () => {
-    const collection = situationFeaturesToFeatureCollection({
-      contractVersion: "cop-situation-source-v1",
-      features: [
-        {
-          geometry: { coordinates: [14.42, 50.08], type: "Point" },
-          properties: {
-            category: "public_transport_stop",
-            confidence: 0.96,
-            featureId: "traffic:public_transit_static:pid-stop-U123",
-            label: "Na Fabiance",
-            layer: "traffic",
-            layerId: "public.traffic.transit_stops",
-            observedAt: "2026-06-30T07:44:08Z",
-            providerProperties: {
-              transit: {
-                staticOnly: true,
-                stopId: "U123",
-                stopName: "Na Fabiance",
-                systemId: "pid"
-              }
+    const collection = situationFeaturesToFeatureCollection(
+      {
+        contractVersion: "cop-situation-source-v1",
+        features: [
+          {
+            geometry: { coordinates: [14.42, 50.08], type: "Point" },
+            properties: {
+              category: "public_transport_stop",
+              confidence: 0.96,
+              featureId: "traffic:public_transit_static:pid-stop-U123",
+              label: "Na Fabiance",
+              layer: "traffic",
+              layerId: "public.traffic.transit_stops",
+              observedAt: "2026-06-30T07:44:08Z",
+              providerProperties: {
+                transit: {
+                  staticOnly: true,
+                  stopId: "U123",
+                  stopName: "Na Fabiance",
+                  systemId: "pid"
+                }
+              },
+              sourceId: "public_transit_static",
+              stale: false
             },
-            sourceId: "public_transit_static",
-            stale: false
-          },
-          type: "Feature"
-        }
-      ],
-      generatedAt: "2026-06-30T07:44:08Z",
-      query: {
-        bbox: { east: 15, north: 51, south: 49, west: 13 },
-        layers: ["traffic"],
-        limit: 250
+            type: "Feature"
+          }
+        ],
+        generatedAt: "2026-06-30T07:44:08Z",
+        query: {
+          bbox: { east: 15, north: 51, south: 49, west: 13 },
+          layers: ["traffic"],
+          limit: 250
+        },
+        source: {
+          sourceId: "situation-data-api",
+          sourceType: "PUBLIC_SITUATION_AGGREGATE"
+        },
+        sources: [],
+        summary: {
+          featureCount: 1,
+          sourceCount: 1,
+          staleFeatureCount: 0,
+          warningCount: 0
+        },
+        type: "FeatureCollection",
+        warnings: []
       },
-      source: {
-        sourceId: "situation-data-api",
-        sourceType: "PUBLIC_SITUATION_AGGREGATE"
-      },
-      sources: [],
-      summary: {
-        featureCount: 1,
-        sourceCount: 1,
-        staleFeatureCount: 0,
-        warningCount: 0
-      },
-      type: "FeatureCollection",
-      warnings: []
-    }, undefined, "civil");
+      undefined,
+      "civil"
+    );
 
     expect(collection.features[0]?.properties).toMatchObject({
       mapLabel: "Na Fabiance",
@@ -1267,60 +1319,65 @@ describe("COP map data helpers", () => {
   });
 
   it("adds mobile coverage polygon render metadata from SIM quality", () => {
-    const collection = situationFeaturesToFeatureCollection({
-      contractVersion: "cop-situation-source-v1",
-      features: [
-        {
-          geometry: {
-            coordinates: [[
-              [14.2, 49.95],
-              [14.3, 49.95],
-              [14.3, 50.05],
-              [14.2, 50.05],
-              [14.2, 49.95]
-            ]],
-            type: "Polygon"
-          },
-          properties: {
-            category: "mobile_coverage",
-            confidence: 0.63,
-            estimatedSignalDbm: -111,
-            featureId: "coverage:mobile:4g:6-4",
-            label: "4G coverage estimate",
-            layer: "mobile_coverage",
-            modelVersion: "coverage-v1",
-            observedAt: "2026-05-21T13:44:09.575Z",
-            quality: "weak",
-            resolutionM: 4554,
-            sourceId: "mobile_coverage_model",
-            stale: false,
-            technology: "4G"
-          },
-          type: "Feature"
-        }
-      ],
-      generatedAt: "2026-05-21T14:08:41Z",
-      query: {
-        bbox: { east: 15, north: 51, south: 49, west: 13 },
-        layers: ["mobile_coverage"],
-        limit: 250,
-        sources: ["mobile_coverage_model"],
-        technology: "4G"
+    const collection = situationFeaturesToFeatureCollection(
+      {
+        contractVersion: "cop-situation-source-v1",
+        features: [
+          {
+            geometry: {
+              coordinates: [
+                [
+                  [14.2, 49.95],
+                  [14.3, 49.95],
+                  [14.3, 50.05],
+                  [14.2, 50.05],
+                  [14.2, 49.95]
+                ]
+              ],
+              type: "Polygon"
+            },
+            properties: {
+              category: "mobile_coverage",
+              confidence: 0.63,
+              estimatedSignalDbm: -111,
+              featureId: "coverage:mobile:4g:6-4",
+              label: "4G coverage estimate",
+              layer: "mobile_coverage",
+              modelVersion: "coverage-v1",
+              observedAt: "2026-05-21T13:44:09.575Z",
+              quality: "weak",
+              resolutionM: 4554,
+              sourceId: "mobile_coverage_model",
+              stale: false,
+              technology: "4G"
+            },
+            type: "Feature"
+          }
+        ],
+        generatedAt: "2026-05-21T14:08:41Z",
+        query: {
+          bbox: { east: 15, north: 51, south: 49, west: 13 },
+          layers: ["mobile_coverage"],
+          limit: 250,
+          sources: ["mobile_coverage_model"],
+          technology: "4G"
+        },
+        source: {
+          sourceId: "situation-data-api",
+          sourceType: "PUBLIC_SITUATION_AGGREGATE"
+        },
+        sources: [],
+        summary: {
+          featureCount: 1,
+          sourceCount: 1,
+          staleFeatureCount: 0,
+          warningCount: 0
+        },
+        type: "FeatureCollection",
+        warnings: []
       },
-      source: {
-        sourceId: "situation-data-api",
-        sourceType: "PUBLIC_SITUATION_AGGREGATE"
-      },
-      sources: [],
-      summary: {
-        featureCount: 1,
-        sourceCount: 1,
-        staleFeatureCount: 0,
-        warningCount: 0
-      },
-      type: "FeatureCollection",
-      warnings: []
-    }, "coverage:mobile:4g:6-4");
+      "coverage:mobile:4g:6-4"
+    );
 
     expect(collection.features[0]?.properties).toMatchObject({
       coverageColor: "#fb923c",
@@ -1402,13 +1459,15 @@ describe("COP map data helpers", () => {
       features: [
         {
           geometry: {
-            coordinates: [[
-              [14.2, 49.95],
-              [14.3, 49.95],
-              [14.3, 50.05],
-              [14.2, 50.05],
-              [14.2, 49.95]
-            ]],
+            coordinates: [
+              [
+                [14.2, 49.95],
+                [14.3, 49.95],
+                [14.3, 50.05],
+                [14.2, 50.05],
+                [14.2, 49.95]
+              ]
+            ],
             type: "Polygon"
           },
           properties: {
@@ -1468,13 +1527,15 @@ describe("COP map data helpers", () => {
       features: [
         {
           geometry: {
-            coordinates: [[
-              [14.2, 49.95],
-              [14.3, 49.95],
-              [14.3, 50.05],
-              [14.2, 50.05],
-              [14.2, 49.95]
-            ]],
+            coordinates: [
+              [
+                [14.2, 49.95],
+                [14.3, 49.95],
+                [14.3, 50.05],
+                [14.2, 50.05],
+                [14.2, 49.95]
+              ]
+            ],
             type: "Polygon"
           },
           properties: {
@@ -1537,13 +1598,15 @@ describe("COP map data helpers", () => {
       features: [
         {
           geometry: {
-            coordinates: [[
-              [10.0, 47.0],
-              [20.0, 47.0],
-              [20.0, 53.0],
-              [10.0, 53.0],
-              [10.0, 47.0]
-            ]],
+            coordinates: [
+              [
+                [10.0, 47.0],
+                [20.0, 47.0],
+                [20.0, 53.0],
+                [10.0, 53.0],
+                [10.0, 47.0]
+              ]
+            ],
             type: "Polygon"
           },
           properties: {
@@ -1566,13 +1629,15 @@ describe("COP map data helpers", () => {
         },
         {
           geometry: {
-            coordinates: [[
-              [14.2, 49.95],
-              [14.22, 49.95],
-              [14.22, 49.97],
-              [14.2, 49.97],
-              [14.2, 49.95]
-            ]],
+            coordinates: [
+              [
+                [14.2, 49.95],
+                [14.22, 49.95],
+                [14.22, 49.97],
+                [14.2, 49.97],
+                [14.2, 49.95]
+              ]
+            ],
             type: "Polygon"
           },
           properties: {
@@ -1617,7 +1682,9 @@ describe("COP map data helpers", () => {
       warnings: []
     });
 
-    expect(collection.features.map((feature) => feature.properties.featureId)).toEqual(["mobile_network:aggregate:5g:6-4"]);
+    expect(collection.features.map((feature) => feature.properties.featureId)).toEqual([
+      "mobile_network:aggregate:5g:6-4"
+    ]);
   });
 
   it("suppresses synthetic warning points from map marker rendering", () => {
@@ -1642,13 +1709,15 @@ describe("COP map data helpers", () => {
         },
         {
           geometry: {
-            coordinates: [[
-              [15.2, 50.7],
-              [15.4, 50.7],
-              [15.4, 50.8],
-              [15.2, 50.8],
-              [15.2, 50.7]
-            ]],
+            coordinates: [
+              [
+                [15.2, 50.7],
+                [15.4, 50.7],
+                [15.4, 50.8],
+                [15.2, 50.8],
+                [15.2, 50.7]
+              ]
+            ],
             type: "Polygon"
           },
           properties: {
@@ -1696,84 +1765,94 @@ describe("COP map data helpers", () => {
   });
 
   it("keeps weather alert polygons visually separate from generic crisis warnings", () => {
-    const collection = situationFeaturesToFeatureCollection({
-      contractVersion: "cop-situation-source-v1",
-      features: [
-        {
-          geometry: {
-            coordinates: [[
-              [14.0, 50.0],
-              [14.2, 50.0],
-              [14.2, 50.2],
-              [14.0, 50.2],
-              [14.0, 50.0]
-            ]],
-            type: "Polygon"
+    const collection = situationFeaturesToFeatureCollection(
+      {
+        contractVersion: "cop-situation-source-v1",
+        features: [
+          {
+            geometry: {
+              coordinates: [
+                [
+                  [14.0, 50.0],
+                  [14.2, 50.0],
+                  [14.2, 50.2],
+                  [14.0, 50.2],
+                  [14.0, 50.0]
+                ]
+              ],
+              type: "Polygon"
+            },
+            properties: {
+              category: "weather_warning",
+              confidence: 0.81,
+              featureId: "weather_alerts:chmi_alerts:area",
+              headline: "Silný vítr",
+              label: "Silný vítr",
+              layer: "weather_alerts",
+              layerId: "public.safety.weather_alerts",
+              observedAt: "2026-05-21T08:11:11Z",
+              severity: "warning",
+              sourceId: "chmi_alerts",
+              stale: false
+            },
+            type: "Feature"
           },
-          properties: {
-            category: "weather_warning",
-            confidence: 0.81,
-            featureId: "weather_alerts:chmi_alerts:area",
-            headline: "Silný vítr",
-            label: "Silný vítr",
-            layer: "weather_alerts",
-            layerId: "public.safety.weather_alerts",
-            observedAt: "2026-05-21T08:11:11Z",
-            severity: "warning",
-            sourceId: "chmi_alerts",
-            stale: false
-          },
-          type: "Feature"
+          {
+            geometry: {
+              coordinates: [
+                [
+                  [14.3, 50.0],
+                  [14.5, 50.0],
+                  [14.5, 50.2],
+                  [14.3, 50.2],
+                  [14.3, 50.0]
+                ]
+              ],
+              type: "Polygon"
+            },
+            properties: {
+              category: "road.accident",
+              confidence: 0.73,
+              featureId: "warnings:road_srti_lod:area",
+              headline: "Dopravní nehoda",
+              label: "Dopravní nehoda",
+              layer: "warnings",
+              layerId: "public.safety.warnings",
+              observedAt: "2026-05-21T08:12:11Z",
+              severity: "advisory",
+              sourceId: "road_srti_lod",
+              stale: false
+            },
+            type: "Feature"
+          }
+        ],
+        generatedAt: "2026-05-21T10:00:00Z",
+        query: {
+          bbox: { east: 14.6, north: 50.3, south: 49.9, west: 13.9 },
+          layers: ["weather_alerts", "warnings"],
+          limit: 250
         },
-        {
-          geometry: {
-            coordinates: [[
-              [14.3, 50.0],
-              [14.5, 50.0],
-              [14.5, 50.2],
-              [14.3, 50.2],
-              [14.3, 50.0]
-            ]],
-            type: "Polygon"
-          },
-          properties: {
-            category: "road.accident",
-            confidence: 0.73,
-            featureId: "warnings:road_srti_lod:area",
-            headline: "Dopravní nehoda",
-            label: "Dopravní nehoda",
-            layer: "warnings",
-            layerId: "public.safety.warnings",
-            observedAt: "2026-05-21T08:12:11Z",
-            severity: "advisory",
-            sourceId: "road_srti_lod",
-            stale: false
-          },
-          type: "Feature"
-        }
-      ],
-      generatedAt: "2026-05-21T10:00:00Z",
-      query: {
-        bbox: { east: 14.6, north: 50.3, south: 49.9, west: 13.9 },
-        layers: ["weather_alerts", "warnings"],
-        limit: 250
+        source: {
+          sourceId: "situation-data-api",
+          sourceType: "PUBLIC_SITUATION_AGGREGATE"
+        },
+        sources: [],
+        summary: {
+          featureCount: 2,
+          sourceCount: 2,
+          staleFeatureCount: 0,
+          warningCount: 2
+        },
+        type: "FeatureCollection",
+        warnings: []
       },
-      source: {
-        sourceId: "situation-data-api",
-        sourceType: "PUBLIC_SITUATION_AGGREGATE"
-      },
-      sources: [],
-      summary: {
-        featureCount: 2,
-        sourceCount: 2,
-        staleFeatureCount: 0,
-        warningCount: 2
-      },
-      type: "FeatureCollection",
-      warnings: []
-    }, "weather_alerts:chmi_alerts:area");
+      "weather_alerts:chmi_alerts:area"
+    );
 
-    expect(collection.features.map((feature) => feature.properties.safetyAlertLayer)).toEqual(["weather_alerts", "warnings"]);
+    expect(collection.features.map((feature) => feature.properties.safetyAlertLayer)).toEqual([
+      "weather_alerts",
+      "warnings"
+    ]);
     expect(collection.features[0]?.properties).toMatchObject({
       safetyAlertDimmed: false,
       selected: true
@@ -1937,13 +2016,15 @@ describe("COP map data helpers", () => {
       features: [
         {
           geometry: {
-            coordinates: [[
-              [14.1, 50.0],
-              [14.2, 50.0],
-              [14.2, 50.1],
-              [14.1, 50.1],
-              [14.1, 50.0]
-            ]],
+            coordinates: [
+              [
+                [14.1, 50.0],
+                [14.2, 50.0],
+                [14.2, 50.1],
+                [14.1, 50.1],
+                [14.1, 50.0]
+              ]
+            ],
             type: "Polygon"
           },
           properties: {
@@ -2002,13 +2083,15 @@ describe("COP map data helpers", () => {
       features: [
         {
           geometry: {
-            coordinates: [[
-              [11.267, 48.047],
-              [20.77, 48.047],
-              [20.77, 52.167],
-              [11.267, 52.167],
-              [11.267, 48.047]
-            ]],
+            coordinates: [
+              [
+                [11.267, 48.047],
+                [20.77, 48.047],
+                [20.77, 52.167],
+                [11.267, 52.167],
+                [11.267, 48.047]
+              ]
+            ],
             type: "Polygon"
           },
           properties: {
@@ -2075,13 +2158,15 @@ describe("COP map data helpers", () => {
       features: [
         {
           geometry: {
-            coordinates: [[
-              [14.1, 50.0],
-              [14.2, 50.0],
-              [14.2, 50.1],
-              [14.1, 50.1],
-              [14.1, 50.0]
-            ]],
+            coordinates: [
+              [
+                [14.1, 50.0],
+                [14.2, 50.0],
+                [14.2, 50.1],
+                [14.1, 50.1],
+                [14.1, 50.0]
+              ]
+            ],
             type: "Polygon"
           },
           properties: {
@@ -2139,13 +2224,15 @@ describe("COP map data helpers", () => {
       features: [
         {
           geometry: {
-            coordinates: [[
-              [14.1, 50.0],
-              [14.2, 50.0],
-              [14.2, 50.1],
-              [14.1, 50.1],
-              [14.1, 50.0]
-            ]],
+            coordinates: [
+              [
+                [14.1, 50.0],
+                [14.2, 50.0],
+                [14.2, 50.1],
+                [14.1, 50.1],
+                [14.1, 50.0]
+              ]
+            ],
             type: "Polygon"
           },
           properties: {
@@ -2206,10 +2293,16 @@ describe("COP map data helpers", () => {
 
   it("falls back from empty or invalid map tile configuration", () => {
     expect(normalizeMapTileTemplate("")).toBe("https://tile.openstreetmap.org/{z}/{x}/{y}.png");
-    expect(normalizeMapTileTemplate("https://tiles.example.test/{z}/{x}.png")).toBe("https://tile.openstreetmap.org/{z}/{x}/{y}.png");
-    expect(normalizeMapTileTemplate(" https://tiles.example.test/{z}/{x}/{y}.png ")).toBe("https://tiles.example.test/{z}/{x}/{y}.png");
+    expect(normalizeMapTileTemplate("https://tiles.example.test/{z}/{x}.png")).toBe(
+      "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    );
+    expect(normalizeMapTileTemplate(" https://tiles.example.test/{z}/{x}/{y}.png ")).toBe(
+      "https://tiles.example.test/{z}/{x}/{y}.png"
+    );
     expect(normalizeMapGlyphsTemplate("")).toBe("https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf");
-    expect(normalizeMapGlyphsTemplate("https://tiles.example.test/fonts/{range}.pbf")).toBe("https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf");
+    expect(normalizeMapGlyphsTemplate("https://tiles.example.test/fonts/{range}.pbf")).toBe(
+      "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf"
+    );
   });
 
   it("fits the map to one or more positioned tracks", () => {
@@ -2372,7 +2465,13 @@ describe("COP map data helpers", () => {
     ] satisfies CopObject[];
     const history = {
       "AIR_SIM_UAV-0001": [
-        { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 49.99, lon: 13.99, timestamp: "2026-05-19T08:00:00Z" },
+        {
+          objectId: "AIR_SIM_UAV-0001",
+          affiliation: "HOSTILE",
+          lat: 49.99,
+          lon: 13.99,
+          timestamp: "2026-05-19T08:00:00Z"
+        },
         { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50, lon: 14, timestamp: "2026-05-19T08:05:00Z" }
       ]
     };
@@ -2416,16 +2515,48 @@ describe("COP map data helpers", () => {
     ] satisfies CopObject[];
     const history = {
       "AIR_SIM_AIRCRAFT-0003": [
-        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
-        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50.01, lon: 14.018, timestamp: "2026-05-19T08:01:00Z" },
-        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50.02, lon: 14.035, timestamp: "2026-05-19T08:02:00Z" },
-        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50.03, lon: 14.05, timestamp: "2026-05-19T08:03:00Z" }
+        {
+          objectId: "AIR_SIM_AIRCRAFT-0003",
+          affiliation: "FRIEND",
+          lat: 50,
+          lon: 14,
+          timestamp: "2026-05-19T08:00:00Z"
+        },
+        {
+          objectId: "AIR_SIM_AIRCRAFT-0003",
+          affiliation: "FRIEND",
+          lat: 50.01,
+          lon: 14.018,
+          timestamp: "2026-05-19T08:01:00Z"
+        },
+        {
+          objectId: "AIR_SIM_AIRCRAFT-0003",
+          affiliation: "FRIEND",
+          lat: 50.02,
+          lon: 14.035,
+          timestamp: "2026-05-19T08:02:00Z"
+        },
+        {
+          objectId: "AIR_SIM_AIRCRAFT-0003",
+          affiliation: "FRIEND",
+          lat: 50.03,
+          lon: 14.05,
+          timestamp: "2026-05-19T08:03:00Z"
+        }
       ]
     };
 
-    const predictionCollection = objectsToPredictionFeatureCollection(objects, history, "AIR_SIM_AIRCRAFT-0003", 8, "advanced");
+    const predictionCollection = objectsToPredictionFeatureCollection(
+      objects,
+      history,
+      "AIR_SIM_AIRCRAFT-0003",
+      8,
+      "advanced"
+    );
     const pathFeature = predictionCollection.features.find((feature) => feature.properties.kind === "path");
-    const uncertaintyFeature = predictionCollection.features.find((feature) => feature.properties.kind === "uncertainty");
+    const uncertaintyFeature = predictionCollection.features.find(
+      (feature) => feature.properties.kind === "uncertainty"
+    );
 
     expect(predictionCollection.features).toHaveLength(2);
     expect(pathFeature?.geometry.type).toBe("LineString");
@@ -2465,7 +2596,11 @@ describe("COP map data helpers", () => {
       ]
     };
 
-    expect(objectsToHistoryFeatureCollection(objects, history, "A", "selected").features.map((feature) => feature.properties.objectId)).toEqual(["A"]);
+    expect(
+      objectsToHistoryFeatureCollection(objects, history, "A", "selected").features.map(
+        (feature) => feature.properties.objectId
+      )
+    ).toEqual(["A"]);
     expect(objectsToHistoryFeatureCollection(objects, history, "A", "all").features).toHaveLength(2);
   });
 
@@ -2508,7 +2643,9 @@ describe("COP map data helpers", () => {
     expect(ring[0]).toEqual(ring[ring.length - 1]);
     expect(ring[0]![1]).toBeGreaterThan(50.1);
     expect(userAlertRadiusToFeatureCollection(null, 10, true).features).toEqual([]);
-    expect(userAlertRadiusToFeatureCollection({ lat: 50, lon: 14, updatedAt: "2026-05-19T08:00:00Z" }, 10, false).features).toEqual([]);
+    expect(
+      userAlertRadiusToFeatureCollection({ lat: 50, lon: 14, updatedAt: "2026-05-19T08:00:00Z" }, 10, false).features
+    ).toEqual([]);
   });
 
   it("builds translucent alert area polygons for active server alerts", () => {

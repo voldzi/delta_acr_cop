@@ -138,15 +138,7 @@ describe("ConversationControls", () => {
   });
 
   it("disables message selection actions without a selected message", () => {
-    render(
-      <SelectionToolbar
-        count={0}
-        onCancel={vi.fn()}
-        onCopy={vi.fn()}
-        onForward={vi.fn()}
-        onShare={vi.fn()}
-      />
-    );
+    render(<SelectionToolbar count={0} onCancel={vi.fn()} onCopy={vi.fn()} onForward={vi.fn()} onShare={vi.fn()} />);
 
     expect(screen.getByText("Vybráno 0")).toBeTruthy();
     expect((screen.getByRole("button", { name: /Přeposlat/u }) as HTMLButtonElement).disabled).toBe(true);

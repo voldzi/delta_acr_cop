@@ -73,17 +73,28 @@ export function Avatar({
   const defaultAiImageSrc = variant === "ai" && failedSrc !== copAiAvatarUrl ? copAiAvatarUrl : undefined;
   const imageSrc = primaryImageSrc ?? defaultAiImageSrc;
   return (
-    <span className={clsx("avatar", small && "small", imageSrc && "image", variant === "ai" && "ai")} aria-hidden="true">
-      {imageSrc ? <img alt="" src={imageSrc} onError={() => setFailedSrc(primaryImageSrc ? src ?? primaryImageSrc : imageSrc)} /> : variant === "ai" ? "AI" : initialsFor(label)}
+    <span
+      className={clsx("avatar", small && "small", imageSrc && "image", variant === "ai" && "ai")}
+      aria-hidden="true"
+    >
+      {imageSrc ? (
+        <img
+          alt=""
+          src={imageSrc}
+          onError={() => setFailedSrc(primaryImageSrc ? (src ?? primaryImageSrc) : imageSrc)}
+        />
+      ) : variant === "ai" ? (
+        "AI"
+      ) : (
+        initialsFor(label)
+      )}
     </span>
   );
 }
 
 export function initialsFor(value: string): string {
   const parts = value.trim().split(/\s+/u).filter(Boolean);
-  const initials = parts.length > 1
-    ? `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`
-    : value.slice(0, 2);
+  const initials = parts.length > 1 ? `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}` : value.slice(0, 2);
   return initials.toLocaleUpperCase("cs-CZ");
 }
 

@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import { mergeTimelineMessages } from "./chat-model";
-import { aiMapActionsForMessage, aiMapActionsFromResponse, aiQuestionNeedsCurrentLocation, buildAiChatContextSnapshot, buildAiRequestContextOptions, composerQuickActions, composerSuggestions, formatAiAgentShareBody, formatAiSituationShareBody, parseAiAgentInvocation, parseAiAgentMention } from "./ChatApp";
+import {
+  aiMapActionsForMessage,
+  aiMapActionsFromResponse,
+  aiQuestionNeedsCurrentLocation,
+  buildAiChatContextSnapshot,
+  buildAiRequestContextOptions,
+  composerQuickActions,
+  composerSuggestions,
+  formatAiAgentShareBody,
+  formatAiSituationShareBody,
+  parseAiAgentInvocation,
+  parseAiAgentMention
+} from "./ChatApp";
 import type { AiCopResponse } from "@cop/core/cop-data";
 import type { MatrixTimelineMessage } from "@cop/messaging/types";
 
@@ -137,33 +149,35 @@ describe("aiMapActionsFromResponse", () => {
   };
 
   it("extracts explicit structured map actions", () => {
-    expect(aiMapActionsFromResponse({
-      ...baseResponse,
-      result: {
-        ...baseResponse.result,
-        structured: {
-          mapActions: [
-            {
-              action: "focus-map",
-              entityId: "security-police:vrbno",
-              label: "Zobrazit na mapě: Policie",
-              layerId: "reference.infrastructure.emergency",
-              lat: 50.1187,
-              lon: 17.3842,
-              sourceName: "SIM search-data",
-              sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
-              title: "Policie"
-            },
-            {
-              action: "focus-map",
-              label: "Neplatný bod",
-              lat: "x",
-              lon: 17.3842
-            }
-          ]
+    expect(
+      aiMapActionsFromResponse({
+        ...baseResponse,
+        result: {
+          ...baseResponse.result,
+          structured: {
+            mapActions: [
+              {
+                action: "focus-map",
+                entityId: "security-police:vrbno",
+                label: "Zobrazit na mapě: Policie",
+                layerId: "reference.infrastructure.emergency",
+                lat: 50.1187,
+                lon: 17.3842,
+                sourceName: "SIM search-data",
+                sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
+                title: "Policie"
+              },
+              {
+                action: "focus-map",
+                label: "Neplatný bod",
+                lat: "x",
+                lon: 17.3842
+              }
+            ]
+          }
         }
-      }
-    })).toEqual([
+      })
+    ).toEqual([
       expect.objectContaining({
         action: "focus-map",
         entityId: "security-police:vrbno",
@@ -179,31 +193,33 @@ describe("aiMapActionsFromResponse", () => {
   });
 
   it("falls back to map search results when explicit actions are missing", () => {
-    expect(aiMapActionsFromResponse({
-      ...baseResponse,
-      result: {
-        ...baseResponse.result,
-        structured: {
-          mapSearch: {
-            results: [
-              {
-                distanceText: "1.2 km",
-                location: {
-                  lat: 50.1187,
-                  lon: 17.3842
-                },
-                layerId: "reference.infrastructure.emergency",
-                mapFeatureId: "security-police:vrbno",
-                sourceName: "SIM search-data",
-                sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
-                title: "Policie ČR - Vrbno pod Pradědem",
-                type: "mapFeature"
-              }
-            ]
+    expect(
+      aiMapActionsFromResponse({
+        ...baseResponse,
+        result: {
+          ...baseResponse.result,
+          structured: {
+            mapSearch: {
+              results: [
+                {
+                  distanceText: "1.2 km",
+                  location: {
+                    lat: 50.1187,
+                    lon: 17.3842
+                  },
+                  layerId: "reference.infrastructure.emergency",
+                  mapFeatureId: "security-police:vrbno",
+                  sourceName: "SIM search-data",
+                  sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
+                  title: "Policie ČR - Vrbno pod Pradědem",
+                  type: "mapFeature"
+                }
+              ]
+            }
           }
         }
-      }
-    })).toEqual([
+      })
+    ).toEqual([
       expect.objectContaining({
         action: "focus-map",
         entityId: "security-police:vrbno",
@@ -269,18 +285,20 @@ describe("buildAiChatContextSnapshot", () => {
       sender: index % 2 === 0 ? "@me:cop.local" : "@peer:cop.local",
       senderDisplayName: index % 2 === 0 ? "Já" : "Peer",
       timestamp: `2026-06-26T07:${String(index).padStart(2, "0")}:00.000Z`,
-      ...(index === 31 ? {
-        cop: {
-          ai: {
-            auditId: "audit-31",
-            provider: "mock",
-            status: "COMPLETED",
-            type: "chat-agent"
-          },
-          kind: "ai-agent-response",
-          source: "cop-chat"
-        }
-      } : {})
+      ...(index === 31
+        ? {
+            cop: {
+              ai: {
+                auditId: "audit-31",
+                provider: "mock",
+                status: "COMPLETED",
+                type: "chat-agent"
+              },
+              kind: "ai-agent-response",
+              source: "cop-chat"
+            }
+          }
+        : {})
     }));
 
     const snapshot = buildAiChatContextSnapshot(messages, {
@@ -381,12 +399,14 @@ describe("buildAiRequestContextOptions", () => {
       }
     ];
 
-    expect(buildAiRequestContextOptions(messages, {
-      label: "Moje poloha",
-      lat: 50.12952,
-      lon: 17.36285,
-      source: "device"
-    })).toEqual({
+    expect(
+      buildAiRequestContextOptions(messages, {
+        label: "Moje poloha",
+        lat: 50.12952,
+        lon: 17.36285,
+        source: "device"
+      })
+    ).toEqual({
       geoContext: {
         currentLocation: {
           label: "Moje poloha",

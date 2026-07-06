@@ -11,7 +11,9 @@ export function StaticLocationMap({ large = false, location }: { large?: boolean
       style={{ backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.04)), url("${tileUrl}")` }}
       aria-hidden="true"
     >
-      <span className="map-pin-dot"><MapPin size={large ? 26 : 18} /></span>
+      <span className="map-pin-dot">
+        <MapPin size={large ? 26 : 18} />
+      </span>
     </span>
   );
 }
@@ -34,9 +36,9 @@ export function centerLocationInCop(location: MatrixLocationShare): void {
 
 function osmTileUrlForLocation(location: { lat: number; lon: number }, zoom: number): string {
   const z = Math.max(1, Math.min(18, Math.trunc(zoom)));
-  const latRad = location.lat * Math.PI / 180;
+  const latRad = (location.lat * Math.PI) / 180;
   const scale = 2 ** z;
-  const x = Math.floor((location.lon + 180) / 360 * scale);
-  const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * scale);
+  const x = Math.floor(((location.lon + 180) / 360) * scale);
+  const y = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * scale);
   return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
 }

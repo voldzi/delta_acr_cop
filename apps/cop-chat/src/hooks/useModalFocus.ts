@@ -17,7 +17,9 @@ export function useEventCallback<A extends unknown[], R>(handler: (...args: A) =
   return React.useCallback((...args: A) => handlerRef.current(...args), []);
 }
 
-export function useModalFocus<T extends HTMLElement>(onClose: () => void): {
+export function useModalFocus<T extends HTMLElement>(
+  onClose: () => void
+): {
   dialogRef: React.RefObject<T | null>;
   onDialogKeyDown: (event: React.KeyboardEvent<T>) => void;
 } {
@@ -49,40 +51,48 @@ export function useModalFocus<T extends HTMLElement>(onClose: () => void): {
     };
   }, []);
 
-  const onDialogKeyDown = React.useCallback((event: React.KeyboardEvent<T>) => {
-    if (event.key === "Escape") {
-      event.stopPropagation();
-      closeDialog();
-      return;
-    }
-    if (event.key !== "Tab") {
-      return;
-    }
-    const dialog = dialogRef.current;
-    if (!dialog) {
-      return;
-    }
-    const focusable = focusableModalElements(dialog);
-    if (focusable.length === 0) {
+  const onDialogKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<T>) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        closeDialog();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+      const dialog = dialogRef.current;
+      if (!dialog) {
+        return;
+      }
+      const focusable = focusableModalElements(dialog);
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus({ preventScroll: true });
+        return;
+      }
+      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const activeIndex = activeElement ? focusable.indexOf(activeElement) : -1;
+      const nextIndex = event.shiftKey
+        ? activeIndex <= 0
+          ? focusable.length - 1
+          : activeIndex - 1
+        : activeIndex === focusable.length - 1
+          ? 0
+          : activeIndex + 1;
       event.preventDefault();
-      dialog.focus({ preventScroll: true });
-      return;
-    }
-    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const activeIndex = activeElement ? focusable.indexOf(activeElement) : -1;
-    const nextIndex = event.shiftKey
-      ? activeIndex <= 0 ? focusable.length - 1 : activeIndex - 1
-      : activeIndex === focusable.length - 1 ? 0 : activeIndex + 1;
-    event.preventDefault();
-    focusable[nextIndex]?.focus({ preventScroll: true });
-  }, [closeDialog]);
+      focusable[nextIndex]?.focus({ preventScroll: true });
+    },
+    [closeDialog]
+  );
 
   return { dialogRef, onDialogKeyDown };
 }
 
 function focusableModalElements(root: HTMLElement): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(modalFocusableSelector))
-    .filter((element) => !element.hasAttribute("disabled") && isVisibleElement(element));
+  return Array.from(root.querySelectorAll<HTMLElement>(modalFocusableSelector)).filter(
+    (element) => !element.hasAttribute("disabled") && isVisibleElement(element)
+  );
 }
 
 function preferredModalFocusElement(root: HTMLElement): HTMLElement | null {

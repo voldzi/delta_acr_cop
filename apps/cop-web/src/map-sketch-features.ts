@@ -1,11 +1,7 @@
-import type {
-  SketchDrawingFeature,
-  SketchDrawingKind,
-  SketchDrawingVisibility,
-  SketchGeometry
-} from "./cop-data";
+import type { SketchDrawingFeature, SketchDrawingKind, SketchDrawingVisibility, SketchGeometry } from "./cop-data";
 
-export type SketchToolMode = "arrow" | "circle" | "line" | "marker" | "measurement" | "pan" | "polygon" | "select" | "text";
+export type SketchToolMode =
+  "arrow" | "circle" | "line" | "marker" | "measurement" | "pan" | "polygon" | "select" | "text";
 export type SketchFillPattern = "dash" | "hatch" | "outline" | "solid";
 export type SketchSymbolPalette = "civil" | "professional";
 
@@ -109,9 +105,30 @@ export const sketchSymbolPresets: SketchSymbolPreset[] = [
   { glyph: "▲", iconId: "shape-triangle", label: "Trojúhelník", palette: "civil", shape: "triangle", tone: "warning" },
   { glyph: "≋", iconId: "shape-wave", label: "Vlnka", palette: "civil", shape: "wave", tone: "info" },
   { glyph: "✚", iconId: "shape-cross", label: "Kříž", palette: "civil", shape: "cross", tone: "ok" },
-  { glyph: "□", iconId: "app6-friendly", label: "APP-6 vlastní", palette: "professional", sidc: "10031000001211000000", tone: "professional" },
-  { glyph: "▭", iconId: "app6-neutral", label: "APP-6 neutrální", palette: "professional", sidc: "10031000001211000000", tone: "professional" },
-  { glyph: "◇", iconId: "app6-unknown", label: "APP-6 neznámé", palette: "professional", sidc: "10011000001211000000", tone: "professional" }
+  {
+    glyph: "□",
+    iconId: "app6-friendly",
+    label: "APP-6 vlastní",
+    palette: "professional",
+    sidc: "10031000001211000000",
+    tone: "professional"
+  },
+  {
+    glyph: "▭",
+    iconId: "app6-neutral",
+    label: "APP-6 neutrální",
+    palette: "professional",
+    sidc: "10031000001211000000",
+    tone: "professional"
+  },
+  {
+    glyph: "◇",
+    iconId: "app6-unknown",
+    label: "APP-6 neznámé",
+    palette: "professional",
+    sidc: "10011000001211000000",
+    tone: "professional"
+  }
 ];
 
 export const defaultSketchSymbol = sketchSymbolPresets[0]!;
@@ -132,7 +149,9 @@ export function isSketchFillPattern(value: unknown): value is SketchFillPattern 
   return value === "dash" || value === "hatch" || value === "outline" || value === "solid";
 }
 
-export function sketchPresetToSymbolInput(preset: SketchSymbolPreset): Partial<SketchDrawingFeature["properties"]["symbol"]> {
+export function sketchPresetToSymbolInput(
+  preset: SketchSymbolPreset
+): Partial<SketchDrawingFeature["properties"]["symbol"]> {
   return {
     iconId: preset.iconId,
     palette: preset.palette,
@@ -141,7 +160,9 @@ export function sketchPresetToSymbolInput(preset: SketchSymbolPreset): Partial<S
 }
 
 export function sketchSymbolGlyph(iconId: string | undefined, sidc: string | undefined): string {
-  const preset = sketchSymbolPresets.find((candidate) => candidate.iconId === iconId || (sidc && candidate.sidc === sidc));
+  const preset = sketchSymbolPresets.find(
+    (candidate) => candidate.iconId === iconId || (sidc && candidate.sidc === sidc)
+  );
   return preset?.glyph ?? "●";
 }
 
@@ -223,7 +244,10 @@ export function sketchDraftToFeatureCollection(
     if (first) {
       features.push({
         type: "Feature",
-        geometry: { type: coordinates.length >= 3 ? "Polygon" : "LineString", coordinates: coordinates.length >= 3 ? [[...coordinates, first]] : coordinates } as SketchDraftFeatureCollection["features"][number]["geometry"],
+        geometry: {
+          type: coordinates.length >= 3 ? "Polygon" : "LineString",
+          coordinates: coordinates.length >= 3 ? [[...coordinates, first]] : coordinates
+        } as SketchDraftFeatureCollection["features"][number]["geometry"],
         properties: { kind: coordinates.length >= 3 ? "area" : "line" }
       });
     }
@@ -347,12 +371,18 @@ export function sketchDraftHint(mode: SketchToolMode, points: Array<{ lat: numbe
     return points.length < 3 ? `Přidejte alespoň 3 body (${points.length}/3).` : `${points.length} bodů připraveno.`;
   }
   if (mode === "circle") {
-    return points.length < 2 ? `Klikněte na střed a okraj kruhu (${points.length}/2).` : `Poloměr ${formatMeasurementLabel(measureSketchLine(points.map((point) => [point.lon, point.lat])))}.`;
+    return points.length < 2
+      ? `Klikněte na střed a okraj kruhu (${points.length}/2).`
+      : `Poloměr ${formatMeasurementLabel(measureSketchLine(points.map((point) => [point.lon, point.lat])))}.`;
   }
   if (mode === "arrow") {
-    return points.length < 2 ? `Klikněte začátek a konec šipky (${points.length}/2).` : `${points.length} bodů připraveno.`;
+    return points.length < 2
+      ? `Klikněte začátek a konec šipky (${points.length}/2).`
+      : `${points.length} bodů připraveno.`;
   }
-  return points.length < 2 ? `Přidejte alespoň 2 body (${points.length}/2).` : formatMeasurementLabel(measureSketchLine(points.map((point) => [point.lon, point.lat])));
+  return points.length < 2
+    ? `Přidejte alespoň 2 body (${points.length}/2).`
+    : formatMeasurementLabel(measureSketchLine(points.map((point) => [point.lon, point.lat])));
 }
 
 export function formatSketchDrawingSubtitle(drawing: SketchDrawingFeature): string {
@@ -372,7 +402,10 @@ export function formatSketchDrawingSubtitle(drawing: SketchDrawingFeature): stri
     private: "soukromé",
     public: "veřejné"
   };
-  const metric = drawing.geometry.type === "LineString" ? ` · ${formatMeasurementLabel(measureSketchLine(drawing.geometry.coordinates))}` : "";
+  const metric =
+    drawing.geometry.type === "LineString"
+      ? ` · ${formatMeasurementLabel(measureSketchLine(drawing.geometry.coordinates))}`
+      : "";
   return `${kindLabels[drawing.properties.kind]} · ${visibilityLabels[drawing.properties.visibility]}${metric}`;
 }
 
@@ -398,10 +431,16 @@ export function formatMeasurementLabel(distanceKm: number): string {
 
 function sketchArrowHeadFeature(
   drawing: SketchDrawingFeature,
-  baseProperties: Omit<SketchFeatureCollection["features"][number]["properties"], "bearing" | "kind"> & { kind: SketchDrawingKind },
+  baseProperties: Omit<SketchFeatureCollection["features"][number]["properties"], "bearing" | "kind"> & {
+    kind: SketchDrawingKind;
+  },
   selected: boolean
 ): SketchFeatureCollection["features"][number] | null {
-  if (drawing.properties.kind !== "arrow" || drawing.geometry.type !== "LineString" || drawing.geometry.coordinates.length < 2) {
+  if (
+    drawing.properties.kind !== "arrow" ||
+    drawing.geometry.type !== "LineString" ||
+    drawing.geometry.coordinates.length < 2
+  ) {
     return null;
   }
   const end = drawing.geometry.coordinates[drawing.geometry.coordinates.length - 1];
@@ -422,7 +461,9 @@ function sketchArrowHeadFeature(
   };
 }
 
-function arrowGeometryFromDraftPoints(points: Array<{ lat: number; lon: number }>): Extract<SketchGeometry, { type: "Polygon" }> | null {
+function arrowGeometryFromDraftPoints(
+  points: Array<{ lat: number; lon: number }>
+): Extract<SketchGeometry, { type: "Polygon" }> | null {
   const start = points[0];
   const end = points[points.length - 1];
   if (!start || !end) {
@@ -456,7 +497,9 @@ function arrowGeometryFromDraftPoints(points: Array<{ lat: number; lon: number }
   return { type: "Polygon", coordinates: [ring] };
 }
 
-function circleGeometryFromDraftPoints(points: Array<{ lat: number; lon: number }>): Extract<SketchGeometry, { type: "Polygon" }> | null {
+function circleGeometryFromDraftPoints(
+  points: Array<{ lat: number; lon: number }>
+): Extract<SketchGeometry, { type: "Polygon" }> | null {
   const center = points[0];
   const edge = points[1];
   if (!center || !edge) {
@@ -476,14 +519,16 @@ function circleGeometryFromDraftPoints(points: Array<{ lat: number; lon: number 
   for (let index = 0; index <= 64; index += 1) {
     const bearing = (index / 64) * Math.PI * 2;
     const lat = Math.asin(
-      Math.sin(centerLat) * Math.cos(angularDistance)
-        + Math.cos(centerLat) * Math.sin(angularDistance) * Math.cos(bearing)
+      Math.sin(centerLat) * Math.cos(angularDistance) +
+        Math.cos(centerLat) * Math.sin(angularDistance) * Math.cos(bearing)
     );
-    const lon = centerLon + Math.atan2(
-      Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(centerLat),
-      Math.cos(angularDistance) - Math.sin(centerLat) * Math.sin(lat)
-    );
-    const normalizedLon = ((((lon * toDegrees) + 540) % 360) - 180) as number;
+    const lon =
+      centerLon +
+      Math.atan2(
+        Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(centerLat),
+        Math.cos(angularDistance) - Math.sin(centerLat) * Math.sin(lat)
+      );
+    const normalizedLon = (((lon * toDegrees + 540) % 360) - 180) as number;
     ring.push([normalizedLon, lat * toDegrees]);
   }
   return { type: "Polygon", coordinates: [ring] };
@@ -510,7 +555,7 @@ function bearingDegrees(from: [number, number], to: [number, number]): number {
   const deltaLambda = (lonB - lonA) * toRadians;
   const y = Math.sin(deltaLambda) * Math.cos(phi2);
   const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
-  return ((Math.atan2(y, x) * toDegrees - 90) + 360) % 360;
+  return (Math.atan2(y, x) * toDegrees - 90 + 360) % 360;
 }
 
 function clampValue(value: number, min: number, max: number): number {

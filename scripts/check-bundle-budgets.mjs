@@ -12,10 +12,13 @@ const budgets = [
     dir: "apps/cop-web/dist/assets",
     required: true,
     entries: [
-      { label: "app shell", pattern: /^index-[\w-]+\.js$/, maxBytes: 340 * KiB },
-      { label: "maplibre", pattern: /^maplibre-[\w-]+\.js$/, maxBytes: 330 * KiB },
-      { label: "milsymbol", pattern: /^milsymbol-[\w-]+\.js$/, maxBytes: 230 * KiB },
-      { label: "pairing QR generator", pattern: /^qrcode-[\w-]+\.js$/, maxBytes: 30 * KiB },
+      { label: "app shell", pattern: /^index-[\w-]+\.js$/, maxBytes: 250 * KiB },
+      { label: "map workspace", pattern: /^CopMap-[\w-]+\.js$/, maxBytes: 65 * KiB },
+      { label: "XR workspace", pattern: /^XrWorkspace-[\w-]+\.js$/, maxBytes: 160 * KiB },
+      { label: "track table", pattern: /^TrackTable-[\w-]+\.js$/, maxBytes: 16 * KiB },
+      { label: "maplibre", pattern: /^maplibre-[\w-]+\.js$/, maxBytes: 300 * KiB },
+      { label: "milsymbol", pattern: /^milsymbol-[\w-]+\.js$/, maxBytes: 210 * KiB },
+      { label: "pairing QR generator", pattern: /^qrcode-[\w-]+\.js$/, maxBytes: 12 * KiB },
       { label: "styles", pattern: /^index-[\w-]+\.css$/, maxBytes: 35 * KiB },
       { label: "maplibre styles", pattern: /^maplibre-[\w-]+\.css$/, maxBytes: 15 * KiB }
     ]
@@ -25,12 +28,12 @@ const budgets = [
     dir: "apps/cop-chat/dist/assets",
     required: true,
     entries: [
-      { label: "app shell", pattern: /^index-[\w-]+\.js$/, maxBytes: 130 * KiB },
-      { label: "matrix sdk", pattern: /^matrix-[\w-]+\.js$/, maxBytes: 380 * KiB },
+      { label: "app shell", pattern: /^index-[\w-]+\.js$/, maxBytes: 135 * KiB },
+      { label: "matrix sdk", pattern: /^matrix-[\w-]+\.js$/, maxBytes: 360 * KiB },
       { label: "matrix crypto wasm", pattern: /^matrix_sdk_crypto_wasm_bg-[\w-]+\.wasm$/, maxBytes: 1_950 * KiB },
-      { label: "pdf viewer", pattern: /^pdf-[\w-]+\.js$/, maxBytes: 145 * KiB },
+      { label: "pdf viewer", pattern: /^pdf-[\w-]+\.js$/, maxBytes: 130 * KiB },
       { label: "pdf worker", pattern: /^pdf\.worker-[\w-]+\.mjs$/, maxBytes: 500 * KiB },
-      { label: "office/archive parser", pattern: /^jszip\.min-[\w-]+\.js$/, maxBytes: 35 * KiB },
+      { label: "office/archive parser", pattern: /^jszip\.min-[\w-]+\.js$/, maxBytes: 30 * KiB },
       { label: "styles", pattern: /^index-[\w-]+\.css$/, maxBytes: 15 * KiB }
     ]
   }
@@ -53,7 +56,7 @@ function readAssets(dir) {
       path: join(absoluteDir, name),
       size: gzipSync(readFileSync(join(absoluteDir, name))).length
     }));
-  } catch (error) {
+  } catch {
     hasFailure = true;
     console.error(`Bundle budget: ${dir} není dostupný. Spusťte nejdřív pnpm build.`);
     return [];

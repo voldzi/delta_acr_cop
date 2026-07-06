@@ -21,36 +21,42 @@ function response(overrides: Partial<AiCopResponse> = {}): AiCopResponse {
       structured: {
         evidence: {
           indexed: {
-            citations: [{
-              citationId: "I1",
-              entityId: "report-1",
-              entityType: "communityReport",
-              label: "Stoupající hladina řeky",
-              location: {
-                lat: 50.12,
-                lon: 17.36
-              },
-              updatedAt: "2026-07-04T09:20:00.000Z"
-            }],
+            citations: [
+              {
+                citationId: "I1",
+                entityId: "report-1",
+                entityType: "communityReport",
+                label: "Stoupající hladina řeky",
+                location: {
+                  lat: 50.12,
+                  lon: 17.36
+                },
+                updatedAt: "2026-07-04T09:20:00.000Z"
+              }
+            ],
             documentCount: 3,
             matchedDocumentCount: 1,
             status: "ok"
           },
           priority: {
-            citations: [{
-              citationId: "P1",
-              entityId: "alert-1",
-              entityType: "alert",
-              label: "Povodňová bdělost"
-            }]
+            citations: [
+              {
+                citationId: "P1",
+                entityId: "alert-1",
+                entityType: "alert",
+                label: "Povodňová bdělost"
+              }
+            ]
           },
           semantic: {
-            citations: [{
-              citationId: "S1",
-              entityId: "incident-1",
-              entityType: "incident",
-              label: "Uzavřený most"
-            }],
+            citations: [
+              {
+                citationId: "S1",
+                entityId: "incident-1",
+                entityType: "incident",
+                label: "Uzavřený most"
+              }
+            ],
             documentCount: 2,
             model: "bge-m3",
             status: "ok"

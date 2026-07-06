@@ -6,10 +6,7 @@ import {
   matrixSessionReducer,
   type MatrixSessionState
 } from "./useMatrixSession";
-import type {
-  MatrixEncryptionRecoveryStatus,
-  MatrixMessagingSession
-} from "@cop/messaging/types";
+import type { MatrixEncryptionRecoveryStatus, MatrixMessagingSession } from "@cop/messaging/types";
 
 function sessionStub(): MatrixMessagingSession {
   return {
@@ -119,11 +116,13 @@ describe("matrixSessionReducer", () => {
   });
 
   it("records a failed session start as an error state", () => {
-    expect(matrixSessionReducer(initialMatrixSessionState, {
-      message: "Matrix spojení se nepodařilo spustit.",
-      observedAt: 4321,
-      type: "error"
-    })).toMatchObject({
+    expect(
+      matrixSessionReducer(initialMatrixSessionState, {
+        message: "Matrix spojení se nepodařilo spustit.",
+        observedAt: 4321,
+        type: "error"
+      })
+    ).toMatchObject({
       error: "Matrix spojení se nepodařilo spustit.",
       lastSyncAt: 4321,
       lifecycle: "error",

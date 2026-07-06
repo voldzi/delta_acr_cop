@@ -264,7 +264,9 @@ async function openBestClientWindow(targetUrl) {
 function scoreClientForTarget(client, target) {
   const clientUrl = new URL(client.url);
   let score = 1;
-  if (`${clientUrl.pathname}${clientUrl.search}${clientUrl.hash}` === `${target.pathname}${target.search}${target.hash}`) {
+  if (
+    `${clientUrl.pathname}${clientUrl.search}${clientUrl.hash}` === `${target.pathname}${target.search}${target.hash}`
+  ) {
     score += 20;
   }
   if (clientUrl.pathname === target.pathname) {

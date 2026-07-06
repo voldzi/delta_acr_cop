@@ -46,8 +46,8 @@ export default function MessageRetentionDialog({
           <Clock3 size={58} />
         </div>
         <p>
-          Zprávy v tomto chatu se po zvolené době nebudou zobrazovat v COP Chat.
-          Nastavení se ukládá do chatové místnosti a platí pro členy používající COP Chat.
+          Zprávy v tomto chatu se po zvolené době nebudou zobrazovat v COP Chat. Nastavení se ukládá do chatové
+          místnosti a platí pro členy používající COP Chat.
         </p>
         <strong className="retention-section-title">Časový interval</strong>
         <div className="retention-options">
@@ -65,7 +65,9 @@ export default function MessageRetentionDialog({
           })}
         </div>
         <footer>
-          <button disabled={saving} onClick={onClose} type="button">Hotovo</button>
+          <button disabled={saving} onClick={onClose} type="button">
+            Hotovo
+          </button>
         </footer>
       </section>
     </div>

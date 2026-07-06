@@ -36,6 +36,12 @@ export function filterTechnicalSituationSources(sources: SituationSourceDescript
 }
 
 export function sanitizeCitizenSituationSourceIds(sourceIds: string[]): string[] {
-  return Array.from(new Set(sourceIds.map((item) => item.trim()).filter(Boolean).filter((sourceId) => !isTechnicalSituationSourceId(sourceId)))).slice(0, 32);
+  return Array.from(
+    new Set(
+      sourceIds
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .filter((sourceId) => !isTechnicalSituationSourceId(sourceId))
+    )
+  ).slice(0, 32);
 }
-

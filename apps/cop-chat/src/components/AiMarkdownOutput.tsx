@@ -152,7 +152,10 @@ function isTableSeparator(line: string): boolean {
   return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/u.test(cell.trim()));
 }
 
-function readTable(lines: string[], index: number): { block: Extract<MarkdownBlock, { type: "table" }>; nextIndex: number } {
+function readTable(
+  lines: string[],
+  index: number
+): { block: Extract<MarkdownBlock, { type: "table" }>; nextIndex: number } {
   const headers = parseTableCells(lines[index] ?? "");
   const rows: string[][] = [];
   let cursor = index + 2;
@@ -283,9 +286,13 @@ function renderPlainText(text: string, query: string, keyOffset: number): React.
     return [text];
   }
   const parts = splitTextByQuery(text, query);
-  return parts.map((part, index) => part.match
-    ? <mark key={`mark-${keyOffset}-${index}`}>{part.text}</mark>
-    : <React.Fragment key={`text-${keyOffset}-${index}`}>{part.text}</React.Fragment>);
+  return parts.map((part, index) =>
+    part.match ? (
+      <mark key={`mark-${keyOffset}-${index}`}>{part.text}</mark>
+    ) : (
+      <React.Fragment key={`text-${keyOffset}-${index}`}>{part.text}</React.Fragment>
+    )
+  );
 }
 
 function splitTextByQuery(text: string, query: string): Array<{ match: boolean; text: string }> {

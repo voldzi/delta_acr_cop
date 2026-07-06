@@ -3,7 +3,11 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchWeatherForecastAreaDetail, type SituationFeature, type WeatherForecastAreaDetailResponse } from "./cop-data";
+import {
+  fetchWeatherForecastAreaDetail,
+  type SituationFeature,
+  type WeatherForecastAreaDetailResponse
+} from "./cop-data";
 import { WeatherForecastAreaDetailPanel } from "./weather-detail";
 
 vi.mock("./cop-data", async (importOriginal) => {
@@ -23,13 +27,15 @@ afterEach(() => {
 function forecastAreaFeature(): SituationFeature {
   return {
     geometry: {
-      coordinates: [[
-        [15, 49.5],
-        [15.75, 49.5],
-        [15.75, 50.25],
-        [15, 50.25],
-        [15, 49.5]
-      ]],
+      coordinates: [
+        [
+          [15, 49.5],
+          [15.75, 49.5],
+          [15.75, 50.25],
+          [15, 50.25],
+          [15, 49.5]
+        ]
+      ],
       type: "Polygon"
     },
     properties: {

@@ -16,26 +16,30 @@ const allowedHosts = [
   .filter((host, index, hosts) => host.length > 0 && hosts.indexOf(host) === index);
 
 const iosAppId = process.env.COP_IOS_APP_ID ?? "LM6W548X36.cz.zeleznalady.csm.messenger";
-const appleAppSiteAssociation = JSON.stringify({
-  applinks: {
-    apps: [],
-    details: [
-      {
-        appIDs: [iosAppId],
-        components: [
-          {
-            "/": "/mobile/pair/*",
-            comment: "CSM Messenger pairing links"
-          }
-        ],
-        paths: ["/mobile/pair/*"]
-      }
-    ]
+const appleAppSiteAssociation = JSON.stringify(
+  {
+    applinks: {
+      apps: [],
+      details: [
+        {
+          appIDs: [iosAppId],
+          components: [
+            {
+              "/": "/mobile/pair/*",
+              comment: "CSM Messenger pairing links"
+            }
+          ],
+          paths: ["/mobile/pair/*"]
+        }
+      ]
+    },
+    webcredentials: {
+      apps: [iosAppId]
+    }
   },
-  webcredentials: {
-    apps: [iosAppId]
-  }
-}, null, 2);
+  null,
+  2
+);
 
 function appleAppSiteAssociationPreviewPlugin(): PluginOption {
   return {
@@ -70,7 +74,6 @@ export default defineConfig({
   build: {
     chunkSizeWarningLimit: 1200,
     target: ["es2020", "safari16"],
-    minify: false,
     rollupOptions: {
       output: {
         manualChunks(id) {

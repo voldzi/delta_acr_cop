@@ -32,16 +32,27 @@ export type ChatAttachmentPreviewKind =
 
 type AttachmentFallbackKind = "document" | "file" | "image" | "location" | "video";
 
-export function inferChatAttachmentPreviewKind(fileName: string, contentType?: string, fallbackKind?: AttachmentFallbackKind): ChatAttachmentPreviewKind {
+export function inferChatAttachmentPreviewKind(
+  fileName: string,
+  contentType?: string,
+  fallbackKind?: AttachmentFallbackKind
+): ChatAttachmentPreviewKind {
   const ext = fileExtension(fileName);
   const mime = (contentType ?? "").toLowerCase();
   if (fallbackKind === "image" || mime.startsWith("image/")) return "image";
   if (fallbackKind === "video" || mime.startsWith("video/")) return "video";
   if (mime.startsWith("audio/")) return "audio";
   if (mime.includes("pdf") || ext === "pdf") return "pdf";
-  if (["docx", "docm", "doc", "dot"].includes(ext) || mime.includes("wordprocessingml") || mime.includes("msword")) return "docx";
-  if (["xlsx", "xlsm", "xls", "xlt"].includes(ext) || mime.includes("spreadsheetml") || mime.includes("ms-excel")) return "spreadsheet";
-  if (["pptx", "pptm", "ppt", "pps", "pot"].includes(ext) || mime.includes("presentationml") || mime.includes("powerpoint")) return "presentation";
+  if (["docx", "docm", "doc", "dot"].includes(ext) || mime.includes("wordprocessingml") || mime.includes("msword"))
+    return "docx";
+  if (["xlsx", "xlsm", "xls", "xlt"].includes(ext) || mime.includes("spreadsheetml") || mime.includes("ms-excel"))
+    return "spreadsheet";
+  if (
+    ["pptx", "pptm", "ppt", "pps", "pot"].includes(ext) ||
+    mime.includes("presentationml") ||
+    mime.includes("powerpoint")
+  )
+    return "presentation";
   if (["archimate", "archi"].includes(ext) || mime.includes("archimate")) return "archi";
   if (ext === "csv" || mime.includes("csv")) return "csv";
   if (ext === "json" || mime.includes("json")) return "json";
@@ -97,7 +108,12 @@ export function AttachmentKindIcon({ kind, size = 22 }: { kind: ChatAttachmentPr
 
 export function fileExtension(fileName: string): string {
   const dotIndex = fileName.lastIndexOf(".");
-  return dotIndex > -1 ? fileName.slice(dotIndex + 1).trim().toLowerCase() : "";
+  return dotIndex > -1
+    ? fileName
+        .slice(dotIndex + 1)
+        .trim()
+        .toLowerCase()
+    : "";
 }
 
 function attachmentIconComponent(kind: ChatAttachmentPreviewKind) {

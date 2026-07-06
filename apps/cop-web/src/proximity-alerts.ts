@@ -29,7 +29,9 @@ export function buildProximityAlerts(
   }
 
   return objects
-    .flatMap((object) => buildObjectAlert(object, userLocation, trackHistory, radiusKm, predictionMinutes, predictionMode))
+    .flatMap((object) =>
+      buildObjectAlert(object, userLocation, trackHistory, radiusKm, predictionMinutes, predictionMode)
+    )
     .sort((a, b) => a.currentDistanceKm - b.currentDistanceKm);
 }
 
@@ -39,9 +41,7 @@ export function distanceKm(a: { lat: number; lon: number }, b: { lat: number; lo
   const dLon = degreesToRadians(b.lon - a.lon);
   const lat1 = degreesToRadians(a.lat);
   const lat2 = degreesToRadians(b.lat);
-  const haversine =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  const haversine = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
   return 2 * earthRadiusKm * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }
 

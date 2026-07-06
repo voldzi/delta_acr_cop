@@ -27,23 +27,20 @@ export interface ChatWorkflowState {
 
 export function deriveChatWorkflowState(input: ChatWorkflowInput): ChatWorkflowState {
   const chatReady = input.authenticated && input.chatAvailable;
-  const sessionReady = input.matrixSessionActive && input.matrixLifecycle !== "starting" && input.matrixLifecycle !== "error";
+  const sessionReady =
+    input.matrixSessionActive && input.matrixLifecycle !== "starting" && input.matrixLifecycle !== "error";
   const needsRecovery = input.matrixSessionActive && !input.recoveryReady;
   const composerEnabled = Boolean(
-    chatReady
-      && sessionReady
-      && input.selectedRoomId
-      && !input.preparingChat
-      && input.recoveryReady
+    chatReady && sessionReady && input.selectedRoomId && !input.preparingChat && input.recoveryReady
   );
 
   return {
     canForwardMessages: Boolean(
-      chatReady
-        && sessionReady
-        && input.forwardDraftCount > 0
-        && input.selectedForwardTargetCount > 0
-        && input.recoveryReady
+      chatReady &&
+      sessionReady &&
+      input.forwardDraftCount > 0 &&
+      input.selectedForwardTargetCount > 0 &&
+      input.recoveryReady
     ),
     canOpenChat: chatReady && !input.preparingChat,
     canSendMessage: composerEnabled && !input.sending,

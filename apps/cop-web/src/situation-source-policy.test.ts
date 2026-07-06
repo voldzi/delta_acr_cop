@@ -10,7 +10,10 @@ import type { SituationLayer, SituationSourceDescriptor } from "./cop-data";
 
 describe("situation source policy", () => {
   it("maps technical mobile inputs to the citizen mobile network layer", () => {
-    expect(normalizeCitizenSituationLayerIds(["weather", "mobile", "mobile_coverage"])).toEqual(["weather", "mobile_network"]);
+    expect(normalizeCitizenSituationLayerIds(["weather", "mobile", "mobile_coverage"])).toEqual([
+      "weather",
+      "mobile_network"
+    ]);
   });
 
   it("hides technical mobile layers from the citizen layer picker", () => {
@@ -33,11 +36,25 @@ describe("situation source policy", () => {
       { sourceId: "osm_postgis", label: "OSM context" }
     ];
 
-    expect(filterCitizenSituationSources(sources).map((source) => source.sourceId)).toEqual(["open_meteo", "mobile_network_model"]);
-    expect(filterTechnicalSituationSources(sources).map((source) => source.sourceId)).toEqual(["mobile_coverage_model", "ctu_nettest", "osm_postgis"]);
+    expect(filterCitizenSituationSources(sources).map((source) => source.sourceId)).toEqual([
+      "open_meteo",
+      "mobile_network_model"
+    ]);
+    expect(filterTechnicalSituationSources(sources).map((source) => source.sourceId)).toEqual([
+      "mobile_coverage_model",
+      "ctu_nettest",
+      "osm_postgis"
+    ]);
   });
 
   it("removes stale technical source preferences", () => {
-    expect(sanitizeCitizenSituationSourceIds(["mobile_coverage_model", "mobile_network_model", "ctu_nettest", "mobile_network_model"])).toEqual(["mobile_network_model"]);
+    expect(
+      sanitizeCitizenSituationSourceIds([
+        "mobile_coverage_model",
+        "mobile_network_model",
+        "ctu_nettest",
+        "mobile_network_model"
+      ])
+    ).toEqual(["mobile_network_model"]);
   });
 });

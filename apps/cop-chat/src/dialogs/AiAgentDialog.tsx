@@ -91,13 +91,28 @@ export default function AiAgentDialog({
         </label>
 
         <div className="dialog-tabs ai-agent-model-tabs" role="group" aria-label="Model AI agenta">
-          <button className={modelPreference === "auto" ? "active" : ""} disabled={working} onClick={() => onModelPreferenceChange("auto")} type="button">
+          <button
+            className={modelPreference === "auto" ? "active" : ""}
+            disabled={working}
+            onClick={() => onModelPreferenceChange("auto")}
+            type="button"
+          >
             Auto
           </button>
-          <button className={modelPreference === "fast" ? "active" : ""} disabled={working} onClick={() => onModelPreferenceChange("fast")} type="button">
+          <button
+            className={modelPreference === "fast" ? "active" : ""}
+            disabled={working}
+            onClick={() => onModelPreferenceChange("fast")}
+            type="button"
+          >
             Rychlý
           </button>
-          <button className={modelPreference === "reasoning" ? "active" : ""} disabled={working} onClick={() => onModelPreferenceChange("reasoning")} type="button">
+          <button
+            className={modelPreference === "reasoning" ? "active" : ""}
+            disabled={working}
+            onClick={() => onModelPreferenceChange("reasoning")}
+            type="button"
+          >
             Reasoning
           </button>
         </div>
@@ -125,7 +140,10 @@ export default function AiAgentDialog({
               </div>
               <div>
                 <dt>Provider</dt>
-                <dd>{response.provider ?? "auto"}{response.model ? ` / ${response.model}` : ""}</dd>
+                <dd>
+                  {response.provider ?? "auto"}
+                  {response.model ? ` / ${response.model}` : ""}
+                </dd>
               </div>
               <div>
                 <dt>Audit</dt>
@@ -150,11 +168,21 @@ export default function AiAgentDialog({
             {working ? <Loader2 className="spin" size={17} /> : <Sparkles size={17} />}
             Zeptat se
           </button>
-          <button className="secondary-dialog-action" disabled={!canUseAnswer} onClick={() => void copyAnswer()} type="button">
+          <button
+            className="secondary-dialog-action"
+            disabled={!canUseAnswer}
+            onClick={() => void copyAnswer()}
+            type="button"
+          >
             {copyState === "copied" ? <Check size={17} /> : <Copy size={17} />}
             {copyState === "copied" ? "Zkopírováno" : copyState === "failed" ? "Kopírování selhalo" : "Zkopírovat"}
           </button>
-          <button className="primary-dialog-action" disabled={!canUseAnswer || sending} onClick={() => onSendToChat(answer)} type="button">
+          <button
+            className="primary-dialog-action"
+            disabled={!canUseAnswer || sending}
+            onClick={() => onSendToChat(answer)}
+            type="button"
+          >
             {sending ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
             Odeslat odpověď
           </button>

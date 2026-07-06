@@ -11,6 +11,10 @@ describe("chatSelectionReducer", () => {
     state = chatSelectionReducer(state, { type: "room", value: (current) => current ?? "!room:cop.local" });
 
     expect(state).toEqual({ conversationId: "conv-1", groupId: "group-1", roomId: "!room:cop.local" });
-    expect(chatSelectionReducer(state, { type: "clear" })).toEqual({ conversationId: null, groupId: null, roomId: null });
+    expect(chatSelectionReducer(state, { type: "clear" })).toEqual({
+      conversationId: null,
+      groupId: null,
+      roomId: null
+    });
   });
 });

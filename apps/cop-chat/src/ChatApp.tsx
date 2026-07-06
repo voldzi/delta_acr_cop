@@ -101,10 +101,7 @@ import type {
   ServerUserProfile,
   UserDirectoryEntry
 } from "@cop/core/cop-data";
-import {
-  publishChatUnreadCount,
-  rotateMatrixDeviceId
-} from "@cop/messaging/runtime";
+import { publishChatUnreadCount, rotateMatrixDeviceId } from "@cop/messaging/runtime";
 import {
   enableWebPushNotifications,
   fetchWebPushConfig,
@@ -122,7 +119,13 @@ import type {
   MatrixTimelineMessage,
   MatrixTransitShare
 } from "@cop/messaging/types";
-import { decodeChatCurrentLocation, decodeChatShareTransit, decodeCopMapFocusSearch, encodeChatCenterLocation, encodeCopMapFocusUrl } from "@cop/messaging/bridge";
+import {
+  decodeChatCurrentLocation,
+  decodeChatShareTransit,
+  decodeCopMapFocusSearch,
+  encodeChatCenterLocation,
+  encodeCopMapFocusUrl
+} from "@cop/messaging/bridge";
 import { chatText } from "./i18n";
 import { Avatar } from "./components/Avatar";
 import { AiMarkdownOutput } from "./components/AiMarkdownOutput";
@@ -406,7 +409,9 @@ export function ChatApp() {
   const [forwardQuery, setForwardQuery] = React.useState("");
   const [forwardSearchLoading, setForwardSearchLoading] = React.useState(false);
   const [forwardSelectedTargetKeys, setForwardSelectedTargetKeys] = React.useState<Set<string>>(() => new Set());
-  const [forwardSelectedTargetsByKey, setForwardSelectedTargetsByKey] = React.useState<Record<string, ForwardTarget>>({});
+  const [forwardSelectedTargetsByKey, setForwardSelectedTargetsByKey] = React.useState<Record<string, ForwardTarget>>(
+    {}
+  );
   const [forwardUserSuggestions, setForwardUserSuggestions] = React.useState<UserDirectoryEntry[]>([]);
   const [forwardWorkingId, setForwardWorkingId] = React.useState<string | null>(null);
   const [recoveryDialogOpen, setRecoveryDialogOpen] = React.useState(false);
@@ -428,7 +433,9 @@ export function ChatApp() {
   const [aiAgentJobStatus, setAiAgentJobStatus] = React.useState<string | null>(null);
   const [aiAgentInlineStatus, setAiAgentInlineStatus] = React.useState<string | null>(null);
   const [tomatoGameOpen, setTomatoGameOpen] = React.useState(false);
-  const [hostCurrentLocation, setHostCurrentLocation] = React.useState<MatrixLocationShare | null>(() => initialEmbeddedHostLocation());
+  const [hostCurrentLocation, setHostCurrentLocation] = React.useState<MatrixLocationShare | null>(() =>
+    initialEmbeddedHostLocation()
+  );
   const [standaloneAiLocation, setStandaloneAiLocation] = React.useState<MatrixLocationShare | null>(null);
   const [standaloneAiLocationBusy, setStandaloneAiLocationBusy] = React.useState(false);
   const [aiAgentWorking, setAiAgentWorking] = React.useState(false);
@@ -437,7 +444,9 @@ export function ChatApp() {
   const [deleteChatCandidate, setDeleteChatCandidate] = React.useState<ChatListItem | null>(null);
   const [retentionDialogOpen, setRetentionDialogOpen] = React.useState(false);
   const [retentionSaving, setRetentionSaving] = React.useState(false);
-  const [retentionOverrideByRoom, setRetentionOverrideByRoom] = React.useState<Record<string, MessageRetentionSeconds>>({});
+  const [retentionOverrideByRoom, setRetentionOverrideByRoom] = React.useState<Record<string, MessageRetentionSeconds>>(
+    {}
+  );
   const [selectionMode, setSelectionMode] = React.useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = React.useState<Set<string>>(() => new Set());
   const [activeSearchIndex, setActiveSearchIndex] = React.useState(0);
@@ -473,10 +482,15 @@ export function ChatApp() {
     [authConfig, authSession, localUserPreferences, serverUserProfile]
   );
   const matrixWebPushDeviceId = webPushState.registered ? webPushState.deviceId : undefined;
-  const handleMatrixRoomsChanged = React.useCallback((nextRooms: MatrixRoomSummary[], preferredSelection?: string | null) => {
-    setRooms(nextRooms);
-    setSelectedRoomId((current) => current ?? selectRoomIdFromKey(preferredSelection, conversationsRef.current, nextRooms));
-  }, [setSelectedRoomId]);
+  const handleMatrixRoomsChanged = React.useCallback(
+    (nextRooms: MatrixRoomSummary[], preferredSelection?: string | null) => {
+      setRooms(nextRooms);
+      setSelectedRoomId(
+        (current) => current ?? selectRoomIdFromKey(preferredSelection, conversationsRef.current, nextRooms)
+      );
+    },
+    [setSelectedRoomId]
+  );
   const handleMatrixTimelineChanged = React.useCallback(() => setTimelineRevision((value) => value + 1), []);
   const {
     encryptionRecoveryStatus,
@@ -555,12 +569,12 @@ export function ChatApp() {
   const embedded = React.useMemo(() => new URLSearchParams(window.location.search).get("embedded") === "1", []);
   const aiContextLocation = hostCurrentLocation ?? standaloneAiLocation;
   const selectedConversation = selectedConversationId
-    ? conversations.find((conversation) => conversation.conversationId === selectedConversationId) ?? null
+    ? (conversations.find((conversation) => conversation.conversationId === selectedConversationId) ?? null)
     : selectedRoomId
-      ? conversations.find((conversation) => conversation.matrix?.roomId === selectedRoomId) ?? null
+      ? (conversations.find((conversation) => conversation.matrix?.roomId === selectedRoomId) ?? null)
       : null;
   const selectedGroup = selectedGroupId
-    ? groups.find((group) => group.groupId === selectedGroupId) ?? null
+    ? (groups.find((group) => group.groupId === selectedGroupId) ?? null)
     : selectedConversation
       ? groupForConversation(selectedConversation, groups)
       : null;
@@ -570,37 +584,43 @@ export function ChatApp() {
   const selectedGroupAiAssistant = selectedGroup ? communityGroupAiAssistantMetadata(selectedGroup) : null;
   const selectedGroupAiAssistantEnabled = Boolean(selectedGroupAiAssistant?.enabled);
   const selectedRoom = selectedRoomId
-    ? rooms.find((room) => room.roomId === selectedRoomId) ?? null
+    ? (rooms.find((room) => room.roomId === selectedRoomId) ?? null)
     : selectedConversation?.matrix?.roomId
-      ? rooms.find((room) => room.roomId === selectedConversation.matrix?.roomId) ?? null
+      ? (rooms.find((room) => room.roomId === selectedConversation.matrix?.roomId) ?? null)
       : null;
   const rawChatItems = React.useMemo(
-    () => buildChatItems({
+    () =>
+      buildChatItems({
+        authSubjectId,
+        conversations,
+        filter: chatFilter,
+        groups,
+        ownIdentityIds,
+        query: conversationQuery,
+        rooms,
+        selectedConversationId,
+        selectedGroupId,
+        selectedRoomId
+      }),
+    [
       authSubjectId,
+      chatFilter,
+      conversationQuery,
       conversations,
-      filter: chatFilter,
       groups,
       ownIdentityIds,
-      query: conversationQuery,
       rooms,
       selectedConversationId,
       selectedGroupId,
       selectedRoomId
-    }),
-    [authSubjectId, chatFilter, conversationQuery, conversations, groups, ownIdentityIds, rooms, selectedConversationId, selectedGroupId, selectedRoomId]
+    ]
   );
   const chatItems = React.useMemo(
     () => applyChatPreferences(rawChatItems, chatPreferences),
     [chatPreferences, rawChatItems]
   );
-  const pinnedChatItems = React.useMemo(
-    () => chatItems.filter((item) => item.pinned),
-    [chatItems]
-  );
-  const regularChatItems = React.useMemo(
-    () => chatItems.filter((item) => !item.pinned),
-    [chatItems]
-  );
+  const pinnedChatItems = React.useMemo(() => chatItems.filter((item) => item.pinned), [chatItems]);
+  const regularChatItems = React.useMemo(() => chatItems.filter((item) => !item.pinned), [chatItems]);
   const activeChat = chatItems.find((item) => item.active) ?? null;
   const selectedAiAgentDirectChat = activeChat ? isAiAgentChatItem(activeChat) : false;
   const routeChatSelected = Boolean(activeChat && readRouteSelection());
@@ -611,31 +631,37 @@ export function ChatApp() {
   React.useEffect(() => {
     updateApplicationBadge(totalUnreadCount);
   }, [totalUnreadCount]);
-  const activeMessageRetentionSeconds = selectedRoomId && Object.prototype.hasOwnProperty.call(retentionOverrideByRoom, selectedRoomId)
-    ? retentionOverrideByRoom[selectedRoomId] ?? null
-    : messageRetentionSecondsForActiveChat(selectedRoom, selectedGroup);
+  const activeMessageRetentionSeconds =
+    selectedRoomId && Object.prototype.hasOwnProperty.call(retentionOverrideByRoom, selectedRoomId)
+      ? (retentionOverrideByRoom[selectedRoomId] ?? null)
+      : messageRetentionSecondsForActiveChat(selectedRoom, selectedGroup);
   const retainedTimeline = React.useMemo(
     () => filterTimelineByRetention(timeline, activeMessageRetentionSeconds),
     [activeMessageRetentionSeconds, timeline]
   );
   const demoTimeline = React.useMemo(
-    () => selectedGroup ? demoTimelineMessagesForGroup(selectedGroup, authSession) : [],
+    () => (selectedGroup ? demoTimelineMessagesForGroup(selectedGroup, authSession) : []),
     [authSession, selectedGroup]
   );
   const showingDemoTimeline = retainedTimeline.length === 0 && demoTimeline.length > 0;
   const visibleTimeline = showingDemoTimeline ? demoTimeline : retainedTimeline;
   const timelineRows = React.useMemo(() => buildTimelineRows(visibleTimeline), [visibleTimeline]);
   const virtualTimeline = useVirtualTimelineRows(timelineRows, messageCanvasRef);
-  const timelineMessages = React.useMemo(() => timelineRows.filter((row) => row.kind === "message").map((row) => row.message), [timelineRows]);
+  const timelineMessages = React.useMemo(
+    () => timelineRows.filter((row) => row.kind === "message").map((row) => row.message),
+    [timelineRows]
+  );
   const messageById = React.useMemo(
     () => new Map(timelineMessages.map((message) => [message.eventId, message])),
     [timelineMessages]
   );
-  const historyExhausted = showingDemoTimeline || (selectedRoomId ? historyExhaustedByRoom[selectedRoomId] === true : true);
+  const historyExhausted =
+    showingDemoTimeline || (selectedRoomId ? historyExhaustedByRoom[selectedRoomId] === true : true);
   const searchMatches = React.useMemo(
-    () => messageSearchOpen && messageSearchQuery.trim()
-      ? timelineMessages.filter((message) => messageMatchesQuery(message, messageSearchQuery))
-      : [],
+    () =>
+      messageSearchOpen && messageSearchQuery.trim()
+        ? timelineMessages.filter((message) => messageMatchesQuery(message, messageSearchQuery))
+        : [],
     [messageSearchOpen, messageSearchQuery, timelineMessages]
   );
   const activeSearchMessageId = searchMatches[activeSearchIndex]?.eventId ?? null;
@@ -647,42 +673,50 @@ export function ChatApp() {
     () => buildForwardTargets(chatItems, forwardUserSuggestions, forwardQuery),
     [chatItems, forwardQuery, forwardUserSuggestions]
   );
-  const selectedForwardTargets = React.useMemo(() => Object.values(forwardSelectedTargetsByKey), [forwardSelectedTargetsByKey]);
-  const workflowState = React.useMemo(() => deriveChatWorkflowState({
-    authenticated,
-    chatAvailable: Boolean(status?.chatAvailable),
-    forwardDraftCount: forwardDraftMessages.length,
-    matrixLifecycle: matrixSessionLifecycle,
-    matrixSessionActive: Boolean(matrixSession),
-    preparingChat: Boolean(preparingChatId),
-    recoveryReady: encryptionRecoveryReady,
-    selectedForwardTargetCount: selectedForwardTargets.length,
-    selectedRoomId,
-    sending,
-    surface: "desktop"
-  }), [
-    authenticated,
-    encryptionRecoveryReady,
-    forwardDraftMessages.length,
-    matrixSession,
-    matrixSessionLifecycle,
-    preparingChatId,
-    selectedForwardTargets.length,
-    selectedRoomId,
-    sending,
-    status?.chatAvailable
-  ]);
+  const selectedForwardTargets = React.useMemo(
+    () => Object.values(forwardSelectedTargetsByKey),
+    [forwardSelectedTargetsByKey]
+  );
+  const workflowState = React.useMemo(
+    () =>
+      deriveChatWorkflowState({
+        authenticated,
+        chatAvailable: Boolean(status?.chatAvailable),
+        forwardDraftCount: forwardDraftMessages.length,
+        matrixLifecycle: matrixSessionLifecycle,
+        matrixSessionActive: Boolean(matrixSession),
+        preparingChat: Boolean(preparingChatId),
+        recoveryReady: encryptionRecoveryReady,
+        selectedForwardTargetCount: selectedForwardTargets.length,
+        selectedRoomId,
+        sending,
+        surface: "desktop"
+      }),
+    [
+      authenticated,
+      encryptionRecoveryReady,
+      forwardDraftMessages.length,
+      matrixSession,
+      matrixSessionLifecycle,
+      preparingChatId,
+      selectedForwardTargets.length,
+      selectedRoomId,
+      sending,
+      status?.chatAvailable
+    ]
+  );
   const composerEnabled = workflowState.composerEnabled;
-  const actionMessage = messageActionPopover ? messageById.get(messageActionPopover.messageId) ?? null : null;
+  const actionMessage = messageActionPopover ? (messageById.get(messageActionPopover.messageId) ?? null) : null;
   const statusLabel = statusLabelFor(status, matrixSession, syncState, matrixLoading);
   const matrixMediaAccessToken = matrixSession?.bootstrap.accessToken;
-  const recoveryBanner = matrixSession && encryptionRecoveryStatus && !encryptionRecoveryStatus.ready
-    ? encryptionRecoveryStatus.needsSetup
-      ? encryptionRecoveryStatus.keyBackupEnabled
-        ? "E2EE je aktivní, ale pro iPhone/iPad je potřeba doplnit kompletní obnovu."
-        : "E2EE je aktivní. Pro bezpečné použití na více zařízeních nastavte obnovovací klíč."
-      : "Toto zařízení zatím nemá odemčenou E2EE zálohu. Zadejte obnovovací klíč."
-    : null;
+  const recoveryBanner =
+    matrixSession && encryptionRecoveryStatus && !encryptionRecoveryStatus.ready
+      ? encryptionRecoveryStatus.needsSetup
+        ? encryptionRecoveryStatus.keyBackupEnabled
+          ? "E2EE je aktivní, ale pro iPhone/iPad je potřeba doplnit kompletní obnovu."
+          : "E2EE je aktivní. Pro bezpečné použití na více zařízeních nastavte obnovovací klíč."
+        : "Toto zařízení zatím nemá odemčenou E2EE zálohu. Zadejte obnovovací klíč."
+      : null;
   const matrixWarmupBanner = React.useMemo(() => {
     if (!authenticated || !selectedRoomId || showingDemoTimeline || !status?.chatAvailable) {
       return null;
@@ -707,31 +741,34 @@ export function ChatApp() {
     showingDemoTimeline,
     status?.chatAvailable
   ]);
-  const deviceDiagnostics = React.useMemo<ChatDeviceDiagnostics>(() => ({
-    e2eeReady: encryptionRecoveryReady,
-    matrixDeviceId: matrixSession?.bootstrap.deviceId,
-    matrixLastSyncAt,
-    matrixLifecycle: matrixSessionLifecycle,
-    matrixSyncState: syncState,
-    notificationPermission: webPushState.permission,
-    pwaStandalone: webPushState.standalone,
-    serviceWorkerReady: webPushState.serviceWorkerReady,
-    webPushRegistered: webPushState.registered,
-    webPushStatus: webPushState.status,
-    webPushSubscriptionActive: webPushState.subscriptionActive
-  }), [
-    encryptionRecoveryReady,
-    matrixLastSyncAt,
-    matrixSession?.bootstrap.deviceId,
-    matrixSessionLifecycle,
-    syncState,
-    webPushState.permission,
-    webPushState.registered,
-    webPushState.serviceWorkerReady,
-    webPushState.standalone,
-    webPushState.status,
-    webPushState.subscriptionActive
-  ]);
+  const deviceDiagnostics = React.useMemo<ChatDeviceDiagnostics>(
+    () => ({
+      e2eeReady: encryptionRecoveryReady,
+      matrixDeviceId: matrixSession?.bootstrap.deviceId,
+      matrixLastSyncAt,
+      matrixLifecycle: matrixSessionLifecycle,
+      matrixSyncState: syncState,
+      notificationPermission: webPushState.permission,
+      pwaStandalone: webPushState.standalone,
+      serviceWorkerReady: webPushState.serviceWorkerReady,
+      webPushRegistered: webPushState.registered,
+      webPushStatus: webPushState.status,
+      webPushSubscriptionActive: webPushState.subscriptionActive
+    }),
+    [
+      encryptionRecoveryReady,
+      matrixLastSyncAt,
+      matrixSession?.bootstrap.deviceId,
+      matrixSessionLifecycle,
+      syncState,
+      webPushState.permission,
+      webPushState.registered,
+      webPushState.serviceWorkerReady,
+      webPushState.standalone,
+      webPushState.status,
+      webPushState.subscriptionActive
+    ]
+  );
 
   React.useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId;
@@ -809,7 +846,9 @@ export function ChatApp() {
       existingNode.scrollIntoView({ block: "center", behavior: "smooth" });
       return;
     }
-    const rowIndex = timelineRows.findIndex((row) => row.kind === "message" && row.message.eventId === activeSearchMessageId);
+    const rowIndex = timelineRows.findIndex(
+      (row) => row.kind === "message" && row.message.eventId === activeSearchMessageId
+    );
     if (rowIndex >= 0) {
       virtualTimeline.scrollToRow(rowIndex, "center");
     }
@@ -817,7 +856,7 @@ export function ChatApp() {
 
   React.useEffect(() => {
     let cancelled = false;
-    setAuthSession((current) => current.status === "anonymous" ? { status: "authenticating" } : current);
+    setAuthSession((current) => (current.status === "anonymous" ? { status: "authenticating" } : current));
     initializeAuth(authConfig)
       .then((nextSession) => {
         if (!cancelled) {
@@ -880,10 +919,11 @@ export function ChatApp() {
     const nextWebPushDeviceId = matrixWebPushDeviceId;
     matrixAttemptKeyRef.current = null;
     resetMatrixSession();
-    void startMatrixSession(selectedRoomId ?? selectedConversationId ?? selectedGroupId ?? readRouteSelection())
-      .then((session) => {
+    void startMatrixSession(selectedRoomId ?? selectedConversationId ?? selectedGroupId ?? readRouteSelection()).then(
+      (session) => {
         matrixWebPushPusherDeviceIdRef.current = session ? nextWebPushDeviceId : undefined;
-      });
+      }
+    );
   }, [
     authToken,
     matrixSession,
@@ -908,7 +948,10 @@ export function ChatApp() {
     const syncStateNormalized = syncState.toUpperCase();
     const lastActivityAt = matrixLastSyncAt ?? matrixLastReadyAt;
     const staleSession = Boolean(matrixSessionRef.current && lastActivityAt && nowMs - lastActivityAt > 75_000);
-    const brokenSession = matrixSessionLifecycle === "error" || syncStateNormalized.includes("ERROR") || syncStateNormalized.includes("STOPPED");
+    const brokenSession =
+      matrixSessionLifecycle === "error" ||
+      syncStateNormalized.includes("ERROR") ||
+      syncStateNormalized.includes("STOPPED");
     if (matrixSessionRef.current && !staleSession && !brokenSession) {
       return;
     }
@@ -917,10 +960,11 @@ export function ChatApp() {
     if (matrixSessionRef.current || matrixSession) {
       resetMatrixSession();
     }
-    void startMatrixSession(selectedRoomId ?? selectedConversationId ?? selectedGroupId ?? readRouteSelection())
-      .finally(() => {
-        matrixResumeInFlightRef.current = false;
-      });
+    void startMatrixSession(
+      selectedRoomId ?? selectedConversationId ?? selectedGroupId ?? readRouteSelection()
+    ).finally(() => {
+      matrixResumeInFlightRef.current = false;
+    });
   }, [
     authToken,
     matrixLastReadyAt,
@@ -1011,11 +1055,14 @@ export function ChatApp() {
     };
   }, [refreshChatWebPushState, resumeMatrixSessionIfNeeded]);
 
-  React.useEffect(() => () => {
-    if (pendingAttachment?.previewUrl) {
-      window.URL.revokeObjectURL(pendingAttachment.previewUrl);
-    }
-  }, [pendingAttachment?.previewUrl]);
+  React.useEffect(
+    () => () => {
+      if (pendingAttachment?.previewUrl) {
+        window.URL.revokeObjectURL(pendingAttachment.previewUrl);
+      }
+    },
+    [pendingAttachment?.previewUrl]
+  );
 
   React.useEffect(() => {
     if (!messageMenuOpen) {
@@ -1078,9 +1125,12 @@ export function ChatApp() {
     if (!Number.isFinite(expiresAt)) {
       return undefined;
     }
-    const timer = window.setTimeout(() => {
-      void startMatrixSession(selectedRoomId);
-    }, Math.max(30_000, expiresAt - Date.now() - 60_000));
+    const timer = window.setTimeout(
+      () => {
+        void startMatrixSession(selectedRoomId);
+      },
+      Math.max(30_000, expiresAt - Date.now() - 60_000)
+    );
     return () => window.clearTimeout(timer);
   }, [authToken, matrixSession?.bootstrap.expiresAt, selectedRoomId]);
 
@@ -1098,7 +1148,11 @@ export function ChatApp() {
     }
     const loadKey = `${matrixSession.bootstrap.userId}:${matrixSession.bootstrap.deviceId}:${selectedRoomId}`;
     const attempts = initialHistoryLoadAttemptsRef.current.get(loadKey) ?? 0;
-    if (attempts >= initialHistoryLoadRetryLimit || historyExhausted || historyLoadingRoomsRef.current.has(selectedRoomId)) {
+    if (
+      attempts >= initialHistoryLoadRetryLimit ||
+      historyExhausted ||
+      historyLoadingRoomsRef.current.has(selectedRoomId)
+    ) {
       return;
     }
     const currentTimeline = matrixSession.getTimeline(selectedRoomId);
@@ -1241,7 +1295,14 @@ export function ChatApp() {
     }
     markChatRead(activeChat);
     void matrixSession.markRoomRead(selectedRoomId);
-  }, [activeChat?.latest?.eventId, activeChat?.manuallyUnread, activeChat?.preferenceKey, activeChat?.unreadCount, matrixSession, selectedRoomId]);
+  }, [
+    activeChat?.latest?.eventId,
+    activeChat?.manuallyUnread,
+    activeChat?.preferenceKey,
+    activeChat?.unreadCount,
+    matrixSession,
+    selectedRoomId
+  ]);
 
   React.useEffect(() => {
     publishChatUnreadCount(totalUnreadCount);
@@ -1344,7 +1405,11 @@ export function ChatApp() {
     });
   }
 
-  function rememberRoomTimeline(roomId: string, messages: MatrixTimelineMessage[], allowEmpty = false): MatrixTimelineMessage[] {
+  function rememberRoomTimeline(
+    roomId: string,
+    messages: MatrixTimelineMessage[],
+    allowEmpty = false
+  ): MatrixTimelineMessage[] {
     const cached = timelineCacheRef.current.get(roomId) ?? [];
     if (messages.length === 0 && cached.length > 0 && !allowEmpty) {
       return cached;
@@ -1415,7 +1480,10 @@ export function ChatApp() {
       delete nextReadOverride[item.preferenceKey];
       return {
         ...current,
-        manualUnreadKeys: [item.preferenceKey, ...current.manualUnreadKeys.filter((key) => key !== item.preferenceKey)].slice(0, 200),
+        manualUnreadKeys: [
+          item.preferenceKey,
+          ...current.manualUnreadKeys.filter((key) => key !== item.preferenceKey)
+        ].slice(0, 200),
         readOverrideByKey: nextReadOverride
       };
     });
@@ -1660,7 +1728,9 @@ export function ChatApp() {
     }
     const text = selectedMessages.map(formatMessageForClipboard).join("\n\n");
     await navigator.clipboard?.writeText(text);
-    setNotice(`${selectedMessages.length} ${selectedMessages.length === 1 ? "zpráva zkopírována" : "zprávy zkopírovány"}.`);
+    setNotice(
+      `${selectedMessages.length} ${selectedMessages.length === 1 ? "zpráva zkopírována" : "zprávy zkopírovány"}.`
+    );
   }
 
   async function shareSelectedMessages() {
@@ -1767,7 +1837,10 @@ export function ChatApp() {
     });
   }
 
-  async function ensureRoomForForwardTarget(target: ForwardTarget, session: MatrixMessagingSession): Promise<{ roomId: string; title: string }> {
+  async function ensureRoomForForwardTarget(
+    target: ForwardTarget,
+    session: MatrixMessagingSession
+  ): Promise<{ roomId: string; title: string }> {
     if (target.chat) {
       const roomId = await ensureRoomForChatItem(target.chat, session);
       return { roomId, title: target.title };
@@ -1777,9 +1850,12 @@ export function ChatApp() {
     }
     const title = target.user.displayName?.trim() || target.user.username || target.user.subjectId;
     const existing = findExistingDirectConversation(target.user, conversations, title);
-    const conversation = ensureConversationHasMember(existing ?? await createDirectConversation(target.user, title), target.user);
+    const conversation = ensureConversationHasMember(
+      existing ?? (await createDirectConversation(target.user, title)),
+      target.user
+    );
     setConversations((current) => upsertConversation(current, conversation));
-    const roomId = conversation.matrix?.roomId ?? await createRoomForConversation(conversation, session);
+    const roomId = conversation.matrix?.roomId ?? (await createRoomForConversation(conversation, session));
     return { roomId, title };
   }
 
@@ -1813,7 +1889,9 @@ export function ChatApp() {
       setForwardSelectedTargetsByKey({});
       setForwardUserSuggestions([]);
       const recipientLabel = sentTitles.length === 1 ? sentTitles[0] : `${sentTitles.length} příjemcům`;
-      setNotice(`${forwardDraftMessages.length === 1 ? "Zpráva přeposlána" : "Zprávy přeposlány"} do ${recipientLabel}.`);
+      setNotice(
+        `${forwardDraftMessages.length === 1 ? "Zpráva přeposlána" : "Zprávy přeposlány"} do ${recipientLabel}.`
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Zprávu se nepodařilo přeposlat.");
     } finally {
@@ -1931,9 +2009,13 @@ export function ChatApp() {
             }
           }
         });
-        setGroups((current) => current.map((group) => group.groupId === updatedGroup.groupId ? updatedGroup : group));
+        setGroups((current) => current.map((group) => (group.groupId === updatedGroup.groupId ? updatedGroup : group)));
       }
-      setNotice(seconds === null ? "Automatické mazání zpráv je vypnuté." : `Nové zprávy se budou automaticky odstraňovat po ${messageRetentionLabel(seconds)}.`);
+      setNotice(
+        seconds === null
+          ? "Automatické mazání zpráv je vypnuté."
+          : `Nové zprávy se budou automaticky odstraňovat po ${messageRetentionLabel(seconds)}.`
+      );
       setRetentionDialogOpen(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Automatické mazání zpráv se nepodařilo nastavit.");
@@ -1981,9 +2063,11 @@ export function ChatApp() {
     const nextStatus = await refreshEncryptionRecoveryStatus(session);
     if (nextStatus && !nextStatus.ready) {
       setRecoveryDialogOpen(true);
-      throw new Error(nextStatus.needsSetup
-        ? "Nejdřív nastavte obnovovací klíč E2EE. Potom půjde chat bezpečně používat na více zařízeních."
-        : "Nejdřív obnovte toto zařízení pomocí obnovovacího klíče E2EE.");
+      throw new Error(
+        nextStatus.needsSetup
+          ? "Nejdřív nastavte obnovovací klíč E2EE. Potom půjde chat bezpečně používat na více zařízeních."
+          : "Nejdřív obnovte toto zařízení pomocí obnovovacího klíče E2EE."
+      );
     }
   }
 
@@ -2021,7 +2105,12 @@ export function ChatApp() {
   }
 
   async function createEncryptionRecovery(reset = false): Promise<void> {
-    if (reset && !window.confirm("Nouzově začít znovu s E2EE? Tuto volbu použijte jen při ztraceném nebo kompromitovaném klíči. Starší šifrovaná historie nemusí být dostupná.")) {
+    if (
+      reset &&
+      !window.confirm(
+        "Nouzově začít znovu s E2EE? Tuto volbu použijte jen při ztraceném nebo kompromitovaném klíči. Starší šifrovaná historie nemusí být dostupná."
+      )
+    ) {
       return;
     }
     setRecoveryWorking(true);
@@ -2029,14 +2118,16 @@ export function ChatApp() {
     try {
       const session = reset
         ? await startFreshMatrixSessionForRecovery()
-        : matrixSessionRef.current ?? await startFreshMatrixSessionForRecovery();
+        : (matrixSessionRef.current ?? (await startFreshMatrixSessionForRecovery()));
       const recoveryKey = await session.createEncryptionRecovery(reset);
       setGeneratedRecoveryKey(recoveryKey);
       setRecoveryKeyInput("");
       await refreshEncryptionRecoveryStatus(session);
-      setNotice(reset
-        ? "Nový nouzový E2EE obnovovací klíč je aktivní. Použijte ho i na iOS; starší šifrovaná historie nemusí být dostupná."
-        : "E2EE obnova je nastavena pro web i iPhone/iPad. Uložte obnovovací klíč mimo tento prohlížeč.");
+      setNotice(
+        reset
+          ? "Nový nouzový E2EE obnovovací klíč je aktivní. Použijte ho i na iOS; starší šifrovaná historie nemusí být dostupná."
+          : "E2EE obnova je nastavena pro web i iPhone/iPad. Uložte obnovovací klíč mimo tento prohlížeč."
+      );
     } catch (caught) {
       setError(userFacingError(caught instanceof Error ? caught.message : "Obnovovací klíč se nepodařilo vytvořit."));
     } finally {
@@ -2045,7 +2136,11 @@ export function ChatApp() {
   }
 
   async function prepareEncryptionRecoveryForMobile(): Promise<void> {
-    if (!window.confirm("Připravit iPhone/iPad čistým E2EE resetem? Starší šifrovaná historie nemusí být dostupná, ale web a iOS dostanou nový kompatibilní obnovovací klíč.")) {
+    if (
+      !window.confirm(
+        "Připravit iPhone/iPad čistým E2EE resetem? Starší šifrovaná historie nemusí být dostupná, ale web a iOS dostanou nový kompatibilní obnovovací klíč."
+      )
+    ) {
       return;
     }
     setRecoveryWorking(true);
@@ -2056,16 +2151,22 @@ export function ChatApp() {
       setGeneratedRecoveryKey(recoveryKey);
       setRecoveryKeyInput("");
       await refreshEncryptionRecoveryStatus(session);
-      setNotice("Nový E2EE recovery cyklus pro web+iOS je připravený. Uložte nový klíč a použijte ho v mobilní aplikaci.");
+      setNotice(
+        "Nový E2EE recovery cyklus pro web+iOS je připravený. Uložte nový klíč a použijte ho v mobilní aplikaci."
+      );
     } catch (caught) {
-      setError(userFacingError(caught instanceof Error ? caught.message : "Recovery pro iPhone/iPad se nepodařilo připravit."));
+      setError(
+        userFacingError(caught instanceof Error ? caught.message : "Recovery pro iPhone/iPad se nepodařilo připravit.")
+      );
     } finally {
       setRecoveryWorking(false);
     }
   }
 
   async function restoreEncryptionRecovery(): Promise<void> {
-    const session = matrixSessionRef.current ?? await startMatrixSession(selectedConversationId ?? selectedGroupId ?? selectedRoomId);
+    const session =
+      matrixSessionRef.current ??
+      (await startMatrixSession(selectedConversationId ?? selectedGroupId ?? selectedRoomId));
     if (!session) {
       return;
     }
@@ -2093,7 +2194,9 @@ export function ChatApp() {
       clearChatSelection();
       return true;
     }
-    const conversation = conversations.find((item) => item.conversationId === selection || item.matrix?.roomId === selection);
+    const conversation = conversations.find(
+      (item) => item.conversationId === selection || item.matrix?.roomId === selection
+    );
     if (conversation) {
       selectConversation(conversation, false);
       return true;
@@ -2134,7 +2237,8 @@ export function ChatApp() {
   }
 
   function selectGroup(group: CommunityGroup, updateRoute = true) {
-    const conversation = findConversationForGroup(group, conversations) ?? findConversationByTitle(group.name, conversations, "group");
+    const conversation =
+      findConversationForGroup(group, conversations) ?? findConversationByTitle(group.name, conversations, "group");
     setSelectedGroupId(group.groupId);
     setSelectedConversationId(conversation?.conversationId ?? null);
     setSelectedRoomId(conversation?.matrix?.roomId ?? communityGroupMatrixRoomId(group) ?? null);
@@ -2145,7 +2249,9 @@ export function ChatApp() {
 
   function selectRoom(room: MatrixRoomSummary, updateRoute = true) {
     const conversation = conversations.find((item) => item.matrix?.roomId === room.roomId) ?? null;
-    const group = conversation ? groupForConversation(conversation, groups) : findGroupByMatrixRoomId(room.roomId, groups) ?? findGroupByTitle(room.name, groups);
+    const group = conversation
+      ? groupForConversation(conversation, groups)
+      : (findGroupByMatrixRoomId(room.roomId, groups) ?? findGroupByTitle(room.name, groups));
     setSelectedRoomId(room.roomId);
     setSelectedConversationId(conversation?.conversationId ?? null);
     setSelectedGroupId(group?.groupId ?? null);
@@ -2236,7 +2342,7 @@ export function ChatApp() {
     try {
       const title = user.displayName?.trim() || user.username || user.subjectId;
       const existing = findExistingDirectConversation(user, conversations, title);
-      const conversation = existing ?? await createDirectConversation(user, title);
+      const conversation = existing ?? (await createDirectConversation(user, title));
       const conversationWithMember = ensureConversationHasMember(conversation, user);
       setConversations((current) => upsertConversation(current, conversationWithMember));
       setComposeMode(null);
@@ -2263,9 +2369,10 @@ export function ChatApp() {
     setPreparingChatId(`direct:${copAiAgentUser.subjectId}`);
     try {
       const title = copAiAgentUser.displayName || copAiAgentUser.username;
-      const existing = findExistingAiAgentDirectConversation(conversations)
-        ?? findExistingDirectConversation(copAiAgentUser, conversations, title);
-      const conversation = existing ?? await createAiAgentDirectConversation();
+      const existing =
+        findExistingAiAgentDirectConversation(conversations) ??
+        findExistingDirectConversation(copAiAgentUser, conversations, title);
+      const conversation = existing ?? (await createAiAgentDirectConversation());
       const conversationWithMember = ensureConversationHasMember(conversation, copAiAgentUser, "bot");
       setConversations((current) => upsertConversation(current, conversationWithMember));
       setComposeMode(null);
@@ -2284,7 +2391,10 @@ export function ChatApp() {
     }
   }
 
-  async function createDirectConversation(user: UserDirectoryEntry, title: string): Promise<MessagingConversationSummary> {
+  async function createDirectConversation(
+    user: UserDirectoryEntry,
+    title: string
+  ): Promise<MessagingConversationSummary> {
     if (!authToken) {
       throw new Error("Pro založení chatu je potřeba přihlášení.");
     }
@@ -2326,7 +2436,8 @@ export function ChatApp() {
     if (!authToken) {
       throw new Error("Pro založení skupinového chatu je potřeba přihlášení.");
     }
-    const existing = findConversationForGroup(group, conversations) ?? findConversationByTitle(group.name, conversations, "group");
+    const existing =
+      findConversationForGroup(group, conversations) ?? findConversationByTitle(group.name, conversations, "group");
     if (existing) {
       await persistGroupChatBindingIfAllowed(group, existing);
       return existing;
@@ -2412,7 +2523,7 @@ export function ChatApp() {
         subjectId: user.subjectId,
         username: user.username
       });
-      setGroups((current) => current.map((item) => item.groupId === group.groupId ? group : item));
+      setGroups((current) => current.map((item) => (item.groupId === group.groupId ? group : item)));
       const conversation = findConversationForGroup(group, conversations);
       const warnings: string[] = [];
       if (conversation) {
@@ -2424,7 +2535,9 @@ export function ChatApp() {
             communityGroupMembersToMessagingMembers(group)
           );
           if (sync.conversation) {
-            setConversations((current) => upsertConversation(current, sync.conversation as MessagingConversationSummary));
+            setConversations((current) =>
+              upsertConversation(current, sync.conversation as MessagingConversationSummary)
+            );
           } else {
             warnings.push(sync.warnings[0] ?? "Messaging synchronizace zatím nevrátila konverzaci.");
           }
@@ -2447,9 +2560,11 @@ export function ChatApp() {
       }
       setMemberQuery("");
       setMemberSuggestions([]);
-      setNotice(warnings.length > 0
-        ? `${user.displayName || user.username} byl/a přidán/a do COP skupiny. Chat synchronizace doběhne později: ${userFacingError(warnings[0] ?? "")}`
-        : `${user.displayName || user.username} byl/a přidán/a do skupiny.`);
+      setNotice(
+        warnings.length > 0
+          ? `${user.displayName || user.username} byl/a přidán/a do COP skupiny. Chat synchronizace doběhne později: ${userFacingError(warnings[0] ?? "")}`
+          : `${user.displayName || user.username} byl/a přidán/a do skupiny.`
+      );
     } catch (caught) {
       setError(userFacingError(caught instanceof Error ? caught.message : "Člena se nepodařilo přidat."));
     } finally {
@@ -2471,8 +2586,13 @@ export function ChatApp() {
     setError(null);
     setNotice(null);
     try {
-      const updatedGroup = await removeCommunityGroupMember(apiBase, authToken, candidate.groupId, candidate.memberSubjectId);
-      setGroups((current) => current.map((group) => group.groupId === updatedGroup.groupId ? updatedGroup : group));
+      const updatedGroup = await removeCommunityGroupMember(
+        apiBase,
+        authToken,
+        candidate.groupId,
+        candidate.memberSubjectId
+      );
+      setGroups((current) => current.map((group) => (group.groupId === updatedGroup.groupId ? updatedGroup : group)));
       const conversation = findConversationForGroup(updatedGroup, conversations);
       if (conversation) {
         const sync = await syncMessagingConversationMembers(
@@ -2522,7 +2642,9 @@ export function ChatApp() {
         setNotice("AI souhrn vyžaduje lidskou kontrolu před dalším sdílením.");
       }
     } catch (caught) {
-      const message = userFacingError(caught instanceof Error ? caught.message : "AI situační souhrn se nepodařilo vytvořit.");
+      const message = userFacingError(
+        caught instanceof Error ? caught.message : "AI situační souhrn se nepodařilo vytvořit."
+      );
       setAiSituationError(message);
       setError(message);
     } finally {
@@ -2655,7 +2777,12 @@ export function ChatApp() {
       return;
     }
     const updateTime = new Date().toISOString();
-    if (enabled && !window.confirm("Zapnout COP AI agenta jako viditelného Matrix člena této E2EE místnosti? Agent bude mít vlastní Matrix účet a device, uvidí nové zprávy sdílené po připojení a jeho odpovědi budou auditované.")) {
+    if (
+      enabled &&
+      !window.confirm(
+        "Zapnout COP AI agenta jako viditelného Matrix člena této E2EE místnosti? Agent bude mít vlastní Matrix účet a device, uvidí nové zprávy sdílené po připojení a jeho odpovědi budou auditované."
+      )
+    ) {
       return;
     }
     setAiAgentGroupUpdating(true);
@@ -2670,19 +2797,21 @@ export function ChatApp() {
             enabled,
             label: currentChat.aiAssistant?.label ?? "COP AI Assistant",
             mode: "cop-context",
-            consent: enabled ? {
-              granted: true,
-              grantedAt: updateTime,
-              grantedBy: authSubjectId ?? authSession.profile?.username ?? "unknown",
-              scope: "matrix-room-member",
-              termsVersion: "cop-ai-room-agent-consent-v1"
-            } : {
-              granted: false,
-              revokedAt: updateTime,
-              revokedBy: authSubjectId ?? authSession.profile?.username ?? "unknown",
-              scope: "matrix-room-member",
-              termsVersion: "cop-ai-room-agent-consent-v1"
-            },
+            consent: enabled
+              ? {
+                  granted: true,
+                  grantedAt: updateTime,
+                  grantedBy: authSubjectId ?? authSession.profile?.username ?? "unknown",
+                  scope: "matrix-room-member",
+                  termsVersion: "cop-ai-room-agent-consent-v1"
+                }
+              : {
+                  granted: false,
+                  revokedAt: updateTime,
+                  revokedBy: authSubjectId ?? authSession.profile?.username ?? "unknown",
+                  scope: "matrix-room-member",
+                  termsVersion: "cop-ai-room-agent-consent-v1"
+                },
             updatedAt: updateTime,
             updatedBy: authSubjectId ?? authSession.profile?.username ?? "unknown"
           }
@@ -2697,10 +2826,12 @@ export function ChatApp() {
         nextAi = communityGroupAiAssistantMetadata(finalGroup);
         matrixInviteWarning = inviteResult.warning ?? null;
       }
-      setGroups((current) => current.map((group) => group.groupId === finalGroup.groupId ? finalGroup : group));
-      setNotice(enabled
-        ? `AI agent je zapnutý. ${aiAssistantStatusLabel(nextAi)}.${matrixInviteWarning ? ` ${matrixInviteWarning}` : ""}`
-        : "AI agent je pro skupinu vypnutý.");
+      setGroups((current) => current.map((group) => (group.groupId === finalGroup.groupId ? finalGroup : group)));
+      setNotice(
+        enabled
+          ? `AI agent je zapnutý. ${aiAssistantStatusLabel(nextAi)}.${matrixInviteWarning ? ` ${matrixInviteWarning}` : ""}`
+          : "AI agent je pro skupinu vypnutý."
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Nastavení AI agenta se nepodařilo uložit.");
     } finally {
@@ -2753,7 +2884,10 @@ export function ChatApp() {
     }
   }
 
-  async function createRoomForConversation(conversation: MessagingConversationSummary, session = matrixSessionRef.current): Promise<string> {
+  async function createRoomForConversation(
+    conversation: MessagingConversationSummary,
+    session = matrixSessionRef.current
+  ): Promise<string> {
     if (conversation.matrix?.roomId) {
       setSelectedRoomId(conversation.matrix.roomId);
       return conversation.matrix.roomId;
@@ -2781,17 +2915,19 @@ export function ChatApp() {
     };
     setConversations((current) => upsertConversation(current, nextConversation));
     const linkedGroup = selectedGroupId
-      ? groups.find((group) => group.groupId === selectedGroupId) ?? groupForConversation(nextConversation, groups)
+      ? (groups.find((group) => group.groupId === selectedGroupId) ?? groupForConversation(nextConversation, groups))
       : groupForConversation(nextConversation, groups);
     if (linkedGroup) {
       await persistGroupChatBindingIfAllowed(linkedGroup, nextConversation, roomId);
     }
-    setRooms((current) => ensureRoomSummary(current, {
-      encrypted: true,
-      name: conversation.title,
-      roomId,
-      unreadCount: 0
-    }));
+    setRooms((current) =>
+      ensureRoomSummary(current, {
+        encrypted: true,
+        name: conversation.title,
+        roomId,
+        unreadCount: 0
+      })
+    );
     setSelectedConversationId(nextConversation.conversationId);
     setSelectedGroupId(conversationCommunityGroupId(nextConversation) ?? selectedGroupId);
     setSelectedRoomId(roomId);
@@ -2854,13 +2990,13 @@ export function ChatApp() {
       chat: {
         ...currentChat,
         conversationId: conversation.conversationId,
-        encrypted: roomId ? true : currentChat.encrypted ?? true,
+        encrypted: roomId ? true : (currentChat.encrypted ?? true),
         linkedAt: new Date().toISOString(),
         ...(roomId ? { matrixRoomId: roomId } : {}),
         source: "cop-chat"
       }
     });
-    setGroups((current) => current.map((item) => item.groupId === updated.groupId ? updated : item));
+    setGroups((current) => current.map((item) => (item.groupId === updated.groupId ? updated : item)));
     return updated;
   }
 
@@ -2923,12 +3059,13 @@ export function ChatApp() {
       return false;
     }
     const attachment = pendingAttachment;
-    const aiInvocation = !options.skipAiMention && !attachment && !replyDraft
-      ? parseAiAgentInvocation(text, {
-          aiDirectChat: selectedAiAgentDirectChat,
-          groupAiAssistantEnabled: selectedGroupAiAssistantEnabled
-        })
-      : null;
+    const aiInvocation =
+      !options.skipAiMention && !attachment && !replyDraft
+        ? parseAiAgentInvocation(text, {
+            aiDirectChat: selectedAiAgentDirectChat,
+            groupAiAssistantEnabled: selectedGroupAiAssistantEnabled
+          })
+        : null;
     setSending(true);
     setError(null);
     try {
@@ -2970,9 +3107,11 @@ export function ChatApp() {
       throw new Error("Pro dotaz na AI agenta je potřeba platné přihlášení do COP.");
     }
     if (!question) {
-      throw new Error(invocation.trigger === "slash"
-        ? "Za příkaz doplňte konkrétní dotaz pro AI agenta."
-        : "Za @COP AI doplňte konkrétní dotaz.");
+      throw new Error(
+        invocation.trigger === "slash"
+          ? "Za příkaz doplňte konkrétní dotaz pro AI agenta."
+          : "Za @COP AI doplňte konkrétní dotaz."
+      );
     }
     if (!matrixSession || !selectedRoomId) {
       throw new Error("Nejdřív otevřete chatovou místnost.");
@@ -3008,7 +3147,12 @@ export function ChatApp() {
     try {
       let response: AiCopResponse;
       response = await queryAiChatAgentWithJob(
-        buildAiChatAgentQueryOptions(input.question, input.invocation.modelPreference, input.userMessage, input.geoLocation ?? undefined),
+        buildAiChatAgentQueryOptions(
+          input.question,
+          input.invocation.modelPreference,
+          input.userMessage,
+          input.geoLocation ?? undefined
+        ),
         (job) => {
           const label = aiChatAgentJobStatusLabel(job);
           setNotice(label);
@@ -3021,9 +3165,11 @@ export function ChatApp() {
       const answer = aiResponseSummary(response);
       if (response.status !== "COMPLETED") {
         setAiAgentDialogOpen(true);
-        setNotice(response.status === "NEEDS_HUMAN_REVIEW"
-          ? "AI odpověď vyžaduje lidskou kontrolu, proto není automaticky odeslaná."
-          : "AI odpověď nebyla automaticky odeslaná.");
+        setNotice(
+          response.status === "NEEDS_HUMAN_REVIEW"
+            ? "AI odpověď vyžaduje lidskou kontrolu, proto není automaticky odeslaná."
+            : "AI odpověď nebyla automaticky odeslaná."
+        );
         return;
       }
       if (!answer.trim()) {
@@ -3046,7 +3192,9 @@ export function ChatApp() {
     }
   }
 
-  async function requestStandaloneAiLocation(options: { reportNotice: boolean } = { reportNotice: true }): Promise<MatrixLocationShare> {
+  async function requestStandaloneAiLocation(
+    options: { reportNotice: boolean } = { reportNotice: true }
+  ): Promise<MatrixLocationShare> {
     setStandaloneAiLocationBusy(true);
     setError(null);
     try {
@@ -3157,18 +3305,26 @@ export function ChatApp() {
 
   // Stable handler identities so memoized ChatRow/MessageRow only re-render when
   // their own data props change, not on every parent state update.
-  const handleOpenChat = useEventCallback((item: ChatListItem) => { void openChat(item); });
+  const handleOpenChat = useEventCallback((item: ChatListItem) => {
+    void openChat(item);
+  });
   const handleToggleMutedChat = useEventCallback((item: ChatListItem) => toggleMutedChat(item));
   const handleTogglePinnedChat = useEventCallback((item: ChatListItem) => togglePinnedChat(item));
   const handleToggleUnreadChat = useEventCallback((item: ChatListItem) => toggleUnreadChat(item));
-  const handleDownloadAttachment = useEventCallback((message: MatrixTimelineMessage) => { void downloadAttachment(message); });
-  const handleOpenMessageActions = useEventCallback((
-    message: MatrixTimelineMessage,
-    rect: DOMRect,
-    stickerTrayOpen?: boolean,
-    mode?: MessageActionPopoverState["mode"]
-  ) => openMessageActions(message, rect, stickerTrayOpen, mode));
-  const handleReactToMessage = useEventCallback((message: MatrixTimelineMessage, key: string) => { void reactToMessage(message, key); });
+  const handleDownloadAttachment = useEventCallback((message: MatrixTimelineMessage) => {
+    void downloadAttachment(message);
+  });
+  const handleOpenMessageActions = useEventCallback(
+    (
+      message: MatrixTimelineMessage,
+      rect: DOMRect,
+      stickerTrayOpen?: boolean,
+      mode?: MessageActionPopoverState["mode"]
+    ) => openMessageActions(message, rect, stickerTrayOpen, mode)
+  );
+  const handleReactToMessage = useEventCallback((message: MatrixTimelineMessage, key: string) => {
+    void reactToMessage(message, key);
+  });
   const handleToggleSelectedMessage = useEventCallback((messageId: string) => toggleSelectedMessage(messageId));
 
   const connectionLocked = authenticated && !chatReady && !showingDemoTimeline;
@@ -3184,28 +3340,47 @@ export function ChatApp() {
         onChange={(event) => handleAttachmentSelected(event.target.files)}
       />
 
-      {!embedded ? <nav className="app-rail" aria-label="COP Chat">
-        <a className="rail-logo" href="/" aria-label="Zpět na mapu">COP</a>
-        <button className="rail-button active" type="button" aria-label="Chaty">
-          <MessageCircle size={22} />
-        </button>
-        <button className="rail-button" onClick={() => setComposeMode("group")} type="button" aria-label="Skupiny">
-          <Users size={22} />
-        </button>
-        <span className="rail-spacer" />
-        <button className="rail-button" onClick={() => setRefreshNonce((value) => value + 1)} type="button" aria-label="Obnovit">
-          <RefreshCcw size={21} />
-        </button>
-        {authenticated ? (
-          <button className="rail-button" onClick={() => endSession(authConfig, authSession)} type="button" aria-label="Odhlásit">
-            <LogOut size={21} />
+      {!embedded ? (
+        <nav className="app-rail" aria-label="COP Chat">
+          <a className="rail-logo" href="/" aria-label="Zpět na mapu">
+            COP
+          </a>
+          <button className="rail-button active" type="button" aria-label="Chaty">
+            <MessageCircle size={22} />
           </button>
-        ) : (
-          <button className="rail-button" onClick={() => void beginLogin(authConfig)} type="button" aria-label="Přihlásit">
-            <LogIn size={21} />
+          <button className="rail-button" onClick={() => setComposeMode("group")} type="button" aria-label="Skupiny">
+            <Users size={22} />
           </button>
-        )}
-      </nav> : null}
+          <span className="rail-spacer" />
+          <button
+            className="rail-button"
+            onClick={() => setRefreshNonce((value) => value + 1)}
+            type="button"
+            aria-label="Obnovit"
+          >
+            <RefreshCcw size={21} />
+          </button>
+          {authenticated ? (
+            <button
+              className="rail-button"
+              onClick={() => endSession(authConfig, authSession)}
+              type="button"
+              aria-label="Odhlásit"
+            >
+              <LogOut size={21} />
+            </button>
+          ) : (
+            <button
+              className="rail-button"
+              onClick={() => void beginLogin(authConfig)}
+              type="button"
+              aria-label="Přihlásit"
+            >
+              <LogIn size={21} />
+            </button>
+          )}
+        </nav>
+      ) : null}
 
       <aside className="chat-list-pane" aria-label="Chaty">
         <header className="list-header">
@@ -3221,7 +3396,12 @@ export function ChatApp() {
                 onEnable={() => void enableBrowserNotifications()}
               />
             ) : null}
-            <button className="round-icon" onClick={() => setComposeMode("direct")} type="button" aria-label="Nový chat">
+            <button
+              className="round-icon"
+              onClick={() => setComposeMode("direct")}
+              type="button"
+              aria-label="Nový chat"
+            >
               <MessageSquarePlus size={22} />
             </button>
           </div>
@@ -3246,16 +3426,39 @@ export function ChatApp() {
         </label>
 
         <div className="filter-tabs" role="tablist" aria-label="Filtr chatů">
-          <button className={chatFilter === "all" ? "active" : ""} onClick={() => setChatFilter("all")} role="tab" type="button">Vše</button>
-          <button className={chatFilter === "direct" ? "active" : ""} onClick={() => setChatFilter("direct")} role="tab" type="button">Přímé</button>
-          <button className={chatFilter === "group" ? "active" : ""} onClick={() => setChatFilter("group")} role="tab" type="button">Skupiny</button>
+          <button
+            className={chatFilter === "all" ? "active" : ""}
+            onClick={() => setChatFilter("all")}
+            role="tab"
+            type="button"
+          >
+            Vše
+          </button>
+          <button
+            className={chatFilter === "direct" ? "active" : ""}
+            onClick={() => setChatFilter("direct")}
+            role="tab"
+            type="button"
+          >
+            Přímé
+          </button>
+          <button
+            className={chatFilter === "group" ? "active" : ""}
+            onClick={() => setChatFilter("group")}
+            role="tab"
+            type="button"
+          >
+            Skupiny
+          </button>
         </div>
 
         {pinnedChatItems.length > 0 ? (
           <PinnedChats
             items={pinnedChatItems}
             mediaAccessToken={matrixMediaAccessToken}
-            connectionStateForItem={(item) => chatConnectionStateFor(item, chatReady, matrixSession, syncState, preparingChatId === item.id, status)}
+            connectionStateForItem={(item) =>
+              chatConnectionStateFor(item, chatReady, matrixSession, syncState, preparingChatId === item.id, status)
+            }
             onOpen={(nextItem) => void openChat(nextItem)}
             onTogglePinned={togglePinnedChat}
           />
@@ -3272,20 +3475,29 @@ export function ChatApp() {
             <ChatSkeleton />
           ) : regularChatItems.length === 0 && pinnedChatItems.length === 0 ? (
             <ListPrompt actionLabel="Nový chat" title="Žádné chaty" onAction={() => setComposeMode("direct")} />
-          ) : regularChatItems.map((item) => (
-            <ChatRowMemo
-              item={item}
-              key={item.id}
-              mediaAccessToken={matrixMediaAccessToken}
-              connectionState={chatConnectionStateFor(item, chatReady, matrixSession, syncState, preparingChatId === item.id, status)}
-              onDeleteRequest={setDeleteChatCandidate}
-              onToggleMute={handleToggleMutedChat}
-              onTogglePinned={handleTogglePinnedChat}
-              onToggleUnread={handleToggleUnreadChat}
-              preparing={preparingChatId === item.id}
-              onOpen={handleOpenChat}
-            />
-          ))}
+          ) : (
+            regularChatItems.map((item) => (
+              <ChatRowMemo
+                item={item}
+                key={item.id}
+                mediaAccessToken={matrixMediaAccessToken}
+                connectionState={chatConnectionStateFor(
+                  item,
+                  chatReady,
+                  matrixSession,
+                  syncState,
+                  preparingChatId === item.id,
+                  status
+                )}
+                onDeleteRequest={setDeleteChatCandidate}
+                onToggleMute={handleToggleMutedChat}
+                onTogglePinned={handleTogglePinnedChat}
+                onToggleUnread={handleToggleUnreadChat}
+                preparing={preparingChatId === item.id}
+                onOpen={handleOpenChat}
+              />
+            ))
+          )}
         </div>
       </aside>
 
@@ -3297,15 +3509,33 @@ export function ChatApp() {
                 <ArrowLeft size={21} />
               </button>
               <span className="chat-avatar-wrap header-avatar">
-                <Avatar label={activeChat.title} mediaAccessToken={matrixMediaAccessToken} src={activeChat.avatarUrl} variant={activeChat.avatarVariant} />
-                <ConnectionDot state={chatConnectionStateFor(activeChat, chatReady, matrixSession, syncState, preparingChatId === activeChat.id, status)} />
+                <Avatar
+                  label={activeChat.title}
+                  mediaAccessToken={matrixMediaAccessToken}
+                  src={activeChat.avatarUrl}
+                  variant={activeChat.avatarVariant}
+                />
+                <ConnectionDot
+                  state={chatConnectionStateFor(
+                    activeChat,
+                    chatReady,
+                    matrixSession,
+                    syncState,
+                    preparingChatId === activeChat.id,
+                    status
+                  )}
+                />
               </span>
               <div className="conversation-title">
                 <strong>{activeChat.title}</strong>
                 <span>{conversationSubtitle(activeChat, selectedRoom, status)}</span>
               </div>
               <div className="conversation-actions">
-                {selectedRoom?.encrypted ? <span className="e2ee-chip"><ShieldCheck size={14} /> E2EE</span> : null}
+                {selectedRoom?.encrypted ? (
+                  <span className="e2ee-chip">
+                    <ShieldCheck size={14} /> E2EE
+                  </span>
+                ) : null}
                 <button
                   className="round-icon"
                   onClick={() => setNotice(chatText("calls.videoComingSoon"))}
@@ -3325,7 +3555,13 @@ export function ChatApp() {
                   <Phone size={21} />
                 </button>
                 <div className="chat-menu-anchor" ref={messageMenuRef}>
-                  <button className="round-icon" onClick={() => setMessageMenuOpen((open) => !open)} type="button" aria-expanded={messageMenuOpen} aria-label="Další">
+                  <button
+                    className="round-icon"
+                    onClick={() => setMessageMenuOpen((open) => !open)}
+                    type="button"
+                    aria-expanded={messageMenuOpen}
+                    aria-label="Další"
+                  >
                     <MoreVertical size={21} />
                   </button>
                   {messageMenuOpen ? (
@@ -3390,11 +3626,13 @@ export function ChatApp() {
               <StatusBanner kind="error" text={userFacingError(error)} onClose={() => setError(null)} />
             ) : recoveryBanner ? (
               <StatusBanner
-                actionLabel={encryptionRecoveryStatus?.needsRecovery
-                  ? "Obnovit"
-                  : encryptionRecoveryStatus?.keyBackupEnabled
-                    ? "Připravit pro iOS"
-                    : "Nastavit"}
+                actionLabel={
+                  encryptionRecoveryStatus?.needsRecovery
+                    ? "Obnovit"
+                    : encryptionRecoveryStatus?.keyBackupEnabled
+                      ? "Připravit pro iOS"
+                      : "Nastavit"
+                }
                 text={recoveryBanner}
                 onAction={() => {
                   setGeneratedRecoveryKey(null);
@@ -3426,18 +3664,22 @@ export function ChatApp() {
               />
             ) : selectedRoomId && !encryptionRecoveryReady && !showingDemoTimeline ? (
               <ChatLockedState
-                actionLabel={encryptionRecoveryStatus?.needsRecovery
-                  ? "Obnovit zařízení"
-                  : encryptionRecoveryStatus?.keyBackupEnabled
-                    ? "Připravit pro iOS"
-                    : "Nastavit obnovu"}
+                actionLabel={
+                  encryptionRecoveryStatus?.needsRecovery
+                    ? "Obnovit zařízení"
+                    : encryptionRecoveryStatus?.keyBackupEnabled
+                      ? "Připravit pro iOS"
+                      : "Nastavit obnovu"
+                }
                 icon={<KeyRound size={30} />}
                 title="Dokončete zabezpečení E2EE"
-                text={encryptionRecoveryStatus?.needsRecovery
-                  ? "Zadejte obnovovací klíč, aby toto zařízení získalo přístup k vaší E2EE záloze."
-                  : encryptionRecoveryStatus?.keyBackupEnabled
-                    ? "Tento web umí šifrované zprávy číst, ale účet ještě nemá kompletní recovery metadata pro iPhone/iPad."
-                    : "Před psaním zpráv nastavte obnovovací klíč. Nové zprávy pak půjde bezpečně číst i na dalších zařízeních."}
+                text={
+                  encryptionRecoveryStatus?.needsRecovery
+                    ? "Zadejte obnovovací klíč, aby toto zařízení získalo přístup k vaší E2EE záloze."
+                    : encryptionRecoveryStatus?.keyBackupEnabled
+                      ? "Tento web umí šifrované zprávy číst, ale účet ještě nemá kompletní recovery metadata pro iPhone/iPad."
+                      : "Před psaním zpráv nastavte obnovovací klíč. Nové zprávy pak půjde bezpečně číst i na dalších zařízeních."
+                }
                 onAction={() => setRecoveryDialogOpen(true)}
               />
             ) : (
@@ -3459,37 +3701,55 @@ export function ChatApp() {
                   />
                   {timelineRows.length === 0 ? <div className="day-pill">Dnes</div> : null}
                   {virtualTimeline.enabled && virtualTimeline.paddingTop > 0 ? (
-                    <div className="timeline-spacer" style={{ height: virtualTimeline.paddingTop }} aria-hidden="true" />
-                  ) : null}
-                  {virtualTimeline.rows.map((row) => row.kind === "date" ? (
-                    <div className="day-pill" key={row.id}>{row.label}</div>
-                  ) : (
-                    <MessageRowMemo
-                      grouped={row.grouped}
-                      activeSearchMatch={activeSearchMessageId === row.message.eventId}
-                      key={row.message.eventId}
-                      matrixSession={matrixSession}
-                      message={row.message}
-                      focused={messageActionPopover?.messageId === row.message.eventId}
-                      replyToMessage={row.message.replyToEventId ? messageById.get(row.message.replyToEventId) ?? null : null}
-                      searchQuery={messageSearchQuery}
-                      selectable={selectionMode}
-                      selected={selectedMessageIds.has(row.message.eventId)}
-                      senderLabel={messageSenderLabel(row.message, selectedConversation, authSession)}
-                      onDownloadAttachment={handleDownloadAttachment}
-                      onOpenActions={handleOpenMessageActions}
-                      onOpenPreview={setPreviewItem}
-                      onReact={handleReactToMessage}
-                      onToggleSelected={handleToggleSelectedMessage}
+                    <div
+                      className="timeline-spacer"
+                      style={{ height: virtualTimeline.paddingTop }}
+                      aria-hidden="true"
                     />
-                  ))}
+                  ) : null}
+                  {virtualTimeline.rows.map((row) =>
+                    row.kind === "date" ? (
+                      <div className="day-pill" key={row.id}>
+                        {row.label}
+                      </div>
+                    ) : (
+                      <MessageRowMemo
+                        grouped={row.grouped}
+                        activeSearchMatch={activeSearchMessageId === row.message.eventId}
+                        key={row.message.eventId}
+                        matrixSession={matrixSession}
+                        message={row.message}
+                        focused={messageActionPopover?.messageId === row.message.eventId}
+                        replyToMessage={
+                          row.message.replyToEventId ? (messageById.get(row.message.replyToEventId) ?? null) : null
+                        }
+                        searchQuery={messageSearchQuery}
+                        selectable={selectionMode}
+                        selected={selectedMessageIds.has(row.message.eventId)}
+                        senderLabel={messageSenderLabel(row.message, selectedConversation, authSession)}
+                        onDownloadAttachment={handleDownloadAttachment}
+                        onOpenActions={handleOpenMessageActions}
+                        onOpenPreview={setPreviewItem}
+                        onReact={handleReactToMessage}
+                        onToggleSelected={handleToggleSelectedMessage}
+                      />
+                    )
+                  )}
                   {virtualTimeline.enabled && virtualTimeline.paddingBottom > 0 ? (
-                    <div className="timeline-spacer" style={{ height: virtualTimeline.paddingBottom }} aria-hidden="true" />
+                    <div
+                      className="timeline-spacer"
+                      style={{ height: virtualTimeline.paddingBottom }}
+                      aria-hidden="true"
+                    />
                   ) : null}
                   <div ref={timelineEndRef} aria-hidden="true" />
                 </div>
                 {showJumpToLatest ? (
-                  <button className="jump-latest" onClick={() => timelineEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" })} type="button">
+                  <button
+                    className="jump-latest"
+                    onClick={() => timelineEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" })}
+                    type="button"
+                  >
                     <ArrowDown size={17} />
                   </button>
                 ) : null}
@@ -3526,7 +3786,9 @@ export function ChatApp() {
                     onAttachmentPick={pickAttachment}
                     onReplyClear={() => setReplyDraft(null)}
                     onSend={sendMessage}
-                    onUseAiLocation={() => void requestStandaloneAiLocation({ reportNotice: true }).catch(() => undefined)}
+                    onUseAiLocation={() =>
+                      void requestStandaloneAiLocation({ reportNotice: true }).catch(() => undefined)
+                    }
                     onShareLocation={() => void shareLocation()}
                   />
                 )}
@@ -3544,7 +3806,15 @@ export function ChatApp() {
       </section>
 
       {composeMode ? (
-        <React.Suspense fallback={<DialogLoadingFallback label={composeMode === "direct" ? "Nový chat" : composeMode === "member" ? "Přidat člena" : "Nová skupina"} />}>
+        <React.Suspense
+          fallback={
+            <DialogLoadingFallback
+              label={
+                composeMode === "direct" ? "Nový chat" : composeMode === "member" ? "Přidat člena" : "Nová skupina"
+              }
+            />
+          }
+        >
           <NewChatDialog
             canChat={chatReady}
             directQuery={directQuery}
@@ -3552,7 +3822,10 @@ export function ChatApp() {
             memberQuery={memberQuery}
             memberSuggestions={memberSuggestions}
             memberAddingSubjectIds={Array.from(memberAddPendingIds)}
-            existingMemberSubjectIds={selectedGroup?.members.filter((member) => member.status === "active").map((member) => member.subjectId) ?? []}
+            existingMemberSubjectIds={
+              selectedGroup?.members.filter((member) => member.status === "active").map((member) => member.subjectId) ??
+              []
+            }
             mode={composeMode}
             newGroupName={newGroupName}
             searchLoading={searchLoading}
@@ -3625,7 +3898,9 @@ export function ChatApp() {
             setSelectionMode(true);
             setSelectedMessageIds(new Set([message.eventId]));
           }}
-          onStickerTrayChange={(open) => setMessageActionPopover((current) => current ? { ...current, stickerTrayOpen: open } : current)}
+          onStickerTrayChange={(open) =>
+            setMessageActionPopover((current) => (current ? { ...current, stickerTrayOpen: open } : current))
+          }
         />
       ) : null}
 
@@ -3704,17 +3979,16 @@ export function ChatApp() {
       ) : null}
       {muteDialogOpen && activeChat ? (
         <React.Suspense fallback={<DialogLoadingFallback label="Ztlumit upozornění" />}>
-          <MuteDialog
-            title={activeChat.title}
-            onClose={() => setMuteDialogOpen(false)}
-            onMute={applyMuteChoice}
-          />
+          <MuteDialog title={activeChat.title} onClose={() => setMuteDialogOpen(false)} onMute={applyMuteChoice} />
         </React.Suspense>
       ) : null}
       {deleteChatCandidate ? (
         <React.Suspense fallback={<DialogLoadingFallback label="Smazat chat" />}>
           <DeleteChatDialog
-            canDeleteGroup={Boolean(deleteChatCandidate.group?.groupId && canManageCommunityGroupMembers(deleteChatCandidate.group, authSubjectId))}
+            canDeleteGroup={Boolean(
+              deleteChatCandidate.group?.groupId &&
+              canManageCommunityGroupMembers(deleteChatCandidate.group, authSubjectId)
+            )}
             canLeaveGroup={Boolean(deleteChatCandidate.group?.groupId && deleteChatCandidate.type !== "direct")}
             chatKind={deleteChatCandidate.type === "direct" ? "direct" : "group"}
             working={chatRemovalWorking}
@@ -3787,7 +4061,13 @@ function TomatoGameDialog({ onClose }: { onClose: () => void }) {
             <strong>Rajčatová sklizeň</strong>
           </span>
           <div className="tomato-game-actions">
-            <a className="round-icon small" href={tomatoGameUrl} rel="noreferrer" target="_blank" title="Otevřít hru samostatně">
+            <a
+              className="round-icon small"
+              href={tomatoGameUrl}
+              rel="noreferrer"
+              target="_blank"
+              title="Otevřít hru samostatně"
+            >
               <ExternalLink size={17} />
             </a>
             <button className="round-icon small" onClick={onClose} title="Zavřít" type="button">
@@ -3839,10 +4119,19 @@ function PinnedChats({
         <div className={clsx("pinned-chat", item.active && "active")} key={item.id}>
           <button className="pinned-chat-open" onClick={() => onOpen(item)} type="button">
             <span className="pinned-avatar-wrap">
-              <Avatar label={item.title} mediaAccessToken={mediaAccessToken} src={item.avatarUrl} variant={item.avatarVariant} />
+              <Avatar
+                label={item.title}
+                mediaAccessToken={mediaAccessToken}
+                src={item.avatarUrl}
+                variant={item.avatarVariant}
+              />
               <ConnectionDot state={connectionStateForItem(item)} />
               {item.unreadCount > 0 && !item.muted ? <span className="pinned-unread">{item.unreadCount}</span> : null}
-              {item.muted ? <span className="pinned-muted"><BellOff size={13} /></span> : null}
+              {item.muted ? (
+                <span className="pinned-muted">
+                  <BellOff size={13} />
+                </span>
+              ) : null}
             </span>
             <span className="pinned-title">{item.title}</span>
             <span className="visually-hidden">Otevřít připnutý chat</span>
@@ -3963,25 +4252,47 @@ function ChatRow({
   return (
     <article
       aria-current={item.active ? "true" : undefined}
-      className={clsx("chat-row-shell", item.active && "active", item.unreadCount > 0 && "unread", openActions && "swipe-open")}
+      className={clsx(
+        "chat-row-shell",
+        item.active && "active",
+        item.unreadCount > 0 && "unread",
+        openActions && "swipe-open"
+      )}
       role="listitem"
     >
       <div className="chat-swipe-actions chat-swipe-leading" aria-hidden={openActions !== "leading"}>
-        <button onClick={() => runSwipeAction(() => onTogglePinned(item))} tabIndex={openActions === "leading" ? 0 : -1} type="button">
+        <button
+          onClick={() => runSwipeAction(() => onTogglePinned(item))}
+          tabIndex={openActions === "leading" ? 0 : -1}
+          type="button"
+        >
           {item.pinned ? <PinOff size={19} /> : <Pin size={19} />}
           <span>{item.pinned ? "Odepnout" : "Připnout"}</span>
         </button>
-        <button onClick={() => runSwipeAction(() => onToggleUnread(item))} tabIndex={openActions === "leading" ? 0 : -1} type="button">
+        <button
+          onClick={() => runSwipeAction(() => onToggleUnread(item))}
+          tabIndex={openActions === "leading" ? 0 : -1}
+          type="button"
+        >
           {item.unreadCount > 0 || item.manuallyUnread ? <CheckCheck size={19} /> : <MessageCircle size={19} />}
           <span>{unreadActionLabel}</span>
         </button>
       </div>
       <div className="chat-swipe-actions chat-swipe-trailing" aria-hidden={openActions !== "trailing"}>
-        <button onClick={() => runSwipeAction(() => onToggleMute(item))} tabIndex={openActions === "trailing" ? 0 : -1} type="button">
+        <button
+          onClick={() => runSwipeAction(() => onToggleMute(item))}
+          tabIndex={openActions === "trailing" ? 0 : -1}
+          type="button"
+        >
           {item.muted ? <Bell size={19} /> : <BellOff size={19} />}
           <span>{item.muted ? "Zapnout" : "Ztlumit"}</span>
         </button>
-        <button className="danger" onClick={() => runSwipeAction(() => onDeleteRequest(item))} tabIndex={openActions === "trailing" ? 0 : -1} type="button">
+        <button
+          className="danger"
+          onClick={() => runSwipeAction(() => onDeleteRequest(item))}
+          tabIndex={openActions === "trailing" ? 0 : -1}
+          type="button"
+        >
           <Trash2 size={19} />
           <span>{item.type === "direct" ? "Skrýt" : "Správa"}</span>
         </button>
@@ -3996,7 +4307,12 @@ function ChatRow({
       >
         <button className="chat-row-open" onClick={handleOpen} type="button">
           <span className="chat-avatar-wrap">
-            <Avatar label={item.title} mediaAccessToken={mediaAccessToken} src={item.avatarUrl} variant={item.avatarVariant} />
+            <Avatar
+              label={item.title}
+              mediaAccessToken={mediaAccessToken}
+              src={item.avatarUrl}
+              variant={item.avatarVariant}
+            />
             <ConnectionDot state={connectionState} />
           </span>
           <span className="chat-row-main">
@@ -4008,7 +4324,11 @@ function ChatRow({
               </span>
             </span>
             <span className="chat-row-preview">
-              {preparing ? <Loader2 className="spin" size={15} /> : item.latest ? attachmentIndicator(item.latest) : null}
+              {preparing ? (
+                <Loader2 className="spin" size={15} />
+              ) : item.latest ? (
+                attachmentIndicator(item.latest)
+              ) : null}
               {preparing ? "Připravuji..." : item.preview}
             </span>
           </span>
@@ -4165,15 +4485,7 @@ function NotificationToggleButton({
   );
 }
 
-function HistoryLoader({
-  exhausted,
-  loading,
-  onLoad
-}: {
-  exhausted: boolean;
-  loading: boolean;
-  onLoad: () => void;
-}) {
+function HistoryLoader({ exhausted, loading, onLoad }: { exhausted: boolean; loading: boolean; onLoad: () => void }) {
   if (exhausted) {
     return <div className="history-loader done">Začátek historie</div>;
   }
@@ -4267,7 +4579,7 @@ function Composer({
       {replyTo ? (
         <div className="reply-composer">
           <span>
-            <strong>Odpověď na {replyTo.own ? "vás" : replyTo.senderDisplayName ?? "člena"}</strong>
+            <strong>Odpověď na {replyTo.own ? "vás" : (replyTo.senderDisplayName ?? "člena")}</strong>
             <small>{messagePreviewText(replyTo)}</small>
           </span>
           <button className="round-icon small" onClick={onReplyClear} type="button" aria-label="Zrušit odpověď">
@@ -4277,9 +4589,15 @@ function Composer({
       ) : null}
       {pendingAttachment ? (
         <div className="pending-attachment">
-          {pendingAttachment.previewUrl && pendingAttachment.kind === "image" ? <img alt="" src={pendingAttachment.previewUrl} /> : null}
-          {pendingAttachment.previewUrl && pendingAttachment.kind === "video" ? <video muted src={pendingAttachment.previewUrl} /> : null}
-          {!pendingAttachment.previewUrl ? <span className="file-thumb">{attachmentIcon(pendingAttachment.kind)}</span> : null}
+          {pendingAttachment.previewUrl && pendingAttachment.kind === "image" ? (
+            <img alt="" src={pendingAttachment.previewUrl} />
+          ) : null}
+          {pendingAttachment.previewUrl && pendingAttachment.kind === "video" ? (
+            <video muted src={pendingAttachment.previewUrl} />
+          ) : null}
+          {!pendingAttachment.previewUrl ? (
+            <span className="file-thumb">{attachmentIcon(pendingAttachment.kind)}</span>
+          ) : null}
           <span>
             <strong>{pendingAttachment.file.name || attachmentKindLabel(pendingAttachment.kind)}</strong>
             <small>{formatBytes(pendingAttachment.file.size)}</small>
@@ -4328,7 +4646,15 @@ function Composer({
               title={action.description}
               type="button"
             >
-              {action.kind === "fast" ? <Send size={14} /> : action.kind === "reasoning" ? <Search size={14} /> : action.kind === "situation" ? <ShieldCheck size={14} /> : <Sparkles size={14} />}
+              {action.kind === "fast" ? (
+                <Send size={14} />
+              ) : action.kind === "reasoning" ? (
+                <Search size={14} />
+              ) : action.kind === "situation" ? (
+                <ShieldCheck size={14} />
+              ) : (
+                <Sparkles size={14} />
+              )}
               <span>{action.label}</span>
             </button>
           ))}
@@ -4339,7 +4665,11 @@ function Composer({
               className={clsx("ai-location-chip", aiLocationActive && "active")}
               disabled={disabled || aiLocationBusy}
               onClick={onUseAiLocation}
-              title={aiLocationActive ? "AI používá tuto polohu jen jako dočasný kontext dotazu." : "Zaměří polohu pro dotazy typu nejbližší policie."}
+              title={
+                aiLocationActive
+                  ? "AI používá tuto polohu jen jako dočasný kontext dotazu."
+                  : "Zaměří polohu pro dotazy typu nejbližší policie."
+              }
               type="button"
             >
               {aiLocationBusy ? <Loader2 className="spin" size={14} /> : <MapPin size={14} />}
@@ -4349,13 +4679,31 @@ function Composer({
         </div>
       ) : null}
       <div className="composer-row">
-        <button className="round-icon" disabled={disabled} onClick={() => onAttachmentPick("file")} type="button" aria-label="Příloha">
+        <button
+          className="round-icon"
+          disabled={disabled}
+          onClick={() => onAttachmentPick("file")}
+          type="button"
+          aria-label="Příloha"
+        >
           <Plus size={24} />
         </button>
-        <button className="round-icon desktop-tool" disabled={disabled} onClick={() => onAttachmentPick("image")} type="button" aria-label="Fotka">
+        <button
+          className="round-icon desktop-tool"
+          disabled={disabled}
+          onClick={() => onAttachmentPick("image")}
+          type="button"
+          aria-label="Fotka"
+        >
           <ImageIcon size={21} />
         </button>
-        <button className="round-icon desktop-tool" disabled={disabled} onClick={() => onShareLocation()} type="button" aria-label="Poloha">
+        <button
+          className="round-icon desktop-tool"
+          disabled={disabled}
+          onClick={() => onShareLocation()}
+          type="button"
+          aria-label="Poloha"
+        >
           <MapPin size={21} />
         </button>
         <div className="message-input">
@@ -4399,7 +4747,12 @@ function Composer({
             value={text}
           />
         </div>
-        <button className="send-button" disabled={!canSend || sending} type="submit" aria-label={canSend ? "Odeslat" : "Hlasová zpráva"}>
+        <button
+          className="send-button"
+          disabled={!canSend || sending}
+          type="submit"
+          aria-label={canSend ? "Odeslat" : "Hlasová zpráva"}
+        >
           {sending ? <Clock3 size={21} /> : canSend ? <Send size={21} /> : <Mic size={22} />}
         </button>
       </div>
@@ -4490,7 +4843,8 @@ export function composerQuickActions(aiAgentAvailable: boolean): ComposerQuickAc
       description: "Připravit krizový situační přehled nad COP daty a chatem",
       kind: "situation",
       label: "Krizový přehled",
-      value: "/ai Vytvoř krizový situační přehled pro aktuální oblast. Zaměř se na vodu, počasí, požáry, policii, zdravotní rizika, dopravu, dostupné zdroje a nejistoty. "
+      value:
+        "/ai Vytvoř krizový situační přehled pro aktuální oblast. Zaměř se na vodu, počasí, požáry, policii, zdravotní rizika, dopravu, dostupné zdroje a nejistoty. "
     }
   ];
 }
@@ -4541,7 +4895,12 @@ function MessageRow({
   selected: boolean;
   senderLabel: string;
   onDownloadAttachment: (message: MatrixTimelineMessage) => void;
-  onOpenActions: (message: MatrixTimelineMessage, rect: DOMRect, stickerTrayOpen?: boolean, mode?: MessageActionPopoverState["mode"]) => void;
+  onOpenActions: (
+    message: MatrixTimelineMessage,
+    rect: DOMRect,
+    stickerTrayOpen?: boolean,
+    mode?: MessageActionPopoverState["mode"]
+  ) => void;
   onOpenPreview: (item: MediaPreviewItem) => void;
   onReact: (message: MatrixTimelineMessage, key: string) => void;
   onToggleSelected: (messageId: string) => void;
@@ -4564,7 +4923,9 @@ function MessageRow({
   React.useEffect(() => clearLongPressTimer, [clearLongPressTimer]);
 
   function openActions(stickerTrayOpen = false, mode: MessageActionPopoverState["mode"] = "actions") {
-    const rect = rowRef.current?.querySelector(".message-bubble")?.getBoundingClientRect() ?? rowRef.current?.getBoundingClientRect();
+    const rect =
+      rowRef.current?.querySelector(".message-bubble")?.getBoundingClientRect() ??
+      rowRef.current?.getBoundingClientRect();
     if (rect) {
       onOpenActions(message, rect, stickerTrayOpen, mode);
     }
@@ -4573,7 +4934,17 @@ function MessageRow({
   return (
     <article
       ref={rowRef}
-      className={clsx("message-row", message.own && "own", grouped && "grouped", selectable && "selectable", selected && "selected", focused && "action-focused", activeSearchMatch && "search-active", hasReactions && "has-reactions", hasAiMetadata && "ai-message")}
+      className={clsx(
+        "message-row",
+        message.own && "own",
+        grouped && "grouped",
+        selectable && "selectable",
+        selected && "selected",
+        focused && "action-focused",
+        activeSearchMatch && "search-active",
+        hasReactions && "has-reactions",
+        hasAiMetadata && "ai-message"
+      )}
       data-message-id={message.eventId}
       onClick={(event) => {
         if (longPressHandledRef.current) {
@@ -4776,7 +5147,9 @@ export function aiMapActionsForMessage(message: MatrixTimelineMessage): MatrixCo
 }
 
 function aiMapActionsFromMessageBody(body: string): MatrixCopMapAction[] | undefined {
-  const coordinates = body.match(/(?:souřadnice|souradnice|coordinates)\s*:\s*(-?\d{1,2}(?:[.,]\d+)?)\s*,\s*(-?\d{1,3}(?:[.,]\d+)?)/iu);
+  const coordinates = body.match(
+    /(?:souřadnice|souradnice|coordinates)\s*:\s*(-?\d{1,2}(?:[.,]\d+)?)\s*,\s*(-?\d{1,3}(?:[.,]\d+)?)/iu
+  );
   if (!coordinates) {
     return undefined;
   }
@@ -4785,19 +5158,24 @@ function aiMapActionsFromMessageBody(body: string): MatrixCopMapAction[] | undef
   if (lat === undefined || lon === undefined) {
     return undefined;
   }
-  const title = optionalAiText(body.match(/Našel jsem[\s\S]*?:\s*(?<title>[\s\S]*?)\.\s+Kategorie:/iu)?.groups?.title)
-    ?? optionalAiText(body.match(/^\s*(?<title>[^\n.]{8,180})/u)?.groups?.title)
-    ?? "Mapový výsledek";
-  const distanceText = optionalAiText(body.match(/Vzdálenost[^:]*:\s*(?<distance>[0-9]+(?:[,.][0-9]+)?\s*(?:km|m))/iu)?.groups?.distance);
-  return [{
-    action: "focus-map",
-    ...(distanceText ? { distanceText } : {}),
-    label: distanceText ? `Zobrazit na mapě: ${title} (${distanceText})` : `Zobrazit na mapě: ${title}`,
-    lat,
-    lon,
-    title,
-    zoom: 16
-  }];
+  const title =
+    optionalAiText(body.match(/Našel jsem[\s\S]*?:\s*(?<title>[\s\S]*?)\.\s+Kategorie:/iu)?.groups?.title) ??
+    optionalAiText(body.match(/^\s*(?<title>[^\n.]{8,180})/u)?.groups?.title) ??
+    "Mapový výsledek";
+  const distanceText = optionalAiText(
+    body.match(/Vzdálenost[^:]*:\s*(?<distance>[0-9]+(?:[,.][0-9]+)?\s*(?:km|m))/iu)?.groups?.distance
+  );
+  return [
+    {
+      action: "focus-map",
+      ...(distanceText ? { distanceText } : {}),
+      label: distanceText ? `Zobrazit na mapě: ${title} (${distanceText})` : `Zobrazit na mapě: ${title}`,
+      lat,
+      lon,
+      title,
+      zoom: 16
+    }
+  ];
 }
 
 function chatCenterFeatureKindFromAiAction(action: MatrixCopMapAction): "feature" | "place" | "track" | undefined {
@@ -4850,7 +5228,7 @@ function shortAuditId(value: string): string {
 function ReplyPreview({ message }: { message: MatrixTimelineMessage }) {
   return (
     <span className="message-reply-preview">
-      <strong>{message.own ? "Vy" : message.senderDisplayName ?? "Člen"}</strong>
+      <strong>{message.own ? "Vy" : (message.senderDisplayName ?? "Člen")}</strong>
       <small>{messagePreviewText(message)}</small>
     </span>
   );
@@ -4864,7 +5242,12 @@ function MessageReactions({
 }: {
   message: MatrixTimelineMessage;
   reactions: NonNullable<MatrixTimelineMessage["reactions"]>;
-  onOpenActions: (message: MatrixTimelineMessage, rect: DOMRect, stickerTrayOpen?: boolean, mode?: MessageActionPopoverState["mode"]) => void;
+  onOpenActions: (
+    message: MatrixTimelineMessage,
+    rect: DOMRect,
+    stickerTrayOpen?: boolean,
+    mode?: MessageActionPopoverState["mode"]
+  ) => void;
   onReact: (message: MatrixTimelineMessage, key: string) => void;
 }) {
   return (
@@ -4900,7 +5283,9 @@ function HighlightedMessageText({ query, text }: { query: string; text: string }
   const parts = splitTextByQuery(text, normalizedQuery);
   return (
     <span className="message-text">
-      {parts.map((part, index) => part.match ? <mark key={index}>{part.text}</mark> : <React.Fragment key={index}>{part.text}</React.Fragment>)}
+      {parts.map((part, index) =>
+        part.match ? <mark key={index}>{part.text}</mark> : <React.Fragment key={index}>{part.text}</React.Fragment>
+      )}
     </span>
   );
 }
@@ -4930,7 +5315,8 @@ function AttachmentMessage({
     }
     let cancelled = false;
     setLoading(true);
-    matrixSession.downloadAttachment(message)
+    matrixSession
+      .downloadAttachment(message)
       .then((blob) => {
         if (!cancelled) {
           setObjectUrl(window.URL.createObjectURL(blob));
@@ -4951,11 +5337,14 @@ function AttachmentMessage({
     };
   }, [attachment, canRenderMedia, matrixSession, message, objectUrl, thumbnailUrl]);
 
-  React.useEffect(() => () => {
-    if (objectUrl?.startsWith("blob:")) {
-      window.URL.revokeObjectURL(objectUrl);
-    }
-  }, [objectUrl]);
+  React.useEffect(
+    () => () => {
+      if (objectUrl?.startsWith("blob:")) {
+        window.URL.revokeObjectURL(objectUrl);
+      }
+    },
+    [objectUrl]
+  );
 
   if (!attachment) {
     return null;
@@ -4977,23 +5366,38 @@ function AttachmentMessage({
           type="button"
           aria-label={`Otevřít ${attachment.fileName}`}
         >
-          {message.kind === "image" && (objectUrl || thumbnailUrl) ? <img alt="" src={objectUrl ?? thumbnailUrl ?? ""} /> : null}
+          {message.kind === "image" && (objectUrl || thumbnailUrl) ? (
+            <img alt="" src={objectUrl ?? thumbnailUrl ?? ""} />
+          ) : null}
           {message.kind === "video" && objectUrl ? <video muted playsInline src={objectUrl} /> : null}
           {message.kind === "video" && !objectUrl && thumbnailUrl ? (
             <span className="attachment-video-poster">
               <img alt="" src={thumbnailUrl} />
-              <span><Video size={18} /> Video</span>
+              <span>
+                <Video size={18} /> Video
+              </span>
             </span>
           ) : null}
-          {message.kind === "image" && !objectUrl && !thumbnailUrl ? <PreviewPlaceholder loading={loading} failed={failed} icon={<ImageIcon size={22} />} /> : null}
-          {message.kind === "video" && !objectUrl && !thumbnailUrl ? <PreviewPlaceholder loading={loading} failed={failed} icon={<Video size={22} />} /> : null}
-          {message.kind === "file" ? <DocumentThumb contentType={attachment.contentType} fileName={attachment.fileName} /> : null}
+          {message.kind === "image" && !objectUrl && !thumbnailUrl ? (
+            <PreviewPlaceholder loading={loading} failed={failed} icon={<ImageIcon size={22} />} />
+          ) : null}
+          {message.kind === "video" && !objectUrl && !thumbnailUrl ? (
+            <PreviewPlaceholder loading={loading} failed={failed} icon={<Video size={22} />} />
+          ) : null}
+          {message.kind === "file" ? (
+            <DocumentThumb contentType={attachment.contentType} fileName={attachment.fileName} />
+          ) : null}
         </button>
         <span className="attachment-copy">
           <strong>{attachment.fileName}</strong>
           <small>{attachmentMeta(message)}</small>
         </span>
-        <button className="round-icon small" onClick={() => onDownloadAttachment(message)} type="button" aria-label="Stáhnout">
+        <button
+          className="round-icon small"
+          onClick={() => onDownloadAttachment(message)}
+          type="button"
+          aria-label="Stáhnout"
+        >
           <Download size={16} />
         </button>
       </div>
@@ -5010,7 +5414,13 @@ function PreviewPlaceholder({ failed, icon, loading }: { failed: boolean; icon: 
   );
 }
 
-function LocationMessage({ message, onOpenPreview }: { message: MatrixTimelineMessage; onOpenPreview: (item: MediaPreviewItem) => void }) {
+function LocationMessage({
+  message,
+  onOpenPreview
+}: {
+  message: MatrixTimelineMessage;
+  onOpenPreview: (item: MediaPreviewItem) => void;
+}) {
   const location = message.location;
   if (!location) {
     return null;
@@ -5031,13 +5441,17 @@ function TransitMessage({ message }: { message: MatrixTimelineMessage }) {
   if (!transit) {
     return null;
   }
-  const title = [transit.transportMode ? formatTransitModeLabel(transit.transportMode) : "Spoj", transit.routeShortName].filter(Boolean).join(" ");
+  const title = [transit.transportMode ? formatTransitModeLabel(transit.transportMode) : "Spoj", transit.routeShortName]
+    .filter(Boolean)
+    .join(" ");
   return (
     <div className="transit-card">
-      <span className="transit-card-icon"><Bus size={22} /></span>
+      <span className="transit-card-icon">
+        <Bus size={22} />
+      </span>
       <span>
         <strong>{title}</strong>
-        <small>{transit.destination ? `směr ${transit.destination}` : transit.label ?? "Sdílený spoj"}</small>
+        <small>{transit.destination ? `směr ${transit.destination}` : (transit.label ?? "Sdílený spoj")}</small>
         {transit.nextStopName ? <small>Příští zastávka: {transit.nextStopName}</small> : null}
         {transit.status ? <em>{formatTransitStatusLabel(transit.status)}</em> : null}
       </span>
@@ -5058,13 +5472,19 @@ function WelcomePane({
 }) {
   return (
     <div className="welcome-pane">
-      <span className="welcome-icon"><MessageCircle size={34} /></span>
+      <span className="welcome-icon">
+        <MessageCircle size={34} />
+      </span>
       <h2>Vyberte chat</h2>
       <div className="welcome-actions">
         {authenticated ? (
-          <button className="primary-dialog-action" onClick={onNewChat} type="button">Nový chat</button>
+          <button className="primary-dialog-action" onClick={onNewChat} type="button">
+            Nový chat
+          </button>
         ) : isOidcEnabled(authConfig) ? (
-          <button className="primary-dialog-action" onClick={onLogin} type="button">Přihlásit</button>
+          <button className="primary-dialog-action" onClick={onLogin} type="button">
+            Přihlásit
+          </button>
         ) : null}
       </div>
     </div>
@@ -5089,7 +5509,11 @@ function ChatLockedState({
       <span>{icon}</span>
       <strong>{title}</strong>
       {text ? <p>{text}</p> : null}
-      {actionLabel && onAction ? <button className="primary-dialog-action" onClick={onAction} type="button">{actionLabel}</button> : null}
+      {actionLabel && onAction ? (
+        <button className="primary-dialog-action" onClick={onAction} type="button">
+          {actionLabel}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -5111,7 +5535,11 @@ function StatusBanner({
     <div className={clsx("status-banner", kind === "error" && "error")} role={kind === "error" ? "alert" : "status"}>
       {kind === "error" ? <AlertCircle size={17} /> : <ShieldCheck size={17} />}
       <span>{text}</span>
-      {actionLabel && onAction ? <button className="status-banner-action" onClick={onAction} type="button">{actionLabel}</button> : null}
+      {actionLabel && onAction ? (
+        <button className="status-banner-action" onClick={onAction} type="button">
+          {actionLabel}
+        </button>
+      ) : null}
       {onClose ? (
         <button className="round-icon small" onClick={onClose} type="button" aria-label="Zavřít">
           <X size={15} />
@@ -5126,7 +5554,11 @@ function ListPrompt({ actionLabel, title, onAction }: { actionLabel?: string; ti
     <div className="list-prompt">
       <MessageCircle size={24} />
       <strong>{title}</strong>
-      {actionLabel && onAction ? <button onClick={onAction} type="button">{actionLabel}</button> : null}
+      {actionLabel && onAction ? (
+        <button onClick={onAction} type="button">
+          {actionLabel}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -5137,7 +5569,10 @@ function ChatSkeleton() {
       {Array.from({ length: 8 }, (_, index) => (
         <div className="chat-skeleton" key={index}>
           <span />
-          <div><b /><small /></div>
+          <div>
+            <b />
+            <small />
+          </div>
         </div>
       ))}
     </>
@@ -5202,10 +5637,13 @@ function ChatInfoPanel({
   const isDirect = activeChat.type === "direct";
   const aiAssistant = group ? communityGroupAiAssistantMetadata(group) : null;
   const members = infoMembersForChat(activeChat, conversation, group, authSession);
-  const mediaMessages = messages.filter((message) => message.attachment && (message.kind === "image" || message.kind === "video"));
+  const mediaMessages = messages.filter(
+    (message) => message.attachment && (message.kind === "image" || message.kind === "video")
+  );
   const documentMessages = messages.filter((message) => message.attachment && message.kind === "file");
   const locationMessages = messages.filter((message) => message.kind === "location" && message.location);
-  const activeMediaMessages = mediaTab === "media" ? mediaMessages : mediaTab === "documents" ? documentMessages : locationMessages;
+  const activeMediaMessages =
+    mediaTab === "media" ? mediaMessages : mediaTab === "documents" ? documentMessages : locationMessages;
   const title = isDirect ? "O kontaktu" : "O skupině";
   const modal = useModalFocus<HTMLElement>(onClose);
   return (
@@ -5242,23 +5680,38 @@ function ChatInfoPanel({
         </aside>
         <div className="info-content">
           <header className="info-hero">
-            <Avatar label={activeChat.title} mediaAccessToken={mediaAccessToken} src={activeChat.avatarUrl} variant={activeChat.avatarVariant} />
+            <Avatar
+              label={activeChat.title}
+              mediaAccessToken={mediaAccessToken}
+              src={activeChat.avatarUrl}
+              variant={activeChat.avatarVariant}
+            />
             <div>
               <h2>{activeChat.title}</h2>
-              <p>{isDirect ? "Přímý chat" : `${activeChat.memberCount} ${activeChat.memberCount === 1 ? "člen" : activeChat.memberCount < 5 ? "členové" : "členů"}`}</p>
+              <p>
+                {isDirect
+                  ? "Přímý chat"
+                  : `${activeChat.memberCount} ${activeChat.memberCount === 1 ? "člen" : activeChat.memberCount < 5 ? "členové" : "členů"}`}
+              </p>
             </div>
           </header>
 
           {tab === "info" ? (
             <div className="info-section">
               <InfoMetric label="Typ" value={isDirect ? "Soukromý chat" : "Veřejná skupina"} />
-              <InfoMetric label="Šifrování" value={activeChat.room?.encrypted ? "Zapnuto pro tuto místnost" : "Připraveno při otevření místnosti"} />
+              <InfoMetric
+                label="Šifrování"
+                value={activeChat.room?.encrypted ? "Zapnuto pro tuto místnost" : "Připraveno při otevření místnosti"}
+              />
               <InfoMetric label="Upozornění" value={muted ? "Ztlumeno" : "Zapnuto"} />
               <InfoMetric label="Připnutí" value={pinned ? "Chat je připnutý" : "Chat není připnutý"} />
               <InfoMetric label="Aplikace" value={deviceDiagnostics.pwaStandalone ? "PWA režim" : "Prohlížeč"} />
               <InfoMetric label="Web Push" value={webPushDiagnosticsLabel(deviceDiagnostics)} />
               <InfoMetric label="Matrix sync" value={matrixSyncDiagnosticsLabel(deviceDiagnostics)} />
-              <InfoMetric label="E2EE zařízení" value={deviceDiagnostics.e2eeReady ? "Připravené" : "Vyžaduje obnovu"} />
+              <InfoMetric
+                label="E2EE zařízení"
+                value={deviceDiagnostics.e2eeReady ? "Připravené" : "Vyžaduje obnovu"}
+              />
               <button className="info-setting-row" onClick={onOpenRetentionSettings} type="button">
                 <span>
                   <Clock3 size={20} />
@@ -5324,9 +5777,27 @@ function ChatInfoPanel({
           {tab === "media" ? (
             <div className="info-section media-section">
               <div className="media-tabs" role="tablist" aria-label="Typ příloh">
-                <button className={mediaTab === "media" ? "active" : ""} onClick={() => onMediaTabChange("media")} type="button">Média</button>
-                <button className={mediaTab === "documents" ? "active" : ""} onClick={() => onMediaTabChange("documents")} type="button">Dokumenty</button>
-                <button className={mediaTab === "locations" ? "active" : ""} onClick={() => onMediaTabChange("locations")} type="button">Polohy</button>
+                <button
+                  className={mediaTab === "media" ? "active" : ""}
+                  onClick={() => onMediaTabChange("media")}
+                  type="button"
+                >
+                  Média
+                </button>
+                <button
+                  className={mediaTab === "documents" ? "active" : ""}
+                  onClick={() => onMediaTabChange("documents")}
+                  type="button"
+                >
+                  Dokumenty
+                </button>
+                <button
+                  className={mediaTab === "locations" ? "active" : ""}
+                  onClick={() => onMediaTabChange("locations")}
+                  type="button"
+                >
+                  Polohy
+                </button>
               </div>
               {activeMediaMessages.length === 0 ? (
                 <div className="media-empty">Zatím žádné položky.</div>
@@ -5337,11 +5808,29 @@ function ChatInfoPanel({
                     const thumbnailUrl = directBrowserThumbnailUrl(message);
                     const gridImageUrl = mediaUrl ?? thumbnailUrl;
                     return (
-                      <button key={message.eventId} onClick={() => onOpenPreview(matrixMessagePreviewItem(message, mediaUrl ?? undefined, thumbnailUrl ?? undefined))} type="button">
+                      <button
+                        key={message.eventId}
+                        onClick={() =>
+                          onOpenPreview(
+                            matrixMessagePreviewItem(message, mediaUrl ?? undefined, thumbnailUrl ?? undefined)
+                          )
+                        }
+                        type="button"
+                      >
                         {gridImageUrl && (message.kind === "image" || message.kind === "video") ? (
                           <img alt="" src={gridImageUrl} />
-                        ) : message.kind === "location" ? <MapPin size={24} /> : message.kind === "file" ? <FileText size={24} /> : <ImageIcon size={24} />}
-                        {message.kind === "video" && gridImageUrl ? <strong className="media-grid-video-badge"><Video size={14} /> Video</strong> : null}
+                        ) : message.kind === "location" ? (
+                          <MapPin size={24} />
+                        ) : message.kind === "file" ? (
+                          <FileText size={24} />
+                        ) : (
+                          <ImageIcon size={24} />
+                        )}
+                        {message.kind === "video" && gridImageUrl ? (
+                          <strong className="media-grid-video-badge">
+                            <Video size={14} /> Video
+                          </strong>
+                        ) : null}
                         <span>{mediaGridLabel(message)}</span>
                       </button>
                     );
@@ -5369,7 +5858,11 @@ function ChatInfoPanel({
                     <strong>{member.name}</strong>
                     <small>{member.subtitle}</small>
                   </span>
-                  {!isDirect && canAddMember && member.subjectId && member.subjectId !== authSession.profile?.subjectId && member.status !== "left" ? (
+                  {!isDirect &&
+                  canAddMember &&
+                  member.subjectId &&
+                  member.subjectId !== authSession.profile?.subjectId &&
+                  member.status !== "left" ? (
                     <button className="member-row-action" onClick={() => onRemoveMember(member)} type="button">
                       <UserMinus size={16} />
                       Odebrat
@@ -5382,7 +5875,9 @@ function ChatInfoPanel({
                   <Avatar label={aiAssistant.label} small variant="ai" />
                   <span>
                     <strong>{aiAssistant.label}</strong>
-                    <small>{aiAssistantStatusLabel(aiAssistant)} • {aiAssistantE2eeLabel(aiAssistant)}</small>
+                    <small>
+                      {aiAssistantStatusLabel(aiAssistant)} • {aiAssistantE2eeLabel(aiAssistant)}
+                    </small>
                   </span>
                 </div>
               ) : null}
@@ -5423,9 +5918,10 @@ function webPushDiagnosticsLabel(diagnostics: ChatDeviceDiagnostics): string {
 }
 
 function matrixSyncDiagnosticsLabel(diagnostics: ChatDeviceDiagnostics): string {
-  const state = diagnostics.matrixSyncState && diagnostics.matrixSyncState !== "idle"
-    ? diagnostics.matrixSyncState
-    : diagnostics.matrixLifecycle;
+  const state =
+    diagnostics.matrixSyncState && diagnostics.matrixSyncState !== "idle"
+      ? diagnostics.matrixSyncState
+      : diagnostics.matrixLifecycle;
   if (!diagnostics.matrixLastSyncAt) {
     return state;
   }
@@ -5437,11 +5933,12 @@ function matrixSyncDiagnosticsLabel(diagnostics: ChatDeviceDiagnostics): string 
 }
 
 function ConnectionDot({ state }: { state: ChatConnectionState }) {
-  const label = state === "online"
-    ? "Kontakt nebo skupina je online"
-    : state === "syncing"
-      ? "Stav spojení se zjišťuje"
-      : "Kontakt nebo skupina není online";
+  const label =
+    state === "online"
+      ? "Kontakt nebo skupina je online"
+      : state === "syncing"
+        ? "Stav spojení se zjišťuje"
+        : "Kontakt nebo skupina není online";
   return <span className={clsx("connection-dot", state)} aria-label={label} role="img" title={label} />;
 }
 
@@ -5497,20 +5994,29 @@ export function buildChatItems({
     const title = chatTitleForConversation(conversation, room, authSubjectId, ownIdentityIds);
     const roomLatest = room?.latestMessage;
     const latest = roomLatest ?? (group ? demoLatestMessageForGroup(group) : undefined);
-    const id = roomId
-      ? `room:${roomId}`
-      : groupId
-        ? `group:${groupId}`
-        : `conversation:${conversation.conversationId}`;
+    const id = roomId ? `room:${roomId}` : groupId ? `group:${groupId}` : `conversation:${conversation.conversationId}`;
     remember({
-      active: selectedConversationId === conversation.conversationId || selectedRoomId === conversation.matrix?.roomId || selectedGroupId === group?.groupId,
-      ...(conversation.type === "direct" && (isAiAgentDirectConversation(conversation) || isAiAgentRoomSummary(room) || isAiAgentDisplayName(title)) ? { avatarVariant: "ai" as const } : {}),
-      avatarUrl: room?.avatarUrl ?? room?.directPeer?.avatarUrl ?? conversation.avatarUrl ?? conversation.directPeer?.avatarUrl ?? directPeer?.avatarUrl,
+      active:
+        selectedConversationId === conversation.conversationId ||
+        selectedRoomId === conversation.matrix?.roomId ||
+        selectedGroupId === group?.groupId,
+      ...(conversation.type === "direct" &&
+      (isAiAgentDirectConversation(conversation) || isAiAgentRoomSummary(room) || isAiAgentDisplayName(title))
+        ? { avatarVariant: "ai" as const }
+        : {}),
+      avatarUrl:
+        room?.avatarUrl ??
+        room?.directPeer?.avatarUrl ??
+        conversation.avatarUrl ??
+        conversation.directPeer?.avatarUrl ??
+        directPeer?.avatarUrl,
       conversation,
       ...(group ? { group } : {}),
       id,
       latest,
-      memberCount: group ? activeCommunityGroupMemberCount(group) : conversation.memberCount ?? conversation.members?.length ?? 2,
+      memberCount: group
+        ? activeCommunityGroupMemberCount(group)
+        : (conversation.memberCount ?? conversation.members?.length ?? 2),
       muted: false,
       pinned: false,
       preferenceKey: chatPreferenceKeyForConversation(conversation, group ?? undefined),
@@ -5519,7 +6025,9 @@ export function buildChatItems({
       roomId,
       searchable: `${title} ${conversation.title} ${group?.name ?? ""} ${conversation.members?.map((member) => member.displayName ?? member.userId).join(" ") ?? ""}`,
       sortAt: timestampMillis(latest?.timestamp ?? conversation.updatedAt ?? group?.updatedAt),
-      timestamp: latest ? formatShortTimestamp(latest.timestamp) : formatShortTimestamp(conversation.updatedAt ?? group?.updatedAt),
+      timestamp: latest
+        ? formatShortTimestamp(latest.timestamp)
+        : formatShortTimestamp(conversation.updatedAt ?? group?.updatedAt),
       title,
       type: conversation.type,
       unreadCount: room?.unreadCount ?? 0
@@ -5571,12 +6079,18 @@ export function buildChatItems({
       muted: false,
       pinned: false,
       preferenceKey: chatPreferenceKeyForGroup(group),
-      preview: metadataLatest ? latestMessagePreview(metadataLatest) : metadataRoomId ? "Nový chat" : "Klepnutím otevřít chat",
+      preview: metadataLatest
+        ? latestMessagePreview(metadataLatest)
+        : metadataRoomId
+          ? "Nový chat"
+          : "Klepnutím otevřít chat",
       ...(metadataRoom ? { room: metadataRoom } : {}),
       roomId: metadataRoomId,
       searchable: `${group.name} ${group.members.map((member) => member.displayName || member.username).join(" ")}`,
       sortAt: timestampMillis(metadataLatest?.timestamp ?? group.updatedAt),
-      timestamp: metadataLatest ? formatShortTimestamp(metadataLatest.timestamp) : formatShortTimestamp(group.updatedAt),
+      timestamp: metadataLatest
+        ? formatShortTimestamp(metadataLatest.timestamp)
+        : formatShortTimestamp(group.updatedAt),
       title: group.name,
       type: "group",
       unreadCount: metadataRoom?.unreadCount ?? 0
@@ -5613,7 +6127,9 @@ export function buildChatItems({
     }
     remember({
       active: selectedRoomId === room.roomId,
-      ...(room.directPeer && (isAiAgentRoomSummary(room) || isAiAgentDisplayName(roomTitle)) ? { avatarVariant: "ai" as const } : {}),
+      ...(room.directPeer && (isAiAgentRoomSummary(room) || isAiAgentDisplayName(roomTitle))
+        ? { avatarVariant: "ai" as const }
+        : {}),
       avatarUrl: room.avatarUrl ?? room.directPeer?.avatarUrl,
       id: `room:${room.roomId}`,
       latest,
@@ -5636,7 +6152,11 @@ export function buildChatItems({
   const normalizedQuery = query.trim().toLocaleLowerCase("cs-CZ");
   return dedupeChatItems(Array.from(items.values()))
     .filter((item) => filter === "all" || (filter === "direct" ? item.type === "direct" : item.type !== "direct"))
-    .filter((item) => normalizedQuery ? `${item.title} ${item.preview} ${item.searchable}`.toLocaleLowerCase("cs-CZ").includes(normalizedQuery) : true)
+    .filter((item) =>
+      normalizedQuery
+        ? `${item.title} ${item.preview} ${item.searchable}`.toLocaleLowerCase("cs-CZ").includes(normalizedQuery)
+        : true
+    )
     .sort((left, right) => right.sortAt - left.sortAt || left.title.localeCompare(right.title, "cs-CZ"));
 }
 
@@ -5668,7 +6188,11 @@ export function dedupeChatItems(items: ChatListItem[]): ChatListItem[] {
 }
 
 function chatDedupeKey(item: ChatListItem): string {
-  const memberIds = item.conversation?.members?.map((member) => member.userId).filter(Boolean).sort().join("|");
+  const memberIds = item.conversation?.members
+    ?.map((member) => member.userId)
+    .filter(Boolean)
+    .sort()
+    .join("|");
   if (item.type === "direct" && memberIds) {
     return `direct:${normalizeDirectIdentityKey(memberIds)}`;
   }
@@ -5746,9 +6270,11 @@ function chatTitleForConversation(
   if (conversation.type !== "direct") {
     return conversation.title;
   }
-  return room?.directPeer?.displayName
-    ?? conversationDirectPeer(conversation, authSubjectId, ownIdentityIds)?.displayName
-    ?? conversation.title;
+  return (
+    room?.directPeer?.displayName ??
+    conversationDirectPeer(conversation, authSubjectId, ownIdentityIds)?.displayName ??
+    conversation.title
+  );
 }
 
 function conversationDirectPeer(
@@ -5759,7 +6285,9 @@ function conversationDirectPeer(
   const members = conversation.members ?? [];
   const fallbackOwnIds = authSubjectId ? new Set([normalizeIdentityId(authSubjectId)]) : new Set<string>();
   const ownIds = ownIdentityIds.size > 0 ? ownIdentityIds : fallbackOwnIds;
-  const peer = members.find((member) => !ownIds.has(normalizeIdentityId(member.userId))) ?? (members.length === 1 ? members[0] : undefined);
+  const peer =
+    members.find((member) => !ownIds.has(normalizeIdentityId(member.userId))) ??
+    (members.length === 1 ? members[0] : undefined);
   if (!peer) {
     return undefined;
   }
@@ -5778,9 +6306,7 @@ function ownChatIdentityIds(session: AuthSession, matrixUserId: string | undefin
     matrixUserId,
     matrixUserId ? matrixUserIdLocalpart(matrixUserId) : undefined
   ];
-  return new Set(values
-    .map((value) => value ? normalizeIdentityId(value) : "")
-    .filter(Boolean));
+  return new Set(values.map((value) => (value ? normalizeIdentityId(value) : "")).filter(Boolean));
 }
 
 function normalizeIdentityId(value: string): string {
@@ -5795,7 +6321,10 @@ function buildForwardTargets(chatItems: ChatListItem[], users: UserDirectoryEntr
   const normalizedQuery = query.trim().toLocaleLowerCase("cs-CZ");
   const targets = new Map<string, ForwardTarget>();
   for (const item of chatItems) {
-    if (normalizedQuery && !`${item.title} ${item.preview} ${item.searchable}`.toLocaleLowerCase("cs-CZ").includes(normalizedQuery)) {
+    if (
+      normalizedQuery &&
+      !`${item.title} ${item.preview} ${item.searchable}`.toLocaleLowerCase("cs-CZ").includes(normalizedQuery)
+    ) {
       continue;
     }
     targets.set(`chat:${item.id}`, {
@@ -5811,7 +6340,9 @@ function buildForwardTargets(chatItems: ChatListItem[], users: UserDirectoryEntr
   for (const user of users) {
     const title = user.displayName?.trim() || user.username || user.subjectId;
     const directKey = `user:${user.subjectId}`;
-    const alreadyVisible = Array.from(targets.values()).some((target) => target.chat?.conversation?.members?.some((member) => member.userId === user.subjectId));
+    const alreadyVisible = Array.from(targets.values()).some((target) =>
+      target.chat?.conversation?.members?.some((member) => member.userId === user.subjectId)
+    );
     if (alreadyVisible) {
       continue;
     }
@@ -5853,19 +6384,25 @@ function chatPreferenceKeyForRoom(roomId: string): string {
   return `room:${roomId}`;
 }
 
-function groupForConversation(conversation: MessagingConversationSummary, groups: CommunityGroup[]): CommunityGroup | null {
+function groupForConversation(
+  conversation: MessagingConversationSummary,
+  groups: CommunityGroup[]
+): CommunityGroup | null {
   const groupId = conversationCommunityGroupId(conversation);
   if (groupId) {
     return groups.find((group) => group.groupId === groupId) ?? null;
   }
   return conversation.type === "group"
-    ? groups.find((group) => communityGroupConversationId(group) === conversation.conversationId)
-      ?? findGroupByTitle(conversation.title, groups)
-      ?? null
+    ? (groups.find((group) => communityGroupConversationId(group) === conversation.conversationId) ??
+        findGroupByTitle(conversation.title, groups) ??
+        null)
     : null;
 }
 
-function findConversationForGroup(group: CommunityGroup, conversations: MessagingConversationSummary[]): MessagingConversationSummary | undefined {
+function findConversationForGroup(
+  group: CommunityGroup,
+  conversations: MessagingConversationSummary[]
+): MessagingConversationSummary | undefined {
   const conversationId = communityGroupConversationId(group);
   if (conversationId) {
     const conversation = conversations.find((item) => item.conversationId === conversationId);
@@ -5880,25 +6417,39 @@ function findGroupByMatrixRoomId(roomId: string, groups: CommunityGroup[]): Comm
   return groups.find((group) => communityGroupMatrixRoomId(group) === roomId);
 }
 
-function findConversationByTitle(title: string, conversations: MessagingConversationSummary[], type?: "direct" | "group"): MessagingConversationSummary | undefined {
+function findConversationByTitle(
+  title: string,
+  conversations: MessagingConversationSummary[],
+  type?: "direct" | "group"
+): MessagingConversationSummary | undefined {
   const normalized = normalizeTitle(title);
-  return conversations.find((conversation) => normalizeTitle(conversation.title) === normalized && (!type || conversation.type === type));
+  return conversations.find(
+    (conversation) => normalizeTitle(conversation.title) === normalized && (!type || conversation.type === type)
+  );
 }
 
 function canUpdateCommunityGroupMetadata(group: CommunityGroup, subjectId: string | null | undefined): boolean {
-  return Boolean(subjectId && group.members.some((member) => member.subjectId === subjectId && member.status === "active"));
+  return Boolean(
+    subjectId && group.members.some((member) => member.subjectId === subjectId && member.status === "active")
+  );
 }
 
 function groupHasActiveMember(group: CommunityGroup, subjectId: string | null | undefined): boolean {
-  return Boolean(subjectId && group.members.some((member) => member.subjectId === subjectId && member.status === "active"));
+  return Boolean(
+    subjectId && group.members.some((member) => member.subjectId === subjectId && member.status === "active")
+  );
 }
 
 function canManageCommunityGroupMembers(group: CommunityGroup, subjectId: string | null | undefined): boolean {
-  return Boolean(subjectId && group.members.some((member) =>
-    member.subjectId === subjectId &&
-    member.status === "active" &&
-    (member.role === "owner" || member.role === "admin")
-  ));
+  return Boolean(
+    subjectId &&
+    group.members.some(
+      (member) =>
+        member.subjectId === subjectId &&
+        member.status === "active" &&
+        (member.role === "owner" || member.role === "admin")
+    )
+  );
 }
 
 function findGroupByTitle(title: string, groups: CommunityGroup[]): CommunityGroup | undefined {
@@ -5992,13 +6543,15 @@ function communityGroupChatMetadata(group: CommunityGroup): CommunityGroupChatMe
   return {
     ...(aiAssistant ? { aiAssistant: communityGroupAiAssistantMetadata(group) } : {}),
     conversationId: typeof chat.conversationId === "string" ? chat.conversationId : undefined,
-    ...(disappearingMessages ? {
-      disappearingMessages: {
-        enabled: retentionEnabled,
-        seconds: retentionEnabled ? retentionSeconds : null,
-        updatedAt: typeof disappearingMessages.updatedAt === "string" ? disappearingMessages.updatedAt : undefined
-      }
-    } : {}),
+    ...(disappearingMessages
+      ? {
+          disappearingMessages: {
+            enabled: retentionEnabled,
+            seconds: retentionEnabled ? retentionSeconds : null,
+            updatedAt: typeof disappearingMessages.updatedAt === "string" ? disappearingMessages.updatedAt : undefined
+          }
+        }
+      : {}),
     encrypted: typeof chat.encrypted === "boolean" ? chat.encrypted : undefined,
     linkedAt: typeof chat.linkedAt === "string" ? chat.linkedAt : undefined,
     matrixRoomId: typeof chat.matrixRoomId === "string" ? chat.matrixRoomId : undefined,
@@ -6013,43 +6566,54 @@ function communityGroupAiAssistantMetadata(group: CommunityGroup): CommunityGrou
   const e2ee = asRecord(aiAssistant?.e2ee);
   const matrixBot = asRecord(aiAssistant?.matrixBot);
   return {
-    ...(consent ? {
-      consent: {
-        granted: consent.granted === true,
-        grantedAt: typeof consent.grantedAt === "string" ? consent.grantedAt : undefined,
-        grantedBy: typeof consent.grantedBy === "string" ? consent.grantedBy : undefined,
-        revokedAt: typeof consent.revokedAt === "string" ? consent.revokedAt : undefined,
-        revokedBy: typeof consent.revokedBy === "string" ? consent.revokedBy : undefined,
-        scope: typeof consent.scope === "string" ? consent.scope : undefined,
-        termsVersion: typeof consent.termsVersion === "string" ? consent.termsVersion : undefined
-      }
-    } : {}),
-    ...(e2ee ? {
-      e2ee: {
-        keyModel: typeof e2ee.keyModel === "string" ? e2ee.keyModel : undefined,
-        plaintextProxy: e2ee.plaintextProxy === true,
-        roomKeyPolicy: typeof e2ee.roomKeyPolicy === "string" ? e2ee.roomKeyPolicy : undefined,
-        serverReadsHistory: e2ee.serverReadsHistory === true,
-        status: typeof e2ee.status === "string" ? e2ee.status : undefined,
-        updatedAt: typeof e2ee.updatedAt === "string" ? e2ee.updatedAt : undefined
-      }
-    } : {}),
+    ...(consent
+      ? {
+          consent: {
+            granted: consent.granted === true,
+            grantedAt: typeof consent.grantedAt === "string" ? consent.grantedAt : undefined,
+            grantedBy: typeof consent.grantedBy === "string" ? consent.grantedBy : undefined,
+            revokedAt: typeof consent.revokedAt === "string" ? consent.revokedAt : undefined,
+            revokedBy: typeof consent.revokedBy === "string" ? consent.revokedBy : undefined,
+            scope: typeof consent.scope === "string" ? consent.scope : undefined,
+            termsVersion: typeof consent.termsVersion === "string" ? consent.termsVersion : undefined
+          }
+        }
+      : {}),
+    ...(e2ee
+      ? {
+          e2ee: {
+            keyModel: typeof e2ee.keyModel === "string" ? e2ee.keyModel : undefined,
+            plaintextProxy: e2ee.plaintextProxy === true,
+            roomKeyPolicy: typeof e2ee.roomKeyPolicy === "string" ? e2ee.roomKeyPolicy : undefined,
+            serverReadsHistory: e2ee.serverReadsHistory === true,
+            status: typeof e2ee.status === "string" ? e2ee.status : undefined,
+            updatedAt: typeof e2ee.updatedAt === "string" ? e2ee.updatedAt : undefined
+          }
+        }
+      : {}),
     enabled: aiAssistant?.enabled === true,
-    label: typeof aiAssistant?.label === "string" && aiAssistant.label.trim() ? aiAssistant.label.trim() : "COP AI Assistant",
-    ...(matrixBot ? {
-      matrixBot: {
-        deviceId: typeof matrixBot.deviceId === "string" ? matrixBot.deviceId : undefined,
-        displayName: typeof matrixBot.displayName === "string" ? matrixBot.displayName : undefined,
-        joinedAt: typeof matrixBot.joinedAt === "string" ? matrixBot.joinedAt : undefined,
-        matrixUserId: typeof matrixBot.matrixUserId === "string" ? matrixBot.matrixUserId : undefined,
-        membership: typeof matrixBot.membership === "string" ? matrixBot.membership : undefined,
-        roomId: typeof matrixBot.roomId === "string" ? matrixBot.roomId : undefined,
-        status: typeof matrixBot.status === "string" ? matrixBot.status : undefined,
-        updatedAt: typeof matrixBot.updatedAt === "string" ? matrixBot.updatedAt : undefined,
-        userId: typeof matrixBot.userId === "string" ? matrixBot.userId : undefined,
-        warnings: Array.isArray(matrixBot.warnings) ? matrixBot.warnings.filter((item): item is string => typeof item === "string").slice(0, 6) : undefined
-      }
-    } : {}),
+    label:
+      typeof aiAssistant?.label === "string" && aiAssistant.label.trim()
+        ? aiAssistant.label.trim()
+        : "COP AI Assistant",
+    ...(matrixBot
+      ? {
+          matrixBot: {
+            deviceId: typeof matrixBot.deviceId === "string" ? matrixBot.deviceId : undefined,
+            displayName: typeof matrixBot.displayName === "string" ? matrixBot.displayName : undefined,
+            joinedAt: typeof matrixBot.joinedAt === "string" ? matrixBot.joinedAt : undefined,
+            matrixUserId: typeof matrixBot.matrixUserId === "string" ? matrixBot.matrixUserId : undefined,
+            membership: typeof matrixBot.membership === "string" ? matrixBot.membership : undefined,
+            roomId: typeof matrixBot.roomId === "string" ? matrixBot.roomId : undefined,
+            status: typeof matrixBot.status === "string" ? matrixBot.status : undefined,
+            updatedAt: typeof matrixBot.updatedAt === "string" ? matrixBot.updatedAt : undefined,
+            userId: typeof matrixBot.userId === "string" ? matrixBot.userId : undefined,
+            warnings: Array.isArray(matrixBot.warnings)
+              ? matrixBot.warnings.filter((item): item is string => typeof item === "string").slice(0, 6)
+              : undefined
+          }
+        }
+      : {}),
     mode: "cop-context",
     updatedAt: typeof aiAssistant?.updatedAt === "string" ? aiAssistant.updatedAt : undefined,
     updatedBy: typeof aiAssistant?.updatedBy === "string" ? aiAssistant.updatedBy : undefined
@@ -6093,7 +6657,9 @@ function demoConversationMetadata(group: CommunityGroup): DemoConversationMetada
     return null;
   }
   const messages = Array.isArray(raw.messages)
-    ? raw.messages.map(parseDemoConversationMessage).filter((message): message is DemoConversationMessage => Boolean(message))
+    ? raw.messages
+        .map(parseDemoConversationMessage)
+        .filter((message): message is DemoConversationMessage => Boolean(message))
     : [];
   const media = Array.isArray(raw.media)
     ? raw.media.map(parseDemoConversationMedia).filter((item): item is DemoConversationMedia => Boolean(item))
@@ -6101,11 +6667,15 @@ function demoConversationMetadata(group: CommunityGroup): DemoConversationMetada
   const metadata: DemoConversationMetadata = {
     media,
     messages,
-    ...(typeof raw.pinnedContext === "string" && raw.pinnedContext.trim() ? { pinnedContext: raw.pinnedContext.trim() } : {}),
+    ...(typeof raw.pinnedContext === "string" && raw.pinnedContext.trim()
+      ? { pinnedContext: raw.pinnedContext.trim() }
+      : {}),
     ...(typeof raw.summary === "string" && raw.summary.trim() ? { summary: raw.summary.trim() } : {}),
     ...(typeof raw.title === "string" && raw.title.trim() ? { title: raw.title.trim() } : {})
   };
-  return metadata.messages.length > 0 || metadata.media.length > 0 || metadata.summary || metadata.pinnedContext ? metadata : null;
+  return metadata.messages.length > 0 || metadata.media.length > 0 || metadata.summary || metadata.pinnedContext
+    ? metadata
+    : null;
 }
 
 function demoTimelineMessagesForGroup(group: CommunityGroup, authSession?: AuthSession): MatrixTimelineMessage[] {
@@ -6115,11 +6685,12 @@ function demoTimelineMessagesForGroup(group: CommunityGroup, authSession?: AuthS
   }
   const messages: MatrixTimelineMessage[] = [];
   const firstMessageMillis = Math.min(
-    ...demo.messages
-      .map((message) => timestampMillis(message.sentAt))
-      .filter((timestamp) => timestamp > 0)
+    ...demo.messages.map((message) => timestampMillis(message.sentAt)).filter((timestamp) => timestamp > 0)
   );
-  const baseMillis = Number.isFinite(firstMessageMillis) && firstMessageMillis > 0 ? firstMessageMillis : timestampMillis(group.updatedAt) || Date.now();
+  const baseMillis =
+    Number.isFinite(firstMessageMillis) && firstMessageMillis > 0
+      ? firstMessageMillis
+      : timestampMillis(group.updatedAt) || Date.now();
   if (demo.summary || demo.pinnedContext) {
     messages.push({
       body: [demo.summary, demo.pinnedContext].filter(Boolean).join("\n"),
@@ -6138,8 +6709,8 @@ function demoTimelineMessagesForGroup(group: CommunityGroup, authSession?: AuthS
       eventId: `demo:${group.groupId}:${message.id || index}`,
       kind: "text",
       own,
-      sender: own ? authSession?.profile?.subjectId ?? "demo:self" : `demo:${group.groupId}:member:${index}`,
-      senderDisplayName: own ? authSession?.profile?.name ?? message.authorName ?? "Vy" : demoSenderLabel(message),
+      sender: own ? (authSession?.profile?.subjectId ?? "demo:self") : `demo:${group.groupId}:member:${index}`,
+      senderDisplayName: own ? (authSession?.profile?.name ?? message.authorName ?? "Vy") : demoSenderLabel(message),
       timestamp: safeIsoTimestamp(message.sentAt, baseMillis + index * 60_000)
     });
   });
@@ -6184,7 +6755,9 @@ function parseDemoConversationMedia(value: unknown): DemoConversationMedia | nul
   return {
     kind,
     title,
-    ...(typeof raw.byteSizeLabel === "string" && raw.byteSizeLabel.trim() ? { byteSizeLabel: raw.byteSizeLabel.trim() } : {}),
+    ...(typeof raw.byteSizeLabel === "string" && raw.byteSizeLabel.trim()
+      ? { byteSizeLabel: raw.byteSizeLabel.trim() }
+      : {}),
     ...(typeof raw.caption === "string" && raw.caption.trim() ? { caption: raw.caption.trim() } : {}),
     ...(typeof raw.previewUrl === "string" && raw.previewUrl.trim() ? { previewUrl: raw.previewUrl.trim() } : {})
   };
@@ -6194,7 +6767,12 @@ function demoSenderLabel(message: DemoConversationMessage): string {
   return [message.authorName, message.role].filter(Boolean).join(" · ") || "Člen skupiny";
 }
 
-function demoMediaTimelineMessage(group: CommunityGroup, item: DemoConversationMedia, timestampMillisValue: number, index: number): MatrixTimelineMessage {
+function demoMediaTimelineMessage(
+  group: CommunityGroup,
+  item: DemoConversationMedia,
+  timestampMillisValue: number,
+  index: number
+): MatrixTimelineMessage {
   const timestamp = new Date(timestampMillisValue).toISOString();
   const eventId = `demo:${group.groupId}:media:${index}`;
   if (item.kind === "location") {
@@ -6304,15 +6882,22 @@ function communityGroupMatrixRoomId(group: CommunityGroup): string | undefined {
   return communityGroupChatMetadata(group).matrixRoomId;
 }
 
-function messageRetentionSecondsForActiveChat(room: MatrixRoomSummary | null, group: CommunityGroup | null): MessageRetentionSeconds {
-  return normalizeMessageRetentionSeconds(room?.messageRetentionSeconds ?? (group ? communityGroupChatMetadata(group).disappearingMessages?.seconds : null));
+function messageRetentionSecondsForActiveChat(
+  room: MatrixRoomSummary | null,
+  group: CommunityGroup | null
+): MessageRetentionSeconds {
+  return normalizeMessageRetentionSeconds(
+    room?.messageRetentionSeconds ?? (group ? communityGroupChatMetadata(group).disappearingMessages?.seconds : null)
+  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined;
 }
 
-function communityGroupMembersToMessagingMembers(group: CommunityGroup): Array<{ displayName?: string; role?: string; userId: string }> {
+function communityGroupMembersToMessagingMembers(
+  group: CommunityGroup
+): Array<{ displayName?: string; role?: string; userId: string }> {
   return group.members
     .filter((member) => member.status === "active")
     .map((member) => ({
@@ -6347,7 +6932,11 @@ function findExistingDirectConversation(
   return candidates.find((conversation) => Boolean(conversation.matrix?.roomId)) ?? candidates[0];
 }
 
-function ensureConversationHasMember(conversation: MessagingConversationSummary, user: UserDirectoryEntry, role: "bot" | "member" = "member"): MessagingConversationSummary {
+function ensureConversationHasMember(
+  conversation: MessagingConversationSummary,
+  user: UserDirectoryEntry,
+  role: "bot" | "member" = "member"
+): MessagingConversationSummary {
   if (conversation.members?.some((member) => member.userId === user.subjectId)) {
     return conversation;
   }
@@ -6360,24 +6949,32 @@ function ensureConversationHasMember(conversation: MessagingConversationSummary,
   };
 }
 
-function findExistingAiAgentDirectConversation(conversations: MessagingConversationSummary[]): MessagingConversationSummary | undefined {
+function findExistingAiAgentDirectConversation(
+  conversations: MessagingConversationSummary[]
+): MessagingConversationSummary | undefined {
   const candidates = conversations.filter(isAiAgentDirectConversation);
   return candidates.find((conversation) => Boolean(conversation.matrix?.roomId)) ?? candidates[0];
 }
 
 export function isAiAgentChatItem(item: ChatListItem): boolean {
-  return item.type === "direct" && (
-    isAiAgentDirectConversation(item.conversation)
-    || isAiAgentRoomSummary(item.room)
-    || isAiAgentDisplayName(item.title)
+  return (
+    item.type === "direct" &&
+    (isAiAgentDirectConversation(item.conversation) ||
+      isAiAgentRoomSummary(item.room) ||
+      isAiAgentDisplayName(item.title))
   );
 }
 
-function isAiAgentDirectConversation(conversation: MessagingConversationSummary | null | undefined): conversation is MessagingConversationSummary {
+function isAiAgentDirectConversation(
+  conversation: MessagingConversationSummary | null | undefined
+): conversation is MessagingConversationSummary {
   if (!conversation || conversation.type !== "direct") {
     return false;
   }
-  if (conversation.metadata?.source === "cop.ai.direct" || conversation.metadata?.externalId === copAiAgentUser.subjectId) {
+  if (
+    conversation.metadata?.source === "cop.ai.direct" ||
+    conversation.metadata?.externalId === copAiAgentUser.subjectId
+  ) {
     return true;
   }
   return Boolean(conversation.members?.some((member) => member.userId === copAiAgentUser.subjectId));
@@ -6396,16 +6993,21 @@ function isAiAgentUserId(value: string | undefined): boolean {
   }
   const normalized = normalizeIdentityId(value);
   const localpart = matrixUserIdLocalpart(value);
-  return normalized === normalizeIdentityId(copAiAgentUser.subjectId)
-    || normalized === normalizeIdentityId(copAiAgentUser.username)
-    || (localpart ? normalizeIdentityId(localpart) === normalizeIdentityId(copAiAgentUser.subjectId) : false);
+  return (
+    normalized === normalizeIdentityId(copAiAgentUser.subjectId) ||
+    normalized === normalizeIdentityId(copAiAgentUser.username) ||
+    (localpart ? normalizeIdentityId(localpart) === normalizeIdentityId(copAiAgentUser.subjectId) : false)
+  );
 }
 
 function isAiAgentDisplayName(value: string | undefined): boolean {
   return Boolean(value && normalizeTitle(value) === normalizeTitle(copAiAgentUser.displayName));
 }
 
-function matrixUserIdsFromResolution(result: MessagingMatrixIdentityResolutionResponse, requestedUserIds: string[]): string[] {
+function matrixUserIdsFromResolution(
+  result: MessagingMatrixIdentityResolutionResponse,
+  requestedUserIds: string[]
+): string[] {
   if (result.status !== "online") {
     throw new Error(result.warnings[0] ?? "Některé členy se nepodařilo pozvat do konverzace.");
   }
@@ -6425,7 +7027,10 @@ function assertMatrixRoomBindingConfirmed(binding: MessagingMatrixRoomBindingRes
   throw new Error(binding.warnings[0] ?? "Služba zpráv zatím nepotvrdila zabezpečenou konverzaci.");
 }
 
-function upsertConversation(current: MessagingConversationSummary[], conversation: MessagingConversationSummary): MessagingConversationSummary[] {
+function upsertConversation(
+  current: MessagingConversationSummary[],
+  conversation: MessagingConversationSummary
+): MessagingConversationSummary[] {
   return [conversation, ...current.filter((item) => item.conversationId !== conversation.conversationId)];
 }
 
@@ -6436,18 +7041,28 @@ function ensureRoomSummary(rooms: MatrixRoomSummary[], room: MatrixRoomSummary):
   return [room, ...rooms];
 }
 
-function selectRoomIdFromKey(selection: string | null | undefined, conversations: MessagingConversationSummary[], rooms: MatrixRoomSummary[]): string | null {
+function selectRoomIdFromKey(
+  selection: string | null | undefined,
+  conversations: MessagingConversationSummary[],
+  rooms: MatrixRoomSummary[]
+): string | null {
   if (!selection) {
     return null;
   }
-  const conversation = conversations.find((item) => item.conversationId === selection || item.matrix?.roomId === selection);
+  const conversation = conversations.find(
+    (item) => item.conversationId === selection || item.matrix?.roomId === selection
+  );
   if (conversation?.matrix?.roomId) {
     return conversation.matrix.roomId;
   }
   return rooms.some((room) => room.roomId === selection) ? selection : null;
 }
 
-function messageSenderLabel(message: MatrixTimelineMessage, conversation: MessagingConversationSummary | null, session: AuthSession): string {
+function messageSenderLabel(
+  message: MatrixTimelineMessage,
+  conversation: MessagingConversationSummary | null,
+  session: AuthSession
+): string {
   if (message.own) {
     return "Vy";
   }
@@ -6457,7 +7072,10 @@ function messageSenderLabel(message: MatrixTimelineMessage, conversation: Messag
   const sender = message.sender.toLocaleLowerCase("cs-CZ");
   const match = conversation?.members?.find((member) => {
     const userId = member.userId.toLocaleLowerCase("cs-CZ");
-    return sender.includes(userId) || (member.displayName ? sender.includes(member.displayName.toLocaleLowerCase("cs-CZ")) : false);
+    return (
+      sender.includes(userId) ||
+      (member.displayName ? sender.includes(member.displayName.toLocaleLowerCase("cs-CZ")) : false)
+    );
   });
   if (match?.displayName) {
     return match.displayName;
@@ -6517,11 +7135,12 @@ function parseAiAgentSlashCommand(text: string): AiAgentInvocation | null {
     return null;
   }
   const command = (match.groups.command ?? "").toLocaleLowerCase("cs-CZ");
-  const fallbackPreference: AiModelPreference = command === "reasoning" || command === "reason"
-    ? "reasoning"
-    : command === "fast" || command === "ai" || command === "cop-ai" || command === "copai"
-      ? "fast"
-      : "auto";
+  const fallbackPreference: AiModelPreference =
+    command === "reasoning" || command === "reason"
+      ? "reasoning"
+      : command === "fast" || command === "ai" || command === "cop-ai" || command === "copai"
+        ? "fast"
+        : "auto";
   const normalized = normalizeAiAgentQuestion(match.groups.question ?? "", fallbackPreference);
   return {
     modelPreference: normalized.modelPreference,
@@ -6534,7 +7153,10 @@ function isTomatoSlashCommand(text: string): boolean {
   return /^\/(?:tomato|rajce|rajcata|rajcatova-sklizen)\s*$/iu.test(text.trim());
 }
 
-function normalizeAiAgentQuestion(question: string, fallbackPreference: AiModelPreference): { modelPreference: AiModelPreference; question: string } {
+function normalizeAiAgentQuestion(
+  question: string,
+  fallbackPreference: AiModelPreference
+): { modelPreference: AiModelPreference; question: string } {
   const trimmed = question.trim();
   const modelMatch = trimmed.match(/^\/(?<model>reasoning|reason|fast|auto)\b[\s:,-]*(?<question>[\s\S]*)$/iu);
   if (!modelMatch?.groups) {
@@ -6560,25 +7182,29 @@ export function formatAiSituationShareBody(summary: string): string {
   return `AI situační souhrn:\n\n${summary.trim()}`.trim();
 }
 
-export function buildAiRequestContextOptions(messages: MatrixTimelineMessage[], hostLocation?: MatrixLocationShare): {
+export function buildAiRequestContextOptions(
+  messages: MatrixTimelineMessage[],
+  hostLocation?: MatrixLocationShare
+): {
   geoContext?: AiContextGeoContext;
   timeWindow: AiContextTimeWindow;
 } {
-  const latestLocation = hostLocation && validMatrixLocation(hostLocation)
-    ? hostLocation
-    : latestTimelineLocation(messages);
+  const latestLocation =
+    hostLocation && validMatrixLocation(hostLocation) ? hostLocation : latestTimelineLocation(messages);
   return {
-    ...(latestLocation ? {
-      geoContext: {
-        currentLocation: {
-          ...(latestLocation.label ? { label: latestLocation.label } : {}),
-          lat: latestLocation.lat,
-          lon: latestLocation.lon,
-          radiusKm: 30
-        },
-        label: latestLocation.label ?? "Sdílená poloha v chatu"
-      }
-    } : {}),
+    ...(latestLocation
+      ? {
+          geoContext: {
+            currentLocation: {
+              ...(latestLocation.label ? { label: latestLocation.label } : {}),
+              lat: latestLocation.lat,
+              lon: latestLocation.lon,
+              radiusKm: 30
+            },
+            label: latestLocation.label ?? "Sdílená poloha v chatu"
+          }
+        }
+      : {}),
     timeWindow: {
       maxAgeSeconds: 7 * 24 * 3600
     }
@@ -6613,12 +7239,14 @@ function latestTimelineLocation(messages: MatrixTimelineMessage[]): MatrixLocati
 }
 
 function validMatrixLocation(location: MatrixLocationShare): boolean {
-  return Number.isFinite(location.lat)
-    && Number.isFinite(location.lon)
-    && location.lat >= -90
-    && location.lat <= 90
-    && location.lon >= -180
-    && location.lon <= 180;
+  return (
+    Number.isFinite(location.lat) &&
+    Number.isFinite(location.lon) &&
+    location.lat >= -90 &&
+    location.lat <= 90 &&
+    location.lon >= -180 &&
+    location.lon <= 180
+  );
 }
 
 export function buildAiChatContextSnapshot(
@@ -6636,14 +7264,16 @@ export function buildAiChatContextSnapshot(
         return null;
       }
       return {
-        ...(message.cop?.ai ? {
-          ai: {
-            ...(message.cop.ai.auditId ? { auditId: message.cop.ai.auditId } : {}),
-            ...(message.cop.ai.provider ? { provider: message.cop.ai.provider } : {}),
-            ...(message.cop.ai.status ? { status: message.cop.ai.status } : {}),
-            ...(message.cop.ai.type ? { type: message.cop.ai.type } : {})
-          }
-        } : {}),
+        ...(message.cop?.ai
+          ? {
+              ai: {
+                ...(message.cop.ai.auditId ? { auditId: message.cop.ai.auditId } : {}),
+                ...(message.cop.ai.provider ? { provider: message.cop.ai.provider } : {}),
+                ...(message.cop.ai.status ? { status: message.cop.ai.status } : {}),
+                ...(message.cop.ai.type ? { type: message.cop.ai.type } : {})
+              }
+            }
+          : {}),
         body: body.slice(0, 1200),
         eventId: message.eventId,
         kind: message.kind,
@@ -6744,7 +7374,9 @@ function buildAiMessageMetadata(
       ...(response?.provider ? { provider: response.provider } : {}),
       ...(question ? { question } : {}),
       ...(response?.requestId ? { requestId: response.requestId } : {}),
-      ...(evidence.semanticDocumentCount !== undefined ? { semanticDocumentCount: evidence.semanticDocumentCount } : {}),
+      ...(evidence.semanticDocumentCount !== undefined
+        ? { semanticDocumentCount: evidence.semanticDocumentCount }
+        : {}),
       ...(evidence.semanticStatus ? { semanticStatus: evidence.semanticStatus } : {}),
       ...(response?.status ? { status: response.status } : {}),
       type: options.type
@@ -6757,7 +7389,9 @@ function buildAiMessageMetadata(
 export function aiMapActionsFromResponse(response: AiCopResponse | null): MatrixCopMapAction[] {
   const structured = asRecord(response?.result.structured);
   const explicitActions = Array.isArray(structured?.mapActions)
-    ? structured.mapActions.map(normalizeAiMapAction).filter((action): action is MatrixCopMapAction => action !== undefined)
+    ? structured.mapActions
+        .map(normalizeAiMapAction)
+        .filter((action): action is MatrixCopMapAction => action !== undefined)
     : [];
   if (explicitActions.length > 0) {
     return explicitActions.slice(0, 3);
@@ -6766,11 +7400,10 @@ export function aiMapActionsFromResponse(response: AiCopResponse | null): Matrix
   const mapSearch = asRecord(structured?.mapSearch);
   const fallback = asRecord(structured?.mapSearchFallback);
   const fallbackResult = asRecord(fallback?.result);
-  const mapSearchResults = Array.isArray(mapSearch?.results) ? mapSearch.results.filter((item): item is Record<string, unknown> => Boolean(asRecord(item))) : [];
-  const results = [
-    ...(fallbackResult ? [fallbackResult] : []),
-    ...mapSearchResults
-  ];
+  const mapSearchResults = Array.isArray(mapSearch?.results)
+    ? mapSearch.results.filter((item): item is Record<string, unknown> => Boolean(asRecord(item)))
+    : [];
+  const results = [...(fallbackResult ? [fallbackResult] : []), ...mapSearchResults];
   return results
     .map(aiMapActionFromResult)
     .filter((action): action is MatrixCopMapAction => action !== undefined)
@@ -6862,10 +7495,14 @@ function optionalAiTextList(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  return Array.from(new Set(value.flatMap((item) => {
-    const normalized = optionalAiText(item);
-    return normalized ? [normalized] : [];
-  }))).slice(0, 16);
+  return Array.from(
+    new Set(
+      value.flatMap((item) => {
+        const normalized = optionalAiText(item);
+        return normalized ? [normalized] : [];
+      })
+    )
+  ).slice(0, 16);
 }
 
 function aiResponseEvidenceMetadata(response: AiCopResponse | null): {
@@ -6946,7 +7583,12 @@ function attachmentIndicator(message: MatrixTimelineMessage): React.ReactNode {
   return null;
 }
 
-function matrixMessagePreviewItem(message: MatrixTimelineMessage, url?: string, posterUrl?: string, loadBlob?: () => Promise<Blob>): MediaPreviewItem {
+function matrixMessagePreviewItem(
+  message: MatrixTimelineMessage,
+  url?: string,
+  posterUrl?: string,
+  loadBlob?: () => Promise<Blob>
+): MediaPreviewItem {
   if (message.kind === "location" && message.location) {
     return {
       caption: message.location.source === "device" ? "Poloha ze zařízení" : "Poloha z mapy",
@@ -6963,16 +7605,17 @@ function matrixMessagePreviewItem(message: MatrixTimelineMessage, url?: string, 
       title: "Zpráva"
     };
   }
-  const kind: MediaPreviewItem["kind"] = message.kind === "image"
-    ? "image"
-    : message.kind === "video"
-      ? "video"
-      : attachment.contentType?.includes("pdf") || /\.pdf$/iu.test(attachment.fileName)
-        ? "document"
-        : "file";
+  const kind: MediaPreviewItem["kind"] =
+    message.kind === "image"
+      ? "image"
+      : message.kind === "video"
+        ? "video"
+        : attachment.contentType?.includes("pdf") || /\.pdf$/iu.test(attachment.fileName)
+          ? "document"
+          : "file";
   const previewUrl = url ?? (kind === "image" ? posterUrl : undefined);
   return {
-    contentType: attachment.encrypted ? "chráněná příloha" : attachment.contentType ?? "soubor",
+    contentType: attachment.encrypted ? "chráněná příloha" : (attachment.contentType ?? "soubor"),
     downloadName: attachment.fileName,
     kind,
     ...(loadBlob ? { loadBlob } : {}),
@@ -7004,7 +7647,7 @@ function attachmentMeta(message: MatrixTimelineMessage): string {
     return "";
   }
   const size = attachment.size ? formatBytes(attachment.size) : "velikost neznámá";
-  const type = attachment.encrypted ? "chráněno" : attachment.contentType ?? message.kind;
+  const type = attachment.encrypted ? "chráněno" : (attachment.contentType ?? message.kind);
   return `${type} · ${size}`;
 }
 
@@ -7054,7 +7697,11 @@ function normalizeAttachmentKind(file: File, requestedKind: MatrixAttachmentKind
   return "file";
 }
 
-function conversationSubtitle(item: ChatListItem, room: MatrixRoomSummary | null, status?: MessagingStatusResponse | null): string {
+function conversationSubtitle(
+  item: ChatListItem,
+  room: MatrixRoomSummary | null,
+  status?: MessagingStatusResponse | null
+): string {
   if (isAiAgentChatItem(item)) {
     if (status?.chatAvailable && status.status === "online") {
       return "AI asistent online";
@@ -7098,16 +7745,19 @@ function chatIdentityFor(
 ): ChatIdentityProfile {
   const serverOperatorProfile = operatorProfileFromServer(serverProfile);
   const localOperatorProfile = operatorProfileFromPreferences(localPreferences);
-  const displayName = serverOperatorProfile.displayName ?? localOperatorProfile.displayName ?? authDisplayName(session, config);
-  const avatarUrl = serverOperatorProfile.avatarDataUrl
-    ?? localOperatorProfile.avatarDataUrl
-    ?? (session.status === "authenticated" ? trimmedString(session.profile?.picture) : undefined);
-  const matrixProfile = session.status === "authenticated" && (displayName || avatarUrl)
-    ? {
-        ...(avatarUrl ? { avatarUrl } : {}),
-        ...(displayName ? { displayName } : {})
-      }
-    : undefined;
+  const displayName =
+    serverOperatorProfile.displayName ?? localOperatorProfile.displayName ?? authDisplayName(session, config);
+  const avatarUrl =
+    serverOperatorProfile.avatarDataUrl ??
+    localOperatorProfile.avatarDataUrl ??
+    (session.status === "authenticated" ? trimmedString(session.profile?.picture) : undefined);
+  const matrixProfile =
+    session.status === "authenticated" && (displayName || avatarUrl)
+      ? {
+          ...(avatarUrl ? { avatarUrl } : {}),
+          ...(displayName ? { displayName } : {})
+        }
+      : undefined;
 
   return {
     ...(avatarUrl ? { avatarUrl } : {}),
@@ -7117,7 +7767,10 @@ function chatIdentityFor(
   };
 }
 
-function operatorProfileFromServer(serverProfile: ServerUserProfile | null): { avatarDataUrl?: string; displayName?: string } {
+function operatorProfileFromServer(serverProfile: ServerUserProfile | null): {
+  avatarDataUrl?: string;
+  displayName?: string;
+} {
   const operatorProfile = asRecord(serverProfile?.preferences.operatorProfile);
   return {
     avatarDataUrl: trimmedString(operatorProfile?.avatarDataUrl),
@@ -7125,7 +7778,10 @@ function operatorProfileFromServer(serverProfile: ServerUserProfile | null): { a
   };
 }
 
-function operatorProfileFromPreferences(preferences: LocalUserPreferences): { avatarDataUrl?: string; displayName?: string } {
+function operatorProfileFromPreferences(preferences: LocalUserPreferences): {
+  avatarDataUrl?: string;
+  displayName?: string;
+} {
   const operatorProfile = asRecord(preferences.operatorProfile);
   return {
     avatarDataUrl: trimmedString(operatorProfile?.avatarDataUrl),
@@ -7154,7 +7810,12 @@ function authSubtitle(session: AuthSession, config: AuthConfig): string {
   return "OIDC účet";
 }
 
-function statusLabelFor(status: MessagingStatusResponse | null, matrixSession: MatrixMessagingSession | null, syncState: string, loading: boolean): string {
+function statusLabelFor(
+  status: MessagingStatusResponse | null,
+  matrixSession: MatrixMessagingSession | null,
+  syncState: string,
+  loading: boolean
+): string {
   if (loading) {
     return "připojuji";
   }
@@ -7226,18 +7887,22 @@ function roomPresenceLabel(room: MatrixRoomSummary | null): string | null {
 
 function isMatrixSyncWarming(syncState: string): boolean {
   const normalized = syncState.toLowerCase();
-  return normalized.includes("catch")
-    || normalized.includes("prep")
-    || normalized.includes("reconnect")
-    || normalized.includes("start");
+  return (
+    normalized.includes("catch") ||
+    normalized.includes("prep") ||
+    normalized.includes("reconnect") ||
+    normalized.includes("start")
+  );
 }
 
 function isMatrixSyncOffline(syncState: string): boolean {
   const normalized = syncState.toLowerCase();
-  return normalized.includes("error")
-    || normalized.includes("stop")
-    || normalized.includes("offline")
-    || normalized.includes("fail");
+  return (
+    normalized.includes("error") ||
+    normalized.includes("stop") ||
+    normalized.includes("offline") ||
+    normalized.includes("fail")
+  );
 }
 
 export function userFacingError(message: string): string {
@@ -7257,7 +7922,10 @@ export function userFacingError(message: string): string {
   if (/\b(401|403)\b/u.test(normalized) || /unauthori[sz]ed|forbidden|přihlášen/i.test(normalized)) {
     return "Pro tuto akci je potřeba platné přihlášení.";
   }
-  if (/\b(500|502|503|504)\b/u.test(normalized) || /service unavailable|gateway timeout|bad gateway/i.test(normalized)) {
+  if (
+    /\b(500|502|503|504)\b/u.test(normalized) ||
+    /service unavailable|gateway timeout|bad gateway/i.test(normalized)
+  ) {
     return "Služba zpráv je dočasně nedostupná.";
   }
   if (/\b(429)\b/u.test(normalized) || /too many|rate.?limit|M_LIMIT_EXCEEDED/i.test(normalized)) {
@@ -7270,31 +7938,46 @@ export function userFacingError(message: string): string {
 }
 
 function isMatrixInteractiveAuthError(message: string): boolean {
-  return /device_signing\/upload|cross[- ]signing|secret storage|SecretStorage|interactive auth|UIA|m\.login|M_FORBIDDEN|getSecretStorageKey callback returned falsey/i.test(message)
-    && /\b(401|403)\b|M_FORBIDDEN|M_UNAUTHORIZED|unauthori[sz]ed|forbidden|getSecretStorageKey callback returned falsey/i.test(message);
+  return (
+    /device_signing\/upload|cross[- ]signing|secret storage|SecretStorage|interactive auth|UIA|m\.login|M_FORBIDDEN|getSecretStorageKey callback returned falsey/i.test(
+      message
+    ) &&
+    /\b(401|403)\b|M_FORBIDDEN|M_UNAUTHORIZED|unauthori[sz]ed|forbidden|getSecretStorageKey callback returned falsey/i.test(
+      message
+    )
+  );
 }
 
 function isMatrixSessionExpiredError(message: string): boolean {
-  return /MatrixError|_matrix|M_UNKNOWN_TOKEN|unknown token|access token/i.test(message)
-    && /\b401\b|M_UNKNOWN_TOKEN|unknown token|expired/i.test(message);
+  return (
+    /MatrixError|_matrix|M_UNKNOWN_TOKEN|unknown token|access token/i.test(message) &&
+    /\b401\b|M_UNKNOWN_TOKEN|unknown token|expired/i.test(message)
+  );
 }
 
 function isMatrixDuplicateOneTimeKeyUploadError(message: string): boolean {
   const normalized = message.toLowerCase();
-  return normalized.includes("one time key")
-    && normalized.includes("already exists")
-    && (normalized.includes("signed_curve25519") || normalized.includes("keys/upload") || normalized.includes("/keys/upload"));
+  return (
+    normalized.includes("one time key") &&
+    normalized.includes("already exists") &&
+    (normalized.includes("signed_curve25519") ||
+      normalized.includes("keys/upload") ||
+      normalized.includes("/keys/upload"))
+  );
 }
 
 function isSensitiveMatrixKeyMaterialError(message: string): boolean {
-  return /signed_curve25519|ed25519|curve25519|old key|new key|signatures|\/keys\/upload|_matrix\/client\/v3\/keys/iu.test(message);
+  return /signed_curve25519|ed25519|curve25519|old key|new key|signatures|\/keys\/upload|_matrix\/client\/v3\/keys/iu.test(
+    message
+  );
 }
 
 function readLocalUserPreferences(ownerId: string): LocalUserPreferences {
   try {
     const storageKey = scopedCopUserPreferencesKey(ownerId);
-    const raw = window.localStorage.getItem(storageKey)
-      ?? (storageKey === copUserPreferencesStorageKey ? null : window.localStorage.getItem(copUserPreferencesStorageKey));
+    const raw =
+      window.localStorage.getItem(storageKey) ??
+      (storageKey === copUserPreferencesStorageKey ? null : window.localStorage.getItem(copUserPreferencesStorageKey));
     if (!raw) {
       return {};
     }
@@ -7356,7 +8039,9 @@ function messageSearchText(message: MatrixTimelineMessage): string {
     message.transit ? transitMessageLabel(message.transit) : "",
     message.transit?.destination ?? "",
     message.transit?.nextStopName ?? ""
-  ].filter(Boolean).join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function messagePreviewText(message: MatrixTimelineMessage): string {
@@ -7368,7 +8053,7 @@ function matrixReplyTarget(message: MatrixTimelineMessage, session: AuthSession)
   return {
     body: messagePreviewText(message),
     eventId: message.eventId,
-    sender: message.own ? "Vy" : message.senderDisplayName ?? message.sender ?? session.profile?.username ?? "Člen"
+    sender: message.own ? "Vy" : (message.senderDisplayName ?? message.sender ?? session.profile?.username ?? "Člen")
   };
 }
 
@@ -7378,7 +8063,7 @@ function isDemoTimelineMessage(message: MatrixTimelineMessage): boolean {
 
 function formatMessageForClipboard(message: MatrixTimelineMessage): string {
   const time = new Date(message.timestamp).toLocaleString("cs-CZ");
-  return `[${time}] ${message.own ? "Vy" : message.senderDisplayName ?? "Člen"}: ${messageSearchText(message) || message.body}`;
+  return `[${time}] ${message.own ? "Vy" : (message.senderDisplayName ?? "Člen")}: ${messageSearchText(message) || message.body}`;
 }
 
 function formatMessageForForward(message: MatrixTimelineMessage): string {
@@ -7413,7 +8098,12 @@ function formatTransitStatusLabel(status: string): string {
   return status.replaceAll("_", " ");
 }
 
-function applyLocalReaction(messages: MatrixTimelineMessage[], messageId: string, key: string, senderLabel: string): MatrixTimelineMessage[] {
+function applyLocalReaction(
+  messages: MatrixTimelineMessage[],
+  messageId: string,
+  key: string,
+  senderLabel: string
+): MatrixTimelineMessage[] {
   return messages.map((message) => {
     if (message.eventId !== messageId) {
       return message;
@@ -7425,9 +8115,7 @@ function applyLocalReaction(messages: MatrixTimelineMessage[], messageId: string
           return reaction;
         }
         const count = Math.max(0, reaction.count - 1);
-        const senders = reaction.senders
-          .filter((sender) => sender !== senderLabel)
-          .slice(0, count);
+        const senders = reaction.senders.filter((sender) => sender !== senderLabel).slice(0, count);
         return {
           ...reaction,
           count,
@@ -7437,7 +8125,9 @@ function applyLocalReaction(messages: MatrixTimelineMessage[], messageId: string
       })
       .filter((reaction) => reaction.count > 0);
     if (ownReaction?.key === key) {
-      const sortedReactions = reactions.sort((left, right) => right.count - left.count || left.key.localeCompare(right.key, "cs-CZ"));
+      const sortedReactions = reactions.sort(
+        (left, right) => right.count - left.count || left.key.localeCompare(right.key, "cs-CZ")
+      );
       if (sortedReactions.length === 0) {
         const messageWithoutReactions = { ...message };
         delete messageWithoutReactions.reactions;
@@ -7527,17 +8217,21 @@ function infoMembersForChat(
   const members = conversation?.members ?? [];
   const contact = members.find((member) => member.userId !== ownId) ?? members[0];
   if (contact) {
-    return [{
-      id: contact.userId,
-      name: contact.displayName || activeChat.title,
-      subtitle: contact.userId
-    }];
+    return [
+      {
+        id: contact.userId,
+        name: contact.displayName || activeChat.title,
+        subtitle: contact.userId
+      }
+    ];
   }
-  return [{
-    id: activeChat.preferenceKey,
-    name: activeChat.title,
-    subtitle: activeChat.type === "direct" ? "kontakt" : "chat"
-  }];
+  return [
+    {
+      id: activeChat.preferenceKey,
+      name: activeChat.title,
+      subtitle: activeChat.type === "direct" ? "kontakt" : "chat"
+    }
+  ];
 }
 
 function communityGroupMemberSubtitle(member: CommunityGroup["members"][number]): string {
@@ -7591,7 +8285,11 @@ function isActiveFocusedRoom(roomId: string, selectedRoomId: string | null): boo
 }
 
 function chatItemForRoom(chatItems: ChatListItem[], roomId: string): ChatListItem | null {
-  return chatItems.find((item) => item.roomId === roomId || item.room?.roomId === roomId || item.conversation?.matrix?.roomId === roomId) ?? null;
+  return (
+    chatItems.find(
+      (item) => item.roomId === roomId || item.room?.roomId === roomId || item.conversation?.matrix?.roomId === roomId
+    ) ?? null
+  );
 }
 
 function showIncomingChatNotification(candidate: IncomingChatNotification, onOpen: () => void): void {
@@ -7636,19 +8334,26 @@ function incomingNotificationBody(message: MatrixTimelineMessage): string {
 }
 
 function findChatItemForSelection(selection: string, chatItems: ChatListItem[]): ChatListItem | null {
-  return chatItems.find((item) => item.id === selection
-    || item.conversation?.conversationId === selection
-    || item.conversation?.matrix?.roomId === selection
-    || item.group?.groupId === selection
-    || item.room?.roomId === selection) ?? null;
+  return (
+    chatItems.find(
+      (item) =>
+        item.id === selection ||
+        item.conversation?.conversationId === selection ||
+        item.conversation?.matrix?.roomId === selection ||
+        item.group?.groupId === selection ||
+        item.room?.roomId === selection
+    ) ?? null
+  );
 }
 
 function stableStorageKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._=-]+/gu, "_")
-    .slice(0, 96) || "anonymous";
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._=-]+/gu, "_")
+      .slice(0, 96) || "anonymous"
+  );
 }
 
 function scopedCopUserPreferencesKey(ownerId: string): string {
@@ -7686,9 +8391,13 @@ export function aiQuestionNeedsCurrentLocation(question: string): boolean {
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
     .toLocaleLowerCase("cs-CZ");
-  return /\b(nejbliz|nejblizsi|closest|nearest|near me)\b/u.test(normalized)
-    || /\b(u me|ode me|moje poloha|moji polohy|me polohy|blizko me polohy|blizko moji polohy|aktualni poloha|current location)\b/u.test(normalized)
-    || /\b(v okoli|okoli me|okoli moji polohy|pobliz me|pobliz moji polohy|kolem me|around me|nearby)\b/u.test(normalized);
+  return (
+    /\b(nejbliz|nejblizsi|closest|nearest|near me)\b/u.test(normalized) ||
+    /\b(u me|ode me|moje poloha|moji polohy|me polohy|blizko me polohy|blizko moji polohy|aktualni poloha|current location)\b/u.test(
+      normalized
+    ) ||
+    /\b(v okoli|okoli me|okoli moji polohy|pobliz me|pobliz moji polohy|kolem me|around me|nearby)\b/u.test(normalized)
+  );
 }
 
 function geolocationErrorMessage(error: unknown): string {

@@ -116,10 +116,11 @@ export function buildTrackSearchResult(object: CopObject, center: [number, numbe
 export function buildFeatureSearchResult(feature: SituationFeature, center: [number, number]): MapSearchResult {
   const type = classifyFeatureType(feature);
   const typeLabel = mapResultTypeLabel(type);
-  const label = cleanSearchText(feature.properties.headline)
-    ?? cleanSearchText(feature.properties.label)
-    ?? cleanSearchText(feature.properties.summary)
-    ?? feature.properties.featureId;
+  const label =
+    cleanSearchText(feature.properties.headline) ??
+    cleanSearchText(feature.properties.label) ??
+    cleanSearchText(feature.properties.summary) ??
+    feature.properties.featureId;
   return {
     center,
     featureId: feature.properties.featureId,
@@ -132,7 +133,11 @@ export function buildFeatureSearchResult(feature: SituationFeature, center: [num
   };
 }
 
-export function buildPlaceSearchResults(items: PlaceGeocodeResult[], query: string, options: { limit?: number } = {}): MapSearchResult[] {
+export function buildPlaceSearchResults(
+  items: PlaceGeocodeResult[],
+  query: string,
+  options: { limit?: number } = {}
+): MapSearchResult[] {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {
     return [];
@@ -299,13 +304,9 @@ function scorePlaceResult(result: PlaceGeocodeResult, normalizedQuery: string): 
 
 function buildFeatureSubtitle(feature: SituationFeature): string {
   const properties = feature.properties;
-  return [
-    properties.layer,
-    properties.category,
-    properties.technology,
-    properties.quality,
-    properties.severity
-  ].filter(Boolean).join(" · ");
+  return [properties.layer, properties.category, properties.technology, properties.quality, properties.severity]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function isPublicFlight(object: CopObject): boolean {

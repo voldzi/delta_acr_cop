@@ -1,11 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  applyChatUnreadPayload,
-  publishChatUnreadCount,
-  readStoredChatUnreadCount
-} from "./runtime.js";
+import { applyChatUnreadPayload, publishChatUnreadCount, readStoredChatUnreadCount } from "./runtime.js";
 
 // Unread-badge bridge contract (chat → web: cop-chat:unread). cop-web's shell badge
 // in the Komunikace menu depends on this exact payload shape and storage key.

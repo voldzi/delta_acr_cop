@@ -27,7 +27,10 @@ describe("web push browser state", () => {
     defineServiceWorker({
       getRegistration: vi.fn().mockResolvedValue(registration)
     });
-    vi.stubGlobal("fetch", createFetchMock([{ enabled: true, status: "online", vapidPublicKey: base64Url("current-key") }]));
+    vi.stubGlobal(
+      "fetch",
+      createFetchMock([{ enabled: true, status: "online", vapidPublicKey: base64Url("current-key") }])
+    );
 
     const state = await fetchWebPushConfig("");
 

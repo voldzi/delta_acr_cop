@@ -80,9 +80,9 @@ export const builtInViewProfiles: ViewProfile[] = [
       showHistory: true,
       showPrediction: true,
       trackHistoryDisplayMode: "all",
-    situationLayerIds: ["weather"],
-    takLayerIds: [],
-    trackHistoryLimit: 120,
+      situationLayerIds: ["weather"],
+      takLayerIds: [],
+      trackHistoryLimit: 120,
       trackHistoryWindowSeconds: 180
     }
   },
@@ -107,9 +107,9 @@ export const builtInViewProfiles: ViewProfile[] = [
       showHistory: true,
       showPrediction: true,
       trackHistoryDisplayMode: "all",
-    situationLayerIds: ["weather"],
-    takLayerIds: [],
-    trackHistoryLimit: 72,
+      situationLayerIds: ["weather"],
+      takLayerIds: [],
+      trackHistoryLimit: 72,
       trackHistoryWindowSeconds: 60
     }
   },
@@ -135,9 +135,9 @@ export const builtInViewProfiles: ViewProfile[] = [
       showPrediction: true,
       publicFlightSymbolMode: "civil",
       trackHistoryDisplayMode: "selected",
-    situationLayerIds: ["weather", "traffic"],
-    takLayerIds: [],
-    trackHistoryLimit: 120,
+      situationLayerIds: ["weather", "traffic"],
+      takLayerIds: [],
+      trackHistoryLimit: 120,
       trackHistoryWindowSeconds: 180
     }
   },
@@ -202,7 +202,9 @@ export function readCustomViewProfiles(scope?: string): ViewProfile[] {
 
   try {
     const key = scopedStorageKey(customProfilesKey, scope);
-    const raw = window.localStorage?.getItem(key) ?? (key === customProfilesKey ? null : window.localStorage?.getItem(customProfilesKey));
+    const raw =
+      window.localStorage?.getItem(key) ??
+      (key === customProfilesKey ? null : window.localStorage?.getItem(customProfilesKey));
     if (!raw) {
       return [];
     }
@@ -224,11 +226,21 @@ export function writeCustomViewProfiles(profiles: ViewProfile[], scope?: string)
     return;
   }
 
-  window.localStorage.setItem(scopedStorageKey(customProfilesKey, scope), JSON.stringify(profiles.filter((profile) => !profile.builtIn).slice(-12)));
+  window.localStorage.setItem(
+    scopedStorageKey(customProfilesKey, scope),
+    JSON.stringify(profiles.filter((profile) => !profile.builtIn).slice(-12))
+  );
 }
 
 export function normalizeWorkspaceModule(value: unknown, fallback: WorkspaceModule = "map"): WorkspaceModule {
-  return value === "map" || value === "data" || value === "sources" || value === "alerts" || value === "replay" || value === "radio" ? value : fallback;
+  return value === "map" ||
+    value === "data" ||
+    value === "sources" ||
+    value === "alerts" ||
+    value === "replay" ||
+    value === "radio"
+    ? value
+    : fallback;
 }
 
 function normalizeViewProfile(value: unknown): ViewProfile | null {
@@ -283,7 +295,13 @@ function normalizeProfileSettings(value: unknown): ViewProfileSettings {
 }
 
 function normalizeLayer(value: unknown): CopLayer | undefined {
-  return value === "air-situation" || value === "sim-air" || value === "uav" || value === "friendly" || value === "foreign" || value === "public-flights" || value === "data-quality"
+  return value === "air-situation" ||
+    value === "sim-air" ||
+    value === "uav" ||
+    value === "friendly" ||
+    value === "foreign" ||
+    value === "public-flights" ||
+    value === "data-quality"
     ? value
     : undefined;
 }
@@ -297,7 +315,11 @@ function optionalLayerArray(value: unknown): CopLayer[] | undefined {
 }
 
 function normalizePredictionMode(value: unknown): PredictionMode | undefined {
-  return value === "advanced" || value === "adaptive" || value === "telemetry" || value === "history" || value === "maneuver"
+  return value === "advanced" ||
+    value === "adaptive" ||
+    value === "telemetry" ||
+    value === "history" ||
+    value === "maneuver"
     ? value
     : undefined;
 }
@@ -311,7 +333,9 @@ function normalizeTrackHistoryDisplayMode(value: unknown): TrackHistoryDisplayMo
 }
 
 function normalizeOptionalWorkspaceModule(value: unknown): WorkspaceModule | undefined {
-  return value === "map" || value === "data" || value === "sources" || value === "alerts" || value === "replay" ? value : undefined;
+  return value === "map" || value === "data" || value === "sources" || value === "alerts" || value === "replay"
+    ? value
+    : undefined;
 }
 
 function normalizeWorkspaceSkin(value: unknown): WorkspaceSkin | undefined {

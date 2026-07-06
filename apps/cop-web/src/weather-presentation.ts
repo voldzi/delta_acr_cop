@@ -9,22 +9,28 @@ export function normalizeSituationCategory(category: string | undefined): string
 
 export function isCurrentWeatherSummaryFeature(feature: SituationFeature): boolean {
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  return feature.properties.layerId === "public.weather.current"
-    || feature.properties.providerLayerId === "weather.open_meteo"
-    || (feature.properties.layer === "weather" && feature.properties.sourceId === "open_meteo")
-    || stringProperty(tags.mapDisplayHint) === "weather_observation_point";
+  return (
+    feature.properties.layerId === "public.weather.current" ||
+    feature.properties.providerLayerId === "weather.open_meteo" ||
+    (feature.properties.layer === "weather" && feature.properties.sourceId === "open_meteo") ||
+    stringProperty(tags.mapDisplayHint) === "weather_observation_point"
+  );
 }
 
 export function isMeasuredWeatherStationFeature(feature: SituationFeature): boolean {
   const providerLayerId = stringProperty(feature.properties.providerLayerId);
-  return feature.properties.layerId === "public.weather.observations"
-    || feature.properties.sourceId === "chmi_weather_stations"
-    || providerLayerId === "weather.chmi_station_observations"
-    || providerLayerId?.includes("chmi_station") === true;
+  return (
+    feature.properties.layerId === "public.weather.observations" ||
+    feature.properties.sourceId === "chmi_weather_stations" ||
+    providerLayerId === "weather.chmi_station_observations" ||
+    providerLayerId?.includes("chmi_station") === true
+  );
 }
 
 export function weatherDisplayRecord(feature: SituationFeature): Record<string, unknown> | undefined {
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   return isRecord(providerProperties.display) ? providerProperties.display : undefined;
 }
 
@@ -134,7 +140,9 @@ export function weatherFeatureSubtitle(feature: SituationFeature): string {
     feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId),
     weatherDataQualityLabel(stringProperty(feature.properties.dataQuality)),
     feature.properties.stale ? "starší data" : undefined
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export function weatherFeatureTypeLabel(feature: SituationFeature): string {
@@ -165,7 +173,10 @@ export function weatherFeatureTypeLabel(feature: SituationFeature): string {
   }
 }
 
-export function weatherFeatureValueLabel(feature: SituationFeature, metrics: Record<string, unknown>): string | undefined {
+export function weatherFeatureValueLabel(
+  feature: SituationFeature,
+  metrics: Record<string, unknown>
+): string | undefined {
   const displayValue = weatherDisplayString(feature, "primaryValue");
   if (displayValue) {
     return displayValue;
@@ -178,10 +189,14 @@ export function weatherFeatureValueLabel(feature: SituationFeature, metrics: Rec
     case "weather_wind_field": {
       const speed = weatherMetricValue(feature, metrics, "windSpeedMps");
       const direction = recordNumber(metrics, "windDirectionDeg");
-      return [
-        speed !== undefined ? `${Math.round(speed)} m/s` : undefined,
-        direction !== undefined ? `${Math.round(direction)}°` : undefined
-      ].filter(Boolean).join(", ") || undefined;
+      return (
+        [
+          speed !== undefined ? `${Math.round(speed)} m/s` : undefined,
+          direction !== undefined ? `${Math.round(direction)}°` : undefined
+        ]
+          .filter(Boolean)
+          .join(", ") || undefined
+      );
     }
     case "weather_precipitation_grid": {
       const value = weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm");
@@ -213,11 +228,15 @@ export function weatherFeatureConditionLabel(feature: SituationFeature, metrics:
     const temperature = weatherMetricValue(feature, metrics, "temperatureC");
     const wind = weatherMetricValue(feature, metrics, "windSpeedMps");
     const precipitation = weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm");
-    return [
-      temperature !== undefined ? `${Math.round(temperature)} °C` : undefined,
-      wind !== undefined ? `vítr ${Math.round(wind)} m/s` : undefined,
-      precipitation !== undefined ? `${formatPrecipitationAmount(precipitation)} srážek` : undefined
-    ].filter(Boolean).join(" · ") || "aktuální počasí";
+    return (
+      [
+        temperature !== undefined ? `${Math.round(temperature)} °C` : undefined,
+        wind !== undefined ? `vítr ${Math.round(wind)} m/s` : undefined,
+        precipitation !== undefined ? `${formatPrecipitationAmount(precipitation)} srážek` : undefined
+      ]
+        .filter(Boolean)
+        .join(" · ") || "aktuální počasí"
+    );
   }
   switch (feature.properties.layer) {
     case "weather_precipitation_grid": {
@@ -267,9 +286,20 @@ export function weatherContextDetailRows(feature: SituationFeature): Array<[stri
       ["Stanice", weatherDisplayString(feature, "title") ?? feature.properties.label ?? feature.properties.headline],
       ["Závěr SIM", weatherFeatureConditionLabel(feature, metrics)],
       ["Hodnota", weatherDisplayString(feature, "primaryValue")],
-      ["Doplňkově", [weatherDisplayString(feature, "secondaryValue"), weatherDisplayString(feature, "tertiaryValue")].filter(Boolean).join(" · ")],
+      [
+        "Doplňkově",
+        [weatherDisplayString(feature, "secondaryValue"), weatherDisplayString(feature, "tertiaryValue")]
+          .filter(Boolean)
+          .join(" · ")
+      ],
       ["Typ závěru", weatherConditionModeLabel(weatherDisplayString(feature, "conditionMode"))],
-      ["Jistota závěru", formatOptionalPercentFromWhole(weatherDisplayNumber(feature, "confidencePercent"), feature.properties.confidence)],
+      [
+        "Jistota závěru",
+        formatOptionalPercentFromWhole(
+          weatherDisplayNumber(feature, "confidencePercent"),
+          feature.properties.confidence
+        )
+      ],
       ["Čas měření", formatShortDateTime(feature.properties.observedAt)],
       ["Stáří dat", formatAge(feature.properties.observedAt)],
       ["Zdroj", feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)]
@@ -299,7 +329,9 @@ export function weatherMeasuredStationPrimaryValue(metrics: Record<string, unkno
   const parts = [
     temperatureC !== undefined ? `${Math.round(temperatureC)} °C` : undefined,
     windSpeedMps !== undefined ? `vítr ${Math.round(windSpeedMps)} m/s` : undefined,
-    precipitation10mMm !== undefined && precipitation10mMm > 0 ? `${formatPrecipitationAmount(precipitation10mMm)} srážek` : undefined
+    precipitation10mMm !== undefined && precipitation10mMm > 0
+      ? `${formatPrecipitationAmount(precipitation10mMm)} srážek`
+      : undefined
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
@@ -331,7 +363,11 @@ export function formatWeatherTemperatureRange(minC: number | undefined, maxC: nu
   return minC !== undefined ? `min ${Math.round(minC)} °C` : `max ${Math.round(maxC as number)} °C`;
 }
 
-export function formatMeasuredWeatherWind(directionDeg: number | undefined, speedMps: number | undefined, gustMps: number | undefined): string {
+export function formatMeasuredWeatherWind(
+  directionDeg: number | undefined,
+  speedMps: number | undefined,
+  gustMps: number | undefined
+): string {
   const parts = [
     directionDeg !== undefined ? `${Math.round(directionDeg)}°` : undefined,
     speedMps !== undefined ? `${Math.round(speedMps)} m/s` : undefined,
@@ -380,9 +416,15 @@ export function weatherMeasuredPrecipitationTone(value: number | undefined): Wea
   return "ok";
 }
 
-export function weatherMetricValue(feature: SituationFeature, metrics: Record<string, unknown>, ...fallbackKeys: string[]): number | undefined {
+export function weatherMetricValue(
+  feature: SituationFeature,
+  metrics: Record<string, unknown>,
+  ...fallbackKeys: string[]
+): number | undefined {
   const rendering = isRecord(feature.properties.rendering) ? feature.properties.rendering : {};
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const providerRendering = isRecord(providerProperties.rendering) ? providerProperties.rendering : {};
   const metricKey = stringProperty(rendering.valueMetric) ?? stringProperty(providerRendering.valueMetric);
   if (metricKey) {
@@ -468,8 +510,20 @@ function weatherMeasuredStationDetailRows(
   includeIdentity: boolean
 ): Array<[string, React.ReactNode]> {
   const temperatureC = weatherMeasuredMetric(metrics, "temperatureC");
-  const temperatureMinC = weatherMeasuredMetric(metrics, "temperatureMinC", "minTemperatureC", "temperatureMinimumC", "temperatureMin24hC");
-  const temperatureMaxC = weatherMeasuredMetric(metrics, "temperatureMaxC", "maxTemperatureC", "temperatureMaximumC", "temperatureMax24hC");
+  const temperatureMinC = weatherMeasuredMetric(
+    metrics,
+    "temperatureMinC",
+    "minTemperatureC",
+    "temperatureMinimumC",
+    "temperatureMin24hC"
+  );
+  const temperatureMaxC = weatherMeasuredMetric(
+    metrics,
+    "temperatureMaxC",
+    "maxTemperatureC",
+    "temperatureMaximumC",
+    "temperatureMax24hC"
+  );
   const windSpeedMps = weatherMeasuredMetric(metrics, "windSpeedMps");
   const windGustMps = weatherMeasuredMetric(metrics, "windGustMps");
   const windDirectionDeg = weatherMeasuredMetric(metrics, "windDirectionDeg");
@@ -480,20 +534,33 @@ function weatherMeasuredStationDetailRows(
   const elevationM = weatherMeasuredMetric(metrics, "elevationM");
   const ageSeconds = weatherMeasuredMetric(metrics, "ageSeconds");
   return compactDetailRows([
-    ["Stanice", includeIdentity ? feature.properties.label ?? feature.properties.headline : undefined],
+    ["Stanice", includeIdentity ? (feature.properties.label ?? feature.properties.headline) : undefined],
     ["Čas měření", includeIdentity ? formatShortDateTime(feature.properties.observedAt) : undefined],
-    ["Stáří dat", includeIdentity ? ageSeconds !== undefined ? formatDurationSeconds(ageSeconds) : formatAge(feature.properties.observedAt) : undefined],
+    [
+      "Stáří dat",
+      includeIdentity
+        ? ageSeconds !== undefined
+          ? formatDurationSeconds(ageSeconds)
+          : formatAge(feature.properties.observedAt)
+        : undefined
+    ],
     ["Teplota", temperatureC !== undefined ? formatOptionalNumber(temperatureC, " °C") : undefined],
     ["Teplota min/max", formatWeatherTemperatureRange(temperatureMinC, temperatureMaxC)],
     ["Vítr", formatMeasuredWeatherWind(windDirectionDeg, windSpeedMps, windGustMps)],
     ["Srážky 10 min", precipitation10mMm !== undefined ? formatPrecipitationAmount(precipitation10mMm) : undefined],
     ["Vlhkost", humidityPercent !== undefined ? `${Math.round(humidityPercent)} %` : undefined],
     ["Tlak", pressureHpa !== undefined ? `${Math.round(pressureHpa)} hPa` : undefined],
-    ["Sluneční svit", sunshineDurationSeconds !== undefined ? formatDurationSeconds(sunshineDurationSeconds) : undefined],
+    [
+      "Sluneční svit",
+      sunshineDurationSeconds !== undefined ? formatDurationSeconds(sunshineDurationSeconds) : undefined
+    ],
     ["Nadmořská výška", elevationM !== undefined ? formatOptionalNumber(elevationM, " m") : undefined],
     ["Kvalita dat", weatherDataQualityLabel(stringProperty(feature.properties.dataQuality))],
     ["Jistota", formatOptionalPercent(feature.properties.confidence)],
-    ["Zdroj", includeIdentity ? feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId) : undefined]
+    [
+      "Zdroj",
+      includeIdentity ? (feature.properties.sourceName ?? sourceDisplayName(feature.properties.sourceId)) : undefined
+    ]
   ]);
 }
 

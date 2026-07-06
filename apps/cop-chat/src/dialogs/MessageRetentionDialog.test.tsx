@@ -30,13 +30,7 @@ describe("MessageRetentionDialog", () => {
 
   it("disables interval changes while saving", () => {
     render(
-      <MessageRetentionDialog
-        currentSeconds={86_400}
-        saving
-        title="Krizový tým"
-        onClose={vi.fn()}
-        onSelect={vi.fn()}
-      />
+      <MessageRetentionDialog currentSeconds={86_400} saving title="Krizový tým" onClose={vi.fn()} onSelect={vi.fn()} />
     );
 
     expect((screen.getByRole("button", { name: /24 hodin/u }) as HTMLButtonElement).disabled).toBe(true);

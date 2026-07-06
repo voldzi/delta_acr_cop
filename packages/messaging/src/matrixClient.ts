@@ -32,7 +32,15 @@ interface MatrixClientLike {
   isRoomEncrypted?: (roomId: string) => boolean;
   joinRoom?: (roomIdOrAlias: string) => Promise<{ room_id?: string; roomId?: string }>;
   leave?: (roomId: string) => Promise<unknown>;
-  mxcUrlToHttp?: (mxcUrl: string, width?: number, height?: number, resizeMethod?: string, allowDirectLinks?: boolean, allowRedirects?: boolean, useAuthentication?: boolean) => string | null;
+  mxcUrlToHttp?: (
+    mxcUrl: string,
+    width?: number,
+    height?: number,
+    resizeMethod?: string,
+    allowDirectLinks?: boolean,
+    allowRedirects?: boolean,
+    useAuthentication?: boolean
+  ) => string | null;
   off?: (event: string, listener: (...args: unknown[]) => void) => void;
   on?: (event: string, listener: (...args: unknown[]) => void) => void;
   redactEvent?: (roomId: string, eventId: string, txnId?: string, opts?: Record<string, unknown>) => Promise<unknown>;
@@ -40,16 +48,28 @@ interface MatrixClientLike {
   sendEvent?: (roomId: string, eventType: string, content: Record<string, unknown>, txnId?: string) => Promise<unknown>;
   sendMessage?: (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
   setPusher?: (pusher: Record<string, unknown>) => Promise<unknown>;
-  sendStateEvent?: (roomId: string, eventType: string, content: Record<string, unknown>, stateKey?: string) => Promise<unknown>;
+  sendStateEvent?: (
+    roomId: string,
+    eventType: string,
+    content: Record<string, unknown>,
+    stateKey?: string
+  ) => Promise<unknown>;
   sendTextMessage?: (roomId: string, body: string) => Promise<unknown>;
-  setRoomReadMarkers?: (roomId: string, readMarkerEventId: string, readReceiptEvent?: MatrixEventLike) => Promise<unknown>;
+  setRoomReadMarkers?: (
+    roomId: string,
+    readMarkerEventId: string,
+    readReceiptEvent?: MatrixEventLike
+  ) => Promise<unknown>;
   setPresence?: (options: { presence: "offline" | "online" | "unavailable" }) => Promise<unknown>;
   startClient?: (options?: Record<string, unknown>) => Promise<void> | void;
   stopClient?: () => void;
   scrollback?: (room: MatrixRoomLike, limit?: number) => Promise<unknown>;
   setAvatarUrl?: (mxcUrl: string) => Promise<unknown>;
   setDisplayName?: (displayName: string) => Promise<unknown>;
-  uploadContent?: (file: Blob | File, opts?: Record<string, unknown>) => Promise<{ content_uri?: string; contentUri?: string }>;
+  uploadContent?: (
+    file: Blob | File,
+    opts?: Record<string, unknown>
+  ) => Promise<{ content_uri?: string; contentUri?: string }>;
 }
 
 interface MatrixCryptoApiLike {
@@ -74,7 +94,9 @@ interface MatrixCryptoApiLike {
   restoreKeyBackup?: (options?: Record<string, unknown>) => Promise<unknown>;
 }
 
-type MatrixInteractiveAuthCallback = (makeRequest: (authData: Record<string, unknown> | null) => Promise<unknown>) => Promise<unknown>;
+type MatrixInteractiveAuthCallback = (
+  makeRequest: (authData: Record<string, unknown> | null) => Promise<unknown>
+) => Promise<unknown>;
 
 interface MatrixRecoveryController {
   readonly cryptoCallbacks: Record<string, unknown>;
@@ -114,7 +136,11 @@ interface MatrixRoomLike {
 }
 
 interface MatrixRelationsContainerLike {
-  getChildEventsForEvent?: (eventId: string, relationType: string, eventType: string) => MatrixRelationsLike | undefined;
+  getChildEventsForEvent?: (
+    eventId: string,
+    relationType: string,
+    eventType: string
+  ) => MatrixRelationsLike | undefined;
 }
 
 interface MatrixRelationsLike {
@@ -185,7 +211,7 @@ export async function createMatrixMessagingSession(
     throw new Error("Zabezpečený chat nemá připravenou adresu služby.");
   }
   await assertBrowserCanReachHomeserver(homeserverBaseUrl);
-  const matrixSdk = await import("matrix-js-sdk/lib/browser-index.js") as unknown as MatrixSdkLike;
+  const matrixSdk = (await import("matrix-js-sdk/lib/browser-index.js")) as unknown as MatrixSdkLike;
   disableMatrixPollAggregation(matrixSdk);
   const createClient = matrixSdk.createClient;
   const recoveryController = createUserControlledRecoveryController();
@@ -222,12 +248,13 @@ export async function createMatrixMessagingSession(
   const refreshJoinedRoomIds = async () => {
     joinedRoomIds = await readServerJoinedRoomIds(client, homeserverBaseUrl, bootstrap.accessToken, joinedRoomIds);
   };
-  const readVisibleRooms = () => readRooms(client, {
-    allowedRoomIds: joinedRoomIds,
-    homeserverBaseUrl,
-    ownUserId: bootstrap.userId,
-    presenceByUserId: roomPresenceByUserId
-  });
+  const readVisibleRooms = () =>
+    readRooms(client, {
+      allowedRoomIds: joinedRoomIds,
+      homeserverBaseUrl,
+      ownUserId: bootstrap.userId,
+      presenceByUserId: roomPresenceByUserId
+    });
   const publishRooms = () => {
     callbacks.onRoomsChanged?.(readVisibleRooms());
   };
@@ -303,23 +330,25 @@ export async function createMatrixMessagingSession(
     if (staleUserIds.length === 0) {
       return;
     }
-    await Promise.all(staleUserIds.map(async (userId) => {
-      const [presence, profile] = await Promise.all([
-        fetchMatrixPresence(homeserverBaseUrl, bootstrap.accessToken, userId),
-        fetchMatrixUserProfile(client, homeserverBaseUrl, bootstrap.accessToken, userId)
-      ]);
-      if (presence || profile) {
-        const nextPresence = {
-          ...roomPresenceByUserId.get(userId),
-          ...presence,
-          ...profile,
-          fetchedAt: Date.now(),
-          userId
-        };
-        roomPresenceByUserId.set(userId, nextPresence);
-        writeCachedMatrixUserProfile(userId, nextPresence);
-      }
-    }));
+    await Promise.all(
+      staleUserIds.map(async (userId) => {
+        const [presence, profile] = await Promise.all([
+          fetchMatrixPresence(homeserverBaseUrl, bootstrap.accessToken, userId),
+          fetchMatrixUserProfile(client, homeserverBaseUrl, bootstrap.accessToken, userId)
+        ]);
+        if (presence || profile) {
+          const nextPresence = {
+            ...roomPresenceByUserId.get(userId),
+            ...presence,
+            ...profile,
+            fetchedAt: Date.now(),
+            userId
+          };
+          roomPresenceByUserId.set(userId, nextPresence);
+          writeCachedMatrixUserProfile(userId, nextPresence);
+        }
+      })
+    );
   };
   const schedulePresenceRefresh = (delayMs = 250) => {
     if (presenceRefreshTimer !== undefined) {
@@ -378,7 +407,8 @@ export async function createMatrixMessagingSession(
 
   return {
     bootstrap,
-    createEncryptionRecovery: async (reset = false) => createUserControlledEncryptionRecovery(client, recoveryController, { reset }),
+    createEncryptionRecovery: async (reset = false) =>
+      createUserControlledEncryptionRecovery(client, recoveryController, { reset }),
     createGroupRoom: async (name, inviteUserIds = []) => {
       if (typeof client.createRoom !== "function") {
         throw new Error("Chat se nepodařilo založit.");
@@ -387,13 +417,17 @@ export async function createMatrixMessagingSession(
       try {
         response = await client.createRoom({
           invite: inviteUserIds,
-          initial_state: bootstrap.e2eeRequired ? [{
-            content: {
-              algorithm: "m.megolm.v1.aes-sha2"
-            },
-            state_key: "",
-            type: "m.room.encryption"
-          }] : [],
+          initial_state: bootstrap.e2eeRequired
+            ? [
+                {
+                  content: {
+                    algorithm: "m.megolm.v1.aes-sha2"
+                  },
+                  state_key: "",
+                  type: "m.room.encryption"
+                }
+              ]
+            : [],
           name,
           preset: inviteUserIds.length > 0 ? "private_chat" : "trusted_private_chat",
           visibility: "private"
@@ -524,11 +558,13 @@ export async function createMatrixMessagingSession(
         // Read receipts are a best-effort UX signal. Message delivery must not fail because of them.
       }
     },
-    prepareEncryptionRecoveryForMobile: async () => createUserControlledEncryptionRecovery(client, recoveryController, {
-      mobileCompatible: true,
-      reset: true
-    }),
-    restoreEncryptionRecovery: async (recoveryKey) => restoreUserControlledEncryptionRecovery(client, recoveryController, recoveryKey),
+    prepareEncryptionRecoveryForMobile: async () =>
+      createUserControlledEncryptionRecovery(client, recoveryController, {
+        mobileCompatible: true,
+        reset: true
+      }),
+    restoreEncryptionRecovery: async (recoveryKey) =>
+      restoreUserControlledEncryptionRecovery(client, recoveryController, recoveryKey),
     setMessageRetentionPolicy: async (roomId, seconds) => {
       if (typeof client.sendStateEvent !== "function") {
         throw new Error("Nastavení automatického mazání služba zpráv nepodporuje.");
@@ -594,7 +630,9 @@ export async function createMatrixMessagingSession(
       }
       const cop = sanitizeCopMessageMetadata(options?.cop);
       if ((options?.replyTo || cop) && typeof client.sendMessage !== "function") {
-        throw new Error(options?.replyTo ? "Odpověď se nepodařilo odeslat." : "Zprávu s COP metadaty se nepodařilo odeslat.");
+        throw new Error(
+          options?.replyTo ? "Odpověď se nepodařilo odeslat." : "Zprávu s COP metadaty se nepodařilo odeslat."
+        );
       }
       if (!options?.replyTo && !cop && typeof client.sendTextMessage !== "function") {
         throw new Error("Zprávu se nepodařilo odeslat.");
@@ -649,9 +687,13 @@ export async function createMatrixMessagingSession(
           if (typeof client.redactEvent !== "function") {
             throw new Error("Reakci se nepodařilo změnit.");
           }
-          await Promise.all(existingReactions.map((reaction) => client.redactEvent?.(roomId, reaction.eventId, undefined, {
-            reason: removingExistingReaction ? "Reakce odstraněna uživatelem" : "Reakce změněna uživatelem"
-          })));
+          await Promise.all(
+            existingReactions.map((reaction) =>
+              client.redactEvent?.(roomId, reaction.eventId, undefined, {
+                reason: removingExistingReaction ? "Reakce odstraněna uživatelem" : "Reakce změněna uživatelem"
+              })
+            )
+          );
           if (removingExistingReaction) {
             return;
           }
@@ -749,7 +791,7 @@ function createUserControlledRecoveryController(): MatrixRecoveryController {
 }
 
 async function decodeUserRecoveryKey(recoveryKey: string): Promise<Uint8Array> {
-  const { decodeRecoveryKey } = await import("matrix-js-sdk/lib/crypto-api/recovery-key.js") as {
+  const { decodeRecoveryKey } = (await import("matrix-js-sdk/lib/crypto-api/recovery-key.js")) as {
     decodeRecoveryKey: (recoveryKey: string) => Uint8Array;
   };
   try {
@@ -778,9 +820,10 @@ async function syncMatrixUserProfile(
 ): Promise<void> {
   const displayName = profile?.displayName?.trim();
   const avatarSourceUrl = profile?.avatarUrl?.trim();
-  const currentProfile = bootstrap.userId && (displayName || avatarSourceUrl) && client.getProfileInfo
-    ? await client.getProfileInfo(bootstrap.userId).catch(() => undefined)
-    : undefined;
+  const currentProfile =
+    bootstrap.userId && (displayName || avatarSourceUrl) && client.getProfileInfo
+      ? await client.getProfileInfo(bootstrap.userId).catch(() => undefined)
+      : undefined;
 
   if (displayName && typeof client.setDisplayName === "function" && currentProfile?.displayname !== displayName) {
     await client.setDisplayName(displayName).catch(() => undefined);
@@ -880,7 +923,7 @@ function stableStringHash(value: string): string {
 
 function readLocalStorageValue(key: string): string | undefined {
   try {
-    return typeof window !== "undefined" ? window.localStorage.getItem(key) ?? undefined : undefined;
+    return typeof window !== "undefined" ? (window.localStorage.getItem(key) ?? undefined) : undefined;
   } catch {
     return undefined;
   }
@@ -914,17 +957,20 @@ async function readMatrixEncryptionRecoveryStatus(client: MatrixClientLike): Pro
   }
   const [backupInfo, activeBackupVersion, secretStorageReady, crossSigningReady] = await Promise.all([
     crypto.getKeyBackupInfo ? crypto.getKeyBackupInfo().catch(() => null) : Promise.resolve(null),
-    crypto.getActiveSessionBackupVersion ? crypto.getActiveSessionBackupVersion().catch(() => null) : Promise.resolve(null),
+    crypto.getActiveSessionBackupVersion
+      ? crypto.getActiveSessionBackupVersion().catch(() => null)
+      : Promise.resolve(null),
     crypto.isSecretStorageReady ? crypto.isSecretStorageReady().catch(() => false) : Promise.resolve(false),
     crypto.isCrossSigningReady ? crypto.isCrossSigningReady().catch(() => false) : Promise.resolve(false)
   ]);
   const keyBackupExists = Boolean(backupInfo);
   const keyBackupEnabled = Boolean(activeBackupVersion);
-  const supported = typeof crypto.bootstrapSecretStorage === "function"
-    && typeof crypto.bootstrapCrossSigning === "function"
-    && typeof crypto.createRecoveryKeyFromPassphrase === "function"
-    && typeof crypto.isCrossSigningReady === "function"
-    && typeof crypto.isSecretStorageReady === "function";
+  const supported =
+    typeof crypto.bootstrapSecretStorage === "function" &&
+    typeof crypto.bootstrapCrossSigning === "function" &&
+    typeof crypto.createRecoveryKeyFromPassphrase === "function" &&
+    typeof crypto.isCrossSigningReady === "function" &&
+    typeof crypto.isSecretStorageReady === "function";
   const matrixRustCompatible = Boolean(keyBackupEnabled && secretStorageReady && crossSigningReady);
   return {
     ...(activeBackupVersion ? { activeBackupVersion } : {}),
@@ -947,9 +993,11 @@ async function createUserControlledEncryptionRecovery(
   options: { mobileCompatible?: boolean; reset?: boolean } = {}
 ): Promise<string> {
   const crypto = requireMatrixCrypto(client);
-  if (typeof crypto.bootstrapSecretStorage !== "function"
-    || typeof crypto.bootstrapCrossSigning !== "function"
-    || typeof crypto.createRecoveryKeyFromPassphrase !== "function") {
+  if (
+    typeof crypto.bootstrapSecretStorage !== "function" ||
+    typeof crypto.bootstrapCrossSigning !== "function" ||
+    typeof crypto.createRecoveryKeyFromPassphrase !== "function"
+  ) {
     throw new Error("Tento prohlížeč nepodporuje vytvoření obnovovacího klíče.");
   }
 
@@ -989,11 +1037,15 @@ async function createUserControlledEncryptionRecovery(
     await crypto.checkKeyBackupAndEnable?.();
     const status = await readMatrixEncryptionRecoveryStatus(client);
     if (!status.matrixRustCompatible) {
-      throw new Error("Nová E2EE obnova není kompletní pro iPhone/iPad. Zkuste akci zopakovat z tohoto důvěryhodného prohlížeče.");
+      throw new Error(
+        "Nová E2EE obnova není kompletní pro iPhone/iPad. Zkuste akci zopakovat z tohoto důvěryhodného prohlížeče."
+      );
     }
   } catch (caught) {
-    if (isMatrixDuplicateOneTimeKeyUploadError(caught)
-      && await acceptCompletedRecoveryAfterDuplicateOneTimeKeyUpload(client, crypto, encodedRecoveryKey)) {
+    if (
+      isMatrixDuplicateOneTimeKeyUploadError(caught) &&
+      (await acceptCompletedRecoveryAfterDuplicateOneTimeKeyUpload(client, crypto, encodedRecoveryKey))
+    ) {
       return encodedRecoveryKey;
     }
     const action = options.mobileCompatible ? "připravit pro iPhone/iPad" : "vytvořit";
@@ -1084,13 +1136,13 @@ function readMatrixInteractiveAuthData(caught: unknown): MatrixInteractiveAuthDa
   const data = asRecord(asRecord(caught)?.data) ?? asRecord(caught);
   const flows = Array.isArray(data?.flows)
     ? data.flows
-      .map((flow) => {
-        const stages = asRecord(flow)?.stages;
-        return Array.isArray(stages)
-          ? { stages: stages.filter((stage): stage is string => typeof stage === "string") }
-          : null;
-      })
-      .filter((flow): flow is { stages: string[] } => Boolean(flow && flow.stages.length > 0))
+        .map((flow) => {
+          const stages = asRecord(flow)?.stages;
+          return Array.isArray(stages)
+            ? { stages: stages.filter((stage): stage is string => typeof stage === "string") }
+            : null;
+        })
+        .filter((flow): flow is { stages: string[] } => Boolean(flow && flow.stages.length > 0))
     : [];
   if (flows.length === 0) {
     return null;
@@ -1186,11 +1238,13 @@ function restoreUserKeyBackupInBackground(crypto: MatrixCryptoApiLike): void {
   if (typeof crypto.restoreKeyBackup !== "function") {
     return;
   }
-  void crypto.restoreKeyBackup({ progressCallback: () => undefined })
-    .catch(() => undefined);
+  void crypto.restoreKeyBackup({ progressCallback: () => undefined }).catch(() => undefined);
 }
 
-async function createEncryptedAttachmentMessage(client: MatrixClientLike, attachment: MatrixAttachmentUpload): Promise<Record<string, unknown>> {
+async function createEncryptedAttachmentMessage(
+  client: MatrixClientLike,
+  attachment: MatrixAttachmentUpload
+): Promise<Record<string, unknown>> {
   if (typeof client.uploadContent !== "function") {
     throw new Error("Přílohu se nepodařilo nahrát.");
   }
@@ -1225,18 +1279,13 @@ async function encryptAttachmentFile(file: File): Promise<{ blob: Blob; file: Om
   if (!globalThis.crypto?.subtle) {
     throw new Error("Prohlížeč nepodporuje Web Crypto potřebné pro šifrované přílohy.");
   }
-  const key = await globalThis.crypto.subtle.generateKey(
-    { length: 256, name: "AES-CTR" },
-    true,
-    ["decrypt", "encrypt"]
-  );
+  const key = await globalThis.crypto.subtle.generateKey({ length: 256, name: "AES-CTR" }, true, [
+    "decrypt",
+    "encrypt"
+  ]);
   const iv = globalThis.crypto.getRandomValues(new Uint8Array(16));
   const plain = await file.arrayBuffer();
-  const encrypted = await globalThis.crypto.subtle.encrypt(
-    { counter: iv, length: 64, name: "AES-CTR" },
-    key,
-    plain
-  );
+  const encrypted = await globalThis.crypto.subtle.encrypt({ counter: iv, length: 64, name: "AES-CTR" }, key, plain);
   const exported = await globalThis.crypto.subtle.exportKey("jwk", key);
   const digest = await globalThis.crypto.subtle.digest("SHA-256", encrypted);
   const k = typeof exported.k === "string" ? exported.k : "";
@@ -1307,13 +1356,7 @@ async function decryptAttachmentPayload(payload: ArrayBuffer, encrypted: MatrixE
   if (!globalThis.crypto?.subtle) {
     throw new Error("Prohlížeč nepodporuje Web Crypto potřebné pro přílohy.");
   }
-  const key = await globalThis.crypto.subtle.importKey(
-    "jwk",
-    encrypted.key,
-    { name: "AES-CTR" },
-    false,
-    ["decrypt"]
-  );
+  const key = await globalThis.crypto.subtle.importKey("jwk", encrypted.key, { name: "AES-CTR" }, false, ["decrypt"]);
   return globalThis.crypto.subtle.decrypt(
     { counter: decodeBase64(encrypted.iv), length: 64, name: "AES-CTR" },
     key,
@@ -1331,12 +1374,13 @@ function createTextMessageContent(
   };
   const replyTo = options.replyTo;
   if (replyTo) {
-    const quoted = replyTo.body
-      .split(/\r?\n/u)
-      .filter((line) => line.trim())
-      .slice(0, 4)
-      .map((line) => `> <${replyTo.sender}> ${line}`)
-      .join("\n") || `> <${replyTo.sender}> Zpráva`;
+    const quoted =
+      replyTo.body
+        .split(/\r?\n/u)
+        .filter((line) => line.trim())
+        .slice(0, 4)
+        .map((line) => `> <${replyTo.sender}> ${line}`)
+        .join("\n") || `> <${replyTo.sender}> Zpráva`;
     content["m.relates_to"] = {
       "m.in_reply_to": {
         event_id: replyTo.eventId
@@ -1412,7 +1456,9 @@ function matrixCryptoDatabasePrefix(bootstrap: MessagingBootstrapResponse): stri
 async function joinInvitedRoomsOnce(client: MatrixClientLike, homeserverBaseUrl: string): Promise<void> {
   const invitedRoomIds = (client.getRooms?.() ?? [])
     .map(asRoom)
-    .filter((room): room is MatrixRoomLike & { roomId: string } => Boolean(room?.roomId && room.getMyMembership?.() === "invite"))
+    .filter((room): room is MatrixRoomLike & { roomId: string } =>
+      Boolean(room?.roomId && room.getMyMembership?.() === "invite")
+    )
     .map((room) => room.roomId);
 
   for (const roomId of invitedRoomIds) {
@@ -1441,25 +1487,34 @@ async function readServerJoinedRoomIds(
   accessToken: string | undefined,
   fallback: Set<string> | null
 ): Promise<Set<string> | null> {
-  if (typeof client.getJoinedRooms !== "function" && (typeof window === "undefined" || !accessToken || typeof fetch !== "function")) {
+  if (
+    typeof client.getJoinedRooms !== "function" &&
+    (typeof window === "undefined" || !accessToken || typeof fetch !== "function")
+  ) {
     return fallback;
   }
   try {
-    const response = typeof client.getJoinedRooms === "function"
-      ? await client.getJoinedRooms()
-      : await fetchJoinedRooms(homeserverBaseUrl, accessToken);
+    const response =
+      typeof client.getJoinedRooms === "function"
+        ? await client.getJoinedRooms()
+        : await fetchJoinedRooms(homeserverBaseUrl, accessToken);
     const rawRoomIds = Array.isArray(response)
       ? response
       : Array.isArray(response.joined_rooms)
         ? response.joined_rooms
         : [];
-    return new Set(rawRoomIds.filter((roomId): roomId is string => typeof roomId === "string" && roomId.startsWith("!")));
+    return new Set(
+      rawRoomIds.filter((roomId): roomId is string => typeof roomId === "string" && roomId.startsWith("!"))
+    );
   } catch {
     return fallback;
   }
 }
 
-async function fetchJoinedRooms(homeserverBaseUrl: string, accessToken: string | undefined): Promise<{ joined_rooms?: unknown }> {
+async function fetchJoinedRooms(
+  homeserverBaseUrl: string,
+  accessToken: string | undefined
+): Promise<{ joined_rooms?: unknown }> {
   if (!accessToken || typeof fetch !== "function") {
     return {};
   }
@@ -1472,7 +1527,7 @@ async function fetchJoinedRooms(homeserverBaseUrl: string, accessToken: string |
   if (!response.ok) {
     throw new Error(`Matrix joined_rooms failed: HTTP ${response.status}`);
   }
-  return await response.json() as { joined_rooms?: unknown };
+  return (await response.json()) as { joined_rooms?: unknown };
 }
 
 const matrixUserProfileCachePrefix = "cop.matrix.profile.v1";
@@ -1520,16 +1575,19 @@ function writeCachedMatrixUserProfile(
     return;
   }
   try {
-    window.localStorage.setItem(`${matrixUserProfileCachePrefix}.${encodeURIComponent(userId)}`, JSON.stringify({
-      ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
-      ...(profile.currentlyActive !== undefined ? { currentlyActive: profile.currentlyActive } : {}),
-      ...(profile.displayName ? { displayName: profile.displayName } : {}),
-      fetchedAt: profile.fetchedAt,
-      ...(profile.lastActiveAgo !== undefined ? { lastActiveAgo: profile.lastActiveAgo } : {}),
-      ...(profile.lastPresenceTs !== undefined ? { lastPresenceTs: profile.lastPresenceTs } : {}),
-      ...(profile.presence ? { presence: profile.presence } : {}),
-      userId
-    }));
+    window.localStorage.setItem(
+      `${matrixUserProfileCachePrefix}.${encodeURIComponent(userId)}`,
+      JSON.stringify({
+        ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
+        ...(profile.currentlyActive !== undefined ? { currentlyActive: profile.currentlyActive } : {}),
+        ...(profile.displayName ? { displayName: profile.displayName } : {}),
+        fetchedAt: profile.fetchedAt,
+        ...(profile.lastActiveAgo !== undefined ? { lastActiveAgo: profile.lastActiveAgo } : {}),
+        ...(profile.lastPresenceTs !== undefined ? { lastPresenceTs: profile.lastPresenceTs } : {}),
+        ...(profile.presence ? { presence: profile.presence } : {}),
+        userId
+      })
+    );
   } catch {
     // localStorage is best-effort only; Matrix profile loading must not depend on it.
   }
@@ -1544,16 +1602,19 @@ async function fetchMatrixPresence(
     return undefined;
   }
   try {
-    const response = await fetch(`${homeserverBaseUrl.replace(/\/+$/u, "")}/_matrix/client/v3/presence/${encodeURIComponent(userId)}/status`, {
-      cache: "no-store",
-      credentials: "omit",
-      headers: { Authorization: `Bearer ${accessToken}` },
-      mode: "cors"
-    });
+    const response = await fetch(
+      `${homeserverBaseUrl.replace(/\/+$/u, "")}/_matrix/client/v3/presence/${encodeURIComponent(userId)}/status`,
+      {
+        cache: "no-store",
+        credentials: "omit",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        mode: "cors"
+      }
+    );
     if (!response.ok) {
       return undefined;
     }
-    const payload = await response.json() as Record<string, unknown>;
+    const payload = (await response.json()) as Record<string, unknown>;
     const lastActiveAgo = typeof payload.last_active_ago === "number" ? payload.last_active_ago : undefined;
     const presence = typeof payload.presence === "string" ? payload.presence : undefined;
     return {
@@ -1573,24 +1634,16 @@ async function fetchMatrixUserProfile(
   accessToken: string | undefined,
   userId: string
 ): Promise<MatrixUserPresenceLike | undefined> {
-  const sdkProfile = client.getProfileInfo
-    ? await client.getProfileInfo(userId).catch(() => undefined)
-    : undefined;
+  const sdkProfile = client.getProfileInfo ? await client.getProfileInfo(userId).catch(() => undefined) : undefined;
   const sdkDisplayName = stringValue(sdkProfile?.displayname) ?? stringValue(sdkProfile?.displayName);
   const sdkAvatarUrl = stringValue(sdkProfile?.avatar_url) ?? stringValue(sdkProfile?.avatarUrl);
   const needsHttpFallback = !sdkProfile || !sdkDisplayName || !sdkAvatarUrl;
-  const httpProfile = needsHttpFallback
-    ? await fetchMatrixProfile(homeserverBaseUrl, accessToken, userId)
-    : undefined;
+  const httpProfile = needsHttpFallback ? await fetchMatrixProfile(homeserverBaseUrl, accessToken, userId) : undefined;
   if (!sdkProfile && !httpProfile) {
     return undefined;
   }
-  const displayName = sdkDisplayName
-    ?? stringValue(httpProfile?.displayname)
-    ?? stringValue(httpProfile?.displayName);
-  const avatarUrl = sdkAvatarUrl
-    ?? stringValue(httpProfile?.avatar_url)
-    ?? stringValue(httpProfile?.avatarUrl);
+  const displayName = sdkDisplayName ?? stringValue(httpProfile?.displayname) ?? stringValue(httpProfile?.displayName);
+  const avatarUrl = sdkAvatarUrl ?? stringValue(httpProfile?.avatar_url) ?? stringValue(httpProfile?.avatarUrl);
   if (!displayName && !avatarUrl) {
     return undefined;
   }
@@ -1611,37 +1664,49 @@ async function fetchMatrixProfile(
   }
   try {
     const headers: Record<string, string> = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
-    const response = await fetch(`${homeserverBaseUrl.replace(/\/+$/u, "")}/_matrix/client/v3/profile/${encodeURIComponent(userId)}`, {
-      cache: "no-store",
-      credentials: "omit",
-      headers,
-      mode: "cors"
-    });
+    const response = await fetch(
+      `${homeserverBaseUrl.replace(/\/+$/u, "")}/_matrix/client/v3/profile/${encodeURIComponent(userId)}`,
+      {
+        cache: "no-store",
+        credentials: "omit",
+        headers,
+        mode: "cors"
+      }
+    );
     if (!response.ok) {
       return undefined;
     }
-    return await response.json() as Record<string, unknown>;
+    return (await response.json()) as Record<string, unknown>;
   } catch {
     return undefined;
   }
 }
 
-export async function clearMatrixMessagingCryptoStateForBootstrap(bootstrap: MessagingBootstrapResponse): Promise<void> {
+export async function clearMatrixMessagingCryptoStateForBootstrap(
+  bootstrap: MessagingBootstrapResponse
+): Promise<void> {
   if (typeof window === "undefined") {
     return;
   }
   const prefix = matrixCryptoDatabasePrefix(bootstrap);
   const indexedDb = window.indexedDB;
   const databases = typeof indexedDb?.databases === "function" ? await indexedDb.databases() : [];
-  await Promise.all(databases
-    .map((database) => database.name)
-    .filter((name): name is string => Boolean(name && (name === prefix || name.startsWith(prefix) || name.includes(prefix))))
-    .map((name) => new Promise<void>((resolve) => {
-      const request = indexedDb.deleteDatabase(name);
-      request.onerror = () => resolve();
-      request.onsuccess = () => resolve();
-      request.onblocked = () => resolve();
-    })));
+  await Promise.all(
+    databases
+      .map((database) => database.name)
+      .filter((name): name is string =>
+        Boolean(name && (name === prefix || name.startsWith(prefix) || name.includes(prefix)))
+      )
+      .map(
+        (name) =>
+          new Promise<void>((resolve) => {
+            const request = indexedDb.deleteDatabase(name);
+            request.onerror = () => resolve();
+            request.onsuccess = () => resolve();
+            request.onblocked = () => resolve();
+          })
+      )
+  );
 }
 
 function validateBootstrap(bootstrap: MessagingBootstrapResponse): void {
@@ -1677,7 +1742,9 @@ async function assertBrowserCanReachHomeserver(baseUrl: string): Promise<void> {
 
 export function formatMatrixClientError(caught: unknown, baseUrl: string, action: string): Error {
   if (isLikelyBrowserNetworkError(caught)) {
-    return new Error(`Nelze ${action}. Služba zpráv teď není z tohoto zařízení dostupná. Zkontrolujte připojení nebo VPN a zkuste to znovu.`);
+    return new Error(
+      `Nelze ${action}. Služba zpráv teď není z tohoto zařízení dostupná. Zkontrolujte připojení nebo VPN a zkuste to znovu.`
+    );
   }
   return caught instanceof Error ? caught : new Error(`Nelze ${action}: ${String(caught)}`);
 }
@@ -1687,8 +1754,10 @@ function isMatrixAccountStoreMismatch(caught: unknown): boolean {
     return false;
   }
   const message = caught.message.toLowerCase();
-  return message.includes("account in the store doesn't match the account in the constructor") ||
-    message.includes("account in the store does not match the account in the constructor");
+  return (
+    message.includes("account in the store doesn't match the account in the constructor") ||
+    message.includes("account in the store does not match the account in the constructor")
+  );
 }
 
 function isLikelyBrowserNetworkError(caught: unknown): boolean {
@@ -1722,14 +1791,18 @@ function recoveryErrorMessage(caught: unknown): string {
 
 function isMatrixDuplicateOneTimeKeyUploadError(caught: unknown): boolean {
   const text = matrixErrorDiagnosticText(caught).toLowerCase();
-  return text.includes("one time key")
-    && text.includes("already exists")
-    && (text.includes("signed_curve25519") || text.includes("keys/upload") || text.includes("/keys/upload"));
+  return (
+    text.includes("one time key") &&
+    text.includes("already exists") &&
+    (text.includes("signed_curve25519") || text.includes("keys/upload") || text.includes("/keys/upload"))
+  );
 }
 
 function isSensitiveMatrixCryptoError(caught: unknown): boolean {
   const text = matrixErrorDiagnosticText(caught);
-  return /signed_curve25519|ed25519|curve25519|one time key|old key|new key|signatures|\/keys\/upload|_matrix\/client\/v3\/keys/iu.test(text);
+  return /signed_curve25519|ed25519|curve25519|one time key|old key|new key|signatures|\/keys\/upload|_matrix\/client\/v3\/keys/iu.test(
+    text
+  );
 }
 
 function matrixErrorDiagnosticText(caught: unknown): string {
@@ -1762,12 +1835,15 @@ function isLikelyMatrixForbiddenError(caught: unknown): boolean {
   return caught instanceof Error && /m_forbidden|forbidden|permission|power level/iu.test(caught.message);
 }
 
-function readRooms(client: MatrixClientLike, options: {
-  allowedRoomIds?: Set<string> | null;
-  homeserverBaseUrl?: string;
-  ownUserId?: string;
-  presenceByUserId?: Map<string, MatrixUserPresenceLike & { fetchedAt: number }>;
-} = {}): MatrixRoomSummary[] {
+function readRooms(
+  client: MatrixClientLike,
+  options: {
+    allowedRoomIds?: Set<string> | null;
+    homeserverBaseUrl?: string;
+    ownUserId?: string;
+    presenceByUserId?: Map<string, MatrixUserPresenceLike & { fetchedAt: number }>;
+  } = {}
+): MatrixRoomSummary[] {
   const currentUserId = client.getUserId?.() ?? undefined;
   return (client.getRooms?.() ?? [])
     .map(asRoom)
@@ -1810,8 +1886,7 @@ function readRoomPresence(
   ownUserId: string | undefined,
   presenceByUserId: Map<string, MatrixUserPresenceLike & { fetchedAt: number }> | undefined
 ): MatrixRoomSummary["presence"] {
-  const members = readRoomJoinedMembers(room)
-    .filter((member) => member.userId && member.userId !== ownUserId);
+  const members = readRoomJoinedMembers(room).filter((member) => member.userId && member.userId !== ownUserId);
   if (members.length === 0) {
     return {
       activeMemberCount: 0,
@@ -1854,11 +1929,8 @@ function readRoomPresence(
     }
   }
 
-  const state: MatrixPresenceState = onlineMemberCount > 0
-    ? "online"
-    : unavailableMemberCount > 0 || unknownMemberCount > 0
-      ? "unknown"
-      : "offline";
+  const state: MatrixPresenceState =
+    onlineMemberCount > 0 ? "online" : unavailableMemberCount > 0 || unknownMemberCount > 0 ? "unknown" : "offline";
   return {
     activeMemberCount: onlineMemberCount + unavailableMemberCount,
     offlineMemberCount,
@@ -1880,25 +1952,27 @@ function readRoomJoinedMembers(room: MatrixRoomLike): MatrixRoomMemberLike[] {
   if (!Array.isArray(stateMembers)) {
     return [];
   }
-  return stateMembers
-    .map(asEvent)
-    .flatMap((event) => {
-      if (!event) {
-        return [];
-      }
-      const content = event.getContent?.() ?? {};
-      if (content.membership !== "join") {
-        return [];
-      }
-      const userId = event.getStateKey?.() ?? event.getSender?.();
-      return userId ? [{
-        avatarUrl: stringValue(content.avatar_url),
-        displayName: stringValue(content.displayname),
-        name: stringValue(content.displayname),
-        rawDisplayName: stringValue(content.displayname),
-        userId
-      }] : [];
-    });
+  return stateMembers.map(asEvent).flatMap((event) => {
+    if (!event) {
+      return [];
+    }
+    const content = event.getContent?.() ?? {};
+    if (content.membership !== "join") {
+      return [];
+    }
+    const userId = event.getStateKey?.() ?? event.getSender?.();
+    return userId
+      ? [
+          {
+            avatarUrl: stringValue(content.avatar_url),
+            displayName: stringValue(content.displayname),
+            name: stringValue(content.displayname),
+            rawDisplayName: stringValue(content.displayname),
+            userId
+          }
+        ]
+      : [];
+  });
 }
 
 function readRoomAvatarUrl(
@@ -1917,13 +1991,17 @@ function readRoomAvatarUrl(
     return matrixMediaHttpUrl(client, homeserverBaseUrl, roomAvatarUrl, true) ?? roomAvatarUrl;
   }
 
-  const otherMembers = readRoomJoinedMembers(room)
-    .filter((member) => member.userId && member.userId !== ownUserId);
+  const otherMembers = readRoomJoinedMembers(room).filter((member) => member.userId && member.userId !== ownUserId);
   if (otherMembers.length !== 1) {
     return undefined;
   }
   const userId = otherMembers[0]?.userId;
-  return readMemberAvatarUrl(otherMembers[0], client, homeserverBaseUrl, userId ? presenceByUserId?.get(userId) : undefined);
+  return readMemberAvatarUrl(
+    otherMembers[0],
+    client,
+    homeserverBaseUrl,
+    userId ? presenceByUserId?.get(userId) : undefined
+  );
 }
 
 function readRoomDirectPeer(
@@ -1933,8 +2011,7 @@ function readRoomDirectPeer(
   ownUserId: string | undefined,
   presenceByUserId: Map<string, MatrixUserPresenceLike & { fetchedAt: number }> | undefined
 ): MatrixRoomSummary["directPeer"] {
-  const otherMembers = readRoomJoinedMembers(room)
-    .filter((member) => member.userId && member.userId !== ownUserId);
+  const otherMembers = readRoomJoinedMembers(room).filter((member) => member.userId && member.userId !== ownUserId);
   if (otherMembers.length !== 1) {
     return undefined;
   }
@@ -1945,12 +2022,13 @@ function readRoomDirectPeer(
   }
   const cached = presenceByUserId?.get(userId);
   const user = client.getUser?.(userId) ?? member.user;
-  const displayName = trimmedMatrixString(member.name)
-    ?? trimmedMatrixString(member.rawDisplayName)
-    ?? trimmedMatrixString(member.displayName)
-    ?? trimmedMatrixString(cached?.displayName)
-    ?? trimmedMatrixString(user?.displayName)
-    ?? matrixLocalpart(userId);
+  const displayName =
+    trimmedMatrixString(member.name) ??
+    trimmedMatrixString(member.rawDisplayName) ??
+    trimmedMatrixString(member.displayName) ??
+    trimmedMatrixString(cached?.displayName) ??
+    trimmedMatrixString(user?.displayName) ??
+    matrixLocalpart(userId);
   const avatarUrl = readMemberAvatarUrl(member, client, homeserverBaseUrl, cached);
   return {
     ...(avatarUrl ? { avatarUrl } : {}),
@@ -1972,9 +2050,9 @@ function readMemberAvatarUrl(
     member?.user?.avatarUrl
   ];
   const avatarUrl = candidates
-    .map((value) => typeof value === "string" && value.trim() ? value.trim() : undefined)
+    .map((value) => (typeof value === "string" && value.trim() ? value.trim() : undefined))
     .find((value): value is string => Boolean(value));
-  return avatarUrl ? matrixMediaHttpUrl(client, homeserverBaseUrl, avatarUrl, true) ?? avatarUrl : undefined;
+  return avatarUrl ? (matrixMediaHttpUrl(client, homeserverBaseUrl, avatarUrl, true) ?? avatarUrl) : undefined;
 }
 
 function trimmedMatrixString(value: unknown): string | undefined {
@@ -2029,7 +2107,14 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
       if (redactedEventIds.has(eventId)) {
         return [];
       }
-      const mapped = mapMatrixMessageEvent(client, room ?? undefined, homeserverBaseUrl, event, currentUserId, reactionsByEventId.get(eventId));
+      const mapped = mapMatrixMessageEvent(
+        client,
+        room ?? undefined,
+        homeserverBaseUrl,
+        event,
+        currentUserId,
+        reactionsByEventId.get(eventId)
+      );
       return mapped ? [mapped] : [];
     })
     .filter((message) => messageWithinRetention(message, retentionSeconds));
@@ -2048,7 +2133,9 @@ function mapMatrixMessageEvent(
 ): MatrixTimelineMessage | null {
   const eventId = event.getId?.() ?? `${event.getSender?.() ?? "sender"}-${event.getTs?.() ?? Date.now()}`;
   const content = event.getContent?.() ?? {};
-  const body = normalizeMatrixMessageBody(stripMatrixReplyFallback(typeof content.body === "string" ? content.body.trim() : ""));
+  const body = normalizeMatrixMessageBody(
+    stripMatrixReplyFallback(typeof content.body === "string" ? content.body.trim() : "")
+  );
   const kind = matrixMessageKind(content);
   const attachment = matrixAttachmentFromContent(client, homeserverBaseUrl, content);
   const geoUri = readLocationUri(content);
@@ -2089,9 +2176,7 @@ function readRoomLatestMessage(
   currentUserId: string | undefined
 ): MatrixTimelineMessage | undefined {
   const retentionSeconds = room ? readRoomRetentionSeconds(room) : undefined;
-  const events = (room?.timeline ?? [])
-    .map(asEvent)
-    .filter((event): event is MatrixEventLike => Boolean(event));
+  const events = (room?.timeline ?? []).map(asEvent).filter((event): event is MatrixEventLike => Boolean(event));
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event?.getType?.() !== "m.room.message") {
@@ -2106,9 +2191,7 @@ function readRoomLatestMessage(
 }
 
 function latestReadableMessageEvent(room: MatrixRoomLike | undefined): MatrixEventLike | undefined {
-  const events = (room?.timeline ?? [])
-    .map(asEvent)
-    .filter((event): event is MatrixEventLike => Boolean(event));
+  const events = (room?.timeline ?? []).map(asEvent).filter((event): event is MatrixEventLike => Boolean(event));
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event?.getType?.() === "m.room.message" && event.getId?.()) {
@@ -2154,7 +2237,8 @@ function readMessageReactions(
     if (!eventId) {
       continue;
     }
-    const relations = room?.relations?.getChildEventsForEvent?.(eventId, "m.annotation", "m.reaction")?.getRelations?.() ?? [];
+    const relations =
+      room?.relations?.getChildEventsForEvent?.(eventId, "m.annotation", "m.reaction")?.getRelations?.() ?? [];
     for (const relation of relations) {
       const reactionEvent = asEvent(relation);
       if (reactionEvent) {
@@ -2162,7 +2246,10 @@ function readMessageReactions(
         if (reactionEventId && redactedEventIds.has(reactionEventId)) {
           continue;
         }
-        reactionEvents.set(reactionEventId ?? `${reactionEvent.getSender?.() ?? ""}:${reactionEvent.getTs?.() ?? ""}:${eventId}`, reactionEvent);
+        reactionEvents.set(
+          reactionEventId ?? `${reactionEvent.getSender?.() ?? ""}:${reactionEvent.getTs?.() ?? ""}:${eventId}`,
+          reactionEvent
+        );
       }
     }
   }
@@ -2179,7 +2266,8 @@ function readMessageReactions(
       continue;
     }
     const senderLabel = displayNameForMatrixSender(room, sender) ?? sender;
-    const buckets = bucketsByEventId.get(targetEventId) ?? new Map<string, Map<string, { eventId?: string; label: string }>>();
+    const buckets =
+      bucketsByEventId.get(targetEventId) ?? new Map<string, Map<string, { eventId?: string; label: string }>>();
     const senders = buckets.get(key) ?? new Map<string, { eventId?: string; label: string }>();
     senders.set(sender, {
       ...(reactionEventId ? { eventId: reactionEventId } : {}),
@@ -2191,18 +2279,21 @@ function readMessageReactions(
 
   const reactionsByEventId = new Map<string, MatrixMessageReaction[]>();
   for (const [eventId, buckets] of bucketsByEventId.entries()) {
-    reactionsByEventId.set(eventId, [...buckets.entries()]
-      .map(([key, senders]) => {
-        const ownSender = currentUserId ? senders.get(currentUserId) : undefined;
-        return {
-          count: senders.size,
-          key,
-          own: Boolean(ownSender),
-          ...(ownSender?.eventId ? { ownEventId: ownSender.eventId } : {}),
-          senders: [...senders.values()].map((sender) => sender.label)
-        };
-      })
-      .sort((left, right) => right.count - left.count || left.key.localeCompare(right.key, "cs-CZ")));
+    reactionsByEventId.set(
+      eventId,
+      [...buckets.entries()]
+        .map(([key, senders]) => {
+          const ownSender = currentUserId ? senders.get(currentUserId) : undefined;
+          return {
+            count: senders.size,
+            key,
+            own: Boolean(ownSender),
+            ...(ownSender?.eventId ? { ownEventId: ownSender.eventId } : {}),
+            senders: [...senders.values()].map((sender) => sender.label)
+          };
+        })
+        .sort((left, right) => right.count - left.count || left.key.localeCompare(right.key, "cs-CZ"))
+    );
   }
   return reactionsByEventId;
 }
@@ -2232,7 +2323,8 @@ function findOwnReactionEvents(
     }
     reactionEvents.set(reactionEventId, event);
   }
-  const relatedEvents = room?.relations?.getChildEventsForEvent?.(targetEventId, "m.annotation", "m.reaction")?.getRelations?.() ?? [];
+  const relatedEvents =
+    room?.relations?.getChildEventsForEvent?.(targetEventId, "m.annotation", "m.reaction")?.getRelations?.() ?? [];
   for (const relation of relatedEvents) {
     const reactionEvent = asEvent(relation);
     const reactionEventId = reactionEvent?.getId?.();
@@ -2250,7 +2342,13 @@ function findOwnReactionEvents(
     const key = stringValue(relation?.key);
     const sender = event.getSender?.() ?? "";
     const reactionEventId = event.getId?.();
-    if (relationTargetEventId === targetEventId && relationType === "m.annotation" && key && sender === currentUserId && reactionEventId) {
+    if (
+      relationTargetEventId === targetEventId &&
+      relationType === "m.annotation" &&
+      key &&
+      sender === currentUserId &&
+      reactionEventId
+    ) {
       ownReactions.push({ eventId: reactionEventId, key });
     }
   }
@@ -2320,11 +2418,7 @@ function displayNameForMatrixSender(room: MatrixRoomLike | undefined, sender: st
     return undefined;
   }
   const member = room?.getMember?.(sender) ?? undefined;
-  const candidates = [
-    member?.rawDisplayName,
-    member?.name,
-    member?.user?.displayName
-  ];
+  const candidates = [member?.rawDisplayName, member?.name, member?.user?.displayName];
   return candidates
     .map((value) => cleanMatrixDisplayName(value, sender))
     .find((value): value is string => Boolean(value));
@@ -2370,9 +2464,7 @@ function sanitizeCopMessageMetadata(value: unknown): MatrixCopMessageMetadata | 
   if (!record || record.source !== "cop-chat") {
     return undefined;
   }
-  const kind = record.kind === "ai-agent-response" || record.kind === "ai-situation-summary"
-    ? record.kind
-    : undefined;
+  const kind = record.kind === "ai-agent-response" || record.kind === "ai-situation-summary" ? record.kind : undefined;
   const ai = sanitizeCopAiMessageMetadata(record.ai);
   if (!kind && !ai) {
     return undefined;
@@ -2389,12 +2481,12 @@ function sanitizeCopAiMessageMetadata(value: unknown): MatrixCopMessageMetadata[
   if (!record) {
     return undefined;
   }
-  const type: MatrixCopAiMessageMetadata["type"] = record.type === "chat-agent" || record.type === "situation-summary"
-    ? record.type
-    : undefined;
-  const status: MatrixCopAiMessageMetadata["status"] = record.status === "COMPLETED" || record.status === "NEEDS_HUMAN_REVIEW" || record.status === "REJECTED"
-    ? record.status
-    : undefined;
+  const type: MatrixCopAiMessageMetadata["type"] =
+    record.type === "chat-agent" || record.type === "situation-summary" ? record.type : undefined;
+  const status: MatrixCopAiMessageMetadata["status"] =
+    record.status === "COMPLETED" || record.status === "NEEDS_HUMAN_REVIEW" || record.status === "REJECTED"
+      ? record.status
+      : undefined;
   const auditId = stringValue(record.auditId)?.slice(0, 160);
   const model = stringValue(record.model)?.slice(0, 120);
   const policyReason = stringValue(record.policyReason)?.slice(0, 240);
@@ -2402,14 +2494,16 @@ function sanitizeCopAiMessageMetadata(value: unknown): MatrixCopMessageMetadata[
   const question = stringValue(record.question)?.slice(0, 500);
   const requestId = stringValue(record.requestId)?.slice(0, 160);
   const indexedDocumentCount = nonNegativeInteger(record.indexedDocumentCount, 0, 1000);
-  const indexedStatus: MatrixCopAiMessageMetadata["indexedStatus"] = record.indexedStatus === "ok" || record.indexedStatus === "degraded" || record.indexedStatus === "disabled"
-    ? record.indexedStatus
-    : undefined;
+  const indexedStatus: MatrixCopAiMessageMetadata["indexedStatus"] =
+    record.indexedStatus === "ok" || record.indexedStatus === "degraded" || record.indexedStatus === "disabled"
+      ? record.indexedStatus
+      : undefined;
   const mapActions = sanitizeCopMapActions(record.mapActions);
   const semanticDocumentCount = nonNegativeInteger(record.semanticDocumentCount, 0, 1000);
-  const semanticStatus: MatrixCopAiMessageMetadata["semanticStatus"] = record.semanticStatus === "ok" || record.semanticStatus === "degraded" || record.semanticStatus === "disabled"
-    ? record.semanticStatus
-    : undefined;
+  const semanticStatus: MatrixCopAiMessageMetadata["semanticStatus"] =
+    record.semanticStatus === "ok" || record.semanticStatus === "degraded" || record.semanticStatus === "disabled"
+      ? record.semanticStatus
+      : undefined;
   const ai: MatrixCopAiMessageMetadata = {
     ...(auditId ? { auditId } : {}),
     ...(indexedDocumentCount !== undefined ? { indexedDocumentCount } : {}),
@@ -2491,7 +2585,14 @@ function sanitizeTransitShare(transit: MatrixTransitShare): MatrixTransitShare {
     ...(stringValue(transit.status) ? { status: stringValue(transit.status) } : {}),
     ...(stringValue(transit.transportMode) ? { transportMode: stringValue(transit.transportMode) } : {}),
     ...(stringValue(transit.vehicleId) ? { vehicleId: stringValue(transit.vehicleId) } : {}),
-    ...(Array.isArray(transit.warnings) ? { warnings: transit.warnings.filter((item) => stringValue(item)).map((item) => item.trim()).slice(0, 5) } : {})
+    ...(Array.isArray(transit.warnings)
+      ? {
+          warnings: transit.warnings
+            .filter((item) => stringValue(item))
+            .map((item) => item.trim())
+            .slice(0, 5)
+        }
+      : {})
   };
 }
 
@@ -2516,7 +2617,9 @@ function matrixTransitShareFromContent(content: Record<string, unknown>): Matrix
     status: stringValue(data.status),
     transportMode: stringValue(data.transportMode),
     vehicleId: stringValue(data.vehicleId),
-    warnings: Array.isArray(data.warnings) ? data.warnings.filter((item): item is string => typeof item === "string") : undefined
+    warnings: Array.isArray(data.warnings)
+      ? data.warnings.filter((item): item is string => typeof item === "string")
+      : undefined
   });
 }
 
@@ -2541,16 +2644,19 @@ function matrixAttachmentFromContent(
   const info = asRecord(content.info);
   const encrypted = asEncryptedFile(content.file);
   const rawUrl = typeof content.url === "string" ? content.url : encrypted?.url;
-  const fileName = typeof content.filename === "string" && content.filename.trim()
-    ? content.filename.trim()
-    : typeof content.body === "string" && content.body.trim()
-      ? content.body.trim()
-      : defaultAttachmentName(kind);
+  const fileName =
+    typeof content.filename === "string" && content.filename.trim()
+      ? content.filename.trim()
+      : typeof content.body === "string" && content.body.trim()
+        ? content.body.trim()
+        : defaultAttachmentName(kind);
   return {
     contentType: typeof info?.mimetype === "string" ? info.mimetype : undefined,
     ...(encrypted ? { encrypted } : {}),
     fileName,
-    ...(rawUrl ? { mediaUrl: encrypted ? rawUrl : matrixMediaHttpUrl(client, homeserverBaseUrl, rawUrl, false) ?? rawUrl } : {}),
+    ...(rawUrl
+      ? { mediaUrl: encrypted ? rawUrl : (matrixMediaHttpUrl(client, homeserverBaseUrl, rawUrl, false) ?? rawUrl) }
+      : {}),
     size: typeof info?.size === "number" ? info.size : undefined
   };
 }
@@ -2599,13 +2705,17 @@ function asEncryptedFile(value: unknown): MatrixEncryptedFileRef | undefined {
     return undefined;
   }
   return {
-    hashes: Object.fromEntries(Object.entries(hashes).filter((entry): entry is [string, string] => typeof entry[1] === "string")),
+    hashes: Object.fromEntries(
+      Object.entries(hashes).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+    ),
     iv: file.iv,
     key: {
       alg: typeof key.alg === "string" ? key.alg : "A256CTR",
       ext: key.ext === true,
       k: key.k,
-      key_ops: Array.isArray(key.key_ops) ? key.key_ops.filter((item): item is string => typeof item === "string") : ["encrypt", "decrypt"],
+      key_ops: Array.isArray(key.key_ops)
+        ? key.key_ops.filter((item): item is string => typeof item === "string")
+        : ["encrypt", "decrypt"],
       kty: typeof key.kty === "string" ? key.kty : "oct"
     },
     url: file.url,
@@ -2614,7 +2724,7 @@ function asEncryptedFile(value: unknown): MatrixEncryptedFileRef | undefined {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined;
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -2625,10 +2735,14 @@ function stringListValue(value: unknown, maxItems: number, maxLength: number): s
   if (!Array.isArray(value)) {
     return [];
   }
-  return Array.from(new Set(value.flatMap((item) => {
-    const normalized = stringValue(item)?.slice(0, maxLength);
-    return normalized ? [normalized] : [];
-  }))).slice(0, maxItems);
+  return Array.from(
+    new Set(
+      value.flatMap((item) => {
+        const normalized = stringValue(item)?.slice(0, maxLength);
+        return normalized ? [normalized] : [];
+      })
+    )
+  ).slice(0, maxItems);
 }
 
 function nonNegativeInteger(value: unknown, min: number, max: number): number | undefined {
@@ -2661,11 +2775,19 @@ function defaultAttachmentName(kind: MatrixAttachmentKind | MatrixTimelineMessag
   return "soubor";
 }
 
-function matrixMediaHttpUrl(client: MatrixClientLike, homeserverBaseUrl: string, mxcUrl: string, authenticated: boolean): string | undefined {
+function matrixMediaHttpUrl(
+  client: MatrixClientLike,
+  homeserverBaseUrl: string,
+  mxcUrl: string,
+  authenticated: boolean
+): string | undefined {
   if (!mxcUrl.startsWith("mxc://")) {
     return mxcUrl;
   }
-  return client.mxcUrlToHttp?.(mxcUrl, undefined, undefined, undefined, false, true, authenticated) ?? fallbackMxcDownloadUrl(homeserverBaseUrl, mxcUrl);
+  return (
+    client.mxcUrlToHttp?.(mxcUrl, undefined, undefined, undefined, false, true, authenticated) ??
+    fallbackMxcDownloadUrl(homeserverBaseUrl, mxcUrl)
+  );
 }
 
 function fallbackMxcDownloadUrl(homeserverBaseUrl: string, mxcUrl: string): string | undefined {
@@ -2691,16 +2813,16 @@ function encodeBase64(value: ArrayBuffer | Uint8Array): string {
 
 function decodeBase64(value: string): ArrayBuffer {
   const normalized = value.replace(/-/gu, "+").replace(/_/gu, "/");
-  const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), "=");
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
   const binary = atob(padded);
   const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 
 function asRoom(value: unknown): MatrixRoomLike | null {
-  return typeof value === "object" && value !== null ? value as MatrixRoomLike : null;
+  return typeof value === "object" && value !== null ? (value as MatrixRoomLike) : null;
 }
 
 function asEvent(value: unknown): MatrixEventLike | null {
-  return typeof value === "object" && value !== null ? value as MatrixEventLike : null;
+  return typeof value === "object" && value !== null ? (value as MatrixEventLike) : null;
 }

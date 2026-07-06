@@ -17,7 +17,14 @@ export interface AoiRuleFeatureCollection {
   features: Array<{
     type: "Feature";
     geometry: { type: "Polygon"; coordinates: Array<Array<[number, number]>> };
-    properties: { color: string; enabled: boolean; fillOpacity: number; id: string; name: string; severity: NonNullable<AoiRule["severity"]> };
+    properties: {
+      color: string;
+      enabled: boolean;
+      fillOpacity: number;
+      id: string;
+      name: string;
+      severity: NonNullable<AoiRule["severity"]>;
+    };
   }>;
 }
 
@@ -75,7 +82,12 @@ export function alertAreasToFeatureCollection(alerts: CopAlert[]): AlertAreaFeat
   return {
     type: "FeatureCollection",
     features: alerts.flatMap((alert) => {
-      if (!alert.map || !Number.isFinite(alert.map.lat) || !Number.isFinite(alert.map.lon) || !Number.isFinite(alert.map.radiusKm)) {
+      if (
+        !alert.map ||
+        !Number.isFinite(alert.map.lat) ||
+        !Number.isFinite(alert.map.lon) ||
+        !Number.isFinite(alert.map.radiusKm)
+      ) {
         return [];
       }
       return [
@@ -100,7 +112,12 @@ export function aoiRulesToFeatureCollection(aoiRules: AoiRule[]): AoiRuleFeature
   return {
     type: "FeatureCollection",
     features: aoiRules.flatMap((rule) => {
-      if (!rule.enabled || !Number.isFinite(rule.lat) || !Number.isFinite(rule.lon) || !Number.isFinite(rule.radiusKm)) {
+      if (
+        !rule.enabled ||
+        !Number.isFinite(rule.lat) ||
+        !Number.isFinite(rule.lon) ||
+        !Number.isFinite(rule.radiusKm)
+      ) {
         return [];
       }
       const polygonCoordinates = isValidAoiPolygon(rule.polygon)
@@ -198,7 +215,10 @@ export function aoiRuleEditablePoints(rule: AoiRule | null): Array<{ lat: number
   return ring.slice(0, -1).map(([lon, lat]) => ({ lat, lon }));
 }
 
-export function aoiRuleToEditFeatureCollection(rule: AoiRule | null, selectedVertexIndex: number | null = null): AoiEditFeatureCollection {
+export function aoiRuleToEditFeatureCollection(
+  rule: AoiRule | null,
+  selectedVertexIndex: number | null = null
+): AoiEditFeatureCollection {
   const points = aoiRuleEditablePoints(rule);
   if (!rule || points.length < 3) {
     return emptyAoiEditFeatureCollection();
@@ -295,9 +315,11 @@ function isValidAoiPolygon(polygon: AoiRule["polygon"]): polygon is NonNullable<
   if (!first || !last) {
     return false;
   }
-  return ring.every(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat))
-    && first[0] === last[0]
-    && first[1] === last[1];
+  return (
+    ring.every(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat)) &&
+    first[0] === last[0] &&
+    first[1] === last[1]
+  );
 }
 
 function normalizeZoneColor(value: string | undefined): string {
@@ -308,7 +330,11 @@ function normalizeZoneOpacity(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.min(0.35, Math.max(0.02, value)) : 0.1;
 }
 
-function buildGeodesicCircle(center: { lat: number; lon: number }, radiusKm: number, segments = 96): Array<[number, number]> {
+function buildGeodesicCircle(
+  center: { lat: number; lon: number },
+  radiusKm: number,
+  segments = 96
+): Array<[number, number]> {
   const lat = degreesToRadians(center.lat);
   const lon = degreesToRadians(center.lon);
   const angularDistance = radiusKm / earthRadiusKm;

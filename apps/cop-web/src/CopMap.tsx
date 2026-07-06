@@ -490,8 +490,7 @@ export interface SelectedRouteFeatureCollection {
   features: Array<{
     type: "Feature";
     geometry:
-      | { type: "LineString"; coordinates: Array<[number, number]> }
-      | { type: "Point"; coordinates: [number, number] };
+      { type: "LineString"; coordinates: Array<[number, number]> } | { type: "Point"; coordinates: [number, number] };
     properties: { featureId: string; kind: "route-line" | "route-stop" | "route-waypoint"; label: string };
   }>;
 }
@@ -501,8 +500,7 @@ export interface EmergencyRouteFeatureCollection {
   features: Array<{
     type: "Feature";
     geometry:
-      | { type: "LineString"; coordinates: Array<[number, number]> }
-      | { type: "Point"; coordinates: [number, number] };
+      { type: "LineString"; coordinates: Array<[number, number]> } | { type: "Point"; coordinates: [number, number] };
     properties: {
       kind: "route-line" | "route-point";
       label: string;
@@ -938,28 +936,28 @@ function CopMapComponent({
 
   const selectedId = selectedObjectId;
   const selectedObject = React.useMemo(
-    () => selectedObjectId ? objects.find((object) => object.objectId === selectedObjectId) ?? null : null,
+    () => (selectedObjectId ? (objects.find((object) => object.objectId === selectedObjectId) ?? null) : null),
     [objects, selectedObjectId]
   );
-  const liveSelectedSituationFeature = React.useMemo(
-    () => {
-      const features = situationFeatures?.features ?? [];
-      if (selectedSituationFeatureId) {
-        const direct = features.find((feature) => feature.properties.featureId === selectedSituationFeatureId);
-        if (direct) {
-          return direct;
-        }
+  const liveSelectedSituationFeature = React.useMemo(() => {
+    const features = situationFeatures?.features ?? [];
+    if (selectedSituationFeatureId) {
+      const direct = features.find((feature) => feature.properties.featureId === selectedSituationFeatureId);
+      if (direct) {
+        return direct;
       }
-      if (selectedSituationFeatureStableKey) {
-        return features.find((feature) => transportSelectionKey(feature) === selectedSituationFeatureStableKey) ?? null;
-      }
-      return null;
-    },
-    [selectedSituationFeatureId, selectedSituationFeatureStableKey, situationFeatures]
-  );
+    }
+    if (selectedSituationFeatureStableKey) {
+      return features.find((feature) => transportSelectionKey(feature) === selectedSituationFeatureStableKey) ?? null;
+    }
+    return null;
+  }, [selectedSituationFeatureId, selectedSituationFeatureStableKey, situationFeatures]);
   const retainedSelectedSituationFeatureRef = React.useRef<SituationFeature | null>(null);
-  const selectedSituationFeature = liveSelectedSituationFeature
-    ?? (isTransitVehicleSelectionKey(selectedSituationFeatureStableKey) ? retainedSelectedSituationFeatureRef.current : null);
+  const selectedSituationFeature =
+    liveSelectedSituationFeature ??
+    (isTransitVehicleSelectionKey(selectedSituationFeatureStableKey)
+      ? retainedSelectedSituationFeatureRef.current
+      : null);
   React.useEffect(() => {
     if (liveSelectedSituationFeature) {
       retainedSelectedSituationFeatureRef.current = liveSelectedSituationFeature;
@@ -970,12 +968,18 @@ function CopMapComponent({
     }
   }, [liveSelectedSituationFeature, selectedSituationFeatureStableKey]);
   const selectedSketchDrawing = React.useMemo(
-    () => selectedSketchDrawingId ? sketchDrawings.find((drawing) => drawing.id === selectedSketchDrawingId) ?? null : null,
+    () =>
+      selectedSketchDrawingId
+        ? (sketchDrawings.find((drawing) => drawing.id === selectedSketchDrawingId) ?? null)
+        : null,
     [selectedSketchDrawingId, sketchDrawings]
   );
   const [selectionPopoverCollapsed, setSelectionPopoverCollapsed] = React.useState(false);
   const selectedTransitSelectionKey = React.useMemo(
-    () => selectedSituationFeature ? transportSelectionKey(selectedSituationFeature) ?? selectedSituationFeature.properties.featureId : null,
+    () =>
+      selectedSituationFeature
+        ? (transportSelectionKey(selectedSituationFeature) ?? selectedSituationFeature.properties.featureId)
+        : null,
     [selectedSituationFeature]
   );
   const retainedSelectedTransitRouteDetailRef = React.useRef<{
@@ -994,27 +998,27 @@ function CopMapComponent({
       retainedSelectedTransitRouteDetailRef.current = null;
     }
   }, [selectedTransitRouteDetail, selectedTransitSelectionKey]);
-  const effectiveSelectedTransitRouteDetail = selectedTransitRouteDetail
-    ?? (
-      selectedTransitSelectionKey && retainedSelectedTransitRouteDetailRef.current?.key === selectedTransitSelectionKey
-        ? retainedSelectedTransitRouteDetailRef.current.detail
-        : null
-    );
+  const effectiveSelectedTransitRouteDetail =
+    selectedTransitRouteDetail ??
+    (selectedTransitSelectionKey && retainedSelectedTransitRouteDetailRef.current?.key === selectedTransitSelectionKey
+      ? retainedSelectedTransitRouteDetailRef.current.detail
+      : null);
   const selectionCard = React.useMemo(
-    () => selectedObject
-      ? formatObjectSelectionCard(selectedObject)
-      : selectedSituationFeature
-        ? formatSituationFeatureSelectionCard(selectedSituationFeature, effectiveSelectedTransitRouteDetail)
-        : selectedSketchDrawing
-          ? {
-              compactSubtitle: formatSketchDrawingSubtitle(selectedSketchDrawing),
-              eyebrow: "Vybraný zákres",
-              key: `sketch:${selectedSketchDrawing.id}`,
-              metaItems: [],
-              subtitle: formatSketchDrawingSubtitle(selectedSketchDrawing),
-              title: selectedSketchDrawing.properties.label
-          } satisfies MapSelectionCard
-          : null,
+    () =>
+      selectedObject
+        ? formatObjectSelectionCard(selectedObject)
+        : selectedSituationFeature
+          ? formatSituationFeatureSelectionCard(selectedSituationFeature, effectiveSelectedTransitRouteDetail)
+          : selectedSketchDrawing
+            ? ({
+                compactSubtitle: formatSketchDrawingSubtitle(selectedSketchDrawing),
+                eyebrow: "Vybraný zákres",
+                key: `sketch:${selectedSketchDrawing.id}`,
+                metaItems: [],
+                subtitle: formatSketchDrawingSubtitle(selectedSketchDrawing),
+                title: selectedSketchDrawing.properties.label
+              } satisfies MapSelectionCard)
+            : null,
     [effectiveSelectedTransitRouteDetail, selectedObject, selectedSituationFeature, selectedSketchDrawing]
   );
   React.useEffect(() => {
@@ -1025,13 +1029,14 @@ function CopMapComponent({
     [selectedObject, selectedSituationFeature, selectedSketchDrawing]
   );
   const selectedRouteFeatureCollection = React.useMemo(
-    () => selectedSituationFeature
-      ? selectedTransitRouteToFeatureCollection(
-          selectedSituationFeature,
-          selectedTransitRouteShapeForMap(selectedTransitRouteShape, effectiveSelectedTransitRouteDetail),
-          effectiveSelectedTransitRouteDetail
-        )
-      : emptySelectedRouteFeatureCollection(),
+    () =>
+      selectedSituationFeature
+        ? selectedTransitRouteToFeatureCollection(
+            selectedSituationFeature,
+            selectedTransitRouteShapeForMap(selectedTransitRouteShape, effectiveSelectedTransitRouteDetail),
+            effectiveSelectedTransitRouteDetail
+          )
+        : emptySelectedRouteFeatureCollection(),
     [effectiveSelectedTransitRouteDetail, selectedSituationFeature, selectedTransitRouteShape]
   );
   const emergencyRouteFeatureCollection = React.useMemo(
@@ -1044,7 +1049,10 @@ function CopMapComponent({
     [hoveredObjectId, objects, publicFlightSymbolMode, selectedId]
   );
   const historyFeatureCollection = React.useMemo(
-    () => (showHistory ? objectsToHistoryFeatureCollection(objects, trackHistory, selectedId, trackHistoryDisplayMode) : emptyLineFeatureCollection()),
+    () =>
+      showHistory
+        ? objectsToHistoryFeatureCollection(objects, trackHistory, selectedId, trackHistoryDisplayMode)
+        : emptyLineFeatureCollection(),
     [objects, selectedId, showHistory, trackHistory, trackHistoryDisplayMode]
   );
   const predictionFeatureCollection = React.useMemo(
@@ -1059,15 +1067,12 @@ function CopMapComponent({
     [alertRadiusKm, hasProximityAlerts, showProximityAlertRadius, userLocation]
   );
   const aoiRuleFeatureCollection = React.useMemo(() => aoiRulesToFeatureCollection(aoiRules), [aoiRules]);
-  const aoiDraftFeatureCollection = React.useMemo(() => zoneDraftToFeatureCollection(zoneDraftPoints), [zoneDraftPoints]);
-  const editingZone = React.useMemo(
-    () => findEditableAoiRule(aoiRules, editingZoneId),
-    [aoiRules, editingZoneId]
+  const aoiDraftFeatureCollection = React.useMemo(
+    () => zoneDraftToFeatureCollection(zoneDraftPoints),
+    [zoneDraftPoints]
   );
-  const editingZonePoints = React.useMemo(
-    () => aoiRuleEditablePoints(editingZone),
-    [editingZone]
-  );
+  const editingZone = React.useMemo(() => findEditableAoiRule(aoiRules, editingZoneId), [aoiRules, editingZoneId]);
+  const editingZonePoints = React.useMemo(() => aoiRuleEditablePoints(editingZone), [editingZone]);
   const aoiEditFeatureCollection = React.useMemo(
     () => aoiRuleToEditFeatureCollection(editingZone, selectedEditVertexIndex),
     [editingZone, selectedEditVertexIndex]
@@ -1089,12 +1094,13 @@ function CopMapComponent({
     [alerts, showAlertAreas]
   );
   const situationFeatureCollection = React.useMemo(
-    () => situationFeaturesToFeatureCollection(
-      situationFeatures,
-      selectedSituationFeatureId,
-      publicFlightSymbolMode,
-      selectedSituationFeatureStableKey
-    ),
+    () =>
+      situationFeaturesToFeatureCollection(
+        situationFeatures,
+        selectedSituationFeatureId,
+        publicFlightSymbolMode,
+        selectedSituationFeatureStableKey
+      ),
     [publicFlightSymbolMode, selectedSituationFeatureId, selectedSituationFeatureStableKey, situationFeatures]
   );
   const situationOsmClusterFeatureCollection = React.useMemo(
@@ -1102,7 +1108,10 @@ function CopMapComponent({
     [situationFeatureCollection]
   );
   const hasMobileCoverageFeatures = React.useMemo(
-    () => situationFeatureCollection.features.some((feature) => feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network"),
+    () =>
+      situationFeatureCollection.features.some(
+        (feature) => feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network"
+      ),
     [situationFeatureCollection]
   );
 
@@ -1163,9 +1172,11 @@ function CopMapComponent({
     setSketchFillPattern(isSketchFillPattern(properties.fillPattern) ? properties.fillPattern : "solid");
     const symbol = selectedSketchDrawing.properties.symbol;
     const preset =
-      sketchSymbolPresets.find((candidate) => candidate.iconId === symbol.iconId && candidate.palette === symbol.palette)
-      ?? (symbol.sidc ? sketchSymbolPresets.find((candidate) => candidate.sidc === symbol.sidc) : undefined)
-      ?? defaultSketchSymbol;
+      sketchSymbolPresets.find(
+        (candidate) => candidate.iconId === symbol.iconId && candidate.palette === symbol.palette
+      ) ??
+      (symbol.sidc ? sketchSymbolPresets.find((candidate) => candidate.sidc === symbol.sidc) : undefined) ??
+      defaultSketchSymbol;
     setSketchSymbol(preset);
   }, [selectedSketchDrawing]);
 
@@ -1204,7 +1215,9 @@ function CopMapComponent({
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
     requestMapResize(map);
 
-    const selectRenderedFeature = (renderedFeature: NonNullable<MapLayerMouseEvent["features"]>[number] | undefined) => {
+    const selectRenderedFeature = (
+      renderedFeature: NonNullable<MapLayerMouseEvent["features"]>[number] | undefined
+    ) => {
       const properties = isRecord(renderedFeature?.properties) ? renderedFeature.properties : {};
       const objectId = stringProperty(properties.objectId);
       const object = objectsRef.current.find((candidate) => candidate.objectId === objectId);
@@ -1213,7 +1226,9 @@ function CopMapComponent({
         return true;
       }
       const featureId = stringProperty(properties.featureId);
-      const situationFeature = situationFeaturesRef.current.find((candidate) => candidate.properties.featureId === featureId);
+      const situationFeature = situationFeaturesRef.current.find(
+        (candidate) => candidate.properties.featureId === featureId
+      );
       if (situationFeature) {
         onSelectSituationFeatureRef.current(situationFeature);
         return true;
@@ -1231,11 +1246,15 @@ function CopMapComponent({
       void (async () => {
         map.addSource(trackSourceId, {
           type: "geojson",
-          data: objectsToTrackFeatureCollection(objectsRef.current, selectedId, { publicFlightSymbolMode }) as Parameters<GeoJSONSource["setData"]>[0]
+          data: objectsToTrackFeatureCollection(objectsRef.current, selectedId, {
+            publicFlightSymbolMode
+          }) as Parameters<GeoJSONSource["setData"]>[0]
         });
         map.addSource(trackClusterSourceId, {
           type: "geojson",
-          data: objectsToTrackFeatureCollection(objectsRef.current, selectedId, { publicFlightSymbolMode }) as Parameters<GeoJSONSource["setData"]>[0],
+          data: objectsToTrackFeatureCollection(objectsRef.current, selectedId, {
+            publicFlightSymbolMode
+          }) as Parameters<GeoJSONSource["setData"]>[0],
           cluster: true,
           clusterMaxZoom: 14,
           clusterRadius: 52
@@ -1341,7 +1360,11 @@ function CopMapComponent({
           type: "fill",
           source: aoiRuleSourceId,
           paint: {
-            "fill-color": ["coalesce", ["get", "color"], ["match", ["get", "severity"], "critical", "#ef4444", "warning", "#facc15", "#38bdf8"]],
+            "fill-color": [
+              "coalesce",
+              ["get", "color"],
+              ["match", ["get", "severity"], "critical", "#ef4444", "warning", "#facc15", "#38bdf8"]
+            ],
             "fill-opacity": ["coalesce", ["get", "fillOpacity"], 0.08]
           }
         });
@@ -1355,7 +1378,11 @@ function CopMapComponent({
             "line-join": "round"
           },
           paint: {
-            "line-color": ["coalesce", ["get", "color"], ["match", ["get", "severity"], "critical", "#ef4444", "warning", "#facc15", "#38bdf8"]],
+            "line-color": [
+              "coalesce",
+              ["get", "color"],
+              ["match", ["get", "severity"], "critical", "#ef4444", "warning", "#facc15", "#38bdf8"]
+            ],
             "line-dasharray": [3, 2],
             "line-opacity": 0.58,
             "line-width": ["interpolate", ["linear"], ["zoom"], 6, 1, 12, 1.7, 16, 2.3]
@@ -1472,7 +1499,12 @@ function CopMapComponent({
               ["literal", [1000, 0.0001]]
             ],
             "line-opacity": 0.9,
-            "line-width": ["case", ["get", "selected"], ["+", ["coalesce", ["get", "lineWidth"], 2], 1.4], ["coalesce", ["get", "lineWidth"], 2]]
+            "line-width": [
+              "case",
+              ["get", "selected"],
+              ["+", ["coalesce", ["get", "lineWidth"], 2], 1.4],
+              ["coalesce", ["get", "lineWidth"], 2]
+            ]
           }
         });
 
@@ -1778,19 +1810,7 @@ function CopMapComponent({
               ["literal", [1000, 0.0001]]
             ],
             "line-opacity": ["case", ["get", "stale"], 0.42, 0.86],
-            "line-width": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              7,
-              1.4,
-              11,
-              2.1,
-              14,
-              3.2,
-              17,
-              4.4
-            ]
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 1.4, 11, 2.1, 14, 3.2, 17, 4.4]
           }
         });
 
@@ -1965,12 +1985,7 @@ function CopMapComponent({
               ["literal", [2.2, 1.2]],
               ["literal", [1000, 0.0001]]
             ],
-            "line-opacity": [
-              "case",
-              ["get", "selected"],
-              0.96,
-              ["coalesce", ["get", "radioLineOpacity"], 0.78]
-            ],
+            "line-opacity": ["case", ["get", "selected"], 0.96, ["coalesce", ["get", "radioLineOpacity"], 0.78]],
             "line-width": [
               "interpolate",
               ["linear"],
@@ -2020,12 +2035,7 @@ function CopMapComponent({
           id: selectedTransitRouteStopLabelLayerId,
           type: "symbol",
           source: selectedTransitRouteSourceId,
-          filter: [
-            "all",
-            ["==", ["geometry-type"], "Point"],
-            ["==", ["get", "kind"], "route-stop"],
-            ["has", "label"]
-          ],
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "kind"], "route-stop"], ["has", "label"]],
           layout: {
             "text-allow-overlap": false,
             "text-anchor": "top",
@@ -2069,24 +2079,14 @@ function CopMapComponent({
             "line-join": "round"
           },
           paint: {
-            "line-color": [
-              "case",
-              ["==", ["get", "role"], "alternative"],
-              "#0ea5e9",
-              "#dc2626"
-            ],
+            "line-color": ["case", ["==", ["get", "role"], "alternative"], "#0ea5e9", "#dc2626"],
             "line-dasharray": [
               "case",
               ["==", ["get", "role"], "alternative"],
               ["literal", [1.6, 1.1]],
               ["literal", [1000, 0.0001]]
             ],
-            "line-opacity": [
-              "case",
-              ["==", ["get", "role"], "alternative"],
-              0.74,
-              0.94
-            ],
+            "line-opacity": ["case", ["==", ["get", "role"], "alternative"], 0.74, 0.94],
             "line-width": ["interpolate", ["linear"], ["zoom"], 8, 4.5, 13, 7.2, 17, 10]
           }
         });
@@ -2097,12 +2097,7 @@ function CopMapComponent({
           source: emergencyRouteSourceId,
           filter: ["==", ["geometry-type"], "Point"],
           paint: {
-            "circle-color": [
-              "case",
-              ["==", ["get", "role"], "origin"],
-              "#16a34a",
-              "#dc2626"
-            ],
+            "circle-color": ["case", ["==", ["get", "role"], "origin"], "#16a34a", "#dc2626"],
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 4, 13, 6.5, 17, 9],
             "circle-stroke-color": "#ffffff",
             "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 8, 1.6, 13, 2.4, 17, 3.2]
@@ -2202,14 +2197,7 @@ function CopMapComponent({
           ],
           paint: {
             "fill-color": ["coalesce", ["get", "weatherForecastFillColor"], "#38bdf8"],
-            "fill-opacity": [
-              "case",
-              ["get", "selected"],
-              0.32,
-              ["get", "stale"],
-              0.08,
-              0.2
-            ]
+            "fill-opacity": ["case", ["get", "selected"], 0.32, ["get", "stale"], 0.08, 0.2]
           }
         });
 
@@ -2227,7 +2215,12 @@ function CopMapComponent({
             "line-join": "round"
           },
           paint: {
-            "line-color": ["coalesce", ["get", "weatherForecastLineColor"], ["get", "weatherForecastFillColor"], "#38bdf8"],
+            "line-color": [
+              "coalesce",
+              ["get", "weatherForecastLineColor"],
+              ["get", "weatherForecastFillColor"],
+              "#38bdf8"
+            ],
             "line-opacity": ["case", ["get", "selected"], 0.98, ["get", "stale"], 0.42, 0.78],
             "line-width": [
               "interpolate",
@@ -2248,11 +2241,7 @@ function CopMapComponent({
           type: "symbol",
           source: situationSourceId,
           minzoom: 5,
-          filter: [
-            "all",
-            ["==", ["get", "weatherForecastArea"], true],
-            ["has", "weatherForecastSymbolKey"]
-          ],
+          filter: ["all", ["==", ["get", "weatherForecastArea"], true], ["has", "weatherForecastSymbolKey"]],
           layout: {
             "icon-image": ["get", "weatherForecastSymbolKey"],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.36, 10, 0.5, 14, 0.64],
@@ -2271,11 +2260,7 @@ function CopMapComponent({
           type: "symbol",
           source: situationSourceId,
           minzoom: 7,
-          filter: [
-            "all",
-            ["==", ["get", "weatherForecastArea"], true],
-            ["has", "weatherForecastLabel"]
-          ],
+          filter: ["all", ["==", ["get", "weatherForecastArea"], true], ["has", "weatherForecastLabel"]],
           layout: {
             "text-field": ["get", "weatherForecastLabel"],
             "text-font": ["Noto Sans Bold"],
@@ -2299,7 +2284,11 @@ function CopMapComponent({
           id: situationWeatherGridFillLayerId,
           type: "fill",
           source: situationSourceId,
-          filter: ["all", ["==", ["get", "weatherGrid"], true], ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]]],
+          filter: [
+            "all",
+            ["==", ["get", "weatherGrid"], true],
+            ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]]
+          ],
           paint: {
             "fill-color": ["coalesce", ["get", "weatherFillColor"], ["get", "situationStatusColor"], "#38bdf8"],
             "fill-opacity": [
@@ -2315,13 +2304,23 @@ function CopMapComponent({
           id: situationWeatherGridLineLayerId,
           type: "line",
           source: situationSourceId,
-          filter: ["all", ["==", ["get", "weatherGrid"], true], ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]]],
+          filter: [
+            "all",
+            ["==", ["get", "weatherGrid"], true],
+            ["in", ["geometry-type"], ["literal", ["LineString", "Polygon", "MultiPolygon"]]]
+          ],
           layout: {
             "line-cap": "round",
             "line-join": "round"
           },
           paint: {
-            "line-color": ["coalesce", ["get", "weatherLineColor"], ["get", "weatherFillColor"], ["get", "situationStatusColor"], "#38bdf8"],
+            "line-color": [
+              "coalesce",
+              ["get", "weatherLineColor"],
+              ["get", "weatherFillColor"],
+              ["get", "situationStatusColor"],
+              "#38bdf8"
+            ],
             "line-dasharray": ["case", ["get", "stale"], ["literal", [2, 1.2]], ["literal", [1000, 0.0001]]],
             "line-opacity": ["case", ["get", "stale"], 0.28, 0.48],
             "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.45, 9, 0.8, 13, 1.25]
@@ -2373,7 +2372,12 @@ function CopMapComponent({
           source: situationSourceId,
           maxzoom: 13,
           minzoom: 5,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], ["has", "weatherTemperatureC"]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "weatherObservation"], true],
+            ["has", "weatherTemperatureC"]
+          ],
           paint: {
             "heatmap-color": [
               "interpolate",
@@ -2419,7 +2423,12 @@ function CopMapComponent({
           source: situationSourceId,
           maxzoom: 13,
           minzoom: 5,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "airQualityFeature"], true], ["has", "airQualityIndex"]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "airQualityFeature"], true],
+            ["has", "airQualityIndex"]
+          ],
           paint: {
             "heatmap-color": [
               "interpolate",
@@ -2463,7 +2472,12 @@ function CopMapComponent({
           id: situationPointSelectedLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "selected"], true], ["!=", ["get", "mapPointSuppressed"], true]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "selected"], true],
+            ["!=", ["get", "mapPointSuppressed"], true]
+          ],
           paint: {
             "circle-color": [
               "coalesce",
@@ -2502,7 +2516,19 @@ function CopMapComponent({
           id: situationPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "airQualityFeature"], true], ["!=", ["get", "weatherObservation"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["!=", ["get", "trafficStaticStop"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["!=", ["get", "mapPointSuppressed"], true],
+            ["!=", ["get", "riskFeature"], true],
+            ["!=", ["get", "airQualityFeature"], true],
+            ["!=", ["get", "weatherObservation"], true],
+            ["!=", ["get", "layer"], "weather"],
+            ["!=", ["get", "osmPoi"], true],
+            ["!=", ["get", "trafficTransit"], true],
+            ["!=", ["get", "trafficStaticStop"], true],
+            ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]
+          ],
           paint: {
             "circle-color": [
               "case",
@@ -2512,23 +2538,23 @@ function CopMapComponent({
                 "coalesce",
                 ["get", "situationStatusColor"],
                 [
-                "match",
-                ["get", "layer"],
-                "ground",
-                "#22c55e",
-                "traffic",
-                "#facc15",
-                "fire",
-                "#fb923c",
-                "warnings",
-                "#ef4444",
-                "weather_alerts",
-                "#facc15",
-                "flood",
-                "#38bdf8",
-                "air_quality",
-                "#22c55e",
-                "#8cb6d8"
+                  "match",
+                  ["get", "layer"],
+                  "ground",
+                  "#22c55e",
+                  "traffic",
+                  "#facc15",
+                  "fire",
+                  "#fb923c",
+                  "warnings",
+                  "#ef4444",
+                  "weather_alerts",
+                  "#facc15",
+                  "flood",
+                  "#38bdf8",
+                  "air_quality",
+                  "#22c55e",
+                  "#8cb6d8"
                 ]
               ]
             ],
@@ -2638,7 +2664,12 @@ function CopMapComponent({
           id: situationRadioLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "radioOverlay"], true], ["has", "radioLabel"]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "radioOverlay"], true],
+            ["has", "radioLabel"]
+          ],
           layout: {
             "text-field": ["get", "radioLabel"],
             "text-font": ["Noto Sans Bold"],
@@ -2677,7 +2708,12 @@ function CopMapComponent({
           },
           paint: {
             "icon-opacity": ["case", ["get", "stale"], 0.6, 0.96],
-            "text-color": ["case", ["get", "stale"], "#facc15", ["coalesce", ["get", "situationStatusColor"], "#dff8ff"]],
+            "text-color": [
+              "case",
+              ["get", "stale"],
+              "#facc15",
+              ["coalesce", ["get", "situationStatusColor"], "#dff8ff"]
+            ],
             "text-halo-color": "#061019",
             "text-halo-width": 1.7,
             "text-halo-blur": 0.35
@@ -2712,7 +2748,13 @@ function CopMapComponent({
             "icon-anchor": "center",
             "icon-allow-overlap": true,
             "icon-ignore-placement": true,
-            "text-field": ["step", ["zoom"], "", 15, ["coalesce", ["get", "trafficStopName"], ["get", "mapLabel"], ["get", "label"]]],
+            "text-field": [
+              "step",
+              ["zoom"],
+              "",
+              15,
+              ["coalesce", ["get", "trafficStopName"], ["get", "mapLabel"], ["get", "label"]]
+            ],
             "text-font": ["Noto Sans Bold"],
             "text-size": ["interpolate", ["linear"], ["zoom"], 14, 10, 17, 12],
             "text-offset": [0, 1.05],
@@ -2733,7 +2775,12 @@ function CopMapComponent({
           id: situationRiskPointLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskFeature"], true], ["any", ["!=", ["get", "riskKind"], "flood"], [">=", ["coalesce", ["get", "hydroMapPriority"], 0], 70]]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "riskFeature"], true],
+            ["any", ["!=", ["get", "riskKind"], "flood"], [">=", ["coalesce", ["get", "hydroMapPriority"], 0], 70]]
+          ],
           paint: {
             "circle-color": ["coalesce", ["get", "situationStatusColor"], "#fb923c"],
             "circle-opacity": ["case", ["get", "stale"], 0.48, 0.78],
@@ -2748,7 +2795,12 @@ function CopMapComponent({
           id: situationRiskIconLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskFeature"], true], ["any", ["!=", ["get", "riskKind"], "flood"], [">=", ["coalesce", ["get", "hydroMapPriority"], 0], 70]]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "riskFeature"], true],
+            ["any", ["!=", ["get", "riskKind"], "flood"], [">=", ["coalesce", ["get", "hydroMapPriority"], 0], 70]]
+          ],
           layout: {
             "icon-image": ["coalesce", ["get", "riskIconKey"], getRiskIconKey("warning")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.28, 10, 0.38, 15, 0.5],
@@ -2765,12 +2817,28 @@ function CopMapComponent({
           id: situationFloodTrendLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["has", "floodTrendIconKey"], [">=", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "riskKind"], "flood"],
+            ["has", "floodTrendIconKey"],
+            [">=", ["coalesce", ["get", "hydroMapPriority"], 0], 70]
+          ],
           layout: {
             "icon-image": ["get", "floodTrendIconKey"],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.2, 10, 0.28, 15, 0.38],
             "icon-anchor": "center",
-            "icon-offset": ["interpolate", ["linear"], ["zoom"], 5, ["literal", [22, -22]], 12, ["literal", [30, -30]], 16, ["literal", [36, -36]]],
+            "icon-offset": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              5,
+              ["literal", [22, -22]],
+              12,
+              ["literal", [30, -30]],
+              16,
+              ["literal", [36, -36]]
+            ],
             "icon-allow-overlap": true,
             "icon-ignore-placement": true
           },
@@ -2785,7 +2853,12 @@ function CopMapComponent({
           source: situationSourceId,
           minzoom: 10.3,
           maxzoom: 12.2,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "riskKind"], "flood"],
+            ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]
+          ],
           layout: {
             "icon-image": ["coalesce", ["get", "riskIconKey"], getRiskIconKey("flood")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 10.3, 0.22, 12, 0.3, 15, 0.44],
@@ -2805,7 +2878,12 @@ function CopMapComponent({
           type: "symbol",
           source: situationSourceId,
           minzoom: 12.2,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "riskKind"], "flood"],
+            ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]
+          ],
           layout: {
             "icon-image": ["coalesce", ["get", "riskIconKey"], getRiskIconKey("flood")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 12.2, 0.34, 15, 0.44, 17, 0.52],
@@ -2825,12 +2903,26 @@ function CopMapComponent({
           source: situationSourceId,
           minzoom: 12,
           maxzoom: 12.2,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["has", "floodTrendIconKey"], ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "riskKind"], "flood"],
+            ["has", "floodTrendIconKey"],
+            ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]
+          ],
           layout: {
             "icon-image": ["get", "floodTrendIconKey"],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 12, 0.22, 15, 0.34],
             "icon-anchor": "center",
-            "icon-offset": ["interpolate", ["linear"], ["zoom"], 12, ["literal", [26, -26]], 16, ["literal", [34, -34]]],
+            "icon-offset": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              12,
+              ["literal", [26, -26]],
+              16,
+              ["literal", [34, -34]]
+            ],
             "icon-allow-overlap": false,
             "icon-ignore-placement": false,
             "icon-optional": true
@@ -2845,12 +2937,26 @@ function CopMapComponent({
           type: "symbol",
           source: situationSourceId,
           minzoom: 12.2,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["has", "floodTrendIconKey"], ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "riskKind"], "flood"],
+            ["has", "floodTrendIconKey"],
+            ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]
+          ],
           layout: {
             "icon-image": ["get", "floodTrendIconKey"],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 12.2, 0.26, 15, 0.34, 17, 0.4],
             "icon-anchor": "center",
-            "icon-offset": ["interpolate", ["linear"], ["zoom"], 12.2, ["literal", [28, -28]], 16, ["literal", [36, -36]]],
+            "icon-offset": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              12.2,
+              ["literal", [28, -28]],
+              16,
+              ["literal", [36, -36]]
+            ],
             "icon-allow-overlap": true,
             "icon-ignore-placement": true
           },
@@ -2864,7 +2970,12 @@ function CopMapComponent({
           type: "symbol",
           source: situationSourceId,
           minzoom: 12.2,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskKind"], "flood"], ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "riskKind"], "flood"],
+            ["<", ["coalesce", ["get", "hydroMapPriority"], 0], 70]
+          ],
           layout: {
             "text-field": ["coalesce", ["get", "riskMapLabel"], ["get", "mapLabel"], ["get", "label"]],
             "text-font": ["Noto Sans Bold"],
@@ -2888,7 +2999,12 @@ function CopMapComponent({
           id: situationRiskLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "riskFeature"], true], ["any", ["!=", ["get", "riskKind"], "flood"], [">=", ["coalesce", ["get", "hydroMapPriority"], 0], 70]]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "riskFeature"], true],
+            ["any", ["!=", ["get", "riskKind"], "flood"], [">=", ["coalesce", ["get", "hydroMapPriority"], 0], 70]]
+          ],
           layout: {
             "text-field": ["coalesce", ["get", "riskMapLabel"], ["get", "mapLabel"], ["get", "label"]],
             "text-font": ["Noto Sans Bold"],
@@ -2927,7 +3043,17 @@ function CopMapComponent({
             "text-optional": true
           },
           paint: {
-            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.72, 9, 0.84, 12, ["case", ["get", "stale"], 0.68, 0.94]],
+            "icon-opacity": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              5,
+              0.72,
+              9,
+              0.84,
+              12,
+              ["case", ["get", "stale"], 0.68, 0.94]
+            ],
             "text-color": ["case", ["get", "stale"], "#facc15", "#dff8ff"],
             "text-halo-color": "#061019",
             "text-halo-width": 1.5,
@@ -3030,7 +3156,19 @@ function CopMapComponent({
           id: situationLabelLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["!=", ["get", "mapPointSuppressed"], true], ["!=", ["get", "riskFeature"], true], ["!=", ["get", "airQualityFeature"], true], ["!=", ["get", "weatherObservation"], true], ["!=", ["get", "layer"], "weather"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "trafficTransit"], true], ["!=", ["get", "trafficStaticStop"], true], ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["!=", ["get", "mapPointSuppressed"], true],
+            ["!=", ["get", "riskFeature"], true],
+            ["!=", ["get", "airQualityFeature"], true],
+            ["!=", ["get", "weatherObservation"], true],
+            ["!=", ["get", "layer"], "weather"],
+            ["!=", ["get", "osmPoi"], true],
+            ["!=", ["get", "trafficTransit"], true],
+            ["!=", ["get", "trafficStaticStop"], true],
+            ["any", ["!=", ["get", "layer"], "mobile"], ["==", ["get", "takGateway"], true]]
+          ],
           layout: {
             "text-field": ["coalesce", ["get", "mapLabel"], ["get", "label"]],
             "text-font": ["Noto Sans Regular"],
@@ -3094,7 +3232,14 @@ function CopMapComponent({
           id: situationMobileSymbolLayerId,
           type: "symbol",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "layer"], "mobile"], ["!=", ["get", "osmPoi"], true], ["!=", ["get", "takGateway"], true], ["!=", ["get", "radioOverlay"], true]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "layer"], "mobile"],
+            ["!=", ["get", "osmPoi"], true],
+            ["!=", ["get", "takGateway"], true],
+            ["!=", ["get", "radioOverlay"], true]
+          ],
           layout: {
             "icon-image": ["coalesce", ["get", "mobileSymbolKey"], getMobileNetworkIconKey("unknown")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 7, 0.26, 11, 0.34, 15, 0.48],
@@ -3133,7 +3278,12 @@ function CopMapComponent({
           type: "symbol",
           source: situationSourceId,
           maxzoom: 12.2,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], [">=", ["coalesce", ["get", "weatherMapPriority"], 0], 50]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "weatherObservation"], true],
+            [">=", ["coalesce", ["get", "weatherMapPriority"], 0], 50]
+          ],
           layout: {
             "icon-image": ["coalesce", ["get", "weatherSymbolKey"], getWeatherConditionIconKey("unknown")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.34, 8, 0.42, 12, 0.54, 16, 0.72],
@@ -3153,12 +3303,29 @@ function CopMapComponent({
           type: "symbol",
           source: situationSourceId,
           minzoom: 11,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], [">=", ["coalesce", ["get", "weatherWindSpeedMps"], 0], 3]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "weatherObservation"], true],
+            [">=", ["coalesce", ["get", "weatherWindSpeedMps"], 0], 3]
+          ],
           layout: {
             "icon-image": weatherWindIconKey,
             "icon-rotate": ["+", ["coalesce", ["get", "weatherWindDirectionDeg"], 0], 180],
             "icon-rotation-alignment": "map",
-            "icon-size": ["interpolate", ["linear"], ["coalesce", ["get", "weatherWindSpeedMps"], 0], 0.5, 0.18, 5, 0.3, 14, 0.48, 28, 0.62],
+            "icon-size": [
+              "interpolate",
+              ["linear"],
+              ["coalesce", ["get", "weatherWindSpeedMps"], 0],
+              0.5,
+              0.18,
+              5,
+              0.3,
+              14,
+              0.48,
+              28,
+              0.62
+            ],
             "icon-allow-overlap": true,
             "icon-ignore-placement": true,
             "icon-anchor": "center"
@@ -3174,7 +3341,12 @@ function CopMapComponent({
           source: situationSourceId,
           minzoom: 10,
           maxzoom: 12.2,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], ["<", ["coalesce", ["get", "weatherMapPriority"], 0], 50]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "weatherObservation"], true],
+            ["<", ["coalesce", ["get", "weatherMapPriority"], 0], 50]
+          ],
           layout: {
             "icon-image": ["coalesce", ["get", "weatherSymbolKey"], getWeatherConditionIconKey("unknown")],
             "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.38, 13, 0.52, 16, 0.66],
@@ -3212,7 +3384,12 @@ function CopMapComponent({
           type: "symbol",
           source: situationSourceId,
           minzoom: 10.5,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], ["has", "weatherValueLabel"]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "weatherObservation"], true],
+            ["has", "weatherValueLabel"]
+          ],
           layout: {
             "text-field": ["get", "weatherValueLabel"],
             "text-font": ["Noto Sans Bold"],
@@ -3237,7 +3414,12 @@ function CopMapComponent({
           type: "symbol",
           source: situationSourceId,
           minzoom: 12.4,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherObservation"], true], ["has", "weatherLabel"]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "weatherObservation"], true],
+            ["has", "weatherLabel"]
+          ],
           layout: {
             "text-field": ["get", "weatherLabel"],
             "text-font": ["Noto Sans Bold"],
@@ -3260,7 +3442,12 @@ function CopMapComponent({
           id: situationWeatherCameraSelectedLayerId,
           type: "circle",
           source: situationSourceId,
-          filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherCamera"], true], ["==", ["get", "selected"], true]],
+          filter: [
+            "all",
+            ["==", ["geometry-type"], "Point"],
+            ["==", ["get", "weatherCamera"], true],
+            ["==", ["get", "selected"], true]
+          ],
           paint: {
             "circle-color": "#38bdf8",
             "circle-opacity": 0.18,
@@ -3284,7 +3471,17 @@ function CopMapComponent({
             "icon-ignore-placement": true
           },
           paint: {
-            "icon-opacity": ["interpolate", ["linear"], ["zoom"], 6, ["case", ["get", "stale"], 0.48, 0.78], 9.5, ["case", ["get", "stale"], 0.56, 0.9], 11, ["case", ["get", "stale"], 0.68, 0.98]]
+            "icon-opacity": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              6,
+              ["case", ["get", "stale"], 0.48, 0.78],
+              9.5,
+              ["case", ["get", "stale"], 0.56, 0.9],
+              11,
+              ["case", ["get", "stale"], 0.68, 0.98]
+            ]
           }
         });
 
@@ -3295,7 +3492,17 @@ function CopMapComponent({
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "airQualityFeature"], true]],
           paint: {
             "circle-color": ["coalesce", ["get", "situationStatusColor"], "#22c55e"],
-            "circle-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0, 9, 0, 11, ["case", ["get", "stale"], 0.5, 0.82]],
+            "circle-opacity": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              5,
+              0,
+              9,
+              0,
+              11,
+              ["case", ["get", "stale"], 0.5, 0.82]
+            ],
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 7, 9, 11, 13, 16, 16, 22],
             "circle-stroke-color": "#061019",
             "circle-stroke-opacity": 0.92,
@@ -3517,7 +3724,12 @@ function CopMapComponent({
           source: trackSourceId,
           layout: {
             "icon-image": ["get", "displaySymbolKey"],
-            "icon-size": ["case", ["get", "publicFlight"], ["case", ["get", "selected"], 0.68, ["get", "hovered"], 0.62, 0.56], 0.46],
+            "icon-size": [
+              "case",
+              ["get", "publicFlight"],
+              ["case", ["get", "selected"], 0.68, ["get", "hovered"], 0.62, 0.56],
+              0.46
+            ],
             "icon-rotate": ["case", ["get", "publicFlight"], ["coalesce", ["get", "aircraftHeadingDeg"], 0], 0],
             "icon-rotation-alignment": "map",
             "icon-allow-overlap": true,
@@ -3565,9 +3777,9 @@ function CopMapComponent({
           if (!rule || !points[index]) {
             return;
           }
-          const nextPoints = points.map((point, pointIndex) => (
+          const nextPoints = points.map((point, pointIndex) =>
             pointIndex === index ? { lat: lngLat.lat, lon: lngLat.lng } : point
-          ));
+          );
           onUpdateZonePolygonRef.current?.(rule.id, nextPoints);
         };
         const finishAoiVertexDrag = () => {
@@ -3579,7 +3791,9 @@ function CopMapComponent({
           map.touchZoomRotate.enable();
           map.getCanvas().style.cursor = "";
         };
-        const handleAoiVertexDragMove = (event: maplibregl.MapMouseEvent | (maplibregl.MapTouchEvent & { lngLat: maplibregl.LngLat })) => {
+        const handleAoiVertexDragMove = (
+          event: maplibregl.MapMouseEvent | (maplibregl.MapTouchEvent & { lngLat: maplibregl.LngLat })
+        ) => {
           const dragged = draggedAoiVertexRef.current;
           if (!dragged) {
             return;
@@ -3587,7 +3801,11 @@ function CopMapComponent({
           event.preventDefault();
           updateAoiEditPoint(dragged.zoneId, dragged.index, event.lngLat);
         };
-        const handleAoiVertexDragStart = (event: MapLayerMouseEvent | (maplibregl.MapTouchEvent & { features?: MapLayerMouseEvent["features"]; lngLat: maplibregl.LngLat })) => {
+        const handleAoiVertexDragStart = (
+          event:
+            | MapLayerMouseEvent
+            | (maplibregl.MapTouchEvent & { features?: MapLayerMouseEvent["features"]; lngLat: maplibregl.LngLat })
+        ) => {
           const feature = event.features?.[0];
           const properties = isRecord(feature?.properties) ? feature.properties : {};
           const zoneId = stringProperty(properties.zoneId);
@@ -3658,9 +3876,9 @@ function CopMapComponent({
           if (!drawing || !points[index]) {
             return;
           }
-          const nextPoints = points.map((point, pointIndex) => (
+          const nextPoints = points.map((point, pointIndex) =>
             pointIndex === index ? { lat: lngLat.lat, lon: lngLat.lng } : point
-          ));
+          );
           const geometry = sketchGeometryFromPoints(drawing.properties.kind, nextPoints);
           if (geometry) {
             onUpdateSketchDrawingRef.current?.(drawing.id, { geometry });
@@ -3671,13 +3889,20 @@ function CopMapComponent({
             return;
           }
           draggedSketchVertexRef.current = null;
-          if (!mapInteractionSuspended && sketchModeRef.current !== "line" && sketchModeRef.current !== "polygon" && sketchModeRef.current !== "measurement") {
+          if (
+            !mapInteractionSuspended &&
+            sketchModeRef.current !== "line" &&
+            sketchModeRef.current !== "polygon" &&
+            sketchModeRef.current !== "measurement"
+          ) {
             map.dragPan.enable();
           }
           map.touchZoomRotate.enable();
           map.getCanvas().style.cursor = "";
         };
-        const handleSketchVertexDragMove = (event: maplibregl.MapMouseEvent | (maplibregl.MapTouchEvent & { lngLat: maplibregl.LngLat })) => {
+        const handleSketchVertexDragMove = (
+          event: maplibregl.MapMouseEvent | (maplibregl.MapTouchEvent & { lngLat: maplibregl.LngLat })
+        ) => {
           const dragged = draggedSketchVertexRef.current;
           if (!dragged) {
             return;
@@ -3685,7 +3910,11 @@ function CopMapComponent({
           event.preventDefault();
           updateSketchEditPoint(dragged.drawingId, dragged.index, event.lngLat);
         };
-        const handleSketchVertexDragStart = (event: MapLayerMouseEvent | (maplibregl.MapTouchEvent & { features?: MapLayerMouseEvent["features"]; lngLat: maplibregl.LngLat })) => {
+        const handleSketchVertexDragStart = (
+          event:
+            | MapLayerMouseEvent
+            | (maplibregl.MapTouchEvent & { features?: MapLayerMouseEvent["features"]; lngLat: maplibregl.LngLat })
+        ) => {
           const feature = event.features?.[0];
           const properties = isRecord(feature?.properties) ? feature.properties : {};
           const drawingId = stringProperty(properties.drawingId);
@@ -3714,7 +3943,9 @@ function CopMapComponent({
           const properties = isRecord(feature?.properties) ? feature.properties : {};
           const drawingId = stringProperty(properties.drawingId);
           const insertIndex = numberProperty(properties.insertIndex);
-          const drawing = sketchDrawingsRef.current.find((candidate) => candidate.id === (drawingId ?? selectedSketchDrawingIdRef.current));
+          const drawing = sketchDrawingsRef.current.find(
+            (candidate) => candidate.id === (drawingId ?? selectedSketchDrawingIdRef.current)
+          );
           const points = sketchEditablePoints(drawing ?? null);
           if (!drawing || insertIndex === undefined || points.length < 2) {
             return;
@@ -3770,7 +4001,10 @@ function CopMapComponent({
           const activeSketchMode = sketchModeRef.current;
           if (activeSketchMode === "marker" || activeSketchMode === "text") {
             const kind: SketchDrawingKind = activeSketchMode === "text" ? "text" : "marker";
-            const preset = activeSketchMode === "text" ? sketchSymbolPresets.find((candidate) => candidate.iconId === "note") ?? defaultSketchSymbol : sketchSymbolRef.current;
+            const preset =
+              activeSketchMode === "text"
+                ? (sketchSymbolPresets.find((candidate) => candidate.iconId === "note") ?? defaultSketchSymbol)
+                : sketchSymbolRef.current;
             const style = sketchStyleSettingsRef.current;
             onCreateSketchDrawingRef.current?.({
               geometry: { coordinates: [event.lngLat.lng, event.lngLat.lat], type: "Point" },
@@ -3785,19 +4019,32 @@ function CopMapComponent({
             return;
           }
           if (isSketchDraftMode(activeSketchMode)) {
-            setSketchDraftPoints((current) => [...current, { lat: event.lngLat.lat, lon: event.lngLat.lng }].slice(0, 200));
+            setSketchDraftPoints((current) =>
+              [...current, { lat: event.lngLat.lat, lon: event.lngLat.lng }].slice(0, 200)
+            );
             return;
           }
           if (zoneCreationActiveRef.current) {
-            setZoneDraftPoints((current) => [...current, { lat: event.lngLat.lat, lon: event.lngLat.lng }].slice(0, 80));
+            setZoneDraftPoints((current) =>
+              [...current, { lat: event.lngLat.lat, lon: event.lngLat.lng }].slice(0, 80)
+            );
             return;
           }
           if (activeSketchMode === "select") {
-            const clickedSketchEditHandle = queryRenderedFeatureByLayerPriority(map, event.point, [sketchEditVertexLayerId, sketchEditMidpointLayerId]);
+            const clickedSketchEditHandle = queryRenderedFeatureByLayerPriority(map, event.point, [
+              sketchEditVertexLayerId,
+              sketchEditMidpointLayerId
+            ]);
             if (clickedSketchEditHandle) {
               return;
             }
-            const clickedSketch = queryRenderedFeatureByLayerPriority(map, event.point, [sketchPointIconLayerId, sketchPointLayerId, sketchLabelLayerId, sketchLineLayerId, sketchFillLayerId]);
+            const clickedSketch = queryRenderedFeatureByLayerPriority(map, event.point, [
+              sketchPointIconLayerId,
+              sketchPointLayerId,
+              sketchLabelLayerId,
+              sketchLineLayerId,
+              sketchFillLayerId
+            ]);
             const properties = isRecord(clickedSketch?.properties) ? clickedSketch.properties : {};
             const drawingId = stringProperty(properties.drawingId);
             const drawing = sketchDrawingsRef.current.find((candidate) => candidate.id === drawingId);
@@ -3810,7 +4057,10 @@ function CopMapComponent({
             return;
           }
           if (editingZoneIdRef.current) {
-            const clickedEditHandle = queryRenderedFeatureByLayerPriority(map, event.point, [aoiEditVertexLayerId, aoiEditMidpointLayerId]);
+            const clickedEditHandle = queryRenderedFeatureByLayerPriority(map, event.point, [
+              aoiEditVertexLayerId,
+              aoiEditMidpointLayerId
+            ]);
             if (clickedEditHandle) {
               return;
             }
@@ -4200,7 +4450,9 @@ function CopMapComponent({
   React.useEffect(() => {
     const source = mapRef.current?.getSource(userLocationSourceId);
     if (mapReady && source && "setData" in source) {
-      (source as GeoJSONSource).setData(userLocationToFeatureCollection(userLocation) as Parameters<GeoJSONSource["setData"]>[0]);
+      (source as GeoJSONSource).setData(
+        userLocationToFeatureCollection(userLocation) as Parameters<GeoJSONSource["setData"]>[0]
+      );
     }
   }, [mapReady, userLocation]);
 
@@ -4308,7 +4560,9 @@ function CopMapComponent({
   React.useEffect(() => {
     const source = mapRef.current?.getSource(situationOsmClusterSourceId);
     if (mapReady && source && "setData" in source) {
-      const clusterData = clusterTracks ? situationOsmClusterFeatureCollection : emptySituationContextFeatureCollection();
+      const clusterData = clusterTracks
+        ? situationOsmClusterFeatureCollection
+        : emptySituationContextFeatureCollection();
       (source as GeoJSONSource).setData(clusterData as Parameters<GeoJSONSource["setData"]>[0]);
     }
   }, [clusterTracks, mapReady, situationOsmClusterFeatureCollection]);
@@ -4581,47 +4835,61 @@ function CopMapComponent({
     }
   }, [selectedSketchDrawing, selectedSketchVertexIndex]);
 
-  const applySketchStyle = React.useCallback((patch: Partial<SketchStyleSettings>) => {
-    const nextStyle = {
-      fill: patch.fill ?? sketchStyleSettingsRef.current.fill,
-      lineWidth: patch.lineWidth ?? sketchStyleSettingsRef.current.lineWidth,
-      opacity: patch.opacity ?? sketchStyleSettingsRef.current.opacity,
-      stroke: patch.stroke ?? sketchStyleSettingsRef.current.stroke
-    };
-    setSketchFill(nextStyle.fill);
-    setSketchLineWidth(nextStyle.lineWidth);
-    setSketchOpacity(nextStyle.opacity);
-    setSketchStroke(nextStyle.stroke);
-    if (selectedSketchDrawing) {
-      onUpdateSketchDrawingRef.current?.(selectedSketchDrawing.id, { style: nextStyle });
-    }
-  }, [selectedSketchDrawing]);
+  const applySketchStyle = React.useCallback(
+    (patch: Partial<SketchStyleSettings>) => {
+      const nextStyle = {
+        fill: patch.fill ?? sketchStyleSettingsRef.current.fill,
+        lineWidth: patch.lineWidth ?? sketchStyleSettingsRef.current.lineWidth,
+        opacity: patch.opacity ?? sketchStyleSettingsRef.current.opacity,
+        stroke: patch.stroke ?? sketchStyleSettingsRef.current.stroke
+      };
+      setSketchFill(nextStyle.fill);
+      setSketchLineWidth(nextStyle.lineWidth);
+      setSketchOpacity(nextStyle.opacity);
+      setSketchStroke(nextStyle.stroke);
+      if (selectedSketchDrawing) {
+        onUpdateSketchDrawingRef.current?.(selectedSketchDrawing.id, { style: nextStyle });
+      }
+    },
+    [selectedSketchDrawing]
+  );
 
-  const applySketchFillPattern = React.useCallback((pattern: SketchFillPattern) => {
-    setSketchFillPattern(pattern);
-    if (selectedSketchDrawing) {
-      onUpdateSketchDrawingRef.current?.(selectedSketchDrawing.id, {
-        properties: {
-          ...(selectedSketchDrawing.properties.properties ?? {}),
-          fillPattern: pattern
-        }
-      });
-    }
-  }, [selectedSketchDrawing]);
+  const applySketchFillPattern = React.useCallback(
+    (pattern: SketchFillPattern) => {
+      setSketchFillPattern(pattern);
+      if (selectedSketchDrawing) {
+        onUpdateSketchDrawingRef.current?.(selectedSketchDrawing.id, {
+          properties: {
+            ...(selectedSketchDrawing.properties.properties ?? {}),
+            fillPattern: pattern
+          }
+        });
+      }
+    },
+    [selectedSketchDrawing]
+  );
 
-  const applySketchSymbol = React.useCallback((preset: SketchSymbolPreset) => {
-    setSketchSymbol(preset);
-    if (selectedSketchDrawing && (selectedSketchDrawing.properties.kind === "marker" || selectedSketchDrawing.properties.kind === "point" || selectedSketchDrawing.properties.kind === "text")) {
-      onUpdateSketchDrawingRef.current?.(selectedSketchDrawing.id, {
-        label: preset.label,
-        properties: {
-          ...(selectedSketchDrawing.properties.properties ?? {}),
-          shape: preset.shape
-        },
-        symbol: sketchPresetToSymbolInput(preset)
-      });
-    }
-  }, [selectedSketchDrawing]);
+  const applySketchSymbol = React.useCallback(
+    (preset: SketchSymbolPreset) => {
+      setSketchSymbol(preset);
+      if (
+        selectedSketchDrawing &&
+        (selectedSketchDrawing.properties.kind === "marker" ||
+          selectedSketchDrawing.properties.kind === "point" ||
+          selectedSketchDrawing.properties.kind === "text")
+      ) {
+        onUpdateSketchDrawingRef.current?.(selectedSketchDrawing.id, {
+          label: preset.label,
+          properties: {
+            ...(selectedSketchDrawing.properties.properties ?? {}),
+            shape: preset.shape
+          },
+          symbol: sketchPresetToSymbolInput(preset)
+        });
+      }
+    },
+    [selectedSketchDrawing]
+  );
 
   const activeSketchTool = React.useMemo(
     () => sketchToolItems.find((item) => item.mode === sketchMode) ?? sketchToolItems[0]!,
@@ -4638,8 +4906,13 @@ function CopMapComponent({
     [mobileSketchControlsOpen]
   );
   const showSketchSymbolPalette =
-    sketchMode === "marker"
-    || Boolean(selectedSketchDrawing && (selectedSketchDrawing.properties.kind === "marker" || selectedSketchDrawing.properties.kind === "point" || selectedSketchDrawing.properties.kind === "text"));
+    sketchMode === "marker" ||
+    Boolean(
+      selectedSketchDrawing &&
+      (selectedSketchDrawing.properties.kind === "marker" ||
+        selectedSketchDrawing.properties.kind === "point" ||
+        selectedSketchDrawing.properties.kind === "text")
+    );
   const beginSketchPaletteDrag = React.useCallback(
     (event: React.PointerEvent<HTMLButtonElement>) => {
       if (mobileSketchControlsOpen || !sketchToolsExpanded) {
@@ -4846,26 +5119,36 @@ function CopMapComponent({
         mapFullscreen ? "fullscreen" : "",
         radioPointPickActive ? "radio-point-pick-active" : "",
         mobileSketchControlsOpen ? "mobile-sketch-controls-open" : ""
-      ].filter(Boolean).join(" ")}
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       <div className="map-canvas" ref={containerRef} aria-label="Georeferencovaná situační mapa" />
       {zoneCreationActive ? (
         <div className="map-zone-create-hint">
           <strong>Kreslení zóny</strong>
-          <span>{zoneDraftPoints.length < 3 ? `Přidejte alespoň 3 body (${zoneDraftPoints.length}/3).` : `${zoneDraftPoints.length} bodů připraveno.`}</span>
+          <span>
+            {zoneDraftPoints.length < 3
+              ? `Přidejte alespoň 3 body (${zoneDraftPoints.length}/3).`
+              : `${zoneDraftPoints.length} bodů připraveno.`}
+          </span>
           <div className="map-zone-create-actions">
-            <button disabled={zoneDraftPoints.length < 3} onClick={finishZoneDraft} type="button">Dokončit polygon</button>
-            <button disabled={zoneDraftPoints.length === 0} onClick={removeLastZoneDraftPoint} type="button">Zpět bod</button>
-            <button onClick={cancelZoneDraft} type="button">Zrušit</button>
+            <button disabled={zoneDraftPoints.length < 3} onClick={finishZoneDraft} type="button">
+              Dokončit polygon
+            </button>
+            <button disabled={zoneDraftPoints.length === 0} onClick={removeLastZoneDraftPoint} type="button">
+              Zpět bod
+            </button>
+            <button onClick={cancelZoneDraft} type="button">
+              Zrušit
+            </button>
           </div>
         </div>
       ) : null}
       {editingZone ? (
         <div className="map-zone-create-hint map-zone-edit-hint">
           <strong>Editace zóny: {editingZone.name}</strong>
-          <span>
-            Tažením posuňte roh. Modré body mezi hranami vloží nový bod. Vybraný roh lze smazat.
-          </span>
+          <span>Tažením posuňte roh. Modré body mezi hranami vloží nový bod. Vybraný roh lze smazat.</span>
           <div className="map-zone-create-actions">
             <button
               disabled={selectedEditVertexIndex === null || editingZonePoints.length <= 3}
@@ -4874,12 +5157,18 @@ function CopMapComponent({
             >
               Smazat bod
             </button>
-            <button onClick={() => setSelectedEditVertexIndex(null)} type="button">Zrušit výběr</button>
-            <button onClick={() => onCancelZoneEditingRef.current?.()} type="button">Hotovo</button>
+            <button onClick={() => setSelectedEditVertexIndex(null)} type="button">
+              Zrušit výběr
+            </button>
+            <button onClick={() => onCancelZoneEditingRef.current?.()} type="button">
+              Hotovo
+            </button>
           </div>
         </div>
       ) : null}
-      {reportLocationPickActive ? <div className="map-zone-create-hint">Kliknutím do mapy určíte polohu hlášení</div> : null}
+      {reportLocationPickActive ? (
+        <div className="map-zone-create-hint">Kliknutím do mapy určíte polohu hlášení</div>
+      ) : null}
       {radioPointPickActive ? (
         <div className="map-zone-create-hint radio-map-pick-hint">
           <strong>Výběr bodu pro rádio</strong>
@@ -4892,7 +5181,9 @@ function CopMapComponent({
           sketchToolsExpanded ? "expanded" : "collapsed",
           sketchPaletteDragging ? "dragging" : "",
           sketchPalettePosition && sketchToolsExpanded && !mobileSketchControlsOpen ? "moved" : ""
-        ].filter(Boolean).join(" ")}
+        ]
+          .filter(Boolean)
+          .join(" ")}
         onClick={stopMapToolbarEvent}
         onDoubleClick={stopMapToolbarEvent}
         onPointerDown={stopMapToolbarEvent}
@@ -4935,143 +5226,143 @@ function CopMapComponent({
             </button>
           )}
         </div>
-      {sketchToolsExpanded ? (
-        <div
-          className="map-sketch-style-panel"
-          onClick={stopMapToolbarEvent}
-          onDoubleClick={stopMapToolbarEvent}
-          onPointerDown={stopMapToolbarEvent}
-          onWheel={stopMapToolbarEvent}
-        >
-          <div className="map-sketch-style-header">
-            <Palette size={16} />
-            <strong>Zákres</strong>
-            <span>{selectedSketchDrawing ? "upravujete vybraný prvek" : "styl pro nový prvek"}</span>
-            <button
-              aria-label="Přesunout paletu zákresu"
-              className="map-sketch-palette-drag"
-              onPointerDown={beginSketchPaletteDrag}
-              title="Přesunout paletu"
-              type="button"
-            >
-              <Move size={15} strokeWidth={2.2} />
-            </button>
-          </div>
-          <div className="map-sketch-style-grid">
-            <div className="map-sketch-style-section">
-              <span>Tah</span>
-              <div className="map-sketch-swatches">
-                {sketchColorSwatches.map((color) => (
-                  <button
-                    aria-label={`Barva tahu ${color}`}
-                    className={sketchStroke === color ? "active" : ""}
-                    key={`stroke-${color}`}
-                    onClick={() => applySketchStyle({ stroke: color })}
-                    style={{ "--swatch-color": color } as React.CSSProperties}
-                    type="button"
-                  />
-                ))}
-                <input
-                  aria-label="Vlastní barva tahu"
-                  onChange={(event) => applySketchStyle({ stroke: event.target.value })}
-                  type="color"
-                  value={sketchStroke}
-                />
-              </div>
+        {sketchToolsExpanded ? (
+          <div
+            className="map-sketch-style-panel"
+            onClick={stopMapToolbarEvent}
+            onDoubleClick={stopMapToolbarEvent}
+            onPointerDown={stopMapToolbarEvent}
+            onWheel={stopMapToolbarEvent}
+          >
+            <div className="map-sketch-style-header">
+              <Palette size={16} />
+              <strong>Zákres</strong>
+              <span>{selectedSketchDrawing ? "upravujete vybraný prvek" : "styl pro nový prvek"}</span>
+              <button
+                aria-label="Přesunout paletu zákresu"
+                className="map-sketch-palette-drag"
+                onPointerDown={beginSketchPaletteDrag}
+                title="Přesunout paletu"
+                type="button"
+              >
+                <Move size={15} strokeWidth={2.2} />
+              </button>
             </div>
-            <div className="map-sketch-style-section">
-              <span>Výplň</span>
-              <div className="map-sketch-swatches">
-                {sketchColorSwatches.map((color) => (
-                  <button
-                    aria-label={`Barva výplně ${color}`}
-                    className={sketchFill === color ? "active" : ""}
-                    key={`fill-${color}`}
-                    onClick={() => applySketchStyle({ fill: color })}
-                    style={{ "--swatch-color": color } as React.CSSProperties}
-                    type="button"
-                  />
-                ))}
-                <input
-                  aria-label="Vlastní barva výplně"
-                  onChange={(event) => applySketchStyle({ fill: event.target.value })}
-                  type="color"
-                  value={sketchFill}
-                />
-              </div>
-            </div>
-            <label className="map-sketch-range">
-              <span>Šířka {sketchLineWidth}px</span>
-              <input
-                max={12}
-                min={1}
-                onChange={(event) => applySketchStyle({ lineWidth: Number(event.target.value) })}
-                step={1}
-                type="range"
-                value={sketchLineWidth}
-              />
-            </label>
-            <label className="map-sketch-range">
-              <span>Průhlednost {Math.round(sketchOpacity * 100)}%</span>
-              <input
-                max={0.9}
-                min={0.05}
-                onChange={(event) => applySketchStyle({ opacity: Number(event.target.value) })}
-                step={0.05}
-                type="range"
-                value={sketchOpacity}
-              />
-            </label>
-            <div className="map-sketch-fill-patterns">
-              {([
-                ["solid", "Plná"],
-                ["outline", "Obrys"],
-                ["hatch", "Šrafy"],
-                ["dash", "Čár."]
-              ] as Array<[SketchFillPattern, string]>).map(([pattern, label]) => (
-                <button
-                  className={sketchFillPattern === pattern ? "active" : ""}
-                  key={pattern}
-                  onClick={() => applySketchFillPattern(pattern)}
-                  type="button"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          {showSketchSymbolPalette ? (
-            <div className="map-sketch-symbol-section">
-              <span>Symbol</span>
-              <div className="map-sketch-symbol-grid">
-                {sketchSymbolPresets.map((preset) => {
-                  const Icon = sketchSymbolIcons[preset.iconId] ?? MapPin;
-                  return (
+            <div className="map-sketch-style-grid">
+              <div className="map-sketch-style-section">
+                <span>Tah</span>
+                <div className="map-sketch-swatches">
+                  {sketchColorSwatches.map((color) => (
                     <button
-                      aria-label={preset.label}
-                      className={sketchSymbol.iconId === preset.iconId ? "active" : ""}
-                      key={preset.iconId}
-                      onClick={() => applySketchSymbol(preset)}
-                      title={preset.label}
+                      aria-label={`Barva tahu ${color}`}
+                      className={sketchStroke === color ? "active" : ""}
+                      key={`stroke-${color}`}
+                      onClick={() => applySketchStyle({ stroke: color })}
+                      style={{ "--swatch-color": color } as React.CSSProperties}
                       type="button"
-                    >
-                      <Icon size={16} strokeWidth={2.2} />
-                      <span>{preset.glyph}</span>
-                    </button>
-                  );
-                })}
+                    />
+                  ))}
+                  <input
+                    aria-label="Vlastní barva tahu"
+                    onChange={(event) => applySketchStyle({ stroke: event.target.value })}
+                    type="color"
+                    value={sketchStroke}
+                  />
+                </div>
+              </div>
+              <div className="map-sketch-style-section">
+                <span>Výplň</span>
+                <div className="map-sketch-swatches">
+                  {sketchColorSwatches.map((color) => (
+                    <button
+                      aria-label={`Barva výplně ${color}`}
+                      className={sketchFill === color ? "active" : ""}
+                      key={`fill-${color}`}
+                      onClick={() => applySketchStyle({ fill: color })}
+                      style={{ "--swatch-color": color } as React.CSSProperties}
+                      type="button"
+                    />
+                  ))}
+                  <input
+                    aria-label="Vlastní barva výplně"
+                    onChange={(event) => applySketchStyle({ fill: event.target.value })}
+                    type="color"
+                    value={sketchFill}
+                  />
+                </div>
+              </div>
+              <label className="map-sketch-range">
+                <span>Šířka {sketchLineWidth}px</span>
+                <input
+                  max={12}
+                  min={1}
+                  onChange={(event) => applySketchStyle({ lineWidth: Number(event.target.value) })}
+                  step={1}
+                  type="range"
+                  value={sketchLineWidth}
+                />
+              </label>
+              <label className="map-sketch-range">
+                <span>Průhlednost {Math.round(sketchOpacity * 100)}%</span>
+                <input
+                  max={0.9}
+                  min={0.05}
+                  onChange={(event) => applySketchStyle({ opacity: Number(event.target.value) })}
+                  step={0.05}
+                  type="range"
+                  value={sketchOpacity}
+                />
+              </label>
+              <div className="map-sketch-fill-patterns">
+                {(
+                  [
+                    ["solid", "Plná"],
+                    ["outline", "Obrys"],
+                    ["hatch", "Šrafy"],
+                    ["dash", "Čár."]
+                  ] as Array<[SketchFillPattern, string]>
+                ).map(([pattern, label]) => (
+                  <button
+                    className={sketchFillPattern === pattern ? "active" : ""}
+                    key={pattern}
+                    onClick={() => applySketchFillPattern(pattern)}
+                    type="button"
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
-          ) : null}
-        </div>
-      ) : null}
+            {showSketchSymbolPalette ? (
+              <div className="map-sketch-symbol-section">
+                <span>Symbol</span>
+                <div className="map-sketch-symbol-grid">
+                  {sketchSymbolPresets.map((preset) => {
+                    const Icon = sketchSymbolIcons[preset.iconId] ?? MapPin;
+                    return (
+                      <button
+                        aria-label={preset.label}
+                        className={sketchSymbol.iconId === preset.iconId ? "active" : ""}
+                        key={preset.iconId}
+                        onClick={() => applySketchSymbol(preset)}
+                        title={preset.label}
+                        type="button"
+                      >
+                        <Icon size={16} strokeWidth={2.2} />
+                        <span>{preset.glyph}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {isSketchDraftMode(sketchMode) ? (
         <div className="map-zone-create-hint map-sketch-create-hint">
           <strong>{sketchMode === "measurement" ? "Měření" : "Kreslení"}</strong>
-          <span>
-            {sketchDraftHint(sketchMode, sketchDraftPoints)}
-          </span>
+          <span>{sketchDraftHint(sketchMode, sketchDraftPoints)}</span>
           <div className="map-zone-create-actions">
             <button
               disabled={sketchDraftPoints.length < (sketchMode === "polygon" ? 3 : 2)}
@@ -5080,8 +5371,12 @@ function CopMapComponent({
             >
               Uložit
             </button>
-            <button disabled={sketchDraftPoints.length === 0} onClick={removeLastSketchDraftPoint} type="button">Zpět bod</button>
-            <button onClick={() => onSketchModeChangeRef.current?.("pan")} type="button">Zrušit</button>
+            <button disabled={sketchDraftPoints.length === 0} onClick={removeLastSketchDraftPoint} type="button">
+              Zpět bod
+            </button>
+            <button onClick={() => onSketchModeChangeRef.current?.("pan")} type="button">
+              Zrušit
+            </button>
           </div>
         </div>
       ) : null}
@@ -5091,13 +5386,19 @@ function CopMapComponent({
           <span>Rohy lze táhnout, modré body vkládají další bod. Zákres je samostatná vrstva.</span>
           <div className="map-zone-create-actions">
             <button
-              disabled={selectedSketchVertexIndex === null || sketchEditablePoints(selectedSketchDrawing).length <= (selectedSketchDrawing.properties.kind === "polygon" ? 3 : 2)}
+              disabled={
+                selectedSketchVertexIndex === null ||
+                sketchEditablePoints(selectedSketchDrawing).length <=
+                  (selectedSketchDrawing.properties.kind === "polygon" ? 3 : 2)
+              }
               onClick={deleteSelectedSketchVertex}
               type="button"
             >
               Smazat bod
             </button>
-            <button onClick={() => setSelectedSketchVertexIndex(null)} type="button">Zrušit výběr</button>
+            <button onClick={() => setSelectedSketchVertexIndex(null)} type="button">
+              Zrušit výběr
+            </button>
             <button
               onClick={() => {
                 if (window.confirm("Smazat vybraný zákres?")) {
@@ -5117,7 +5418,9 @@ function CopMapComponent({
           mapControlsCollapsed ? "collapsed" : "expanded",
           mapControlsDragging ? "dragging" : "",
           mapControlsPosition ? "moved" : ""
-        ].filter(Boolean).join(" ")}
+        ]
+          .filter(Boolean)
+          .join(" ")}
         onClick={stopMapToolbarEvent}
         onDoubleClick={stopMapToolbarEvent}
         onPointerDown={stopMapToolbarEvent}
@@ -5152,7 +5455,10 @@ function CopMapComponent({
               onClick={() => {
                 const nextAutoFit = !autoFit;
                 onAutoFitChange(nextAutoFit);
-                if (nextAutoFit && fitMapToVisibleContent(mapRef.current, positionedObjects, situationFeatureCollection)) {
+                if (
+                  nextAutoFit &&
+                  fitMapToVisibleContent(mapRef.current, positionedObjects, situationFeatureCollection)
+                ) {
                   lastFitSignatureRef.current = buildFitSignature(positionedObjects, situationFeatureCollection);
                 }
               }}
@@ -5227,12 +5533,14 @@ function CopMapComponent({
           onDoubleClick={stopMapToolbarEvent}
           onPointerDown={stopMapToolbarEvent}
           onWheel={stopMapToolbarEvent}
-          style={{
-            "--popover-arrow-x": `${selectionPopupPoint.arrowX}px`,
-            "--popover-gap": `${selectionPopupPoint.yOffset}px`,
-            left: `${selectionPopupPoint.x}px`,
-            top: `${selectionPopupPoint.y}px`
-          } as React.CSSProperties}
+          style={
+            {
+              "--popover-arrow-x": `${selectionPopupPoint.arrowX}px`,
+              "--popover-gap": `${selectionPopupPoint.yOffset}px`,
+              left: `${selectionPopupPoint.x}px`,
+              top: `${selectionPopupPoint.y}px`
+            } as React.CSSProperties
+          }
         >
           <div className="map-object-popover-header">
             <span>{selectionCard.eyebrow}</span>
@@ -5370,8 +5678,12 @@ function CopMapComponent({
             <LegendItem disposition="unknown" color="#facc15" label="Neznámé" />
             {showHistory ? <LineLegendItem label="Historie" /> : null}
             {showPrediction ? <LineLegendItem dashed label="Predikce" /> : null}
-            {showProximityAlertRadius && userLocation ? <RadiusLegendItem active={hasProximityAlerts} label="Výstražný perimetr" /> : null}
-            {aoiRuleFeatureCollection.features.length > 0 ? <RadiusLegendItem active={false} label="Uživatelská zóna" /> : null}
+            {showProximityAlertRadius && userLocation ? (
+              <RadiusLegendItem active={hasProximityAlerts} label="Výstražný perimetr" />
+            ) : null}
+            {aoiRuleFeatureCollection.features.length > 0 ? (
+              <RadiusLegendItem active={false} label="Uživatelská zóna" />
+            ) : null}
             {alertAreaFeatureCollection.features.length > 0 ? <RadiusLegendItem active label="Alert vrstva" /> : null}
             {situationFeatureCollection.features.length > 0 ? <SituationLegendItem label="Situační kontext" /> : null}
             {hasMobileCoverageFeatures ? <CoverageLegendItem /> : null}
@@ -5380,9 +5692,16 @@ function CopMapComponent({
         )}
       </div>
       {clusterInfo ? <ClusterPanel cluster={clusterInfo} onClose={() => setClusterInfo(null)} /> : null}
-      {missingPositionCount > 0 ? <div className="map-notice">{missingPositionCount} objektů bez polohy není v mapě.</div> : null}
+      {missingPositionCount > 0 ? (
+        <div className="map-notice">{missingPositionCount} objektů bez polohy není v mapě.</div>
+      ) : null}
       {mapError ? <div className="map-notice error">Mapový podklad: {mapError}</div> : null}
-      {emptyMessage && objects.length === 0 && !hasSituationContextEnabled && situationFeatureCollection.features.length === 0 ? <div className="map-empty">{emptyMessage}</div> : null}
+      {emptyMessage &&
+      objects.length === 0 &&
+      !hasSituationContextEnabled &&
+      situationFeatureCollection.features.length === 0 ? (
+        <div className="map-empty">{emptyMessage}</div>
+      ) : null}
     </div>
   );
 }
@@ -5505,7 +5824,13 @@ async function zoomToCluster(
   const pointCount = Number(feature?.properties?.point_count);
   const center = extractPointCoordinates(feature);
   const source = map.getSource(sourceId);
-  if (!Number.isFinite(clusterId) || !Number.isFinite(pointCount) || !center || !source || !("getClusterExpansionZoom" in source)) {
+  if (
+    !Number.isFinite(clusterId) ||
+    !Number.isFinite(pointCount) ||
+    !center ||
+    !source ||
+    !("getClusterExpansionZoom" in source)
+  ) {
     return;
   }
 
@@ -5552,7 +5877,9 @@ function queryRenderedFeatureByLayerPriority(
   return undefined;
 }
 
-function extractPointCoordinates(feature: NonNullable<MapLayerMouseEvent["features"]>[number] | undefined): [number, number] | null {
+function extractPointCoordinates(
+  feature: NonNullable<MapLayerMouseEvent["features"]>[number] | undefined
+): [number, number] | null {
   const coordinates = (feature?.geometry as { coordinates?: unknown } | undefined)?.coordinates;
   if (!Array.isArray(coordinates) || coordinates.length < 2) {
     return null;
@@ -5563,22 +5890,34 @@ function extractPointCoordinates(feature: NonNullable<MapLayerMouseEvent["featur
 }
 
 function clusterLeafToInfo(feature: unknown): ClusterInfo["leaves"][number] | null {
-  const properties = isRecord((feature as { properties?: unknown })?.properties) ? (feature as { properties: Record<string, unknown> }).properties : null;
+  const properties = isRecord((feature as { properties?: unknown })?.properties)
+    ? (feature as { properties: Record<string, unknown> }).properties
+    : null;
   if (!properties) {
     return null;
   }
-  const situationLabel = stringProperty(properties.weatherLabel)
-    ?? stringProperty(properties.riskMapLabel)
-    ?? stringProperty(properties.weatherCameraLabel)
-    ?? stringProperty(properties.airQualityLabel)
-    ?? stringProperty(properties.mobileNetworkLabel)
-    ?? stringProperty(properties.coverageLabel)
-    ?? stringProperty(properties.mapLabel);
+  const situationLabel =
+    stringProperty(properties.weatherLabel) ??
+    stringProperty(properties.riskMapLabel) ??
+    stringProperty(properties.weatherCameraLabel) ??
+    stringProperty(properties.airQualityLabel) ??
+    stringProperty(properties.mobileNetworkLabel) ??
+    stringProperty(properties.coverageLabel) ??
+    stringProperty(properties.mapLabel);
   return {
     affiliation: stringProperty(properties.affiliation) ?? "UNKNOWN",
-    label: situationLabel ?? stringProperty(properties.label) ?? stringProperty(properties.objectId) ?? stringProperty(properties.featureId) ?? "bod",
+    label:
+      situationLabel ??
+      stringProperty(properties.label) ??
+      stringProperty(properties.objectId) ??
+      stringProperty(properties.featureId) ??
+      "bod",
     objectType: stringProperty(properties.objectType) ?? stringProperty(properties.layer) ?? "bod",
-    status: stringProperty(properties.status) ?? stringProperty(properties.situationStatusLabel) ?? stringProperty(properties.quality) ?? "n/a"
+    status:
+      stringProperty(properties.status) ??
+      stringProperty(properties.situationStatusLabel) ??
+      stringProperty(properties.quality) ??
+      "n/a"
   };
 }
 
@@ -5595,8 +5934,12 @@ export function situationFeaturesToFeatureCollection(
   const features: SituationContextFeatureCollection["features"] = [];
   const requestedMobileTechnology = normalizeMobileNetworkTechnology(collection?.query.technology);
   const hasSelectedSafetyAlert = Boolean(
-    (selectedFeatureId || selectedStableKey)
-      && (collection?.features ?? []).some((feature) => isSituationFeatureSelected(feature, selectedFeatureId, selectedStableKey) && isSafetyAlertPolygonFeature(feature))
+    (selectedFeatureId || selectedStableKey) &&
+    (collection?.features ?? []).some(
+      (feature) =>
+        isSituationFeatureSelected(feature, selectedFeatureId, selectedStableKey) &&
+        isSafetyAlertPolygonFeature(feature)
+    )
   );
   for (const feature of collection?.features ?? []) {
     if (isSituationRasterOverlayFeature(feature)) {
@@ -5605,7 +5948,13 @@ export function situationFeaturesToFeatureCollection(
     if (isUnsafeMobileNetworkFeature(feature, requestedMobileTechnology)) {
       continue;
     }
-    const renderedFeature = renderSituationFeature(feature, selectedFeatureId, mapSymbolMode, hasSelectedSafetyAlert, selectedStableKey);
+    const renderedFeature = renderSituationFeature(
+      feature,
+      selectedFeatureId,
+      mapSymbolMode,
+      hasSelectedSafetyAlert,
+      selectedStableKey
+    );
     features.push(renderedFeature);
     const pulseFeature = buildWeatherPulseFeature(feature, renderedFeature.properties);
     if (pulseFeature) {
@@ -5623,7 +5972,9 @@ function situationOsmPointsToClusterFeatureCollection(
 ): SituationContextFeatureCollection {
   return {
     type: "FeatureCollection",
-    features: collection.features.filter((feature) => feature.geometry.type === "Point" && feature.properties.osmPoi === true)
+    features: collection.features.filter(
+      (feature) => feature.geometry.type === "Point" && feature.properties.osmPoi === true
+    )
   };
 }
 
@@ -5640,7 +5991,10 @@ function isUnsafeMobileNetworkFeature(feature: SituationFeature, requestedTechno
   if (feature.properties.layer !== "mobile_network") {
     return false;
   }
-  if (feature.properties.readModel === false || (feature.properties.sourceId === "mobile_network_model" && feature.properties.readModel !== true)) {
+  if (
+    feature.properties.readModel === false ||
+    (feature.properties.sourceId === "mobile_network_model" && feature.properties.readModel !== true)
+  ) {
     return true;
   }
   if (/^mobile_network:aggregate:mixed:/iu.test(feature.properties.featureId)) {
@@ -5658,12 +6012,21 @@ function isUnsafeMobileNetworkFeature(feature: SituationFeature, requestedTechno
     return true;
   }
   const [west, south, east, north] = bounds;
-  if (east < czechiaMobileNetworkEnvelope.west || west > czechiaMobileNetworkEnvelope.east || north < czechiaMobileNetworkEnvelope.south || south > czechiaMobileNetworkEnvelope.north) {
+  if (
+    east < czechiaMobileNetworkEnvelope.west ||
+    west > czechiaMobileNetworkEnvelope.east ||
+    north < czechiaMobileNetworkEnvelope.south ||
+    south > czechiaMobileNetworkEnvelope.north
+  ) {
     return true;
   }
   const width = Math.abs(east - west);
   const height = Math.abs(north - south);
-  return width > maxMobileNetworkCellSpanDegrees || height > maxMobileNetworkCellSpanDegrees || width * height > maxMobileNetworkCellAreaDegrees;
+  return (
+    width > maxMobileNetworkCellSpanDegrees ||
+    height > maxMobileNetworkCellSpanDegrees ||
+    width * height > maxMobileNetworkCellAreaDegrees
+  );
 }
 
 function normalizeMobileNetworkTechnology(value: unknown): string | undefined {
@@ -5685,7 +6048,9 @@ function situationRasterOverlaySpec(feature: SituationFeature): SituationRasterO
   if (!isSituationRasterOverlayFeature(feature)) {
     return null;
   }
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const raster = isRecord(providerProperties.raster) ? providerProperties.raster : {};
   const url = stringProperty(raster.url);
   const bounds = rasterBoundsWgs84(raster) ?? geometryBoundsWgs84(feature.geometry);
@@ -5696,7 +6061,9 @@ function situationRasterOverlaySpec(feature: SituationFeature): SituationRasterO
   const rasterOpacity = recordNumber(raster, "opacity");
   const rendering = isRecord(feature.properties.rendering) ? feature.properties.rendering : {};
   const providerRendering = isRecord(providerProperties.rendering) ? providerProperties.rendering : {};
-  const opacity = clampUnit(rasterOpacity ?? recordNumber(rendering, "opacity") ?? recordNumber(providerRendering, "opacity") ?? 0.58);
+  const opacity = clampUnit(
+    rasterOpacity ?? recordNumber(rendering, "opacity") ?? recordNumber(providerRendering, "opacity") ?? 0.58
+  );
   const [west, south, east, north] = bounds;
   return {
     coordinates: [
@@ -5735,7 +6102,9 @@ function syncSituationRasterOverlays(
   for (const overlay of overlays) {
     const source = map.getSource(overlay.sourceId);
     if (source) {
-      const imageSource = source as { updateImage?: (options: { coordinates: RasterOverlayCoordinates; url: string }) => void };
+      const imageSource = source as {
+        updateImage?: (options: { coordinates: RasterOverlayCoordinates; url: string }) => void;
+      };
       imageSource.updateImage?.({ coordinates: overlay.coordinates, url: overlay.url });
     } else {
       map.addSource(overlay.sourceId, {
@@ -5746,15 +6115,18 @@ function syncSituationRasterOverlays(
     }
     if (!map.getLayer(overlay.layerId)) {
       const beforeLayerId = map.getLayer(situationFillLayerId) ? situationFillLayerId : undefined;
-      map.addLayer({
-        id: overlay.layerId,
-        paint: {
-          "raster-fade-duration": 0,
-          "raster-opacity": overlay.opacity
+      map.addLayer(
+        {
+          id: overlay.layerId,
+          paint: {
+            "raster-fade-duration": 0,
+            "raster-opacity": overlay.opacity
+          },
+          source: overlay.sourceId,
+          type: "raster"
         },
-        source: overlay.sourceId,
-        type: "raster"
-      }, beforeLayerId);
+        beforeLayerId
+      );
     } else {
       map.setPaintProperty(overlay.layerId, "raster-opacity", overlay.opacity);
     }
@@ -5775,22 +6147,26 @@ function removeSituationRasterOverlay(map: maplibregl.Map, overlayId: string): v
 
 function isSituationRasterOverlayFeature(feature: SituationFeature): boolean {
   const rendering = isRecord(feature.properties.rendering) ? feature.properties.rendering : {};
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const providerRendering = isRecord(providerProperties.rendering) ? providerProperties.rendering : {};
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  return stringProperty(rendering.mode) === "raster_overlay"
-    || stringProperty(providerRendering.mode) === "raster_overlay"
-    || stringProperty(providerProperties.renderAs) === "raster_overlay"
-    || stringProperty(tags.renderAs) === "raster_overlay"
-    || stringProperty(tags.geometryRole) === "raster_extent"
-    || feature.properties.layerId === "public.weather.radar_reflectivity"
-    || feature.properties.layerId === "public.weather.radar_precipitation"
-    || feature.properties.layerId === "public.weather.radar_nowcast"
-    || feature.properties.layerId === "public.safety.thunderstorm_risk"
-    || feature.properties.layer === "weather_radar_reflectivity"
-    || feature.properties.layer === "weather_radar_precipitation"
-    || feature.properties.layer === "weather_radar_nowcast"
-    || feature.properties.layer === "weather_thunderstorm_risk";
+  return (
+    stringProperty(rendering.mode) === "raster_overlay" ||
+    stringProperty(providerRendering.mode) === "raster_overlay" ||
+    stringProperty(providerProperties.renderAs) === "raster_overlay" ||
+    stringProperty(tags.renderAs) === "raster_overlay" ||
+    stringProperty(tags.geometryRole) === "raster_extent" ||
+    feature.properties.layerId === "public.weather.radar_reflectivity" ||
+    feature.properties.layerId === "public.weather.radar_precipitation" ||
+    feature.properties.layerId === "public.weather.radar_nowcast" ||
+    feature.properties.layerId === "public.safety.thunderstorm_risk" ||
+    feature.properties.layer === "weather_radar_reflectivity" ||
+    feature.properties.layer === "weather_radar_precipitation" ||
+    feature.properties.layer === "weather_radar_nowcast" ||
+    feature.properties.layer === "weather_thunderstorm_risk"
+  );
 }
 
 function rasterBoundsWgs84(raster: Record<string, unknown>): [number, number, number, number] | null {
@@ -5826,7 +6202,12 @@ function geometryBoundsWgs84(geometry: SituationFeature["geometry"]): [number, n
 }
 
 function sanitizeMapLibreId(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "raster";
+  return (
+    value
+      .replace(/[^a-zA-Z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 120) || "raster"
+  );
 }
 
 function clampUnit(value: number): number {
@@ -5869,17 +6250,23 @@ function renderSituationFeature(
     properties: {
       ...feature.properties,
       ...buildSituationRenderProperties(feature, mapSymbolMode),
-      ...(safetyAlertLayer ? {
-        safetyAlertDimmed: hasSelectedSafetyAlert && !selected,
-        safetyAlertLayer
-      } : {}),
+      ...(safetyAlertLayer
+        ? {
+            safetyAlertDimmed: hasSelectedSafetyAlert && !selected,
+            safetyAlertLayer
+          }
+        : {}),
       selected
     },
     type: "Feature"
   };
 }
 
-function isSituationFeatureSelected(feature: SituationFeature, selectedFeatureId?: string, selectedStableKey?: string): boolean {
+function isSituationFeatureSelected(
+  feature: SituationFeature,
+  selectedFeatureId?: string,
+  selectedStableKey?: string
+): boolean {
   if (selectedFeatureId && feature.properties.featureId === selectedFeatureId) {
     return true;
   }
@@ -5890,8 +6277,10 @@ function isSituationFeatureSelected(feature: SituationFeature, selectedFeatureId
 }
 
 function isSafetyAlertPolygonFeature(feature: SituationFeature): boolean {
-  return (feature.geometry.type === "Polygon" || feature.geometry.type === "MultiPolygon")
-    && Boolean(safetyAlertLayerKind(feature));
+  return (
+    (feature.geometry.type === "Polygon" || feature.geometry.type === "MultiPolygon") &&
+    Boolean(safetyAlertLayerKind(feature))
+  );
 }
 
 function safetyAlertLayerKind(feature: SituationFeature): "warnings" | "weather_alerts" | undefined {
@@ -5899,11 +6288,20 @@ function safetyAlertLayerKind(feature: SituationFeature): "warnings" | "weather_
     feature.properties.layer,
     feature.properties.layerId,
     feature.properties.providerLayerId
-  ].flatMap((value) => typeof value === "string" ? [value] : []);
-  if (identifiers.some((value) => value === "weather_alerts" || value === "safety.weather_alerts" || value === "public.safety.weather_alerts")) {
+  ].flatMap((value) => (typeof value === "string" ? [value] : []));
+  if (
+    identifiers.some(
+      (value) =>
+        value === "weather_alerts" || value === "safety.weather_alerts" || value === "public.safety.weather_alerts"
+    )
+  ) {
     return "weather_alerts";
   }
-  if (identifiers.some((value) => value === "warnings" || value === "safety.warnings" || value === "public.safety.warnings")) {
+  if (
+    identifiers.some(
+      (value) => value === "warnings" || value === "safety.warnings" || value === "public.safety.warnings"
+    )
+  ) {
     return "warnings";
   }
   return undefined;
@@ -5980,17 +6378,18 @@ function selectedTransitRouteToFeatureCollection(
   }
   const label = formatSituationFeatureTitle(feature);
   const stopPoints = transitRouteStopPoints(detail);
-  const pointFeatures = stopPoints.length > 0
-    ? stopPoints.map((stop) => ({
-        geometry: { type: "Point" as const, coordinates: stop.coordinate },
-        properties: { featureId: feature.properties.featureId, kind: "route-stop" as const, label: stop.label },
-        type: "Feature" as const
-      }))
-    : routeWaypointCoordinates(coordinates).map((coordinate) => ({
-        geometry: { type: "Point" as const, coordinates: coordinate },
-        properties: { featureId: feature.properties.featureId, kind: "route-waypoint" as const, label },
-        type: "Feature" as const
-      }));
+  const pointFeatures =
+    stopPoints.length > 0
+      ? stopPoints.map((stop) => ({
+          geometry: { type: "Point" as const, coordinates: stop.coordinate },
+          properties: { featureId: feature.properties.featureId, kind: "route-stop" as const, label: stop.label },
+          type: "Feature" as const
+        }))
+      : routeWaypointCoordinates(coordinates).map((coordinate) => ({
+          geometry: { type: "Point" as const, coordinates: coordinate },
+          properties: { featureId: feature.properties.featureId, kind: "route-waypoint" as const, label },
+          type: "Feature" as const
+        }));
   return {
     type: "FeatureCollection",
     features: [
@@ -6018,14 +6417,18 @@ function transitRouteShapeAvailable(detail: TransitVehicleDetailResponse | null 
   return detail?.quality?.routeShapeAvailable === true || detail?.quality?.shapeAvailable === true;
 }
 
-function transitRouteStopPoints(detail: TransitVehicleDetailResponse | null | undefined): Array<{ coordinate: [number, number]; label: string }> {
+function transitRouteStopPoints(
+  detail: TransitVehicleDetailResponse | null | undefined
+): Array<{ coordinate: [number, number]; label: string }> {
   return transitDetailStops(detail)
     .map((stop, index) => ({
       coordinate: transitStopCoordinate(stop),
       label: transitStopLabel(stop) ?? `Zastávka ${index + 1}`,
       sequence: stop.stopSequence ?? stop.sequence ?? index
     }))
-    .filter((stop): stop is { coordinate: [number, number]; label: string; sequence: number } => Boolean(stop.coordinate))
+    .filter((stop): stop is { coordinate: [number, number]; label: string; sequence: number } =>
+      Boolean(stop.coordinate)
+    )
     .sort((left, right) => left.sequence - right.sequence)
     .map(({ coordinate, label }) => ({ coordinate, label }));
 }
@@ -6036,8 +6439,7 @@ function transitDetailStops(detail: TransitVehicleDetailResponse | null | undefi
   const merged = [...stops, ...stopTimes];
   const seen = new Set<string>();
   return merged.filter((stop, index) => {
-    const key = stop.stopId
-      ?? `${transitStopLabel(stop) ?? "stop"}:${stop.stopSequence ?? stop.sequence ?? index}`;
+    const key = stop.stopId ?? `${transitStopLabel(stop) ?? "stop"}:${stop.stopSequence ?? stop.sequence ?? index}`;
     if (seen.has(key)) {
       return false;
     }
@@ -6060,7 +6462,10 @@ function transitStopLabel(stop: TransitStopTime | null | undefined): string | nu
   return typeof label === "string" && label.trim().length > 0 ? label.trim() : null;
 }
 
-function extractTransitRouteCoordinates(feature: SituationFeature, detailRouteShape?: unknown): Array<[number, number]> | null {
+function extractTransitRouteCoordinates(
+  feature: SituationFeature,
+  detailRouteShape?: unknown
+): Array<[number, number]> | null {
   const detailCoordinates = lineCoordinatesFromUnknown(detailRouteShape);
   if (detailCoordinates && detailCoordinates.length >= 2) {
     return detailCoordinates;
@@ -6112,7 +6517,17 @@ function lineCoordinatesFromUnknown(value: unknown, depth = 0): Array<[number, n
       return candidates.sort((a, b) => b.length - a.length)[0] ?? null;
     }
   }
-  const directKeys = ["coordinates", "geometry", "routeShape", "routeGeometry", "shape", "route", "lineString", "path", "points"];
+  const directKeys = [
+    "coordinates",
+    "geometry",
+    "routeShape",
+    "routeGeometry",
+    "shape",
+    "route",
+    "lineString",
+    "path",
+    "points"
+  ];
   for (const key of directKeys) {
     const coordinates = lineCoordinatesFromUnknown(value[key], depth + 1);
     if (coordinates) {
@@ -6152,7 +6567,10 @@ function routeWaypointCoordinates(coordinates: Array<[number, number]>): Array<[
   if (coordinates.length > 6) {
     indexes.add(Math.floor(coordinates.length / 2));
   }
-  return [...indexes].sort((a, b) => a - b).map((index) => coordinates[index]!).filter(Boolean);
+  return [...indexes]
+    .sort((a, b) => a - b)
+    .map((index) => coordinates[index]!)
+    .filter(Boolean);
 }
 
 function sketchGeometryVisualCentroid(geometry: SketchGeometry): [number, number] | null {
@@ -6373,7 +6791,12 @@ function buildSituationRenderProperties(
       mapPointSuppressed: feature.geometry.type !== "Point" ? true : undefined,
       situationStatusColor: colors.fill,
       situationStatusLabel: weatherForecastStatusLabel(riskScore, riskLevel),
-      situationStatusTone: weatherForecastTone(riskScore, riskLevel) === "bad" ? "critical" : weatherForecastTone(riskScore, riskLevel) === "warn" ? "warning" : "info",
+      situationStatusTone:
+        weatherForecastTone(riskScore, riskLevel) === "bad"
+          ? "critical"
+          : weatherForecastTone(riskScore, riskLevel) === "warn"
+            ? "warning"
+            : "info",
       weatherForecastArea: true,
       weatherForecastDetailUrl: weatherForecastDetailUrl(feature),
       weatherForecastFillColor: colors.fill,
@@ -6393,12 +6816,15 @@ function buildSituationRenderProperties(
     const hydroMapPriority = kind === "flood" ? hydroMapPriorityScore(feature, floodStage, floodTrend) : undefined;
     return {
       riskFeature: true,
-      ...(kind === "flood" && floodTrend && floodTone ? {
-        floodStageLabel: typeof floodStage === "number" && floodStage > 0 ? `${Math.round(floodStage)}. SPA` : "bez SPA",
-        floodTrendIconKey: getFloodTrendIconKey(floodTrend, floodTone),
-        floodTrendLabel: floodTrendShortLabel(feature.properties.trend),
-        hydroMapPriority
-      } : {}),
+      ...(kind === "flood" && floodTrend && floodTone
+        ? {
+            floodStageLabel:
+              typeof floodStage === "number" && floodStage > 0 ? `${Math.round(floodStage)}. SPA` : "bez SPA",
+            floodTrendIconKey: getFloodTrendIconKey(floodTrend, floodTone),
+            floodTrendLabel: floodTrendShortLabel(feature.properties.trend),
+            hydroMapPriority
+          }
+        : {}),
       riskIconKey: getRiskIconKey(kind),
       riskKind: kind,
       riskMapLabel: formatRiskMapLabel(feature, status),
@@ -6411,7 +6837,10 @@ function buildSituationRenderProperties(
     const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
     const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
     const airQualityIndex = weatherMetricValue(feature, metrics, "airQualityIndex");
-    const airQualityLevel = recordString(tags, "airQualityLevel") ?? stringProperty(feature.properties.status) ?? stringProperty(feature.properties.quality);
+    const airQualityLevel =
+      recordString(tags, "airQualityLevel") ??
+      stringProperty(feature.properties.status) ??
+      stringProperty(feature.properties.quality);
     const dominantPollutant = recordString(tags, "dominantPollutant");
     const color = airQualityColor(airQualityIndex, airQualityLevel, status.color);
     const label = formatAirQualityMapLabel(airQualityIndex, dominantPollutant, airQualityLevel);
@@ -6459,8 +6888,8 @@ function buildSituationRenderProperties(
   const currentWeatherSummary = isCurrentWeatherSummaryFeature(feature);
   const color = weatherContextColor(feature, status.color);
   const weatherDisplay = weatherDisplayRecord(feature);
-  const chmiMeasuredStation = feature.properties.sourceId === "chmi_weather_stations"
-    || providerLayerId?.includes("chmi_station") === true;
+  const chmiMeasuredStation =
+    feature.properties.sourceId === "chmi_weather_stations" || providerLayerId?.includes("chmi_station") === true;
   const weatherCondition = weatherDisplay
     ? {
         iconId: weatherDisplayIconId(weatherDisplay, {
@@ -6471,19 +6900,35 @@ function buildSituationRenderProperties(
         }),
         label: weatherDisplayConditionLabel(weatherDisplay)
       }
-    : resolveWeatherConditionPresentation(feature, metrics, temperatureC, windSpeedMps, precipitationMm, cloudCoverPercent, humidityPercent, chmiMeasuredStation);
+    : resolveWeatherConditionPresentation(
+        feature,
+        metrics,
+        temperatureC,
+        windSpeedMps,
+        precipitationMm,
+        cloudCoverPercent,
+        humidityPercent,
+        chmiMeasuredStation
+      );
   const weatherStationLabel = formatWeatherStationLabel(feature, currentWeatherSummary);
   const weatherLabel = aviationCategory
     ? formatAviationWeatherMapLabel(stationIcao, aviationCategory.label)
     : weatherGrid
       ? formatWeatherContextMapLabel(feature, temperatureC, windSpeedMps, precipitationMm, humidityPercent, pressureHpa)
-      : weatherDisplayString(weatherDisplay, "label") ?? formatWeatherObservationMapLabel(weatherStationLabel, weatherCondition.label, temperatureC, windSpeedMps, precipitationMm);
+      : (weatherDisplayString(weatherDisplay, "label") ??
+        formatWeatherObservationMapLabel(
+          weatherStationLabel,
+          weatherCondition.label,
+          temperatureC,
+          windSpeedMps,
+          precipitationMm
+        ));
   const weatherHeadline = aviationCategory
     ? undefined
-    : weatherDisplayString(weatherDisplay, "title")
-      ?? (currentWeatherSummary ? "Počasí ve středu oblasti" : formatWeatherFeatureHeadline(feature));
-  const weatherObservation = !weatherGrid && (currentWeatherSummary || feature.properties.layer !== "weather"
-    || chmiMeasuredStation);
+    : (weatherDisplayString(weatherDisplay, "title") ??
+      (currentWeatherSummary ? "Počasí ve středu oblasti" : formatWeatherFeatureHeadline(feature)));
+  const weatherObservation =
+    !weatherGrid && (currentWeatherSummary || feature.properties.layer !== "weather" || chmiMeasuredStation);
   const weatherMapPriority = weatherObservation
     ? weatherObservationMapPriority(temperatureC, windSpeedMps, windGustMps, precipitationMm, status.tone)
     : undefined;
@@ -6502,18 +6947,23 @@ function buildSituationRenderProperties(
     weatherMapPriority,
     weatherMetricLabel: weatherGrid ? weatherLabel.replace("\n", " ") : undefined,
     weatherObservation,
-    weatherSubtitle: aviationCategory ? undefined : weatherDisplayString(weatherDisplay, "subtitle") ?? formatWeatherFeatureSubtitle(feature),
+    weatherSubtitle: aviationCategory
+      ? undefined
+      : (weatherDisplayString(weatherDisplay, "subtitle") ?? formatWeatherFeatureSubtitle(feature)),
     weatherPrecipitationMm: precipitationMm,
     weatherStationIcao: stationIcao,
     weatherStationLabel: weatherDisplayString(weatherDisplay, "title") ?? weatherStationLabel,
     weatherSymbolKey: weatherObservation ? getWeatherConditionIconKey(weatherCondition.iconId) : undefined,
     weatherTemperatureC: temperatureC,
-    weatherValueLabel: weatherObservation ? formatWeatherValueLabel(weatherDisplay, temperatureC, windSpeedMps, precipitationMm, humidityPercent) : undefined,
+    weatherValueLabel: weatherObservation
+      ? formatWeatherValueLabel(weatherDisplay, temperatureC, windSpeedMps, precipitationMm, humidityPercent)
+      : undefined,
     weatherWindDirectionDeg: windDirectionDeg,
     weatherWindSpeedMps: windSpeedMps,
     mapPointSuppressed: weatherGrid ? true : undefined,
     situationStatusColor: color,
-    situationStatusLabel: weatherDisplayString(weatherDisplay, "badgeLabel") ?? weatherContextStatusLabel(feature, status.label),
+    situationStatusLabel:
+      weatherDisplayString(weatherDisplay, "badgeLabel") ?? weatherContextStatusLabel(feature, status.label),
     situationStatusTone: displayTone ?? status.tone
   };
 }
@@ -6525,12 +6975,14 @@ function isSyntheticWarningPoint(feature: SituationFeature): boolean {
 function isRiskFeature(feature: SituationFeature): boolean {
   const tokens = riskTokens(feature);
   const presentation = riskPresentationIconKind(feature);
-  return feature.properties.layer === "warnings"
-    || feature.properties.layer === "weather_alerts"
-    || feature.properties.layer === "flood"
-    || feature.properties.layer === "fire"
-    || Boolean(presentation)
-    || ["fire", "wildfire", "flood", "warning", "weather_alert", "storm", "risk"].some((token) => tokens.includes(token));
+  return (
+    feature.properties.layer === "warnings" ||
+    feature.properties.layer === "weather_alerts" ||
+    feature.properties.layer === "flood" ||
+    feature.properties.layer === "fire" ||
+    Boolean(presentation) ||
+    ["fire", "wildfire", "flood", "warning", "weather_alert", "storm", "risk"].some((token) => tokens.includes(token))
+  );
 }
 
 function riskIconKind(feature: SituationFeature): RiskIconId {
@@ -6542,10 +6994,20 @@ function riskIconKind(feature: SituationFeature): RiskIconId {
   if (feature.properties.layer === "fire" || tokens.includes("fire") || tokens.includes("wildfire")) {
     return "fire";
   }
-  if (feature.properties.layer === "flood" || tokens.includes("flood") || tokens.includes("hydro") || tokens.includes("water")) {
+  if (
+    feature.properties.layer === "flood" ||
+    tokens.includes("flood") ||
+    tokens.includes("hydro") ||
+    tokens.includes("water")
+  ) {
     return "flood";
   }
-  if (feature.properties.layer === "weather_alerts" || tokens.includes("weather") || tokens.includes("storm") || tokens.includes("wind")) {
+  if (
+    feature.properties.layer === "weather_alerts" ||
+    tokens.includes("weather") ||
+    tokens.includes("storm") ||
+    tokens.includes("wind")
+  ) {
     return "weather";
   }
   if (feature.properties.layer === "warnings" || tokens.includes("warning")) {
@@ -6568,7 +7030,14 @@ function riskPresentationIconKind(feature: SituationFeature): RiskIconId | undef
   if (code.includes("flood") || code.includes("hydro") || code.includes("water")) {
     return "flood";
   }
-  if (code.includes("weather") || code.includes("storm") || code.includes("wind") || code.includes("rain") || code.includes("snow") || code.includes("temperature")) {
+  if (
+    code.includes("weather") ||
+    code.includes("storm") ||
+    code.includes("wind") ||
+    code.includes("rain") ||
+    code.includes("snow") ||
+    code.includes("temperature")
+  ) {
     return "weather";
   }
   if (code.includes("warning") || code.includes("alert") || code.includes("smog") || code.includes("air_quality")) {
@@ -6578,24 +7047,27 @@ function riskPresentationIconKind(feature: SituationFeature): RiskIconId | undef
 }
 
 function riskPresentation(feature: SituationFeature): Record<string, unknown> {
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   return isRecord(providerProperties.presentation) ? providerProperties.presentation : {};
 }
 
 function formatRiskMapLabel(feature: SituationFeature, status: { label: string }): string {
   const presentation = riskPresentation(feature);
-  const headline = stringProperty(presentation.label)
-    ?? stringProperty(presentation.title)
-    ?? feature.properties.headline
-    ?? feature.properties.areaName
-    ?? feature.properties.label;
+  const headline =
+    stringProperty(presentation.label) ??
+    stringProperty(presentation.title) ??
+    feature.properties.headline ??
+    feature.properties.areaName ??
+    feature.properties.label;
   const category = riskMapCategoryLabel(feature);
   if (feature.properties.layer === "flood") {
     const floodName = feature.properties.riverName ?? feature.properties.areaName ?? headline;
     const stage = floodStageValue(feature);
-    const suffix = [
-      typeof stage === "number" && stage > 0 ? `${Math.round(stage)}. SPA` : undefined
-    ].filter(Boolean).join(" · ");
+    const suffix = [typeof stage === "number" && stage > 0 ? `${Math.round(stage)}. SPA` : undefined]
+      .filter(Boolean)
+      .join(" · ");
     return [compactRiskHeadline(floodName), suffix].filter(Boolean).join(" ") || status.label || category;
   }
   if (!headline || headline === feature.properties.featureId) {
@@ -6605,7 +7077,9 @@ function formatRiskMapLabel(feature: SituationFeature, status: { label: string }
 }
 
 function riskTokens(feature: SituationFeature): string {
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const taxonomy = isRecord(providerProperties.taxonomy) ? providerProperties.taxonomy : {};
   return [
     feature.properties.category,
@@ -6629,39 +7103,45 @@ function riskTokens(feature: SituationFeature): string {
 }
 
 function isBoundaryReferenceFeature(feature: SituationFeature): boolean {
-  return feature.properties.layer === "boundary_admin"
-    || feature.properties.layer === "boundary_country"
-    || feature.properties.layer === "boundary_region"
-    || feature.properties.layer === "boundary_district"
-    || feature.properties.layer === "boundary_orp"
-    || feature.properties.layer === "boundary_municipality"
-    || feature.properties.layer === "place_settlements"
-    || feature.properties.layerId === "public.boundary.admin"
-    || feature.properties.layerId?.startsWith("public.boundary.") === true
-    || feature.properties.layerId === "public.place.settlements"
-    || feature.properties.providerLayerId === "boundary.admin"
-    || feature.properties.providerLayerId?.startsWith("boundary.") === true
-    || feature.properties.providerLayerId === "place.settlements"
-    || normalizeSituationCategory(feature.properties.category) === "admin_boundary";
+  return (
+    feature.properties.layer === "boundary_admin" ||
+    feature.properties.layer === "boundary_country" ||
+    feature.properties.layer === "boundary_region" ||
+    feature.properties.layer === "boundary_district" ||
+    feature.properties.layer === "boundary_orp" ||
+    feature.properties.layer === "boundary_municipality" ||
+    feature.properties.layer === "place_settlements" ||
+    feature.properties.layerId === "public.boundary.admin" ||
+    feature.properties.layerId?.startsWith("public.boundary.") === true ||
+    feature.properties.layerId === "public.place.settlements" ||
+    feature.properties.providerLayerId === "boundary.admin" ||
+    feature.properties.providerLayerId?.startsWith("boundary.") === true ||
+    feature.properties.providerLayerId === "place.settlements" ||
+    normalizeSituationCategory(feature.properties.category) === "admin_boundary"
+  );
 }
 
 function isWeatherContextFeature(feature: SituationFeature): boolean {
-  return feature.properties.layer === "weather"
-    || feature.properties.layer === "weather_temperature_grid"
-    || feature.properties.layer === "weather_wind_field"
-    || feature.properties.layer === "weather_precipitation_grid"
-    || feature.properties.layer === "weather_humidity_grid"
-    || feature.properties.layer === "weather_pressure_grid";
+  return (
+    feature.properties.layer === "weather" ||
+    feature.properties.layer === "weather_temperature_grid" ||
+    feature.properties.layer === "weather_wind_field" ||
+    feature.properties.layer === "weather_precipitation_grid" ||
+    feature.properties.layer === "weather_humidity_grid" ||
+    feature.properties.layer === "weather_pressure_grid"
+  );
 }
 
 function isWeatherForecastAreaFeature(feature: SituationFeature): boolean {
   const providerLayerId = stringProperty(feature.properties.providerLayerId);
-  return feature.properties.layer === "weather_forecast_area"
-    || feature.properties.layerId === "public.weather.forecast_area"
-    || feature.properties.sourceId === "weather_forecast"
-    || providerLayerId === "weather.forecast_area"
-    || providerLayerId === "weather_forecast_area"
-    || providerLayerId === "public.weather.forecast_area";
+  return (
+    feature.properties.layer === "weather_forecast_area" ||
+    feature.properties.layerId === "public.weather.forecast_area" ||
+    feature.properties.sourceId === "weather_forecast" ||
+    providerLayerId === "weather.forecast_area" ||
+    providerLayerId === "weather_forecast_area" ||
+    providerLayerId === "public.weather.forecast_area"
+  );
 }
 
 function weatherForecastProviderProperties(feature: SituationFeature): Record<string, unknown> {
@@ -6682,34 +7162,52 @@ function weatherForecastDetailUrl(feature: SituationFeature): string | undefined
   const providerProperties = weatherForecastProviderProperties(feature);
   const display = weatherForecastDisplay(feature);
   const forecast = isRecord(providerProperties.weatherForecast) ? providerProperties.weatherForecast : {};
-  return recordString(display, "chartUrl")
-    ?? recordString(display, "detailUrl")
-    ?? recordString(forecast, "detailUrl")
-    ?? recordString(providerProperties, "detailUrl");
+  return (
+    recordString(display, "chartUrl") ??
+    recordString(display, "detailUrl") ??
+    recordString(forecast, "detailUrl") ??
+    recordString(providerProperties, "detailUrl")
+  );
 }
 
-function weatherForecastRiskScore(feature: SituationFeature, presentation: Record<string, unknown>): number | undefined {
+function weatherForecastRiskScore(
+  feature: SituationFeature,
+  presentation: Record<string, unknown>
+): number | undefined {
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   return recordNumber(metrics, "riskScore") ?? recordNumber(presentation, "riskScore");
 }
 
-function weatherForecastRiskLevel(feature: SituationFeature, presentation: Record<string, unknown>): string | undefined {
+function weatherForecastRiskLevel(
+  feature: SituationFeature,
+  presentation: Record<string, unknown>
+): string | undefined {
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
-  return recordString(presentation, "riskLevel")
-    ?? recordString(metrics, "riskLevel")
-    ?? stringProperty(feature.properties.severity)
-    ?? stringProperty(feature.properties.status);
+  return (
+    recordString(presentation, "riskLevel") ??
+    recordString(metrics, "riskLevel") ??
+    stringProperty(feature.properties.severity) ??
+    stringProperty(feature.properties.status)
+  );
 }
 
-function weatherForecastColors(riskScore: number | undefined, riskLevel: string | undefined, fallback: string): { fill: string; line: string } {
+function weatherForecastColors(
+  riskScore: number | undefined,
+  riskLevel: string | undefined,
+  fallback: string
+): { fill: string; line: string } {
   const normalized = normalizeSituationCategory(riskLevel);
-  const score = riskScore ?? (
-    normalized.includes("critical") || normalized.includes("extreme") || normalized.includes("veryhigh") ? 0.9
-      : normalized.includes("high") || normalized.includes("warning") ? 0.72
-        : normalized.includes("medium") || normalized.includes("moderate") || normalized.includes("advisory") ? 0.48
-          : normalized.includes("low") || normalized.includes("minor") ? 0.22
-            : 0
-  );
+  const score =
+    riskScore ??
+    (normalized.includes("critical") || normalized.includes("extreme") || normalized.includes("veryhigh")
+      ? 0.9
+      : normalized.includes("high") || normalized.includes("warning")
+        ? 0.72
+        : normalized.includes("medium") || normalized.includes("moderate") || normalized.includes("advisory")
+          ? 0.48
+          : normalized.includes("low") || normalized.includes("minor")
+            ? 0.22
+            : 0);
   if (score >= 0.75) {
     return { fill: "#ef4444", line: "#b91c1c" };
   }
@@ -6731,7 +7229,12 @@ function weatherForecastTone(riskScore: number | undefined, riskLevel: string | 
   if (score >= 0.75 || normalized.includes("critical") || normalized.includes("extreme")) {
     return "bad";
   }
-  if (score >= 0.25 || normalized.includes("warning") || normalized.includes("advisory") || normalized.includes("moderate")) {
+  if (
+    score >= 0.25 ||
+    normalized.includes("warning") ||
+    normalized.includes("advisory") ||
+    normalized.includes("moderate")
+  ) {
     return "warn";
   }
   return "ok";
@@ -6749,12 +7252,14 @@ function weatherForecastStatusLabel(riskScore: number | undefined, riskLevel: st
 }
 
 function weatherForecastMapLabel(feature: SituationFeature, presentation: Record<string, unknown>): string {
-  return recordString(presentation, "mapLabel")
-    ?? recordString(presentation, "label")
-    ?? feature.properties.areaName
-    ?? feature.properties.label
-    ?? feature.properties.headline
-    ?? "Předpověď";
+  return (
+    recordString(presentation, "mapLabel") ??
+    recordString(presentation, "label") ??
+    feature.properties.areaName ??
+    feature.properties.label ??
+    feature.properties.headline ??
+    "Předpověď"
+  );
 }
 
 function weatherForecastSubtitle(feature: SituationFeature, presentation: Record<string, unknown>): string {
@@ -6762,41 +7267,48 @@ function weatherForecastSubtitle(feature: SituationFeature, presentation: Record
   const forecast = isRecord(providerProperties.weatherForecast) ? providerProperties.weatherForecast : {};
   const properties = feature.properties as unknown as Record<string, unknown>;
   return [
-    recordString(presentation, "subtitle")
-      ?? recordString(forecast, "summary")
-      ?? recordString(properties, "description")
-      ?? recordString(properties, "summary"),
+    recordString(presentation, "subtitle") ??
+      recordString(forecast, "summary") ??
+      recordString(properties, "description") ??
+      recordString(properties, "summary"),
     sourceDisplayName(feature.properties.sourceId)
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function isWeatherWebcamFeature(feature: SituationFeature): boolean {
   const camera = weatherWebcamProviderMetadata(feature);
   const category = normalizeSituationCategory(feature.properties.category);
   const providerLayerId = stringProperty(feature.properties.providerLayerId);
-  return feature.properties.layerId === "public.weather.webcams"
-    || feature.properties.sourceId === "chmi_weather_webcams"
-    || providerLayerId === "weather.webcams"
-    || providerLayerId === "weather_webcams"
-    || providerLayerId === "chmi_weather_webcams"
-    || category === "weather_webcam"
-    || category === "webcam"
-    || Boolean(stringProperty(camera.detailUrl) || stringProperty(camera.snapshotUrl));
+  return (
+    feature.properties.layerId === "public.weather.webcams" ||
+    feature.properties.sourceId === "chmi_weather_webcams" ||
+    providerLayerId === "weather.webcams" ||
+    providerLayerId === "weather_webcams" ||
+    providerLayerId === "chmi_weather_webcams" ||
+    category === "weather_webcam" ||
+    category === "webcam" ||
+    Boolean(stringProperty(camera.detailUrl) || stringProperty(camera.snapshotUrl))
+  );
 }
 
 function weatherWebcamProviderMetadata(feature: SituationFeature): Record<string, unknown> {
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   return isRecord(providerProperties.camera) ? providerProperties.camera : {};
 }
 
 function formatWeatherWebcamLabel(feature: SituationFeature): string {
   const camera = weatherWebcamProviderMetadata(feature);
-  const label = stringProperty(camera.label)
-    ?? stringProperty(camera.name)
-    ?? stringProperty(camera.title)
-    ?? feature.properties.headline
-    ?? feature.properties.label
-    ?? "Webkamera ČHMÚ";
+  const label =
+    stringProperty(camera.label) ??
+    stringProperty(camera.name) ??
+    stringProperty(camera.title) ??
+    feature.properties.headline ??
+    feature.properties.label ??
+    "Webkamera ČHMÚ";
   return normalizeWeatherWebcamDisplayLabel(label);
 }
 
@@ -6807,25 +7319,31 @@ function normalizeWeatherWebcamDisplayLabel(label: string): string {
 
 function isCurrentWeatherSummaryFeature(feature: SituationFeature): boolean {
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  return feature.properties.layerId === "public.weather.current"
-    || feature.properties.providerLayerId === "weather.open_meteo"
-    || (feature.properties.layer === "weather" && feature.properties.sourceId === "open_meteo")
-    || stringProperty(tags.mapDisplayHint) === "weather_observation_point";
+  return (
+    feature.properties.layerId === "public.weather.current" ||
+    feature.properties.providerLayerId === "weather.open_meteo" ||
+    (feature.properties.layer === "weather" && feature.properties.sourceId === "open_meteo") ||
+    stringProperty(tags.mapDisplayHint) === "weather_observation_point"
+  );
 }
 
 function isAviationWeatherFeature(feature: SituationFeature): boolean {
-  return feature.properties.sourceId === "aviation_weather" || feature.properties.category === "aviation_weather_station";
+  return (
+    feature.properties.sourceId === "aviation_weather" || feature.properties.category === "aviation_weather_station"
+  );
 }
 
 function isWeatherGridFeature(feature: SituationFeature): boolean {
   if (feature.geometry.type === "Point") {
     return false;
   }
-  return feature.properties.layer === "weather_temperature_grid"
-    || feature.properties.layer === "weather_wind_field"
-    || feature.properties.layer === "weather_precipitation_grid"
-    || feature.properties.layer === "weather_humidity_grid"
-    || feature.properties.layer === "weather_pressure_grid";
+  return (
+    feature.properties.layer === "weather_temperature_grid" ||
+    feature.properties.layer === "weather_wind_field" ||
+    feature.properties.layer === "weather_precipitation_grid" ||
+    feature.properties.layer === "weather_humidity_grid" ||
+    feature.properties.layer === "weather_pressure_grid"
+  );
 }
 
 function weatherGridFillOpacity(feature: SituationFeature): number {
@@ -6848,10 +7366,7 @@ function weatherGridFillOpacity(feature: SituationFeature): number {
 }
 
 function formatBoundaryLabel(feature: SituationFeature): string {
-  return feature.properties.areaName
-    ?? feature.properties.headline
-    ?? feature.properties.label
-    ?? "Správní hranice";
+  return feature.properties.areaName ?? feature.properties.headline ?? feature.properties.label ?? "Správní hranice";
 }
 
 function riskLabelForKind(kind: RiskIconId): string {
@@ -6920,7 +7435,11 @@ function floodStageTone(value: number | undefined): FloodStageTone {
   return "critical";
 }
 
-function hydroMapPriorityScore(feature: SituationFeature, floodStage: number | undefined, trend: FloodTrendDirection | undefined): number {
+function hydroMapPriorityScore(
+  feature: SituationFeature,
+  floodStage: number | undefined,
+  trend: FloodTrendDirection | undefined
+): number {
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   let priority = 35;
   if (floodStage !== undefined) {
@@ -6940,7 +7459,10 @@ function hydroMapPriorityScore(feature: SituationFeature, floodStage: number | u
 
   const waterLevelCm = numberProperty(feature.properties.waterLevelCm) ?? recordNumber(metrics, "waterLevelCm");
   const spa1Cm = recordNumber(metrics, "spa1Cm");
-  const discharge = numberProperty(feature.properties.discharge) ?? recordNumber(metrics, "discharge") ?? recordNumber(metrics, "flowM3s");
+  const discharge =
+    numberProperty(feature.properties.discharge) ??
+    recordNumber(metrics, "discharge") ??
+    recordNumber(metrics, "flowM3s");
   const spa1FlowM3s = recordNumber(metrics, "spa1FlowM3s");
   const levelRatio = spa1Cm && spa1Cm > 0 && waterLevelCm !== undefined ? waterLevelCm / spa1Cm : undefined;
   const flowRatio = spa1FlowM3s && spa1FlowM3s > 0 && discharge !== undefined ? discharge / spa1FlowM3s : undefined;
@@ -6981,18 +7503,20 @@ function floodTrendShortLabel(value: string | undefined): string {
 
 function isCommunicationTowerFeature(feature: SituationFeature): boolean {
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
   const providerLayerId = feature.properties.providerLayerId ?? stringProperty(providerProperties.providerLayerId);
-  return feature.properties.layer === "mobile"
-    && normalizeSituationCategory(feature.properties.category) === "communications_tower"
-    && (
-      feature.properties.sourceId === "osm_postgis"
-      || feature.properties.layerId === "reference.infrastructure.communications"
-      || providerLayerId === "mobile.osm_postgis.communications"
-      || stringProperty(tags.referenceOnly) === "true"
-      || stringProperty(providerTags.referenceOnly) === "true"
-    );
+  return (
+    feature.properties.layer === "mobile" &&
+    normalizeSituationCategory(feature.properties.category) === "communications_tower" &&
+    (feature.properties.sourceId === "osm_postgis" ||
+      feature.properties.layerId === "reference.infrastructure.communications" ||
+      providerLayerId === "mobile.osm_postgis.communications" ||
+      stringProperty(tags.referenceOnly) === "true" ||
+      stringProperty(providerTags.referenceOnly) === "true")
+  );
 }
 
 function isRadioInputFeature(feature: SituationFeature): boolean {
@@ -7002,10 +7526,12 @@ function isRadioInputFeature(feature: SituationFeature): boolean {
 
 function isRadioOverlayFeature(feature: SituationFeature): boolean {
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  return isRadioInputFeature(feature)
-    || feature.properties.sourceId === "radio_los_model"
-    || feature.properties.layerId?.startsWith("analysis.radio.") === true
-    || stringProperty(tags.radioOverlay) === "true";
+  return (
+    isRadioInputFeature(feature) ||
+    feature.properties.sourceId === "radio_los_model" ||
+    feature.properties.layerId?.startsWith("analysis.radio.") === true ||
+    stringProperty(tags.radioOverlay) === "true"
+  );
 }
 
 function formatRadioInputFeatureLabel(feature: SituationFeature): string {
@@ -7021,15 +7547,14 @@ function buildRadioOverlayRenderProperties(
   const status = input ? { color: "#38bdf8", label: "VSTUP", tone: "info" } : mobileCoverageStatus(quality);
   const confidence = clampUnit(numberProperty(feature.properties.confidence) ?? (input ? 1 : 0.55));
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  const mode = stringProperty(tags.radioOverlayMode)
-    ?? feature.properties.layerId?.replace(/^analysis\.radio\./u, "")
-    ?? (input ? "input" : "coverage");
+  const mode =
+    stringProperty(tags.radioOverlayMode) ??
+    feature.properties.layerId?.replace(/^analysis\.radio\./u, "") ??
+    (input ? "input" : "coverage");
   const kind = input ? "input" : mode;
   const label = input
     ? formatRadioInputFeatureLabel(feature)
-    : feature.properties.label
-      ?? feature.properties.summary
-      ?? status.label;
+    : (feature.properties.label ?? feature.properties.summary ?? status.label);
   const fillOpacity = input ? 0.06 : 0.08 + confidence * 0.2;
   const lineOpacity = input ? 0.86 : 0.48 + confidence * 0.34;
   return {
@@ -7060,17 +7585,26 @@ function situationFeatureStatus(feature: SituationFeature): { color: string; lab
     const role = missionArenaFeatureRole(feature);
     return {
       color: missionArenaFeatureColor(feature),
-      label: role === "task_state"
-        ? missionArenaTaskRoleLabel(feature)
-        : role === "team_state"
-          ? (missionArenaTeamLabel(feature) ?? "TÝM")
-          : (feature.properties.runtimeMode === "live" ? "LIVE" : "EVENT"),
+      label:
+        role === "task_state"
+          ? missionArenaTaskRoleLabel(feature)
+          : role === "team_state"
+            ? (missionArenaTeamLabel(feature) ?? "TÝM")
+            : feature.properties.runtimeMode === "live"
+              ? "LIVE"
+              : "EVENT",
       tone: "info"
     };
   }
   if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
     const coverage = mobileCoverageStatus(feature.properties.quality);
-    return feature.properties.stale ? { ...coverage, label: `${coverage.label} · starší data`, tone: coverage.tone === "info" ? "warning" : coverage.tone } : coverage;
+    return feature.properties.stale
+      ? {
+          ...coverage,
+          label: `${coverage.label} · starší data`,
+          tone: coverage.tone === "info" ? "warning" : coverage.tone
+        }
+      : coverage;
   }
   if (isCommunicationTowerFeature(feature)) {
     return communicationTowerReferenceStatus();
@@ -7089,7 +7623,15 @@ function situationFeatureStatus(feature: SituationFeature): { color: string; lab
     return { color: "#38bdf8", label: "PROSTOR", tone: "info" };
   }
   if (isRiskFeature(feature)) {
-    const rawRisk = (feature.properties.hazardSeverity ?? feature.properties.severity ?? feature.properties.status ?? feature.properties.urgency ?? "info").trim().toLowerCase();
+    const rawRisk = (
+      feature.properties.hazardSeverity ??
+      feature.properties.severity ??
+      feature.properties.status ??
+      feature.properties.urgency ??
+      "info"
+    )
+      .trim()
+      .toLowerCase();
     if (["critical", "extreme", "severe", "danger", "emergency", "red"].includes(rawRisk)) {
       return { color: "#ef4444", label: "KRITICKÉ", tone: "critical" };
     }
@@ -7126,12 +7668,13 @@ function situationFeatureStatus(feature: SituationFeature): { color: string; lab
   }
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  const raw = stringProperty(tags.status)
-    ?? stringProperty(tags.networkStatus)
-    ?? stringProperty(metrics.status)
-    ?? stringProperty(metrics.networkStatus)
-    ?? feature.properties.severity
-    ?? "info";
+  const raw =
+    stringProperty(tags.status) ??
+    stringProperty(tags.networkStatus) ??
+    stringProperty(metrics.status) ??
+    stringProperty(metrics.networkStatus) ??
+    feature.properties.severity ??
+    "info";
   const normalized = raw.toLowerCase();
   if (["critical", "down", "offline", "outage", "failed", "error"].includes(normalized)) {
     return { color: "#ef4444", label: "KRITICKÝ", tone: "critical" };
@@ -7169,7 +7712,11 @@ function mobileCoverageStatus(quality: string | undefined): { color: string; lab
 
 function normalizeCoverageQuality(quality: string | undefined): string {
   const normalized = quality?.trim().toLowerCase();
-  return normalized === "good" || normalized === "fair" || normalized === "weak" || normalized === "none" || normalized === "unknown"
+  return normalized === "good" ||
+    normalized === "fair" ||
+    normalized === "weak" ||
+    normalized === "none" ||
+    normalized === "unknown"
     ? normalized
     : "unknown";
 }
@@ -7181,7 +7728,10 @@ function formatCoverageLabel(feature: SituationFeature): string {
 }
 
 function aviationFlightCategory(feature: SituationFeature): { color: string; label: string; tone: string } | null {
-  if (feature.properties.sourceId !== "aviation_weather" && feature.properties.category !== "aviation_weather_station") {
+  if (
+    feature.properties.sourceId !== "aviation_weather" &&
+    feature.properties.category !== "aviation_weather_station"
+  ) {
     return null;
   }
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
@@ -7204,25 +7754,26 @@ function aviationFlightCategory(feature: SituationFeature): { color: string; lab
 function formatMobileNetworkLabel(feature: SituationFeature): string {
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  const raw = stringProperty(tags.accessTechnology)
-    ?? stringProperty(tags.catTechnology)
-    ?? stringProperty(tags.networkType)
-    ?? stringProperty(tags.networkGeneration)
-    ?? stringProperty(tags.technology)
-    ?? stringProperty(tags.radioAccessTechnology)
-    ?? stringProperty(tags.rat)
-    ?? stringProperty(tags.standard)
-    ?? stringProperty(tags.type)
-    ?? stringProperty(metrics.accessTechnology)
-    ?? stringProperty(metrics.catTechnology)
-    ?? stringProperty(metrics.networkType)
-    ?? stringProperty(metrics.networkGeneration)
-    ?? stringProperty(metrics.technology)
-    ?? stringProperty(metrics.radioAccessTechnology)
-    ?? stringProperty(metrics.rat)
-    ?? stringProperty(metrics.standard)
-    ?? stringProperty(metrics.type)
-    ?? stringProperty(feature.properties.category);
+  const raw =
+    stringProperty(tags.accessTechnology) ??
+    stringProperty(tags.catTechnology) ??
+    stringProperty(tags.networkType) ??
+    stringProperty(tags.networkGeneration) ??
+    stringProperty(tags.technology) ??
+    stringProperty(tags.radioAccessTechnology) ??
+    stringProperty(tags.rat) ??
+    stringProperty(tags.standard) ??
+    stringProperty(tags.type) ??
+    stringProperty(metrics.accessTechnology) ??
+    stringProperty(metrics.catTechnology) ??
+    stringProperty(metrics.networkType) ??
+    stringProperty(metrics.networkGeneration) ??
+    stringProperty(metrics.technology) ??
+    stringProperty(metrics.radioAccessTechnology) ??
+    stringProperty(metrics.rat) ??
+    stringProperty(metrics.standard) ??
+    stringProperty(metrics.type) ??
+    stringProperty(feature.properties.category);
 
   return normalizeMobileNetworkLabel(raw) ?? "MOBILE";
 }
@@ -7249,7 +7800,10 @@ function abbreviateCommunicationTowerLabel(raw: string | undefined): string | un
   if (normalized.includes("gsmr")) {
     return "GSM-R";
   }
-  if ((normalized.includes("5g") || normalized.includes("nr")) && (normalized.includes("4g") || normalized.includes("lte"))) {
+  if (
+    (normalized.includes("5g") || normalized.includes("nr")) &&
+    (normalized.includes("4g") || normalized.includes("lte"))
+  ) {
     return "4G/5G";
   }
   if (normalized.includes("5g") || normalized.includes("nr")) {
@@ -7264,7 +7818,12 @@ function abbreviateCommunicationTowerLabel(raw: string | undefined): string | un
   if (normalized.includes("ceskeradiokomunikace")) {
     return "CRA";
   }
-  if (normalized.includes("mobilephone") || normalized.includes("cellular") || normalized.includes("basestation") || normalized.includes("bts")) {
+  if (
+    normalized.includes("mobilephone") ||
+    normalized.includes("cellular") ||
+    normalized.includes("basestation") ||
+    normalized.includes("bts")
+  ) {
     return "BTS";
   }
   if (normalized.includes("television") || normalized === "tv") {
@@ -7278,7 +7837,10 @@ function abbreviateCommunicationTowerLabel(raw: string | undefined): string | un
   }
   const words = label.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   if (words.length >= 2) {
-    const acronym = words.slice(0, 4).map((word) => word[0]?.toUpperCase()).join("");
+    const acronym = words
+      .slice(0, 4)
+      .map((word) => word[0]?.toUpperCase())
+      .join("");
     if (acronym.length >= 2 && acronym.length <= 5) {
       return acronym;
     }
@@ -7292,7 +7854,10 @@ function normalizeMobileNetworkLabel(raw: string | undefined): string | undefine
     return undefined;
   }
   const normalized = raw.toLowerCase().replace(/[_\s.-]+/g, "");
-  if ((normalized.includes("5g") || normalized.includes("nr")) && (normalized.includes("4g") || normalized.includes("lte"))) {
+  if (
+    (normalized.includes("5g") || normalized.includes("nr")) &&
+    (normalized.includes("4g") || normalized.includes("lte"))
+  ) {
     return "4G/5G";
   }
   if (normalized.includes("5g") || normalized.includes("nr")) {
@@ -7301,10 +7866,20 @@ function normalizeMobileNetworkLabel(raw: string | undefined): string | undefine
   if (normalized.includes("4g") || normalized.includes("lte")) {
     return "4G";
   }
-  if (normalized.includes("3g") || normalized.includes("umts") || normalized.includes("wcdma") || normalized.includes("hspa")) {
+  if (
+    normalized.includes("3g") ||
+    normalized.includes("umts") ||
+    normalized.includes("wcdma") ||
+    normalized.includes("hspa")
+  ) {
     return "3G";
   }
-  if (normalized.includes("2g") || normalized.includes("gsm") || normalized.includes("gprs") || normalized.includes("edge")) {
+  if (
+    normalized.includes("2g") ||
+    normalized.includes("gsm") ||
+    normalized.includes("gprs") ||
+    normalized.includes("edge")
+  ) {
     return "2G";
   }
   if (normalized.includes("mobile") || normalized.includes("cellular") || normalized.includes("network")) {
@@ -7378,12 +7953,24 @@ function normalizeCompactAscii(value: string): string {
     .replace(/[_\s./-]+/g, "");
 }
 
-function resolveOsmCategoryPresentation(feature: SituationFeature): { iconId: OsmCategoryIconId; label: string } | null {
+function resolveOsmCategoryPresentation(
+  feature: SituationFeature
+): { iconId: OsmCategoryIconId; label: string } | null {
   if (feature.properties.sourceId !== "osm_postgis") {
     return null;
   }
   const normalized = normalizeSituationCategory(feature.properties.category);
-  if (["hospital", "clinic", "doctors", "healthcare_hospital", "healthcare_clinic", "healthcare_doctor", "ambulance_station"].includes(normalized)) {
+  if (
+    [
+      "hospital",
+      "clinic",
+      "doctors",
+      "healthcare_hospital",
+      "healthcare_clinic",
+      "healthcare_doctor",
+      "ambulance_station"
+    ].includes(normalized)
+  ) {
     return { iconId: "hospital", label: "Nemocnice" };
   }
   if (["fire_station", "fire_hydrant"].includes(normalized)) {
@@ -7407,11 +7994,15 @@ function resolveOsmCategoryPresentation(feature: SituationFeature): { iconId: Os
   return { iconId: "other", label: "OSM" };
 }
 
-function resolveTrailRoutePresentation(feature: SituationFeature): { color: string; label: string; mode: string } | null {
+function resolveTrailRoutePresentation(
+  feature: SituationFeature
+): { color: string; label: string; mode: string } | null {
   if (feature.properties.layer !== "trail_routes") {
     return null;
   }
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const trail = isRecord(providerProperties.trail) ? providerProperties.trail : {};
   const display = isRecord(providerProperties.display) ? providerProperties.display : {};
   const mode = normalizeSituationCategory(recordString(trail, "mode") ?? feature.properties.category);
@@ -7425,18 +8016,23 @@ function resolveTrailRoutePresentation(feature: SituationFeature): { color: stri
   };
 }
 
-function resolveTrailPoiPresentation(feature: SituationFeature): { category: string; color: string; iconId: OsmCategoryIconId; label: string } | null {
+function resolveTrailPoiPresentation(
+  feature: SituationFeature
+): { category: string; color: string; iconId: OsmCategoryIconId; label: string } | null {
   if (feature.properties.layer !== "trail_poi") {
     return null;
   }
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const trailPoi = isRecord(providerProperties.trailPoi) ? providerProperties.trailPoi : {};
   const display = isRecord(providerProperties.display) ? providerProperties.display : {};
   const category = normalizeSituationCategory(recordString(trailPoi, "category") ?? feature.properties.category);
-  const label = localizedDisplayValue(trailPoi.categoryLabelLocalized)
-    ?? recordString(display, "label")
-    ?? feature.properties.label
-    ?? trailPoiCategoryLabel(category);
+  const label =
+    localizedDisplayValue(trailPoi.categoryLabelLocalized) ??
+    recordString(display, "label") ??
+    feature.properties.label ??
+    trailPoiCategoryLabel(category);
   return {
     category,
     color: recordString(display, "colorHex") ?? "#84cc16",
@@ -7445,23 +8041,26 @@ function resolveTrailPoiPresentation(feature: SituationFeature): { category: str
   };
 }
 
-function resolveCommunityPlacePresentation(feature: SituationFeature): { color: string; iconId: OsmCategoryIconId; label: string } | null {
+function resolveCommunityPlacePresentation(
+  feature: SituationFeature
+): { color: string; iconId: OsmCategoryIconId; label: string } | null {
   if (feature.properties.layer !== "community_places") {
     return null;
   }
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const community = isRecord(providerProperties.community) ? providerProperties.community : {};
   const display = isRecord(providerProperties.display) ? providerProperties.display : {};
   const category = normalizeSituationCategory(
-    recordString(community, "categoryGroup")
-    ?? recordString(community, "category")
-    ?? feature.properties.category
+    recordString(community, "categoryGroup") ?? recordString(community, "category") ?? feature.properties.category
   );
-  const label = localizedDisplayValue(community.categoryLabelLocalized)
-    ?? recordString(display, "label")
-    ?? recordString(community, "categoryLabel")
-    ?? feature.properties.label
-    ?? communityPlaceCategoryLabel(category);
+  const label =
+    localizedDisplayValue(community.categoryLabelLocalized) ??
+    recordString(display, "label") ??
+    recordString(community, "categoryLabel") ??
+    feature.properties.label ??
+    communityPlaceCategoryLabel(category);
   return {
     color: recordString(display, "colorHex") ?? communityPlaceColor(category),
     iconId: communityPlaceIconId(category),
@@ -7647,16 +8246,20 @@ function formatWeatherStationLabel(feature: SituationFeature, currentWeatherSumm
     return "Střed mapy";
   }
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const station = isRecord(providerProperties.station) ? providerProperties.station : {};
-  return stringProperty(feature.properties.label)
-    ?? stringProperty(feature.properties.headline)
-    ?? recordString(tags, "stationName")
-    ?? recordString(tags, "name")
-    ?? recordString(providerProperties, "stationName")
-    ?? recordString(providerProperties, "name")
-    ?? recordString(station, "name")
-    ?? "Počasí";
+  return (
+    stringProperty(feature.properties.label) ??
+    stringProperty(feature.properties.headline) ??
+    recordString(tags, "stationName") ??
+    recordString(tags, "name") ??
+    recordString(providerProperties, "stationName") ??
+    recordString(providerProperties, "name") ??
+    recordString(station, "name") ??
+    "Počasí"
+  );
 }
 
 function formatWeatherObservationMapLabel(
@@ -7737,15 +8340,31 @@ function resolveWeatherConditionPresentation(
   preferMeasuredIcon = false
 ): WeatherConditionPresentation {
   const metadataRecords = weatherMetadataRecords(feature);
-  const explicitIconId = firstRecordString(metadataRecords, "weatherSymbolKey", "weatherConditionKey", "conditionKey", "symbolKey", "iconKey", "icon");
-  const explicitLabel = firstRecordString(metadataRecords, "weatherConditionLabel", "conditionLabel", "weatherLabel", "badgeLabel", "condition");
+  const explicitIconId = firstRecordString(
+    metadataRecords,
+    "weatherSymbolKey",
+    "weatherConditionKey",
+    "conditionKey",
+    "symbolKey",
+    "iconKey",
+    "icon"
+  );
+  const explicitLabel = firstRecordString(
+    metadataRecords,
+    "weatherConditionLabel",
+    "conditionLabel",
+    "weatherLabel",
+    "badgeLabel",
+    "condition"
+  );
   if (explicitIconId) {
     const iconId = normalizeWeatherConditionIconId(explicitIconId);
     return { iconId, label: explicitLabel ?? weatherConditionDefaultLabel(iconId) };
   }
 
-  const weatherCode = firstRecordNumber(metrics, "weatherCode", "wmoCode", "wmoWeatherCode", "openMeteoWeatherCode")
-    ?? firstRecordNumberFromRecords(metadataRecords, "weatherCode", "wmoCode", "wmoWeatherCode", "openMeteoWeatherCode");
+  const weatherCode =
+    firstRecordNumber(metrics, "weatherCode", "wmoCode", "wmoWeatherCode", "openMeteoWeatherCode") ??
+    firstRecordNumberFromRecords(metadataRecords, "weatherCode", "wmoCode", "wmoWeatherCode", "openMeteoWeatherCode");
   if (weatherCode !== undefined) {
     const iconId = weatherConditionIconFromWmoCode(weatherCode);
     return { iconId, label: explicitLabel ?? weatherConditionDefaultLabel(iconId) };
@@ -7756,12 +8375,20 @@ function resolveWeatherConditionPresentation(
     return { iconId, label: explicitLabel ?? weatherConditionDefaultLabel(iconId) };
   }
 
-  const inferredIconId = inferWeatherConditionIconId(temperatureC, windSpeedMps, precipitationMm, cloudCoverPercent, humidityPercent);
+  const inferredIconId = inferWeatherConditionIconId(
+    temperatureC,
+    windSpeedMps,
+    precipitationMm,
+    cloudCoverPercent,
+    humidityPercent
+  );
   return { iconId: inferredIconId, label: explicitLabel ?? weatherConditionDefaultLabel(inferredIconId) };
 }
 
 function weatherDisplayRecord(feature: SituationFeature): Record<string, unknown> | undefined {
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   return isRecord(providerProperties.display) ? providerProperties.display : undefined;
 }
 
@@ -7782,9 +8409,7 @@ function weatherDisplayIconId(
   const conditionMode = recordString(display, "conditionMode");
   if (iconKey) {
     const normalized = normalizeWeatherConditionIconId(iconKey);
-    return normalized === "measurement"
-      ? measurementWeatherIconId(display, metrics)
-      : normalized;
+    return normalized === "measurement" ? measurementWeatherIconId(display, metrics) : normalized;
   }
   if (conditionMode === "unclassified" || conditionMode === "measured") {
     return measurementWeatherIconId(display, metrics);
@@ -7810,14 +8435,26 @@ function measurementWeatherIconId(
     recordString(display, "tertiaryValue"),
     recordString(display, "label"),
     recordString(display, "subtitle")
-  ].filter(Boolean).join(" ").toLowerCase();
-  if ((metrics.precipitationMm ?? 0) > 0 || sourceText.includes("sráž") || sourceText.includes("déšť") || sourceText.includes("rain")) {
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (
+    (metrics.precipitationMm ?? 0) > 0 ||
+    sourceText.includes("sráž") ||
+    sourceText.includes("déšť") ||
+    sourceText.includes("rain")
+  ) {
     return "measurement_rain";
   }
   if ((metrics.windSpeedMps ?? 0) >= 0.5 || sourceText.includes("vítr") || sourceText.includes("wind")) {
     return "measurement_wind";
   }
-  if (metrics.temperatureC !== undefined || /[-+]?\d+(?:[.,]\d+)?\s*°?\s*c\b/u.test(sourceText) || sourceText.includes("teplot")) {
+  if (
+    metrics.temperatureC !== undefined ||
+    /[-+]?\d+(?:[.,]\d+)?\s*°?\s*c\b/u.test(sourceText) ||
+    sourceText.includes("teplot")
+  ) {
     return "measurement_temperature";
   }
   if (metrics.humidityPercent !== undefined || sourceText.includes("vlhkost") || sourceText.includes("humidity")) {
@@ -7855,7 +8492,12 @@ function measurementIconFromText(value: string | undefined): WeatherConditionIco
   if (!normalized) {
     return undefined;
   }
-  if (normalized.includes("sráž") || normalized.includes("déšť") || normalized.includes("rain") || normalized.includes("mm")) {
+  if (
+    normalized.includes("sráž") ||
+    normalized.includes("déšť") ||
+    normalized.includes("rain") ||
+    normalized.includes("mm")
+  ) {
     return "measurement_rain";
   }
   if (normalized.includes("vítr") || normalized.includes("wind") || /\bm\/s\b/u.test(normalized)) {
@@ -7962,16 +8604,24 @@ function weatherMetadataRecords(feature: SituationFeature): Record<string, unkno
   const records: Record<string, unknown>[] = [feature.properties as unknown as Record<string, unknown>];
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : undefined;
   const rendering = isRecord(feature.properties.rendering) ? feature.properties.rendering : undefined;
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : undefined;
-  const providerRendering = providerProperties && isRecord(providerProperties.rendering) ? providerProperties.rendering : undefined;
-  const providerWeather = providerProperties && isRecord(providerProperties.weather) ? providerProperties.weather : undefined;
-  const providerCondition = providerProperties && isRecord(providerProperties.condition) ? providerProperties.condition : undefined;
-  const providerDisplay = providerProperties && isRecord(providerProperties.display) ? providerProperties.display : undefined;
-  [tags, rendering, providerProperties, providerRendering, providerWeather, providerCondition, providerDisplay].forEach((record) => {
-    if (record) {
-      records.push(record);
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : undefined;
+  const providerRendering =
+    providerProperties && isRecord(providerProperties.rendering) ? providerProperties.rendering : undefined;
+  const providerWeather =
+    providerProperties && isRecord(providerProperties.weather) ? providerProperties.weather : undefined;
+  const providerCondition =
+    providerProperties && isRecord(providerProperties.condition) ? providerProperties.condition : undefined;
+  const providerDisplay =
+    providerProperties && isRecord(providerProperties.display) ? providerProperties.display : undefined;
+  [tags, rendering, providerProperties, providerRendering, providerWeather, providerCondition, providerDisplay].forEach(
+    (record) => {
+      if (record) {
+        records.push(record);
+      }
     }
-  });
+  );
   return records;
 }
 
@@ -8086,7 +8736,11 @@ function weatherConditionDefaultLabel(iconId: WeatherConditionIconId): string {
   }
 }
 
-function formatWeatherMapLabel(temperatureC: number | undefined, windSpeedMps: number | undefined, precipitationMm: number | undefined): string {
+function formatWeatherMapLabel(
+  temperatureC: number | undefined,
+  windSpeedMps: number | undefined,
+  precipitationMm: number | undefined
+): string {
   const parts: string[] = [];
   if (temperatureC !== undefined) {
     parts.push(`${Math.round(temperatureC)}°C`);
@@ -8132,9 +8786,15 @@ function weatherContextColor(feature: SituationFeature, fallback: string): strin
     case "weather_wind_field":
       return windSpeedColor(weatherMetricValue(feature, metrics, "windSpeedMps"), fallback);
     case "weather_precipitation_grid":
-      return precipitationColor(weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm"), fallback);
+      return precipitationColor(
+        weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm"),
+        fallback
+      );
     case "weather_humidity_grid":
-      return humidityColor(weatherMetricValue(feature, metrics, "relativeHumidityPercent", "humidityPercent"), fallback);
+      return humidityColor(
+        weatherMetricValue(feature, metrics, "relativeHumidityPercent", "humidityPercent"),
+        fallback
+      );
     case "weather_pressure_grid":
       return pressureColor(weatherMetricValue(feature, metrics, "pressureHpa", "pressureHpaSeaLevel"), fallback);
     default:
@@ -8159,9 +8819,15 @@ function weatherContextStatusLabel(feature: SituationFeature, fallback: string):
   }
 }
 
-function weatherMetricValue(feature: SituationFeature, metrics: Record<string, unknown>, ...fallbackKeys: string[]): number | undefined {
+function weatherMetricValue(
+  feature: SituationFeature,
+  metrics: Record<string, unknown>,
+  ...fallbackKeys: string[]
+): number | undefined {
   const rendering = isRecord(feature.properties.rendering) ? feature.properties.rendering : {};
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const providerRendering = isRecord(providerProperties.rendering) ? providerProperties.rendering : {};
   const metricKey = stringProperty(rendering.valueMetric) ?? stringProperty(providerRendering.valueMetric);
   if (metricKey) {
@@ -8205,7 +8871,9 @@ function formatWeatherFeatureSubtitle(feature: SituationFeature): string {
     source,
     weatherDataQualityLabel(stringProperty(feature.properties.dataQuality)),
     feature.properties.stale ? "starší data" : undefined
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function weatherFeatureValueLabel(feature: SituationFeature, metrics: Record<string, unknown>): string | undefined {
@@ -8217,10 +8885,14 @@ function weatherFeatureValueLabel(feature: SituationFeature, metrics: Record<str
     case "weather_wind_field": {
       const speed = weatherMetricValue(feature, metrics, "windSpeedMps");
       const direction = recordNumber(metrics, "windDirectionDeg");
-      return [
-        speed !== undefined ? `${Math.round(speed)} m/s` : undefined,
-        direction !== undefined ? `${Math.round(direction)}°` : undefined
-      ].filter(Boolean).join(", ") || undefined;
+      return (
+        [
+          speed !== undefined ? `${Math.round(speed)} m/s` : undefined,
+          direction !== undefined ? `${Math.round(direction)}°` : undefined
+        ]
+          .filter(Boolean)
+          .join(", ") || undefined
+      );
     }
     case "weather_precipitation_grid": {
       const value = weatherMetricValue(feature, metrics, "precipitationMm", "precipitation10mMm");
@@ -8296,7 +8968,11 @@ function formatAviationWeatherMapLabel(icaoId: string | undefined, flightCategor
   return [icaoId, flightCategory].filter(Boolean).join("\n") || "METAR";
 }
 
-function formatAirQualityMapLabel(index: number | undefined, pollutant: string | undefined, level: string | undefined): string {
+function formatAirQualityMapLabel(
+  index: number | undefined,
+  pollutant: string | undefined,
+  level: string | undefined
+): string {
   const normalizedPollutant = pollutant?.trim().toUpperCase();
   if (index !== undefined) {
     return normalizedPollutant ? `AQI ${Math.round(index)}\n${normalizedPollutant}` : `AQI ${Math.round(index)}`;
@@ -8518,8 +9194,13 @@ function weatherPulseOpacityExpression(expanded: boolean): ExpressionSpecificati
   ] as ExpressionSpecification;
 }
 
-function normalizeAirQualityLevel(level: string | undefined): "fair" | "good" | "moderate" | "poor" | "very_poor" | "unknown" {
-  const normalized = level?.trim().toLowerCase().replace(/[\s-]+/g, "_");
+function normalizeAirQualityLevel(
+  level: string | undefined
+): "fair" | "good" | "moderate" | "poor" | "very_poor" | "unknown" {
+  const normalized = level
+    ?.trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
   if (!normalized) {
     return "unknown";
   }
@@ -8569,7 +9250,11 @@ interface TrackFeatureOptions {
   publicFlightSymbolMode?: PublicFlightSymbolMode;
 }
 
-export function objectsToTrackFeatureCollection(objects: CopObject[], selectedObjectId?: string, options: TrackFeatureOptions = {}): TrackFeatureCollection {
+export function objectsToTrackFeatureCollection(
+  objects: CopObject[],
+  selectedObjectId?: string,
+  options: TrackFeatureOptions = {}
+): TrackFeatureCollection {
   return {
     type: "FeatureCollection",
     features: objects.filter(hasPosition).map((object) => {
@@ -8578,11 +9263,14 @@ export function objectsToTrackFeatureCollection(objects: CopObject[], selectedOb
       const publicFlight = isPublicFlightObject(object);
       const civilAircraftKind = publicFlight ? resolveCivilAircraftIconKind(object) : undefined;
       const civilAircraftTone = publicFlight ? resolveCivilAircraftIconTone(object) : undefined;
-      const civilAircraftSymbolColor = publicFlight ? resolveCivilAircraftSymbolColor(object, civilAircraftTone ?? "normal") : affiliation.color;
+      const civilAircraftSymbolColor = publicFlight
+        ? resolveCivilAircraftSymbolColor(object, civilAircraftTone ?? "normal")
+        : affiliation.color;
       const standardSymbolKey = getNatoIconKey(object.objectType, object.affiliation);
-      const displaySymbolKey = publicFlight && options.publicFlightSymbolMode !== "standard"
-        ? getCivilAircraftIconKey(civilAircraftKind ?? "unknown", civilAircraftTone ?? "normal")
-        : standardSymbolKey;
+      const displaySymbolKey =
+        publicFlight && options.publicFlightSymbolMode !== "standard"
+          ? getCivilAircraftIconKey(civilAircraftKind ?? "unknown", civilAircraftTone ?? "normal")
+          : standardSymbolKey;
       return {
         type: "Feature",
         geometry: {
@@ -8606,9 +9294,10 @@ export function objectsToTrackFeatureCollection(objects: CopObject[], selectedOb
           civilAircraftKind,
           civilAircraftTone,
           label: formatTrackLabel(object),
-          symbolColor: publicFlight && options.publicFlightSymbolMode !== "standard"
-            ? civilAircraftSymbolColor
-            : affiliation.color,
+          symbolColor:
+            publicFlight && options.publicFlightSymbolMode !== "standard"
+              ? civilAircraftSymbolColor
+              : affiliation.color,
           symbolDisposition: affiliation.disposition
         }
       };
@@ -8629,9 +9318,9 @@ function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind 
   }
   const aircraft = isRecord(flightData?.aircraft) ? flightData.aircraft : {};
   const iconHint = normalizeCivilAircraftIconKind(
-    stringProperty(aircraft.iconKey)
-    ?? stripSvgExtension(stringProperty(aircraft.iconFile))
-    ?? stringProperty(aircraft.iconHint)
+    stringProperty(aircraft.iconKey) ??
+      stripSvgExtension(stringProperty(aircraft.iconFile)) ??
+      stringProperty(aircraft.iconHint)
   );
   if (iconHint) {
     return iconHint;
@@ -8673,7 +9362,12 @@ function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind 
     if (descriptor.includes("military") || descriptor.includes("attack")) {
       return "military_helicopter";
     }
-    if (descriptor.includes("medical") || descriptor.includes("ems") || descriptor.includes("rescue") || descriptor.includes("sar")) {
+    if (
+      descriptor.includes("medical") ||
+      descriptor.includes("ems") ||
+      descriptor.includes("rescue") ||
+      descriptor.includes("sar")
+    ) {
       return "medical_helicopter";
     }
     if (["ch47", "ch46", "chinook"].some((token) => descriptor.includes(token))) {
@@ -8681,7 +9375,12 @@ function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind 
     }
     return descriptor.includes("light") ? "light_helicopter" : "medium_helicopter";
   }
-  if (descriptor.includes("glider") || typeDesignator.includes("glid") || typeDesignator.startsWith("asw") || typeDesignator.startsWith("dg")) {
+  if (
+    descriptor.includes("glider") ||
+    typeDesignator.includes("glid") ||
+    typeDesignator.startsWith("asw") ||
+    typeDesignator.startsWith("dg")
+  ) {
     return "glider";
   }
   if (descriptor.includes("seaplane") || descriptor.includes("amphib")) {
@@ -8696,22 +9395,40 @@ function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind 
   if (descriptor.includes("ultralight") || descriptor.includes("microlight")) {
     return "ultralight";
   }
-  if (descriptor.includes("fighter") || ["f16", "f18", "f22", "f35", "gripen", "rafale", "eurofighter", "mig", "su"].some((token) => descriptor.includes(token))) {
+  if (
+    descriptor.includes("fighter") ||
+    ["f16", "f18", "f22", "f35", "gripen", "rafale", "eurofighter", "mig", "su"].some((token) =>
+      descriptor.includes(token)
+    )
+  ) {
     return "fighter";
   }
-  if (descriptor.includes("bomber") || ["b1", "b2", "b52", "tu95", "tu160"].some((token) => typeDesignator.startsWith(token) || descriptor.includes(token))) {
+  if (
+    descriptor.includes("bomber") ||
+    ["b1", "b2", "b52", "tu95", "tu160"].some((token) => typeDesignator.startsWith(token) || descriptor.includes(token))
+  ) {
     return "military_bomber";
   }
-  if (descriptor.includes("militarytransport") || ["c130", "a400", "c17", "c5", "il76", "an12", "an124"].some((token) => descriptor.includes(token))) {
+  if (
+    descriptor.includes("militarytransport") ||
+    ["c130", "a400", "c17", "c5", "il76", "an12", "an124"].some((token) => descriptor.includes(token))
+  ) {
     return "military_transport";
   }
   if (descriptor.includes("cargo") || descriptor.includes("freighter")) {
     return "cargo_aircraft";
   }
-  if (descriptor.includes("business") || descriptor.includes("bizjet") || ["c25", "c55", "c56", "c68", "cl", "fa", "glf", "h25", "lj"].some((prefix) => typeDesignator.startsWith(prefix))) {
+  if (
+    descriptor.includes("business") ||
+    descriptor.includes("bizjet") ||
+    ["c25", "c55", "c56", "c68", "cl", "fa", "glf", "h25", "lj"].some((prefix) => typeDesignator.startsWith(prefix))
+  ) {
     return "business_jet";
   }
-  if (engineType.includes("turboprop") || ["at", "dh", "pc", "sf", "tb", "yk"].some((prefix) => typeDesignator.startsWith(prefix))) {
+  if (
+    engineType.includes("turboprop") ||
+    ["at", "dh", "pc", "sf", "tb", "yk"].some((prefix) => typeDesignator.startsWith(prefix))
+  ) {
     return "turboprop";
   }
   if (["a38", "b74"].some((prefix) => typeDesignator.startsWith(prefix)) || descriptor.includes("jumbo")) {
@@ -8723,10 +9440,19 @@ function resolveCivilAircraftIconKind(object: CopObject): CivilAircraftIconKind 
   if (["crj", "e1", "e2", "e7", "e9", "erj"].some((prefix) => typeDesignator.startsWith(prefix))) {
     return "regional_jet";
   }
-  if (category.includes("light") || category.includes("small") || ["c1", "c2", "c3", "c4", "pa", "sr", "da", "be", "p2"].some((prefix) => typeDesignator.startsWith(prefix))) {
-    return descriptor.includes("twin") || ["be", "pa3", "pa4"].some((prefix) => typeDesignator.startsWith(prefix)) ? "light_twin" : "light_single";
+  if (
+    category.includes("light") ||
+    category.includes("small") ||
+    ["c1", "c2", "c3", "c4", "pa", "sr", "da", "be", "p2"].some((prefix) => typeDesignator.startsWith(prefix))
+  ) {
+    return descriptor.includes("twin") || ["be", "pa3", "pa4"].some((prefix) => typeDesignator.startsWith(prefix))
+      ? "light_twin"
+      : "light_single";
   }
-  if (engineType.includes("jet") || ["a", "b", "c", "e", "f", "m"].some((prefix) => typeDesignator.startsWith(prefix))) {
+  if (
+    engineType.includes("jet") ||
+    ["a", "b", "c", "e", "f", "m"].some((prefix) => typeDesignator.startsWith(prefix))
+  ) {
     return "narrow_body_airliner";
   }
   return "narrow_body_airliner";
@@ -8772,11 +9498,15 @@ function civilAircraftPresentation(object: CopObject): Record<string, unknown> |
   return isRecord(flightData?.presentation) ? flightData.presentation : undefined;
 }
 
-function isAirspaceMonoPresentation(presentation: Record<string, unknown> | undefined): presentation is Record<string, unknown> {
+function isAirspaceMonoPresentation(
+  presentation: Record<string, unknown> | undefined
+): presentation is Record<string, unknown> {
   return normalizeCompactAscii(recordString(presentation ?? {}, "iconSet") ?? "") === "airspaceiconsmonov1";
 }
 
-function resolveCivilAircraftPresentationTone(presentation: Record<string, unknown> | undefined): CivilAircraftIconTone | undefined {
+function resolveCivilAircraftPresentationTone(
+  presentation: Record<string, unknown> | undefined
+): CivilAircraftIconTone | undefined {
   if (!presentation) {
     return undefined;
   }
@@ -8813,7 +9543,10 @@ function normalizeHexColor(value: unknown): string | undefined {
 }
 
 function stripSvgExtension(value: string | undefined): string | undefined {
-  return value?.split(/[\\/]/).pop()?.replace(/\.svg$/i, "");
+  return value
+    ?.split(/[\\/]/)
+    .pop()
+    ?.replace(/\.svg$/i, "");
 }
 
 function civilAircraftStatusRecords(object: CopObject): Array<Record<string, unknown>> {
@@ -8832,7 +9565,11 @@ function civilAircraftStatusRecords(object: CopObject): Array<Record<string, unk
 
 function hasCivilAircraftEmergency(records: Array<Record<string, unknown>>, status: string): boolean {
   const normalizedStatus = normalizeCompactAscii(status);
-  if (["emergency", "distress", "mayday", "sos", "hijack", "radiofailure"].some((token) => normalizedStatus.includes(token))) {
+  if (
+    ["emergency", "distress", "mayday", "sos", "hijack", "radiofailure"].some((token) =>
+      normalizedStatus.includes(token)
+    )
+  ) {
     return true;
   }
   if (firstRecordBoolean(records, ["emergency", "distress", "mayday", "hijack", "radioFailure", "active"]) === true) {
@@ -8848,7 +9585,11 @@ function hasCivilAircraftEmergency(records: Array<Record<string, unknown>>, stat
   ]);
   if (statusText) {
     const normalized = normalizeCompactAscii(statusText);
-    if (["emergency", "distress", "mayday", "panpan", "hijack", "radiofailure", "minfuel"].some((token) => normalized.includes(token))) {
+    if (
+      ["emergency", "distress", "mayday", "panpan", "hijack", "radiofailure", "minfuel"].some((token) =>
+        normalized.includes(token)
+      )
+    ) {
       return true;
     }
   }
@@ -8878,7 +9619,12 @@ function hasCivilAircraftDelay(records: Array<Record<string, unknown>>, status: 
   if (delaySeconds !== undefined && delaySeconds > 60) {
     return true;
   }
-  const delayMinutes = firstRecordNumberFromRecords(records, "delayMinutes", "arrivalDelayMinutes", "departureDelayMinutes");
+  const delayMinutes = firstRecordNumberFromRecords(
+    records,
+    "delayMinutes",
+    "arrivalDelayMinutes",
+    "departureDelayMinutes"
+  );
   if (delayMinutes !== undefined && delayMinutes > 1) {
     return true;
   }
@@ -8892,7 +9638,12 @@ function hasCivilAircraftDelay(records: Array<Record<string, unknown>>, status: 
       return false;
     }
   }
-  const positionAgeSeconds = firstRecordNumberFromRecords(records, "positionAgeSeconds", "ageSeconds", "trackAgeSeconds");
+  const positionAgeSeconds = firstRecordNumberFromRecords(
+    records,
+    "positionAgeSeconds",
+    "ageSeconds",
+    "trackAgeSeconds"
+  );
   return positionAgeSeconds !== undefined && positionAgeSeconds > 180;
 }
 
@@ -8918,7 +9669,10 @@ function firstRecordBoolean(records: Array<Record<string, unknown>>, keys: strin
 }
 
 function normalizeCivilAircraftIconKind(value: string | undefined): CivilAircraftIconKind | undefined {
-  const normalized = value?.trim().toLowerCase().replace(/[\s./-]+/g, "_");
+  const normalized = value
+    ?.trim()
+    .toLowerCase()
+    .replace(/[\s./-]+/g, "_");
   if (!normalized) {
     return undefined;
   }
@@ -8975,7 +9729,7 @@ function normalizeCivilAircraftIconKind(value: string | undefined): CivilAircraf
     widebody: "wide_body_airliner"
   };
   return civilAircraftIconKinds.includes(normalized as CivilAircraftIconKind)
-    ? normalized as CivilAircraftIconKind
+    ? (normalized as CivilAircraftIconKind)
     : aliases[normalized];
 }
 
@@ -9027,7 +9781,8 @@ function formatAircraftSelectionCard(object: CopObject): MapSelectionCard {
   const delay = formatAircraftDelayLabel(flightData);
   const aircraftTone = resolveCivilAircraftIconTone(object);
   const qualityTone = aircraftTone === "emergency" ? "bad" : aircraftTone === "delayed" ? "warn" : "ok";
-  const subtitle = route ?? ([aircraftType, altitude, speed].filter(Boolean).join(" · ") || formatTrackSelectionSubtitle(object));
+  const subtitle =
+    route ?? ([aircraftType, altitude, speed].filter(Boolean).join(" · ") || formatTrackSelectionSubtitle(object));
   const compactSubtitle = [compactAltitude, compactSpeed].filter(Boolean).join(" · ") || subtitle;
   const detailRows = [
     aircraftType ? { label: "Typ", value: aircraftType } : undefined,
@@ -9075,20 +9830,24 @@ function formatAircraftTypeLabel(aircraft: Record<string, unknown>): string | un
   return label || undefined;
 }
 
-function formatAircraftRouteLabel(flightData: NonNullable<CopObject["attributes"]>["flightData"] | undefined): string | undefined {
+function formatAircraftRouteLabel(
+  flightData: NonNullable<CopObject["attributes"]>["flightData"] | undefined
+): string | undefined {
   if (!flightData) {
     return undefined;
   }
   const flightRecord = flightData as Record<string, unknown>;
   const metadata = isRecord(flightData.metadata) ? flightData.metadata : {};
-  const route = isRecord(flightData.route)
-    ? flightData.route
-    : isRecord(metadata.route)
-      ? metadata.route
-      : {};
+  const route = isRecord(flightData.route) ? flightData.route : isRecord(metadata.route) ? metadata.route : {};
   const itinerary = isRecord(flightData.itinerary) ? flightData.itinerary : {};
-  const origin = firstRecordText([flightRecord, metadata, route, itinerary], ["origin", "originAirport", "departureAirport", "departure", "from"]);
-  const destination = firstRecordText([flightRecord, metadata, route, itinerary], ["destination", "destinationAirport", "arrivalAirport", "arrival", "to"]);
+  const origin = firstRecordText(
+    [flightRecord, metadata, route, itinerary],
+    ["origin", "originAirport", "departureAirport", "departure", "from"]
+  );
+  const destination = firstRecordText(
+    [flightRecord, metadata, route, itinerary],
+    ["destination", "destinationAirport", "arrivalAirport", "arrival", "to"]
+  );
   if (!origin || !destination || origin === destination) {
     return undefined;
   }
@@ -9097,16 +9856,24 @@ function formatAircraftRouteLabel(flightData: NonNullable<CopObject["attributes"
 
 function formatAircraftAdsbCategoryLabel(aircraft: Record<string, unknown>): string | undefined {
   const adsbCategory = isRecord(aircraft.adsbCategory) ? aircraft.adsbCategory : {};
-  return recordString(adsbCategory, "label") ?? recordString(aircraft, "adsbCategoryLabel") ?? recordString(aircraft, "categoryLabel");
+  return (
+    recordString(adsbCategory, "label") ??
+    recordString(aircraft, "adsbCategoryLabel") ??
+    recordString(aircraft, "categoryLabel")
+  );
 }
 
-function formatAircraftPhaseLabel(flightData: NonNullable<CopObject["attributes"]>["flightData"] | undefined): string | undefined {
+function formatAircraftPhaseLabel(
+  flightData: NonNullable<CopObject["attributes"]>["flightData"] | undefined
+): string | undefined {
   const status = isRecord(flightData?.status) ? flightData.status : {};
   const phase = recordString(status, "phase") ?? recordString(status, "flightPhase");
   return phase ? phase.toLowerCase() : undefined;
 }
 
-function formatAircraftEmergencyDetail(flightData: NonNullable<CopObject["attributes"]>["flightData"] | undefined): string | undefined {
+function formatAircraftEmergencyDetail(
+  flightData: NonNullable<CopObject["attributes"]>["flightData"] | undefined
+): string | undefined {
   const status = isRecord(flightData?.status) ? flightData.status : {};
   const emergency = isRecord(status.emergency) ? status.emergency : {};
   const active = firstRecordBoolean([status, emergency], ["active", "emergency", "distress"]);
@@ -9120,12 +9887,22 @@ function formatAircraftEmergencyDetail(flightData: NonNullable<CopObject["attrib
   return undefined;
 }
 
-function formatAircraftDelayLabel(flightData: NonNullable<CopObject["attributes"]>["flightData"] | undefined): string | undefined {
+function formatAircraftDelayLabel(
+  flightData: NonNullable<CopObject["attributes"]>["flightData"] | undefined
+): string | undefined {
   const status = isRecord(flightData?.status) ? flightData.status : {};
   const delay = isRecord(status.delay) ? status.delay : {};
   const delayStatus = firstRecordText([delay, status], ["status", "delayStatus"]);
-  const delaySeconds = firstRecordNumberFromRecords([delay, status], "delaySeconds", "arrivalDelaySeconds", "departureDelaySeconds");
-  const delayMinutes = delaySeconds !== undefined ? Math.round(delaySeconds / 60) : firstRecordNumberFromRecords([delay, status], "delayMinutes");
+  const delaySeconds = firstRecordNumberFromRecords(
+    [delay, status],
+    "delaySeconds",
+    "arrivalDelaySeconds",
+    "departureDelaySeconds"
+  );
+  const delayMinutes =
+    delaySeconds !== undefined
+      ? Math.round(delaySeconds / 60)
+      : firstRecordNumberFromRecords([delay, status], "delayMinutes");
   if (delayMinutes !== undefined && Math.abs(delayMinutes) >= 1) {
     return `${delayMinutes > 0 ? "+" : ""}${delayMinutes} min${delayStatus ? ` · ${delayStatus}` : ""}`;
   }
@@ -9152,7 +9929,7 @@ function formatAircraftAltitude(object: CopObject): string | undefined {
   if (typeof altitudeM !== "number" || !Number.isFinite(altitudeM)) {
     return undefined;
   }
-  const altitudeFt = Math.round(altitudeM * 3.28084 / 100) * 100;
+  const altitudeFt = Math.round((altitudeM * 3.28084) / 100) * 100;
   return `${altitudeFt.toLocaleString("cs-CZ")} ft · ${Math.round(altitudeM).toLocaleString("cs-CZ")} m`;
 }
 
@@ -9223,9 +10000,8 @@ function formatAgeSeconds(seconds: number): string {
 }
 
 function formatAircraftConfidence(object: CopObject): string | undefined {
-  const confidence = typeof object.confidence === "number"
-    ? object.confidence
-    : object.attributes?.flightData?.quality?.confidence;
+  const confidence =
+    typeof object.confidence === "number" ? object.confidence : object.attributes?.flightData?.quality?.confidence;
   return typeof confidence === "number" && Number.isFinite(confidence)
     ? `spolehlivost ${Math.round(confidence * 100)} %`
     : undefined;
@@ -9251,7 +10027,9 @@ function formatTrackSelectionSubtitle(object: CopObject): string {
     formatMapAffiliation(object.affiliation),
     object.status,
     typeof object.confidence === "number" ? `${Math.round(object.confidence * 100)} %` : undefined
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function formatSituationFeatureSelectionCard(
@@ -9308,10 +10086,9 @@ function formatWeatherForecastFeatureSelectionCard(feature: SituationFeature): M
     detailRows,
     eyebrow: "Předpověď počasí",
     key: `feature:${feature.properties.featureId}`,
-    metaItems: [
-      statusLabel,
-      sourceDisplayName(feature.properties.sourceId)
-    ].filter((item, index, items): item is string => Boolean(item) && items.indexOf(item) === index),
+    metaItems: [statusLabel, sourceDisplayName(feature.properties.sourceId)].filter(
+      (item, index, items): item is string => Boolean(item) && items.indexOf(item) === index
+    ),
     statusTone: weatherForecastTone(riskScore, riskLevel),
     subtitle,
     title
@@ -9332,19 +10109,26 @@ function formatWeatherFeatureSelectionCard(feature: SituationFeature): MapSelect
   const conditionLabel = weatherDisplayString(display, "label") ?? weatherDisplayConditionLabel(display ?? {});
   const temperatureLabel = temperatureC !== undefined ? formatWeatherTemperature(temperatureC) : undefined;
   const windLabel = formatWeatherWindSelection(windDirectionDeg, windSpeedMps, windGustMps);
-  const precipitationLabel = precipitationMm !== undefined ? `${formatPrecipitationAmount(precipitationMm)} / 10 min` : undefined;
+  const precipitationLabel =
+    precipitationMm !== undefined ? `${formatPrecipitationAmount(precipitationMm)} / 10 min` : undefined;
   const humidityLabel = humidityPercent !== undefined ? `${Math.round(humidityPercent)} %` : undefined;
   const pressureLabel = pressureHpa !== undefined ? `${Math.round(pressureHpa)} hPa` : undefined;
   const primaryValue = formatWeatherValueLabel(display, temperatureC, windSpeedMps, precipitationMm, humidityPercent);
-  const subtitle = [
-    temperatureLabel ?? primaryValue,
-    windLabel,
-    precipitationMm !== undefined && precipitationMm > 0 ? `srážky ${precipitationLabel}` : undefined
-  ].filter(Boolean).join(" · ") || formatWeatherFeatureSubtitle(feature);
-  const compactSubtitle = [
-    temperatureLabel ?? primaryValue,
-    windSpeedMps !== undefined && windSpeedMps >= 0.5 ? `${Math.round(windSpeedMps)} m/s` : undefined
-  ].filter(Boolean).join(" · ") || conditionLabel;
+  const subtitle =
+    [
+      temperatureLabel ?? primaryValue,
+      windLabel,
+      precipitationMm !== undefined && precipitationMm > 0 ? `srážky ${precipitationLabel}` : undefined
+    ]
+      .filter(Boolean)
+      .join(" · ") || formatWeatherFeatureSubtitle(feature);
+  const compactSubtitle =
+    [
+      temperatureLabel ?? primaryValue,
+      windSpeedMps !== undefined && windSpeedMps >= 0.5 ? `${Math.round(windSpeedMps)} m/s` : undefined
+    ]
+      .filter(Boolean)
+      .join(" · ") || conditionLabel;
   const detailRows = [
     rowValue("Teplota", temperatureLabel),
     rowValue("Vítr", windLabel),
@@ -9380,14 +10164,17 @@ function formatWeatherWindSelection(
   gustMps: number | undefined
 ): string | undefined {
   const speed = speedMps !== undefined ? `${Math.round(speedMps)} m/s` : undefined;
-  const gust = gustMps !== undefined && gustMps > (speedMps ?? 0) + 0.5 ? `náraz ${Math.round(gustMps)} m/s` : undefined;
+  const gust =
+    gustMps !== undefined && gustMps > (speedMps ?? 0) + 0.5 ? `náraz ${Math.round(gustMps)} m/s` : undefined;
   const direction = directionDeg !== undefined ? `${Math.round(directionDeg)}°` : undefined;
   return [speed, gust, direction].filter(Boolean).join(" · ") || undefined;
 }
 
 function weatherSelectionTone(feature: SituationFeature): "bad" | "ok" | "warn" {
   const displayTone = weatherDisplayTone(weatherDisplayRecord(feature));
-  const severity = normalizeSituationCategory(feature.properties.severity ?? feature.properties.hazardSeverity ?? feature.properties.status);
+  const severity = normalizeSituationCategory(
+    feature.properties.severity ?? feature.properties.hazardSeverity ?? feature.properties.status
+  );
   if (["critical", "danger", "severe", "bad"].includes(displayTone ?? severity)) {
     return "bad";
   }
@@ -9408,7 +10195,9 @@ function formatTransportFeatureSelectionCard(
       "Zastávka",
       presentation.systemId ? `systém ${presentation.systemId}` : undefined,
       presentation.zoneId ? `zóna ${presentation.zoneId}` : undefined
-    ].filter(Boolean).join(" · ");
+    ]
+      .filter(Boolean)
+      .join(" · ");
     return {
       compactSubtitle: subtitle,
       eyebrow: "Zastávka",
@@ -9421,34 +10210,36 @@ function formatTransportFeatureSelectionCard(
       title
     };
   }
-  const routeShortName = detail?.route?.routeShortName
-    ?? detail?.trip?.routeShortName
-    ?? detail?.vehicle?.routeShortName
-    ?? presentation.routeShortName;
+  const routeShortName =
+    detail?.route?.routeShortName ??
+    detail?.trip?.routeShortName ??
+    detail?.vehicle?.routeShortName ??
+    presentation.routeShortName;
   const title = [presentation.label, routeShortName].filter(Boolean).join(" ") || presentation.mapLabel;
   const status = formatTransportCurrentStatus(presentation.currentStatus);
   const delaySeconds = detail?.current?.delaySeconds ?? detail?.vehicle?.delaySeconds ?? presentation.delaySeconds;
   const delay = formatTransportDelay(delaySeconds);
-  const speed = formatTransportSpeed(detail?.current?.speedMps ?? detail?.vehicle?.position?.speedMps ?? presentation.speedMps);
+  const speed = formatTransportSpeed(
+    detail?.current?.speedMps ?? detail?.vehicle?.position?.speedMps ?? presentation.speedMps
+  );
   const position = formatTransportPositionKind(presentation.positionKind);
   const destination = transitDestination(detail) ?? presentation.destination;
   const nextStop = transitNextStop(detail);
   const previousStop = transitPreviousStop(detail);
   const nextStopName = transitStopLabel(nextStop);
   const nextStopEta = formatTransitStopEta(nextStop);
-  const compactNextStop = nextStopName
-    ? [nextStopEta, nextStopName].filter(Boolean).join(" ")
-    : undefined;
-  const subtitle = [
-    destination ? `směr ${destination}` : undefined,
-    nextStopName ? `příští ${nextStopName}` : undefined,
-    status !== "n/a" ? status : undefined,
-    delay !== "n/a" ? delay : undefined
-  ].filter(Boolean).join(" · ") || "Živá dopravní poloha";
-  const compactSubtitle = [
-    compactNextStop,
-    delay !== "n/a" ? delay : undefined
-  ].filter(Boolean).join(" · ") || subtitle;
+  const compactNextStop = nextStopName ? [nextStopEta, nextStopName].filter(Boolean).join(" ") : undefined;
+  const subtitle =
+    [
+      destination ? `směr ${destination}` : undefined,
+      nextStopName ? `příští ${nextStopName}` : undefined,
+      status !== "n/a" ? status : undefined,
+      delay !== "n/a" ? delay : undefined
+    ]
+      .filter(Boolean)
+      .join(" · ") || "Živá dopravní poloha";
+  const compactSubtitle =
+    [compactNextStop, delay !== "n/a" ? delay : undefined].filter(Boolean).join(" · ") || subtitle;
   const detailRows = [
     rowValue("Příští", formatTransitStopDetail(nextStop)),
     rowValue("Poslední", formatTransitStopDetail(previousStop)),
@@ -9492,12 +10283,9 @@ function transitDelayTone(delaySeconds: number | null | undefined): "bad" | "ok"
 }
 
 function transitDestination(detail: TransitVehicleDetailResponse | null | undefined): string | undefined {
-  return [
-    detail?.trip?.destination,
-    detail?.trip?.headsign,
-    detail?.route?.destination,
-    detail?.vehicle?.destination
-  ].find((value): value is string => typeof value === "string" && value.trim().length > 0)?.trim();
+  return [detail?.trip?.destination, detail?.trip?.headsign, detail?.route?.destination, detail?.vehicle?.destination]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0)
+    ?.trim();
 }
 
 function transitNextStop(detail: TransitVehicleDetailResponse | null | undefined): TransitStopTime | null {
@@ -9505,14 +10293,16 @@ function transitNextStop(detail: TransitVehicleDetailResponse | null | undefined
     return detail.trip.nextStop;
   }
   const now = Date.now();
-  return transitDetailStops(detail).find((stop) => {
-    const relation = typeof stop.relationToVehicle === "string" ? stop.relationToVehicle.toLowerCase() : "";
-    if (["next", "upcoming", "future"].includes(relation)) {
-      return true;
-    }
-    const time = transitStopTimestamp(stop);
-    return typeof time === "number" && time >= now - 30_000;
-  }) ?? null;
+  return (
+    transitDetailStops(detail).find((stop) => {
+      const relation = typeof stop.relationToVehicle === "string" ? stop.relationToVehicle.toLowerCase() : "";
+      if (["next", "upcoming", "future"].includes(relation)) {
+        return true;
+      }
+      const time = transitStopTimestamp(stop);
+      return typeof time === "number" && time >= now - 30_000;
+    }) ?? null
+  );
 }
 
 function transitPreviousStop(detail: TransitVehicleDetailResponse | null | undefined): TransitStopTime | null {
@@ -9558,12 +10348,13 @@ function formatTransitStopEta(stop: TransitStopTime | null): string | null {
 }
 
 function transitStopTimestamp(stop: TransitStopTime | null | undefined): number | null {
-  const value = stop?.realtimeArrival
-    ?? stop?.realtimeDeparture
-    ?? stop?.plannedArrival
-    ?? stop?.plannedDeparture
-    ?? stop?.scheduledArrival
-    ?? stop?.scheduledDeparture;
+  const value =
+    stop?.realtimeArrival ??
+    stop?.realtimeDeparture ??
+    stop?.plannedArrival ??
+    stop?.plannedDeparture ??
+    stop?.scheduledArrival ??
+    stop?.scheduledDeparture;
   if (typeof value !== "string" || value.trim().length === 0) {
     return null;
   }
@@ -9584,15 +10375,15 @@ function parseTransitTimestamp(value: string): number | null {
   const minutes = Number(timeOnly[2]);
   const seconds = Number(timeOnly[3] ?? 0);
   if (
-    !Number.isInteger(hours)
-    || !Number.isInteger(minutes)
-    || !Number.isInteger(seconds)
-    || hours < 0
-    || hours > 23
-    || minutes < 0
-    || minutes > 59
-    || seconds < 0
-    || seconds > 59
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    !Number.isInteger(seconds) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59 ||
+    seconds < 0 ||
+    seconds > 59
   ) {
     return null;
   }
@@ -9654,7 +10445,9 @@ function formatSituationFeatureSubtitle(feature: SituationFeature): string {
       role === "task_state" ? task?.status : undefined,
       role === "task_state" ? task?.priority : undefined,
       typeof feature.properties.aggregate === "number" ? `${Math.round(feature.properties.aggregate)} bodů` : undefined
-    ].filter(Boolean).join(" · ");
+    ]
+      .filter(Boolean)
+      .join(" · ");
   }
   if (isWeatherContextFeature(feature) && !isAviationWeatherFeature(feature)) {
     return formatWeatherFeatureSubtitle(feature);
@@ -9667,14 +10460,20 @@ function formatSituationFeatureSubtitle(feature: SituationFeature): string {
           "Zastávka",
           presentation.systemId ? `systém ${presentation.systemId}` : undefined,
           presentation.zoneId ? `zóna ${presentation.zoneId}` : undefined
-        ].filter(Boolean).join(" · ");
+        ]
+          .filter(Boolean)
+          .join(" · ");
       }
-      return [
-        presentation.destination ? `směr ${presentation.destination}` : undefined,
-        formatTransportCurrentStatus(presentation.currentStatus),
-        formatTransportDelay(presentation.delaySeconds),
-        formatTransportSpeed(presentation.speedMps)
-      ].filter((item) => item && item !== "n/a").join(" · ") || "Dopravní spoj";
+      return (
+        [
+          presentation.destination ? `směr ${presentation.destination}` : undefined,
+          formatTransportCurrentStatus(presentation.currentStatus),
+          formatTransportDelay(presentation.delaySeconds),
+          formatTransportSpeed(presentation.speedMps)
+        ]
+          .filter((item) => item && item !== "n/a")
+          .join(" · ") || "Dopravní spoj"
+      );
     }
   }
   if (feature.properties.layer === "mobile_coverage" || feature.properties.layer === "mobile_network") {
@@ -9682,59 +10481,78 @@ function formatSituationFeatureSubtitle(feature: SituationFeature): string {
       feature.properties.layer === "mobile_network" ? "Mobilní síť" : "Model mobilní sítě",
       feature.properties.technology,
       status.label,
-      typeof feature.properties.estimatedSignalDbm === "number" ? `${Math.round(feature.properties.estimatedSignalDbm)} dBm` : undefined,
-      typeof feature.properties.confidence === "number" ? `${Math.round(feature.properties.confidence * 100)} %` : undefined
-    ].filter(Boolean).join(" · ");
+      typeof feature.properties.estimatedSignalDbm === "number"
+        ? `${Math.round(feature.properties.estimatedSignalDbm)} dBm`
+        : undefined,
+      typeof feature.properties.confidence === "number"
+        ? `${Math.round(feature.properties.confidence * 100)} %`
+        : undefined
+    ]
+      .filter(Boolean)
+      .join(" · ");
   }
   if (isCommunicationTowerFeature(feature)) {
     return [
       "BTS / komunikační stožár",
       formatCommunicationTowerLabel(feature),
       "stav operátora neznámý",
-      typeof feature.properties.confidence === "number" ? `${Math.round(feature.properties.confidence * 100)} %` : undefined,
+      typeof feature.properties.confidence === "number"
+        ? `${Math.round(feature.properties.confidence * 100)} %`
+        : undefined,
       feature.properties.sourceId
-    ].filter(Boolean).join(" · ");
+    ]
+      .filter(Boolean)
+      .join(" · ");
   }
   if (feature.properties.layer === "traffic") {
     const presentation = resolveTransportPresentation(feature);
     if (presentation) {
       if (presentation.kind === "stop") {
-        return [
-          "Zastávka veřejné dopravy",
-          presentation.stopId,
-          presentation.operator,
-          feature.properties.sourceId
-        ].filter(Boolean).join(" · ");
+        return ["Zastávka veřejné dopravy", presentation.stopId, presentation.operator, feature.properties.sourceId]
+          .filter(Boolean)
+          .join(" · ");
       }
       return [
         situationLayerDisplayName(feature),
         presentation.currentStatus,
         presentation.destination ? `směr ${presentation.destination}` : undefined,
         presentation.speedMps !== undefined ? `${Math.round(presentation.speedMps * 3.6)} km/h` : undefined,
-        presentation.delaySeconds !== undefined ? `zpoždění ${Math.round(presentation.delaySeconds / 60)} min` : undefined,
+        presentation.delaySeconds !== undefined
+          ? `zpoždění ${Math.round(presentation.delaySeconds / 60)} min`
+          : undefined,
         feature.properties.sourceId
-      ].filter(Boolean).join(" · ");
+      ]
+        .filter(Boolean)
+        .join(" · ");
     }
   }
   return [
     situationLayerDisplayName(feature),
     feature.properties.category,
     status.label,
-    typeof feature.properties.confidence === "number" ? `${Math.round(feature.properties.confidence * 100)} %` : undefined,
+    typeof feature.properties.confidence === "number"
+      ? `${Math.round(feature.properties.confidence * 100)} %`
+      : undefined,
     feature.properties.sourceId
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function safetyAlertTags(feature: SituationFeature): Record<string, unknown> {
-  const providerProperties = isRecord(feature.properties.providerProperties) ? feature.properties.providerProperties : {};
+  const providerProperties = isRecord(feature.properties.providerProperties)
+    ? feature.properties.providerProperties
+    : {};
   const providerTags = isRecord(providerProperties.tags) ? providerProperties.tags : {};
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
   return { ...providerTags, ...tags };
 }
 
 function isCrisisSafetyAlertFeature(feature: SituationFeature): boolean {
-  return (feature.properties.layer === "warnings" || feature.properties.layer === "fire")
-    && (feature.properties.sourceId === "hzs_incidents" || feature.properties.sourceId === "municipal_alerts");
+  return (
+    (feature.properties.layer === "warnings" || feature.properties.layer === "fire") &&
+    (feature.properties.sourceId === "hzs_incidents" || feature.properties.sourceId === "municipal_alerts")
+  );
 }
 
 function formatSafetyAlertLocationInterpretation(feature: SituationFeature): string | undefined {
@@ -9836,9 +10654,11 @@ function isTakGatewayFeature(feature: SituationFeature): boolean {
 }
 
 function isMissionArenaFeature(feature: SituationFeature): boolean {
-  return feature.properties.layer === "mission_arena"
-    || feature.properties.layerId === "presentation.mission_arena"
-    || feature.properties.providerId === "csm.mission-arena";
+  return (
+    feature.properties.layer === "mission_arena" ||
+    feature.properties.layerId === "presentation.mission_arena" ||
+    feature.properties.providerId === "csm.mission-arena"
+  );
 }
 
 function missionArenaFeatureRole(feature: SituationFeature): "mission_state" | "task_state" | "team_state" {
@@ -9850,16 +10670,15 @@ function missionArenaFeatureRole(feature: SituationFeature): "mission_state" | "
 function missionArenaMapLabel(feature: SituationFeature): string {
   const role = missionArenaFeatureRole(feature);
   if (role === "task_state") {
-    return [
-      missionArenaTeamShortLabel(feature),
-      missionArenaTaskRoleLabel(feature)
-    ].filter(Boolean).join(" ");
+    return [missionArenaTeamShortLabel(feature), missionArenaTaskRoleLabel(feature)].filter(Boolean).join(" ");
   }
   if (role === "team_state") {
     return [
       missionArenaTeamLabel(feature) ?? "Tým",
       typeof feature.properties.aggregate === "number" ? Math.round(feature.properties.aggregate).toString() : undefined
-    ].filter(Boolean).join(" ");
+    ]
+      .filter(Boolean)
+      .join(" ");
   }
   return "Mise";
 }
@@ -9868,7 +10687,9 @@ function missionArenaDetailTitle(feature: SituationFeature): string {
   const role = missionArenaFeatureRole(feature);
   if (role === "task_state") {
     const task = missionArenaPrimaryTask(feature);
-    return ["Úkol", missionArenaTeamLabel(feature), missionArenaRoleDisplayName(stringProperty(task?.toRole))].filter(Boolean).join(" · ");
+    return ["Úkol", missionArenaTeamLabel(feature), missionArenaRoleDisplayName(stringProperty(task?.toRole))]
+      .filter(Boolean)
+      .join(" · ");
   }
   if (role === "team_state") {
     return [missionArenaTeamLabel(feature) ?? "Tým", feature.properties.missionId].filter(Boolean).join(" · ");
@@ -10140,7 +10961,12 @@ export function parseMapCenter(value: string | undefined): [number, number] {
   return [lon, lat];
 }
 
-function resolveMapStyle(styleUrl: string, tiles: string, attribution: string, glyphs: string): string | StyleSpecification {
+function resolveMapStyle(
+  styleUrl: string,
+  tiles: string,
+  attribution: string,
+  glyphs: string
+): string | StyleSpecification {
   const normalizedStyleUrl = styleUrl.trim();
   if (normalizedStyleUrl) {
     return normalizedStyleUrl;
@@ -10250,16 +11076,16 @@ function isRecoverableRasterStyleError(message: string): boolean {
 
 function isRecoverableRasterOverlayRequestError(message: string): boolean {
   const normalized = message.toLowerCase();
-  return normalized.includes("ajaxerror")
-    && normalized.includes("/api/v1/map/raster-overlay")
-    && (
-      normalized.includes("(404)")
-      || normalized.includes("(502)")
-      || normalized.includes("upstream")
-    );
+  return (
+    normalized.includes("ajaxerror") &&
+    normalized.includes("/api/v1/map/raster-overlay") &&
+    (normalized.includes("(404)") || normalized.includes("(502)") || normalized.includes("upstream"))
+  );
 }
 
-function emergencyRouteToFeatureCollection(response: RoutingRouteResponse | null | undefined): EmergencyRouteFeatureCollection {
+function emergencyRouteToFeatureCollection(
+  response: RoutingRouteResponse | null | undefined
+): EmergencyRouteFeatureCollection {
   if (!response) {
     return emptyEmergencyRouteFeatureCollection();
   }
@@ -10321,12 +11147,22 @@ function emergencyRouteToFeatureCollection(response: RoutingRouteResponse | null
     features.push(
       {
         geometry: { coordinates: first, type: "Point" },
-        properties: { kind: "route-point", label: "Start", role: "origin", routeId: `${firstLine.properties.routeId}:origin` },
+        properties: {
+          kind: "route-point",
+          label: "Start",
+          role: "origin",
+          routeId: `${firstLine.properties.routeId}:origin`
+        },
         type: "Feature"
       },
       {
         geometry: { coordinates: last, type: "Point" },
-        properties: { kind: "route-point", label: "Cíl", role: "destination", routeId: `${firstLine.properties.routeId}:destination` },
+        properties: {
+          kind: "route-point",
+          label: "Cíl",
+          role: "destination",
+          routeId: `${firstLine.properties.routeId}:destination`
+        },
         type: "Feature"
       }
     );
@@ -10346,7 +11182,9 @@ function routeLineGeometry(value: unknown): { coordinates: Array<[number, number
     return coordinates.length >= 2 ? { coordinates, type: "LineString" } : null;
   }
   if (value.type === "MultiLineString" && Array.isArray(value.coordinates)) {
-    const coordinates = value.coordinates.flatMap((line) => Array.isArray(line) ? normalizeRouteCoordinates(line) : []);
+    const coordinates = value.coordinates.flatMap((line) =>
+      Array.isArray(line) ? normalizeRouteCoordinates(line) : []
+    );
     return coordinates.length >= 2 ? { coordinates, type: "LineString" } : null;
   }
   return null;
@@ -10360,7 +11198,9 @@ function routePointGeometry(value: unknown): { coordinates: [number, number]; ty
   return coordinate ? { coordinates: coordinate, type: "Point" } : null;
 }
 
-function routeLineGeometryFromRecord(record: Record<string, unknown>): { coordinates: Array<[number, number]>; type: "LineString" } | null {
+function routeLineGeometryFromRecord(
+  record: Record<string, unknown>
+): { coordinates: Array<[number, number]>; type: "LineString" } | null {
   const directKeys = ["geometry", "routeGeometry", "routeShape", "shape", "lineString", "path"];
   for (const key of directKeys) {
     const geometry = routeLineGeometry(record[key]);
@@ -10392,18 +11232,21 @@ function normalizeRouteCoordinate(value: unknown): [number, number] | null {
 }
 
 function routeFeatureLabel(properties: Record<string, unknown> | undefined, index: number): string {
-  return stringProperty(properties?.label)
-    ?? stringProperty(properties?.title)
-    ?? (index === 0 ? "Primární trasa" : `Alternativa ${index + 1}`);
+  return (
+    stringProperty(properties?.label) ??
+    stringProperty(properties?.title) ??
+    (index === 0 ? "Primární trasa" : `Alternativa ${index + 1}`)
+  );
 }
 
 function routeFeatureId(properties: Record<string, unknown> | undefined, index: number): string {
-  return stringProperty(properties?.routeId)
-    ?? stringProperty(properties?.id)
-    ?? `route-${index + 1}`;
+  return stringProperty(properties?.routeId) ?? stringProperty(properties?.id) ?? `route-${index + 1}`;
 }
 
-function routeFeatureRole(properties: Record<string, unknown> | undefined, index: number): EmergencyRouteFeatureCollection["features"][number]["properties"]["role"] {
+function routeFeatureRole(
+  properties: Record<string, unknown> | undefined,
+  index: number
+): EmergencyRouteFeatureCollection["features"][number]["properties"]["role"] {
   const role = stringProperty(properties?.role)?.toLowerCase();
   if (role === "origin" || role === "destination" || role === "alternative" || role === "primary") {
     return role;
@@ -10483,22 +11326,22 @@ function fitEligibleSituationCoordinates(collection: SituationContextFeatureColl
 }
 
 function isFitEligibleSituationFeature(feature: SituationContextFeatureCollection["features"][number]): boolean {
-  if (feature.properties.weatherPulse || feature.properties.weatherGrid || isSituationRasterOverlayFeature(feature as SituationFeature)) {
+  if (
+    feature.properties.weatherPulse ||
+    feature.properties.weatherGrid ||
+    isSituationRasterOverlayFeature(feature as SituationFeature)
+  ) {
     return false;
   }
   return feature.geometry.type === "Point";
 }
 
 function buildFitSignature(objects: CopObject[], situationFeatures: SituationContextFeatureCollection): string {
-  const objectIds = objects
-    .filter(hasPosition)
-    .map((object) => `object:${object.objectId}`);
+  const objectIds = objects.filter(hasPosition).map((object) => `object:${object.objectId}`);
   const featureIds = situationFeatures.features
     .filter(isFitEligibleSituationFeature)
     .map((feature) => `feature:${feature.properties.featureId}`);
-  return [...objectIds, ...featureIds]
-    .sort()
-    .join("|");
+  return [...objectIds, ...featureIds].sort().join("|");
 }
 
 function hasPosition(object: CopObject): object is CopObject & { position: NonNullable<CopObject["position"]> } {
@@ -10518,7 +11361,15 @@ function roundZoom(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function LegendItem({ color, disposition, label }: { color: string; disposition: AffiliationDisposition; label: string }) {
+function LegendItem({
+  color,
+  disposition,
+  label
+}: {
+  color: string;
+  disposition: AffiliationDisposition;
+  label: string;
+}) {
   return (
     <div className="legend-item">
       <span className={`legend-symbol ${disposition}`} style={{ borderColor: color }} />
@@ -10574,7 +11425,10 @@ function SituationLegendItem({ label }: { label: string }) {
 
 function CoverageLegendItem() {
   return (
-    <div className="legend-item coverage-legend-item" title="Modelové hodnocení, ne garantované pokrytí ani potvrzený výpadek operátora.">
+    <div
+      className="legend-item coverage-legend-item"
+      title="Modelové hodnocení, ne garantované pokrytí ani potvrzený výpadek operátora."
+    >
       <span className="legend-coverage-swatch good" />
       <span className="legend-coverage-swatch fair" />
       <span className="legend-coverage-swatch weak" />
@@ -10608,7 +11462,9 @@ function ClusterPanel({ cluster, onClose }: { cluster: ClusterInfo; onClose: () 
           {cluster.leaves.slice(0, 6).map((leaf, index) => (
             <li key={`${leaf.label}-${index}`}>
               <span>{leaf.label}</span>
-              <em>{leaf.objectType} · {leaf.affiliation} · {leaf.status}</em>
+              <em>
+                {leaf.objectType} · {leaf.affiliation} · {leaf.status}
+              </em>
             </li>
           ))}
         </ul>

@@ -99,9 +99,8 @@ export function ChatPdfViewer({ fileName, onDownload, sourceBlob, sourceUrl }: C
         if (cancelled) return;
 
         const baseViewport = page.getViewport({ rotation, scale: 1 });
-        const targetScale = fitWidth && containerWidth > 0
-          ? clampNumber((containerWidth - 34) / baseViewport.width, 0.3, 4)
-          : zoom;
+        const targetScale =
+          fitWidth && containerWidth > 0 ? clampNumber((containerWidth - 34) / baseViewport.width, 0.3, 4) : zoom;
         const viewport = page.getViewport({ rotation, scale: targetScale });
         const context = canvas.getContext("2d");
         if (!context) throw new Error("Canvas context unavailable");
@@ -175,7 +174,12 @@ export function ChatPdfViewer({ fileName, onDownload, sourceBlob, sourceUrl }: C
   return (
     <div className="chat-pdf-viewer" ref={containerRef} title={fileName}>
       <div className="chat-pdf-viewer__toolbar" aria-label="Ovládání PDF">
-        <button aria-label="Předchozí strana" disabled={!canGoPrevious} onClick={() => setPage(renderState.pageNumber - 1)} type="button">
+        <button
+          aria-label="Předchozí strana"
+          disabled={!canGoPrevious}
+          onClick={() => setPage(renderState.pageNumber - 1)}
+          type="button"
+        >
           <ChevronLeft size={16} />
         </button>
         <label className="chat-pdf-viewer__page-control">
@@ -191,14 +195,24 @@ export function ChatPdfViewer({ fileName, onDownload, sourceBlob, sourceUrl }: C
           />
           <em>/ {pageCount || "..."}</em>
         </label>
-        <button aria-label="Další strana" disabled={!canGoNext} onClick={() => setPage(renderState.pageNumber + 1)} type="button">
+        <button
+          aria-label="Další strana"
+          disabled={!canGoNext}
+          onClick={() => setPage(renderState.pageNumber + 1)}
+          type="button"
+        >
           <ChevronRight size={16} />
         </button>
         <span className="chat-pdf-viewer__separator" aria-hidden="true" />
         <button aria-label="Zmenšit" onClick={() => setCustomZoom(zoom - 0.15)} type="button">
           <ZoomOut size={16} />
         </button>
-        <button aria-label="Přizpůsobit šířce" className={fitWidth ? "is-active" : undefined} onClick={() => setFitWidth(true)} type="button">
+        <button
+          aria-label="Přizpůsobit šířce"
+          className={fitWidth ? "is-active" : undefined}
+          onClick={() => setFitWidth(true)}
+          type="button"
+        >
           <Maximize2 size={16} />
           <span>{fitWidth ? "Fit" : `${zoomPercent}%`}</span>
         </button>
@@ -209,7 +223,11 @@ export function ChatPdfViewer({ fileName, onDownload, sourceBlob, sourceUrl }: C
           <RotateCw size={16} />
         </button>
         <span className="chat-pdf-viewer__separator" aria-hidden="true" />
-        <button aria-label="Otevřít v nové záložce" onClick={() => window.open(sourceUrl, "_blank", "noopener,noreferrer")} type="button">
+        <button
+          aria-label="Otevřít v nové záložce"
+          onClick={() => window.open(sourceUrl, "_blank", "noopener,noreferrer")}
+          type="button"
+        >
           <ExternalLink size={16} />
         </button>
         {onDownload ? (
@@ -261,7 +279,11 @@ async function fetchPdfBytes(sourceUrl: string): Promise<ArrayBuffer> {
   return response.arrayBuffer();
 }
 
-function pdfPageStyle(renderState: { height: number; status: "loading" | "ready" | "error"; width: number }): CSSProperties | undefined {
+function pdfPageStyle(renderState: {
+  height: number;
+  status: "loading" | "ready" | "error";
+  width: number;
+}): CSSProperties | undefined {
   if (renderState.status === "ready" && renderState.width > 0 && renderState.height > 0) {
     return {
       height: renderState.height,

@@ -28,9 +28,11 @@ const dataQualityLabels: Record<string, string> = {
 };
 
 export function isMobileNetworkReadModel(properties: MobileNetworkProvenanceProperties): boolean {
-  return properties.readModel === true
-    || properties.metrics?.coverageReadModel === true
-    || (properties.basis ?? []).includes("PRECOMPUTED_COVERAGE_READ_MODEL");
+  return (
+    properties.readModel === true ||
+    properties.metrics?.coverageReadModel === true ||
+    (properties.basis ?? []).includes("PRECOMPUTED_COVERAGE_READ_MODEL")
+  );
 }
 
 export function mobileNetworkModelLabel(properties: MobileNetworkProvenanceProperties): string {
@@ -41,9 +43,11 @@ export function mobileNetworkModelLabel(properties: MobileNetworkProvenancePrope
 }
 
 export function isMobileNetworkModelEstimate(properties: MobileNetworkProvenanceProperties): boolean {
-  return properties.operatorStatusAvailable === false
-    || properties.btsStatus === "operator_feed_unavailable"
-    || (properties.basis ?? []).includes("NO_OPERATOR_BTS_STATUS");
+  return (
+    properties.operatorStatusAvailable === false ||
+    properties.btsStatus === "operator_feed_unavailable" ||
+    (properties.basis ?? []).includes("NO_OPERATOR_BTS_STATUS")
+  );
 }
 
 export function mobileNetworkOperationalModeLabel(properties: MobileNetworkProvenanceProperties): string {
@@ -71,7 +75,7 @@ export function mobileNetworkModelExplanation(properties: MobileNetworkProvenanc
 
 export function mobileNetworkDataQualityLabel(value: string | undefined): string {
   const normalized = value?.trim().toLowerCase();
-  return normalized ? dataQualityLabels[normalized] ?? "jiný datový podklad" : "n/a";
+  return normalized ? (dataQualityLabels[normalized] ?? "jiný datový podklad") : "n/a";
 }
 
 export function mobileNetworkBasisLabels(value: string[] | undefined): string {

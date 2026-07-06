@@ -86,13 +86,15 @@ describe("map search", () => {
       sourceId: "chmi_alerts"
     });
     feature.geometry = {
-      coordinates: [[
-        [14, 50],
-        [16, 50],
-        [16, 52],
-        [14, 52],
-        [14, 50]
-      ]],
+      coordinates: [
+        [
+          [14, 50],
+          [16, 50],
+          [16, 52],
+          [14, 52],
+          [14, 50]
+        ]
+      ],
       type: "Polygon"
     };
 
@@ -100,16 +102,18 @@ describe("map search", () => {
   });
 
   it("builds place results for geocoded cities", () => {
-    const places: PlaceGeocodeResult[] = [{
-      center: [30.5234, 50.4501],
-      displayName: "Kyjev, Ukrajina",
-      id: "nominatim:123",
-      importance: 0.8,
-      kind: "city",
-      providerId: "nominatim",
-      subtitle: "město",
-      zoomHint: 10
-    }];
+    const places: PlaceGeocodeResult[] = [
+      {
+        center: [30.5234, 50.4501],
+        displayName: "Kyjev, Ukrajina",
+        id: "nominatim:123",
+        importance: 0.8,
+        kind: "city",
+        providerId: "nominatim",
+        subtitle: "město",
+        zoomHint: 10
+      }
+    ];
 
     expect(buildPlaceSearchResults(places, "Kyjev")).toEqual([
       expect.objectContaining({
@@ -123,7 +127,9 @@ describe("map search", () => {
   });
 });
 
-function testFeature(properties: Pick<SituationFeature["properties"], "category" | "featureId" | "label" | "layer" | "sourceId">): SituationFeature {
+function testFeature(
+  properties: Pick<SituationFeature["properties"], "category" | "featureId" | "label" | "layer" | "sourceId">
+): SituationFeature {
   return {
     geometry: {
       coordinates: [14.4, 50.1],

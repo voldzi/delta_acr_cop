@@ -130,7 +130,11 @@ describe("messageMatchesQuery", () => {
 
 describe("userFacingError", () => {
   it("does not mask Matrix UIA failures as a missing COP login", () => {
-    expect(userFacingError("Obnovovací klíč se nepodařilo připravit pro iPhone/iPad: Matrix interactive auth je vyžadovaný pro E2EE reset (m.login.password): MatrixError: [401] Unauthorized")).toContain("Matrix vyžaduje dodatečné ověření");
+    expect(
+      userFacingError(
+        "Obnovovací klíč se nepodařilo připravit pro iPhone/iPad: Matrix interactive auth je vyžadovaný pro E2EE reset (m.login.password): MatrixError: [401] Unauthorized"
+      )
+    ).toContain("Matrix vyžaduje dodatečné ověření");
   });
 
   it("keeps real COP auth failures as login failures", () => {
@@ -139,7 +143,7 @@ describe("userFacingError", () => {
 
   it("does not expose Matrix key material from duplicate one-time key upload errors", () => {
     const message = userFacingError(
-      "Obnovovací klíč se nepodařilo vytvořit: MatrixError: [400] One time key signed_curve25519:AAAAAAAAAGO already exists. Old key: {\"key\":\"old-secret\",\"signatures\":{\"@user:server\":{\"ed25519:DEVICE\":\"old-signature\"}}}; new key: {\"key\":\"new-secret\"} (https://msg.zeleznalady.cz/_matrix/client/v3/keys/upload)"
+      'Obnovovací klíč se nepodařilo vytvořit: MatrixError: [400] One time key signed_curve25519:AAAAAAAAAGO already exists. Old key: {"key":"old-secret","signatures":{"@user:server":{"ed25519:DEVICE":"old-signature"}}}; new key: {"key":"new-secret"} (https://msg.zeleznalady.cz/_matrix/client/v3/keys/upload)'
     );
 
     expect(message).toContain("původní webové zařízení");
@@ -211,7 +215,13 @@ describe("applyChatPreferences", () => {
 
 describe("dedupeChatItems", () => {
   it("collapses duplicate direct chats and prefers the room-backed item", () => {
-    const withRoom = chatItem({ id: "room:!a", roomId: "!a", title: "Alice", latest: message({ eventId: "$x" }), unreadCount: 2 });
+    const withRoom = chatItem({
+      id: "room:!a",
+      roomId: "!a",
+      title: "Alice",
+      latest: message({ eventId: "$x" }),
+      unreadCount: 2
+    });
     const metadataOnly = chatItem({ id: "conversation:c1", roomId: undefined, title: "Alice", unreadCount: 0 });
     const deduped = dedupeChatItems([metadataOnly, withRoom]);
     expect(deduped).toHaveLength(1);
@@ -285,68 +295,83 @@ describe("dedupeChatItems", () => {
   });
 
   it("recognizes a metadata-light AI direct chat by the canonical assistant title", () => {
-    expect(isAiAgentChatItem(chatItem({
-      conversation: undefined,
-      room: undefined,
-      title: "COP AI Assistant",
-      type: "direct"
-    }))).toBe(true);
+    expect(
+      isAiAgentChatItem(
+        chatItem({
+          conversation: undefined,
+          room: undefined,
+          title: "COP AI Assistant",
+          type: "direct"
+        })
+      )
+    ).toBe(true);
   });
 });
 
 describe("aiMatrixBotInvitePlan", () => {
   it("invites the bot when backend has a Matrix identity but join is still pending", () => {
-    expect(aiMatrixBotInvitePlan({
-      enabled: true,
-      label: "COP AI Assistant",
-      matrixBot: {
-        matrixUserId: "@cop.ai.agent:docker.home.cz",
-        roomId: "!room:docker.home.cz",
-        status: "bot_join_failed"
-      },
-      mode: "cop-context"
-    })).toEqual({
+    expect(
+      aiMatrixBotInvitePlan({
+        enabled: true,
+        label: "COP AI Assistant",
+        matrixBot: {
+          matrixUserId: "@cop.ai.agent:docker.home.cz",
+          roomId: "!room:docker.home.cz",
+          status: "bot_join_failed"
+        },
+        mode: "cop-context"
+      })
+    ).toEqual({
       matrixUserId: "@cop.ai.agent:docker.home.cz",
       roomId: "!room:docker.home.cz"
     });
   });
 
   it("uses the selected Matrix room as a fallback when metadata has not caught up", () => {
-    expect(aiMatrixBotInvitePlan({
-      enabled: true,
-      label: "COP AI Assistant",
-      matrixBot: {
-        matrixUserId: "@cop.ai.agent:docker.home.cz",
-        status: "bot_join_failed"
-      },
-      mode: "cop-context"
-    }, "!selected:docker.home.cz")).toEqual({
+    expect(
+      aiMatrixBotInvitePlan(
+        {
+          enabled: true,
+          label: "COP AI Assistant",
+          matrixBot: {
+            matrixUserId: "@cop.ai.agent:docker.home.cz",
+            status: "bot_join_failed"
+          },
+          mode: "cop-context"
+        },
+        "!selected:docker.home.cz"
+      )
+    ).toEqual({
       matrixUserId: "@cop.ai.agent:docker.home.cz",
       roomId: "!selected:docker.home.cz"
     });
   });
 
   it("does not invite when the bot is already joined or cannot authenticate", () => {
-    expect(aiMatrixBotInvitePlan({
-      enabled: true,
-      label: "COP AI Assistant",
-      matrixBot: {
-        matrixUserId: "@cop.ai.agent:docker.home.cz",
-        roomId: "!room:docker.home.cz",
-        status: "joined"
-      },
-      mode: "cop-context"
-    })).toBeNull();
-    expect(aiMatrixBotInvitePlan({
-      enabled: true,
-      label: "COP AI Assistant",
-      matrixBot: {
-        matrixUserId: "@cop.ai.agent:docker.home.cz",
-        roomId: "!room:docker.home.cz",
-        status: "bot_token_unavailable"
-      },
-      mode: "cop-context"
-    })).toBeNull();
+    expect(
+      aiMatrixBotInvitePlan({
+        enabled: true,
+        label: "COP AI Assistant",
+        matrixBot: {
+          matrixUserId: "@cop.ai.agent:docker.home.cz",
+          roomId: "!room:docker.home.cz",
+          status: "joined"
+        },
+        mode: "cop-context"
+      })
+    ).toBeNull();
+    expect(
+      aiMatrixBotInvitePlan({
+        enabled: true,
+        label: "COP AI Assistant",
+        matrixBot: {
+          matrixUserId: "@cop.ai.agent:docker.home.cz",
+          roomId: "!room:docker.home.cz",
+          status: "bot_token_unavailable"
+        },
+        mode: "cop-context"
+      })
+    ).toBeNull();
   });
 });
 

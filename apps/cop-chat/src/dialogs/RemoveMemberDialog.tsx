@@ -30,15 +30,17 @@ export default function RemoveMemberDialog({
       >
         <h2>Odebrat člena?</h2>
         <p>
-          Člen {memberName} bude odebrán ze skupiny {groupName}. Přestane být
-          aktivním členem COP skupiny a změna se promítne do CSM Messaging.
+          Člen {memberName} bude odebrán ze skupiny {groupName}. Přestane být aktivním členem COP skupiny a změna se
+          promítne do CSM Messaging.
         </p>
         <div className="delete-chat-dialog__actions">
           <button className="danger" disabled={working} onClick={onRemove} type="button">
             <UserMinus size={17} />
             {working ? "Odebírám..." : "Odebrat člena"}
           </button>
-          <button disabled={working} onClick={onClose} type="button">Zrušit</button>
+          <button disabled={working} onClick={onClose} type="button">
+            Zrušit
+          </button>
         </div>
       </section>
     </div>

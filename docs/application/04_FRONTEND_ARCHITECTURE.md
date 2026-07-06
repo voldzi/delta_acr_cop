@@ -9,6 +9,16 @@ Pilot má dvě React/Vite webové plochy:
   `/chat/`. Sdílí existující COP auth helpery, metadata API klienta a
   Matrix/E2EE klienta z `cop-web`, ale UI drží mimo mapový shell.
 
+Obě webové plochy se v produkci servírují jako statické Vite buildy přes
+projektový Node runtime, ne přes vývojový `vite preview`. Runtime musí:
+
+- komprimovat textové assety přes Brotli nebo gzip podle `Accept-Encoding`,
+- servírovat hashed `/assets/*` s `Cache-Control: public, max-age=31536000,
+immutable`,
+- vracet `404` pro chybějící hashed assety místo HTML fallbacku,
+- povolit SPA fallback pouze pro aplikační routy bez přípony,
+- držet `index.html`, `site.webmanifest` a service worker v `no-cache` režimu.
+
 ## Doporučený stack
 
 - Next.js + React,
@@ -66,4 +76,10 @@ Při dalších úpravách platí:
 - před release spouštět `pnpm check:release`, které sestaví všechny aplikace a
   zkontroluje rozpočty pro web shell, mapové runtime chunky, chat shell, Matrix
   runtime, PDF viewer/worker a Office/archive parser,
+- `pnpm check:static-runtime` ověřuje, že web i chat runtime po buildu vrací
+  správné hlavičky pro kompresi, immutable cache a `404` pro chybějící assety,
+- `pnpm format:check` pokrývá aktivně spravovaný rozsah `apps/cop-web`,
+  `apps/cop-chat`, `packages/messaging` a release skripty; celorepo formátování
+  se nezapíná skokově, aby nezaneslo velký historický churn mimo aktuální
+  vlastnictví,
 - veřejný build nesmí obsahovat serverové tokeny ani interní provider URL.

@@ -23,12 +23,17 @@ type MockMatrixClient = {
   setPusher?: (pusher: Record<string, unknown>) => Promise<unknown>;
   scrollback?: MatrixScrollback;
   startClient: () => Promise<void>;
-  uploadContent?: (file: Blob | File, opts?: Record<string, unknown>) => Promise<{ content_uri?: string; contentUri?: string }>;
+  uploadContent?: (
+    file: Blob | File,
+    opts?: Record<string, unknown>
+  ) => Promise<{ content_uri?: string; contentUri?: string }>;
 };
 
 type MockMatrixCrypto = {
   bootstrapCrossSigning?: (options: {
-    authUploadDeviceSigningKeys?: (makeRequest: (authData: Record<string, unknown> | null) => Promise<unknown>) => Promise<unknown>;
+    authUploadDeviceSigningKeys?: (
+      makeRequest: (authData: Record<string, unknown> | null) => Promise<unknown>
+    ) => Promise<unknown>;
     setupNewCrossSigning?: boolean;
   }) => Promise<void>;
   bootstrapSecretStorage?: (options: {
@@ -43,18 +48,45 @@ type MockMatrixCrypto = {
   isCrossSigningReady?: () => Promise<boolean>;
   isSecretStorageReady?: () => Promise<boolean>;
   loadSessionBackupPrivateKeyFromSecretStorage?: () => Promise<void>;
-  resetEncryption?: (authUploadDeviceSigningKeys: (makeRequest: (authData: Record<string, unknown> | null) => Promise<unknown>) => Promise<unknown>) => Promise<void>;
+  resetEncryption?: (
+    authUploadDeviceSigningKeys: (
+      makeRequest: (authData: Record<string, unknown> | null) => Promise<unknown>
+    ) => Promise<unknown>
+  ) => Promise<void>;
   restoreKeyBackup?: () => Promise<unknown>;
 };
 
-type MatrixSendStateEvent = (roomId: string, eventType: string, content: Record<string, unknown>, stateKey?: string) => Promise<unknown>;
-type MatrixSendEvent = (roomId: string, eventType: string, content: Record<string, unknown>, txnId?: string) => Promise<unknown>;
+type MatrixSendStateEvent = (
+  roomId: string,
+  eventType: string,
+  content: Record<string, unknown>,
+  stateKey?: string
+) => Promise<unknown>;
+type MatrixSendEvent = (
+  roomId: string,
+  eventType: string,
+  content: Record<string, unknown>,
+  txnId?: string
+) => Promise<unknown>;
 type MatrixSendMessage = (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
-type MatrixRedactEvent = (roomId: string, eventId: string, txnId?: string, opts?: Record<string, unknown>) => Promise<unknown>;
+type MatrixRedactEvent = (
+  roomId: string,
+  eventId: string,
+  txnId?: string,
+  opts?: Record<string, unknown>
+) => Promise<unknown>;
 type MatrixLeaveRoom = (roomId: string) => Promise<unknown>;
 type MatrixScrollback = (room: unknown, limit?: number) => Promise<unknown>;
 type MatrixEventSubscription = (event: string, listener: (...args: unknown[]) => void) => void;
-type MatrixMxcUrlToHttp = (mxcUrl: string, width?: number, height?: number, resizeMethod?: string, allowDirectLinks?: boolean, allowRedirects?: boolean, useAuthentication?: boolean) => string | null;
+type MatrixMxcUrlToHttp = (
+  mxcUrl: string,
+  width?: number,
+  height?: number,
+  resizeMethod?: string,
+  allowDirectLinks?: boolean,
+  allowRedirects?: boolean,
+  useAuthentication?: boolean
+) => string | null;
 
 const matrixSdkMock = vi.hoisted(() => ({
   createClient: vi.fn()
@@ -92,18 +124,22 @@ describe("Matrix client diagnostics", () => {
   });
 
   it("hides raw Matrix decryption diagnostics from the user timeline", () => {
-    expect(normalizeMatrixMessageBody(
-      "** Unable to decrypt: DecryptionError: This message was sent before this device logged in, and there is no key backup on the server. **"
-    )).toBe("Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy.");
+    expect(
+      normalizeMatrixMessageBody(
+        "** Unable to decrypt: DecryptionError: This message was sent before this device logged in, and there is no key backup on the server. **"
+      )
+    ).toBe("Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy.");
   });
 
   it("syncs authenticated COP display name to the Matrix user profile", async () => {
     const setDisplayName = vi.fn<NonNullable<MockMatrixClient["setDisplayName"]>>().mockResolvedValue(undefined);
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      getProfileInfo: vi.fn().mockResolvedValue({}),
-      rooms: [createRoom({ roomId: "!chat:cop.local" })],
-      setDisplayName
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getProfileInfo: vi.fn().mockResolvedValue({}),
+        rooms: [createRoom({ roomId: "!chat:cop.local" })],
+        setDisplayName
+      })
+    );
 
     await createMatrixMessagingSession(createBootstrap(), {
       profile: { displayName: "Jiří Volek" }
@@ -113,69 +149,96 @@ describe("Matrix client diagnostics", () => {
   });
 
   it("uploads authenticated COP avatar and syncs it to the Matrix user profile", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Blob(["avatar"], { type: "image/png" }), { status: 200 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(new Blob(["avatar"], { type: "image/png" }), { status: 200 }))
+    );
     const setAvatarUrl = vi.fn<NonNullable<MockMatrixClient["setAvatarUrl"]>>().mockResolvedValue(undefined);
-    const uploadContent = vi.fn<NonNullable<MockMatrixClient["uploadContent"]>>().mockResolvedValue({ content_uri: "mxc://cop.local/avatar" });
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      getProfileInfo: vi.fn().mockResolvedValue({}),
-      rooms: [createRoom({ roomId: "!chat:cop.local" })],
-      setAvatarUrl,
-      uploadContent
-    }));
+    const uploadContent = vi
+      .fn<NonNullable<MockMatrixClient["uploadContent"]>>()
+      .mockResolvedValue({ content_uri: "mxc://cop.local/avatar" });
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getProfileInfo: vi.fn().mockResolvedValue({}),
+        rooms: [createRoom({ roomId: "!chat:cop.local" })],
+        setAvatarUrl,
+        uploadContent
+      })
+    );
 
     await createMatrixMessagingSession(createBootstrap(), {
       profile: { avatarUrl: "data:image/png;base64,YXZhdGFy" }
     });
 
-    await vi.waitFor(() => expect(uploadContent).toHaveBeenCalledWith(expect.any(Blob), expect.objectContaining({
-      includeFilename: false,
-      name: "avatar",
-      type: "image/png"
-    })));
+    await vi.waitFor(() =>
+      expect(uploadContent).toHaveBeenCalledWith(
+        expect.any(Blob),
+        expect.objectContaining({
+          includeFilename: false,
+          name: "avatar",
+          type: "image/png"
+        })
+      )
+    );
     expect(setAvatarUrl).toHaveBeenCalledWith("mxc://cop.local/avatar");
   });
 
   it("registers a Matrix web pusher for COP browser notifications", async () => {
     const setPusher = vi.fn<NonNullable<MockMatrixClient["setPusher"]>>().mockResolvedValue(undefined);
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      rooms: [createRoom({ roomId: "!chat:cop.local" })],
-      setPusher
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [createRoom({ roomId: "!chat:cop.local" })],
+        setPusher
+      })
+    );
 
     await createMatrixMessagingSession(createBootstrap(), {
       webPush: { deviceId: "web_device-1", lang: "cs-CZ" }
     });
 
-    await vi.waitFor(() => expect(setPusher).toHaveBeenCalledWith(expect.objectContaining({
-      app_display_name: "COP Chat",
-      app_id: "cz.zeleznalady.cop.web",
-      data: { url: "https://msg.zeleznalady.cz/api/v1/matrix/push/notify" },
-      device_display_name: "COP web",
-      kind: "http",
-      lang: "cs-CZ",
-      pushkey: "web_device-1"
-    })));
+    await vi.waitFor(() =>
+      expect(setPusher).toHaveBeenCalledWith(
+        expect.objectContaining({
+          app_display_name: "COP Chat",
+          app_id: "cz.zeleznalady.cop.web",
+          data: { url: "https://msg.zeleznalady.cz/api/v1/matrix/push/notify" },
+          device_display_name: "COP web",
+          kind: "http",
+          lang: "cs-CZ",
+          pushkey: "web_device-1"
+        })
+      )
+    );
   });
 
   it("refreshes direct chat avatars from Matrix profile info when room member state has no avatar", async () => {
     vi.useFakeTimers();
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 404 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 404 }))
+    );
     const onRoomsChanged = vi.fn();
-    const getProfileInfo = vi.fn<NonNullable<MockMatrixClient["getProfileInfo"]>>(async (userId) => userId === "@peer:cop.local"
-      ? { avatar_url: "mxc://cop.local/peer-avatar", displayname: "Peer User" }
-      : {});
-    const mxcUrlToHttp = vi.fn<MatrixMxcUrlToHttp>((mxcUrl) => `https://msg.zeleznalady.cz/media/${encodeURIComponent(mxcUrl)}`);
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      getProfileInfo,
-      mxcUrlToHttp,
-      rooms: [createRoom({
-        members: [
-          { displayName: "COP Operator", userId: "@operator:cop.local" },
-          { displayName: "Peer User", userId: "@peer:cop.local" }
-        ],
-        roomId: "!direct:cop.local"
-      })]
-    }));
+    const getProfileInfo = vi.fn<NonNullable<MockMatrixClient["getProfileInfo"]>>(async (userId) =>
+      userId === "@peer:cop.local" ? { avatar_url: "mxc://cop.local/peer-avatar", displayname: "Peer User" } : {}
+    );
+    const mxcUrlToHttp = vi.fn<MatrixMxcUrlToHttp>(
+      (mxcUrl) => `https://msg.zeleznalady.cz/media/${encodeURIComponent(mxcUrl)}`
+    );
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getProfileInfo,
+        mxcUrlToHttp,
+        rooms: [
+          createRoom({
+            members: [
+              { displayName: "COP Operator", userId: "@operator:cop.local" },
+              { displayName: "Peer User", userId: "@peer:cop.local" }
+            ],
+            roomId: "!direct:cop.local"
+          })
+        ]
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap(), { onRoomsChanged });
 
@@ -186,7 +249,9 @@ describe("Matrix client diagnostics", () => {
     const latestRooms = onRoomsChanged.mock.calls.at(-1)?.[0];
     expect(getProfileInfo).toHaveBeenCalledWith("@peer:cop.local");
     expect(latestRooms?.[0]?.avatarUrl).toBe("https://msg.zeleznalady.cz/media/mxc%3A%2F%2Fcop.local%2Fpeer-avatar");
-    expect(latestRooms?.[0]?.directPeer?.avatarUrl).toBe("https://msg.zeleznalady.cz/media/mxc%3A%2F%2Fcop.local%2Fpeer-avatar");
+    expect(latestRooms?.[0]?.directPeer?.avatarUrl).toBe(
+      "https://msg.zeleznalady.cz/media/mxc%3A%2F%2Fcop.local%2Fpeer-avatar"
+    );
   });
 
   it("fills missing peer avatar from the Matrix HTTP profile when SDK profile is partial", async () => {
@@ -203,21 +268,27 @@ describe("Matrix client diagnostics", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const onRoomsChanged = vi.fn();
-    const getProfileInfo = vi.fn<NonNullable<MockMatrixClient["getProfileInfo"]>>(async (userId) => userId === "@peer:cop.local"
-      ? { displayname: "Peer User" }
-      : {});
-    const mxcUrlToHttp = vi.fn<MatrixMxcUrlToHttp>((mxcUrl) => `https://msg.zeleznalady.cz/media/${encodeURIComponent(mxcUrl)}`);
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      getProfileInfo,
-      mxcUrlToHttp,
-      rooms: [createRoom({
-        members: [
-          { displayName: "COP Operator", userId: "@operator:cop.local" },
-          { displayName: "Peer User", userId: "@peer:cop.local" }
-        ],
-        roomId: "!direct:cop.local"
-      })]
-    }));
+    const getProfileInfo = vi.fn<NonNullable<MockMatrixClient["getProfileInfo"]>>(async (userId) =>
+      userId === "@peer:cop.local" ? { displayname: "Peer User" } : {}
+    );
+    const mxcUrlToHttp = vi.fn<MatrixMxcUrlToHttp>(
+      (mxcUrl) => `https://msg.zeleznalady.cz/media/${encodeURIComponent(mxcUrl)}`
+    );
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getProfileInfo,
+        mxcUrlToHttp,
+        rooms: [
+          createRoom({
+            members: [
+              { displayName: "COP Operator", userId: "@operator:cop.local" },
+              { displayName: "Peer User", userId: "@peer:cop.local" }
+            ],
+            roomId: "!direct:cop.local"
+          })
+        ]
+      })
+    );
 
     await createMatrixMessagingSession(createBootstrap(), { onRoomsChanged });
     await vi.runOnlyPendingTimersAsync();
@@ -231,16 +302,22 @@ describe("Matrix client diagnostics", () => {
         headers: { Authorization: "Bearer test-token" }
       })
     );
-    expect(latestRooms?.[0]?.avatarUrl).toBe("https://msg.zeleznalady.cz/media/mxc%3A%2F%2Fcop.local%2Fhttp-peer-avatar");
-    expect(latestRooms?.[0]?.directPeer?.avatarUrl).toBe("https://msg.zeleznalady.cz/media/mxc%3A%2F%2Fcop.local%2Fhttp-peer-avatar");
+    expect(latestRooms?.[0]?.avatarUrl).toBe(
+      "https://msg.zeleznalady.cz/media/mxc%3A%2F%2Fcop.local%2Fhttp-peer-avatar"
+    );
+    expect(latestRooms?.[0]?.directPeer?.avatarUrl).toBe(
+      "https://msg.zeleznalady.cz/media/mxc%3A%2F%2Fcop.local%2Fhttp-peer-avatar"
+    );
   });
 
   it("stores disappearing-message settings as Matrix room retention state", async () => {
     const sendStateEvent = vi.fn<MatrixSendStateEvent>().mockResolvedValue(undefined);
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      rooms: [createRoom({ roomId: "!chat:cop.local" })],
-      sendStateEvent
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [createRoom({ roomId: "!chat:cop.local" })],
+        sendStateEvent
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -254,40 +331,40 @@ describe("Matrix client diagnostics", () => {
       { max_lifetime: 604_800_000 },
       ""
     );
-    expect(sendStateEvent).toHaveBeenNthCalledWith(
-      2,
-      "!chat:cop.local",
-      "m.room.retention",
-      {},
-      ""
-    );
+    expect(sendStateEvent).toHaveBeenNthCalledWith(2, "!chat:cop.local", "m.room.retention", {}, "");
   });
 
   it("turns Matrix retention permission failures into a user-facing error", async () => {
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      rooms: [createRoom({ roomId: "!chat:cop.local" })],
-      sendStateEvent: vi.fn<MatrixSendStateEvent>().mockRejectedValue(new Error("M_FORBIDDEN: power level too low"))
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [createRoom({ roomId: "!chat:cop.local" })],
+        sendStateEvent: vi.fn<MatrixSendStateEvent>().mockRejectedValue(new Error("M_FORBIDDEN: power level too low"))
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
-    await expect(session.setMessageRetentionPolicy("!chat:cop.local", 86_400))
-      .rejects
-      .toThrow("Automatické mazání zpráv může v této místnosti změnit jen správce chatu.");
+    await expect(session.setMessageRetentionPolicy("!chat:cop.local", 86_400)).rejects.toThrow(
+      "Automatické mazání zpráv může v této místnosti změnit jen správce chatu."
+    );
   });
 
   it("reads retention state and hides messages older than the configured interval", async () => {
     vi.setSystemTime(new Date("2026-06-24T12:00:00.000Z"));
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      rooms: [createRoom({
-        retentionSeconds: 86_400,
-        roomId: "!chat:cop.local",
-        timeline: [
-          createMessageEvent("old", Date.parse("2026-06-22T12:00:00.000Z")),
-          createMessageEvent("recent", Date.parse("2026-06-24T11:00:00.000Z"))
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [
+          createRoom({
+            retentionSeconds: 86_400,
+            roomId: "!chat:cop.local",
+            timeline: [
+              createMessageEvent("old", Date.parse("2026-06-22T12:00:00.000Z")),
+              createMessageEvent("recent", Date.parse("2026-06-24T11:00:00.000Z"))
+            ]
+          })
         ]
-      })]
-    }));
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -298,10 +375,12 @@ describe("Matrix client diagnostics", () => {
   it("keeps an empty initial scrollback retryable while Matrix sync warms the timeline", async () => {
     const timeline: unknown[] = [];
     const scrollback = vi.fn<MatrixScrollback>().mockResolvedValue(undefined);
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      rooms: [createRoom({ roomId: "!chat:cop.local", timeline })],
-      scrollback
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [createRoom({ roomId: "!chat:cop.local", timeline })],
+        scrollback
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -315,13 +394,12 @@ describe("Matrix client diagnostics", () => {
   });
 
   it("hides local cached rooms that are no longer joined on the homeserver", async () => {
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!active:cop.local"] }),
-      rooms: [
-        createRoom({ roomId: "!active:cop.local" }),
-        createRoom({ roomId: "!purged-local-cache:cop.local" })
-      ]
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!active:cop.local"] }),
+        rooms: [createRoom({ roomId: "!active:cop.local" }), createRoom({ roomId: "!purged-local-cache:cop.local" })]
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -335,11 +413,13 @@ describe("Matrix client diagnostics", () => {
     });
     const off = vi.fn<MatrixEventSubscription>();
     const onTimelineChanged = vi.fn();
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      off,
-      on,
-      rooms: [createRoom({ roomId: "!chat:cop.local" })]
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        off,
+        on,
+        rooms: [createRoom({ roomId: "!chat:cop.local" })]
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap(), { onTimelineChanged });
     onTimelineChanged.mockClear();
@@ -369,10 +449,12 @@ describe("Matrix client diagnostics", () => {
       listeners.set(event, [...(listeners.get(event) ?? []), listener]);
     });
     const onTimelineChanged = vi.fn();
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      on,
-      rooms: [createRoom({ roomId: "!chat:cop.local" })]
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        on,
+        rooms: [createRoom({ roomId: "!chat:cop.local" })]
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap(), { onTimelineChanged });
     onTimelineChanged.mockClear();
@@ -388,10 +470,12 @@ describe("Matrix client diagnostics", () => {
 
   it("sends Matrix reactions as annotation relation events", async () => {
     const sendEvent = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined);
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      rooms: [createRoom({ roomId: "!chat:cop.local" })],
-      sendEvent
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [createRoom({ roomId: "!chat:cop.local" })],
+        sendEvent
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -412,20 +496,22 @@ describe("Matrix client diagnostics", () => {
       "cz.cop": {
         ai: {
           auditId: "audit-1",
-          mapActions: [{
-            action: "focus-map",
-            distanceText: "1.8 km",
-            entityId: "place:nominatim:183697209",
-            entityType: "place",
-            label: "Zobrazit na mapě: Policie ČR - Vrbno pod Pradědem (1.8 km)",
-            layerId: "reference.infrastructure.emergency",
-            lat: 50.12076,
-            lon: 17.38413,
-            sourceName: "SIM search-data",
-            sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
-            title: "Policie ČR - Vrbno pod Pradědem",
-            zoom: 16
-          }],
+          mapActions: [
+            {
+              action: "focus-map",
+              distanceText: "1.8 km",
+              entityId: "place:nominatim:183697209",
+              entityType: "place",
+              label: "Zobrazit na mapě: Policie ČR - Vrbno pod Pradědem (1.8 km)",
+              layerId: "reference.infrastructure.emergency",
+              lat: 50.12076,
+              lon: 17.38413,
+              sourceName: "SIM search-data",
+              sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
+              title: "Policie ČR - Vrbno pod Pradědem",
+              zoom: 16
+            }
+          ],
           policyReason: "allowed",
           provider: "mock",
           question: "Co je teď důležité?",
@@ -439,13 +525,25 @@ describe("Matrix client diagnostics", () => {
       body: "AI odpověď",
       msgtype: "m.text"
     };
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      rooms: [createRoom({
-        roomId: "!chat:cop.local",
-        timeline: [createMessageEvent(content.body, Date.parse("2026-06-24T11:00:00.000Z"), "$ai", "@operator:cop.local", content)]
-      })],
-      sendMessage
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [
+          createRoom({
+            roomId: "!chat:cop.local",
+            timeline: [
+              createMessageEvent(
+                content.body,
+                Date.parse("2026-06-24T11:00:00.000Z"),
+                "$ai",
+                "@operator:cop.local",
+                content
+              )
+            ]
+          })
+        ],
+        sendMessage
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -453,20 +551,22 @@ describe("Matrix client diagnostics", () => {
       cop: {
         ai: {
           auditId: "audit-1",
-          mapActions: [{
-            action: "focus-map",
-            distanceText: "1.8 km",
-            entityId: "place:nominatim:183697209",
-            entityType: "place",
-            label: "Zobrazit na mapě: Policie ČR - Vrbno pod Pradědem (1.8 km)",
-            layerId: "reference.infrastructure.emergency",
-            lat: 50.12076,
-            lon: 17.38413,
-            sourceName: "SIM search-data",
-            sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
-            title: "Policie ČR - Vrbno pod Pradědem",
-            zoom: 16
-          }],
+          mapActions: [
+            {
+              action: "focus-map",
+              distanceText: "1.8 km",
+              entityId: "place:nominatim:183697209",
+              entityType: "place",
+              label: "Zobrazit na mapě: Policie ČR - Vrbno pod Pradědem (1.8 km)",
+              layerId: "reference.infrastructure.emergency",
+              lat: 50.12076,
+              lon: 17.38413,
+              sourceName: "SIM search-data",
+              sourceSystemIds: ["sim.search-data", "reference.infrastructure.emergency"],
+              title: "Policie ČR - Vrbno pod Pradědem",
+              zoom: 16
+            }
+          ],
           policyReason: "allowed",
           provider: "mock",
           question: "Co je teď důležité?",
@@ -486,18 +586,22 @@ describe("Matrix client diagnostics", () => {
   it("removes the current Matrix reaction when setting the same reaction again", async () => {
     const redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined);
     const sendEvent = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined);
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      redactEvent,
-      rooms: [createRoom({
-        roomId: "!chat:cop.local",
-        timeline: [
-          createMessageEvent("hello", Date.parse("2026-06-24T11:00:00.000Z"), "$hello", "@other:cop.local"),
-          createReactionEvent("$hello", "👀", "@operator:cop.local", "$reaction-own-old"),
-          createReactionEvent("$hello", "👍", "@operator:cop.local", "$reaction-own")
-        ]
-      })],
-      sendEvent
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        redactEvent,
+        rooms: [
+          createRoom({
+            roomId: "!chat:cop.local",
+            timeline: [
+              createMessageEvent("hello", Date.parse("2026-06-24T11:00:00.000Z"), "$hello", "@other:cop.local"),
+              createReactionEvent("$hello", "👀", "@operator:cop.local", "$reaction-own-old"),
+              createReactionEvent("$hello", "👍", "@operator:cop.local", "$reaction-own")
+            ]
+          })
+        ],
+        sendEvent
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -515,17 +619,21 @@ describe("Matrix client diagnostics", () => {
   it("changes the current Matrix reaction by redacting the old one before sending the new one", async () => {
     const redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined);
     const sendEvent = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined);
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      redactEvent,
-      rooms: [createRoom({
-        roomId: "!chat:cop.local",
-        timeline: [
-          createMessageEvent("hello", Date.parse("2026-06-24T11:00:00.000Z"), "$hello", "@other:cop.local"),
-          createReactionEvent("$hello", "👀", "@operator:cop.local", "$reaction-own")
-        ]
-      })],
-      sendEvent
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        redactEvent,
+        rooms: [
+          createRoom({
+            roomId: "!chat:cop.local",
+            timeline: [
+              createMessageEvent("hello", Date.parse("2026-06-24T11:00:00.000Z"), "$hello", "@other:cop.local"),
+              createReactionEvent("$hello", "👀", "@operator:cop.local", "$reaction-own")
+            ]
+          })
+        ],
+        sendEvent
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -545,10 +653,12 @@ describe("Matrix client diagnostics", () => {
 
   it("redacts messages through Matrix when deleting a message", async () => {
     const redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined);
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      redactEvent,
-      rooms: [createRoom({ roomId: "!chat:cop.local" })]
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        redactEvent,
+        rooms: [createRoom({ roomId: "!chat:cop.local" })]
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -561,10 +671,12 @@ describe("Matrix client diagnostics", () => {
 
   it("leaves a Matrix room when leaving a group", async () => {
     const leave = vi.fn<MatrixLeaveRoom>().mockResolvedValue(undefined);
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      leave,
-      rooms: [createRoom({ roomId: "!group:cop.local" })]
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        leave,
+        rooms: [createRoom({ roomId: "!group:cop.local" })]
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -574,38 +686,46 @@ describe("Matrix client diagnostics", () => {
   });
 
   it("reads grouped Matrix reactions from timeline relation events", async () => {
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      rooms: [createRoom({
-        roomId: "!chat:cop.local",
-        timeline: [
-          createMessageEvent("hello", Date.parse("2026-06-24T11:00:00.000Z"), "$hello", "@other:cop.local"),
-          createReactionEvent("$hello", "👍", "@operator:cop.local", "$reaction-own"),
-          createReactionEvent("$hello", "👍", "@other:cop.local", "$reaction-other")
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [
+          createRoom({
+            roomId: "!chat:cop.local",
+            timeline: [
+              createMessageEvent("hello", Date.parse("2026-06-24T11:00:00.000Z"), "$hello", "@other:cop.local"),
+              createReactionEvent("$hello", "👍", "@operator:cop.local", "$reaction-own"),
+              createReactionEvent("$hello", "👍", "@other:cop.local", "$reaction-other")
+            ]
+          })
         ]
-      })]
-    }));
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
-    expect(session.getTimeline("!chat:cop.local")[0]?.reactions).toEqual([{
-      count: 2,
-      key: "👍",
-      own: true,
-      ownEventId: "$reaction-own",
-      senders: ["@operator:cop.local", "@other:cop.local"]
-    }]);
+    expect(session.getTimeline("!chat:cop.local")[0]?.reactions).toEqual([
+      {
+        count: 2,
+        key: "👍",
+        own: true,
+        ownEventId: "$reaction-own",
+        senders: ["@operator:cop.local", "@other:cop.local"]
+      }
+    ]);
   });
 
   it("reports that user-controlled E2EE recovery needs setup when no key backup exists", async () => {
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      crypto: {
-        getActiveSessionBackupVersion: vi.fn().mockResolvedValue(null),
-        getKeyBackupInfo: vi.fn().mockResolvedValue(null),
-        isCrossSigningReady: vi.fn().mockResolvedValue(false),
-        isSecretStorageReady: vi.fn().mockResolvedValue(false)
-      },
-      rooms: []
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        crypto: {
+          getActiveSessionBackupVersion: vi.fn().mockResolvedValue(null),
+          getKeyBackupInfo: vi.fn().mockResolvedValue(null),
+          isCrossSigningReady: vi.fn().mockResolvedValue(false),
+          isSecretStorageReady: vi.fn().mockResolvedValue(false)
+        },
+        rooms: []
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -619,15 +739,17 @@ describe("Matrix client diagnostics", () => {
   });
 
   it("treats active key backup as web-ready even when iOS metadata are incomplete", async () => {
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({
-      crypto: {
-        getActiveSessionBackupVersion: vi.fn().mockResolvedValue("1"),
-        getKeyBackupInfo: vi.fn().mockResolvedValue({ version: "1" }),
-        isCrossSigningReady: vi.fn().mockResolvedValue(false),
-        isSecretStorageReady: vi.fn().mockResolvedValue(true)
-      },
-      rooms: []
-    }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        crypto: {
+          getActiveSessionBackupVersion: vi.fn().mockResolvedValue("1"),
+          getKeyBackupInfo: vi.fn().mockResolvedValue({ version: "1" }),
+          isCrossSigningReady: vi.fn().mockResolvedValue(false),
+          isSecretStorageReady: vi.fn().mockResolvedValue(true)
+        },
+        rooms: []
+      })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -644,7 +766,9 @@ describe("Matrix client diagnostics", () => {
   });
 
   it("creates a user-held Matrix recovery key without server-managed recovery material", async () => {
-    const bootstrapCrossSigning = vi.fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>().mockResolvedValue(undefined);
+    const bootstrapCrossSigning = vi
+      .fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>()
+      .mockResolvedValue(undefined);
     const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
       await options.createSecretStorageKey?.();
     });
@@ -668,20 +792,26 @@ describe("Matrix client diagnostics", () => {
 
     expect(recoveryKey).toBe("EsTK aBCd user held recovery key");
     expect(bootstrapCrossSigning).toHaveBeenCalled();
-    expect(bootstrapSecretStorage).toHaveBeenCalledWith(expect.objectContaining({
-      setupNewKeyBackup: true,
-      setupNewSecretStorage: true
-    }));
+    expect(bootstrapSecretStorage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupNewKeyBackup: true,
+        setupNewSecretStorage: true
+      })
+    );
   });
 
   it("prepares a complete Matrix Rust compatible recovery set for iPhone and iPad", async () => {
-    const bootstrapCrossSigning = vi.fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>().mockResolvedValue(undefined);
+    const bootstrapCrossSigning = vi
+      .fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>()
+      .mockResolvedValue(undefined);
     const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
       await options.createSecretStorageKey?.();
     });
-    const resetEncryption = vi.fn<NonNullable<MockMatrixCrypto["resetEncryption"]>>(async (authUploadDeviceSigningKeys) => {
-      await authUploadDeviceSigningKeys((authData) => Promise.resolve(authData));
-    });
+    const resetEncryption = vi.fn<NonNullable<MockMatrixCrypto["resetEncryption"]>>(
+      async (authUploadDeviceSigningKeys) => {
+        await authUploadDeviceSigningKeys((authData) => Promise.resolve(authData));
+      }
+    );
     const crypto: MockMatrixCrypto = {
       bootstrapCrossSigning,
       bootstrapSecretStorage,
@@ -704,10 +834,12 @@ describe("Matrix client diagnostics", () => {
     expect(recoveryKey).toBe("EsTK mobile compatible recovery key");
     expect(resetEncryption).toHaveBeenCalled();
     expect(bootstrapCrossSigning).not.toHaveBeenCalled();
-    expect(bootstrapSecretStorage).toHaveBeenCalledWith(expect.objectContaining({
-      setupNewKeyBackup: false,
-      setupNewSecretStorage: true
-    }));
+    expect(bootstrapSecretStorage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupNewKeyBackup: false,
+        setupNewSecretStorage: true
+      })
+    );
     await expect(session.getEncryptionRecoveryStatus()).resolves.toMatchObject({
       matrixRustCompatible: true,
       ready: true
@@ -716,7 +848,7 @@ describe("Matrix client diagnostics", () => {
 
   it("accepts a completed recovery when Matrix reports a duplicate one-time key upload", async () => {
     const duplicateUploadError = new Error(
-      "MatrixError: [400] One time key signed_curve25519:AAAAAAAAAGO already exists. Old key: {\"key\":\"old-secret\",\"signatures\":{\"@user:server\":{\"ed25519:DEVICE\":\"old-signature\"}}}; new key: {\"key\":\"new-secret\"} (https://msg.zeleznalady.cz/_matrix/client/v3/keys/upload)"
+      'MatrixError: [400] One time key signed_curve25519:AAAAAAAAAGO already exists. Old key: {"key":"old-secret","signatures":{"@user:server":{"ed25519:DEVICE":"old-signature"}}}; new key: {"key":"new-secret"} (https://msg.zeleznalady.cz/_matrix/client/v3/keys/upload)'
     );
     const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
       await options.createSecretStorageKey?.();
@@ -746,7 +878,7 @@ describe("Matrix client diagnostics", () => {
 
   it("sanitizes duplicate one-time key upload failures when recovery cannot be confirmed", async () => {
     const duplicateUploadError = new Error(
-      "MatrixError: [400] One time key signed_curve25519:AAAAAAAAAGO already exists. Old key: {\"key\":\"old-secret\",\"signatures\":{\"@user:server\":{\"ed25519:DEVICE\":\"old-signature\"}}}; new key: {\"key\":\"new-secret\"} (https://msg.zeleznalady.cz/_matrix/client/v3/keys/upload)"
+      'MatrixError: [400] One time key signed_curve25519:AAAAAAAAAGO already exists. Old key: {"key":"old-secret","signatures":{"@user:server":{"ed25519:DEVICE":"old-signature"}}}; new key: {"key":"new-secret"} (https://msg.zeleznalady.cz/_matrix/client/v3/keys/upload)'
     );
     const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
       await options.createSecretStorageKey?.();
@@ -778,25 +910,34 @@ describe("Matrix client diagnostics", () => {
 
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).toContain("původní webové zařízení");
-    expect((caught as Error).message).not.toMatch(/signed_curve25519|old-secret|new-secret|old-signature|\/keys\/upload/iu);
+    expect((caught as Error).message).not.toMatch(
+      /signed_curve25519|old-secret|new-secret|old-signature|\/keys\/upload/iu
+    );
   });
 
   it("keeps the generated secret-storage key available during iOS recovery preparation", async () => {
     let createClientOptions: Record<string, unknown> | undefined;
-    const bootstrapCrossSigning = vi.fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>().mockResolvedValue(undefined);
+    const bootstrapCrossSigning = vi
+      .fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>()
+      .mockResolvedValue(undefined);
     const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
       await options.createSecretStorageKey?.();
-      const callbacks = createClientOptions?.cryptoCallbacks as {
-        getSecretStorageKey?: (
-          options: { keys: Record<string, unknown> },
-          name: string
-        ) => Promise<[string, Uint8Array] | null>;
-      } | undefined;
-      const returnedKey = await callbacks?.getSecretStorageKey?.({
-        keys: {
-          "generated-key": { algorithm: "m.secret_storage.v1.aes-hmac-sha2" }
-        }
-      }, "m.cross_signing.master");
+      const callbacks = createClientOptions?.cryptoCallbacks as
+        | {
+            getSecretStorageKey?: (
+              options: { keys: Record<string, unknown> },
+              name: string
+            ) => Promise<[string, Uint8Array] | null>;
+          }
+        | undefined;
+      const returnedKey = await callbacks?.getSecretStorageKey?.(
+        {
+          keys: {
+            "generated-key": { algorithm: "m.secret_storage.v1.aes-hmac-sha2" }
+          }
+        },
+        "m.cross_signing.master"
+      );
       expect(returnedKey?.[0]).toBe("generated-key");
       expect(Array.from(returnedKey?.[1] ?? [])).toEqual([7, 8, 9]);
     });
@@ -856,9 +997,9 @@ describe("Matrix client diagnostics", () => {
   });
 
   it("resets legacy Matrix E2EE metadata before preparing iOS recovery", async () => {
-    const bootstrapCrossSigning = vi.fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>().mockRejectedValue(
-      new Error("getSecretStorageKey callback returned falsey")
-    );
+    const bootstrapCrossSigning = vi
+      .fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>()
+      .mockRejectedValue(new Error("getSecretStorageKey callback returned falsey"));
     const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
       await options.createSecretStorageKey?.();
     });
@@ -884,10 +1025,12 @@ describe("Matrix client diagnostics", () => {
     await expect(session.prepareEncryptionRecoveryForMobile()).resolves.toBe("EsTK clean mobile recovery key");
     expect(resetEncryption).toHaveBeenCalled();
     expect(bootstrapCrossSigning).not.toHaveBeenCalled();
-    expect(bootstrapSecretStorage).toHaveBeenCalledWith(expect.objectContaining({
-      setupNewKeyBackup: false,
-      setupNewSecretStorage: true
-    }));
+    expect(bootstrapSecretStorage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupNewKeyBackup: false,
+        setupNewSecretStorage: true
+      })
+    );
   });
 
   it("completes Matrix UIA with dummy auth when the homeserver offers it", async () => {
@@ -895,20 +1038,22 @@ describe("Matrix client diagnostics", () => {
     const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
       await options.createSecretStorageKey?.();
     });
-    const resetEncryption = vi.fn<NonNullable<MockMatrixCrypto["resetEncryption"]>>(async (authUploadDeviceSigningKeys) => {
-      await authUploadDeviceSigningKeys(async (authData) => {
-        authAttempts.push(authData);
-        if (!authData) {
-          throw Object.assign(new Error("UIA required"), {
-            data: {
-              flows: [{ stages: ["m.login.dummy"] }],
-              session: "UIA_SESSION"
-            }
-          });
-        }
-        return undefined;
-      });
-    });
+    const resetEncryption = vi.fn<NonNullable<MockMatrixCrypto["resetEncryption"]>>(
+      async (authUploadDeviceSigningKeys) => {
+        await authUploadDeviceSigningKeys(async (authData) => {
+          authAttempts.push(authData);
+          if (!authData) {
+            throw Object.assign(new Error("UIA required"), {
+              data: {
+                flows: [{ stages: ["m.login.dummy"] }],
+                session: "UIA_SESSION"
+              }
+            });
+          }
+          return undefined;
+        });
+      }
+    );
     const crypto: MockMatrixCrypto = {
       bootstrapCrossSigning: vi.fn(),
       bootstrapSecretStorage,
@@ -928,23 +1073,22 @@ describe("Matrix client diagnostics", () => {
     const session = await createMatrixMessagingSession(createBootstrap());
 
     await expect(session.prepareEncryptionRecoveryForMobile()).resolves.toBe("EsTK dummy uia recovery key");
-    expect(authAttempts).toEqual([
-      null,
-      { session: "UIA_SESSION", type: "m.login.dummy" }
-    ]);
+    expect(authAttempts).toEqual([null, { session: "UIA_SESSION", type: "m.login.dummy" }]);
   });
 
   it("surfaces Matrix UIA requirements instead of masking them as COP login failures", async () => {
-    const resetEncryption = vi.fn<NonNullable<MockMatrixCrypto["resetEncryption"]>>(async (authUploadDeviceSigningKeys) => {
-      await authUploadDeviceSigningKeys(async () => {
-        throw Object.assign(new Error("UIA required"), {
-          data: {
-            flows: [{ stages: ["m.login.password"] }],
-            session: "PASSWORD_UIA"
-          }
+    const resetEncryption = vi.fn<NonNullable<MockMatrixCrypto["resetEncryption"]>>(
+      async (authUploadDeviceSigningKeys) => {
+        await authUploadDeviceSigningKeys(async () => {
+          throw Object.assign(new Error("UIA required"), {
+            data: {
+              flows: [{ stages: ["m.login.password"] }],
+              session: "PASSWORD_UIA"
+            }
+          });
         });
-      });
-    });
+      }
+    );
     const crypto: MockMatrixCrypto = {
       bootstrapCrossSigning: vi.fn(),
       bootstrapSecretStorage: vi.fn(),
@@ -963,17 +1107,23 @@ describe("Matrix client diagnostics", () => {
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
-    await expect(session.prepareEncryptionRecoveryForMobile()).rejects.toThrow(/Matrix interactive auth.*m\.login\.password/u);
+    await expect(session.prepareEncryptionRecoveryForMobile()).rejects.toThrow(
+      /Matrix interactive auth.*m\.login\.password/u
+    );
   });
 
   it("resets Matrix encryption metadata before rotating the recovery key", async () => {
-    const bootstrapCrossSigning = vi.fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>().mockResolvedValue(undefined);
+    const bootstrapCrossSigning = vi
+      .fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>()
+      .mockResolvedValue(undefined);
     const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
       await options.createSecretStorageKey?.();
     });
-    const resetEncryption = vi.fn<NonNullable<MockMatrixCrypto["resetEncryption"]>>(async (authUploadDeviceSigningKeys) => {
-      await authUploadDeviceSigningKeys((authData) => Promise.resolve(authData));
-    });
+    const resetEncryption = vi.fn<NonNullable<MockMatrixCrypto["resetEncryption"]>>(
+      async (authUploadDeviceSigningKeys) => {
+        await authUploadDeviceSigningKeys((authData) => Promise.resolve(authData));
+      }
+    );
     const crypto: MockMatrixCrypto = {
       bootstrapCrossSigning,
       bootstrapSecretStorage,
@@ -995,10 +1145,12 @@ describe("Matrix client diagnostics", () => {
 
     expect(recoveryKey).toBe("EsTK replacement recovery key");
     expect(resetEncryption).toHaveBeenCalled();
-    expect(bootstrapSecretStorage).toHaveBeenCalledWith(expect.objectContaining({
-      setupNewKeyBackup: false,
-      setupNewSecretStorage: true
-    }));
+    expect(bootstrapSecretStorage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupNewKeyBackup: false,
+        setupNewSecretStorage: true
+      })
+    );
   });
 
   it("restores an existing key backup after the user enters a recovery key", async () => {
@@ -1113,12 +1265,13 @@ function createRoom({
 }) {
   return {
     currentState: {
-      getStateEvents: (eventType: string) => eventType === "m.room.retention" && retentionSeconds
-        ? {
-          getContent: () => ({ max_lifetime: retentionSeconds * 1000 }),
-          getType: () => "m.room.retention"
-        }
-        : null
+      getStateEvents: (eventType: string) =>
+        eventType === "m.room.retention" && retentionSeconds
+          ? {
+              getContent: () => ({ max_lifetime: retentionSeconds * 1000 }),
+              getType: () => "m.room.retention"
+            }
+          : null
     },
     ...(members ? { getJoinedMembers: () => members } : {}),
     getMyMembership: () => "join",

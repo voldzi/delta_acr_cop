@@ -84,7 +84,10 @@ export default function AiSituationDialog({
               </div>
               <div>
                 <dt>Provider</dt>
-                <dd>{response.provider ?? "auto"}{response.model ? ` / ${response.model}` : ""}</dd>
+                <dd>
+                  {response.provider ?? "auto"}
+                  {response.model ? ` / ${response.model}` : ""}
+                </dd>
               </div>
               <div>
                 <dt>Audit</dt>
@@ -109,11 +112,21 @@ export default function AiSituationDialog({
             <RefreshCcw size={17} />
             {response ? "Obnovit" : "Vygenerovat"}
           </button>
-          <button className="secondary-dialog-action" disabled={!canUseSummary} onClick={() => void copySummary()} type="button">
+          <button
+            className="secondary-dialog-action"
+            disabled={!canUseSummary}
+            onClick={() => void copySummary()}
+            type="button"
+          >
             {copyState === "copied" ? <Check size={17} /> : <Copy size={17} />}
             {copyState === "copied" ? "Zkopírováno" : copyState === "failed" ? "Kopírování selhalo" : "Zkopírovat"}
           </button>
-          <button className="primary-dialog-action" disabled={!canUseSummary || sending} onClick={() => onSendToChat(summary)} type="button">
+          <button
+            className="primary-dialog-action"
+            disabled={!canUseSummary || sending}
+            onClick={() => onSendToChat(summary)}
+            type="button"
+          >
             {sending ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
             Odeslat do chatu
           </button>

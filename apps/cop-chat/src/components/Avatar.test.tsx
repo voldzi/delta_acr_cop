@@ -46,11 +46,14 @@ describe("Avatar", () => {
     render(<Avatar label="COP Operator" mediaAccessToken="matrix-token" src={src} />);
 
     await waitFor(() => expect(createObjectURL).toHaveBeenCalledWith(avatarBlob));
-    expect(fetchMock).toHaveBeenCalledWith(src, expect.objectContaining({
-      credentials: "omit",
-      headers: {
-        Authorization: "Bearer matrix-token"
-      }
-    }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      src,
+      expect.objectContaining({
+        credentials: "omit",
+        headers: {
+          Authorization: "Bearer matrix-token"
+        }
+      })
+    );
   });
 });

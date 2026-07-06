@@ -9,13 +9,13 @@ export interface ChatPreferences {
   readOverrideByKey: Record<string, string>;
 }
 
-export function buildTimelineRows(messages: MatrixTimelineMessage[]): Array<
-  | { id: string; kind: "date"; label: string }
-  | { grouped: boolean; kind: "message"; message: MatrixTimelineMessage }
+export function buildTimelineRows(
+  messages: MatrixTimelineMessage[]
+): Array<
+  { id: string; kind: "date"; label: string } | { grouped: boolean; kind: "message"; message: MatrixTimelineMessage }
 > {
   const rows: Array<
-    | { id: string; kind: "date"; label: string }
-    | { grouped: boolean; kind: "message"; message: MatrixTimelineMessage }
+    { id: string; kind: "date"; label: string } | { grouped: boolean; kind: "message"; message: MatrixTimelineMessage }
   > = [];
   let previousDay = "";
   let previousSender = "";
@@ -33,7 +33,10 @@ export function buildTimelineRows(messages: MatrixTimelineMessage[]): Array<
   return rows;
 }
 
-export function filterTimelineByRetention(messages: MatrixTimelineMessage[], seconds: MessageRetentionSeconds): MatrixTimelineMessage[] {
+export function filterTimelineByRetention(
+  messages: MatrixTimelineMessage[],
+  seconds: MessageRetentionSeconds
+): MatrixTimelineMessage[] {
   if (seconds === null) {
     return messages;
   }
@@ -44,7 +47,10 @@ export function filterTimelineByRetention(messages: MatrixTimelineMessage[], sec
   });
 }
 
-export function mergeTimelineMessages(cached: MatrixTimelineMessage[], live: MatrixTimelineMessage[]): MatrixTimelineMessage[] {
+export function mergeTimelineMessages(
+  cached: MatrixTimelineMessage[],
+  live: MatrixTimelineMessage[]
+): MatrixTimelineMessage[] {
   const byEventId = new Map<string, MatrixTimelineMessage>();
   for (const message of cached) {
     byEventId.set(message.eventId, message);
@@ -52,15 +58,17 @@ export function mergeTimelineMessages(cached: MatrixTimelineMessage[], live: Mat
   for (const message of live) {
     byEventId.set(message.eventId, message);
   }
-  return removeConfirmedLocalEchoes(Array.from(byEventId.values()))
-    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+  return removeConfirmedLocalEchoes(Array.from(byEventId.values())).sort(
+    (left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)
+  );
 }
 
 export function normalizeChatPreferences(preferences: Partial<ChatPreferences>): ChatPreferences {
   const now = Date.now();
   const mutedUntilByKey = Object.fromEntries(
-    Object.entries(preferences.mutedUntilByKey ?? {})
-      .filter(([key, value]) => key && (value === "forever" || Date.parse(value) > now))
+    Object.entries(preferences.mutedUntilByKey ?? {}).filter(
+      ([key, value]) => key && (value === "forever" || Date.parse(value) > now)
+    )
   );
   const hiddenByKey = Object.fromEntries(
     Object.entries(preferences.hiddenByKey ?? {})
@@ -116,7 +124,10 @@ function isConfirmedLocalEchoPair(localEcho: MatrixTimelineMessage, confirmed: M
   if ((localEcho.replyToEventId ?? "") !== (confirmed.replyToEventId ?? "")) {
     return false;
   }
-  if (attachmentSignature(localEcho) !== attachmentSignature(confirmed) || locationSignature(localEcho) !== locationSignature(confirmed)) {
+  if (
+    attachmentSignature(localEcho) !== attachmentSignature(confirmed) ||
+    locationSignature(localEcho) !== locationSignature(confirmed)
+  ) {
     return false;
   }
   const localAt = Date.parse(localEcho.timestamp);
@@ -134,7 +145,9 @@ function isTemporaryMatrixEventId(eventId: string): boolean {
 
 function attachmentSignature(message: MatrixTimelineMessage): string {
   const attachment = message.attachment;
-  return attachment ? `${attachment.contentType ?? ""}:${attachment.fileName}:${attachment.size ?? ""}:${attachment.mediaUrl ?? ""}` : "";
+  return attachment
+    ? `${attachment.contentType ?? ""}:${attachment.fileName}:${attachment.size ?? ""}:${attachment.mediaUrl ?? ""}`
+    : "";
 }
 
 function locationSignature(message: MatrixTimelineMessage): string {
@@ -147,7 +160,9 @@ function messageSearchText(message: MatrixTimelineMessage): string {
     message.attachment?.fileName,
     message.location ? `${message.location.lat.toFixed(5)}, ${message.location.lon.toFixed(5)}` : "",
     message.location?.label ?? ""
-  ].filter(Boolean).join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function formatDate(value: string): string {

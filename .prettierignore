@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+.turbo
+.vite
+*.log
+pnpm-lock.yaml
+docs/archive
+openapi/openapi.json
+docs/api/openapi-main-cop.yaml
+apps/*/dist
+packages/*/dist

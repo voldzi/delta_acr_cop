@@ -26,7 +26,11 @@ export function SelectField<Value extends string>({
   value: Value;
 }) {
   return (
-    <SelectPrimitive.Root disabled={disabled} value={value} onValueChange={(nextValue) => onValueChange(nextValue as Value)}>
+    <SelectPrimitive.Root
+      disabled={disabled}
+      value={value}
+      onValueChange={(nextValue) => onValueChange(nextValue as Value)}
+    >
       <SelectPrimitive.Trigger aria-label={ariaLabel} className={clsx("ui-select-trigger", className)}>
         <SelectPrimitive.Value placeholder={placeholder} />
         <SelectPrimitive.Icon className="ui-select-icon">
@@ -37,7 +41,12 @@ export function SelectField<Value extends string>({
         <SelectPrimitive.Content className="ui-select-content" collisionPadding={10} position="popper" sideOffset={6}>
           <SelectPrimitive.Viewport className="ui-select-viewport">
             {options.map((option) => (
-              <SelectPrimitive.Item className="ui-select-item" disabled={option.disabled} key={option.value} value={option.value}>
+              <SelectPrimitive.Item
+                className="ui-select-item"
+                disabled={option.disabled}
+                key={option.value}
+                value={option.value}
+              >
                 <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
                 <SelectPrimitive.ItemIndicator className="ui-select-item-indicator">
                   <Check size={14} />

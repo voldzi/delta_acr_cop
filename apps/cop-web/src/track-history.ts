@@ -226,7 +226,10 @@ export function predictPosition(
     return predictFromHistory(object, historyPoints, horizonMinutes);
   }
   if (mode === "maneuver") {
-    return predictFromManeuver(object, historyPoints, horizonMinutes) ?? predictFromHistory(object, historyPoints, horizonMinutes);
+    return (
+      predictFromManeuver(object, historyPoints, horizonMinutes) ??
+      predictFromHistory(object, historyPoints, horizonMinutes)
+    );
   }
   if (mode === "advanced") {
     return (
@@ -240,7 +243,11 @@ export function predictPosition(
   return predictFromTelemetry(object, horizonMinutes) ?? predictFromHistory(object, historyPoints, horizonMinutes);
 }
 
-function predictFromAdvanced(object: CopObject, historyPoints: TrackHistoryPoint[], horizonMinutes: number): PredictedPosition | null {
+function predictFromAdvanced(
+  object: CopObject,
+  historyPoints: TrackHistoryPoint[],
+  horizonMinutes: number
+): PredictedPosition | null {
   if (!hasPosition(object)) {
     return null;
   }
@@ -257,7 +264,7 @@ function predictFromAdvanced(object: CopObject, historyPoints: TrackHistoryPoint
   const headingDeg =
     telemetryHeading !== undefined && historyHeading !== undefined
       ? blendHeading(telemetryHeading, historyHeading, 0.72)
-      : telemetryHeading ?? historyHeading;
+      : (telemetryHeading ?? historyHeading);
 
   if (speedMps === undefined || headingDeg === undefined || speedMps <= 0) {
     return null;
@@ -266,9 +273,23 @@ function predictFromAdvanced(object: CopObject, historyPoints: TrackHistoryPoint
   const turnRateDegPerSecond = estimateTurnRate(segments);
   const path = buildAdvancedPath(object.position, speedMps, headingDeg, turnRateDegPerSecond, horizonMinutes);
   const telemetryDisagreement =
-    telemetryHeading !== undefined && historyHeading !== undefined ? Math.abs(angularDeltaDeg(telemetryHeading, historyHeading)) : 0;
-  const confidence = estimatePredictionConfidence(object, segments, telemetrySpeed, telemetryHeading, telemetryDisagreement);
-  const uncertaintyM = estimatePredictionUncertaintyM(speedMps, horizonMinutes, confidence, turnRateDegPerSecond, telemetryDisagreement);
+    telemetryHeading !== undefined && historyHeading !== undefined
+      ? Math.abs(angularDeltaDeg(telemetryHeading, historyHeading))
+      : 0;
+  const confidence = estimatePredictionConfidence(
+    object,
+    segments,
+    telemetrySpeed,
+    telemetryHeading,
+    telemetryDisagreement
+  );
+  const uncertaintyM = estimatePredictionUncertaintyM(
+    speedMps,
+    horizonMinutes,
+    confidence,
+    turnRateDegPerSecond,
+    telemetryDisagreement
+  );
   const uncertaintyPolygon = buildUncertaintyPolygon(path, uncertaintyM);
 
   return {
@@ -300,7 +321,11 @@ function predictFromTelemetry(object: CopObject, horizonMinutes: number): Predic
   };
 }
 
-function predictFromHistory(object: CopObject, historyPoints: TrackHistoryPoint[], horizonMinutes: number): PredictedPosition | null {
+function predictFromHistory(
+  object: CopObject,
+  historyPoints: TrackHistoryPoint[],
+  horizonMinutes: number
+): PredictedPosition | null {
   if (!hasPosition(object)) {
     return null;
   }
@@ -327,7 +352,11 @@ function predictFromHistory(object: CopObject, historyPoints: TrackHistoryPoint[
   };
 }
 
-function predictFromManeuver(object: CopObject, historyPoints: TrackHistoryPoint[], horizonMinutes: number): PredictedPosition | null {
+function predictFromManeuver(
+  object: CopObject,
+  historyPoints: TrackHistoryPoint[],
+  horizonMinutes: number
+): PredictedPosition | null {
   if (!hasPosition(object)) {
     return null;
   }
@@ -339,7 +368,8 @@ function predictFromManeuver(object: CopObject, historyPoints: TrackHistoryPoint
 
   const lastSegment = segments[segments.length - 1]!;
   const previousSegment = segments[segments.length - 2]!;
-  const turnRateDegPerSecond = angularDeltaDeg(lastSegment.headingDeg, previousSegment.headingDeg) / Math.max(1, lastSegment.elapsedSeconds);
+  const turnRateDegPerSecond =
+    angularDeltaDeg(lastSegment.headingDeg, previousSegment.headingDeg) / Math.max(1, lastSegment.elapsedSeconds);
   const speedMps = average(segments.slice(-3).map((segment) => segment.speedMps));
   if (!Number.isFinite(speedMps) || speedMps <= 0) {
     return null;
@@ -417,7 +447,13 @@ function estimatePredictionConfidence(
   const historyFactor = segments.length >= 4 ? 1 : segments.length >= 2 ? 0.9 : 0.76;
   const telemetryFactor = telemetrySpeed !== undefined && telemetryHeading !== undefined ? 1 : 0.84;
   const disagreementFactor =
-    telemetryDisagreementDeg > 60 ? 0.68 : telemetryDisagreementDeg > 35 ? 0.8 : telemetryDisagreementDeg > 18 ? 0.9 : 1;
+    telemetryDisagreementDeg > 60
+      ? 0.68
+      : telemetryDisagreementDeg > 35
+        ? 0.8
+        : telemetryDisagreementDeg > 18
+          ? 0.9
+          : 1;
   const recentCadence = average(segments.slice(-3).map((segment) => segment.elapsedSeconds));
   const cadenceFactor = recentCadence > 180 ? 0.72 : recentCadence > 90 ? 0.84 : 1;
 
@@ -434,7 +470,10 @@ function estimatePredictionUncertaintyM(
   const horizonSeconds = horizonMinutes * 60;
   const distanceM = speedMps * horizonSeconds;
   const headingUncertaintyDeg = clampNumber(
-    4 + (1 - confidence) * 30 + Math.abs(turnRateDegPerSecond) * horizonSeconds * 0.08 + telemetryDisagreementDeg * 0.18,
+    4 +
+      (1 - confidence) * 30 +
+      Math.abs(turnRateDegPerSecond) * horizonSeconds * 0.08 +
+      telemetryDisagreementDeg * 0.18,
     4,
     55
   );
@@ -484,7 +523,9 @@ function buildTelemetryPath(
   return path;
 }
 
-function estimateHistoryVector(historyPoints: TrackHistoryPoint[]): { latPerSecond: number; lonPerSecond: number } | null {
+function estimateHistoryVector(
+  historyPoints: TrackHistoryPoint[]
+): { latPerSecond: number; lonPerSecond: number } | null {
   const segments = buildRecentSegments(historyPoints);
   if (segments.length === 0) {
     return null;
@@ -514,7 +555,8 @@ function buildRecentSegments(historyPoints: TrackHistoryPoint[]): Array<{
   for (let index = 1; index < historyPoints.length; index += 1) {
     const previousPoint = historyPoints[index - 1]!;
     const lastPoint = historyPoints[index]!;
-    const elapsedSeconds = (new Date(lastPoint.timestamp).getTime() - new Date(previousPoint.timestamp).getTime()) / 1000;
+    const elapsedSeconds =
+      (new Date(lastPoint.timestamp).getTime() - new Date(previousPoint.timestamp).getTime()) / 1000;
     if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) {
       continue;
     }
@@ -545,15 +587,19 @@ function findLastPointAtOrBefore(points: TrackHistoryPoint[], cutoffMs: number):
   }, null);
 }
 
-function projectPosition(lat: number, lon: number, distanceM: number, headingDeg: number): { lat: number; lon: number } {
+function projectPosition(
+  lat: number,
+  lon: number,
+  distanceM: number,
+  headingDeg: number
+): { lat: number; lon: number } {
   const bearing = toRadians(headingDeg);
   const lat1 = toRadians(lat);
   const lon1 = toRadians(lon);
   const angularDistance = distanceM / earthRadiusM;
 
   const lat2 = Math.asin(
-    Math.sin(lat1) * Math.cos(angularDistance) +
-      Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing)
+    Math.sin(lat1) * Math.cos(angularDistance) + Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing)
   );
   const lon2 =
     lon1 +
@@ -573,9 +619,7 @@ function distanceMeters(a: { lat: number; lon: number }, b: { lat: number; lon: 
   const dLon = toRadians(b.lon - a.lon);
   const lat1 = toRadians(a.lat);
   const lat2 = toRadians(b.lat);
-  const haversine =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  const haversine = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
   return 2 * earthRadiusM * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }
 
@@ -602,7 +646,9 @@ function average(values: number[]): number {
 }
 
 function weightedAverage(values: Array<{ value: number | undefined; weight: number }>): number | undefined {
-  const validValues = values.filter((item): item is { value: number; weight: number } => Number.isFinite(item.value) && item.weight > 0);
+  const validValues = values.filter(
+    (item): item is { value: number; weight: number } => Number.isFinite(item.value) && item.weight > 0
+  );
   const totalWeight = validValues.reduce((sum, item) => sum + item.weight, 0);
   if (totalWeight <= 0) {
     return undefined;

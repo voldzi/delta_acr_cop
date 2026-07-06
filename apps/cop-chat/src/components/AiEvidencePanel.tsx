@@ -34,7 +34,13 @@ interface AiEvidenceSummary {
 
 export function AiEvidencePanel({ response }: { response: AiCopResponse }) {
   const evidence = aiEvidenceSummary(response);
-  if (!evidence || evidence.priority.citations.length + evidence.semantic.citations.length + (evidence.indexed?.citations.length ?? 0) === 0) {
+  if (
+    !evidence ||
+    evidence.priority.citations.length +
+      evidence.semantic.citations.length +
+      (evidence.indexed?.citations.length ?? 0) ===
+      0
+  ) {
     return null;
   }
   return (
@@ -48,18 +54,34 @@ export function AiEvidencePanel({ response }: { response: AiCopResponse }) {
       </header>
       <div className="ai-evidence-groups">
         <AiEvidenceGroup title="Priority" citations={evidence.priority.citations} />
-        <AiEvidenceGroup title="Aktuální kontext" citations={evidence.semantic.citations} detail={evidence.semantic.model} />
+        <AiEvidenceGroup
+          title="Aktuální kontext"
+          citations={evidence.semantic.citations}
+          detail={evidence.semantic.model}
+        />
         <AiEvidenceGroup
           title="Background index"
           citations={evidence.indexed?.citations ?? []}
-          detail={typeof evidence.indexed?.matchedDocumentCount === "number" ? `${evidence.indexed.matchedDocumentCount} shod` : evidence.indexed?.status}
+          detail={
+            typeof evidence.indexed?.matchedDocumentCount === "number"
+              ? `${evidence.indexed.matchedDocumentCount} shod`
+              : evidence.indexed?.status
+          }
         />
       </div>
     </section>
   );
 }
 
-function AiEvidenceGroup({ citations, detail, title }: { citations: AiEvidenceCitation[]; detail?: string; title: string }) {
+function AiEvidenceGroup({
+  citations,
+  detail,
+  title
+}: {
+  citations: AiEvidenceCitation[];
+  detail?: string;
+  title: string;
+}) {
   if (citations.length === 0) {
     return null;
   }
@@ -75,10 +97,17 @@ function AiEvidenceGroup({ citations, detail, title }: { citations: AiEvidenceCi
             <span className="ai-evidence-id">{citation.citationId}</span>
             <span className="ai-evidence-label">
               <strong>{citation.label ?? citation.entityId ?? "Zdroj"}</strong>
-              <small>{[citation.entityType, citation.updatedAt ? formatEvidenceDate(citation.updatedAt) : undefined].filter(Boolean).join(" · ")}</small>
+              <small>
+                {[citation.entityType, citation.updatedAt ? formatEvidenceDate(citation.updatedAt) : undefined]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </small>
             </span>
             {citation.location ? (
-              <span className="ai-evidence-location" title={`${citation.location.lat.toFixed(5)}, ${citation.location.lon.toFixed(5)}`}>
+              <span
+                className="ai-evidence-location"
+                title={`${citation.location.lat.toFixed(5)}, ${citation.location.lon.toFixed(5)}`}
+              >
                 <MapPin size={13} />
               </span>
             ) : null}
@@ -99,14 +128,16 @@ function aiEvidenceSummary(response: AiCopResponse): AiEvidenceSummary | null {
   const semantic = asRecord(evidence.semantic);
   const indexed = asRecord(evidence.indexed);
   return {
-    ...(indexed ? {
-      indexed: {
-        documentCount: numberValue(indexed.documentCount),
-        matchedDocumentCount: numberValue(indexed.matchedDocumentCount),
-        status: stringValue(indexed.status),
-        citations: citationList(indexed.citations)
-      }
-    } : {}),
+    ...(indexed
+      ? {
+          indexed: {
+            documentCount: numberValue(indexed.documentCount),
+            matchedDocumentCount: numberValue(indexed.matchedDocumentCount),
+            status: stringValue(indexed.status),
+            citations: citationList(indexed.citations)
+          }
+        }
+      : {}),
     priority: {
       citations: citationList(priority?.citations)
     },
@@ -178,7 +209,9 @@ function formatEvidenceDate(value: string): string {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function numberValue(value: unknown): number | undefined {

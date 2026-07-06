@@ -34,9 +34,7 @@ export function buildXrObjectModels(
   const projection = createProjection(limitedObjects);
   return limitedObjects.map((object) => {
     const projectedPosition = projection.project(object.position?.lat ?? 0, object.position?.lon ?? 0);
-    const y = object.domain === "AIR"
-      ? clampNumber(0.55 + ((object.position?.altitudeM ?? 0) / 3000), 0.65, 4.2)
-      : 0.22;
+    const y = object.domain === "AIR" ? clampNumber(0.55 + (object.position?.altitudeM ?? 0) / 3000, 0.65, 4.2) : 0.22;
     const headingDeg = normalizeHeading(object.movement?.headingDeg ?? object.headingDeg);
     const history = (trackHistory[object.objectId] ?? [])
       .slice(-24)
@@ -91,11 +89,15 @@ export function isSimulatedObject(object: CopObject): boolean {
   if (isPublicFlightObject(object)) {
     return false;
   }
-  return Boolean(object.synthetic) || object.attributes?.provenance?.sourceSystemId?.toLowerCase().includes("sim") === true;
+  return (
+    Boolean(object.synthetic) || object.attributes?.provenance?.sourceSystemId?.toLowerCase().includes("sim") === true
+  );
 }
 
 function createProjection(objects: CopObject[]) {
-  const positions = objects.map((object) => object.position).filter((position): position is NonNullable<CopObject["position"]> => Boolean(position));
+  const positions = objects
+    .map((object) => object.position)
+    .filter((position): position is NonNullable<CopObject["position"]> => Boolean(position));
   const centerLat = average(positions.map((position) => position.lat)) ?? 50.08;
   const centerLon = average(positions.map((position) => position.lon)) ?? 14.42;
   const projected = positions.map((position) => projectKm(position.lat, position.lon, centerLat, centerLon));

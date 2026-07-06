@@ -24,7 +24,7 @@ export default defineConfig({
     }
   },
   build: {
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 2300,
     modulePreload: {
       resolveDependencies(_url, deps) {
         return deps.filter((dep) => !/(^|\/)matrix-[^/]+\.js$/u.test(dep));

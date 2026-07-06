@@ -199,7 +199,11 @@ export interface MatrixMessagingSession {
   setMessageRetentionPolicy(roomId: string, seconds: number | null): Promise<void>;
   sendAttachment(roomId: string, attachment: MatrixAttachmentUpload): Promise<void>;
   sendLocation(roomId: string, location: MatrixLocationShare): Promise<void>;
-  sendMessage(roomId: string, body: string, options?: { cop?: MatrixCopMessageMetadata; replyTo?: MatrixMessageReplyTarget }): Promise<void>;
+  sendMessage(
+    roomId: string,
+    body: string,
+    options?: { cop?: MatrixCopMessageMetadata; replyTo?: MatrixMessageReplyTarget }
+  ): Promise<void>;
   sendReaction(roomId: string, eventId: string, key: string): Promise<void>;
   sendTransitShare(roomId: string, transit: MatrixTransitShare): Promise<void>;
   setReaction(roomId: string, eventId: string, key: string): Promise<void>;

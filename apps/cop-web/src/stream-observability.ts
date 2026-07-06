@@ -32,7 +32,10 @@ export function createInitialStreamTelemetry(): StreamTelemetry {
   };
 }
 
-export function calculateStreamLatencyMs(serverTimestamp: string | undefined, receivedAtMs = Date.now()): number | null {
+export function calculateStreamLatencyMs(
+  serverTimestamp: string | undefined,
+  receivedAtMs = Date.now()
+): number | null {
   const serverMs = serverTimestamp ? Date.parse(serverTimestamp) : Number.NaN;
   if (!Number.isFinite(serverMs)) {
     return null;
@@ -55,7 +58,12 @@ export function updateStreamTelemetryForMessage(
     lastMessageAt: receivedAtIso,
     lastReconnectRequiredAt: message.type === "reconnect_required" ? receivedAtIso : current.lastReconnectRequiredAt,
     latencyMs: calculateStreamLatencyMs(message.serverTimestamp, receivedAt.getTime()),
-    recommendedRetryMs: message.type === "backpressure" ? message.recommendedRetryMs : message.type === "reconnect_required" ? message.retryAfterMs : current.recommendedRetryMs,
+    recommendedRetryMs:
+      message.type === "backpressure"
+        ? message.recommendedRetryMs
+        : message.type === "reconnect_required"
+          ? message.retryAfterMs
+          : current.recommendedRetryMs,
     sequence: message.sequence,
     serverClientCount: message.type === "backpressure" ? message.clientCount : current.serverClientCount,
     serverWriteErrorsTotal: message.type === "backpressure" ? message.writeErrorsTotal : current.serverWriteErrorsTotal

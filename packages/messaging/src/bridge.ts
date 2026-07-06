@@ -97,7 +97,7 @@ export interface ChatShareTransitMessage {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
 function clampUnreadCount(count: number): number {
@@ -111,7 +111,12 @@ export function encodeChatUnread(count: number): ChatUnreadMessage {
 
 export function decodeChatUnread(value: unknown): number | null {
   const data = asRecord(value);
-  if (!data || data.type !== chatBridgeMessageTypes.unread || typeof data.count !== "number" || !Number.isFinite(data.count)) {
+  if (
+    !data ||
+    data.type !== chatBridgeMessageTypes.unread ||
+    typeof data.count !== "number" ||
+    !Number.isFinite(data.count)
+  ) {
     return null;
   }
   return clampUnreadCount(data.count);
@@ -152,12 +157,12 @@ export function encodeChatCenterLocation(
 export function decodeChatCenterLocation(value: unknown): ChatCenterLocationMessage | null {
   const data = asRecord(value);
   if (
-    !data
-    || data.type !== chatBridgeMessageTypes.centerLocation
-    || typeof data.lat !== "number"
-    || typeof data.lon !== "number"
-    || !Number.isFinite(data.lat)
-    || !Number.isFinite(data.lon)
+    !data ||
+    data.type !== chatBridgeMessageTypes.centerLocation ||
+    typeof data.lat !== "number" ||
+    typeof data.lon !== "number" ||
+    !Number.isFinite(data.lat) ||
+    !Number.isFinite(data.lon)
   ) {
     return null;
   }
@@ -216,9 +221,8 @@ export function encodeCopMapFocusUrl(baseUrl: string | URL, focus: ChatCenterLoc
 }
 
 export function decodeCopMapFocusSearch(search: string | URLSearchParams): ChatCenterLocationMessage | null {
-  const params = typeof search === "string"
-    ? new URLSearchParams(search.startsWith("?") ? search : `?${search}`)
-    : search;
+  const params =
+    typeof search === "string" ? new URLSearchParams(search.startsWith("?") ? search : `?${search}`) : search;
   const lat = Number(params.get(copMapFocusSearchParams.lat));
   const lon = Number(params.get(copMapFocusSearchParams.lon));
   return decodeChatCenterLocation({
@@ -283,7 +287,9 @@ function optionalStringList(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
-  const values = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+  const values = value
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim());
   return values.length ? values : undefined;
 }
 
@@ -322,7 +328,13 @@ function normalizeCenterAction(value: unknown): ChatCenterLocationMessage["actio
 
 function normalizeCurrentLocation(value: unknown): ChatCurrentLocationPayload | null {
   const data = asRecord(value);
-  if (!data || typeof data.lat !== "number" || typeof data.lon !== "number" || !Number.isFinite(data.lat) || !Number.isFinite(data.lon)) {
+  if (
+    !data ||
+    typeof data.lat !== "number" ||
+    typeof data.lon !== "number" ||
+    !Number.isFinite(data.lat) ||
+    !Number.isFinite(data.lon)
+  ) {
     return null;
   }
   if (data.lat < -90 || data.lat > 90 || data.lon < -180 || data.lon > 180) {
@@ -353,17 +365,19 @@ function normalizeBridgeTextList(value: unknown, maxLength: number, maxItems: nu
   if (!Array.isArray(value)) {
     return undefined;
   }
-  const values = Array.from(new Set(value.flatMap((item) => {
-    const normalized = normalizeBridgeText(item, maxLength);
-    return normalized ? [normalized] : [];
-  }))).slice(0, maxItems);
+  const values = Array.from(
+    new Set(
+      value.flatMap((item) => {
+        const normalized = normalizeBridgeText(item, maxLength);
+        return normalized ? [normalized] : [];
+      })
+    )
+  ).slice(0, maxItems);
   return values.length > 0 ? values : undefined;
 }
 
 function compactRecord<T extends Record<string, unknown>>(value: T): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined)
-  ) as Partial<T>;
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
 }
 
 // web → chat: send a normalized public-transit card into the active conversation.

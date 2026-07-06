@@ -5,7 +5,7 @@
   "scripts": {
     "build": "tsc -p ../../packages/nato-symbol-renderer/tsconfig.json && tsc -p tsconfig.json && vite build",
     "dev": "vite --host 0.0.0.0 --port ${COP_WEB_PORT:-4311}",
-    "preview": "vite preview --host 0.0.0.0 --port ${COP_WEB_PORT:-4311}"
+    "preview": "node server.mjs"
   },
   "dependencies": {
     "@cop/core": "workspace:*",
@@ -20,7 +20,6 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.22.0",
     "maplibre-gl": "^5.24.0",
-    "matrix-js-sdk": "41.8.0",
     "milsymbol": "3.0.4",
     "qrcode": "^1.5.4",
     "react": "^19.2.7",

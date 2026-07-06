@@ -16,19 +16,16 @@ export type MediaPreviewItem = ChatMediaPreviewItem;
 
 export default function MediaPreviewDialog({ item, onClose }: { item: MediaPreviewItem; onClose: () => void }) {
   const modal = useModalFocus<HTMLElement>(onClose);
-  const {
-    descriptor,
-    error,
-    loading,
-    resolved,
-    triggerDownload
-  } = useAttachmentPreviewDescriptor(item);
+  const { descriptor, error, loading, resolved, triggerDownload } = useAttachmentPreviewDescriptor(item);
   const resolvedUrl = resolved.url ?? item.url;
   return (
     <div className="preview-backdrop" onClick={onClose} role="presentation">
       <section
         ref={modal.dialogRef}
-        className={clsx("preview-dialog", (item.kind === "document" || item.kind === "file") && "with-document-preview")}
+        className={clsx(
+          "preview-dialog",
+          (item.kind === "document" || item.kind === "file") && "with-document-preview"
+        )}
         role="dialog"
         aria-modal="true"
         aria-label={`Náhled ${item.title}`}
@@ -39,7 +36,9 @@ export default function MediaPreviewDialog({ item, onClose }: { item: MediaPrevi
         <header>
           <span>
             <strong>{item.title}</strong>
-            <small>{[mediaKindLabel(item.kind), item.byteSizeLabel, item.contentType].filter(Boolean).join(" · ")}</small>
+            <small>
+              {[mediaKindLabel(item.kind), item.byteSizeLabel, item.contentType].filter(Boolean).join(" · ")}
+            </small>
           </span>
           <button className="round-icon" onClick={onClose} type="button" aria-label="Zavřít">
             <X size={20} />
@@ -51,7 +50,9 @@ export default function MediaPreviewDialog({ item, onClose }: { item: MediaPrevi
           {item.kind === "video" && !resolvedUrl && item.posterUrl ? (
             <div className="preview-video-poster">
               <img alt={item.title} src={item.posterUrl} />
-              <span><Video size={22} /> Demo náhled videa</span>
+              <span>
+                <Video size={22} /> Demo náhled videa
+              </span>
             </div>
           ) : null}
           {item.kind === "location" && item.location ? (
@@ -68,10 +69,20 @@ export default function MediaPreviewDialog({ item, onClose }: { item: MediaPrevi
             </div>
           ) : null}
           {item.kind !== "image" && item.kind !== "video" && item.kind !== "location" ? (
-            <ChatAttachmentPreview descriptor={descriptor} error={error} loading={loading} onDownload={triggerDownload} />
+            <ChatAttachmentPreview
+              descriptor={descriptor}
+              error={error}
+              loading={loading}
+              onDownload={triggerDownload}
+            />
           ) : null}
           {(item.kind === "image" || item.kind === "video") && !resolvedUrl && !item.posterUrl ? (
-            <ChatAttachmentPreview descriptor={descriptor} error={error} loading={loading} onDownload={triggerDownload} />
+            <ChatAttachmentPreview
+              descriptor={descriptor}
+              error={error}
+              loading={loading}
+              onDownload={triggerDownload}
+            />
           ) : null}
         </div>
         {item.caption ? <p>{item.caption}</p> : null}
@@ -103,7 +114,7 @@ function useAttachmentPreviewDescriptor(item: MediaPreviewItem): {
   resolved: ResolvedAttachmentPreview;
   triggerDownload: () => void;
 } {
-  const [resolved, setResolved] = React.useState<ResolvedAttachmentPreview>(() => item.url ? { url: item.url } : {});
+  const [resolved, setResolved] = React.useState<ResolvedAttachmentPreview>(() => (item.url ? { url: item.url } : {}));
   const [descriptor, setDescriptor] = React.useState<ChatAttachmentPreviewDescriptor | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);

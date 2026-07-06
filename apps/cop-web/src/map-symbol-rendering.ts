@@ -85,7 +85,24 @@ const civilAircraftIconAssetByKind: Record<CivilAircraftIconKind, string> = {
 };
 const transitIconPrefix = "cop-transit";
 const osmCategoryIconPrefix = "cop-osm-category";
-export const osmCategoryIconIds = ["airport", "hospital", "fire_station", "police", "pharmacy", "shelter", "townhall", "communications_tower", "toilet", "water", "shower", "charging", "aed", "library", "community", "other"] as const;
+export const osmCategoryIconIds = [
+  "airport",
+  "hospital",
+  "fire_station",
+  "police",
+  "pharmacy",
+  "shelter",
+  "townhall",
+  "communications_tower",
+  "toilet",
+  "water",
+  "shower",
+  "charging",
+  "aed",
+  "library",
+  "community",
+  "other"
+] as const;
 export type OsmCategoryIconId = (typeof osmCategoryIconIds)[number];
 const riskIconPrefix = "cop-risk";
 export const riskIconIds = ["fire", "flood", "warning", "weather", "unknown"] as const;
@@ -96,7 +113,22 @@ export type FloodTrendDirection = (typeof floodTrendDirections)[number];
 export const floodStageTones = ["ok", "warn", "critical"] as const;
 export type FloodStageTone = (typeof floodStageTones)[number];
 const weatherConditionIconPrefix = "cop-weather-condition";
-export const weatherConditionIconIds = ["sun", "partly_cloudy", "cloud", "fog", "rain", "snow", "storm", "wind", "measurement", "measurement_temperature", "measurement_wind", "measurement_rain", "measurement_humidity", "unknown"] as const;
+export const weatherConditionIconIds = [
+  "sun",
+  "partly_cloudy",
+  "cloud",
+  "fog",
+  "rain",
+  "snow",
+  "storm",
+  "wind",
+  "measurement",
+  "measurement_temperature",
+  "measurement_wind",
+  "measurement_rain",
+  "measurement_humidity",
+  "unknown"
+] as const;
 export type WeatherConditionIconId = (typeof weatherConditionIconIds)[number];
 export const weatherWindIconKey = "cop-weather-wind-arrow";
 export const weatherCameraIconKey = "cop-weather-camera";
@@ -122,7 +154,7 @@ export function getWeatherConditionIconKey(iconId: string | undefined): string {
 }
 
 function normalizeMobileNetworkIconTone(tone: string | undefined): MobileNetworkIconTone {
-  return mobileNetworkIconTones.includes(tone as MobileNetworkIconTone) ? tone as MobileNetworkIconTone : "unknown";
+  return mobileNetworkIconTones.includes(tone as MobileNetworkIconTone) ? (tone as MobileNetworkIconTone) : "unknown";
 }
 
 function mobileNetworkIconColor(tone: MobileNetworkIconTone): string {
@@ -147,20 +179,26 @@ function normalizeCompactAscii(value: string): string {
 
 export function normalizeWeatherConditionIconId(value: string | undefined): WeatherConditionIconId {
   const normalized = normalizeCompactAscii(value ?? "");
-  if (["clear", "clearday", "clearnight", "clearsky", "clearskyday", "clearskynight", "sun", "sunny", "jasno"].includes(normalized)) {
+  if (
+    ["clear", "clearday", "clearnight", "clearsky", "clearskyday", "clearskynight", "sun", "sunny", "jasno"].includes(
+      normalized
+    )
+  ) {
     return "sun";
   }
-  if ([
-    "fair",
-    "fairday",
-    "fairnight",
-    "partlycloudy",
-    "partlycloudyday",
-    "partlycloudynight",
-    "mostlycloudy",
-    "polojasno",
-    "oblacno"
-  ].includes(normalized)) {
+  if (
+    [
+      "fair",
+      "fairday",
+      "fairnight",
+      "partlycloudy",
+      "partlycloudyday",
+      "partlycloudynight",
+      "mostlycloudy",
+      "polojasno",
+      "oblacno"
+    ].includes(normalized)
+  ) {
     return "partly_cloudy";
   }
   if (["cloud", "cloudy", "overcast", "zatazeno"].includes(normalized)) {
@@ -169,67 +207,81 @@ export function normalizeWeatherConditionIconId(value: string | undefined): Weat
   if (["fog", "mist", "mlha"].includes(normalized)) {
     return "fog";
   }
-  if ([
-    "drizzle",
-    "heavyrain",
-    "lightrain",
-    "precipitation",
-    "rain",
-    "rainshowers",
-    "rainshowersday",
-    "rainshowersnight",
-    "showers",
-    "dest",
-    "mrholeni",
-    "srazky"
-  ].includes(normalized)) {
+  if (
+    [
+      "drizzle",
+      "heavyrain",
+      "lightrain",
+      "precipitation",
+      "rain",
+      "rainshowers",
+      "rainshowersday",
+      "rainshowersnight",
+      "showers",
+      "dest",
+      "mrholeni",
+      "srazky"
+    ].includes(normalized)
+  ) {
     return "rain";
   }
-  if ([
-    "heavysnow",
-    "lightsleet",
-    "lightsnow",
-    "sleet",
-    "sleetshowers",
-    "snow",
-    "snowfall",
-    "snowshowers",
-    "snowshowersday",
-    "snowshowersnight",
-    "snezeni",
-    "snih"
-  ].includes(normalized)) {
+  if (
+    [
+      "heavysnow",
+      "lightsleet",
+      "lightsnow",
+      "sleet",
+      "sleetshowers",
+      "snow",
+      "snowfall",
+      "snowshowers",
+      "snowshowersday",
+      "snowshowersnight",
+      "snezeni",
+      "snih"
+    ].includes(normalized)
+  ) {
     return "snow";
   }
-  if ([
-    "lightning",
-    "rainandthunder",
-    "showersandthunder",
-    "storm",
-    "thunder",
-    "thunderstorm",
-    "thunderstormwithrain",
-    "bourka",
-    "bourky"
-  ].includes(normalized)) {
+  if (
+    [
+      "lightning",
+      "rainandthunder",
+      "showersandthunder",
+      "storm",
+      "thunder",
+      "thunderstorm",
+      "thunderstormwithrain",
+      "bourka",
+      "bourky"
+    ].includes(normalized)
+  ) {
     return "storm";
   }
   if (["wind", "windy", "vitr", "veterno"].includes(normalized)) {
     return "wind";
   }
-  if (["temperature", "temp", "teplota", "measurementtemperature", "temperaturemeasurement", "thermometer"].includes(normalized)) {
+  if (
+    ["temperature", "temp", "teplota", "measurementtemperature", "temperaturemeasurement", "thermometer"].includes(
+      normalized
+    )
+  ) {
     return "measurement_temperature";
   }
   if (["humidity", "vlhkost", "measurementhumidity", "humiditymeasurement"].includes(normalized)) {
     return "measurement_humidity";
   }
-  if (["measurementrain", "rainmeasurement", "precipitationmeasurement", "srazkomer", "srazkymereni"].includes(normalized)) {
+  if (
+    ["measurementrain", "rainmeasurement", "precipitationmeasurement", "srazkomer", "srazkymereni"].includes(normalized)
+  ) {
     return "measurement_rain";
   }
   if (["measurementwind", "windmeasurement", "windgauge", "anemometer"].includes(normalized)) {
     return "measurement_wind";
   }
-  if (["measurement", "measured", "station", "observation", "observed", "mereni", "mericistanice"].includes(normalized)) {
+  if (
+    ["measurement", "measured", "station", "observation", "observed", "mereni", "mericistanice"].includes(normalized)
+  ) {
     return "measurement";
   }
   return "unknown";
@@ -253,7 +305,16 @@ export function getTransitIconKey(kind: TransportIconKind): string {
 }
 
 export async function registerNatoSymbolImages(map: maplibregl.Map) {
-  const objectTypes = ["AIRCRAFT", "UAV", "MISSILE_TRACK", "GROUND_UNIT", "RESCUE_ASSET", "INCIDENT", "REPORT", "UNKNOWN"];
+  const objectTypes = [
+    "AIRCRAFT",
+    "UAV",
+    "MISSILE_TRACK",
+    "GROUND_UNIT",
+    "RESCUE_ASSET",
+    "INCIDENT",
+    "REPORT",
+    "UNKNOWN"
+  ];
   const affiliations = ["FRIEND", "ASSUMED_FRIEND", "HOSTILE", "SUSPECT", "NEUTRAL", "UNKNOWN", "PENDING"];
 
   const registrations = new Map<string, { objectType: string; affiliation: string }>();
@@ -352,7 +413,10 @@ export async function registerSituationSymbolImages(map: maplibregl.Map) {
   }
 }
 
-export async function createCivilAircraftSymbolImage(kind: CivilAircraftIconKind, tone: CivilAircraftIconTone = "normal"): Promise<ImageData> {
+export async function createCivilAircraftSymbolImage(
+  kind: CivilAircraftIconKind,
+  tone: CivilAircraftIconTone = "normal"
+): Promise<ImageData> {
   try {
     const response = await fetch(`/symbols/aircraft/${civilAircraftIconAssetByKind[kind]}.svg`, {
       cache: "force-cache"
@@ -385,7 +449,10 @@ export async function createCivilAircraftSymbolImage(kind: CivilAircraftIconKind
   }
 }
 
-function createFallbackCivilAircraftSymbolImage(kind: CivilAircraftIconKind, tone: CivilAircraftIconTone = "normal"): ImageData {
+function createFallbackCivilAircraftSymbolImage(
+  kind: CivilAircraftIconKind,
+  tone: CivilAircraftIconTone = "normal"
+): ImageData {
   const canvas = document.createElement("canvas");
   const size = 128;
   canvas.width = size;
@@ -408,7 +475,12 @@ function createFallbackCivilAircraftSymbolImage(kind: CivilAircraftIconKind, ton
   return context.getImageData(0, 0, size, size);
 }
 
-function drawCivilAircraftShape(context: CanvasRenderingContext2D, kind: CivilAircraftIconKind, strokeStyle: string, lineWidth: number): void {
+function drawCivilAircraftShape(
+  context: CanvasRenderingContext2D,
+  kind: CivilAircraftIconKind,
+  strokeStyle: string,
+  lineWidth: number
+): void {
   context.save();
   context.strokeStyle = strokeStyle;
   context.fillStyle = strokeStyle;
@@ -1798,7 +1870,14 @@ export function createOsmCategorySymbolImage(iconId: OsmCategoryIconId): ImageDa
   return context.getImageData(0, 0, size, size);
 }
 
-function drawRoundedRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+function drawRoundedRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+): void {
   context.beginPath();
   context.moveTo(x + radius, y);
   context.lineTo(x + width - radius, y);

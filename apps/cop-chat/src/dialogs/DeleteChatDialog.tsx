@@ -55,10 +55,14 @@ export default function DeleteChatDialog({
               {working ? "Mažu..." : "Smazat skupinu"}
             </button>
           ) : null}
-          <button disabled={working} onClick={onClose} type="button">Zrušit</button>
+          <button disabled={working} onClick={onClose} type="button">
+            Zrušit
+          </button>
         </div>
         {!isDirect && !canLeaveGroup && !canDeleteGroup ? (
-          <p className="delete-chat-dialog__note">Tato položka zatím není propojená se skupinou COP, proto ji lze pouze skrýt.</p>
+          <p className="delete-chat-dialog__note">
+            Tato položka zatím není propojená se skupinou COP, proto ji lze pouze skrýt.
+          </p>
         ) : null}
       </section>
     </div>

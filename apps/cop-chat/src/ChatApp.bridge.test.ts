@@ -1,12 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  centerLocationInCop,
-  embeddedChatSelectionFromMessage,
-  readRouteSelection,
-  writeChatRoute
-} from "./ChatApp";
+import { centerLocationInCop, embeddedChatSelectionFromMessage, readRouteSelection, writeChatRoute } from "./ChatApp";
 import type { MatrixLocationShare } from "@cop/messaging/types";
 
 // Bridge / wire-protocol contract tests. These pin the exact cross-app contract
@@ -53,11 +48,7 @@ describe("centerLocationInCop (chat → web: cop-chat:center-location)", () => {
   it("opens COP map focus URL in the current tab when not embedded (parent === self)", () => {
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     centerLocationInCop(location);
-    expect(open).toHaveBeenCalledWith(
-      expect.stringContaining("copLat=50.0755"),
-      "_self",
-      "noopener,noreferrer"
-    );
+    expect(open).toHaveBeenCalledWith(expect.stringContaining("copLat=50.0755"), "_self", "noopener,noreferrer");
     expect(open.mock.calls[0]?.[0]).toContain("copLon=14.4378");
   });
 });

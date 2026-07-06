@@ -11,7 +11,13 @@ import {
   type CopDashboardData,
   type CopObject
 } from "./cop-data";
-import { buildXrObjectModels, formatXrObjectLabel, isSimulatedObject, summarizeXrObjects, type XrObjectModel } from "./xr-model";
+import {
+  buildXrObjectModels,
+  formatXrObjectLabel,
+  isSimulatedObject,
+  summarizeXrObjects,
+  type XrObjectModel
+} from "./xr-model";
 import { readUserPreferences, type UserPreferences } from "./user-preferences";
 import "./styles.css";
 
@@ -222,9 +228,20 @@ export default function XrWorkspace() {
             <RefreshCw size={14} className={loading ? "spin" : ""} />
             Obnovit
           </button>
-          <button className="primary-button xr-start-button" type="button" onClick={() => void startXrSession()} disabled={xrSupport !== "supported"}>
+          <button
+            className="primary-button xr-start-button"
+            type="button"
+            onClick={() => void startXrSession()}
+            disabled={xrSupport !== "supported"}
+          >
             <Sparkles size={16} />
-            {xrActive ? "XR běží" : xrSupport === "checking" ? "Ověřuji XR" : xrSupport === "supported" ? "Spustit v brýlích" : "XR nedostupné"}
+            {xrActive
+              ? "XR běží"
+              : xrSupport === "checking"
+                ? "Ověřuji XR"
+                : xrSupport === "supported"
+                  ? "Spustit v brýlích"
+                  : "XR nedostupné"}
           </button>
         </div>
       </header>
@@ -267,7 +284,11 @@ export default function XrWorkspace() {
               <div className="xr-selected-card">
                 <strong>{xrMedia.title}</strong>
                 <span>{formatXrMediaLayout(xrMedia.layout)}</span>
-                <small>{xrMedia.layout === "apple_mv_hevc" ? "Originál je zachovaný, WebXR používá 2D náhled bez konverze." : "V brýlích se zobrazí oddělený obraz pro levé a pravé oko."}</small>
+                <small>
+                  {xrMedia.layout === "apple_mv_hevc"
+                    ? "Originál je zachovaný, WebXR používá 2D náhled bez konverze."
+                    : "V brýlích se zobrazí oddělený obraz pro levé a pravé oko."}
+                </small>
               </div>
               <button className="mini-button" type="button" onClick={() => void playXrMedia(sceneRef.current)}>
                 <Play size={14} />
@@ -281,11 +302,31 @@ export default function XrWorkspace() {
               <Layers size={17} />
               Vrstvy XR
             </div>
-            <XrToggle label="Veřejné lety" checked={filters.showPublicFlights} onChange={(value) => setFilters((current) => ({ ...current, showPublicFlights: value }))} />
-            <XrToggle label="Simulace" checked={filters.showSimulated} onChange={(value) => setFilters((current) => ({ ...current, showSimulated: value }))} />
-            <XrToggle label="Ostatní tracky" checked={filters.showOtherTracks} onChange={(value) => setFilters((current) => ({ ...current, showOtherTracks: value }))} />
-            <XrToggle label="Historie" checked={filters.showHistory} onChange={(value) => setFilters((current) => ({ ...current, showHistory: value }))} />
-            <XrToggle label="Predikce" checked={filters.showPrediction} onChange={(value) => setFilters((current) => ({ ...current, showPrediction: value }))} />
+            <XrToggle
+              label="Veřejné lety"
+              checked={filters.showPublicFlights}
+              onChange={(value) => setFilters((current) => ({ ...current, showPublicFlights: value }))}
+            />
+            <XrToggle
+              label="Simulace"
+              checked={filters.showSimulated}
+              onChange={(value) => setFilters((current) => ({ ...current, showSimulated: value }))}
+            />
+            <XrToggle
+              label="Ostatní tracky"
+              checked={filters.showOtherTracks}
+              onChange={(value) => setFilters((current) => ({ ...current, showOtherTracks: value }))}
+            />
+            <XrToggle
+              label="Historie"
+              checked={filters.showHistory}
+              onChange={(value) => setFilters((current) => ({ ...current, showHistory: value }))}
+            />
+            <XrToggle
+              label="Predikce"
+              checked={filters.showPrediction}
+              onChange={(value) => setFilters((current) => ({ ...current, showPrediction: value }))}
+            />
           </div>
 
           <div className="xr-panel-section">
@@ -296,8 +337,14 @@ export default function XrWorkspace() {
             {selectedModel ? (
               <div className="xr-selected-card">
                 <strong>{selectedModel.label}</strong>
-                <span>{selectedModel.objectType} · {selectedModel.affiliation} · {selectedModel.status}</span>
-                <small>{selectedModel.confidence === undefined ? "jistota není dostupná" : `${Math.round(selectedModel.confidence * 100)} % jistota`}</small>
+                <span>
+                  {selectedModel.objectType} · {selectedModel.affiliation} · {selectedModel.status}
+                </span>
+                <small>
+                  {selectedModel.confidence === undefined
+                    ? "jistota není dostupná"
+                    : `${Math.round(selectedModel.confidence * 100)} % jistota`}
+                </small>
               </div>
             ) : (
               <div className="empty-mini">Vyberte marker ovladačem, rukou nebo kliknutím v náhledu.</div>
@@ -308,10 +355,20 @@ export default function XrWorkspace() {
         <section className="xr-stage">
           <div ref={mountRef} className="xr-canvas" aria-label="3D XR situační prostor" />
           <div className="xr-stage-overlay">
-            <span><Eye size={15} /> Desktop náhled: kliknutím vyberete objekt</span>
-            <span><Play size={15} /> Quest: oba trigery vybírají, grip posouvá mapu</span>
-            <span><History size={15} /> Páčky: pohyb, rotace, zoom, trigger + pravá páčka scroll</span>
-            {xrMedia ? <span><Play size={15} /> Video: {formatXrMediaLayout(xrMedia.layout)}</span> : null}
+            <span>
+              <Eye size={15} /> Desktop náhled: kliknutím vyberete objekt
+            </span>
+            <span>
+              <Play size={15} /> Quest: oba trigery vybírají, grip posouvá mapu
+            </span>
+            <span>
+              <History size={15} /> Páčky: pohyb, rotace, zoom, trigger + pravá páčka scroll
+            </span>
+            {xrMedia ? (
+              <span>
+                <Play size={15} /> Video: {formatXrMediaLayout(xrMedia.layout)}
+              </span>
+            ) : null}
           </div>
         </section>
       </section>
@@ -328,7 +385,15 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function XrToggle({ checked, label, onChange }: { checked: boolean; label: string; onChange: (checked: boolean) => void }) {
+function XrToggle({
+  checked,
+  label,
+  onChange
+}: {
+  checked: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
   return (
     <label className="toggle-row xr-toggle">
       <input checked={checked} onChange={(event) => onChange(event.target.checked)} type="checkbox" />
@@ -499,15 +564,25 @@ function renderXrPanel(
   disposeGroupChildren(handles.panelContent);
   const rows: Array<{ accent?: string; muted?: boolean; text: string }> = [
     { accent: "#c8f08d", text: "CSM XR LIVE" },
-    { text: `${options.summary.visibleObjects} objektu | ${options.summary.publicFlights} verejnych letu | ${options.summary.simulated} simulaci` },
-    { text: options.filters.showHistory ? "Historie: zapnuta" : "Historie: vypnuta", muted: !options.filters.showHistory },
-    { text: options.filters.showPrediction ? "Predikce: zapnuta" : "Predikce: vypnuta", muted: !options.filters.showPrediction }
+    {
+      text: `${options.summary.visibleObjects} objektu | ${options.summary.publicFlights} verejnych letu | ${options.summary.simulated} simulaci`
+    },
+    {
+      text: options.filters.showHistory ? "Historie: zapnuta" : "Historie: vypnuta",
+      muted: !options.filters.showHistory
+    },
+    {
+      text: options.filters.showPrediction ? "Predikce: zapnuta" : "Predikce: vypnuta",
+      muted: !options.filters.showPrediction
+    }
   ];
   if (options.selectedModel) {
     rows.push(
       { accent: options.selectedModel.color, text: "VYBRANY OBJEKT" },
       { text: options.selectedModel.label },
-      { text: `${options.selectedModel.objectType} | ${options.selectedModel.affiliation} | ${options.selectedModel.status}` },
+      {
+        text: `${options.selectedModel.objectType} | ${options.selectedModel.affiliation} | ${options.selectedModel.status}`
+      },
       { text: `${options.selectedModel.lat.toFixed(4)}, ${options.selectedModel.lon.toFixed(4)}` }
     );
   }
@@ -596,8 +671,14 @@ function renderXrMedia(handles: XrSceneHandles, mediaParams: XrMediaParams | nul
   handles.media.add(monoPlane);
 
   if (mediaParams.layout === "side_by_side" || mediaParams.layout === "over_under") {
-    const leftPlane = new THREE.Mesh(geometry.clone(), createVideoMaterial(createStereoVideoTexture(texture, mediaParams.layout, "left")));
-    const rightPlane = new THREE.Mesh(geometry.clone(), createVideoMaterial(createStereoVideoTexture(texture, mediaParams.layout, "right")));
+    const leftPlane = new THREE.Mesh(
+      geometry.clone(),
+      createVideoMaterial(createStereoVideoTexture(texture, mediaParams.layout, "left"))
+    );
+    const rightPlane = new THREE.Mesh(
+      geometry.clone(),
+      createVideoMaterial(createStereoVideoTexture(texture, mediaParams.layout, "right"))
+    );
     leftPlane.layers.set(1);
     rightPlane.layers.set(2);
     leftPlane.userData.stereoOnly = true;
@@ -709,7 +790,11 @@ function createFloatingTitle(): THREE.Sprite {
 
 function createControllerRay(index: number): THREE.Line {
   const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -6)]);
-  const material = new THREE.LineBasicMaterial({ color: index === 0 ? "#9dd6ff" : "#c8f08d", transparent: true, opacity: 0.74 });
+  const material = new THREE.LineBasicMaterial({
+    color: index === 0 ? "#9dd6ff" : "#c8f08d",
+    transparent: true,
+    opacity: 0.74
+  });
   return new THREE.Line(geometry, material);
 }
 
@@ -806,8 +891,14 @@ function createTextSprite(
   return new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
 }
 
-function createLinePath(points: Array<{ x: number; y: number; z: number }>, color: string, opacity: number): THREE.Line {
-  const geometry = new THREE.BufferGeometry().setFromPoints(points.map((point) => new THREE.Vector3(point.x, point.y, point.z)));
+function createLinePath(
+  points: Array<{ x: number; y: number; z: number }>,
+  color: string,
+  opacity: number
+): THREE.Line {
+  const geometry = new THREE.BufferGeometry().setFromPoints(
+    points.map((point) => new THREE.Vector3(point.x, point.y, point.z))
+  );
   const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
   return new THREE.Line(geometry, material);
 }
@@ -820,7 +911,11 @@ function createVideoMaterial(texture: THREE.Texture): THREE.MeshBasicMaterial {
   });
 }
 
-function createStereoVideoTexture(baseTexture: THREE.VideoTexture, layout: "over_under" | "side_by_side", eye: "left" | "right"): THREE.Texture {
+function createStereoVideoTexture(
+  baseTexture: THREE.VideoTexture,
+  layout: "over_under" | "side_by_side",
+  eye: "left" | "right"
+): THREE.Texture {
   const texture = baseTexture.clone();
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearFilter;
@@ -949,7 +1044,8 @@ function applyXrInput(handles: XrSceneHandles, deltaSeconds: number) {
       continue;
     }
     const axes = readXrStickAxes(gamepad);
-    const side = source.handedness === "left" || (source.handedness === "none" && handednessIndex === 0) ? "left" : "right";
+    const side =
+      source.handedness === "left" || (source.handedness === "none" && handednessIndex === 0) ? "left" : "right";
     handednessIndex += 1;
     if (side === "left") {
       panXrRoot(handles, axes.x, axes.y, deltaSeconds);
@@ -1067,9 +1163,7 @@ function normalizeXrTrackLayers(preferences: UserPreferences): CopLayer[] {
   if (explicit.length > 0) {
     return explicit;
   }
-  return preferences.selectedLayer && isCopLayer(preferences.selectedLayer)
-    ? [preferences.selectedLayer]
-    : copLayerIds;
+  return preferences.selectedLayer && isCopLayer(preferences.selectedLayer) ? [preferences.selectedLayer] : copLayerIds;
 }
 
 function isCopLayer(value: string): value is CopLayer {
@@ -1104,7 +1198,11 @@ function filterXrObjects(objects: CopObject[], filters: XrFilters, searchQuery: 
       object.domain,
       object.status,
       object.attributes?.provenance?.sourceSystemId
-    ].filter(Boolean).join(" ").toLowerCase().includes(normalizedQuery);
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery);
   });
 }
 
@@ -1214,10 +1312,7 @@ function createMapFallbackCanvas(message: string): HTMLCanvasElement {
 }
 
 function tileUrlFor(z: number, x: number, y: number): string {
-  return xrTileUrlTemplate
-    .replace("{z}", String(z))
-    .replace("{x}", String(x))
-    .replace("{y}", String(y));
+  return xrTileUrlTemplate.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
 }
 
 function loadTileImage(url: string): Promise<HTMLImageElement> {
@@ -1280,7 +1375,9 @@ function normalizeXrMediaUrl(rawUrl: string): string | null {
     if (resolved.protocol !== "https:" && resolved.protocol !== "http:") {
       return null;
     }
-    return resolved.origin === window.location.origin ? `${resolved.pathname}${resolved.search}${resolved.hash}` : resolved.toString();
+    return resolved.origin === window.location.origin
+      ? `${resolved.pathname}${resolved.search}${resolved.hash}`
+      : resolved.toString();
   } catch {
     return null;
   }
@@ -1289,17 +1386,25 @@ function normalizeXrMediaUrl(rawUrl: string): string | null {
 function readNavigatorXr():
   | undefined
   | {
-    isSessionSupported: (mode: string) => Promise<boolean>;
-    requestSession: (mode: string, options?: unknown) => Promise<{
-      addEventListener: (name: "end", listener: () => void) => void;
-    }>;
-  } {
-  return (navigator as Navigator & {
-    xr?: {
       isSessionSupported: (mode: string) => Promise<boolean>;
-      requestSession: (mode: string, options?: unknown) => Promise<{
+      requestSession: (
+        mode: string,
+        options?: unknown
+      ) => Promise<{
         addEventListener: (name: "end", listener: () => void) => void;
       }>;
-    };
-  }).xr;
+    } {
+  return (
+    navigator as Navigator & {
+      xr?: {
+        isSessionSupported: (mode: string) => Promise<boolean>;
+        requestSession: (
+          mode: string,
+          options?: unknown
+        ) => Promise<{
+          addEventListener: (name: "end", listener: () => void) => void;
+        }>;
+      };
+    }
+  ).xr;
 }

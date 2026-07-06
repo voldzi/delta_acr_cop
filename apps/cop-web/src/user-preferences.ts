@@ -91,7 +91,8 @@ export function readUserPreferences(scope?: string): UserPreferences {
       return {};
     }
     const key = scopedStorageKey(preferencesKey, scope);
-    const raw = window.localStorage.getItem(key) ?? (key === preferencesKey ? null : window.localStorage.getItem(preferencesKey));
+    const raw =
+      window.localStorage.getItem(key) ?? (key === preferencesKey ? null : window.localStorage.getItem(preferencesKey));
     if (!raw) {
       return {};
     }
@@ -123,7 +124,9 @@ export function readLocalAlertPreferences(scope?: string): StoredLocalAlertPrefe
       return { alertPreferences: {}, updatedAt: null };
     }
     const key = scopedStorageKey(alertPreferencesKey, scope);
-    const raw = window.localStorage.getItem(key) ?? (key === alertPreferencesKey ? null : window.localStorage.getItem(alertPreferencesKey));
+    const raw =
+      window.localStorage.getItem(key) ??
+      (key === alertPreferencesKey ? null : window.localStorage.getItem(alertPreferencesKey));
     if (!raw) {
       return { alertPreferences: {}, updatedAt: null };
     }
@@ -152,10 +155,13 @@ export function writeLocalAlertPreferences(
   if (typeof window.localStorage?.setItem !== "function") {
     return;
   }
-  window.localStorage.setItem(scopedStorageKey(alertPreferencesKey, scope), JSON.stringify({
-    alertPreferences: normalizeAlertPreferences(alertPreferences),
-    updatedAt
-  }));
+  window.localStorage.setItem(
+    scopedStorageKey(alertPreferencesKey, scope),
+    JSON.stringify({
+      alertPreferences: normalizeAlertPreferences(alertPreferences),
+      updatedAt
+    })
+  );
 }
 
 export function normalizeMapView(value: unknown): MapViewState | undefined {
@@ -320,12 +326,14 @@ function optionalAlertSeverity(value: unknown): AlertPreferences["minimumSeverit
 }
 
 function isCopAlertType(value: string): value is CopAlertType {
-  return value === "AOI_ENTRY"
-    || value === "LOW_CONFIDENCE"
-    || value === "SOURCE_DEGRADED"
-    || value === "TRACK_CONFLICT"
-    || value === "TRACK_LOST"
-    || value === "TRACK_STALE";
+  return (
+    value === "AOI_ENTRY" ||
+    value === "LOW_CONFIDENCE" ||
+    value === "SOURCE_DEGRADED" ||
+    value === "TRACK_CONFLICT" ||
+    value === "TRACK_LOST" ||
+    value === "TRACK_STALE"
+  );
 }
 
 function normalizeLocalAoiRule(value: unknown): AoiRule[] {
@@ -397,7 +405,9 @@ function optionalPublicFlightSymbolMode(value: unknown): PublicFlightSymbolMode 
 }
 
 function optionalMapBasemapMode(value: unknown): MapBasemapMode | undefined {
-  return value === "standard" || value === "civil" || value === "risk" || value === "dark" || value === "outline" ? value : undefined;
+  return value === "standard" || value === "civil" || value === "risk" || value === "dark" || value === "outline"
+    ? value
+    : undefined;
 }
 
 function optionalAppLanguage(value: unknown): AppLanguage | undefined {
@@ -418,7 +428,7 @@ function optionalWorkspaceSkin(value: unknown): WorkspaceSkin | undefined {
 
 function compactObject<T extends object>(value: T): T | undefined {
   const entries = Object.entries(value).filter(([, entryValue]) => entryValue !== undefined);
-  return entries.length > 0 ? Object.fromEntries(entries) as T : undefined;
+  return entries.length > 0 ? (Object.fromEntries(entries) as T) : undefined;
 }
 
 function scopedStorageKey(baseKey: string, scope: string | undefined): string {

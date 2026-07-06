@@ -71,31 +71,74 @@ class TestCanvasContext {
   private operations = 0;
   private signature = 0x811c9dc5;
 
-  arc(...args: unknown[]) { this.touch("arc", args); }
-  beginPath(...args: unknown[]) { this.touch("beginPath", args); }
-  bezierCurveTo(...args: unknown[]) { this.touch("bezierCurveTo", args); }
-  clearRect(...args: unknown[]) { this.touch("clearRect", args); }
-  closePath(...args: unknown[]) { this.touch("closePath", args); }
-  createLinearGradient(...args: unknown[]) { this.touch("createLinearGradient", args); return new TestGradient(); }
-  drawImage(...args: unknown[]) { this.touch("drawImage", args); }
-  ellipse(...args: unknown[]) { this.touch("ellipse", args); }
-  fill(...args: unknown[]) { this.touch("fill", args); }
-  fillRect(...args: unknown[]) { this.touch("fillRect", args); }
-  fillText(...args: unknown[]) { this.touch("fillText", args); }
+  arc(...args: unknown[]) {
+    this.touch("arc", args);
+  }
+  beginPath(...args: unknown[]) {
+    this.touch("beginPath", args);
+  }
+  bezierCurveTo(...args: unknown[]) {
+    this.touch("bezierCurveTo", args);
+  }
+  clearRect(...args: unknown[]) {
+    this.touch("clearRect", args);
+  }
+  closePath(...args: unknown[]) {
+    this.touch("closePath", args);
+  }
+  createLinearGradient(...args: unknown[]) {
+    this.touch("createLinearGradient", args);
+    return new TestGradient();
+  }
+  drawImage(...args: unknown[]) {
+    this.touch("drawImage", args);
+  }
+  ellipse(...args: unknown[]) {
+    this.touch("ellipse", args);
+  }
+  fill(...args: unknown[]) {
+    this.touch("fill", args);
+  }
+  fillRect(...args: unknown[]) {
+    this.touch("fillRect", args);
+  }
+  fillText(...args: unknown[]) {
+    this.touch("fillText", args);
+  }
   getImageData(_x: number, _y: number, width: number, height: number) {
     this.touch("getImageData", [width, height]);
     return new TestImageData(width, height, this.operations, this.signature);
   }
-  lineTo(...args: unknown[]) { this.touch("lineTo", args); }
-  moveTo(...args: unknown[]) { this.touch("moveTo", args); }
-  quadraticCurveTo(...args: unknown[]) { this.touch("quadraticCurveTo", args); }
-  restore(...args: unknown[]) { this.touch("restore", args); }
-  rotate(...args: unknown[]) { this.touch("rotate", args); }
-  roundRect(...args: unknown[]) { this.touch("roundRect", args); }
-  save(...args: unknown[]) { this.touch("save", args); }
-  scale(...args: unknown[]) { this.touch("scale", args); }
-  stroke(...args: unknown[]) { this.touch("stroke", args); }
-  translate(...args: unknown[]) { this.touch("translate", args); }
+  lineTo(...args: unknown[]) {
+    this.touch("lineTo", args);
+  }
+  moveTo(...args: unknown[]) {
+    this.touch("moveTo", args);
+  }
+  quadraticCurveTo(...args: unknown[]) {
+    this.touch("quadraticCurveTo", args);
+  }
+  restore(...args: unknown[]) {
+    this.touch("restore", args);
+  }
+  rotate(...args: unknown[]) {
+    this.touch("rotate", args);
+  }
+  roundRect(...args: unknown[]) {
+    this.touch("roundRect", args);
+  }
+  save(...args: unknown[]) {
+    this.touch("save", args);
+  }
+  scale(...args: unknown[]) {
+    this.touch("scale", args);
+  }
+  stroke(...args: unknown[]) {
+    this.touch("stroke", args);
+  }
+  translate(...args: unknown[]) {
+    this.touch("translate", args);
+  }
 
   private touch(method: string, args: unknown[] = []) {
     this.operations += 1;
@@ -166,9 +209,12 @@ describe("map symbol rendering contract", () => {
       "cop-risk-unknown"
     ]);
     expect(transportIconKinds.map(getTransitIconKey)).toContain("cop-transit-road_event");
-    expect(weatherConditionIconIds.map(getWeatherConditionIconKey)).toContain("cop-weather-condition-measurement_temperature");
-    expect(floodTrendDirections.flatMap((direction) => floodStageTones.map((tone) => getFloodTrendIconKey(direction, tone))))
-      .toContain("cop-flood-trend-rising-critical");
+    expect(weatherConditionIconIds.map(getWeatherConditionIconKey)).toContain(
+      "cop-weather-condition-measurement_temperature"
+    );
+    expect(
+      floodTrendDirections.flatMap((direction) => floodStageTones.map((tone) => getFloodTrendIconKey(direction, tone)))
+    ).toContain("cop-flood-trend-rising-critical");
     expect(weatherWindIconKey).toBe("cop-weather-wind-arrow");
     expect(weatherCameraIconKey).toBe("cop-weather-camera");
   });
@@ -196,16 +242,17 @@ describe("map symbol rendering contract", () => {
   it("keeps deterministic visual fingerprints for operator-facing map symbols", () => {
     const fingerprints = {
       flood: Object.fromEntries(
-        floodTrendDirections.flatMap((direction) => (
-          floodStageTones.map((tone) => [`${direction}-${tone}`, imageFingerprint(createFloodTrendSymbolImage(direction, tone))])
-        ))
+        floodTrendDirections.flatMap((direction) =>
+          floodStageTones.map((tone) => [
+            `${direction}-${tone}`,
+            imageFingerprint(createFloodTrendSymbolImage(direction, tone))
+          ])
+        )
       ),
       mobile: Object.fromEntries(
         mobileNetworkIconTones.map((tone) => [tone, imageFingerprint(createMobileNetworkSymbolImage(tone))])
       ),
-      risk: Object.fromEntries(
-        riskIconIds.map((iconId) => [iconId, imageFingerprint(createRiskSymbolImage(iconId))])
-      ),
+      risk: Object.fromEntries(riskIconIds.map((iconId) => [iconId, imageFingerprint(createRiskSymbolImage(iconId))])),
       transit: Object.fromEntries(
         transportIconKinds.map((kind) => [kind, imageFingerprint(createTransitSymbolImage(kind))])
       ),

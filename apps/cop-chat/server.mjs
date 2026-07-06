@@ -1,4 +1,5 @@
 import { createReadStream, promises as fs } from "node:fs";
+import { createBrotliCompress, createGzip } from "node:zlib";
 import http from "node:http";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -55,7 +56,7 @@ async function handleRequest(request, response) {
     return;
   }
 
-  await serveStatic(url.pathname.slice(basePath.length), request.method ?? "GET", response);
+  await serveStatic(url.pathname.slice(basePath.length), request, response);
 }
 
 async function proxyOidcTokenRequest(request, response) {
@@ -92,7 +93,7 @@ async function proxyOidcTokenRequest(request, response) {
   const upstream = await fetch(`${issuer}/protocol/openid-connect/token`, {
     body,
     headers: {
-      "Accept": "application/json",
+      Accept: "application/json",
       "Content-Type": request.headers["content-type"] ?? "application/x-www-form-urlencoded"
     },
     method: "POST"
@@ -102,13 +103,14 @@ async function proxyOidcTokenRequest(request, response) {
     "Cache-Control": "no-store",
     "Content-Length": String(payload.length),
     "Content-Type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8",
-    "Pragma": "no-cache",
+    Pragma: "no-cache",
     ...corsHeaders
   });
   response.end(payload);
 }
 
-async function serveStatic(requestPath, method, response) {
+async function serveStatic(requestPath, request, response) {
+  const method = request.method ?? "GET";
   const relativePath = decodeURIComponent(requestPath || "index.html");
   const candidate = path.resolve(distDir, relativePath);
   const distRoot = `${path.resolve(distDir)}${path.sep}`;
@@ -120,19 +122,39 @@ async function serveStatic(requestPath, method, response) {
 
   const filePath = await resolveFilePath(candidate);
   if (!filePath) {
+    if (isStaticAssetRequest(relativePath)) {
+      response.writeHead(404, { "Cache-Control": "no-cache", "Content-Type": "text/plain; charset=utf-8" });
+      response.end(method === "HEAD" ? undefined : "Not Found");
+      return;
+    }
     await sendIndex(method, response);
     return;
   }
 
-  response.writeHead(200, {
+  await sendFile(filePath, method, request, response);
+}
+
+async function sendFile(filePath, method, request, response) {
+  const type = contentType(filePath);
+  const compression = compressionForRequest(request, type);
+  const headers = {
     "Cache-Control": filePath.endsWith("index.html") ? "no-cache" : "public, max-age=31536000, immutable",
-    "Content-Type": contentType(filePath)
-  });
+    "Content-Type": type,
+    Vary: "Accept-Encoding"
+  };
+  if (compression) {
+    headers["Content-Encoding"] = compression.name;
+  }
+  response.writeHead(200, headers);
   if (method === "HEAD") {
     response.end();
     return;
   }
-  await pipeline(createReadStream(filePath), response);
+  if (!compression) {
+    await pipeline(createReadStream(filePath), response);
+    return;
+  }
+  await pipeline(createReadStream(filePath), compression.stream(), response);
 }
 
 async function resolveFilePath(candidate) {
@@ -161,7 +183,13 @@ async function sendIndex(method, response) {
     response.end();
     return;
   }
-  await pipeline(createReadStream(path.join(distDir, "index.html")), response);
+  const filePath = path.join(distDir, "index.html");
+  await pipeline(createReadStream(filePath), response);
+}
+
+function isStaticAssetRequest(relativePath) {
+  const normalized = relativePath.replace(/^\/+/u, "");
+  return normalized.startsWith("assets/") || path.extname(normalized) !== "";
 }
 
 function normalizeBasePath(value) {
@@ -170,10 +198,12 @@ function normalizeBasePath(value) {
 }
 
 function parseAllowedHosts(value) {
-  return new Set((value ?? "")
-    .split(",")
-    .map((host) => host.trim().toLowerCase())
-    .filter(Boolean));
+  return new Set(
+    (value ?? "")
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean)
+  );
 }
 
 function isAllowedHost(value) {
@@ -193,7 +223,7 @@ function corsHeadersForOrigin(value, requestHost) {
   }
   return {
     "Access-Control-Allow-Origin": value,
-    "Vary": "Origin"
+    Vary: "Origin"
   };
 }
 
@@ -218,6 +248,24 @@ function hostnameFromAuthority(value) {
 
 function isLocalhost(host) {
   return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function compressionForRequest(request, type) {
+  if (!isCompressible(type)) {
+    return null;
+  }
+  const accepted = String(request.headers["accept-encoding"] ?? "");
+  if (/\bbr\b/u.test(accepted)) {
+    return { name: "br", stream: createBrotliCompress };
+  }
+  if (/\bgzip\b/u.test(accepted)) {
+    return { name: "gzip", stream: createGzip };
+  }
+  return null;
+}
+
+function isCompressible(type) {
+  return /^(text\/|application\/(javascript|json|manifest\+json|wasm))/u.test(type) || type === "image/svg+xml";
 }
 
 async function readRequestBody(request, maxBytes) {

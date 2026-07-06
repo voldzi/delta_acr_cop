@@ -48,9 +48,18 @@ export function useChatSelection(): {
     selectedConversationId: chatSelection.conversationId,
     selectedGroupId: chatSelection.groupId,
     selectedRoomId: chatSelection.roomId,
-    setSelectedConversationId: React.useCallback((value: ChatSelectionValue) => dispatchChatSelection({ type: "conversation", value }), []),
-    setSelectedGroupId: React.useCallback((value: ChatSelectionValue) => dispatchChatSelection({ type: "group", value }), []),
-    setSelectedRoomId: React.useCallback((value: ChatSelectionValue) => dispatchChatSelection({ type: "room", value }), [])
+    setSelectedConversationId: React.useCallback(
+      (value: ChatSelectionValue) => dispatchChatSelection({ type: "conversation", value }),
+      []
+    ),
+    setSelectedGroupId: React.useCallback(
+      (value: ChatSelectionValue) => dispatchChatSelection({ type: "group", value }),
+      []
+    ),
+    setSelectedRoomId: React.useCallback(
+      (value: ChatSelectionValue) => dispatchChatSelection({ type: "room", value }),
+      []
+    )
   };
 }
 

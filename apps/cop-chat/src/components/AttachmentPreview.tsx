@@ -1,12 +1,5 @@
 import React from "react";
-import {
-  AlertCircle,
-  Download,
-  ExternalLink,
-  FileAudio,
-  FileText,
-  Loader2
-} from "lucide-react";
+import { AlertCircle, Download, ExternalLink, FileAudio, FileText, Loader2 } from "lucide-react";
 import type { MatrixLocationShare } from "@cop/messaging/types";
 import {
   AttachmentKindIcon,
@@ -93,7 +86,10 @@ export async function createChatAttachmentPreviewDescriptor({
   const legacyOfficeFormat = legacyOfficePreviewFormat(fileName, contentType);
 
   if (legacyOfficeFormat) {
-    return unsupportedDescriptor(base, `${legacyOfficeFormat} je starší binární Office formát. V chatu jej lze stáhnout; plný náhled vyžaduje serverovou konverzi.`);
+    return unsupportedDescriptor(
+      base,
+      `${legacyOfficeFormat} je starší binární Office formát. V chatu jej lze stáhnout; plný náhled vyžaduje serverovou konverzi.`
+    );
   }
 
   if ((kind === "pdf" || kind === "image" || kind === "video" || kind === "audio") && sourceUrl) {
@@ -122,7 +118,13 @@ export async function createChatAttachmentPreviewDescriptor({
       const content = await readBlobText(blob, maxTextPreviewBytes);
       const rows = parseCsv(content).slice(0, maxRows);
       const [headers, ...bodyRows] = rows;
-      return { ...base, headers, kind, rows: bodyRows, truncated: rows.length >= maxRows || blob.size > maxTextPreviewBytes };
+      return {
+        ...base,
+        headers,
+        kind,
+        rows: bodyRows,
+        truncated: rows.length >= maxRows || blob.size > maxTextPreviewBytes
+      };
     }
     if (kind === "docx") {
       return { ...base, kind, paragraphs: await extractDocxParagraphs(blob) };
@@ -215,16 +217,33 @@ export function ChatAttachmentPreview({
   );
 }
 
-function PdfPreview({ descriptor, onDownload }: { descriptor: Extract<ChatAttachmentPreviewDescriptor, { kind: "pdf" }>; onDownload?: () => void }) {
+function PdfPreview({
+  descriptor,
+  onDownload
+}: {
+  descriptor: Extract<ChatAttachmentPreviewDescriptor, { kind: "pdf" }>;
+  onDownload?: () => void;
+}) {
   return (
     <section className="chat-doc-preview is-pdf">
       <PreviewHeader descriptor={descriptor} onDownload={onDownload} />
-      <ChatPdfViewer fileName={descriptor.title} onDownload={onDownload} sourceBlob={descriptor.sourceBlob} sourceUrl={descriptor.sourceUrl} />
+      <ChatPdfViewer
+        fileName={descriptor.title}
+        onDownload={onDownload}
+        sourceBlob={descriptor.sourceBlob}
+        sourceUrl={descriptor.sourceUrl}
+      />
     </section>
   );
 }
 
-function PreviewHeader({ descriptor, onDownload }: { descriptor: ChatAttachmentPreviewDescriptor; onDownload?: () => void }) {
+function PreviewHeader({
+  descriptor,
+  onDownload
+}: {
+  descriptor: ChatAttachmentPreviewDescriptor;
+  onDownload?: () => void;
+}) {
   return (
     <header className="chat-doc-preview__header">
       <span className="chat-doc-preview__icon">
@@ -232,11 +251,18 @@ function PreviewHeader({ descriptor, onDownload }: { descriptor: ChatAttachmentP
       </span>
       <span>
         <strong>{descriptor.title}</strong>
-        <small>{attachmentKindTitle(descriptor.kind)}{descriptor.contentType ? ` · ${descriptor.contentType}` : ""}</small>
+        <small>
+          {attachmentKindTitle(descriptor.kind)}
+          {descriptor.contentType ? ` · ${descriptor.contentType}` : ""}
+        </small>
       </span>
       <span className="chat-doc-preview__actions">
         {descriptor.sourceUrl ? (
-          <button onClick={() => window.open(descriptor.sourceUrl, "_blank", "noopener,noreferrer")} type="button" aria-label="Otevřít v nové záložce">
+          <button
+            onClick={() => window.open(descriptor.sourceUrl, "_blank", "noopener,noreferrer")}
+            type="button"
+            aria-label="Otevřít v nové záložce"
+          >
             <ExternalLink size={16} />
           </button>
         ) : null}
@@ -257,7 +283,11 @@ function renderDescriptorBody(descriptor: ChatAttachmentPreviewDescriptor): Reac
     case "json":
     case "xml":
     case "html":
-      return <pre className={`chat-doc-preview__text is-${descriptor.kind}`}>{descriptor.content || "Soubor neobsahuje zobrazitelný text."}</pre>;
+      return (
+        <pre className={`chat-doc-preview__text is-${descriptor.kind}`}>
+          {descriptor.content || "Soubor neobsahuje zobrazitelný text."}
+        </pre>
+      );
     case "csv":
       return <TablePreview headers={descriptor.headers} rows={descriptor.rows} />;
     case "docx":
@@ -270,7 +300,9 @@ function renderDescriptorBody(descriptor: ChatAttachmentPreviewDescriptor): Reac
             </article>
           ))}
         </div>
-      ) : <EmptyPreview />;
+      ) : (
+        <EmptyPreview />
+      );
     case "spreadsheet":
       return descriptor.sheets.length ? (
         <div className="chat-doc-preview__sheets">
@@ -282,7 +314,9 @@ function renderDescriptorBody(descriptor: ChatAttachmentPreviewDescriptor): Reac
             </section>
           ))}
         </div>
-      ) : <EmptyPreview />;
+      ) : (
+        <EmptyPreview />
+      );
     case "presentation":
       return descriptor.slides.length ? (
         <div className="chat-doc-preview__slides">
@@ -290,11 +324,17 @@ function renderDescriptorBody(descriptor: ChatAttachmentPreviewDescriptor): Reac
             <section key={slide.slideNumber}>
               <span>Slide {slide.slideNumber}</span>
               <h3>{slide.title ?? slide.text[0] ?? "Prezentace"}</h3>
-              <ul>{slide.text.slice(slide.title ? 0 : 1).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul>
+              <ul>
+                {slide.text.slice(slide.title ? 0 : 1).map((line, index) => (
+                  <li key={`${index}-${line}`}>{line}</li>
+                ))}
+              </ul>
             </section>
           ))}
         </div>
-      ) : <EmptyPreview />;
+      ) : (
+        <EmptyPreview />
+      );
     case "archi":
       return <ArchiPreview model={descriptor.model} />;
     case "archive":
@@ -327,11 +367,21 @@ function TablePreview({ headers, rows }: { headers?: string[]; rows: string[][] 
   return (
     <div className="chat-doc-preview__table-wrap">
       <table className="chat-doc-preview__table">
-        {headers?.length ? <thead><tr>{headers.map((cell, index) => <th key={`${index}-${cell}`}>{cell}</th>)}</tr></thead> : null}
+        {headers?.length ? (
+          <thead>
+            <tr>
+              {headers.map((cell, index) => (
+                <th key={`${index}-${cell}`}>{cell}</th>
+              ))}
+            </tr>
+          </thead>
+        ) : null}
         <tbody>
           {rows.map((row, rowIndex) => (
             <tr key={rowIndex}>
-              {row.map((cell, cellIndex) => <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>)}
+              {row.map((cell, cellIndex) => (
+                <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>
+              ))}
             </tr>
           ))}
         </tbody>
@@ -364,7 +414,9 @@ function ArchiPreview({ model }: { model: ChatArchiPreviewModel }) {
         {model.elements.slice(0, 30).map((element) => (
           <article key={element.id}>
             <strong>{element.name}</strong>
-            <small>{element.type} · {element.id}</small>
+            <small>
+              {element.type} · {element.id}
+            </small>
           </article>
         ))}
       </section>
@@ -424,7 +476,9 @@ async function extractDocxParagraphs(blob: Blob): Promise<Array<{ index: number;
   return elementsByLocalName(doc, "p")
     .map((paragraph, index) => ({
       index: index + 1,
-      text: elementsByLocalName(paragraph, "t").map((node) => node.textContent ?? "").join("")
+      text: elementsByLocalName(paragraph, "t")
+        .map((node) => node.textContent ?? "")
+        .join("")
     }))
     .map((paragraph) => ({ ...paragraph, text: paragraph.text.replace(/\s+/g, " ").trim() }))
     .filter((paragraph) => paragraph.text.length > 0)
@@ -437,16 +491,22 @@ async function extractPptxSlides(blob: Blob): Promise<Array<{ slideNumber: numbe
     .filter((name) => /^ppt\/slides\/slide\d+\.xml$/u.test(name))
     .sort((left, right) => slideNumberFromPath(left) - slideNumberFromPath(right))
     .slice(0, 20);
-  const slides = await Promise.all(slideNames.map(async (name) => {
-    const xml = await zip.file(name)?.async("text");
-    const text = xml ? elementsByLocalName(parseXml(xml), "t").map((node) => node.textContent?.trim() ?? "").filter(Boolean) : [];
-    const [title, ...rest] = text;
-    return {
-      slideNumber: slideNumberFromPath(name),
-      ...(title ? { title } : {}),
-      text: rest.length ? rest : text
-    };
-  }));
+  const slides = await Promise.all(
+    slideNames.map(async (name) => {
+      const xml = await zip.file(name)?.async("text");
+      const text = xml
+        ? elementsByLocalName(parseXml(xml), "t")
+            .map((node) => node.textContent?.trim() ?? "")
+            .filter(Boolean)
+        : [];
+      const [title, ...rest] = text;
+      return {
+        slideNumber: slideNumberFromPath(name),
+        ...(title ? { title } : {}),
+        text: rest.length ? rest : text
+      };
+    })
+  );
   return slides.filter((slide) => slide.text.length || slide.title);
 }
 
@@ -459,17 +519,21 @@ async function extractXlsxSheets(blob: Blob): Promise<Array<{ name: string; rows
     .sort((left, right) => sheetNumberFromPath(left) - sheetNumberFromPath(right))
     .slice(0, 6);
 
-  const sheets = await Promise.all(sheetPaths.map(async (path, index) => {
-    const xml = await zip.file(path)?.async("text");
-    if (!xml) return { name: sheetNames[index] ?? `List ${index + 1}`, rows: [] };
-    const doc = parseXml(xml);
-    const rows = elementsByLocalName(doc, "row").slice(0, maxRows).map((row) => sheetRowValues(row, sharedStrings));
-    return {
-      name: sheetNames[index] ?? `List ${index + 1}`,
-      rows: rows.filter((row) => row.some((cell) => cell.trim().length > 0)),
-      truncated: elementsByLocalName(doc, "row").length > maxRows
-    };
-  }));
+  const sheets = await Promise.all(
+    sheetPaths.map(async (path, index) => {
+      const xml = await zip.file(path)?.async("text");
+      if (!xml) return { name: sheetNames[index] ?? `List ${index + 1}`, rows: [] };
+      const doc = parseXml(xml);
+      const rows = elementsByLocalName(doc, "row")
+        .slice(0, maxRows)
+        .map((row) => sheetRowValues(row, sharedStrings));
+      return {
+        name: sheetNames[index] ?? `List ${index + 1}`,
+        rows: rows.filter((row) => row.some((cell) => cell.trim().length > 0)),
+        truncated: elementsByLocalName(doc, "row").length > maxRows
+      };
+    })
+  );
   return sheets.filter((sheet) => sheet.rows.length > 0);
 }
 
@@ -526,35 +590,45 @@ async function readPossibleXmlFromBlob(blob: Blob): Promise<string> {
 async function readSharedStrings(zip: Awaited<ReturnType<typeof loadZip>>): Promise<string[]> {
   const xml = await zip.file("xl/sharedStrings.xml")?.async("text");
   if (!xml) return [];
-  return elementsByLocalName(parseXml(xml), "si").map((node) => elementsByLocalName(node, "t").map((part) => part.textContent ?? "").join(""));
+  return elementsByLocalName(parseXml(xml), "si").map((node) =>
+    elementsByLocalName(node, "t")
+      .map((part) => part.textContent ?? "")
+      .join("")
+  );
 }
 
 async function readWorkbookSheetNames(zip: Awaited<ReturnType<typeof loadZip>>): Promise<string[]> {
   const xml = await zip.file("xl/workbook.xml")?.async("text");
   if (!xml) return [];
-  return elementsByLocalName(parseXml(xml), "sheet").map((node) => node.getAttribute("name") ?? "").filter(Boolean);
+  return elementsByLocalName(parseXml(xml), "sheet")
+    .map((node) => node.getAttribute("name") ?? "")
+    .filter(Boolean);
 }
 
 function sheetRowValues(row: Element, sharedStrings: string[]): string[] {
   const values: string[] = [];
-  elementsByLocalName(row, "c").slice(0, maxColumns).forEach((cell) => {
-    const ref = cell.getAttribute("r");
-    const columnIndex = ref ? columnIndexFromCellRef(ref) : values.length;
-    while (values.length < columnIndex) values.push("");
-    values[columnIndex] = cellValue(cell, sharedStrings);
-  });
+  elementsByLocalName(row, "c")
+    .slice(0, maxColumns)
+    .forEach((cell) => {
+      const ref = cell.getAttribute("r");
+      const columnIndex = ref ? columnIndexFromCellRef(ref) : values.length;
+      while (values.length < columnIndex) values.push("");
+      values[columnIndex] = cellValue(cell, sharedStrings);
+    });
   return values.slice(0, maxColumns);
 }
 
 function cellValue(cell: Element, sharedStrings: string[]): string {
   const type = cell.getAttribute("t");
   if (type === "inlineStr") {
-    return elementsByLocalName(cell, "t").map((node) => node.textContent ?? "").join("");
+    return elementsByLocalName(cell, "t")
+      .map((node) => node.textContent ?? "")
+      .join("");
   }
   const value = childText(cell, "v");
   if (type === "s") {
     const index = Number.parseInt(value, 10);
-    return Number.isFinite(index) ? sharedStrings[index] ?? "" : "";
+    return Number.isFinite(index) ? (sharedStrings[index] ?? "") : "";
   }
   return value;
 }
@@ -567,10 +641,10 @@ function parseCsv(content: string): string[][] {
   for (let index = 0; index < content.length; index += 1) {
     const char = content[index];
     const next = content[index + 1];
-    if (char === "\"" && quoted && next === "\"") {
-      cell += "\"";
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
       index += 1;
-    } else if (char === "\"") {
+    } else if (char === '"') {
       quoted = !quoted;
     } else if (char === "," && !quoted) {
       row.push(cell.trim());
@@ -605,7 +679,10 @@ function elementsByLocalName(root: ParentNode, localName: string): Element[] {
 }
 
 function childText(root: ParentNode, localName: string): string {
-  return elementsByLocalName(root, localName).map((node) => node.textContent ?? "").join("").trim();
+  return elementsByLocalName(root, localName)
+    .map((node) => node.textContent ?? "")
+    .join("")
+    .trim();
 }
 
 function slideNumberFromPath(path: string): number {
@@ -622,7 +699,10 @@ function columnIndexFromCellRef(ref: string): number {
 }
 
 function simplifyType(type: string): string {
-  return type.replace(/^.*:/u, "").replace(/([a-z])([A-Z])/gu, "$1 $2").trim();
+  return type
+    .replace(/^.*:/u, "")
+    .replace(/([a-z])([A-Z])/gu, "$1 $2")
+    .trim();
 }
 
 function elementName(model: ChatArchiPreviewModel, id?: string): string {

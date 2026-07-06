@@ -71,7 +71,13 @@ describe("track history helpers", () => {
       },
       [
         { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
-        { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50.01, lon: 14.02, timestamp: "2026-05-19T08:10:00Z" }
+        {
+          objectId: "AIR_SIM_UAV-0001",
+          affiliation: "HOSTILE",
+          lat: 50.01,
+          lon: 14.02,
+          timestamp: "2026-05-19T08:10:00Z"
+        }
       ],
       10
     );
@@ -86,8 +92,20 @@ describe("track history helpers", () => {
       {
         "AIR_SIM_UAV-0001": [
           { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
-          { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50.01, lon: 14.01, timestamp: "2026-05-19T08:01:00Z" },
-          { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50.02, lon: 14.02, timestamp: "2026-05-19T08:02:00Z" }
+          {
+            objectId: "AIR_SIM_UAV-0001",
+            affiliation: "HOSTILE",
+            lat: 50.01,
+            lon: 14.01,
+            timestamp: "2026-05-19T08:01:00Z"
+          },
+          {
+            objectId: "AIR_SIM_UAV-0001",
+            affiliation: "HOSTILE",
+            lat: 50.02,
+            lon: 14.02,
+            timestamp: "2026-05-19T08:02:00Z"
+          }
         ]
       },
       2
@@ -104,8 +122,20 @@ describe("track history helpers", () => {
       {
         "AIR_SIM_UAV-0001": [
           { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
-          { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50.01, lon: 14.01, timestamp: "2026-05-19T08:01:30Z" },
-          { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50.02, lon: 14.02, timestamp: "2026-05-19T08:02:00Z" }
+          {
+            objectId: "AIR_SIM_UAV-0001",
+            affiliation: "HOSTILE",
+            lat: 50.01,
+            lon: 14.01,
+            timestamp: "2026-05-19T08:01:30Z"
+          },
+          {
+            objectId: "AIR_SIM_UAV-0001",
+            affiliation: "HOSTILE",
+            lat: 50.02,
+            lon: 14.02,
+            timestamp: "2026-05-19T08:02:00Z"
+          }
         ]
       },
       10,
@@ -156,8 +186,20 @@ describe("track history helpers", () => {
       },
       [
         { objectId: "AIR_SIM_UAV-0002", affiliation: "HOSTILE", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
-        { objectId: "AIR_SIM_UAV-0002", affiliation: "HOSTILE", lat: 50.01, lon: 14.02, timestamp: "2026-05-19T08:01:00Z" },
-        { objectId: "AIR_SIM_UAV-0002", affiliation: "HOSTILE", lat: 50.02, lon: 14.02, timestamp: "2026-05-19T08:02:00Z" }
+        {
+          objectId: "AIR_SIM_UAV-0002",
+          affiliation: "HOSTILE",
+          lat: 50.01,
+          lon: 14.02,
+          timestamp: "2026-05-19T08:01:00Z"
+        },
+        {
+          objectId: "AIR_SIM_UAV-0002",
+          affiliation: "HOSTILE",
+          lat: 50.02,
+          lon: 14.02,
+          timestamp: "2026-05-19T08:02:00Z"
+        }
       ],
       3,
       "maneuver"
@@ -182,10 +224,34 @@ describe("track history helpers", () => {
         movement: { speedMps: 115, headingDeg: 78, verticalRateMps: 1.2 }
       },
       [
-        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
-        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50.01, lon: 14.018, timestamp: "2026-05-19T08:01:00Z" },
-        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50.02, lon: 14.035, timestamp: "2026-05-19T08:02:00Z" },
-        { objectId: "AIR_SIM_AIRCRAFT-0003", affiliation: "FRIEND", lat: 50.03, lon: 14.05, timestamp: "2026-05-19T08:03:00Z" }
+        {
+          objectId: "AIR_SIM_AIRCRAFT-0003",
+          affiliation: "FRIEND",
+          lat: 50,
+          lon: 14,
+          timestamp: "2026-05-19T08:00:00Z"
+        },
+        {
+          objectId: "AIR_SIM_AIRCRAFT-0003",
+          affiliation: "FRIEND",
+          lat: 50.01,
+          lon: 14.018,
+          timestamp: "2026-05-19T08:01:00Z"
+        },
+        {
+          objectId: "AIR_SIM_AIRCRAFT-0003",
+          affiliation: "FRIEND",
+          lat: 50.02,
+          lon: 14.035,
+          timestamp: "2026-05-19T08:02:00Z"
+        },
+        {
+          objectId: "AIR_SIM_AIRCRAFT-0003",
+          affiliation: "FRIEND",
+          lat: 50.03,
+          lon: 14.05,
+          timestamp: "2026-05-19T08:03:00Z"
+        }
       ],
       8,
       "advanced"
@@ -204,10 +270,22 @@ describe("track history helpers", () => {
     const history = {
       "AIR_SIM_UAV-0001": [
         { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
-        { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50.1, lon: 14.1, timestamp: "2026-05-19T08:02:00Z" }
+        {
+          objectId: "AIR_SIM_UAV-0001",
+          affiliation: "HOSTILE",
+          lat: 50.1,
+          lon: 14.1,
+          timestamp: "2026-05-19T08:02:00Z"
+        }
       ],
       "AIR_SIM_AIRCRAFT-0002": [
-        { objectId: "AIR_SIM_AIRCRAFT-0002", affiliation: "FRIEND", lat: 49.9, lon: 13.9, timestamp: "2026-05-19T08:01:00Z" }
+        {
+          objectId: "AIR_SIM_AIRCRAFT-0002",
+          affiliation: "FRIEND",
+          lat: 49.9,
+          lon: 13.9,
+          timestamp: "2026-05-19T08:01:00Z"
+        }
       ]
     };
 
@@ -281,7 +359,13 @@ describe("track history helpers", () => {
       {
         "AIR_SIM_UAV-0001": [
           { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50, lon: 14, timestamp: "2026-05-19T08:00:00Z" },
-          { objectId: "AIR_SIM_UAV-0001", affiliation: "HOSTILE", lat: 50.1, lon: 14.1, timestamp: "2026-05-19T08:02:00Z" }
+          {
+            objectId: "AIR_SIM_UAV-0001",
+            affiliation: "HOSTILE",
+            lat: 50.1,
+            lon: 14.1,
+            timestamp: "2026-05-19T08:02:00Z"
+          }
         ]
       },
       "2026-05-19T08:01:00Z"

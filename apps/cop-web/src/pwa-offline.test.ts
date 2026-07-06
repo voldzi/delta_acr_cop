@@ -39,7 +39,10 @@ describe("PWA offline snapshot", () => {
   });
 
   it("returns null for invalid cached payloads", () => {
-    window.localStorage.setItem("cop.offline.snapshot.v1.lab", JSON.stringify({ version: 1, savedAt: "bad", data: { objects: [] } }));
+    window.localStorage.setItem(
+      "cop.offline.snapshot.v1.lab",
+      JSON.stringify({ version: 1, savedAt: "bad", data: { objects: [] } })
+    );
 
     expect(readCopOfflineSnapshot("lab")).toBeNull();
   });

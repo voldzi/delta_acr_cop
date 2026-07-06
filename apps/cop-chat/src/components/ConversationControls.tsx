@@ -146,15 +146,35 @@ export function MessageSearchBar({
   return (
     <div className="message-search-bar" role="search">
       <Search size={19} />
-      <input autoFocus aria-label="Hledat ve zprávách" placeholder="Hledat ve zprávách" value={query} onChange={(event) => onQueryChange(event.target.value)} />
+      <input
+        autoFocus
+        aria-label="Hledat ve zprávách"
+        placeholder="Hledat ve zprávách"
+        value={query}
+        onChange={(event) => onQueryChange(event.target.value)}
+      />
       <span>{query.trim() ? `${matchCount ? activeIndex + 1 : 0}/${matchCount}` : ""}</span>
-      <button className="round-icon small" disabled={matchCount === 0} onClick={() => onMove(-1)} type="button" aria-label="Předchozí výsledek">
+      <button
+        className="round-icon small"
+        disabled={matchCount === 0}
+        onClick={() => onMove(-1)}
+        type="button"
+        aria-label="Předchozí výsledek"
+      >
         <ChevronUp size={18} />
       </button>
-      <button className="round-icon small" disabled={matchCount === 0} onClick={() => onMove(1)} type="button" aria-label="Další výsledek">
+      <button
+        className="round-icon small"
+        disabled={matchCount === 0}
+        onClick={() => onMove(1)}
+        type="button"
+        aria-label="Další výsledek"
+      >
         <ChevronDown size={18} />
       </button>
-      <button className="search-done" onClick={onClose} type="button">Hotovo</button>
+      <button className="search-done" onClick={onClose} type="button">
+        Hotovo
+      </button>
     </div>
   );
 }
@@ -187,7 +207,9 @@ export function SelectionToolbar({
         <Share2 size={20} />
         Sdílet
       </button>
-      <button className="selection-cancel" onClick={onCancel} type="button">Zrušit</button>
+      <button className="selection-cancel" onClick={onCancel} type="button">
+        Zrušit
+      </button>
     </div>
   );
 }

@@ -2,8 +2,7 @@ import * as React from "react";
 import type { MatrixTimelineMessage } from "@cop/messaging/types";
 
 export type TimelineRow =
-  | { id: string; kind: "date"; label: string }
-  | { grouped: boolean; kind: "message"; message: MatrixTimelineMessage };
+  { id: string; kind: "date"; label: string } | { grouped: boolean; kind: "message"; message: MatrixTimelineMessage };
 
 const timelineVirtualizationThreshold = 80;
 const timelineVirtualizationOverscan = 10;
@@ -85,20 +84,24 @@ export function useVirtualTimelineRows(
     return () => observer.disconnect();
   }, [containerRef, refreshViewport]);
 
-  const scrollToRow = React.useCallback((index: number, block: "center" | "end" | "start" = "center") => {
-    const node = containerRef.current;
-    if (!node) {
-      return;
-    }
-    const rowStart = offsets[Math.max(0, Math.min(index, rows.length - 1))] ?? 0;
-    const rowHeight = heights[Math.max(0, Math.min(index, heights.length - 1))] ?? 52;
-    const nextTop = block === "start"
-      ? rowStart
-      : block === "end"
-        ? rowStart + rowHeight - node.clientHeight
-        : rowStart - Math.max(0, (node.clientHeight - rowHeight) / 2);
-    node.scrollTo({ behavior: "smooth", top: Math.max(0, nextTop) });
-  }, [containerRef, heights, offsets, rows.length]);
+  const scrollToRow = React.useCallback(
+    (index: number, block: "center" | "end" | "start" = "center") => {
+      const node = containerRef.current;
+      if (!node) {
+        return;
+      }
+      const rowStart = offsets[Math.max(0, Math.min(index, rows.length - 1))] ?? 0;
+      const rowHeight = heights[Math.max(0, Math.min(index, heights.length - 1))] ?? 52;
+      const nextTop =
+        block === "start"
+          ? rowStart
+          : block === "end"
+            ? rowStart + rowHeight - node.clientHeight
+            : rowStart - Math.max(0, (node.clientHeight - rowHeight) / 2);
+      node.scrollTo({ behavior: "smooth", top: Math.max(0, nextTop) });
+    },
+    [containerRef, heights, offsets, rows.length]
+  );
 
   if (!enabled) {
     return { enabled: false, endIndex: rows.length, paddingBottom: 0, paddingTop: 0, rows, scrollToRow, startIndex: 0 };
@@ -169,12 +172,13 @@ function estimateTimelineRowHeight(row: TimelineRow): number {
   const bodyLines = Math.max(1, Math.ceil(message.body.length / 54));
   const replyHeight = message.replyToEventId ? 58 : 0;
   const reactionHeight = message.reactions?.length ? 30 : 0;
-  const attachmentHeight = message.kind === "image" || message.kind === "video"
-    ? 236
-    : message.kind === "location"
-      ? 112
-      : message.kind === "file"
-        ? 84
-        : 0;
+  const attachmentHeight =
+    message.kind === "image" || message.kind === "video"
+      ? 236
+      : message.kind === "location"
+        ? 112
+        : message.kind === "file"
+          ? 84
+          : 0;
   return Math.max(48, 28 + bodyLines * 24 + replyHeight + reactionHeight + attachmentHeight);
 }

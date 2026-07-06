@@ -79,7 +79,10 @@ function distanceToAoi(geometry: SituationGeometry, aoiRule: AoiRule): number | 
   if (geometryContainsPoint(geometry, center)) {
     return 0;
   }
-  const minDistanceKm = points.reduce((minimum, point) => Math.min(minimum, distanceBetweenKm(center, point)), Number.POSITIVE_INFINITY);
+  const minDistanceKm = points.reduce(
+    (minimum, point) => Math.min(minimum, distanceBetweenKm(center, point)),
+    Number.POSITIVE_INFINITY
+  );
   return minDistanceKm <= radiusKm ? minDistanceKm : null;
 }
 
@@ -263,7 +266,7 @@ function localizedRecord(properties: SituationFeature["properties"]): Record<str
 }
 
 function recordValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function stringValue(value: unknown): string | undefined {

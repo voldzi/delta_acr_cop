@@ -9,12 +9,7 @@ describe("RemoveMemberDialog", () => {
   it("confirms removing a group member", () => {
     const onRemove = vi.fn();
     render(
-      <RemoveMemberDialog
-        groupName="Povodňový tým"
-        memberName="Terénní hlídka"
-        onClose={vi.fn()}
-        onRemove={onRemove}
-      />
+      <RemoveMemberDialog groupName="Povodňový tým" memberName="Terénní hlídka" onClose={vi.fn()} onRemove={onRemove} />
     );
 
     expect(screen.getByRole("dialog", { name: "Odebrat člena Terénní hlídka" })).toBeTruthy();
@@ -28,12 +23,7 @@ describe("RemoveMemberDialog", () => {
     const onClose = vi.fn();
     const onRemove = vi.fn();
     render(
-      <RemoveMemberDialog
-        groupName="Povodňový tým"
-        memberName="Terénní hlídka"
-        onClose={onClose}
-        onRemove={onRemove}
-      />
+      <RemoveMemberDialog groupName="Povodňový tým" memberName="Terénní hlídka" onClose={onClose} onRemove={onRemove} />
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Zrušit" }));

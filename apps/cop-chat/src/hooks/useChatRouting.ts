@@ -66,7 +66,11 @@ export function useChatRouting(): {
   setSelectedConversationId: (value: ChatRoutingSelectionValue) => void;
   setSelectedGroupId: (value: ChatRoutingSelectionValue) => void;
   setSelectedRoomId: (value: ChatRoutingSelectionValue) => void;
-  selectChatRoute: (selection: { conversationId?: string | null; groupId?: string | null; roomId?: string | null }) => void;
+  selectChatRoute: (selection: {
+    conversationId?: string | null;
+    groupId?: string | null;
+    roomId?: string | null;
+  }) => void;
 } {
   const [state, dispatch] = React.useReducer(chatRoutingReducer, {
     conversationId: null,
@@ -100,10 +104,8 @@ export function embeddedChatSelectionFromMessage(data: unknown): string | null {
 
 export function readRouteSelection(): string | null {
   const params = new URLSearchParams(window.location.search);
-  const querySelection = params.get("selection")
-    ?? params.get("groupId")
-    ?? params.get("conversationId")
-    ?? params.get("roomId");
+  const querySelection =
+    params.get("selection") ?? params.get("groupId") ?? params.get("conversationId") ?? params.get("roomId");
   if (querySelection?.trim()) {
     return querySelection.trim();
   }

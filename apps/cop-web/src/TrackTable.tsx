@@ -95,25 +95,28 @@ export default function TrackTable({ objects, selectedObjectId, onSelect }: Trac
           })}
         </div>
       ))}
-      {table.getRowModel().rows.slice(0, 10).map((row) => {
-        const object = row.original;
-        return (
-          <button
-            className={clsx("track-row", object.objectId === selectedObjectId && "selected")}
-            key={object.objectId}
-            onClick={() => onSelect(object.objectId)}
-            aria-selected={object.objectId === selectedObjectId}
-            role="row"
-            type="button"
-          >
-            {row.getVisibleCells().map((cell) => (
-              <span key={cell.id} title={cell.column.id === "label" ? object.objectId : undefined}>
-                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-              </span>
-            ))}
-          </button>
-        );
-      })}
+      {table
+        .getRowModel()
+        .rows.slice(0, 10)
+        .map((row) => {
+          const object = row.original;
+          return (
+            <button
+              className={clsx("track-row", object.objectId === selectedObjectId && "selected")}
+              key={object.objectId}
+              onClick={() => onSelect(object.objectId)}
+              aria-selected={object.objectId === selectedObjectId}
+              role="row"
+              type="button"
+            >
+              {row.getVisibleCells().map((cell) => (
+                <span key={cell.id} title={cell.column.id === "label" ? object.objectId : undefined}>
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </span>
+              ))}
+            </button>
+          );
+        })}
     </div>
   );
 }

@@ -22,31 +22,37 @@ function response(overrides: Partial<AiCopResponse> = {}): AiCopResponse {
       structured: {
         evidence: {
           indexed: {
-            citations: [{
-              citationId: "I1",
-              entityId: "report-1",
-              entityType: "communityReport",
-              label: "Stoupající hladina řeky"
-            }],
+            citations: [
+              {
+                citationId: "I1",
+                entityId: "report-1",
+                entityType: "communityReport",
+                label: "Stoupající hladina řeky"
+              }
+            ],
             documentCount: 1,
             matchedDocumentCount: 1,
             status: "ok"
           },
           priority: {
-            citations: [{
-              citationId: "P1",
-              entityId: "alert-1",
-              entityType: "alert",
-              label: "Aktivní výstraha"
-            }]
+            citations: [
+              {
+                citationId: "P1",
+                entityId: "alert-1",
+                entityType: "alert",
+                label: "Aktivní výstraha"
+              }
+            ]
           },
           semantic: {
-            citations: [{
-              citationId: "S1",
-              entityId: "incident-1",
-              entityType: "incident",
-              label: "Místní incident"
-            }],
+            citations: [
+              {
+                citationId: "S1",
+                entityId: "incident-1",
+                entityType: "incident",
+                label: "Místní incident"
+              }
+            ],
             documentCount: 2,
             model: "bge-m3",
             status: "ok"
@@ -123,6 +129,6 @@ describe("AiSituationDialog", () => {
   });
 
   it("falls back to structured JSON when the provider does not return text", () => {
-    expect(aiResponseSummary(response({ result: { structured: { ok: true } } }))).toContain("\"ok\": true");
+    expect(aiResponseSummary(response({ result: { structured: { ok: true } } }))).toContain('"ok": true');
   });
 });

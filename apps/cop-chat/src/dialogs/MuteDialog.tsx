@@ -26,10 +26,18 @@ export default function MuteDialog({
       >
         <h2>Ztlumit upozornění</h2>
         <p>Ostatní členové neuvidí, že jste chat ztlumil/a. Upozornění stále dostanete, pokud vás někdo zmíní.</p>
-        <button onClick={() => onMute("8h")} type="button">8 hodin</button>
-        <button onClick={() => onMute("1w")} type="button">1 týden</button>
-        <button onClick={() => onMute("forever")} type="button">Vždy</button>
-        <button onClick={onClose} type="button">Zrušit</button>
+        <button onClick={() => onMute("8h")} type="button">
+          8 hodin
+        </button>
+        <button onClick={() => onMute("1w")} type="button">
+          1 týden
+        </button>
+        <button onClick={() => onMute("forever")} type="button">
+          Vždy
+        </button>
+        <button onClick={onClose} type="button">
+          Zrušit
+        </button>
       </section>
     </div>
   );

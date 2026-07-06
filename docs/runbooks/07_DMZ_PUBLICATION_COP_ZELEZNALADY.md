@@ -366,6 +366,8 @@ Kontrola:
 curl -I http://cop.zeleznalady.cz
 curl -I https://cop.zeleznalady.cz
 curl -I https://cop.zeleznalady.cz/chat/
+curl -I -H 'Accept-Encoding: br, gzip' https://cop.zeleznalady.cz/assets/<current-index>.js
+curl -I https://cop.zeleznalady.cz/assets/__missing__.js
 curl -fsS https://cop.zeleznalady.cz/health/ready
 curl -fsS https://cop.zeleznalady.cz/metrics | grep cop_stream_clients_total
 dd if=/dev/zero bs=1M count=30 2>/dev/null | \
@@ -377,6 +379,10 @@ dd if=/dev/zero bs=1M count=30 2>/dev/null | \
 Upload limit probe nesmi vratit `413` z nginxu. Ocekavane je `401`, `404`
 nebo jina aplikacni odpoved z COP API, protoze test posila data na kontrolni
 neexistujici nebo neautorizovanou cestu.
+
+Statický asset dotaz s `Accept-Encoding` musí vracet `content-encoding: br`
+nebo `gzip` a hashed assety musí mít immutable cache. Chybějící asset pod
+`/assets/` musí vracet `404`, ne `200` s HTML fallbackem.
 
 V prohlizeci otevri:
 

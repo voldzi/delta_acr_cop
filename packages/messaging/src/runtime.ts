@@ -77,7 +77,10 @@ export function readStoredChatUnreadCount(): number | null {
   }
 }
 
-export async function fetchMatrixUnreadCount(bootstrap: MessagingBootstrapResponse, signal?: AbortSignal): Promise<number> {
+export async function fetchMatrixUnreadCount(
+  bootstrap: MessagingBootstrapResponse,
+  signal?: AbortSignal
+): Promise<number> {
   if (!bootstrap.homeserverBaseUrl || !bootstrap.accessToken) {
     return 0;
   }
@@ -94,14 +97,17 @@ export async function fetchMatrixUnreadCount(bootstrap: MessagingBootstrapRespon
     filter: JSON.stringify(filter),
     timeout: "0"
   });
-  const response = await fetch(`${trimTrailingSlash(bootstrap.homeserverBaseUrl)}/_matrix/client/v3/sync?${params.toString()}`, {
-    headers: { Authorization: `Bearer ${bootstrap.accessToken}` },
-    signal
-  });
+  const response = await fetch(
+    `${trimTrailingSlash(bootstrap.homeserverBaseUrl)}/_matrix/client/v3/sync?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${bootstrap.accessToken}` },
+      signal
+    }
+  );
   if (!response.ok) {
     throw new Error(`Matrix unread sync failed: ${response.status}`);
   }
-  const payload = await response.json() as MatrixSyncUnreadResponse;
+  const payload = (await response.json()) as MatrixSyncUnreadResponse;
   const joinedRooms = payload.rooms?.join ?? {};
   const inviteCount = Object.keys(payload.rooms?.invite ?? {}).length;
   const joinedCount = Object.values(joinedRooms).reduce((total, room) => {
@@ -114,12 +120,15 @@ export async function fetchMatrixUnreadCount(bootstrap: MessagingBootstrapRespon
 interface MatrixSyncUnreadResponse {
   rooms?: {
     invite?: Record<string, unknown>;
-    join?: Record<string, {
-      unread_notifications?: {
-        highlight_count?: number;
-        notification_count?: number;
-      };
-    }>;
+    join?: Record<
+      string,
+      {
+        unread_notifications?: {
+          highlight_count?: number;
+          notification_count?: number;
+        };
+      }
+    >;
   };
 }
 
@@ -137,11 +146,13 @@ function isValidMatrixDeviceId(value: string | null): value is string {
 }
 
 function stableStorageKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._=-]+/gu, "_")
-    .slice(0, 96) || "anonymous";
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._=-]+/gu, "_")
+      .slice(0, 96) || "anonymous"
+  );
 }
 
 function trimTrailingSlash(value: string): string {

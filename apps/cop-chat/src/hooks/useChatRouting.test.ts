@@ -46,18 +46,21 @@ describe("chatRoutingReducer", () => {
   });
 
   it("selects all ids atomically for route application", () => {
-    const state = chatRoutingReducer({
-      conversationId: "old",
-      groupId: "old-group",
-      roomId: "old-room",
-      routeApplied: false,
-      routeOpenAttemptKey: null
-    }, {
-      conversationId: "conv-2",
-      groupId: null,
-      roomId: "!room-2",
-      type: "select"
-    });
+    const state = chatRoutingReducer(
+      {
+        conversationId: "old",
+        groupId: "old-group",
+        roomId: "old-room",
+        routeApplied: false,
+        routeOpenAttemptKey: null
+      },
+      {
+        conversationId: "conv-2",
+        groupId: null,
+        roomId: "!room-2",
+        type: "select"
+      }
+    );
 
     expect(state).toMatchObject({ conversationId: "conv-2", groupId: null, roomId: "!room-2" });
   });

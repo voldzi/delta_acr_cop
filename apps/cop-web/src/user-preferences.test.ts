@@ -43,29 +43,35 @@ describe("user preferences helpers", () => {
   });
 
   it("stores user alert zones per local user scope", () => {
-    writeLocalAlertPreferences({
-      aoiRules: [
-        {
-          color: "#8cb6d8",
-          enabled: true,
-          fillOpacity: 0.14,
-          id: "zone-a",
-          lat: 50.1,
-          lon: 14.4,
-          name: "Testovací zóna",
-          polygon: {
-            coordinates: [[
-              [14.4, 50.1],
-              [14.5, 50.1],
-              [14.5, 50.2],
-              [14.4, 50.1]
-            ]],
-            type: "Polygon"
-          },
-          radiusKm: 12
-        }
-      ]
-    }, "operator-a", "2026-06-01T10:00:00.000Z");
+    writeLocalAlertPreferences(
+      {
+        aoiRules: [
+          {
+            color: "#8cb6d8",
+            enabled: true,
+            fillOpacity: 0.14,
+            id: "zone-a",
+            lat: 50.1,
+            lon: 14.4,
+            name: "Testovací zóna",
+            polygon: {
+              coordinates: [
+                [
+                  [14.4, 50.1],
+                  [14.5, 50.1],
+                  [14.5, 50.2],
+                  [14.4, 50.1]
+                ]
+              ],
+              type: "Polygon"
+            },
+            radiusKm: 12
+          }
+        ]
+      },
+      "operator-a",
+      "2026-06-01T10:00:00.000Z"
+    );
     writeLocalAlertPreferences({ aoiRules: [] }, "operator-b", "2026-06-01T11:00:00.000Z");
 
     expect(readLocalAlertPreferences("operator-a")).toMatchObject({
@@ -103,24 +109,26 @@ describe("user preferences helpers", () => {
   });
 
   it("normalizes workspace layout and operator profile preferences", () => {
-    expect(normalizeUserPreferences({
-      operatorProfile: {
-        avatarDataUrl: "data:image/webp;base64,AAAA",
-        contactNote: "  dostupný večer  ",
-        displayName: "Jan Novak",
-        phone: "+420 123",
-        publicContact: true
-      },
-      workspaceLayout: {
-        contextRailVisible: false,
-        leftPanelMode: "collapsed",
-        leftPanelWidth: 120,
-        rightPanelMode: "hidden",
-        rightPanelWidth: 900,
-        statusbarVisible: false
-      },
-      workspaceSkin: "field"
-    })).toMatchObject({
+    expect(
+      normalizeUserPreferences({
+        operatorProfile: {
+          avatarDataUrl: "data:image/webp;base64,AAAA",
+          contactNote: "  dostupný večer  ",
+          displayName: "Jan Novak",
+          phone: "+420 123",
+          publicContact: true
+        },
+        workspaceLayout: {
+          contextRailVisible: false,
+          leftPanelMode: "collapsed",
+          leftPanelWidth: 120,
+          rightPanelMode: "hidden",
+          rightPanelWidth: 900,
+          statusbarVisible: false
+        },
+        workspaceSkin: "field"
+      })
+    ).toMatchObject({
       operatorProfile: {
         avatarDataUrl: "data:image/webp;base64,AAAA",
         contactNote: "dostupný večer",

@@ -51,7 +51,12 @@ export function readWebPushPermissionState(): WebPushUiState {
     permission,
     registered: Boolean(deviceId) && permission === "granted",
     standalone: isPwaStandalone(),
-    status: permission === "denied" ? "permission-denied" : Boolean(deviceId) && permission === "granted" ? "registered" : "available",
+    status:
+      permission === "denied"
+        ? "permission-denied"
+        : Boolean(deviceId) && permission === "granted"
+          ? "registered"
+          : "available",
     warnings: []
   };
 }
@@ -187,12 +192,15 @@ export async function disableWebPushNotifications(apiBase: string, token: string
 
   const deviceId = readStoredDeviceId();
   if (deviceId) {
-    await fetchJson<WebPushDeviceRegistrationResponse>(`${apiBase}/api/v1/push/web/devices/${encodeURIComponent(deviceId)}`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      },
-      method: "DELETE"
-    });
+    await fetchJson<WebPushDeviceRegistrationResponse>(
+      `${apiBase}/api/v1/push/web/devices/${encodeURIComponent(deviceId)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        method: "DELETE"
+      }
+    );
   }
 
   const registration = await navigator.serviceWorker.getRegistration("/");
@@ -212,7 +220,10 @@ export async function disableWebPushNotifications(apiBase: string, token: string
   };
 }
 
-async function subscribeBrowser(registration: ServiceWorkerRegistration, vapidPublicKey: string): Promise<PushSubscription> {
+async function subscribeBrowser(
+  registration: ServiceWorkerRegistration,
+  vapidPublicKey: string
+): Promise<PushSubscription> {
   const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
   const existing = await registration.pushManager.getSubscription();
   if (existing && pushSubscriptionUsesApplicationServerKey(existing, applicationServerKey)) {
@@ -265,7 +276,9 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 function isWebPushSupported(): boolean {
-  return typeof window !== "undefined" && "Notification" in window && "serviceWorker" in navigator && "PushManager" in window;
+  return (
+    typeof window !== "undefined" && "Notification" in window && "serviceWorker" in navigator && "PushManager" in window
+  );
 }
 
 function isPwaStandalone(): boolean {
@@ -274,13 +287,16 @@ function isPwaStandalone(): boolean {
   }
   const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
   return Boolean(
-    window.matchMedia?.("(display-mode: standalone)").matches
-      || window.matchMedia?.("(display-mode: fullscreen)").matches
-      || navigatorWithStandalone.standalone === true
+    window.matchMedia?.("(display-mode: standalone)").matches ||
+    window.matchMedia?.("(display-mode: fullscreen)").matches ||
+    navigatorWithStandalone.standalone === true
   );
 }
 
-function pushSubscriptionUsesApplicationServerKey(subscription: PushSubscription, expectedKey: Uint8Array<ArrayBuffer>): boolean {
+function pushSubscriptionUsesApplicationServerKey(
+  subscription: PushSubscription,
+  expectedKey: Uint8Array<ArrayBuffer>
+): boolean {
   const existingKey = subscription.options.applicationServerKey;
   if (!existingKey) {
     return true;

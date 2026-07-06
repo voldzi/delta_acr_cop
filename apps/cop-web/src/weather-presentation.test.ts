@@ -69,7 +69,9 @@ describe("weather presentation", () => {
 
     expect(isMeasuredWeatherStationFeature(item)).toBe(true);
     expect(weatherFeatureHeadline(item)).toBe("Milešovka");
-    expect(weatherFeatureValueLabel(item, item.properties.metrics as Record<string, unknown>)).toBe("27 °C · vítr 9 m/s");
+    expect(weatherFeatureValueLabel(item, item.properties.metrics as Record<string, unknown>)).toBe(
+      "27 °C · vítr 9 m/s"
+    );
     expect(weatherFeatureConditionLabel(item, item.properties.metrics as Record<string, unknown>)).toBe("větrno");
     expect(weatherContextDetailRows(item).map(([label]) => label)).toContain("Teplota");
   });

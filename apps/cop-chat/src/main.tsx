@@ -25,7 +25,9 @@ class ChatErrorBoundary extends React.Component<{ children: React.ReactNode }, C
         <div className="chat-fatal-error" role="alert">
           <h1>Chat se neočekávaně ukončil</h1>
           <p>Omlouváme se, došlo k chybě. Zkuste aplikaci načíst znovu.</p>
-          <button onClick={() => window.location.reload()} type="button">Načíst znovu</button>
+          <button onClick={() => window.location.reload()} type="button">
+            Načíst znovu
+          </button>
         </div>
       );
     }

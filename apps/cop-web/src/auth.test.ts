@@ -49,7 +49,12 @@ describe("web auth helpers", () => {
   });
 
   it("prefers an OIDC access token over the public lab token", () => {
-    expect(getAuthorizationToken({ accessToken: "oidc-token", expiresAt: Date.now() + 120_000, status: "authenticated" }, "lab-token")).toBe("oidc-token");
+    expect(
+      getAuthorizationToken(
+        { accessToken: "oidc-token", expiresAt: Date.now() + 120_000, status: "authenticated" },
+        "lab-token"
+      )
+    ).toBe("oidc-token");
     expect(getAuthorizationToken({ status: "lab" }, "lab-token")).toBe("lab-token");
     expect(getAuthorizationToken({ status: "anonymous" }, "lab-token")).toBeUndefined();
   });
@@ -83,7 +88,9 @@ describe("web auth helpers", () => {
   it("decodes JWT payloads for operator display data", () => {
     const token = [
       base64Url(JSON.stringify({ alg: "none" })),
-      base64Url(JSON.stringify({ email: "operator@example.test", name: "COP Operator", preferred_username: "operator" })),
+      base64Url(
+        JSON.stringify({ email: "operator@example.test", name: "COP Operator", preferred_username: "operator" })
+      ),
       ""
     ].join(".");
 
@@ -95,12 +102,15 @@ describe("web auth helpers", () => {
   });
 
   it("restores an active OIDC session from persistent storage after reload", () => {
-    window.localStorage.setItem("cop.oidc.session.v1", JSON.stringify({
-      accessToken: "persisted-token",
-      expiresAt: Date.now() + 120_000,
-      profile: { name: "COP Operator", username: "operator" },
-      refreshToken: "persisted-refresh"
-    }));
+    window.localStorage.setItem(
+      "cop.oidc.session.v1",
+      JSON.stringify({
+        accessToken: "persisted-token",
+        expiresAt: Date.now() + 120_000,
+        profile: { name: "COP Operator", username: "operator" },
+        refreshToken: "persisted-refresh"
+      })
+    );
 
     expect(createInitialAuthSession(oidcConfig())).toMatchObject({
       accessToken: "persisted-token",
@@ -110,40 +120,57 @@ describe("web auth helpers", () => {
   });
 
   it("extracts stable subject IDs from active and stored sessions", () => {
-    expect(subjectIdFromAuthSession({
-      accessToken: "token",
-      expiresAt: Date.now() + 120_000,
-      profile: { email: "operator@example.test", name: "COP Operator", subjectId: "subject-1", username: "operator" },
-      status: "authenticated"
-    })).toBe("subject-1");
-    expect(subjectIdFromAuthSession({
-      profile: { email: "operator@example.test", name: "COP Operator", username: "operator" },
-      status: "authenticated"
-    })).toBe("operator");
-    expect(subjectIdFromStoredAuthValue(JSON.stringify({
-      accessToken: "stored-token",
-      expiresAt: Date.now() + 120_000,
-      profile: { name: "Stored Operator", subjectId: "stored-subject", username: "stored" }
-    }))).toBe("stored-subject");
+    expect(
+      subjectIdFromAuthSession({
+        accessToken: "token",
+        expiresAt: Date.now() + 120_000,
+        profile: { email: "operator@example.test", name: "COP Operator", subjectId: "subject-1", username: "operator" },
+        status: "authenticated"
+      })
+    ).toBe("subject-1");
+    expect(
+      subjectIdFromAuthSession({
+        profile: { email: "operator@example.test", name: "COP Operator", username: "operator" },
+        status: "authenticated"
+      })
+    ).toBe("operator");
+    expect(
+      subjectIdFromStoredAuthValue(
+        JSON.stringify({
+          accessToken: "stored-token",
+          expiresAt: Date.now() + 120_000,
+          profile: { name: "Stored Operator", subjectId: "stored-subject", username: "stored" }
+        })
+      )
+    ).toBe("stored-subject");
     expect(subjectIdFromStoredAuthValue(null)).toBeUndefined();
     expect(subjectIdFromStoredAuthValue("{bad json")).toBeUndefined();
   });
 
   it("refreshes an expired persisted OIDC session instead of dropping it to anonymous", async () => {
-    window.localStorage.setItem("cop.oidc.session.v1", JSON.stringify({
-      accessToken: "expired-token",
-      expiresAt: Date.now() - 10_000,
-      profile: { name: "COP Operator", username: "operator" },
-      refreshToken: "persisted-refresh"
-    }));
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      json: async () => ({
-        access_token: unsignedJwt({ name: "COP Operator", preferred_username: "operator", sub: "user-1" }),
-        expires_in: 300,
-        refresh_token: "next-refresh"
-      }),
-      ok: true
-    } as Response)));
+    window.localStorage.setItem(
+      "cop.oidc.session.v1",
+      JSON.stringify({
+        accessToken: "expired-token",
+        expiresAt: Date.now() - 10_000,
+        profile: { name: "COP Operator", username: "operator" },
+        refreshToken: "persisted-refresh"
+      })
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          ({
+            json: async () => ({
+              access_token: unsignedJwt({ name: "COP Operator", preferred_username: "operator", sub: "user-1" }),
+              expires_in: 300,
+              refresh_token: "next-refresh"
+            }),
+            ok: true
+          }) as Response
+      )
+    );
 
     const session = await initializeAuth(oidcConfig());
     const stored = JSON.parse(window.localStorage.getItem("cop.oidc.session.v1") ?? "{}") as { refreshToken?: string };
@@ -157,21 +184,26 @@ describe("web auth helpers", () => {
 
   it("exchanges an OIDC callback when embedded browser storage only preserves the cookie fallback", async () => {
     window.history.pushState({}, "", "/?code=callback-code&state=callback-state");
-    document.cookie = `cop_oidc_callback_v1=${encodeURIComponent(JSON.stringify({
-      expiresAt: Date.now() + 120_000,
-      redirectUri: "https://cop.example.test/",
-      returnUrl: "/chat/",
-      state: "callback-state",
-      verifier: "pkce-verifier"
-    }))}`;
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => ({
-      json: async () => ({
-        access_token: unsignedJwt({ name: "COP Operator", preferred_username: "operator", sub: "user-1" }),
-        expires_in: 300,
-        refresh_token: "next-refresh"
-      }),
-      ok: true
-    } as Response));
+    document.cookie = `cop_oidc_callback_v1=${encodeURIComponent(
+      JSON.stringify({
+        expiresAt: Date.now() + 120_000,
+        redirectUri: "https://cop.example.test/",
+        returnUrl: "/chat/",
+        state: "callback-state",
+        verifier: "pkce-verifier"
+      })
+    )}`;
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        ({
+          json: async () => ({
+            access_token: unsignedJwt({ name: "COP Operator", preferred_username: "operator", sub: "user-1" }),
+            expires_in: 300,
+            refresh_token: "next-refresh"
+          }),
+          ok: true
+        }) as Response
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     expect(document.cookie).toContain("cop_oidc_callback_v1=");
@@ -191,17 +223,26 @@ describe("web auth helpers", () => {
   });
 
   it("does not clear a still-valid stored session when startup refresh temporarily fails", async () => {
-    window.localStorage.setItem("cop.oidc.session.v1", JSON.stringify({
-      accessToken: "near-expiry-token",
-      expiresAt: Date.now() + 20_000,
-      profile: { name: "COP Operator", username: "operator" },
-      refreshToken: "persisted-refresh"
-    }));
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      json: async () => ({ error: "temporarily_unavailable" }),
-      ok: false,
-      status: 503
-    } as Response)));
+    window.localStorage.setItem(
+      "cop.oidc.session.v1",
+      JSON.stringify({
+        accessToken: "near-expiry-token",
+        expiresAt: Date.now() + 20_000,
+        profile: { name: "COP Operator", username: "operator" },
+        refreshToken: "persisted-refresh"
+      })
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          ({
+            json: async () => ({ error: "temporarily_unavailable" }),
+            ok: false,
+            status: 503
+          }) as Response
+      )
+    );
 
     const session = await initializeAuth(oidcConfig());
 
@@ -214,22 +255,31 @@ describe("web auth helpers", () => {
   });
 
   it("records session diagnostics without storing token values", async () => {
-    window.localStorage.setItem("cop.oidc.session.v1", JSON.stringify({
-      accessToken: "expired-access-secret",
-      expiresAt: Date.now() - 10_000,
-      idToken: "expired-id-secret",
-      profile: { name: "COP Operator", username: "operator" },
-      refreshToken: "persisted-refresh-secret"
-    }));
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      json: async () => ({
-        access_token: unsignedJwt({ name: "COP Operator", preferred_username: "operator", sub: "user-1" }),
-        expires_in: 300,
-        id_token: "next-id-secret",
-        refresh_token: "next-refresh-secret"
-      }),
-      ok: true
-    } as Response)));
+    window.localStorage.setItem(
+      "cop.oidc.session.v1",
+      JSON.stringify({
+        accessToken: "expired-access-secret",
+        expiresAt: Date.now() - 10_000,
+        idToken: "expired-id-secret",
+        profile: { name: "COP Operator", username: "operator" },
+        refreshToken: "persisted-refresh-secret"
+      })
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          ({
+            json: async () => ({
+              access_token: unsignedJwt({ name: "COP Operator", preferred_username: "operator", sub: "user-1" }),
+              expires_in: 300,
+              id_token: "next-id-secret",
+              refresh_token: "next-refresh-secret"
+            }),
+            ok: true
+          }) as Response
+      )
+    );
 
     const session = await initializeAuth(oidcConfig());
     const diagnostics = readAuthDiagnostics();
@@ -252,13 +302,23 @@ describe("web auth helpers", () => {
   });
 
   it("can refresh the active request session for a retry after API 401", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      json: async () => ({
-        access_token: unsignedJwt({ email: "operator@example.test", name: "COP Operator", preferred_username: "operator" }),
-        expires_in: 300
-      }),
-      ok: true
-    } as Response)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          ({
+            json: async () => ({
+              access_token: unsignedJwt({
+                email: "operator@example.test",
+                name: "COP Operator",
+                preferred_username: "operator"
+              }),
+              expires_in: 300
+            }),
+            ok: true
+          }) as Response
+      )
+    );
 
     const session = await refreshAuthSession(oidcConfig(), {
       accessToken: "rejected-token",
@@ -280,11 +340,7 @@ function base64Url(value: string): string {
 }
 
 function unsignedJwt(payload: Record<string, unknown>): string {
-  return [
-    base64Url(JSON.stringify({ alg: "none" })),
-    base64Url(JSON.stringify(payload)),
-    ""
-  ].join(".");
+  return [base64Url(JSON.stringify({ alg: "none" })), base64Url(JSON.stringify(payload)), ""].join(".");
 }
 
 function oidcConfig(): AuthConfig {

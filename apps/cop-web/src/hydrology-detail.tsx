@@ -35,7 +35,10 @@ export function SafetyRiskSummary({
   const metrics = isRecord(properties.metrics) ? properties.metrics : {};
   const isFlood = properties.layer === "flood";
   const status = isFlood ? null : safetyFeatureStatusModel(feature);
-  const hydroDetailUrl = React.useMemo(() => hydrologyDetailUrl(properties), [properties.detailUrl, properties.stationId, properties.tags, properties.timelineUrl]);
+  const hydroDetailUrl = React.useMemo(
+    () => hydrologyDetailUrl(properties),
+    [properties.detailUrl, properties.stationId, properties.tags, properties.timelineUrl]
+  );
   const [hydroDetail, setHydroDetail] = React.useState<HydroStationDetailResponse | null>(null);
   const [hydroError, setHydroError] = React.useState<string | null>(null);
   const [hydroLoading, setHydroLoading] = React.useState(false);
@@ -49,7 +52,9 @@ export function SafetyRiskSummary({
       setHydroDetail(await fetchSafetyHydroStationDetail(apiBase, authToken, hydroDetailUrl));
     } catch (error) {
       setHydroDetail(null);
-      setHydroError(error instanceof Error ? humanizeApiError(error.message) : "Detail hydrologické stanice se nepodařilo načíst.");
+      setHydroError(
+        error instanceof Error ? humanizeApiError(error.message) : "Detail hydrologické stanice se nepodařilo načíst."
+      );
     } finally {
       setHydroLoading(false);
     }
@@ -70,19 +75,21 @@ export function SafetyRiskSummary({
   const canonicalSourceSystem = safetyCanonicalSourceSystem(properties);
   const presentation = safetyProviderPresentation(properties);
   const detailText = safetyDetailText(properties);
-  const rows: Array<[string, React.ReactNode]> = isFlood ? [] : [
-    ["Jev", safetyDisplayLabel(properties)],
-    ["Typ jevu", canonicalTypeCode ? humanizeSafetyTypeCode(canonicalTypeCode) : "n/a"],
-    ["Strojový typ", canonicalTypeCode ?? "n/a"],
-    ["Stav", status ? <StatusBadge key="status" label={status.label} tone={status.tone} /> : "n/a"],
-    ["Oblast", properties.areaName ?? properties.affectedArea ?? formatStringList(properties.affectedAreas)],
-    ["Geometrie", safetyGeometryModeLabel(properties.geometryMode, feature.geometry.type)],
-    ["Platí od", formatShortDateTime(properties.validFrom ?? properties.effectiveAt)],
-    ["Platí do", formatShortDateTime(properties.validUntil ?? properties.expiresAt)],
-    ["Zdroj", properties.sourceName ?? properties.source ?? properties.sourceId],
-    ["Podklady", safetyBasisLabel(properties.basis)],
-    ["Push kandidát", safetyNotificationEligibleLabel(properties)]
-  ];
+  const rows: Array<[string, React.ReactNode]> = isFlood
+    ? []
+    : [
+        ["Jev", safetyDisplayLabel(properties)],
+        ["Typ jevu", canonicalTypeCode ? humanizeSafetyTypeCode(canonicalTypeCode) : "n/a"],
+        ["Strojový typ", canonicalTypeCode ?? "n/a"],
+        ["Stav", status ? <StatusBadge key="status" label={status.label} tone={status.tone} /> : "n/a"],
+        ["Oblast", properties.areaName ?? properties.affectedArea ?? formatStringList(properties.affectedAreas)],
+        ["Geometrie", safetyGeometryModeLabel(properties.geometryMode, feature.geometry.type)],
+        ["Platí od", formatShortDateTime(properties.validFrom ?? properties.effectiveAt)],
+        ["Platí do", formatShortDateTime(properties.validUntil ?? properties.expiresAt)],
+        ["Zdroj", properties.sourceName ?? properties.source ?? properties.sourceId],
+        ["Podklady", safetyBasisLabel(properties.basis)],
+        ["Push kandidát", safetyNotificationEligibleLabel(properties)]
+      ];
   if (!isFlood && canonicalSourceCode) {
     rows.splice(3, 0, ["Zdrojový kód", canonicalSourceCode]);
   }
@@ -102,10 +109,20 @@ export function SafetyRiskSummary({
   if (isFlood) {
     rows.push(
       ["Tok", properties.riverName ?? "n/a"],
-      ["Stanice", properties.areaName ? [properties.areaName, properties.stationId].filter(Boolean).join(" · ") : properties.stationId ?? "n/a"],
+      [
+        "Stanice",
+        properties.areaName
+          ? [properties.areaName, properties.stationId].filter(Boolean).join(" · ")
+          : (properties.stationId ?? "n/a")
+      ],
       ["Předpověď", formatHydroForecast(properties, metrics)],
       ["Stáří měření", formatDurationSeconds(safetyMetricNumber(properties, metrics, "observationAgeSeconds"))],
-      ["Povodí", properties.basin ?? recordString(isRecord(properties.tags) ? properties.tags : undefined, "hydrologicalOrder") ?? "n/a"],
+      [
+        "Povodí",
+        properties.basin ??
+          recordString(isRecord(properties.tags) ? properties.tags : undefined, "hydrologicalOrder") ??
+          "n/a"
+      ],
       ["Plocha povodí", formatOptionalNumber(safetyMetricNumber(properties, metrics, "catchmentAreaKm2"), " km2")],
       ["Prahy SPA", formatFloodThresholds(metrics)]
     );
@@ -137,7 +154,13 @@ export function SafetyRiskSummary({
   );
 }
 
-function HydrologyStatusOverview({ feature, metrics }: { feature: SituationFeature; metrics: Record<string, unknown> }) {
+function HydrologyStatusOverview({
+  feature,
+  metrics
+}: {
+  feature: SituationFeature;
+  metrics: Record<string, unknown>;
+}) {
   const properties = feature.properties;
   const floodStage = safetyMetricNumber(properties, metrics, "floodStage", "floodActivityLevel") ?? 0;
   const stage = floodStageStatusModel(floodStage);
@@ -159,7 +182,9 @@ function HydrologyStatusOverview({ feature, metrics }: { feature: SituationFeatu
       </div>
       <div className="hydro-status-card neutral">
         <span>Průtok</span>
-        <strong>{formatOptionalNumber(safetyMetricNumber(properties, metrics, "discharge", "flowM3s"), " m3/s")}</strong>
+        <strong>
+          {formatOptionalNumber(safetyMetricNumber(properties, metrics, "discharge", "flowM3s"), " m3/s")}
+        </strong>
       </div>
       <div className="hydro-status-card neutral">
         <span>Teplota vody</span>
@@ -190,7 +215,11 @@ function HydroStationDetailCard({
       <div className="hydro-detail-header">
         <div>
           <strong>{detail?.chart.title ?? "Detail hlásného profilu"}</strong>
-          <span>{detail ? `${formatShortDateTime(detail.window.from)} - ${formatShortDateTime(detail.window.to)}` : "Časová řada ČHMÚ"}</span>
+          <span>
+            {detail
+              ? `${formatShortDateTime(detail.window.from)} - ${formatShortDateTime(detail.window.to)}`
+              : "Časová řada ČHMÚ"}
+          </span>
         </div>
         <button className="mini-button" disabled={loading} onClick={onRefresh} type="button">
           {loading ? "Načítám" : "Obnovit"}
@@ -199,13 +228,17 @@ function HydroStationDetailCard({
       {error ? <div className="hydro-detail-error">{error}</div> : null}
       {loading && !detail ? <div className="hydro-detail-empty">Načítám hydrologická měření...</div> : null}
       {detail ? <HydroStationChart detail={detail} /> : null}
-      {detail?.warnings.length ? <div className="hydro-detail-warning">{detail.warnings.slice(0, 2).join(" · ")}</div> : null}
+      {detail?.warnings.length ? (
+        <div className="hydro-detail-warning">{detail.warnings.slice(0, 2).join(" · ")}</div>
+      ) : null}
     </div>
   );
 }
 
 function HydroStationChart({ detail }: { detail: HydroStationDetailResponse }) {
-  const panels = detail.chart.panels.filter((panel) => panel.seriesIds.some((seriesId) => hydroSeriesById(detail, seriesId)?.points.length));
+  const panels = detail.chart.panels.filter((panel) =>
+    panel.seriesIds.some((seriesId) => hydroSeriesById(detail, seriesId)?.points.length)
+  );
   if (panels.length === 0) {
     return <div className="hydro-detail-empty">Pro zvolené období zatím nejsou dostupné hodnoty grafu.</div>;
   }
@@ -215,11 +248,21 @@ function HydroStationChart({ detail }: { detail: HydroStationDetailResponse }) {
         <HydroChartPanel detail={detail} key={panel.id} panel={panel} />
       ))}
       <div className="hydro-chart-legend">
-        <span><i className="legend-line measured" /> měření</span>
-        <span><i className="legend-line forecast" /> předpověď</span>
-        <span><i className="legend-line dry" /> sucho</span>
-        <span><i className="legend-line spa" /> SPA</span>
-        <span><i className="legend-line now" /> aktuální čas</span>
+        <span>
+          <i className="legend-line measured" /> měření
+        </span>
+        <span>
+          <i className="legend-line forecast" /> předpověď
+        </span>
+        <span>
+          <i className="legend-line dry" /> sucho
+        </span>
+        <span>
+          <i className="legend-line spa" /> SPA
+        </span>
+        <span>
+          <i className="legend-line now" /> aktuální čas
+        </span>
       </div>
     </div>
   );
@@ -244,41 +287,58 @@ function HydroChartPanel({
   const padding = { bottom: 26, left: 54, right: 16, top: 20 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  const x = (at: string) => padding.left + ((Date.parse(at) - timeDomain.min) / Math.max(1, timeDomain.max - timeDomain.min)) * chartWidth;
-  const y = (value: number) => padding.top + chartHeight - ((value - valueDomain.min) / Math.max(1, valueDomain.max - valueDomain.min)) * chartHeight;
+  const x = (at: string) =>
+    padding.left + ((Date.parse(at) - timeDomain.min) / Math.max(1, timeDomain.max - timeDomain.min)) * chartWidth;
+  const y = (value: number) =>
+    padding.top +
+    chartHeight -
+    ((value - valueDomain.min) / Math.max(1, valueDomain.max - valueDomain.min)) * chartHeight;
   const nowX = x(detail.chart.currentTime);
   const [focusTime, setFocusTime] = React.useState<number | null>(null);
-  const updateFocusFromPointer = React.useCallback((event: React.PointerEvent<SVGSVGElement>) => {
-    setFocusTime(hydroChartPointerTime(event, width, padding.left, chartWidth, timeDomain));
-  }, [chartWidth, timeDomain.max, timeDomain.min]);
-  const handlePointerDown = React.useCallback((event: React.PointerEvent<SVGSVGElement>) => {
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    updateFocusFromPointer(event);
-  }, [updateFocusFromPointer]);
+  const updateFocusFromPointer = React.useCallback(
+    (event: React.PointerEvent<SVGSVGElement>) => {
+      setFocusTime(hydroChartPointerTime(event, width, padding.left, chartWidth, timeDomain));
+    },
+    [chartWidth, timeDomain.max, timeDomain.min]
+  );
+  const handlePointerDown = React.useCallback(
+    (event: React.PointerEvent<SVGSVGElement>) => {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      updateFocusFromPointer(event);
+    },
+    [updateFocusFromPointer]
+  );
   const handlePointerLeave = React.useCallback(() => setFocusTime(null), []);
-  const focusItems = focusTime === null ? [] : series.flatMap((item) => {
-    const point = nearestHydroChartPoint(item.points, focusTime);
-    if (!point) {
-      return [];
-    }
-    return [{
-      colorClass: `${item.role === "forecast" ? "forecast" : "measured"} ${item.id}`,
-      label: item.label,
-      time: point.at,
-      value: point.value,
-      x: x(point.at),
-      y: y(point.value),
-      valueLabel: formatHydroAxisValue(point.value, panel.yAxis.unit)
-    }];
-  });
-  const focusX = focusTime === null
-    ? null
-    : padding.left + ((focusTime - timeDomain.min) / Math.max(1, timeDomain.max - timeDomain.min)) * chartWidth;
+  const focusItems =
+    focusTime === null
+      ? []
+      : series.flatMap((item) => {
+          const point = nearestHydroChartPoint(item.points, focusTime);
+          if (!point) {
+            return [];
+          }
+          return [
+            {
+              colorClass: `${item.role === "forecast" ? "forecast" : "measured"} ${item.id}`,
+              label: item.label,
+              time: point.at,
+              value: point.value,
+              x: x(point.at),
+              y: y(point.value),
+              valueLabel: formatHydroAxisValue(point.value, panel.yAxis.unit)
+            }
+          ];
+        });
+  const focusX =
+    focusTime === null
+      ? null
+      : padding.left + ((focusTime - timeDomain.min) / Math.max(1, timeDomain.max - timeDomain.min)) * chartWidth;
   const tooltipWidth = 190;
   const tooltipHeight = Math.max(42, 22 + focusItems.length * 15);
-  const tooltipX = focusX !== null && focusX > padding.left + chartWidth - tooltipWidth - 10
-    ? padding.left + 8
-    : Math.min((focusX ?? padding.left) + 10, padding.left + chartWidth - tooltipWidth);
+  const tooltipX =
+    focusX !== null && focusX > padding.left + chartWidth - tooltipWidth - 10
+      ? padding.left + 8
+      : Math.min((focusX ?? padding.left) + 10, padding.left + chartWidth - tooltipWidth);
   const tooltipY = padding.top + 6;
 
   return (
@@ -297,19 +357,49 @@ function HydroChartPanel({
         role="img"
         viewBox={`0 0 ${width} ${height}`}
       >
-        <line className="hydro-axis" x1={padding.left} x2={padding.left + chartWidth} y1={padding.top + chartHeight} y2={padding.top + chartHeight} />
-        <line className="hydro-axis" x1={padding.left} x2={padding.left} y1={padding.top} y2={padding.top + chartHeight} />
-        <text className="hydro-axis-label" x={padding.left} y={height - 6}>{formatShortTime(timeDomain.min)}</text>
-        <text className="hydro-axis-label end" x={padding.left + chartWidth} y={height - 6}>{formatShortTime(timeDomain.max)}</text>
-        <text className="hydro-axis-label" x={4} y={padding.top + 6}>{formatHydroAxisValue(valueDomain.max, panel.yAxis.unit)}</text>
-        <text className="hydro-axis-label" x={4} y={padding.top + chartHeight}>{formatHydroAxisValue(valueDomain.min, panel.yAxis.unit)}</text>
+        <line
+          className="hydro-axis"
+          x1={padding.left}
+          x2={padding.left + chartWidth}
+          y1={padding.top + chartHeight}
+          y2={padding.top + chartHeight}
+        />
+        <line
+          className="hydro-axis"
+          x1={padding.left}
+          x2={padding.left}
+          y1={padding.top}
+          y2={padding.top + chartHeight}
+        />
+        <text className="hydro-axis-label" x={padding.left} y={height - 6}>
+          {formatShortTime(timeDomain.min)}
+        </text>
+        <text className="hydro-axis-label end" x={padding.left + chartWidth} y={height - 6}>
+          {formatShortTime(timeDomain.max)}
+        </text>
+        <text className="hydro-axis-label" x={4} y={padding.top + 6}>
+          {formatHydroAxisValue(valueDomain.max, panel.yAxis.unit)}
+        </text>
+        <text className="hydro-axis-label" x={4} y={padding.top + chartHeight}>
+          {formatHydroAxisValue(valueDomain.min, panel.yAxis.unit)}
+        </text>
         {hydroThresholdLines(detail, panel.thresholdSet).map((line) => (
           <g key={line.key}>
-            <line className={`hydro-threshold ${line.key}`} x1={padding.left} x2={padding.left + chartWidth} y1={y(line.value)} y2={y(line.value)} />
-            <text className={`hydro-threshold-label ${line.key}`} x={padding.left + 4} y={y(line.value) - 4}>{line.label}</text>
+            <line
+              className={`hydro-threshold ${line.key}`}
+              x1={padding.left}
+              x2={padding.left + chartWidth}
+              y1={y(line.value)}
+              y2={y(line.value)}
+            />
+            <text className={`hydro-threshold-label ${line.key}`} x={padding.left + 4} y={y(line.value) - 4}>
+              {line.label}
+            </text>
           </g>
         ))}
-        {Number.isFinite(nowX) ? <line className="hydro-now-line" x1={nowX} x2={nowX} y1={padding.top} y2={padding.top + chartHeight} /> : null}
+        {Number.isFinite(nowX) ? (
+          <line className="hydro-now-line" x1={nowX} x2={nowX} y1={padding.top} y2={padding.top + chartHeight} />
+        ) : null}
         {series.map((item) => (
           <polyline
             className={`hydro-series ${item.role === "forecast" ? "forecast" : "measured"} ${item.id}`}
@@ -320,7 +410,13 @@ function HydroChartPanel({
         ))}
         {focusX !== null && focusItems.length > 0 ? (
           <g className="hydro-chart-focus" pointerEvents="none">
-            <line className="hydro-chart-crosshair" x1={focusX} x2={focusX} y1={padding.top} y2={padding.top + chartHeight} />
+            <line
+              className="hydro-chart-crosshair"
+              x1={focusX}
+              x2={focusX}
+              y1={padding.top}
+              y2={padding.top + chartHeight}
+            />
             {focusItems.map((item) => (
               <circle
                 className={`hydro-chart-focus-dot ${item.colorClass}`}
@@ -330,11 +426,25 @@ function HydroChartPanel({
                 r={3.8}
               />
             ))}
-            <rect className="hydro-chart-tooltip-bg" height={tooltipHeight} rx={6} width={tooltipWidth} x={tooltipX} y={tooltipY} />
-            <text className="hydro-chart-tooltip-time" x={tooltipX + 10} y={tooltipY + 15}>{formatHydroChartFocusDateTime(focusTime ?? timeDomain.min)}</text>
+            <rect
+              className="hydro-chart-tooltip-bg"
+              height={tooltipHeight}
+              rx={6}
+              width={tooltipWidth}
+              x={tooltipX}
+              y={tooltipY}
+            />
+            <text className="hydro-chart-tooltip-time" x={tooltipX + 10} y={tooltipY + 15}>
+              {formatHydroChartFocusDateTime(focusTime ?? timeDomain.min)}
+            </text>
             {focusItems.map((item, index) => (
               <g key={`${item.label}-${item.time}-label`}>
-                <circle className={`hydro-chart-tooltip-dot ${item.colorClass}`} cx={tooltipX + 11} cy={tooltipY + 30 + index * 15} r={3} />
+                <circle
+                  className={`hydro-chart-tooltip-dot ${item.colorClass}`}
+                  cx={tooltipX + 11}
+                  cy={tooltipY + 30 + index * 15}
+                  r={3}
+                />
                 <text className="hydro-chart-tooltip-text" x={tooltipX + 20} y={tooltipY + 33 + index * 15}>
                   {`${item.label}: ${item.valueLabel}`}
                 </text>
@@ -342,13 +452,7 @@ function HydroChartPanel({
             ))}
           </g>
         ) : null}
-        <rect
-          className="hydro-chart-hitbox"
-          height={chartHeight}
-          width={chartWidth}
-          x={padding.left}
-          y={padding.top}
-        />
+        <rect className="hydro-chart-hitbox" height={chartHeight} width={chartWidth} x={padding.left} y={padding.top} />
       </svg>
     </div>
   );
@@ -367,7 +471,10 @@ function hydrologyDetailUrl(properties: SituationFeature["properties"]): string 
   return undefined;
 }
 
-function hydroSeriesById(detail: HydroStationDetailResponse, seriesId: HydroSeriesId): HydroStationDetailResponse["series"][number] | undefined {
+function hydroSeriesById(
+  detail: HydroStationDetailResponse,
+  seriesId: HydroSeriesId
+): HydroStationDetailResponse["series"][number] | undefined {
   return detail.series.find((series) => series.id === seriesId);
 }
 
@@ -411,7 +518,9 @@ function hydroThresholdLines(
     { key: "spa2", label: "SPA 2", value: thresholds.spa2 },
     { key: "spa3", label: "SPA 3", value: thresholds.spa3 },
     { key: "spa4", label: "SPA 4", value: thresholds.spa4 }
-  ].flatMap((item) => typeof item.value === "number" && Number.isFinite(item.value) ? [{ ...item, value: item.value }] : []);
+  ].flatMap((item) =>
+    typeof item.value === "number" && Number.isFinite(item.value) ? [{ ...item, value: item.value }] : []
+  );
 }
 
 function formatHydroAxisValue(value: number, unit: string): string {
@@ -433,7 +542,10 @@ function hydroChartPointerTime(
   return timeDomain.min + ratio * (timeDomain.max - timeDomain.min);
 }
 
-function nearestHydroChartPoint(points: Array<{ at: string; value: number }>, timeMs: number): { at: string; value: number } | undefined {
+function nearestHydroChartPoint(
+  points: Array<{ at: string; value: number }>,
+  timeMs: number
+): { at: string; value: number } | undefined {
   return points.reduce<{ distance: number; point: { at: string; value: number } } | undefined>((nearest, point) => {
     const distance = Math.abs(Date.parse(point.at) - timeMs);
     return !nearest || distance < nearest.distance ? { distance, point } : nearest;
@@ -466,12 +578,13 @@ function safetyFeatureStatusModel(feature: SituationFeature): { label: string; t
   }
   const metrics = isRecord(feature.properties.metrics) ? feature.properties.metrics : {};
   const tags = isRecord(feature.properties.tags) ? feature.properties.tags : {};
-  const raw = stringProperty(tags.status)
-    ?? stringProperty(tags.networkStatus)
-    ?? stringProperty(metrics.status)
-    ?? stringProperty(metrics.networkStatus)
-    ?? feature.properties.severity
-    ?? "info";
+  const raw =
+    stringProperty(tags.status) ??
+    stringProperty(tags.networkStatus) ??
+    stringProperty(metrics.status) ??
+    stringProperty(metrics.networkStatus) ??
+    feature.properties.severity ??
+    "info";
   const normalized = raw.toLowerCase();
   if (["critical", "down", "offline", "outage", "failed", "error"].includes(normalized)) {
     return { label: "KRITICKÝ", tone: "critical" };
@@ -514,34 +627,34 @@ function safetyGeometryModeLabel(mode: string | undefined, geometryType: string)
 function safetyCanonicalTypeCode(properties: SituationFeature["properties"]): string | undefined {
   const providerProperties = safetyProviderProperties(properties);
   const taxonomy = safetyProviderTaxonomy(properties);
-  return properties.typeCode
-    ?? stringProperty(providerProperties.typeCode)
-    ?? stringProperty(taxonomy.typeCode);
+  return properties.typeCode ?? stringProperty(providerProperties.typeCode) ?? stringProperty(taxonomy.typeCode);
 }
 
 function safetyCanonicalSourceCode(properties: SituationFeature["properties"]): string | undefined {
   const providerProperties = safetyProviderProperties(properties);
   const taxonomy = safetyProviderTaxonomy(properties);
-  const sourceCode = properties.sourceCode
-    ?? stringProperty(providerProperties.sourceCode)
-    ?? stringProperty(taxonomy.sourceCode);
+  const sourceCode =
+    properties.sourceCode ?? stringProperty(providerProperties.sourceCode) ?? stringProperty(taxonomy.sourceCode);
   if (!sourceCode) {
     return undefined;
   }
-  const sourceSystem = properties.sourceSystem
-    ?? stringProperty(providerProperties.sourceSystem)
-    ?? stringProperty(taxonomy.codeSystem)
-    ?? stringProperty(taxonomy.sourceSystem);
+  const sourceSystem =
+    properties.sourceSystem ??
+    stringProperty(providerProperties.sourceSystem) ??
+    stringProperty(taxonomy.codeSystem) ??
+    stringProperty(taxonomy.sourceSystem);
   return sourceSystem ? `${sourceSystem} ${sourceCode}` : sourceCode;
 }
 
 function safetyCanonicalSourceSystem(properties: SituationFeature["properties"]): string | undefined {
   const providerProperties = safetyProviderProperties(properties);
   const taxonomy = safetyProviderTaxonomy(properties);
-  return properties.sourceSystem
-    ?? stringProperty(providerProperties.sourceSystem)
-    ?? stringProperty(taxonomy.codeSystem)
-    ?? stringProperty(taxonomy.sourceSystem);
+  return (
+    properties.sourceSystem ??
+    stringProperty(providerProperties.sourceSystem) ??
+    stringProperty(taxonomy.codeSystem) ??
+    stringProperty(taxonomy.sourceSystem)
+  );
 }
 
 function safetyProviderProperties(properties: SituationFeature["properties"]): Record<string, unknown> {
@@ -569,7 +682,11 @@ function localizedSafetyRecord(properties: SituationFeature["properties"], local
   return isRecord(entry) ? entry : localized;
 }
 
-function localizedSafetyString(properties: SituationFeature["properties"], locale: "cs" | "en", ...keys: string[]): string | undefined {
+function localizedSafetyString(
+  properties: SituationFeature["properties"],
+  locale: "cs" | "en",
+  ...keys: string[]
+): string | undefined {
   const record = localizedSafetyRecord(properties, locale);
   for (const key of keys) {
     const value = stringProperty(record[key]);
@@ -592,21 +709,25 @@ function safetyPresentationString(properties: SituationFeature["properties"], ..
 }
 
 function safetyDisplayLabel(properties: SituationFeature["properties"]): string {
-  return localizedSafetyString(properties, "cs", "headline", "title", "label", "name")
-    ?? safetyPresentationString(properties, "label", "title")
-    ?? properties.headline
-    ?? properties.areaName
-    ?? properties.label
-    ?? humanizeSafetyTypeCode(safetyCanonicalTypeCode(properties))
-    ?? safetyCanonicalSourceCode(properties)
-    ?? "Výstraha";
+  return (
+    localizedSafetyString(properties, "cs", "headline", "title", "label", "name") ??
+    safetyPresentationString(properties, "label", "title") ??
+    properties.headline ??
+    properties.areaName ??
+    properties.label ??
+    humanizeSafetyTypeCode(safetyCanonicalTypeCode(properties)) ??
+    safetyCanonicalSourceCode(properties) ??
+    "Výstraha"
+  );
 }
 
 function safetyDetailText(properties: SituationFeature["properties"]): string | undefined {
-  return localizedSafetyString(properties, "cs", "detail", "description", "summary")
-    ?? renderSafetyDetailTemplate(properties)
-    ?? properties.description
-    ?? properties.summary;
+  return (
+    localizedSafetyString(properties, "cs", "detail", "description", "summary") ??
+    renderSafetyDetailTemplate(properties) ??
+    properties.description ??
+    properties.summary
+  );
 }
 
 function renderSafetyDetailTemplate(properties: SituationFeature["properties"]): string | undefined {
@@ -623,7 +744,12 @@ function renderSafetyDetailTemplate(properties: SituationFeature["properties"]):
     sourceSystem: safetyCanonicalSourceSystem(properties) ?? "",
     typeCode: safetyCanonicalTypeCode(properties) ?? ""
   };
-  return template.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) => values[key] ?? "").replace(/\s+/g, " ").trim() || undefined;
+  return (
+    template
+      .replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_match, key: string) => values[key] ?? "")
+      .replace(/\s+/g, " ")
+      .trim() || undefined
+  );
 }
 
 function safetyNotificationEligibleLabel(properties: SituationFeature["properties"]): string {
@@ -648,7 +774,13 @@ function humanizeSafetyTypeCode(value: string | undefined): string | undefined {
     "weather.fire_danger": "Nebezpečí požáru",
     "weather.temperature.high": "Vysoké teploty"
   };
-  return known[value] ?? value.split(/[._-]+/u).filter(Boolean).join(" ");
+  return (
+    known[value] ??
+    value
+      .split(/[._-]+/u)
+      .filter(Boolean)
+      .join(" ")
+  );
 }
 
 function safetyBasisLabel(value: string[] | undefined): string {
@@ -784,7 +916,10 @@ function fireConfirmationLabel(typeCode: string | undefined, sourceIncident: str
 }
 
 function fireRiskNotice(properties: SituationFeature["properties"]): string {
-  if (safetyCanonicalTypeCode(properties) === "weather.fire_danger" || properties.sourceIncident === "CHMI_CAP_FIRE_DANGER") {
+  if (
+    safetyCanonicalTypeCode(properties) === "weather.fire_danger" ||
+    properties.sourceIncident === "CHMI_CAP_FIRE_DANGER"
+  ) {
     return "Oficiální výstraha ČHMÚ pro podmínky vzniku a šíření požárů.";
   }
   if (properties.sourceIncident === "NASA_FIRMS_HOTSPOT") {
