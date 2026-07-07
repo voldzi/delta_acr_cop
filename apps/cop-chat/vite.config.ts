@@ -1,5 +1,8 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type PluginOption } from "vite";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import * as http from "node:http";
+import * as https from "node:https";
 import { fileURLToPath, URL } from "node:url";
 
 const apiBase = process.env.COP_API_BASE_URL ?? "http://localhost:4310";
@@ -15,9 +18,55 @@ const allowedHosts = [
   .map((host) => host.trim())
   .filter((host, index, hosts) => host.length > 0 && hosts.indexOf(host) === index);
 
+function matrixPushGatewayPreviewProxyPlugin(): PluginOption {
+  return {
+    name: "cop-chat-matrix-push-gateway-preview-proxy",
+    configurePreviewServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const path = request.url?.split("?")[0] ?? "";
+        if (!path.startsWith("/_matrix/")) {
+          next();
+          return;
+        }
+        proxyPreviewRequest(request, response, apiBase);
+      });
+    }
+  };
+}
+
+function proxyPreviewRequest(request: IncomingMessage, response: ServerResponse, targetBase: string): void {
+  const target = new URL(request.url ?? "/", targetBase);
+  const transport = target.protocol === "https:" ? https : http;
+  const proxyRequest = transport.request(
+    target,
+    {
+      headers: {
+        ...request.headers,
+        host: target.host
+      },
+      method: request.method
+    },
+    (upstream) => {
+      response.statusCode = upstream.statusCode ?? 502;
+      for (const [key, value] of Object.entries(upstream.headers)) {
+        if (value !== undefined) {
+          response.setHeader(key, value);
+        }
+      }
+      upstream.pipe(response);
+    }
+  );
+  proxyRequest.on("error", () => {
+    response.statusCode = 502;
+    response.setHeader("Content-Type", "application/json; charset=utf-8");
+    response.end(JSON.stringify({ rejected: [] }));
+  });
+  request.pipe(proxyRequest);
+}
+
 export default defineConfig({
   base: chatBase.endsWith("/") ? chatBase : `${chatBase}/`,
-  plugins: [react()],
+  plugins: [react(), matrixPushGatewayPreviewProxyPlugin()],
   resolve: {
     alias: {
       "@cop/messaging/webPush": fileURLToPath(new URL("../../packages/messaging/src/webPush.ts", import.meta.url))
