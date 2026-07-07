@@ -5679,6 +5679,7 @@ function MessageAiMapActions({ actions }: { actions?: MatrixCopMapAction[] }) {
     <div className="message-ai-actions" aria-label="Mapové akce AI odpovědi">
       {visibleActions.flatMap((action, index) => {
         const key = `${action.entityId ?? action.title ?? "map"}-${index}`;
+        const routeEnabled = shouldOfferRouteForAiMapAction(action);
         const baseOptions = {
           category: action.category,
           featureId: action.entityId,
@@ -5702,19 +5703,21 @@ function MessageAiMapActions({ actions }: { actions?: MatrixCopMapAction[] }) {
             <MapPin size={14} />
             <span>{action.label || "Zobrazit na mapě"}</span>
           </button>,
-          <button
-            key={`${key}:route`}
-            className="message-ai-map-action"
-            onClick={(event) => {
-              event.stopPropagation();
-              openCopMapFocus(encodeChatCenterLocation(action.lat, action.lon, { ...baseOptions, action: "route" }));
-            }}
-            type="button"
-          >
-            <Navigation size={14} />
-            <span>Trasa: {action.title ?? stripMapActionPrefix(action.label)}</span>
-          </button>
-        ];
+          routeEnabled ? (
+            <button
+              key={`${key}:route`}
+              className="message-ai-map-action"
+              onClick={(event) => {
+                event.stopPropagation();
+                openCopMapFocus(encodeChatCenterLocation(action.lat, action.lon, { ...baseOptions, action: "route" }));
+              }}
+              type="button"
+            >
+              <Navigation size={14} />
+              <span>Trasa: {action.title ?? stripMapActionPrefix(action.label)}</span>
+            </button>
+          ) : null
+        ].filter(Boolean);
       })}
     </div>
   );
@@ -5730,6 +5733,31 @@ function openCopMapFocus(focus: ReturnType<typeof encodeChatCenterLocation>): vo
 
 function stripMapActionPrefix(label: string): string {
   return label.replace(/^Zobrazit na mapě:\s*/iu, "").trim() || "cíl";
+}
+
+export function shouldOfferRouteForAiMapAction(action: MatrixCopMapAction): boolean {
+  const haystack = normalizeAiMapActionText([
+    action.category,
+    action.entityType,
+    action.label,
+    action.layerId,
+    action.sourceName,
+    action.sourceSystemIds?.join(" "),
+    action.title
+  ].filter(Boolean).join(" "));
+  if (!haystack) {
+    return true;
+  }
+  return !/\b(?:air_quality|boundary|coverage|forecast|meteogram|pocasi|precipitation|radar|rain|srazk|teplot|temperature|weather|wind)\b/u.test(haystack);
+}
+
+function normalizeAiMapActionText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLocaleLowerCase("cs-CZ");
 }
 
 export function aiMapActionsForMessage(message: MatrixTimelineMessage): MatrixCopMapAction[] | undefined {

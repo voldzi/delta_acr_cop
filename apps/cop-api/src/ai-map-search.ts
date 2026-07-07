@@ -497,7 +497,7 @@ export function aiMapSearchFallbackResponse(
   }
   const question = optionalText(context?.question);
   const summaryResult = aiBestMapSearchResultForQuestion(results, question) ?? topResult;
-  const mapActions = aiMapActionsFromMapSearchResults(results);
+  const mapActions = aiMapActionsFromFallbackResults(results, summaryResult, question);
   const title = optionalText(summaryResult.title) ?? "mapový výsledek";
   const category = optionalText(summaryResult.category);
   const distanceText = optionalText(summaryResult.distanceText);
@@ -619,6 +619,41 @@ function aiMapSearchDomainNoResultText(categoryIds: string[]): string {
   return "Nenašel jsem odpovídající objekt v aktuálně dostupném COP mapovém indexu.";
 }
 
+function aiMapActionsFromFallbackResults(
+  results: Record<string, unknown>[],
+  summaryResult: Record<string, unknown>,
+  question: string | undefined
+): AiMapAction[] {
+  const normalizedQuestion = normalizeAiMapSearchText(question ?? "");
+  const weatherQuestion = aiQuestionAsksWeather(normalizedQuestion);
+  const candidates = weatherQuestion ? [summaryResult] : aiPreferredMapSearchResults(results, summaryResult);
+  return aiMapActionsFromMapSearchResults(candidates);
+}
+
+function aiPreferredMapSearchResults(
+  results: Record<string, unknown>[],
+  preferredResult: Record<string, unknown>
+): Record<string, unknown>[] {
+  const preferredKey = aiMapSearchResultDedupeKey(preferredResult);
+  const ordered = [preferredResult];
+  for (const result of results) {
+    if (aiMapSearchResultDedupeKey(result) !== preferredKey) {
+      ordered.push(result);
+    }
+  }
+  return ordered;
+}
+
+function aiMapSearchResultDedupeKey(result: Record<string, unknown>): string {
+  const location = aiLocationFromRecord(result.location);
+  return [
+    optionalText(result.mapFeatureId),
+    optionalText(result.layerId),
+    optionalText(result.title),
+    location ? `${location.lat},${location.lon}` : undefined
+  ].filter(Boolean).join("|");
+}
+
 function aiMeasurementMapSearchSummary(
   result: Record<string, unknown>,
   input: {
@@ -722,6 +757,12 @@ function aiQuestionAsksRain(normalizedQuestion: string): boolean {
 
 function aiQuestionAsksStorm(normalizedQuestion: string): boolean {
   return /\b(?:bourka|bourky|blizi se bourka|storm|thunderstorm)\b/u.test(normalizedQuestion);
+}
+
+function aiQuestionAsksWeather(normalizedQuestion: string): boolean {
+  return aiQuestionAsksRain(normalizedQuestion)
+    || aiQuestionAsksStorm(normalizedQuestion)
+    || /\b(?:pocasi|teplot|vitr|radar|weather|temperature|wind|forecast|meteogram)\b/u.test(normalizedQuestion);
 }
 
 function aiWeatherRainAnswer(metrics: Record<string, unknown>, result: Record<string, unknown>): string {

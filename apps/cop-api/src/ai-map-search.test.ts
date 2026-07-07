@@ -217,6 +217,7 @@ describe("AI map search", () => {
 
     const response = aiMapSearchFallbackResponse(aiRequest, new Date("2026-07-07T19:44:00.000Z"), "test");
     const structured = response?.result.structured as {
+      mapActions?: Array<{ title?: string }>;
       mapSearchFallback?: { result?: { title?: string } };
     } | undefined;
     const fallback = structured?.mapSearchFallback;
@@ -225,6 +226,9 @@ describe("AI map search", () => {
     expect(response?.result.summary).toContain("Meteo informace: ČHMÚ MERGE 1h precipitation");
     expect(response?.result.summary).not.toContain("Na déšť nelze");
     expect(fallback?.result?.title).toBe("ČHMÚ MERGE 1h precipitation");
+    expect(structured?.mapActions).toEqual([
+      expect.objectContaining({ title: "ČHMÚ MERGE 1h precipitation" })
+    ]);
   });
 
   it("extracts a clean place query from generic map searches with a location phrase", () => {

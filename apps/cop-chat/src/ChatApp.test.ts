@@ -21,6 +21,7 @@ import {
   formatAiSituationShareBody,
   parseAiAgentInvocation,
   parseAiAgentMention,
+  shouldOfferRouteForAiMapAction,
   shouldShowInAppChatNotification
 } from "./ChatApp";
 import type { AiCopResponse } from "@cop/core/cop-data";
@@ -536,6 +537,38 @@ describe("aiMapActionsForMessage", () => {
         zoom: 16
       })
     ]);
+  });
+});
+
+describe("shouldOfferRouteForAiMapAction", () => {
+  it("does not offer route buttons for weather and radar map actions", () => {
+    expect(
+      shouldOfferRouteForAiMapAction({
+        action: "focus-map",
+        category: "weather_radar",
+        label: "Zobrazit na mapě: ČHMÚ MERGE 1h precipitation",
+        layerId: "public.weather.radar_precipitation",
+        lat: 49.695,
+        lon: 15.0682,
+        sourceName: "chmi_weather_radar",
+        title: "ČHMÚ MERGE 1h precipitation"
+      })
+    ).toBe(false);
+  });
+
+  it("keeps route buttons for navigable operational map actions", () => {
+    expect(
+      shouldOfferRouteForAiMapAction({
+        action: "focus-map",
+        category: "police",
+        entityId: "security-police:vrbno",
+        label: "Zobrazit na mapě: Policie",
+        layerId: "reference.infrastructure.emergency",
+        lat: 50.1187,
+        lon: 17.3842,
+        title: "Policie"
+      })
+    ).toBe(true);
   });
 });
 
