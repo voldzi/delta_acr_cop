@@ -306,6 +306,9 @@ const mapFeatureClickPriorityLayerIds = [
   trackLabelLayerId,
   trackClusterSymbolLayerId,
   trackClusterLabelLayerId,
+  sharedLiveLocationLayerId,
+  sharedLiveLocationLabelLayerId,
+  sharedLiveLocationAccuracyLayerId,
   sketchArrowHeadLayerId,
   sketchPointLayerId,
   sketchPointIconLayerId,
@@ -893,6 +896,7 @@ function CopMapComponent({
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const situationRasterOverlayIdsRef = React.useRef<Set<string>>(new Set());
   const objectsRef = React.useRef(objects);
+  const sharedLiveLocationsRef = React.useRef(sharedLiveLocations);
   const situationFeaturesRef = React.useRef<SituationFeature[]>([]);
   const onBoundsChangeRef = React.useRef(onBoundsChange);
   const onSelectObjectRef = React.useRef(onSelectObject);
@@ -942,6 +946,7 @@ function CopMapComponent({
   const [hoveredObjectId, setHoveredObjectId] = React.useState<string | undefined>();
   const [zoneDraftPoints, setZoneDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
   const [sketchDraftPoints, setSketchDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
+  const [selectedSharedLiveLocationId, setSelectedSharedLiveLocationId] = React.useState<string | null>(null);
   const [selectedSketchVertexIndex, setSelectedSketchVertexIndex] = React.useState<number | null>(null);
   const [selectedEditVertexIndex, setSelectedEditVertexIndex] = React.useState<number | null>(null);
   const [sketchToolsExpanded, setSketchToolsExpanded] = React.useState(false);
@@ -1004,6 +1009,13 @@ function CopMapComponent({
         : null,
     [selectedSketchDrawingId, sketchDrawings]
   );
+  const selectedSharedLiveLocation = React.useMemo(
+    () =>
+      selectedSharedLiveLocationId
+        ? (sharedLiveLocations.find((location) => location.shareId === selectedSharedLiveLocationId) ?? null)
+        : null,
+    [selectedSharedLiveLocationId, sharedLiveLocations]
+  );
   const [selectionPopoverCollapsed, setSelectionPopoverCollapsed] = React.useState(false);
   const selectedTransitSelectionKey = React.useMemo(
     () =>
@@ -1048,15 +1060,32 @@ function CopMapComponent({
                 subtitle: formatSketchDrawingSubtitle(selectedSketchDrawing),
                 title: selectedSketchDrawing.properties.label
               } satisfies MapSelectionCard)
-            : null,
-    [effectiveSelectedTransitRouteDetail, selectedObject, selectedSituationFeature, selectedSketchDrawing]
+            : selectedSharedLiveLocation
+              ? formatSharedLiveLocationSelectionCard(selectedSharedLiveLocation)
+              : null,
+    [
+      effectiveSelectedTransitRouteDetail,
+      selectedObject,
+      selectedSharedLiveLocation,
+      selectedSituationFeature,
+      selectedSketchDrawing
+    ]
   );
+  const clearMapSelection = React.useCallback(() => {
+    setSelectedSharedLiveLocationId(null);
+    onClearSelection?.();
+  }, [onClearSelection]);
   React.useEffect(() => {
     setSelectionPopoverCollapsed(false);
   }, [selectionCard?.key]);
   const selectedAnchorCoordinate = React.useMemo(
-    () => selectionAnchorCoordinate(selectedObject, selectedSituationFeature, selectedSketchDrawing),
-    [selectedObject, selectedSituationFeature, selectedSketchDrawing]
+    () =>
+      selectedObject || selectedSituationFeature || selectedSketchDrawing
+        ? selectionAnchorCoordinate(selectedObject, selectedSituationFeature, selectedSketchDrawing)
+        : selectedSharedLiveLocation
+          ? ([selectedSharedLiveLocation.lon, selectedSharedLiveLocation.lat] as [number, number])
+          : null,
+    [selectedObject, selectedSharedLiveLocation, selectedSituationFeature, selectedSketchDrawing]
   );
   const selectedRouteFeatureCollection = React.useMemo(
     () =>
@@ -1152,6 +1181,7 @@ function CopMapComponent({
   aoiRulesRef.current = aoiRules;
   editingZoneIdRef.current = editingZoneId;
   objectsRef.current = objects;
+  sharedLiveLocationsRef.current = sharedLiveLocations;
   situationFeaturesRef.current = situationFeatures?.features ?? [];
   onBoundsChangeRef.current = onBoundsChange;
   onSelectObjectRef.current = onSelectObject;
@@ -1192,6 +1222,26 @@ function CopMapComponent({
     setSketchToolsExpanded(false);
     setMapLegendCollapsed(true);
   }, [mobileSketchControlsOpen]);
+
+  React.useEffect(() => {
+    if (
+      selectedSharedLiveLocationId &&
+      !sharedLiveLocations.some((location) => location.shareId === selectedSharedLiveLocationId)
+    ) {
+      setSelectedSharedLiveLocationId(null);
+    }
+  }, [selectedSharedLiveLocationId, sharedLiveLocations]);
+
+  React.useEffect(() => {
+    if (
+      selectedObjectId ||
+      selectedSituationFeatureId ||
+      selectedSituationFeatureStableKey ||
+      selectedSketchDrawingId
+    ) {
+      setSelectedSharedLiveLocationId(null);
+    }
+  }, [selectedObjectId, selectedSituationFeatureId, selectedSituationFeatureStableKey, selectedSketchDrawingId]);
 
   React.useEffect(() => {
     if (!selectedSketchDrawing) {
@@ -1262,6 +1312,7 @@ function CopMapComponent({
       const objectId = stringProperty(properties.objectId);
       const object = objectsRef.current.find((candidate) => candidate.objectId === objectId);
       if (object) {
+        setSelectedSharedLiveLocationId(null);
         onSelectObjectRef.current(object);
         return true;
       }
@@ -1270,13 +1321,23 @@ function CopMapComponent({
         (candidate) => candidate.properties.featureId === featureId
       );
       if (situationFeature) {
+        setSelectedSharedLiveLocationId(null);
         onSelectSituationFeatureRef.current(situationFeature);
         return true;
       }
       const drawingId = stringProperty(properties.drawingId);
       const sketchDrawing = sketchDrawingsRef.current.find((candidate) => candidate.id === drawingId);
       if (sketchDrawing) {
+        setSelectedSharedLiveLocationId(null);
         onSelectSketchDrawingRef.current?.(sketchDrawing);
+        return true;
+      }
+      const shareId = stringProperty(properties.shareId);
+      const sharedLiveLocation = sharedLiveLocationsRef.current.find((candidate) => candidate.shareId === shareId);
+      if (sharedLiveLocation) {
+        onClearSelectionRef.current?.();
+        onSelectSketchDrawingRef.current?.(null);
+        setSelectedSharedLiveLocationId(sharedLiveLocation.shareId);
         return true;
       }
       return false;
@@ -4137,10 +4198,12 @@ function CopMapComponent({
             const drawingId = stringProperty(properties.drawingId);
             const drawing = sketchDrawingsRef.current.find((candidate) => candidate.id === drawingId);
             if (drawing) {
+              setSelectedSharedLiveLocationId(null);
               onSelectSketchDrawingRef.current?.(drawing);
               return;
             }
             setSelectedSketchVertexIndex(null);
+            setSelectedSharedLiveLocationId(null);
             onSelectSketchDrawingRef.current?.(null);
             return;
           }
@@ -4163,6 +4226,7 @@ function CopMapComponent({
           if (selectRenderedFeature(clickedFeature)) {
             return;
           }
+          setSelectedSharedLiveLocationId(null);
           onClearSelectionRef.current?.();
         };
         map.on("dragstart", handleUserMapInteraction);
@@ -4191,6 +4255,15 @@ function CopMapComponent({
         map.on("mousemove", trackClusterSymbolLayerId, handleTrackHover);
         map.on("mouseenter", trackClusterLabelLayerId, handleTrackHover);
         map.on("mousemove", trackClusterLabelLayerId, handleTrackHover);
+        map.on("mouseenter", sharedLiveLocationLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", sharedLiveLocationLabelLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseenter", sharedLiveLocationAccuracyLayerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
         map.on("mouseenter", trackClusterCircleLayerId, () => {
           setHoveredObjectId(undefined);
           map.getCanvas().style.cursor = "zoom-in";
@@ -4335,6 +4408,15 @@ function CopMapComponent({
         });
         map.on("mouseleave", trackSymbolLayerId, handleTrackLeave);
         map.on("mouseleave", trackLabelLayerId, handleTrackLeave);
+        map.on("mouseleave", sharedLiveLocationLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", sharedLiveLocationLabelLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+        map.on("mouseleave", sharedLiveLocationAccuracyLayerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
         map.on("mouseleave", trackClusterCircleLayerId, () => {
           setHoveredObjectId(undefined);
           map.getCanvas().style.cursor = "";
@@ -5670,7 +5752,7 @@ function CopMapComponent({
               >
                 {selectionPopoverCollapsed ? <ChevronDown size={14} /> : <Minimize2 size={14} />}
               </button>
-              <button aria-label="Zrušit výběr" onClick={onClearSelection} title="Zrušit výběr" type="button">
+              <button aria-label="Zrušit výběr" onClick={clearMapSelection} title="Zrušit výběr" type="button">
                 <X size={14} />
               </button>
             </div>
@@ -10253,6 +10335,68 @@ function formatAgeSeconds(seconds: number): string {
     return `${Math.round(seconds / 60)} min`;
   }
   return `${Math.round(seconds / 3600)} h`;
+}
+
+function formatSharedLiveLocationSelectionCard(location: ChatLiveLocationPayload): MapSelectionCard {
+  const title = location.senderDisplayName?.trim() || location.label?.trim() || "Sdílená poloha";
+  const sender =
+    location.senderDisplayName?.trim() && location.senderDisplayName !== location.sender ? location.sender : undefined;
+  const age = formatIsoTimestampAge(location.updatedAt);
+  const updatedAt = formatIsoTimestamp(location.updatedAt);
+  const expiresAt = location.expiresAt ? formatIsoTimestamp(location.expiresAt) : undefined;
+  const accuracy = formatMeters(location.accuracyM);
+  const statusLabel = location.status === "live" ? "Živé sdílení" : "Sdílení ukončeno";
+  const subtitle = age ? `Aktualizováno před ${age}` : statusLabel;
+  const detailRows = [
+    { label: "Stav", value: statusLabel },
+    sender ? { label: "Odesílatel", value: sender } : undefined,
+    updatedAt ? { label: "Aktualizace", value: updatedAt } : undefined,
+    expiresAt ? { label: "Platí do", value: expiresAt } : undefined,
+    accuracy ? { label: "Přesnost", value: accuracy } : undefined
+  ].filter((row): row is { label: string; value: string } => Boolean(row));
+
+  return {
+    compactSubtitle: accuracy ? `${subtitle} · ${accuracy}` : subtitle,
+    detailRows,
+    eyebrow: "Sdílená poloha",
+    key: `shared-live:${location.shareId}`,
+    metaItems: [statusLabel, age ? `před ${age}` : undefined, accuracy ? `přesnost ${accuracy}` : undefined].filter(
+      (item): item is string => Boolean(item)
+    ),
+    statusTone: location.status === "live" ? "ok" : "warn",
+    subtitle,
+    title
+  };
+}
+
+function formatIsoTimestampAge(value: string): string | undefined {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return undefined;
+  }
+  return formatAgeSeconds(Math.max(0, Math.round((Date.now() - timestamp) / 1000)));
+}
+
+function formatIsoTimestamp(value: string): string | undefined {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return undefined;
+  }
+  return new Date(timestamp).toLocaleString("cs-CZ", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit"
+  });
+}
+
+function formatMeters(value: number | undefined): string | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return value >= 1000
+    ? `${(value / 1000).toLocaleString("cs-CZ", { maximumFractionDigits: 1 })} km`
+    : `${Math.round(value).toLocaleString("cs-CZ")} m`;
 }
 
 function formatAircraftConfidence(object: CopObject): string | undefined {
