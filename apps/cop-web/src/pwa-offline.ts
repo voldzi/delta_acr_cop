@@ -24,6 +24,11 @@ export type CopPwaCacheState =
   | { kind: "unknown" }
   | { kind: "warming" };
 
+export interface CopRouteTileCacheWarmupRequest {
+  routeId: string;
+  urls: string[];
+}
+
 export function registerCopServiceWorker(): void {
   if (typeof window === "undefined" || typeof navigator === "undefined") {
     return;
@@ -61,6 +66,26 @@ export function requestCopPwaCacheWarmup(): void {
       worker?.postMessage({ type: "cop:pwa:warm-cache" });
     })
     .catch(() => undefined);
+}
+
+export function requestCopRouteTileCacheWarmup(request: CopRouteTileCacheWarmupRequest): boolean {
+  if (
+    typeof navigator === "undefined" ||
+    !("serviceWorker" in navigator) ||
+    !request.routeId ||
+    request.urls.length === 0
+  ) {
+    return false;
+  }
+
+  void navigator.serviceWorker.ready
+    .then((registration) => {
+      const worker =
+        registration.active ?? registration.waiting ?? registration.installing ?? navigator.serviceWorker.controller;
+      worker?.postMessage({ routeId: request.routeId, type: "cop:pwa:warm-route-tiles", urls: request.urls });
+    })
+    .catch(() => undefined);
+  return true;
 }
 
 export function readCopOfflineSnapshot(scope?: string): CopOfflineSnapshot | null {

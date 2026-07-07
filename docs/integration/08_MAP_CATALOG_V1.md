@@ -931,6 +931,14 @@ orientational. Chat map actions may request `action=route`; COP then asks for
 the user's current position, calls `/api/v1/routing/route` and draws the SIM
 route over the map.
 
+The web PWA can promote a displayed route into a navigation session. The
+client asks SIM through COP with profile `car` or `walking`, stores the route
+geometry/summary locally and asks the service worker to prefetch raster map
+tiles along the route corridor. This is an offline-continuation package, not
+offline rerouting: if the operator leaves the route while offline, the client
+can show deviation and the nearest saved route, but a new route calculation
+requires COP API connectivity.
+
 COP must not expose `mobile_coverage` as a normal public layer. Diagnostic
 mobile layers such as `diagnostic.mobile.coverage`,
 `diagnostic.mobile.ctu_measurements`, and

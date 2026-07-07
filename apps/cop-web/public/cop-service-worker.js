@@ -1,7 +1,8 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260707-3";
+const COP_SW_VERSION = "cop-pwa-offline-20260707-4";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
+const ROUTE_TILE_CACHE = `${COP_SW_VERSION}:route-tiles`;
 const MAP_RESOURCE_HOSTS = new Set(["tile.openstreetmap.org", "tiles.zeleznalady.cz", "demotiles.maplibre.org"]);
 const APP_SHELL_URLS = [
   "/",
@@ -20,6 +21,8 @@ const APP_SHELL_ASSET_ATTRIBUTE_PATTERN = /\b(?:href|src)=["']([^"']+)["']/giu;
 const MAX_WARMED_APP_SHELL_ASSETS = 32;
 const MAX_RUNTIME_ENTRIES = 120;
 const MAX_TILE_ENTRIES = 1200;
+const MAX_ROUTE_TILE_ENTRIES = 900;
+const MAX_ROUTE_TILE_WARMUP_URLS = 650;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -63,7 +66,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (isMapTileRequest(request, url)) {
-    event.respondWith(cacheFirst(request, TILE_CACHE, MAX_TILE_ENTRIES));
+    event.respondWith(routeCacheFirst(request));
     return;
   }
 
@@ -139,6 +142,20 @@ self.addEventListener("message", (event) => {
             type: "cop:pwa:cache-warm-failed"
           })
         )
+    );
+    return;
+  }
+  if (event.data?.type === "cop:pwa:warm-route-tiles") {
+    const routeId = typeof event.data.routeId === "string" ? event.data.routeId : "";
+    const urls = Array.isArray(event.data.urls) ? event.data.urls : [];
+    event.waitUntil(
+      warmRouteTileCache(routeId, urls, event.source).catch((error) =>
+        notifyClient(event.source, {
+          message: error instanceof Error ? error.message : "Route tile cache warm-up failed.",
+          routeId,
+          type: "cop:pwa:route-cache-failed"
+        })
+      )
     );
     return;
   }
@@ -220,6 +237,18 @@ async function cacheFirst(request, cacheName, maxEntries) {
   return response;
 }
 
+async function routeCacheFirst(request) {
+  const routeCache = await caches.open(ROUTE_TILE_CACHE);
+  const cachedRouteTile = await routeCache.match(request);
+  if (cachedRouteTile) {
+    if (cachedRouteTile.ok && cachedRouteTile.type !== "opaque") {
+      return cachedRouteTile;
+    }
+    await routeCache.delete(request);
+  }
+  return cacheFirst(request, TILE_CACHE, MAX_TILE_ENTRIES);
+}
+
 async function warmAppShellAssets() {
   const shellCache = await caches.open(APP_SHELL_CACHE);
   const runtimeCache = await caches.open(RUNTIME_CACHE);
@@ -227,6 +256,97 @@ async function warmAppShellAssets() {
   await Promise.all(assetUrls.map((url) => runtimeCache.add(url).catch(() => undefined)));
   await trimCache(runtimeCache, MAX_RUNTIME_ENTRIES);
   return assetUrls;
+}
+
+async function warmRouteTileCache(routeId, urls, client) {
+  const normalizedRouteId = routeId.trim();
+  if (!normalizedRouteId) {
+    throw new Error("Route cache request is missing routeId.");
+  }
+
+  const normalizedUrls = normalizeRouteTileUrls(urls);
+  const total = normalizedUrls.length;
+  await notifyClient(client, {
+    cached: 0,
+    failed: 0,
+    routeId: normalizedRouteId,
+    total,
+    type: "cop:pwa:route-cache-started"
+  });
+  if (total === 0) {
+    await notifyClient(client, {
+      cached: 0,
+      failed: 0,
+      routeId: normalizedRouteId,
+      total,
+      type: "cop:pwa:route-cache-warmed",
+      updatedAt: new Date().toISOString()
+    });
+    return;
+  }
+
+  const cache = await caches.open(ROUTE_TILE_CACHE);
+  let cached = 0;
+  let failed = 0;
+
+  for (const [index, url] of normalizedUrls.entries()) {
+    try {
+      const request = new Request(url, { credentials: "omit", mode: "cors" });
+      const response = await fetch(request);
+      if (response && response.ok && response.type !== "opaque") {
+        await cache.put(request, response.clone());
+        cached += 1;
+      } else {
+        failed += 1;
+      }
+    } catch {
+      failed += 1;
+    }
+
+    if ((index + 1) % 25 === 0 || index + 1 === total) {
+      await notifyClient(client, {
+        cached,
+        failed,
+        routeId: normalizedRouteId,
+        total,
+        type: "cop:pwa:route-cache-progress"
+      });
+    }
+  }
+
+  await trimCache(cache, MAX_ROUTE_TILE_ENTRIES);
+  await notifyClient(client, {
+    cached,
+    failed,
+    routeId: normalizedRouteId,
+    total,
+    type: "cop:pwa:route-cache-warmed",
+    updatedAt: new Date().toISOString()
+  });
+}
+
+function normalizeRouteTileUrls(value) {
+  const urls = new Set();
+  for (const candidate of value) {
+    if (urls.size >= MAX_ROUTE_TILE_WARMUP_URLS) {
+      break;
+    }
+    if (typeof candidate !== "string" || !candidate.trim()) {
+      continue;
+    }
+    try {
+      const url = new URL(candidate, self.location.origin);
+      if (url.protocol !== "https:" && url.origin !== self.location.origin) {
+        continue;
+      }
+      if (MAP_RESOURCE_HOSTS.has(url.hostname) || isMapTileRequest(new Request(url.href), url)) {
+        urls.add(url.href);
+      }
+    } catch {
+      // Ignore malformed route cache candidates.
+    }
+  }
+  return Array.from(urls);
 }
 
 async function collectAppShellAssetUrls(shellCache) {
@@ -277,18 +397,21 @@ function extractSameOriginAssetUrls(html, basePath = "/") {
 }
 
 async function readPwaCacheState(warmedAssets = 0) {
-  const [shellCache, runtimeCache, tileCache] = await Promise.all([
+  const [shellCache, runtimeCache, tileCache, routeTileCache] = await Promise.all([
     caches.open(APP_SHELL_CACHE),
     caches.open(RUNTIME_CACHE),
-    caches.open(TILE_CACHE)
+    caches.open(TILE_CACHE),
+    caches.open(ROUTE_TILE_CACHE)
   ]);
-  const [shellKeys, runtimeKeys, tileKeys] = await Promise.all([
+  const [shellKeys, runtimeKeys, tileKeys, routeTileKeys] = await Promise.all([
     shellCache.keys(),
     runtimeCache.keys(),
-    tileCache.keys()
+    tileCache.keys(),
+    routeTileCache.keys()
   ]);
   return {
     appShellEntries: shellKeys.length,
+    routeTileEntries: routeTileKeys.length,
     runtimeEntries: runtimeKeys.length,
     tileEntries: tileKeys.length,
     updatedAt: new Date().toISOString(),

@@ -15,6 +15,12 @@ Klient podporuje dva režimy:
 
 PWA cache zlepšuje opakované zobrazení na zařízení uživatele, ale nenahrazuje serverovou tile cache ani vlastní tile server.
 
+Navigační režim navíc umí předem zahřát dlaždice v koridoru aktuální trasy do
+samostatné route tile cache service workeru. Tato cache se používá před
+běžnou mapovou tile cache, aby aktivní trasa zůstala dostupná i při krátkém
+výpadku signálu. Cache obsahuje pouze mapové dlaždice a lokální route package;
+COP v PWA bez online SIM/backend spojení nepočítá novou trasu.
+
 ## Vrstvy MVP
 
 - air situation,

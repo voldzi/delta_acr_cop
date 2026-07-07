@@ -664,6 +664,8 @@ interface CopMapProps {
   onClearSelection?: () => void;
   onClearEmergencyRoute?: () => void;
   onRequestRouteToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
+  onStartEmergencyNavigation?: () => void;
+  onStartNavigationToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
   onRequestUserLocation: () => void;
   onViewChange: (view: MapViewState) => void;
   reportLocationPickActive?: boolean;
@@ -821,6 +823,8 @@ function CopMapComponent({
   onPickReportLocation,
   onRequestRouteToPoint,
   onRequestUserLocation,
+  onStartEmergencyNavigation,
+  onStartNavigationToPoint,
   onViewChange,
   reportLocationPickActive = false,
   showAlertAreas,
@@ -5619,6 +5623,24 @@ function CopMapComponent({
                   <span>{emergencyRouteStatus === "loading" ? "Počítám zásahovou trasu..." : "Trasa z mé polohy"}</span>
                 </button>
               ) : null}
+              {selectedAnchorCoordinate && onStartNavigationToPoint ? (
+                <button
+                  className="map-object-popover-route primary"
+                  disabled={emergencyRouteStatus === "loading"}
+                  onClick={(event) => {
+                    stopMapToolbarEvent(event);
+                    onStartNavigationToPoint({
+                      label: selectionCard.title,
+                      lat: selectedAnchorCoordinate[1],
+                      lon: selectedAnchorCoordinate[0]
+                    });
+                  }}
+                  type="button"
+                >
+                  <Compass size={14} strokeWidth={2.2} />
+                  <span>Navigovat</span>
+                </button>
+              ) : null}
               {selectedRouteFeatureCollection.features.length > 0 ? (
                 <div className="map-object-popover-route">
                   <ArrowRight size={14} strokeWidth={2.2} />
@@ -5641,6 +5663,18 @@ function CopMapComponent({
             <strong>Zásahová trasa</strong>
             <span>{emergencyRouteMessage}</span>
           </div>
+          {emergencyRouteStatus === "ready" && onStartEmergencyNavigation ? (
+            <button
+              aria-label="Spustit navigaci po trase"
+              onClick={(event) => {
+                stopMapToolbarEvent(event);
+                onStartEmergencyNavigation();
+              }}
+              type="button"
+            >
+              <Compass size={14} />
+            </button>
+          ) : null}
           {onClearEmergencyRoute ? (
             <button
               aria-label="Skrýt zásahovou trasu"

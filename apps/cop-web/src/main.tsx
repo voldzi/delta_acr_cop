@@ -10,11 +10,13 @@ import {
   Building2,
   Bus,
   Camera,
+  Car,
   CheckCircle2,
   Clock3,
   CloudSun,
   ChevronDown,
   ClipboardList,
+  Compass,
   Copy,
   Crosshair,
   Database,
@@ -36,6 +38,7 @@ import {
   MonitorUp,
   MousePointer2,
   Move,
+  Navigation,
   PanelLeftClose,
   PanelRightClose,
   Pause,
@@ -309,6 +312,7 @@ import {
   readCopOfflineSnapshot,
   registerCopServiceWorker,
   requestCopPwaCacheWarmup,
+  requestCopRouteTileCacheWarmup,
   snapshotAgeSeconds,
   writeCopOfflineSnapshot,
   type CopOfflineSnapshot
@@ -558,6 +562,65 @@ interface EmergencyRouteTarget {
   lat: number;
   lon: number;
 }
+
+type NavigationProfile = "car" | "walking";
+type NavigationMapMode = "north-up" | "route-up" | "overview";
+
+interface NavigationRouteCacheState {
+  cached: number;
+  failed: number;
+  kind: "error" | "idle" | "ready" | "unsupported" | "warming";
+  message?: string;
+  total: number;
+  updatedAt?: string;
+}
+
+interface NavigationProgress {
+  offRouteM?: number;
+  remainingDistanceM?: number;
+  routeBearingDeg?: number;
+}
+
+interface NavigationSession {
+  cache: NavigationRouteCacheState;
+  id: string;
+  mapMode: NavigationMapMode;
+  profile: NavigationProfile;
+  progress: NavigationProgress;
+  route: RoutingRouteResponse;
+  routeCoordinates: Array<[number, number]>;
+  routeSummary: string;
+  startedAt: string;
+  target: EmergencyRouteTarget;
+}
+
+interface StoredNavigationSession {
+  id: string;
+  profile: NavigationProfile;
+  route: RoutingRouteResponse;
+  routeCoordinates: Array<[number, number]>;
+  routeSummary: string;
+  startedAt: string;
+  target: EmergencyRouteTarget;
+  version: 1;
+}
+
+interface NavigationRouteOptions {
+  avoid?: string[];
+  loadingLabel?: string;
+  profileId?: string;
+  summaryLabel?: string;
+}
+
+const navigationProfileOptions: Array<{ id: NavigationProfile; label: string; routeProfileId: string }> = [
+  { id: "car", label: "Autem", routeProfileId: "car" },
+  { id: "walking", label: "Pěšky", routeProfileId: "walking" }
+];
+const navigationStorageKey = "cop.navigation.session.v1";
+const navigationRouteTileZooms = [12, 13, 14, 15, 16] as const;
+const maxNavigationRouteTileUrls = 520;
+const defaultNavigationTileTemplate = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const navigationTileTemplate = normalizeNavigationTileTemplate(import.meta.env.VITE_COP_TILE_URL);
 
 function isMobileSheetViewport(): boolean {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -960,11 +1023,25 @@ export function App() {
   const [selectedSituationFeatureId, setSelectedSituationFeatureId] = React.useState<string | null>(null);
   const [selectedSituationFeatureStableKey, setSelectedSituationFeatureStableKey] = React.useState<string | null>(null);
   const [userLocation, setUserLocation] = React.useState<UserLocation | null>(null);
-  const [emergencyRoute, setEmergencyRoute] = React.useState<RoutingRouteResponse | null>(null);
-  const [emergencyRouteStatus, setEmergencyRouteStatus] = React.useState<"error" | "idle" | "loading" | "ready">(
-    "idle"
+  const initialNavigationSession = React.useMemo(() => readStoredNavigationSession(userStorageScope), [userStorageScope]);
+  const [emergencyRoute, setEmergencyRoute] = React.useState<RoutingRouteResponse | null>(
+    () => initialNavigationSession?.route ?? null
   );
-  const [emergencyRouteMessage, setEmergencyRouteMessage] = React.useState<string | null>(null);
+  const [emergencyRouteStatus, setEmergencyRouteStatus] = React.useState<"error" | "idle" | "loading" | "ready">(
+    () => (initialNavigationSession ? "ready" : "idle")
+  );
+  const [emergencyRouteMessage, setEmergencyRouteMessage] = React.useState<string | null>(
+    () => initialNavigationSession?.routeSummary ?? null
+  );
+  const [emergencyRouteTarget, setEmergencyRouteTarget] = React.useState<EmergencyRouteTarget | null>(
+    () => initialNavigationSession?.target ?? null
+  );
+  const [navigationSession, setNavigationSession] = React.useState<NavigationSession | null>(
+    () => initialNavigationSession
+  );
+  const [navigationDraftTarget, setNavigationDraftTarget] = React.useState<EmergencyRouteTarget | null>(null);
+  const [navigationStarting, setNavigationStarting] = React.useState(false);
+  const [navigationStartError, setNavigationStartError] = React.useState<string | null>(null);
   const [pendingRouteTarget, setPendingRouteTarget] = React.useState<EmergencyRouteTarget | null>(() =>
     normalizeEmergencyRouteTarget(
       initialMapFocus?.action === "route"
@@ -1143,6 +1220,8 @@ export function App() {
             routeRequestIdRef.current += 1;
             setPendingRouteTarget(null);
             setEmergencyRoute(null);
+            setEmergencyRouteTarget(null);
+            setNavigationSession(null);
             setEmergencyRouteStatus("idle");
             setEmergencyRouteMessage(null);
             setLocationStatus("Cíl trasy nemá platné souřadnice.");
@@ -1151,6 +1230,8 @@ export function App() {
           routeRequestIdRef.current += 1;
           setPendingRouteTarget(null);
           setEmergencyRoute(null);
+          setEmergencyRouteTarget(null);
+          setNavigationSession(null);
           setEmergencyRouteStatus("idle");
           setEmergencyRouteMessage(null);
         }
@@ -1376,6 +1457,87 @@ export function App() {
       window.removeEventListener("focus", requestWarmup);
     };
   }, []);
+
+  React.useEffect(() => {
+    const storedSession = readStoredNavigationSession(userStorageScope);
+    setNavigationSession(storedSession);
+    setEmergencyRoute(storedSession?.route ?? null);
+    setEmergencyRouteTarget(storedSession?.target ?? null);
+    setEmergencyRouteStatus(storedSession ? "ready" : "idle");
+    setEmergencyRouteMessage(storedSession?.routeSummary ?? null);
+  }, [userStorageScope]);
+
+  React.useEffect(() => {
+    writeStoredNavigationSession(navigationSession, userStorageScope);
+  }, [navigationSession, userStorageScope]);
+
+  React.useEffect(() => {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+      return;
+    }
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      const cacheState = navigationRouteCacheStateFromServiceWorkerMessage(event.data);
+      if (!cacheState) {
+        return;
+      }
+      setNavigationSession((current) =>
+        current?.id === cacheState.routeId ? { ...current, cache: cacheState.cache } : current
+      );
+    };
+    navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
+  }, []);
+
+  React.useEffect(() => {
+    if (!navigationSession || typeof navigator === "undefined" || !navigator.geolocation?.watchPosition) {
+      return;
+    }
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const location: UserLocation = {
+          accuracyM: position.coords.accuracy,
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          updatedAt: new Date().toISOString()
+        };
+        if (!isValidMapPoint(location)) {
+          return;
+        }
+        const progress = navigationProgressForLocation(location, navigationSession.routeCoordinates);
+        setUserLocation(location);
+        setNavigationSession((current) => (current?.id === navigationSession.id ? { ...current, progress } : current));
+        if (navigationSession.mapMode !== "overview") {
+          setMapView({
+            bearing: navigationSession.mapMode === "route-up" ? (progress.routeBearingDeg ?? 0) : 0,
+            center: [location.lon, location.lat],
+            pitch: navigationSession.mapMode === "route-up" ? 42 : 0,
+            zoom: Math.max(mapView?.zoom ?? 0, navigationSession.profile === "walking" ? 17 : 16)
+          });
+          setFocusViewRequest((current) => current + 1);
+        }
+      },
+      (error) => {
+        setNavigationSession((current) =>
+          current?.id === navigationSession.id
+            ? {
+                ...current,
+                cache: {
+                  ...current.cache,
+                  kind: current.cache.kind === "ready" ? current.cache.kind : current.cache.kind,
+                  message: error.message || current.cache.message
+                }
+              }
+            : current
+        );
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 5_000,
+        timeout: 15_000
+      }
+    );
+    return () => navigator.geolocation.clearWatch?.(watchId);
+  }, [mapView?.zoom, navigationSession?.id, navigationSession?.mapMode, navigationSession?.profile]);
 
   const handleEnableWebPush = React.useCallback(async () => {
     if (!authenticatedSessionActive || !authToken) {
@@ -3142,6 +3304,10 @@ export function App() {
     selectedTransitRouteRequest?.sourceId,
     selectedTransitRouteRequest?.stableKey
   ]);
+  const displayedRouteNavigationTarget = React.useMemo(
+    () => navigationTargetFromDisplayedRoute(selectedSituationFeature, selectedTransitRouteDetail),
+    [selectedSituationFeature, selectedTransitRouteDetail]
+  );
   const visibleFlightLayerCount = React.useMemo(
     () => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds),
     [mapCatalog, visibleCatalogLayerIds]
@@ -4324,27 +4490,35 @@ export function App() {
   }
 
   const runEmergencyRouteFromLocation = React.useCallback(
-    async (location: UserLocation, target: EmergencyRouteTarget) => {
+    async (
+      location: UserLocation,
+      target: EmergencyRouteTarget,
+      options: NavigationRouteOptions = {}
+    ): Promise<RoutingRouteResponse | null> => {
       const normalizedTarget = normalizeEmergencyRouteTarget(target);
       if (!isValidMapPoint(location) || !normalizedTarget) {
         routeRequestIdRef.current += 1;
         setPendingRouteTarget(null);
         setEmergencyRoute(null);
+        setEmergencyRouteTarget(null);
         setEmergencyRouteStatus("idle");
         setEmergencyRouteMessage(null);
         setLocationStatus(
           normalizedTarget ? "Poloha zařízení nemá platné souřadnice." : "Cíl trasy nemá platné souřadnice."
         );
-        return;
+        return null;
       }
       const requestId = routeRequestIdRef.current + 1;
       routeRequestIdRef.current = requestId;
       setEmergencyRoute(null);
+      setEmergencyRouteTarget(normalizedTarget);
       setEmergencyRouteStatus("loading");
-      setEmergencyRouteMessage(`Počítám zásahovou trasu k cíli ${normalizedTarget.label ?? "vybraný bod"}...`);
+      setEmergencyRouteMessage(
+        options.loadingLabel ?? `Počítám zásahovou trasu k cíli ${normalizedTarget.label ?? "vybraný bod"}...`
+      );
       try {
         const response = await runEmergencyRoute(apiBase, authToken, {
-          avoid: ["flood", "road_closure"],
+          avoid: options.avoid ?? ["flood", "road_closure"],
           from: {
             ...(typeof location.accuracyM === "number"
               ? { label: `Moje poloha (±${Math.round(location.accuracyM)} m)` }
@@ -4352,7 +4526,7 @@ export function App() {
             lat: location.lat,
             lon: location.lon
           },
-          profileId: "emergency_vehicle",
+          profileId: options.profileId ?? "emergency_vehicle",
           to: {
             ...(normalizedTarget.label ? { label: normalizedTarget.label } : {}),
             lat: normalizedTarget.lat,
@@ -4360,22 +4534,25 @@ export function App() {
           }
         });
         if (routeRequestIdRef.current !== requestId) {
-          return;
+          return null;
         }
         setEmergencyRoute(response);
+        setEmergencyRouteTarget(normalizedTarget);
         setEmergencyRouteStatus("ready");
         const primary = response.routes[0];
-        const summary = formatEmergencyRouteSummary(primary, response.quality);
+        const summary = formatEmergencyRouteSummary(primary, response.quality, options.summaryLabel);
         setEmergencyRouteMessage(summary);
         setLocationStatus(summary);
+        return response;
       } catch (error) {
         if (routeRequestIdRef.current !== requestId) {
-          return;
+          return null;
         }
         const message = error instanceof Error ? error.message : "Zásahovou trasu se nepodařilo vypočítat.";
         setEmergencyRouteStatus("error");
         setEmergencyRouteMessage(message);
         setLocationStatus(message);
+        return null;
       }
     },
     [apiBase, authToken]
@@ -4388,6 +4565,7 @@ export function App() {
       routeRequestIdRef.current += 1;
       setPendingRouteTarget(null);
       setEmergencyRoute(null);
+      setEmergencyRouteTarget(null);
       setEmergencyRouteStatus("idle");
       setEmergencyRouteMessage(null);
       setLocationStatus("Cíl trasy nemá platné souřadnice.");
@@ -4420,6 +4598,7 @@ export function App() {
             routeRequestIdRef.current += 1;
             setPendingRouteTarget(null);
             setEmergencyRoute(null);
+            setEmergencyRouteTarget(null);
             setEmergencyRouteStatus("error");
             setEmergencyRouteMessage(message);
           }
@@ -4461,6 +4640,7 @@ export function App() {
         routeRequestIdRef.current += 1;
         setPendingRouteTarget(null);
         setEmergencyRoute(null);
+        setEmergencyRouteTarget(null);
         setEmergencyRouteStatus("idle");
         setEmergencyRouteMessage(null);
         setLocationStatus("Cíl trasy nemá platné souřadnice.");
@@ -4477,6 +4657,144 @@ export function App() {
       await runEmergencyRouteFromLocation(userLocation, normalizedTarget);
     },
     [runEmergencyRouteFromLocation, userLocation]
+  );
+
+  const openNavigationProfileDialog = React.useCallback((target: EmergencyRouteTarget | null | undefined) => {
+    const normalizedTarget = normalizeEmergencyRouteTarget(target);
+    setNavigationStartError(
+      normalizedTarget ? null : "Navigaci nelze spustit, protože zvolený cíl nemá platné souřadnice."
+    );
+    setNavigationDraftTarget(normalizedTarget);
+  }, []);
+
+  const focusMapForNavigation = React.useCallback(
+    (session: NavigationSession, location: UserLocation | null = userLocation) => {
+      setAutoFit(false);
+      if (session.mapMode === "overview") {
+        const view = mapViewForNavigationOverview(session.routeCoordinates, mapView);
+        if (view) {
+          setMapView(view);
+          setFocusViewRequest((current) => current + 1);
+        }
+        return;
+      }
+      const center = location
+        ? ([location.lon, location.lat] as [number, number])
+        : (session.routeCoordinates[0] ?? [session.target.lon, session.target.lat]);
+      const routeBearing = location
+        ? navigationProgressForLocation(location, session.routeCoordinates).routeBearingDeg
+        : routeInitialBearing(session.routeCoordinates);
+      setMapView({
+        bearing: session.mapMode === "route-up" ? (routeBearing ?? 0) : 0,
+        center,
+        pitch: session.mapMode === "route-up" ? 42 : 0,
+        zoom: Math.max(mapView?.zoom ?? 0, session.profile === "walking" ? 17 : 16)
+      });
+      setFocusViewRequest((current) => current + 1);
+    },
+    [mapView, userLocation]
+  );
+
+  const startNavigationToTarget = React.useCallback(
+    async (target: EmergencyRouteTarget, profile: NavigationProfile) => {
+      const normalizedTarget = normalizeEmergencyRouteTarget(target);
+      if (!normalizedTarget) {
+        setNavigationStartError("Navigaci nelze spustit, protože zvolený cíl nemá platné souřadnice.");
+        return;
+      }
+      setNavigationStarting(true);
+      setNavigationStartError(null);
+      try {
+        const location = userLocation ?? (await readCurrentUserLocation());
+        setUserLocation(location);
+        setFocusUserLocationRequest((current) => current + 1);
+        setLocationStatus(formatUserLocation(location));
+        const profileOption = navigationProfileOptions.find((option) => option.id === profile) ?? navigationProfileOptions[0]!;
+        const response = await runEmergencyRouteFromLocation(location, normalizedTarget, {
+          avoid: ["flood", "road_closure"],
+          loadingLabel: `Počítám navigaci ${profile === "walking" ? "pěšky" : "autem"} k cíli ${normalizedTarget.label ?? "vybraný bod"}...`,
+          profileId: profileOption.routeProfileId,
+          summaryLabel: profile === "walking" ? "Pěší navigace" : "Navigace autem"
+        });
+        if (!response) {
+          setNavigationStartError("Navigaci se nepodařilo připravit.");
+          return;
+        }
+        const routeCoordinates = routingRouteCoordinates(response);
+        if (routeCoordinates.length < 2) {
+          setNavigationStartError("SIM nevrátil geometrii trasy potřebnou pro navigaci.");
+          return;
+        }
+        const routeSummary = formatEmergencyRouteSummary(
+          response.routes[0],
+          response.quality,
+          profile === "walking" ? "Pěší navigace" : "Navigace autem"
+        );
+        const progress = navigationProgressForLocation(location, routeCoordinates);
+        const session: NavigationSession = {
+          cache: { cached: 0, failed: 0, kind: "idle", total: 0 },
+          id: createNavigationSessionId(),
+          mapMode: "route-up",
+          profile,
+          progress,
+          route: response,
+          routeCoordinates,
+          routeSummary,
+          startedAt: new Date().toISOString(),
+          target: normalizedTarget
+        };
+        setActiveWorkspace("map");
+        setNavigationDraftTarget(null);
+        setNavigationSession(session);
+        setMobileSheet(null);
+        focusMapForNavigation(session, location);
+        const tileUrls = navigationRouteTileUrls(routeCoordinates);
+        if (tileUrls.length === 0) {
+          setNavigationSession((current) =>
+            current?.id === session.id
+              ? {
+                  ...current,
+                  cache: {
+                    cached: 0,
+                    failed: 0,
+                    kind: "unsupported",
+                    message: "Pro aktuální mapový podklad nelze připravit route dlaždice.",
+                    total: 0
+                  }
+                }
+              : current
+          );
+          return;
+        }
+        setNavigationSession((current) =>
+          current?.id === session.id
+            ? { ...current, cache: { cached: 0, failed: 0, kind: "warming", total: tileUrls.length } }
+            : current
+        );
+        const queued = requestCopRouteTileCacheWarmup({ routeId: session.id, urls: tileUrls });
+        if (!queued) {
+          setNavigationSession((current) =>
+            current?.id === session.id
+              ? {
+                  ...current,
+                  cache: {
+                    cached: 0,
+                    failed: 0,
+                    kind: "unsupported",
+                    message: "Service worker není v tomto běhu dostupný.",
+                    total: tileUrls.length
+                  }
+                }
+              : current
+          );
+        }
+      } catch (error) {
+        setNavigationStartError(error instanceof Error ? error.message : "Navigaci se nepodařilo spustit.");
+      } finally {
+        setNavigationStarting(false);
+      }
+    },
+    [focusMapForNavigation, runEmergencyRouteFromLocation, userLocation]
   );
 
   React.useEffect(() => {
@@ -6292,6 +6610,8 @@ export function App() {
                   onAutoFitChange={setAutoFit}
                   onClearEmergencyRoute={() => {
                     setEmergencyRoute(null);
+                    setEmergencyRouteTarget(null);
+                    setNavigationSession(null);
                     setEmergencyRouteStatus("idle");
                     setEmergencyRouteMessage(null);
                   }}
@@ -6303,6 +6623,10 @@ export function App() {
                   onPickReportLocation={handleCommunityReportLocationPicked}
                   onPickRadioPoint={handleRadioPointPicked}
                   onRequestRouteToPoint={(target) => void requestEmergencyRouteToPoint(target)}
+                  onStartNavigationToPoint={openNavigationProfileDialog}
+                  onStartEmergencyNavigation={() =>
+                    openNavigationProfileDialog(emergencyRouteTarget ?? navigationTargetFromRouteResponse(emergencyRoute))
+                  }
                   onCreateSketchDrawing={handleCreateSketchDrawing}
                   onDeleteSketchDrawing={handleDeleteSketchDrawing}
                   onSelectSketchDrawing={handleMapSelectSketchDrawing}
@@ -6324,6 +6648,46 @@ export function App() {
                   zoneCreationActive={zoneCreationMode}
                 />
               </React.Suspense>
+              {activeWorkspace === "map" && displayedRouteNavigationTarget ? (
+                <DisplayedRouteNavigationAction
+                  target={displayedRouteNavigationTarget}
+                  onStart={openNavigationProfileDialog}
+                />
+              ) : null}
+              {activeWorkspace === "map" && navigationSession ? (
+                <NavigationOverlay
+                  browserOnline={browserOnline}
+                  session={navigationSession}
+                  target={navigationSession.target}
+                  onClose={() => {
+                    setNavigationSession(null);
+                    setNavigationDraftTarget(null);
+                    setNavigationStartError(null);
+                  }}
+                  onFocus={() => focusMapForNavigation(navigationSession)}
+                  onMapModeChange={(mapMode) => {
+                    setNavigationSession((current) => (current ? { ...current, mapMode } : current));
+                    const nextSession = navigationSession ? { ...navigationSession, mapMode } : null;
+                    if (nextSession) {
+                      focusMapForNavigation(nextSession);
+                    }
+                  }}
+                />
+              ) : null}
+              {navigationDraftTarget ? (
+                <NavigationProfileDialog
+                  error={navigationStartError}
+                  starting={navigationStarting}
+                  target={navigationDraftTarget}
+                  onClose={() => {
+                    if (!navigationStarting) {
+                      setNavigationDraftTarget(null);
+                      setNavigationStartError(null);
+                    }
+                  }}
+                  onStart={(profile) => void startNavigationToTarget(navigationDraftTarget, profile)}
+                />
+              ) : null}
             </section>
 
             {activeWorkspace === "map" ? null : activeWorkspace === "data" ? (
@@ -6620,6 +6984,7 @@ export function App() {
                       onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
                       onEditReport={(feature) => editCommunityReportFeature(feature)}
                       onOpenChat={(feature) => openCommunityReportChat(feature)}
+                      onNavigateToTarget={openNavigationProfileDialog}
                       onShareTransit={shareTransitToEmbeddedChat}
                       onOpenGallery={(attachments, index, title, subtitle) => {
                         const galleryAttachments = buildCommunityGalleryAttachments(
@@ -6644,6 +7009,7 @@ export function App() {
                     <ObjectDetail
                       historyPoints={replayTrackHistory[selectedObject.objectId] ?? []}
                       object={selectedObject}
+                      onNavigateToTarget={openNavigationProfileDialog}
                       replayActive={replayActive}
                       sourceHealth={sourceHealth}
                     />
@@ -6789,6 +7155,7 @@ export function App() {
               onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
               onEditReport={(feature) => editCommunityReportFeature(feature)}
               onOpenChat={(feature) => openCommunityReportChat(feature)}
+              onNavigateToTarget={openNavigationProfileDialog}
               onShareTransit={shareTransitToEmbeddedChat}
               onOpenGallery={(attachments, index, title, subtitle) => {
                 const galleryAttachments = buildCommunityGalleryAttachments(
@@ -6813,6 +7180,7 @@ export function App() {
             <ObjectDetail
               historyPoints={replayTrackHistory[selectedObject.objectId] ?? []}
               object={selectedObject}
+              onNavigateToTarget={openNavigationProfileDialog}
               replayActive={replayActive}
               sourceHealth={sourceHealth}
             />
@@ -7631,6 +7999,155 @@ function SafetyAreaPopup({
       </div>
     </aside>
   );
+}
+
+function DisplayedRouteNavigationAction({
+  onStart,
+  target
+}: {
+  onStart: (target: EmergencyRouteTarget) => void;
+  target: EmergencyRouteTarget;
+}) {
+  return (
+    <div className="displayed-route-navigation-action">
+      <button className="mini-button primary-lite" onClick={() => onStart(target)} type="button">
+        <Navigation size={14} />
+        Navigovat po zobrazené trase
+      </button>
+    </div>
+  );
+}
+
+function NavigationProfileDialog({
+  error,
+  onClose,
+  onStart,
+  starting,
+  target
+}: {
+  error: string | null;
+  onClose: () => void;
+  onStart: (profile: NavigationProfile) => void;
+  starting: boolean;
+  target: EmergencyRouteTarget;
+}) {
+  return (
+    <ModalDialog
+      closeDisabled={starting}
+      description="Zvolte režim výpočtu. Trasa se uloží jako offline balíček s dlaždicemi v koridoru trasy."
+      eyebrow="Navigace"
+      onClose={onClose}
+      title={target.label ?? "Vybraný cíl"}
+    >
+      <div className="navigation-profile-grid">
+        <button className="navigation-profile-option" disabled={starting} onClick={() => onStart("car")} type="button">
+          <Car size={20} />
+          <span>Autem</span>
+          <small>Výpočet přes SIM profil car</small>
+        </button>
+        <button
+          className="navigation-profile-option"
+          disabled={starting}
+          onClick={() => onStart("walking")}
+          type="button"
+        >
+          <Footprints size={20} />
+          <span>Pěšky</span>
+          <small>Výpočet přes SIM profil walking</small>
+        </button>
+      </div>
+      {starting ? <div className="empty-mini">Připravuji navigaci a offline route balíček...</div> : null}
+      {error ? <div className="situation-warning">{error}</div> : null}
+    </ModalDialog>
+  );
+}
+
+function NavigationOverlay({
+  browserOnline,
+  onClose,
+  onFocus,
+  onMapModeChange,
+  session,
+  target
+}: {
+  browserOnline: boolean;
+  onClose: () => void;
+  onFocus: () => void;
+  onMapModeChange: (mode: NavigationMapMode) => void;
+  session: NavigationSession;
+  target: EmergencyRouteTarget;
+}) {
+  const instruction = navigationInstruction(session);
+  return (
+    <aside className="navigation-overlay" aria-label="Navigace">
+      <div className="navigation-instruction">
+        <div className="navigation-instruction-icon">
+          {session.profile === "walking" ? <Footprints size={24} /> : <Car size={24} />}
+        </div>
+        <div>
+          <span>{navigationProfileLabel(session.profile)}</span>
+          <strong>{instruction}</strong>
+          <small>{target.label ?? "Vybraný cíl"}</small>
+        </div>
+      </div>
+      <div className="navigation-metrics">
+        <div>
+          <span>Zbývá</span>
+          <strong>{formatNavigationDistance(session.progress.remainingDistanceM)}</strong>
+        </div>
+        <div>
+          <span>Odchylka</span>
+          <strong>{formatNavigationOffRoute(session.progress.offRouteM)}</strong>
+        </div>
+        <div>
+          <span>Offline</span>
+          <strong>{formatNavigationRouteCache(session.cache)}</strong>
+        </div>
+      </div>
+      <div className="navigation-status-row">
+        <span className={browserOnline ? "status-dot ok" : "status-dot warn"} />
+        <span>{browserOnline ? "Online, přepočet je dostupný" : "Offline, pokračuji po uložené trase"}</span>
+      </div>
+      <div className="navigation-controls">
+        <button
+          className={clsx("mini-button", session.mapMode === "route-up" && "active")}
+          onClick={() => onMapModeChange("route-up")}
+          type="button"
+        >
+          <Compass size={14} />
+          Rotace
+        </button>
+        <button
+          className={clsx("mini-button", session.mapMode === "north-up" && "active")}
+          onClick={() => onMapModeChange("north-up")}
+          type="button"
+        >
+          <MapPin size={14} />
+          Sever
+        </button>
+        <button
+          className={clsx("mini-button", session.mapMode === "overview" && "active")}
+          onClick={() => onMapModeChange("overview")}
+          type="button"
+        >
+          <RouteOverviewIcon />
+          Přehled
+        </button>
+        <button className="mini-button" onClick={onFocus} type="button">
+          <Crosshair size={14} />
+          Zaměřit
+        </button>
+        <button className="mini-button danger" onClick={onClose} type="button">
+          <X size={14} />
+          Ukončit
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function RouteOverviewIcon() {
+  return <Navigation size={14} />;
 }
 
 function LoginRequiredDialog({
@@ -14003,11 +14520,13 @@ function EventStream({ events }: { events: Array<{ id: string; title: string; de
 
 function ObjectDetail({
   historyPoints,
+  onNavigateToTarget,
   object,
   replayActive,
   sourceHealth
 }: {
   historyPoints: TrackHistory[string];
+  onNavigateToTarget?: (target: EmergencyRouteTarget) => void;
   object: CopObject;
   replayActive: boolean;
   sourceHealth: SourceHealthItem[];
@@ -14018,6 +14537,7 @@ function ObjectDetail({
   );
   const flightData = object.attributes?.flightData;
   const objectTitle = formatObjectListLabel(object);
+  const navigationTarget = navigationTargetFromObject(object);
 
   return (
     <div className="object-detail">
@@ -14028,6 +14548,14 @@ function ObjectDetail({
         </div>
         <em>{objectStatusLabel(object.status)}</em>
       </div>
+      {navigationTarget && onNavigateToTarget ? (
+        <div className="object-detail-actions">
+          <button className="mini-button primary-lite" onClick={() => onNavigateToTarget(navigationTarget)} type="button">
+            <Navigation size={14} />
+            Navigovat sem
+          </button>
+        </div>
+      ) : null}
 
       <ObjectDetailSection title="Identita">
         <DetailGrid
@@ -14920,6 +15448,7 @@ function SituationFeatureDetail({
   mobileTowerViewshed,
   onDeleteReport,
   onEditReport,
+  onNavigateToTarget,
   onOpenChat,
   onOpenGallery,
   onShareTransit
@@ -14930,6 +15459,7 @@ function SituationFeatureDetail({
   mobileTowerViewshed?: MobileTowerViewshedState;
   onDeleteReport?: (reportId: string) => void;
   onEditReport?: (feature: SituationFeature) => void;
+  onNavigateToTarget?: (target: EmergencyRouteTarget) => void;
   onOpenChat?: (feature: SituationFeature) => void;
   onOpenGallery?: (
     attachments: NonNullable<SituationFeature["properties"]["attachments"]>,
@@ -14940,6 +15470,7 @@ function SituationFeatureDetail({
   onShareTransit?: (transit: ChatTransitSharePayload) => void;
 }) {
   const properties = feature.properties;
+  const navigationTarget = navigationTargetFromSituationFeature(feature);
   const technicalCoverage = useMobileNetworkTechnicalCoverage(apiBase, authToken, feature);
   const status = situationFeatureStatusModel(feature);
   const isCommunityReport = properties.layer === "community" && typeof properties.reportId === "string";
@@ -14998,6 +15529,15 @@ function SituationFeatureDetail({
           {floodDetail ? null : <StatusBadge label={status.label} tone={status.tone} />}
         </div>
       </div>
+
+      {navigationTarget && onNavigateToTarget ? (
+        <div className="object-detail-actions">
+          <button className="mini-button primary-lite" onClick={() => onNavigateToTarget(navigationTarget)} type="button">
+            <Navigation size={14} />
+            Navigovat sem
+          </button>
+        </div>
+      ) : null}
 
       {isCommunityReport ? (
         <div className="community-report-actions">
@@ -19170,9 +19710,546 @@ function formatIncidentTimeSpan(value: number): string {
   return `okno ${(value / 3600).toFixed(value >= 36000 ? 0 : 1)} h`;
 }
 
+function navigationTargetFromObject(object: CopObject): EmergencyRouteTarget | null {
+  const lat = Number(object.position?.lat);
+  const lon = Number(object.position?.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return null;
+  }
+  return {
+    label: formatObjectListLabel(object),
+    lat,
+    lon
+  };
+}
+
+function navigationTargetFromSituationFeature(feature: SituationFeature): EmergencyRouteTarget | null {
+  const label =
+    stringProperty(feature.properties.headline) ??
+    stringProperty(feature.properties.label) ??
+    stringProperty(feature.properties.featureId) ??
+    "Vybraný prvek";
+  const coordinates = situationGeometryCoordinates(feature.geometry);
+  if (coordinates.length === 0) {
+    return null;
+  }
+  const coordinate =
+    feature.geometry.type === "LineString" || feature.geometry.type === "MultiLineString"
+      ? coordinates[coordinates.length - 1]
+      : coordinates[0];
+  return navigationTargetFromCoordinate(label, coordinate);
+}
+
+function navigationTargetFromDisplayedRoute(
+  feature: SituationFeature | null,
+  transitDetail: TransitVehicleDetailResponse | null
+): EmergencyRouteTarget | null {
+  const transitCoordinates = routeLineCoordinatesFromUnknown(transitRouteShapeForMap(transitDetail));
+  if (transitCoordinates.length >= 2) {
+    const label =
+      transitDetail?.route?.routeShortName ??
+      transitDetail?.trip?.routeShortName ??
+      transitDetail?.vehicle?.routeShortName ??
+      "Zobrazená trasa";
+    return navigationTargetFromCoordinate(`Konec trasy ${label}`, transitCoordinates[transitCoordinates.length - 1]);
+  }
+  if (!feature || feature.properties.layer !== "trail_routes") {
+    return null;
+  }
+  const coordinates = situationGeometryCoordinates(feature.geometry);
+  if (coordinates.length < 2) {
+    return null;
+  }
+  const label =
+    stringProperty(feature.properties.label) ??
+    stringProperty(feature.properties.headline) ??
+    stringProperty(feature.properties.featureId) ??
+    "Turistická trasa";
+  return navigationTargetFromCoordinate(`Konec trasy ${label}`, coordinates[coordinates.length - 1]);
+}
+
+function navigationTargetFromRouteResponse(response: RoutingRouteResponse | null): EmergencyRouteTarget | null {
+  const coordinates = routingRouteCoordinates(response);
+  if (coordinates.length < 2) {
+    return null;
+  }
+  return navigationTargetFromCoordinate("Cíl zobrazené trasy", coordinates[coordinates.length - 1]);
+}
+
+function navigationTargetFromCoordinate(
+  label: string,
+  coordinate: [number, number] | null | undefined
+): EmergencyRouteTarget | null {
+  if (!coordinate) {
+    return null;
+  }
+  const [lon, lat] = coordinate;
+  return normalizeEmergencyRouteTarget({ label, lat, lon });
+}
+
+function routingRouteCoordinates(response: RoutingRouteResponse | null | undefined): Array<[number, number]> {
+  if (!response) {
+    return [];
+  }
+  for (const feature of response.features) {
+    const coordinates = routeLineCoordinatesFromUnknown(feature.geometry);
+    if (coordinates.length >= 2) {
+      return coordinates;
+    }
+  }
+  for (const route of response.routes) {
+    const coordinates = routeCoordinatesFromRecord(route);
+    if (coordinates.length >= 2) {
+      return coordinates;
+    }
+  }
+  return [];
+}
+
+function routeCoordinatesFromRecord(record: Record<string, unknown>): Array<[number, number]> {
+  for (const key of ["geometry", "routeGeometry", "routeShape", "shape", "lineString", "path"]) {
+    const coordinates = routeLineCoordinatesFromUnknown(record[key]);
+    if (coordinates.length >= 2) {
+      return coordinates;
+    }
+  }
+  return Array.isArray(record.coordinates) ? normalizeNavigationCoordinates(record.coordinates) : [];
+}
+
+function routeLineCoordinatesFromUnknown(value: unknown, depth = 0): Array<[number, number]> {
+  if (depth > 6 || !value) {
+    return [];
+  }
+  if (isRecord(value)) {
+    if (value.type === "LineString" && Array.isArray(value.coordinates)) {
+      return normalizeNavigationCoordinates(value.coordinates);
+    }
+    if (value.type === "MultiLineString" && Array.isArray(value.coordinates)) {
+      return value.coordinates.flatMap((line) =>
+        Array.isArray(line) ? normalizeNavigationCoordinates(line) : []
+      );
+    }
+    for (const key of ["geometry", "routeGeometry", "routeShape", "shape", "lineString", "path", "coordinates"]) {
+      const coordinates = routeLineCoordinatesFromUnknown(value[key], depth + 1);
+      if (coordinates.length >= 2) {
+        return coordinates;
+      }
+    }
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const direct = normalizeNavigationCoordinates(value);
+  if (direct.length >= 2) {
+    return direct;
+  }
+  return value.flatMap((item) => routeLineCoordinatesFromUnknown(item, depth + 1));
+}
+
+function normalizeNavigationCoordinates(value: unknown[]): Array<[number, number]> {
+  return value.flatMap((item) => {
+    const coordinate = normalizeNavigationCoordinate(item);
+    return coordinate ? [coordinate] : [];
+  });
+}
+
+function normalizeNavigationCoordinate(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length < 2) {
+    return null;
+  }
+  const lon = Number(value[0]);
+  const lat = Number(value[1]);
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+    return null;
+  }
+  return [clamp(lon, -180, 180), clamp(lat, -90, 90)];
+}
+
+function navigationProgressForLocation(
+  location: UserLocation,
+  coordinates: Array<[number, number]>
+): NavigationProgress {
+  if (coordinates.length < 2) {
+    return {};
+  }
+  let nearestIndex = 0;
+  let nearestDistanceM = Number.POSITIVE_INFINITY;
+  coordinates.forEach(([lon, lat], index) => {
+    const distance = distanceMeters(location, { lat, lon });
+    if (distance < nearestDistanceM) {
+      nearestDistanceM = distance;
+      nearestIndex = index;
+    }
+  });
+  let remainingDistanceM = Number.isFinite(nearestDistanceM) ? nearestDistanceM : 0;
+  for (let index = nearestIndex; index < coordinates.length - 1; index += 1) {
+    remainingDistanceM += distanceMeters(
+      { lat: coordinates[index]![1], lon: coordinates[index]![0] },
+      { lat: coordinates[index + 1]![1], lon: coordinates[index + 1]![0] }
+    );
+  }
+  const next = coordinates[Math.min(nearestIndex + 1, coordinates.length - 1)];
+  return {
+    offRouteM: Number.isFinite(nearestDistanceM) ? nearestDistanceM : undefined,
+    remainingDistanceM,
+    routeBearingDeg: next ? bearingDegrees(location, { lat: next[1], lon: next[0] }) : undefined
+  };
+}
+
+function distanceMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const earthRadiusM = 6371008.8;
+  const dLat = degreesToRadians(b.lat - a.lat);
+  const dLon = degreesToRadians(b.lon - a.lon);
+  const lat1 = degreesToRadians(a.lat);
+  const lat2 = degreesToRadians(b.lat);
+  const haversine = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * earthRadiusM * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function bearingDegrees(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const lat1 = degreesToRadians(a.lat);
+  const lat2 = degreesToRadians(b.lat);
+  const dLon = degreesToRadians(b.lon - a.lon);
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return (radiansToDegrees(Math.atan2(y, x)) + 360) % 360;
+}
+
+function radiansToDegrees(value: number): number {
+  return (value * 180) / Math.PI;
+}
+
+function routeInitialBearing(coordinates: Array<[number, number]>): number | undefined {
+  if (coordinates.length < 2) {
+    return undefined;
+  }
+  return bearingDegrees(
+    { lat: coordinates[0]![1], lon: coordinates[0]![0] },
+    { lat: coordinates[1]![1], lon: coordinates[1]![0] }
+  );
+}
+
+function mapViewForNavigationOverview(
+  coordinates: Array<[number, number]>,
+  fallback: MapViewState | undefined
+): MapViewState | null {
+  if (coordinates.length === 0) {
+    return null;
+  }
+  const west = Math.min(...coordinates.map(([lon]) => lon));
+  const east = Math.max(...coordinates.map(([lon]) => lon));
+  const south = Math.min(...coordinates.map(([, lat]) => lat));
+  const north = Math.max(...coordinates.map(([, lat]) => lat));
+  const span = Math.max(east - west, north - south, 0.003);
+  const zoom = span > 2 ? 8 : span > 0.8 ? 10 : span > 0.25 ? 12 : span > 0.08 ? 13 : 15;
+  return {
+    bearing: 0,
+    center: [(west + east) / 2, (south + north) / 2],
+    pitch: 0,
+    zoom: Math.min(fallback?.zoom ?? zoom, zoom)
+  };
+}
+
+function navigationRouteTileUrls(coordinates: Array<[number, number]>): string[] {
+  if (
+    coordinates.length < 2 ||
+    !navigationTileTemplate.includes("{z}") ||
+    !navigationTileTemplate.includes("{x}") ||
+    !navigationTileTemplate.includes("{y}")
+  ) {
+    return [];
+  }
+  const urls = new Set<string>();
+  const samples = sampleNavigationCoordinates(coordinates, 36);
+  for (const z of navigationRouteTileZooms) {
+    for (const [lon, lat] of samples) {
+      const tile = lonLatToTileCoordinate(lon, lat, z);
+      const maxTile = Math.max(0, 2 ** z - 1);
+      for (let dx = -1; dx <= 1; dx += 1) {
+        for (let dy = -1; dy <= 1; dy += 1) {
+          urls.add(
+            rasterNavigationTileUrl(
+              navigationTileTemplate,
+              z,
+              clampInteger(tile.x + dx, 0, maxTile),
+              clampInteger(tile.y + dy, 0, maxTile)
+            )
+          );
+          if (urls.size >= maxNavigationRouteTileUrls) {
+            return Array.from(urls);
+          }
+        }
+      }
+    }
+  }
+  return Array.from(urls);
+}
+
+function sampleNavigationCoordinates(coordinates: Array<[number, number]>, maxSamples: number): Array<[number, number]> {
+  if (coordinates.length <= maxSamples) {
+    return coordinates;
+  }
+  const result: Array<[number, number]> = [];
+  const step = (coordinates.length - 1) / (maxSamples - 1);
+  for (let index = 0; index < maxSamples; index += 1) {
+    result.push(coordinates[Math.round(index * step)]!);
+  }
+  return result;
+}
+
+function lonLatToTileCoordinate(lon: number, lat: number, z: number): { x: number; y: number } {
+  const clampedLat = clamp(lat, -85.05112878, 85.05112878);
+  const latRad = degreesToRadians(clampedLat);
+  const tileCount = 2 ** z;
+  const x = Math.floor(((lon + 180) / 360) * tileCount);
+  const y = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * tileCount);
+  return {
+    x: clampInteger(x, 0, Math.max(0, tileCount - 1)),
+    y: clampInteger(y, 0, Math.max(0, tileCount - 1))
+  };
+}
+
+function rasterNavigationTileUrl(template: string, z: number, x: number, y: number): string {
+  return template.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
+}
+
+function clampInteger(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+
+function normalizeNavigationTileTemplate(value: string | undefined): string {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return defaultNavigationTileTemplate;
+  }
+  return normalized.includes("{z}") && normalized.includes("{x}") && normalized.includes("{y}")
+    ? normalized
+    : defaultNavigationTileTemplate;
+}
+
+function navigationInstruction(session: NavigationSession): string {
+  const primary = session.route.routes[0];
+  const maneuvers = Array.isArray(primary?.maneuvers)
+    ? primary.maneuvers
+    : Array.isArray(primary?.instructions)
+      ? primary.instructions
+      : [];
+  for (const maneuver of maneuvers) {
+    if (!isRecord(maneuver)) {
+      continue;
+    }
+    const instruction =
+      stringProperty(maneuver.instruction) ??
+      stringProperty(maneuver.text) ??
+      stringProperty(maneuver.message) ??
+      stringProperty(maneuver.name);
+    if (instruction) {
+      return instruction;
+    }
+  }
+  if (session.progress.offRouteM !== undefined && session.progress.offRouteM > 90) {
+    return "Vraťte se k uložené trase";
+  }
+  return "Pokračujte po zobrazené trase";
+}
+
+function navigationProfileLabel(profile: NavigationProfile): string {
+  return profile === "walking" ? "Pěší navigace" : "Navigace autem";
+}
+
+function formatNavigationDistance(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "n/a";
+  }
+  return value >= 1000 ? `${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)} km` : `${Math.round(value)} m`;
+}
+
+function formatNavigationOffRoute(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "n/a";
+  }
+  return value <= 35 ? "na trase" : formatNavigationDistance(value);
+}
+
+function formatNavigationRouteCache(state: NavigationRouteCacheState): string {
+  if (state.kind === "ready") {
+    return state.total > 0 ? `${state.cached}/${state.total}` : "připraveno";
+  }
+  if (state.kind === "warming") {
+    return state.total > 0 ? `${state.cached}/${state.total}` : "připravuji";
+  }
+  if (state.kind === "unsupported") {
+    return "nedostupná";
+  }
+  if (state.kind === "error") {
+    return "chyba";
+  }
+  return "čeká";
+}
+
+function navigationRouteCacheStateFromServiceWorkerMessage(
+  data: unknown
+): { cache: NavigationRouteCacheState; routeId: string } | null {
+  if (!isRecord(data) || typeof data.type !== "string" || typeof data.routeId !== "string") {
+    return null;
+  }
+  const routeId = data.routeId.trim();
+  if (!routeId) {
+    return null;
+  }
+  if (data.type === "cop:pwa:route-cache-failed") {
+    return {
+      cache: {
+        cached: 0,
+        failed: 0,
+        kind: "error",
+        message: stringProperty(data.message) ?? "Offline dlaždice trasy se nepodařilo připravit.",
+        total: 0
+      },
+      routeId
+    };
+  }
+  if (
+    data.type !== "cop:pwa:route-cache-started" &&
+    data.type !== "cop:pwa:route-cache-progress" &&
+    data.type !== "cop:pwa:route-cache-warmed"
+  ) {
+    return null;
+  }
+  return {
+    cache: {
+      cached: nonNegativeInteger(data.cached),
+      failed: nonNegativeInteger(data.failed),
+      kind: data.type === "cop:pwa:route-cache-warmed" ? "ready" : "warming",
+      total: nonNegativeInteger(data.total),
+      updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined
+    },
+    routeId
+  };
+}
+
+function readCurrentUserLocation(): Promise<UserLocation> {
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    return Promise.reject(new Error("Prohlížeč neposkytuje geolokaci."));
+  }
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const location: UserLocation = {
+          accuracyM: position.coords.accuracy,
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          updatedAt: new Date().toISOString()
+        };
+        if (!isValidMapPoint(location)) {
+          reject(new Error("Poloha zařízení nemá platné souřadnice."));
+          return;
+        }
+        resolve(location);
+      },
+      (error) => reject(new Error(error.message || "Polohu se nepodařilo zaměřit.")),
+      {
+        enableHighAccuracy: true,
+        maximumAge: 10_000,
+        timeout: 12_000
+      }
+    );
+  });
+}
+
+function createNavigationSessionId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `nav:${crypto.randomUUID()}`;
+  }
+  return `nav:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function readStoredNavigationSession(scope: string | undefined): NavigationSession | null {
+  if (typeof window === "undefined" || typeof window.localStorage?.getItem !== "function") {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(scopedNavigationStorageKey(scope));
+    if (!raw) {
+      return null;
+    }
+    const value = JSON.parse(raw) as unknown;
+    if (!isRecord(value) || value.version !== 1 || typeof value.id !== "string") {
+      return null;
+    }
+    const target = normalizeEmergencyRouteTarget(value.target as EmergencyRouteTarget | null | undefined);
+    const route = isRecord(value.route) ? (value.route as unknown as RoutingRouteResponse) : null;
+    const routeCoordinates = Array.isArray(value.routeCoordinates)
+      ? normalizeNavigationCoordinates(value.routeCoordinates)
+      : routingRouteCoordinates(route);
+    const profile = value.profile === "walking" ? "walking" : value.profile === "car" ? "car" : null;
+    if (!target || !route || !profile || routeCoordinates.length < 2 || typeof value.startedAt !== "string") {
+      return null;
+    }
+    return {
+      cache: { cached: 0, failed: 0, kind: "idle", total: 0 },
+      id: value.id,
+      mapMode: "route-up",
+      profile,
+      progress: {},
+      route,
+      routeCoordinates,
+      routeSummary: stringProperty(value.routeSummary) ?? formatEmergencyRouteSummary(route.routes[0], route.quality),
+      startedAt: value.startedAt,
+      target
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredNavigationSession(session: NavigationSession | null, scope: string | undefined): void {
+  if (typeof window === "undefined" || typeof window.localStorage?.setItem !== "function") {
+    return;
+  }
+  const key = scopedNavigationStorageKey(scope);
+  if (!session) {
+    window.localStorage.removeItem(key);
+    return;
+  }
+  const stored: StoredNavigationSession = {
+    id: session.id,
+    profile: session.profile,
+    route: session.route,
+    routeCoordinates: session.routeCoordinates,
+    routeSummary: session.routeSummary,
+    startedAt: session.startedAt,
+    target: session.target,
+    version: 1
+  };
+  try {
+    const serialized = JSON.stringify(stored);
+    if (serialized.length <= 300_000) {
+      window.localStorage.setItem(key, serialized);
+    }
+  } catch {
+    // Navigation remains usable even when browser storage refuses the route package.
+  }
+}
+
+function scopedNavigationStorageKey(scope: string | undefined): string {
+  const normalizedScope = scope
+    ?.trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return normalizedScope ? `${navigationStorageKey}.${normalizedScope}` : navigationStorageKey;
+}
+
 function formatEmergencyRouteSummary(
   route: Record<string, unknown> | undefined,
-  fallbackQuality: Record<string, unknown> | undefined
+  fallbackQuality: Record<string, unknown> | undefined,
+  label = "Zásahová trasa"
 ): string {
   const distance = formatRouteDistance(numberProperty(route?.distanceM));
   const duration = formatDurationSeconds(numberProperty(route?.durationSeconds));
@@ -19185,7 +20262,7 @@ function formatEmergencyRouteSummary(
   ]
     .filter(Boolean)
     .join(" · ");
-  return `Zásahová trasa: ${distance}, ETA ${duration}${quality ? ` · ${quality}` : ""}.`;
+  return `${label}: ${distance}, ETA ${duration}${quality ? ` · ${quality}` : ""}.`;
 }
 
 function formatRouteDistance(value: number | undefined): string {

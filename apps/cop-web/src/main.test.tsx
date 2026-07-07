@@ -30,6 +30,7 @@ vi.mock("./CopMap", async () => {
       mapInteractionSuspended,
       objects,
       onSelectObject,
+      onStartNavigationToPoint,
       selectedSituationFeatureId,
       situationFeatures
     }: {
@@ -42,6 +43,7 @@ vi.mock("./CopMap", async () => {
       mapInteractionSuspended?: boolean;
       objects: Array<{ objectId: string }>;
       onSelectObject?: (object: { objectId: string }) => void;
+      onStartNavigationToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
       selectedSituationFeatureId?: string;
       situationFeatures?: { features?: Array<{ properties?: { featureId?: string; label?: string } }> };
     }) =>
@@ -72,6 +74,23 @@ vi.mock("./CopMap", async () => {
                   object.objectId
                 )
               ),
+              onStartNavigationToPoint
+                ? React.createElement(
+                    "button",
+                    {
+                      "data-testid": "map-start-navigation",
+                      key: "map-start-navigation",
+                      onClick: () =>
+                        onStartNavigationToPoint({
+                          label: "GROUND_UNIT-1",
+                          lat: 50.15077,
+                          lon: 17.37303
+                        }),
+                      type: "button"
+                    },
+                    "Navigovat z mapy"
+                  )
+                : null,
               ...(situationFeatures?.features ?? []).map((feature) =>
                 React.createElement(
                   "span",
@@ -1121,6 +1140,128 @@ describe("COP web dashboard", () => {
     expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-message")).toContain(
       "Zásahová trasa: 2.5 km"
     );
+  });
+
+  it("starts car navigation from a map navigation action", async () => {
+    installMatchMedia(false);
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: {
+          accuracy: 9,
+          altitude: null,
+          altitudeAccuracy: null,
+          heading: null,
+          latitude: 50.12952,
+          longitude: 17.36285,
+          speed: null
+        },
+        timestamp: Date.parse("2026-05-19T08:00:00Z")
+      } as GeolocationPosition);
+    });
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition }
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/routing/route")) {
+        return jsonResponse({
+          contractVersion: "sim-emergency-routing-v1",
+          features: [
+            {
+              geometry: {
+                coordinates: [
+                  [17.36285, 50.12952],
+                  [17.37303, 50.15077]
+                ],
+                type: "LineString"
+              },
+              properties: { label: "Navigace autem", role: "primary", routeId: "primary" },
+              type: "Feature"
+            }
+          ],
+          generatedAt: "2026-05-19T08:00:00Z",
+          providerId: "sim.situation-data.routing",
+          quality: { confidence: 0.91, mode: "osm_graph" },
+          routes: [
+            {
+              distanceM: 2500,
+              durationSeconds: 420,
+              quality: { confidence: 0.91, mode: "osm_graph" },
+              routeId: "primary",
+              warnings: []
+            }
+          ],
+          warnings: []
+        });
+      }
+      if (url.includes("/api/v1/map/query")) {
+        return jsonResponse(emptyMapQueryResponse(["public.weather.current"]));
+      }
+      if (url.includes("/api/v1/sources/health")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/sources")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/tracks?includeSynthetic=true")) {
+        return jsonResponse({
+          items: [
+            {
+              affiliation: "FRIEND",
+              confidence: 0.9,
+              domain: "LAND",
+              objectId: "GROUND_UNIT-1",
+              objectType: "VEHICLE",
+              position: { lat: 50.15077, lon: 17.37303 },
+              status: "ACTIVE"
+            }
+          ]
+        });
+      }
+      if (url.includes("/api/v1/cop/track-history?")) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({ items: [], init });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("map-start-navigation"));
+    fireEvent.click(await screen.findByRole("button", { name: /Autem/ }));
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/routing/route"))).toBe(true)
+    );
+    const routeCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/v1/routing/route"));
+    const routeBody = JSON.parse(String((routeCall?.[1] as RequestInit | undefined)?.body));
+    expect(routeBody).toMatchObject({
+      from: { lat: 50.12952, lon: 17.36285 },
+      profileId: "car",
+      to: { label: "GROUND_UNIT-1", lat: 50.15077, lon: 17.37303 }
+    });
+    await waitFor(() => expect(screen.getByLabelText("Navigace")).toBeTruthy());
+    expect(screen.getByText("Navigace autem")).toBeTruthy();
   });
 
   it("clears a previous emergency route when chat sends a plain map focus action", async () => {
