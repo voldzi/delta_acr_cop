@@ -2342,6 +2342,11 @@ h1 {
   opacity: 0.7;
 }
 
+.mini-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .spin {
   animation: spin 0.9s linear infinite;
 }
@@ -5465,7 +5470,7 @@ h1 {
 
 .navigation-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -5484,13 +5489,28 @@ h1 {
   overflow-wrap: anywhere;
 }
 
-.navigation-status-row {
+.navigation-status-row,
+.navigation-route-status {
   grid-column: 1 / -1;
   display: inline-flex;
   align-items: center;
   gap: 7px;
   color: #cbd5df;
   font-size: 12px;
+}
+
+.navigation-route-status.warn {
+  color: #fde68a;
+}
+
+.navigation-route-error {
+  grid-column: 1 / -1;
+  padding: 8px 10px;
+  border: 1px solid rgba(239, 68, 68, 0.34);
+  background: rgba(127, 29, 29, 0.28);
+  color: #fecaca;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .status-dot {
@@ -5502,6 +5522,10 @@ h1 {
 
 .status-dot.ok {
   background: var(--lime);
+}
+
+.status-dot.warn {
+  background: var(--yellow);
 }
 
 .navigation-controls {
@@ -9194,7 +9218,7 @@ dd {
   }
 
   .navigation-metrics {
-    grid-template-columns: repeat(3, minmax(74px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .navigation-controls {

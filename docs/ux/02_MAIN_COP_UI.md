@@ -48,7 +48,9 @@ požádá SIM přes `/api/v1/routing/route`, zobrazí fullscreen navigační ove
 a uloží lehký route package lokálně pro návrat po restartu PWA. Offline režim
 pokračuje po uložené trase a stažených dlaždicích v koridoru trasy; nové
 přepočítání trasy vyžaduje dostupné backend spojení, dokud nebude zaveden
-lokální routovací graf.
+lokální routovací graf. Aktivní navigace průběžně počítá postup po segmentech
+trasy, odchylku od linie, vzdálenost k dalšímu bodu a při online režimu nabízí
+ruční přepočet z aktuální polohy.
 
 UI nesmí obsahovat targeting, navádění ani ovládání prostředků.
 

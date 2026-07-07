@@ -576,9 +576,24 @@ interface NavigationRouteCacheState {
 }
 
 interface NavigationProgress {
+  arrived?: boolean;
+  distanceToNextPointM?: number;
+  nearestIndex?: number;
+  nextIndex?: number;
   offRouteM?: number;
   remainingDistanceM?: number;
   routeBearingDeg?: number;
+  totalDistanceM?: number;
+  traveledDistanceM?: number;
+}
+
+type NavigationRouteStateKind = "arrived" | "off-route" | "tracking";
+
+interface NavigationRouteState {
+  canReroute: boolean;
+  detail: string;
+  kind: NavigationRouteStateKind;
+  tone: "ok" | "warn";
 }
 
 interface NavigationSession {
@@ -617,6 +632,7 @@ const navigationProfileOptions: Array<{ id: NavigationProfile; label: string; ro
   { id: "walking", label: "Pěšky", routeProfileId: "walking" }
 ];
 const navigationStorageKey = "cop.navigation.session.v1";
+const navigationArrivalThresholdM = 35;
 const navigationRouteTileZooms = [12, 13, 14, 15, 16] as const;
 const maxNavigationRouteTileUrls = 520;
 const defaultNavigationTileTemplate = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -6657,6 +6673,8 @@ export function App() {
               {activeWorkspace === "map" && navigationSession ? (
                 <NavigationOverlay
                   browserOnline={browserOnline}
+                  error={navigationStartError}
+                  rerouting={navigationStarting && !navigationDraftTarget}
                   session={navigationSession}
                   target={navigationSession.target}
                   onClose={() => {
@@ -6672,6 +6690,7 @@ export function App() {
                       focusMapForNavigation(nextSession);
                     }
                   }}
+                  onReroute={() => void startNavigationToTarget(navigationSession.target, navigationSession.profile)}
                 />
               ) : null}
               {navigationDraftTarget ? (
@@ -8064,20 +8083,27 @@ function NavigationProfileDialog({
 
 function NavigationOverlay({
   browserOnline,
+  error,
   onClose,
   onFocus,
   onMapModeChange,
+  onReroute,
+  rerouting,
   session,
   target
 }: {
   browserOnline: boolean;
+  error: string | null;
   onClose: () => void;
   onFocus: () => void;
   onMapModeChange: (mode: NavigationMapMode) => void;
+  onReroute: () => void;
+  rerouting: boolean;
   session: NavigationSession;
   target: EmergencyRouteTarget;
 }) {
   const instruction = navigationInstruction(session);
+  const routeState = navigationRouteState(session, browserOnline);
   return (
     <aside className="navigation-overlay" aria-label="Navigace">
       <div className="navigation-instruction">
@@ -8096,6 +8122,10 @@ function NavigationOverlay({
           <strong>{formatNavigationDistance(session.progress.remainingDistanceM)}</strong>
         </div>
         <div>
+          <span>Další bod</span>
+          <strong>{formatNavigationDistance(session.progress.distanceToNextPointM)}</strong>
+        </div>
+        <div>
           <span>Odchylka</span>
           <strong>{formatNavigationOffRoute(session.progress.offRouteM)}</strong>
         </div>
@@ -8104,11 +8134,21 @@ function NavigationOverlay({
           <strong>{formatNavigationRouteCache(session.cache)}</strong>
         </div>
       </div>
-      <div className="navigation-status-row">
-        <span className={browserOnline ? "status-dot ok" : "status-dot warn"} />
-        <span>{browserOnline ? "Online, přepočet je dostupný" : "Offline, pokračuji po uložené trase"}</span>
+      <div className={clsx("navigation-route-status", routeState.tone)}>
+        <span className={clsx("status-dot", routeState.tone)} />
+        <span>{routeState.detail}</span>
       </div>
+      {error ? <div className="navigation-route-error">{error}</div> : null}
       <div className="navigation-controls">
+        <button
+          className="mini-button primary-lite"
+          disabled={!routeState.canReroute || rerouting}
+          onClick={onReroute}
+          type="button"
+        >
+          <RefreshCw className={rerouting ? "spin" : undefined} size={14} />
+          {rerouting ? "Přepočítávám" : "Přepočítat"}
+        </button>
         <button
           className={clsx("mini-button", session.mapMode === "route-up" && "active")}
           onClick={() => onMapModeChange("route-up")}
@@ -19873,27 +19913,111 @@ function navigationProgressForLocation(
   if (coordinates.length < 2) {
     return {};
   }
-  let nearestIndex = 0;
-  let nearestDistanceM = Number.POSITIVE_INFINITY;
-  coordinates.forEach(([lon, lat], index) => {
-    const distance = distanceMeters(location, { lat, lon });
-    if (distance < nearestDistanceM) {
-      nearestDistanceM = distance;
-      nearestIndex = index;
-    }
-  });
-  let remainingDistanceM = Number.isFinite(nearestDistanceM) ? nearestDistanceM : 0;
-  for (let index = nearestIndex; index < coordinates.length - 1; index += 1) {
-    remainingDistanceM += distanceMeters(
+  const segmentLengths: number[] = [];
+  const cumulativeDistances: number[] = [0];
+  for (let index = 0; index < coordinates.length - 1; index += 1) {
+    const lengthM = distanceMeters(
       { lat: coordinates[index]![1], lon: coordinates[index]![0] },
       { lat: coordinates[index + 1]![1], lon: coordinates[index + 1]![0] }
     );
+    segmentLengths.push(lengthM);
+    cumulativeDistances.push((cumulativeDistances[index] ?? 0) + lengthM);
   }
-  const next = coordinates[Math.min(nearestIndex + 1, coordinates.length - 1)];
+
+  let nearestSegmentIndex = 0;
+  let nearestSegmentProgress = 0;
+  let nearestDistanceM = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < coordinates.length - 1; index += 1) {
+    const projection = projectLocationToRouteSegment(location, coordinates[index]!, coordinates[index + 1]!);
+    if (projection.distanceM < nearestDistanceM) {
+      nearestDistanceM = projection.distanceM;
+      nearestSegmentIndex = index;
+      nearestSegmentProgress = projection.progress;
+    }
+  }
+
+  const totalDistanceM = cumulativeDistances[cumulativeDistances.length - 1] ?? 0;
+  const traveledDistanceM =
+    (cumulativeDistances[nearestSegmentIndex] ?? 0) +
+    (segmentLengths[nearestSegmentIndex] ?? 0) * nearestSegmentProgress;
+  const routeRemainingDistanceM = Math.max(0, totalDistanceM - traveledDistanceM);
+  const nextIndex = Math.min(
+    nearestSegmentIndex + (nearestSegmentProgress > 0.78 ? 2 : 1),
+    coordinates.length - 1
+  );
+  const next = coordinates[nextIndex];
+  const target = coordinates[coordinates.length - 1]!;
+  const distanceToNextPointM = next ? distanceMeters(location, { lat: next[1], lon: next[0] }) : undefined;
+  const distanceToTargetM = distanceMeters(location, { lat: target[1], lon: target[0] });
+  const arrived =
+    routeRemainingDistanceM <= navigationArrivalThresholdM && distanceToTargetM <= navigationArrivalThresholdM;
   return {
+    arrived,
+    distanceToNextPointM,
+    nearestIndex: nearestSegmentIndex,
+    nextIndex,
     offRouteM: Number.isFinite(nearestDistanceM) ? nearestDistanceM : undefined,
-    remainingDistanceM,
-    routeBearingDeg: next ? bearingDegrees(location, { lat: next[1], lon: next[0] }) : undefined
+    remainingDistanceM: routeRemainingDistanceM + (Number.isFinite(nearestDistanceM) ? nearestDistanceM : 0),
+    routeBearingDeg: arrived || !next ? undefined : bearingDegrees(location, { lat: next[1], lon: next[0] }),
+    totalDistanceM,
+    traveledDistanceM
+  };
+}
+
+function projectLocationToRouteSegment(
+  location: { lat: number; lon: number },
+  start: [number, number],
+  end: [number, number]
+): { distanceM: number; progress: number } {
+  const metersPerDegLat = 111_320;
+  const metersPerDegLon = Math.max(1, Math.cos(degreesToRadians(location.lat)) * metersPerDegLat);
+  const ax = (start[0] - location.lon) * metersPerDegLon;
+  const ay = (start[1] - location.lat) * metersPerDegLat;
+  const bx = (end[0] - location.lon) * metersPerDegLon;
+  const by = (end[1] - location.lat) * metersPerDegLat;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const denominator = dx * dx + dy * dy;
+  const progress = denominator > 0 ? clamp((-(ax * dx + ay * dy)) / denominator, 0, 1) : 0;
+  const px = ax + dx * progress;
+  const py = ay + dy * progress;
+  return {
+    distanceM: Math.hypot(px, py),
+    progress
+  };
+}
+
+function navigationOffRouteThreshold(profile: NavigationProfile): number {
+  return profile === "walking" ? 45 : 90;
+}
+
+function navigationRouteState(session: NavigationSession, browserOnline: boolean): NavigationRouteState {
+  if (session.progress.arrived) {
+    return {
+      canReroute: false,
+      detail: "Cíl je dosažen. Navigaci můžete ukončit.",
+      kind: "arrived",
+      tone: "ok"
+    };
+  }
+  const offRouteM = session.progress.offRouteM;
+  if (offRouteM !== undefined && offRouteM > navigationOffRouteThreshold(session.profile)) {
+    return {
+      canReroute: browserOnline,
+      detail: browserOnline
+        ? `Mimo trasu o ${formatNavigationDistance(offRouteM)}. Přepočet je dostupný.`
+        : `Mimo trasu o ${formatNavigationDistance(offRouteM)}. Offline režim drží uloženou trasu.`,
+      kind: "off-route",
+      tone: "warn"
+    };
+  }
+  return {
+    canReroute: browserOnline,
+    detail: browserOnline
+      ? "Online sledování trasy, přepočet je dostupný."
+      : "Offline režim, pokračuji po uložené trase.",
+    kind: "tracking",
+    tone: browserOnline ? "ok" : "warn"
   };
 }
 
@@ -20032,9 +20156,23 @@ function normalizeNavigationTileTemplate(value: string | undefined): string {
 }
 
 function navigationInstruction(session: NavigationSession): string {
+  if (session.progress.arrived) {
+    return "Cíl je dosažen";
+  }
+  if (
+    session.progress.offRouteM !== undefined &&
+    session.progress.offRouteM > navigationOffRouteThreshold(session.profile)
+  ) {
+    return "Jste mimo trasu";
+  }
+  if (session.progress.remainingDistanceM !== undefined && session.progress.remainingDistanceM <= 120) {
+    return `Cíl za ${formatNavigationDistance(session.progress.remainingDistanceM)}`;
+  }
   const primary = session.route.routes[0];
   const maneuvers = Array.isArray(primary?.maneuvers)
     ? primary.maneuvers
+    : Array.isArray(primary?.steps)
+      ? primary.steps
     : Array.isArray(primary?.instructions)
       ? primary.instructions
       : [];
@@ -20051,8 +20189,8 @@ function navigationInstruction(session: NavigationSession): string {
       return instruction;
     }
   }
-  if (session.progress.offRouteM !== undefined && session.progress.offRouteM > 90) {
-    return "Vraťte se k uložené trase";
+  if (session.progress.distanceToNextPointM !== undefined && session.progress.nextIndex !== undefined) {
+    return `Pokračujte ${formatNavigationDistance(session.progress.distanceToNextPointM)} k bodu ${session.progress.nextIndex}`;
   }
   return "Pokračujte po zobrazené trase";
 }

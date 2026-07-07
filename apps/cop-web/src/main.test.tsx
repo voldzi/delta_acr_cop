@@ -1207,6 +1207,7 @@ describe("COP web dashboard", () => {
             {
               distanceM: 2500,
               durationSeconds: 420,
+              steps: [{ instruction: "Pokračujte po silnici k cíli." }],
               quality: { confidence: 0.91, mode: "osm_graph" },
               routeId: "primary",
               warnings: []
@@ -1262,6 +1263,20 @@ describe("COP web dashboard", () => {
     });
     await waitFor(() => expect(screen.getByLabelText("Navigace")).toBeTruthy());
     expect(screen.getByText("Navigace autem")).toBeTruthy();
+    expect(screen.getByText("Pokračujte po silnici k cíli.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Přepočítat/ }));
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/v1/routing/route"))).toHaveLength(2)
+    );
+    const rerouteCall = fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/v1/routing/route"))[1];
+    const rerouteBody = JSON.parse(String((rerouteCall?.[1] as RequestInit | undefined)?.body));
+    expect(rerouteBody).toMatchObject({
+      from: { lat: 50.12952, lon: 17.36285 },
+      profileId: "car",
+      to: { label: "GROUND_UNIT-1", lat: 50.15077, lon: 17.37303 }
+    });
   });
 
   it("clears a previous emergency route when chat sends a plain map focus action", async () => {

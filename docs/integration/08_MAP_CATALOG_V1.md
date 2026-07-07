@@ -937,7 +937,9 @@ geometry/summary locally and asks the service worker to prefetch raster map
 tiles along the route corridor. This is an offline-continuation package, not
 offline rerouting: if the operator leaves the route while offline, the client
 can show deviation and the nearest saved route, but a new route calculation
-requires COP API connectivity.
+requires COP API connectivity. While online, the PWA can manually rerun
+`/api/v1/routing/route` from the current device position with the active
+navigation profile and replace the stored route package.
 
 COP must not expose `mobile_coverage` as a normal public layer. Diagnostic
 mobile layers such as `diagnostic.mobile.coverage`,
