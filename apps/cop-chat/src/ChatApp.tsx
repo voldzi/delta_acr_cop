@@ -153,9 +153,11 @@ import {
   mergeTimelineMessages,
   messageMatchesQuery,
   normalizeChatPreferences,
+  selectReadableTimelineMessagesForStorage,
   timelineNeedsBridgeBackfill,
   type ChatPreferences
 } from "./chat-model";
+import { deleteStoredRoomTimeline, readStoredRoomTimeline, writeStoredRoomTimeline } from "./timeline-cache";
 import type { ForwardTarget } from "./dialogs/ForwardDialog";
 import type { MediaPreviewItem } from "./dialogs/MediaPreviewDialog";
 import type { MuteChoice } from "./dialogs/MuteDialog";
@@ -192,6 +194,7 @@ export {
   mergeTimelineMessages,
   messageMatchesQuery,
   normalizeChatPreferences,
+  selectReadableTimelineMessagesForStorage,
   timelineNeedsBridgeBackfill
 } from "./chat-model";
 export type { ChatPreferences } from "./chat-model";
@@ -634,6 +637,7 @@ export function ChatApp() {
   const notificationRoomWatermarksRef = React.useRef<Map<string, number>>(new Map());
   const selectedRoomIdRef = React.useRef<string | null>(null);
   const timelineCacheRef = React.useRef<Map<string, MatrixTimelineMessage[]>>(new Map());
+  const timelinePersistFingerprintRef = React.useRef<Map<string, string>>(new Map());
   const conversationsRef = React.useRef<MessagingConversationSummary[]>(conversations);
   const memberAddPendingIdsRef = React.useRef<Set<string>>(new Set());
 
@@ -696,6 +700,27 @@ export function ChatApp() {
   const ownIdentityIds = React.useMemo(
     () => ownChatIdentityIds(authSession, matrixSession?.bootstrap.userId),
     [authSession, matrixSession?.bootstrap.userId]
+  );
+  const timelineStorageOwner = matrixSession?.bootstrap.userId ?? authSubjectId ?? preferencesOwner;
+  const persistRoomTimeline = React.useCallback(
+    (roomId: string, messages: MatrixTimelineMessage[], options: { replaceEmpty?: boolean } = {}) => {
+      const readableMessages = selectReadableTimelineMessagesForStorage(messages);
+      if (readableMessages.length === 0) {
+        if (options.replaceEmpty) {
+          timelinePersistFingerprintRef.current.delete(`${timelineStorageOwner}:${roomId}`);
+          void deleteStoredRoomTimeline(timelineStorageOwner, roomId).catch(() => undefined);
+        }
+        return;
+      }
+      const fingerprintKey = `${timelineStorageOwner}:${roomId}`;
+      const fingerprint = persistentTimelineFingerprint(readableMessages);
+      if (timelinePersistFingerprintRef.current.get(fingerprintKey) === fingerprint) {
+        return;
+      }
+      timelinePersistFingerprintRef.current.set(fingerprintKey, fingerprint);
+      void writeStoredRoomTimeline(timelineStorageOwner, roomId, readableMessages).catch(() => undefined);
+    },
+    [timelineStorageOwner]
   );
 
   React.useEffect(() => {
@@ -1329,6 +1354,7 @@ export function ChatApp() {
       setRooms([]);
       setTimeline([]);
       timelineCacheRef.current.clear();
+      timelinePersistFingerprintRef.current.clear();
       setTimelineCacheRevision((value) => value + 1);
       notifiedEventIdsRef.current.clear();
       notificationPrimedRoomIdsRef.current.clear();
@@ -1366,6 +1392,30 @@ export function ChatApp() {
     );
     return () => window.clearTimeout(timer);
   }, [authToken, matrixSession?.bootstrap.expiresAt, selectedRoomId]);
+
+  React.useEffect(() => {
+    if (!authToken || !selectedRoomId) {
+      return undefined;
+    }
+    let cancelled = false;
+    void readStoredRoomTimeline(timelineStorageOwner, selectedRoomId)
+      .then((storedTimeline) => {
+        if (cancelled || selectedRoomIdRef.current !== selectedRoomId || storedTimeline.length === 0) {
+          return;
+        }
+        const cachedTimeline = timelineCacheRef.current.get(selectedRoomId) ?? [];
+        const nextTimeline =
+          cachedTimeline.length > 0 ? mergeTimelineMessages(storedTimeline, cachedTimeline) : storedTimeline;
+        timelineCacheRef.current.set(selectedRoomId, nextTimeline);
+        setTimeline(nextTimeline);
+        setTimelineCacheRevision((value) => value + 1);
+        persistRoomTimeline(selectedRoomId, nextTimeline);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, persistRoomTimeline, selectedRoomId, timelineStorageOwner]);
 
   React.useEffect(() => {
     if (!matrixSession || !selectedRoomId) {
@@ -1730,6 +1780,7 @@ export function ChatApp() {
     }
     const nextMessages = messages.length > 0 && cached.length > 0 ? mergeTimelineMessages(cached, messages) : messages;
     timelineCacheRef.current.set(roomId, nextMessages);
+    persistRoomTimeline(roomId, nextMessages);
     setTimelineCacheRevision((value) => value + 1);
     return nextMessages;
   }
@@ -1820,6 +1871,8 @@ export function ChatApp() {
       return;
     }
     timelineCacheRef.current.delete(item.roomId);
+    timelinePersistFingerprintRef.current.delete(`${timelineStorageOwner}:${item.roomId}`);
+    void deleteStoredRoomTimeline(timelineStorageOwner, item.roomId).catch(() => undefined);
     setHistoryExhaustedByRoom((current) => {
       if (!(item.roomId && current[item.roomId])) {
         return current;
@@ -2090,6 +2143,7 @@ export function ChatApp() {
       setTimeline((current) => {
         const next = applyLocalReaction(current, message.eventId, key, senderLabel);
         timelineCacheRef.current.set(selectedRoomId, next);
+        persistRoomTimeline(selectedRoomId, next);
         setTimelineCacheRevision((value) => value + 1);
         return next;
       });
@@ -2220,6 +2274,7 @@ export function ChatApp() {
       setTimeline((current) => {
         const next = current.filter((item) => item.eventId !== message.eventId);
         timelineCacheRef.current.set(selectedRoomId, next);
+        persistRoomTimeline(selectedRoomId, next, { replaceEmpty: true });
         setTimelineCacheRevision((value) => value + 1);
         return next;
       });
@@ -8648,6 +8703,10 @@ function writeChatPreferences(ownerId: string, preferences: ChatPreferences): vo
   } catch {
     // localStorage can be unavailable in privacy modes; preferences then stay in memory.
   }
+}
+
+function persistentTimelineFingerprint(messages: MatrixTimelineMessage[]): string {
+  return JSON.stringify(messages);
 }
 
 function muteChoiceToStorageValue(choice: MuteChoice): string {

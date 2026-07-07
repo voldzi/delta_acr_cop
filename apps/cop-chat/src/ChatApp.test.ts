@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { mergeTimelineMessages, timelineNeedsBridgeBackfill } from "./chat-model";
+import {
+  mergeTimelineMessages,
+  selectReadableTimelineMessagesForStorage,
+  timelineNeedsBridgeBackfill
+} from "./chat-model";
 import {
   aiMapActionsForMessage,
   aiMapActionsFromResponse,
@@ -96,6 +100,31 @@ describe("mergeTimelineMessages", () => {
     };
 
     expect(mergeTimelineMessages([undecryptableCached], [readableLive])).toEqual([readableLive]);
+  });
+
+  it("persists only the last known readable message versions for local timeline recovery", () => {
+    const readableLocation: MatrixTimelineMessage = {
+      body: "COP Operator živě",
+      eventId: "$location-readable",
+      kind: "location",
+      location: { label: "COP Operator živě", lat: 50.06883, lon: 14.31115, source: "device" },
+      own: false,
+      sender: "@operator:msg.zeleznalady.cz",
+      timestamp: "2026-07-07T18:24:00.000Z"
+    };
+    const undecryptableOwnMessage: MatrixTimelineMessage = {
+      body: undecryptableBody,
+      decryptionState: "undecryptable",
+      eventId: "$own-lost",
+      kind: "text",
+      own: true,
+      sender: "@voldzi:msg.zeleznalady.cz",
+      timestamp: "2026-07-07T18:25:00.000Z"
+    };
+
+    expect(selectReadableTimelineMessagesForStorage([readableLocation, undecryptableOwnMessage])).toEqual([
+      readableLocation
+    ]);
   });
 });
 

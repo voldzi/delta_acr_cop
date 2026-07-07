@@ -9,6 +9,7 @@ interface ServiceWorkerContext {
   isAppAssetRequest: (request: Request, url: URL) => boolean;
   isChatRequestPath: (pathname: string) => boolean;
   isImmutableRuntimeAssetRequest: (request: Request, url: URL) => boolean;
+  networkFirstAppShell: (request: Request) => Promise<Response>;
   notificationPayloadBadgeCount: (payload: Record<string, unknown>) => number | undefined;
   notificationPayloadTag: (payload: Record<string, unknown>) => string | undefined;
   self: {
@@ -23,7 +24,21 @@ interface ServiceWorkerContext {
   updateAppBadge: (count?: number) => Promise<void>;
 }
 
-function loadServiceWorkerContext(options: { existingNotifications?: Array<{ tag?: string }> } = {}): ServiceWorkerContext {
+interface MockServiceWorkerCache {
+  delete: ReturnType<typeof vi.fn>;
+  entries: Map<string, Response>;
+  keys: ReturnType<typeof vi.fn>;
+  match: ReturnType<typeof vi.fn>;
+  put: ReturnType<typeof vi.fn>;
+}
+
+function loadServiceWorkerContext(
+  options: {
+    existingNotifications?: Array<{ tag?: string }>;
+    fetch?: ReturnType<typeof vi.fn>;
+    shellCache?: MockServiceWorkerCache;
+  } = {}
+): ServiceWorkerContext {
   const source = readFileSync(resolve("apps/cop-web/public/cop-service-worker.js"), "utf8");
   const clearAppBadge = vi.fn(async () => undefined);
   const getNotifications = vi.fn(async ({ tag }: { tag?: string } = {}) =>
@@ -31,14 +46,17 @@ function loadServiceWorkerContext(options: { existingNotifications?: Array<{ tag
   );
   const setAppBadge = vi.fn(async () => undefined);
   const showNotification = vi.fn(async () => undefined);
+  const shellCache = options.shellCache ?? createMockCache();
   const context = {
     Request,
     Response,
     URL,
-    caches: {},
+    caches: {
+      open: vi.fn(async () => shellCache)
+    },
     clearTimeout,
     console,
-    fetch: vi.fn(),
+    fetch: options.fetch ?? vi.fn(),
     self: {
       clients: {},
       location: { origin: "https://cop.example.test" },
@@ -55,6 +73,29 @@ function loadServiceWorkerContext(options: { existingNotifications?: Array<{ tag
   vm.createContext(context);
   vm.runInContext(source, context);
   return context as unknown as ServiceWorkerContext;
+}
+
+function createMockCache(initialEntries: Record<string, Response> = {}): MockServiceWorkerCache {
+  const entries = new Map(Object.entries(initialEntries));
+  return {
+    delete: vi.fn(async (request: Request | string) => entries.delete(cacheRequestKey(request))),
+    entries,
+    keys: vi.fn(async () =>
+      Array.from(entries.keys()).map((key) => new Request(new URL(key, "https://cop.example.test").href))
+    ),
+    match: vi.fn(async (request: Request | string) => entries.get(cacheRequestKey(request))?.clone()),
+    put: vi.fn(async (request: Request | string, response: Response) => {
+      entries.set(cacheRequestKey(request), response.clone());
+    })
+  };
+}
+
+function cacheRequestKey(request: Request | string): string {
+  if (typeof request === "string") {
+    return request;
+  }
+  const url = new URL(request.url);
+  return `${url.pathname}${url.search}`;
 }
 
 describe("COP PWA service worker routing", () => {
@@ -98,6 +139,31 @@ describe("COP PWA service worker routing", () => {
       "/chat/assets/index.css?v=1",
       "/site.webmanifest"
     ]);
+  });
+
+  it("prefers a fresh network app shell for online chat navigations", async () => {
+    const shellCache = createMockCache({ "/chat/": new Response("cached chat shell", { status: 200 }) });
+    const fetch = vi.fn(async () => new Response("fresh chat shell", { status: 200 }));
+    const serviceWorker = loadServiceWorkerContext({ fetch, shellCache });
+
+    const response = await serviceWorker.networkFirstAppShell(new Request("https://cop.example.test/chat/"));
+
+    await expect(response.text()).resolves.toBe("fresh chat shell");
+    expect(fetch).toHaveBeenCalledWith(expect.any(Request), { cache: "no-cache" });
+    expect(shellCache.put).toHaveBeenCalledWith("/chat/", expect.any(Response));
+    await expect(shellCache.entries.get("/chat/")?.text()).resolves.toBe("fresh chat shell");
+  });
+
+  it("falls back to the cached app shell when chat navigation is offline", async () => {
+    const shellCache = createMockCache({ "/chat/": new Response("offline chat shell", { status: 200 }) });
+    const fetch = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const serviceWorker = loadServiceWorkerContext({ fetch, shellCache });
+
+    const response = await serviceWorker.networkFirstAppShell(new Request("https://cop.example.test/chat/"));
+
+    await expect(response.text()).resolves.toBe("offline chat shell");
   });
 });
 

@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260707-7";
+const COP_SW_VERSION = "cop-pwa-offline-20260707-8";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -23,6 +23,7 @@ const MAX_RUNTIME_ENTRIES = 120;
 const MAX_TILE_ENTRIES = 1200;
 const MAX_ROUTE_TILE_ENTRIES = 900;
 const MAX_ROUTE_TILE_WARMUP_URLS = 650;
+const APP_SHELL_NETWORK_TIMEOUT_MS = 2500;
 const RECENT_NOTIFICATION_TAG_TTL_MS = 120_000;
 const recentNotificationTags = new Map();
 
@@ -63,7 +64,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    event.respondWith(staleWhileRevalidateAppShell(request));
+    event.respondWith(networkFirstAppShell(request));
     return;
   }
 
@@ -184,11 +185,11 @@ self.addEventListener("message", (event) => {
   }
 });
 
-async function staleWhileRevalidateAppShell(request) {
+async function networkFirstAppShell(request) {
   const cache = await caches.open(APP_SHELL_CACHE);
   const cacheKey = appShellCacheKeyForRequest(request);
   const cached = await cache.match(cacheKey);
-  const refresh = fetch(request)
+  const refresh = fetch(request, { cache: "no-cache" })
     .then(async (response) => {
       if (response.ok) {
         await cache.put(cacheKey, response.clone());
@@ -198,10 +199,14 @@ async function staleWhileRevalidateAppShell(request) {
     .catch(() => undefined);
 
   if (cached) {
-    return cached;
+    return (await Promise.race([refresh, delay(APP_SHELL_NETWORK_TIMEOUT_MS)])) || cached;
   }
 
   return (await refresh) || Response.error();
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(() => resolve(undefined), ms));
 }
 
 async function networkFirstRuntime(request, cacheName, maxEntries) {

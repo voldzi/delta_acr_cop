@@ -16,3 +16,10 @@ documentation remains in:
 
 Operational rule: do not commit secrets. `.env.example` contains placeholders
 only; real secrets are configured outside the repository.
+
+Client-side chat rule: COP Chat may keep a per-device, per-room last-known
+readable Matrix timeline cache in browser storage so the PWA does not degrade
+already displayed E2EE messages to undecryptable placeholders after restart or
+sync refresh. This plaintext cache stays on the user's device/browser origin and
+is not sent to COP API; Matrix access tokens, recovery keys and room keys remain
+out of logs, commits and server-side COP storage.

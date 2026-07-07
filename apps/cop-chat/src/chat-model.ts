@@ -68,6 +68,22 @@ export function isUndecryptableTimelineMessage(message: MatrixTimelineMessage): 
   return message.decryptionState === "undecryptable" || isUndecryptableTimelineBody(message.body);
 }
 
+export function selectReadableTimelineMessagesForStorage(
+  messages: MatrixTimelineMessage[],
+  limit = 500
+): MatrixTimelineMessage[] {
+  const byEventId = new Map<string, MatrixTimelineMessage>();
+  for (const message of messages) {
+    if (!message.eventId || isUndecryptableTimelineMessage(message)) {
+      continue;
+    }
+    byEventId.set(message.eventId, message);
+  }
+  return Array.from(byEventId.values())
+    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
+    .slice(Math.max(0, byEventId.size - limit));
+}
+
 function mergeTimelineMessageVersion(
   cached: MatrixTimelineMessage,
   live: MatrixTimelineMessage

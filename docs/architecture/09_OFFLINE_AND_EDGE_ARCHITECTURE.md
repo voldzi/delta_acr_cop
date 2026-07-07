@@ -21,11 +21,13 @@ ukládá aplikační shell, manifest, ikony, lokální build assety, chat shell 
 `/chat/` a průběžně použité mapové dlaždice. API endpointy se service workerem
 necachují, aby se neobcházela autentizace ani aktuální server-side policy.
 
-Navigace do mapy i chatu používá stale-while-revalidate shell strategii: pokud
-už je shell v cache, PWA ho vrátí okamžitě a síťovou aktualizaci provede na
-pozadí. Content-hashované `/assets/*` a `/chat/assets/*` jsou cache-first,
-protože změna buildu mění jejich název. To je základ pro chování podobné
-nativní aplikaci při opakovaném otevření nebo nestabilní síti.
+Navigace do mapy i chatu používá network-first shell strategii s krátkým
+timeoutem. Pokud je zařízení online, připnutá PWA načte aktuální HTML shell a
+uloží ho do cache; pokud je síť pomalá nebo nedostupná, vrátí poslední uložený
+shell. Content-hashované `/assets/*` a `/chat/assets/*` jsou cache-first,
+protože změna buildu mění jejich název. To drží offline start rychlý, ale
+zároveň brání tomu, aby po produkčním nasazení PWA dlouho běžela na starém
+shellu.
 
 Při instalaci service worker navíc zahřívá runtime cache ze same-origin assetů
 odkazovaných přímo z HTML shellu mapy a chatu. Díky tomu další spuštění PWA
@@ -62,6 +64,15 @@ secret šifrovaný lokálním WebCrypto AES-GCM wrapping key. Wrapping key je
 non-extractable a vázaný na origin prohlížeče. Pokud prohlížeč IndexedDB nebo
 structured-clone CryptoKey odmítne, klient použije legacy `localStorage`
 fallback, aby uživatel neztratil možnost obnovit Matrix key backup.
+
+COP Chat navíc per uživatel a Matrix místnost ukládá poslední známou čitelnou
+podobu timeline do lokálního browser storage. Primární úložiště je IndexedDB,
+`localStorage` je fallback pro omezené prohlížeče. Do této cache se nezapisují
+události, které Matrix SDK v daném okamžiku hlásí jako nešifrovatelné
+placeholdery; čitelná zpráva, která už v tomto prohlížeči jednou byla
+zobrazena, se proto při krátkodobém E2EE/key refresh problému nemá degradovat
+zpět na text o chybějícím klíči. Cache zůstává pouze na zařízení a neposílá se
+do COP API.
 
 Při startu PWA nejdřív asynchronně načte nejnovější lokální snapshot z
 IndexedDB/`localStorage`, okamžitě ho zobrazí jako `DEGRADED` nebo `OFFLINE`
