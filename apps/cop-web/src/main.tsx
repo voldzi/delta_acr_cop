@@ -441,6 +441,7 @@ const predictionModeOptions: Array<[PredictionMode, string]> = [
 ];
 const defaultAoiCenter = { lat: 50.0755, lon: 14.4378 };
 const defaultMapFallbackZoom = 8;
+const userLocationFocusMinZoom = 15;
 const priorityAlertUserRadiusKm = 30;
 const mapFeatureFetchDelayMs = 450;
 const defaultMapBounds: MapBounds = { east: 19.1, north: 51.2, south: 48.5, west: 12 };
@@ -3737,6 +3738,18 @@ export function App() {
     setFocusViewRequest((current) => current + 1);
   }, []);
 
+  const focusMapOnUserLocation = React.useCallback((location: UserLocation) => {
+    setAutoFit(false);
+    setMapView((current) => ({
+      bearing: current?.bearing ?? 0,
+      center: [location.lon, location.lat],
+      pitch: current?.pitch ?? 0,
+      zoom: Math.max(current?.zoom ?? 0, userLocationFocusMinZoom)
+    }));
+    setFocusViewRequest((current) => current + 1);
+    setFocusUserLocationRequest((current) => current + 1);
+  }, []);
+
   const currentPreferences = React.useMemo<UserPreferences>(
     () => ({
       activeWorkspace,
@@ -4714,7 +4727,11 @@ export function App() {
         }
         setUserLocation(location);
         setLocationStatus(formatUserLocation(location));
-        setFocusUserLocationRequest((current) => current + 1);
+        if (requestedRouteTarget) {
+          setFocusUserLocationRequest((current) => current + 1);
+        } else {
+          focusMapOnUserLocation(location);
+        }
         setIsLocating(false);
         if (requestedRouteTarget) {
           const target = requestedRouteTarget;

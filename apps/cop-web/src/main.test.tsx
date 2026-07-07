@@ -31,6 +31,7 @@ vi.mock("./CopMap", async () => {
       initialView,
       mapInteractionSuspended,
       objects,
+      onRequestUserLocation,
       onSelectObject,
       onStartNavigationToPoint,
       selectedSituationFeatureId,
@@ -45,6 +46,7 @@ vi.mock("./CopMap", async () => {
       initialView?: { center: [number, number]; zoom?: number };
       mapInteractionSuspended?: boolean;
       objects: Array<{ objectId: string }>;
+      onRequestUserLocation?: () => void;
       onSelectObject?: (object: { objectId: string }) => void;
       onStartNavigationToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
       selectedSituationFeatureId?: string;
@@ -93,6 +95,18 @@ vi.mock("./CopMap", async () => {
                       type: "button"
                     },
                     "Navigovat z mapy"
+                  )
+                : null,
+              onRequestUserLocation
+                ? React.createElement(
+                    "button",
+                    {
+                      "data-testid": "map-request-user-location",
+                      key: "map-request-user-location",
+                      onClick: () => onRequestUserLocation(),
+                      type: "button"
+                    },
+                    "Přejít na moji polohu"
                   )
                 : null,
               ...(situationFeatures?.features ?? []).map((feature) =>
@@ -479,6 +493,65 @@ describe("COP web dashboard", () => {
     const expectedCenter = `${defaultMapCenter[0].toFixed(5)},${defaultMapCenter[1].toFixed(5)}`;
     await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-initial-center")).toBe(expectedCenter));
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe(expectedCenter);
+  });
+
+  it("focuses the map on the current device location after the location button is clicked", async () => {
+    installMatchMedia(true);
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: {
+          accuracy: 12,
+          altitude: null,
+          altitudeAccuracy: null,
+          heading: null,
+          latitude: 50.087,
+          longitude: 14.421,
+          speed: null
+        },
+        timestamp: Date.parse("2026-05-19T08:00:00Z")
+      } as GeolocationPosition);
+    });
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition }
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/map/features")) {
+        return jsonResponse(emptyMapQueryResponse([]));
+      }
+      return jsonResponse({ init, items: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId("map-request-user-location"));
+
+    await waitFor(() => expect(getCurrentPosition).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1"));
+    expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42100,50.08700");
   });
 
   it("renders SIM tracks returned from COP API", async () => {

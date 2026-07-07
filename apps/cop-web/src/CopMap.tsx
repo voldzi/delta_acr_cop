@@ -5524,6 +5524,7 @@ function CopMapComponent({
               <Compass size={16} strokeWidth={2.2} />
             </button>
             <button
+              aria-label="Přejít na moji polohu"
               className="map-control-button"
               onClick={onRequestUserLocation}
               title="Přejít na moji polohu"
