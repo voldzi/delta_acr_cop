@@ -187,6 +187,13 @@ describe("center-location (chat -> web)", () => {
     expect(url).toContain("copLayerId=reference.infrastructure.emergency");
     expect(decodeCopMapFocusSearch(new URL(url).search)).toEqual(focus);
   });
+
+  it("does not treat an empty COP map focus URL as Null Island", () => {
+    expect(decodeCopMapFocusSearch("")).toBeNull();
+    expect(decodeCopMapFocusSearch("?copLat=50.1187")).toBeNull();
+    expect(decodeCopMapFocusSearch("?copLon=17.3842")).toBeNull();
+    expect(decodeCopMapFocusSearch("?copLat=0&copLon=0")).toBeNull();
+  });
 });
 
 describe("select (web -> chat)", () => {

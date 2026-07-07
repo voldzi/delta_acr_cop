@@ -53,7 +53,14 @@ import {
 } from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
 import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
-import type { MapBasemapMode, MapViewState, PublicFlightSymbolMode, TrackHistoryDisplayMode } from "./user-preferences";
+import {
+  defaultMapCenter,
+  isUsableMapCenter,
+  type MapBasemapMode,
+  type MapViewState,
+  type PublicFlightSymbolMode,
+  type TrackHistoryDisplayMode
+} from "./user-preferences";
 import {
   getAffiliationPresentation,
   getNatoIconKey,
@@ -11104,14 +11111,14 @@ export function normalizeMapGlyphsTemplate(value: string | undefined, fallback =
 
 export function parseMapCenter(value: string | undefined): [number, number] {
   if (!value) {
-    return [14.42, 50.08];
+    return defaultMapCenter;
   }
 
   const [lonRaw, latRaw] = value.split(",");
   const lon = Number(lonRaw);
   const lat = Number(latRaw);
-  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
-    return [14.42, 50.08];
+  if (!Number.isFinite(lon) || !Number.isFinite(lat) || !isUsableMapCenter([lon, lat])) {
+    return defaultMapCenter;
   }
   return [lon, lat];
 }

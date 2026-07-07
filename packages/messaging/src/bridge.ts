@@ -17,6 +17,7 @@ export const chatBridgeMessageTypes = {
 
 export const chatBridgeChannelName = "cop-chat";
 export const chatUnreadStorageKey = "cop.chat.unread.v1";
+const nullIslandThresholdDeg = 0.0001;
 
 export interface ChatUnreadMessage {
   at: number;
@@ -215,8 +216,14 @@ export function encodeCopMapFocusUrl(baseUrl: string | URL, focus: ChatCenterLoc
 export function decodeCopMapFocusSearch(search: string | URLSearchParams): ChatCenterLocationMessage | null {
   const params =
     typeof search === "string" ? new URLSearchParams(search.startsWith("?") ? search : `?${search}`) : search;
+  if (!params.has(copMapFocusSearchParams.lat) || !params.has(copMapFocusSearchParams.lon)) {
+    return null;
+  }
   const lat = Number(params.get(copMapFocusSearchParams.lat));
   const lon = Number(params.get(copMapFocusSearchParams.lon));
+  if (Math.abs(lat) <= nullIslandThresholdDeg && Math.abs(lon) <= nullIslandThresholdDeg) {
+    return null;
+  }
   return decodeChatCenterLocation({
     action: params.get(copMapFocusSearchParams.action) ?? undefined,
     category: params.get(copMapFocusSearchParams.category) ?? undefined,

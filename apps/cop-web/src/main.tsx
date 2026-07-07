@@ -280,6 +280,7 @@ import { SelectField } from "./ui/select";
 import { Tooltip } from "./ui/tooltip";
 import {
   clamp,
+  defaultMapCenter,
   normalizeAlertPreferences,
   normalizeMapView,
   normalizeUserPreferences,
@@ -439,6 +440,7 @@ const predictionModeOptions: Array<[PredictionMode, string]> = [
   ["maneuver", "Manévr"]
 ];
 const defaultAoiCenter = { lat: 50.0755, lon: 14.4378 };
+const defaultMapFallbackZoom = 8;
 const priorityAlertUserRadiusKm = 30;
 const mapFeatureFetchDelayMs = 450;
 const defaultMapBounds: MapBounds = { east: 19.1, north: 51.2, south: 48.5, west: 12 };
@@ -451,6 +453,15 @@ function mapViewFromCopMapFocus(focus: ChatCenterLocationMessage, fallback: unkn
     center: [focus.lon, focus.lat],
     pitch: current?.pitch ?? 0,
     zoom: focus.zoom ?? Math.max(current?.zoom ?? 0, 15)
+  };
+}
+
+function defaultMapViewState(): MapViewState {
+  return {
+    bearing: 0,
+    center: defaultMapCenter,
+    pitch: 0,
+    zoom: defaultMapFallbackZoom
   };
 }
 
@@ -963,7 +974,7 @@ export function App() {
   const [mapView, setMapView] = React.useState<MapViewState | undefined>(() =>
     initialMapFocus
       ? mapViewFromCopMapFocus(initialMapFocus, initialPreferences.mapView)
-      : normalizeMapView(initialPreferences.mapView)
+      : (normalizeMapView(initialPreferences.mapView) ?? defaultMapViewState())
   );
   const [mapBounds, setMapBounds] = React.useState<MapBounds>(defaultMapBounds);
   const [focusViewRequest, setFocusViewRequest] = React.useState(0);
@@ -3707,8 +3718,8 @@ export function App() {
       }
 
       const normalizedMapView = normalizeMapView(settings.mapView);
-      if (normalizedMapView) {
-        setMapView(normalizedMapView);
+      if (settings.mapView !== undefined) {
+        setMapView(normalizedMapView ?? defaultMapViewState());
         if (settings.autoFit === undefined) {
           setAutoFit(false);
         }
@@ -3719,6 +3730,12 @@ export function App() {
     },
     []
   );
+
+  const focusDefaultMapCenter = React.useCallback(() => {
+    setAutoFit(false);
+    setMapView(defaultMapViewState());
+    setFocusViewRequest((current) => current + 1);
+  }, []);
 
   const currentPreferences = React.useMemo<UserPreferences>(
     () => ({
@@ -4662,6 +4679,7 @@ export function App() {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       const message = "Prohlížeč neposkytuje geolokaci.";
       setLocationStatus(message);
+      focusDefaultMapCenter();
       if (requestedRouteTarget) {
         setPendingRouteTarget(null);
         setEmergencyRouteStatus("error");
@@ -4682,6 +4700,7 @@ export function App() {
         if (!isValidMapPoint(location)) {
           const message = "Poloha zařízení nemá platné souřadnice.";
           setLocationStatus(message);
+          focusDefaultMapCenter();
           if (requestedRouteTarget) {
             routeRequestIdRef.current += 1;
             setPendingRouteTarget(null);
@@ -4706,6 +4725,7 @@ export function App() {
       (error) => {
         const message = error.message || "Polohu se nepodařilo zaměřit.";
         setLocationStatus(message);
+        focusDefaultMapCenter();
         if (requestedRouteTarget) {
           setPendingRouteTarget(null);
           setEmergencyRouteStatus("error");
@@ -4792,8 +4812,10 @@ export function App() {
       }
       setNavigationStarting(true);
       setNavigationStartError(null);
+      let resolvedLocation = false;
       try {
         const location = userLocation ?? (await readCurrentUserLocation());
+        resolvedLocation = true;
         setUserLocation(location);
         setFocusUserLocationRequest((current) => current + 1);
         setLocationStatus(formatUserLocation(location));
@@ -4877,12 +4899,15 @@ export function App() {
           );
         }
       } catch (error) {
+        if (!resolvedLocation) {
+          focusDefaultMapCenter();
+        }
         setNavigationStartError(error instanceof Error ? error.message : "Navigaci se nepodařilo spustit.");
       } finally {
         setNavigationStarting(false);
       }
     },
-    [focusMapForNavigation, runEmergencyRouteFromLocation, userLocation]
+    [focusDefaultMapCenter, focusMapForNavigation, runEmergencyRouteFromLocation, userLocation]
   );
 
   React.useEffect(() => {

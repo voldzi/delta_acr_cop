@@ -2,6 +2,9 @@ import type { AlertPreferences, AoiRule, CopAlertType } from "./cop-data";
 
 const preferencesKey = "cop.user.preferences.v1";
 const alertPreferencesKey = "cop.user.alertPreferences.v1";
+const nullIslandThresholdDeg = 0.0001;
+
+export const defaultMapCenter: [number, number] = [15.3386, 49.7437];
 
 export interface MapViewState {
   center: [number, number];
@@ -174,12 +177,28 @@ export function normalizeMapView(value: unknown): MapViewState | undefined {
   if (!Number.isFinite(lon) || !Number.isFinite(lat) || !Number.isFinite(zoom)) {
     return undefined;
   }
+  if (!isUsableMapCenter([lon, lat])) {
+    return undefined;
+  }
   return {
     center: [lon, lat],
     zoom: clamp(zoom, 0, 22),
     bearing: optionalFiniteNumber(value.bearing),
     pitch: optionalFiniteNumber(value.pitch)
   };
+}
+
+export function isUsableMapCenter(center: [number, number]): boolean {
+  const [lon, lat] = center;
+  return (
+    Number.isFinite(lon) &&
+    Number.isFinite(lat) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lon >= -180 &&
+    lon <= 180 &&
+    (Math.abs(lat) > nullIslandThresholdDeg || Math.abs(lon) > nullIslandThresholdDeg)
+  );
 }
 
 export function clamp(value: number, min: number, max: number): number {

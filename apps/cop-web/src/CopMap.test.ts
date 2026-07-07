@@ -22,6 +22,7 @@ import {
 import type { CopObject, SituationFeatureCollectionResponse } from "./cop-data";
 import { formatTrackLabel } from "./track-label";
 import { isTransitVehicleSelectionKey } from "./transport-presentation";
+import { defaultMapCenter } from "./user-preferences";
 
 describe("COP map data helpers", () => {
   it("wires mobile PWA viewport resume events to map resize recovery", () => {
@@ -2390,7 +2391,9 @@ describe("COP map data helpers", () => {
 
   it("parses map center from longitude and latitude env value", () => {
     expect(parseMapCenter("15.1,50.2")).toEqual([15.1, 50.2]);
-    expect(parseMapCenter("invalid")).toEqual([14.42, 50.08]);
+    expect(parseMapCenter("invalid")).toEqual(defaultMapCenter);
+    expect(parseMapCenter("0,0")).toEqual(defaultMapCenter);
+    expect(parseMapCenter(undefined)).toEqual(defaultMapCenter);
   });
 
   it("falls back from empty or invalid map tile configuration", () => {

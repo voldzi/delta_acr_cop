@@ -3,6 +3,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   clamp,
+  defaultMapCenter,
+  isUsableMapCenter,
   normalizeMapView,
   normalizeUserPreferences,
   readLocalAlertPreferences,
@@ -27,6 +29,9 @@ describe("user preferences helpers", () => {
 
   it("rejects invalid map view", () => {
     expect(normalizeMapView({ center: ["bad", 50.1], zoom: 9 })).toBeUndefined();
+    expect(normalizeMapView({ center: [181, 50.1], zoom: 9 })).toBeUndefined();
+    expect(normalizeMapView({ center: [0, 0], zoom: 9 })).toBeUndefined();
+    expect(isUsableMapCenter(defaultMapCenter)).toBe(true);
   });
 
   it("clamps numeric settings", () => {

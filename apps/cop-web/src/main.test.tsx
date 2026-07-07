@@ -13,6 +13,7 @@ import {
   mapBoundsContainedBy
 } from "./main";
 import { writeCopOfflineSnapshot } from "./pwa-offline";
+import { defaultMapCenter } from "./user-preferences";
 
 const initialMatchMedia = window.matchMedia;
 const initialGeolocation = navigator.geolocation;
@@ -27,6 +28,7 @@ vi.mock("./CopMap", async () => {
       emergencyRouteStatus,
       focusView,
       focusViewRequest,
+      initialView,
       mapInteractionSuspended,
       objects,
       onSelectObject,
@@ -40,6 +42,7 @@ vi.mock("./CopMap", async () => {
       emergencyRouteStatus?: string;
       focusView?: { center: [number, number]; zoom?: number };
       focusViewRequest?: number;
+      initialView?: { center: [number, number]; zoom?: number };
       mapInteractionSuspended?: boolean;
       objects: Array<{ objectId: string }>;
       onSelectObject?: (object: { objectId: string }) => void;
@@ -52,6 +55,7 @@ vi.mock("./CopMap", async () => {
         {
           "data-focus-center": focusView ? `${focusView.center[0].toFixed(5)},${focusView.center[1].toFixed(5)}` : "",
           "data-focus-view-request": String(focusViewRequest ?? 0),
+          "data-initial-center": initialView ? `${initialView.center[0].toFixed(5)},${initialView.center[1].toFixed(5)}` : "",
           "data-emergency-route-features": String(emergencyRoute?.features?.length ?? 0),
           "data-emergency-route-message": emergencyRouteMessage ?? "",
           "data-emergency-route-status": emergencyRouteStatus ?? "idle",
@@ -426,6 +430,55 @@ describe("COP web dashboard", () => {
 
     expect(summary.total).toBe(0);
     expect(summary.primary).toBeNull();
+  });
+
+  it("starts the map over Czechia when persisted location center is unusable", async () => {
+    installMatchMedia(true);
+    window.localStorage.setItem(
+      "cop.user.preferences.v1.lab",
+      JSON.stringify({
+        autoFit: false,
+        mapView: { center: [0, 0], zoom: 9 }
+      })
+    );
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: undefined
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/map/features")) {
+        return jsonResponse(emptyMapQueryResponse([]));
+      }
+      return jsonResponse({ init, items: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const expectedCenter = `${defaultMapCenter[0].toFixed(5)},${defaultMapCenter[1].toFixed(5)}`;
+    await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-initial-center")).toBe(expectedCenter));
+    expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe(expectedCenter);
   });
 
   it("renders SIM tracks returned from COP API", async () => {
