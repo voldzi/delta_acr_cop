@@ -16,7 +16,28 @@ Edge node nesmí vytvářet nový zdroj pravdy. Po obnovení spojení synchroniz
 
 ## Pilot PWA režim
 
-Web klient v pilotu registruje service worker `cop-service-worker.js`, který ukládá aplikační shell, manifest, ikony, lokální build assety a průběžně použité mapové dlaždice. API endpointy se service workerem necachují, aby se neobcházela autentizace ani aktuální server-side policy.
+Web klient v pilotu registruje service worker `cop-service-worker.js`, který
+ukládá aplikační shell, manifest, ikony, lokální build assety, chat shell pod
+`/chat/` a průběžně použité mapové dlaždice. API endpointy se service workerem
+necachují, aby se neobcházela autentizace ani aktuální server-side policy.
+
+Navigace do mapy i chatu používá stale-while-revalidate shell strategii: pokud
+už je shell v cache, PWA ho vrátí okamžitě a síťovou aktualizaci provede na
+pozadí. Content-hashované `/assets/*` a `/chat/assets/*` jsou cache-first,
+protože změna buildu mění jejich název. To je základ pro chování podobné
+nativní aplikaci při opakovaném otevření nebo nestabilní síti.
+
+Při instalaci service worker navíc zahřívá runtime cache ze same-origin assetů
+odkazovaných přímo z HTML shellu mapy a chatu. Díky tomu další spuštění PWA
+nečeká na základní JS/CSS chunky mapy ani integrovaného chatu. Volitelné těžké
+části, například Matrix/E2EE nebo PDF zpracování, se předem nestahují; ukládají
+se cache-first až při prvním skutečném použití.
+
+Po registraci service workeru a při návratu aplikace do popředí web shell posílá
+zprávu `cop:pwa:warm-cache`. Service worker zopakuje bezpečné dohřátí shell
+assetů a vrátí `cop:pwa:cache-warmed` s počty položek v shell/runtime/tile
+cache. Nastavení aplikace tak rozlišuje samotnou registraci service workeru od
+praktické připravenosti PWA cache.
 
 Manifest `site.webmanifest` je společný pro mapu i chat pod stejným veřejným
 originem. Aplikace běží v `standalone` režimu, nefixuje orientaci zařízení a

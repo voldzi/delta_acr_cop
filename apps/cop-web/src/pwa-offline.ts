@@ -11,6 +11,19 @@ export interface CopOfflineSnapshot {
   version: typeof snapshotVersion;
 }
 
+export type CopPwaCacheState =
+  | {
+      appShellEntries: number;
+      kind: "ready";
+      runtimeEntries: number;
+      tileEntries: number;
+      updatedAt: string;
+      warmedAssets: number;
+    }
+  | { error: string; kind: "error" }
+  | { kind: "unknown" }
+  | { kind: "warming" };
+
 export function registerCopServiceWorker(): void {
   if (typeof window === "undefined" || typeof navigator === "undefined") {
     return;
@@ -34,6 +47,20 @@ export function registerCopServiceWorker(): void {
         // The app must remain usable even when a browser or policy blocks service workers.
       });
   });
+}
+
+export function requestCopPwaCacheWarmup(): void {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return;
+  }
+
+  void navigator.serviceWorker.ready
+    .then((registration) => {
+      const worker =
+        registration.active ?? registration.waiting ?? registration.installing ?? navigator.serviceWorker.controller;
+      worker?.postMessage({ type: "cop:pwa:warm-cache" });
+    })
+    .catch(() => undefined);
 }
 
 export function readCopOfflineSnapshot(scope?: string): CopOfflineSnapshot | null {

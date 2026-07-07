@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260707-1";
+const COP_SW_VERSION = "cop-pwa-offline-20260707-3";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -6,6 +6,7 @@ const MAP_RESOURCE_HOSTS = new Set(["tile.openstreetmap.org", "tiles.zeleznalady
 const APP_SHELL_URLS = [
   "/",
   "/index.html",
+  "/chat/",
   "/site.webmanifest",
   "/icons/cop-icon.svg",
   "/icons/favicon-32.png",
@@ -15,6 +16,8 @@ const APP_SHELL_URLS = [
   "/icons/cop-icon-maskable-512.png"
 ];
 const API_PATH_PREFIXES = ["/api/", "/health", "/metrics"];
+const APP_SHELL_ASSET_ATTRIBUTE_PATTERN = /\b(?:href|src)=["']([^"']+)["']/giu;
+const MAX_WARMED_APP_SHELL_ASSETS = 32;
 const MAX_RUNTIME_ENTRIES = 120;
 const MAX_TILE_ENTRIES = 1200;
 
@@ -22,7 +25,8 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(APP_SHELL_CACHE)
-      .then((cache) => cache.addAll(APP_SHELL_URLS))
+      .then((cache) => Promise.all(APP_SHELL_URLS.map((url) => cache.add(url).catch(() => undefined))))
+      .then(() => warmAppShellAssets().catch(() => undefined))
       .then(() => self.skipWaiting())
   );
 });
@@ -52,12 +56,9 @@ self.addEventListener("fetch", (event) => {
   if (url.origin === self.location.origin && API_PATH_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
     return;
   }
-  if (url.origin === self.location.origin && isChatRequestPath(url.pathname)) {
-    return;
-  }
 
   if (request.mode === "navigate") {
-    event.respondWith(networkFirstAppShell(request));
+    event.respondWith(staleWhileRevalidateAppShell(request));
     return;
   }
 
@@ -67,6 +68,10 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.origin === self.location.origin) {
+    if (isImmutableRuntimeAssetRequest(request, url)) {
+      event.respondWith(cacheFirst(request, RUNTIME_CACHE, MAX_RUNTIME_ENTRIES));
+      return;
+    }
     if (isAppAssetRequest(request, url)) {
       event.respondWith(networkFirstRuntime(request, RUNTIME_CACHE, MAX_RUNTIME_ENTRIES));
       return;
@@ -121,19 +126,62 @@ self.addEventListener("pushsubscriptionchange", (event) => {
 self.addEventListener("message", (event) => {
   if (event.data?.type === "cop:pwa:skip-waiting") {
     void self.skipWaiting();
+    return;
+  }
+  if (event.data?.type === "cop:pwa:warm-cache") {
+    event.waitUntil(
+      warmAppShellAssets()
+        .then((assetUrls) => readPwaCacheState(assetUrls.length))
+        .then((state) => notifyClient(event.source, { type: "cop:pwa:cache-warmed", ...state }))
+        .catch((error) =>
+          notifyClient(event.source, {
+            message: error instanceof Error ? error.message : "PWA cache warm-up failed.",
+            type: "cop:pwa:cache-warm-failed"
+          })
+        )
+    );
+    return;
+  }
+  if (event.data?.type === "cop:pwa:cache-status") {
+    event.waitUntil(
+      readPwaCacheState()
+        .then((state) => notifyClient(event.source, { type: "cop:pwa:cache-status", ...state }))
+        .catch(() => undefined)
+    );
   }
 });
 
-async function networkFirstAppShell(request) {
+async function staleWhileRevalidateAppShell(request) {
   const cache = await caches.open(APP_SHELL_CACHE);
+  const cacheKey = appShellCacheKeyForRequest(request);
+  const cached = await cache.match(cacheKey);
+  const refresh = fetch(request)
+    .then(async (response) => {
+      if (response.ok) {
+        await cache.put(cacheKey, response.clone());
+      }
+      return response;
+    })
+    .catch(() => undefined);
+
+  if (cached) {
+    return cached;
+  }
+
+  return (await refresh) || Response.error();
+}
+
+async function networkFirstRuntime(request, cacheName, maxEntries) {
+  const cache = await caches.open(cacheName);
   try {
-    const response = await fetch(request);
+    const response = await fetch(request, { cache: "no-cache" });
     if (response.ok) {
-      await cache.put("/index.html", response.clone());
+      await cache.put(request, response.clone());
+      await trimCache(cache, maxEntries);
     }
     return response;
   } catch {
-    return (await cache.match("/index.html")) || (await cache.match("/")) || Response.error();
+    return (await cache.match(request)) || Response.error();
   }
 }
 
@@ -150,20 +198,6 @@ async function staleWhileRevalidate(request, cacheName, maxEntries) {
     })
     .catch(() => undefined);
   return cached || (await refresh) || Response.error();
-}
-
-async function networkFirstRuntime(request, cacheName, maxEntries) {
-  const cache = await caches.open(cacheName);
-  try {
-    const response = await fetch(request, { cache: "no-cache" });
-    if (response && (response.ok || response.type === "opaque")) {
-      await cache.put(request, response.clone());
-      await trimCache(cache, maxEntries);
-    }
-    return response;
-  } catch {
-    return (await cache.match(request)) || Response.error();
-  }
 }
 
 async function cacheFirst(request, cacheName, maxEntries) {
@@ -184,6 +218,82 @@ async function cacheFirst(request, cacheName, maxEntries) {
     await trimCache(cache, maxEntries);
   }
   return response;
+}
+
+async function warmAppShellAssets() {
+  const shellCache = await caches.open(APP_SHELL_CACHE);
+  const runtimeCache = await caches.open(RUNTIME_CACHE);
+  const assetUrls = await collectAppShellAssetUrls(shellCache);
+  await Promise.all(assetUrls.map((url) => runtimeCache.add(url).catch(() => undefined)));
+  await trimCache(runtimeCache, MAX_RUNTIME_ENTRIES);
+  return assetUrls;
+}
+
+async function collectAppShellAssetUrls(shellCache) {
+  const assetUrls = new Set();
+  await Promise.all(
+    ["/index.html", "/chat/"].map(async (shellUrl) => {
+      const response = await shellCache.match(shellUrl);
+      if (!response || !response.ok) {
+        return;
+      }
+      const html = await response.clone().text();
+      for (const assetUrl of extractSameOriginAssetUrls(html, shellUrl)) {
+        assetUrls.add(assetUrl);
+      }
+    })
+  );
+  return Array.from(assetUrls).slice(0, MAX_WARMED_APP_SHELL_ASSETS);
+}
+
+function extractSameOriginAssetUrls(html, basePath = "/") {
+  const baseUrl = new URL(basePath, self.location.origin);
+  const assetUrls = new Set();
+  APP_SHELL_ASSET_ATTRIBUTE_PATTERN.lastIndex = 0;
+
+  for (const match of html.matchAll(APP_SHELL_ASSET_ATTRIBUTE_PATTERN)) {
+    const rawValue = match[1]?.trim();
+    if (!rawValue) {
+      continue;
+    }
+
+    let assetUrl;
+    try {
+      assetUrl = new URL(rawValue, baseUrl);
+    } catch {
+      continue;
+    }
+    if (assetUrl.origin !== self.location.origin) {
+      continue;
+    }
+
+    const request = new Request(assetUrl.href);
+    if (isImmutableRuntimeAssetRequest(request, assetUrl) || isAppAssetRequest(request, assetUrl)) {
+      assetUrls.add(`${assetUrl.pathname}${assetUrl.search}`);
+    }
+  }
+
+  return Array.from(assetUrls);
+}
+
+async function readPwaCacheState(warmedAssets = 0) {
+  const [shellCache, runtimeCache, tileCache] = await Promise.all([
+    caches.open(APP_SHELL_CACHE),
+    caches.open(RUNTIME_CACHE),
+    caches.open(TILE_CACHE)
+  ]);
+  const [shellKeys, runtimeKeys, tileKeys] = await Promise.all([
+    shellCache.keys(),
+    runtimeCache.keys(),
+    tileCache.keys()
+  ]);
+  return {
+    appShellEntries: shellKeys.length,
+    runtimeEntries: runtimeKeys.length,
+    tileEntries: tileKeys.length,
+    updatedAt: new Date().toISOString(),
+    warmedAssets
+  };
 }
 
 async function trimCache(cache, maxEntries) {
@@ -207,11 +317,30 @@ function isMapTileRequest(request, url) {
   return request.destination === "font" && /font|glyph/u.test(url.hostname + url.pathname);
 }
 
+function appShellCacheKeyForRequest(request) {
+  const url = new URL(request.url);
+  return isChatRequestPath(url.pathname) ? "/chat/" : "/index.html";
+}
+
+function isImmutableRuntimeAssetRequest(request, url) {
+  if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/chat/assets/")) {
+    return true;
+  }
+  if (url.pathname.startsWith("/icons/")) {
+    return true;
+  }
+  return ["image", "font"].includes(request.destination) && url.origin === self.location.origin;
+}
+
 function isAppAssetRequest(request, url) {
   if (url.pathname === "/cop-service-worker.js" || url.pathname === "/site.webmanifest") {
     return true;
   }
-  if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/icons/")) {
+  if (
+    url.pathname.startsWith("/assets/") ||
+    url.pathname.startsWith("/chat/assets/") ||
+    url.pathname.startsWith("/icons/")
+  ) {
     return true;
   }
   return ["script", "style", "worker", "manifest", "font"].includes(request.destination);
@@ -292,6 +421,14 @@ async function notifyClients(message) {
   for (const client of clients) {
     client.postMessage(message);
   }
+}
+
+async function notifyClient(client, message) {
+  if (client && "postMessage" in client) {
+    client.postMessage(message);
+    return;
+  }
+  await notifyClients(message);
 }
 
 function normalizeNotificationUrl(value) {

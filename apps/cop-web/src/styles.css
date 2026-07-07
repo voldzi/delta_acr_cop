@@ -528,6 +528,12 @@ h1 {
   border-radius: 16px;
 }
 
+.embedded-chat-panel.hidden {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .embedded-chat-panel:not(.pinned) {
   width: min(430px, calc(100vw - 32px));
   height: min(640px, calc(100svh - 110px));

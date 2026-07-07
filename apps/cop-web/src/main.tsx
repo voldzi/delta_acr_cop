@@ -305,8 +305,10 @@ import {
   type WorkspaceModule
 } from "./view-profiles";
 import {
+  type CopPwaCacheState,
   readCopOfflineSnapshot,
   registerCopServiceWorker,
+  requestCopPwaCacheWarmup,
   snapshotAgeSeconds,
   writeCopOfflineSnapshot,
   type CopOfflineSnapshot
@@ -1000,6 +1002,7 @@ export function App() {
   const [profileSyncError, setProfileSyncError] = React.useState<string | null>(null);
   const [serverProfileUpdatedAt, setServerProfileUpdatedAt] = React.useState<string | null>(null);
   const [messagingOpen, setMessagingOpen] = React.useState(false);
+  const [messagingFrameMounted, setMessagingFrameMounted] = React.useState(false);
   const [messagingPinned, setMessagingPinned] = React.useState(false);
   const [messagingDockWidth, setMessagingDockWidth] = React.useState(() => readMessagingDockWidth());
   const [messagingSelection, setMessagingSelection] = React.useState<MessagingSelectionCommand | null>(null);
@@ -1010,12 +1013,19 @@ export function App() {
   const initialMapFeatureFocusRef = React.useRef(initialMapFocus);
   const catalogSelectionInitializedRef = React.useRef(initialPreferences.catalogLayerIds !== undefined);
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
+  const [pwaCacheState, setPwaCacheState] = React.useState<CopPwaCacheState>({ kind: "unknown" });
   const [webPushBusy, setWebPushBusy] = React.useState(false);
   const [incidentSuggestions, setIncidentSuggestions] = React.useState<IncidentFusionSuggestion[]>([]);
   const [incidents, setIncidents] = React.useState<IncidentRecord[]>([]);
   const [incidentTasksById, setIncidentTasksById] = React.useState<Record<string, IncidentTaskRecord[]>>({});
   const [selectedIncidentId, setSelectedIncidentId] = React.useState<string | null>(null);
   const [pendingMapFocusNonce, setPendingMapFocusNonce] = React.useState(0);
+
+  React.useEffect(() => {
+    if (messagingOpen) {
+      setMessagingFrameMounted(true);
+    }
+  }, [messagingOpen]);
 
   React.useEffect(() => {
     const handleTomatoShortcut = (event: KeyboardEvent) => {
@@ -1322,6 +1332,50 @@ export function App() {
       navigator.serviceWorker?.removeEventListener("message", handleServiceWorkerMessage);
     };
   }, [refreshWebPushState]);
+
+  React.useEffect(() => {
+    if (!import.meta.env.PROD || typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+      return;
+    }
+
+    let cancelled = false;
+    const markWarming = () => {
+      setPwaCacheState((current) => (current.kind === "ready" ? current : { kind: "warming" }));
+    };
+    const requestWarmup = () => {
+      if (cancelled) {
+        return;
+      }
+      markWarming();
+      requestCopPwaCacheWarmup();
+    };
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (cancelled) {
+        return;
+      }
+      const cacheState = pwaCacheStateFromServiceWorkerMessage(event.data);
+      if (cacheState) {
+        setPwaCacheState(cacheState);
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        requestWarmup();
+      }
+    };
+
+    navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", requestWarmup);
+    void navigator.serviceWorker.ready.then(requestWarmup).catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+      navigator.serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", requestWarmup);
+    };
+  }, []);
 
   const handleEnableWebPush = React.useCallback(async () => {
     if (!authenticatedSessionActive || !authToken) {
@@ -6874,6 +6928,7 @@ export function App() {
           predictionMinutes={predictionMinutes}
           predictionMode={predictionMode}
           publicFlightSymbolMode={publicFlightSymbolMode}
+          pwaCacheState={pwaCacheState}
           profileSyncError={profileSyncError}
           profileSyncStatus={profileSyncStatus}
           proximityAlertEnabled={proximityAlertEnabled}
@@ -6937,8 +6992,9 @@ export function App() {
         />
       ) : null}
 
-      {messagingOpen ? (
+      {messagingOpen || messagingFrameMounted ? (
         <EmbeddedCopChatPanel
+          active={messagingOpen}
           dockWidth={messagingDockWidth}
           mapView={mapView}
           pinned={messagingPinned}
@@ -9497,6 +9553,7 @@ function formatUnreadBadge(count: number): string {
 }
 
 function EmbeddedCopChatPanel({
+  active,
   dockWidth,
   mapView,
   pinned,
@@ -9506,6 +9563,7 @@ function EmbeddedCopChatPanel({
   onClose,
   onDockWidthChange
 }: {
+  active: boolean;
   dockWidth: number;
   mapView: MapViewState | undefined;
   pinned: boolean;
@@ -9635,8 +9693,9 @@ function EmbeddedCopChatPanel({
 
   return (
     <aside
+      aria-hidden={!active}
       aria-label="COP Chat"
-      className={clsx("messaging-panel embedded-chat-panel", pinned && "pinned")}
+      className={clsx("messaging-panel embedded-chat-panel", pinned && "pinned", !active && "hidden")}
       style={{ "--messaging-dock-width": `${dockWidth}px` } as React.CSSProperties}
     >
       {pinned ? (
@@ -10598,6 +10657,59 @@ function offlineSnapshotTone(state: OfflineSnapshotState): "ok" | "warn" | "neut
   return state.kind === "available" ? "ok" : "neutral";
 }
 
+function pwaCacheStateFromServiceWorkerMessage(data: unknown): CopPwaCacheState | null {
+  if (!isRecord(data) || typeof data.type !== "string") {
+    return null;
+  }
+  if (data.type === "cop:pwa:cache-warm-failed") {
+    return {
+      error: typeof data.message === "string" && data.message.trim() ? data.message.trim() : "Cache není připravená.",
+      kind: "error"
+    };
+  }
+  if (data.type !== "cop:pwa:cache-warmed" && data.type !== "cop:pwa:cache-status") {
+    return null;
+  }
+
+  return {
+    appShellEntries: nonNegativeInteger(data.appShellEntries),
+    kind: "ready",
+    runtimeEntries: nonNegativeInteger(data.runtimeEntries),
+    tileEntries: nonNegativeInteger(data.tileEntries),
+    updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
+    warmedAssets: nonNegativeInteger(data.warmedAssets)
+  };
+}
+
+function formatPwaCacheState(state: CopPwaCacheState): string {
+  if (state.kind === "ready") {
+    const assetCount = state.appShellEntries + state.runtimeEntries;
+    return assetCount > 0 ? `připravena · ${assetCount} assetů` : "připravena";
+  }
+  if (state.kind === "warming") {
+    return "připravuji";
+  }
+  if (state.kind === "error") {
+    return "chyba cache";
+  }
+  return "čeká";
+}
+
+function pwaCacheTone(state: CopPwaCacheState): "ok" | "warn" | "neutral" {
+  if (state.kind === "ready") {
+    return "ok";
+  }
+  if (state.kind === "error") {
+    return "warn";
+  }
+  return "neutral";
+}
+
+function nonNegativeInteger(value: unknown): number {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue >= 0 ? Math.trunc(numericValue) : 0;
+}
+
 function initialOfflineSnapshotState(scope: string): OfflineSnapshotState {
   const snapshot = readCopOfflineSnapshot(scope);
   if (!snapshot) {
@@ -10845,6 +10957,7 @@ function SettingsDrawer({
   predictionMinutes,
   predictionMode,
   publicFlightSymbolMode,
+  pwaCacheState,
   profileSyncError,
   profileSyncStatus,
   proximityAlertEnabled,
@@ -10916,6 +11029,7 @@ function SettingsDrawer({
   predictionMinutes: number;
   predictionMode: PredictionMode;
   publicFlightSymbolMode: PublicFlightSymbolMode;
+  pwaCacheState: CopPwaCacheState;
   profileSyncError: string | null;
   profileSyncStatus: ProfileSyncStatus;
   proximityAlertEnabled: boolean;
@@ -11306,6 +11420,7 @@ function SettingsDrawer({
               <WebPushSettingsPanel
                 authenticated={authSession.status === "authenticated"}
                 busy={webPushBusy}
+                pwaCacheState={pwaCacheState}
                 state={webPushState}
                 onDisable={onDisableWebPush}
                 onEnable={onEnableWebPush}
@@ -11402,12 +11517,14 @@ function WebPushSettingsPanel({
   busy,
   onDisable,
   onEnable,
+  pwaCacheState,
   state
 }: {
   authenticated: boolean;
   busy: boolean;
   onDisable: () => void;
   onEnable: () => void;
+  pwaCacheState: CopPwaCacheState;
   state: WebPushUiState;
 }) {
   const canEnable =
@@ -11437,6 +11554,7 @@ function WebPushSettingsPanel({
         value={state.serviceWorkerReady ? "připraven" : "čeká"}
         tone={state.serviceWorkerReady ? "ok" : "neutral"}
       />
+      <ReadinessRow label="PWA cache" value={formatPwaCacheState(pwaCacheState)} tone={pwaCacheTone(pwaCacheState)} />
       {state.subscriptionActive !== undefined ? (
         <ReadinessRow
           label="Push odběr"

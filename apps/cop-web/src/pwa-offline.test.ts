@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readCopOfflineSnapshot, snapshotAgeSeconds, writeCopOfflineSnapshot } from "./pwa-offline";
+import {
+  readCopOfflineSnapshot,
+  requestCopPwaCacheWarmup,
+  snapshotAgeSeconds,
+  writeCopOfflineSnapshot
+} from "./pwa-offline";
 import type { CopDashboardData } from "./cop-data";
 
 let localStorageData: Map<string, string>;
@@ -49,6 +54,23 @@ describe("PWA offline snapshot", () => {
 
   it("reports snapshot age in seconds", () => {
     expect(snapshotAgeSeconds({ savedAt: "2026-05-19T08:00:00.000Z" }, new Date("2026-05-19T08:00:45.000Z"))).toBe(45);
+  });
+
+  it("asks the active service worker to warm the PWA cache", async () => {
+    const postMessage = vi.fn();
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: {
+        ready: Promise.resolve({
+          active: { postMessage }
+        })
+      }
+    });
+
+    requestCopPwaCacheWarmup();
+    await Promise.resolve();
+
+    expect(postMessage).toHaveBeenCalledWith({ type: "cop:pwa:warm-cache" });
   });
 });
 
