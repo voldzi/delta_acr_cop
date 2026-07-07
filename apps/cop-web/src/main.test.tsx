@@ -37,8 +37,11 @@ vi.mock("./CopMap", async () => {
       onRequestUserLocation,
       onSelectObject,
       onStartNavigationToPoint,
+      onUserLocationFollowChange,
       selectedSituationFeatureId,
-      situationFeatures
+      situationFeatures,
+      userLocation,
+      userLocationFollowEnabled
     }: {
       emptyMessage: string | null;
       emergencyRoute?: { features?: unknown[] } | null;
@@ -52,18 +55,25 @@ vi.mock("./CopMap", async () => {
       onRequestUserLocation?: () => void;
       onSelectObject?: (object: { objectId: string }) => void;
       onStartNavigationToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
+      onUserLocationFollowChange?: (value: boolean) => void;
       selectedSituationFeatureId?: string;
       situationFeatures?: { features?: Array<{ properties?: { featureId?: string; label?: string } }> };
+      userLocation?: { lat: number; lon: number } | null;
+      userLocationFollowEnabled?: boolean;
     }) =>
       React.createElement(
         "div",
         {
           "data-focus-center": focusView ? `${focusView.center[0].toFixed(5)},${focusView.center[1].toFixed(5)}` : "",
           "data-focus-view-request": String(focusViewRequest ?? 0),
-          "data-initial-center": initialView ? `${initialView.center[0].toFixed(5)},${initialView.center[1].toFixed(5)}` : "",
+          "data-initial-center": initialView
+            ? `${initialView.center[0].toFixed(5)},${initialView.center[1].toFixed(5)}`
+            : "",
           "data-emergency-route-features": String(emergencyRoute?.features?.length ?? 0),
           "data-emergency-route-message": emergencyRouteMessage ?? "",
           "data-emergency-route-status": emergencyRouteStatus ?? "idle",
+          "data-user-location": userLocation ? `${userLocation.lon.toFixed(5)},${userLocation.lat.toFixed(5)}` : "",
+          "data-user-location-follow-enabled": String(Boolean(userLocationFollowEnabled)),
           "data-map-interaction-suspended": String(Boolean(mapInteractionSuspended)),
           "data-selected-situation-feature-id": selectedSituationFeatureId ?? "",
           "data-testid": "cop-map"
@@ -110,6 +120,18 @@ vi.mock("./CopMap", async () => {
                       type: "button"
                     },
                     "Přejít na moji polohu"
+                  )
+                : null,
+              onUserLocationFollowChange
+                ? React.createElement(
+                    "button",
+                    {
+                      "data-testid": "map-follow-user-location",
+                      key: "map-follow-user-location",
+                      onClick: () => onUserLocationFollowChange(!userLocationFollowEnabled),
+                      type: "button"
+                    },
+                    "Sledovat moji polohu"
                   )
                 : null,
               ...(situationFeatures?.features ?? []).map((feature) =>
@@ -595,6 +617,105 @@ describe("COP web dashboard", () => {
     await waitFor(() => expect(getCurrentPosition).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1"));
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42100,50.08700");
+  });
+
+  it("keeps the user location marker live and follows it only when enabled", async () => {
+    installMatchMedia(true);
+    const makePosition = (latitude: number, longitude: number): GeolocationPosition =>
+      ({
+        coords: {
+          accuracy: 10,
+          altitude: null,
+          altitudeAccuracy: null,
+          heading: null,
+          latitude,
+          longitude,
+          speed: null
+        },
+        timestamp: Date.parse("2026-05-19T08:00:00Z")
+      }) as GeolocationPosition;
+    const watchCallbacks: PositionCallback[] = [];
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success(makePosition(50.087, 14.421));
+    });
+    const watchPosition = vi.fn((success: PositionCallback) => {
+      watchCallbacks.push(success);
+      return 11;
+    });
+    const clearWatch = vi.fn();
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: { clearWatch, getCurrentPosition, watchPosition }
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/map/features")) {
+        return jsonResponse(emptyMapQueryResponse([]));
+      }
+      return jsonResponse({ init, items: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId("map-request-user-location"));
+
+    await waitFor(() => expect(getCurrentPosition).toHaveBeenCalled());
+    await waitFor(() => expect(watchPosition).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-user-location")).toBe("14.42100,50.08700")
+    );
+    expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42100,50.08700");
+
+    act(() => {
+      watchCallbacks[0]?.(makePosition(50.088, 14.422));
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-user-location")).toBe("14.42200,50.08800")
+    );
+    expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42100,50.08700");
+
+    fireEvent.click(screen.getByTestId("map-follow-user-location"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-user-location-follow-enabled")).toBe("true")
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42200,50.08800")
+    );
+
+    act(() => {
+      watchCallbacks[0]?.(makePosition(50.089, 14.423));
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-user-location")).toBe("14.42300,50.08900")
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42300,50.08900")
+    );
   });
 
   it("renders SIM tracks returned from COP API", async () => {

@@ -15,6 +15,7 @@ import {
   Minus,
   Move,
   MousePointer2,
+  Navigation,
   Palette,
   Pentagon,
   PenLine,
@@ -674,6 +675,7 @@ interface CopMapProps {
   onStartEmergencyNavigation?: () => void;
   onStartNavigationToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
   onRequestUserLocation: () => void;
+  onUserLocationFollowChange: (value: boolean) => void;
   onViewChange: (view: MapViewState) => void;
   reportLocationPickActive?: boolean;
   showAlertAreas: boolean;
@@ -687,6 +689,7 @@ interface CopMapProps {
   onPickReportLocation?: (center: { lat: number; lon: number }) => void;
   onPickRadioPoint?: (center: { lat: number; lon: number }) => void;
   userLocation: UserLocation | null;
+  userLocationFollowEnabled: boolean;
   radioPointPickActive?: boolean;
   radioPointPickLabel?: string;
   sketchDrawings?: SketchDrawingFeature[];
@@ -832,12 +835,14 @@ function CopMapComponent({
   onRequestUserLocation,
   onStartEmergencyNavigation,
   onStartNavigationToPoint,
+  onUserLocationFollowChange,
   onViewChange,
   reportLocationPickActive = false,
   showAlertAreas,
   showProximityAlertRadius,
   editingZoneId = null,
   userLocation,
+  userLocationFollowEnabled,
   onCancelZoneEditing,
   onUpdateZonePolygon,
   onPickRadioPoint,
@@ -5532,6 +5537,17 @@ function CopMapComponent({
             >
               <MapPin size={16} strokeWidth={2.2} />
               <span>Poloha</span>
+            </button>
+            <button
+              aria-label={userLocationFollowEnabled ? "Vypnout sledování polohy" : "Sledovat moji polohu"}
+              aria-pressed={userLocationFollowEnabled}
+              className={`map-control-button ${userLocationFollowEnabled ? "active" : ""}`}
+              onClick={() => onUserLocationFollowChange(!userLocationFollowEnabled)}
+              title={userLocationFollowEnabled ? "Vypnout sledování polohy" : "Sledovat moji polohu"}
+              type="button"
+            >
+              <Navigation size={16} strokeWidth={2.2} />
+              <span>Sledovat</span>
             </button>
             <button
               aria-pressed={mapFullscreen}

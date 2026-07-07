@@ -1085,7 +1085,11 @@ export function App() {
     )
   );
   const routeRequestIdRef = React.useRef(0);
+  const userLocationWatchIdRef = React.useRef<number | null>(null);
+  const userLocationFollowEnabledRef = React.useRef(false);
+  const navigationSessionRef = React.useRef<NavigationSession | null>(initialNavigationSession);
   const [focusUserLocationRequest, setFocusUserLocationRequest] = React.useState(0);
+  const [userLocationFollowEnabled, setUserLocationFollowEnabled] = React.useState(false);
   const [locationStatus, setLocationStatus] = React.useState(() =>
     initialMapFocus?.label
       ? `Mapa otevřena z chatu: ${initialMapFocus.label}.`
@@ -3745,6 +3749,95 @@ export function App() {
     setFocusUserLocationRequest((current) => current + 1);
   }, []);
 
+  const clearUserLocationWatch = React.useCallback(() => {
+    const watchId = userLocationWatchIdRef.current;
+    if (watchId === null || typeof navigator === "undefined" || !navigator.geolocation?.clearWatch) {
+      userLocationWatchIdRef.current = null;
+      return;
+    }
+    userLocationWatchIdRef.current = null;
+    navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  const applyLiveUserLocation = React.useCallback(
+    (location: UserLocation, options: { focus?: boolean } = {}) => {
+      if (!isValidMapPoint(location)) {
+        return;
+      }
+      setUserLocation(location);
+      setLocationStatus(
+        options.focus || userLocationFollowEnabledRef.current
+          ? `${formatUserLocation(location)} · mapa sleduje polohu`
+          : formatUserLocation(location)
+      );
+      if ((options.focus || userLocationFollowEnabledRef.current) && !navigationSessionRef.current) {
+        focusMapOnUserLocation(location);
+      }
+    },
+    [focusMapOnUserLocation]
+  );
+
+  const startUserLocationWatch = React.useCallback(() => {
+    if (
+      userLocationWatchIdRef.current !== null ||
+      navigationSessionRef.current ||
+      typeof navigator === "undefined" ||
+      !navigator.geolocation?.watchPosition
+    ) {
+      return;
+    }
+
+    try {
+      userLocationWatchIdRef.current = navigator.geolocation.watchPosition(
+        (position) => {
+          try {
+            applyLiveUserLocation(userLocationFromPosition(position));
+          } catch {
+            setLocationStatus("Poloha zařízení nemá platné souřadnice.");
+          }
+        },
+        (error) => {
+          const message = error.message || "Sledování polohy se přerušilo.";
+          setLocationStatus(`Sledování polohy: ${message}`);
+          if (error.code === error.PERMISSION_DENIED) {
+            userLocationFollowEnabledRef.current = false;
+            setUserLocationFollowEnabled(false);
+            clearUserLocationWatch();
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 5_000,
+          timeout: 20_000
+        }
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Sledování polohy se nepodařilo spustit.";
+      setLocationStatus(message);
+      userLocationWatchIdRef.current = null;
+    }
+  }, [applyLiveUserLocation, clearUserLocationWatch]);
+
+  React.useEffect(() => {
+    userLocationFollowEnabledRef.current = userLocationFollowEnabled;
+  }, [userLocationFollowEnabled]);
+
+  React.useEffect(() => {
+    navigationSessionRef.current = navigationSession;
+  }, [navigationSession]);
+
+  React.useEffect(() => {
+    if (navigationSession) {
+      clearUserLocationWatch();
+      return;
+    }
+    if (userLocationFollowEnabled) {
+      startUserLocationWatch();
+    }
+  }, [clearUserLocationWatch, navigationSession?.id, startUserLocationWatch, userLocationFollowEnabled]);
+
+  React.useEffect(() => clearUserLocationWatch, [clearUserLocationWatch]);
+
   const currentPreferences = React.useMemo<UserPreferences>(
     () => ({
       activeWorkspace,
@@ -4671,8 +4764,8 @@ export function App() {
     [apiBase, authToken]
   );
 
-  function locateUser(routeTarget?: EmergencyRouteTarget) {
-    const rawRouteTarget = routeTarget ?? pendingRouteTarget;
+  function locateUser(routeTarget?: EmergencyRouteTarget, options: { follow?: boolean } = {}) {
+    const rawRouteTarget = routeTarget === undefined && !options.follow ? pendingRouteTarget : routeTarget;
     const requestedRouteTarget = normalizeEmergencyRouteTarget(rawRouteTarget);
     if (rawRouteTarget && !requestedRouteTarget) {
       routeRequestIdRef.current += 1;
@@ -4687,6 +4780,10 @@ export function App() {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       const message = "Prohlížeč neposkytuje geolokaci.";
       setLocationStatus(message);
+      if (options.follow) {
+        userLocationFollowEnabledRef.current = false;
+        setUserLocationFollowEnabled(false);
+      }
       focusDefaultMapCenter();
       if (requestedRouteTarget) {
         setPendingRouteTarget(null);
@@ -4702,6 +4799,10 @@ export function App() {
         if (!isValidMapPoint(location)) {
           const message = "Poloha zařízení nemá platné souřadnice.";
           setLocationStatus(message);
+          if (options.follow) {
+            userLocationFollowEnabledRef.current = false;
+            setUserLocationFollowEnabled(false);
+          }
           focusDefaultMapCenter();
           if (requestedRouteTarget) {
             routeRequestIdRef.current += 1;
@@ -4714,8 +4815,17 @@ export function App() {
           setIsLocating(false);
           return;
         }
+        if (options.follow) {
+          userLocationFollowEnabledRef.current = true;
+          setUserLocationFollowEnabled(true);
+        }
         setUserLocation(location);
-        setLocationStatus(formatUserLocation(location));
+        setLocationStatus(
+          options.follow || userLocationFollowEnabledRef.current
+            ? `${formatUserLocation(location)} · mapa sleduje polohu`
+            : formatUserLocation(location)
+        );
+        startUserLocationWatch();
         if (requestedRouteTarget) {
           setFocusUserLocationRequest((current) => current + 1);
         } else {
@@ -4731,6 +4841,10 @@ export function App() {
       .catch((error) => {
         const message = error instanceof Error ? error.message : "Polohu se nepodařilo zaměřit.";
         setLocationStatus(message);
+        if (options.follow) {
+          userLocationFollowEnabledRef.current = false;
+          setUserLocationFollowEnabled(false);
+        }
         focusDefaultMapCenter();
         if (requestedRouteTarget) {
           setPendingRouteTarget(null);
@@ -4739,6 +4853,26 @@ export function App() {
         }
         setIsLocating(false);
       });
+  }
+
+  function handleUserLocationFollowChange(enabled: boolean) {
+    userLocationFollowEnabledRef.current = enabled;
+    setUserLocationFollowEnabled(enabled);
+    if (!enabled) {
+      setLocationStatus(
+        userLocation
+          ? `${formatUserLocation(userLocation)} · sledování mapy vypnuto`
+          : "Sledování mapy podle polohy je vypnuté."
+      );
+      return;
+    }
+    if (userLocation) {
+      setLocationStatus(`${formatUserLocation(userLocation)} · mapa sleduje polohu`);
+      focusMapOnUserLocation(userLocation);
+      startUserLocationWatch();
+      return;
+    }
+    locateUser(undefined, { follow: true });
   }
 
   const requestEmergencyRouteToPoint = React.useCallback(
@@ -6752,6 +6886,7 @@ export function App() {
                   onSketchModeChange={handleMapSketchModeChange}
                   onUpdateSketchDrawing={handleUpdateSketchDrawing}
                   onRequestUserLocation={locateUser}
+                  onUserLocationFollowChange={handleUserLocationFollowChange}
                   onViewChange={setMapView}
                   radioPointPickActive={Boolean(radioPointPickTarget)}
                   radioPointPickLabel={
@@ -6764,6 +6899,7 @@ export function App() {
                   sketchDrawings={visibleSketchLayerEnabled ? sketchDrawings : []}
                   sketchMode={sketchMode}
                   userLocation={userLocation}
+                  userLocationFollowEnabled={userLocationFollowEnabled}
                   zoneCreationActive={zoneCreationMode}
                 />
               </React.Suspense>
