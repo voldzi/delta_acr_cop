@@ -309,12 +309,15 @@ import {
 } from "./view-profiles";
 import {
   type CopPwaCacheState,
+  type CopStoragePersistenceState,
   readCopOfflineSnapshot,
+  readCopOfflineSnapshotAsync,
   registerCopServiceWorker,
+  requestCopPersistentStorage,
   requestCopPwaCacheWarmup,
   requestCopRouteTileCacheWarmup,
   snapshotAgeSeconds,
-  writeCopOfflineSnapshot,
+  writeCopOfflineSnapshotAsync,
   type CopOfflineSnapshot
 } from "./pwa-offline";
 import {
@@ -1107,6 +1110,7 @@ export function App() {
   const catalogSelectionInitializedRef = React.useRef(initialPreferences.catalogLayerIds !== undefined);
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
   const [pwaCacheState, setPwaCacheState] = React.useState<CopPwaCacheState>({ kind: "unknown" });
+  const [pwaStorageState, setPwaStorageState] = React.useState<CopStoragePersistenceState>({ kind: "unknown" });
   const [webPushBusy, setWebPushBusy] = React.useState(false);
   const [incidentSuggestions, setIncidentSuggestions] = React.useState<IncidentFusionSuggestion[]>([]);
   const [incidents, setIncidents] = React.useState<IncidentRecord[]>([]);
@@ -1295,6 +1299,7 @@ export function App() {
   const [incidentWorkflowStatus, setIncidentWorkflowStatus] = React.useState<string | null>(null);
   const [aiResult, setAiResult] = React.useState("AI asistent je připraven zkontrolovat kvalitu zobrazených dat.");
   const loadInFlightRef = React.useRef(false);
+  const offlineBootstrapScopeRef = React.useRef<string | null>(null);
   const situationFeatureRequestRef = React.useRef<StableFeatureRequest | null>(null);
   const profileHydratedRef = React.useRef(false);
   const profileLoadKeyRef = React.useRef<string | null>(null);
@@ -1471,6 +1476,34 @@ export function App() {
       navigator.serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", requestWarmup);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.storage) {
+      setPwaStorageState({ kind: "unsupported" });
+      return;
+    }
+
+    let cancelled = false;
+    setPwaStorageState((current) => (current.kind === "persisted" ? current : { kind: "checking" }));
+    requestCopPersistentStorage()
+      .then((state) => {
+        if (!cancelled) {
+          setPwaStorageState(state);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setPwaStorageState({
+            error: error instanceof Error ? error.message : "Persistent storage request failed.",
+            kind: "error"
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -1772,19 +1805,58 @@ export function App() {
 
   const persistOfflineSnapshot = React.useCallback(
     (data: CopDashboardData, savedAt = new Date().toISOString()) => {
-      const snapshot = writeCopOfflineSnapshot(data, userStorageScope, savedAt);
-      if (!snapshot) {
-        return;
-      }
-      setOfflineSnapshotState({
-        kind: "available",
-        objectCount: snapshot.objectCount,
-        savedAt: snapshot.savedAt,
-        sourceCount: snapshot.sourceCount
+      void writeCopOfflineSnapshotAsync(data, userStorageScope, savedAt).then((snapshot) => {
+        if (!snapshot) {
+          return;
+        }
+        setOfflineSnapshotState({
+          kind: "available",
+          objectCount: snapshot.objectCount,
+          savedAt: snapshot.savedAt,
+          sourceCount: snapshot.sourceCount
+        });
       });
     },
     [userStorageScope]
   );
+
+  React.useEffect(() => {
+    if (!dataAccessReady) {
+      return;
+    }
+    if (offlineBootstrapScopeRef.current === userStorageScope) {
+      return;
+    }
+    offlineBootstrapScopeRef.current = userStorageScope;
+
+    let cancelled = false;
+    readCopOfflineSnapshotAsync(userStorageScope)
+      .then((snapshot) => {
+        if (cancelled || !snapshot) {
+          return;
+        }
+        const restoredAt = new Date();
+        applyDashboardData(snapshot.data, restoredAt);
+        setOfflineSnapshotState({
+          kind: "active",
+          objectCount: snapshot.objectCount,
+          reason: "Čekám na čerstvá online data.",
+          restoredAt: restoredAt.toISOString(),
+          savedAt: snapshot.savedAt,
+          sourceCount: snapshot.sourceCount
+        });
+        setStreamStatus((current) => (current === "live" ? current : browserOnline ? "degraded" : "offline"));
+        setLoadError(
+          (current) =>
+            current ?? `Zobrazuji uložený náhled posledních dat (${formatSnapshotAge(snapshot)}), obnovuji online data.`
+        );
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyDashboardData, browserOnline, dataAccessReady, userStorageScope]);
 
   React.useEffect(() => {
     if (!isOidcEnabled(authConfig)) {
@@ -1867,7 +1939,7 @@ export function App() {
       setLoadError(null);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Nepodařilo se načíst situační data.";
-      const snapshot = readCopOfflineSnapshot(userStorageScope);
+      const snapshot = await readCopOfflineSnapshotAsync(userStorageScope);
       if (snapshot) {
         const restoredAt = new Date();
         applyDashboardData(snapshot.data, restoredAt);
@@ -7316,6 +7388,7 @@ export function App() {
           predictionMode={predictionMode}
           publicFlightSymbolMode={publicFlightSymbolMode}
           pwaCacheState={pwaCacheState}
+          pwaStorageState={pwaStorageState}
           profileSyncError={profileSyncError}
           profileSyncStatus={profileSyncStatus}
           proximityAlertEnabled={proximityAlertEnabled}
@@ -11262,6 +11335,56 @@ function pwaCacheTone(state: CopPwaCacheState): "ok" | "warn" | "neutral" {
   return "neutral";
 }
 
+function formatPwaStorageState(state: CopStoragePersistenceState): string {
+  if (state.kind === "persisted") {
+    return storageQuotaLabel("trvalé", state);
+  }
+  if (state.kind === "best-effort") {
+    return storageQuotaLabel("best-effort", state);
+  }
+  if (state.kind === "checking") {
+    return "ověřuji";
+  }
+  if (state.kind === "unsupported") {
+    return "nepodporováno";
+  }
+  if (state.kind === "error") {
+    return "chyba";
+  }
+  return "čeká";
+}
+
+function pwaStorageTone(state: CopStoragePersistenceState): "ok" | "warn" | "neutral" {
+  if (state.kind === "persisted") {
+    return "ok";
+  }
+  if (state.kind === "best-effort" || state.kind === "error") {
+    return "warn";
+  }
+  return "neutral";
+}
+
+function storageQuotaLabel(
+  prefix: string,
+  state: Extract<CopStoragePersistenceState, { kind: "best-effort" | "persisted" }>
+): string {
+  if (typeof state.quotaBytes !== "number" || state.quotaBytes <= 0) {
+    return prefix;
+  }
+  const used = typeof state.usageBytes === "number" ? `${formatStorageBytes(state.usageBytes)} / ` : "";
+  return `${prefix} · ${used}${formatStorageBytes(state.quotaBytes)}`;
+}
+
+function formatStorageBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${Math.round(bytes / (1024 * 1024 * 1024))} GB`;
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${Math.round(bytes / (1024 * 1024))} MB`;
+  }
+  return `${Math.round(bytes / 1024)} kB`;
+}
+
 function nonNegativeInteger(value: unknown): number {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) && numericValue >= 0 ? Math.trunc(numericValue) : 0;
@@ -11515,6 +11638,7 @@ function SettingsDrawer({
   predictionMode,
   publicFlightSymbolMode,
   pwaCacheState,
+  pwaStorageState,
   profileSyncError,
   profileSyncStatus,
   proximityAlertEnabled,
@@ -11587,6 +11711,7 @@ function SettingsDrawer({
   predictionMode: PredictionMode;
   publicFlightSymbolMode: PublicFlightSymbolMode;
   pwaCacheState: CopPwaCacheState;
+  pwaStorageState: CopStoragePersistenceState;
   profileSyncError: string | null;
   profileSyncStatus: ProfileSyncStatus;
   proximityAlertEnabled: boolean;
@@ -11978,6 +12103,7 @@ function SettingsDrawer({
                 authenticated={authSession.status === "authenticated"}
                 busy={webPushBusy}
                 pwaCacheState={pwaCacheState}
+                pwaStorageState={pwaStorageState}
                 state={webPushState}
                 onDisable={onDisableWebPush}
                 onEnable={onEnableWebPush}
@@ -12075,6 +12201,7 @@ function WebPushSettingsPanel({
   onDisable,
   onEnable,
   pwaCacheState,
+  pwaStorageState,
   state
 }: {
   authenticated: boolean;
@@ -12082,6 +12209,7 @@ function WebPushSettingsPanel({
   onDisable: () => void;
   onEnable: () => void;
   pwaCacheState: CopPwaCacheState;
+  pwaStorageState: CopStoragePersistenceState;
   state: WebPushUiState;
 }) {
   const canEnable =
@@ -12112,6 +12240,11 @@ function WebPushSettingsPanel({
         tone={state.serviceWorkerReady ? "ok" : "neutral"}
       />
       <ReadinessRow label="PWA cache" value={formatPwaCacheState(pwaCacheState)} tone={pwaCacheTone(pwaCacheState)} />
+      <ReadinessRow
+        label="Offline úložiště"
+        value={formatPwaStorageState(pwaStorageState)}
+        tone={pwaStorageTone(pwaStorageState)}
+      />
       {state.subscriptionActive !== undefined ? (
         <ReadinessRow
           label="Push odběr"

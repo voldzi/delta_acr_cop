@@ -2,6 +2,9 @@ import type { CopDashboardData } from "./cop-data";
 
 const snapshotKey = "cop.offline.snapshot.v1";
 const snapshotVersion = 1;
+const offlineDatabaseName = "cop.offline.v1";
+const offlineDatabaseVersion = 1;
+const offlineSnapshotStoreName = "snapshots";
 
 export interface CopOfflineSnapshot {
   data: CopDashboardData;
@@ -23,6 +26,14 @@ export type CopPwaCacheState =
   | { error: string; kind: "error" }
   | { kind: "unknown" }
   | { kind: "warming" };
+
+export type CopStoragePersistenceState =
+  | { kind: "best-effort"; quotaBytes?: number; usageBytes?: number }
+  | { error: string; kind: "error" }
+  | { kind: "persisted"; quotaBytes?: number; usageBytes?: number }
+  | { kind: "checking" }
+  | { kind: "unknown" }
+  | { kind: "unsupported" };
 
 export interface CopRouteTileCacheWarmupRequest {
   routeId: string;
@@ -104,36 +115,58 @@ export function readCopOfflineSnapshot(scope?: string): CopOfflineSnapshot | nul
   }
 }
 
+export async function readCopOfflineSnapshotAsync(scope?: string): Promise<CopOfflineSnapshot | null> {
+  const key = scopedStorageKey(snapshotKey, scope);
+  const indexedSnapshot = await readSnapshotFromIndexedDb(key);
+  return newestSnapshot(indexedSnapshot, readCopOfflineSnapshot(scope));
+}
+
 export function writeCopOfflineSnapshot(
   data: CopDashboardData,
   scope?: string,
   savedAt = new Date().toISOString()
 ): CopOfflineSnapshot | null {
-  if (typeof window === "undefined" || typeof window.localStorage?.setItem !== "function") {
-    return null;
+  const snapshot = createCopOfflineSnapshot(data, savedAt);
+  const key = scopedStorageKey(snapshotKey, scope);
+  const localStored = writeSnapshotToLocalStorage(key, snapshot);
+  void writeSnapshotToIndexedDb(key, snapshot).catch(() => undefined);
+  return localStored ? snapshot : null;
+}
+
+export async function writeCopOfflineSnapshotAsync(
+  data: CopDashboardData,
+  scope?: string,
+  savedAt = new Date().toISOString()
+): Promise<CopOfflineSnapshot | null> {
+  const snapshot = createCopOfflineSnapshot(data, savedAt);
+  const key = scopedStorageKey(snapshotKey, scope);
+  const localStored = writeSnapshotToLocalStorage(key, snapshot);
+  const indexedStored = await writeSnapshotToIndexedDb(key, snapshot);
+  return localStored || indexedStored ? snapshot : null;
+}
+
+export async function requestCopPersistentStorage(): Promise<CopStoragePersistenceState> {
+  if (typeof navigator === "undefined" || !navigator.storage) {
+    return { kind: "unsupported" };
   }
-
-  const snapshot: CopOfflineSnapshot = {
-    data: {
-      alerts: Array.isArray(data.alerts) ? data.alerts : [],
-      health: data.health,
-      objects: Array.isArray(data.objects) ? data.objects : [],
-      sourceHealth: Array.isArray(data.sourceHealth) ? data.sourceHealth : [],
-      sources: Array.isArray(data.sources) ? data.sources : [],
-      streamHealth: data.streamHealth,
-      trackHistory: data.trackHistory
-    },
-    objectCount: data.objects.length,
-    savedAt,
-    sourceCount: data.sources.length,
-    version: snapshotVersion
-  };
-
   try {
-    window.localStorage.setItem(scopedStorageKey(snapshotKey, scope), JSON.stringify(snapshot));
-    return snapshot;
-  } catch {
-    return null;
+    const estimate = typeof navigator.storage.estimate === "function" ? await navigator.storage.estimate() : undefined;
+    const usageBytes = optionalNonNegativeInteger(estimate?.usage);
+    const quotaBytes = optionalNonNegativeInteger(estimate?.quota);
+    const alreadyPersisted =
+      typeof navigator.storage.persisted === "function" ? await navigator.storage.persisted() : false;
+    const persisted =
+      alreadyPersisted || (typeof navigator.storage.persist === "function" ? await navigator.storage.persist() : false);
+    return {
+      kind: persisted ? "persisted" : "best-effort",
+      ...(quotaBytes !== undefined ? { quotaBytes } : {}),
+      ...(usageBytes !== undefined ? { usageBytes } : {})
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Persistent storage request failed.",
+      kind: "error"
+    };
   }
 }
 
@@ -150,6 +183,7 @@ function normalizeSnapshot(value: unknown): CopOfflineSnapshot | null {
     !isRecord(value) ||
     value.version !== snapshotVersion ||
     typeof value.savedAt !== "string" ||
+    !Number.isFinite(Date.parse(value.savedAt)) ||
     !isRecord(value.data)
   ) {
     return null;
@@ -176,6 +210,129 @@ function normalizeSnapshot(value: unknown): CopOfflineSnapshot | null {
     sourceCount: optionalNonNegativeInteger(value.sourceCount) ?? data.sources.length,
     version: snapshotVersion
   };
+}
+
+function newestSnapshot(
+  first: CopOfflineSnapshot | null,
+  second: CopOfflineSnapshot | null
+): CopOfflineSnapshot | null {
+  if (!first) {
+    return second;
+  }
+  if (!second) {
+    return first;
+  }
+  const firstSavedAt = Date.parse(first.savedAt);
+  const secondSavedAt = Date.parse(second.savedAt);
+  if (!Number.isFinite(firstSavedAt)) {
+    return second;
+  }
+  if (!Number.isFinite(secondSavedAt)) {
+    return first;
+  }
+  return secondSavedAt > firstSavedAt ? second : first;
+}
+
+function createCopOfflineSnapshot(data: CopDashboardData, savedAt: string): CopOfflineSnapshot {
+  return {
+    data: {
+      alerts: Array.isArray(data.alerts) ? data.alerts : [],
+      health: data.health,
+      objects: Array.isArray(data.objects) ? data.objects : [],
+      sourceHealth: Array.isArray(data.sourceHealth) ? data.sourceHealth : [],
+      sources: Array.isArray(data.sources) ? data.sources : [],
+      streamHealth: data.streamHealth,
+      trackHistory: data.trackHistory
+    },
+    objectCount: data.objects.length,
+    savedAt,
+    sourceCount: data.sources.length,
+    version: snapshotVersion
+  };
+}
+
+function writeSnapshotToLocalStorage(key: string, snapshot: CopOfflineSnapshot): boolean {
+  if (typeof window === "undefined" || typeof window.localStorage?.setItem !== "function") {
+    return false;
+  }
+  try {
+    window.localStorage.setItem(key, JSON.stringify(snapshot));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readSnapshotFromIndexedDb(key: string): Promise<CopOfflineSnapshot | null> {
+  const db = await openOfflineDatabase();
+  if (!db) {
+    return null;
+  }
+  try {
+    const transaction = db.transaction(offlineSnapshotStoreName, "readonly");
+    const value = await requestToPromise<unknown>(transaction.objectStore(offlineSnapshotStoreName).get(key));
+    if (!isRecord(value)) {
+      return null;
+    }
+    return normalizeSnapshot(value.snapshot);
+  } catch {
+    return null;
+  }
+}
+
+async function writeSnapshotToIndexedDb(key: string, snapshot: CopOfflineSnapshot): Promise<boolean> {
+  const db = await openOfflineDatabase();
+  if (!db) {
+    return false;
+  }
+  try {
+    const transaction = db.transaction(offlineSnapshotStoreName, "readwrite");
+    transaction.objectStore(offlineSnapshotStoreName).put({
+      key,
+      snapshot,
+      updatedAt: new Date().toISOString()
+    });
+    await transactionToPromise(transaction);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+let offlineDatabasePromise: Promise<IDBDatabase | null> | null = null;
+
+function openOfflineDatabase(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === "undefined") {
+    return Promise.resolve(null);
+  }
+  offlineDatabasePromise ??= new Promise((resolve) => {
+    const request = indexedDB.open(offlineDatabaseName, offlineDatabaseVersion);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(offlineSnapshotStoreName)) {
+        db.createObjectStore(offlineSnapshotStoreName, { keyPath: "key" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => resolve(null);
+    request.onblocked = () => resolve(null);
+  });
+  return offlineDatabasePromise;
+}
+
+function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function transactionToPromise(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
 }
 
 function optionalNonNegativeInteger(value: unknown): number | undefined {

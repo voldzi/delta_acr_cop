@@ -39,7 +39,12 @@ Manuál je součást aplikace. Hlavní vstup je v topbaru, kontextové malé ota
 
 Primární aktualizace COP dat probíhá přes live SSE stream. Nastavení intervalu je proto v centru nastavení jako `Fallback synchronizace`; používá se v degraded režimu, při výpadku streamu, po obnově záložky a pro méně dynamická data.
 
-PWA offline režim automaticky ukládá poslední povolený COP snapshot pro daný operátorský scope. Při výpadku API nebo sítě topbar přepne na `DEGRADED` nebo `OFFLINE`, levý panel ukáže stáří snapshotu a zobrazení je read-only, dokud se neobnoví serverové spojení.
+PWA offline režim automaticky ukládá poslední povolený COP snapshot pro daný
+operátorský scope do IndexedDB s `localStorage` fallbackem. Při otevření
+aplikace se lokální snapshot zobrazí bez čekání na síť, topbar ho označí jako
+`DEGRADED` nebo `OFFLINE` náhled a aplikace paralelně obnovuje živé API/SSE
+spojení. Po výpadku API nebo sítě levý panel ukáže stáří snapshotu a zobrazení
+je read-only, dokud se neobnoví serverové spojení.
 
 Navigace je mapový režim nad existujícím routing overlay. Uživatel ji může
 spustit z vybraného objektu/prvku, ze zobrazené trasy nebo z již vypočtené

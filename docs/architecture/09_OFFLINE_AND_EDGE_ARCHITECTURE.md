@@ -47,6 +47,20 @@ samostatná chat stránka synchronizují počet nepřečtených zpráv na ikonu
 instalované aplikace. Tato badge synchronizace je best effort a nesmí nahrazovat
 serverový audit doručení notifikací.
 
-Po každém úspěšném načtení nebo live stream update se do `localStorage` pro daný operátorský scope ukládá poslední povolený COP snapshot: health, zdroje, source health, aktuální objekty, alerty a oříznutá historie stop. Pokud API nebo síť selže, UI přepne do read-only fallbacku, označí režim `OFFLINE` nebo `DEGRADED`, zobrazí stáří snapshotu a ponechá mapu, seznam objektů, detail a replay nad posledními lokálními daty.
+Po každém úspěšném načtení nebo live stream update se pro daný operátorský
+scope ukládá poslední povolený COP snapshot: health, zdroje, source health,
+aktuální objekty, alerty a oříznutá historie stop. Primární úložiště je
+IndexedDB; `localStorage` zůstává kompatibilní fallback a rychlá synchronní
+indikace při startu. Web shell zároveň požádá prohlížeč přes Storage Manager API
+o persistent storage. Pokud prohlížeč žádost odmítne nebo API nepodporuje, PWA
+funguje dál v best-effort režimu a stav se zobrazí v nastavení.
+
+Při startu PWA nejdřív asynchronně načte nejnovější lokální snapshot z
+IndexedDB/`localStorage`, okamžitě ho zobrazí jako `DEGRADED` nebo `OFFLINE`
+náhled a paralelně obnovuje živá data přes COP API a SSE stream. Po úspěšné
+online obnově se lokální snapshot přepíše novým serverovým stavem a UI se vrátí
+do live režimu. Pokud API nebo síť selže, UI zůstane v read-only fallbacku,
+zobrazí stáří snapshotu a ponechá mapu, seznam objektů, detail a replay nad
+posledními lokálními daty.
 
 Tento režim je pouze informační. Nepovoluje manuální hlášení, změnu zdroje pravdy ani akční workflow. Po obnovení spojení se snapshot přepíše novým serverovým stavem.
