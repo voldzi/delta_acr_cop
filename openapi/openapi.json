@@ -4037,6 +4037,62 @@
         }
       }
     },
+    "/_matrix/push/v1/notify": {
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Accept Matrix push gateway notifications",
+        "description": "Public Matrix Push Gateway endpoint used by Synapse HTTP pushers. COP accepts the canonical Matrix path and forwards the payload server-side to CSM Messaging without exposing provider credentials to browsers or Matrix clients.",
+        "operationId": "matrixPushGatewayNotify",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatrixPushGatewayRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Matrix push gateway result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatrixPushGatewayResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "CSM Messaging did not accept the Matrix push notification.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatrixPushGatewayResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Messaging provider integration is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatrixPushGatewayResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/api/v1/push/web/config": {
       "get": {
         "tags": [
@@ -16962,6 +17018,33 @@
           }
         },
         "additionalProperties": false
+      },
+      "MatrixPushGatewayRequest": {
+        "type": "object",
+        "description": "Matrix Push Gateway notification payload sent by Synapse. COP forwards this body to CSM Messaging and does not interpret plaintext message content.",
+        "additionalProperties": true,
+        "properties": {
+          "notification": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "MatrixPushGatewayResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "rejected"
+        ],
+        "properties": {
+          "rejected": {
+            "type": "array",
+            "description": "Pushkeys rejected by the downstream push gateway.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "WebPushConfigResponse": {
         "type": "object",

@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260707-4";
+const COP_SW_VERSION = "cop-pwa-offline-20260707-5";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -90,24 +90,29 @@ self.addEventListener("push", (event) => {
   const deepLink = normalizeNotificationUrl(payload.deepLink ?? payload.url ?? notificationPayloadUrl(payload));
   const severity = notificationPayloadSeverity(payload);
   const tag = notificationPayloadTag(payload);
+  const badgeCount = notificationPayloadBadgeCount(payload);
 
   event.waitUntil(
-    self.registration.showNotification(title, {
-      actions: notificationActionsForUrl(deepLink),
-      badge: "/icons/favicon-32.png",
-      body,
-      data: {
-        receivedAt: Date.now(),
-        severity,
-        type: notificationPayloadType(payload),
-        url: deepLink
-      },
-      icon: "/icons/cop-icon-192.png",
-      requireInteraction: ["critical", "high"].includes(severity),
-      renotify: false,
-      tag,
-      timestamp: Date.now()
-    })
+    Promise.all([
+      updateAppBadge(badgeCount),
+      self.registration.showNotification(title, {
+        actions: notificationActionsForUrl(deepLink),
+        badge: "/icons/favicon-32.png",
+        body,
+        data: {
+          badgeCount,
+          receivedAt: Date.now(),
+          severity,
+          type: notificationPayloadType(payload),
+          url: deepLink
+        },
+        icon: "/icons/cop-icon-192.png",
+        requireInteraction: ["critical", "high"].includes(severity),
+        renotify: false,
+        tag,
+        timestamp: Date.now()
+      })
+    ])
   );
 });
 
@@ -631,6 +636,42 @@ function notificationPayloadType(payload) {
     }
   }
   return "notification";
+}
+
+function notificationPayloadBadgeCount(payload) {
+  const candidates = [
+    payload?.badgeCount,
+    payload?.unreadCount,
+    payload?.unread,
+    payload?.count,
+    payload?.counts?.unread,
+    payload?.data?.badgeCount,
+    payload?.data?.unreadCount,
+    payload?.data?.unread,
+    payload?.data?.count,
+    payload?.data?.counts?.unread
+  ];
+  for (const candidate of candidates) {
+    const normalized = Number(candidate);
+    if (Number.isFinite(normalized) && normalized > 0) {
+      return Math.min(Math.trunc(normalized), 99);
+    }
+  }
+  return 1;
+}
+
+async function updateAppBadge(count) {
+  try {
+    if (typeof self.registration.setAppBadge === "function") {
+      await self.registration.setAppBadge(count);
+      return;
+    }
+    if (typeof navigator !== "undefined" && typeof navigator.setAppBadge === "function") {
+      await navigator.setAppBadge(count);
+    }
+  } catch {
+    // Badging is best-effort and not available in every PWA container.
+  }
 }
 
 function notificationPayloadTag(payload) {

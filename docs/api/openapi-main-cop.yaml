@@ -2649,6 +2649,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MessagingMatrixRoomBindingResponse"
+  /_matrix/push/v1/notify:
+    post:
+      tags:
+        - Notifications
+      summary: Accept Matrix push gateway notifications
+      description: Public Matrix Push Gateway endpoint used by Synapse HTTP pushers. COP accepts the
+        canonical Matrix path and forwards the payload server-side to CSM Messaging without exposing
+        provider credentials to browsers or Matrix clients.
+      operationId: matrixPushGatewayNotify
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MatrixPushGatewayRequest"
+      responses:
+        "200":
+          description: Matrix push gateway result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatrixPushGatewayResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          description: CSM Messaging did not accept the Matrix push notification.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatrixPushGatewayResponse"
+        "503":
+          description: Messaging provider integration is disabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatrixPushGatewayResponse"
   /api/v1/push/web/config:
     get:
       tags:
@@ -3415,6 +3452,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EdgeRuntimeHealthStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /edge/health/ready:
     get:
       tags:
@@ -3431,6 +3470,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EdgeRuntimeReadyStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /edge/status:
     get:
       tags:
@@ -3448,6 +3489,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EdgeRuntimeStatusResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /edge/events:
     get:
       tags:
@@ -3472,6 +3515,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EdgeRuntimeStatusResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /edge/sync:
     post:
       tags:
@@ -4548,8 +4593,6 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-    mtlsAuth:
-      type: mutualTLS
   parameters:
     SourceSystemIdHeader:
       name: X-Source-System-Id
@@ -11121,88 +11164,6 @@ components:
           enum:
             - ok
             - degraded
-    EdgeRuntimeState:
-      type: object
-      additionalProperties: true
-      required:
-        - nodeId
-        - nodeName
-        - nodeRole
-        - contractVersion
-        - health
-        - queueDepth
-        - lastSyncAt
-        - lastReplayOffset
-        - lastError
-        - centralApiUrl
-        - classificationMax
-        - autoSync
-        - syncIntervalMs
-        - outboxDepth
-        - inboundEventCount
-        - deadLetterCount
-        - updatedAt
-      properties:
-        nodeId:
-          type: string
-          example: node_edge_pilot_01
-        nodeName:
-          type: string
-          example: CSM Edge Pilot Node
-        nodeRole:
-          type: string
-          enum:
-            - edge-node
-        contractVersion:
-          type: string
-          example: cop-edge-runtime-v1
-        health:
-          type: string
-          enum:
-            - ok
-            - degraded
-        queueDepth:
-          type: integer
-          minimum: 0
-        outboxDepth:
-          type: integer
-          minimum: 0
-        inboundEventCount:
-          type: integer
-          minimum: 0
-        deadLetterCount:
-          type: integer
-          minimum: 0
-        lastSyncAt:
-          type:
-            - string
-            - "null"
-          format: date-time
-        lastReplayOffset:
-          type: integer
-          minimum: 0
-        lastError:
-          type:
-            - string
-            - "null"
-        centralApiUrl:
-          type: string
-          format: uri
-        classificationMax:
-          type: string
-          enum:
-            - PUBLIC
-            - INTERNAL
-            - SENSITIVE
-            - RESTRICTED_SIMULATED
-        autoSync:
-          type: boolean
-        syncIntervalMs:
-          type: integer
-          minimum: 1000
-        updatedAt:
-          type: string
-          format: date-time
     EdgeRuntimeStatusResponse:
       type: object
       additionalProperties: false
@@ -11814,6 +11775,26 @@ components:
           items:
             $ref: "#/components/schemas/DemoScenarioStatus"
       additionalProperties: false
+    MatrixPushGatewayRequest:
+      type: object
+      description: Matrix Push Gateway notification payload sent by Synapse. COP forwards this body to CSM
+        Messaging and does not interpret plaintext message content.
+      additionalProperties: true
+      properties:
+        notification:
+          type: object
+          additionalProperties: true
+    MatrixPushGatewayResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - rejected
+      properties:
+        rejected:
+          type: array
+          description: Pushkeys rejected by the downstream push gateway.
+          items:
+            type: string
     WebPushConfigResponse:
       type: object
       additionalProperties: false

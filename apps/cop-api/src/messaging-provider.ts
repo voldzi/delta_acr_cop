@@ -196,6 +196,18 @@ export interface MessagingNotificationIntakeResponse {
   warnings: string[];
 }
 
+export interface MatrixPushGatewayResponse {
+  rejected: string[];
+}
+
+export interface MessagingMatrixPushGatewayForwardResponse {
+  body: MatrixPushGatewayResponse;
+  ok: boolean;
+  status: MessagingIntegrationRuntimeStatus;
+  statusCode: number;
+  warnings: string[];
+}
+
 export interface MessagingConversationMemberSyncResponse {
   contractVersion: "cop-messaging-conversations-v1";
   conversation?: MessagingConversationSummary;
@@ -262,6 +274,7 @@ export interface MessagingProvider {
   registerWebPushDevice(actor: AuthenticatedActor, requestNow: Date, input: MessagingWebPushDeviceRegistrationRequest): Promise<MessagingWebPushDeviceRegistrationResponse>;
   deleteWebPushDevice(actor: AuthenticatedActor, requestNow: Date, deviceId: string): Promise<MessagingWebPushDeviceDeletionResponse>;
   sendNotification(actor: AuthenticatedActor | undefined, requestNow: Date, idempotencyKey: string, input: MessagingNotificationIntakeRequest): Promise<MessagingNotificationIntakeResponse>;
+  forwardMatrixPushNotification(requestNow: Date, input: unknown): Promise<MessagingMatrixPushGatewayForwardResponse>;
 }
 
 interface CsmMessagingCapabilities {
@@ -866,6 +879,50 @@ export class CsmMessagingProvider implements MessagingProvider {
     }
   }
 
+  async forwardMatrixPushNotification(
+    requestNow: Date,
+    input: unknown
+  ): Promise<MessagingMatrixPushGatewayForwardResponse> {
+    if (!this.config.enabled) {
+      return {
+        body: { rejected: [] },
+        ok: false,
+        status: "disabled",
+        statusCode: 503,
+        warnings: ["Messaging provider is disabled."]
+      };
+    }
+    try {
+      const result = await fetchJsonWithStatus(
+        new URL(`${this.config.baseUrl}/api/v1/matrix/push/notify`),
+        this.config,
+        requestNow,
+        {
+          body: JSON.stringify(input ?? {}),
+          headers: {
+            "Content-Type": "application/json"
+          },
+          method: "POST"
+        }
+      );
+      return {
+        body: normalizeMatrixPushGatewayResponse(result.body),
+        ok: result.ok,
+        status: result.ok ? "online" : "degraded",
+        statusCode: result.status,
+        warnings: result.ok ? [] : [`Messaging Matrix push gateway returned HTTP ${result.status}.`]
+      };
+    } catch (error) {
+      return {
+        body: { rejected: [] },
+        ok: false,
+        status: "degraded",
+        statusCode: 502,
+        warnings: [`Messaging Matrix push gateway forward failed: ${errorMessage(error)}`]
+      };
+    }
+  }
+
   async registerWebPushDevice(
     actor: AuthenticatedActor,
     requestNow: Date,
@@ -1324,6 +1381,15 @@ function normalizeHealth(value: Record<string, unknown>): CsmMessagingHealth {
         : [])
       : undefined,
     status: optionalString(value.status)
+  };
+}
+
+function normalizeMatrixPushGatewayResponse(value: unknown): MatrixPushGatewayResponse {
+  if (!isRecord(value) || !Array.isArray(value.rejected)) {
+    return { rejected: [] };
+  }
+  return {
+    rejected: value.rejected.filter((item): item is string => typeof item === "string")
   };
 }
 

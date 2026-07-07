@@ -205,7 +205,7 @@ describe("Matrix client diagnostics", () => {
         expect.objectContaining({
           app_display_name: "COP Chat",
           app_id: "cz.zeleznalady.cop.web",
-          data: { url: "https://msg.zeleznalady.cz/api/v1/matrix/push/notify" },
+          data: { url: "https://msg.zeleznalady.cz/_matrix/push/v1/notify" },
           device_display_name: "COP web",
           kind: "http",
           lang: "cs-CZ",

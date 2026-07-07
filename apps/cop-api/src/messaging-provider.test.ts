@@ -1348,4 +1348,81 @@ describe("CsmMessagingProvider", () => {
     });
     expect(JSON.stringify(result)).not.toContain("provider-token");
   });
+
+  it("forwards Matrix push gateway payloads to CSM Messaging without requiring browser auth", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://messaging.local:4050/api/v1/matrix/push/notify");
+      expect(init?.method).toBe("POST");
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer provider-token",
+        "Content-Type": "application/json"
+      });
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        notification: {
+          devices: [{ pushkey: "web_device-1" }],
+          event_id: "$event"
+        }
+      });
+      return new Response(JSON.stringify({ rejected: [] }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000,
+      token: "provider-token"
+    });
+
+    const result = await provider.forwardMatrixPushNotification(new Date("2026-07-07T13:20:00Z"), {
+      notification: {
+        devices: [{ pushkey: "web_device-1" }],
+        event_id: "$event"
+      }
+    });
+
+    expect(result).toMatchObject({
+      body: { rejected: [] },
+      ok: true,
+      status: "online",
+      statusCode: 200,
+      warnings: []
+    });
+    expect(JSON.stringify(result)).not.toContain("provider-token");
+  });
+
+  it("exposes the Matrix push gateway through the public canonical Matrix endpoint", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://messaging.local:4050/api/v1/matrix/push/notify");
+      expect(init?.method).toBe("POST");
+      return new Response(JSON.stringify({ rejected: [] }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000,
+        token: "provider-token"
+      }),
+      now: () => new Date("2026-07-07T13:21:00Z")
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      payload: {
+        notification: {
+          devices: [{ pushkey: "web_device-1" }],
+          event_id: "$event"
+        }
+      },
+      url: "/_matrix/push/v1/notify"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ rejected: [] });
+    expect(response.body).not.toContain("provider-token");
+    await app.close();
+  });
 });

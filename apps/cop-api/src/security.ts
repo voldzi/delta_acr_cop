@@ -210,6 +210,9 @@ function isPublicReadRequest(request: FastifyRequest): boolean {
   if ((method === "GET" || method === "HEAD") && isMobilePairingPublicRequest(path)) {
     return true;
   }
+  if (method === "POST" && path === "/_matrix/push/v1/notify") {
+    return true;
+  }
 
   if (!readBoolean(process.env.COP_PUBLIC_READ_ENABLED)) {
     return false;

@@ -877,7 +877,7 @@ async function syncMatrixWebPushPusher(
   }
 
   const pushGatewayUrl =
-    options?.pushGatewayUrl?.trim() || new URL("/api/v1/matrix/push/notify", homeserverBaseUrl).toString();
+    options?.pushGatewayUrl?.trim() || defaultMatrixPushGatewayUrl(homeserverBaseUrl);
 
   await client.setPusher({
     app_display_name: options?.appDisplayName?.trim() || "COP Chat",
@@ -891,6 +891,21 @@ async function syncMatrixWebPushPusher(
     pushkey: deviceId
   });
   writeStoredMatrixWebPushPusher({ appId, pushkey: deviceId });
+}
+
+function defaultMatrixPushGatewayUrl(homeserverBaseUrl: string): string {
+  return new URL("/_matrix/push/v1/notify", browserLocationOrigin() ?? homeserverBaseUrl).toString();
+}
+
+function browserLocationOrigin(): string | undefined {
+  try {
+    if (typeof window !== "undefined" && typeof window.location?.origin === "string" && window.location.origin) {
+      return window.location.origin;
+    }
+  } catch {
+    // Fall back to the Matrix homeserver URL outside a browser context.
+  }
+  return undefined;
 }
 
 async function resolveProfileAvatarMxcUrl(

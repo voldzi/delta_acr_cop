@@ -8,6 +8,7 @@ export interface MessagingRouteHandlers {
   conversations: RouteHandlerMethod;
   createConversation: RouteHandlerMethod;
   deleteWebPushDevice: RouteHandlerMethod;
+  matrixPushGateway: RouteHandlerMethod;
   registerWebPushDevice: RouteHandlerMethod;
   resolveConversation: RouteHandlerMethod;
   resolveMatrixIdentities: RouteHandlerMethod;
@@ -16,6 +17,7 @@ export interface MessagingRouteHandlers {
 }
 
 export function registerMessagingRoutes(app: FastifyInstance, handlers: MessagingRouteHandlers): void {
+  app.post("/_matrix/push/v1/notify", handlers.matrixPushGateway);
   app.get("/api/v1/messaging/status", handlers.status);
   app.get("/api/v1/push/web/config", handlers.webPushConfig);
   app.post("/api/v1/push/web/devices", handlers.registerWebPushDevice);

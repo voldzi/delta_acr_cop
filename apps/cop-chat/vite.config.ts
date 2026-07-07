@@ -43,12 +43,18 @@ export default defineConfig({
     port: Number.parseInt(process.env.COP_CHAT_PORT ?? "4314", 10),
     proxy: {
       "/api": apiBase,
+      "/_matrix": apiBase,
       "/health": apiBase
     }
   },
   preview: {
     allowedHosts,
     host: "0.0.0.0",
-    port: Number.parseInt(process.env.COP_CHAT_PORT ?? "4314", 10)
+    port: Number.parseInt(process.env.COP_CHAT_PORT ?? "4314", 10),
+    proxy: {
+      "/api": apiBase,
+      "/_matrix": apiBase,
+      "/health": apiBase
+    }
   }
 });

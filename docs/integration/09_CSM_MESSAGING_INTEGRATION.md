@@ -322,12 +322,19 @@ an HTTP pusher:
 ```text
 app_id=cz.zeleznalady.cop.web
 pushkey=<CSM web deviceId>
-data.url=https://msg.zeleznalady.cz/api/v1/matrix/push/notify
+data.url=https://cop.zeleznalady.cz/_matrix/push/v1/notify
 ```
 
 The `pushkey` is the CSM device id returned by COP Web Push registration, not a
 browser subscription secret. CSM Messaging resolves it server-side and sends a
 minimal Web Push payload with a chat deep link.
+
+The public Matrix pusher URL must use the standard Matrix Push Gateway path,
+otherwise Synapse rejects the pusher registration before any background push can
+be delivered. COP exposes this canonical path without browser bearer auth and
+forwards the payload server-side to CSM Messaging at
+`/api/v1/matrix/push/notify`. The browser never receives provider tokens or Web
+Push private credentials.
 
 When the browser no longer has a confirmed COP Web Push registration, COP Chat
 removes the Matrix pusher with `kind=null` for the last known web device id.

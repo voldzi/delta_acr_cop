@@ -2532,6 +2532,10 @@ class HangingMessagingProvider implements MessagingProvider {
   async sendNotification(): Promise<never> {
     throw new Error("not implemented");
   }
+
+  async forwardMatrixPushNotification(): Promise<never> {
+    throw new Error("not implemented");
+  }
 }
 
 class FakeFlightDataSource implements FlightDataSource {

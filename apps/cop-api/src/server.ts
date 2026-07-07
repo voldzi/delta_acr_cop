@@ -4119,6 +4119,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const result = await messagingProvider.deleteWebPushDevice(actor, now(), deviceId);
       return reply.code(result.status === "disabled" ? 503 : 202).send(result);
     },
+    matrixPushGateway: async (request, reply) => {
+      const result = await messagingProvider.forwardMatrixPushNotification(now(), request.body ?? {});
+      if (result.warnings.length > 0) {
+        app.log.warn(
+          {
+            providerStatus: result.status,
+            statusCode: result.statusCode,
+            warnings: result.warnings
+          },
+          "Matrix push gateway forward degraded"
+        );
+      }
+      return reply.code(result.ok ? 200 : result.statusCode === 503 ? 503 : 502).send(result.body);
+    },
     registerWebPushDevice: async (request, reply) => {
       const actor = requireActor(request, reply);
       if (!actor) {

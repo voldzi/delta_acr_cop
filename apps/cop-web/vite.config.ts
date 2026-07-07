@@ -93,6 +93,7 @@ export default defineConfig({
     port: Number.parseInt(process.env.COP_WEB_PORT ?? "4311", 10),
     proxy: {
       "/api": apiBase,
+      "/_matrix": apiBase,
       "/chat": {
         changeOrigin: true,
         target: chatBase,
@@ -105,6 +106,12 @@ export default defineConfig({
   preview: {
     host: "0.0.0.0",
     port: Number.parseInt(process.env.COP_WEB_PORT ?? "4311", 10),
-    allowedHosts
+    allowedHosts,
+    proxy: {
+      "/_matrix": apiBase,
+      "/api": apiBase,
+      "/health": apiBase,
+      "/metrics": apiBase
+    }
   }
 });

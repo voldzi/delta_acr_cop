@@ -195,6 +195,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
         sessionRef.current?.stop();
         const matrixWebPushDeviceId =
           currentOptions.matrixWebPushDeviceId ?? currentOptions.matrixWebPushFallbackDeviceId;
+        const matrixPushGatewayUrl = browserMatrixPushGatewayUrl();
         const nextSession = await createMatrixMessagingSession(bootstrap, {
           onRoomsChanged: (nextRooms) => {
             currentOptions.onRoomsChanged(nextRooms, preferredSelection);
@@ -205,6 +206,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
           webPush: {
             ...(matrixWebPushDeviceId ? { deviceId: matrixWebPushDeviceId } : {}),
             lang: typeof navigator !== "undefined" ? navigator.language || "cs" : "cs",
+            ...(matrixPushGatewayUrl ? { pushGatewayUrl: matrixPushGatewayUrl } : {}),
             registered: Boolean(currentOptions.matrixWebPushDeviceId)
           }
         });
@@ -294,4 +296,15 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
     startMatrixSession,
     syncState: state.syncState
   };
+}
+
+function browserMatrixPushGatewayUrl(): string | undefined {
+  try {
+    if (typeof window === "undefined" || typeof window.location?.origin !== "string" || !window.location.origin) {
+      return undefined;
+    }
+    return new URL("/_matrix/push/v1/notify", window.location.origin).toString();
+  } catch {
+    return undefined;
+  }
 }
