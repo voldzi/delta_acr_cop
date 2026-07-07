@@ -9,3 +9,4 @@
 - [07 AI Audit and Logging](07_AI_AUDIT_AND_LOGGING.md)
 - [08 Prompt Templates](08_PROMPT_TEMPLATES.md)
 - [09 Assistive AI COP Roadmap](09_ASSISTIVE_AI_COP_ROADMAP.md)
+- [10 AI Response Playbook And Evals](10_RESPONSE_PLAYBOOK_AND_EVALS.md)

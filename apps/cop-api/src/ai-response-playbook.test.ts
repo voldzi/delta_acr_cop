@@ -1,0 +1,60 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  aiResponsePlaybookGuidanceForQuestion,
+  aiResponsePlaybookPromptGuidance,
+  buildAiResponsePlaybookEvalCases,
+  classifyAiResponseIntent
+} from "./ai-response-playbook.js";
+
+describe("AI response playbook", () => {
+  it("classifies weather rain questions with map-only actions", () => {
+    const match = classifyAiResponseIntent("Bude dnes pršet?");
+
+    expect(match).toMatchObject({
+      domain: "weather",
+      intentId: "weather.rain.now"
+    });
+    expect(match?.rule.allowedActions).toEqual(["focus-map"]);
+    expect(match?.rule.forbiddenActions).toContain("route");
+  });
+
+  it("keeps navigable public-safety targets route-capable", () => {
+    const match = classifyAiResponseIntent("Kde je nejbližší policie u mě?");
+
+    expect(match).toMatchObject({
+      domain: "security",
+      intentId: "map.nearest.police"
+    });
+    expect(match?.rule.allowedActions).toEqual(expect.arrayContaining(["focus-map", "route"]));
+    expect(match?.rule.forbiddenActions).not.toContain("route");
+  });
+
+  it("emits compact guidance for the chat-agent prompt and context", () => {
+    const guidance = aiResponsePlaybookGuidanceForQuestion("Proč mi nefunguje poloha?");
+    const promptGuidance = aiResponsePlaybookPromptGuidance("Proč mi nefunguje poloha?");
+
+    expect(guidance).toMatchObject({
+      domain: "application",
+      intentId: "app.location.permission",
+      requiredSources: ["app-runtime"]
+    });
+    expect(promptGuidance).toContain("ResponsePlaybook intent=app.location.permission");
+    expect(promptGuidance).toContain("Forbidden UI actions: route");
+  });
+
+  it("generates a ten-thousand-query eval set that maps back to expected intents", () => {
+    const cases = buildAiResponsePlaybookEvalCases(10_000);
+    const uniqueQuestions = new Set(cases.map((item) => item.question));
+    const mismatches = cases.flatMap((item) => {
+      const match = classifyAiResponseIntent(item.question);
+      return match?.intentId === item.expectedIntentId
+        ? []
+        : [{ expected: item.expectedIntentId, id: item.id, question: item.question, actual: match?.intentId }];
+    });
+
+    expect(cases).toHaveLength(10_000);
+    expect(uniqueQuestions.size).toBeGreaterThan(9_000);
+    expect(mismatches).toEqual([]);
+  });
+});

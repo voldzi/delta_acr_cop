@@ -74,6 +74,10 @@ import {
   type AiRetrievalIntent
 } from "./ai-retrieval-intent.js";
 import {
+  aiResponsePlaybookGuidanceForQuestion,
+  aiResponsePlaybookPromptGuidance
+} from "./ai-response-playbook.js";
+import {
   AiSemanticRetriever,
   createSemanticDocuments,
   type AiSemanticContext,
@@ -8527,6 +8531,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       sourceHealth: aiSourceHealth
     });
     const retrievalIntent = inferAiRetrievalIntent(question);
+    const responsePlaybook = aiResponsePlaybookGuidanceForQuestion(question);
+    const responsePlaybookPrompt = aiResponsePlaybookPromptGuidance(question);
     const retrievalQuery = buildAiRetrievalQuery(question, retrievalIntent);
     const semanticStartedAt = Date.now();
     const semanticContext = await retrieveAiSemanticContext({
@@ -8600,6 +8606,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       generatedAt: requestNow.toISOString(),
       question,
       retrievalIntent,
+      responsePlaybook,
       chat,
       chatContext,
       mapSearch: aiMapSearch,
@@ -8619,6 +8626,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       generatedAt: requestNow.toISOString(),
       question,
       retrievalIntent,
+      responsePlaybook,
       chat,
       chatContext: promptContext.chatContext,
       mapSearch: aiMapSearch,
@@ -8646,6 +8654,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         "Bezpečnostní priority jsou voda/povodeň, požár, zdravotní riziko, infrastruktura, dopravní omezení, bezpečnostní/policejní incident a komunitní hlášení; civilní lety a stale civilní letové tracky nejsou priorita a zmiň je jen při explicitním leteckém dotazu nebo přímé bezpečnostní souvislosti.",
         "Důležitá tvrzení cituj pomocí [S1] ze semanticContext.citations, [I1] z indexedContext.citations nebo [P1] z priorityContext.citations.",
         "Respektuj retrievalIntent a contextCompression: pokud jsou záznamy vynechané z promptu, neber to jako důkaz jejich neexistence.",
+        responsePlaybookPrompt
+          ? `Respektuj responsePlaybook pro záměr, zdroje, nejistotu a UI akce. ${responsePlaybookPrompt}`
+          : "Pokud responsePlaybook není k dispozici, drž se obecného COP kontextu a nevyvozuj UI akce bez dat.",
         "ChatContext ber jen jako výňatek viditelné dešifrované timeline poskytnutý klientem; nedovozuj neviděnou historii místnosti.",
         "Jasně odděl ověřená data, odhady a chybějící informace. Neformuluj taktické pokyny, targeting ani doporučení použití síly.",
         `Dotaz uživatele: ${question}`
@@ -15463,6 +15474,9 @@ function withAiResponseEvidence(
             })
           }),
           observability: input.observability,
+          responsePlaybook: isRecord(input.requestContext.responsePlaybook)
+            ? input.requestContext.responsePlaybook
+            : undefined,
           mapSnapshot: isRecord(input.priorityContext.mapSnapshot) ? input.priorityContext.mapSnapshot : undefined,
           priority: compactRecord({
             citations: aiEvidencePriorityCitations(input.priorityContext),

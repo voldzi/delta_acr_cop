@@ -2133,6 +2133,12 @@ describe("community report routes", () => {
       })
     ]);
     const evidence = structured.evidence as Record<string, unknown>;
+    expect(evidence.responsePlaybook).toMatchObject({
+      allowedActions: ["focus-map", "route"],
+      domain: "security",
+      intentId: "map.nearest.police",
+      requiredSources: ["map-search"]
+    });
     const priorityContext = evidence.priority as Record<string, unknown>;
     expect(priorityContext.citations).toEqual(expect.arrayContaining([
       expect.objectContaining({
