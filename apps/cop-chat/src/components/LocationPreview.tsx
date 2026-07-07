@@ -27,6 +27,19 @@ export function centerLocationInCop(location: MatrixLocationShare): void {
     label: location.label,
     zoom: 16
   });
+  openCopMapFocus(focus);
+}
+
+export function navigateToLocationInCop(location: MatrixLocationShare): void {
+  const focus = encodeChatCenterLocation(location.lat, location.lon, {
+    action: "route",
+    label: location.label,
+    zoom: 16
+  });
+  openCopMapFocus(focus);
+}
+
+function openCopMapFocus(focus: ReturnType<typeof encodeChatCenterLocation>): void {
   if (window.parent !== window) {
     window.parent.postMessage(focus, window.location.origin);
     return;

@@ -3978,6 +3978,13 @@ button {
   color: rgba(255, 255, 255, 0.72);
 }
 
+.large-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
 .map-center-button {
   display: inline-flex;
   min-height: 40px;

@@ -1,6 +1,6 @@
 import React from "react";
 import clsx from "clsx";
-import { MapPin, Video, X } from "lucide-react";
+import { MapPin, Navigation, Video, X } from "lucide-react";
 import {
   ChatAttachmentPreview,
   createChatAttachmentPreviewDescriptor,
@@ -9,7 +9,12 @@ import {
   type ChatMediaPreviewItem,
   type ResolvedAttachmentPreview
 } from "../components/AttachmentPreview";
-import { StaticLocationMap, centerLocationInCop, formatCoordinates } from "../components/LocationPreview";
+import {
+  StaticLocationMap,
+  centerLocationInCop,
+  formatCoordinates,
+  navigateToLocationInCop
+} from "../components/LocationPreview";
 import { useModalFocus } from "../hooks/useModalFocus";
 
 export type MediaPreviewItem = ChatMediaPreviewItem;
@@ -62,10 +67,20 @@ export default function MediaPreviewDialog({ item, onClose }: { item: MediaPrevi
                 <strong>{formatCoordinates(item.location)}</strong>
                 <small>{item.caption ?? "Sdílená poloha"}</small>
               </div>
-              <button className="map-center-button" onClick={() => centerLocationInCop(item.location!)} type="button">
-                <MapPin size={17} />
-                Vycentrovat mapu
-              </button>
+              <div className="large-map-actions">
+                <button className="map-center-button" onClick={() => centerLocationInCop(item.location!)} type="button">
+                  <MapPin size={17} />
+                  Vycentrovat mapu
+                </button>
+                <button
+                  className="map-center-button primary"
+                  onClick={() => navigateToLocationInCop(item.location!)}
+                  type="button"
+                >
+                  <Navigation size={17} />
+                  Navigovat
+                </button>
+              </div>
             </div>
           ) : null}
           {item.kind !== "image" && item.kind !== "video" && item.kind !== "location" ? (
