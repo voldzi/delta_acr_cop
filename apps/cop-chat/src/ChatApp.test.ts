@@ -8,6 +8,7 @@ import {
   buildAiChatContextSnapshot,
   buildAiRequestContextOptions,
   chatNotificationTag,
+  collectIncomingChatNotifications,
   composerQuickActions,
   composerSuggestions,
   formatAiAgentShareBody,
@@ -16,7 +17,7 @@ import {
   parseAiAgentMention
 } from "./ChatApp";
 import type { AiCopResponse } from "@cop/core/cop-data";
-import type { MatrixTimelineMessage } from "@cop/messaging/types";
+import type { MatrixRoomSummary, MatrixTimelineMessage } from "@cop/messaging/types";
 
 describe("mergeTimelineMessages", () => {
   const baseMessage: MatrixTimelineMessage = {
@@ -129,6 +130,92 @@ describe("chatNotificationTag", () => {
     expect(chatNotificationTag("!room:cop.local", "$event-1")).not.toBe(
       chatNotificationTag("!room:cop.local", "$event-2")
     );
+  });
+});
+
+describe("collectIncomingChatNotifications", () => {
+  const room: MatrixRoomSummary = {
+    encrypted: true,
+    name: "Operační skupina",
+    roomId: "!ops:cop.local",
+    unreadCount: 0
+  };
+
+  const tracker = () => ({
+    notifiedEventIds: new Set<string>(),
+    primedRoomIds: new Set<string>(),
+    roomWatermarks: new Map<string, number>()
+  });
+
+  const incoming = (eventId: string, timestamp: string): MatrixTimelineMessage => ({
+    body: "Zpráva",
+    eventId,
+    kind: "text",
+    own: false,
+    sender: "@peer:cop.local",
+    timestamp
+  });
+
+  it("primes initial room history without replaying old notifications", () => {
+    const state = tracker();
+    const initialHistory = [incoming("$old", "2026-07-07T10:00:00.000Z")];
+
+    expect(
+      collectIncomingChatNotifications(
+        [{ activeFocused: false, chat: null, messages: initialHistory, muted: false, room }],
+        state,
+        Date.parse("2026-07-07T10:05:00.000Z")
+      )
+    ).toEqual([]);
+
+    expect(state.notifiedEventIds.has("$old")).toBe(true);
+    expect(state.roomWatermarks.get(room.roomId)).toBe(Date.parse("2026-07-07T10:05:00.000Z"));
+  });
+
+  it("ignores older history backfilled after an empty room was primed", () => {
+    const state = tracker();
+
+    expect(
+      collectIncomingChatNotifications(
+        [{ activeFocused: false, chat: null, messages: [], muted: false, room }],
+        state,
+        Date.parse("2026-07-07T10:05:00.000Z")
+      )
+    ).toEqual([]);
+
+    expect(
+      collectIncomingChatNotifications(
+        [{ activeFocused: false, chat: null, messages: [incoming("$backfill", "2026-07-07T10:04:00.000Z")], muted: false, room }],
+        state,
+        Date.parse("2026-07-07T10:06:00.000Z")
+      )
+    ).toEqual([]);
+  });
+
+  it("notifies only messages newer than the room watermark", () => {
+    const state = tracker();
+    collectIncomingChatNotifications(
+      [{ activeFocused: false, chat: null, messages: [incoming("$old", "2026-07-07T10:00:00.000Z")], muted: false, room }],
+      state,
+      Date.parse("2026-07-07T10:05:00.000Z")
+    );
+
+    const fresh = incoming("$fresh", "2026-07-07T10:06:00.000Z");
+    expect(
+      collectIncomingChatNotifications(
+        [
+          {
+            activeFocused: false,
+            chat: null,
+            messages: [incoming("$old", "2026-07-07T10:00:00.000Z"), fresh],
+            muted: false,
+            room
+          }
+        ],
+        state,
+        Date.parse("2026-07-07T10:06:01.000Z")
+      )
+    ).toEqual([{ chat: null, message: fresh, room }]);
   });
 });
 

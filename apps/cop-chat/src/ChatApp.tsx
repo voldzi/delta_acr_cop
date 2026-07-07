@@ -291,10 +291,24 @@ interface MessageActionPopoverState {
   top: number;
 }
 
-interface IncomingChatNotification {
+export interface IncomingChatNotification {
   chat: ChatListItem | null;
   message: MatrixTimelineMessage;
   room: MatrixRoomSummary;
+}
+
+export interface ChatNotificationRoomSnapshot {
+  activeFocused: boolean;
+  chat: ChatListItem | null;
+  messages: MatrixTimelineMessage[];
+  muted: boolean;
+  room: MatrixRoomSummary;
+}
+
+export interface ChatNotificationTracker {
+  notifiedEventIds: Set<string>;
+  primedRoomIds: Set<string>;
+  roomWatermarks: Map<string, number>;
 }
 
 interface ChatIdentityProfile {
@@ -462,10 +476,12 @@ export function ChatApp() {
   const matrixAttemptKeyRef = React.useRef<string | null>(null);
   const matrixResumeInFlightRef = React.useRef(false);
   const matrixWebPushPusherDeviceIdRef = React.useRef<string | undefined>(undefined);
+  const webPushAutoSyncKeyRef = React.useRef<string | null>(null);
   const initialHistoryLoadAttemptsRef = React.useRef<Map<string, number>>(new Map());
   const historyLoadingRoomsRef = React.useRef<Set<string>>(new Set());
   const notifiedEventIdsRef = React.useRef<Set<string>>(new Set());
-  const notificationsPrimedRef = React.useRef(false);
+  const notificationPrimedRoomIdsRef = React.useRef<Set<string>>(new Set());
+  const notificationRoomWatermarksRef = React.useRef<Map<string, number>>(new Map());
   const selectedRoomIdRef = React.useRef<string | null>(null);
   const timelineCacheRef = React.useRef<Map<string, MatrixTimelineMessage[]>>(new Map());
   const conversationsRef = React.useRef<MessagingConversationSummary[]>(conversations);
@@ -821,6 +837,56 @@ export function ChatApp() {
   }, [refreshChatWebPushState, refreshNonce]);
 
   React.useEffect(() => {
+    if (!authToken || webPushBusy || webPushState.permission !== "granted" || !webPushState.enabled) {
+      return;
+    }
+    const existingOptIn = webPushState.registered || Boolean(webPushState.deviceId) || webPushState.subscriptionActive;
+    if (!existingOptIn) {
+      return;
+    }
+    const syncKey = [
+      authSubjectId ?? "anonymous",
+      webPushState.deviceId ?? "no-device",
+      webPushState.registered ? "registered" : "unregistered",
+      webPushState.serviceWorkerReady ? "sw-ready" : "sw-missing",
+      webPushState.subscriptionActive ? "sub-active" : "sub-missing"
+    ].join(":");
+    if (webPushAutoSyncKeyRef.current === syncKey) {
+      return;
+    }
+    webPushAutoSyncKeyRef.current = syncKey;
+    let cancelled = false;
+    enableWebPushNotifications(apiBase, authToken)
+      .then((nextState) => {
+        if (!cancelled) {
+          setWebPushState(nextState);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWebPushState((current) => ({
+            ...current,
+            warnings: ["Webové push notifikace se nepodařilo automaticky obnovit. Zkuste je zapnout znovu."]
+          }));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    apiBase,
+    authSubjectId,
+    authToken,
+    webPushBusy,
+    webPushState.deviceId,
+    webPushState.enabled,
+    webPushState.permission,
+    webPushState.registered,
+    webPushState.serviceWorkerReady,
+    webPushState.subscriptionActive
+  ]);
+
+  React.useEffect(() => {
     setMessageMenuOpen(false);
     setMuteDialogOpen(false);
     setRetentionDialogOpen(false);
@@ -1101,7 +1167,8 @@ export function ChatApp() {
       timelineCacheRef.current.clear();
       setTimelineCacheRevision((value) => value + 1);
       notifiedEventIdsRef.current.clear();
-      notificationsPrimedRef.current = false;
+      notificationPrimedRoomIdsRef.current.clear();
+      notificationRoomWatermarksRef.current.clear();
       return;
     }
     void loadMetadata();
@@ -1184,33 +1251,29 @@ export function ChatApp() {
   React.useEffect(() => {
     if (!matrixSession) {
       notifiedEventIdsRef.current.clear();
-      notificationsPrimedRef.current = false;
+      notificationPrimedRoomIdsRef.current.clear();
+      notificationRoomWatermarksRef.current.clear();
       return;
     }
 
-    const pendingNotifications: IncomingChatNotification[] = [];
+    const roomSnapshots: ChatNotificationRoomSnapshot[] = [];
     for (const room of rooms) {
       const chat = chatItemForRoom(chatItems, room.roomId);
-      const messages = matrixSession.getTimeline(room.roomId);
-      for (const message of messages) {
-        if (notifiedEventIdsRef.current.has(message.eventId)) {
-          continue;
-        }
-        notifiedEventIdsRef.current.add(message.eventId);
-        if (!notificationsPrimedRef.current) {
-          continue;
-        }
-        if (message.own || chat?.muted) {
-          continue;
-        }
-        if (isActiveFocusedRoom(room.roomId, selectedRoomId)) {
-          continue;
-        }
-        pendingNotifications.push({ chat, message, room });
-      }
+      roomSnapshots.push({
+        activeFocused: isActiveFocusedRoom(room.roomId, selectedRoomId),
+        chat,
+        messages: matrixSession.getTimeline(room.roomId),
+        muted: Boolean(chat?.muted),
+        room
+      });
     }
 
-    notificationsPrimedRef.current = true;
+    const pendingNotifications = collectIncomingChatNotifications(roomSnapshots, {
+      notifiedEventIds: notifiedEventIdsRef.current,
+      primedRoomIds: notificationPrimedRoomIdsRef.current,
+      roomWatermarks: notificationRoomWatermarksRef.current
+    });
+
     if (webPushState.permission !== "granted") {
       return;
     }
@@ -8296,6 +8359,48 @@ function isActiveFocusedRoom(roomId: string, selectedRoomId: string | null): boo
   return document.visibilityState === "visible" && document.hasFocus();
 }
 
+export function collectIncomingChatNotifications(
+  snapshots: ChatNotificationRoomSnapshot[],
+  tracker: ChatNotificationTracker,
+  observedAt = Date.now()
+): IncomingChatNotification[] {
+  const pendingNotifications: IncomingChatNotification[] = [];
+  for (const snapshot of snapshots) {
+    const roomId = snapshot.room.roomId;
+    const latestTimestamp = latestNotificationTimestamp(snapshot.messages);
+    if (!tracker.primedRoomIds.has(roomId)) {
+      for (const message of snapshot.messages) {
+        tracker.notifiedEventIds.add(message.eventId);
+      }
+      tracker.primedRoomIds.add(roomId);
+      tracker.roomWatermarks.set(roomId, Math.max(latestTimestamp ?? observedAt, observedAt));
+      continue;
+    }
+
+    const currentWatermark = tracker.roomWatermarks.get(roomId) ?? observedAt;
+    let nextWatermark = Math.max(currentWatermark, latestTimestamp ?? currentWatermark);
+    for (const message of snapshot.messages) {
+      const messageTimestamp = notificationTimestampMillis(message);
+      if (Number.isFinite(messageTimestamp)) {
+        nextWatermark = Math.max(nextWatermark, messageTimestamp);
+      }
+      if (tracker.notifiedEventIds.has(message.eventId)) {
+        continue;
+      }
+      tracker.notifiedEventIds.add(message.eventId);
+      if (!Number.isFinite(messageTimestamp) || messageTimestamp <= currentWatermark) {
+        continue;
+      }
+      if (message.own || snapshot.muted || snapshot.activeFocused) {
+        continue;
+      }
+      pendingNotifications.push({ chat: snapshot.chat, message, room: snapshot.room });
+    }
+    tracker.roomWatermarks.set(roomId, nextWatermark);
+  }
+  return pendingNotifications;
+}
+
 function chatItemForRoom(chatItems: ChatListItem[], roomId: string): ChatListItem | null {
   return (
     chatItems.find(
@@ -8323,6 +8428,21 @@ function showIncomingChatNotification(candidate: IncomingChatNotification, onOpe
 
 export function chatNotificationTag(roomId: string, eventId: string): string {
   return `cop-chat-${roomId}-${eventId}`;
+}
+
+function latestNotificationTimestamp(messages: MatrixTimelineMessage[]): number | undefined {
+  let latest: number | undefined;
+  for (const message of messages) {
+    const timestamp = notificationTimestampMillis(message);
+    if (Number.isFinite(timestamp)) {
+      latest = latest === undefined ? timestamp : Math.max(latest, timestamp);
+    }
+  }
+  return latest;
+}
+
+function notificationTimestampMillis(message: MatrixTimelineMessage): number {
+  return Date.parse(message.timestamp);
 }
 
 function updateApplicationBadge(count: number): void {
