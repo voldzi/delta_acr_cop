@@ -1403,6 +1403,50 @@ describe("Matrix client diagnostics", () => {
 
     expect(decodedLoads).toBe(2);
   }, 10_000);
+
+  it("seals the locally stored recovery key in IndexedDB when available", async () => {
+    const storage = installLocalStorageStub();
+    const indexedDb = installIndexedDbStub();
+    const recoveryKey = await createValidRecoveryKey(13);
+    const expectedPrivateKey = new Uint8Array(32).fill(13);
+    let decodedLoads = 0;
+    matrixSdkMock.createClient.mockImplementation((options: Record<string, unknown>) => {
+      const cryptoCallbacks = options.cryptoCallbacks as {
+        getSecretStorageKey?: (options: { keys: Record<string, unknown> }) => Promise<[string, Uint8Array] | null>;
+      };
+      const crypto: MockMatrixCrypto = {
+        checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
+        getActiveSessionBackupVersion: vi.fn().mockResolvedValue("1"),
+        getKeyBackupInfo: vi.fn().mockResolvedValue({ version: "1" }),
+        isCrossSigningReady: vi.fn().mockResolvedValue(true),
+        isSecretStorageReady: vi.fn().mockResolvedValue(true),
+        loadSessionBackupPrivateKeyFromSecretStorage: vi.fn(async () => {
+          const result = await cryptoCallbacks.getSecretStorageKey?.({ keys: { "recovery-key-id": {} } });
+          if (!result) {
+            return;
+          }
+          decodedLoads += 1;
+          expect(Array.from(result[1])).toEqual(Array.from(expectedPrivateKey));
+        }),
+        restoreKeyBackup: vi.fn().mockResolvedValue(undefined)
+      };
+      return createMockMatrixClient({
+        crypto,
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }),
+        rooms: []
+      });
+    });
+
+    const firstSession = await createMatrixMessagingSession(createBootstrap());
+    await firstSession.restoreEncryptionRecovery(recoveryKey);
+
+    expect(Array.from(storage.values()).join("\n")).not.toContain(recoveryKey);
+    expect(indexedDb.dump()).not.toContain(recoveryKey);
+
+    await createMatrixMessagingSession(createBootstrap());
+
+    expect(decodedLoads).toBe(2);
+  }, 10_000);
 });
 
 function installLocalStorageStub(): Map<string, string> {
@@ -1419,6 +1463,109 @@ function installLocalStorageStub(): Map<string, string> {
     }
   });
   return storage;
+}
+
+function installIndexedDbStub(): { dump: () => string } {
+  const stores = new Map<string, Map<string, unknown>>();
+  let opened = false;
+  const database = {
+    close: vi.fn(),
+    createObjectStore: (name: string) => {
+      if (!stores.has(name)) {
+        stores.set(name, new Map());
+      }
+      return {};
+    },
+    objectStoreNames: {
+      contains: (name: string) => stores.has(name)
+    },
+    transaction: (storeName: string) => createFakeTransaction(stores, storeName)
+  };
+  vi.stubGlobal("indexedDB", {
+    open: () => {
+      const request = createFakeRequest<IDBDatabase>();
+      setTimeout(() => {
+        request.result = database as unknown as IDBDatabase;
+        if (!opened) {
+          opened = true;
+          request.onupgradeneeded?.({ target: request } as unknown as IDBVersionChangeEvent);
+        }
+        setTimeout(() => request.onsuccess?.({ target: request } as unknown as Event), 0);
+      }, 0);
+      return request as unknown as IDBOpenDBRequest;
+    }
+  });
+  return {
+    dump: () => JSON.stringify(Array.from(stores.entries()))
+  };
+}
+
+function createFakeTransaction(stores: Map<string, Map<string, unknown>>, storeName: string): IDBTransaction {
+  const transaction = {
+    error: null,
+    mode: "readonly",
+    onabort: null,
+    oncomplete: null,
+    onerror: null,
+    objectStore: (requestedStoreName: string) => {
+      const store = stores.get(requestedStoreName) ?? stores.get(storeName) ?? new Map<string, unknown>();
+      if (!stores.has(requestedStoreName)) {
+        stores.set(requestedStoreName, store);
+      }
+      return {
+        delete: (key: IDBValidKey) => completeFakeRequest(createFakeRequest<undefined>(), () => {
+          store.delete(String(key));
+          completeFakeTransaction(transaction);
+          return undefined;
+        }),
+        get: (key: IDBValidKey) => completeFakeRequest(createFakeRequest<unknown>(), () => store.get(String(key))),
+        put: (value: { id?: unknown }) =>
+          completeFakeRequest(createFakeRequest<IDBValidKey>(), () => {
+            const id = typeof value.id === "string" ? value.id : "";
+            store.set(id, value);
+            completeFakeTransaction(transaction);
+            return id;
+          })
+      };
+    }
+  };
+  return transaction as unknown as IDBTransaction;
+}
+
+function createFakeRequest<T>(): IDBRequest<T> & {
+  error: DOMException | null;
+  onerror: ((event: Event) => void) | null;
+  onsuccess: ((event: Event) => void) | null;
+  onupgradeneeded?: ((event: IDBVersionChangeEvent) => void) | null;
+  result: T;
+} {
+  return {
+    error: null,
+    onerror: null,
+    onsuccess: null,
+    onupgradeneeded: null,
+    result: undefined as T
+  } as IDBRequest<T> & {
+    error: DOMException | null;
+    onerror: ((event: Event) => void) | null;
+    onsuccess: ((event: Event) => void) | null;
+    onupgradeneeded?: ((event: IDBVersionChangeEvent) => void) | null;
+    result: T;
+  };
+}
+
+function completeFakeRequest<T>(request: ReturnType<typeof createFakeRequest<T>>, read: () => T): IDBRequest<T> {
+  setTimeout(() => {
+    request.result = read();
+    request.onsuccess?.({ target: request } as unknown as Event);
+  }, 0);
+  return request;
+}
+
+function completeFakeTransaction(
+  transaction: { oncomplete: ((event: Event) => void) | null }
+): void {
+  setTimeout(() => transaction.oncomplete?.({ target: transaction } as unknown as Event), 0);
 }
 
 async function createValidRecoveryKey(fill: number): Promise<string> {

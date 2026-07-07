@@ -55,6 +55,14 @@ indikace při startu. Web shell zároveň požádá prohlížeč přes Storage M
 o persistent storage. Pokud prohlížeč žádost odmítne nebo API nepodporuje, PWA
 funguje dál v best-effort režimu a stav se zobrazí v nastavení.
 
+Stejnou persistent storage žádost spouští i samostatný chat shell po vytvoření
+Matrix session. E2EE recovery key se v moderním prohlížeči neukládá jako
+plaintext `localStorage`; `@cop/messaging` jej zapíše do IndexedDB jako sealed
+secret šifrovaný lokálním WebCrypto AES-GCM wrapping key. Wrapping key je
+non-extractable a vázaný na origin prohlížeče. Pokud prohlížeč IndexedDB nebo
+structured-clone CryptoKey odmítne, klient použije legacy `localStorage`
+fallback, aby uživatel neztratil možnost obnovit Matrix key backup.
+
 Při startu PWA nejdřív asynchronně načte nejnovější lokální snapshot z
 IndexedDB/`localStorage`, okamžitě ho zobrazí jako `DEGRADED` nebo `OFFLINE`
 náhled a paralelně obnovuje živá data přes COP API a SSE stream. Po úspěšné

@@ -129,9 +129,17 @@ received room keys are recoverable only through Matrix E2EE recovery that the
 user controls. COP Chat therefore requires Matrix secret storage + key backup
 before sending new messages from the standalone chat app. The browser creates
 the recovery key locally, shows it to the user once, and uses it to unlock the
-Matrix key backup on additional devices. COP API, CSM Messaging and Synapse
-must not receive a server-managed recovery passphrase or any plaintext room
-key.
+Matrix key backup on additional devices.
+
+The PWA requests browser persistent storage and stores the local recovery key
+preferentially as a sealed browser secret in IndexedDB: the value is encrypted
+with a WebCrypto AES-GCM wrapping key that is generated as non-extractable and
+stored in the same browser origin. Legacy plaintext `localStorage` recovery key
+records are migrated to the sealed IndexedDB form and removed when the browser
+supports this storage path. `localStorage` remains only a compatibility fallback
+for browsers or private contexts that deny IndexedDB/WebCrypto key storage. COP
+API, CSM Messaging and Synapse must not receive a server-managed recovery
+passphrase or any plaintext room key.
 
 If the user loses every trusted device and the recovery key, strong E2EE means
 old room keys cannot be reconstructed from authentication alone. The supported
