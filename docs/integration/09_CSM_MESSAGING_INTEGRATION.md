@@ -141,6 +141,13 @@ for browsers or private contexts that deny IndexedDB/WebCrypto key storage. COP
 API, CSM Messaging and Synapse must not receive a server-managed recovery
 passphrase or any plaintext room key.
 
+When the user enters a recovery key, COP Chat waits for Matrix key-backup
+restore before reporting the device as restored. On later PWA starts the locally
+sealed recovery key is used to enable key backup automatically; once Matrix
+finishes restoring room keys, COP Chat refreshes room summaries and the visible
+timeline so previously undecrypted events can be rendered without another
+manual key entry.
+
 If the user loses every trusted device and the recovery key, strong E2EE means
 old room keys cannot be reconstructed from authentication alone. The supported
 operational recovery is to start a new E2EE key cycle, accepting that older

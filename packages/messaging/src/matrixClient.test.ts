@@ -55,7 +55,7 @@ type MockMatrixCrypto = {
       makeRequest: (authData: Record<string, unknown> | null) => Promise<unknown>
     ) => Promise<unknown>
   ) => Promise<void>;
-  restoreKeyBackup?: () => Promise<unknown>;
+  restoreKeyBackup?: (options?: Record<string, unknown>) => Promise<unknown>;
 };
 
 type MatrixSendStateEvent = (
@@ -81,7 +81,11 @@ type MatrixLeaveRoom = (roomId: string) => Promise<unknown>;
 type MatrixScrollback = (room: unknown, limit?: number) => Promise<unknown>;
 type MatrixEventSubscription = (event: string, listener: (...args: unknown[]) => void) => void;
 type MatrixSendReadReceipt = (event: unknown, receiptType?: string) => Promise<unknown>;
-type MatrixSetRoomReadMarkers = (roomId: string, readMarkerEventId: string, readReceiptEvent?: unknown) => Promise<unknown>;
+type MatrixSetRoomReadMarkers = (
+  roomId: string,
+  readMarkerEventId: string,
+  readReceiptEvent?: unknown
+) => Promise<unknown>;
 type MatrixMxcUrlToHttp = (
   mxcUrl: string,
   width?: number,
@@ -440,11 +444,7 @@ describe("Matrix client diagnostics", () => {
       "$readable",
       "@peer:cop.local"
     );
-    const undecrypted = createEncryptedEvent(
-      Date.parse("2026-07-07T13:15:00.000Z"),
-      "$undecrypted",
-      "@peer:cop.local"
-    );
+    const undecrypted = createEncryptedEvent(Date.parse("2026-07-07T13:15:00.000Z"), "$undecrypted", "@peer:cop.local");
     matrixSdkMock.createClient.mockReturnValue(
       createMockMatrixClient({
         rooms: [createRoom({ roomId: "!chat:cop.local", timeline: [readable, undecrypted] })]
@@ -455,14 +455,33 @@ describe("Matrix client diagnostics", () => {
 
     expect(session.getTimeline("!chat:cop.local").map((message) => [message.eventId, message.body])).toEqual([
       ["$readable", "readable"],
-      [
-        "$undecrypted",
-        "Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy."
-      ]
+      ["$undecrypted", "Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy."]
     ]);
     expect(session.getRooms()[0]?.latestMessage).toMatchObject({
       body: "Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy.",
       eventId: "$undecrypted"
+    });
+  });
+
+  it("maps decrypted encrypted events from Matrix clear content", async () => {
+    const decrypted = createEncryptedEvent(Date.parse("2026-07-07T13:18:00.000Z"), "$decrypted", "@peer:cop.local", {
+      body: "obnovená zpráva",
+      msgtype: "m.text"
+    });
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [createRoom({ roomId: "!chat:cop.local", timeline: [decrypted] })]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    expect(session.getTimeline("!chat:cop.local").map((message) => [message.eventId, message.body])).toEqual([
+      ["$decrypted", "obnovená zpráva"]
+    ]);
+    expect(session.getRooms()[0]?.latestMessage).toMatchObject({
+      body: "obnovená zpráva",
+      eventId: "$decrypted"
     });
   });
 
@@ -1341,14 +1360,25 @@ describe("Matrix client diagnostics", () => {
   it("restores an existing key backup after the user enters a recovery key", async () => {
     const storage = installLocalStorageStub();
     const recoveryKey = await createValidRecoveryKey(7);
+    let finishRestoreKeyBackup!: () => void;
+    let restoreCompleted = false;
+    const getActiveSessionBackupVersion = vi.fn().mockResolvedValueOnce(null).mockResolvedValue("1");
     const crypto: MockMatrixCrypto = {
       checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
-      getActiveSessionBackupVersion: vi.fn().mockResolvedValue("1"),
+      getActiveSessionBackupVersion,
       getKeyBackupInfo: vi.fn().mockResolvedValue({ version: "1" }),
       isCrossSigningReady: vi.fn().mockResolvedValue(true),
       isSecretStorageReady: vi.fn().mockResolvedValue(true),
       loadSessionBackupPrivateKeyFromSecretStorage: vi.fn().mockResolvedValue(undefined),
-      restoreKeyBackup: vi.fn().mockResolvedValue(undefined)
+      restoreKeyBackup: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishRestoreKeyBackup = () => {
+              restoreCompleted = true;
+              resolve();
+            };
+          })
+      )
     };
     matrixSdkMock.createClient.mockReturnValue(
       createMockMatrixClient({ crypto, getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }), rooms: [] })
@@ -1356,9 +1386,17 @@ describe("Matrix client diagnostics", () => {
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
-    await expect(session.restoreEncryptionRecovery(recoveryKey)).resolves.toBeUndefined();
+    const restorePromise = session.restoreEncryptionRecovery(recoveryKey);
+    await Promise.resolve();
+    expect(restoreCompleted).toBe(false);
+    await vi.waitFor(() => expect(crypto.restoreKeyBackup).toHaveBeenCalled());
+    finishRestoreKeyBackup();
+    await expect(restorePromise).resolves.toBeUndefined();
     expect(crypto.loadSessionBackupPrivateKeyFromSecretStorage).toHaveBeenCalled();
     expect(crypto.checkKeyBackupAndEnable).toHaveBeenCalled();
+    expect(crypto.restoreKeyBackup).toHaveBeenCalledWith(
+      expect.objectContaining({ progressCallback: expect.any(Function) })
+    );
     expect(Array.from(storage.values()).some((value) => value.includes(recoveryKey))).toBe(true);
   }, 10_000);
 
@@ -1367,6 +1405,7 @@ describe("Matrix client diagnostics", () => {
     const recoveryKey = await createValidRecoveryKey(11);
     const expectedPrivateKey = new Uint8Array(32).fill(11);
     let decodedLoads = 0;
+    let restoreCalls = 0;
     matrixSdkMock.createClient.mockImplementation((options: Record<string, unknown>) => {
       const cryptoCallbacks = options.cryptoCallbacks as {
         getSecretStorageKey?: (options: { keys: Record<string, unknown> }) => Promise<[string, Uint8Array] | null>;
@@ -1380,13 +1419,15 @@ describe("Matrix client diagnostics", () => {
         loadSessionBackupPrivateKeyFromSecretStorage: vi.fn(async () => {
           const result = await cryptoCallbacks.getSecretStorageKey?.({ keys: { "recovery-key-id": {} } });
           if (!result) {
-            return;
+            throw new Error("missing recovery key");
           }
           decodedLoads += 1;
           expect(result?.[0]).toBe("recovery-key-id");
           expect(Array.from(result?.[1] ?? [])).toEqual(Array.from(expectedPrivateKey));
         }),
-        restoreKeyBackup: vi.fn().mockResolvedValue(undefined)
+        restoreKeyBackup: vi.fn(async () => {
+          restoreCalls += 1;
+        })
       };
       return createMockMatrixClient({
         crypto,
@@ -1399,9 +1440,12 @@ describe("Matrix client diagnostics", () => {
     await firstSession.restoreEncryptionRecovery(recoveryKey);
     expect(Array.from(storage.values()).some((value) => value.includes(recoveryKey))).toBe(true);
 
-    await createMatrixMessagingSession(createBootstrap());
+    const onTimelineChanged = vi.fn();
+    await createMatrixMessagingSession(createBootstrap(), { onTimelineChanged });
 
     expect(decodedLoads).toBe(2);
+    await vi.waitFor(() => expect(restoreCalls).toBe(2));
+    await vi.waitFor(() => expect(onTimelineChanged).toHaveBeenCalled());
   }, 10_000);
 
   it("seals the locally stored recovery key in IndexedDB when available", async () => {
@@ -1423,7 +1467,7 @@ describe("Matrix client diagnostics", () => {
         loadSessionBackupPrivateKeyFromSecretStorage: vi.fn(async () => {
           const result = await cryptoCallbacks.getSecretStorageKey?.({ keys: { "recovery-key-id": {} } });
           if (!result) {
-            return;
+            throw new Error("missing recovery key");
           }
           decodedLoads += 1;
           expect(Array.from(result[1])).toEqual(Array.from(expectedPrivateKey));
@@ -1513,11 +1557,12 @@ function createFakeTransaction(stores: Map<string, Map<string, unknown>>, storeN
         stores.set(requestedStoreName, store);
       }
       return {
-        delete: (key: IDBValidKey) => completeFakeRequest(createFakeRequest<undefined>(), () => {
-          store.delete(String(key));
-          completeFakeTransaction(transaction);
-          return undefined;
-        }),
+        delete: (key: IDBValidKey) =>
+          completeFakeRequest(createFakeRequest<undefined>(), () => {
+            store.delete(String(key));
+            completeFakeTransaction(transaction);
+            return undefined;
+          }),
         get: (key: IDBValidKey) => completeFakeRequest(createFakeRequest<unknown>(), () => store.get(String(key))),
         put: (value: { id?: unknown }) =>
           completeFakeRequest(createFakeRequest<IDBValidKey>(), () => {
@@ -1562,9 +1607,7 @@ function completeFakeRequest<T>(request: ReturnType<typeof createFakeRequest<T>>
   return request;
 }
 
-function completeFakeTransaction(
-  transaction: { oncomplete: ((event: Event) => void) | null }
-): void {
+function completeFakeTransaction(transaction: { oncomplete: ((event: Event) => void) | null }): void {
   setTimeout(() => transaction.oncomplete?.({ target: transaction } as unknown as Event), 0);
 }
 
@@ -1711,8 +1754,14 @@ function createMessageEvent(
   };
 }
 
-function createEncryptedEvent(timestamp: number, eventId: string, sender = "@operator:cop.local") {
+function createEncryptedEvent(
+  timestamp: number,
+  eventId: string,
+  sender = "@operator:cop.local",
+  clearContent?: Record<string, unknown>
+) {
   return {
+    ...(clearContent ? { getClearContent: () => clearContent } : {}),
     getContent: () => ({
       algorithm: "m.megolm.v1.aes-sha2",
       ciphertext: "encrypted",

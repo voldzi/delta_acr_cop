@@ -195,6 +195,7 @@ interface CachedMatrixUserProfile {
 
 interface MatrixEventLike {
   getAssociatedId?: () => string | undefined;
+  getClearContent?: () => Record<string, unknown> | null;
   getContent?: () => Record<string, unknown>;
   getId?: () => string | undefined;
   getRelation?: () => Record<string, unknown> | null;
@@ -240,6 +241,7 @@ export async function createMatrixMessagingSession(
     userId: bootstrap.userId
   });
 
+  let restoreKeyBackupOnStart = false;
   if (bootstrap.e2eeRequired) {
     if (typeof client.initRustCrypto !== "function") {
       throw new Error("Tento prohlížeč nepodporuje potřebné šifrování zpráv.");
@@ -254,7 +256,7 @@ export async function createMatrixMessagingSession(
       }
       throw caught;
     }
-    await enableKnownMatrixKeyBackup(client);
+    restoreKeyBackupOnStart = await enableKnownMatrixKeyBackup(client);
   }
 
   let inviteJoinInFlight: Promise<void> | null = null;
@@ -422,6 +424,9 @@ export async function createMatrixMessagingSession(
   await refreshJoinedRoomIds();
   publishRooms();
   schedulePresenceRefresh(0);
+  if (restoreKeyBackupOnStart) {
+    restoreUserKeyBackupInBackground(client.getCrypto?.(), () => scheduleNotify({ rooms: true, timeline: true }));
+  }
   const exhaustedTimelineRooms = new Set<string>();
 
   return {
@@ -592,6 +597,7 @@ export async function createMatrixMessagingSession(
     restoreEncryptionRecovery: async (recoveryKey) => {
       await restoreUserControlledEncryptionRecovery(client, recoveryController, recoveryKey);
       await writeStoredMatrixRecoveryKey(bootstrap, recoveryKey);
+      scheduleNotify({ rooms: true, timeline: true });
     },
     setMessageRetentionPolicy: async (roomId, seconds) => {
       if (typeof client.sendStateEvent !== "function") {
@@ -829,16 +835,14 @@ async function decodeUserRecoveryKey(recoveryKey: string): Promise<Uint8Array> {
   }
 }
 
-async function enableKnownMatrixKeyBackup(client: MatrixClientLike): Promise<void> {
+async function enableKnownMatrixKeyBackup(client: MatrixClientLike): Promise<boolean> {
   const crypto = client.getCrypto?.();
   if (!crypto) {
-    return;
+    return false;
   }
-  await loadUserSessionBackupKey(crypto);
+  const backupKeyLoaded = await loadUserSessionBackupKey(crypto);
   await crypto.checkKeyBackupAndEnable?.();
-  if (await hasActiveUserBackup(crypto)) {
-    restoreUserKeyBackupInBackground(crypto);
-  }
+  return backupKeyLoaded && (await hasActiveUserBackup(crypto));
 }
 
 async function syncMatrixUserProfile(
@@ -1293,7 +1297,7 @@ async function restoreUserControlledEncryptionRecovery(
     if (!(await hasActiveUserBackup(crypto))) {
       throw new Error("Key backup se nepodařilo aktivovat.");
     }
-    restoreUserKeyBackupInBackground(crypto);
+    await restoreUserKeyBackup(crypto);
   } catch (caught) {
     throw new Error(`Zařízení se nepodařilo obnovit: ${errorMessage(caught)}`);
   }
@@ -1340,11 +1344,27 @@ async function hasActiveUserBackup(crypto: MatrixCryptoApiLike): Promise<boolean
   }
 }
 
-function restoreUserKeyBackupInBackground(crypto: MatrixCryptoApiLike): void {
+async function restoreUserKeyBackup(crypto: MatrixCryptoApiLike): Promise<void> {
   if (typeof crypto.restoreKeyBackup !== "function") {
     return;
   }
-  void crypto.restoreKeyBackup({ progressCallback: () => undefined }).catch(() => undefined);
+  await crypto.restoreKeyBackup({ progressCallback: () => undefined });
+}
+
+function restoreUserKeyBackupInBackground(crypto: MatrixCryptoApiLike | undefined, onRestored?: () => void): void {
+  if (!crypto || typeof crypto.restoreKeyBackup !== "function") {
+    return;
+  }
+  void hasActiveUserBackup(crypto)
+    .then((active) => {
+      if (!active) {
+        return undefined;
+      }
+      return restoreUserKeyBackup(crypto).then(() => {
+        onRestored?.();
+      });
+    })
+    .catch(() => undefined);
 }
 
 async function createEncryptedAttachmentMessage(
@@ -2383,7 +2403,7 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
     .map(asEvent)
     .filter((event): event is MatrixEventLike => Boolean(event));
   const messageEvents = timelineEvents.filter(isTimelineMessageEvent);
-  const readableMessageEvents = messageEvents.filter((event) => event.getType?.() === "m.room.message");
+  const readableMessageEvents = messageEvents.filter((event) => matrixTimelineEventType(event) === "m.room.message");
   const redactedEventIds = readRedactedEventIds(timelineEvents);
   const reactionsByEventId = readMessageReactions(
     room,
@@ -2398,7 +2418,7 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
       if (redactedEventIds.has(eventId)) {
         return [];
       }
-      if (event.getType?.() === "m.room.encrypted") {
+      if (matrixTimelineEventType(event) === "m.room.encrypted") {
         return [mapUndecryptedMatrixEvent(room ?? undefined, event, currentUserId)];
       }
       const mapped = mapMatrixMessageEvent(
@@ -2415,8 +2435,21 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
 }
 
 function isTimelineMessageEvent(event: MatrixEventLike): boolean {
-  const type = event.getType?.();
+  const type = matrixTimelineEventType(event);
   return type === "m.room.message" || type === "m.room.encrypted";
+}
+
+function matrixTimelineEventType(event: MatrixEventLike): string | undefined {
+  const type = event.getType?.();
+  const clearContent = event.getClearContent?.();
+  if (type === "m.room.encrypted" && clearContent && Object.keys(clearContent).length > 0) {
+    return "m.room.message";
+  }
+  return type;
+}
+
+function matrixTimelineEventContent(event: MatrixEventLike): Record<string, unknown> {
+  return event.getClearContent?.() ?? event.getContent?.() ?? {};
 }
 
 function mapUndecryptedMatrixEvent(
@@ -2449,7 +2482,7 @@ function mapMatrixMessageEvent(
   reactions?: MatrixMessageReaction[]
 ): MatrixTimelineMessage | null {
   const eventId = event.getId?.() ?? `${event.getSender?.() ?? "sender"}-${event.getTs?.() ?? Date.now()}`;
-  const content = event.getContent?.() ?? {};
+  const content = matrixTimelineEventContent(event);
   const body = normalizeMatrixMessageBody(
     stripMatrixReplyFallback(typeof content.body === "string" ? content.body.trim() : "")
   );
@@ -2499,7 +2532,7 @@ function readRoomLatestMessage(
     if (!event || !isTimelineMessageEvent(event)) {
       continue;
     }
-    if (event.getType?.() === "m.room.encrypted") {
+    if (matrixTimelineEventType(event) === "m.room.encrypted") {
       const mapped = mapUndecryptedMatrixEvent(room, event, currentUserId);
       return messageWithinRetention(mapped, retentionSeconds) ? mapped : undefined;
     }
