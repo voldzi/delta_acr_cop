@@ -388,6 +388,94 @@ export function aiMapSearchResultCompare(left: AiMapSearchResult, right: AiMapSe
   return rightPriority - leftPriority;
 }
 
+function aiBestMapSearchResultForQuestion(
+  results: Record<string, unknown>[],
+  question: string | undefined
+): Record<string, unknown> | undefined {
+  const normalizedQuestion = normalizeAiMapSearchText(question ?? "");
+  const asksRain = aiQuestionAsksRain(normalizedQuestion);
+  const asksStorm = aiQuestionAsksStorm(normalizedQuestion);
+  if (!asksRain && !asksStorm) {
+    return undefined;
+  }
+
+  let bestResult: Record<string, unknown> | undefined;
+  let bestScore = 0;
+  for (const result of results) {
+    const score = (asksRain ? aiRainMapSearchResultScore(result) : 0)
+      + (asksStorm ? aiStormMapSearchResultScore(result) : 0);
+    if (score <= 0) {
+      continue;
+    }
+    if (!bestResult || score > bestScore || (score === bestScore && aiMapSearchResultCompare(result, bestResult) < 0)) {
+      bestResult = result;
+      bestScore = score;
+    }
+  }
+  return bestResult;
+}
+
+function aiRainMapSearchResultScore(result: Record<string, unknown>): number {
+  const metrics = isRecord(result.metrics) ? result.metrics : {};
+  let score = 0;
+  if (metricNumber(metrics, ["precipitation10mMm"]) !== undefined) {
+    score += 110;
+  }
+  if (metricNumber(metrics, ["precipitation1hMm", "precipitationHourlyMm", "precipitationMm", "rainMm"]) !== undefined) {
+    score += 120;
+  }
+  if (metricNumber(metrics, ["precipitation3hMm", "precipitationThreeHourMm"]) !== undefined) {
+    score += 110;
+  }
+  if (metricPercentNumber(metrics, [
+    "precipitationProbabilityPct",
+    "precipitationProbabilityPercent",
+    "precipitationProbability",
+    "rainProbability"
+  ]) !== undefined) {
+    score += 100;
+  }
+
+  const haystack = aiMapSearchResultHaystack(result);
+  if (/\b(?:precipitation|srazk|dest|rain|rainfall|merge1h|merge_1h|precipitation_grid|radar_precipitation)\b/u.test(haystack)) {
+    score += 80;
+  }
+  if (/\b(?:weather_forecast|forecast_area|meteogram|nowcast)\b/u.test(haystack)) {
+    score += 45;
+  }
+  if (/\b(?:weather|pocasi|radar|chmi_weather_radar)\b/u.test(haystack)) {
+    score += 15;
+  }
+  if (/\b(?:max_z|reflectivity|odrazivost)\b/u.test(haystack)) {
+    score -= 30;
+  }
+  return Math.max(0, score);
+}
+
+function aiStormMapSearchResultScore(result: Record<string, unknown>): number {
+  const metrics = isRecord(result.metrics) ? result.metrics : {};
+  let score = 0;
+  if (metricPercentNumber(metrics, [
+    "thunderstormProbabilityPct",
+    "thunderstormProbabilityPercent",
+    "thunderstormProbability",
+    "stormProbability"
+  ]) !== undefined) {
+    score += 120;
+  }
+  if (metricRawText(metrics, ["risk", "riskLevel", "riskCategory", "weatherRisk"], "riziko") !== undefined) {
+    score += 80;
+  }
+  const haystack = aiMapSearchResultHaystack(result);
+  if (/\b(?:thunderstorm|storm|bourk|blesk|lightning|weather_alerts|thunderstorm_risk)\b/u.test(haystack)) {
+    score += 80;
+  }
+  if (/\b(?:weather|pocasi|radar|chmi_weather_radar)\b/u.test(haystack)) {
+    score += 10;
+  }
+  return score;
+}
+
 export function aiMapActionsFromMapSearchContext(context: AiMapSearchContext | undefined): AiMapAction[] {
   return (context?.results ?? [])
     .map(aiMapActionFromResult)
@@ -407,21 +495,23 @@ export function aiMapSearchFallbackResponse(
   if (!topResult) {
     return undefined;
   }
+  const question = optionalText(context?.question);
+  const summaryResult = aiBestMapSearchResultForQuestion(results, question) ?? topResult;
   const mapActions = aiMapActionsFromMapSearchResults(results);
-  const title = optionalText(topResult.title) ?? "mapový výsledek";
-  const category = optionalText(topResult.category);
-  const distanceText = optionalText(topResult.distanceText);
-  const location = aiLocationFromRecord(topResult.location);
-  const citationId = citationForAiMapSearchResult(context, topResult);
+  const title = optionalText(summaryResult.title) ?? "mapový výsledek";
+  const category = optionalText(summaryResult.category);
+  const distanceText = optionalText(summaryResult.distanceText);
+  const location = aiLocationFromRecord(summaryResult.location);
+  const citationId = citationForAiMapSearchResult(context, summaryResult);
   const locationText = location ? `Souřadnice: ${location.lat}, ${location.lon}.` : undefined;
   const distanceSentence = distanceText ? `Vzdálenost od zadané polohy: ${distanceText}.` : undefined;
   const citationText = citationId ? `Zdroj: [${citationId}].` : "Zdroj: COP mapové vyhledávání.";
-  const summary = aiMeasurementMapSearchSummary(topResult, {
+  const summary = aiMeasurementMapSearchSummary(summaryResult, {
     category,
     citationText,
     distanceSentence,
     locationText,
-    question: optionalText(context?.question),
+    question,
     title
   }) ?? [
     `Našel jsem v mapových datech COP: ${title}.`,
@@ -450,7 +540,7 @@ export function aiMapSearchFallbackResponse(
         },
         mapSearchFallback: {
           reason,
-          result: topResult,
+          result: summaryResult,
           resultCount: results.length
         }
       },
@@ -610,14 +700,14 @@ function aiMeasurementMapSearchSummary(
 
 function aiWeatherDirectAnswer(question: string | undefined, metrics: Record<string, unknown>, result: Record<string, unknown>): string | undefined {
   const normalizedQuestion = normalizeAiMapSearchText(question ?? "");
-  const asksRain = /\b(?:bude prset|prset|prsi|dest|deste|srazk|rain|precipitation)\b/u.test(normalizedQuestion);
-  const asksStorm = /\b(?:bourka|bourky|blizi se bourka|storm|thunderstorm)\b/u.test(normalizedQuestion);
+  const asksRain = aiQuestionAsksRain(normalizedQuestion);
+  const asksStorm = aiQuestionAsksStorm(normalizedQuestion);
   if (!asksRain && !asksStorm) {
     return undefined;
   }
   const parts: string[] = [];
   if (asksRain) {
-    parts.push(aiWeatherRainAnswer(metrics));
+    parts.push(aiWeatherRainAnswer(metrics, result));
   }
   if (asksStorm) {
     parts.push(aiWeatherStormAnswer(metrics));
@@ -626,7 +716,15 @@ function aiWeatherDirectAnswer(question: string | undefined, metrics: Record<str
   return [`Odpověď: ${parts.join(" ")}`, coverage].filter(Boolean).join(" ");
 }
 
-function aiWeatherRainAnswer(metrics: Record<string, unknown>): string {
+function aiQuestionAsksRain(normalizedQuestion: string): boolean {
+  return /\b(?:bude prset|prset|prsi|dest|deste|srazk|rain|precipitation)\b/u.test(normalizedQuestion);
+}
+
+function aiQuestionAsksStorm(normalizedQuestion: string): boolean {
+  return /\b(?:bourka|bourky|blizi se bourka|storm|thunderstorm)\b/u.test(normalizedQuestion);
+}
+
+function aiWeatherRainAnswer(metrics: Record<string, unknown>, result: Record<string, unknown>): string {
   const precipitationProbability = metricPercentNumber(metrics, [
     "precipitationProbabilityPct",
     "precipitationProbabilityPercent",
@@ -653,6 +751,19 @@ function aiWeatherRainAnswer(metrics: Record<string, unknown>): string {
   }
   if (precipitationProbability !== undefined || maxPrecipitationMm !== undefined) {
     return `Déšť se v dostupném meteo výsledku spíše nepotvrzuje${suffix}`;
+  }
+  const radarEvidence = aiRadarPrecipitationEvidence(result);
+  if (radarEvidence?.precipitation) {
+    return [
+      `SIM vrátil srážkový radarový podklad (${radarEvidence.label}) pro aktuální časové okno.`,
+      "V tomto výsledku ale není přímo uveden číselný úhrn ani pravděpodobnost, proto množství srážek neodhaduji."
+    ].join(" ");
+  }
+  if (radarEvidence) {
+    return [
+      `SIM vrátil radarový meteo podklad (${radarEvidence.label}),`,
+      "ale nejde o srážkový úhrn ani pravděpodobnost pro přímou odpověď na déšť."
+    ].join(" ");
   }
   return "Na déšť nelze z dostupné meteo entity spolehlivě odpovědět, protože neobsahuje srážkovou pravděpodobnost ani úhrn.";
 }
@@ -718,6 +829,38 @@ function aiMetricValidityText(result: Record<string, unknown>): string | undefin
     return `Platnost do: ${formatAiCzechDateTime(validUntil)}.`;
   }
   return undefined;
+}
+
+function aiRadarPrecipitationEvidence(result: Record<string, unknown>): { label: string; precipitation: boolean } | undefined {
+  const haystack = aiMapSearchResultHaystack(result);
+  const label = optionalText(result.title)
+    ?? optionalText(result.layerId)
+    ?? optionalText(result.category)
+    ?? "radarový meteo podklad";
+  if (/\b(?:precipitation|srazk|dest|rain|rainfall|merge1h|merge_1h|precipitation_grid|radar_precipitation)\b/u.test(haystack)) {
+    return { label, precipitation: true };
+  }
+  if (/\b(?:radar|weather_radar|chmi_weather_radar|max_z|reflectivity|odrazivost)\b/u.test(haystack)) {
+    return { label, precipitation: false };
+  }
+  return undefined;
+}
+
+function aiMapSearchResultHaystack(result: Record<string, unknown>): string {
+  const values: string[] = [];
+  collectAiMapSearchValues({
+    category: result.category,
+    detail: result.detail,
+    layerId: result.layerId,
+    mapFeatureId: result.mapFeatureId,
+    metrics: result.metrics,
+    sourceName: result.sourceName,
+    sourceSystemIds: result.sourceSystemIds,
+    status: result.status,
+    title: result.title,
+    type: result.type
+  }, values);
+  return normalizeAiMapSearchText(values.join(" "));
 }
 
 function metricNumber(metrics: Record<string, unknown>, keys: string[]): number | undefined {

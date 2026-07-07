@@ -174,6 +174,59 @@ describe("AI map search", () => {
     expect(response?.result.summary).toContain("Meteo informace: Weather near map center");
   });
 
+  it("prefers SIM precipitation radar results over generic reflectivity for rain answers", () => {
+    const aiRequest: AiCopQuery = {
+      context: {
+        mapSearch: {
+          results: [
+            {
+              category: "weather_radar",
+              layerId: "public.weather.radar_nowcast",
+              location: { lat: 49.695, lon: 15.0682 },
+              mapFeatureId: "chmi:max-z",
+              sourceName: "chmi_weather_radar",
+              sourceSystemIds: ["chmi_weather_radar", "public.weather.radar_nowcast"],
+              title: "ČHMÚ radar MAX_Z",
+              updatedAt: "2026-07-07T19:40:00.000Z",
+              validFrom: "2026-07-07T19:40:00.000Z",
+              validUntil: "2026-07-07T19:55:00.000Z"
+            },
+            {
+              category: "weather_radar",
+              layerId: "public.weather.radar_precipitation",
+              location: { lat: 49.695, lon: 15.0682 },
+              mapFeatureId: "chmi:merge1h",
+              sourceName: "chmi_weather_radar",
+              sourceSystemIds: ["chmi_weather_radar", "public.weather.radar_precipitation"],
+              title: "ČHMÚ MERGE 1h precipitation",
+              updatedAt: "2026-07-07T19:40:00.000Z",
+              validFrom: "2026-07-07T19:40:00.000Z",
+              validUntil: "2026-07-07T19:55:00.000Z"
+            }
+          ]
+        },
+        question: "Bude dnes pršet?"
+      },
+      outputFormat: "MARKDOWN",
+      prompt: "Dotaz uživatele: Bude dnes pršet?",
+      providerPreference: "auto",
+      purpose: "COP_EXPLANATION",
+      requestId: "test-weather-radar-rain",
+      safetyScope: "COP_DATA_ASSISTANCE_ONLY"
+    };
+
+    const response = aiMapSearchFallbackResponse(aiRequest, new Date("2026-07-07T19:44:00.000Z"), "test");
+    const structured = response?.result.structured as {
+      mapSearchFallback?: { result?: { title?: string } };
+    } | undefined;
+    const fallback = structured?.mapSearchFallback;
+
+    expect(response?.result.summary).toContain("SIM vrátil srážkový radarový podklad");
+    expect(response?.result.summary).toContain("Meteo informace: ČHMÚ MERGE 1h precipitation");
+    expect(response?.result.summary).not.toContain("Na déšť nelze");
+    expect(fallback?.result?.title).toBe("ČHMÚ MERGE 1h precipitation");
+  });
+
   it("extracts a clean place query from generic map searches with a location phrase", () => {
     const intent = inferAiMapSearchIntent("Najdi vodoměrnou stanici ve Vrbně pod Pradědem.", {});
     const waterGaugeFeature: SituationFeature = {
