@@ -1388,12 +1388,14 @@ function normalizeNotificationResponse(value: Record<string, unknown>): CsmMessa
 }
 
 function normalizeWebPushDeviceResponse(value: Record<string, unknown>): CsmMessagingWebPushDeviceProviderResponse {
+  const nestedDevice = isRecord(value.device) ? value.device : undefined;
+  const nestedStatus = nestedDevice ? optionalString(nestedDevice.status) : undefined;
   return {
     contractVersion: optionalString(value.contractVersion),
-    deviceId: optionalString(value.deviceId) ?? optionalString(value.id),
+    deviceId: optionalString(value.deviceId) ?? optionalString(value.id) ?? (nestedDevice ? optionalString(nestedDevice.deviceId) : undefined),
     providerId: optionalString(value.providerId),
     registered: typeof value.registered === "boolean" ? value.registered : undefined,
-    status: optionalString(value.status),
+    status: optionalString(value.status) ?? (nestedStatus === "active" ? "registered" : nestedStatus),
     warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
   };
 }

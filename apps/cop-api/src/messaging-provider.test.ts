@@ -1069,6 +1069,66 @@ describe("CsmMessagingProvider", () => {
     expect(JSON.stringify(result)).not.toContain("provider-token");
   });
 
+  it("accepts nested active CSM device responses as successful Web Push registration", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          contractVersion: "csm-messaging-provider-v1",
+          device: {
+            deviceId: "web_device-1",
+            platform: "web",
+            pushProvider: "webpush",
+            status: "active"
+          },
+          providerId: "csm.messaging"
+        }),
+        { status: 201 }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000,
+      token: "provider-token",
+      webPushEnabled: true,
+      webPushVapidPublicKey: "browser-public-vapid-key"
+    });
+
+    const result = await provider.registerWebPushDevice(
+      {
+        authMode: "oidc",
+        displayName: "Jiří Volek",
+        roles: ["cop_operator"],
+        subjectId: "user-123",
+        username: "jiri.volek"
+      },
+      new Date("2026-07-07T11:07:45Z"),
+      {
+        capabilities: ["notifications", "deep_links"],
+        deviceId: "web_device-1",
+        endpoint: "https://web.push.apple.com/subscription/1",
+        keys: {
+          auth: "auth-secret",
+          p256dh: "p256dh-public"
+        },
+        locale: "cs-CZ",
+        timezone: "Europe/Prague"
+      }
+    );
+
+    expect(result).toMatchObject({
+      contractVersion: "cop-web-push-device-v1",
+      deviceId: "web_device-1",
+      enabled: true,
+      providerId: "csm.messaging",
+      registered: true,
+      status: "online",
+      warnings: []
+    });
+  });
+
   it("deletes browser Web Push devices through the server-side provider", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe("http://messaging.local:4050/api/v1/devices/web_device-1");
