@@ -706,6 +706,14 @@ describe("Matrix client diagnostics", () => {
           provider: "mock",
           question: "Co je teď důležité?",
           requestId: "request-1",
+          responsePlaybook: {
+            allowedActions: ["focus-map"],
+            confidence: 0.9,
+            domain: "weather",
+            forbiddenActions: ["route"],
+            intentId: "weather.rain.now",
+            requiredSources: ["sim-search-data", "map-search"]
+          },
           status: "COMPLETED",
           type: "chat-agent"
         },
@@ -761,6 +769,14 @@ describe("Matrix client diagnostics", () => {
           provider: "mock",
           question: "Co je teď důležité?",
           requestId: "request-1",
+          responsePlaybook: {
+            allowedActions: ["focus-map"],
+            confidence: 0.9,
+            domain: "weather",
+            forbiddenActions: ["route"],
+            intentId: "weather.rain.now",
+            requiredSources: ["sim-search-data", "map-search"]
+          },
           status: "COMPLETED",
           type: "chat-agent"
         },

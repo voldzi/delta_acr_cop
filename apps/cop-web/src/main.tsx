@@ -1437,7 +1437,11 @@ export function App() {
       }
     };
     const handleServiceWorkerMessage = (event: MessageEvent) => {
-      if (event.data?.type === "cop:pwa:pushsubscriptionchange" && !cancelled) {
+      if (
+        (event.data?.type === "cop:pwa:pushsubscriptionchange" ||
+          event.data?.type === "cop:pwa:notification-clicked") &&
+        !cancelled
+      ) {
         void refreshWebPushState();
       }
     };

@@ -110,10 +110,20 @@ export interface MatrixCopAiMessageMetadata {
   provider?: string;
   question?: string;
   requestId?: string;
+  responsePlaybook?: MatrixCopAiResponsePlaybookMetadata;
   semanticDocumentCount?: number;
   semanticStatus?: "degraded" | "disabled" | "ok";
   status?: "COMPLETED" | "NEEDS_HUMAN_REVIEW" | "REJECTED";
   type?: "chat-agent" | "situation-summary";
+}
+
+export interface MatrixCopAiResponsePlaybookMetadata {
+  allowedActions?: string[];
+  confidence?: number;
+  domain?: string;
+  forbiddenActions?: string[];
+  intentId?: string;
+  requiredSources?: string[];
 }
 
 export interface MatrixCopMapAction {

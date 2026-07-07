@@ -2851,6 +2851,7 @@ function sanitizeCopAiMessageMetadata(value: unknown): MatrixCopMessageMetadata[
   const provider = stringValue(record.provider)?.slice(0, 80);
   const question = stringValue(record.question)?.slice(0, 500);
   const requestId = stringValue(record.requestId)?.slice(0, 160);
+  const responsePlaybook = sanitizeCopAiResponsePlaybook(record.responsePlaybook);
   const indexedDocumentCount = nonNegativeInteger(record.indexedDocumentCount, 0, 1000);
   const indexedStatus: MatrixCopAiMessageMetadata["indexedStatus"] =
     record.indexedStatus === "ok" || record.indexedStatus === "degraded" || record.indexedStatus === "disabled"
@@ -2872,12 +2873,35 @@ function sanitizeCopAiMessageMetadata(value: unknown): MatrixCopMessageMetadata[
     ...(provider ? { provider } : {}),
     ...(question ? { question } : {}),
     ...(requestId ? { requestId } : {}),
+    ...(responsePlaybook ? { responsePlaybook } : {}),
     ...(semanticDocumentCount !== undefined ? { semanticDocumentCount } : {}),
     ...(semanticStatus ? { semanticStatus } : {}),
     ...(status ? { status } : {}),
     ...(type ? { type } : {})
   };
   return Object.keys(ai).length ? ai : undefined;
+}
+
+function sanitizeCopAiResponsePlaybook(value: unknown): MatrixCopAiMessageMetadata["responsePlaybook"] | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const allowedActions = stringListValue(record.allowedActions, 12, 40);
+  const forbiddenActions = stringListValue(record.forbiddenActions, 12, 40);
+  const requiredSources = stringListValue(record.requiredSources, 16, 80);
+  const confidence = finiteNumber(record.confidence, 0, 1);
+  const domain = stringValue(record.domain)?.slice(0, 80);
+  const intentId = stringValue(record.intentId)?.slice(0, 120);
+  const responsePlaybook: NonNullable<MatrixCopAiMessageMetadata["responsePlaybook"]> = {
+    ...(allowedActions.length > 0 ? { allowedActions } : {}),
+    ...(confidence !== undefined ? { confidence } : {}),
+    ...(domain ? { domain } : {}),
+    ...(forbiddenActions.length > 0 ? { forbiddenActions } : {}),
+    ...(intentId ? { intentId } : {}),
+    ...(requiredSources.length > 0 ? { requiredSources } : {})
+  };
+  return Object.keys(responsePlaybook).length ? responsePlaybook : undefined;
 }
 
 function sanitizeCopMapActions(value: unknown): MatrixCopMapAction[] | undefined {

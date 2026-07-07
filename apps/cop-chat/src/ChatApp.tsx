@@ -111,6 +111,7 @@ import {
 import type {
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
+  MatrixCopAiResponsePlaybookMetadata,
   MatrixCopMapAction,
   MatrixCopMessageMetadata,
   MatrixLocationShare,
@@ -5622,7 +5623,10 @@ function MessageRow({
         ) : hasAiMetadata ? (
           <>
             <AiMarkdownOutput query={searchQuery} text={messageDisplayBody(message)} />
-            <MessageAiMapActions actions={aiMapActionsForMessage(message)} />
+            <MessageAiMapActions
+              actions={aiMapActionsForMessage(message)}
+              responsePlaybook={message.cop?.ai?.responsePlaybook}
+            />
           </>
         ) : (
           <HighlightedMessageText query={searchQuery} text={messageDisplayBody(message)} />
@@ -5668,10 +5672,14 @@ function MessageRow({
   );
 }
 
-function MessageAiMapActions({ actions }: { actions?: MatrixCopMapAction[] }) {
-  const visibleActions = (actions ?? [])
-    .filter((action) => Number.isFinite(action.lat) && Number.isFinite(action.lon))
-    .slice(0, 3);
+function MessageAiMapActions({
+  actions,
+  responsePlaybook
+}: {
+  actions?: MatrixCopMapAction[];
+  responsePlaybook?: MatrixCopAiResponsePlaybookMetadata;
+}) {
+  const visibleActions = aiMapActionsAllowedByPlaybook(actions ?? [], responsePlaybook);
   if (visibleActions.length === 0) {
     return null;
   }
@@ -5679,7 +5687,7 @@ function MessageAiMapActions({ actions }: { actions?: MatrixCopMapAction[] }) {
     <div className="message-ai-actions" aria-label="Mapové akce AI odpovědi">
       {visibleActions.flatMap((action, index) => {
         const key = `${action.entityId ?? action.title ?? "map"}-${index}`;
-        const routeEnabled = shouldOfferRouteForAiMapAction(action);
+        const routeEnabled = shouldOfferRouteForAiMapAction(action, responsePlaybook);
         const baseOptions = {
           category: action.category,
           featureId: action.entityId,
@@ -5735,20 +5743,67 @@ function stripMapActionPrefix(label: string): string {
   return label.replace(/^Zobrazit na mapě:\s*/iu, "").trim() || "cíl";
 }
 
-export function shouldOfferRouteForAiMapAction(action: MatrixCopMapAction): boolean {
-  const haystack = normalizeAiMapActionText([
-    action.category,
-    action.entityType,
-    action.label,
-    action.layerId,
-    action.sourceName,
-    action.sourceSystemIds?.join(" "),
-    action.title
-  ].filter(Boolean).join(" "));
+export function aiMapActionsAllowedByPlaybook(
+  actions: MatrixCopMapAction[],
+  responsePlaybook?: MatrixCopAiResponsePlaybookMetadata
+): MatrixCopMapAction[] {
+  const allowedActions = normalizedPlaybookActions(responsePlaybook?.allowedActions);
+  if (allowedActions && !allowedActions.has("focus-map")) {
+    return [];
+  }
+  const forbiddenActions = normalizedPlaybookActions(responsePlaybook?.forbiddenActions);
+  if (forbiddenActions?.has("focus-map")) {
+    return [];
+  }
+  const limit = aiResponsePlaybookIsWeather(responsePlaybook) ? 1 : 3;
+  return actions.filter((action) => Number.isFinite(action.lat) && Number.isFinite(action.lon)).slice(0, limit);
+}
+
+export function shouldOfferRouteForAiMapAction(
+  action: MatrixCopMapAction,
+  responsePlaybook?: MatrixCopAiResponsePlaybookMetadata
+): boolean {
+  const forbiddenActions = normalizedPlaybookActions(responsePlaybook?.forbiddenActions);
+  if (forbiddenActions?.has("route")) {
+    return false;
+  }
+  const allowedActions = normalizedPlaybookActions(responsePlaybook?.allowedActions);
+  if (allowedActions) {
+    return allowedActions.has("route");
+  }
+  const haystack = normalizeAiMapActionText(
+    [
+      action.category,
+      action.entityType,
+      action.label,
+      action.layerId,
+      action.sourceName,
+      action.sourceSystemIds?.join(" "),
+      action.title
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
   if (!haystack) {
     return true;
   }
-  return !/\b(?:air_quality|boundary|coverage|forecast|meteogram|pocasi|precipitation|radar|rain|srazk|teplot|temperature|weather|wind)\b/u.test(haystack);
+  return !/\b(?:air_quality|boundary|coverage|forecast|meteogram|pocasi|precipitation|radar|rain|srazk|teplot|temperature|weather|wind)\b/u.test(
+    haystack
+  );
+}
+
+function normalizedPlaybookActions(actions: string[] | undefined): Set<string> | undefined {
+  if (!actions || actions.length === 0) {
+    return undefined;
+  }
+  const normalized = actions.map((action) => action.trim().toLocaleLowerCase("cs-CZ")).filter(Boolean);
+  return normalized.length > 0 ? new Set(normalized) : undefined;
+}
+
+function aiResponsePlaybookIsWeather(responsePlaybook: MatrixCopAiResponsePlaybookMetadata | undefined): boolean {
+  const domain = responsePlaybook?.domain?.trim().toLocaleLowerCase("cs-CZ");
+  const intentId = responsePlaybook?.intentId?.trim().toLocaleLowerCase("cs-CZ");
+  return domain === "weather" || Boolean(intentId?.startsWith("weather."));
 }
 
 function normalizeAiMapActionText(value: string): string {
@@ -8062,6 +8117,7 @@ function buildAiMessageMetadata(
   const question = options.question?.trim();
   const evidence = aiResponseEvidenceMetadata(response);
   const mapActions = aiMapActionsFromResponse(response);
+  const responsePlaybook = aiResponsePlaybookMetadata(response);
   return {
     ai: {
       ...(response?.auditId ? { auditId: response.auditId } : {}),
@@ -8073,6 +8129,7 @@ function buildAiMessageMetadata(
       ...(response?.provider ? { provider: response.provider } : {}),
       ...(question ? { question } : {}),
       ...(response?.requestId ? { requestId: response.requestId } : {}),
+      ...(responsePlaybook ? { responsePlaybook } : {}),
       ...(evidence.semanticDocumentCount !== undefined
         ? { semanticDocumentCount: evidence.semanticDocumentCount }
         : {}),
@@ -8083,6 +8140,30 @@ function buildAiMessageMetadata(
     kind: options.kind,
     source: "cop-chat"
   };
+}
+
+function aiResponsePlaybookMetadata(response: AiCopResponse | null): MatrixCopAiResponsePlaybookMetadata | undefined {
+  const structured = asRecord(response?.result.structured);
+  const evidence = asRecord(structured?.evidence);
+  const responsePlaybook = asRecord(evidence?.responsePlaybook);
+  if (!responsePlaybook) {
+    return undefined;
+  }
+  const allowedActions = optionalAiTextList(responsePlaybook.allowedActions);
+  const forbiddenActions = optionalAiTextList(responsePlaybook.forbiddenActions);
+  const requiredSources = optionalAiTextList(responsePlaybook.requiredSources);
+  const confidence = finiteCoordinate(responsePlaybook.confidence, 0, 1);
+  const domain = optionalAiText(responsePlaybook.domain);
+  const intentId = optionalAiText(responsePlaybook.intentId);
+  const metadata: MatrixCopAiResponsePlaybookMetadata = {
+    ...(allowedActions.length > 0 ? { allowedActions } : {}),
+    ...(confidence !== undefined ? { confidence } : {}),
+    ...(domain ? { domain } : {}),
+    ...(forbiddenActions.length > 0 ? { forbiddenActions } : {}),
+    ...(intentId ? { intentId } : {}),
+    ...(requiredSources.length > 0 ? { requiredSources } : {})
+  };
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
 export function aiMapActionsFromResponse(response: AiCopResponse | null): MatrixCopMapAction[] {

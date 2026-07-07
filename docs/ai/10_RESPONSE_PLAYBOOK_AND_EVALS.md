@@ -36,8 +36,15 @@ Chat-agent pipeline v `apps/cop-api/src/server.ts` vkládá playbook do:
 - `context.responsePlaybook`,
 - `result.structured.evidence.responsePlaybook`.
 
-Tím je možné zpětně auditovat, proč odpověď použila konkrétní zdroje a proč
-byly některé UI akce povolené nebo zakázané.
+API zároveň filtruje `result.structured.mapActions` podle playbooku. Například
+počasí může nabídnout nejvýše jeden mapový odkaz a nikdy trasu, pokud ji
+playbook explicitně nepovolí.
+
+COP Chat ukládá zkrácený `responsePlaybook` i do Matrix metadata `cz.cop.ai`.
+Renderer jej používá před starší heuristikou: route tlačítko se zobrazí jen
+tehdy, když je `route` v `allowedActions` a není ve `forbiddenActions`. Tím je
+možné zpětně auditovat, proč odpověď použila konkrétní zdroje a proč byly
+některé UI akce povolené nebo zakázané.
 
 ## Eval sada
 

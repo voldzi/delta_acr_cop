@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260707-8";
+const COP_SW_VERSION = "cop-pwa-offline-20260707-9";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -132,7 +132,7 @@ self.addEventListener("notificationclick", (event) => {
 
   const targetUrl = normalizeNotificationUrl(event.notification.data?.url) ?? "/";
 
-  event.waitUntil(openBestClientWindow(targetUrl));
+  event.waitUntil(openBestClientWindow(targetUrl, event.notification.tag));
 });
 
 self.addEventListener("pushsubscriptionchange", (event) => {
@@ -509,8 +509,13 @@ function parsePushPayload(data) {
   }
 }
 
-async function openBestClientWindow(targetUrl) {
+async function openBestClientWindow(targetUrl, notificationTag) {
   const target = new URL(normalizeNotificationUrl(targetUrl) ?? "/", self.location.origin);
+  const openedMessage = {
+    tag: notificationTag,
+    type: "cop:pwa:notification-clicked",
+    url: `${target.pathname}${target.search}${target.hash}`
+  };
   const clients = await self.clients.matchAll({ includeUncontrolled: true, type: "window" });
   const rankedClients = clients
     .filter((client) => {
@@ -530,13 +535,17 @@ async function openBestClientWindow(targetUrl) {
   if (selected) {
     const focused = "focus" in selected ? await selected.focus() : selected;
     if ("navigate" in focused) {
-      await focused.navigate(`${target.pathname}${target.search}${target.hash}`);
+      const navigated = await focused.navigate(`${target.pathname}${target.search}${target.hash}`);
+      await notifyClient(navigated ?? focused, openedMessage);
+      return;
     }
+    await notifyClient(focused, openedMessage);
     return;
   }
 
   if (self.clients.openWindow) {
-    await self.clients.openWindow(`${target.pathname}${target.search}${target.hash}`);
+    const opened = await self.clients.openWindow(`${target.pathname}${target.search}${target.hash}`);
+    await notifyClient(opened, openedMessage);
   }
 }
 

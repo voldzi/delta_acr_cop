@@ -6,6 +6,7 @@ import {
   timelineNeedsBridgeBackfill
 } from "./chat-model";
 import {
+  aiMapActionsAllowedByPlaybook,
   aiMapActionsForMessage,
   aiMapActionsFromResponse,
   aiQuestionNeedsCurrentLocation,
@@ -569,6 +570,61 @@ describe("shouldOfferRouteForAiMapAction", () => {
         title: "Policie"
       })
     ).toBe(true);
+  });
+
+  it("uses response playbook actions before route heuristics", () => {
+    const weatherAction = {
+      action: "focus-map" as const,
+      category: "weather_radar",
+      label: "Zobrazit na mapě: ČHMÚ radar",
+      lat: 49.695,
+      lon: 15.0682,
+      title: "ČHMÚ radar"
+    };
+    expect(
+      shouldOfferRouteForAiMapAction(weatherAction, {
+        allowedActions: ["focus-map", "route"],
+        domain: "weather",
+        intentId: "weather.radar.show"
+      })
+    ).toBe(true);
+    expect(
+      shouldOfferRouteForAiMapAction(weatherAction, {
+        allowedActions: ["focus-map"],
+        domain: "weather",
+        forbiddenActions: ["route"],
+        intentId: "weather.radar.show"
+      })
+    ).toBe(false);
+  });
+});
+
+describe("aiMapActionsAllowedByPlaybook", () => {
+  it("limits weather answers to one map action", () => {
+    const actions = [
+      { action: "focus-map" as const, label: "Radar", lat: 49.6, lon: 15.1 },
+      { action: "focus-map" as const, label: "Forecast", lat: 49.7, lon: 15.2 },
+      { action: "focus-map" as const, label: "Wind", lat: 49.8, lon: 15.3 }
+    ];
+
+    expect(
+      aiMapActionsAllowedByPlaybook(actions, {
+        allowedActions: ["focus-map"],
+        domain: "weather",
+        forbiddenActions: ["route"],
+        intentId: "weather.rain.now"
+      })
+    ).toEqual([actions[0]]);
+  });
+
+  it("hides map actions when playbook does not allow focus-map", () => {
+    expect(
+      aiMapActionsAllowedByPlaybook([{ action: "focus-map", label: "Mapa", lat: 49.6, lon: 15.1 }], {
+        allowedActions: ["open-chat"],
+        domain: "chat",
+        intentId: "chat.notification.status"
+      })
+    ).toEqual([]);
   });
 });
 

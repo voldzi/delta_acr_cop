@@ -55,6 +55,7 @@ import {
   summarizeMapFeatureCollectionForAi,
   summarizeSimSearchResponseForAi,
   summarizeSituationMapFeatureForAi,
+  type AiMapAction,
   type AiMapSearchContext,
   type AiMapSearchResult
 } from "./ai-map-search.js";
@@ -73,10 +74,7 @@ import {
   isRoutineCivilAirText,
   type AiRetrievalIntent
 } from "./ai-retrieval-intent.js";
-import {
-  aiResponsePlaybookGuidanceForQuestion,
-  aiResponsePlaybookPromptGuidance
-} from "./ai-response-playbook.js";
+import { aiResponsePlaybookGuidanceForQuestion, aiResponsePlaybookPromptGuidance } from "./ai-response-playbook.js";
 import {
   AiSemanticRetriever,
   createSemanticDocuments,
@@ -15434,7 +15432,10 @@ function withAiResponseEvidence(
   }
 ): AiCopResponse {
   const structured = isRecord(response.result.structured) ? response.result.structured : {};
-  const mapActions = aiMapActionsFromMapSearchContext(input.mapSearch);
+  const mapActions = filterAiMapActionsForResponsePlaybook(
+    aiMapActionsFromMapSearchContext(input.mapSearch),
+    input.requestContext.responsePlaybook
+  );
   return {
     ...response,
     result: {
@@ -15494,6 +15495,36 @@ function withAiResponseEvidence(
       }
     }
   };
+}
+
+function filterAiMapActionsForResponsePlaybook(actions: AiMapAction[], responsePlaybook: unknown): AiMapAction[] {
+  const playbook = isRecord(responsePlaybook) ? responsePlaybook : undefined;
+  const allowedActions = normalizedAiActionSet(playbook?.allowedActions);
+  if (allowedActions && !allowedActions.has("focus-map")) {
+    return [];
+  }
+  const forbiddenActions = normalizedAiActionSet(playbook?.forbiddenActions);
+  if (forbiddenActions?.has("focus-map")) {
+    return [];
+  }
+  const limitedActions = actions.slice(0, 3);
+  const intentId = optionalText(playbook?.intentId)?.toLowerCase();
+  const domain = optionalText(playbook?.domain)?.toLowerCase();
+  if (domain === "weather" || intentId?.startsWith("weather.")) {
+    return limitedActions.slice(0, 1);
+  }
+  return limitedActions;
+}
+
+function normalizedAiActionSet(value: unknown): Set<string> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  return normalized.length > 0 ? new Set(normalized) : undefined;
 }
 
 function buildAiPipelineObservability(input: {
