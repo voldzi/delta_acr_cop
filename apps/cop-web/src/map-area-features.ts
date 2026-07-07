@@ -1,5 +1,6 @@
 import type { AoiRule, CopAlert } from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
+import type { ChatLiveLocationPayload } from "@cop/messaging/bridge";
 
 const earthRadiusKm = 6371.0088;
 
@@ -61,6 +62,21 @@ export interface UserLocationFeatureCollection {
     type: "Feature";
     geometry: { type: "Point"; coordinates: [number, number] };
     properties: { accuracyM: number };
+  }>;
+}
+
+export interface SharedLiveLocationFeatureCollection {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry: { type: "Point"; coordinates: [number, number] };
+    properties: {
+      accuracyM: number;
+      label: string;
+      sender: string;
+      shareId: string;
+      updatedAt: string;
+    };
   }>;
 }
 
@@ -277,6 +293,30 @@ export function userLocationToFeatureCollection(userLocation: UserLocation | nul
   };
 }
 
+export function sharedLiveLocationsToFeatureCollection(
+  locations: ChatLiveLocationPayload[]
+): SharedLiveLocationFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: locations
+      .filter((location) => isValidLatLon(location.lat, location.lon))
+      .map((location) => ({
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [location.lon, location.lat]
+        },
+        properties: {
+          accuracyM: location.accuracyM ?? 0,
+          label: location.senderDisplayName ?? location.label ?? "Sdílená poloha",
+          sender: location.sender,
+          shareId: location.shareId,
+          updatedAt: location.updatedAt
+        }
+      }))
+  };
+}
+
 export function userAlertRadiusToFeatureCollection(
   userLocation: UserLocation | null,
   radiusKm: number,
@@ -303,6 +343,10 @@ export function userAlertRadiusToFeatureCollection(
       }
     ]
   };
+}
+
+function isValidLatLon(lat: number, lon: number): boolean {
+  return Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lon) && lon >= -180 && lon <= 180;
 }
 
 function isValidAoiPolygon(polygon: AoiRule["polygon"]): polygon is NonNullable<AoiRule["polygon"]> {

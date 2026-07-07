@@ -7,6 +7,7 @@ import {
   decodeCopMapFocusSearch,
   decodeChatCenterLocation,
   decodeChatCurrentLocation,
+  decodeChatLiveLocations,
   decodeChatSelect,
   decodeChatShareTransit,
   decodeChatSummary,
@@ -14,6 +15,7 @@ import {
   encodeCopMapFocusUrl,
   encodeChatCenterLocation,
   encodeChatCurrentLocation,
+  encodeChatLiveLocations,
   encodeChatSelect,
   encodeChatShareTransit,
   encodeChatSummary,
@@ -28,6 +30,7 @@ describe("contract constants", () => {
     expect(chatBridgeMessageTypes).toEqual({
       centerLocation: "cop-chat:center-location",
       currentLocation: "cop-chat:current-location",
+      liveLocations: "cop-chat:live-locations",
       select: "cop-chat:select",
       shareTransit: "cop-chat:share-transit",
       summary: "cop-chat:summary",
@@ -35,6 +38,48 @@ describe("contract constants", () => {
     });
     expect(chatBridgeChannelName).toBe("cop-chat");
     expect(chatUnreadStorageKey).toBe("cop.chat.unread.v1");
+  });
+});
+
+describe("live-locations (chat -> web)", () => {
+  it("encodes and decodes active live location snapshots", () => {
+    const payload = encodeChatLiveLocations([
+      {
+        accuracyM: 18.4,
+        expiresAt: "2026-07-07T12:30:00.000Z",
+        label: " Jiří Volek ",
+        lat: 50.12952,
+        lon: 17.36285,
+        roomId: "!room:example.cz",
+        sender: "@jiri:example.cz",
+        senderDisplayName: " Jiří Volek ",
+        shareId: " live-123 ",
+        status: "live",
+        updatedAt: "2026-07-07T12:15:00.000Z"
+      }
+    ]);
+
+    expect(payload.type).toBe("cop-chat:live-locations");
+    expect(decodeChatLiveLocations(payload)).toEqual([
+      {
+        accuracyM: 18.4,
+        expiresAt: "2026-07-07T12:30:00.000Z",
+        label: "Jiří Volek",
+        lat: 50.12952,
+        lon: 17.36285,
+        roomId: "!room:example.cz",
+        sender: "@jiri:example.cz",
+        senderDisplayName: "Jiří Volek",
+        shareId: "live-123",
+        status: "live",
+        updatedAt: "2026-07-07T12:15:00.000Z"
+      }
+    ]);
+  });
+
+  it("rejects malformed or foreign live location payloads", () => {
+    expect(decodeChatLiveLocations({ locations: [], type: "other" })).toBeNull();
+    expect(decodeChatLiveLocations({ locations: [{ lat: 91, lon: 17 }], type: "cop-chat:live-locations" })).toEqual([]);
   });
 });
 
@@ -167,7 +212,10 @@ describe("summary (chat -> web)", () => {
       decodeChatSummary({
         totalUnread: 1,
         type: "cop-chat:summary",
-        unreadRooms: [{ selection: "x", title: "", unreadCount: 1 }, { selection: "y", title: "Y", unreadCount: 1 }]
+        unreadRooms: [
+          { selection: "x", title: "", unreadCount: 1 },
+          { selection: "y", title: "Y", unreadCount: 1 }
+        ]
       })?.unreadRooms
     ).toEqual([{ selection: "y", title: "Y", unreadCount: 1 }]);
   });

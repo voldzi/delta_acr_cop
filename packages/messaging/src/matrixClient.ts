@@ -897,8 +897,7 @@ async function syncMatrixWebPushPusher(
     return;
   }
 
-  const pushGatewayUrl =
-    options?.pushGatewayUrl?.trim() || defaultMatrixPushGatewayUrl(homeserverBaseUrl);
+  const pushGatewayUrl = options?.pushGatewayUrl?.trim() || defaultMatrixPushGatewayUrl(homeserverBaseUrl);
 
   await client.setPusher({
     app_display_name: options?.appDisplayName?.trim() || "COP Chat",
@@ -1505,13 +1504,25 @@ function createLocationMessage(location: MatrixLocationShare): Record<string, un
   const roundedLat = Number(location.lat.toFixed(6));
   const roundedLon = Number(location.lon.toFixed(6));
   const geoUri = `geo:${roundedLat},${roundedLon}${typeof location.accuracyM === "number" ? `;u=${Math.max(0, Math.round(location.accuracyM))}` : ""}`;
-  const label = location.label?.trim() || (location.source === "device" ? "Moje poloha" : "Poloha v mapě");
+  const live = sanitizeLiveLocationShare(location.live);
+  const label =
+    location.label?.trim() ||
+    (live?.status === "ended"
+      ? "Živé sdílení polohy ukončeno"
+      : live
+        ? "Živá poloha"
+        : location.source === "device"
+          ? "Moje poloha"
+          : "Poloha v mapě");
+  const updatedAt = location.updatedAt ?? live?.updatedAt;
   return {
     "cz.cop.location": {
       accuracyM: location.accuracyM ?? undefined,
       lat: roundedLat,
+      live,
       lon: roundedLon,
-      source: location.source
+      source: location.source,
+      updatedAt
     },
     "m.asset": {
       type: location.source === "device" ? "m.self" : "cz.cop.map"
@@ -1525,6 +1536,22 @@ function createLocationMessage(location: MatrixLocationShare): Record<string, un
     body: `${label}: ${roundedLat.toFixed(6)}, ${roundedLon.toFixed(6)}`,
     geo_uri: geoUri,
     msgtype: "m.location"
+  };
+}
+
+function sanitizeLiveLocationShare(value: MatrixLocationShare["live"]): MatrixLocationShare["live"] | undefined {
+  if (!value?.shareId?.trim()) {
+    return undefined;
+  }
+  return {
+    ...(typeof value.durationSeconds === "number" && Number.isFinite(value.durationSeconds) && value.durationSeconds > 0
+      ? { durationSeconds: Math.trunc(value.durationSeconds) }
+      : {}),
+    ...(typeof value.expiresAt === "string" && value.expiresAt.trim() ? { expiresAt: value.expiresAt.trim() } : {}),
+    shareId: value.shareId.trim().slice(0, 160),
+    ...(typeof value.startedAt === "string" && value.startedAt.trim() ? { startedAt: value.startedAt.trim() } : {}),
+    status: value.status === "ended" ? "ended" : "live",
+    ...(typeof value.updatedAt === "string" && value.updatedAt.trim() ? { updatedAt: value.updatedAt.trim() } : {})
   };
 }
 
@@ -1669,10 +1696,7 @@ async function readStoredMatrixRecoveryKey(bootstrap: MessagingBootstrapResponse
   return undefined;
 }
 
-function readLegacyStoredMatrixRecoveryKey(
-  key: string,
-  bootstrap: MessagingBootstrapResponse
-): string | undefined {
+function readLegacyStoredMatrixRecoveryKey(key: string, bootstrap: MessagingBootstrapResponse): string | undefined {
   if (typeof window === "undefined") {
     return undefined;
   }
@@ -2980,12 +3004,32 @@ function matrixLocationFromGeoUri(geoUri: string, content: Record<string, unknow
   const extensibleLocation = asRecord(content["m.location"]);
   const copLocation = asRecord(content["cz.cop.location"]);
   const source = copLocation?.source === "device" ? "device" : "map";
+  const live = matrixLiveLocationShareFromContent(copLocation?.live);
   return {
     accuracyM: match[3] ? Number(match[3]) : undefined,
     label: typeof extensibleLocation?.description === "string" ? extensibleLocation.description : undefined,
     lat,
+    ...(live ? { live } : {}),
     lon,
-    source
+    source,
+    ...(typeof copLocation?.updatedAt === "string" ? { updatedAt: copLocation.updatedAt } : {})
+  };
+}
+
+function matrixLiveLocationShareFromContent(value: unknown): MatrixLocationShare["live"] | undefined {
+  const data = asRecord(value);
+  if (!data || typeof data.shareId !== "string" || !data.shareId.trim()) {
+    return undefined;
+  }
+  return {
+    ...(typeof data.durationSeconds === "number" && Number.isFinite(data.durationSeconds) && data.durationSeconds > 0
+      ? { durationSeconds: Math.trunc(data.durationSeconds) }
+      : {}),
+    ...(typeof data.expiresAt === "string" && data.expiresAt.trim() ? { expiresAt: data.expiresAt.trim() } : {}),
+    shareId: data.shareId.trim(),
+    ...(typeof data.startedAt === "string" && data.startedAt.trim() ? { startedAt: data.startedAt.trim() } : {}),
+    status: data.status === "ended" ? "ended" : "live",
+    ...(typeof data.updatedAt === "string" && data.updatedAt.trim() ? { updatedAt: data.updatedAt.trim() } : {})
   };
 }
 

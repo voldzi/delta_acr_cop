@@ -135,8 +135,21 @@ export interface MatrixLocationShare {
   accuracyM?: number | null;
   label?: string;
   lat: number;
+  live?: MatrixLiveLocationShare;
   lon: number;
   source: "device" | "map";
+  updatedAt?: string;
+}
+
+export type MatrixLiveLocationStatus = "ended" | "live";
+
+export interface MatrixLiveLocationShare {
+  durationSeconds?: number;
+  expiresAt?: string;
+  shareId: string;
+  startedAt?: string;
+  status: MatrixLiveLocationStatus;
+  updatedAt?: string;
 }
 
 export interface MatrixTransitShare {

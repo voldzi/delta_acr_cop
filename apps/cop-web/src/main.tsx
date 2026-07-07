@@ -246,18 +246,16 @@ import {
   type RefreshSeconds
 } from "./refresh-config";
 import { buildMapSearchResults, buildPlaceSearchResults, type MapSearchResult } from "./map-search";
-import {
-  applyChatSummaryPayload,
-  applyChatUnreadPayload,
-  readStoredChatSummarySnapshot
-} from "@cop/messaging/runtime";
+import { applyChatSummaryPayload, applyChatUnreadPayload, readStoredChatSummarySnapshot } from "@cop/messaging/runtime";
 import {
   decodeChatCenterLocation,
+  decodeChatLiveLocations,
   decodeCopMapFocusSearch,
   encodeChatCurrentLocation,
   encodeChatSelect,
   encodeChatShareTransit,
   type ChatCenterLocationMessage,
+  type ChatLiveLocationPayload,
   type ChatSummaryMessage,
   type ChatSummaryUnreadRoom,
   type ChatTransitSharePayload
@@ -1054,12 +1052,15 @@ export function App() {
   const [selectedSituationFeatureId, setSelectedSituationFeatureId] = React.useState<string | null>(null);
   const [selectedSituationFeatureStableKey, setSelectedSituationFeatureStableKey] = React.useState<string | null>(null);
   const [userLocation, setUserLocation] = React.useState<UserLocation | null>(null);
-  const initialNavigationSession = React.useMemo(() => readStoredNavigationSession(userStorageScope), [userStorageScope]);
+  const initialNavigationSession = React.useMemo(
+    () => readStoredNavigationSession(userStorageScope),
+    [userStorageScope]
+  );
   const [emergencyRoute, setEmergencyRoute] = React.useState<RoutingRouteResponse | null>(
     () => initialNavigationSession?.route ?? null
   );
-  const [emergencyRouteStatus, setEmergencyRouteStatus] = React.useState<"error" | "idle" | "loading" | "ready">(
-    () => (initialNavigationSession ? "ready" : "idle")
+  const [emergencyRouteStatus, setEmergencyRouteStatus] = React.useState<"error" | "idle" | "loading" | "ready">(() =>
+    initialNavigationSession ? "ready" : "idle"
   );
   const [emergencyRouteMessage, setEmergencyRouteMessage] = React.useState<string | null>(
     () => initialNavigationSession?.routeSummary ?? null
@@ -1127,6 +1128,7 @@ export function App() {
   const [messagingUnreadCount, setMessagingUnreadCount] = React.useState(() =>
     hostUnreadCountFromChatSummary(hostUsableChatSummary(readStoredChatSummarySnapshot()))
   );
+  const [sharedLiveLocations, setSharedLiveLocations] = React.useState<ChatLiveLocationPayload[]>([]);
   const messagingSelectionNonceRef = React.useRef(0);
   const messagingTransitShareNonceRef = React.useRef(0);
   const initialMapFeatureFocusRef = React.useRef(initialMapFocus);
@@ -1209,6 +1211,11 @@ export function App() {
         return;
       }
       if (applyUnread(data)) {
+        return;
+      }
+      const liveLocations = decodeChatLiveLocations(data);
+      if (liveLocations) {
+        setSharedLiveLocations(liveLocations.filter((location) => location.status === "live"));
         return;
       }
       const center = decodeChatCenterLocation(data);
@@ -4953,7 +4960,8 @@ export function App() {
         setUserLocation(location);
         setFocusUserLocationRequest((current) => current + 1);
         setLocationStatus(formatUserLocation(location));
-        const profileOption = navigationProfileOptions.find((option) => option.id === profile) ?? navigationProfileOptions[0]!;
+        const profileOption =
+          navigationProfileOptions.find((option) => option.id === profile) ?? navigationProfileOptions[0]!;
         const response = await runEmergencyRouteFromLocation(location, normalizedTarget, {
           avoid: ["flood", "road_closure"],
           loadingLabel: `Počítám navigaci ${profile === "walking" ? "pěšky" : "autem"} k cíli ${normalizedTarget.label ?? "vybraný bod"}...`,
@@ -6857,6 +6865,7 @@ export function App() {
                   situationFeatures={combinedSituationFeatures}
                   selectedTransitRouteDetail={selectedTransitRouteDetail}
                   selectedTransitRouteShape={transitRouteShapeForMap(selectedTransitRouteDetail)}
+                  sharedLiveLocations={sharedLiveLocations}
                   onBoundsChange={setMapBounds}
                   onSelectObject={handleMapSelectObject}
                   onSelectSituationFeature={handleMapSelectSituationFeature}
@@ -6878,7 +6887,9 @@ export function App() {
                   onRequestRouteToPoint={(target) => void requestEmergencyRouteToPoint(target)}
                   onStartNavigationToPoint={openNavigationProfileDialog}
                   onStartEmergencyNavigation={() =>
-                    openNavigationProfileDialog(emergencyRouteTarget ?? navigationTargetFromRouteResponse(emergencyRoute))
+                    openNavigationProfileDialog(
+                      emergencyRouteTarget ?? navigationTargetFromRouteResponse(emergencyRoute)
+                    )
                   }
                   onCreateSketchDrawing={handleCreateSketchDrawing}
                   onDeleteSketchDrawing={handleDeleteSketchDrawing}
@@ -10348,10 +10359,7 @@ function formatUnreadBadge(count: number): string {
   return count > 99 ? "99+" : String(Math.trunc(count));
 }
 
-export function hostUsableChatSummary(
-  summary: ChatSummaryMessage | null,
-  now = Date.now()
-): ChatSummaryMessage | null {
+export function hostUsableChatSummary(summary: ChatSummaryMessage | null, now = Date.now()): ChatSummaryMessage | null {
   if (!summary) {
     return null;
   }
@@ -14930,7 +14938,11 @@ function ObjectDetail({
       </div>
       {navigationTarget && onNavigateToTarget ? (
         <div className="object-detail-actions">
-          <button className="mini-button primary-lite" onClick={() => onNavigateToTarget(navigationTarget)} type="button">
+          <button
+            className="mini-button primary-lite"
+            onClick={() => onNavigateToTarget(navigationTarget)}
+            type="button"
+          >
             <Navigation size={14} />
             Navigovat sem
           </button>
@@ -15912,7 +15924,11 @@ function SituationFeatureDetail({
 
       {navigationTarget && onNavigateToTarget ? (
         <div className="object-detail-actions">
-          <button className="mini-button primary-lite" onClick={() => onNavigateToTarget(navigationTarget)} type="button">
+          <button
+            className="mini-button primary-lite"
+            onClick={() => onNavigateToTarget(navigationTarget)}
+            type="button"
+          >
             <Navigation size={14} />
             Navigovat sem
           </button>
@@ -20221,9 +20237,7 @@ function routeLineCoordinatesFromUnknown(value: unknown, depth = 0): Array<[numb
       return normalizeNavigationCoordinates(value.coordinates);
     }
     if (value.type === "MultiLineString" && Array.isArray(value.coordinates)) {
-      return value.coordinates.flatMap((line) =>
-        Array.isArray(line) ? normalizeNavigationCoordinates(line) : []
-      );
+      return value.coordinates.flatMap((line) => (Array.isArray(line) ? normalizeNavigationCoordinates(line) : []));
     }
     for (const key of ["geometry", "routeGeometry", "routeShape", "shape", "lineString", "path", "coordinates"]) {
       const coordinates = routeLineCoordinatesFromUnknown(value[key], depth + 1);
@@ -20297,10 +20311,7 @@ function navigationProgressForLocation(
     (cumulativeDistances[nearestSegmentIndex] ?? 0) +
     (segmentLengths[nearestSegmentIndex] ?? 0) * nearestSegmentProgress;
   const routeRemainingDistanceM = Math.max(0, totalDistanceM - traveledDistanceM);
-  const nextIndex = Math.min(
-    nearestSegmentIndex + (nearestSegmentProgress > 0.78 ? 2 : 1),
-    coordinates.length - 1
-  );
+  const nextIndex = Math.min(nearestSegmentIndex + (nearestSegmentProgress > 0.78 ? 2 : 1), coordinates.length - 1);
   const next = coordinates[nextIndex];
   const target = coordinates[coordinates.length - 1]!;
   const distanceToNextPointM = next ? distanceMeters(location, { lat: next[1], lon: next[0] }) : undefined;
@@ -20334,7 +20345,7 @@ function projectLocationToRouteSegment(
   const dx = bx - ax;
   const dy = by - ay;
   const denominator = dx * dx + dy * dy;
-  const progress = denominator > 0 ? clamp((-(ax * dx + ay * dy)) / denominator, 0, 1) : 0;
+  const progress = denominator > 0 ? clamp(-(ax * dx + ay * dy) / denominator, 0, 1) : 0;
   const px = ax + dx * progress;
   const py = ay + dy * progress;
   return {
@@ -20466,7 +20477,10 @@ function navigationRouteTileUrls(coordinates: Array<[number, number]>): string[]
   return Array.from(urls);
 }
 
-function sampleNavigationCoordinates(coordinates: Array<[number, number]>, maxSamples: number): Array<[number, number]> {
+function sampleNavigationCoordinates(
+  coordinates: Array<[number, number]>,
+  maxSamples: number
+): Array<[number, number]> {
   if (coordinates.length <= maxSamples) {
     return coordinates;
   }
@@ -20529,9 +20543,9 @@ function navigationInstruction(session: NavigationSession): string {
     ? primary.maneuvers
     : Array.isArray(primary?.steps)
       ? primary.steps
-    : Array.isArray(primary?.instructions)
-      ? primary.instructions
-      : [];
+      : Array.isArray(primary?.instructions)
+        ? primary.instructions
+        : [];
   for (const maneuver of maneuvers) {
     if (!isRecord(maneuver)) {
       continue;

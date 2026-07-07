@@ -608,6 +608,13 @@ AI assistants follow the same boundary:
   action. This temporary context is not written to Matrix history. Map actions
   returned by AI open COP Web with `copLat/copLon` focus parameters so the user
   can continue on the full map.
+- COP Chat also supports explicit live location sharing for a selected room.
+  The browser sends periodic Matrix `m.location` updates with COP namespaced
+  live-share metadata (`shareId`, status and expiry). The embedded chat then
+  projects currently active live locations to COP Web through the same-origin
+  bridge so the main map can render shared contacts alongside the local user
+  location. Expired or ended shares are removed from the map view and retained
+  only as normal room history events.
 - A room assistant must be a visible, explicit participant before it can observe
   or answer in a group conversation.
 - Proactive AI notices should be rendered as system situation cards with source
@@ -629,6 +636,9 @@ The browser may send:
 - encrypted image, video and file messages through Matrix media upload and
   Matrix `m.image`, `m.video` or `m.file` events,
 - location shares through Matrix `m.location` events with `geo:` URI metadata,
+- live location updates as Matrix `m.location` events with `geo:` URI metadata
+  and `cz.cop.location.live` metadata for `shareId`, status, update time and
+  expiry,
 - COP-owned UI/audit annotations inside namespaced Matrix content such as
   `cz.cop`, currently used for visible AI assistant answers and situation
   summaries.

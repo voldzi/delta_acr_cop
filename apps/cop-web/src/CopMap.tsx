@@ -53,6 +53,7 @@ import {
   type TransitVehicleDetailResponse
 } from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
+import type { ChatLiveLocationPayload } from "@cop/messaging/bridge";
 import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
 import {
   defaultMapCenter,
@@ -111,6 +112,7 @@ import {
   emptyAoiEditFeatureCollection,
   emptyPolygonFeatureCollection,
   findEditableAoiRule,
+  sharedLiveLocationsToFeatureCollection,
   userAlertRadiusToFeatureCollection,
   userLocationToFeatureCollection,
   zoneDraftToFeatureCollection
@@ -148,6 +150,7 @@ export {
   alertAreasToFeatureCollection,
   aoiRuleToEditFeatureCollection,
   aoiRulesToFeatureCollection,
+  sharedLiveLocationsToFeatureCollection,
   userAlertRadiusToFeatureCollection,
   userLocationToFeatureCollection
 } from "./map-area-features";
@@ -157,6 +160,7 @@ export type {
   AoiEditFeatureCollection,
   AoiRuleFeatureCollection,
   EmptyFeatureCollection,
+  SharedLiveLocationFeatureCollection,
   UserAlertRadiusFeatureCollection,
   UserLocationFeatureCollection
 } from "./map-area-features";
@@ -176,6 +180,7 @@ const trackClusterSourceId = "cop-live-track-clusters";
 const trackHistorySourceId = "cop-track-history";
 const trackPredictionSourceId = "cop-track-prediction";
 const userLocationSourceId = "cop-user-location";
+const sharedLiveLocationSourceId = "cop-shared-live-locations";
 const userAlertRadiusSourceId = "cop-user-alert-radius";
 const aoiRuleSourceId = "cop-aoi-rules";
 const aoiDraftSourceId = "cop-aoi-draft";
@@ -276,6 +281,9 @@ const situationPointLayerId = "cop-situation-point";
 const situationLabelLayerId = "cop-situation-label";
 const userLocationAccuracyLayerId = "cop-user-location-accuracy";
 const userLocationLayerId = "cop-user-location-point";
+const sharedLiveLocationAccuracyLayerId = "cop-shared-live-location-accuracy";
+const sharedLiveLocationLayerId = "cop-shared-live-location-point";
+const sharedLiveLocationLabelLayerId = "cop-shared-live-location-label";
 const trackSelectedHaloLayerId = "cop-live-track-selected-halo";
 const trackHoverHaloLayerId = "cop-live-track-hover-halo";
 const trackSymbolLayerId = "cop-live-track-symbol";
@@ -407,6 +415,9 @@ const mapPointRaiseLayerIds = [
   situationAirQualityLabelLayerId,
   userLocationAccuracyLayerId,
   userLocationLayerId,
+  sharedLiveLocationAccuracyLayerId,
+  sharedLiveLocationLayerId,
+  sharedLiveLocationLabelLayerId,
   trackHoverHaloLayerId,
   trackSelectedHaloLayerId,
   trackClusterCircleLayerId,
@@ -664,6 +675,7 @@ interface CopMapProps {
   situationFeatures: SituationFeatureCollectionResponse | null;
   selectedTransitRouteDetail?: TransitVehicleDetailResponse | null;
   selectedTransitRouteShape?: unknown;
+  sharedLiveLocations: ChatLiveLocationPayload[];
   onBoundsChange: (bounds: MapBounds) => void;
   onSelectObject: (object: CopObject) => void;
   onSelectSituationFeature: (feature: SituationFeature) => void;
@@ -821,6 +833,7 @@ function CopMapComponent({
   situationFeatures,
   selectedTransitRouteDetail,
   selectedTransitRouteShape,
+  sharedLiveLocations,
   onBoundsChange,
   onSelectObject,
   onSelectSituationFeature,
@@ -1083,6 +1096,10 @@ function CopMapComponent({
     () => userAlertRadiusToFeatureCollection(userLocation, alertRadiusKm, showProximityAlertRadius, hasProximityAlerts),
     [alertRadiusKm, hasProximityAlerts, showProximityAlertRadius, userLocation]
   );
+  const sharedLiveLocationFeatureCollection = React.useMemo(
+    () => sharedLiveLocationsToFeatureCollection(sharedLiveLocations),
+    [sharedLiveLocations]
+  );
   const aoiRuleFeatureCollection = React.useMemo(() => aoiRulesToFeatureCollection(aoiRules), [aoiRules]);
   const aoiDraftFeatureCollection = React.useMemo(
     () => zoneDraftToFeatureCollection(zoneDraftPoints),
@@ -1293,6 +1310,10 @@ function CopMapComponent({
         map.addSource(userLocationSourceId, {
           type: "geojson",
           data: userLocationToFeatureCollection(null) as Parameters<GeoJSONSource["setData"]>[0]
+        });
+        map.addSource(sharedLiveLocationSourceId, {
+          type: "geojson",
+          data: sharedLiveLocationsToFeatureCollection([]) as Parameters<GeoJSONSource["setData"]>[0]
         });
         map.addSource(userAlertRadiusSourceId, {
           type: "geojson",
@@ -3626,6 +3647,50 @@ function CopMapComponent({
         });
 
         map.addLayer({
+          id: sharedLiveLocationAccuracyLayerId,
+          type: "circle",
+          source: sharedLiveLocationSourceId,
+          paint: {
+            "circle-color": "#f59e0b",
+            "circle-opacity": 0.12,
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 8, 12, 26, 16, 48],
+            "circle-stroke-color": "#fff7ed",
+            "circle-stroke-opacity": 0.5,
+            "circle-stroke-width": 1
+          }
+        });
+
+        map.addLayer({
+          id: sharedLiveLocationLayerId,
+          type: "circle",
+          source: sharedLiveLocationSourceId,
+          paint: {
+            "circle-color": "#f59e0b",
+            "circle-radius": 7,
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-width": 2.4
+          }
+        });
+
+        map.addLayer({
+          id: sharedLiveLocationLabelLayerId,
+          type: "symbol",
+          source: sharedLiveLocationSourceId,
+          layout: {
+            "text-anchor": "bottom",
+            "text-field": ["get", "label"],
+            "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+            "text-offset": [0, -1],
+            "text-size": 12
+          },
+          paint: {
+            "text-color": "#7c2d12",
+            "text-halo-color": "#ffffff",
+            "text-halo-width": 1.4
+          }
+        });
+
+        map.addLayer({
           id: trackHoverHaloLayerId,
           type: "circle",
           source: trackSourceId,
@@ -4477,6 +4542,13 @@ function CopMapComponent({
       );
     }
   }, [mapReady, userLocation]);
+
+  React.useEffect(() => {
+    const source = mapRef.current?.getSource(sharedLiveLocationSourceId);
+    if (mapReady && source && "setData" in source) {
+      (source as GeoJSONSource).setData(sharedLiveLocationFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
+    }
+  }, [mapReady, sharedLiveLocationFeatureCollection]);
 
   React.useEffect(() => {
     const source = mapRef.current?.getSource(userAlertRadiusSourceId);
@@ -5859,7 +5931,12 @@ export async function warmRasterBasemapTileCache(map: maplibregl.Map, tiles: str
   for (let dx = -1; dx <= 1; dx += 1) {
     for (let dy = -1; dy <= 1; dy += 1) {
       urls.add(
-        rasterTileUrl(tiles, z, clampInteger(centerTile.x + dx, 0, maxTile), clampInteger(centerTile.y + dy, 0, maxTile))
+        rasterTileUrl(
+          tiles,
+          z,
+          clampInteger(centerTile.x + dx, 0, maxTile),
+          clampInteger(centerTile.y + dy, 0, maxTile)
+        )
       );
     }
   }

@@ -10,6 +10,7 @@
 export const chatBridgeMessageTypes = {
   centerLocation: "cop-chat:center-location",
   currentLocation: "cop-chat:current-location",
+  liveLocations: "cop-chat:live-locations",
   select: "cop-chat:select",
   shareTransit: "cop-chat:share-transit",
   summary: "cop-chat:summary",
@@ -73,6 +74,28 @@ export interface ChatCurrentLocationPayload {
 export interface ChatCurrentLocationMessage {
   location: ChatCurrentLocationPayload;
   type: typeof chatBridgeMessageTypes.currentLocation;
+}
+
+export type ChatLiveLocationStatus = "ended" | "live";
+
+export interface ChatLiveLocationPayload {
+  accuracyM?: number;
+  expiresAt?: string;
+  label?: string;
+  lat: number;
+  lon: number;
+  roomId?: string;
+  sender: string;
+  senderDisplayName?: string;
+  shareId: string;
+  status: ChatLiveLocationStatus;
+  updatedAt: string;
+}
+
+export interface ChatLiveLocationsMessage {
+  at: number;
+  locations: ChatLiveLocationPayload[];
+  type: typeof chatBridgeMessageTypes.liveLocations;
 }
 
 export const copMapFocusSearchParams = {
@@ -310,6 +333,23 @@ export function decodeChatCurrentLocation(value: unknown): ChatCurrentLocationPa
   return normalizeCurrentLocation(data.location);
 }
 
+// chat → web: active live location shares visible in the currently loaded Matrix timeline.
+export function encodeChatLiveLocations(locations: ChatLiveLocationPayload[]): ChatLiveLocationsMessage {
+  return {
+    at: Date.now(),
+    locations: normalizeLiveLocations(locations),
+    type: chatBridgeMessageTypes.liveLocations
+  };
+}
+
+export function decodeChatLiveLocations(value: unknown): ChatLiveLocationPayload[] | null {
+  const data = asRecord(value);
+  if (!data || data.type !== chatBridgeMessageTypes.liveLocations) {
+    return null;
+  }
+  return normalizeLiveLocations(data.locations);
+}
+
 // web → chat: open a specific conversation in the embedded chat.
 export function encodeChatSelect(selection: string): ChatSelectMessage {
   return { selection, type: chatBridgeMessageTypes.select };
@@ -394,20 +434,63 @@ function normalizeCurrentLocation(value: unknown): ChatCurrentLocationPayload | 
   }) as ChatCurrentLocationPayload;
 }
 
+function normalizeLiveLocations(value: unknown): ChatLiveLocationPayload[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .flatMap((item) => {
+      const normalized = normalizeLiveLocation(item);
+      return normalized ? [normalized] : [];
+    })
+    .slice(0, 50);
+}
+
+function normalizeLiveLocation(value: unknown): ChatLiveLocationPayload | null {
+  const data = asRecord(value);
+  const shareId = normalizeBridgeText(data?.shareId, 160);
+  const sender = normalizeBridgeText(data?.sender, 240);
+  const updatedAt = normalizeBridgeText(data?.updatedAt, 64);
+  if (
+    !data ||
+    !shareId ||
+    !sender ||
+    !updatedAt ||
+    typeof data.lat !== "number" ||
+    typeof data.lon !== "number" ||
+    !validLatLon(data.lat, data.lon)
+  ) {
+    return null;
+  }
+  return compactRecord({
+    accuracyM: optionalNumber(data.accuracyM),
+    expiresAt: normalizeBridgeText(data.expiresAt, 64),
+    label: normalizeBridgeText(data.label, 160),
+    lat: data.lat,
+    lon: data.lon,
+    roomId: normalizeBridgeText(data.roomId, 240),
+    sender,
+    senderDisplayName: normalizeBridgeText(data.senderDisplayName, 160),
+    shareId,
+    status: data.status === "ended" ? "ended" : "live",
+    updatedAt
+  }) as ChatLiveLocationPayload;
+}
+
 function normalizeChatSummarySyncState(value: unknown): ChatSummarySyncState {
-  return value === "offline" || value === "ready" || value === "syncing" || value === "unavailable"
-    ? value
-    : "syncing";
+  return value === "offline" || value === "ready" || value === "syncing" || value === "unavailable" ? value : "syncing";
 }
 
 function normalizeChatSummaryUnreadRooms(value: unknown): ChatSummaryUnreadRoom[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.flatMap((item) => {
-    const normalized = normalizeChatSummaryUnreadRoom(item);
-    return normalized ? [normalized] : [];
-  }).slice(0, 20);
+  return value
+    .flatMap((item) => {
+      const normalized = normalizeChatSummaryUnreadRoom(item);
+      return normalized ? [normalized] : [];
+    })
+    .slice(0, 20);
 }
 
 function normalizeChatSummaryUnreadRoom(value: unknown): ChatSummaryUnreadRoom | null {

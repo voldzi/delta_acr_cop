@@ -13,6 +13,7 @@ import {
   objectsToTrackFeatureCollection,
   parseMapCenter,
   registerMapViewportResumeHandlers,
+  sharedLiveLocationsToFeatureCollection,
   situationFeaturesToFeatureCollection,
   type SituationContextFeatureCollection,
   userAlertRadiusToFeatureCollection,
@@ -2751,6 +2752,36 @@ describe("COP map data helpers", () => {
       ]
     });
     expect(userLocationToFeatureCollection(null).features).toEqual([]);
+  });
+
+  it("builds shared live location features for map display", () => {
+    expect(
+      sharedLiveLocationsToFeatureCollection([
+        {
+          accuracyM: 18,
+          label: "Jiří živě",
+          lat: 50.2,
+          lon: 14.4,
+          sender: "@jiri:cop.local",
+          senderDisplayName: "Jiří",
+          shareId: "live-1",
+          status: "live",
+          updatedAt: "2026-07-07T12:00:00.000Z"
+        }
+      ])
+    ).toMatchObject({
+      features: [
+        {
+          geometry: { coordinates: [14.4, 50.2] },
+          properties: {
+            accuracyM: 18,
+            label: "Jiří",
+            sender: "@jiri:cop.local",
+            shareId: "live-1"
+          }
+        }
+      ]
+    });
   });
 
   it("builds a geodesic user alert radius polygon", () => {

@@ -8,6 +8,8 @@ import {
   buildAiChatContextSnapshot,
   buildAiRequestContextOptions,
   chatNotificationTag,
+  collapseLiveLocationTimeline,
+  collectActiveLiveLocations,
   collectIncomingChatNotifications,
   composerQuickActions,
   composerSuggestions,
@@ -64,10 +66,7 @@ describe("timelineNeedsBridgeBackfill", () => {
   it("detects a cache/live gap that should trigger Matrix scrollback", () => {
     expect(
       timelineNeedsBridgeBackfill(
-        [
-          message("$cop-9", "2026-07-06T14:29:00.000Z"),
-          message("$cop-14", "2026-07-07T13:13:00.000Z")
-        ],
+        [message("$cop-9", "2026-07-06T14:29:00.000Z"), message("$cop-14", "2026-07-07T13:13:00.000Z")],
         [message("$cop-14", "2026-07-07T13:13:00.000Z")]
       )
     ).toBe(true);
@@ -263,7 +262,15 @@ describe("collectIncomingChatNotifications", () => {
 
     expect(
       collectIncomingChatNotifications(
-        [{ activeFocused: false, chat: null, messages: [incoming("$backfill", "2026-07-07T10:04:00.000Z")], muted: false, room }],
+        [
+          {
+            activeFocused: false,
+            chat: null,
+            messages: [incoming("$backfill", "2026-07-07T10:04:00.000Z")],
+            muted: false,
+            room
+          }
+        ],
         state,
         Date.parse("2026-07-07T10:06:00.000Z")
       )
@@ -273,7 +280,15 @@ describe("collectIncomingChatNotifications", () => {
   it("notifies only messages newer than the room watermark", () => {
     const state = tracker();
     collectIncomingChatNotifications(
-      [{ activeFocused: false, chat: null, messages: [incoming("$old", "2026-07-07T10:00:00.000Z")], muted: false, room }],
+      [
+        {
+          activeFocused: false,
+          chat: null,
+          messages: [incoming("$old", "2026-07-07T10:00:00.000Z")],
+          muted: false,
+          room
+        }
+      ],
       state,
       Date.parse("2026-07-07T10:05:00.000Z")
     );
@@ -594,6 +609,76 @@ describe("buildAiRequestContextOptions", () => {
         maxAgeSeconds: 604800
       }
     });
+  });
+});
+
+describe("live location timeline helpers", () => {
+  const liveMessage = (
+    eventId: string,
+    timestamp: string,
+    status: "ended" | "live" = "live"
+  ): MatrixTimelineMessage => ({
+    body: "Živá poloha",
+    eventId,
+    kind: "location",
+    location: {
+      accuracyM: 12,
+      label: "Jiří živě",
+      lat: eventId === "$live-2" ? 50.2 : 50.1,
+      live: {
+        expiresAt: "2099-07-07T12:30:00.000Z",
+        shareId: "live-1",
+        status,
+        updatedAt: timestamp
+      },
+      lon: 14.4,
+      source: "device",
+      updatedAt: timestamp
+    },
+    own: false,
+    sender: "@jiri:cop.local",
+    senderDisplayName: "Jiří",
+    timestamp
+  });
+
+  it("keeps only the newest message for a live location share", () => {
+    const collapsed = collapseLiveLocationTimeline([
+      liveMessage("$live-1", "2026-07-07T12:00:00.000Z"),
+      {
+        body: "běžná zpráva",
+        eventId: "$text",
+        kind: "text",
+        own: false,
+        sender: "@jiri:cop.local",
+        timestamp: "2026-07-07T12:00:05.000Z"
+      },
+      liveMessage("$live-2", "2026-07-07T12:00:15.000Z")
+    ]);
+
+    expect(collapsed.map((message) => message.eventId)).toEqual(["$text", "$live-2"]);
+  });
+
+  it("returns active live locations for the host map and omits ended shares", () => {
+    expect(collectActiveLiveLocations([liveMessage("$live-2", "2026-07-07T12:00:15.000Z")], "!room:cop.local")).toEqual(
+      [
+        {
+          accuracyM: 12,
+          expiresAt: "2099-07-07T12:30:00.000Z",
+          label: "Jiří živě",
+          lat: 50.2,
+          lon: 14.4,
+          roomId: "!room:cop.local",
+          sender: "@jiri:cop.local",
+          senderDisplayName: "Jiří",
+          shareId: "live-1",
+          status: "live",
+          updatedAt: "2026-07-07T12:00:15.000Z"
+        }
+      ]
+    );
+    expect(collectActiveLiveLocations([liveMessage("$ended", "2026-07-07T12:01:00.000Z", "ended")], "!room")).toEqual(
+      []
+    );
   });
 });
 

@@ -1978,6 +1978,15 @@ button {
   text-align: left;
 }
 
+.location-card.live .map-pin-dot {
+  background: #dcfce7;
+  color: #047857;
+}
+
+.location-card.ended {
+  opacity: 0.72;
+}
+
 .map-tile {
   display: grid;
   width: 72px;
@@ -2244,6 +2253,57 @@ button {
 }
 
 .composer-ai-quickbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.composer-location-quickbar {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 0 1px 52px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.composer-location-quickbar::-webkit-scrollbar {
+  display: none;
+}
+
+.composer-location-quickbar button {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  padding: 0 11px;
+  background: #ffffff;
+  color: #314451;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(17, 27, 33, 0.05);
+  cursor: pointer;
+}
+
+.composer-location-quickbar button:hover,
+.composer-location-quickbar button:focus-visible {
+  border-color: rgba(20, 184, 166, 0.46);
+  background: #effdf9;
+  color: #047857;
+  outline: none;
+}
+
+.composer-location-quickbar button.danger {
+  border-color: rgba(248, 113, 113, 0.28);
+  color: #b91c1c;
+}
+
+.composer-location-quickbar button:disabled {
   cursor: not-allowed;
   opacity: 0.52;
 }

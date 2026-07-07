@@ -123,6 +123,7 @@ import {
   decodeChatCurrentLocation,
   decodeChatShareTransit,
   decodeCopMapFocusSearch,
+  encodeChatLiveLocations,
   type ChatSummaryMessage,
   type ChatSummarySyncState,
   type ChatSummaryUnreadRoom,
@@ -166,6 +167,21 @@ import {
   type MessageRetentionSeconds
 } from "./dialogs/messageRetention";
 import { aiResponseSummary, aiStatusLabel } from "./dialogs/aiResponse";
+
+const liveLocationUpdateMinIntervalMs = 15_000;
+const liveLocationDurationOptions = [
+  { label: "15 min", seconds: 15 * 60 },
+  { label: "1 h", seconds: 60 * 60 },
+  { label: "8 h", seconds: 8 * 60 * 60 }
+] as const;
+
+interface ActiveLiveLocationSession {
+  durationSeconds: number;
+  expiresAt: string;
+  roomId: string;
+  shareId: string;
+  startedAt: string;
+}
 
 export { embeddedChatSelectionFromMessage, readRouteSelection, writeChatRoute } from "./hooks/useChatRouting";
 export { centerLocationInCop } from "./components/LocationPreview";
@@ -579,6 +595,8 @@ export function ChatApp() {
   );
   const [standaloneAiLocation, setStandaloneAiLocation] = React.useState<MatrixLocationShare | null>(null);
   const [standaloneAiLocationBusy, setStandaloneAiLocationBusy] = React.useState(false);
+  const [liveLocationSession, setLiveLocationSession] = React.useState<ActiveLiveLocationSession | null>(null);
+  const [liveLocationExpiryTick, setLiveLocationExpiryTick] = React.useState(0);
   const [aiAgentWorking, setAiAgentWorking] = React.useState(false);
   const [aiAgentGroupUpdating, setAiAgentGroupUpdating] = React.useState(false);
   const [muteDialogOpen, setMuteDialogOpen] = React.useState(false);
@@ -604,6 +622,12 @@ export function ChatApp() {
   const webPushAutoSyncKeyRef = React.useRef<string | null>(null);
   const initialHistoryLoadAttemptsRef = React.useRef<Map<string, number>>(new Map());
   const timelineBridgeBackfillAttemptsRef = React.useRef<Map<string, number>>(new Map());
+  const liveLocationSessionRef = React.useRef<ActiveLiveLocationSession | null>(null);
+  const liveLocationWatchIdRef = React.useRef<number | null>(null);
+  const liveLocationExpiryTimerRef = React.useRef<number | null>(null);
+  const liveLocationLastSentAtRef = React.useRef(0);
+  const liveLocationLastPositionRef = React.useRef<MatrixLocationShare | null>(null);
+  const liveLocationSendInFlightRef = React.useRef(false);
   const historyLoadingRoomsRef = React.useRef<Set<string>>(new Set());
   const notifiedEventIdsRef = React.useRef<Set<string>>(new Set());
   const notificationPrimedRoomIdsRef = React.useRef<Set<string>>(new Set());
@@ -795,7 +819,10 @@ export function ChatApp() {
     [authSession, selectedGroup]
   );
   const showingDemoTimeline = retainedTimeline.length === 0 && demoTimeline.length > 0;
-  const visibleTimeline = showingDemoTimeline ? demoTimeline : retainedTimeline;
+  const visibleTimeline = React.useMemo(
+    () => collapseLiveLocationTimeline(showingDemoTimeline ? demoTimeline : retainedTimeline),
+    [demoTimeline, retainedTimeline, showingDemoTimeline]
+  );
   const timelineRows = React.useMemo(() => buildTimelineRows(visibleTimeline), [visibleTimeline]);
   const virtualTimeline = useVirtualTimelineRows(timelineRows, messageCanvasRef);
   const timelineMessages = React.useMemo(
@@ -819,6 +846,10 @@ export function ChatApp() {
   const selectedMessages = React.useMemo(
     () => timelineMessages.filter((message) => selectedMessageIds.has(message.eventId)),
     [selectedMessageIds, timelineMessages]
+  );
+  const activeLiveLocations = React.useMemo(
+    () => collectActiveLiveLocations(timelineMessages, selectedRoomId),
+    [liveLocationExpiryTick, selectedRoomId, timelineMessages]
   );
   const forwardTargets = React.useMemo(
     () => buildForwardTargets(chatItems, forwardUserSuggestions, forwardQuery),
@@ -1483,6 +1514,33 @@ export function ChatApp() {
   }, [authenticated, chatItems, chatReady, matrixSession, preparingChatId, selectedRoomId]);
 
   React.useEffect(() => {
+    if (!embedded || window.parent === window) {
+      return;
+    }
+    window.parent.postMessage(encodeChatLiveLocations(activeLiveLocations), window.location.origin);
+  }, [activeLiveLocations, embedded]);
+
+  React.useEffect(() => {
+    const nextExpiry = activeLiveLocations.reduce<number | null>((nearest, location) => {
+      const expiresAt = location.expiresAt ? Date.parse(location.expiresAt) : NaN;
+      if (!Number.isFinite(expiresAt)) {
+        return nearest;
+      }
+      return nearest === null ? expiresAt : Math.min(nearest, expiresAt);
+    }, null);
+    if (nextExpiry === null) {
+      return undefined;
+    }
+    const timer = window.setTimeout(
+      () => {
+        setLiveLocationExpiryTick((value) => value + 1);
+      },
+      Math.max(0, nextExpiry - Date.now() + 250)
+    );
+    return () => window.clearTimeout(timer);
+  }, [activeLiveLocations]);
+
+  React.useEffect(() => {
     const routeSelection = readRouteSelection();
     if (!routeSelection || !activeChat || !authenticated || preparingChatId) {
       return;
@@ -1542,14 +1600,24 @@ export function ChatApp() {
     ) {
       return;
     }
-    publishChatSummarySnapshot(chatSummarySnapshotFromItems(chatItems, {
-      authTokenAvailable: Boolean(authToken),
-      chatAvailable: status?.chatAvailable,
-      matrixLoading,
-      matrixSessionActive: Boolean(matrixSession),
-      matrixSessionLifecycle
-    }));
-  }, [authToken, chatItems, matrixLoading, matrixSession, matrixSessionLifecycle, status?.chatAvailable, totalUnreadCount]);
+    publishChatSummarySnapshot(
+      chatSummarySnapshotFromItems(chatItems, {
+        authTokenAvailable: Boolean(authToken),
+        chatAvailable: status?.chatAvailable,
+        matrixLoading,
+        matrixSessionActive: Boolean(matrixSession),
+        matrixSessionLifecycle
+      })
+    );
+  }, [
+    authToken,
+    chatItems,
+    matrixLoading,
+    matrixSession,
+    matrixSessionLifecycle,
+    status?.chatAvailable,
+    totalUnreadCount
+  ]);
 
   React.useEffect(() => {
     if (!authToken || composeMode !== "direct" || directQuery.trim().length < 2) {
@@ -2427,7 +2495,9 @@ export function ChatApp() {
         setTimeline(rememberRoomTimeline(selectedRoomId, session.getTimeline(selectedRoomId)));
       }
       setRecoveryDialogOpen(false);
-      setNotice("Zařízení bylo obnoveno a E2EE key backup je aktivní. Při dalším spuštění se klíč použije automaticky.");
+      setNotice(
+        "Zařízení bylo obnoveno a E2EE key backup je aktivní. Při dalším spuštění se klíč použije automaticky."
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Zařízení se nepodařilo obnovit.");
     } finally {
@@ -3460,7 +3530,189 @@ export function ChatApp() {
     }
   }
 
-  async function shareLocation() {
+  React.useEffect(() => {
+    liveLocationSessionRef.current = liveLocationSession;
+  }, [liveLocationSession]);
+
+  React.useEffect(
+    () => () => {
+      clearLiveLocationWatch();
+      clearLiveLocationExpiryTimer();
+    },
+    []
+  );
+
+  async function sendLiveLocationUpdate(
+    session: ActiveLiveLocationSession,
+    location: MatrixLocationShare,
+    status: "ended" | "live",
+    sessionApi: MatrixMessagingSession
+  ): Promise<void> {
+    const updatedAt = new Date().toISOString();
+    await sessionApi.sendLocation(session.roomId, {
+      ...location,
+      label: status === "ended" ? "Sdílení polohy ukončeno" : liveLocationShareLabel(authSession),
+      live: {
+        durationSeconds: session.durationSeconds,
+        expiresAt: session.expiresAt,
+        shareId: session.shareId,
+        startedAt: session.startedAt,
+        status,
+        updatedAt
+      },
+      source: "device",
+      updatedAt
+    });
+    if (selectedRoomIdRef.current === session.roomId) {
+      setTimeline(rememberRoomTimeline(session.roomId, sessionApi.getTimeline(session.roomId)));
+    }
+  }
+
+  function scheduleLiveLocationExpiry(session: ActiveLiveLocationSession, sessionApi: MatrixMessagingSession): void {
+    clearLiveLocationExpiryTimer();
+    const delayMs = Math.max(0, Date.parse(session.expiresAt) - Date.now());
+    liveLocationExpiryTimerRef.current = window.setTimeout(() => {
+      void stopLiveLocationShare({ reason: "expired", sessionApi });
+    }, delayMs);
+  }
+
+  function clearLiveLocationExpiryTimer(): void {
+    if (liveLocationExpiryTimerRef.current !== null) {
+      window.clearTimeout(liveLocationExpiryTimerRef.current);
+      liveLocationExpiryTimerRef.current = null;
+    }
+  }
+
+  function clearLiveLocationWatch(): void {
+    const watchId = liveLocationWatchIdRef.current;
+    if (watchId !== null && navigator.geolocation?.clearWatch) {
+      navigator.geolocation.clearWatch(watchId);
+    }
+    liveLocationWatchIdRef.current = null;
+  }
+
+  function startLiveLocationWatch(session: ActiveLiveLocationSession, sessionApi: MatrixMessagingSession): void {
+    clearLiveLocationWatch();
+    if (!navigator.geolocation?.watchPosition) {
+      return;
+    }
+    liveLocationWatchIdRef.current = navigator.geolocation.watchPosition(
+      (position) => {
+        const activeSession = liveLocationSessionRef.current;
+        if (!activeSession || activeSession.shareId !== session.shareId) {
+          return;
+        }
+        const now = Date.now();
+        if (now >= Date.parse(activeSession.expiresAt)) {
+          void stopLiveLocationShare({ reason: "expired", sessionApi });
+          return;
+        }
+        const location = matrixLocationFromGeolocationPosition(position);
+        liveLocationLastPositionRef.current = location;
+        if (now - liveLocationLastSentAtRef.current < liveLocationUpdateMinIntervalMs) {
+          return;
+        }
+        liveLocationLastSentAtRef.current = now;
+        if (liveLocationSendInFlightRef.current) {
+          return;
+        }
+        liveLocationSendInFlightRef.current = true;
+        void sendLiveLocationUpdate(activeSession, location, "live", sessionApi)
+          .catch((caught) =>
+            setError(caught instanceof Error ? caught.message : "Živou polohu se nepodařilo aktualizovat.")
+          )
+          .finally(() => {
+            liveLocationSendInFlightRef.current = false;
+          });
+      },
+      (caught) => {
+        setError(geolocationErrorMessage(caught));
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 10_000,
+        timeout: 20_000
+      }
+    );
+  }
+
+  async function startLiveLocationShare(durationSeconds: number): Promise<void> {
+    if (!matrixSession || !selectedRoomId) {
+      setError("Nejdřív otevřete chat, do kterého chcete polohu sdílet.");
+      return;
+    }
+    if (!navigator.geolocation) {
+      setError("Prohlížeč nepodporuje sdílení polohy.");
+      return;
+    }
+    setSending(true);
+    setError(null);
+    try {
+      if (liveLocationSessionRef.current) {
+        await stopLiveLocationShare({ notify: false, sessionApi: matrixSession });
+      }
+      const startedAt = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + durationSeconds * 1000).toISOString();
+      const session: ActiveLiveLocationSession = {
+        durationSeconds,
+        expiresAt,
+        roomId: selectedRoomId,
+        shareId: createLiveLocationShareId(),
+        startedAt
+      };
+      const location = await getDeviceLocation();
+      liveLocationLastPositionRef.current = location;
+      liveLocationLastSentAtRef.current = Date.now();
+      liveLocationSessionRef.current = session;
+      setLiveLocationSession(session);
+      await sendLiveLocationUpdate(session, location, "live", matrixSession);
+      startLiveLocationWatch(session, matrixSession);
+      scheduleLiveLocationExpiry(session, matrixSession);
+      setNotice(`Živá poloha se sdílí ${formatLiveLocationDuration(durationSeconds)}.`);
+    } catch (caught) {
+      liveLocationSessionRef.current = null;
+      setLiveLocationSession(null);
+      clearLiveLocationWatch();
+      clearLiveLocationExpiryTimer();
+      setError(caught instanceof Error ? caught.message : "Živou polohu se nepodařilo spustit.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function stopLiveLocationShare({
+    notify = true,
+    reason = "manual",
+    sessionApi = matrixSession as MatrixMessagingSession | null
+  }: {
+    notify?: boolean;
+    reason?: "expired" | "manual";
+    sessionApi?: MatrixMessagingSession | null;
+  } = {}): Promise<void> {
+    const session = liveLocationSessionRef.current;
+    clearLiveLocationWatch();
+    clearLiveLocationExpiryTimer();
+    liveLocationSessionRef.current = null;
+    setLiveLocationSession(null);
+    if (session && sessionApi && liveLocationLastPositionRef.current) {
+      try {
+        await sendLiveLocationUpdate(session, liveLocationLastPositionRef.current, "ended", sessionApi);
+      } catch (caught) {
+        if (notify) {
+          setError(caught instanceof Error ? caught.message : "Ukončení sdílení polohy se nepodařilo odeslat.");
+        }
+      }
+    }
+    if (notify) {
+      setNotice(reason === "expired" ? "Živé sdílení polohy vypršelo." : "Živé sdílení polohy bylo ukončeno.");
+    }
+  }
+
+  async function shareLocation(durationSeconds?: number) {
+    if (typeof durationSeconds === "number" && durationSeconds > 0) {
+      await startLiveLocationShare(durationSeconds);
+      return;
+    }
     if (!matrixSession || !selectedRoomId) {
       return;
     }
@@ -4031,6 +4283,7 @@ export function ChatApp() {
                     aiLocationBusy={standaloneAiLocationBusy}
                     disabled={!composerEnabled || sending}
                     embedded={embedded}
+                    liveLocationActive={Boolean(liveLocationSession)}
                     pendingAttachment={pendingAttachment}
                     replyTo={replyDraft}
                     sending={sending}
@@ -4042,6 +4295,8 @@ export function ChatApp() {
                       void requestStandaloneAiLocation({ reportNotice: true }).catch(() => undefined)
                     }
                     onShareLocation={() => void shareLocation()}
+                    onStartLiveLocation={(durationSeconds) => void shareLocation(durationSeconds)}
+                    onStopLiveLocation={() => void stopLiveLocationShare()}
                   />
                 )}
               </>
@@ -4763,6 +5018,7 @@ function Composer({
   aiLocationBusy,
   disabled,
   embedded,
+  liveLocationActive,
   pendingAttachment,
   replyTo,
   sending,
@@ -4771,13 +5027,16 @@ function Composer({
   onReplyClear,
   onSend,
   onUseAiLocation,
-  onShareLocation
+  onShareLocation,
+  onStartLiveLocation,
+  onStopLiveLocation
 }: {
   aiAgentAvailable: boolean;
   aiLocationActive: boolean;
   aiLocationBusy: boolean;
   disabled: boolean;
   embedded: boolean;
+  liveLocationActive: boolean;
   pendingAttachment: PendingChatAttachment | null;
   replyTo: MatrixTimelineMessage | null;
   sending: boolean;
@@ -4787,6 +5046,8 @@ function Composer({
   onSend: (text: string) => Promise<boolean> | void;
   onUseAiLocation: () => void;
   onShareLocation: () => void;
+  onStartLiveLocation: (durationSeconds: number) => void;
+  onStopLiveLocation: () => void;
 }) {
   // The draft text lives locally so typing re-renders only the Composer, not the
   // whole ChatApp tree (timeline, chat list, panels). The draft intentionally
@@ -4932,6 +5193,31 @@ function Composer({
             >
               {aiLocationBusy ? <Loader2 className="spin" size={14} /> : <MapPin size={14} />}
               <span>{aiLocationActive ? "AI poloha" : "Moje poloha"}</span>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {visibleSuggestions.length === 0 ? (
+        <div className="composer-location-quickbar" aria-label="Sdílení polohy">
+          <button disabled={disabled} onClick={onShareLocation} type="button">
+            <MapPin size={14} />
+            Poloha
+          </button>
+          {liveLocationDurationOptions.map((option) => (
+            <button
+              disabled={disabled || liveLocationActive}
+              key={option.seconds}
+              onClick={() => onStartLiveLocation(option.seconds)}
+              type="button"
+            >
+              <Navigation size={14} />
+              {option.label}
+            </button>
+          ))}
+          {liveLocationActive ? (
+            <button className="danger" disabled={disabled} onClick={onStopLiveLocation} type="button">
+              <X size={14} />
+              Ukončit
             </button>
           ) : null}
         </div>
@@ -5683,12 +5969,22 @@ function LocationMessage({
   if (!location) {
     return null;
   }
+  const live = location.live;
+  const subtitle = live
+    ? live.status === "ended"
+      ? "Sdílení ukončeno"
+      : `Živě · ${formatCoordinates(location)}`
+    : formatCoordinates(location);
   return (
-    <button className="location-card" onClick={() => onOpenPreview(matrixMessagePreviewItem(message))} type="button">
+    <button
+      className={clsx("location-card", live?.status === "live" && "live", live?.status === "ended" && "ended")}
+      onClick={() => onOpenPreview(matrixMessagePreviewItem(message))}
+      type="button"
+    >
       <StaticLocationMap location={location} />
       <span>
         <strong>{location.label ?? "Sdílená poloha"}</strong>
-        <small>{formatCoordinates(location)}</small>
+        <small>{subtitle}</small>
       </span>
     </button>
   );
@@ -6278,7 +6574,11 @@ export function buildChatItems({
       muted: false,
       pinned: false,
       preferenceKey: chatPreferenceKeyForConversation(conversation, group ?? undefined),
-      preview: latest ? chatListMessagePreview(latest, conversation.type) : roomId ? "Nový chat" : "Klepnutím otevřít chat",
+      preview: latest
+        ? chatListMessagePreview(latest, conversation.type)
+        : roomId
+          ? "Nový chat"
+          : "Klepnutím otevřít chat",
       ...(room ? { room } : {}),
       roomId,
       searchable: `${title} ${conversation.title} ${group?.name ?? ""} ${conversation.members?.map((member) => member.displayName ?? member.userId).join(" ") ?? ""}`,
@@ -7494,6 +7794,64 @@ function latestTimelineLocation(messages: MatrixTimelineMessage[]): MatrixLocati
     .reverse()
     .find((message) => message.kind === "location" && message.location && validMatrixLocation(message.location))
     ?.location;
+}
+
+export function collapseLiveLocationTimeline(messages: MatrixTimelineMessage[]): MatrixTimelineMessage[] {
+  const latestLiveEventIdByShare = new Map<string, string>();
+  messages.forEach((message) => {
+    const shareId = message.location?.live?.shareId;
+    if (shareId) {
+      latestLiveEventIdByShare.set(shareId, message.eventId);
+    }
+  });
+  if (latestLiveEventIdByShare.size === 0) {
+    return messages;
+  }
+  return messages.filter((message) => {
+    const shareId = message.location?.live?.shareId;
+    return !shareId || latestLiveEventIdByShare.get(shareId) === message.eventId;
+  });
+}
+
+export function collectActiveLiveLocations(messages: MatrixTimelineMessage[], roomId: string | null) {
+  const latestByShare = new Map<string, MatrixTimelineMessage>();
+  messages.forEach((message) => {
+    const location = message.location;
+    const shareId = location?.live?.shareId;
+    if (!location || !shareId || !validMatrixLocation(location)) {
+      return;
+    }
+    const current = latestByShare.get(shareId);
+    if (!current || Date.parse(message.timestamp) >= Date.parse(current.timestamp)) {
+      latestByShare.set(shareId, message);
+    }
+  });
+  const now = Date.now();
+  return Array.from(latestByShare.values()).flatMap((message) => {
+    const location = message.location;
+    const live = location?.live;
+    if (!location || !live || live.status !== "live") {
+      return [];
+    }
+    if (live.expiresAt && Date.parse(live.expiresAt) <= now) {
+      return [];
+    }
+    return [
+      {
+        ...(typeof location.accuracyM === "number" ? { accuracyM: location.accuracyM } : {}),
+        ...(live.expiresAt ? { expiresAt: live.expiresAt } : {}),
+        label: location.label ?? message.senderDisplayName ?? message.sender,
+        lat: location.lat,
+        lon: location.lon,
+        ...(roomId ? { roomId } : {}),
+        sender: message.sender,
+        ...(message.senderDisplayName ? { senderDisplayName: message.senderDisplayName } : {}),
+        shareId: live.shareId,
+        status: live.status,
+        updatedAt: live.updatedAt ?? location.updatedAt ?? message.timestamp
+      }
+    ];
+  });
 }
 
 function validMatrixLocation(location: MatrixLocationShare): boolean {
@@ -8730,13 +9088,39 @@ async function getDeviceLocation(): Promise<MatrixLocationShare> {
       timeout: 12_000
     });
   });
+  return matrixLocationFromGeolocationPosition(position);
+}
+
+function matrixLocationFromGeolocationPosition(position: GeolocationPosition): MatrixLocationShare {
   return {
     accuracyM: position.coords.accuracy,
     label: "Moje poloha",
     lat: position.coords.latitude,
     lon: position.coords.longitude,
-    source: "device"
+    source: "device",
+    updatedAt: new Date().toISOString()
   };
+}
+
+function createLiveLocationShareId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `live:${crypto.randomUUID()}`;
+  }
+  return `live:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function liveLocationShareLabel(authSession: AuthSession): string {
+  const profileName = authSession.profile?.name || authSession.profile?.username;
+  return profileName ? `${profileName} živě` : "Živá poloha";
+}
+
+function formatLiveLocationDuration(seconds: number): string {
+  if (seconds >= 60 * 60) {
+    const hours = Math.round(seconds / 3600);
+    return hours === 1 ? "1 hodinu" : `${hours} hodin`;
+  }
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  return `${minutes} minut`;
 }
 
 export function aiQuestionNeedsCurrentLocation(question: string): boolean {
