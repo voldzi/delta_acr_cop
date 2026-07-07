@@ -5787,7 +5787,7 @@ export function registerMapViewportResumeHandlers(onResume: () => void): () => v
   };
 }
 
-async function warmRasterBasemapTileCache(map: maplibregl.Map, tiles: string): Promise<void> {
+export async function warmRasterBasemapTileCache(map: maplibregl.Map, tiles: string): Promise<void> {
   if (typeof fetch !== "function" || !tiles.includes("{z}") || !tiles.includes("{x}") || !tiles.includes("{y}")) {
     return;
   }
@@ -5810,7 +5810,8 @@ async function warmRasterBasemapTileCache(map: maplibregl.Map, tiles: string): P
     Array.from(urls).map((url) =>
       fetch(url, {
         cache: "force-cache",
-        mode: "no-cors"
+        credentials: "omit",
+        mode: "cors"
       })
     )
   );

@@ -16,7 +16,8 @@ import {
   situationFeaturesToFeatureCollection,
   type SituationContextFeatureCollection,
   userAlertRadiusToFeatureCollection,
-  userLocationToFeatureCollection
+  userLocationToFeatureCollection,
+  warmRasterBasemapTileCache
 } from "./CopMap";
 import type { CopObject, SituationFeatureCollectionResponse } from "./cop-data";
 import { formatTrackLabel } from "./track-label";
@@ -2404,6 +2405,31 @@ describe("COP map data helpers", () => {
     expect(normalizeMapGlyphsTemplate("https://tiles.example.test/fonts/{range}.pbf")).toBe(
       "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf"
     );
+  });
+
+  it("warms raster basemap tiles with CORS-readable requests", async () => {
+    const fetchMock = vi.fn(async (_url: string, _options?: RequestInit) => new Response());
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      await warmRasterBasemapTileCache(
+        {
+          getCenter: () => ({ lat: 0, lng: 0 }),
+          getZoom: () => 1
+        } as never,
+        "https://tiles.example.test/osm/{z}/{x}/{y}.png"
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(fetchMock).toHaveBeenCalledWith("https://tiles.example.test/osm/1/0/0.png", {
+        cache: "force-cache",
+        credentials: "omit",
+        mode: "cors"
+      });
+      expect(fetchMock.mock.calls.every(([, options]) => options?.mode !== "no-cors")).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("fits the map to one or more positioned tracks", () => {

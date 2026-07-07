@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260706-2";
+const COP_SW_VERSION = "cop-pwa-offline-20260707-1";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -170,11 +170,16 @@ async function cacheFirst(request, cacheName, maxEntries) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
   if (cached) {
-    return cached;
+    // MapLibre rejects opaque responses served by a service worker as tile data.
+    if (cached.ok && cached.type !== "opaque") {
+      return cached;
+    }
+    await cache.delete(request);
   }
 
   const response = await fetch(request);
-  if (response && (response.ok || response.type === "opaque")) {
+  // Cross-origin map resources must stay CORS-readable. Do not persist no-cors opaque responses.
+  if (response && response.ok && response.type !== "opaque") {
     await cache.put(request, response.clone());
     await trimCache(cache, maxEntries);
   }
