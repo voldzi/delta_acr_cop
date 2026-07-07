@@ -905,7 +905,67 @@ describe("COP web dashboard", () => {
 
     await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1"));
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("17.38420,50.11870");
-    expect(screen.queryByTitle("Zavřít chat")).toBeNull();
+    expect(screen.getByTitle("Zavřít chat").closest("aside")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("keeps the embedded chat iframe mounted between panel opens", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/map/query")) {
+        return jsonResponse(emptyMapQueryResponse(["public.weather.current"]));
+      }
+      if (url.includes("/api/v1/sources/health")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/sources")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/tracks?includeSynthetic=true")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/track-history?")) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({ items: [], init });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Komunikace" }));
+    const firstFrame = document.querySelector("iframe.embedded-chat-frame");
+    expect(firstFrame).toBeTruthy();
+    expect(firstFrame?.closest("aside")?.getAttribute("aria-hidden")).toBe("false");
+
+    fireEvent.click(screen.getByTitle("Zavřít chat"));
+    const hiddenFrame = document.querySelector("iframe.embedded-chat-frame");
+    expect(hiddenFrame).toBe(firstFrame);
+    expect(hiddenFrame?.closest("aside")?.getAttribute("aria-hidden")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Komunikace" }));
+    const reopenedFrame = document.querySelector("iframe.embedded-chat-frame");
+    expect(reopenedFrame).toBe(firstFrame);
+    expect(reopenedFrame?.closest("aside")?.getAttribute("aria-hidden")).toBe("false");
   });
 
   it("requests an emergency route when chat sends a route map action", async () => {
