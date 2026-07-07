@@ -215,6 +215,61 @@ describe("Matrix client diagnostics", () => {
     );
   });
 
+  it("removes a stored Matrix web pusher when COP browser notifications are not registered", async () => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => {
+          storage.delete(key);
+        },
+        setItem: (key: string, value: string) => {
+          storage.set(key, value);
+        }
+      }
+    });
+    const registerPusher = vi.fn<NonNullable<MockMatrixClient["setPusher"]>>().mockResolvedValue(undefined);
+    matrixSdkMock.createClient.mockReturnValueOnce(
+      createMockMatrixClient({
+        rooms: [createRoom({ roomId: "!chat:cop.local" })],
+        setPusher: registerPusher
+      })
+    );
+
+    await createMatrixMessagingSession(createBootstrap(), {
+      webPush: { deviceId: "web_device-1", lang: "cs-CZ", registered: true }
+    });
+    await vi.waitFor(() =>
+      expect(registerPusher).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "http",
+          pushkey: "web_device-1"
+        })
+      )
+    );
+
+    const removePusher = vi.fn<NonNullable<MockMatrixClient["setPusher"]>>().mockResolvedValue(undefined);
+    matrixSdkMock.createClient.mockReturnValueOnce(
+      createMockMatrixClient({
+        rooms: [createRoom({ roomId: "!chat:cop.local" })],
+        setPusher: removePusher
+      })
+    );
+
+    await createMatrixMessagingSession(createBootstrap(), {
+      webPush: { lang: "cs-CZ", registered: false }
+    });
+
+    await vi.waitFor(() =>
+      expect(removePusher).toHaveBeenCalledWith({
+        app_id: "cz.zeleznalady.cop.web",
+        kind: null,
+        pushkey: "web_device-1"
+      })
+    );
+    expect(storage.get("cop.matrix.webPushPusher.v1")).toBeUndefined();
+  });
+
   it("refreshes direct chat avatars from Matrix profile info when room member state has no avatar", async () => {
     vi.useFakeTimers();
     vi.stubGlobal(

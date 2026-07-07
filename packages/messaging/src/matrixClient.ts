@@ -121,6 +121,7 @@ interface MatrixWebPushPusherOptions {
   deviceId?: string;
   lang?: string;
   pushGatewayUrl?: string;
+  registered?: boolean;
 }
 
 interface MatrixRoomLike {
@@ -849,8 +850,29 @@ async function syncMatrixWebPushPusher(
   homeserverBaseUrl: string,
   options: MatrixWebPushPusherOptions | undefined
 ): Promise<void> {
+  if (typeof client.setPusher !== "function") {
+    return;
+  }
+
+  const appId = options?.appId?.trim() || "cz.zeleznalady.cop.web";
   const deviceId = options?.deviceId?.trim();
-  if (!deviceId || typeof client.setPusher !== "function") {
+  const pusherRegistered = options?.registered ?? Boolean(deviceId);
+  if (!pusherRegistered) {
+    const storedPusher = readStoredMatrixWebPushPusher();
+    const pushkey = deviceId || storedPusher?.pushkey;
+    if (!pushkey) {
+      return;
+    }
+    await client.setPusher({
+      app_id: storedPusher?.appId || appId,
+      kind: null,
+      pushkey
+    });
+    clearStoredMatrixWebPushPusher();
+    return;
+  }
+
+  if (!deviceId) {
     return;
   }
 
@@ -859,7 +881,7 @@ async function syncMatrixWebPushPusher(
 
   await client.setPusher({
     app_display_name: options?.appDisplayName?.trim() || "COP Chat",
-    app_id: options?.appId?.trim() || "cz.zeleznalady.cop.web",
+    app_id: appId,
     data: {
       url: pushGatewayUrl
     },
@@ -868,6 +890,7 @@ async function syncMatrixWebPushPusher(
     lang: options?.lang?.trim() || "cs",
     pushkey: deviceId
   });
+  writeStoredMatrixWebPushPusher({ appId, pushkey: deviceId });
 }
 
 async function resolveProfileAvatarMxcUrl(
@@ -942,6 +965,48 @@ function writeLocalStorageValue(key: string, value: string): void {
     }
   } catch {
     // Profile avatar cache is only an optimization.
+  }
+}
+
+function readStoredMatrixWebPushPusher(): { appId: string; pushkey: string } | undefined {
+  try {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+    const raw = window.localStorage.getItem(matrixWebPushPusherStorageKey);
+    if (!raw) {
+      return undefined;
+    }
+    const parsed = JSON.parse(raw) as Partial<{ appId: string; pushkey: string }>;
+    if (typeof parsed.appId !== "string" || typeof parsed.pushkey !== "string") {
+      return undefined;
+    }
+    return {
+      appId: parsed.appId,
+      pushkey: parsed.pushkey
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function writeStoredMatrixWebPushPusher(pusher: { appId: string; pushkey: string }): void {
+  try {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(matrixWebPushPusherStorageKey, JSON.stringify(pusher));
+    }
+  } catch {
+    // Matrix pusher cleanup remains best effort if browser storage is unavailable.
+  }
+}
+
+function clearStoredMatrixWebPushPusher(): void {
+  try {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(matrixWebPushPusherStorageKey);
+    }
+  } catch {
+    // Best effort.
   }
 }
 
@@ -1538,6 +1603,7 @@ async function fetchJoinedRooms(
 
 const matrixUserProfileCachePrefix = "cop.matrix.profile.v1";
 const matrixUserProfileCacheTtlMs = 7 * 24 * 60 * 60 * 1000;
+const matrixWebPushPusherStorageKey = "cop.matrix.webPushPusher.v1";
 
 function readCachedMatrixUserProfile(userId: string): CachedMatrixUserProfile | undefined {
   if (typeof window === "undefined") {

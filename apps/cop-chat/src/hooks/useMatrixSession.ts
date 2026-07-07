@@ -119,6 +119,7 @@ interface UseMatrixSessionOptions {
   conversationsRef: React.MutableRefObject<MessagingConversationSummary[]>;
   matrixProfile: MatrixUserProfileSyncInput | undefined;
   matrixWebPushDeviceId?: string;
+  matrixWebPushFallbackDeviceId?: string;
   onError: (message: string | null) => void;
   onNotice: (message: string | null) => void;
   onRoomsChanged: (rooms: MatrixRoomSummary[], preferredSelection?: string | null) => void;
@@ -192,6 +193,8 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
           return null;
         }
         sessionRef.current?.stop();
+        const matrixWebPushDeviceId =
+          currentOptions.matrixWebPushDeviceId ?? currentOptions.matrixWebPushFallbackDeviceId;
         const nextSession = await createMatrixMessagingSession(bootstrap, {
           onRoomsChanged: (nextRooms) => {
             currentOptions.onRoomsChanged(nextRooms, preferredSelection);
@@ -199,12 +202,11 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
           onSyncState: (nextSyncState) => dispatch({ type: "sync-state", syncState: nextSyncState }),
           onTimelineChanged: currentOptions.onTimelineChanged,
           profile: currentOptions.matrixProfile,
-          webPush: currentOptions.matrixWebPushDeviceId
-            ? {
-                deviceId: currentOptions.matrixWebPushDeviceId,
-                lang: typeof navigator !== "undefined" ? navigator.language || "cs" : "cs"
-              }
-            : undefined
+          webPush: {
+            ...(matrixWebPushDeviceId ? { deviceId: matrixWebPushDeviceId } : {}),
+            lang: typeof navigator !== "undefined" ? navigator.language || "cs" : "cs",
+            registered: Boolean(currentOptions.matrixWebPushDeviceId)
+          }
         });
         const nextRooms = nextSession.getRooms();
         const recoveryStatus = await nextSession.getEncryptionRecoveryStatus();

@@ -621,6 +621,12 @@ export function ChatApp() {
     [authConfig, authSession, localUserPreferences, serverUserProfile]
   );
   const matrixWebPushDeviceId = webPushState.registered ? webPushState.deviceId : undefined;
+  const matrixWebPushFallbackDeviceId = webPushState.registered ? undefined : webPushState.deviceId;
+  const matrixWebPushPusherStateKey = matrixWebPushDeviceId
+    ? `registered:${matrixWebPushDeviceId}`
+    : matrixWebPushFallbackDeviceId
+      ? `disabled:${matrixWebPushFallbackDeviceId}`
+      : "disabled";
   const handleMatrixRoomsChanged = React.useCallback(
     (nextRooms: MatrixRoomSummary[], preferredSelection?: string | null) => {
       setRooms(nextRooms);
@@ -652,6 +658,7 @@ export function ChatApp() {
     conversationsRef,
     matrixProfile: chatIdentity.matrixProfile,
     matrixWebPushDeviceId,
+    matrixWebPushFallbackDeviceId,
     onError: setError,
     onNotice: setNotice,
     onRoomsChanged: handleMatrixRoomsChanged,
@@ -1095,29 +1102,29 @@ export function ChatApp() {
   }, [chatIdentity.matrixProfile, matrixSession]);
 
   React.useEffect(() => {
-    if (!authToken || !status?.chatAvailable || !matrixWebPushDeviceId) {
+    if (!authToken || !status?.chatAvailable) {
       return;
     }
-    if (matrixWebPushPusherDeviceIdRef.current === matrixWebPushDeviceId) {
+    if (matrixWebPushPusherDeviceIdRef.current === matrixWebPushPusherStateKey) {
       return;
     }
     if (!matrixSessionRef.current && !matrixSession) {
-      matrixWebPushPusherDeviceIdRef.current = matrixWebPushDeviceId;
+      matrixWebPushPusherDeviceIdRef.current = matrixWebPushPusherStateKey;
       return;
     }
-    const nextWebPushDeviceId = matrixWebPushDeviceId;
+    const nextWebPushPusherStateKey = matrixWebPushPusherStateKey;
     matrixAttemptKeyRef.current = null;
     resetMatrixSession();
     void startMatrixSession(selectedRoomId ?? selectedConversationId ?? selectedGroupId ?? readRouteSelection()).then(
       (session) => {
-        matrixWebPushPusherDeviceIdRef.current = session ? nextWebPushDeviceId : undefined;
+        matrixWebPushPusherDeviceIdRef.current = session ? nextWebPushPusherStateKey : undefined;
       }
     );
   }, [
     authToken,
     matrixSession,
     matrixSessionRef,
-    matrixWebPushDeviceId,
+    matrixWebPushPusherStateKey,
     resetMatrixSession,
     selectedConversationId,
     selectedGroupId,

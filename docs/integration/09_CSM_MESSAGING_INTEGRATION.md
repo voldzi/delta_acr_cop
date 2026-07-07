@@ -329,6 +329,11 @@ The `pushkey` is the CSM device id returned by COP Web Push registration, not a
 browser subscription secret. CSM Messaging resolves it server-side and sends a
 minimal Web Push payload with a chat deep link.
 
+When the browser no longer has a confirmed COP Web Push registration, COP Chat
+removes the Matrix pusher with `kind=null` for the last known web device id.
+This prevents Matrix from retaining stale pushkeys after a browser subscription
+was lost, re-created or rejected by the CSM Messaging device registry.
+
 Authenticated clients also read and create conversation metadata through COP:
 
 ```http
