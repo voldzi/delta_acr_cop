@@ -5526,7 +5526,7 @@ function CopMapComponent({
             <button
               aria-label="Přejít na moji polohu"
               className="map-control-button"
-              onClick={onRequestUserLocation}
+              onClick={() => onRequestUserLocation()}
               title="Přejít na moji polohu"
               type="button"
             >

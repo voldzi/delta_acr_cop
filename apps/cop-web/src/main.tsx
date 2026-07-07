@@ -4697,14 +4697,8 @@ export function App() {
     }
 
     setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const location: UserLocation = {
-          lat: position.coords.latitude,
-          lon: position.coords.longitude,
-          accuracyM: position.coords.accuracy,
-          updatedAt: new Date().toISOString()
-        };
+    readCurrentUserLocation()
+      .then((location) => {
         if (!isValidMapPoint(location)) {
           const message = "Poloha zařízení nemá platné souřadnice.";
           setLocationStatus(message);
@@ -4733,9 +4727,9 @@ export function App() {
           setPendingRouteTarget(null);
           void runEmergencyRouteFromLocation(location, target);
         }
-      },
-      (error) => {
-        const message = error.message || "Polohu se nepodařilo zaměřit.";
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : "Polohu se nepodařilo zaměřit.";
         setLocationStatus(message);
         focusDefaultMapCenter();
         if (requestedRouteTarget) {
@@ -4744,13 +4738,7 @@ export function App() {
           setEmergencyRouteMessage(`Pro výpočet trasy se nepodařilo zaměřit polohu: ${message}`);
         }
         setIsLocating(false);
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 10_000,
-        timeout: 12_000
-      }
-    );
+      });
   }
 
   const requestEmergencyRouteToPoint = React.useCallback(
@@ -16554,6 +16542,7 @@ function updateApplicationBadge(count: number): void {
     setAppBadge?: (contents?: number) => Promise<void>;
   };
   const normalizedCount = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
+  postServiceWorkerBadgeUpdate(normalizedCount);
   if (normalizedCount > 0 && typeof badgeNavigator.setAppBadge === "function") {
     void badgeNavigator.setAppBadge(Math.min(normalizedCount, 99)).catch(() => undefined);
     return;
@@ -16561,6 +16550,21 @@ function updateApplicationBadge(count: number): void {
   if (normalizedCount === 0 && typeof badgeNavigator.clearAppBadge === "function") {
     void badgeNavigator.clearAppBadge().catch(() => undefined);
   }
+}
+
+function postServiceWorkerBadgeUpdate(count: number): void {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return;
+  }
+  const message = { count, type: "cop:pwa:set-badge" };
+  const controller = navigator.serviceWorker.controller;
+  if (controller) {
+    controller.postMessage(message);
+    return;
+  }
+  void navigator.serviceWorker.ready
+    .then((registration) => registration.active?.postMessage(message))
+    .catch(() => undefined);
 }
 
 function webPushStatusLabel(state: WebPushUiState): string {
@@ -20490,29 +20494,80 @@ function readCurrentUserLocation(): Promise<UserLocation> {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
     return Promise.reject(new Error("Prohlížeč neposkytuje geolokaci."));
   }
+  return readCurrentUserLocationOnce({ maximumAge: 0, timeout: 8_000 }).catch(() =>
+    readCurrentUserLocationFromWatch({ maximumAge: 0, timeout: 16_000 })
+  );
+}
+
+function readCurrentUserLocationOnce(options: PositionOptions): Promise<UserLocation> {
   return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const location: UserLocation = {
-          accuracyM: position.coords.accuracy,
-          lat: position.coords.latitude,
-          lon: position.coords.longitude,
-          updatedAt: new Date().toISOString()
-        };
-        if (!isValidMapPoint(location)) {
-          reject(new Error("Poloha zařízení nemá platné souřadnice."));
-          return;
+        try {
+          resolve(userLocationFromPosition(position));
+        } catch (error) {
+          reject(error);
         }
-        resolve(location);
       },
       (error) => reject(new Error(error.message || "Polohu se nepodařilo zaměřit.")),
       {
         enableHighAccuracy: true,
-        maximumAge: 10_000,
-        timeout: 12_000
+        ...options
       }
     );
   });
+}
+
+function readCurrentUserLocationFromWatch(options: PositionOptions): Promise<UserLocation> {
+  if (!navigator.geolocation.watchPosition) {
+    return readCurrentUserLocationOnce({ maximumAge: 10_000, timeout: 12_000 });
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let watchId: number | undefined;
+    const finish = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timeoutId);
+      if (watchId !== undefined) {
+        navigator.geolocation.clearWatch?.(watchId);
+      }
+      callback();
+    };
+    const timeoutId = window.setTimeout(() => {
+      finish(() => reject(new Error("Polohu se nepodařilo zaměřit v časovém limitu.")));
+    }, options.timeout ?? 16_000);
+    watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        try {
+          const location = userLocationFromPosition(position);
+          finish(() => resolve(location));
+        } catch (error) {
+          finish(() => reject(error));
+        }
+      },
+      (error) => finish(() => reject(new Error(error.message || "Polohu se nepodařilo zaměřit."))),
+      {
+        enableHighAccuracy: true,
+        ...options
+      }
+    );
+  });
+}
+
+function userLocationFromPosition(position: GeolocationPosition): UserLocation {
+  const location: UserLocation = {
+    accuracyM: position.coords.accuracy,
+    lat: position.coords.latitude,
+    lon: position.coords.longitude,
+    updatedAt: new Date().toISOString()
+  };
+  if (!isValidMapPoint(location)) {
+    throw new Error("Poloha zařízení nemá platné souřadnice.");
+  }
+  return location;
 }
 
 function createNavigationSessionId(): string {

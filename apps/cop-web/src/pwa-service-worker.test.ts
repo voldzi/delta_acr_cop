@@ -9,10 +9,28 @@ interface ServiceWorkerContext {
   isAppAssetRequest: (request: Request, url: URL) => boolean;
   isChatRequestPath: (pathname: string) => boolean;
   isImmutableRuntimeAssetRequest: (request: Request, url: URL) => boolean;
+  notificationPayloadBadgeCount: (payload: Record<string, unknown>) => number | undefined;
+  notificationPayloadTag: (payload: Record<string, unknown>) => string | undefined;
+  self: {
+    registration: {
+      clearAppBadge: ReturnType<typeof vi.fn>;
+      getNotifications: ReturnType<typeof vi.fn>;
+      setAppBadge: ReturnType<typeof vi.fn>;
+      showNotification: ReturnType<typeof vi.fn>;
+    };
+  };
+  shouldSuppressDuplicateNotification: (tag?: string) => Promise<boolean>;
+  updateAppBadge: (count?: number) => Promise<void>;
 }
 
-function loadServiceWorkerContext(): ServiceWorkerContext {
+function loadServiceWorkerContext(options: { existingNotifications?: Array<{ tag?: string }> } = {}): ServiceWorkerContext {
   const source = readFileSync(resolve("apps/cop-web/public/cop-service-worker.js"), "utf8");
+  const clearAppBadge = vi.fn(async () => undefined);
+  const getNotifications = vi.fn(async ({ tag }: { tag?: string } = {}) =>
+    (options.existingNotifications ?? []).filter((notification) => !tag || notification.tag === tag)
+  );
+  const setAppBadge = vi.fn(async () => undefined);
+  const showNotification = vi.fn(async () => undefined);
   const context = {
     Request,
     Response,
@@ -24,7 +42,13 @@ function loadServiceWorkerContext(): ServiceWorkerContext {
     self: {
       clients: {},
       location: { origin: "https://cop.example.test" },
-      addEventListener: vi.fn()
+      addEventListener: vi.fn(),
+      registration: {
+        clearAppBadge,
+        getNotifications,
+        setAppBadge,
+        showNotification
+      }
     },
     setTimeout
   };
@@ -74,5 +98,60 @@ describe("COP PWA service worker routing", () => {
       "/chat/assets/index.css?v=1",
       "/site.webmanifest"
     ]);
+  });
+});
+
+describe("COP PWA service worker notifications", () => {
+  it("deduplicates raw Matrix push payloads by room and event", () => {
+    const serviceWorker = loadServiceWorkerContext();
+
+    expect(
+      serviceWorker.notificationPayloadTag({
+        notification: {
+          event_id: "$event-1",
+          room_id: "!room:cop.local",
+          type: "m.room.encrypted"
+        }
+      })
+    ).toBe("cop-chat-!room:cop.local-$event-1");
+  });
+
+  it("reads zero unread counts from Matrix push payloads", () => {
+    const serviceWorker = loadServiceWorkerContext();
+
+    expect(
+      serviceWorker.notificationPayloadBadgeCount({
+        notification: {
+          counts: {
+            unread: 0
+          }
+        }
+      })
+    ).toBe(0);
+  });
+
+  it("clears the app badge when unread count reaches zero", async () => {
+    const serviceWorker = loadServiceWorkerContext();
+    const registration = serviceWorker.self.registration;
+
+    await serviceWorker.updateAppBadge(0);
+
+    expect(registration.clearAppBadge).toHaveBeenCalledTimes(1);
+    expect(registration.setAppBadge).not.toHaveBeenCalled();
+  });
+
+  it("suppresses repeated notifications with the same tag", async () => {
+    const serviceWorker = loadServiceWorkerContext();
+
+    await expect(serviceWorker.shouldSuppressDuplicateNotification("cop-chat-!room-$event")).resolves.toBe(false);
+    await expect(serviceWorker.shouldSuppressDuplicateNotification("cop-chat-!room-$event")).resolves.toBe(true);
+  });
+
+  it("suppresses notifications that are already visible for the same tag", async () => {
+    const serviceWorker = loadServiceWorkerContext({
+      existingNotifications: [{ tag: "cop-chat-!room-$event" }]
+    });
+
+    await expect(serviceWorker.shouldSuppressDuplicateNotification("cop-chat-!room-$event")).resolves.toBe(true);
   });
 });

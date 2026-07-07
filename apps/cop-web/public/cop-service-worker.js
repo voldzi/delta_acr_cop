@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260707-6";
+const COP_SW_VERSION = "cop-pwa-offline-20260707-7";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -23,6 +23,8 @@ const MAX_RUNTIME_ENTRIES = 120;
 const MAX_TILE_ENTRIES = 1200;
 const MAX_ROUTE_TILE_ENTRIES = 900;
 const MAX_ROUTE_TILE_WARMUP_URLS = 650;
+const RECENT_NOTIFICATION_TAG_TTL_MS = 120_000;
+const recentNotificationTags = new Map();
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -93,9 +95,14 @@ self.addEventListener("push", (event) => {
   const badgeCount = notificationPayloadBadgeCount(payload);
 
   event.waitUntil(
-    Promise.all([
-      updateAppBadge(badgeCount),
-      self.registration.showNotification(title, {
+    (async () => {
+      if (badgeCount !== undefined) {
+        await updateAppBadge(badgeCount);
+      }
+      if (await shouldSuppressDuplicateNotification(tag)) {
+        return;
+      }
+      await self.registration.showNotification(title, {
         actions: notificationActionsForUrl(deepLink),
         badge: "/icons/favicon-32.png",
         body,
@@ -111,8 +118,8 @@ self.addEventListener("push", (event) => {
         renotify: false,
         tag,
         timestamp: Date.now()
-      })
-    ])
+      });
+    })()
   );
 });
 
@@ -170,6 +177,10 @@ self.addEventListener("message", (event) => {
         .then((state) => notifyClient(event.source, { type: "cop:pwa:cache-status", ...state }))
         .catch(() => undefined)
     );
+    return;
+  }
+  if (event.data?.type === "cop:pwa:set-badge") {
+    event.waitUntil(updateAppBadge(event.data.count));
   }
 });
 
@@ -597,8 +608,17 @@ function notificationPayloadUrl(payload) {
   if (typeof payload.conversationId === "string" && payload.conversationId.trim()) {
     return `/chat/${encodeURIComponent(payload.conversationId.trim())}`;
   }
+  if (typeof payload.conversation_id === "string" && payload.conversation_id.trim()) {
+    return `/chat/${encodeURIComponent(payload.conversation_id.trim())}`;
+  }
   if (typeof payload.roomId === "string" && payload.roomId.trim()) {
     return `/chat/${encodeURIComponent(payload.roomId.trim())}`;
+  }
+  if (typeof payload.room_id === "string" && payload.room_id.trim()) {
+    return `/chat/${encodeURIComponent(payload.room_id.trim())}`;
+  }
+  if (typeof payload.notification?.room_id === "string" && payload.notification.room_id.trim()) {
+    return `/chat/${encodeURIComponent(payload.notification.room_id.trim())}`;
   }
   if (payload.type === "chat.message" || payload.type === "message") {
     return "/chat/";
@@ -641,19 +661,25 @@ function notificationPayloadType(payload) {
 function notificationPayloadBadgeCount(payload) {
   const candidates = [
     payload?.badgeCount,
+    payload?.badge_count,
     payload?.unreadCount,
+    payload?.unread_count,
     payload?.unread,
     payload?.count,
     payload?.counts?.unread,
+    payload?.notification?.counts?.unread,
     payload?.data?.badgeCount,
+    payload?.data?.badge_count,
     payload?.data?.unreadCount,
+    payload?.data?.unread_count,
     payload?.data?.unread,
     payload?.data?.count,
-    payload?.data?.counts?.unread
+    payload?.data?.counts?.unread,
+    payload?.data?.notification?.counts?.unread
   ];
   for (const candidate of candidates) {
     const normalized = Number(candidate);
-    if (Number.isFinite(normalized) && normalized > 0) {
+    if (Number.isFinite(normalized) && normalized >= 0) {
       return Math.min(Math.trunc(normalized), 99);
     }
   }
@@ -661,13 +687,32 @@ function notificationPayloadBadgeCount(payload) {
 }
 
 async function updateAppBadge(count) {
+  const normalized = Number.isFinite(Number(count)) ? Math.max(0, Math.trunc(Number(count))) : 0;
   try {
+    if (normalized <= 0) {
+      if (typeof self.registration.clearAppBadge === "function") {
+        await self.registration.clearAppBadge();
+        return;
+      }
+      if (typeof self.registration.setAppBadge === "function") {
+        await self.registration.setAppBadge(0);
+        return;
+      }
+      if (typeof navigator !== "undefined" && typeof navigator.clearAppBadge === "function") {
+        await navigator.clearAppBadge();
+        return;
+      }
+      if (typeof navigator !== "undefined" && typeof navigator.setAppBadge === "function") {
+        await navigator.setAppBadge(0);
+      }
+      return;
+    }
     if (typeof self.registration.setAppBadge === "function") {
-      await self.registration.setAppBadge(count);
+      await self.registration.setAppBadge(normalized);
       return;
     }
     if (typeof navigator !== "undefined" && typeof navigator.setAppBadge === "function") {
-      await navigator.setAppBadge(count);
+      await navigator.setAppBadge(normalized);
     }
   } catch {
     // Badging is best-effort and not available in every PWA container.
@@ -679,22 +724,67 @@ function notificationPayloadTag(payload) {
   const type = notificationPayloadType(payload);
   const eventId = firstString(
     payload?.eventId,
+    payload?.event_id,
     payload?.messageId,
+    payload?.message_id,
     payload?.matrixEventId,
+    payload?.matrix_event_id,
+    payload?.notification?.event_id,
     payload?.data?.eventId,
+    payload?.data?.event_id,
     payload?.data?.messageId,
-    payload?.data?.matrixEventId
+    payload?.data?.message_id,
+    payload?.data?.matrixEventId,
+    payload?.data?.matrix_event_id,
+    payload?.data?.notification?.event_id
   );
-  if ((type === "chat.message" || type === "message") && eventId) {
-    const scope = firstString(
-      payload?.roomId,
-      payload?.conversationId,
-      payload?.data?.roomId,
-      payload?.data?.conversationId
-    );
+  const scope = firstString(
+    payload?.roomId,
+    payload?.room_id,
+    payload?.conversationId,
+    payload?.conversation_id,
+    payload?.notification?.room_id,
+    payload?.data?.roomId,
+    payload?.data?.room_id,
+    payload?.data?.conversationId,
+    payload?.data?.conversation_id,
+    payload?.data?.notification?.room_id
+  );
+  if (eventId && (type === "chat.message" || type === "message" || scope)) {
     return `cop-chat-${safeNotificationTagPart(scope ?? "message")}-${safeNotificationTagPart(eventId)}`;
   }
   return explicitTag;
+}
+
+async function shouldSuppressDuplicateNotification(tag) {
+  if (!tag) {
+    pruneRecentNotificationTags();
+    return false;
+  }
+  const now = Date.now();
+  const previousAt = recentNotificationTags.get(tag);
+  recentNotificationTags.set(tag, now);
+  pruneRecentNotificationTags(now);
+  if (previousAt && now - previousAt < RECENT_NOTIFICATION_TAG_TTL_MS) {
+    return true;
+  }
+  if (typeof self.registration.getNotifications === "function") {
+    try {
+      const existing = await self.registration.getNotifications({ tag });
+      return existing.length > 0;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+function pruneRecentNotificationTags(now = Date.now()) {
+  for (const [tag, observedAt] of recentNotificationTags) {
+    if (now - observedAt > RECENT_NOTIFICATION_TAG_TTL_MS) {
+      recentNotificationTags.delete(tag);
+    }
+  }
 }
 
 function firstString(...candidates) {

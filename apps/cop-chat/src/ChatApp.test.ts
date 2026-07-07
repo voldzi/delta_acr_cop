@@ -14,7 +14,8 @@ import {
   formatAiAgentShareBody,
   formatAiSituationShareBody,
   parseAiAgentInvocation,
-  parseAiAgentMention
+  parseAiAgentMention,
+  shouldShowInAppChatNotification
 } from "./ChatApp";
 import type { AiCopResponse } from "@cop/core/cop-data";
 import type { MatrixRoomSummary, MatrixTimelineMessage } from "@cop/messaging/types";
@@ -166,6 +167,47 @@ describe("chatNotificationTag", () => {
     expect(chatNotificationTag("!room:cop.local", "$event-1")).not.toBe(
       chatNotificationTag("!room:cop.local", "$event-2")
     );
+  });
+});
+
+describe("shouldShowInAppChatNotification", () => {
+  it("does not show a second local notification when web push is registered and active", () => {
+    expect(
+      shouldShowInAppChatNotification({
+        permission: "granted",
+        registered: true,
+        subscriptionActive: true
+      })
+    ).toBe(false);
+  });
+
+  it("treats a registered browser with unknown subscription state as owned by web push", () => {
+    expect(
+      shouldShowInAppChatNotification({
+        permission: "granted",
+        registered: true
+      })
+    ).toBe(false);
+  });
+
+  it("keeps local notifications available before web push registration", () => {
+    expect(
+      shouldShowInAppChatNotification({
+        permission: "granted",
+        registered: false,
+        subscriptionActive: false
+      })
+    ).toBe(true);
+  });
+
+  it("does not show local notifications without browser permission", () => {
+    expect(
+      shouldShowInAppChatNotification({
+        permission: "default",
+        registered: false,
+        subscriptionActive: false
+      })
+    ).toBe(false);
   });
 });
 

@@ -1414,7 +1414,7 @@ export function ChatApp() {
       roomWatermarks: notificationRoomWatermarksRef.current
     });
 
-    if (webPushState.permission !== "granted") {
+    if (!shouldShowInAppChatNotification(webPushState)) {
       return;
     }
 
@@ -1429,7 +1429,16 @@ export function ChatApp() {
         writeChatRoute(candidate.room.roomId);
       });
     }
-  }, [chatItems, matrixSession, rooms, selectedRoomId, timelineRevision, webPushState.permission]);
+  }, [
+    chatItems,
+    matrixSession,
+    rooms,
+    selectedRoomId,
+    timelineRevision,
+    webPushState.permission,
+    webPushState.registered,
+    webPushState.subscriptionActive
+  ]);
 
   React.useEffect(() => {
     markRouteApplied(applyRouteSelection(readRouteSelection()));
@@ -8597,6 +8606,12 @@ function showIncomingChatNotification(candidate: IncomingChatNotification, onOpe
   };
 }
 
+export function shouldShowInAppChatNotification(
+  state: Pick<WebPushUiState, "permission" | "registered" | "subscriptionActive">
+): boolean {
+  return state.permission === "granted" && !(state.registered && state.subscriptionActive !== false);
+}
+
 export function chatNotificationTag(roomId: string, eventId: string): string {
   return `cop-chat-${roomId}-${eventId}`;
 }
@@ -8625,6 +8640,7 @@ function updateApplicationBadge(count: number): void {
     setAppBadge?: (contents?: number) => Promise<void>;
   };
   const normalizedCount = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
+  postServiceWorkerBadgeUpdate(normalizedCount);
   if (normalizedCount > 0 && typeof badgeNavigator.setAppBadge === "function") {
     void badgeNavigator.setAppBadge(Math.min(normalizedCount, 99)).catch(() => undefined);
     return;
@@ -8632,6 +8648,21 @@ function updateApplicationBadge(count: number): void {
   if (normalizedCount === 0 && typeof badgeNavigator.clearAppBadge === "function") {
     void badgeNavigator.clearAppBadge().catch(() => undefined);
   }
+}
+
+function postServiceWorkerBadgeUpdate(count: number): void {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return;
+  }
+  const message = { count, type: "cop:pwa:set-badge" };
+  const controller = navigator.serviceWorker.controller;
+  if (controller) {
+    controller.postMessage(message);
+    return;
+  }
+  void navigator.serviceWorker.ready
+    .then((registration) => registration.active?.postMessage(message))
+    .catch(() => undefined);
 }
 
 function incomingNotificationBody(message: MatrixTimelineMessage): string {
