@@ -2700,12 +2700,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "429":
           $ref: "#/components/responses/TooManyRequests"
-        "502":
-          description: Messaging provider degraded or unavailable.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/WebPushDeviceRegistrationResponse"
   /api/v1/push/web/devices/{deviceId}:
     delete:
       tags:
@@ -2741,12 +2735,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "429":
           $ref: "#/components/responses/TooManyRequests"
-        "502":
-          description: Messaging provider degraded or unavailable.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/WebPushDeviceDeletionResponse"
   /api/v1/notifications/safety/evaluate:
     post:
       tags:

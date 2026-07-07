@@ -228,12 +228,13 @@ Push endpoint credentials beyond the forwarded request and never sends a push
 payload directly to a browser push service.
 
 The COP PWA service worker is registered at `/cop-service-worker.js` with root
-scope `/`. The web client treats a stored COP web device id as valid only when
-the browser still has an active `PushSubscription`; if the subscription is
-missing or was created for an old VAPID key, the client prompts for a fresh
-browser registration. Notification clicks are handled in the service worker:
-chat deep links prefer an existing `/chat/...` window, while map alert/report
-links prefer the map shell.
+scope `/`. The web client treats a browser as truly registered only after COP
+receives `registered=true` from the CSM Messaging device registry. A local
+browser `PushSubscription` by itself is only a browser-side subscription; if the
+server registration is missing, degraded or was created by an older client, the
+PWA shows a limited state and prompts for a fresh registration. Notification
+clicks are handled in the service worker: chat deep links prefer an existing
+`/chat/...` window, while map alert/report links prefer the map shell.
 
 The integrated chat uses the same Web Push registration helper as the main COP
 map shell. Its notification bell must represent real server registration state:

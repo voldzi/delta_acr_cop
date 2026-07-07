@@ -986,6 +986,63 @@ describe("CsmMessagingProvider", () => {
     await app.close();
   });
 
+  it("returns structured degraded Web Push registration responses without browser-visible 502", async () => {
+    vi.stubEnv("COP_AUTH_MODE", "lab");
+    vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          contractVersion: "csm-device-v1",
+          providerId: "csm.messaging",
+          status: "degraded",
+          warnings: ["Device registry temporarily unavailable."]
+        }),
+        { status: 500 }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000,
+        token: "provider-token",
+        webPushEnabled: true,
+        webPushVapidPublicKey: "browser-public-vapid-key"
+      }),
+      now: () => new Date("2026-07-07T11:35:00Z")
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "POST",
+      payload: {
+        deviceId: "web_device-1",
+        subscription: {
+          endpoint: "https://push.example.test/subscription/1",
+          keys: {
+            auth: "auth-secret",
+            p256dh: "p256dh-public"
+          }
+        }
+      },
+      url: "/api/v1/push/web/devices"
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({
+      contractVersion: "cop-web-push-device-v1",
+      enabled: true,
+      providerId: "csm.messaging",
+      registered: false,
+      status: "degraded"
+    });
+    expect(response.body).not.toContain("provider-token");
+    expect(response.body).toContain("HTTP 500");
+    await app.close();
+  });
+
   it("registers browser Web Push devices server-side with sanitized actor headers", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe("http://messaging.local:4050/api/v1/devices");
@@ -1115,6 +1172,59 @@ describe("CsmMessagingProvider", () => {
         },
         locale: "cs-CZ",
         timezone: "Europe/Prague"
+      }
+    );
+
+    expect(result).toMatchObject({
+      contractVersion: "cop-web-push-device-v1",
+      deviceId: "web_device-1",
+      enabled: true,
+      providerId: "csm.messaging",
+      registered: true,
+      status: "online",
+      warnings: []
+    });
+  });
+
+  it("accepts top-level active CSM device responses as successful Web Push registration", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          contractVersion: "csm-device-v1",
+          deviceId: "web_device-1",
+          providerId: "csm.messaging",
+          status: "active"
+        }),
+        { status: 201 }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000,
+      token: "provider-token",
+      webPushEnabled: true,
+      webPushVapidPublicKey: "browser-public-vapid-key"
+    });
+
+    const result = await provider.registerWebPushDevice(
+      {
+        authMode: "oidc",
+        displayName: "Jiří Volek",
+        roles: ["cop_operator"],
+        subjectId: "user-123",
+        username: "jiri.volek"
+      },
+      new Date("2026-07-07T11:38:00Z"),
+      {
+        deviceId: "web_device-1",
+        endpoint: "https://web.push.apple.com/subscription/1",
+        keys: {
+          auth: "auth-secret",
+          p256dh: "p256dh-public"
+        }
       }
     );
 

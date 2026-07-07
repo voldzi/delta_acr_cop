@@ -4117,7 +4117,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const result = await messagingProvider.deleteWebPushDevice(actor, now(), deviceId);
-      return reply.code(result.deleted ? 202 : result.status === "disabled" ? 503 : 502).send(result);
+      return reply.code(result.status === "disabled" ? 503 : 202).send(result);
     },
     registerWebPushDevice: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -4136,7 +4136,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const result = await messagingProvider.registerWebPushDevice(actor, now(), registration);
-      return reply.code(result.registered ? 202 : result.status === "disabled" ? 503 : 502).send(result);
+      return reply.code(result.status === "disabled" ? 503 : 202).send(result);
     },
     resolveConversation: async (request, reply) => {
       const actor = requireActor(request, reply);

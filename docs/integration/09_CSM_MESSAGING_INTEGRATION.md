@@ -298,6 +298,13 @@ Messaging `POST /api/v1/devices` with `platform=web` and
 `pushProvider=webpush`. Delivery, deduplication and device lifecycle remain
 owned by CSM Messaging.
 
+The PWA distinguishes a browser-side `PushSubscription` from a confirmed COP
+device registration. It stores a confirmed web device only after COP receives
+`registered=true` from CSM Messaging. A browser with permission and an active
+subscription but without this confirmation is shown as limited and must be
+registered again before the UI can claim background notifications are fully
+active.
+
 COP web registers browser notification preferences for `safetyAlerts`,
 `watchedAreaAlerts`, `communityReports`, `chatMessages` and `system`.
 CSM Messaging may ignore unknown preference keys, but it should treat

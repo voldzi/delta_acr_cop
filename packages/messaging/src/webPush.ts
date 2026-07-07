@@ -6,6 +6,7 @@ export interface WebPushUiState {
   enabled: boolean;
   permission: NotificationPermission | "unsupported";
   registered: boolean;
+  registrationConfirmedAt?: string;
   serviceWorkerReady?: boolean;
   standalone: boolean;
   status: WebPushStatus;
@@ -28,8 +29,15 @@ interface WebPushDeviceRegistrationResponse {
 }
 
 const webPushDeviceIdStorageKey = "cop.webPush.deviceId.v1";
+const webPushRegistrationStorageKey = "cop.webPush.registration.v1";
 const serviceWorkerPath = "/cop-service-worker.js";
 const serviceWorkerScope = "/";
+
+interface StoredWebPushRegistration {
+  deviceId: string;
+  registeredAt: string;
+  status: "online";
+}
 
 export function readWebPushPermissionState(): WebPushUiState {
   if (!isWebPushSupported()) {
@@ -43,18 +51,21 @@ export function readWebPushPermissionState(): WebPushUiState {
     };
   }
 
-  const deviceId = readStoredDeviceId();
+  const confirmedRegistration = readStoredRegistration();
+  const deviceId = confirmedRegistration?.deviceId ?? readStoredDeviceId();
   const permission = Notification.permission;
+  const registered = Boolean(confirmedRegistration) && permission === "granted";
   return {
     ...(deviceId ? { deviceId } : {}),
     enabled: false,
     permission,
-    registered: Boolean(deviceId) && permission === "granted",
+    registered,
+    ...(confirmedRegistration ? { registrationConfirmedAt: confirmedRegistration.registeredAt } : {}),
     standalone: isPwaStandalone(),
     status:
       permission === "denied"
         ? "permission-denied"
-        : Boolean(deviceId) && permission === "granted"
+        : registered
           ? "registered"
           : "available",
     warnings: []
@@ -94,20 +105,30 @@ export async function fetchWebPushConfig(apiBase: string): Promise<WebPushUiStat
   }
 
   const hasStoredRegistration = Boolean(current.deviceId) && current.permission === "granted";
-  const registered = hasStoredRegistration && browserState.subscriptionActive;
+  const confirmedRegistration = readStoredRegistration();
+  const hasConfirmedRegistration =
+    Boolean(confirmedRegistration?.deviceId) && current.permission === "granted";
+  const registered = hasConfirmedRegistration && browserState.subscriptionActive;
   const staleWarnings =
     hasStoredRegistration && !browserState.subscriptionActive
       ? ["Registrace tohoto prohlížeče není aktivní. Zapněte webové notifikace znovu."]
-      : browserState.subscriptionActive && !current.deviceId
-        ? ["Prohlížeč má aktivní push odběr bez COP registrace. Zapněte webové notifikace znovu."]
+      : browserState.subscriptionActive && !hasConfirmedRegistration
+        ? ["Prohlížeč má aktivní push odběr, ale COP registrace není potvrzená. Zapněte webové notifikace znovu."]
         : [];
 
   return {
     ...current,
     enabled: true,
     registered,
+    ...(confirmedRegistration ? { registrationConfirmedAt: confirmedRegistration.registeredAt } : {}),
     serviceWorkerReady: browserState.serviceWorkerReady,
-    status: registered ? "registered" : current.status === "permission-denied" ? "permission-denied" : "available",
+    status: registered
+      ? "registered"
+      : current.status === "permission-denied"
+        ? "permission-denied"
+        : browserState.subscriptionActive && !hasConfirmedRegistration
+          ? "degraded"
+          : "available",
     subscriptionActive: browserState.subscriptionActive,
     warnings: [...(config.warnings ?? []), ...staleWarnings]
   };
@@ -146,37 +167,52 @@ export async function enableWebPushNotifications(apiBase: string, token: string)
   const subscription = await subscribeBrowser(registration, config.vapidPublicKey);
   const deviceId = readStoredDeviceId() ?? createWebPushDeviceId();
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const response = await fetchJson<WebPushDeviceRegistrationResponse>(`${apiBase}/api/v1/push/web/devices`, {
-    body: JSON.stringify({
-      capabilities: ["notifications", "deep_links"],
-      deviceId,
-      locale: navigator.language,
-      notificationPreferences: {
-        chatMessages: true,
-        communityReports: true,
-        safetyAlerts: true,
-        system: true,
-        watchedAreaAlerts: true
+  const response = await fetchJson<WebPushDeviceRegistrationResponse>(
+    `${apiBase}/api/v1/push/web/devices`,
+    {
+      body: JSON.stringify({
+        capabilities: ["notifications", "deep_links"],
+        deviceId,
+        locale: navigator.language,
+        notificationPreferences: {
+          chatMessages: true,
+          communityReports: true,
+          safetyAlerts: true,
+          system: true,
+          watchedAreaAlerts: true
+        },
+        subscription: subscription.toJSON(),
+        timezone
+      }),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
       },
-      subscription: subscription.toJSON(),
-      timezone
-    }),
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
+      method: "POST"
     },
-    method: "POST"
-  });
+    { acceptedErrorStatuses: [502, 503] }
+  );
 
   const storedDeviceId = response.deviceId ?? deviceId;
-  storeDeviceId(storedDeviceId);
+  const registeredAt = new Date().toISOString();
+  if (response.registered) {
+    storeDeviceId(storedDeviceId);
+    storeConfirmedRegistration({
+      deviceId: storedDeviceId,
+      registeredAt,
+      status: "online"
+    });
+  } else {
+    clearStoredRegistration();
+  }
 
   return {
     detail: response.status,
-    deviceId: storedDeviceId,
+    ...(response.registered ? { deviceId: storedDeviceId } : {}),
     enabled: true,
     permission,
     registered: response.registered,
+    ...(response.registered ? { registrationConfirmedAt: registeredAt } : {}),
     serviceWorkerReady: Boolean(registration.active ?? registration.waiting ?? registration.installing),
     standalone: isPwaStandalone(),
     status: response.registered ? "registered" : response.status === "degraded" ? "degraded" : "disabled",
@@ -207,6 +243,7 @@ export async function disableWebPushNotifications(apiBase: string, token: string
   const subscription = await registration?.pushManager.getSubscription();
   await subscription?.unsubscribe();
   clearStoredDeviceId();
+  clearStoredRegistration();
 
   return {
     enabled: true,
@@ -264,12 +301,17 @@ async function readBrowserPushState(): Promise<{ serviceWorkerReady: boolean; su
   }
 }
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+async function fetchJson<T>(
+  url: string,
+  init?: RequestInit,
+  options: { acceptedErrorStatuses?: number[] } = {}
+): Promise<T> {
   const response = await fetch(url, {
     credentials: "same-origin",
     ...init
   });
-  if (!response.ok) {
+  const acceptedError = options.acceptedErrorStatuses?.includes(response.status) ?? false;
+  if (!response.ok && !acceptedError) {
     throw new Error(`${response.status} API request failed for ${new URL(url, window.location.origin).pathname}`);
   }
   return response.json() as Promise<T>;
@@ -334,6 +376,42 @@ function storeDeviceId(deviceId: string): void {
 function clearStoredDeviceId(): void {
   try {
     window.localStorage.removeItem(webPushDeviceIdStorageKey);
+  } catch {
+    // Best effort.
+  }
+}
+
+function readStoredRegistration(): StoredWebPushRegistration | undefined {
+  try {
+    const raw = window.localStorage.getItem(webPushRegistrationStorageKey);
+    if (!raw) {
+      return undefined;
+    }
+    const parsed = JSON.parse(raw) as Partial<StoredWebPushRegistration>;
+    if (typeof parsed.deviceId !== "string" || typeof parsed.registeredAt !== "string") {
+      return undefined;
+    }
+    return {
+      deviceId: parsed.deviceId,
+      registeredAt: parsed.registeredAt,
+      status: "online"
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function storeConfirmedRegistration(registration: StoredWebPushRegistration): void {
+  try {
+    window.localStorage.setItem(webPushRegistrationStorageKey, JSON.stringify(registration));
+  } catch {
+    // Registration still succeeds server-side; local persistence is a browser convenience.
+  }
+}
+
+function clearStoredRegistration(): void {
+  try {
+    window.localStorage.removeItem(webPushRegistrationStorageKey);
   } catch {
     // Best effort.
   }

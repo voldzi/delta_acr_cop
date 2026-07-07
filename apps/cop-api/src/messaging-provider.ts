@@ -907,7 +907,10 @@ export class CsmMessagingProvider implements MessagingProvider {
         return degradedWebPushDeviceRegistration("Messaging device registration response is not valid JSON.");
       }
       const normalized = normalizeWebPushDeviceResponse(result.body);
-      const registered = result.ok && (normalized.registered === true || normalized.status === "registered" || normalized.status === "ok" || normalized.status === "accepted");
+      const registered =
+        result.ok &&
+        (normalized.registered === true ||
+          (normalized.registered !== false && isSuccessfulWebPushDeviceStatus(normalized.status)));
       const warnings = [
         ...(normalized.contractVersion === "csm-messaging-provider-v1" || normalized.contractVersion === "csm-device-v1" ? [] : [`Messaging device contract version is ${normalized.contractVersion ?? "unknown"}.`]),
         ...(normalized.providerId === "csm.messaging" || !normalized.providerId ? [] : [`Messaging device provider id is ${normalized.providerId}.`]),
@@ -1220,6 +1223,10 @@ function degradedWebPushDeviceDeletion(detail: string, deviceId?: string): Messa
     status: "degraded",
     warnings: [detail]
   };
+}
+
+function isSuccessfulWebPushDeviceStatus(status: string | undefined): boolean {
+  return status === "active" || status === "accepted" || status === "ok" || status === "online" || status === "registered";
 }
 
 async function fetchJsonWithStatus(

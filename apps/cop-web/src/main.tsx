@@ -12332,7 +12332,11 @@ function WebPushSettingsPanel({
         />
       ) : null}
       {state.deviceId ? (
-        <ReadinessRow label="Zařízení" value="registrovaný prohlížeč" tone={state.registered ? "ok" : "neutral"} />
+        <ReadinessRow
+          label="Zařízení"
+          value={state.registered ? "registrovaný prohlížeč" : "čeká na opětovnou registraci"}
+          tone={state.registered ? "ok" : "warn"}
+        />
       ) : null}
       {!authenticated ? (
         <div className="empty-mini">Webové notifikace vyžadují přihlášení. Mapa zůstává dostupná i bez účtu.</div>

@@ -4110,16 +4110,6 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
-          },
-          "502": {
-            "description": "Messaging provider degraded or unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WebPushDeviceRegistrationResponse"
-                }
-              }
-            }
           }
         }
       }
@@ -4173,16 +4163,6 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
-          },
-          "502": {
-            "description": "Messaging provider degraded or unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WebPushDeviceDeletionResponse"
-                }
-              }
-            }
           }
         }
       }
