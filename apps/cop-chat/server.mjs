@@ -1,6 +1,7 @@
 import { createReadStream, promises as fs } from "node:fs";
 import { createBrotliCompress, createGzip } from "node:zlib";
 import http from "node:http";
+import https from "node:https";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
@@ -8,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(rootDir, "dist");
 const port = Number.parseInt(process.env.COP_CHAT_PORT ?? "4314", 10);
+const apiBase = process.env.COP_API_BASE_URL ?? "http://localhost:4310";
 const basePath = normalizeBasePath(process.env.COP_CHAT_BASE_PATH ?? "/chat/");
 const tokenProxyPath = `${basePath}oidc/token`;
 const allowedHosts = parseAllowedHosts(process.env.COP_CHAT_ALLOWED_HOSTS);
@@ -44,6 +46,10 @@ async function handleRequest(request, response) {
     await proxyOidcTokenRequest(request, response);
     return;
   }
+  if (url.pathname === "/_matrix/push/v1/notify") {
+    proxyApiRequest(request, response);
+    return;
+  }
 
   if (!url.pathname.startsWith(basePath)) {
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
@@ -57,6 +63,46 @@ async function handleRequest(request, response) {
   }
 
   await serveStatic(url.pathname.slice(basePath.length), request, response);
+}
+
+function proxyApiRequest(request, response) {
+  const target = new URL(request.url ?? "/", apiBase);
+  const transport = target.protocol === "https:" ? https : http;
+  const proxyRequest = transport.request(
+    target,
+    {
+      headers: {
+        ...request.headers,
+        host: target.host
+      },
+      method: request.method
+    },
+    (upstream) => {
+      response.writeHead(upstream.statusCode ?? 502, sanitizeProxyResponseHeaders(upstream.headers));
+      upstream.pipe(response);
+    }
+  );
+  proxyRequest.on("error", () => {
+    response.writeHead(502, {
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json; charset=utf-8"
+    });
+    response.end(JSON.stringify({ rejected: [] }));
+  });
+  request.pipe(proxyRequest);
+}
+
+function sanitizeProxyResponseHeaders(headers) {
+  const nextHeaders = { ...headers };
+  delete nextHeaders.connection;
+  delete nextHeaders["keep-alive"];
+  delete nextHeaders["proxy-authenticate"];
+  delete nextHeaders["proxy-authorization"];
+  delete nextHeaders.te;
+  delete nextHeaders.trailer;
+  delete nextHeaders["transfer-encoding"];
+  delete nextHeaders.upgrade;
+  return nextHeaders;
 }
 
 async function proxyOidcTokenRequest(request, response) {
