@@ -101,7 +101,7 @@ import type {
   ServerUserProfile,
   UserDirectoryEntry
 } from "@cop/core/cop-data";
-import { publishChatUnreadCount, rotateMatrixDeviceId } from "@cop/messaging/runtime";
+import { publishChatSummarySnapshot, rotateMatrixDeviceId } from "@cop/messaging/runtime";
 import {
   enableWebPushNotifications,
   fetchWebPushConfig,
@@ -123,6 +123,9 @@ import {
   decodeChatCurrentLocation,
   decodeChatShareTransit,
   decodeCopMapFocusSearch,
+  type ChatSummaryMessage,
+  type ChatSummarySyncState,
+  type ChatSummaryUnreadRoom,
   encodeChatCenterLocation,
   encodeCopMapFocusUrl
 } from "@cop/messaging/bridge";
@@ -358,6 +361,124 @@ const emptyChatPreferences: ChatPreferences = {
   pinnedKeys: [],
   readOverrideByKey: {}
 };
+
+export function shouldPublishChatUnreadBridgeSnapshot({
+  authTokenAvailable,
+  chatAvailable,
+  matrixSessionActive
+}: {
+  authTokenAvailable: boolean;
+  chatAvailable?: boolean;
+  matrixSessionActive: boolean;
+}): boolean {
+  if (!authTokenAvailable) {
+    return true;
+  }
+  if (chatAvailable === false) {
+    return true;
+  }
+  return chatAvailable === true && matrixSessionActive;
+}
+
+export function chatSummarySnapshotFromItems(
+  items: ChatListItem[],
+  state: {
+    authTokenAvailable: boolean;
+    chatAvailable?: boolean;
+    matrixLoading: boolean;
+    matrixSessionActive: boolean;
+    matrixSessionLifecycle: string;
+  }
+): Omit<ChatSummaryMessage, "at" | "type"> {
+  const unreadRooms = items.flatMap((item) => {
+    const room = chatSummaryUnreadRoomFromItem(item);
+    return room ? [room] : [];
+  });
+  return {
+    syncState: chatSummarySyncState(state),
+    totalUnread: items.reduce((count, item) => count + (!item.muted ? item.unreadCount : 0), 0),
+    unreadRooms
+  };
+}
+
+export function canMarkActiveChatRead({
+  item,
+  selectedRoomId,
+  timeline
+}: {
+  item: ChatListItem | null;
+  selectedRoomId: string | null;
+  timeline: MatrixTimelineMessage[];
+}): boolean {
+  if (!item || !selectedRoomId) {
+    return false;
+  }
+  if (item.roomId && item.roomId !== selectedRoomId) {
+    return false;
+  }
+  if (!item.latest?.eventId) {
+    return true;
+  }
+  return timeline.some((message) => message.eventId === item.latest?.eventId);
+}
+
+function chatSummarySyncState({
+  authTokenAvailable,
+  chatAvailable,
+  matrixLoading,
+  matrixSessionActive,
+  matrixSessionLifecycle
+}: {
+  authTokenAvailable: boolean;
+  chatAvailable?: boolean;
+  matrixLoading: boolean;
+  matrixSessionActive: boolean;
+  matrixSessionLifecycle: string;
+}): ChatSummarySyncState {
+  if (!authTokenAvailable) {
+    return "offline";
+  }
+  if (chatAvailable === false) {
+    return "unavailable";
+  }
+  if (matrixSessionActive && !matrixLoading && matrixSessionLifecycle === "ready") {
+    return "ready";
+  }
+  return "syncing";
+}
+
+function chatSummaryUnreadRoomFromItem(item: ChatListItem): ChatSummaryUnreadRoom | null {
+  if (item.muted || item.unreadCount <= 0) {
+    return null;
+  }
+  const selection = chatSummarySelectionForItem(item);
+  if (!selection) {
+    return null;
+  }
+  return {
+    ...(item.roomId ? { roomId: item.roomId } : {}),
+    preview: item.preview,
+    selection,
+    ...(item.timestamp ? { timestamp: item.timestamp } : {}),
+    title: item.title,
+    type: item.type,
+    unreadCount: item.unreadCount
+  };
+}
+
+function chatSummarySelectionForItem(item: ChatListItem): string | null {
+  if (item.roomId) {
+    return item.roomId;
+  }
+  if (item.conversation?.conversationId) {
+    return item.conversation.conversationId;
+  }
+  if (item.group?.groupId) {
+    return item.group.groupId;
+  }
+  const prefixed = /^(room|conversation|group):(.+)$/u.exec(item.id);
+  return prefixed?.[2] ?? null;
+}
 
 // Memoized row components: re-render only when their own props change. Combined
 // with the stable handlers above, a parent state update (e.g. typing elsewhere)
@@ -1367,6 +1488,9 @@ export function ChatApp() {
     if (activeChat.unreadCount === 0 && !activeChat.manuallyUnread) {
       return;
     }
+    if (!canMarkActiveChatRead({ item: activeChat, selectedRoomId, timeline: timelineMessages })) {
+      return;
+    }
     markChatRead(activeChat);
     void matrixSession.markRoomRead(selectedRoomId);
   }, [
@@ -1375,12 +1499,28 @@ export function ChatApp() {
     activeChat?.preferenceKey,
     activeChat?.unreadCount,
     matrixSession,
-    selectedRoomId
+    selectedRoomId,
+    timelineMessages
   ]);
 
   React.useEffect(() => {
-    publishChatUnreadCount(totalUnreadCount);
-  }, [totalUnreadCount]);
+    if (
+      !shouldPublishChatUnreadBridgeSnapshot({
+        authTokenAvailable: Boolean(authToken),
+        chatAvailable: status?.chatAvailable,
+        matrixSessionActive: Boolean(matrixSession)
+      })
+    ) {
+      return;
+    }
+    publishChatSummarySnapshot(chatSummarySnapshotFromItems(chatItems, {
+      authTokenAvailable: Boolean(authToken),
+      chatAvailable: status?.chatAvailable,
+      matrixLoading,
+      matrixSessionActive: Boolean(matrixSession),
+      matrixSessionLifecycle
+    }));
+  }, [authToken, chatItems, matrixLoading, matrixSession, matrixSessionLifecycle, status?.chatAvailable, totalUnreadCount]);
 
   React.useEffect(() => {
     if (!authToken || composeMode !== "direct" || directQuery.trim().length < 2) {
@@ -6095,7 +6235,7 @@ export function buildChatItems({
       muted: false,
       pinned: false,
       preferenceKey: chatPreferenceKeyForConversation(conversation, group ?? undefined),
-      preview: latest ? latestMessagePreview(latest) : roomId ? "Nový chat" : "Klepnutím otevřít chat",
+      preview: latest ? chatListMessagePreview(latest, conversation.type) : roomId ? "Nový chat" : "Klepnutím otevřít chat",
       ...(room ? { room } : {}),
       roomId,
       searchable: `${title} ${conversation.title} ${group?.name ?? ""} ${conversation.members?.map((member) => member.displayName ?? member.userId).join(" ") ?? ""}`,
@@ -6155,7 +6295,7 @@ export function buildChatItems({
       pinned: false,
       preferenceKey: chatPreferenceKeyForGroup(group),
       preview: metadataLatest
-        ? latestMessagePreview(metadataLatest)
+        ? chatListMessagePreview(metadataLatest, "group")
         : metadataRoomId
           ? "Nový chat"
           : "Klepnutím otevřít chat",
@@ -6188,7 +6328,7 @@ export function buildChatItems({
           ...current,
           active: current.active || selectedRoomId === room.roomId,
           latest: current.latest ?? latest,
-          preview: latest ? latestMessagePreview(latest) : current.preview,
+          preview: latest ? chatListMessagePreview(latest, current.type) : current.preview,
           room,
           roomId: room.roomId,
           sortAt: Math.max(current.sortAt, timestampMillis(latest?.timestamp)),
@@ -6212,7 +6352,7 @@ export function buildChatItems({
       muted: false,
       pinned: false,
       preferenceKey: chatPreferenceKeyForRoom(room.roomId),
-      preview: latest ? latestMessagePreview(latest) : "Nový chat",
+      preview: latest ? chatListMessagePreview(latest, room.directPeer ? "direct" : "room") : "Nový chat",
       room,
       roomId: room.roomId,
       searchable: `${roomTitle} ${room.name}`,
@@ -7634,6 +7774,18 @@ function latestMessagePreview(message: MatrixTimelineMessage): string {
     return body && body !== message.attachment.fileName ? body : message.attachment.fileName;
   }
   return message.own ? `Vy: ${body}` : body;
+}
+
+export function chatListMessagePreview(message: MatrixTimelineMessage, chatType: ChatListItem["type"]): string {
+  const preview = latestMessagePreview(message);
+  if (message.own || chatType === "direct") {
+    return preview;
+  }
+  const sender = message.senderDisplayName?.trim();
+  if (!sender || preview.startsWith(`${sender}:`)) {
+    return preview;
+  }
+  return `${sender}: ${preview}`;
 }
 
 function attachmentIndicator(message: MatrixTimelineMessage): React.ReactNode {

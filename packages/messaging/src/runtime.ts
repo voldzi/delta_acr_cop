@@ -1,5 +1,13 @@
 import type { MessagingBootstrapResponse } from "./types.js";
-import { chatBridgeChannelName, chatUnreadStorageKey, decodeChatUnread, encodeChatUnread } from "./bridge.js";
+import {
+  chatBridgeChannelName,
+  chatUnreadStorageKey,
+  decodeChatSummary,
+  decodeChatUnread,
+  encodeChatSummary,
+  encodeChatUnread,
+  type ChatSummaryMessage
+} from "./bridge.js";
 
 const matrixDeviceIdStoragePrefix = "cop.messaging.matrixDeviceId.v2";
 const fallbackMatrixDeviceIds = new Map<string, string>();
@@ -34,6 +42,19 @@ export function rotateMatrixDeviceId(ownerId: string): string {
 
 export function publishChatUnreadCount(count: number): void {
   const payload = encodeChatUnread(count);
+  publishChatBridgePayload(payload);
+}
+
+export function publishChatSummarySnapshot(input: {
+  syncState: ChatSummaryMessage["syncState"];
+  totalUnread: number;
+  unreadRooms?: ChatSummaryMessage["unreadRooms"];
+}): void {
+  const payload = encodeChatSummary(input);
+  publishChatBridgePayload(payload);
+}
+
+function publishChatBridgePayload(payload: ChatSummaryMessage | ReturnType<typeof encodeChatUnread>): void {
   if (window.parent !== window) {
     window.parent.postMessage(payload, window.location.origin);
   }
@@ -62,16 +83,42 @@ export function applyChatUnreadPayload(value: unknown, onCount: (count: number) 
   return true;
 }
 
+export function applyChatSummaryPayload(
+  value: unknown,
+  onSummary: (summary: ChatSummaryMessage) => void
+): boolean {
+  const summary = decodeChatSummary(value);
+  if (!summary) {
+    return false;
+  }
+  onSummary(summary);
+  return true;
+}
+
 export function readStoredChatUnreadCount(): number | null {
   try {
     const stored = window.localStorage.getItem(chatUnreadStorageKey);
     let count: number | null = null;
     if (stored) {
-      applyChatUnreadPayload(JSON.parse(stored) as unknown, (nextCount) => {
+      const parsed = JSON.parse(stored) as unknown;
+      const summary = decodeChatSummary(parsed);
+      if (summary) {
+        return summary.totalUnread;
+      }
+      applyChatUnreadPayload(parsed, (nextCount) => {
         count = nextCount;
       });
     }
     return count;
+  } catch {
+    return null;
+  }
+}
+
+export function readStoredChatSummarySnapshot(): ChatSummaryMessage | null {
+  try {
+    const stored = window.localStorage.getItem(chatUnreadStorageKey);
+    return stored ? decodeChatSummary(JSON.parse(stored) as unknown) : null;
   } catch {
     return null;
   }

@@ -1,5 +1,5 @@
 import React from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { ChatApp } from "./ChatApp";
 import "./styles.css";
 
@@ -36,9 +36,12 @@ class ChatErrorBoundary extends React.Component<{ children: React.ReactNode }, C
 }
 
 const rootElement = document.getElementById("root");
+const rootWindow = window as Window & { __copChatRoot?: Root };
 
 if (rootElement) {
-  createRoot(rootElement).render(
+  const root = rootWindow.__copChatRoot ?? createRoot(rootElement);
+  rootWindow.__copChatRoot = root;
+  root.render(
     <React.StrictMode>
       <ChatErrorBoundary>
         <ChatApp />

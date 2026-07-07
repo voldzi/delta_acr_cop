@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyChatUnreadPayload, publishChatUnreadCount, readStoredChatUnreadCount } from "./runtime.js";
+import {
+  applyChatSummaryPayload,
+  applyChatUnreadPayload,
+  publishChatSummarySnapshot,
+  publishChatUnreadCount,
+  readStoredChatSummarySnapshot,
+  readStoredChatUnreadCount
+} from "./runtime.js";
 
 // Unread-badge bridge contract (chat → web: cop-chat:unread). cop-web's shell badge
 // in the Komunikace menu depends on this exact payload shape and storage key.
@@ -56,6 +63,23 @@ describe("publishChatUnreadCount", () => {
   });
 });
 
+describe("publishChatSummarySnapshot", () => {
+  it("persists a cop-chat:summary payload and keeps unread count readable", () => {
+    publishChatSummarySnapshot({
+      syncState: "ready",
+      totalUnread: 3,
+      unreadRooms: [{ selection: "!ops", title: "Ops", unreadCount: 3 }]
+    });
+    const raw = window.localStorage.getItem(unreadStorageKey);
+    expect(raw).toBeTruthy();
+    const payload = JSON.parse(raw as string) as { totalUnread: number; type: string };
+    expect(payload.type).toBe("cop-chat:summary");
+    expect(payload.totalUnread).toBe(3);
+    expect(readStoredChatUnreadCount()).toBe(3);
+    expect(readStoredChatSummarySnapshot()?.unreadRooms).toEqual([{ selection: "!ops", title: "Ops", unreadCount: 3 }]);
+  });
+});
+
 describe("applyChatUnreadPayload", () => {
   it("accepts a valid payload and reports the clamped count", () => {
     const onCount = vi.fn();
@@ -69,6 +93,36 @@ describe("applyChatUnreadPayload", () => {
     expect(applyChatUnreadPayload({ count: "4", type: "cop-chat:unread" }, onCount)).toBe(false);
     expect(applyChatUnreadPayload(null, onCount)).toBe(false);
     expect(onCount).not.toHaveBeenCalled();
+  });
+});
+
+describe("applyChatSummaryPayload", () => {
+  it("accepts a valid summary payload", () => {
+    const onSummary = vi.fn();
+    expect(
+      applyChatSummaryPayload(
+        {
+          syncState: "ready",
+          totalUnread: 2,
+          type: "cop-chat:summary",
+          unreadRooms: [{ selection: "!ops", title: "Ops", unreadCount: 2 }]
+        },
+        onSummary
+      )
+    ).toBe(true);
+    expect(onSummary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        syncState: "ready",
+        totalUnread: 2,
+        unreadRooms: [{ selection: "!ops", title: "Ops", unreadCount: 2 }]
+      })
+    );
+  });
+
+  it("rejects malformed summaries", () => {
+    const onSummary = vi.fn();
+    expect(applyChatSummaryPayload({ totalUnread: 2, type: "other" }, onSummary)).toBe(false);
+    expect(onSummary).not.toHaveBeenCalled();
   });
 });
 

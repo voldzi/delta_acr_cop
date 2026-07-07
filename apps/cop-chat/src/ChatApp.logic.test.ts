@@ -4,9 +4,13 @@ import {
   aiMatrixBotInvitePlan,
   applyChatPreferences,
   buildChatItems,
+  canMarkActiveChatRead,
+  chatListMessagePreview,
+  chatSummarySnapshotFromItems,
   chatPreferenceSnapshot,
   dedupeChatItems,
   isAiAgentChatItem,
+  shouldPublishChatUnreadBridgeSnapshot,
   userFacingError
 } from "./ChatApp";
 import {
@@ -210,6 +214,156 @@ describe("applyChatPreferences", () => {
     const revived = chatItem({ preferenceKey: "a", latest: message({ eventId: "$newer" }), unreadCount: 0 });
     const shown = applyChatPreferences([revived], { ...emptyPreferences(), hiddenByKey: { a: snapshot } });
     expect(shown).toHaveLength(1);
+  });
+});
+
+describe("shouldPublishChatUnreadBridgeSnapshot", () => {
+  it("waits for a Matrix session before publishing an authenticated unread snapshot", () => {
+    expect(
+      shouldPublishChatUnreadBridgeSnapshot({
+        authTokenAvailable: true,
+        chatAvailable: undefined,
+        matrixSessionActive: false
+      })
+    ).toBe(false);
+    expect(
+      shouldPublishChatUnreadBridgeSnapshot({
+        authTokenAvailable: true,
+        chatAvailable: true,
+        matrixSessionActive: false
+      })
+    ).toBe(false);
+    expect(
+      shouldPublishChatUnreadBridgeSnapshot({
+        authTokenAvailable: true,
+        chatAvailable: true,
+        matrixSessionActive: true
+      })
+    ).toBe(true);
+  });
+
+  it("allows clearing stale bridge state when auth or chat availability is gone", () => {
+    expect(
+      shouldPublishChatUnreadBridgeSnapshot({
+        authTokenAvailable: false,
+        chatAvailable: undefined,
+        matrixSessionActive: false
+      })
+    ).toBe(true);
+    expect(
+      shouldPublishChatUnreadBridgeSnapshot({
+        authTokenAvailable: true,
+        chatAvailable: false,
+        matrixSessionActive: false
+      })
+    ).toBe(true);
+  });
+});
+
+describe("chatSummarySnapshotFromItems", () => {
+  it("summarizes visible unread rooms for the host shell", () => {
+    const items = [
+      chatItem({
+        id: "room:!ops",
+        preview: "Potřebujeme čerpadlo",
+        roomId: "!ops",
+        timestamp: "13:40",
+        title: "Povodeň",
+        type: "group",
+        unreadCount: 2
+      }),
+      chatItem({ id: "room:!muted", muted: true, roomId: "!muted", title: "Ztlumeno", unreadCount: 8 }),
+      chatItem({ id: "room:!read", roomId: "!read", title: "Přečteno", unreadCount: 0 })
+    ];
+
+    expect(
+      chatSummarySnapshotFromItems(items, {
+        authTokenAvailable: true,
+        chatAvailable: true,
+        matrixLoading: false,
+        matrixSessionActive: true,
+        matrixSessionLifecycle: "ready"
+      })
+    ).toEqual({
+      syncState: "ready",
+      totalUnread: 2,
+      unreadRooms: [
+        {
+          preview: "Potřebujeme čerpadlo",
+          roomId: "!ops",
+          selection: "!ops",
+          timestamp: "13:40",
+          title: "Povodeň",
+          type: "group",
+          unreadCount: 2
+        }
+      ]
+    });
+  });
+
+  it("keeps the host in syncing state until Matrix is ready", () => {
+    expect(
+      chatSummarySnapshotFromItems([], {
+        authTokenAvailable: true,
+        chatAvailable: true,
+        matrixLoading: true,
+        matrixSessionActive: true,
+        matrixSessionLifecycle: "starting"
+      }).syncState
+    ).toBe("syncing");
+  });
+});
+
+describe("chatListMessagePreview", () => {
+  it("adds sender context for group and room previews", () => {
+    const latest = message({ body: "Přivezte vodu", senderDisplayName: "Jana" });
+
+    expect(chatListMessagePreview(latest, "group")).toBe("Jana: Přivezte vodu");
+    expect(chatListMessagePreview(latest, "room")).toBe("Jana: Přivezte vodu");
+  });
+
+  it("keeps direct and own-message previews compact", () => {
+    expect(chatListMessagePreview(message({ body: "Ahoj", senderDisplayName: "Jana" }), "direct")).toBe("Ahoj");
+    expect(chatListMessagePreview(message({ body: "Jedu", own: true, senderDisplayName: "Já" }), "group")).toBe(
+      "Vy: Jedu"
+    );
+  });
+});
+
+describe("canMarkActiveChatRead", () => {
+  it("waits until the latest unread event is present in the visible timeline", () => {
+    const latest = message({ eventId: "$latest" });
+    const item = chatItem({
+      latest,
+      roomId: "!ops",
+      unreadCount: 2
+    });
+
+    expect(canMarkActiveChatRead({ item, selectedRoomId: "!ops", timeline: [] })).toBe(false);
+    expect(
+      canMarkActiveChatRead({
+        item,
+        selectedRoomId: "!ops",
+        timeline: [message({ eventId: "$older" })]
+      })
+    ).toBe(false);
+    expect(
+      canMarkActiveChatRead({
+        item,
+        selectedRoomId: "!ops",
+        timeline: [message({ eventId: "$older" }), latest]
+      })
+    ).toBe(true);
+  });
+
+  it("does not mark a different selected Matrix room as read", () => {
+    expect(
+      canMarkActiveChatRead({
+        item: chatItem({ latest: message({ eventId: "$latest" }), roomId: "!other", unreadCount: 1 }),
+        selectedRoomId: "!selected",
+        timeline: [message({ eventId: "$latest" })]
+      })
+    ).toBe(false);
   });
 });
 
@@ -443,5 +597,39 @@ describe("buildChatItems", () => {
     expect(item?.latest?.eventId).toBe("$latest");
     expect(item?.preview).toContain("Poslední zpráva");
     expect(item?.preferenceKey).toBeTruthy();
+  });
+
+  it("shows the sender in a group chat row preview", () => {
+    const conversation = {
+      conversationId: "c-group",
+      matrix: { roomId: "!group:example.cz" },
+      memberCount: 3,
+      members: [],
+      title: "Povodeň",
+      type: "group",
+      updatedAt: "2026-06-26T07:00:00.000Z"
+    } as unknown as MessagingConversationSummary;
+    const latest = message({
+      body: "Potřebujeme čerpadlo",
+      eventId: "$latest-group",
+      senderDisplayName: "Jana",
+      timestamp: "2026-06-26T08:30:00.000Z"
+    });
+    const room = { roomId: "!group:example.cz", unreadCount: 1, latestMessage: latest } as unknown as MatrixRoomSummary;
+
+    const items = buildChatItems({
+      authSubjectId: "@me:example.cz",
+      conversations: [conversation],
+      filter: "all",
+      groups: [],
+      ownIdentityIds: new Set<string>(),
+      query: "",
+      rooms: [room],
+      selectedConversationId: null,
+      selectedGroupId: null,
+      selectedRoomId: null
+    });
+
+    expect(items[0]?.preview).toBe("Jana: Potřebujeme čerpadlo");
   });
 });

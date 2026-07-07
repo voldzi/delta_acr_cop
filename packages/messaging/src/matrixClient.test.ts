@@ -15,9 +15,11 @@ type MockMatrixClient = {
   off?: MatrixEventSubscription;
   on?: MatrixEventSubscription;
   redactEvent?: MatrixRedactEvent;
+  sendReadReceipt?: MatrixSendReadReceipt;
   sendEvent?: MatrixSendEvent;
   sendMessage?: MatrixSendMessage;
   sendStateEvent?: MatrixSendStateEvent;
+  setRoomReadMarkers?: MatrixSetRoomReadMarkers;
   setAvatarUrl?: (mxcUrl: string) => Promise<unknown>;
   setDisplayName?: (displayName: string) => Promise<unknown>;
   setPusher?: (pusher: Record<string, unknown>) => Promise<unknown>;
@@ -78,6 +80,8 @@ type MatrixRedactEvent = (
 type MatrixLeaveRoom = (roomId: string) => Promise<unknown>;
 type MatrixScrollback = (room: unknown, limit?: number) => Promise<unknown>;
 type MatrixEventSubscription = (event: string, listener: (...args: unknown[]) => void) => void;
+type MatrixSendReadReceipt = (event: unknown, receiptType?: string) => Promise<unknown>;
+type MatrixSetRoomReadMarkers = (roomId: string, readMarkerEventId: string, readReceiptEvent?: unknown) => Promise<unknown>;
 type MatrixMxcUrlToHttp = (
   mxcUrl: string,
   width?: number,
@@ -370,6 +374,37 @@ describe("Matrix client diagnostics", () => {
 
     expect(session.getRooms()[0]?.messageRetentionSeconds).toBe(86_400);
     expect(session.getTimeline("!chat:cop.local").map((message) => message.body)).toEqual(["recent"]);
+  });
+
+  it("optimistically clears room unread count after a read marker and restores it for a newer message", async () => {
+    let unreadCount = 2;
+    const older = createMessageEvent("older", Date.parse("2026-06-24T10:59:00.000Z"), "$older", "@peer:cop.local");
+    const latest = createMessageEvent("latest", Date.parse("2026-06-24T11:00:00.000Z"), "$latest", "@peer:cop.local");
+    const newer = createMessageEvent("newer", Date.parse("2026-06-24T11:01:00.000Z"), "$newer", "@peer:cop.local");
+    const timeline = [older, latest];
+    const sendReadReceipt = vi.fn<MatrixSendReadReceipt>().mockResolvedValue(undefined);
+    const setRoomReadMarkers = vi.fn<MatrixSetRoomReadMarkers>().mockResolvedValue(undefined);
+    const onRoomsChanged = vi.fn();
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [createRoom({ roomId: "!chat:cop.local", timeline, unreadCount: () => unreadCount })],
+        sendReadReceipt,
+        setRoomReadMarkers
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap(), { onRoomsChanged });
+
+    expect(session.getRooms()[0]?.unreadCount).toBe(2);
+    await session.markRoomRead("!chat:cop.local");
+    expect(sendReadReceipt).toHaveBeenCalledWith(latest);
+    expect(setRoomReadMarkers).toHaveBeenCalledWith("!chat:cop.local", "$latest", latest);
+    expect(session.getRooms()[0]?.unreadCount).toBe(0);
+    expect(onRoomsChanged.mock.calls.at(-1)?.[0]?.[0]?.unreadCount).toBe(0);
+
+    unreadCount = 1;
+    timeline.push(newer);
+    expect(session.getRooms()[0]?.unreadCount).toBe(1);
   });
 
   it("keeps an empty initial scrollback retryable while Matrix sync warms the timeline", async () => {
@@ -1246,9 +1281,11 @@ function createMockMatrixClient({
   off,
   on,
   rooms,
+  sendReadReceipt,
   sendEvent = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined),
   sendMessage = vi.fn<MatrixSendMessage>().mockResolvedValue(undefined),
   sendStateEvent = vi.fn<MatrixSendStateEvent>().mockResolvedValue(undefined),
+  setRoomReadMarkers,
   setAvatarUrl,
   setDisplayName,
   setPusher,
@@ -1264,9 +1301,11 @@ function createMockMatrixClient({
   on?: MockMatrixClient["on"];
   redactEvent?: MockMatrixClient["redactEvent"];
   rooms: unknown[];
+  sendReadReceipt?: MockMatrixClient["sendReadReceipt"];
   sendEvent?: MockMatrixClient["sendEvent"];
   sendMessage?: MockMatrixClient["sendMessage"];
   sendStateEvent?: MockMatrixClient["sendStateEvent"];
+  setRoomReadMarkers?: MockMatrixClient["setRoomReadMarkers"];
   setAvatarUrl?: MockMatrixClient["setAvatarUrl"];
   setDisplayName?: MockMatrixClient["setDisplayName"];
   setPusher?: MockMatrixClient["setPusher"];
@@ -1286,9 +1325,11 @@ function createMockMatrixClient({
     ...(off ? { off } : {}),
     ...(on ? { on } : {}),
     redactEvent,
+    ...(sendReadReceipt ? { sendReadReceipt } : {}),
     sendEvent,
     sendMessage,
     sendStateEvent,
+    ...(setRoomReadMarkers ? { setRoomReadMarkers } : {}),
     ...(setAvatarUrl ? { setAvatarUrl } : {}),
     ...(setDisplayName ? { setDisplayName } : {}),
     ...(setPusher ? { setPusher } : {}),
@@ -1303,13 +1344,15 @@ function createRoom({
   paginationToken,
   retentionSeconds,
   roomId,
-  timeline = []
+  timeline = [],
+  unreadCount = 0
 }: {
   members?: Array<{ avatarUrl?: string; displayName?: string; userId: string }>;
   paginationToken?: string | null;
   retentionSeconds?: number;
   roomId: string;
   timeline?: unknown[];
+  unreadCount?: number | (() => number);
 }) {
   return {
     currentState: {
@@ -1323,7 +1366,7 @@ function createRoom({
     },
     ...(members ? { getJoinedMembers: () => members } : {}),
     getMyMembership: () => "join",
-    getUnreadNotificationCount: () => 0,
+    getUnreadNotificationCount: () => (typeof unreadCount === "function" ? unreadCount() : unreadCount),
     name: "Test Chat",
     ...(paginationToken !== undefined ? { oldState: { paginationToken } } : {}),
     roomId,

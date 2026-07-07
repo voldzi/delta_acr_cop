@@ -248,6 +248,7 @@ export async function createMatrixMessagingSession(
   let joinedRoomIds: Set<string> | null = canReadServerJoinedRooms ? new Set() : null;
   let presenceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   const roomPresenceByUserId = new Map<string, MatrixUserPresenceLike & { fetchedAt: number }>();
+  const readOverrideByRoomId = new Map<string, string>();
   const refreshJoinedRoomIds = async () => {
     joinedRoomIds = await readServerJoinedRoomIds(client, homeserverBaseUrl, bootstrap.accessToken, joinedRoomIds);
   };
@@ -256,7 +257,8 @@ export async function createMatrixMessagingSession(
       allowedRoomIds: joinedRoomIds,
       homeserverBaseUrl,
       ownUserId: bootstrap.userId,
-      presenceByUserId: roomPresenceByUserId
+      presenceByUserId: roomPresenceByUserId,
+      readOverrideByRoomId
     });
   const publishRooms = () => {
     callbacks.onRoomsChanged?.(readVisibleRooms());
@@ -553,7 +555,10 @@ export async function createMatrixMessagingSession(
         if (typeof client.setRoomReadMarkers === "function") {
           operations.push(client.setRoomReadMarkers(roomId, latestEventId, latestEvent));
         }
-        await Promise.allSettled(operations);
+        const results = await Promise.allSettled(operations);
+        if (results.some((result) => result.status === "fulfilled")) {
+          readOverrideByRoomId.set(roomId, latestEventId);
+        }
         publishRooms();
       } catch {
         // Read receipts are a best-effort UX signal. Message delivery must not fail because of them.
@@ -1843,6 +1848,7 @@ function readRooms(
     homeserverBaseUrl?: string;
     ownUserId?: string;
     presenceByUserId?: Map<string, MatrixUserPresenceLike & { fetchedAt: number }>;
+    readOverrideByRoomId?: Map<string, string>;
   } = {}
 ): MatrixRoomSummary[] {
   const currentUserId = client.getUserId?.() ?? undefined;
@@ -1866,6 +1872,7 @@ function readRooms(
       const latestMessage = options.homeserverBaseUrl
         ? readRoomLatestMessage(client, room, options.homeserverBaseUrl, currentUserId)
         : undefined;
+      const unreadCount = roomUnreadCount(room, latestMessage, options.readOverrideByRoomId);
       return {
         ...(avatarUrl ? { avatarUrl } : {}),
         ...(directPeer ? { directPeer } : {}),
@@ -1875,10 +1882,27 @@ function readRooms(
         name: room.name?.trim() || room.roomId,
         ...(presence ? { presence } : {}),
         roomId: room.roomId,
-        unreadCount: Math.max(0, room.getUnreadNotificationCount?.() ?? 0)
+        unreadCount
       };
     })
     .sort((left, right) => left.name.localeCompare(right.name, "cs"));
+}
+
+function roomUnreadCount(
+  room: MatrixRoomLike & { roomId: string },
+  latestMessage: MatrixTimelineMessage | undefined,
+  readOverrideByRoomId: Map<string, string> | undefined
+): number {
+  const sdkUnreadCount = Math.max(0, room.getUnreadNotificationCount?.() ?? 0);
+  const readOverrideEventId = readOverrideByRoomId?.get(room.roomId);
+  if (!readOverrideEventId) {
+    return sdkUnreadCount;
+  }
+  if (latestMessage?.eventId === readOverrideEventId) {
+    return 0;
+  }
+  readOverrideByRoomId?.delete(room.roomId);
+  return sdkUnreadCount;
 }
 
 function readRoomPresence(

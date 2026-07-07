@@ -378,6 +378,32 @@ using `/chat/?embedded=1`. Embedded mode removes the standalone chat app rail
 and uses a narrow-panel list/conversation flow, so the map shell keeps one main
 navigation rail instead of nested left/right chat menus.
 
+After an authenticated web session has a usable COP token, the map shell mounts
+the embedded chat iframe even while the panel is hidden. This lets the Matrix SDK
+bootstrap, decrypt room summaries and publish the same unread count that the chat
+list uses before the user opens the panel. The shell treats the embedded chat
+runtime as the badge authority and must not run an independent Matrix unread
+poller in parallel. The chat runtime publishes a bridge unread count only after
+Matrix room state is available, or when auth/chat availability is gone and stale
+badge state must be cleared.
+The bridge keeps the legacy `cop-chat:unread` message for compatibility, but the
+preferred runtime payload is `cop-chat:summary`: `totalUnread`, `syncState` and a
+small list of unread rooms with `selection`, `title`, `preview`, timestamp and
+per-room count. COP web uses this summary to route a Chat tap directly to the
+most relevant unread room while keeping the navigation badge and chat list on the
+same source of truth. A stored summary is only a short startup hint; if it is
+older than ten minutes, not in `ready` sync state or only available as the
+legacy numeric payload, COP web waits for the embedded chat runtime instead of
+showing a stale unread badge from a previous session.
+When an unread room is opened from the shell, COP Chat keeps the unread state
+until the latest unread Matrix event is present in the visible timeline; it then
+marks the room as read locally and sends the Matrix read marker. This prevents a
+room from appearing read before the user can see the message that caused the
+badge.
+Group chat rows include the sender label in the one-line preview, while direct
+chat rows keep the preview compact. This keeps the badge target and the visible
+list row understandable without opening every group conversation.
+
 The panel can be opened for quick checks or pinned as a right-side dock next to
 the map. In pinned mode the map shell reserves space for the panel and the user
 can resize the chat width. Width preferences are browser-local UI state and do

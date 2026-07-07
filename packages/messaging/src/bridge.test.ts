@@ -9,12 +9,14 @@ import {
   decodeChatCurrentLocation,
   decodeChatSelect,
   decodeChatShareTransit,
+  decodeChatSummary,
   decodeChatUnread,
   encodeCopMapFocusUrl,
   encodeChatCenterLocation,
   encodeChatCurrentLocation,
   encodeChatSelect,
   encodeChatShareTransit,
+  encodeChatSummary,
   encodeChatUnread
 } from "./bridge.js";
 
@@ -28,6 +30,7 @@ describe("contract constants", () => {
       currentLocation: "cop-chat:current-location",
       select: "cop-chat:select",
       shareTransit: "cop-chat:share-transit",
+      summary: "cop-chat:summary",
       unread: "cop-chat:unread"
     });
     expect(chatBridgeChannelName).toBe("cop-chat");
@@ -118,6 +121,55 @@ describe("unread (chat -> web)", () => {
     expect(decodeChatUnread({ count: "4", type: "cop-chat:unread" })).toBeNull();
     expect(decodeChatUnread({ count: 4, type: "other" })).toBeNull();
     expect(decodeChatUnread(null)).toBeNull();
+  });
+});
+
+describe("summary (chat -> web)", () => {
+  it("encodes a compact unread-room snapshot", () => {
+    const payload = encodeChatSummary({
+      syncState: "ready",
+      totalUnread: 2.9,
+      unreadRooms: [
+        {
+          preview: "  Poslední zpráva  ",
+          roomId: "!ops:example.cz",
+          selection: " !ops:example.cz ",
+          timestamp: "13:40",
+          title: " Povodeň ",
+          type: "group",
+          unreadCount: 2.9
+        }
+      ]
+    });
+    expect(payload.type).toBe("cop-chat:summary");
+    expect(payload.totalUnread).toBe(2);
+    expect(payload.unreadRooms).toEqual([
+      {
+        preview: "Poslední zpráva",
+        roomId: "!ops:example.cz",
+        selection: "!ops:example.cz",
+        timestamp: "13:40",
+        title: "Povodeň",
+        type: "group",
+        unreadCount: 2
+      }
+    ]);
+    expect(decodeChatSummary(payload)).toMatchObject({
+      syncState: "ready",
+      totalUnread: 2,
+      type: "cop-chat:summary"
+    });
+  });
+
+  it("rejects foreign summaries and drops malformed rooms", () => {
+    expect(decodeChatSummary({ totalUnread: 2, type: "other" })).toBeNull();
+    expect(
+      decodeChatSummary({
+        totalUnread: 1,
+        type: "cop-chat:summary",
+        unreadRooms: [{ selection: "x", title: "", unreadCount: 1 }, { selection: "y", title: "Y", unreadCount: 1 }]
+      })?.unreadRooms
+    ).toEqual([{ selection: "y", title: "Y", unreadCount: 1 }]);
   });
 });
 

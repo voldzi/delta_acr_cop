@@ -3,13 +3,16 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { encodeChatCenterLocation } from "@cop/messaging/bridge";
+import { encodeChatCenterLocation, encodeChatSelect, encodeChatSummary } from "@cop/messaging/bridge";
 import {
   App,
   buildPriorityAlertSummary,
   buildSituationMapRequestGroups,
   buildStableSituationQueryBounds,
+  firstUnreadChatSummaryRoom,
   formatWeatherStationAttribution,
+  hostUnreadCountFromChatSummary,
+  hostUsableChatSummary,
   mapBoundsContainedBy
 } from "./main";
 import { writeCopOfflineSnapshot } from "./pwa-offline";
@@ -134,6 +137,7 @@ vi.mock("./CopMap", async () => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   window.history.replaceState(null, "", "/");
   if (typeof window.localStorage?.clear === "function") {
     window.localStorage.clear();
@@ -150,6 +154,45 @@ afterEach(() => {
 });
 
 describe("COP web dashboard", () => {
+  it("chooses the strongest unread chat room from a summary snapshot", () => {
+    expect(
+      firstUnreadChatSummaryRoom({
+        at: Date.now(),
+        syncState: "ready",
+        totalUnread: 4,
+        type: "cop-chat:summary",
+        unreadRooms: [
+          { selection: "!low", title: "Low", unreadCount: 1 },
+          { selection: "!high", title: "High", unreadCount: 3 },
+          { selection: " ", title: "Invalid", unreadCount: 10 }
+        ]
+      })?.selection
+    ).toBe("!high");
+    expect(firstUnreadChatSummaryRoom(null)).toBeNull();
+  });
+
+  it("ignores stale or unready chat summaries for the host badge", () => {
+    const now = Date.parse("2026-07-07T12:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(now));
+    const freshSummary = {
+      at: now,
+      syncState: "ready" as const,
+      totalUnread: 2,
+      type: "cop-chat:summary" as const,
+      unreadRooms: [{ selection: "!ops", title: "Ops", unreadCount: 2 }]
+    };
+    const staleSummary = { ...freshSummary, at: now - 11 * 60 * 1000 };
+    const syncingSummary = { ...freshSummary, syncState: "syncing" as const };
+
+    expect(hostUsableChatSummary(freshSummary, now)).toEqual(freshSummary);
+    expect(hostUnreadCountFromChatSummary(hostUsableChatSummary(freshSummary, now))).toBe(2);
+    expect(hostUsableChatSummary(staleSummary, now)).toBeNull();
+    expect(hostUnreadCountFromChatSummary(hostUsableChatSummary(staleSummary, now))).toBe(0);
+    expect(hostUsableChatSummary(syncingSummary, now)).toBeNull();
+    expect(firstUnreadChatSummaryRoom(staleSummary)).toBeNull();
+  });
+
   it("formats structured weather station attribution from SIM without rendering objects", () => {
     expect(
       formatWeatherStationAttribution([
@@ -1096,18 +1139,56 @@ describe("COP web dashboard", () => {
 
     render(<App />);
     await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
+    await waitFor(() => expect(document.querySelector("iframe.embedded-chat-frame")).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: "Komunikace" }));
     const firstFrame = document.querySelector("iframe.embedded-chat-frame");
     expect(firstFrame).toBeTruthy();
+    if (!firstFrame) {
+      throw new Error("Embedded chat iframe was not mounted.");
+    }
+    expect(firstFrame?.closest("aside")?.getAttribute("aria-hidden")).toBe("true");
+    const postMessage = vi.fn();
+    Object.defineProperty(firstFrame, "contentWindow", { configurable: true, value: { postMessage } });
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: encodeChatSummary({
+            syncState: "ready",
+            totalUnread: 2,
+            unreadRooms: [
+              {
+                preview: "Potřebujeme čerpadlo",
+                selection: "!ops:msg.zeleznalady.cz",
+                title: "Povodeň",
+                type: "group",
+                unreadCount: 2
+              }
+            ]
+          }),
+          origin: window.location.origin
+        })
+      );
+    });
+    await waitFor(() => expect(document.querySelector(".nav-unread-badge")?.textContent).toBe("2"));
+
+    const communicationButton = document.querySelector(
+      'button.workspace-tab[title="Otevřít komunikaci"]'
+    ) as HTMLButtonElement | null;
+    expect(communicationButton).toBeTruthy();
+    if (!communicationButton) {
+      throw new Error("Communication button was not rendered.");
+    }
+    fireEvent.click(communicationButton);
     expect(firstFrame?.closest("aside")?.getAttribute("aria-hidden")).toBe("false");
+    expect(postMessage).toHaveBeenCalledWith(encodeChatSelect("!ops:msg.zeleznalady.cz"), window.location.origin);
 
     fireEvent.click(screen.getByTitle("Zavřít chat"));
     const hiddenFrame = document.querySelector("iframe.embedded-chat-frame");
     expect(hiddenFrame).toBe(firstFrame);
     expect(hiddenFrame?.closest("aside")?.getAttribute("aria-hidden")).toBe("true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Komunikace" }));
+    fireEvent.click(communicationButton);
     const reopenedFrame = document.querySelector("iframe.embedded-chat-frame");
     expect(reopenedFrame).toBe(firstFrame);
     expect(reopenedFrame?.closest("aside")?.getAttribute("aria-hidden")).toBe("false");

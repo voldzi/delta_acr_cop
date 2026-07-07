@@ -1,5 +1,5 @@
 import React from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import clsx from "clsx";
 import {
   Activity,
@@ -107,7 +107,6 @@ import {
   fetchIncidents,
   fetchMapCatalog,
   fetchMapFeatures,
-  fetchMessagingBootstrap,
   fetchMobileDevices,
   fetchMobilePairingSession,
   fetchMobileTowerViewshed,
@@ -248,11 +247,9 @@ import {
 } from "./refresh-config";
 import { buildMapSearchResults, buildPlaceSearchResults, type MapSearchResult } from "./map-search";
 import {
+  applyChatSummaryPayload,
   applyChatUnreadPayload,
-  fetchMatrixUnreadCount,
-  getOrCreateMatrixDeviceId,
-  publishChatUnreadCount,
-  readStoredChatUnreadCount
+  readStoredChatSummarySnapshot
 } from "@cop/messaging/runtime";
 import {
   decodeChatCenterLocation,
@@ -261,6 +258,8 @@ import {
   encodeChatSelect,
   encodeChatShareTransit,
   type ChatCenterLocationMessage,
+  type ChatSummaryMessage,
+  type ChatSummaryUnreadRoom,
   type ChatTransitSharePayload
 } from "@cop/messaging/bridge";
 import {
@@ -446,6 +445,7 @@ const priorityAlertUserRadiusKm = 30;
 const mapFeatureFetchDelayMs = 450;
 const defaultMapBounds: MapBounds = { east: 19.1, north: 51.2, south: 48.5, west: 12 };
 const messagingDockWidthStorageKey = "cop.messaging.dockWidth.v1";
+const chatSummaryHostMaxAgeMs = 10 * 60 * 1000;
 
 function mapViewFromCopMapFocus(focus: ChatCenterLocationMessage, fallback: unknown): MapViewState {
   const current = normalizeMapView(fallback);
@@ -1110,12 +1110,19 @@ export function App() {
   const [profileSyncError, setProfileSyncError] = React.useState<string | null>(null);
   const [serverProfileUpdatedAt, setServerProfileUpdatedAt] = React.useState<string | null>(null);
   const [messagingOpen, setMessagingOpen] = React.useState(false);
-  const [messagingFrameMounted, setMessagingFrameMounted] = React.useState(false);
+  const [messagingFrameMounted, setMessagingFrameMounted] = React.useState(() =>
+    Boolean(getAuthorizationToken(authSession, labToken))
+  );
   const [messagingPinned, setMessagingPinned] = React.useState(false);
   const [messagingDockWidth, setMessagingDockWidth] = React.useState(() => readMessagingDockWidth());
   const [messagingSelection, setMessagingSelection] = React.useState<MessagingSelectionCommand | null>(null);
   const [messagingTransitShare, setMessagingTransitShare] = React.useState<MessagingTransitShareCommand | null>(null);
-  const [messagingUnreadCount, setMessagingUnreadCount] = React.useState(0);
+  const [messagingSummary, setMessagingSummary] = React.useState<ChatSummaryMessage | null>(() =>
+    hostUsableChatSummary(readStoredChatSummarySnapshot())
+  );
+  const [messagingUnreadCount, setMessagingUnreadCount] = React.useState(() =>
+    hostUnreadCountFromChatSummary(hostUsableChatSummary(readStoredChatSummarySnapshot()))
+  );
   const messagingSelectionNonceRef = React.useRef(0);
   const messagingTransitShareNonceRef = React.useRef(0);
   const initialMapFeatureFocusRef = React.useRef(initialMapFocus);
@@ -1170,11 +1177,18 @@ export function App() {
   }, [mapCatalog]);
 
   React.useEffect(() => {
+    const applySummary = (value: unknown) =>
+      applyChatSummaryPayload(value, (summary) => {
+        const usableSummary = hostUsableChatSummary(summary);
+        setMessagingSummary(usableSummary);
+        setMessagingUnreadCount(hostUnreadCountFromChatSummary(usableSummary));
+      });
     const applyUnread = (value: unknown) => applyChatUnreadPayload(value, setMessagingUnreadCount);
     const hydrateStoredUnread = () => {
-      const count = readStoredChatUnreadCount();
-      if (count !== null) {
-        setMessagingUnreadCount(count);
+      const summary = hostUsableChatSummary(readStoredChatSummarySnapshot());
+      if (summary) {
+        setMessagingSummary(summary);
+        setMessagingUnreadCount(hostUnreadCountFromChatSummary(summary));
       }
     };
     const handleChatMessage = (event: MessageEvent) => {
@@ -1187,6 +1201,9 @@ export function App() {
         return;
       }
       const data = event.data as { count?: unknown; lat?: unknown; lon?: unknown; type?: unknown };
+      if (applySummary(data)) {
+        return;
+      }
       if (applyUnread(data)) {
         return;
       }
@@ -1275,7 +1292,10 @@ export function App() {
         return;
       }
       try {
-        applyUnread(JSON.parse(event.newValue) as unknown);
+        const payload = JSON.parse(event.newValue) as unknown;
+        if (!applySummary(payload)) {
+          applyUnread(payload);
+        }
       } catch {
         // Ignore malformed external values.
       }
@@ -1285,7 +1305,9 @@ export function App() {
       try {
         channel = new BroadcastChannel("cop-chat");
         channel.addEventListener("message", (event) => {
-          applyUnread(event.data);
+          if (!applySummary(event.data)) {
+            applyUnread(event.data);
+          }
         });
       } catch {
         channel = null;
@@ -1325,8 +1347,8 @@ export function App() {
   const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken);
   const profileAccessReady = Boolean(authToken);
   const mobilePairCodeFromPath = React.useMemo(readMobilePairCodeFromLocation, []);
-  const messagingAuthenticated = authenticatedSessionActive;
   const authSubjectId = subjectIdFromAuthSession(authSession);
+  const messagingRuntimeEnabled = Boolean(authToken);
 
   React.useEffect(() => {
     const focus = initialMapFeatureFocusRef.current;
@@ -1351,44 +1373,17 @@ export function App() {
   }, [mapCatalog, pendingMapFocusNonce]);
 
   React.useEffect(() => {
-    if (!authenticatedSessionActive || !authToken || messagingOpen) {
-      return undefined;
+    if (messagingRuntimeEnabled) {
+      setMessagingFrameMounted(true);
+      return;
     }
-    let cancelled = false;
-    let timer: number | undefined;
-    let controller: AbortController | null = null;
-    const ownerId = authSubjectId ?? authSession.profile?.username ?? "anonymous";
-    const refreshUnread = async () => {
-      controller?.abort();
-      controller = new AbortController();
-      try {
-        const bootstrap = await fetchMessagingBootstrap(apiBase, authToken, getOrCreateMatrixDeviceId(ownerId));
-        const count = await fetchMatrixUnreadCount(bootstrap, controller.signal);
-        if (!cancelled) {
-          setMessagingUnreadCount(count);
-          publishChatUnreadCount(count);
-        }
-      } catch {
-        // The chat panel is the authoritative UI; the shell badge monitor is best effort.
-      } finally {
-        if (!cancelled) {
-          timer = window.setTimeout(refreshUnread, 15_000);
-        }
-      }
-    };
-    const storedCount = readStoredChatUnreadCount();
-    if (storedCount !== null) {
-      setMessagingUnreadCount(storedCount);
-    }
-    void refreshUnread();
-    return () => {
-      cancelled = true;
-      controller?.abort();
-      if (timer !== undefined) {
-        window.clearTimeout(timer);
-      }
-    };
-  }, [authSession.profile?.username, authSubjectId, authToken, authenticatedSessionActive, messagingOpen]);
+    setMessagingOpen(false);
+    setMessagingFrameMounted(false);
+    setMessagingSelection(null);
+    setMessagingTransitShare(null);
+    setMessagingSummary(null);
+    setMessagingUnreadCount(0);
+  }, [messagingRuntimeEnabled]);
 
   const refreshWebPushState = React.useCallback(async () => {
     try {
@@ -5299,6 +5294,15 @@ export function App() {
     });
   }
 
+  function openMessagingPanel() {
+    const unreadTarget = firstUnreadChatSummaryRoom(messagingSummary);
+    if (unreadTarget) {
+      requestEmbeddedChatSelection(unreadTarget.selection);
+    }
+    setMessagingOpen(true);
+    setMessagingPinned(true);
+  }
+
   function shareTransitToEmbeddedChat(transit: ChatTransitSharePayload) {
     messagingTransitShareNonceRef.current += 1;
     setMessagingTransitShare({
@@ -6322,10 +6326,7 @@ export function App() {
           activeWorkspace={activeWorkspace}
           chatUnreadCount={messagingUnreadCount}
           onChange={setActiveWorkspace}
-          onOpenMessaging={() => {
-            setMessagingOpen(true);
-            setMessagingPinned(true);
-          }}
+          onOpenMessaging={openMessagingPanel}
           onOpenSettings={() => openSettings("map")}
           onStartReport={startCommunityReportCapture}
         />
@@ -7333,8 +7334,7 @@ export function App() {
           setSettingsOpen(false);
           setMobileSheet(null);
           setMobileSketchOpen(false);
-          setMessagingOpen(true);
-          setMessagingPinned(true);
+          openMessagingPanel();
         }}
         onLayers={() => {
           setSettingsOpen(false);
@@ -10222,6 +10222,43 @@ function formatUnreadBadge(count: number): string {
     return "";
   }
   return count > 99 ? "99+" : String(Math.trunc(count));
+}
+
+export function hostUsableChatSummary(
+  summary: ChatSummaryMessage | null,
+  now = Date.now()
+): ChatSummaryMessage | null {
+  if (!summary) {
+    return null;
+  }
+  if (!Number.isFinite(summary.totalUnread) || summary.totalUnread <= 0) {
+    return { ...summary, totalUnread: 0, unreadRooms: [] };
+  }
+  if (summary.syncState !== "ready") {
+    return null;
+  }
+  if (!Number.isFinite(summary.at) || summary.at > now + 60_000 || now - summary.at > chatSummaryHostMaxAgeMs) {
+    return null;
+  }
+  return summary;
+}
+
+export function hostUnreadCountFromChatSummary(summary: ChatSummaryMessage | null): number {
+  return summary && Number.isFinite(summary.totalUnread) ? Math.max(0, Math.trunc(summary.totalUnread)) : 0;
+}
+
+export function firstUnreadChatSummaryRoom(summary: ChatSummaryMessage | null): ChatSummaryUnreadRoom | null {
+  const usableSummary = hostUsableChatSummary(summary);
+  const rooms =
+    usableSummary?.unreadRooms.filter((room) => room.unreadCount > 0 && room.selection.trim().length > 0) ?? [];
+  if (rooms.length === 0) {
+    return null;
+  }
+  const firstRoom = rooms[0];
+  if (!firstRoom) {
+    return null;
+  }
+  return rooms.slice(1).reduce((best, room) => (room.unreadCount > best.unreadCount ? room : best), firstRoom);
 }
 
 function EmbeddedCopChatPanel({
@@ -22869,7 +22906,10 @@ class RootErrorBoundary extends React.Component<React.PropsWithChildren, RootErr
 const rootElement = document.getElementById("root");
 if (rootElement) {
   const isXrRoute = window.location.pathname === "/xr" || window.location.pathname.startsWith("/xr/");
-  createRoot(rootElement).render(
+  const rootWindow = window as Window & { __copWebRoot?: Root };
+  const root = rootWindow.__copWebRoot ?? createRoot(rootElement);
+  rootWindow.__copWebRoot = root;
+  root.render(
     <React.StrictMode>
       <RootErrorBoundary>
         {isXrRoute ? (

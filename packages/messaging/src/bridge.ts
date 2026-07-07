@@ -12,6 +12,7 @@ export const chatBridgeMessageTypes = {
   currentLocation: "cop-chat:current-location",
   select: "cop-chat:select",
   shareTransit: "cop-chat:share-transit",
+  summary: "cop-chat:summary",
   unread: "cop-chat:unread"
 } as const;
 
@@ -23,6 +24,26 @@ export interface ChatUnreadMessage {
   at: number;
   count: number;
   type: typeof chatBridgeMessageTypes.unread;
+}
+
+export type ChatSummarySyncState = "offline" | "ready" | "syncing" | "unavailable";
+
+export interface ChatSummaryUnreadRoom {
+  preview?: string;
+  roomId?: string;
+  selection: string;
+  timestamp?: string;
+  title: string;
+  type?: "direct" | "group" | "room";
+  unreadCount: number;
+}
+
+export interface ChatSummaryMessage {
+  at: number;
+  syncState: ChatSummarySyncState;
+  totalUnread: number;
+  type: typeof chatBridgeMessageTypes.summary;
+  unreadRooms: ChatSummaryUnreadRoom[];
 }
 
 export interface ChatCenterLocationMessage {
@@ -121,6 +142,35 @@ export function decodeChatUnread(value: unknown): number | null {
     return null;
   }
   return clampUnreadCount(data.count);
+}
+
+// chat → web: richer badge/list snapshot for choosing the unread room to open.
+export function encodeChatSummary(input: {
+  syncState: ChatSummarySyncState;
+  totalUnread: number;
+  unreadRooms?: ChatSummaryUnreadRoom[];
+}): ChatSummaryMessage {
+  return {
+    at: Date.now(),
+    syncState: normalizeChatSummarySyncState(input.syncState),
+    totalUnread: clampUnreadCount(input.totalUnread),
+    type: chatBridgeMessageTypes.summary,
+    unreadRooms: normalizeChatSummaryUnreadRooms(input.unreadRooms)
+  };
+}
+
+export function decodeChatSummary(value: unknown): ChatSummaryMessage | null {
+  const data = asRecord(value);
+  if (!data || data.type !== chatBridgeMessageTypes.summary || typeof data.totalUnread !== "number") {
+    return null;
+  }
+  return {
+    at: typeof data.at === "number" && Number.isFinite(data.at) ? data.at : Date.now(),
+    syncState: normalizeChatSummarySyncState(data.syncState),
+    totalUnread: clampUnreadCount(data.totalUnread),
+    type: chatBridgeMessageTypes.summary,
+    unreadRooms: normalizeChatSummaryUnreadRooms(data.unreadRooms)
+  };
 }
 
 // chat → web: center the map on a shared location and optionally focus a map entity.
@@ -342,6 +392,41 @@ function normalizeCurrentLocation(value: unknown): ChatCurrentLocationPayload | 
     source: data.source === "device" || data.source === "map" ? data.source : undefined,
     updatedAt: normalizeBridgeText(data.updatedAt, 64)
   }) as ChatCurrentLocationPayload;
+}
+
+function normalizeChatSummarySyncState(value: unknown): ChatSummarySyncState {
+  return value === "offline" || value === "ready" || value === "syncing" || value === "unavailable"
+    ? value
+    : "syncing";
+}
+
+function normalizeChatSummaryUnreadRooms(value: unknown): ChatSummaryUnreadRoom[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const normalized = normalizeChatSummaryUnreadRoom(item);
+    return normalized ? [normalized] : [];
+  }).slice(0, 20);
+}
+
+function normalizeChatSummaryUnreadRoom(value: unknown): ChatSummaryUnreadRoom | null {
+  const data = asRecord(value);
+  const selection = normalizeBridgeText(data?.selection, 240);
+  const title = normalizeBridgeText(data?.title, 180);
+  if (!data || !selection || !title || typeof data.unreadCount !== "number" || !Number.isFinite(data.unreadCount)) {
+    return null;
+  }
+  const roomType = data.type === "direct" || data.type === "group" || data.type === "room" ? data.type : undefined;
+  return compactRecord({
+    preview: normalizeBridgeText(data.preview, 240),
+    roomId: normalizeBridgeText(data.roomId, 240),
+    selection,
+    timestamp: normalizeBridgeText(data.timestamp, 64),
+    title,
+    type: roomType,
+    unreadCount: clampUnreadCount(data.unreadCount)
+  }) as ChatSummaryUnreadRoom;
 }
 
 function normalizeCenterZoom(value: unknown): number | undefined {
