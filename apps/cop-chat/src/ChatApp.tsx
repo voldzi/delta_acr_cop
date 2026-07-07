@@ -2368,7 +2368,7 @@ export function ChatApp() {
       setNotice(
         reset
           ? "Nový nouzový E2EE obnovovací klíč je aktivní. Použijte ho i na iOS; starší šifrovaná historie nemusí být dostupná."
-          : "E2EE obnova je nastavena pro web i iPhone/iPad. Uložte obnovovací klíč mimo tento prohlížeč."
+          : "E2EE obnova je nastavena pro web i iPhone/iPad. Tento prohlížeč si klíč lokálně uloží i pro další start; kopii uložte mimo aplikaci."
       );
     } catch (caught) {
       setError(userFacingError(caught instanceof Error ? caught.message : "Obnovovací klíč se nepodařilo vytvořit."));
@@ -2423,7 +2423,7 @@ export function ChatApp() {
         setTimeline(rememberRoomTimeline(selectedRoomId, session.getTimeline(selectedRoomId)));
       }
       setRecoveryDialogOpen(false);
-      setNotice("Zařízení bylo obnoveno a E2EE key backup je aktivní.");
+      setNotice("Zařízení bylo obnoveno a E2EE key backup je aktivní. Při dalším spuštění se klíč použije automaticky.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Zařízení se nepodařilo obnovit.");
     } finally {

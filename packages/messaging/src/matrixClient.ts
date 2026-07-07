@@ -218,7 +218,7 @@ export async function createMatrixMessagingSession(
   const matrixSdk = (await import("matrix-js-sdk/lib/browser-index.js")) as unknown as MatrixSdkLike;
   disableMatrixPollAggregation(matrixSdk);
   const createClient = matrixSdk.createClient;
-  const recoveryController = createUserControlledRecoveryController();
+  const recoveryController = createUserControlledRecoveryController(readStoredMatrixRecoveryKey(bootstrap));
   const client = createClient({
     accessToken: bootstrap.accessToken,
     baseUrl: homeserverBaseUrl,
@@ -413,8 +413,11 @@ export async function createMatrixMessagingSession(
 
   return {
     bootstrap,
-    createEncryptionRecovery: async (reset = false) =>
-      createUserControlledEncryptionRecovery(client, recoveryController, { reset }),
+    createEncryptionRecovery: async (reset = false) => {
+      const recoveryKey = await createUserControlledEncryptionRecovery(client, recoveryController, { reset });
+      writeStoredMatrixRecoveryKey(bootstrap, recoveryKey);
+      return recoveryKey;
+    },
     createGroupRoom: async (name, inviteUserIds = []) => {
       if (typeof client.createRoom !== "function") {
         throw new Error("Chat se nepodařilo založit.");
@@ -565,13 +568,18 @@ export async function createMatrixMessagingSession(
         // Read receipts are a best-effort UX signal. Message delivery must not fail because of them.
       }
     },
-    prepareEncryptionRecoveryForMobile: async () =>
-      createUserControlledEncryptionRecovery(client, recoveryController, {
+    prepareEncryptionRecoveryForMobile: async () => {
+      const recoveryKey = await createUserControlledEncryptionRecovery(client, recoveryController, {
         mobileCompatible: true,
         reset: true
-      }),
-    restoreEncryptionRecovery: async (recoveryKey) =>
-      restoreUserControlledEncryptionRecovery(client, recoveryController, recoveryKey),
+      });
+      writeStoredMatrixRecoveryKey(bootstrap, recoveryKey);
+      return recoveryKey;
+    },
+    restoreEncryptionRecovery: async (recoveryKey) => {
+      await restoreUserControlledEncryptionRecovery(client, recoveryController, recoveryKey);
+      writeStoredMatrixRecoveryKey(bootstrap, recoveryKey);
+    },
     setMessageRetentionPolicy: async (roomId, seconds) => {
       if (typeof client.sendStateEvent !== "function") {
         throw new Error("Nastavení automatického mazání služba zpráv nepodporuje.");
@@ -752,10 +760,10 @@ function disableMatrixPollAggregation(matrixSdk: MatrixSdkLike): void {
   roomPrototype.__copChatPollAggregationDisabled = true;
 }
 
-function createUserControlledRecoveryController(): MatrixRecoveryController {
+function createUserControlledRecoveryController(initialRecoveryKey?: string): MatrixRecoveryController {
   const keyCache = new Map<string, Uint8Array>();
   let generatedSecretStorageKey: Uint8Array | null = null;
-  let recoveryKey: string | null = null;
+  let recoveryKey: string | null = initialRecoveryKey?.trim() || null;
   return {
     cryptoCallbacks: {
       cacheSecretStorageKey: (keyId: string, _keyInfo: unknown, key: Uint8Array) => {
@@ -1619,6 +1627,83 @@ async function fetchJoinedRooms(
 const matrixUserProfileCachePrefix = "cop.matrix.profile.v1";
 const matrixUserProfileCacheTtlMs = 7 * 24 * 60 * 60 * 1000;
 const matrixWebPushPusherStorageKey = "cop.matrix.webPushPusher.v1";
+const matrixRecoveryKeyStoragePrefix = "cop.matrix.recoveryKey.v1";
+
+interface StoredMatrixRecoveryKey {
+  homeserverBaseUrl: string;
+  recoveryKey: string;
+  storedAt: string;
+  userId: string;
+}
+
+function readStoredMatrixRecoveryKey(bootstrap: MessagingBootstrapResponse): string | undefined {
+  const key = matrixRecoveryKeyStorageKey(bootstrap);
+  if (!key || typeof window === "undefined") {
+    return undefined;
+  }
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) {
+      return undefined;
+    }
+    const parsed = JSON.parse(raw) as Partial<StoredMatrixRecoveryKey>;
+    if (
+      parsed.userId !== bootstrap.userId ||
+      parsed.homeserverBaseUrl !== bootstrap.homeserverBaseUrl ||
+      !isPlausibleMatrixRecoveryKey(parsed.recoveryKey)
+    ) {
+      window.localStorage.removeItem(key);
+      return undefined;
+    }
+    return parsed.recoveryKey.trim();
+  } catch {
+    return undefined;
+  }
+}
+
+function writeStoredMatrixRecoveryKey(bootstrap: MessagingBootstrapResponse, recoveryKey: string): void {
+  const key = matrixRecoveryKeyStorageKey(bootstrap);
+  const homeserverBaseUrl = bootstrap.homeserverBaseUrl;
+  const userId = bootstrap.userId;
+  if (
+    !key ||
+    !homeserverBaseUrl ||
+    !userId ||
+    !isPlausibleMatrixRecoveryKey(recoveryKey) ||
+    typeof window === "undefined"
+  ) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({
+        homeserverBaseUrl,
+        recoveryKey: recoveryKey.trim(),
+        storedAt: new Date().toISOString(),
+        userId
+      } satisfies StoredMatrixRecoveryKey)
+    );
+  } catch {
+    // Persisted recovery is a local convenience only; the entered key remains
+    // active for the current Matrix session even when storage is unavailable.
+  }
+}
+
+function matrixRecoveryKeyStorageKey(bootstrap: MessagingBootstrapResponse): string | undefined {
+  if (!bootstrap.userId || !bootstrap.homeserverBaseUrl) {
+    return undefined;
+  }
+  return [
+    matrixRecoveryKeyStoragePrefix,
+    encodeURIComponent(bootstrap.userId),
+    stableStringHash(bootstrap.homeserverBaseUrl)
+  ].join(".");
+}
+
+function isPlausibleMatrixRecoveryKey(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length >= 16 && value.trim().length <= 512;
+}
 
 function readCachedMatrixUserProfile(userId: string): CachedMatrixUserProfile | undefined {
   if (typeof window === "undefined") {

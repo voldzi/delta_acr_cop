@@ -231,6 +231,7 @@ describe("Matrix client diagnostics", () => {
     const registerPusher = vi.fn<NonNullable<MockMatrixClient["setPusher"]>>().mockResolvedValue(undefined);
     matrixSdkMock.createClient.mockReturnValueOnce(
       createMockMatrixClient({
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
         rooms: [createRoom({ roomId: "!chat:cop.local" })],
         setPusher: registerPusher
       })
@@ -251,6 +252,7 @@ describe("Matrix client diagnostics", () => {
     const removePusher = vi.fn<NonNullable<MockMatrixClient["setPusher"]>>().mockResolvedValue(undefined);
     matrixSdkMock.createClient.mockReturnValueOnce(
       createMockMatrixClient({
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
         rooms: [createRoom({ roomId: "!chat:cop.local" })],
         setPusher: removePusher
       })
@@ -954,7 +956,9 @@ describe("Matrix client diagnostics", () => {
       isCrossSigningReady: vi.fn().mockResolvedValue(true),
       isSecretStorageReady: vi.fn().mockResolvedValue(true)
     };
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({ crypto, getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }), rooms: [] })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
     const recoveryKey = await session.createEncryptionRecovery();
@@ -995,7 +999,9 @@ describe("Matrix client diagnostics", () => {
       isSecretStorageReady: vi.fn().mockResolvedValue(true),
       resetEncryption
     };
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({ crypto, getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }), rooms: [] })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
     const recoveryKey = await session.prepareEncryptionRecoveryForMobile();
@@ -1125,7 +1131,11 @@ describe("Matrix client diagnostics", () => {
     };
     matrixSdkMock.createClient.mockImplementation((options: Record<string, unknown>) => {
       createClientOptions = options;
-      return createMockMatrixClient({ crypto, rooms: [] });
+      return createMockMatrixClient({
+        crypto,
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }),
+        rooms: []
+      });
     });
 
     const session = await createMatrixMessagingSession(createBootstrap());
@@ -1323,6 +1333,8 @@ describe("Matrix client diagnostics", () => {
   });
 
   it("restores an existing key backup after the user enters a recovery key", async () => {
+    const storage = installLocalStorageStub();
+    const recoveryKey = await createValidRecoveryKey(7);
     const crypto: MockMatrixCrypto = {
       checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
       getActiveSessionBackupVersion: vi.fn().mockResolvedValue("1"),
@@ -1336,11 +1348,77 @@ describe("Matrix client diagnostics", () => {
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
-    await expect(session.restoreEncryptionRecovery("EsTK aBCd user held recovery key")).resolves.toBeUndefined();
+    await expect(session.restoreEncryptionRecovery(recoveryKey)).resolves.toBeUndefined();
     expect(crypto.loadSessionBackupPrivateKeyFromSecretStorage).toHaveBeenCalled();
     expect(crypto.checkKeyBackupAndEnable).toHaveBeenCalled();
-  });
+    expect(Array.from(storage.values()).some((value) => value.includes(recoveryKey))).toBe(true);
+  }, 10_000);
+
+  it("uses a locally stored recovery key to enable key backup on the next PWA start", async () => {
+    const storage = installLocalStorageStub();
+    const recoveryKey = await createValidRecoveryKey(11);
+    const expectedPrivateKey = new Uint8Array(32).fill(11);
+    let decodedLoads = 0;
+    matrixSdkMock.createClient.mockImplementation((options: Record<string, unknown>) => {
+      const cryptoCallbacks = options.cryptoCallbacks as {
+        getSecretStorageKey?: (options: { keys: Record<string, unknown> }) => Promise<[string, Uint8Array] | null>;
+      };
+      const crypto: MockMatrixCrypto = {
+        checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
+        getActiveSessionBackupVersion: vi.fn().mockResolvedValue("1"),
+        getKeyBackupInfo: vi.fn().mockResolvedValue({ version: "1" }),
+        isCrossSigningReady: vi.fn().mockResolvedValue(true),
+        isSecretStorageReady: vi.fn().mockResolvedValue(true),
+        loadSessionBackupPrivateKeyFromSecretStorage: vi.fn(async () => {
+          const result = await cryptoCallbacks.getSecretStorageKey?.({ keys: { "recovery-key-id": {} } });
+          if (!result) {
+            return;
+          }
+          decodedLoads += 1;
+          expect(result?.[0]).toBe("recovery-key-id");
+          expect(Array.from(result?.[1] ?? [])).toEqual(Array.from(expectedPrivateKey));
+        }),
+        restoreKeyBackup: vi.fn().mockResolvedValue(undefined)
+      };
+      return createMockMatrixClient({
+        crypto,
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }),
+        rooms: []
+      });
+    });
+
+    const firstSession = await createMatrixMessagingSession(createBootstrap());
+    await firstSession.restoreEncryptionRecovery(recoveryKey);
+    expect(Array.from(storage.values()).some((value) => value.includes(recoveryKey))).toBe(true);
+
+    await createMatrixMessagingSession(createBootstrap());
+
+    expect(decodedLoads).toBe(2);
+  }, 10_000);
 });
+
+function installLocalStorageStub(): Map<string, string> {
+  const storage = new Map<string, string>();
+  vi.stubGlobal("window", {
+    localStorage: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      removeItem: (key: string) => {
+        storage.delete(key);
+      },
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      }
+    }
+  });
+  return storage;
+}
+
+async function createValidRecoveryKey(fill: number): Promise<string> {
+  const { encodeRecoveryKey } = (await import("matrix-js-sdk/lib/crypto-api/recovery-key.js")) as {
+    encodeRecoveryKey: (key: Uint8Array) => string;
+  };
+  return encodeRecoveryKey(new Uint8Array(32).fill(fill));
+}
 
 function createBootstrap(): MessagingBootstrapResponse {
   return {
