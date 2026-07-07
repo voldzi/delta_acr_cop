@@ -2461,6 +2461,7 @@ function mapUndecryptedMatrixEvent(
   const senderDisplayName = displayNameForMatrixSender(room, sender);
   return {
     body: undecryptableMatrixMessageBody,
+    decryptionState: "undecryptable",
     eventId: event.getId?.() ?? `${sender || "sender"}-${event.getTs?.() ?? Date.now()}`,
     kind: "text",
     own: Boolean(currentUserId && sender === currentUserId),
@@ -2483,9 +2484,8 @@ function mapMatrixMessageEvent(
 ): MatrixTimelineMessage | null {
   const eventId = event.getId?.() ?? `${event.getSender?.() ?? "sender"}-${event.getTs?.() ?? Date.now()}`;
   const content = matrixTimelineEventContent(event);
-  const body = normalizeMatrixMessageBody(
-    stripMatrixReplyFallback(typeof content.body === "string" ? content.body.trim() : "")
-  );
+  const rawBody = stripMatrixReplyFallback(typeof content.body === "string" ? content.body.trim() : "");
+  const body = normalizeMatrixMessageBody(rawBody);
   const kind = matrixMessageKind(content);
   const attachment = matrixAttachmentFromContent(client, homeserverBaseUrl, content);
   const geoUri = readLocationUri(content);
@@ -2501,6 +2501,9 @@ function mapMatrixMessageEvent(
     ...(attachment ? { attachment } : {}),
     body,
     ...(cop ? { cop } : {}),
+    ...(isUndecryptableMatrixBody(rawBody) && !attachment && !location && !transit
+      ? { decryptionState: "undecryptable" as const }
+      : {}),
     eventId,
     ...(geoUri ? { geoUri } : {}),
     kind,

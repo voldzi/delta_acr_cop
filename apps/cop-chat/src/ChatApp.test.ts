@@ -23,6 +23,7 @@ import type { AiCopResponse } from "@cop/core/cop-data";
 import type { MatrixRoomSummary, MatrixTimelineMessage } from "@cop/messaging/types";
 
 describe("mergeTimelineMessages", () => {
+  const undecryptableBody = "Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy.";
   const baseMessage: MatrixTimelineMessage = {
     body: "text, který má být jenom jedenkrát",
     eventId: "$server",
@@ -50,6 +51,51 @@ describe("mergeTimelineMessages", () => {
     };
 
     expect(mergeTimelineMessages([baseMessage], [repeatedMessage])).toEqual([baseMessage, repeatedMessage]);
+  });
+
+  it("keeps a previously decrypted event when a live Matrix refresh temporarily reports it as undecryptable", () => {
+    const readableLocation: MatrixTimelineMessage = {
+      body: "Moje poloha",
+      eventId: "$location",
+      kind: "location",
+      location: { label: "Moje poloha", lat: 50.06883, lon: 14.31115, source: "device" },
+      own: true,
+      sender: "@voldzi:msg.zeleznalady.cz",
+      timestamp: "2026-07-07T18:24:00.000Z"
+    };
+    const undecryptableRefresh: MatrixTimelineMessage = {
+      body: undecryptableBody,
+      decryptionState: "undecryptable",
+      eventId: "$location",
+      kind: "text",
+      own: true,
+      sender: "@voldzi:msg.zeleznalady.cz",
+      timestamp: "2026-07-07T18:24:00.000Z"
+    };
+
+    expect(mergeTimelineMessages([readableLocation], [undecryptableRefresh])).toEqual([readableLocation]);
+  });
+
+  it("replaces an undecryptable cached event when Matrix later provides decrypted content", () => {
+    const undecryptableCached: MatrixTimelineMessage = {
+      body: undecryptableBody,
+      decryptionState: "undecryptable",
+      eventId: "$server-late",
+      kind: "text",
+      own: false,
+      sender: "@peer:msg.zeleznalady.cz",
+      timestamp: "2026-07-07T18:25:00.000Z"
+    };
+    const readableLive: MatrixTimelineMessage = {
+      body: "Ahoj, už je vidět",
+      eventId: "$server-late",
+      kind: "text",
+      own: false,
+      sender: "@peer:msg.zeleznalady.cz",
+      timestamp: "2026-07-07T18:25:00.000Z"
+    };
+
+    expect(mergeTimelineMessages([undecryptableCached], [readableLive])).toEqual([readableLive]);
   });
 });
 

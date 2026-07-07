@@ -56,10 +56,32 @@ export function mergeTimelineMessages(
     byEventId.set(message.eventId, message);
   }
   for (const message of live) {
-    byEventId.set(message.eventId, message);
+    const cachedMessage = byEventId.get(message.eventId);
+    byEventId.set(message.eventId, cachedMessage ? mergeTimelineMessageVersion(cachedMessage, message) : message);
   }
   return removeConfirmedLocalEchoes(Array.from(byEventId.values())).sort(
     (left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)
+  );
+}
+
+export function isUndecryptableTimelineMessage(message: MatrixTimelineMessage): boolean {
+  return message.decryptionState === "undecryptable" || isUndecryptableTimelineBody(message.body);
+}
+
+function mergeTimelineMessageVersion(
+  cached: MatrixTimelineMessage,
+  live: MatrixTimelineMessage
+): MatrixTimelineMessage {
+  if (isUndecryptableTimelineMessage(live) && !isUndecryptableTimelineMessage(cached)) {
+    return cached;
+  }
+  return live;
+}
+
+function isUndecryptableTimelineBody(body: string): boolean {
+  return (
+    body === "Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy." ||
+    /unable to decrypt|decryptionerror|no key backup|before this device logged in/iu.test(body)
   );
 }
 
@@ -78,11 +100,7 @@ export function timelineNeedsBridgeBackfill(
   }
   const latestCachedOnlyAt = latestFiniteTimestamp(cachedOnly);
   const earliestLiveAt = earliestFiniteTimestamp(live);
-  return (
-    latestCachedOnlyAt !== null &&
-    earliestLiveAt !== null &&
-    latestCachedOnlyAt + minGapMs < earliestLiveAt
-  );
+  return latestCachedOnlyAt !== null && earliestLiveAt !== null && latestCachedOnlyAt + minGapMs < earliestLiveAt;
 }
 
 export function normalizeChatPreferences(preferences: Partial<ChatPreferences>): ChatPreferences {
@@ -140,6 +158,9 @@ function removeConfirmedLocalEchoes(messages: MatrixTimelineMessage[]): MatrixTi
 }
 
 function isConfirmedLocalEchoPair(localEcho: MatrixTimelineMessage, confirmed: MatrixTimelineMessage): boolean {
+  if (isUndecryptableTimelineMessage(confirmed) && !isUndecryptableTimelineMessage(localEcho)) {
+    return false;
+  }
   if (localEcho.sender !== confirmed.sender || localEcho.kind !== confirmed.kind || localEcho.body !== confirmed.body) {
     return false;
   }

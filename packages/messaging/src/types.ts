@@ -56,6 +56,7 @@ export interface MatrixTimelineMessage {
   attachment?: MatrixTimelineAttachment;
   body: string;
   cop?: MatrixCopMessageMetadata;
+  decryptionState?: "undecryptable";
   eventId: string;
   geoUri?: string;
   kind: MatrixMessageKind;
