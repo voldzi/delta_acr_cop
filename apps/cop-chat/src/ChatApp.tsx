@@ -152,6 +152,7 @@ import {
   mergeTimelineMessages,
   messageMatchesQuery,
   normalizeChatPreferences,
+  timelineNeedsBridgeBackfill,
   type ChatPreferences
 } from "./chat-model";
 import type { ForwardTarget } from "./dialogs/ForwardDialog";
@@ -174,7 +175,8 @@ export {
   isChatMuted,
   mergeTimelineMessages,
   messageMatchesQuery,
-  normalizeChatPreferences
+  normalizeChatPreferences,
+  timelineNeedsBridgeBackfill
 } from "./chat-model";
 export type { ChatPreferences } from "./chat-model";
 
@@ -344,6 +346,7 @@ const copUserPreferencesStorageKey = "cop.user.preferences.v1";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
 const initialHistoryLoadRetryLimit = 8;
 const initialHistoryWarmupMessageTarget = 50;
+const timelineBridgeBackfillAttemptLimit = 3;
 const aiChatAgentJobPollIntervalMs = 1500;
 const aiChatAgentJobPollLimit = 90;
 const tomatoGameUrl = "https://games.zeleznalady.cz/tomato/";
@@ -599,6 +602,7 @@ export function ChatApp() {
   const matrixWebPushPusherDeviceIdRef = React.useRef<string | undefined>(undefined);
   const webPushAutoSyncKeyRef = React.useRef<string | null>(null);
   const initialHistoryLoadAttemptsRef = React.useRef<Map<string, number>>(new Map());
+  const timelineBridgeBackfillAttemptsRef = React.useRef<Map<string, number>>(new Map());
   const historyLoadingRoomsRef = React.useRef<Set<string>>(new Set());
   const notifiedEventIdsRef = React.useRef<Set<string>>(new Set());
   const notificationPrimedRoomIdsRef = React.useRef<Set<string>>(new Set());
@@ -1353,16 +1357,24 @@ export function ChatApp() {
       return;
     }
     const currentTimeline = matrixSession.getTimeline(selectedRoomId);
-    if (attempts > 0 && currentTimeline.length >= initialHistoryWarmupMessageTarget) {
+    const cachedTimeline = timelineCacheRef.current.get(selectedRoomId) ?? [];
+    const bridgeBackfillAttempts = timelineBridgeBackfillAttemptsRef.current.get(loadKey) ?? 0;
+    const needsBridgeBackfill =
+      bridgeBackfillAttempts < timelineBridgeBackfillAttemptLimit &&
+      timelineNeedsBridgeBackfill(cachedTimeline, currentTimeline);
+    if (attempts > 0 && currentTimeline.length >= initialHistoryWarmupMessageTarget && !needsBridgeBackfill) {
       return;
     }
     initialHistoryLoadAttemptsRef.current.set(loadKey, attempts + 1);
+    if (needsBridgeBackfill) {
+      timelineBridgeBackfillAttemptsRef.current.set(loadKey, bridgeBackfillAttempts + 1);
+    }
     const delayMs = attempts === 0 ? 0 : Math.min(2_000, attempts * 350);
     const timer = window.setTimeout(() => {
       if (selectedRoomIdRef.current !== selectedRoomId || historyLoadingRoomsRef.current.has(selectedRoomId)) {
         return;
       }
-      void loadOlderMessages(selectedRoomId, 120, true);
+      void loadOlderMessages(selectedRoomId, needsBridgeBackfill ? 240 : 120, true);
     }, delayMs);
     return () => window.clearTimeout(timer);
   }, [

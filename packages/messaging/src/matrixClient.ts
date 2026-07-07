@@ -2204,14 +2204,24 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
   const timelineEvents = (room?.timeline ?? [])
     .map(asEvent)
     .filter((event): event is MatrixEventLike => Boolean(event));
-  const messageEvents = timelineEvents.filter((event) => event.getType?.() === "m.room.message");
+  const messageEvents = timelineEvents.filter(isTimelineMessageEvent);
+  const readableMessageEvents = messageEvents.filter((event) => event.getType?.() === "m.room.message");
   const redactedEventIds = readRedactedEventIds(timelineEvents);
-  const reactionsByEventId = readMessageReactions(room, messageEvents, timelineEvents, currentUserId, redactedEventIds);
+  const reactionsByEventId = readMessageReactions(
+    room,
+    readableMessageEvents,
+    timelineEvents,
+    currentUserId,
+    redactedEventIds
+  );
   return messageEvents
     .flatMap((event) => {
       const eventId = event.getId?.() ?? `${event.getSender?.() ?? "sender"}-${event.getTs?.() ?? Date.now()}`;
       if (redactedEventIds.has(eventId)) {
         return [];
+      }
+      if (event.getType?.() === "m.room.encrypted") {
+        return [mapUndecryptedMatrixEvent(room ?? undefined, event, currentUserId)];
       }
       const mapped = mapMatrixMessageEvent(
         client,
@@ -2224,6 +2234,29 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
       return mapped ? [mapped] : [];
     })
     .filter((message) => messageWithinRetention(message, retentionSeconds));
+}
+
+function isTimelineMessageEvent(event: MatrixEventLike): boolean {
+  const type = event.getType?.();
+  return type === "m.room.message" || type === "m.room.encrypted";
+}
+
+function mapUndecryptedMatrixEvent(
+  room: MatrixRoomLike | undefined,
+  event: MatrixEventLike,
+  currentUserId: string | undefined
+): MatrixTimelineMessage {
+  const sender = event.getSender?.() ?? "";
+  const senderDisplayName = displayNameForMatrixSender(room, sender);
+  return {
+    body: undecryptableMatrixMessageBody,
+    eventId: event.getId?.() ?? `${sender || "sender"}-${event.getTs?.() ?? Date.now()}`,
+    kind: "text",
+    own: Boolean(currentUserId && sender === currentUserId),
+    sender,
+    ...(senderDisplayName ? { senderDisplayName } : {}),
+    timestamp: new Date(event.getTs?.() ?? Date.now()).toISOString()
+  };
 }
 
 // Maps a single m.room.message event to a timeline message. Returns null for
@@ -2285,8 +2318,12 @@ function readRoomLatestMessage(
   const events = (room?.timeline ?? []).map(asEvent).filter((event): event is MatrixEventLike => Boolean(event));
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (event?.getType?.() !== "m.room.message") {
+    if (!event || !isTimelineMessageEvent(event)) {
       continue;
+    }
+    if (event.getType?.() === "m.room.encrypted") {
+      const mapped = mapUndecryptedMatrixEvent(room, event, currentUserId);
+      return messageWithinRetention(mapped, retentionSeconds) ? mapped : undefined;
     }
     const mapped = mapMatrixMessageEvent(client, room, homeserverBaseUrl, event, currentUserId);
     if (mapped && messageWithinRetention(mapped, retentionSeconds)) {
@@ -2300,7 +2337,7 @@ function latestReadableMessageEvent(room: MatrixRoomLike | undefined): MatrixEve
   const events = (room?.timeline ?? []).map(asEvent).filter((event): event is MatrixEventLike => Boolean(event));
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (event?.getType?.() === "m.room.message" && event.getId?.()) {
+    if (event && isTimelineMessageEvent(event) && event.getId?.()) {
       return event;
     }
   }
@@ -2510,10 +2547,11 @@ function messageWithinRetention(message: MatrixTimelineMessage, retentionSeconds
 }
 
 export function normalizeMatrixMessageBody(body: string): string {
-  return isUndecryptableMatrixBody(body)
-    ? "Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy."
-    : body;
+  return isUndecryptableMatrixBody(body) ? undecryptableMatrixMessageBody : body;
 }
+
+const undecryptableMatrixMessageBody =
+  "Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy.";
 
 function isUndecryptableMatrixBody(body: string): boolean {
   return /unable to decrypt|decryptionerror|no key backup|before this device logged in/iu.test(body);

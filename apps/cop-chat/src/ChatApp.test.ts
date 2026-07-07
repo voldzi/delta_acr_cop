@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mergeTimelineMessages } from "./chat-model";
+import { mergeTimelineMessages, timelineNeedsBridgeBackfill } from "./chat-model";
 import {
   aiMapActionsForMessage,
   aiMapActionsFromResponse,
@@ -47,6 +47,42 @@ describe("mergeTimelineMessages", () => {
     };
 
     expect(mergeTimelineMessages([baseMessage], [repeatedMessage])).toEqual([baseMessage, repeatedMessage]);
+  });
+});
+
+describe("timelineNeedsBridgeBackfill", () => {
+  const message = (eventId: string, timestamp: string): MatrixTimelineMessage => ({
+    body: eventId,
+    eventId,
+    kind: "text",
+    own: false,
+    sender: "@peer:cop.local",
+    timestamp
+  });
+
+  it("detects a cache/live gap that should trigger Matrix scrollback", () => {
+    expect(
+      timelineNeedsBridgeBackfill(
+        [
+          message("$cop-9", "2026-07-06T14:29:00.000Z"),
+          message("$cop-14", "2026-07-07T13:13:00.000Z")
+        ],
+        [message("$cop-14", "2026-07-07T13:13:00.000Z")]
+      )
+    ).toBe(true);
+  });
+
+  it("does not request bridge backfill when the cached edge is close to live history", () => {
+    expect(
+      timelineNeedsBridgeBackfill(
+        [
+          message("$cop-9", "2026-07-06T14:29:00.000Z"),
+          message("$cop-10", "2026-07-06T14:30:00.000Z"),
+          message("$cop-14", "2026-07-06T14:33:00.000Z")
+        ],
+        [message("$cop-10", "2026-07-06T14:30:00.000Z"), message("$cop-14", "2026-07-06T14:33:00.000Z")]
+      )
+    ).toBe(false);
   });
 });
 

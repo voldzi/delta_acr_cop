@@ -431,6 +431,39 @@ describe("Matrix client diagnostics", () => {
     expect(session.getTimeline("!chat:cop.local").map((message) => message.body)).toEqual(["recent"]);
   });
 
+  it("keeps undecrypted encrypted events visible in timeline and chat previews", async () => {
+    const readable = createMessageEvent(
+      "readable",
+      Date.parse("2026-07-07T13:13:00.000Z"),
+      "$readable",
+      "@peer:cop.local"
+    );
+    const undecrypted = createEncryptedEvent(
+      Date.parse("2026-07-07T13:15:00.000Z"),
+      "$undecrypted",
+      "@peer:cop.local"
+    );
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [createRoom({ roomId: "!chat:cop.local", timeline: [readable, undecrypted] })]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    expect(session.getTimeline("!chat:cop.local").map((message) => [message.eventId, message.body])).toEqual([
+      ["$readable", "readable"],
+      [
+        "$undecrypted",
+        "Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy."
+      ]
+    ]);
+    expect(session.getRooms()[0]?.latestMessage).toMatchObject({
+      body: "Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy.",
+      eventId: "$undecrypted"
+    });
+  });
+
   it("optimistically clears room unread count after a read marker and restores it for a newer message", async () => {
     let unreadCount = 2;
     const older = createMessageEvent("older", Date.parse("2026-06-24T10:59:00.000Z"), "$older", "@peer:cop.local");
@@ -1442,6 +1475,22 @@ function createMessageEvent(
     getSender: () => sender,
     getTs: () => timestamp,
     getType: () => "m.room.message"
+  };
+}
+
+function createEncryptedEvent(timestamp: number, eventId: string, sender = "@operator:cop.local") {
+  return {
+    getContent: () => ({
+      algorithm: "m.megolm.v1.aes-sha2",
+      ciphertext: "encrypted",
+      device_id: "DEVICE",
+      sender_key: "sender-key",
+      session_id: "session-id"
+    }),
+    getId: () => eventId,
+    getSender: () => sender,
+    getTs: () => timestamp,
+    getType: () => "m.room.encrypted"
   };
 }
 

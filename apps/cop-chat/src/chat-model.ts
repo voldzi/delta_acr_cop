@@ -63,6 +63,28 @@ export function mergeTimelineMessages(
   );
 }
 
+export function timelineNeedsBridgeBackfill(
+  cachedOrMerged: MatrixTimelineMessage[],
+  live: MatrixTimelineMessage[],
+  minGapMs = 120_000
+): boolean {
+  if (cachedOrMerged.length === 0 || live.length === 0) {
+    return false;
+  }
+  const liveEventIds = new Set(live.map((message) => message.eventId));
+  const cachedOnly = cachedOrMerged.filter((message) => !liveEventIds.has(message.eventId));
+  if (cachedOnly.length === 0) {
+    return false;
+  }
+  const latestCachedOnlyAt = latestFiniteTimestamp(cachedOnly);
+  const earliestLiveAt = earliestFiniteTimestamp(live);
+  return (
+    latestCachedOnlyAt !== null &&
+    earliestLiveAt !== null &&
+    latestCachedOnlyAt + minGapMs < earliestLiveAt
+  );
+}
+
 export function normalizeChatPreferences(preferences: Partial<ChatPreferences>): ChatPreferences {
   const now = Date.now();
   const mutedUntilByKey = Object.fromEntries(
@@ -141,6 +163,30 @@ function isServerMatrixEventId(eventId: string): boolean {
 
 function isTemporaryMatrixEventId(eventId: string): boolean {
   return eventId.startsWith("~") || eventId.startsWith("local-") || !isServerMatrixEventId(eventId);
+}
+
+function earliestFiniteTimestamp(messages: MatrixTimelineMessage[]): number | null {
+  let earliest: number | null = null;
+  for (const message of messages) {
+    const timestamp = Date.parse(message.timestamp);
+    if (!Number.isFinite(timestamp)) {
+      continue;
+    }
+    earliest = earliest === null ? timestamp : Math.min(earliest, timestamp);
+  }
+  return earliest;
+}
+
+function latestFiniteTimestamp(messages: MatrixTimelineMessage[]): number | null {
+  let latest: number | null = null;
+  for (const message of messages) {
+    const timestamp = Date.parse(message.timestamp);
+    if (!Number.isFinite(timestamp)) {
+      continue;
+    }
+    latest = latest === null ? timestamp : Math.max(latest, timestamp);
+  }
+  return latest;
 }
 
 function attachmentSignature(message: MatrixTimelineMessage): string {
