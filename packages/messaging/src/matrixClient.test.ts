@@ -1043,7 +1043,9 @@ describe("Matrix client diagnostics", () => {
       isSecretStorageReady: vi.fn().mockResolvedValue(true),
       resetEncryption: vi.fn().mockResolvedValue(undefined)
     };
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({ crypto, getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }), rooms: [] })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -1073,7 +1075,9 @@ describe("Matrix client diagnostics", () => {
       isSecretStorageReady: vi.fn().mockResolvedValue(false),
       resetEncryption: vi.fn().mockResolvedValue(undefined)
     };
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({ crypto, getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }), rooms: [] })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
     let caught: unknown;
@@ -1166,7 +1170,9 @@ describe("Matrix client diagnostics", () => {
       isSecretStorageReady: vi.fn().mockResolvedValue(true),
       resetEncryption
     };
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({ crypto, getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }), rooms: [] })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
@@ -1344,7 +1350,9 @@ describe("Matrix client diagnostics", () => {
       loadSessionBackupPrivateKeyFromSecretStorage: vi.fn().mockResolvedValue(undefined),
       restoreKeyBackup: vi.fn().mockResolvedValue(undefined)
     };
-    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({ crypto, getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }), rooms: [] })
+    );
 
     const session = await createMatrixMessagingSession(createBootstrap());
 

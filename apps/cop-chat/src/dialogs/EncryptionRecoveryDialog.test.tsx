@@ -16,6 +16,7 @@ describe("EncryptionRecoveryDialog", () => {
     render(
       <EncryptionRecoveryDialog
         generatedRecoveryKey="COP-RECOVERY-KEY"
+        manualRestore={false}
         recoveryKeyInput=""
         saving={false}
         status={{
@@ -32,6 +33,7 @@ describe("EncryptionRecoveryDialog", () => {
         }}
         onClose={vi.fn()}
         onCreate={vi.fn()}
+        onManualRestore={vi.fn()}
         onPrepareMobile={vi.fn()}
         onRecoveryKeyInputChange={vi.fn()}
         onReset={vi.fn()}
@@ -51,6 +53,7 @@ describe("EncryptionRecoveryDialog", () => {
     render(
       <EncryptionRecoveryDialog
         generatedRecoveryKey={null}
+        manualRestore={false}
         recoveryKeyInput="SECRET"
         saving={false}
         status={{
@@ -67,6 +70,7 @@ describe("EncryptionRecoveryDialog", () => {
         }}
         onClose={vi.fn()}
         onCreate={vi.fn()}
+        onManualRestore={vi.fn()}
         onPrepareMobile={vi.fn()}
         onRecoveryKeyInputChange={onRecoveryKeyInputChange}
         onReset={vi.fn()}
@@ -83,10 +87,12 @@ describe("EncryptionRecoveryDialog", () => {
 
   it("does not force a web reset when key backup is active but iOS metadata are incomplete", () => {
     const onClose = vi.fn();
+    const onManualRestore = vi.fn();
     const onPrepareMobile = vi.fn();
     render(
       <EncryptionRecoveryDialog
         generatedRecoveryKey={null}
+        manualRestore={false}
         recoveryKeyInput=""
         saving={false}
         status={{
@@ -103,6 +109,7 @@ describe("EncryptionRecoveryDialog", () => {
         }}
         onClose={onClose}
         onCreate={vi.fn()}
+        onManualRestore={onManualRestore}
         onPrepareMobile={onPrepareMobile}
         onRecoveryKeyInputChange={vi.fn()}
         onReset={vi.fn()}
@@ -111,8 +118,48 @@ describe("EncryptionRecoveryDialog", () => {
     );
 
     expect(screen.getByText(/Web má aktivní E2EE key backup/u)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Zadat klíč znovu" }));
+    expect(onManualRestore).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Hotovo" }));
     expect(onClose).toHaveBeenCalled();
     expect(onPrepareMobile).not.toHaveBeenCalled();
+  });
+
+  it("lets a ready browser enter the recovery key again for undecrypted history", () => {
+    const onRestore = vi.fn();
+    const onRecoveryKeyInputChange = vi.fn();
+    render(
+      <EncryptionRecoveryDialog
+        generatedRecoveryKey={null}
+        manualRestore
+        recoveryKeyInput="SECRET"
+        saving={false}
+        status={{
+          canPrepareForMobile: true,
+          crossSigningReady: true,
+          keyBackupEnabled: true,
+          keyBackupExists: true,
+          matrixRustCompatible: true,
+          needsRecovery: false,
+          needsSetup: false,
+          ready: true,
+          secretStorageReady: true,
+          supported: true
+        }}
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onManualRestore={vi.fn()}
+        onPrepareMobile={vi.fn()}
+        onRecoveryKeyInputChange={onRecoveryKeyInputChange}
+        onReset={vi.fn()}
+        onRestore={onRestore}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Obnovovací klíč"), { target: { value: "NEW" } });
+    fireEvent.click(screen.getByRole("button", { name: /Obnovit klíče/u }));
+
+    expect(onRecoveryKeyInputChange).toHaveBeenCalledWith("NEW");
+    expect(onRestore).toHaveBeenCalled();
   });
 });

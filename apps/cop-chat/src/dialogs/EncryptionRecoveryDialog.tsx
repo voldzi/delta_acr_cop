@@ -6,11 +6,13 @@ import { useModalFocus } from "../hooks/useModalFocus";
 
 export interface EncryptionRecoveryDialogProps {
   generatedRecoveryKey: string | null;
+  manualRestore: boolean;
   recoveryKeyInput: string;
   saving: boolean;
   status: MatrixEncryptionRecoveryStatus | null;
   onClose: () => void;
   onCreate: () => void;
+  onManualRestore: () => void;
   onPrepareMobile: () => void;
   onRecoveryKeyInputChange: (value: string) => void;
   onReset: () => void;
@@ -19,11 +21,13 @@ export interface EncryptionRecoveryDialogProps {
 
 export default function EncryptionRecoveryDialog({
   generatedRecoveryKey,
+  manualRestore,
   recoveryKeyInput,
   saving,
   status,
   onClose,
   onCreate,
+  onManualRestore,
   onPrepareMobile,
   onRecoveryKeyInputChange,
   onReset,
@@ -119,15 +123,52 @@ export default function EncryptionRecoveryDialog({
               </button>
             </footer>
           </>
+        ) : manualRestore && hasBackup ? (
+          <>
+            <p>
+              Zadejte obnovovací klíč znovu. Použije se k opětovnému odemčení E2EE zálohy v tomto prohlížeči a může
+              doplnit klíče pro starší zprávy, které se zatím zobrazují jako nečitelné.
+            </p>
+            <label className="recovery-input">
+              <span>Obnovovací klíč</span>
+              <textarea
+                autoFocus
+                data-modal-autofocus="true"
+                spellCheck={false}
+                value={recoveryKeyInput}
+                onChange={(event) => onRecoveryKeyInputChange(event.target.value)}
+              />
+            </label>
+            <footer>
+              <button
+                disabled={saving || !recoveryKeyInput.trim()}
+                className="primary-dialog-action"
+                onClick={onRestore}
+                type="button"
+              >
+                {saving ? <Loader2 className="spin" size={18} /> : <KeyRound size={18} />}
+                Obnovit klíče
+              </button>
+              <button disabled={saving} className="secondary-dialog-action" onClick={onClose} type="button">
+                Zavřít
+              </button>
+              <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
+                Nouzově začít znovu bez staré historie
+              </button>
+            </footer>
+          </>
         ) : mobileReady ? (
           <>
             <p>
               E2EE obnova je kompletní: key backup, secret storage i cross-signing jsou připravené pro web i nativní
-              iPhone/iPad aplikaci. Pokud obnovovací klíč unikl, vygenerujte nový.
+              iPhone/iPad aplikaci. Pokud starší zprávy stále nejdou přečíst, zadejte uložený obnovovací klíč znovu.
             </p>
             <footer>
               <button className="primary-dialog-action" onClick={onClose} type="button">
                 Hotovo
+              </button>
+              <button disabled={saving} className="secondary-dialog-action" onClick={onManualRestore} type="button">
+                Zadat klíč znovu
               </button>
               <button disabled={saving} className="secondary-dialog-action" onClick={onPrepareMobile} type="button">
                 Vygenerovat nový klíč
@@ -152,6 +193,9 @@ export default function EncryptionRecoveryDialog({
             <footer>
               <button className="primary-dialog-action" onClick={onClose} type="button">
                 Hotovo
+              </button>
+              <button disabled={saving} className="secondary-dialog-action" onClick={onManualRestore} type="button">
+                Zadat klíč znovu
               </button>
               <button disabled={saving} className="secondary-dialog-action" onClick={onPrepareMobile} type="button">
                 {saving ? <Loader2 className="spin" size={18} /> : <KeyRound size={18} />}

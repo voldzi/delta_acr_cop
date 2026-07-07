@@ -561,6 +561,7 @@ export function ChatApp() {
   const [chatRemovalWorking, setChatRemovalWorking] = React.useState(false);
   const [memberRemovalCandidate, setMemberRemovalCandidate] = React.useState<MemberRemovalCandidate | null>(null);
   const [memberRemovalWorking, setMemberRemovalWorking] = React.useState(false);
+  const [recoveryManualRestore, setRecoveryManualRestore] = React.useState(false);
   const [aiSituationDialogOpen, setAiSituationDialogOpen] = React.useState(false);
   const [aiSituationResponse, setAiSituationResponse] = React.useState<AiCopResponse | null>(null);
   const [aiSituationError, setAiSituationError] = React.useState<string | null>(null);
@@ -2304,6 +2305,7 @@ export function ChatApp() {
     }
     const nextStatus = await refreshEncryptionRecoveryStatus(session);
     if (nextStatus && !nextStatus.ready) {
+      setRecoveryManualRestore(false);
       setRecoveryDialogOpen(true);
       throw new Error(
         nextStatus.needsSetup
@@ -2364,6 +2366,7 @@ export function ChatApp() {
       const recoveryKey = await session.createEncryptionRecovery(reset);
       setGeneratedRecoveryKey(recoveryKey);
       setRecoveryKeyInput("");
+      setRecoveryManualRestore(false);
       await refreshEncryptionRecoveryStatus(session);
       setNotice(
         reset
@@ -2418,6 +2421,7 @@ export function ChatApp() {
       await session.restoreEncryptionRecovery(recoveryKeyInput);
       setGeneratedRecoveryKey(null);
       setRecoveryKeyInput("");
+      setRecoveryManualRestore(false);
       await refreshEncryptionRecoveryStatus(session);
       if (selectedRoomId) {
         setTimeline(rememberRoomTimeline(selectedRoomId, session.getTimeline(selectedRoomId)));
@@ -3830,6 +3834,7 @@ export function ChatApp() {
                       onRecovery={() => {
                         setMessageMenuOpen(false);
                         setGeneratedRecoveryKey(null);
+                        setRecoveryManualRestore(true);
                         setRecoveryDialogOpen(true);
                       }}
                       onSearch={startMessageSearch}
@@ -3879,6 +3884,7 @@ export function ChatApp() {
                 text={recoveryBanner}
                 onAction={() => {
                   setGeneratedRecoveryKey(null);
+                  setRecoveryManualRestore(false);
                   setRecoveryDialogOpen(true);
                 }}
               />
@@ -3923,7 +3929,10 @@ export function ChatApp() {
                       ? "Tento web umí šifrované zprávy číst, ale účet ještě nemá kompletní recovery metadata pro iPhone/iPad."
                       : "Před psaním zpráv nastavte obnovovací klíč. Nové zprávy pak půjde bezpečně číst i na dalších zařízeních."
                 }
-                onAction={() => setRecoveryDialogOpen(true)}
+                onAction={() => {
+                  setRecoveryManualRestore(false);
+                  setRecoveryDialogOpen(true);
+                }}
               />
             ) : (
               <>
@@ -4258,14 +4267,20 @@ export function ChatApp() {
         <React.Suspense fallback={<DialogLoadingFallback label="Obnova E2EE" />}>
           <EncryptionRecoveryDialog
             generatedRecoveryKey={generatedRecoveryKey}
+            manualRestore={recoveryManualRestore}
             recoveryKeyInput={recoveryKeyInput}
             saving={recoveryWorking}
             status={encryptionRecoveryStatus}
             onClose={() => {
               setRecoveryDialogOpen(false);
               setGeneratedRecoveryKey(null);
+              setRecoveryManualRestore(false);
             }}
             onCreate={() => void createEncryptionRecovery(false)}
+            onManualRestore={() => {
+              setGeneratedRecoveryKey(null);
+              setRecoveryManualRestore(true);
+            }}
             onPrepareMobile={() => void prepareEncryptionRecoveryForMobile()}
             onRecoveryKeyInputChange={setRecoveryKeyInput}
             onReset={() => void createEncryptionRecovery(true)}
