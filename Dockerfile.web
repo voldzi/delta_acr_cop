@@ -54,6 +54,7 @@ FROM node:24-alpine AS runtime
 WORKDIR /app
 RUN corepack enable
 COPY --from=build /app ./
+ENV COP_API_BASE_URL=http://cop-api:4310
 ENV COP_WEB_PORT=4311
 EXPOSE 4311
 CMD ["pnpm", "--filter", "@cop/cop-web", "preview"]

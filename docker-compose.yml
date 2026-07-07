@@ -194,6 +194,7 @@ services:
         VITE_COP_MESSAGING_LAUNCHER_ENABLED: "${COP_WEB_MESSAGING_LAUNCHER_ENABLED:-true}"
     image: delta-acr-cop-web:local
     environment:
+      COP_API_BASE_URL: "${COP_INTERNAL_API_BASE_URL:-http://cop-api:4310}"
       COP_WEB_PORT: "4311"
       COP_DEPLOY_DOMAIN: "${COP_DEPLOY_DOMAIN:-docker.home.cz}"
       COP_WEB_ALLOWED_HOSTS: "${COP_WEB_ALLOWED_HOSTS:-}"
@@ -220,6 +221,7 @@ services:
         COP_CHAT_BASE_PATH: "${COP_CHAT_BASE_PATH:-/chat/}"
     image: delta-acr-cop-chat:local
     environment:
+      COP_API_BASE_URL: "${COP_INTERNAL_API_BASE_URL:-http://cop-api:4310}"
       COP_CHAT_PORT: "4314"
       COP_CHAT_BASE_PATH: "${COP_CHAT_BASE_PATH:-/chat/}"
       COP_DEPLOY_DOMAIN: "${COP_DEPLOY_DOMAIN:-docker.home.cz}"

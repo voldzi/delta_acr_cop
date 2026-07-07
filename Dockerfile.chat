@@ -40,6 +40,7 @@ FROM node:24-alpine AS runtime
 WORKDIR /app
 RUN corepack enable
 COPY --from=build /app ./
+ENV COP_API_BASE_URL=http://cop-api:4310
 ENV COP_CHAT_PORT=4314
 ENV COP_CHAT_BASE_PATH=/chat/
 ENV COP_OIDC_ISSUER=
