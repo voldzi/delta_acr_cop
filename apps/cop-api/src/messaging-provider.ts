@@ -352,7 +352,7 @@ interface CsmMessagingWebPushDeviceProviderResponse {
 }
 
 const defaultConfig: MessagingProviderConfig = {
-  baseUrl: "http://docker.home.cz:4050",
+  baseUrl: "http://comm.home.cz:4050",
   cacheTtlMs: 10_000,
   enabled: false,
   timeoutMs: 3_000

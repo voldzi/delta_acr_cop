@@ -78,6 +78,7 @@ import {
   recordAuthDiagnosticEvent,
   readAuthConfig,
   refreshAuthSession,
+  shouldRefreshAuthSessionOnResume,
   shouldExpireAuthSessionAfterRefreshFailure,
   subjectIdFromAuthSession,
   subjectIdFromStoredAuthValue,
@@ -1353,6 +1354,7 @@ export function App() {
   const skipNextPreferenceWriteRef = React.useRef(false);
   const notifiedProximityAlertsRef = React.useRef<Set<string>>(new Set());
   const notifiedSafetyAreaAlertsRef = React.useRef<Set<string>>(new Set());
+  const authSessionRef = React.useRef(authSession);
   const authToken = getAuthorizationToken(authSession, labToken);
   const authenticatedSessionActive = isAuthSessionActive(authSession);
   const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken);
@@ -1360,6 +1362,10 @@ export function App() {
   const mobilePairCodeFromPath = React.useMemo(readMobilePairCodeFromLocation, []);
   const authSubjectId = subjectIdFromAuthSession(authSession);
   const messagingRuntimeEnabled = Boolean(authToken);
+
+  React.useEffect(() => {
+    authSessionRef.current = authSession;
+  }, [authSession]);
 
   React.useEffect(() => {
     const focus = initialMapFeatureFocusRef.current;
@@ -1661,14 +1667,70 @@ export function App() {
     setAuthDiagnostics(readAuthDiagnostics());
   }, [authSession.expiresAt, authSession.profile?.subjectId, authSession.profile?.username, authSession.status]);
 
+  const ensureFreshAuthSession = React.useCallback(
+    async (options: { force?: boolean } = {}): Promise<AuthSession> => {
+      const currentSession = authSessionRef.current;
+      if (!isOidcEnabled(authConfig) || currentSession.status !== "authenticated") {
+        return currentSession;
+      }
+      if (!currentSession.refreshToken) {
+        return currentSession;
+      }
+      if (!options.force && !shouldRefreshAuthSessionOnResume(currentSession)) {
+        return currentSession;
+      }
+
+      let refreshError: unknown;
+      const refreshed = await refreshAuthSession(authConfig, currentSession).catch((error: unknown) => {
+        refreshError = error;
+        return null;
+      });
+      if (refreshed?.status === "authenticated") {
+        authSessionRef.current = refreshed;
+        setAuthRefreshRetry(0);
+        setAuthSession(refreshed);
+        setAuthDiagnostics(readAuthDiagnostics());
+        return refreshed;
+      }
+
+      if (shouldExpireAuthSessionAfterRefreshFailure(currentSession.expiresAt)) {
+        recordAuthDiagnosticEvent("session_expired", {
+          detail: "Obnova přihlášení se nezdařila při návratu do PWA.",
+          expiresAt: currentSession.expiresAt,
+          hasRefreshToken: Boolean(currentSession.refreshToken),
+          status: currentSession.status,
+          subjectId: subjectIdFromAuthSession(currentSession),
+          username: currentSession.profile?.username
+        });
+        const expiredSession: AuthSession = {
+          error: "Přihlášení vypršelo. Přihlaste se znovu.",
+          status: "anonymous"
+        };
+        authSessionRef.current = expiredSession;
+        setAuthSession(expiredSession);
+        setAuthDiagnostics(readAuthDiagnostics());
+        return expiredSession;
+      }
+
+      const retainedSession: AuthSession = {
+        ...currentSession,
+        error: refreshError instanceof Error
+          ? refreshError.message
+          : "Obnova přihlášení se dočasně nepodařila, zkusím to znovu."
+      };
+      authSessionRef.current = retainedSession;
+      setAuthRefreshRetry((current) => current + 1);
+      setAuthSession(retainedSession);
+      setAuthDiagnostics(readAuthDiagnostics());
+      return retainedSession;
+    },
+    [authConfig]
+  );
+
   const refreshAuthSessionForRequest = React.useCallback(async (): Promise<string | undefined> => {
-    const refreshed = await refreshAuthSession(authConfig, authSession);
-    if (refreshed?.status === "authenticated" && refreshed.accessToken) {
-      setAuthSession(refreshed);
-      return refreshed.accessToken;
-    }
-    return undefined;
-  }, [authConfig, authSession]);
+    const refreshed = await ensureFreshAuthSession({ force: true });
+    return getAuthorizationToken(refreshed, labToken);
+  }, [ensureFreshAuthSession]);
 
   React.useEffect(() => {
     if (!isOidcEnabled(authConfig) || authSession.status !== "authenticated" || !authSubjectId) {
@@ -1788,6 +1850,45 @@ export function App() {
     authSession.status,
     authSubjectId
   ]);
+
+  React.useEffect(() => {
+    if (!isOidcEnabled(authConfig)) {
+      return;
+    }
+
+    let cancelled = false;
+    let resumeInFlight = false;
+    const refreshOnResume = () => {
+      if (cancelled || resumeInFlight || document.visibilityState === "hidden") {
+        return;
+      }
+      const currentSession = authSessionRef.current;
+      if (!shouldRefreshAuthSessionOnResume(currentSession)) {
+        return;
+      }
+      resumeInFlight = true;
+      ensureFreshAuthSession()
+        .catch(() => undefined)
+        .finally(() => {
+          resumeInFlight = false;
+        });
+    };
+
+    window.addEventListener("pageshow", refreshOnResume);
+    window.addEventListener("focus", refreshOnResume);
+    window.addEventListener("online", refreshOnResume);
+    document.addEventListener("visibilitychange", refreshOnResume);
+    const timer = window.setInterval(refreshOnResume, 60_000);
+    refreshOnResume();
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("pageshow", refreshOnResume);
+      window.removeEventListener("focus", refreshOnResume);
+      window.removeEventListener("online", refreshOnResume);
+      document.removeEventListener("visibilitychange", refreshOnResume);
+    };
+  }, [authConfig, ensureFreshAuthSession]);
 
   React.useEffect(() => {
     if (!communityReportSubmitting) {
@@ -1951,13 +2052,29 @@ export function App() {
     loadInFlightRef.current = true;
     setIsLoading(true);
     try {
-      const data = await fetchCopDashboardData(apiBase, authToken, {
-        limit: trackHistoryLimit,
-        seconds: trackHistoryWindowSeconds
-      });
-      const observedAt = new Date();
-      applyDashboardData(data, observedAt);
-      persistOfflineSnapshot(data, observedAt.toISOString());
+      const loadOnline = async (token: string | undefined) => {
+        const data = await fetchCopDashboardData(apiBase, token, {
+          limit: trackHistoryLimit,
+          seconds: trackHistoryWindowSeconds
+        });
+        const observedAt = new Date();
+        applyDashboardData(data, observedAt);
+        persistOfflineSnapshot(data, observedAt.toISOString());
+      };
+      const freshSession = await ensureFreshAuthSession();
+      const freshToken = getAuthorizationToken(freshSession, labToken);
+      try {
+        await loadOnline(freshToken);
+      } catch (error) {
+        if (!isUnauthorizedApiError(error)) {
+          throw error;
+        }
+        const retryToken = await refreshAuthSessionForRequest();
+        if (!retryToken || retryToken === freshToken) {
+          throw error;
+        }
+        await loadOnline(retryToken);
+      }
       setLoadError(null);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Nepodařilo se načíst situační data.";
@@ -1987,7 +2104,9 @@ export function App() {
     authToken,
     browserOnline,
     dataAccessReady,
+    ensureFreshAuthSession,
     persistOfflineSnapshot,
+    refreshAuthSessionForRequest,
     trackHistoryLimit,
     trackHistoryWindowSeconds,
     userStorageScope
@@ -2159,51 +2278,64 @@ export function App() {
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     setStreamStatus("connecting");
-    const connection = connectCopStream(apiBase, authToken, {
-      onError: (error) => {
-        if (active) {
-          flushStreamMessages();
-          setStreamTelemetry((current) => updateStreamTelemetryForError(current, error));
-          setStreamStatus(browserOnline ? "degraded" : "offline");
-          scheduleReconnect();
-        }
-      },
-      onMessage: (message) => {
+    let connection: ReturnType<typeof connectCopStream> | null = null;
+    void ensureFreshAuthSession()
+      .then((freshSession) => {
         if (!active) {
           return;
         }
-        pendingStreamMessages.push(message);
-        if (message.type === "reconnect_required") {
-          scheduleStreamFlush("immediate");
+        const streamToken = getAuthorizationToken(freshSession, labToken);
+        connection = connectCopStream(apiBase, streamToken, {
+          onError: (error) => {
+            if (active) {
+              flushStreamMessages();
+              setStreamTelemetry((current) => updateStreamTelemetryForError(current, error));
+              setStreamStatus(browserOnline ? "degraded" : "offline");
+              scheduleReconnect();
+            }
+          },
+          onMessage: (message) => {
+            if (!active) {
+              return;
+            }
+            pendingStreamMessages.push(message);
+            if (message.type === "reconnect_required") {
+              scheduleStreamFlush("immediate");
+              setStreamStatus("degraded");
+              setStreamReconnectAttempt((current) => current + 1);
+              return;
+            }
+            scheduleStreamFlush(
+              message.type === "snapshot" || message.type === "backpressure" ? "immediate" : "deferred"
+            );
+          },
+          onOpen: () => {
+            if (active) {
+              setStreamStatus("live");
+              setStreamTelemetry((current) => ({ ...current, lastError: null }));
+            }
+          }
+        });
+        if (!connection) {
+          setStreamTelemetry((current) =>
+            updateStreamTelemetryForError(current, new Error("Readable stream is not available."))
+          );
           setStreamStatus("degraded");
-          setStreamReconnectAttempt((current) => current + 1);
-          return;
+          scheduleReconnect();
         }
-        scheduleStreamFlush(message.type === "snapshot" || message.type === "backpressure" ? "immediate" : "deferred");
-      },
-      onOpen: () => {
+      })
+      .catch((error: unknown) => {
         if (active) {
-          setStreamStatus("live");
-          setStreamTelemetry((current) => ({ ...current, lastError: null }));
+          setStreamTelemetry((current) =>
+            updateStreamTelemetryForError(
+              current,
+              error instanceof Error ? error : new Error("Obnova přihlášení pro živý stream selhala.")
+            )
+          );
+          setStreamStatus(browserOnline ? "degraded" : "offline");
+          scheduleReconnect();
         }
-      }
-    });
-    if (!connection) {
-      setStreamTelemetry((current) =>
-        updateStreamTelemetryForError(current, new Error("Readable stream is not available."))
-      );
-      setStreamStatus("degraded");
-      scheduleReconnect();
-      return () => {
-        active = false;
-        document.removeEventListener("visibilitychange", handleVisibilityChange);
-        clearStreamFlushTimer();
-        pendingStreamMessages.length = 0;
-        if (reconnectTimer !== undefined) {
-          window.clearTimeout(reconnectTimer);
-        }
-      };
-    }
+      });
 
     return () => {
       active = false;
@@ -2213,9 +2345,17 @@ export function App() {
       if (reconnectTimer !== undefined) {
         window.clearTimeout(reconnectTimer);
       }
-      connection.close();
+      connection?.close();
     };
-  }, [authToken, browserOnline, dataAccessReady, streamReconnectAttempt, trackHistoryLimit, trackHistoryWindowSeconds]);
+  }, [
+    authToken,
+    browserOnline,
+    dataAccessReady,
+    ensureFreshAuthSession,
+    streamReconnectAttempt,
+    trackHistoryLimit,
+    trackHistoryWindowSeconds
+  ]);
 
   React.useEffect(() => {
     if (!autoRefresh || streamStatus === "live" || streamStatus === "offline") {

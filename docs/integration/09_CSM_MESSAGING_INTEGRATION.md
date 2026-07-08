@@ -696,7 +696,7 @@ media by itself.
 
 ```env
 COP_CSM_MESSAGING_ENABLED=true
-COP_CSM_MESSAGING_BASE_URL=http://docker.home.cz:4050
+COP_CSM_MESSAGING_BASE_URL=http://comm.home.cz:4050
 COP_CSM_MESSAGING_PUBLIC_URL=https://msg.zeleznalady.cz
 COP_CSM_MESSAGING_MATRIX_PUBLIC_URL=https://msg.zeleznalady.cz
 COP_CSM_MESSAGING_TOKEN=<same-value-as-CSM_MESSAGING_API_TOKEN>

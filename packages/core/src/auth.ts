@@ -224,6 +224,13 @@ export function plannedAuthRefreshDelayMs(expiresAt: number, now = Date.now(), r
   return Math.max(0, remainingMs - leadMs);
 }
 
+export function shouldRefreshAuthSessionOnResume(session: AuthSession, now = Date.now(), leadMs = 2 * 60_000): boolean {
+  return session.status === "authenticated"
+    && Boolean(session.refreshToken)
+    && typeof session.expiresAt === "number"
+    && session.expiresAt <= now + leadMs;
+}
+
 export function shouldExpireAuthSessionAfterRefreshFailure(expiresAt: number | undefined, now = Date.now()): boolean {
   return typeof expiresAt !== "number" || expiresAt <= now + 5_000;
 }

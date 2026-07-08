@@ -11,6 +11,7 @@ import {
   plannedAuthRefreshDelayMs,
   readAuthDiagnostics,
   refreshAuthSession,
+  shouldRefreshAuthSessionOnResume,
   shouldExpireAuthSessionAfterRefreshFailure,
   subjectIdFromAuthSession,
   subjectIdFromStoredAuthValue,
@@ -83,6 +84,34 @@ describe("web auth helpers", () => {
     expect(shouldExpireAuthSessionAfterRefreshFailure(now + 60_000, now)).toBe(false);
     expect(shouldExpireAuthSessionAfterRefreshFailure(now + 5_000, now)).toBe(true);
     expect(shouldExpireAuthSessionAfterRefreshFailure(undefined, now)).toBe(true);
+  });
+
+  it("refreshes resumable PWA sessions only when the token is near expiry", () => {
+    const now = 1_000_000;
+
+    expect(
+      shouldRefreshAuthSessionOnResume({
+        accessToken: "token",
+        expiresAt: now + 119_000,
+        refreshToken: "refresh",
+        status: "authenticated"
+      }, now)
+    ).toBe(true);
+    expect(
+      shouldRefreshAuthSessionOnResume({
+        accessToken: "token",
+        expiresAt: now + 180_000,
+        refreshToken: "refresh",
+        status: "authenticated"
+      }, now)
+    ).toBe(false);
+    expect(
+      shouldRefreshAuthSessionOnResume({
+        accessToken: "token",
+        expiresAt: now + 30_000,
+        status: "authenticated"
+      }, now)
+    ).toBe(false);
   });
 
   it("decodes JWT payloads for operator display data", () => {

@@ -64,6 +64,7 @@ import {
   plannedAuthRefreshDelayMs,
   readAuthConfig,
   refreshAuthSession,
+  shouldRefreshAuthSessionOnResume,
   shouldExpireAuthSessionAfterRefreshFailure
 } from "@cop/core/auth";
 import type { AuthConfig, AuthSession } from "@cop/core/auth";
@@ -640,6 +641,7 @@ export function ChatApp() {
   const notifiedEventIdsRef = React.useRef<Set<string>>(new Set());
   const notificationPrimedRoomIdsRef = React.useRef<Set<string>>(new Set());
   const notificationRoomWatermarksRef = React.useRef<Map<string, number>>(new Map());
+  const authSessionRef = React.useRef(authSession);
   const selectedRoomIdRef = React.useRef<string | null>(null);
   const timelineCacheRef = React.useRef<Map<string, MatrixTimelineMessage[]>>(new Map());
   const timelinePersistFingerprintRef = React.useRef<Map<string, string>>(new Map());
@@ -734,6 +736,49 @@ export function ChatApp() {
     },
     [timelineStorageOwner]
   );
+
+  React.useEffect(() => {
+    authSessionRef.current = authSession;
+  }, [authSession]);
+
+  const ensureFreshChatAuthSession = React.useCallback(async (): Promise<AuthSession> => {
+    const currentSession = authSessionRef.current;
+    if (!isOidcEnabled(authConfig) || !shouldRefreshAuthSessionOnResume(currentSession)) {
+      return currentSession;
+    }
+    let refreshError: unknown;
+    const refreshed = await refreshAuthSession(authConfig, currentSession).catch((error: unknown) => {
+      refreshError = error;
+      return null;
+    });
+    if (refreshed?.status === "authenticated") {
+      authSessionRef.current = refreshed;
+      setAuthRefreshRetry(0);
+      setAuthSession(refreshed);
+      matrixAttemptKeyRef.current = null;
+      resetMatrixSession();
+      setRefreshNonce((value) => value + 1);
+      return refreshed;
+    }
+    if (shouldExpireAuthSessionAfterRefreshFailure(currentSession.expiresAt)) {
+      const expiredSession: AuthSession = { status: "anonymous" };
+      authSessionRef.current = expiredSession;
+      setAuthSession(expiredSession);
+      matrixAttemptKeyRef.current = null;
+      resetMatrixSession();
+      return expiredSession;
+    }
+    const retainedSession: AuthSession = {
+      ...currentSession,
+      error: refreshError instanceof Error
+        ? refreshError.message
+        : "Obnova přihlášení se dočasně nepodařila, zkusím to znovu."
+    };
+    authSessionRef.current = retainedSession;
+    setAuthRefreshRetry((current) => current + 1);
+    setAuthSession(retainedSession);
+    return retainedSession;
+  }, [authConfig, resetMatrixSession]);
 
   React.useEffect(() => {
     if (!isOidcEnabled(authConfig)) {
@@ -1313,7 +1358,13 @@ export function ChatApp() {
     const resume = () => {
       void refreshChatWebPushState();
       if (document.visibilityState === "visible") {
-        resumeMatrixSessionIfNeeded();
+        void ensureFreshChatAuthSession()
+          .then((session) => {
+            if (session.status === "authenticated") {
+              resumeMatrixSessionIfNeeded();
+            }
+          })
+          .catch(() => undefined);
       }
     };
     const onPageShow = () => resume();
@@ -1334,7 +1385,7 @@ export function ChatApp() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.clearInterval(timer);
     };
-  }, [refreshChatWebPushState, resumeMatrixSessionIfNeeded]);
+  }, [ensureFreshChatAuthSession, refreshChatWebPushState, resumeMatrixSessionIfNeeded]);
 
   React.useEffect(
     () => () => {
