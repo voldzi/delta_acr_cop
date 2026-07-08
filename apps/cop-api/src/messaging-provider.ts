@@ -445,8 +445,9 @@ export class CsmMessagingProvider implements MessagingProvider {
       ];
       const providerOk = capabilitiesResult.ok && isOperationalStatus(capabilities.status);
       const healthOk = healthResult.ok && isOperationalStatus(health?.status);
+      const criticalHealthOk = hasClientSafeMessagingHealth(health);
       const status: MessagingIntegrationRuntimeStatus = providerOk && healthOk ? "online" : "degraded";
-      let chatAvailable = isClientSafeMatrixBootstrapReady(capabilities, providerOk, healthOk);
+      let chatAvailable = isClientSafeMatrixBootstrapReady(capabilities, providerOk, criticalHealthOk);
       if (chatAvailable) {
         const publicHomeserverHealth = await checkPublicMatrixHomeserver(this.config);
         if (!publicHomeserverHealth.ok) {
@@ -1638,6 +1639,25 @@ function statusWarnings(status: string | undefined, label: string): string[] {
 function isOperationalStatus(status: string | undefined): boolean {
   const normalized = status?.toLowerCase();
   return normalized === "ok" || normalized === "online" || normalized === "ready";
+}
+
+function hasClientSafeMessagingHealth(health: CsmMessagingHealth | undefined): boolean {
+  if (!health || isOperationalStatus(health.status)) {
+    return true;
+  }
+  const degradedChecks = health.checks?.filter((check) => !isOperationalStatus(check.status)) ?? [];
+  return degradedChecks.every((check) => !isClientMessagingBlockingHealthCheck(check));
+}
+
+function isClientMessagingBlockingHealthCheck(check: { id?: string; message?: string; status?: string }): boolean {
+  const id = check.id?.toLowerCase() ?? "";
+  if (!id) {
+    return true;
+  }
+  if (id === "apns" || id === "web_push" || id === "notification_delivery" || id === "notification_store") {
+    return false;
+  }
+  return /matrix|metadata|identity|device|token|server|store|database|postgres|redis|oidc|config/u.test(id);
 }
 
 function sanitizeProviderWarning(warning: string): string {

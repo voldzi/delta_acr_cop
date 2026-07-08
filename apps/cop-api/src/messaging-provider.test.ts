@@ -130,6 +130,64 @@ describe("CsmMessagingProvider", () => {
     expect(status.warnings.join("\n")).toContain("Matrix public homeserver is not reachable");
   });
 
+  it("keeps PWA chat available when provider health is degraded only by APNs delivery", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/capabilities")) {
+        return new Response(JSON.stringify({
+          architecture: { plaintextOnServer: false },
+          contractVersion: "csm-messaging-provider-v1",
+          features: {
+            endToEndEncryptionRequired: true,
+            matrixIdentityResolution: true,
+            matrixRoomBinding: true,
+            matrixTokenBootstrap: true,
+            webPushDelivery: true
+          },
+          providerId: "csm.messaging",
+          security: {
+            readFromBrowser: false,
+            serverSideIntegrationOnly: true
+          },
+          serviceName: "CSM Messaging",
+          status: "online"
+        }), { status: 200 });
+      }
+      if (url.endsWith("/health/ready")) {
+        return new Response(JSON.stringify({
+          checks: [
+            { id: "matrix_config", message: "Matrix bootstrap is configured.", status: "ok" },
+            { id: "metadata_store", message: "Conversation metadata store is writable.", status: "ok" },
+            {
+              id: "apns",
+              message: "APNs key material is required for live native delivery.",
+              status: "degraded"
+            },
+            { id: "web_push", message: "Web Push live delivery is configured.", status: "ok" }
+          ],
+          status: "degraded"
+        }), { status: 503 });
+      }
+      return new Response(JSON.stringify({ versions: ["v1.12"] }), { status: 200 });
+    }));
+
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      matrixHomeserverPublicUrl: "https://msg.zeleznalady.cz",
+      timeoutMs: 3000
+    });
+
+    const status = await provider.fetchStatus(new Date("2026-05-22T12:00:00Z"));
+
+    expect(status.status).toBe("degraded");
+    expect(status.chatAvailable).toBe(true);
+    expect(status.detail).toBe("provider=online; health=degraded");
+    expect(status.warnings).toContain("apns: APNs key material is required for live native delivery.");
+    expect(status.warnings).not.toContain("Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready.");
+  });
+
   it("sends the configured server token only to the messaging provider", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ Authorization: "Bearer server-token-123" });
