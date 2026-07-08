@@ -72,11 +72,13 @@ import {
   hasOidcCallbackParams,
   initializeAuth,
   isAuthSessionActive,
+  isAuthSessionRetainedForOffline,
   isOidcEnabled,
   plannedAuthRefreshDelayMs,
   readAuthDiagnostics,
   recordAuthDiagnosticEvent,
   readAuthConfig,
+  retainAuthSessionAfterRefreshFailure,
   refreshAuthSession,
   shouldRefreshAuthSessionOnResume,
   shouldExpireAuthSessionAfterRefreshFailure,
@@ -1357,7 +1359,8 @@ export function App() {
   const authSessionRef = React.useRef(authSession);
   const authToken = getAuthorizationToken(authSession, labToken);
   const authenticatedSessionActive = isAuthSessionActive(authSession);
-  const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken);
+  const authSessionRetainedForOffline = isAuthSessionRetainedForOffline(authSession);
+  const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken) || authSessionRetainedForOffline;
   const profileAccessReady = Boolean(authToken);
   const mobilePairCodeFromPath = React.useMemo(readMobilePairCodeFromLocation, []);
   const authSubjectId = subjectIdFromAuthSession(authSession);
@@ -1693,6 +1696,15 @@ export function App() {
         return refreshed;
       }
 
+      const offlineRetainedSession = retainAuthSessionAfterRefreshFailure(currentSession, refreshError);
+      if (offlineRetainedSession) {
+        authSessionRef.current = offlineRetainedSession;
+        setAuthRefreshRetry((current) => current + 1);
+        setAuthSession(offlineRetainedSession);
+        setAuthDiagnostics(readAuthDiagnostics());
+        return offlineRetainedSession;
+      }
+
       if (shouldExpireAuthSessionAfterRefreshFailure(currentSession.expiresAt)) {
         recordAuthDiagnosticEvent("session_expired", {
           detail: "Obnova přihlášení se nezdařila při návratu do PWA.",
@@ -1714,9 +1726,10 @@ export function App() {
 
       const retainedSession: AuthSession = {
         ...currentSession,
-        error: refreshError instanceof Error
-          ? refreshError.message
-          : "Obnova přihlášení se dočasně nepodařila, zkusím to znovu."
+        error:
+          refreshError instanceof Error
+            ? refreshError.message
+            : "Obnova přihlášení se dočasně nepodařila, zkusím to znovu."
       };
       authSessionRef.current = retainedSession;
       setAuthRefreshRetry((current) => current + 1);
@@ -1787,6 +1800,14 @@ export function App() {
             setAuthDiagnostics(readAuthDiagnostics());
             return;
           }
+          const offlineRetainedSession = retainAuthSessionAfterRefreshFailure(authSession);
+          if (offlineRetainedSession) {
+            authSessionRef.current = offlineRetainedSession;
+            setAuthRefreshRetry((current) => current + 1);
+            setAuthSession(offlineRetainedSession);
+            setAuthDiagnostics(readAuthDiagnostics());
+            return;
+          }
           if (shouldExpireAuthSessionAfterRefreshFailure(authSession.expiresAt)) {
             recordAuthDiagnosticEvent("session_expired", {
               detail: "Obnova přihlášení se nezdařila před expirací tokenu.",
@@ -1813,6 +1834,14 @@ export function App() {
         })
         .catch((error: unknown) => {
           if (cancelled) {
+            return;
+          }
+          const offlineRetainedSession = retainAuthSessionAfterRefreshFailure(authSession, error);
+          if (offlineRetainedSession) {
+            authSessionRef.current = offlineRetainedSession;
+            setAuthRefreshRetry((current) => current + 1);
+            setAuthSession(offlineRetainedSession);
+            setAuthDiagnostics(readAuthDiagnostics());
             return;
           }
           if (shouldExpireAuthSessionAfterRefreshFailure(authSession.expiresAt)) {
@@ -13145,6 +13174,8 @@ function authDiagnosticEventLabel(event: AuthDiagnostics["events"][number]): str
       return "relace byla uložena";
     case "session_restored":
       return "relace byla obnovena";
+    case "session_retained_offline":
+      return `relace drží offline režim${detail}`;
     case "storage_changed":
       return `změna účtu v jiném okně${detail}`;
     case "storage_write_failed":

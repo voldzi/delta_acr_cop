@@ -363,6 +363,48 @@ const mapFeatureClickPriorityLayerIds = [
   situationFillLayerId
 ] as const;
 
+const dynamicLegendLayerIds = [
+  trackSymbolLayerId,
+  trackLabelLayerId,
+  trackClusterCircleLayerId,
+  trackClusterCountLayerId,
+  trackClusterSymbolLayerId,
+  trackClusterLabelLayerId,
+  sharedLiveLocationLayerId,
+  sharedLiveLocationLabelLayerId,
+  situationRiskIconLayerId,
+  situationRadioPointLayerId,
+  situationRadioLabelLayerId,
+  situationFloodTrendLayerId,
+  situationHydroReferenceDetailTrendLayerId,
+  situationHydroReferenceDetailIconLayerId,
+  situationHydroReferenceIconLayerId,
+  situationHydroReferenceTrendLayerId,
+  situationHydroReferenceLabelLayerId,
+  situationRiskPointLayerId,
+  situationRiskLabelLayerId,
+  situationTrafficSymbolLayerId,
+  situationTrafficStopLayerId,
+  situationMobileSymbolLayerId,
+  situationWeatherCameraLayerId,
+  situationWeatherLabelLayerId,
+  situationWeatherValueLayerId,
+  situationWeatherWindLayerId,
+  situationWeatherDetailLayerId,
+  situationWeatherPriorityLayerId,
+  situationWeatherConditionLayerId,
+  situationWeatherForecastIconLayerId,
+  situationWeatherForecastLabelLayerId,
+  situationAirQualityLabelLayerId,
+  situationAirQualityPointLayerId,
+  situationOsmClusterSymbolLayerId,
+  situationOsmClusterLabelLayerId,
+  situationOsmDetailSymbolLayerId,
+  situationOsmSymbolLayerId,
+  situationPointLayerId,
+  situationLabelLayerId
+] as const;
+
 type RasterOverlayCoordinates = [[number, number], [number, number], [number, number], [number, number]];
 
 interface SituationRasterOverlaySpec {
@@ -477,6 +519,35 @@ export interface TrackFeature {
 export interface TrackFeatureCollection {
   type: "FeatureCollection";
   features: TrackFeature[];
+}
+
+export interface DynamicLegendItem {
+  color: string;
+  count: number;
+  disposition?: AffiliationDisposition;
+  key: string;
+  label: string;
+  shape: "circle" | "cluster" | "diamond" | "square";
+}
+
+interface DynamicLegendBucket {
+  color: string;
+  count: number;
+  disposition?: AffiliationDisposition;
+  identities: Set<string>;
+  key: string;
+  label: string;
+  shape: DynamicLegendItem["shape"];
+}
+
+interface DynamicLegendCandidate {
+  color: string;
+  disposition?: AffiliationDisposition;
+  identity: string;
+  key: string;
+  label: string;
+  shape: DynamicLegendItem["shape"];
+  weight: number;
 }
 
 export interface TrackLineFeature {
@@ -956,6 +1027,7 @@ function CopMapComponent({
   const [sketchPalettePosition, setSketchPalettePosition] = React.useState<{ x: number; y: number } | null>(null);
   const [sketchPaletteDragging, setSketchPaletteDragging] = React.useState(false);
   const [mapLegendCollapsed, setMapLegendCollapsed] = React.useState(false);
+  const [dynamicLegendItems, setDynamicLegendItems] = React.useState<DynamicLegendItem[]>([]);
   const [sketchStroke, setSketchStroke] = React.useState(defaultSketchStyle.stroke);
   const [sketchFill, setSketchFill] = React.useState(defaultSketchStyle.fill);
   const [sketchOpacity, setSketchOpacity] = React.useState(defaultSketchStyle.opacity);
@@ -4749,6 +4821,50 @@ function CopMapComponent({
   }, [clusterTracks, mapReady, situationOsmClusterFeatureCollection]);
 
   React.useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) {
+      setDynamicLegendItems([]);
+      return undefined;
+    }
+    let frameId: number | null = null;
+    const updateLegend = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        const containerRect = containerRef.current?.getBoundingClientRect();
+        const limit = visibleLegendLimitForMapSize(containerRect?.width ?? 0, containerRect?.height ?? 0);
+        const layers = dynamicLegendLayerIds.filter((layerId) => Boolean(map.getLayer(layerId)));
+        const renderedFeatures = layers.length > 0 ? map.queryRenderedFeatures(undefined, { layers }) : [];
+        const nextItems = buildDynamicLegendItemsFromRenderedFeatureProperties(renderedFeatures, limit);
+        setDynamicLegendItems((current) => (dynamicLegendItemsEqual(current, nextItems) ? current : nextItems));
+      });
+    };
+    updateLegend();
+    map.on("idle", updateLegend);
+    map.on("moveend", updateLegend);
+    map.on("zoomend", updateLegend);
+    map.on("resize", updateLegend);
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      map.off("idle", updateLegend);
+      map.off("moveend", updateLegend);
+      map.off("zoomend", updateLegend);
+      map.off("resize", updateLegend);
+    };
+  }, [
+    clusterTracks,
+    featureCollection,
+    mapReady,
+    sharedLiveLocationFeatureCollection,
+    situationFeatureCollection,
+    situationOsmClusterFeatureCollection
+  ]);
+
+  React.useEffect(() => {
     const source = mapRef.current?.getSource(selectedTransitRouteSourceId);
     if (mapReady && source && "setData" in source) {
       (source as GeoJSONSource).setData(selectedRouteFeatureCollection as Parameters<GeoJSONSource["setData"]>[0]);
@@ -5906,10 +6022,16 @@ function CopMapComponent({
         </button>
         {mapLegendCollapsed ? null : (
           <div className="map-legend-items">
-            <LegendItem disposition="friend" color="#3b82f6" label="Vlastní" />
-            <LegendItem disposition="hostile" color="#ef4444" label="Rizikové" />
-            <LegendItem disposition="neutral" color="#22c55e" label="Neutrální" />
-            <LegendItem disposition="unknown" color="#facc15" label="Neznámé" />
+            {dynamicLegendItems.length > 0 ? (
+              dynamicLegendItems.map((item) => <DynamicLegendItemView item={item} key={item.key} />)
+            ) : (
+              <>
+                <LegendItem disposition="friend" color="#3b82f6" label="Vlastní" />
+                <LegendItem disposition="hostile" color="#ef4444" label="Rizikové" />
+                <LegendItem disposition="neutral" color="#22c55e" label="Neutrální" />
+                <LegendItem disposition="unknown" color="#facc15" label="Neznámé" />
+              </>
+            )}
             {showHistory ? <LineLegendItem label="Historie" /> : null}
             {showPrediction ? <LineLegendItem dashed label="Predikce" /> : null}
             {showProximityAlertRadius && userLocation ? (
@@ -9588,6 +9710,266 @@ function recordString(record: Record<string, unknown>, key: string): string | un
   return stringProperty(record[key]);
 }
 
+export function visibleLegendLimitForMapSize(width: number, height: number): number {
+  const safeWidth = Number.isFinite(width) ? Math.max(0, width) : 0;
+  const safeHeight = Number.isFinite(height) ? Math.max(0, height) : 0;
+  const area = safeWidth * safeHeight;
+  if (safeWidth < 390 || safeHeight < 280) {
+    return 3;
+  }
+  if (safeWidth < 540 || area < 230_000) {
+    return 4;
+  }
+  if (safeWidth < 760 || area < 430_000) {
+    return 5;
+  }
+  if (safeWidth < 1080 || area < 760_000) {
+    return 7;
+  }
+  return 10;
+}
+
+export function buildDynamicLegendItemsFromRenderedFeatureProperties(
+  features: Array<{ id?: string | number; layer?: { id?: string }; properties?: unknown }>,
+  limit: number
+): DynamicLegendItem[] {
+  const buckets = new Map<string, DynamicLegendBucket>();
+  features.forEach((feature, index) => {
+    const properties = isRecord(feature.properties) ? feature.properties : {};
+    const candidate = dynamicLegendCandidateFromProperties(
+      properties,
+      `rendered:${feature.layer?.id ?? "layer"}:${feature.id ?? index}`
+    );
+    if (!candidate) {
+      return;
+    }
+    const bucket =
+      buckets.get(candidate.key) ??
+      ({
+        color: candidate.color,
+        count: 0,
+        disposition: candidate.disposition,
+        identities: new Set<string>(),
+        key: candidate.key,
+        label: candidate.label,
+        shape: candidate.shape
+      } satisfies DynamicLegendBucket);
+    if (!bucket.identities.has(candidate.identity)) {
+      bucket.identities.add(candidate.identity);
+      bucket.count += candidate.weight;
+    }
+    buckets.set(candidate.key, bucket);
+  });
+  return Array.from(buckets.values())
+    .map(({ identities: _identities, ...item }) => item)
+    .filter((item) => item.count > 0)
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label, "cs-CZ"))
+    .slice(0, Math.max(0, Math.floor(limit)));
+}
+
+function dynamicLegendCandidateFromProperties(
+  properties: Record<string, unknown>,
+  fallbackIdentity: string
+): DynamicLegendCandidate | null {
+  const cluster = properties.cluster === true || properties.cluster === 1;
+  if (cluster) {
+    const identity = propertyIdentity(properties, "cluster_id") ?? fallbackIdentity;
+    return {
+      color: "#8cb6d8",
+      identity: `cluster:${identity}`,
+      key: "cluster",
+      label: "Shluky",
+      shape: "cluster",
+      weight: Math.max(1, Math.round(numberProperty(properties.point_count) ?? 1))
+    };
+  }
+
+  const objectId = stringProperty(properties.objectId);
+  if (objectId) {
+    const objectType = stringProperty(properties.objectType) ?? "UNKNOWN";
+    const disposition = affiliationDispositionProperty(properties.symbolDisposition);
+    const fallbackAffiliation = getAffiliationPresentation(stringProperty(properties.affiliation) ?? "UNKNOWN");
+    return {
+      color: stringProperty(properties.symbolColor) ?? fallbackAffiliation.color,
+      disposition: disposition ?? fallbackAffiliation.disposition,
+      identity: `object:${objectId}`,
+      key: `object:${normalizeLegendKey(objectType)}`,
+      label: objectTypeLegendLabel(objectType),
+      shape: disposition === "hostile" ? "diamond" : "square",
+      weight: 1
+    };
+  }
+
+  const shareId = stringProperty(properties.shareId);
+  if (shareId) {
+    return {
+      color: "#10b981",
+      identity: `shared-location:${shareId}`,
+      key: "shared-location",
+      label: "Sdílené polohy",
+      shape: "circle",
+      weight: 1
+    };
+  }
+
+  const drawingId = stringProperty(properties.drawingId);
+  if (drawingId) {
+    return {
+      color: stringProperty(properties.stroke) ?? stringProperty(properties.color) ?? "#c8f08d",
+      identity: `sketch:${drawingId}`,
+      key: "sketch",
+      label: "Zákresy",
+      shape: "square",
+      weight: 1
+    };
+  }
+
+  const featureId = stringProperty(properties.featureId);
+  if (featureId) {
+    const label = situationLegendLabel(properties);
+    return {
+      color: stringProperty(properties.situationStatusColor) ?? situationLegendColor(properties),
+      identity: `feature:${featureId}`,
+      key: `situation:${normalizeLegendKey(label)}`,
+      label,
+      shape: "circle",
+      weight: 1
+    };
+  }
+
+  return null;
+}
+
+function propertyIdentity(properties: Record<string, unknown>, key: string): string | undefined {
+  const value = properties[key];
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return undefined;
+}
+
+function affiliationDispositionProperty(value: unknown): AffiliationDisposition | undefined {
+  if (value === "friend" || value === "hostile" || value === "neutral" || value === "pending" || value === "unknown") {
+    return value;
+  }
+  return undefined;
+}
+
+function normalizeLegendKey(value: string): string {
+  return (
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/gu, "")
+      .replace(/[^a-zA-Z0-9]+/gu, "-")
+      .replace(/^-+|-+$/gu, "")
+      .toLowerCase() || "unknown"
+  );
+}
+
+function objectTypeLegendLabel(objectType: string): string {
+  const normalized = objectType.trim().toUpperCase();
+  const labels: Record<string, string> = {
+    AIRCRAFT: "Letadla",
+    GROUND_UNIT: "Pozemní jednotky",
+    INCIDENT: "Incidenty",
+    MISSILE_TRACK: "Střely",
+    REPORT: "Hlášení",
+    RESCUE_ASSET: "Záchranné prostředky",
+    UAV: "UAV",
+    UNKNOWN: "Neznámé objekty",
+    VEHICLE: "Vozidla"
+  };
+  return labels[normalized] ?? (normalized ? normalized.replaceAll("_", " ") : "Objekty");
+}
+
+function situationLegendLabel(properties: Record<string, unknown>): string {
+  const layer = stringProperty(properties.layer) ?? stringProperty(properties.layerId) ?? "";
+  if (properties.weatherForecastArea || properties.weatherObservation || properties.weatherGrid || layer.includes("weather")) {
+    return "Počasí";
+  }
+  if (properties.weatherCamera) {
+    return "Kamery";
+  }
+  if (properties.airQualityFeature || layer.includes("air_quality")) {
+    return "Kvalita ovzduší";
+  }
+  if (properties.trafficTransit || layer.includes("traffic")) {
+    return "Doprava";
+  }
+  if (properties.coverageQuality || properties.mobileSymbolKey || layer.includes("mobile")) {
+    return "Mobilní síť";
+  }
+  if (properties.riskFeature || stringProperty(properties.riskKind)) {
+    return stringProperty(properties.riskKind) === "flood" ? "Vodní rizika" : "Rizika";
+  }
+  if (properties.safetyAlertLayer || layer.includes("warning") || layer.includes("alert")) {
+    return "Výstrahy";
+  }
+  if (properties.radioReference || layer.includes("radio")) {
+    return "Radiové body";
+  }
+  if (properties.trailRoute || properties.trailPoi) {
+    return "Outdoor";
+  }
+  if (properties.missionArena) {
+    return "Mise";
+  }
+  if (properties.takGateway) {
+    return "TAK";
+  }
+  if (properties.boundaryReference) {
+    return "Hranice";
+  }
+  return (
+    stringProperty(properties.osmCategoryLabel) ??
+    stringProperty(properties.mapLabel) ??
+    stringProperty(properties.situationStatusLabel) ??
+    "Situační kontext"
+  );
+}
+
+function situationLegendColor(properties: Record<string, unknown>): string {
+  if (properties.weatherForecastArea || properties.weatherObservation || properties.weatherGrid) {
+    return "#38bdf8";
+  }
+  if (properties.airQualityFeature) {
+    return "#22c55e";
+  }
+  if (properties.trafficTransit) {
+    return "#f97316";
+  }
+  if (properties.coverageQuality || properties.mobileSymbolKey) {
+    return "#a3e635";
+  }
+  if (properties.riskFeature || properties.safetyAlertLayer) {
+    return "#facc15";
+  }
+  return "#38bdf8";
+}
+
+function dynamicLegendItemsEqual(left: DynamicLegendItem[], right: DynamicLegendItem[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((item, index) => {
+      const other = right[index];
+      if (!other) {
+        return false;
+      }
+      return (
+        item.color === other.color &&
+        item.count === other.count &&
+        item.disposition === other.disposition &&
+        item.key === other.key &&
+        item.label === other.label &&
+        item.shape === other.shape
+      );
+    })
+  );
+}
+
 interface TrackFeatureOptions {
   hoveredObjectId?: string;
   publicFlightSymbolMode?: PublicFlightSymbolMode;
@@ -11779,6 +12161,25 @@ function LegendItem({
     <div className="legend-item">
       <span className={`legend-symbol ${disposition}`} style={{ borderColor: color }} />
       {label}
+    </div>
+  );
+}
+
+function DynamicLegendItemView({ item }: { item: DynamicLegendItem }) {
+  return (
+    <div className="legend-item dynamic" title={`${item.label}: ${item.count.toLocaleString("cs-CZ")} v záběru`}>
+      <span
+        className={[
+          "legend-dynamic-symbol",
+          item.shape,
+          item.disposition ? `disposition-${item.disposition}` : ""
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        style={{ borderColor: item.color }}
+      />
+      <strong>{item.label}</strong>
+      <small>{item.count.toLocaleString("cs-CZ")}</small>
     </div>
   );
 }

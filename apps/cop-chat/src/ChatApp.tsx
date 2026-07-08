@@ -60,9 +60,11 @@ import {
   initializeAuth,
   authSessionStorageKey,
   isAuthSessionActive,
+  isAuthSessionRetainedForOffline,
   isOidcEnabled,
   plannedAuthRefreshDelayMs,
   readAuthConfig,
+  retainAuthSessionAfterRefreshFailure,
   refreshAuthSession,
   shouldRefreshAuthSessionOnResume,
   shouldExpireAuthSessionAfterRefreshFailure
@@ -649,7 +651,7 @@ export function ChatApp() {
   const memberAddPendingIdsRef = React.useRef<Set<string>>(new Set());
 
   const authToken = getAuthorizationToken(authSession, labToken);
-  const authenticated = Boolean(authToken);
+  const authenticated = Boolean(authToken) || isAuthSessionRetainedForOffline(authSession);
   const authSubjectId = authSession.profile?.subjectId ?? authSession.profile?.username ?? authSession.profile?.email;
   const preferencesOwner = authSubjectId ?? authSession.profile?.username ?? "anonymous";
   const localUserPreferences = React.useMemo(
@@ -760,6 +762,13 @@ export function ChatApp() {
       setRefreshNonce((value) => value + 1);
       return refreshed;
     }
+    const offlineRetainedSession = retainAuthSessionAfterRefreshFailure(currentSession, refreshError);
+    if (offlineRetainedSession) {
+      authSessionRef.current = offlineRetainedSession;
+      setAuthRefreshRetry((current) => current + 1);
+      setAuthSession(offlineRetainedSession);
+      return offlineRetainedSession;
+    }
     if (shouldExpireAuthSessionAfterRefreshFailure(currentSession.expiresAt)) {
       const expiredSession: AuthSession = { status: "anonymous" };
       authSessionRef.current = expiredSession;
@@ -770,9 +779,10 @@ export function ChatApp() {
     }
     const retainedSession: AuthSession = {
       ...currentSession,
-      error: refreshError instanceof Error
-        ? refreshError.message
-        : "Obnova přihlášení se dočasně nepodařila, zkusím to znovu."
+      error:
+        refreshError instanceof Error
+          ? refreshError.message
+          : "Obnova přihlášení se dočasně nepodařila, zkusím to znovu."
     };
     authSessionRef.current = retainedSession;
     setAuthRefreshRetry((current) => current + 1);
@@ -1322,13 +1332,25 @@ export function ChatApp() {
             setAuthSession(nextSession);
             return;
           }
+          const offlineRetainedSession = retainAuthSessionAfterRefreshFailure(authSession);
+          if (offlineRetainedSession) {
+            setAuthRefreshRetry((current) => current + 1);
+            setAuthSession(offlineRetainedSession);
+            return;
+          }
           if (shouldExpireAuthSessionAfterRefreshFailure(authSession.expiresAt)) {
             setAuthSession({ status: "anonymous" });
             return;
           }
           setAuthRefreshRetry((current) => current + 1);
         })
-        .catch(() => {
+        .catch((error: unknown) => {
+          const offlineRetainedSession = retainAuthSessionAfterRefreshFailure(authSession, error);
+          if (offlineRetainedSession) {
+            setAuthRefreshRetry((current) => current + 1);
+            setAuthSession(offlineRetainedSession);
+            return;
+          }
           setAuthRefreshRetry((current) => current + 1);
         });
     }, delay);
@@ -6257,10 +6279,19 @@ function LocationMessage({
   onOpenPreview: (item: MediaPreviewItem) => void;
 }) {
   const location = message.location;
+  const live = location?.live;
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (!live?.expiresAt || live.status !== "live") {
+      return undefined;
+    }
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [live?.expiresAt, live?.status]);
   if (!location) {
     return null;
   }
-  const live = location.live;
+  const remaining = live?.status === "live" ? formatLiveLocationRemaining(live.expiresAt, now) : null;
   const subtitle = live
     ? live.status === "ended"
       ? "Sdílení ukončeno"
@@ -6276,6 +6307,7 @@ function LocationMessage({
       <span>
         <strong>{location.label ?? "Sdílená poloha"}</strong>
         <small>{subtitle}</small>
+        {remaining ? <em className="location-live-countdown">Zbývá {remaining}</em> : null}
       </span>
     </button>
   );
@@ -8193,19 +8225,38 @@ function latestTimelineLocation(messages: MatrixTimelineMessage[]): MatrixLocati
 
 export function collapseLiveLocationTimeline(messages: MatrixTimelineMessage[]): MatrixTimelineMessage[] {
   const latestLiveEventIdByShare = new Map<string, string>();
+  const latestDeviceLocationEventIdBySender = new Map<string, string>();
   messages.forEach((message) => {
     const shareId = message.location?.live?.shareId;
     if (shareId) {
       latestLiveEventIdByShare.set(shareId, message.eventId);
+      return;
+    }
+    if (isCollapsibleDeviceLocationMessage(message)) {
+      latestDeviceLocationEventIdBySender.set(message.sender, message.eventId);
     }
   });
-  if (latestLiveEventIdByShare.size === 0) {
+  if (latestLiveEventIdByShare.size === 0 && latestDeviceLocationEventIdBySender.size === 0) {
     return messages;
   }
   return messages.filter((message) => {
     const shareId = message.location?.live?.shareId;
-    return !shareId || latestLiveEventIdByShare.get(shareId) === message.eventId;
+    if (shareId) {
+      return latestLiveEventIdByShare.get(shareId) === message.eventId;
+    }
+    if (isCollapsibleDeviceLocationMessage(message)) {
+      return latestDeviceLocationEventIdBySender.get(message.sender) === message.eventId;
+    }
+    return true;
   });
+}
+
+function isCollapsibleDeviceLocationMessage(message: MatrixTimelineMessage): boolean {
+  const location = message.location;
+  if (message.kind !== "location" || !location || location.live || location.source !== "device") {
+    return false;
+  }
+  return validMatrixLocation(location);
 }
 
 export function collectActiveLiveLocations(messages: MatrixTimelineMessage[], roomId: string | null) {
@@ -9546,6 +9597,30 @@ function formatLiveLocationDuration(seconds: number): string {
   }
   const minutes = Math.max(1, Math.round(seconds / 60));
   return `${minutes} minut`;
+}
+
+function formatLiveLocationRemaining(expiresAt: string | undefined, now = Date.now()): string | null {
+  if (!expiresAt) {
+    return null;
+  }
+  const expiresAtMs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresAtMs)) {
+    return null;
+  }
+  const remainingSeconds = Math.max(0, Math.ceil((expiresAtMs - now) / 1000));
+  if (remainingSeconds <= 0) {
+    return "vypršelo";
+  }
+  if (remainingSeconds < 60) {
+    return "méně než min";
+  }
+  const remainingMinutes = Math.ceil(remainingSeconds / 60);
+  if (remainingMinutes < 60) {
+    return `${remainingMinutes} min`;
+  }
+  const hours = Math.floor(remainingMinutes / 60);
+  const minutes = remainingMinutes % 60;
+  return minutes > 0 ? `${hours} h ${minutes} min` : `${hours} h`;
 }
 
 export function aiQuestionNeedsCurrentLocation(question: string): boolean {

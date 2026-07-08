@@ -57,6 +57,14 @@ indikace při startu. Web shell zároveň požádá prohlížeč přes Storage M
 o persistent storage. Pokud prohlížeč žádost odmítne nebo API nepodporuje, PWA
 funguje dál v best-effort režimu a stav se zobrazí v nastavení.
 
+OIDC relace se ukládá odděleně od datového snapshotu. Pokud při startu,
+návratu z pozadí nebo plánované obnově access token expiroval a refresh selže
+kvůli offline stavu, timeoutu, rate limitu nebo 5xx odpovědi identity provideru,
+PWA zachová lokální identitu, uživatelský scope a offline snapshot. Expirovaný
+access token se v tomto režimu neposílá do API; online operace počkají na další
+úspěšný refresh. Lokální relace se automaticky smaže jen při ručním odhlášení
+nebo při potvrzeně neplatném refresh tokenu.
+
 Stejnou persistent storage žádost spouští i samostatný chat shell po vytvoření
 Matrix session. E2EE recovery key se v moderním prohlížeči neukládá jako
 plaintext `localStorage`; `@cop/messaging` jej zapíše do IndexedDB jako sealed

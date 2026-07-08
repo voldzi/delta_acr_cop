@@ -38,6 +38,7 @@ export type AuthDiagnosticEventType =
   | "session_cleared"
   | "session_expired"
   | "session_missing"
+  | "session_retained_offline"
   | "session_persisted"
   | "session_restored"
   | "storage_changed"
@@ -99,6 +100,7 @@ const callbackStateTtlMs = 10 * 60 * 1000;
 const sessionKey = "cop.oidc.session.v1";
 const diagnosticsKey = "cop.oidc.diagnostics.v1";
 const diagnosticsLimit = 40;
+const offlineRetainedAuthError = "Přihlášení čeká na obnovení připojení. Offline data zůstávají dostupná.";
 
 export const authSessionStorageKey = sessionKey;
 
@@ -127,6 +129,18 @@ export function createInitialAuthSession(config: AuthConfig): AuthSession {
     return { ...stored, status: "authenticated" };
   }
   if (stored) {
+    if (stored.profile && stored.refreshToken) {
+      const retainedSession: AuthSession = {
+        ...stored,
+        error: offlineRetainedAuthError,
+        status: "authenticated"
+      };
+      recordAuthDiagnosticEvent("session_retained_offline", {
+        ...snapshotFromStoredSession(stored, detectedSessionStorage()),
+        detail: offlineRetainedAuthError
+      });
+      return retainedSession;
+    }
     recordAuthDiagnosticEvent("session_expired", snapshotFromStoredSession(stored, detectedSessionStorage()));
   } else {
     recordAuthDiagnosticEvent("session_missing", { storage: "none" });
@@ -164,11 +178,21 @@ export async function initializeAuth(config: AuthConfig): Promise<AuthSession> {
     return { ...stored, status: "authenticated" };
   }
   if (stored.refreshToken) {
-    const refreshed = await refreshSession(config, stored.refreshToken);
+    let refreshError: unknown;
+    let refreshed: AuthSession | null = null;
+    try {
+      refreshed = await refreshSession(config, stored.refreshToken);
+    } catch (error: unknown) {
+      refreshError = error;
+    }
     if (refreshed) {
       return refreshed;
     }
     recordAuthDiagnosticEvent("refresh_failed", snapshotFromStoredSession(stored, detectedSessionStorage()));
+    const retained = retainAuthSessionAfterRefreshFailure({ ...stored, status: "authenticated" }, refreshError);
+    if (retained) {
+      return retained;
+    }
   }
   if (!shouldExpireAuthSessionAfterRefreshFailure(stored.expiresAt)) {
     return {
@@ -204,10 +228,19 @@ export function getAuthorizationToken(session: AuthSession, labToken: string): s
   return session.status === "lab" ? labToken : undefined;
 }
 
-export function isAuthSessionActive(session: AuthSession, skewMs = 30_000): session is AuthSession & { accessToken: string } {
-  return session.status === "authenticated"
-    && Boolean(session.accessToken)
-    && (!session.expiresAt || session.expiresAt > Date.now() + skewMs);
+export function isAuthSessionActive(
+  session: AuthSession,
+  skewMs = 30_000
+): session is AuthSession & { accessToken: string } {
+  return (
+    session.status === "authenticated" &&
+    Boolean(session.accessToken) &&
+    (!session.expiresAt || session.expiresAt > Date.now() + skewMs)
+  );
+}
+
+export function isAuthSessionRetainedForOffline(session: AuthSession): boolean {
+  return session.status === "authenticated" && Boolean(session.profile) && !isAuthSessionActive(session, 0);
 }
 
 export function plannedAuthRefreshDelayMs(expiresAt: number, now = Date.now(), retryAttempt = 0): number {
@@ -218,21 +251,45 @@ export function plannedAuthRefreshDelayMs(expiresAt: number, now = Date.now(), r
   if (retryAttempt > 0) {
     return Math.min(30_000, Math.max(2_000, remainingMs - 45_000));
   }
-  const leadMs = remainingMs > 10 * 60_000
-    ? 2 * 60_000
-    : Math.max(20_000, Math.min(90_000, Math.floor(remainingMs * 0.7)));
+  const leadMs =
+    remainingMs > 10 * 60_000 ? 2 * 60_000 : Math.max(20_000, Math.min(90_000, Math.floor(remainingMs * 0.7)));
   return Math.max(0, remainingMs - leadMs);
 }
 
 export function shouldRefreshAuthSessionOnResume(session: AuthSession, now = Date.now(), leadMs = 2 * 60_000): boolean {
-  return session.status === "authenticated"
-    && Boolean(session.refreshToken)
-    && typeof session.expiresAt === "number"
-    && session.expiresAt <= now + leadMs;
+  return (
+    session.status === "authenticated" &&
+    Boolean(session.refreshToken) &&
+    typeof session.expiresAt === "number" &&
+    session.expiresAt <= now + leadMs
+  );
 }
 
 export function shouldExpireAuthSessionAfterRefreshFailure(expiresAt: number | undefined, now = Date.now()): boolean {
   return typeof expiresAt !== "number" || expiresAt <= now + 5_000;
+}
+
+export function shouldRetainAuthSessionAfterRefreshFailure(session: AuthSession, error?: unknown): boolean {
+  if (session.status !== "authenticated" || !session.profile) {
+    return false;
+  }
+  return isAuthSessionActive(session, 0) || isLikelyTransientAuthRefreshFailure(error);
+}
+
+export function retainAuthSessionAfterRefreshFailure(session: AuthSession, error?: unknown): AuthSession | null {
+  if (!shouldRetainAuthSessionAfterRefreshFailure(session, error)) {
+    return null;
+  }
+  const retainedSession: AuthSession = {
+    ...session,
+    error: authRefreshFailureMessage(error),
+    status: "authenticated"
+  };
+  recordAuthDiagnosticEvent("session_retained_offline", {
+    ...snapshotFromAuthSession(retainedSession),
+    detail: retainedSession.error
+  });
+  return retainedSession;
 }
 
 export async function beginLogin(config: AuthConfig, options: BeginLoginOptions = {}): Promise<void> {
@@ -303,7 +360,10 @@ export function readAuthDiagnostics(): AuthDiagnostics {
   };
 }
 
-export function recordAuthDiagnosticEvent(type: AuthDiagnosticEventType, input: Partial<AuthDiagnosticEvent> = {}): void {
+export function recordAuthDiagnosticEvent(
+  type: AuthDiagnosticEventType,
+  input: Partial<AuthDiagnosticEvent> = {}
+): void {
   if (typeof window === "undefined") {
     return;
   }
@@ -323,7 +383,9 @@ export function recordAuthDiagnosticEvent(type: AuthDiagnosticEventType, input: 
     window.localStorage.setItem(diagnosticsKey, JSON.stringify(events));
   } catch {
     try {
-      const events = [...(readAuthDiagnosticEventsFrom(() => window.sessionStorage) ?? []), event].slice(-diagnosticsLimit);
+      const events = [...(readAuthDiagnosticEventsFrom(() => window.sessionStorage) ?? []), event].slice(
+        -diagnosticsLimit
+      );
       window.sessionStorage.setItem(diagnosticsKey, JSON.stringify(events));
     } catch {
       // Diagnostics must never interfere with authentication itself.
@@ -381,31 +443,87 @@ async function exchangeAuthorizationCode(config: AuthConfig, code: string, state
     return { status: "error", error: `OIDC token exchange failed: ${response.status}` };
   }
 
-  const session = persistTokenResponse(await response.json() as TokenResponse);
+  const session = persistTokenResponse((await response.json()) as TokenResponse);
   recordAuthDiagnosticEvent("login_succeeded", snapshotFromAuthSession(session));
   return session;
 }
 
 async function refreshSession(config: AuthConfig, refreshToken: string): Promise<AuthSession | null> {
   recordAuthDiagnosticEvent("refresh_started", { hasRefreshToken: true });
-  const response = await fetch(oidcTokenEndpoint(config), {
-    body: new URLSearchParams({
-      client_id: config.clientId,
-      grant_type: "refresh_token",
-      refresh_token: refreshToken
-    }),
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    method: "POST"
-  });
+  let response: Response;
+  try {
+    response = await fetch(oidcTokenEndpoint(config), {
+      body: new URLSearchParams({
+        client_id: config.clientId,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken
+      }),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      method: "POST"
+    });
+  } catch (error: unknown) {
+    recordAuthDiagnosticEvent("refresh_failed", {
+      detail: error instanceof Error ? error.message : "token refresh network failure",
+      hasRefreshToken: true
+    });
+    throw new AuthRefreshTransientError(undefined, error);
+  }
   if (!response.ok) {
     recordAuthDiagnosticEvent("refresh_failed", { detail: `token refresh ${response.status}`, hasRefreshToken: true });
+    if (isTransientAuthRefreshStatus(response.status)) {
+      throw new AuthRefreshTransientError(response.status);
+    }
     return null;
   }
-  const session = persistTokenResponse(await response.json() as TokenResponse, refreshToken);
+  const session = persistTokenResponse((await response.json()) as TokenResponse, refreshToken);
   recordAuthDiagnosticEvent("refresh_succeeded", snapshotFromAuthSession(session));
   return session;
+}
+
+class AuthRefreshTransientError extends Error {
+  readonly cause?: unknown;
+  readonly status?: number;
+
+  constructor(status?: number, cause?: unknown) {
+    super(
+      status
+        ? `OIDC token refresh is temporarily unavailable (${status}).`
+        : "OIDC token refresh network request failed."
+    );
+    this.name = "AuthRefreshTransientError";
+    this.cause = cause;
+    this.status = status;
+  }
+}
+
+function isTransientAuthRefreshStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function isLikelyTransientAuthRefreshFailure(error: unknown): boolean {
+  if (error instanceof AuthRefreshTransientError) {
+    return true;
+  }
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return true;
+  }
+  if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+    return ["AbortError", "NetworkError", "TimeoutError"].includes(error.name);
+  }
+  if (error instanceof TypeError) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return /abort|failed|fetch|network|offline|timeout|temporar|unavailable|load failed/iu.test(message);
+}
+
+function authRefreshFailureMessage(error: unknown): string {
+  if (isLikelyTransientAuthRefreshFailure(error)) {
+    return offlineRetainedAuthError;
+  }
+  return "Obnova přihlášení se dočasně nepodařila, zkusím to znovu.";
 }
 
 function persistTokenResponse(tokenResponse: TokenResponse, fallbackRefreshToken?: string): AuthSession {
@@ -443,8 +561,7 @@ function stableSubjectId(profile: AuthProfile | undefined): string | undefined {
 }
 
 function readStoredSession(): StoredAuthSession | null {
-  return readStoredSessionFrom(() => window.localStorage)
-    ?? readStoredSessionFrom(() => window.sessionStorage);
+  return readStoredSessionFrom(() => window.localStorage) ?? readStoredSessionFrom(() => window.sessionStorage);
 }
 
 function detectedSessionStorage(): "localStorage" | "sessionStorage" | "none" {
@@ -497,9 +614,11 @@ function snapshotFromStoredSession(
 }
 
 function readAuthDiagnosticEvents(): AuthDiagnosticEvent[] {
-  return readAuthDiagnosticEventsFrom(() => window.localStorage)
-    ?? readAuthDiagnosticEventsFrom(() => window.sessionStorage)
-    ?? [];
+  return (
+    readAuthDiagnosticEventsFrom(() => window.localStorage) ??
+    readAuthDiagnosticEventsFrom(() => window.sessionStorage) ??
+    []
+  );
 }
 
 function readAuthDiagnosticEventsFrom(getStorage: () => Storage): AuthDiagnosticEvent[] | null {
@@ -510,9 +629,7 @@ function readAuthDiagnosticEventsFrom(getStorage: () => Storage): AuthDiagnostic
     }
     const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed)
-      ? parsed
-        .map(normalizeDiagnosticEvent)
-        .filter((event): event is AuthDiagnosticEvent => Boolean(event))
+      ? parsed.map(normalizeDiagnosticEvent).filter((event): event is AuthDiagnosticEvent => Boolean(event))
       : null;
   } catch {
     return null;
@@ -551,15 +668,22 @@ function normalizeDiagnosticEventType(value: string): AuthDiagnosticEventType {
     "session_cleared",
     "session_expired",
     "session_missing",
+    "session_retained_offline",
     "session_persisted",
     "session_restored",
     "storage_changed",
     "storage_write_failed"
-  ].includes(value) ? value as AuthDiagnosticEventType : "session_missing";
+  ].includes(value)
+    ? (value as AuthDiagnosticEventType)
+    : "session_missing";
 }
 
 function normalizeAuthStatus(value: unknown): AuthStatus | undefined {
-  return value === "lab" || value === "anonymous" || value === "authenticating" || value === "authenticated" || value === "error"
+  return value === "lab" ||
+    value === "anonymous" ||
+    value === "authenticating" ||
+    value === "authenticated" ||
+    value === "error"
     ? value
     : undefined;
 }
@@ -579,8 +703,10 @@ function readStoredSessionFrom(getStorage: () => Storage): StoredAuthSession | n
       return null;
     }
     const parsed = JSON.parse(raw) as Partial<StoredAuthSession>;
-    return typeof parsed.accessToken === "string" && typeof parsed.expiresAt === "number" && Number.isFinite(parsed.expiresAt)
-      ? parsed as StoredAuthSession
+    return typeof parsed.accessToken === "string" &&
+      typeof parsed.expiresAt === "number" &&
+      Number.isFinite(parsed.expiresAt)
+      ? (parsed as StoredAuthSession)
       : null;
   } catch {
     return null;
@@ -633,12 +759,18 @@ function readCallbackParams(): { code?: string; error?: string; state?: string }
 }
 
 function readCallbackState(): StoredCallbackState | null {
-  return readCallbackStateFrom(() => window.sessionStorage, callbackStateKey)
-    ?? readCallbackStateFrom(() => window.localStorage, callbackStateFallbackKey, true)
-    ?? readCallbackStateFromCookie();
+  return (
+    readCallbackStateFrom(() => window.sessionStorage, callbackStateKey) ??
+    readCallbackStateFrom(() => window.localStorage, callbackStateFallbackKey, true) ??
+    readCallbackStateFromCookie()
+  );
 }
 
-function readCallbackStateFrom(getStorage: () => Storage, key: string, enforceExpiry = false): StoredCallbackState | null {
+function readCallbackStateFrom(
+  getStorage: () => Storage,
+  key: string,
+  enforceExpiry = false
+): StoredCallbackState | null {
   try {
     const storage = getStorage();
     const raw = storage.getItem(key);
@@ -684,7 +816,9 @@ function writeCallbackState(value: StoredCallbackState): void {
     // A short-lived cookie is only a last-resort fallback for embedded browsers.
   }
   if (!persisted) {
-    throw new Error("Prohlížeč neumožnil uložit dočasný stav přihlášení. Povolte site storage pro COP a zkuste to znovu.");
+    throw new Error(
+      "Prohlížeč neumožnil uložit dočasný stav přihlášení. Povolte site storage pro COP a zkuste to znovu."
+    );
   }
 }
 
@@ -707,10 +841,12 @@ function clearCallbackState(): void {
 }
 
 function isStoredCallbackState(value: Partial<StoredCallbackState>): value is StoredCallbackState {
-  return typeof value.redirectUri === "string" &&
+  return (
+    typeof value.redirectUri === "string" &&
     typeof value.returnUrl === "string" &&
     typeof value.state === "string" &&
-    typeof value.verifier === "string";
+    typeof value.verifier === "string"
+  );
 }
 
 function readCallbackStateFromCookie(): StoredCallbackState | null {
@@ -755,7 +891,9 @@ function removeCallbackParams(returnUrl?: string): void {
   }
 
   const url = new URL(window.location.href);
-  ["code", "state", "session_state", "error", "error_description", "iss"].forEach((name) => url.searchParams.delete(name));
+  ["code", "state", "session_state", "error", "error_description", "iss"].forEach((name) =>
+    url.searchParams.delete(name)
+  );
   window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
 }
 
@@ -787,7 +925,10 @@ function bytesToBase64Url(bytes: Uint8Array): string {
 }
 
 function decodeBase64Url(value: string): string {
-  const base64 = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const base64 = value
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(Math.ceil(value.length / 4) * 4, "=");
   return decodeURIComponent(
     Array.from(atob(base64))
       .map((character) => `%${character.charCodeAt(0).toString(16).padStart(2, "0")}`)

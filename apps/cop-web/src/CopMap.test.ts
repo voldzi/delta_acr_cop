@@ -13,11 +13,13 @@ import {
   objectsToTrackFeatureCollection,
   parseMapCenter,
   registerMapViewportResumeHandlers,
+  buildDynamicLegendItemsFromRenderedFeatureProperties,
   sharedLiveLocationsToFeatureCollection,
   situationFeaturesToFeatureCollection,
   type SituationContextFeatureCollection,
   userAlertRadiusToFeatureCollection,
   userLocationToFeatureCollection,
+  visibleLegendLimitForMapSize,
   warmRasterBasemapTileCache
 } from "./CopMap";
 import type { CopObject, SituationFeatureCollectionResponse } from "./cop-data";
@@ -105,6 +107,72 @@ describe("COP map data helpers", () => {
         selected: true
       }
     });
+  });
+
+  it("sizes the dynamic map legend between compact and desktop layouts", () => {
+    expect(visibleLegendLimitForMapSize(360, 640)).toBe(3);
+    expect(visibleLegendLimitForMapSize(520, 420)).toBe(4);
+    expect(visibleLegendLimitForMapSize(720, 620)).toBe(5);
+    expect(visibleLegendLimitForMapSize(960, 800)).toBe(7);
+    expect(visibleLegendLimitForMapSize(1280, 900)).toBe(10);
+  });
+
+  it("builds dynamic legend items from rendered map feature properties", () => {
+    const items = buildDynamicLegendItemsFromRenderedFeatureProperties(
+      [
+        {
+          layer: { id: "cop-live-track-symbol" },
+          properties: {
+            objectId: "uav-1",
+            objectType: "UAV",
+            symbolColor: "#facc15",
+            symbolDisposition: "unknown"
+          }
+        },
+        {
+          layer: { id: "cop-live-track-label" },
+          properties: {
+            objectId: "uav-1",
+            objectType: "UAV",
+            symbolColor: "#facc15",
+            symbolDisposition: "unknown"
+          }
+        },
+        {
+          layer: { id: "cop-live-track-symbol" },
+          properties: {
+            objectId: "uav-2",
+            objectType: "UAV",
+            symbolColor: "#facc15",
+            symbolDisposition: "unknown"
+          }
+        },
+        {
+          layer: { id: "cop-situation-weather-label" },
+          properties: {
+            featureId: "weather-1",
+            layer: "weather",
+            situationStatusColor: "#38bdf8",
+            weatherObservation: true
+          }
+        },
+        {
+          layer: { id: "cop-live-track-cluster-count" },
+          properties: {
+            cluster: true,
+            cluster_id: 7,
+            point_count: 12
+          }
+        }
+      ],
+      3
+    );
+
+    expect(items).toEqual([
+      expect.objectContaining({ count: 12, key: "cluster", label: "Shluky" }),
+      expect.objectContaining({ count: 2, key: "object:uav", label: "UAV" }),
+      expect.objectContaining({ count: 1, key: "situation:pocasi", label: "Počasí" })
+    ]);
   });
 
   it("uses flight-data callsigns for map labels before falling back to ICAO24", () => {

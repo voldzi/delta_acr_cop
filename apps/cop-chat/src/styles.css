@@ -2151,6 +2151,20 @@ button {
   font-size: 0.78rem;
 }
 
+.location-live-countdown {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(4, 120, 87, 0.12);
+  color: #047857;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .transit-card {
   display: flex;
   min-width: min(300px, 68vw);

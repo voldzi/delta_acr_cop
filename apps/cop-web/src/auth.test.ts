@@ -7,6 +7,7 @@ import {
   getAuthorizationToken,
   initializeAuth,
   isAuthSessionActive,
+  isAuthSessionRetainedForOffline,
   isOidcEnabled,
   plannedAuthRefreshDelayMs,
   readAuthDiagnostics,
@@ -90,27 +91,36 @@ describe("web auth helpers", () => {
     const now = 1_000_000;
 
     expect(
-      shouldRefreshAuthSessionOnResume({
-        accessToken: "token",
-        expiresAt: now + 119_000,
-        refreshToken: "refresh",
-        status: "authenticated"
-      }, now)
+      shouldRefreshAuthSessionOnResume(
+        {
+          accessToken: "token",
+          expiresAt: now + 119_000,
+          refreshToken: "refresh",
+          status: "authenticated"
+        },
+        now
+      )
     ).toBe(true);
     expect(
-      shouldRefreshAuthSessionOnResume({
-        accessToken: "token",
-        expiresAt: now + 180_000,
-        refreshToken: "refresh",
-        status: "authenticated"
-      }, now)
+      shouldRefreshAuthSessionOnResume(
+        {
+          accessToken: "token",
+          expiresAt: now + 180_000,
+          refreshToken: "refresh",
+          status: "authenticated"
+        },
+        now
+      )
     ).toBe(false);
     expect(
-      shouldRefreshAuthSessionOnResume({
-        accessToken: "token",
-        expiresAt: now + 30_000,
-        status: "authenticated"
-      }, now)
+      shouldRefreshAuthSessionOnResume(
+        {
+          accessToken: "token",
+          expiresAt: now + 30_000,
+          status: "authenticated"
+        },
+        now
+      )
     ).toBe(false);
   });
 
@@ -146,6 +156,29 @@ describe("web auth helpers", () => {
       profile: { username: "operator" },
       status: "authenticated"
     });
+  });
+
+  it("keeps an expired stored OIDC session in the user scope for the first offline PWA render", () => {
+    window.localStorage.setItem(
+      "cop.oidc.session.v1",
+      JSON.stringify({
+        accessToken: "expired-token",
+        expiresAt: Date.now() - 10_000,
+        profile: { name: "COP Operator", subjectId: "user-1", username: "operator" },
+        refreshToken: "persisted-refresh"
+      })
+    );
+
+    const session = createInitialAuthSession(oidcConfig());
+
+    expect(session).toMatchObject({
+      accessToken: "expired-token",
+      error: "Přihlášení čeká na obnovení připojení. Offline data zůstávají dostupná.",
+      profile: { subjectId: "user-1", username: "operator" },
+      status: "authenticated"
+    });
+    expect(isAuthSessionRetainedForOffline(session)).toBe(true);
+    expect(getAuthorizationToken(session, "lab-token")).toBeUndefined();
   });
 
   it("extracts stable subject IDs from active and stored sessions", () => {
@@ -277,10 +310,70 @@ describe("web auth helpers", () => {
 
     expect(session).toMatchObject({
       accessToken: "near-expiry-token",
-      error: "Obnova přihlášení se dočasně nepodařila, zkusím to znovu.",
+      error: "Přihlášení čeká na obnovení připojení. Offline data zůstávají dostupná.",
       status: "authenticated"
     });
     expect(window.localStorage.getItem("cop.oidc.session.v1")).toContain("near-expiry-token");
+  });
+
+  it("keeps an expired stored session for offline PWA data when startup refresh cannot reach the provider", async () => {
+    window.localStorage.setItem(
+      "cop.oidc.session.v1",
+      JSON.stringify({
+        accessToken: "expired-token",
+        expiresAt: Date.now() - 10_000,
+        profile: { name: "COP Operator", subjectId: "user-1", username: "operator" },
+        refreshToken: "persisted-refresh"
+      })
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("fetch failed");
+      })
+    );
+
+    const session = await initializeAuth(oidcConfig());
+    const diagnostics = readAuthDiagnostics();
+
+    expect(session).toMatchObject({
+      accessToken: "expired-token",
+      error: "Přihlášení čeká na obnovení připojení. Offline data zůstávají dostupná.",
+      profile: { subjectId: "user-1", username: "operator" },
+      status: "authenticated"
+    });
+    expect(isAuthSessionRetainedForOffline(session)).toBe(true);
+    expect(getAuthorizationToken(session, "lab-token")).toBeUndefined();
+    expect(window.localStorage.getItem("cop.oidc.session.v1")).toContain("expired-token");
+    expect(diagnostics.events.map((event) => event.type)).toContain("session_retained_offline");
+  });
+
+  it("clears an expired stored session when the provider rejects the refresh token", async () => {
+    window.localStorage.setItem(
+      "cop.oidc.session.v1",
+      JSON.stringify({
+        accessToken: "expired-token",
+        expiresAt: Date.now() - 10_000,
+        profile: { name: "COP Operator", subjectId: "user-1", username: "operator" },
+        refreshToken: "persisted-refresh"
+      })
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          ({
+            json: async () => ({ error: "invalid_grant" }),
+            ok: false,
+            status: 400
+          }) as Response
+      )
+    );
+
+    const session = await initializeAuth(oidcConfig());
+
+    expect(session).toMatchObject({ status: "anonymous" });
+    expect(window.localStorage.getItem("cop.oidc.session.v1")).toBeNull();
   });
 
   it("records session diagnostics without storing token values", async () => {

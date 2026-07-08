@@ -822,6 +822,45 @@ describe("live location timeline helpers", () => {
     expect(collapsed.map((message) => message.eventId)).toEqual(["$text", "$live-2"]);
   });
 
+  it("keeps only the newest device location from each sender", () => {
+    const deviceLocation = (eventId: string, timestamp: string): MatrixTimelineMessage => ({
+      body: "Moje poloha",
+      eventId,
+      kind: "location",
+      location: {
+        label: "Moje poloha",
+        lat: eventId === "$device-2" ? 50.2 : 50.1,
+        lon: 14.4,
+        source: "device",
+        updatedAt: timestamp
+      },
+      own: true,
+      sender: "@me:cop.local",
+      timestamp
+    });
+
+    const collapsed = collapseLiveLocationTimeline([
+      deviceLocation("$device-1", "2026-07-07T12:00:00.000Z"),
+      {
+        body: "Poloha zásahu",
+        eventId: "$map-location",
+        kind: "location",
+        location: {
+          label: "Poloha zásahu",
+          lat: 50.3,
+          lon: 14.5,
+          source: "map"
+        },
+        own: true,
+        sender: "@me:cop.local",
+        timestamp: "2026-07-07T12:00:05.000Z"
+      },
+      deviceLocation("$device-2", "2026-07-07T12:00:15.000Z")
+    ]);
+
+    expect(collapsed.map((message) => message.eventId)).toEqual(["$map-location", "$device-2"]);
+  });
+
   it("returns active live locations for the host map and omits ended shares", () => {
     expect(collectActiveLiveLocations([liveMessage("$live-2", "2026-07-07T12:00:15.000Z")], "!room:cop.local")).toEqual(
       [

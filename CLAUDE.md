@@ -67,6 +67,9 @@ Production pilot deployment runs from `/srv/cop` on `docker.home.cz`.
 - `ssh docker.home.cz` is allowed when the task requires access to the
   production or remote environment on that host.
 - The correct production host name is `docker.home.cz`.
+- From `docker.home.cz`, use the SSH host alias `git@github-cop` for COP
+  GitHub access; verify it with `ssh -T git@github-cop` when diagnosing
+  GitHub connectivity.
 - Do not manipulate VPN, VLAN, firewall, or network segmentation unless the user
   explicitly asks for those infrastructure steps.
 
