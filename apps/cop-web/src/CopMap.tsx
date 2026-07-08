@@ -691,6 +691,7 @@ interface CopMapProps {
   onStartNavigationToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
   onRequestUserLocation: () => void;
   onUserLocationFollowChange: (value: boolean) => void;
+  onUserMapInteraction?: () => void;
   onViewChange: (view: MapViewState) => void;
   reportLocationPickActive?: boolean;
   showAlertAreas: boolean;
@@ -852,6 +853,7 @@ function CopMapComponent({
   onStartEmergencyNavigation,
   onStartNavigationToPoint,
   onUserLocationFollowChange,
+  onUserMapInteraction,
   onViewChange,
   reportLocationPickActive = false,
   showAlertAreas,
@@ -914,6 +916,7 @@ function CopMapComponent({
   const onUpdateSketchDrawingRef = React.useRef(onUpdateSketchDrawing);
   const onPickReportLocationRef = React.useRef(onPickReportLocation);
   const onPickRadioPointRef = React.useRef(onPickRadioPoint);
+  const onUserMapInteractionRef = React.useRef(onUserMapInteraction);
   const onViewChangeRef = React.useRef(onViewChange);
   const aoiRulesRef = React.useRef(aoiRules);
   const sketchDrawingsRef = React.useRef(sketchDrawings);
@@ -1199,6 +1202,7 @@ function CopMapComponent({
   onUpdateSketchDrawingRef.current = onUpdateSketchDrawing;
   onPickReportLocationRef.current = onPickReportLocation;
   onPickRadioPointRef.current = onPickRadioPoint;
+  onUserMapInteractionRef.current = onUserMapInteraction;
   onViewChangeRef.current = onViewChange;
   reportLocationPickActiveRef.current = reportLocationPickActive;
   radioPointPickActiveRef.current = radioPointPickActive;
@@ -4136,6 +4140,7 @@ function CopMapComponent({
         const handleUserMapInteraction = (event: maplibregl.MapLibreEvent) => {
           if (event.originalEvent) {
             onAutoFitChangeRef.current(false);
+            onUserMapInteractionRef.current?.();
           }
         };
         const handleMapClick = (event: maplibregl.MapMouseEvent) => {

@@ -38,6 +38,8 @@ vi.mock("./CopMap", async () => {
       onSelectObject,
       onStartNavigationToPoint,
       onUserLocationFollowChange,
+      onUserMapInteraction,
+      onViewChange,
       selectedSituationFeatureId,
       situationFeatures,
       userLocation,
@@ -56,6 +58,8 @@ vi.mock("./CopMap", async () => {
       onSelectObject?: (object: { objectId: string }) => void;
       onStartNavigationToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
       onUserLocationFollowChange?: (value: boolean) => void;
+      onUserMapInteraction?: () => void;
+      onViewChange?: (view: { bearing?: number; center: [number, number]; pitch?: number; zoom?: number }) => void;
       selectedSituationFeatureId?: string;
       situationFeatures?: { features?: Array<{ properties?: { featureId?: string; label?: string } }> };
       userLocation?: { lat: number; lon: number } | null;
@@ -132,6 +136,21 @@ vi.mock("./CopMap", async () => {
                       type: "button"
                     },
                     "Sledovat moji polohu"
+                  )
+                : null,
+              onViewChange
+                ? React.createElement(
+                    "button",
+                    {
+                      "data-testid": "map-simulate-user-pan",
+                      key: "map-simulate-user-pan",
+                      onClick: () => {
+                        onUserMapInteraction?.();
+                        onViewChange({ center: [15, 50], zoom: 10 });
+                      },
+                      type: "button"
+                    },
+                    "Posunout mapu"
                   )
                 : null,
               ...(situationFeatures?.features ?? []).map((feature) =>
@@ -640,7 +659,7 @@ describe("COP web dashboard", () => {
     });
     const watchPosition = vi.fn((success: PositionCallback) => {
       watchCallbacks.push(success);
-      return 11;
+      return 10 + watchCallbacks.length;
     });
     const clearWatch = vi.fn();
     Object.defineProperty(navigator, "geolocation", {
@@ -716,6 +735,36 @@ describe("COP web dashboard", () => {
     await waitFor(() =>
       expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42300,50.08900")
     );
+
+    fireEvent.click(screen.getByTestId("map-follow-user-location"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-user-location-follow-enabled")).toBe("false")
+    );
+    expect(clearWatch).toHaveBeenCalledWith(11);
+
+    fireEvent.click(screen.getByTestId("map-follow-user-location"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-user-location-follow-enabled")).toBe("true")
+    );
+    await waitFor(() => expect(watchPosition).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByTestId("map-simulate-user-pan"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-user-location-follow-enabled")).toBe("false")
+    );
+    expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("15.00000,50.00000");
+
+    act(() => {
+      watchCallbacks.at(-1)?.(makePosition(50.09, 14.424));
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-user-location")).toBe("14.42400,50.09000")
+    );
+    expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("15.00000,50.00000");
   });
 
   it("renders SIM tracks returned from COP API", async () => {

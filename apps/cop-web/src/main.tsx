@@ -4870,6 +4870,7 @@ export function App() {
     userLocationFollowEnabledRef.current = enabled;
     setUserLocationFollowEnabled(enabled);
     if (!enabled) {
+      clearUserLocationWatch();
       setLocationStatus(
         userLocation
           ? `${formatUserLocation(userLocation)} · sledování mapy vypnuto`
@@ -4884,6 +4885,17 @@ export function App() {
       return;
     }
     locateUser(undefined, { follow: true });
+  }
+
+  function handleMapUserInteraction() {
+    if (!userLocationFollowEnabledRef.current) {
+      return;
+    }
+    userLocationFollowEnabledRef.current = false;
+    setUserLocationFollowEnabled(false);
+    setLocationStatus(
+      userLocation ? `${formatUserLocation(userLocation)} · volné prohlížení mapy` : "Volné prohlížení mapy."
+    );
   }
 
   const requestEmergencyRouteToPoint = React.useCallback(
@@ -6902,6 +6914,7 @@ export function App() {
                   onUpdateSketchDrawing={handleUpdateSketchDrawing}
                   onRequestUserLocation={locateUser}
                   onUserLocationFollowChange={handleUserLocationFollowChange}
+                  onUserMapInteraction={handleMapUserInteraction}
                   onViewChange={setMapView}
                   radioPointPickActive={Boolean(radioPointPickTarget)}
                   radioPointPickLabel={
