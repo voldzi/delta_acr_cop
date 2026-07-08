@@ -3525,6 +3525,7 @@ export function ChatApp() {
     setError(null);
     setNotice(null);
     try {
+      await requestVoiceCallMicrophoneAccess();
       await matrixSession.startVoiceCall(roomId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Hovor se nepodařilo zahájit.");
@@ -3539,6 +3540,7 @@ export function ChatApp() {
     }
     setError(null);
     try {
+      await requestVoiceCallMicrophoneAccess();
       await session.answerVoiceCall(call.callId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Hovor se nepodařilo přijmout.");
@@ -6491,6 +6493,41 @@ function voiceCallStatusText(call: MatrixVoiceCallSnapshot, now: number): string
     return "Hovor ukončen.";
   }
   return call.direction === "incoming" ? "Připravuji hovor..." : "Spojuji hovor...";
+}
+
+async function requestVoiceCallMicrophoneAccess(): Promise<void> {
+  const mediaDevices = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+  if (!mediaDevices?.getUserMedia) {
+    throw new Error("Tento prohlížeč neumí zpřístupnit mikrofon pro hlasové hovory.");
+  }
+
+  let stream: MediaStream | null = null;
+  try {
+    stream = await mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch (caught) {
+    throw new Error(voiceCallMicrophoneAccessErrorMessage(caught));
+  } finally {
+    stream?.getTracks().forEach((track) => track.stop());
+  }
+}
+
+function voiceCallMicrophoneAccessErrorMessage(error: unknown): string {
+  const isDomException = typeof DOMException !== "undefined" && error instanceof DOMException;
+  const name = isDomException ? error.name : error instanceof Error ? error.name : "";
+  const message = error instanceof Error ? error.message : "";
+  if (name === "NotAllowedError" || name === "SecurityError" || /denied|permission|not allowed/iu.test(message)) {
+    return "Mikrofon je pro COP zakázaný. V iOS povolte mikrofon pro Safari nebo pro web cop.zeleznalady.cz, potom PWA úplně zavřete a otevřete znovu.";
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return "iPhone nehlásí dostupný mikrofon. Zkontrolujte, že mikrofon není omezený systémem nebo profilem zařízení.";
+  }
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return "Mikrofon se nepodařilo otevřít. Zkontrolujte, že ho právě nepoužívá jiná aplikace, a zkuste hovor znovu.";
+  }
+  if (name === "AbortError") {
+    return "Žádost o mikrofon byla přerušena. Klepněte na Přijmout nebo Volat znovu.";
+  }
+  return "Mikrofon není dostupný nebo nemá povolený přístup.";
 }
 
 function formatVoiceCallDuration(totalSeconds: number): string {
