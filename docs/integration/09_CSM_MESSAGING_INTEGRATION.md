@@ -171,6 +171,13 @@ and reachable ICE/TURN infrastructure from the Matrix deployment. On iOS PWA,
 incoming calls can be handled only while the web app runtime is awake; reliable
 lock-screen ringing remains a native CSM Messenger capability.
 
+COP Chat sends Matrix VoIP signalling events (`m.call.*` and
+`org.matrix.call.*`) as normal Matrix room events over authenticated HTTPS,
+without wrapping them in room message E2EE. This keeps call setup independent
+from delayed or missing Megolm room keys and prevents call signalling failures
+from surfacing as undecryptable chat bubbles. WebRTC media remains protected by
+DTLS-SRTP and COP API still does not receive call signalling or media payloads.
+
 ## Native iOS/iPadOS Pairing
 
 COP exposes a metadata-only pairing flow for CSM Messenger iOS/iPadOS. The

@@ -54,7 +54,7 @@ interface MatrixClientLike {
   on?: (event: string, listener: (...args: unknown[]) => void) => void;
   redactEvent?: (roomId: string, eventId: string, txnId?: string, opts?: Record<string, unknown>) => Promise<unknown>;
   sendReadReceipt?: (event: MatrixEventLike, receiptType?: string) => Promise<unknown>;
-  sendEvent?: (roomId: string, eventType: string, content: Record<string, unknown>, txnId?: string) => Promise<unknown>;
+  sendEvent?: MatrixSendEventLike;
   sendMessage?: (roomId: string, content: Record<string, unknown>) => Promise<unknown>;
   setPusher?: (pusher: Record<string, unknown>) => Promise<unknown>;
   sendStateEvent?: (
@@ -80,6 +80,18 @@ interface MatrixClientLike {
     opts?: Record<string, unknown>
   ) => Promise<{ content_uri?: string; contentUri?: string }>;
 }
+
+type MatrixSendEventArgs =
+  | [roomId: string, eventType: string, content: Record<string, unknown>, txnId?: string]
+  | [
+      roomId: string,
+      threadId: string | null,
+      eventType: string,
+      content: Record<string, unknown>,
+      txnId?: string
+    ];
+
+type MatrixSendEventLike = (...args: MatrixSendEventArgs) => Promise<unknown>;
 
 interface MatrixCallLike {
   callId?: string;
@@ -224,6 +236,7 @@ interface MatrixEventLike {
   getAssociatedId?: () => string | undefined;
   getClearContent?: () => Record<string, unknown> | null;
   getContent?: () => Record<string, unknown>;
+  getEffectiveEvent?: () => { content?: Record<string, unknown>; type?: string } | null;
   getId?: () => string | undefined;
   getRelation?: () => Record<string, unknown> | null;
   getRoomId?: () => string | undefined;
@@ -271,6 +284,7 @@ export async function createMatrixMessagingSession(
     cryptoCallbacks: recoveryController.cryptoCallbacks,
     userId: bootstrap.userId
   });
+  installMatrixVoipSignalingBypass(client, bootstrap);
 
   let restoreKeyBackupOnStart = false;
   if (bootstrap.e2eeRequired) {
@@ -2277,6 +2291,100 @@ async function assertBrowserCanReachHomeserver(baseUrl: string): Promise<void> {
   }
 }
 
+function installMatrixVoipSignalingBypass(client: MatrixClientLike, bootstrap: MessagingBootstrapResponse): void {
+  const originalSendEvent = client.sendEvent?.bind(client);
+  if (!originalSendEvent || !bootstrap.accessToken || !bootstrap.homeserverBaseUrl) {
+    return;
+  }
+  client.sendEvent = (...args) => {
+    const parsed = parseMatrixSendEventArgs(args);
+    if (parsed && isMatrixCallEventType(parsed.eventType)) {
+      return sendMatrixEventWithoutRoomEncryption(
+        bootstrap,
+        parsed.roomId,
+        parsed.eventType,
+        parsed.content,
+        parsed.txnId
+      );
+    }
+    return originalSendEvent(...args);
+  };
+}
+
+function parseMatrixSendEventArgs(args: MatrixSendEventArgs):
+  | {
+      content: Record<string, unknown>;
+      eventType: string;
+      roomId: string;
+      txnId?: string;
+    }
+  | undefined {
+  const [roomId, second, third, fourth, fifth] = args;
+  const directContent = asRecord(third);
+  if (typeof second === "string" && directContent) {
+    return {
+      content: directContent,
+      eventType: second,
+      roomId,
+      ...(typeof fourth === "string" ? { txnId: fourth } : {})
+    };
+  }
+  const threadedContent = asRecord(fourth);
+  if ((typeof second === "string" || second === null) && typeof third === "string" && threadedContent) {
+    return {
+      content: threadedContent,
+      eventType: third,
+      roomId,
+      ...(typeof fifth === "string" ? { txnId: fifth } : {})
+    };
+  }
+  return undefined;
+}
+
+async function sendMatrixEventWithoutRoomEncryption(
+  bootstrap: MessagingBootstrapResponse,
+  roomId: string,
+  eventType: string,
+  content: Record<string, unknown>,
+  txnId?: string
+): Promise<unknown> {
+  if (typeof fetch !== "function") {
+    throw new Error("Hlasovou signalizaci se nepodařilo odeslat bez dostupného síťového rozhraní.");
+  }
+  const transactionId = txnId ?? createMatrixTransactionId("cop-voip");
+  const homeserverBaseUrl = bootstrap.homeserverBaseUrl?.replace(/\/+$/u, "");
+  const accessToken = bootstrap.accessToken;
+  if (!homeserverBaseUrl || !accessToken) {
+    throw new Error("Hlasovou signalizaci se nepodařilo odeslat bez přihlášení ke službě zpráv.");
+  }
+  const response = await fetch(
+    `${homeserverBaseUrl}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/send/${encodeURIComponent(eventType)}/${encodeURIComponent(transactionId)}`,
+    {
+      body: JSON.stringify(content),
+      cache: "no-store",
+      credentials: "omit",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      method: "PUT",
+      mode: "cors"
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`Matrix voice call signalling failed: HTTP ${response.status}`);
+  }
+  return response.json().catch(() => ({}));
+}
+
+function createMatrixTransactionId(prefix: string): string {
+  const random =
+    typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${random}`;
+}
+
 export function formatMatrixClientError(caught: unknown, baseUrl: string, action: string): Error {
   if (isLikelyBrowserNetworkError(caught)) {
     return new Error(
@@ -2688,16 +2796,23 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
 
 function isTimelineMessageEvent(event: MatrixEventLike): boolean {
   const type = matrixTimelineEventType(event);
+  if (isMatrixCallEventType(type)) {
+    return false;
+  }
   return type === "m.room.message" || type === "m.room.encrypted";
 }
 
 function matrixTimelineEventType(event: MatrixEventLike): string | undefined {
   const type = event.getType?.();
-  const clearContent = event.getClearContent?.();
-  if (type === "m.room.encrypted" && clearContent && Object.keys(clearContent).length > 0) {
-    return "m.room.message";
+  const effectiveType = stringValue(asRecord(event.getEffectiveEvent?.())?.type);
+  if (type === "m.room.encrypted" && effectiveType && effectiveType !== "m.room.encrypted") {
+    return effectiveType;
   }
   return type;
+}
+
+function isMatrixCallEventType(type: string | undefined): boolean {
+  return Boolean(type?.startsWith("m.call.") || type?.startsWith("org.matrix.call."));
 }
 
 function matrixTimelineEventContent(event: MatrixEventLike): Record<string, unknown> {

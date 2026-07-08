@@ -322,6 +322,48 @@ describe("Matrix client diagnostics", () => {
     );
   });
 
+  it("sends Matrix voice call room signalling without room encryption", async () => {
+    stubVoiceCallBrowserSupport();
+    const rawSend = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ event_id: "$call-invite" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    matrixSdkMock.createNewMatrixCall.mockImplementation((client: { sendEvent: MatrixSendEvent }, roomId: string) => {
+      const call = createMockVoiceCall({ direction: "outbound", roomId });
+      call.placeVoiceCall = vi.fn(async () => {
+        await client.sendEvent(roomId, "m.call.invite", {
+          call_id: "call-1",
+          lifetime: 60_000,
+          version: "1"
+        });
+        call.state = "invite_sent";
+      });
+      return call;
+    });
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
+        rooms: [createRoom({ roomId: "!chat:cop.local" })],
+        sendEvent: rawSend
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    await session.startVoiceCall("!chat:cop.local");
+
+    expect(rawSend).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/_matrix/client/v3/rooms/!chat%3Acop.local/send/m.call.invite/"),
+      expect.objectContaining({
+        body: JSON.stringify({ call_id: "call-1", lifetime: 60_000, version: "1" }),
+        headers: expect.objectContaining({
+          Authorization: "Bearer test-token",
+          "Content-Type": "application/json"
+        }),
+        method: "PUT"
+      })
+    );
+  });
+
   it("answers an incoming Matrix voice call", async () => {
     stubVoiceCallBrowserSupport();
     const listeners = new Map<string, (...args: unknown[]) => void>();
@@ -558,6 +600,43 @@ describe("Matrix client diagnostics", () => {
     expect(session.getRooms()[0]?.latestMessage).toMatchObject({
       body: "obnovená zpráva",
       eventId: "$decrypted"
+    });
+  });
+
+  it("keeps Matrix voice call signalling out of timeline and chat previews", async () => {
+    const readable = createMessageEvent(
+      "readable",
+      Date.parse("2026-07-07T13:13:00.000Z"),
+      "$readable",
+      "@peer:cop.local"
+    );
+    const callInvite = createCallEvent(
+      "m.call.invite",
+      Date.parse("2026-07-07T13:14:00.000Z"),
+      "$call-invite",
+      "@peer:cop.local"
+    );
+    const encryptedCallAnswer = createEncryptedEvent(
+      Date.parse("2026-07-07T13:15:00.000Z"),
+      "$encrypted-call-answer",
+      "@peer:cop.local",
+      { call_id: "call-1", version: "1" },
+      "m.call.answer"
+    );
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [createRoom({ roomId: "!chat:cop.local", timeline: [readable, callInvite, encryptedCallAnswer] })]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    expect(session.getTimeline("!chat:cop.local").map((message) => [message.eventId, message.body])).toEqual([
+      ["$readable", "readable"]
+    ]);
+    expect(session.getRooms()[0]?.latestMessage).toMatchObject({
+      body: "readable",
+      eventId: "$readable"
     });
   });
 
@@ -1911,25 +1990,44 @@ function createMessageEvent(
   };
 }
 
-function createEncryptedEvent(
-  timestamp: number,
-  eventId: string,
-  sender = "@operator:cop.local",
-  clearContent?: Record<string, unknown>
-) {
+function createCallEvent(eventType: string, timestamp: number, eventId: string, sender = "@operator:cop.local") {
   return {
-    ...(clearContent ? { getClearContent: () => clearContent } : {}),
     getContent: () => ({
-      algorithm: "m.megolm.v1.aes-sha2",
-      ciphertext: "encrypted",
-      device_id: "DEVICE",
-      sender_key: "sender-key",
-      session_id: "session-id"
+      call_id: "call-1",
+      version: "1"
     }),
     getId: () => eventId,
     getSender: () => sender,
     getTs: () => timestamp,
-    getType: () => "m.room.encrypted"
+    getType: () => eventType
+  };
+}
+
+function createEncryptedEvent(
+  timestamp: number,
+  eventId: string,
+  sender = "@operator:cop.local",
+  clearContent?: Record<string, unknown>,
+  clearType = "m.room.message"
+) {
+  const wireContent = {
+    algorithm: "m.megolm.v1.aes-sha2",
+    ciphertext: "encrypted",
+    device_id: "DEVICE",
+    sender_key: "sender-key",
+    session_id: "session-id"
+  };
+  return {
+    ...(clearContent ? { getClearContent: () => clearContent } : {}),
+    getContent: () => (clearContent ? clearContent : wireContent),
+    getEffectiveEvent: () => ({
+      content: clearContent ?? wireContent,
+      type: clearContent ? clearType : "m.room.encrypted"
+    }),
+    getId: () => eventId,
+    getSender: () => sender,
+    getTs: () => timestamp,
+    getType: () => (clearContent ? clearType : "m.room.encrypted")
   };
 }
 
