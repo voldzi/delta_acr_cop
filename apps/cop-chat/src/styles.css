@@ -174,8 +174,7 @@ button {
 }
 
 .wa-shell.embedded .conversation-actions .e2ee-chip,
-.wa-shell.embedded .conversation-actions .round-icon[aria-label="Videohovor"],
-.wa-shell.embedded .conversation-actions .round-icon[aria-label="Hovor"] {
+.wa-shell.embedded .conversation-actions .video-call-action {
   display: none;
 }
 
@@ -263,6 +262,11 @@ button {
 .round-icon.active {
   background: #e1f4ee;
   color: var(--accent-dark);
+}
+
+.round-icon.voice-call-action.active {
+  background: #dff7eb;
+  color: #067a60;
 }
 
 .chat-list-pane {
@@ -1125,6 +1129,124 @@ button {
 .status-banner-action:focus-visible {
   background: #056f5d;
   outline: none;
+}
+
+.voice-call-bar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 18px;
+  border-bottom: 1px solid rgba(0, 128, 105, 0.15);
+  background: #e8f8f2;
+  color: #12352e;
+}
+
+.voice-call-bar.ringing {
+  background: #eef7ff;
+  border-bottom-color: rgba(14, 116, 144, 0.22);
+}
+
+.voice-call-bar.failed {
+  background: #fff0ef;
+  border-bottom-color: #f2cbc7;
+  color: #9f2f2f;
+}
+
+.voice-call-bar audio {
+  display: none;
+}
+
+.voice-call-icon {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--accent-dark);
+  box-shadow: 0 1px 0 rgba(17, 27, 33, 0.08);
+}
+
+.voice-call-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.voice-call-copy strong,
+.voice-call-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-call-copy strong {
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.voice-call-copy span {
+  color: #5c6b73;
+  font-size: 0.78rem;
+  font-weight: 680;
+}
+
+.voice-call-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.voice-call-control {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #12352e;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 0 12px;
+}
+
+.voice-call-control:hover,
+.voice-call-control:focus-visible {
+  background: #d6f2e8;
+  outline: none;
+}
+
+.voice-call-control.accept {
+  background: var(--accent-dark);
+  color: #ffffff;
+}
+
+.voice-call-control.accept:hover,
+.voice-call-control.accept:focus-visible {
+  background: #056f5d;
+}
+
+.voice-call-control.hangup {
+  background: #ffe7e4;
+  color: #a72828;
+}
+
+.voice-call-control.hangup:hover,
+.voice-call-control.hangup:focus-visible {
+  background: #ffd6d1;
+}
+
+.voice-call-control.icon-only {
+  width: 38px;
+  padding: 0;
 }
 
 .message-canvas {
@@ -4570,9 +4692,22 @@ button {
   }
 
   .conversation-actions .e2ee-chip,
-  .conversation-actions .round-icon[aria-label="Videohovor"],
-  .conversation-actions .round-icon[aria-label="Hovor"] {
+  .conversation-actions .video-call-action {
     display: none;
+  }
+
+  .voice-call-bar {
+    min-height: 54px;
+    padding: 8px 10px;
+  }
+
+  .voice-call-controls {
+    gap: 5px;
+  }
+
+  .voice-call-control {
+    min-height: 34px;
+    padding: 0 9px;
   }
 
   .message-canvas {

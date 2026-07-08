@@ -163,6 +163,14 @@ storage records. Recovery keys shown in screenshots or otherwise exposed to a
 human support channel are treated as compromised and must be replaced through
 this reset flow before enrolling additional devices.
 
+One-to-one voice calls are client-side Matrix VoIP/WebRTC calls between direct
+rooms. COP Chat may offer audio call controls after Matrix bootstrap and E2EE
+recovery are ready, but COP API still must not proxy call media, SDP payloads or
+plaintext chat content. Browsers require microphone permission, WebRTC support
+and reachable ICE/TURN infrastructure from the Matrix deployment. On iOS PWA,
+incoming calls can be handled only while the web app runtime is awake; reliable
+lock-screen ringing remains a native CSM Messenger capability.
+
 ## Native iOS/iPadOS Pairing
 
 COP exposes a metadata-only pairing flow for CSM Messenger iOS/iPadOS. The

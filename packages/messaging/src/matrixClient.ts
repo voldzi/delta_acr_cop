@@ -12,6 +12,9 @@ import type {
   MatrixMessageReplyTarget,
   MatrixMessagingSession,
   MatrixTransitShare,
+  MatrixVoiceCallOptions,
+  MatrixVoiceCallPhase,
+  MatrixVoiceCallSnapshot,
   MatrixUserProfileSyncInput,
   MatrixPresenceState,
   MatrixRoomSummary,
@@ -78,6 +81,25 @@ interface MatrixClientLike {
   ) => Promise<{ content_uri?: string; contentUri?: string }>;
 }
 
+interface MatrixCallLike {
+  callId?: string;
+  direction?: string;
+  invitee?: string;
+  localUsermediaStream?: MediaStream;
+  remoteUsermediaStream?: MediaStream;
+  roomId?: string;
+  state?: string;
+  answer?: (audio?: boolean, video?: boolean) => Promise<void>;
+  getOpponentMember?: () => { userId?: string } | undefined;
+  hangup?: (reason: string, suppressEvent: boolean) => void;
+  isMicrophoneMuted?: () => boolean;
+  off?: (event: string, listener: (...args: unknown[]) => void) => void;
+  on?: (event: string, listener: (...args: unknown[]) => void) => void;
+  placeVoiceCall?: () => Promise<void>;
+  reject?: () => void;
+  setMicrophoneMuted?: (muted: boolean) => Promise<boolean>;
+}
+
 interface MatrixCryptoApiLike {
   bootstrapCrossSigning?: (options: {
     authUploadDeviceSigningKeys?: MatrixInteractiveAuthCallback;
@@ -112,6 +134,11 @@ interface MatrixRecoveryController {
 
 interface MatrixSdkLike {
   createClient: (options: Record<string, unknown>) => MatrixClientLike;
+  createNewMatrixCall?: (
+    client: MatrixClientLike,
+    roomId: string,
+    options?: Record<string, unknown>
+  ) => MatrixCallLike | null;
   Room?: {
     prototype?: {
       __copChatPollAggregationDisabled?: boolean;
@@ -214,6 +241,8 @@ export async function createMatrixMessagingSession(
     onSyncState?: (state: string) => void;
     onTimelineChanged?: () => void;
     webPush?: MatrixWebPushPusherOptions;
+    voip?: MatrixVoiceCallOptions;
+    onVoiceCallChanged?: (call: MatrixVoiceCallSnapshot | null) => void;
   } = {}
 ): Promise<MatrixMessagingSession> {
   validateBootstrap(bootstrap);
@@ -237,6 +266,8 @@ export async function createMatrixMessagingSession(
     accessToken: bootstrap.accessToken,
     baseUrl: homeserverBaseUrl,
     deviceId: bootstrap.deviceId,
+    fallbackICEServerAllowed: callbacks.voip?.fallbackIceServerAllowed === true,
+    forceTURN: callbacks.voip?.forceTurn === true,
     cryptoCallbacks: recoveryController.cryptoCallbacks,
     userId: bootstrap.userId
   });
@@ -288,6 +319,10 @@ export async function createMatrixMessagingSession(
   let pendingRoomsNotify = false;
   let pendingTimelineNotify = false;
   let sessionDisposed = false;
+  let activeVoiceCall: MatrixCallLike | null = null;
+  let activeVoiceCallStartedAt: string | undefined;
+  let activeVoiceCallError: string | undefined;
+  let activeVoiceCallClearTimer: ReturnType<typeof setTimeout> | undefined;
   const flushNotifications = () => {
     notifyScheduled = false;
     if (sessionDisposed) {
@@ -393,6 +428,74 @@ export async function createMatrixMessagingSession(
       });
     return inviteJoinInFlight;
   };
+  const publishVoiceCall = () => {
+    callbacks.onVoiceCallChanged?.(
+      activeVoiceCall ? matrixVoiceCallSnapshot(activeVoiceCall, activeVoiceCallStartedAt, activeVoiceCallError) : null
+    );
+  };
+  const clearVoiceCallSoon = () => {
+    if (activeVoiceCallClearTimer !== undefined) {
+      clearTimeout(activeVoiceCallClearTimer);
+    }
+    activeVoiceCallClearTimer = setTimeout(() => {
+      activeVoiceCallClearTimer = undefined;
+      if (activeVoiceCall && (activeVoiceCallError || matrixVoiceCallPhase(activeVoiceCall.state) === "ended")) {
+        activeVoiceCall = null;
+        activeVoiceCallStartedAt = undefined;
+        activeVoiceCallError = undefined;
+        publishVoiceCall();
+      }
+    }, 1_800);
+  };
+  const bindVoiceCall = (call: MatrixCallLike): MatrixCallLike => {
+    const stateListener = (state: unknown) => {
+      const phase = matrixVoiceCallPhase(typeof state === "string" ? state : call.state);
+      if (phase === "connected" && !activeVoiceCallStartedAt) {
+        activeVoiceCallStartedAt = new Date().toISOString();
+      }
+      if (phase === "ended") {
+        clearVoiceCallSoon();
+      }
+      publishVoiceCall();
+    };
+    const feedsListener = () => publishVoiceCall();
+    const hangupListener = () => {
+      if (activeVoiceCall === call) {
+        publishVoiceCall();
+        clearVoiceCallSoon();
+      }
+    };
+    const errorListener = (error: unknown) => {
+      if (activeVoiceCall === call) {
+        activeVoiceCallError = matrixVoiceCallErrorMessage(error);
+        publishVoiceCall();
+        clearVoiceCallSoon();
+      }
+    };
+    call.on?.("state", stateListener);
+    call.on?.("feeds_changed", feedsListener);
+    call.on?.("hangup", hangupListener);
+    call.on?.("error", errorListener);
+    return call;
+  };
+  const incomingCallListener = (call: unknown) => {
+    const nextCall = asMatrixCallLike(call);
+    if (!nextCall?.callId || !nextCall.roomId) {
+      return;
+    }
+    if (
+      activeVoiceCall &&
+      activeVoiceCall.callId !== nextCall.callId &&
+      matrixVoiceCallPhase(activeVoiceCall.state) !== "ended"
+    ) {
+      nextCall.reject?.();
+      return;
+    }
+    activeVoiceCall = bindVoiceCall(nextCall);
+    activeVoiceCallStartedAt = undefined;
+    activeVoiceCallError = undefined;
+    publishVoiceCall();
+  };
 
   const syncListener = (state: unknown) => {
     callbacks.onSyncState?.(typeof state === "string" ? state : "sync");
@@ -415,6 +518,7 @@ export async function createMatrixMessagingSession(
   client.on?.("Event.decrypted", timelineListener);
   client.on?.("User.presence", presenceListener);
   client.on?.("RoomMember.membership", presenceListener);
+  client.on?.("Call.incoming", incomingCallListener);
   await refreshJoinedRoomIds();
   await client.startClient?.({ initialSyncLimit: 30 });
   void syncMatrixUserProfile(client, bootstrap, callbacks.profile).catch(() => undefined);
@@ -431,6 +535,22 @@ export async function createMatrixMessagingSession(
 
   return {
     bootstrap,
+    answerVoiceCall: async (callId) => {
+      const call = requireActiveVoiceCall(activeVoiceCall, callId);
+      if (typeof call.answer !== "function") {
+        throw new Error("Příchozí hovor se nepodařilo přijmout.");
+      }
+      assertBrowserCanUseVoiceCalls();
+      try {
+        await call.answer(true, false);
+        activeVoiceCall = call;
+        publishVoiceCall();
+      } catch (caught) {
+        activeVoiceCallError = matrixVoiceCallErrorMessage(caught);
+        publishVoiceCall();
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "přijmout hovor");
+      }
+    },
     createEncryptionRecovery: async (reset = false) => {
       const recoveryKey = await createUserControlledEncryptionRecovery(client, recoveryController, { reset });
       await writeStoredMatrixRecoveryKey(bootstrap, recoveryKey);
@@ -491,6 +611,14 @@ export async function createMatrixMessagingSession(
     getEncryptionRecoveryStatus: async () => readMatrixEncryptionRecoveryStatus(client),
     getRooms: readVisibleRooms,
     getTimeline: (roomId) => readTimeline(client, roomId, homeserverBaseUrl),
+    getVoiceCall: () =>
+      activeVoiceCall ? matrixVoiceCallSnapshot(activeVoiceCall, activeVoiceCallStartedAt, activeVoiceCallError) : null,
+    hangupVoiceCall: async (callId) => {
+      const call = requireActiveVoiceCall(activeVoiceCall, callId);
+      call.hangup?.("user_hangup", false);
+      publishVoiceCall();
+      clearVoiceCallSoon();
+    },
     inviteUsersToRoom: async (roomId, userIds) => {
       if (userIds.length === 0) {
         return;
@@ -594,6 +722,16 @@ export async function createMatrixMessagingSession(
       await writeStoredMatrixRecoveryKey(bootstrap, recoveryKey);
       return recoveryKey;
     },
+    rejectVoiceCall: async (callId) => {
+      const call = requireActiveVoiceCall(activeVoiceCall, callId);
+      if (typeof call.reject === "function" && matrixVoiceCallPhase(call.state) === "ringing") {
+        call.reject();
+      } else {
+        call.hangup?.("user_hangup", false);
+      }
+      publishVoiceCall();
+      clearVoiceCallSoon();
+    },
     restoreEncryptionRecovery: async (recoveryKey) => {
       await restoreUserControlledEncryptionRecovery(client, recoveryController, recoveryKey);
       await writeStoredMatrixRecoveryKey(bootstrap, recoveryKey);
@@ -619,6 +757,15 @@ export async function createMatrixMessagingSession(
         }
         throw formatMatrixClientError(caught, homeserverBaseUrl, "nastavit automatické mazání zpráv");
       }
+    },
+    setVoiceCallMuted: async (callId, muted) => {
+      const call = requireActiveVoiceCall(activeVoiceCall, callId);
+      if (typeof call.setMicrophoneMuted !== "function") {
+        throw new Error("Ztlumení mikrofonu tento prohlížeč nepodporuje.");
+      }
+      const nextMuted = await call.setMicrophoneMuted(muted);
+      publishVoiceCall();
+      return nextMuted;
     },
     sendAttachment: async (roomId, attachment) => {
       if (typeof client.uploadContent !== "function" || typeof client.sendMessage !== "function") {
@@ -707,6 +854,33 @@ export async function createMatrixMessagingSession(
         throw formatMatrixClientError(caught, homeserverBaseUrl, "odeslat reakci");
       }
     },
+    startVoiceCall: async (roomId) => {
+      assertBrowserCanUseVoiceCalls();
+      if (!typedMatrixSdk.createNewMatrixCall) {
+        throw new Error("Hlasové hovory nejsou v této verzi chatu dostupné.");
+      }
+      if (activeVoiceCall && matrixVoiceCallPhase(activeVoiceCall.state) !== "ended") {
+        throw new Error("Nejdřív ukončete aktuální hovor.");
+      }
+      try {
+        await joinInvitedRooms();
+        await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
+        const call = typedMatrixSdk.createNewMatrixCall(client, roomId);
+        if (!call?.callId || typeof call.placeVoiceCall !== "function") {
+          throw new Error("Hlasový hovor se nepodařilo připravit.");
+        }
+        activeVoiceCall = bindVoiceCall(call);
+        activeVoiceCallStartedAt = undefined;
+        activeVoiceCallError = undefined;
+        publishVoiceCall();
+        await call.placeVoiceCall();
+        publishVoiceCall();
+      } catch (caught) {
+        activeVoiceCallError = matrixVoiceCallErrorMessage(caught);
+        publishVoiceCall();
+        throw formatMatrixClientError(caught, homeserverBaseUrl, "zahájit hovor");
+      }
+    },
     setReaction: async (roomId, eventId, key) => {
       const normalizedKey = key.trim();
       if (!normalizedKey) {
@@ -758,9 +932,87 @@ export async function createMatrixMessagingSession(
       client.off?.("Event.decrypted", timelineListener);
       client.off?.("User.presence", presenceListener);
       client.off?.("RoomMember.membership", presenceListener);
+      client.off?.("Call.incoming", incomingCallListener);
+      if (activeVoiceCallClearTimer !== undefined) {
+        clearTimeout(activeVoiceCallClearTimer);
+      }
+      activeVoiceCall?.hangup?.("user_hangup", false);
+      activeVoiceCall = null;
+      callbacks.onVoiceCallChanged?.(null);
       client.stopClient?.();
     }
   };
+}
+
+function asMatrixCallLike(value: unknown): MatrixCallLike | null {
+  return typeof value === "object" && value !== null ? (value as MatrixCallLike) : null;
+}
+
+function assertBrowserCanUseVoiceCalls(): void {
+  const globalScope = globalThis as typeof globalThis & { RTCPeerConnection?: typeof RTCPeerConnection };
+  const nav = typeof navigator !== "undefined" ? navigator : undefined;
+  const win = typeof window !== "undefined" ? window : undefined;
+  const peerConnection = win?.RTCPeerConnection ?? globalScope.RTCPeerConnection;
+  if (!peerConnection || !nav?.mediaDevices?.getUserMedia) {
+    throw new Error("Tento prohlížeč nepodporuje hlasové hovory.");
+  }
+}
+
+function requireActiveVoiceCall(call: MatrixCallLike | null, callId: string): MatrixCallLike {
+  if (!call || call.callId !== callId) {
+    throw new Error("Aktuální hovor už není dostupný.");
+  }
+  return call;
+}
+
+function matrixVoiceCallSnapshot(
+  call: MatrixCallLike,
+  startedAt: string | undefined,
+  error: string | undefined
+): MatrixVoiceCallSnapshot {
+  const phase = matrixVoiceCallPhase(call.state, error);
+  return {
+    callId: call.callId ?? "unknown",
+    direction: call.direction === "inbound" ? "incoming" : "outgoing",
+    ...(error ? { error } : {}),
+    ...(call.localUsermediaStream ? { localStream: call.localUsermediaStream } : {}),
+    microphoneMuted: Boolean(call.isMicrophoneMuted?.()),
+    ...(call.getOpponentMember?.()?.userId ? { opponentUserId: call.getOpponentMember?.()?.userId } : {}),
+    phase,
+    ...(call.remoteUsermediaStream ? { remoteStream: call.remoteUsermediaStream } : {}),
+    roomId: call.roomId ?? "",
+    ...(startedAt ? { startedAt } : {})
+  };
+}
+
+function matrixVoiceCallPhase(state: string | undefined, error?: string): MatrixVoiceCallPhase {
+  if (error) {
+    return "failed";
+  }
+  if (state === "ringing") {
+    return "ringing";
+  }
+  if (state === "connected") {
+    return "connected";
+  }
+  if (state === "ended") {
+    return "ended";
+  }
+  return "connecting";
+}
+
+function matrixVoiceCallErrorMessage(error: unknown): string {
+  const record = asRecord(error);
+  if (record) {
+    const code = stringValue(record.code);
+    if (code === "no_user_media") {
+      return "Mikrofon není dostupný nebo nemá povolený přístup.";
+    }
+    if (code === "ice_failed") {
+      return "Hovor se nepodařilo spojit. Pravděpodobně chybí dostupný TURN server.";
+    }
+  }
+  return errorMessage(error);
 }
 
 function disableMatrixPollAggregation(matrixSdk: MatrixSdkLike): void {

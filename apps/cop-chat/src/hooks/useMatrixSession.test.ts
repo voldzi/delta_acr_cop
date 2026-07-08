@@ -10,6 +10,7 @@ import type { MatrixEncryptionRecoveryStatus, MatrixMessagingSession } from "@co
 
 function sessionStub(): MatrixMessagingSession {
   return {
+    answerVoiceCall: vi.fn(),
     bootstrap: {
       chatAvailable: true,
       contractVersion: "cop-messaging-bootstrap-v1",
@@ -23,23 +24,28 @@ function sessionStub(): MatrixMessagingSession {
     createGroupRoom: vi.fn(),
     deleteMessage: vi.fn(),
     downloadAttachment: vi.fn(),
+    getVoiceCall: vi.fn(() => null),
     getEncryptionRecoveryStatus: vi.fn(),
     getRooms: vi.fn(),
     getTimeline: vi.fn(),
+    hangupVoiceCall: vi.fn(),
     inviteUsersToRoom: vi.fn(),
     joinInvitedRooms: vi.fn(),
     leaveRoom: vi.fn(),
     loadMoreTimeline: vi.fn(),
     markRoomRead: vi.fn(),
     prepareEncryptionRecoveryForMobile: vi.fn(),
+    rejectVoiceCall: vi.fn(),
     restoreEncryptionRecovery: vi.fn(),
     setMessageRetentionPolicy: vi.fn(),
+    setVoiceCallMuted: vi.fn(),
     sendAttachment: vi.fn(),
     sendLocation: vi.fn(),
     sendMessage: vi.fn(),
     sendReaction: vi.fn(),
     sendTransitShare: vi.fn(),
     setReaction: vi.fn(),
+    startVoiceCall: vi.fn(),
     stop: vi.fn(),
     syncUserProfile: vi.fn()
   };

@@ -31,6 +31,21 @@ type MockMatrixClient = {
   ) => Promise<{ content_uri?: string; contentUri?: string }>;
 };
 
+type MockMatrixCall = {
+  callId: string;
+  direction: "inbound" | "outbound";
+  roomId: string;
+  state: string;
+  answer: (audio?: boolean, video?: boolean) => Promise<void>;
+  hangup: (reason: string, suppressEvent: boolean) => void;
+  isMicrophoneMuted: () => boolean;
+  off: MatrixEventSubscription;
+  on: MatrixEventSubscription;
+  placeVoiceCall: () => Promise<void>;
+  reject: () => void;
+  setMicrophoneMuted: (muted: boolean) => Promise<boolean>;
+};
+
 type MockMatrixCrypto = {
   bootstrapCrossSigning?: (options: {
     authUploadDeviceSigningKeys?: (
@@ -97,11 +112,13 @@ type MatrixMxcUrlToHttp = (
 ) => string | null;
 
 const matrixSdkMock = vi.hoisted(() => ({
-  createClient: vi.fn()
+  createClient: vi.fn(),
+  createNewMatrixCall: vi.fn()
 }));
 
 vi.mock("matrix-js-sdk/lib/browser-index.js", () => ({
   createClient: matrixSdkMock.createClient,
+  createNewMatrixCall: matrixSdkMock.createNewMatrixCall,
   Room: {
     prototype: {}
   }
@@ -109,6 +126,7 @@ vi.mock("matrix-js-sdk/lib/browser-index.js", () => ({
 
 afterEach(() => {
   matrixSdkMock.createClient.mockReset();
+  matrixSdkMock.createNewMatrixCall.mockReset();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -274,6 +292,64 @@ describe("Matrix client diagnostics", () => {
       })
     );
     expect(storage.get("cop.matrix.webPushPusher.v1")).toBeUndefined();
+  });
+
+  it("starts an outgoing Matrix voice call and publishes call state", async () => {
+    stubVoiceCallBrowserSupport();
+    const call = createMockVoiceCall({ direction: "outbound", roomId: "!chat:cop.local" });
+    const onVoiceCallChanged = vi.fn();
+    matrixSdkMock.createNewMatrixCall.mockReturnValue(call);
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
+        rooms: [createRoom({ roomId: "!chat:cop.local" })]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap(), { onVoiceCallChanged });
+    await session.startVoiceCall("!chat:cop.local");
+
+    expect(matrixSdkMock.createNewMatrixCall).toHaveBeenCalledWith(expect.any(Object), "!chat:cop.local");
+    expect(call.placeVoiceCall).toHaveBeenCalled();
+    expect(session.getVoiceCall()).toMatchObject({
+      callId: "call-1",
+      direction: "outgoing",
+      phase: "connecting",
+      roomId: "!chat:cop.local"
+    });
+    expect(onVoiceCallChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ callId: "call-1", direction: "outgoing" })
+    );
+  });
+
+  it("answers an incoming Matrix voice call", async () => {
+    stubVoiceCallBrowserSupport();
+    const listeners = new Map<string, (...args: unknown[]) => void>();
+    const on = vi.fn<MatrixEventSubscription>((event, listener) => listeners.set(event, listener));
+    const call = createMockVoiceCall({ direction: "inbound", roomId: "!chat:cop.local", state: "ringing" });
+    const onVoiceCallChanged = vi.fn();
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
+        on,
+        rooms: [createRoom({ roomId: "!chat:cop.local" })]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap(), { onVoiceCallChanged });
+    listeners.get("Call.incoming")?.(call);
+    await session.answerVoiceCall("call-1");
+
+    expect(call.answer).toHaveBeenCalledWith(true, false);
+    expect(session.getVoiceCall()).toMatchObject({
+      callId: "call-1",
+      direction: "incoming",
+      phase: "connected",
+      roomId: "!chat:cop.local"
+    });
+    expect(onVoiceCallChanged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ callId: "call-1", phase: "connected" })
+    );
   });
 
   it("refreshes direct chat avatars from Matrix profile info when room member state has no avatar", async () => {
@@ -1717,6 +1793,71 @@ function createMockMatrixClient({
     ...(uploadContent ? { uploadContent } : {}),
     startClient: () => Promise.resolve()
   };
+}
+
+function createMockVoiceCall({
+  direction,
+  roomId,
+  state = "fledgling"
+}: {
+  direction: "inbound" | "outbound";
+  roomId: string;
+  state?: string;
+}): MockMatrixCall {
+  const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+  const emit = (event: string, ...args: unknown[]) => {
+    for (const listener of listeners.get(event) ?? []) {
+      listener(...args);
+    }
+  };
+  let microphoneMuted = false;
+  const call: MockMatrixCall = {
+    answer: vi.fn(async () => {
+      call.state = "connected";
+      emit("state", "connected", state, call);
+    }),
+    callId: "call-1",
+    direction,
+    hangup: vi.fn(() => {
+      call.state = "ended";
+      emit("state", "ended", state, call);
+      emit("hangup", call);
+    }),
+    isMicrophoneMuted: () => microphoneMuted,
+    off: (event, listener) => {
+      listeners.get(event)?.delete(listener);
+    },
+    on: (event, listener) => {
+      const current = listeners.get(event) ?? new Set();
+      current.add(listener);
+      listeners.set(event, current);
+    },
+    placeVoiceCall: vi.fn(async () => {
+      call.state = "invite_sent";
+      emit("state", "invite_sent", state, call);
+    }),
+    reject: vi.fn(() => {
+      call.state = "ended";
+      emit("state", "ended", state, call);
+      emit("hangup", call);
+    }),
+    roomId,
+    setMicrophoneMuted: vi.fn(async (muted: boolean) => {
+      microphoneMuted = muted;
+      return microphoneMuted;
+    }),
+    state
+  };
+  return call;
+}
+
+function stubVoiceCallBrowserSupport(): void {
+  vi.stubGlobal("RTCPeerConnection", class MockRTCPeerConnection {});
+  vi.stubGlobal("navigator", {
+    mediaDevices: {
+      getUserMedia: vi.fn()
+    }
+  });
 }
 
 function createRoom({

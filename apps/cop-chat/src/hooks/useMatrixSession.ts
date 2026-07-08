@@ -10,7 +10,8 @@ import type {
   MatrixEncryptionRecoveryStatus,
   MatrixMessagingSession,
   MatrixRoomSummary,
-  MatrixUserProfileSyncInput
+  MatrixUserProfileSyncInput,
+  MatrixVoiceCallSnapshot
 } from "@cop/messaging/types";
 
 export type MatrixSessionLifecycle = "idle" | "starting" | "ready" | "recovery-needed" | "error";
@@ -124,6 +125,7 @@ interface UseMatrixSessionOptions {
   onNotice: (message: string | null) => void;
   onRoomsChanged: (rooms: MatrixRoomSummary[], preferredSelection?: string | null) => void;
   onTimelineChanged: () => void;
+  onVoiceCallChanged?: (call: MatrixVoiceCallSnapshot | null) => void;
 }
 
 export function useMatrixSession(options: UseMatrixSessionOptions): {
@@ -202,6 +204,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
           },
           onSyncState: (nextSyncState) => dispatch({ type: "sync-state", syncState: nextSyncState }),
           onTimelineChanged: currentOptions.onTimelineChanged,
+          onVoiceCallChanged: currentOptions.onVoiceCallChanged,
           profile: currentOptions.matrixProfile,
           webPush: {
             ...(matrixWebPushDeviceId ? { deviceId: matrixWebPushDeviceId } : {}),

@@ -1,19 +1,19 @@
 export type ChatLocale = "cs" | "en";
 
 export type ChatTextKey =
-  "calls.audioComingSoon" | "calls.audioTitle" | "calls.videoComingSoon" | "calls.videoTitle" | "dialog.loading";
+  "calls.audioTitle" | "calls.audioUnavailable" | "calls.videoComingSoon" | "calls.videoTitle" | "dialog.loading";
 
 const chatDictionaries: Record<ChatLocale, Record<ChatTextKey, string>> = {
   cs: {
-    "calls.audioComingSoon": "Hovory jsou v přípravě.",
-    "calls.audioTitle": "Hovor je v přípravě",
+    "calls.audioTitle": "Zahájit hlasový hovor",
+    "calls.audioUnavailable": "Hlasový hovor lze zahájit jen v přímém chatu po připojení Matrix místnosti.",
     "calls.videoComingSoon": "Videohovory jsou v přípravě.",
     "calls.videoTitle": "Videohovor je v přípravě",
     "dialog.loading": "Načítám..."
   },
   en: {
-    "calls.audioComingSoon": "Calls are in preparation.",
-    "calls.audioTitle": "Call is in preparation",
+    "calls.audioTitle": "Start voice call",
+    "calls.audioUnavailable": "Voice calls can start only in a direct chat after the Matrix room is connected.",
     "calls.videoComingSoon": "Video calls are in preparation.",
     "calls.videoTitle": "Video call is in preparation",
     "dialog.loading": "Loading..."

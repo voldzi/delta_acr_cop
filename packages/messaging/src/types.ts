@@ -74,6 +74,28 @@ export type MatrixMessageKind = "file" | "image" | "location" | "text" | "transi
 
 export type MatrixAttachmentKind = "file" | "image" | "video";
 
+export type MatrixVoiceCallDirection = "incoming" | "outgoing";
+
+export type MatrixVoiceCallPhase = "connecting" | "connected" | "ended" | "failed" | "ringing";
+
+export interface MatrixVoiceCallSnapshot {
+  callId: string;
+  direction: MatrixVoiceCallDirection;
+  error?: string;
+  localStream?: MediaStream;
+  microphoneMuted: boolean;
+  opponentUserId?: string;
+  phase: MatrixVoiceCallPhase;
+  remoteStream?: MediaStream;
+  roomId: string;
+  startedAt?: string;
+}
+
+export interface MatrixVoiceCallOptions {
+  fallbackIceServerAllowed?: boolean;
+  forceTurn?: boolean;
+}
+
 export interface MatrixAttachmentUpload {
   caption?: string;
   file: File;
@@ -206,6 +228,7 @@ export interface MatrixEncryptedFileRef {
 
 export interface MatrixMessagingSession {
   bootstrap: MessagingBootstrapResponse;
+  answerVoiceCall(callId: string): Promise<void>;
   createEncryptionRecovery(reset?: boolean): Promise<string>;
   createGroupRoom(name: string, inviteUserIds?: string[]): Promise<string>;
   deleteMessage(roomId: string, eventId: string): Promise<void>;
@@ -213,14 +236,18 @@ export interface MatrixMessagingSession {
   getEncryptionRecoveryStatus(): Promise<MatrixEncryptionRecoveryStatus>;
   getRooms(): MatrixRoomSummary[];
   getTimeline(roomId: string): MatrixTimelineMessage[];
+  getVoiceCall(): MatrixVoiceCallSnapshot | null;
+  hangupVoiceCall(callId: string): Promise<void>;
   inviteUsersToRoom(roomId: string, userIds: string[]): Promise<void>;
   joinInvitedRooms(): Promise<void>;
   leaveRoom(roomId: string): Promise<void>;
   loadMoreTimeline(roomId: string, limit?: number): Promise<{ exhausted: boolean; messages: MatrixTimelineMessage[] }>;
   markRoomRead(roomId: string): Promise<void>;
   prepareEncryptionRecoveryForMobile(): Promise<string>;
+  rejectVoiceCall(callId: string): Promise<void>;
   restoreEncryptionRecovery(recoveryKey: string): Promise<void>;
   setMessageRetentionPolicy(roomId: string, seconds: number | null): Promise<void>;
+  setVoiceCallMuted(callId: string, muted: boolean): Promise<boolean>;
   sendAttachment(roomId: string, attachment: MatrixAttachmentUpload): Promise<void>;
   sendLocation(roomId: string, location: MatrixLocationShare): Promise<void>;
   sendMessage(
@@ -230,6 +257,7 @@ export interface MatrixMessagingSession {
   ): Promise<void>;
   sendReaction(roomId: string, eventId: string, key: string): Promise<void>;
   sendTransitShare(roomId: string, transit: MatrixTransitShare): Promise<void>;
+  startVoiceCall(roomId: string): Promise<void>;
   setReaction(roomId: string, eventId: string, key: string): Promise<void>;
   syncUserProfile(profile: MatrixUserProfileSyncInput | undefined): Promise<void>;
   stop(): void;

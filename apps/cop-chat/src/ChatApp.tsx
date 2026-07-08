@@ -28,9 +28,11 @@ import {
   MessageCircle,
   MessageSquarePlus,
   Mic,
+  MicOff,
   MoreVertical,
   Navigation,
   Phone,
+  PhoneOff,
   Pin,
   PinOff,
   Plus,
@@ -118,7 +120,8 @@ import type {
   MatrixMessagingSession,
   MatrixRoomSummary,
   MatrixTimelineMessage,
-  MatrixTransitShare
+  MatrixTransitShare,
+  MatrixVoiceCallSnapshot
 } from "@cop/messaging/types";
 import {
   decodeChatCurrentLocation,
@@ -543,6 +546,7 @@ export function ChatApp() {
   const [chatFilter, setChatFilter] = React.useState<ChatFilter>("all");
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
   const [webPushBusy, setWebPushBusy] = React.useState(false);
+  const [voiceCall, setVoiceCall] = React.useState<MatrixVoiceCallSnapshot | null>(null);
   const [composeMode, setComposeMode] = React.useState<NewChatMode>(null);
   const [directQuery, setDirectQuery] = React.useState("");
   const [directSuggestions, setDirectSuggestions] = React.useState<UserDirectoryEntry[]>([]);
@@ -671,6 +675,12 @@ export function ChatApp() {
     [setSelectedRoomId]
   );
   const handleMatrixTimelineChanged = React.useCallback(() => setTimelineRevision((value) => value + 1), []);
+  const handleMatrixVoiceCallChanged = React.useCallback((nextCall: MatrixVoiceCallSnapshot | null) => {
+    setVoiceCall(nextCall);
+    if (nextCall?.direction === "incoming" && nextCall.phase === "ringing" && nextCall.roomId) {
+      setSelectedRoomId(nextCall.roomId);
+    }
+  }, []);
   const {
     encryptionRecoveryStatus,
     ensureMatrixSession,
@@ -696,7 +706,8 @@ export function ChatApp() {
     onError: setError,
     onNotice: setNotice,
     onRoomsChanged: handleMatrixRoomsChanged,
-    onTimelineChanged: handleMatrixTimelineChanged
+    onTimelineChanged: handleMatrixTimelineChanged,
+    onVoiceCallChanged: handleMatrixVoiceCallChanged
   });
   const ownIdentityIds = React.useMemo(
     () => ownChatIdentityIds(authSession, matrixSession?.bootstrap.userId),
@@ -823,6 +834,18 @@ export function ChatApp() {
   const pinnedChatItems = React.useMemo(() => chatItems.filter((item) => item.pinned), [chatItems]);
   const regularChatItems = React.useMemo(() => chatItems.filter((item) => !item.pinned), [chatItems]);
   const activeChat = chatItems.find((item) => item.active) ?? null;
+  const voiceCallChat = voiceCall ? (chatItems.find((item) => item.roomId === voiceCall.roomId) ?? null) : null;
+  const activeVoiceCall =
+    voiceCall && activeChat?.roomId === voiceCall.roomId && voiceCall.phase !== "ended" ? voiceCall : null;
+  const canStartVoiceCall = Boolean(
+    activeChat?.type === "direct" &&
+    activeChat.roomId &&
+    selectedRoomId &&
+    matrixSession &&
+    chatReady &&
+    encryptionRecoveryReady &&
+    (!voiceCall || voiceCall.phase === "ended")
+  );
   const selectedAiAgentDirectChat = activeChat ? isAiAgentChatItem(activeChat) : false;
   const routeChatSelected = Boolean(activeChat && readRouteSelection());
   const totalUnreadCount = React.useMemo(
@@ -3420,6 +3443,73 @@ export function ChatApp() {
     }
   }
 
+  async function startVoiceCall(): Promise<void> {
+    const roomId = activeChat?.roomId;
+    if (!canStartVoiceCall || !matrixSession || !roomId) {
+      setNotice(chatText("calls.audioUnavailable"));
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    try {
+      await matrixSession.startVoiceCall(roomId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Hovor se nepodařilo zahájit.");
+    }
+  }
+
+  async function answerVoiceCall(call: MatrixVoiceCallSnapshot): Promise<void> {
+    const session = matrixSessionRef.current;
+    if (!session) {
+      setError("Chatové spojení pro přijetí hovoru není připravené.");
+      return;
+    }
+    setError(null);
+    try {
+      await session.answerVoiceCall(call.callId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Hovor se nepodařilo přijmout.");
+    }
+  }
+
+  async function rejectVoiceCall(call: MatrixVoiceCallSnapshot): Promise<void> {
+    const session = matrixSessionRef.current;
+    if (!session) {
+      setVoiceCall(null);
+      return;
+    }
+    try {
+      await session.rejectVoiceCall(call.callId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Hovor se nepodařilo odmítnout.");
+    }
+  }
+
+  async function hangupVoiceCall(call: MatrixVoiceCallSnapshot): Promise<void> {
+    const session = matrixSessionRef.current;
+    if (!session) {
+      setVoiceCall(null);
+      return;
+    }
+    try {
+      await session.hangupVoiceCall(call.callId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Hovor se nepodařilo ukončit.");
+    }
+  }
+
+  async function toggleVoiceCallMute(call: MatrixVoiceCallSnapshot): Promise<void> {
+    const session = matrixSessionRef.current;
+    if (!session) {
+      return;
+    }
+    try {
+      await session.setVoiceCallMuted(call.callId, !call.microphoneMuted);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Mikrofon se nepodařilo přepnout.");
+    }
+  }
+
   async function sendMessage(draft: string, options: ChatSendOptions = {}): Promise<boolean> {
     const text = draft.trim();
     if (!options.skipAiMention && !pendingAttachment && !replyDraft && isTomatoSlashCommand(text)) {
@@ -4092,7 +4182,7 @@ export function ChatApp() {
                   </span>
                 ) : null}
                 <button
-                  className="round-icon"
+                  className="round-icon video-call-action"
                   onClick={() => setNotice(chatText("calls.videoComingSoon"))}
                   title={chatText("calls.videoTitle")}
                   type="button"
@@ -4101,8 +4191,9 @@ export function ChatApp() {
                   <Video size={21} />
                 </button>
                 <button
-                  className="round-icon"
-                  onClick={() => setNotice(chatText("calls.audioComingSoon"))}
+                  className={clsx("round-icon voice-call-action", activeVoiceCall && "active")}
+                  disabled={!canStartVoiceCall && !activeVoiceCall}
+                  onClick={() => void startVoiceCall()}
                   title={chatText("calls.audioTitle")}
                   type="button"
                   aria-label={chatText("calls.audioTitle")}
@@ -4200,6 +4291,17 @@ export function ChatApp() {
               <StatusBanner text={notice} onClose={() => setNotice(null)} />
             ) : matrixWarmupBanner ? (
               <StatusBanner text={matrixWarmupBanner} />
+            ) : null}
+
+            {activeVoiceCall ? (
+              <VoiceCallBar
+                call={activeVoiceCall}
+                title={voiceCallChat?.title ?? activeChat.title}
+                onAnswer={() => void answerVoiceCall(activeVoiceCall)}
+                onHangup={() => void hangupVoiceCall(activeVoiceCall)}
+                onReject={() => void rejectVoiceCall(activeVoiceCall)}
+                onToggleMute={() => void toggleVoiceCallMute(activeVoiceCall)}
+              />
             ) : null}
 
             {connectionLocked ? (
@@ -6208,6 +6310,110 @@ function ChatLockedState({
       ) : null}
     </div>
   );
+}
+
+function VoiceCallBar({
+  call,
+  title,
+  onAnswer,
+  onHangup,
+  onReject,
+  onToggleMute
+}: {
+  call: MatrixVoiceCallSnapshot;
+  title: string;
+  onAnswer: () => void;
+  onHangup: () => void;
+  onReject: () => void;
+  onToggleMute: () => void;
+}) {
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+  const [now, setNow] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    if (call.phase !== "connected") {
+      return undefined;
+    }
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(intervalId);
+  }, [call.phase, call.startedAt]);
+
+  React.useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    audio.srcObject = call.remoteStream ?? null;
+    if (call.remoteStream) {
+      void audio.play().catch(() => undefined);
+    }
+  }, [call.remoteStream]);
+
+  const incomingRinging = call.direction === "incoming" && call.phase === "ringing";
+  const status = voiceCallStatusText(call, now);
+
+  return (
+    <div className={clsx("voice-call-bar", call.phase)} role="status" aria-live="polite">
+      <audio ref={audioRef} autoPlay playsInline />
+      <span className="voice-call-icon">
+        <Phone size={18} />
+      </span>
+      <div className="voice-call-copy">
+        <strong>{title}</strong>
+        <span>{status}</span>
+      </div>
+      <div className="voice-call-controls">
+        {incomingRinging ? (
+          <>
+            <button className="voice-call-control accept" onClick={onAnswer} type="button">
+              Přijmout
+            </button>
+            <button className="voice-call-control hangup" onClick={onReject} type="button">
+              Odmítnout
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="voice-call-control" onClick={onToggleMute} type="button">
+              {call.microphoneMuted ? <MicOff size={17} /> : <Mic size={17} />}
+              {call.microphoneMuted ? "Zapnout" : "Ztlumit"}
+            </button>
+            <button
+              className="voice-call-control hangup icon-only"
+              onClick={onHangup}
+              type="button"
+              aria-label="Ukončit hovor"
+            >
+              <PhoneOff size={18} />
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function voiceCallStatusText(call: MatrixVoiceCallSnapshot, now: number): string {
+  if (call.error || call.phase === "failed") {
+    return call.error ?? "Hovor se nepodařilo spojit.";
+  }
+  if (call.phase === "ringing") {
+    return call.direction === "incoming" ? "Příchozí hlasový hovor" : "Vyzváním...";
+  }
+  if (call.phase === "connected" && call.startedAt) {
+    const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(call.startedAt)) / 1_000));
+    return `Spojeno ${formatVoiceCallDuration(elapsedSeconds)}`;
+  }
+  if (call.phase === "ended") {
+    return "Hovor ukončen.";
+  }
+  return call.direction === "incoming" ? "Připravuji hovor..." : "Spojuji hovor...";
+}
+
+function formatVoiceCallDuration(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function StatusBanner({
