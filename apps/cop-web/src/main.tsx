@@ -11251,7 +11251,7 @@ function EmbeddedCopChatPanel({
 
   return (
     <aside
-      className={clsx("embedded-chat-panel", pinned && "pinned", active && "active")}
+      className={clsx("messaging-panel", "embedded-chat-panel", pinned && "pinned", active ? "active" : "hidden")}
       style={pinned ? ({ "--messaging-dock-width": `${dockWidth}px` } as React.CSSProperties) : undefined}
       aria-hidden={!active}
     >
