@@ -138,6 +138,40 @@ describe("COP map data helpers", () => {
     );
   });
 
+  it("keeps route distance and ETA first when a rendered route feature matches by rank only", () => {
+    const card = formatEmergencyRouteSelectionCard(
+      { label: "Alternativa 2", rank: 2, role: "alternative", routeId: "rendered-alt-feature" },
+      {
+        contractVersion: "sim-routing-route-v1",
+        features: [],
+        providerId: "sim.situation-data.routing",
+        quality: { confidence: 0.74, engine: "osm_graph", mode: "engine_route" },
+        routes: [
+          {
+            distanceM: 6200,
+            durationSeconds: 360,
+            routeId: "primary-route"
+          },
+          {
+            distanceM: 6400,
+            durationSeconds: 420,
+            quality: { confidence: 0.74, engine: "osm_graph", mode: "engine_route" },
+            routeId: "actual-alt-route"
+          }
+        ],
+        warnings: []
+      }
+    );
+
+    expect(card.title).toBe("Alternativa 2");
+    expect(card.compactSubtitle).toContain("6.4 km");
+    expect(card.compactSubtitle).toContain("ETA 7 min");
+    expect(card.detailRows?.slice(0, 2)).toEqual([
+      { label: "Délka", value: "6.4 km" },
+      { label: "ETA", value: "7 min" }
+    ]);
+  });
+
   it("builds GeoJSON track features from positioned COP objects", () => {
     const collection = objectsToTrackFeatureCollection(
       [

@@ -605,6 +605,8 @@ export interface EmergencyRouteFeatureCollection {
       | { type: "MultiPolygon"; coordinates: Array<Array<Array<[number, number]>>> };
     properties: {
       kind: "route-area" | "route-line" | "route-point";
+      distanceM?: number;
+      durationSeconds?: number;
       label: string;
       qualityMode?: string;
       rank?: number;
@@ -780,7 +782,6 @@ interface CopMapProps {
     target: { label?: string; lat: number; lon: number },
     profile?: RoutingActionProfile
   ) => void;
-  onStartEmergencyNavigation?: () => void;
   onStartNavigationToPoint?: (
     target: { label?: string; lat: number; lon: number },
     profile?: RoutingActionProfile
@@ -962,7 +963,6 @@ function CopMapComponent({
   onRequestNearestAccessToPoint,
   onRequestRouteToPoint,
   onRequestUserLocation,
-  onStartEmergencyNavigation,
   onStartNavigationToPoint,
   onUserLocationFollowChange,
   onUserMapInteraction,
@@ -6321,26 +6321,13 @@ function CopMapComponent({
           )}
         </div>
       ) : null}
-      {emergencyRouteStatus !== "idle" && emergencyRouteCardMessage ? (
+      {emergencyRouteStatus !== "idle" && emergencyRouteStatus !== "ready" && emergencyRouteCardMessage ? (
         <div className={`map-emergency-route-card ${emergencyRouteStatus}`}>
           <div className="map-emergency-route-card-body">
             <strong>Zásahová trasa</strong>
             <span>{emergencyRouteCardMessage}</span>
           </div>
           <div className="map-emergency-route-card-actions">
-            {emergencyRouteStatus === "ready" && onStartEmergencyNavigation ? (
-              <button
-                aria-label="Spustit navigaci po trase"
-                onClick={(event) => {
-                  stopMapToolbarEvent(event);
-                  onStartEmergencyNavigation();
-                }}
-                type="button"
-              >
-                <Compass size={14} />
-                <span>Navigovat</span>
-              </button>
-            ) : null}
             {onClearEmergencyRoute ? (
               <button
                 aria-label="Skrýt zásahovou trasu"
@@ -12251,10 +12238,12 @@ export function formatEmergencyRouteSelectionCard(
   const context = emergencyRouteSelectionContext(properties, response);
   const route = context.route;
   const role = context.role;
-  const rank = numberProperty(route?.rank) ?? numberProperty(properties.rank);
+  const rank = routeMetricNumber(route, properties, "rank");
   const quality = isRecord(route?.quality) ? route.quality : isRecord(response?.quality) ? response.quality : undefined;
   const qualityMode = stringProperty(quality?.mode) ?? stringProperty(properties.qualityMode);
   const trafficSeverity = stringProperty(properties.trafficSeverity);
+  const routeDistanceM = routeMetricNumber(route, properties, "distanceM", "lengthM");
+  const routeDurationSeconds = routeMetricNumber(route, properties, "durationSeconds", "durationS");
   const elevationProfile = routeElevationProfileSummary(route);
   const elevationSummary = formatRouteElevationSummary(route, elevationProfile);
   const weatherSummary = formatRouteWeatherSummary(route);
@@ -12265,14 +12254,12 @@ export function formatEmergencyRouteSelectionCard(
   const label = routeDisplayLabel(route, properties, rank);
   const roleLabel = role ? formatEmergencyRouteRole(role) : "Routing overlay";
   const detailRows = compactDetailRows([
+    routeDistanceM !== undefined ? { label: "Délka", value: formatRouteDistanceValue(routeDistanceM) } : null,
+    routeDurationSeconds !== undefined
+      ? { label: "ETA", value: formatRouteDurationSeconds(routeDurationSeconds) }
+      : null,
     role ? { label: "Role", value: context.active ? `${roleLabel} · aktivní` : roleLabel } : null,
     rank !== undefined ? { label: "Pořadí", value: String(rank) } : null,
-    route
-      ? { label: "Délka", value: formatRouteDistanceValue(firstRecordNumber(route, "distanceM", "lengthM")) }
-      : null,
-    route
-      ? { label: "ETA", value: formatRouteDurationSeconds(firstRecordNumber(route, "durationSeconds", "durationS")) }
-      : null,
     quality
       ? { label: "Kvalita", value: formatRouteQualitySummary(quality) }
       : qualityMode
@@ -12300,7 +12287,8 @@ export function formatEmergencyRouteSelectionCard(
     analysisSections,
     compactSubtitle: [
       roleLabel,
-      route ? formatRouteDistanceValue(firstRecordNumber(route, "distanceM", "lengthM")) : ""
+      routeDistanceM !== undefined ? formatRouteDistanceValue(routeDistanceM) : "",
+      routeDurationSeconds !== undefined ? `ETA ${formatRouteDurationSeconds(routeDurationSeconds)}` : ""
     ]
       .filter(Boolean)
       .join(" · "),
@@ -12312,7 +12300,8 @@ export function formatEmergencyRouteSelectionCard(
     statusTone: emergencyRouteStatusTone(route, response, role),
     subtitle: [
       roleLabel,
-      route ? `ETA ${formatRouteDurationSeconds(firstRecordNumber(route, "durationSeconds", "durationS"))}` : "",
+      routeDistanceM !== undefined ? formatRouteDistanceValue(routeDistanceM) : "",
+      routeDurationSeconds !== undefined ? `ETA ${formatRouteDurationSeconds(routeDurationSeconds)}` : "",
       context.canActivate ? "lze přepnout" : ""
     ]
       .filter(Boolean)
@@ -12342,7 +12331,7 @@ function emergencyRouteSelectionContext(
   const role = stringProperty(properties.role) ?? stringProperty(route?.role);
   const activeRoute = activeRouteRecord(response);
   const activeRouteId = routeRecordId(activeRoute);
-  const rank = numberProperty(route?.rank) ?? numberProperty(properties.rank);
+  const rank = routeMetricNumber(route, properties, "rank");
   const active =
     routeId && activeRouteId
       ? routeId === activeRouteId
@@ -12371,11 +12360,15 @@ function routeRecordForEmergencyRouteFeature(
       return direct;
     }
   }
-  const rank = numberProperty(properties.rank);
+  const rank = firstRecordNumber(properties, "rank");
   if (rank !== undefined) {
-    const ranked = response.routes.find((route) => numberProperty(route.rank) === rank);
+    const ranked = response.routes.find((route) => firstRecordNumber(route, "rank") === rank);
     if (ranked) {
       return ranked;
+    }
+    const rankedByOrder = response.routes[Math.trunc(rank) - 1];
+    if (rankedByOrder) {
+      return rankedByOrder;
     }
   }
   const sequence = numberProperty(properties.sequence);
@@ -12400,7 +12393,7 @@ function routeFeatureRouteIdForMatching(properties: Record<string, unknown>): st
 }
 
 function activeRouteRecord(response?: RoutingRouteResponse | null): Record<string, unknown> | undefined {
-  return response?.routes.find((route) => numberProperty(route.rank) === 1) ?? response?.routes[0];
+  return response?.routes.find((route) => firstRecordNumber(route, "rank") === 1) ?? response?.routes[0];
 }
 
 function routeRecordId(route: Record<string, unknown> | undefined): string | undefined {
@@ -12418,6 +12411,14 @@ function routeDisplayLabel(
     stringProperty(properties.label) ??
     (rank === 1 ? "Primární zásahová trasa" : rank !== undefined ? `Alternativa ${rank}` : "Routing prvek")
   );
+}
+
+function routeMetricNumber(
+  route: Record<string, unknown> | undefined,
+  properties: Record<string, unknown>,
+  ...keys: string[]
+): number | undefined {
+  return (route ? firstRecordNumber(route, ...keys) : undefined) ?? firstRecordNumber(properties, ...keys);
 }
 
 function routeAnalysisSections(
@@ -12814,7 +12815,7 @@ function routeAlternativeItems(
   }
   return response.routes.slice(0, 5).map((route, index) => {
     const routeId = routeRecordId(route);
-    const rank = numberProperty(route.rank) ?? index + 1;
+    const rank = firstRecordNumber(route, "rank") ?? index + 1;
     const active = routeId && activeRouteId ? routeId === activeRouteId : rank === 1;
     return [
       active ? "Aktivní" : `Varianta ${rank}`,
@@ -12934,6 +12935,8 @@ function emergencyRouteToFeatureCollection(
         geometry: area,
         properties: {
           kind: "route-area",
+          distanceM: routeFeatureDistanceM(feature.properties),
+          durationSeconds: routeFeatureDurationSeconds(feature.properties),
           label: routeFeatureLabel(feature.properties, index),
           qualityMode: routeFeatureQualityMode(feature.properties, response.quality),
           rank: routeFeatureRank(feature.properties),
@@ -12951,6 +12954,8 @@ function emergencyRouteToFeatureCollection(
         geometry,
         properties: {
           kind: "route-line",
+          distanceM: routeFeatureDistanceM(feature.properties),
+          durationSeconds: routeFeatureDurationSeconds(feature.properties),
           label: routeFeatureLabel(feature.properties, index),
           qualityMode: routeFeatureQualityMode(feature.properties, response.quality),
           rank: routeFeatureRank(feature.properties),
@@ -12968,6 +12973,8 @@ function emergencyRouteToFeatureCollection(
         geometry: point,
         properties: {
           kind: "route-point",
+          distanceM: routeFeatureDistanceM(feature.properties),
+          durationSeconds: routeFeatureDurationSeconds(feature.properties),
           label: routeFeatureLabel(feature.properties, index),
           qualityMode: routeFeatureQualityMode(feature.properties, response.quality),
           rank: routeFeatureRank(feature.properties),
@@ -12989,6 +12996,8 @@ function emergencyRouteToFeatureCollection(
         geometry,
         properties: {
           kind: "route-line",
+          distanceM: routeFeatureDistanceM(route),
+          durationSeconds: routeFeatureDurationSeconds(route),
           label: routeFeatureLabel(route, index),
           qualityMode: routeFeatureQualityMode(route, response.quality),
           rank: routeFeatureRank(route),
@@ -13134,7 +13143,15 @@ function routeFeatureId(properties: Record<string, unknown> | undefined, index: 
 }
 
 function routeFeatureRank(properties: Record<string, unknown> | undefined): number | undefined {
-  return numberProperty(properties?.rank);
+  return properties ? firstRecordNumber(properties, "rank") : undefined;
+}
+
+function routeFeatureDistanceM(properties: Record<string, unknown> | undefined): number | undefined {
+  return properties ? firstRecordNumber(properties, "distanceM", "lengthM") : undefined;
+}
+
+function routeFeatureDurationSeconds(properties: Record<string, unknown> | undefined): number | undefined {
+  return properties ? firstRecordNumber(properties, "durationSeconds", "durationS") : undefined;
 }
 
 function routeFeatureQualityMode(
@@ -13161,7 +13178,7 @@ function routeFeatureRole(
   ) {
     return role;
   }
-  if (numberProperty(properties?.rank) === 1) {
+  if (properties && firstRecordNumber(properties, "rank") === 1) {
     return "primary";
   }
   return index === 0 ? "primary" : "alternative";

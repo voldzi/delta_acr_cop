@@ -48,6 +48,7 @@ vi.mock("./CopMap", async () => {
       onRequestRouteToPoint,
       onRequestUserLocation,
       onSelectObject,
+      onSelectEmergencyRoute,
       onStartNavigationToPoint,
       onUserLocationFollowChange,
       onUserMapInteraction,
@@ -76,6 +77,20 @@ vi.mock("./CopMap", async () => {
       ) => void;
       onRequestUserLocation?: () => void;
       onSelectObject?: (object: { objectId: string }) => void;
+      onSelectEmergencyRoute?: (info: {
+        canActivate?: boolean;
+        card: {
+          compactSubtitle: string;
+          detailRows?: Array<{ label: string; value: string }>;
+          eyebrow: string;
+          key: string;
+          metaItems: string[];
+          subtitle: string;
+          title: string;
+        };
+        coordinate: [number, number];
+        routeId?: string;
+      }) => void;
       onStartNavigationToPoint?: (
         target: { label?: string; lat: number; lon: number },
         profile?:
@@ -202,6 +217,37 @@ vi.mock("./CopMap", async () => {
                       type: "button"
                     },
                     "Použít alternativu"
+                  )
+                : null,
+              onSelectEmergencyRoute
+                ? React.createElement(
+                    "button",
+                    {
+                      "data-testid": "map-select-route",
+                      key: "map-select-route",
+                      onClick: () =>
+                        onSelectEmergencyRoute({
+                          canActivate: true,
+                          card: {
+                            compactSubtitle: "Alternativní trasa · 6.2 km · ETA 6 min",
+                            detailRows: [
+                              { label: "Délka", value: "6.2 km" },
+                              { label: "ETA", value: "6 min" },
+                              { label: "Role", value: "Alternativní trasa" },
+                              { label: "Kvalita", value: "osm_graph · 74 %" }
+                            ],
+                            eyebrow: "SIM routing",
+                            key: "route:alt-2",
+                            metaItems: ["Alternativní trasa", "rank 2"],
+                            subtitle: "Alternativní trasa · 6.2 km · ETA 6 min · lze přepnout",
+                            title: "Alternativa 2"
+                          },
+                          coordinate: [14.31106, 50.06866],
+                          routeId: "alt-2"
+                        }),
+                      type: "button"
+                    },
+                    "Vybrat trasu"
                   )
                 : null,
               onRequestUserLocation
@@ -2336,6 +2382,67 @@ describe("COP web dashboard", () => {
       expect(within(detailSheet).getByText("Detail objektu")).toBeTruthy();
       expect(within(detailSheet).getByText("Identita")).toBeTruthy();
       expect(within(detailSheet).getByText("Poloha")).toBeTruthy();
+      expect(screen.getByTestId("cop-map").getAttribute("data-map-interaction-suspended")).toBe("true");
+    } finally {
+      restoreMatchMedia();
+    }
+  });
+
+  it("opens the mobile detail sheet when an emergency route is selected", async () => {
+    const restoreMatchMedia = installMatchMedia(true);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {
+            trackHistoryLimit: 120,
+            trackHistoryWindowSeconds: 180
+          },
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/sources/health")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/sources")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/tracks?includeSynthetic=true")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/track-history?")) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({ items: [] });
+    });
+
+    try {
+      vi.stubGlobal("fetch", fetchMock);
+      render(<App />);
+
+      await waitFor(() => expect(screen.getByTestId("map-select-route")).toBeTruthy());
+      fireEvent.click(screen.getByTestId("map-select-route"));
+
+      const detailSheet = await screen.findByTestId("mobile-sheet-surface");
+      expect(within(detailSheet).getByText("Detail trasy")).toBeTruthy();
+      expect(within(detailSheet).getByText("Alternativa 2")).toBeTruthy();
+      expect(within(detailSheet).getByText("Délka")).toBeTruthy();
+      expect(within(detailSheet).getByText("6.2 km")).toBeTruthy();
+      expect(within(detailSheet).getByText("ETA")).toBeTruthy();
+      expect(within(detailSheet).getByText("6 min")).toBeTruthy();
       expect(screen.getByTestId("cop-map").getAttribute("data-map-interaction-suspended")).toBe("true");
     } finally {
       restoreMatchMedia();

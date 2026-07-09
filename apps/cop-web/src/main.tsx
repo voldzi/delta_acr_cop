@@ -35,7 +35,9 @@ import {
   LogIn,
   LogOut,
   MapPin,
+  Maximize2,
   MessageCircle,
+  Minimize2,
   MonitorUp,
   MousePointer2,
   Move,
@@ -1156,6 +1158,7 @@ export function App() {
   const [navigationSession, setNavigationSession] = React.useState<NavigationSession | null>(
     () => initialNavigationSession
   );
+  const [navigationPanelExpanded, setNavigationPanelExpanded] = React.useState(() => !isMobileSheetViewport());
   const [navigationDraftTarget, setNavigationDraftTarget] = React.useState<EmergencyRouteTarget | null>(null);
   const [navigationStarting, setNavigationStarting] = React.useState(false);
   const [navigationStartError, setNavigationStartError] = React.useState<string | null>(null);
@@ -4480,10 +4483,25 @@ export function App() {
   }, [mobileSheet, mobileSheetViewport]);
 
   React.useEffect(() => {
-    if (mobileSheet === "detail" && !selectedSituationFeature && !explicitlySelectedObject) {
+    if (
+      mobileSheet === "detail" &&
+      !selectedEmergencyRouteInfo &&
+      !selectedSituationFeature &&
+      !explicitlySelectedObject
+    ) {
       setMobileSheet(null);
     }
-  }, [explicitlySelectedObject, mobileSheet, selectedSituationFeature]);
+  }, [explicitlySelectedObject, mobileSheet, selectedEmergencyRouteInfo, selectedSituationFeature]);
+
+  React.useEffect(() => {
+    if (!navigationSession) {
+      setNavigationPanelExpanded(false);
+      return;
+    }
+    if (!mobileSheetViewport) {
+      setNavigationPanelExpanded(true);
+    }
+  }, [mobileSheetViewport, navigationSession?.id]);
 
   React.useEffect(() => {
     if (!proximityAlertEnabled || proximityAlerts.length === 0) {
@@ -5442,6 +5460,7 @@ export function App() {
         setActiveWorkspace("map");
         setNavigationDraftTarget(null);
         setNavigationSession(session);
+        setNavigationPanelExpanded(!mobileSheetViewport);
         setMobileSheet(null);
         focusMapForNavigation(session, location);
         const tileUrls = navigationRouteTileUrls(routeCoordinates);
@@ -5493,7 +5512,7 @@ export function App() {
         setNavigationStarting(false);
       }
     },
-    [focusDefaultMapCenter, focusMapForNavigation, runEmergencyRouteFromLocation, userLocation]
+    [focusDefaultMapCenter, focusMapForNavigation, mobileSheetViewport, runEmergencyRouteFromLocation, userLocation]
   );
 
   const activateEmergencyRouteVariant = React.useCallback(
@@ -7427,11 +7446,6 @@ export function App() {
                     }
                     openNavigationProfileDialog(target);
                   }}
-                  onStartEmergencyNavigation={() =>
-                    openNavigationProfileDialog(
-                      emergencyRouteTarget ?? navigationTargetFromRouteResponse(emergencyRoute)
-                    )
-                  }
                   onCreateSketchDrawing={handleCreateSketchDrawing}
                   onDeleteSketchDrawing={handleDeleteSketchDrawing}
                   onSelectSketchDrawing={handleMapSelectSketchDrawing}
@@ -7471,9 +7485,11 @@ export function App() {
                   target={navigationSession.target}
                   onClose={() => {
                     setNavigationSession(null);
+                    setNavigationPanelExpanded(false);
                     setNavigationDraftTarget(null);
                     setNavigationStartError(null);
                   }}
+                  expanded={navigationPanelExpanded}
                   onFocus={() => focusMapForNavigation(navigationSession)}
                   onMapModeChange={(mapMode) => {
                     setNavigationSession((current) => (current ? { ...current, mapMode } : current));
@@ -7483,6 +7499,7 @@ export function App() {
                     }
                   }}
                   onReroute={() => void startNavigationToTarget(navigationSession.target, navigationSession.profile)}
+                  onToggleExpanded={() => setNavigationPanelExpanded((current) => !current)}
                 />
               ) : null}
               {navigationDraftTarget ? (
@@ -8972,20 +8989,24 @@ function NavigationProfileDialog({
 function NavigationOverlay({
   browserOnline,
   error,
+  expanded,
   onClose,
   onFocus,
   onMapModeChange,
   onReroute,
+  onToggleExpanded,
   rerouting,
   session,
   target
 }: {
   browserOnline: boolean;
   error: string | null;
+  expanded: boolean;
   onClose: () => void;
   onFocus: () => void;
   onMapModeChange: (mode: NavigationMapMode) => void;
   onReroute: () => void;
+  onToggleExpanded: () => void;
   rerouting: boolean;
   session: NavigationSession;
   target: EmergencyRouteTarget;
@@ -8993,7 +9014,7 @@ function NavigationOverlay({
   const instruction = navigationInstruction(session);
   const routeState = navigationRouteState(session, browserOnline);
   return (
-    <aside className="navigation-overlay" aria-label="Navigace">
+    <aside className={clsx("navigation-overlay", expanded ? "expanded" : "collapsed")} aria-label="Navigace">
       <div className="navigation-instruction">
         <div className="navigation-instruction-icon">
           {session.profile === "walking" ? <Footprints size={24} /> : <Car size={24} />}
@@ -9003,73 +9024,94 @@ function NavigationOverlay({
           <strong>{instruction}</strong>
           <small>{target.label ?? "Vybraný cíl"}</small>
         </div>
-      </div>
-      <div className="navigation-metrics">
-        <div>
-          <span>Zbývá</span>
-          <strong>{formatNavigationDistance(session.progress.remainingDistanceM)}</strong>
+        <div className="navigation-header-actions">
+          <button
+            className="mini-button"
+            onClick={onToggleExpanded}
+            title={expanded ? "Skrýt navigační panel" : "Zobrazit navigační panel"}
+            type="button"
+          >
+            {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            {expanded ? "Skrýt" : "Panel"}
+          </button>
+          <button className="mini-button" onClick={onFocus} title="Zaměřit trasu" type="button">
+            <Crosshair size={14} />
+            Zaměřit
+          </button>
+          <button className="mini-button danger" onClick={onClose} title="Ukončit navigaci" type="button">
+            <X size={14} />
+            Ukončit
+          </button>
         </div>
-        <div>
-          <span>Další bod</span>
-          <strong>{formatNavigationDistance(session.progress.distanceToNextPointM)}</strong>
-        </div>
-        <div>
-          <span>Odchylka</span>
-          <strong>{formatNavigationOffRoute(session.progress.offRouteM)}</strong>
-        </div>
-        <div>
-          <span>Offline</span>
-          <strong>{formatNavigationRouteCache(session.cache)}</strong>
-        </div>
       </div>
-      <div className={clsx("navigation-route-status", routeState.tone)}>
-        <span className={clsx("status-dot", routeState.tone)} />
-        <span>{routeState.detail}</span>
-      </div>
-      {error ? <div className="navigation-route-error">{error}</div> : null}
-      <div className="navigation-controls">
-        <button
-          className="mini-button primary-lite"
-          disabled={!routeState.canReroute || rerouting}
-          onClick={onReroute}
-          type="button"
-        >
-          <RefreshCw className={rerouting ? "spin" : undefined} size={14} />
-          {rerouting ? "Přepočítávám" : "Přepočítat"}
-        </button>
-        <button
-          className={clsx("mini-button", session.mapMode === "route-up" && "active")}
-          onClick={() => onMapModeChange("route-up")}
-          type="button"
-        >
-          <Compass size={14} />
-          Rotace
-        </button>
-        <button
-          className={clsx("mini-button", session.mapMode === "north-up" && "active")}
-          onClick={() => onMapModeChange("north-up")}
-          type="button"
-        >
-          <MapPin size={14} />
-          Sever
-        </button>
-        <button
-          className={clsx("mini-button", session.mapMode === "overview" && "active")}
-          onClick={() => onMapModeChange("overview")}
-          type="button"
-        >
-          <RouteOverviewIcon />
-          Přehled
-        </button>
-        <button className="mini-button" onClick={onFocus} type="button">
-          <Crosshair size={14} />
-          Zaměřit
-        </button>
-        <button className="mini-button danger" onClick={onClose} type="button">
-          <X size={14} />
-          Ukončit
-        </button>
-      </div>
+      {expanded ? (
+        <>
+          <div className="navigation-metrics">
+            <div>
+              <span>Zbývá</span>
+              <strong>{formatNavigationDistance(session.progress.remainingDistanceM)}</strong>
+            </div>
+            <div>
+              <span>Další bod</span>
+              <strong>{formatNavigationDistance(session.progress.distanceToNextPointM)}</strong>
+            </div>
+            <div>
+              <span>Odchylka</span>
+              <strong>{formatNavigationOffRoute(session.progress.offRouteM)}</strong>
+            </div>
+            <div>
+              <span>Offline</span>
+              <strong>{formatNavigationRouteCache(session.cache)}</strong>
+            </div>
+          </div>
+          <div className={clsx("navigation-route-status", routeState.tone)}>
+            <span className={clsx("status-dot", routeState.tone)} />
+            <span>{routeState.detail}</span>
+          </div>
+          {error ? <div className="navigation-route-error">{error}</div> : null}
+          <div className="navigation-controls">
+            <button
+              className="mini-button primary-lite"
+              disabled={!routeState.canReroute || rerouting}
+              onClick={onReroute}
+              type="button"
+            >
+              <RefreshCw className={rerouting ? "spin" : undefined} size={14} />
+              {rerouting ? "Přepočítávám" : "Přepočítat"}
+            </button>
+            <button
+              className={clsx("mini-button", session.mapMode === "route-up" && "active")}
+              onClick={() => onMapModeChange("route-up")}
+              type="button"
+            >
+              <Compass size={14} />
+              Rotace
+            </button>
+            <button
+              className={clsx("mini-button", session.mapMode === "north-up" && "active")}
+              onClick={() => onMapModeChange("north-up")}
+              type="button"
+            >
+              <MapPin size={14} />
+              Sever
+            </button>
+            <button
+              className={clsx("mini-button", session.mapMode === "overview" && "active")}
+              onClick={() => onMapModeChange("overview")}
+              type="button"
+            >
+              <RouteOverviewIcon />
+              Přehled
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className={clsx("navigation-compact-status", routeState.tone)}>
+          <span>{formatNavigationDistance(session.progress.remainingDistanceM)} zbývá</span>
+          <span>{formatNavigationDistance(session.progress.distanceToNextPointM)} k dalšímu bodu</span>
+          <span className={clsx("status-dot", routeState.tone)} />
+        </div>
+      )}
     </aside>
   );
 }
