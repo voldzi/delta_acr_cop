@@ -1186,12 +1186,9 @@ function CopMapComponent({
               } satisfies MapSelectionCard)
             : selectedSharedLiveLocation
               ? formatSharedLiveLocationSelectionCard(selectedSharedLiveLocation)
-              : selectedEmergencyRouteInfo
-                ? selectedEmergencyRouteInfo.card
-                : null,
+              : null,
     [
       effectiveSelectedTransitRouteDetail,
-      selectedEmergencyRouteInfo,
       selectedObject,
       selectedSharedLiveLocation,
       selectedSituationFeature,
@@ -1212,16 +1209,8 @@ function CopMapComponent({
         ? selectionAnchorCoordinate(selectedObject, selectedSituationFeature, selectedSketchDrawing)
         : selectedSharedLiveLocation
           ? ([selectedSharedLiveLocation.lon, selectedSharedLiveLocation.lat] as [number, number])
-          : selectedEmergencyRouteInfo
-            ? selectedEmergencyRouteInfo.coordinate
-            : null,
-    [
-      selectedEmergencyRouteInfo,
-      selectedObject,
-      selectedSharedLiveLocation,
-      selectedSituationFeature,
-      selectedSketchDrawing
-    ]
+          : null,
+    [selectedObject, selectedSharedLiveLocation, selectedSituationFeature, selectedSketchDrawing]
   );
   const selectedRouteFeatureCollection = React.useMemo(
     () =>
@@ -5518,6 +5507,16 @@ function CopMapComponent({
   }, [mapReady, selectedAnchorCoordinate, selectionPopoverCollapsed]);
 
   const missingPositionCount = objects.length - positionedObjects.length;
+  const emergencyRouteCardMessage =
+    emergencyRouteStatus === "ready"
+      ? formatEmergencyRouteCardSummary(emergencyRoute, emergencyRouteMessage)
+      : emergencyRouteMessage;
+  const openActiveEmergencyRouteDetail = React.useCallback(() => {
+    const info = primaryEmergencyRouteSelectionInfo(emergencyRoute, emergencyRouteFeatureCollection);
+    if (info) {
+      setSelectedEmergencyRouteInfo(info);
+    }
+  }, [emergencyRoute, emergencyRouteFeatureCollection]);
 
   return (
     <div
@@ -6194,36 +6193,68 @@ function CopMapComponent({
           )}
         </div>
       ) : null}
-      {emergencyRouteStatus !== "idle" && emergencyRouteMessage ? (
+      {selectedEmergencyRouteInfo ? (
+        <RouteDetailPanel
+          info={selectedEmergencyRouteInfo}
+          onActivate={
+            selectedEmergencyRouteInfo.routeId && selectedEmergencyRouteInfo.canActivate && onActivateEmergencyRoute
+              ? () => {
+                  onActivateEmergencyRoute(selectedEmergencyRouteInfo.routeId!);
+                  setSelectedEmergencyRouteInfo(null);
+                }
+              : undefined
+          }
+          onClose={() => setSelectedEmergencyRouteInfo(null)}
+          onStartNavigation={emergencyRouteStatus === "ready" ? onStartEmergencyNavigation : undefined}
+        />
+      ) : null}
+      {!selectedEmergencyRouteInfo && emergencyRouteStatus !== "idle" && emergencyRouteCardMessage ? (
         <div className={`map-emergency-route-card ${emergencyRouteStatus}`}>
-          <div>
+          <div className="map-emergency-route-card-body">
             <strong>Zásahová trasa</strong>
-            <span>{emergencyRouteMessage}</span>
+            <span>{emergencyRouteCardMessage}</span>
           </div>
-          {emergencyRouteStatus === "ready" && onStartEmergencyNavigation ? (
-            <button
-              aria-label="Spustit navigaci po trase"
-              onClick={(event) => {
-                stopMapToolbarEvent(event);
-                onStartEmergencyNavigation();
-              }}
-              type="button"
-            >
-              <Compass size={14} />
-            </button>
-          ) : null}
-          {onClearEmergencyRoute ? (
-            <button
-              aria-label="Skrýt zásahovou trasu"
-              onClick={(event) => {
-                stopMapToolbarEvent(event);
-                onClearEmergencyRoute();
-              }}
-              type="button"
-            >
-              <X size={14} />
-            </button>
-          ) : null}
+          <div className="map-emergency-route-card-actions">
+            {emergencyRouteStatus === "ready" ? (
+              <button
+                aria-label="Otevřít detail zásahové trasy"
+                onClick={(event) => {
+                  stopMapToolbarEvent(event);
+                  openActiveEmergencyRouteDetail();
+                }}
+                type="button"
+              >
+                <HelpCircle size={14} />
+                <span>Detail</span>
+              </button>
+            ) : null}
+            {emergencyRouteStatus === "ready" && onStartEmergencyNavigation ? (
+              <button
+                aria-label="Spustit navigaci po trase"
+                onClick={(event) => {
+                  stopMapToolbarEvent(event);
+                  onStartEmergencyNavigation();
+                }}
+                type="button"
+              >
+                <Compass size={14} />
+                <span>Navigovat</span>
+              </button>
+            ) : null}
+            {onClearEmergencyRoute ? (
+              <button
+                aria-label="Skrýt zásahovou trasu"
+                onClick={(event) => {
+                  stopMapToolbarEvent(event);
+                  setSelectedEmergencyRouteInfo(null);
+                  onClearEmergencyRoute();
+                }}
+                type="button"
+              >
+                <X size={14} />
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {onStartReport ? (
@@ -12386,6 +12417,9 @@ function formatRouteTrafficSummary(
   route: Record<string, unknown> | undefined,
   response: RoutingRouteResponse | null | undefined
 ): string {
+  if (routeTrafficRecordsForDetail(route, response).length === 0) {
+    return "doprava n/a";
+  }
   const incidentCount = routeTrafficIncidentCount(route, response);
   const delayPenaltySeconds = Math.max(
     0,
@@ -12778,6 +12812,150 @@ function RouteElevationProfileView({ profile }: { profile: RouteElevationProfile
       </small>
     </div>
   );
+}
+
+function RouteDetailPanel({
+  info,
+  onActivate,
+  onClose,
+  onStartNavigation
+}: {
+  info: EmergencyRouteSelectionInfo;
+  onActivate?: () => void;
+  onClose: () => void;
+  onStartNavigation?: () => void;
+}) {
+  const card = info.card;
+  return (
+    <section
+      aria-label="Detail zásahové trasy"
+      className={`map-route-detail-panel ${card.statusTone ? `tone-${card.statusTone}` : ""}`}
+      data-testid="map-route-detail-panel"
+      onClick={stopMapToolbarEvent}
+      onDoubleClick={stopMapToolbarEvent}
+      onPointerDown={stopMapToolbarEvent}
+      onWheel={stopMapToolbarEvent}
+    >
+      <div className="map-route-detail-header">
+        <div>
+          <span>{card.eyebrow}</span>
+          <strong>{card.title}</strong>
+          <small>{card.subtitle}</small>
+        </div>
+        <button aria-label="Zavřít detail trasy" onClick={onClose} type="button">
+          <X size={15} />
+        </button>
+      </div>
+      {card.metaItems.length > 0 ? (
+        <div className="map-route-detail-meta">
+          {card.metaItems.map((item) => (
+            <span key={item}>{item}</span>
+          ))}
+        </div>
+      ) : null}
+      {card.detailRows?.length ? (
+        <div className="map-route-detail-grid">
+          {card.detailRows.map((row) => (
+            <div key={`${row.label}:${row.value}`}>
+              <span>{row.label}</span>
+              <strong>{row.value}</strong>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {card.elevationProfile ? <RouteElevationProfileView profile={card.elevationProfile} /> : null}
+      {card.analysisSections?.length ? (
+        <div className="map-route-detail-sections">
+          {card.analysisSections.map((section) => (
+            <section key={section.title}>
+              <span>{section.title}</span>
+              {section.items.map((item) => (
+                <p key={item}>{item}</p>
+              ))}
+            </section>
+          ))}
+        </div>
+      ) : null}
+      <div className="map-route-detail-actions">
+        {onActivate ? (
+          <button className="primary" onClick={onActivate} type="button">
+            <ArrowRight size={14} />
+            <span>Použít variantu</span>
+          </button>
+        ) : null}
+        {onStartNavigation ? (
+          <button onClick={onStartNavigation} type="button">
+            <Navigation size={14} />
+            <span>Navigovat</span>
+          </button>
+        ) : null}
+        <button onClick={onClose} type="button">
+          <X size={14} />
+          <span>Zavřít</span>
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function primaryEmergencyRouteSelectionInfo(
+  response: RoutingRouteResponse | null | undefined,
+  collection: EmergencyRouteFeatureCollection
+): EmergencyRouteSelectionInfo | null {
+  const route = activeRouteRecord(response);
+  if (!route) {
+    return null;
+  }
+  const routeId = routeRecordId(route) ?? "route-1";
+  const rank = numberProperty(route.rank) ?? 1;
+  const line = collection.features.find(
+    (feature) =>
+      feature.geometry.type === "LineString" &&
+      (feature.properties.routeId === routeId || numberProperty(feature.properties.rank) === rank)
+  );
+  const coordinate =
+    line?.geometry.type === "LineString"
+      ? line.geometry.coordinates[Math.floor(line.geometry.coordinates.length / 2)]!
+      : ([0, 0] as [number, number]);
+  const properties: Record<string, unknown> = {
+    label: routeDisplayLabel(route, {}, rank),
+    rank,
+    role: "primary",
+    routeId
+  };
+  const context = emergencyRouteSelectionContext(properties, response);
+  return {
+    canActivate: context.canActivate,
+    card: formatEmergencyRouteSelectionCard(properties, response),
+    coordinate,
+    routeId: context.routeId
+  };
+}
+
+function formatEmergencyRouteCardSummary(
+  response: RoutingRouteResponse | null | undefined,
+  fallbackMessage: string | null | undefined
+): string | null {
+  const route = activeRouteRecord(response);
+  if (!route) {
+    return fallbackMessage ?? null;
+  }
+  const label = routeSummaryLabelFromMessage(fallbackMessage) ?? "Trasa";
+  const quality = isRecord(route.quality) ? route.quality : isRecord(response?.quality) ? response.quality : undefined;
+  const traffic = formatRouteTrafficSummary(route, response);
+  return [
+    `${label}: ${formatRouteDistanceValue(firstRecordNumber(route, "distanceM", "lengthM"))}`,
+    `ETA ${formatRouteDurationSeconds(firstRecordNumber(route, "durationSeconds", "durationS"))}`,
+    quality ? formatRouteQualitySummary(quality) : undefined,
+    traffic && traffic !== "bez incidentů" && traffic !== "doprava n/a" ? traffic : undefined
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function routeSummaryLabelFromMessage(message: string | null | undefined): string | undefined {
+  const label = message?.split(":")[0]?.trim();
+  return label && label.length <= 48 ? label : undefined;
 }
 
 function formatEmergencyRouteRole(role: string): string {

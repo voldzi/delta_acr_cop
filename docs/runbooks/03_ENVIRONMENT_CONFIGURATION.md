@@ -260,9 +260,11 @@ vrácené `features[]` jako dočasný operační overlay, v detailu ukazuje
 `traffic.incidentsOnRoute[]`, route `elevation`, `elevationProfile[]`,
 `weatherOnRoute`, `hazardsOnRoute`, `sourceStatus`, `incidentCount`,
 `delayPenaltySeconds`, `hard_exclusion_applied` a `warnings[]`. Kliknutí na
-primární nebo alternativní route feature otevře detail trasy s výškovým
-profilem, dopravními caveaty, počasím, riziky a seznamem dostupných variant;
-alternativu lze bez dalšího volání SIM přepnout jako aktivní trasu. Plnohodnotná
+primární nebo alternativní route feature otevře samostatný detail trasy s
+výškovým profilem, dopravními caveaty, počasím, riziky a seznamem dostupných
+variant; alternativu lze bez dalšího volání SIM přepnout jako aktivní trasu.
+Malá route karta v mapě zůstává pouze stručným souhrnem délky, ETA, kvality a
+krátkého dopravního stavu. Plnohodnotná
 serverová trasa je `quality.mode=engine_route` s `quality.engine=valhalla`.
 Pokud SIM vrátí `quality.mode=direct_fallback`, UI musí zobrazit varování
 „Orientační spojnice, ne navigace po komunikacích.“, protože COP nepočítá

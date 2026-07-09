@@ -1764,7 +1764,7 @@ describe("COP web dashboard", () => {
     expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-message")).toContain(
       "Zásahová trasa: 2.5 km"
     );
-    expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-message")).toContain(
+    expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-message")).not.toContain(
       "Hard exclusion uses Valhalla exclude_locations"
     );
     const routeCallCount = fetchMock.mock.calls.filter(([url]) =>

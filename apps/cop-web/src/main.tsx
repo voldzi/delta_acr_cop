@@ -21702,8 +21702,7 @@ function formatEmergencyRouteSummary(
   const routeQuality = isRecord(route?.quality) ? route.quality : fallbackQuality;
   const quality = formatRoutingQuality(routeQuality);
   const traffic = formatRoutingTraffic(route, response);
-  const warnings = routingWarningSummary(route, response);
-  return `${label}: ${distance}, ETA ${duration}${quality ? ` · ${quality}` : ""}${traffic ? ` · ${traffic}` : ""}${warnings ? ` · ${warnings}` : ""}.`;
+  return `${label}: ${distance}, ETA ${duration}${quality ? ` · ${quality}` : ""}${traffic ? ` · ${traffic}` : ""}.`;
 }
 
 function formatGenericRoutingOverlaySummary(response: RoutingRouteResponse, label: string): string {
@@ -21772,22 +21771,13 @@ function formatRoutingTraffic(
     .map((traffic) => stringProperty(traffic.sourceStatus) ?? stringProperty(traffic.status))
     .find((status) => status && status !== "ok");
   const hardExclusionApplied = trafficRecords.some((traffic) => trafficHardExclusionIncomplete(traffic)) ? false : true;
-  const caveats = Array.from(
-    new Set(
-      trafficRecords.flatMap((traffic) => [
-        ...recordStringArray(traffic.warnings),
-        ...recordStringArray(traffic.limitations)
-      ])
-    )
-  );
   const parts = [
     incidentCount > 0 ? `${incidentCount} dopravní incidenty` : undefined,
     delayPenaltySeconds && delayPenaltySeconds > 0
       ? `zdržení ${formatDurationSeconds(delayPenaltySeconds)}`
       : undefined,
     sourceStatus && sourceStatus !== "ok" ? `doprava ${sourceStatus}` : undefined,
-    hardExclusionApplied === false ? "uzavírky nemusely být plně vyloučeny" : undefined,
-    ...caveats.slice(0, 2)
+    hardExclusionApplied === false ? "dopravní omezení" : undefined
   ];
   return parts.filter(Boolean).join(" · ");
 }
