@@ -18632,6 +18632,44 @@
           "elevationGainM": {
             "type": "number"
           },
+          "elevation": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "SIM elevation summary for this route, for example min/max elevation, ascent and descent when available."
+          },
+          "elevationProfile": {
+            "type": "array",
+            "description": "SIM sampled elevation profile along this route. COP treats sample objects as provider-shaped and reads common distance/elevation fields when present.",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "weatherOnRoute": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "SIM weather context sampled or summarized for this route."
+          },
+          "hazardsOnRoute": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ],
+            "description": "SIM hazards, warnings or other operational problems detected along this route."
+          },
+          "sourceStatus": {
+            "type": "string",
+            "description": "Route-level source health or degradation status returned by SIM."
+          },
           "steps": {
             "type": "array",
             "items": {

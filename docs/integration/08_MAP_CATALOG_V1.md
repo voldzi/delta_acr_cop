@@ -929,9 +929,15 @@ COP renders returned `features[]` as a temporary map overlay and shows
 `routes[].distanceM`, `durationSeconds`, `steps[]`, `quality.mode`,
 `quality.engine`, `quality.confidence`, `warnings[]`, top-level `traffic`,
 route `traffic.incidentsOnRoute[]`, `sourceStatus`, `incidentCount`,
-`delayPenaltySeconds`, `hard_exclusion_applied` and any provider caveats in
-route detail. `routes[].rank === 1` is the primary route; alternatives remain
-clickable but are rendered less prominently. If `quality.mode` is
+`delayPenaltySeconds`, `hard_exclusion_applied`, route `elevation`,
+`elevationProfile[]`, `weatherOnRoute`, `hazardsOnRoute` and any provider
+caveats in route detail. `routes[].rank === 1` is the primary route;
+alternatives remain clickable but are rendered less prominently. Clicking a
+route feature opens the route detail with distance, ETA, traffic, warnings,
+weather, hazards, elevation profile and available alternatives. COP can promote
+a returned alternative to the active route locally by reordering the already
+returned `routes[]`/`features[]`; this does not call SIM again. If
+`quality.mode` is
 `engine_route` and `quality.engine` is `valhalla`, COP labels the route as a
 full SIM engine route. If `quality.mode` is `direct_fallback`, the UI must show
 the exact caveat "Orientační spojnice, ne navigace po komunikacích." Chat map

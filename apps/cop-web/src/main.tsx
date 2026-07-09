@@ -5481,6 +5481,27 @@ export function App() {
     [focusDefaultMapCenter, focusMapForNavigation, runEmergencyRouteFromLocation, userLocation]
   );
 
+  const activateEmergencyRouteVariant = React.useCallback(
+    (routeId: string) => {
+      const nextRoute = activateRoutingRouteVariant(emergencyRoute, routeId);
+      if (!nextRoute || nextRoute === emergencyRoute) {
+        return;
+      }
+      const summary = formatEmergencyRouteSummary(
+        primaryRoutingRoute(nextRoute),
+        nextRoute.quality,
+        "Zásahová trasa",
+        nextRoute
+      );
+      setEmergencyRoute(nextRoute);
+      setEmergencyRouteStatus("ready");
+      setEmergencyRouteMessage(summary);
+      setLocationStatus(summary);
+      setNavigationSession(null);
+    },
+    [emergencyRoute]
+  );
+
   React.useEffect(() => {
     if (!pendingRouteTarget) {
       return;
@@ -7347,6 +7368,7 @@ export function App() {
                   onBoundsChange={setMapBounds}
                   onSelectObject={handleMapSelectObject}
                   onSelectSituationFeature={handleMapSelectSituationFeature}
+                  onActivateEmergencyRoute={activateEmergencyRouteVariant}
                   onAutoFitChange={setAutoFit}
                   onClearEmergencyRoute={() => {
                     setEmergencyRoute(null);
@@ -21335,6 +21357,102 @@ function primaryRoutingRoute(response: RoutingRouteResponse | null | undefined):
     return undefined;
   }
   return response.routes.find((route) => numberProperty(route.rank) === 1) ?? response.routes[0];
+}
+
+function activateRoutingRouteVariant(
+  response: RoutingRouteResponse | null | undefined,
+  selectedRouteId: string
+): RoutingRouteResponse | null {
+  const normalizedSelectedRouteId = normalizeRoutingRouteIdForActivation(selectedRouteId);
+  if (!response || !normalizedSelectedRouteId || response.routes.length <= 1) {
+    return null;
+  }
+  const selectedRoute = response.routes.find(
+    (route) => routeRecordIdForActivation(route) === normalizedSelectedRouteId
+  );
+  if (!selectedRoute) {
+    return null;
+  }
+  const currentPrimary = primaryRoutingRoute(response);
+  if (routeRecordIdForActivation(currentPrimary) === normalizedSelectedRouteId) {
+    return response;
+  }
+  const orderedRoutes = [
+    selectedRoute,
+    ...response.routes.filter((route) => routeRecordIdForActivation(route) !== normalizedSelectedRouteId)
+  ].map((route, index) => {
+    const originalRank = numberProperty(route.originalRank) ?? numberProperty(route.rank) ?? index + 1;
+    return {
+      ...route,
+      originalRank,
+      rank: index + 1,
+      role: index === 0 ? "primary" : "alternative"
+    };
+  });
+  const nextRankByRouteId = new Map<string, number>();
+  for (const route of orderedRoutes) {
+    const routeId = routeRecordIdForActivation(route);
+    if (routeId) {
+      nextRankByRouteId.set(routeId, numberProperty(route.rank) ?? 1);
+    }
+  }
+  const originalRouteByIndex = new Map<number, string>();
+  response.routes.forEach((route, index) => {
+    const routeId = routeRecordIdForActivation(route);
+    if (routeId) {
+      originalRouteByIndex.set(index, routeId);
+    }
+  });
+  const features = response.features.map((feature, index) => {
+    const properties = isRecord(feature.properties) ? feature.properties : {};
+    const rankedRoute =
+      numberProperty(properties.rank) !== undefined
+        ? response.routes.find((route) => numberProperty(route.rank) === numberProperty(properties.rank))
+        : undefined;
+    const featureRouteId =
+      normalizeRoutingRouteIdForActivation(stringProperty(properties.routeId) ?? stringProperty(properties.id)) ??
+      routeRecordIdForActivation(rankedRoute) ??
+      originalRouteByIndex.get(index);
+    const nextRank = featureRouteId ? nextRankByRouteId.get(featureRouteId) : undefined;
+    if (nextRank === undefined) {
+      return feature;
+    }
+    return {
+      ...feature,
+      properties: {
+        ...properties,
+        activeRoute: nextRank === 1,
+        rank: nextRank,
+        role: nextRank === 1 ? "primary" : "alternative"
+      }
+    };
+  });
+  const primary = orderedRoutes[0];
+  return {
+    ...response,
+    features,
+    quality: isRecord(primary?.quality) ? primary.quality : response.quality,
+    routes: orderedRoutes,
+    traffic: isRecord(primary?.traffic) ? primary.traffic : response.traffic
+  };
+}
+
+function normalizeRoutingRouteIdForActivation(routeId: string | undefined): string | undefined {
+  const normalized = routeId?.trim();
+  if (!normalized || normalized.startsWith("traffic:")) {
+    return undefined;
+  }
+  if (normalized.endsWith(":origin")) {
+    return normalized.slice(0, -":origin".length);
+  }
+  if (normalized.endsWith(":destination")) {
+    return normalized.slice(0, -":destination".length);
+  }
+  return normalized;
+}
+
+function routeRecordIdForActivation(route: Record<string, unknown> | undefined): string | undefined {
+  return normalizeRoutingRouteIdForActivation(stringProperty(route?.routeId) ?? stringProperty(route?.id));
 }
 
 function formatNavigationDistance(value: number | undefined): string {

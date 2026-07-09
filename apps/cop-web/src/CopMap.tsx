@@ -769,6 +769,7 @@ interface CopMapProps {
   onAutoFitChange: (value: boolean) => void;
   onClearSelection?: () => void;
   onClearEmergencyRoute?: () => void;
+  onActivateEmergencyRoute?: (routeId: string) => void;
   onRequestIsochroneFromPoint?: (target: { label?: string; lat: number; lon: number }) => void;
   onRequestNearestAccessToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
   onRequestRouteToPoint?: (
@@ -878,11 +879,16 @@ interface ClusterInfo {
 }
 
 interface MapSelectionCard {
+  analysisSections?: Array<{
+    items: string[];
+    title: string;
+  }>;
   compactSubtitle: string;
   detailRows?: Array<{
     label: string;
     value: string;
   }>;
+  elevationProfile?: RouteElevationProfileSummary;
   eyebrow: string;
   key: string;
   metaItems: string[];
@@ -893,8 +899,21 @@ interface MapSelectionCard {
 }
 
 interface EmergencyRouteSelectionInfo {
+  canActivate?: boolean;
   card: MapSelectionCard;
   coordinate: [number, number];
+  routeId?: string;
+}
+
+interface RouteElevationProfileSummary {
+  gainM?: number;
+  lossM?: number;
+  maxM?: number;
+  minM?: number;
+  points: Array<{
+    distanceM: number;
+    elevationM: number;
+  }>;
 }
 
 function CopMapComponent({
@@ -937,6 +956,7 @@ function CopMapComponent({
   onBoundsChange,
   onSelectObject,
   onSelectSituationFeature,
+  onActivateEmergencyRoute,
   onStartReport,
   onAutoFitChange,
   onCancelZoneCreation,
@@ -4379,11 +4399,14 @@ function CopMapComponent({
           if (clickedEmergencyRoute) {
             event.preventDefault();
             const properties = isRecord(clickedEmergencyRoute.properties) ? clickedEmergencyRoute.properties : {};
+            const routeSelection = emergencyRouteSelectionContext(properties, emergencyRoute);
             setSelectedSharedLiveLocationId(null);
             onClearSelectionRef.current?.();
             setSelectedEmergencyRouteInfo({
-              card: formatEmergencyRouteSelectionCard(properties),
-              coordinate: [event.lngLat.lng, event.lngLat.lat]
+              canActivate: routeSelection.canActivate,
+              card: formatEmergencyRouteSelectionCard(properties, emergencyRoute),
+              coordinate: [event.lngLat.lng, event.lngLat.lat],
+              routeId: routeSelection.routeId
             });
             return;
           }
@@ -5992,6 +6015,39 @@ function CopMapComponent({
                       <strong>{row.value}</strong>
                     </div>
                   ))}
+                </div>
+              ) : null}
+              {selectionCard.elevationProfile ? (
+                <RouteElevationProfileView profile={selectionCard.elevationProfile} />
+              ) : null}
+              {selectionCard.analysisSections?.length ? (
+                <div className="map-object-popover-sections">
+                  {selectionCard.analysisSections.map((section) => (
+                    <div className="map-object-popover-section" key={section.title}>
+                      <span>{section.title}</span>
+                      {section.items.map((item) => (
+                        <p key={item}>{item}</p>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {selectedEmergencyRouteInfo?.routeId &&
+              selectedEmergencyRouteInfo.canActivate &&
+              onActivateEmergencyRoute ? (
+                <div className="map-object-popover-route-actions">
+                  <button
+                    className="map-object-popover-route primary"
+                    onClick={(event) => {
+                      stopMapToolbarEvent(event);
+                      onActivateEmergencyRoute(selectedEmergencyRouteInfo.routeId!);
+                      setSelectedEmergencyRouteInfo(null);
+                    }}
+                    type="button"
+                  >
+                    <ArrowRight size={14} strokeWidth={2.2} />
+                    <span>Použít variantu</span>
+                  </button>
                 </div>
               ) : null}
               {selectedAnchorCoordinate &&
@@ -12057,32 +12113,671 @@ function isRecoverableRasterOverlayRequestError(message: string): boolean {
   );
 }
 
-function formatEmergencyRouteSelectionCard(properties: Record<string, unknown>): MapSelectionCard {
-  const label = stringProperty(properties.label) ?? "Routing prvek";
-  const role = stringProperty(properties.role);
-  const rank = numberProperty(properties.rank);
-  const qualityMode = stringProperty(properties.qualityMode);
+export function formatEmergencyRouteSelectionCard(
+  properties: Record<string, unknown>,
+  response?: RoutingRouteResponse | null
+): MapSelectionCard {
+  const context = emergencyRouteSelectionContext(properties, response);
+  const route = context.route;
+  const role = context.role;
+  const rank = numberProperty(route?.rank) ?? numberProperty(properties.rank);
+  const quality = isRecord(route?.quality) ? route.quality : isRecord(response?.quality) ? response.quality : undefined;
+  const qualityMode = stringProperty(quality?.mode) ?? stringProperty(properties.qualityMode);
   const trafficSeverity = stringProperty(properties.trafficSeverity);
-  const detailRows = [
-    role ? { label: "Role", value: formatEmergencyRouteRole(role) } : null,
+  const elevationProfile = routeElevationProfileSummary(route);
+  const elevationSummary = formatRouteElevationSummary(route, elevationProfile);
+  const weatherSummary = formatRouteWeatherSummary(route);
+  const hazardsSummary = formatRouteHazardsSummary(route);
+  const trafficSummary = formatRouteTrafficSummary(route, response);
+  const warnings = routeWarningItems(route, response);
+  const sourceStatus = routeSourceStatus(route, response);
+  const label = routeDisplayLabel(route, properties, rank);
+  const roleLabel = role ? formatEmergencyRouteRole(role) : "Routing overlay";
+  const detailRows = compactDetailRows([
+    role ? { label: "Role", value: context.active ? `${roleLabel} · aktivní` : roleLabel } : null,
     rank !== undefined ? { label: "Pořadí", value: String(rank) } : null,
-    qualityMode ? { label: "Kvalita", value: qualityMode } : null,
-    trafficSeverity ? { label: "Incident", value: trafficSeverity } : null
-  ].filter((row): row is { label: string; value: string } => row !== null);
+    route
+      ? { label: "Délka", value: formatRouteDistanceValue(firstRecordNumber(route, "distanceM", "lengthM")) }
+      : null,
+    route
+      ? { label: "ETA", value: formatRouteDurationSeconds(firstRecordNumber(route, "durationSeconds", "durationS")) }
+      : null,
+    quality
+      ? { label: "Kvalita", value: formatRouteQualitySummary(quality) }
+      : qualityMode
+        ? { label: "Kvalita", value: qualityMode }
+        : null,
+    trafficSummary
+      ? { label: "Doprava", value: trafficSummary }
+      : trafficSeverity
+        ? { label: "Incident", value: trafficSeverity }
+        : null,
+    route ? { label: "Počasí", value: weatherSummary } : null,
+    route ? { label: "Rizika", value: hazardsSummary } : null,
+    route ? { label: "Výška", value: elevationSummary } : null,
+    sourceStatus && sourceStatus !== "ok" ? { label: "Zdroj", value: sourceStatus } : null,
+    warnings.length > 0 ? { label: "Caveaty", value: `${warnings.length}` } : null
+  ]);
+  const analysisSections = routeAnalysisSections(route, response, context.routeId);
+  const metaItems = [
+    role ? formatEmergencyRouteRole(role) : undefined,
+    rank !== undefined ? `rank ${rank}` : undefined,
+    quality ? formatRouteQualitySummary(quality) : qualityMode,
+    sourceStatus && sourceStatus !== "ok" ? `zdroj ${sourceStatus}` : undefined
+  ].filter((item): item is string => Boolean(item));
   return {
-    compactSubtitle: role ? formatEmergencyRouteRole(role) : "Routing overlay",
+    analysisSections,
+    compactSubtitle: [
+      roleLabel,
+      route ? formatRouteDistanceValue(firstRecordNumber(route, "distanceM", "lengthM")) : ""
+    ]
+      .filter(Boolean)
+      .join(" · "),
     detailRows,
+    elevationProfile,
     eyebrow: role === "incident" ? "Dopravní incident na trase" : "SIM routing",
-    key: `route:${stringProperty(properties.routeId) ?? label}:${role ?? ""}`,
-    metaItems: [
-      role ? formatEmergencyRouteRole(role) : undefined,
-      rank !== undefined ? `rank ${rank}` : undefined,
-      qualityMode
-    ].filter((item): item is string => Boolean(item)),
-    statusTone: role === "incident" ? "warn" : undefined,
-    subtitle: role ? formatEmergencyRouteRole(role) : "Routing overlay",
+    key: `route:${context.routeId ?? stringProperty(properties.routeId) ?? label}:${role ?? ""}:${rank ?? ""}`,
+    metaItems,
+    statusTone: emergencyRouteStatusTone(route, response, role),
+    subtitle: [
+      roleLabel,
+      route ? `ETA ${formatRouteDurationSeconds(firstRecordNumber(route, "durationSeconds", "durationS"))}` : "",
+      context.canActivate ? "lze přepnout" : ""
+    ]
+      .filter(Boolean)
+      .join(" · "),
     title: label
   };
+}
+
+function compactDetailRows(
+  rows: Array<{ label: string; value: string } | null>
+): Array<{ label: string; value: string }> {
+  return rows.filter((row): row is { label: string; value: string } => row !== null && row.value.trim().length > 0);
+}
+
+function emergencyRouteSelectionContext(
+  properties: Record<string, unknown>,
+  response?: RoutingRouteResponse | null
+): {
+  active: boolean;
+  canActivate: boolean;
+  role?: string;
+  route?: Record<string, unknown>;
+  routeId?: string;
+} {
+  const route = routeRecordForEmergencyRouteFeature(properties, response);
+  const routeId = routeRecordId(route) ?? routeFeatureRouteIdForMatching(properties);
+  const role = stringProperty(properties.role) ?? stringProperty(route?.role);
+  const activeRoute = activeRouteRecord(response);
+  const activeRouteId = routeRecordId(activeRoute);
+  const rank = numberProperty(route?.rank) ?? numberProperty(properties.rank);
+  const active =
+    routeId && activeRouteId
+      ? routeId === activeRouteId
+      : role === "primary" || rank === 1 || (route !== undefined && route === activeRoute);
+  const routeSelectableRole = role === "alternative" || (rank !== undefined && rank > 1);
+  return {
+    active,
+    canActivate: Boolean(routeId && route && !active && routeSelectableRole),
+    role,
+    route,
+    routeId
+  };
+}
+
+function routeRecordForEmergencyRouteFeature(
+  properties: Record<string, unknown>,
+  response?: RoutingRouteResponse | null
+): Record<string, unknown> | undefined {
+  if (!response) {
+    return undefined;
+  }
+  const routeId = routeFeatureRouteIdForMatching(properties);
+  if (routeId) {
+    const direct = response.routes.find((route) => routeRecordId(route) === routeId);
+    if (direct) {
+      return direct;
+    }
+  }
+  const rank = numberProperty(properties.rank);
+  if (rank !== undefined) {
+    const ranked = response.routes.find((route) => numberProperty(route.rank) === rank);
+    if (ranked) {
+      return ranked;
+    }
+  }
+  const sequence = numberProperty(properties.sequence);
+  if (sequence !== undefined && sequence >= 0 && sequence < response.routes.length) {
+    return response.routes[Math.trunc(sequence)];
+  }
+  return undefined;
+}
+
+function routeFeatureRouteIdForMatching(properties: Record<string, unknown>): string | undefined {
+  const routeId = stringProperty(properties.routeId) ?? stringProperty(properties.id);
+  if (!routeId || routeId.startsWith("traffic:")) {
+    return undefined;
+  }
+  if (routeId.endsWith(":origin")) {
+    return routeId.slice(0, -":origin".length);
+  }
+  if (routeId.endsWith(":destination")) {
+    return routeId.slice(0, -":destination".length);
+  }
+  return routeId;
+}
+
+function activeRouteRecord(response?: RoutingRouteResponse | null): Record<string, unknown> | undefined {
+  return response?.routes.find((route) => numberProperty(route.rank) === 1) ?? response?.routes[0];
+}
+
+function routeRecordId(route: Record<string, unknown> | undefined): string | undefined {
+  return stringProperty(route?.routeId) ?? stringProperty(route?.id);
+}
+
+function routeDisplayLabel(
+  route: Record<string, unknown> | undefined,
+  properties: Record<string, unknown>,
+  rank: number | undefined
+): string {
+  return (
+    stringProperty(route?.label) ??
+    stringProperty(route?.name) ??
+    stringProperty(properties.label) ??
+    (rank === 1 ? "Primární zásahová trasa" : rank !== undefined ? `Alternativa ${rank}` : "Routing prvek")
+  );
+}
+
+function routeAnalysisSections(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined,
+  activeRouteId: string | undefined
+): Array<{ items: string[]; title: string }> | undefined {
+  const sections = [
+    { title: "Doprava", items: routeTrafficDetailItems(route, response) },
+    route ? { title: "Počasí", items: routeWeatherItems(route) } : null,
+    route ? { title: "Rizika", items: routeHazardItems(route) } : null,
+    { title: "Varování a degradace", items: routeWarningItems(route, response) },
+    route ? { title: "Alternativy", items: routeAlternativeItems(response, activeRouteId) } : null
+  ].filter((section): section is { items: string[]; title: string } => section !== null && section.items.length > 0);
+  return sections.length > 0 ? sections : undefined;
+}
+
+function emergencyRouteStatusTone(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined,
+  role: string | undefined
+): MapSelectionCard["statusTone"] {
+  if (role === "incident") {
+    return "warn";
+  }
+  const quality = isRecord(route?.quality) ? route.quality : isRecord(response?.quality) ? response.quality : undefined;
+  if (stringProperty(quality?.mode) === "direct_fallback") {
+    return "warn";
+  }
+  const sourceStatus = routeSourceStatus(route, response);
+  if (sourceStatus && sourceStatus !== "ok") {
+    return ["error", "failed", "unavailable"].includes(sourceStatus) ? "bad" : "warn";
+  }
+  if (
+    routeWarningItems(route, response).length > 0 ||
+    routeHazardCount(route) > 0 ||
+    routeTrafficIncidentCount(route, response) > 0
+  ) {
+    return "warn";
+  }
+  return undefined;
+}
+
+function formatRouteDistanceValue(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "n/a";
+  }
+  return value >= 1000 ? `${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)} km` : `${Math.round(value)} m`;
+}
+
+function formatRouteDurationSeconds(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "n/a";
+  }
+  if (value < 60) {
+    return `${Math.round(value)} s`;
+  }
+  if (value < 3600) {
+    return `${Math.round(value / 60)} min`;
+  }
+  const hours = Math.floor(value / 3600);
+  const minutes = Math.round((value - hours * 3600) / 60);
+  return minutes > 0 ? `${hours} h ${minutes} min` : `${hours} h`;
+}
+
+function formatRouteQualitySummary(quality: Record<string, unknown>): string {
+  const mode = stringProperty(quality.mode);
+  const engine = stringProperty(quality.engine);
+  const confidence = numberProperty(quality.confidence);
+  const modeLabel =
+    mode === "direct_fallback"
+      ? "orientační spojnice"
+      : mode === "engine_route" && engine === "valhalla"
+        ? "Valhalla"
+        : mode === "engine_route"
+          ? `engine route${engine ? ` ${engine}` : ""}`
+          : mode;
+  return [
+    modeLabel,
+    confidence !== undefined ? `${Math.round(Math.max(0, Math.min(1, confidence)) * 100)} %` : undefined
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function routeTrafficRecordsForDetail(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined
+): Array<Record<string, unknown>> {
+  return [
+    isRecord(route?.traffic) ? route.traffic : null,
+    isRecord(response?.traffic) ? response.traffic : null
+  ].filter((traffic): traffic is Record<string, unknown> => traffic !== null);
+}
+
+function formatRouteTrafficSummary(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined
+): string {
+  const incidentCount = routeTrafficIncidentCount(route, response);
+  const delayPenaltySeconds = Math.max(
+    0,
+    ...routeTrafficRecordsForDetail(route, response).flatMap(
+      (traffic) => firstRecordNumber(traffic, "delayPenaltySeconds", "delaySeconds") ?? []
+    )
+  );
+  const sourceStatus = routeTrafficRecordsForDetail(route, response)
+    .map((traffic) => stringProperty(traffic.sourceStatus) ?? stringProperty(traffic.status))
+    .find((status) => status && status !== "ok");
+  return [
+    incidentCount > 0 ? `${incidentCount} incidenty` : "bez incidentů",
+    delayPenaltySeconds > 0 ? `zdržení ${formatRouteDurationSeconds(delayPenaltySeconds)}` : undefined,
+    sourceStatus && sourceStatus !== "ok" ? `zdroj ${sourceStatus}` : undefined
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function routeTrafficDetailItems(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined
+): string[] {
+  const trafficRecords = routeTrafficRecordsForDetail(route, response);
+  if (trafficRecords.length === 0) {
+    return ["SIM nevrátil dopravní kontext pro tuto trasu."];
+  }
+  const incidents = trafficRecords.flatMap((traffic) =>
+    Array.isArray(traffic.incidentsOnRoute) ? traffic.incidentsOnRoute.filter(isRecord) : []
+  );
+  const items = [
+    formatRouteTrafficSummary(route, response),
+    ...incidents
+      .slice(0, 3)
+      .map((incident) =>
+        [
+          stringProperty(incident.label) ??
+            stringProperty(incident.title) ??
+            stringProperty(incident.type) ??
+            "Dopravní incident",
+          stringProperty(incident.severity) ? `závažnost ${stringProperty(incident.severity)}` : undefined
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      ),
+    ...uniqueRouteStrings(
+      trafficRecords.flatMap((traffic) => [
+        ...recordStringArray(traffic.warnings),
+        ...recordStringArray(traffic.limitations)
+      ])
+    ).slice(0, 3)
+  ];
+  return items.filter((item) => item.trim().length > 0);
+}
+
+function routeTrafficIncidentCount(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined
+): number {
+  const trafficRecords = routeTrafficRecordsForDetail(route, response);
+  const incidents = trafficRecords.flatMap((traffic) =>
+    Array.isArray(traffic.incidentsOnRoute) ? traffic.incidentsOnRoute.filter(isRecord) : []
+  );
+  return Math.max(
+    incidents.length,
+    0,
+    ...trafficRecords.flatMap((traffic) => numberProperty(traffic.incidentCount) ?? [])
+  );
+}
+
+function routeWeatherRecord(route: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  return firstRecordValue(route, "weatherOnRoute", "weather", "weatherContext", "weatherAlongRoute");
+}
+
+function formatRouteWeatherSummary(route: Record<string, unknown> | undefined): string {
+  const weather = routeWeatherRecord(route);
+  if (!weather) {
+    return "nedostupné";
+  }
+  const temperatureC = firstRecordNumber(weather, "temperatureC", "tempC", "airTemperatureC");
+  const precipitationMm = firstRecordNumber(weather, "precipitationMm", "rainMm", "precipitation");
+  const windSpeedMs = firstRecordNumber(weather, "windSpeedMs", "windSpeedMps", "windMps");
+  const sourceStatus = stringProperty(weather.sourceStatus) ?? stringProperty(weather.status);
+  const parts = [
+    stringProperty(weather.summary) ?? stringProperty(weather.label) ?? stringProperty(weather.condition),
+    temperatureC !== undefined ? `${Math.round(temperatureC)} °C` : undefined,
+    precipitationMm !== undefined ? `${precipitationMm.toFixed(precipitationMm < 1 ? 1 : 0)} mm` : undefined,
+    windSpeedMs !== undefined ? `vítr ${windSpeedMs.toFixed(1)} m/s` : undefined,
+    sourceStatus && sourceStatus !== "ok" ? `zdroj ${sourceStatus}` : undefined
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "dostupné";
+}
+
+function routeWeatherItems(route: Record<string, unknown> | undefined): string[] {
+  const weather = routeWeatherRecord(route);
+  if (!weather) {
+    return ["SIM pro tuto trasu nevrátil počasí na trase."];
+  }
+  return [
+    formatRouteWeatherSummary(route),
+    ...uniqueRouteStrings([
+      ...recordStringArray(weather.warnings),
+      ...recordStringArray(weather.limitations),
+      stringProperty(weather.caveat)
+    ]).slice(0, 3)
+  ].filter((item): item is string => Boolean(item));
+}
+
+function routeHazardsValue(route: Record<string, unknown> | undefined): unknown {
+  return route?.hazardsOnRoute ?? route?.hazards ?? route?.risksOnRoute ?? route?.riskOnRoute;
+}
+
+function routeHazardsRecords(route: Record<string, unknown> | undefined): Array<Record<string, unknown>> {
+  const value = routeHazardsValue(route);
+  if (Array.isArray(value)) {
+    return value.filter(isRecord);
+  }
+  if (!isRecord(value)) {
+    return [];
+  }
+  for (const key of ["items", "hazards", "features", "risks"]) {
+    if (Array.isArray(value[key])) {
+      return value[key].filter(isRecord);
+    }
+  }
+  return [];
+}
+
+function routeHazardCount(route: Record<string, unknown> | undefined): number {
+  const value = routeHazardsValue(route);
+  const records = routeHazardsRecords(route);
+  if (isRecord(value)) {
+    return firstRecordNumber(value, "hazardCount", "riskCount", "count") ?? records.length;
+  }
+  return records.length;
+}
+
+function formatRouteHazardsSummary(route: Record<string, unknown> | undefined): string {
+  const value = routeHazardsValue(route);
+  if (value === undefined || value === null) {
+    return "nedostupné";
+  }
+  const count = routeHazardCount(route);
+  if (count === 0) {
+    return "bez hlášených rizik";
+  }
+  const maxSeverity = isRecord(value)
+    ? (stringProperty(value.maxSeverity) ?? stringProperty(value.severity))
+    : undefined;
+  return maxSeverity ? `${count} rizika · ${maxSeverity}` : `${count} rizika`;
+}
+
+function routeHazardItems(route: Record<string, unknown> | undefined): string[] {
+  const value = routeHazardsValue(route);
+  if (value === undefined || value === null) {
+    return ["SIM pro tuto trasu nevrátil rizika na trase."];
+  }
+  const records = routeHazardsRecords(route);
+  const items = records
+    .slice(0, 4)
+    .map((hazard) =>
+      [
+        stringProperty(hazard.label) ?? stringProperty(hazard.title) ?? stringProperty(hazard.type) ?? "Riziko",
+        stringProperty(hazard.severity) ? `závažnost ${stringProperty(hazard.severity)}` : undefined,
+        stringProperty(hazard.sourceStatus) && stringProperty(hazard.sourceStatus) !== "ok"
+          ? `zdroj ${stringProperty(hazard.sourceStatus)}`
+          : undefined
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    );
+  if (items.length > 0) {
+    return items;
+  }
+  return [formatRouteHazardsSummary(route)];
+}
+
+function routeElevationProfileSummary(
+  route: Record<string, unknown> | undefined
+): RouteElevationProfileSummary | undefined {
+  const rawProfile = Array.isArray(route?.elevationProfile)
+    ? route.elevationProfile
+    : Array.isArray(route?.profile)
+      ? route.profile
+      : [];
+  const points = rawProfile.flatMap((point, index) => {
+    if (Array.isArray(point)) {
+      const distanceM = Number(point[0]);
+      const elevationM = Number(point[1]);
+      return Number.isFinite(elevationM)
+        ? [{ distanceM: Number.isFinite(distanceM) ? distanceM : index, elevationM }]
+        : [];
+    }
+    if (!isRecord(point)) {
+      return [];
+    }
+    const distanceKm = firstRecordNumber(point, "distanceKm", "offsetKm");
+    const distanceM =
+      firstRecordNumber(point, "distanceM", "distance_m", "distance", "offsetM", "chainageM", "x") ??
+      (distanceKm !== undefined ? distanceKm * 1000 : index);
+    const elevationM = firstRecordNumber(
+      point,
+      "elevationM",
+      "elevation_m",
+      "elevation",
+      "altitudeM",
+      "altitude",
+      "z",
+      "y"
+    );
+    return elevationM !== undefined ? [{ distanceM, elevationM }] : [];
+  });
+  if (points.length < 2) {
+    return undefined;
+  }
+  const elevations = points.map((point) => point.elevationM);
+  let gainM = 0;
+  let lossM = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const delta = points[index]!.elevationM - points[index - 1]!.elevationM;
+    if (delta > 0) {
+      gainM += delta;
+    } else {
+      lossM += Math.abs(delta);
+    }
+  }
+  const elevation = isRecord(route?.elevation) ? route.elevation : {};
+  return {
+    gainM:
+      firstRecordNumber(elevation, "gainM", "elevationGainM", "ascentM") ??
+      numberProperty(route?.elevationGainM) ??
+      gainM,
+    lossM: firstRecordNumber(elevation, "lossM", "elevationLossM", "descentM") ?? lossM,
+    maxM: firstRecordNumber(elevation, "maxM", "maxElevationM", "maximumM") ?? Math.max(...elevations),
+    minM: firstRecordNumber(elevation, "minM", "minElevationM", "minimumM") ?? Math.min(...elevations),
+    points
+  };
+}
+
+function formatRouteElevationSummary(
+  route: Record<string, unknown> | undefined,
+  profile: RouteElevationProfileSummary | undefined
+): string {
+  const elevation = isRecord(route?.elevation) ? route.elevation : undefined;
+  const gainM =
+    profile?.gainM ??
+    firstRecordNumber(elevation ?? {}, "gainM", "elevationGainM", "ascentM") ??
+    numberProperty(route?.elevationGainM);
+  const minM = profile?.minM ?? firstRecordNumber(elevation ?? {}, "minM", "minElevationM", "minimumM");
+  const maxM = profile?.maxM ?? firstRecordNumber(elevation ?? {}, "maxM", "maxElevationM", "maximumM");
+  if (gainM === undefined && minM === undefined && maxM === undefined) {
+    return "nedostupné";
+  }
+  return [
+    gainM !== undefined ? `stoupání ${Math.round(gainM)} m` : undefined,
+    minM !== undefined && maxM !== undefined ? `${Math.round(minM)}-${Math.round(maxM)} m n. m.` : undefined
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function routeWarningItems(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined
+): string[] {
+  const trafficRecords = routeTrafficRecordsForDetail(route, response);
+  const warnings = uniqueRouteStrings([
+    ...recordStringArray(route?.warnings),
+    ...(Array.isArray(response?.warnings) ? response.warnings : []),
+    ...trafficRecords.flatMap((traffic) => [
+      ...recordStringArray(traffic.warnings),
+      ...recordStringArray(traffic.limitations)
+    ])
+  ]);
+  const quality = isRecord(route?.quality) ? route.quality : isRecord(response?.quality) ? response.quality : undefined;
+  if (stringProperty(quality?.mode) === "direct_fallback") {
+    warnings.unshift("Orientační spojnice, ne navigace po komunikacích.");
+  }
+  const sourceStatus = routeSourceStatus(route, response);
+  if (sourceStatus && sourceStatus !== "ok") {
+    warnings.unshift(`Zdroj trasy je ve stavu ${sourceStatus}.`);
+  }
+  return uniqueRouteStrings(warnings).slice(0, 5);
+}
+
+function routeAlternativeItems(
+  response: RoutingRouteResponse | null | undefined,
+  activeRouteId: string | undefined
+): string[] {
+  if (!response || response.routes.length <= 1) {
+    return [];
+  }
+  return response.routes.slice(0, 5).map((route, index) => {
+    const routeId = routeRecordId(route);
+    const rank = numberProperty(route.rank) ?? index + 1;
+    const active = routeId && activeRouteId ? routeId === activeRouteId : rank === 1;
+    return [
+      active ? "Aktivní" : `Varianta ${rank}`,
+      formatRouteDistanceValue(firstRecordNumber(route, "distanceM", "lengthM")),
+      `ETA ${formatRouteDurationSeconds(firstRecordNumber(route, "durationSeconds", "durationS"))}`,
+      formatRouteTrafficSummary(route, response)
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  });
+}
+
+function routeSourceStatus(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined
+): string | undefined {
+  return (
+    stringProperty(route?.sourceStatus) ??
+    stringProperty(route?.status) ??
+    routeTrafficRecordsForDetail(route, response)
+      .map((traffic) => stringProperty(traffic.sourceStatus) ?? stringProperty(traffic.status))
+      .find(Boolean)
+  );
+}
+
+function firstRecordValue(
+  record: Record<string, unknown> | undefined,
+  ...keys: string[]
+): Record<string, unknown> | undefined {
+  if (!record) {
+    return undefined;
+  }
+  for (const key of keys) {
+    if (isRecord(record[key])) {
+      return record[key];
+    }
+  }
+  return undefined;
+}
+
+function recordStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.flatMap((item) => stringProperty(item) ?? []) : [];
+}
+
+function uniqueRouteStrings(values: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const normalized = value?.trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function RouteElevationProfileView({ profile }: { profile: RouteElevationProfileSummary }) {
+  const width = 240;
+  const height = 58;
+  const paddingX = 4;
+  const paddingY = 5;
+  const points = profile.points;
+  const minDistance = points[0]?.distanceM ?? 0;
+  const maxDistance = points[points.length - 1]?.distanceM ?? minDistance + points.length - 1;
+  const minElevation = profile.minM ?? Math.min(...points.map((point) => point.elevationM));
+  const maxElevation = profile.maxM ?? Math.max(...points.map((point) => point.elevationM));
+  const distanceSpan = Math.max(1, maxDistance - minDistance);
+  const elevationSpan = Math.max(1, maxElevation - minElevation);
+  const polyline = points
+    .map((point, index) => {
+      const x =
+        paddingX +
+        (((Number.isFinite(point.distanceM) ? point.distanceM : index) - minDistance) / distanceSpan) *
+          (width - paddingX * 2);
+      const y = paddingY + (1 - (point.elevationM - minElevation) / elevationSpan) * (height - paddingY * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  return (
+    <div className="map-object-popover-elevation">
+      <div>
+        <span>Výškový profil</span>
+        <strong>
+          {Math.round(minElevation)}-{Math.round(maxElevation)} m
+        </strong>
+      </div>
+      <svg aria-hidden="true" preserveAspectRatio="none" viewBox={`0 0 ${width} ${height}`}>
+        <polyline points={polyline} />
+      </svg>
+      <small>
+        {profile.gainM !== undefined ? `Stoupání ${Math.round(profile.gainM)} m` : "Stoupání n/a"}
+        {profile.lossM !== undefined ? ` · klesání ${Math.round(profile.lossM)} m` : ""}
+      </small>
+    </div>
+  );
 }
 
 function formatEmergencyRouteRole(role: string): string {

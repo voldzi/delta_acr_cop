@@ -37,9 +37,25 @@ export interface RoutingRouteResponse {
   generatedAt?: string;
   providerId?: string;
   quality?: Record<string, unknown>;
-  routes: Array<Record<string, unknown>>;
+  routes: RoutingRoute[];
   traffic?: Record<string, unknown>;
   warnings: string[];
+}
+
+export interface RoutingRoute extends Record<string, unknown> {
+  distanceM?: number;
+  durationSeconds?: number;
+  elevation?: Record<string, unknown>;
+  elevationGainM?: number;
+  elevationProfile?: Array<Record<string, unknown>>;
+  hazardsOnRoute?: Array<Record<string, unknown>> | Record<string, unknown>;
+  quality?: Record<string, unknown>;
+  rank?: number;
+  routeId?: string;
+  sourceStatus?: string;
+  traffic?: Record<string, unknown>;
+  warnings?: string[];
+  weatherOnRoute?: Record<string, unknown>;
 }
 
 export interface RoutingSource {

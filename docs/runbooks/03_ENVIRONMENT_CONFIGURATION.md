@@ -257,8 +257,12 @@ nejsou nastavené routing-specifické hodnoty. Mapa zobrazuje
 vrácené `features[]` jako dočasný operační overlay, v detailu ukazuje
 `routes[].distanceM`, `durationSeconds`, `steps[]`, `quality.mode`,
 `quality.engine`, `quality.confidence`, route/top-level `traffic`,
-`traffic.incidentsOnRoute[]`, `sourceStatus`, `incidentCount`,
-`delayPenaltySeconds`, `hard_exclusion_applied` a `warnings[]`. Plnohodnotná
+`traffic.incidentsOnRoute[]`, route `elevation`, `elevationProfile[]`,
+`weatherOnRoute`, `hazardsOnRoute`, `sourceStatus`, `incidentCount`,
+`delayPenaltySeconds`, `hard_exclusion_applied` a `warnings[]`. Kliknutí na
+primární nebo alternativní route feature otevře detail trasy s výškovým
+profilem, dopravními caveaty, počasím, riziky a seznamem dostupných variant;
+alternativu lze bez dalšího volání SIM přepnout jako aktivní trasu. Plnohodnotná
 serverová trasa je `quality.mode=engine_route` s `quality.engine=valhalla`.
 Pokud SIM vrátí `quality.mode=direct_fallback`, UI musí zobrazit varování
 „Orientační spojnice, ne navigace po komunikacích.“, protože COP nepočítá

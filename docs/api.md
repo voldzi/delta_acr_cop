@@ -43,8 +43,9 @@ Emergency routing clients must also call only COP API endpoints:
 `/api/v1/routing/alternatives`, `/api/v1/routing/isochrone` and
 `/api/v1/routing/nearest-access`. COP calls SIM server-to-server and renders
 the returned route `features[]`, ETA, distance, rank, steps, quality, traffic
-incidents, degradation state and warnings as a temporary operational map
-overlay. COP does not calculate routing graphs in the browser or API process.
+incidents, elevation profile, weather on route, hazards on route, degradation
+state, warnings and alternatives as a temporary operational map overlay. COP
+does not calculate routing graphs in the browser or API process.
 
 AI responses may include optional `routing` metadata from the server-side
 `deterministic-v1` model router. It identifies the selected provider/model role

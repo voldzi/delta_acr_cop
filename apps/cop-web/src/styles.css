@@ -5484,6 +5484,79 @@ h1 {
   white-space: nowrap;
 }
 
+.map-object-popover-elevation {
+  display: grid;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 7px;
+  border: 1px solid rgba(159, 178, 196, 0.16);
+  background: rgba(15, 25, 34, 0.44);
+}
+
+.map-object-popover-elevation div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.map-object-popover-elevation span,
+.map-object-popover-section span {
+  color: #92a6b7;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.map-object-popover-elevation strong {
+  color: #f1f6fb;
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.map-object-popover-elevation svg {
+  width: 100%;
+  height: 58px;
+}
+
+.map-object-popover-elevation polyline {
+  fill: none;
+  stroke: #c8f08d;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.map-object-popover-elevation small {
+  color: #b8c6d2;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.map-object-popover-sections {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.map-object-popover-section {
+  display: grid;
+  gap: 3px;
+  padding: 7px;
+  border: 1px solid rgba(159, 178, 196, 0.14);
+  background: rgba(15, 25, 34, 0.34);
+}
+
+.map-object-popover-section p {
+  margin: 0;
+  color: #dbe6ef;
+  font-size: 11px;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
+}
+
 .map-object-popover-route {
   display: inline-flex;
   align-items: center;
