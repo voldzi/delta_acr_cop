@@ -43,6 +43,7 @@ import {
   PanelRightClose,
   Pause,
   PenLine,
+  PhoneIncoming,
   Pin,
   PinOff,
   Plane,
@@ -113,6 +114,7 @@ import {
   fetchMobileDevices,
   fetchMobilePairingSession,
   fetchMobileTowerViewshed,
+  fetchEmergencyRoutingProfiles,
   fetchPlaceGeocode,
   fetchRadioProfiles,
   fetchDemoScenarioStatus,
@@ -135,7 +137,9 @@ import {
   resetDemoScenario,
   revokeMobileDevice,
   runRadioCoverage,
-  runEmergencyRoute,
+  runEmergencyRouteAlternatives,
+  runEmergencyRoutingIsochrone,
+  runEmergencyRoutingNearestAccess,
   runRadioLinkCheck,
   runRadioSiteSearch,
   updateCommunityGroupMetadata,
@@ -192,6 +196,8 @@ import {
   type RadioProfile,
   type RadioProfilesResponse,
   type RadioSiteSearchRequest,
+  type RoutingGenericResponse,
+  type RoutingProfilesResponse,
   type RoutingRouteResponse,
   type SourceHealthItem,
   type SourceSystem,
@@ -249,19 +255,30 @@ import {
   type RefreshSeconds
 } from "./refresh-config";
 import { buildMapSearchResults, buildPlaceSearchResults, type MapSearchResult } from "./map-search";
-import { applyChatSummaryPayload, applyChatUnreadPayload, readStoredChatSummarySnapshot } from "@cop/messaging/runtime";
 import {
+  applyChatSummaryPayload,
+  applyChatUnreadPayload,
+  applyChatVoiceCallPayload,
+  readStoredChatSummarySnapshot,
+  readStoredChatVoiceCallSnapshot
+} from "@cop/messaging/runtime";
+import {
+  chatUnreadStorageKey,
+  chatVoiceCallStorageKey,
   decodeChatCenterLocation,
   decodeChatLiveLocations,
   decodeCopMapFocusSearch,
   encodeChatCurrentLocation,
   encodeChatSelect,
   encodeChatShareTransit,
+  encodeChatVoiceCallCommand,
   type ChatCenterLocationMessage,
   type ChatLiveLocationPayload,
   type ChatSummaryMessage,
   type ChatSummaryUnreadRoom,
-  type ChatTransitSharePayload
+  type ChatTransitSharePayload,
+  type ChatVoiceCallCommandAction,
+  type ChatVoiceCallMessage
 } from "@cop/messaging/bridge";
 import {
   countHistoryPoints,
@@ -447,6 +464,7 @@ const mapFeatureFetchDelayMs = 450;
 const defaultMapBounds: MapBounds = { east: 19.1, north: 51.2, south: 48.5, west: 12 };
 const messagingDockWidthStorageKey = "cop.messaging.dockWidth.v1";
 const chatSummaryHostMaxAgeMs = 10 * 60 * 1000;
+const chatVoiceCallHostMaxAgeMs = 5 * 60 * 1000;
 
 function mapViewFromCopMapFocus(focus: ChatCenterLocationMessage, fallback: unknown): MapViewState {
   const current = normalizeMapView(fallback);
@@ -579,7 +597,8 @@ interface EmergencyRouteTarget {
   lon: number;
 }
 
-type NavigationProfile = "car" | "walking";
+type NavigationProfile =
+  "car" | "emergency_vehicle" | "evacuation_walking" | "large_emergency_vehicle" | "offroad_4x4" | "walking";
 type NavigationMapMode = "north-up" | "route-up" | "overview";
 
 interface NavigationRouteCacheState {
@@ -637,15 +656,64 @@ interface StoredNavigationSession {
 }
 
 interface NavigationRouteOptions {
+  alternatives?: number;
   avoid?: string[];
   loadingLabel?: string;
   profileId?: string;
   summaryLabel?: string;
 }
 
-const navigationProfileOptions: Array<{ id: NavigationProfile; label: string; routeProfileId: string }> = [
-  { id: "car", label: "Autem", routeProfileId: "car" },
-  { id: "walking", label: "Pěšky", routeProfileId: "walking" }
+interface NavigationProfileOption {
+  description: string;
+  id: NavigationProfile;
+  label: string;
+  routeProfileId: NavigationProfile;
+  vehicle: boolean;
+}
+
+const navigationProfileOptions: NavigationProfileOption[] = [
+  {
+    description: "Běžný silniční profil pro osobní vozidlo.",
+    id: "car",
+    label: "Auto",
+    routeProfileId: "car",
+    vehicle: true
+  },
+  {
+    description: "Profil zásahového vozidla se zohledněním uzavírek.",
+    id: "emergency_vehicle",
+    label: "Zásahové vozidlo",
+    routeProfileId: "emergency_vehicle",
+    vehicle: true
+  },
+  {
+    description: "Profil pro větší zásahové vozidlo s omezeními průjezdu.",
+    id: "large_emergency_vehicle",
+    label: "Velké vozidlo",
+    routeProfileId: "large_emergency_vehicle",
+    vehicle: true
+  },
+  {
+    description: "Terénní přístup a napojení na sjízdnou síť.",
+    id: "offroad_4x4",
+    label: "4x4",
+    routeProfileId: "offroad_4x4",
+    vehicle: true
+  },
+  {
+    description: "Pěší trasa po cestách a komunikacích.",
+    id: "walking",
+    label: "Pěšky",
+    routeProfileId: "walking",
+    vehicle: false
+  },
+  {
+    description: "Pěší evakuační režim pro bezpečný odchod.",
+    id: "evacuation_walking",
+    label: "Evakuace pěšky",
+    routeProfileId: "evacuation_walking",
+    vehicle: false
+  }
 ];
 const navigationStorageKey = "cop.navigation.session.v1";
 const navigationArrivalThresholdM = 35;
@@ -1071,6 +1139,11 @@ export function App() {
   const [emergencyRouteTarget, setEmergencyRouteTarget] = React.useState<EmergencyRouteTarget | null>(
     () => initialNavigationSession?.target ?? null
   );
+  const [routingProfiles, setRoutingProfiles] = React.useState<Array<Record<string, unknown>>>([]);
+  const [routingProfilesStatus, setRoutingProfilesStatus] = React.useState<"degraded" | "idle" | "loading" | "ready">(
+    "idle"
+  );
+  const [routingProfilesMessage, setRoutingProfilesMessage] = React.useState<string | null>(null);
   const [navigationSession, setNavigationSession] = React.useState<NavigationSession | null>(
     () => initialNavigationSession
   );
@@ -1125,15 +1198,23 @@ export function App() {
   const [messagingDockWidth, setMessagingDockWidth] = React.useState(() => readMessagingDockWidth());
   const [messagingSelection, setMessagingSelection] = React.useState<MessagingSelectionCommand | null>(null);
   const [messagingTransitShare, setMessagingTransitShare] = React.useState<MessagingTransitShareCommand | null>(null);
+  const [messagingVoiceCallCommand, setMessagingVoiceCallCommand] = React.useState<MessagingVoiceCallCommand | null>(
+    null
+  );
   const [messagingSummary, setMessagingSummary] = React.useState<ChatSummaryMessage | null>(() =>
     hostUsableChatSummary(readStoredChatSummarySnapshot())
   );
   const [messagingUnreadCount, setMessagingUnreadCount] = React.useState(() =>
     hostUnreadCountFromChatSummary(hostUsableChatSummary(readStoredChatSummarySnapshot()))
   );
+  const [messagingVoiceCall, setMessagingVoiceCall] = React.useState<ChatVoiceCallMessage | null>(() =>
+    hostVisibleChatVoiceCall(readStoredChatVoiceCallSnapshot())
+  );
   const [sharedLiveLocations, setSharedLiveLocations] = React.useState<ChatLiveLocationPayload[]>([]);
   const messagingSelectionNonceRef = React.useRef(0);
   const messagingTransitShareNonceRef = React.useRef(0);
+  const messagingVoiceCallCommandNonceRef = React.useRef(0);
+  const notifiedVoiceCallIdsRef = React.useRef(new Set<string>());
   const initialMapFeatureFocusRef = React.useRef(initialMapFocus);
   const catalogSelectionInitializedRef = React.useRef(initialPreferences.catalogLayerIds !== undefined);
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
@@ -1193,12 +1274,15 @@ export function App() {
         setMessagingUnreadCount(hostUnreadCountFromChatSummary(usableSummary));
       });
     const applyUnread = (value: unknown) => applyChatUnreadPayload(value, setMessagingUnreadCount);
+    const applyVoiceCall = (value: unknown) =>
+      applyChatVoiceCallPayload(value, (call) => setMessagingVoiceCall(hostVisibleChatVoiceCall(call)));
     const hydrateStoredUnread = () => {
       const summary = hostUsableChatSummary(readStoredChatSummarySnapshot());
       if (summary) {
         setMessagingSummary(summary);
         setMessagingUnreadCount(hostUnreadCountFromChatSummary(summary));
       }
+      setMessagingVoiceCall(hostVisibleChatVoiceCall(readStoredChatVoiceCallSnapshot()));
     };
     const handleChatMessage = (event: MessageEvent) => {
       if (
@@ -1214,6 +1298,9 @@ export function App() {
         return;
       }
       if (applyUnread(data)) {
+        return;
+      }
+      if (applyVoiceCall(data)) {
         return;
       }
       const liveLocations = decodeChatLiveLocations(data);
@@ -1302,12 +1389,14 @@ export function App() {
       }
     };
     const handleChatStorage = (event: StorageEvent) => {
-      if (event.key !== "cop.chat.unread.v1" || !event.newValue) {
+      if ((event.key !== chatUnreadStorageKey && event.key !== chatVoiceCallStorageKey) || !event.newValue) {
         return;
       }
       try {
         const payload = JSON.parse(event.newValue) as unknown;
-        if (!applySummary(payload)) {
+        if (event.key === chatVoiceCallStorageKey) {
+          applyVoiceCall(payload);
+        } else if (!applySummary(payload)) {
           applyUnread(payload);
         }
       } catch {
@@ -1319,7 +1408,7 @@ export function App() {
       try {
         channel = new BroadcastChannel("cop-chat");
         channel.addEventListener("message", (event) => {
-          if (!applySummary(event.data)) {
+          if (!applySummary(event.data) && !applyVoiceCall(event.data)) {
             applyUnread(event.data);
           }
         });
@@ -1367,6 +1456,44 @@ export function App() {
   const messagingRuntimeEnabled = Boolean(authToken);
 
   React.useEffect(() => {
+    let active = true;
+    setRoutingProfilesStatus("loading");
+    setRoutingProfilesMessage("Načítám SIM routing profily...");
+    fetchEmergencyRoutingProfiles(apiBase, authToken)
+      .then((response: RoutingProfilesResponse) => {
+        if (!active) {
+          return;
+        }
+        const profiles = Array.isArray(response.profiles) ? response.profiles : [];
+        setRoutingProfiles(profiles);
+        setRoutingProfilesStatus("ready");
+        setRoutingProfilesMessage(
+          profiles.length > 0 ? `SIM routing profily: ${profiles.length} režimů.` : "SIM routing profily jsou dostupné."
+        );
+      })
+      .catch((error) => {
+        if (!active) {
+          return;
+        }
+        setRoutingProfiles([]);
+        setRoutingProfilesStatus("degraded");
+        setRoutingProfilesMessage(
+          error instanceof Error
+            ? `SIM routing profily nejsou dostupné: ${error.message}`
+            : "SIM routing profily nejsou dostupné."
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [authToken]);
+
+  const availableRoutingProfileIds = React.useMemo(
+    () => new Set(routingProfiles.flatMap((profile) => routingProfileIdFromProfile(profile) ?? [])),
+    [routingProfiles]
+  );
+
+  React.useEffect(() => {
     authSessionRef.current = authSession;
   }, [authSession]);
 
@@ -1401,8 +1528,10 @@ export function App() {
     setMessagingFrameMounted(false);
     setMessagingSelection(null);
     setMessagingTransitShare(null);
+    setMessagingVoiceCallCommand(null);
     setMessagingSummary(null);
     setMessagingUnreadCount(0);
+    setMessagingVoiceCall(null);
   }, [messagingRuntimeEnabled]);
 
   const refreshWebPushState = React.useCallback(async () => {
@@ -4903,8 +5032,10 @@ export function App() {
         options.loadingLabel ?? `Počítám zásahovou trasu k cíli ${normalizedTarget.label ?? "vybraný bod"}...`
       );
       try {
-        const response = await runEmergencyRoute(apiBase, authToken, {
-          avoid: options.avoid ?? ["flood", "road_closure"],
+        const profileId = options.profileId ?? "emergency_vehicle";
+        const response = await runEmergencyRouteAlternatives(apiBase, authToken, {
+          alternatives: options.alternatives ?? 2,
+          avoid: routingAvoidForProfile(profileId, options.avoid),
           from: {
             ...(typeof location.accuracyM === "number"
               ? { label: `Moje poloha (±${Math.round(location.accuracyM)} m)` }
@@ -4912,7 +5043,8 @@ export function App() {
             lat: location.lat,
             lon: location.lon
           },
-          profileId: options.profileId ?? "emergency_vehicle",
+          includeSteps: true,
+          profileId,
           to: {
             ...(normalizedTarget.label ? { label: normalizedTarget.label } : {}),
             lat: normalizedTarget.lat,
@@ -4925,8 +5057,8 @@ export function App() {
         setEmergencyRoute(response);
         setEmergencyRouteTarget(normalizedTarget);
         setEmergencyRouteStatus("ready");
-        const primary = response.routes[0];
-        const summary = formatEmergencyRouteSummary(primary, response.quality, options.summaryLabel);
+        const primary = primaryRoutingRoute(response);
+        const summary = formatEmergencyRouteSummary(primary, response.quality, options.summaryLabel, response);
         setEmergencyRouteMessage(summary);
         setLocationStatus(summary);
         return response;
@@ -5068,8 +5200,12 @@ export function App() {
   }
 
   const requestEmergencyRouteToPoint = React.useCallback(
-    async (target: EmergencyRouteTarget) => {
+    async (target: EmergencyRouteTarget, profile: NavigationProfile = "emergency_vehicle") => {
       const normalizedTarget = normalizeEmergencyRouteTarget(target);
+      const profileOption =
+        navigationProfileOptions.find((option) => option.id === profile) ??
+        navigationProfileOptions.find((option) => option.id === "emergency_vehicle") ??
+        navigationProfileOptions[0]!;
       if (!normalizedTarget) {
         routeRequestIdRef.current += 1;
         setPendingRouteTarget(null);
@@ -5081,16 +5217,123 @@ export function App() {
         return;
       }
       if (!userLocation) {
-        setPendingRouteTarget(normalizedTarget);
         setEmergencyRouteStatus("loading");
         setEmergencyRouteMessage("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
         setLocationStatus("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
-        locateUser(normalizedTarget);
+        try {
+          const location = await readCurrentUserLocation();
+          setUserLocation(location);
+          setFocusUserLocationRequest((current) => current + 1);
+          setLocationStatus(formatUserLocation(location));
+          await runEmergencyRouteFromLocation(location, normalizedTarget, {
+            loadingLabel: `Počítám trasu (${profileOption.label}) k cíli ${normalizedTarget.label ?? "vybraný bod"}...`,
+            profileId: profileOption.routeProfileId,
+            summaryLabel: profileOption.id === "emergency_vehicle" ? "Zásahová trasa" : `Trasa ${profileOption.label}`
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Polohu zařízení se nepodařilo získat.";
+          setEmergencyRouteStatus("error");
+          setEmergencyRouteMessage(message);
+          setLocationStatus(message);
+        }
         return;
       }
-      await runEmergencyRouteFromLocation(userLocation, normalizedTarget);
+      await runEmergencyRouteFromLocation(userLocation, normalizedTarget, {
+        loadingLabel: `Počítám trasu (${profileOption.label}) k cíli ${normalizedTarget.label ?? "vybraný bod"}...`,
+        profileId: profileOption.routeProfileId,
+        summaryLabel: profileOption.id === "emergency_vehicle" ? "Zásahová trasa" : `Trasa ${profileOption.label}`
+      });
     },
     [runEmergencyRouteFromLocation, userLocation]
+  );
+
+  const requestNearestAccessToPoint = React.useCallback(
+    async (target: EmergencyRouteTarget) => {
+      const normalizedTarget = normalizeEmergencyRouteTarget(target);
+      if (!normalizedTarget) {
+        setEmergencyRouteStatus("error");
+        setEmergencyRouteMessage("Bod pro hledání nejbližšího přístupu nemá platné souřadnice.");
+        return;
+      }
+      const requestId = routeRequestIdRef.current + 1;
+      routeRequestIdRef.current = requestId;
+      setEmergencyRoute(null);
+      setEmergencyRouteTarget(normalizedTarget);
+      setEmergencyRouteStatus("loading");
+      setEmergencyRouteMessage(`Hledám nejbližší přístup k bodu ${normalizedTarget.label ?? "vybraný bod"}...`);
+      try {
+        const point = routingPointFromTarget(normalizedTarget);
+        const response = await runEmergencyRoutingNearestAccess(apiBase, authToken, {
+          includeSteps: true,
+          point,
+          profileId: "offroad_4x4",
+          target: point
+        });
+        if (routeRequestIdRef.current !== requestId) {
+          return;
+        }
+        const overlay = routingGenericResponseToRouteResponse(response);
+        setEmergencyRoute(overlay);
+        setEmergencyRouteStatus("ready");
+        const message = formatGenericRoutingOverlaySummary(overlay, "Nejbližší přístup");
+        setEmergencyRouteMessage(message);
+        setLocationStatus(message);
+      } catch (error) {
+        if (routeRequestIdRef.current !== requestId) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : "Nejbližší přístup se nepodařilo najít.";
+        setEmergencyRouteStatus("error");
+        setEmergencyRouteMessage(message);
+        setLocationStatus(message);
+      }
+    },
+    [authToken]
+  );
+
+  const requestIsochroneFromPoint = React.useCallback(
+    async (target: EmergencyRouteTarget) => {
+      const normalizedTarget = normalizeEmergencyRouteTarget(target);
+      if (!normalizedTarget) {
+        setEmergencyRouteStatus("error");
+        setEmergencyRouteMessage("Bod pro výpočet dosahu nemá platné souřadnice.");
+        return;
+      }
+      const requestId = routeRequestIdRef.current + 1;
+      routeRequestIdRef.current = requestId;
+      setEmergencyRoute(null);
+      setEmergencyRouteTarget(normalizedTarget);
+      setEmergencyRouteStatus("loading");
+      setEmergencyRouteMessage(`Počítám 15min dosah z bodu ${normalizedTarget.label ?? "vybraný bod"}...`);
+      try {
+        const point = routingPointFromTarget(normalizedTarget);
+        const response = await runEmergencyRoutingIsochrone(apiBase, authToken, {
+          center: point,
+          contours: [{ seconds: 900 }],
+          from: point,
+          profileId: "walking",
+          rangeSeconds: 900
+        });
+        if (routeRequestIdRef.current !== requestId) {
+          return;
+        }
+        const overlay = routingGenericResponseToRouteResponse(response);
+        setEmergencyRoute(overlay);
+        setEmergencyRouteStatus("ready");
+        const message = formatGenericRoutingOverlaySummary(overlay, "Dosah 15 min");
+        setEmergencyRouteMessage(message);
+        setLocationStatus(message);
+      } catch (error) {
+        if (routeRequestIdRef.current !== requestId) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : "Dosahovou oblast se nepodařilo vypočítat.";
+        setEmergencyRouteStatus("error");
+        setEmergencyRouteMessage(message);
+        setLocationStatus(message);
+      }
+    },
+    [authToken]
   );
 
   const openNavigationProfileDialog = React.useCallback((target: EmergencyRouteTarget | null | undefined) => {
@@ -5122,7 +5365,7 @@ export function App() {
         bearing: session.mapMode === "route-up" ? (routeBearing ?? 0) : 0,
         center,
         pitch: session.mapMode === "route-up" ? 42 : 0,
-        zoom: Math.max(mapView?.zoom ?? 0, session.profile === "walking" ? 17 : 16)
+        zoom: Math.max(mapView?.zoom ?? 0, isWalkingNavigationProfile(session.profile) ? 17 : 16)
       });
       setFocusViewRequest((current) => current + 1);
     },
@@ -5148,10 +5391,10 @@ export function App() {
         const profileOption =
           navigationProfileOptions.find((option) => option.id === profile) ?? navigationProfileOptions[0]!;
         const response = await runEmergencyRouteFromLocation(location, normalizedTarget, {
-          avoid: ["flood", "road_closure"],
-          loadingLabel: `Počítám navigaci ${profile === "walking" ? "pěšky" : "autem"} k cíli ${normalizedTarget.label ?? "vybraný bod"}...`,
+          avoid: routingAvoidForProfile(profileOption.routeProfileId),
+          loadingLabel: `Počítám navigaci (${profileOption.label}) k cíli ${normalizedTarget.label ?? "vybraný bod"}...`,
           profileId: profileOption.routeProfileId,
-          summaryLabel: profile === "walking" ? "Pěší navigace" : "Navigace autem"
+          summaryLabel: navigationProfileLabel(profile)
         });
         if (!response) {
           setNavigationStartError("Navigaci se nepodařilo připravit.");
@@ -5163,9 +5406,10 @@ export function App() {
           return;
         }
         const routeSummary = formatEmergencyRouteSummary(
-          response.routes[0],
+          primaryRoutingRoute(response),
           response.quality,
-          profile === "walking" ? "Pěší navigace" : "Navigace autem"
+          navigationProfileLabel(profile),
+          response
         );
         const progress = navigationProgressForLocation(location, routeCoordinates);
         const session: NavigationSession = {
@@ -5609,13 +5853,61 @@ export function App() {
     });
   }
 
+  function requestEmbeddedVoiceCallCommand(call: ChatVoiceCallMessage, action: ChatVoiceCallCommandAction) {
+    messagingVoiceCallCommandNonceRef.current += 1;
+    setMessagingVoiceCallCommand({
+      action,
+      callId: call.callId,
+      nonce: messagingVoiceCallCommandNonceRef.current,
+      roomId: call.roomId
+    });
+  }
+
+  const visibleMessagingVoiceCall = hostVisibleChatVoiceCall(messagingVoiceCall);
+  const incomingMessagingVoiceCall = hostIncomingChatVoiceCall(visibleMessagingVoiceCall);
+
+  React.useEffect(() => {
+    if (!incomingMessagingVoiceCall) {
+      return undefined;
+    }
+    const stopAttention = startHostIncomingVoiceCallAttention();
+    showHostIncomingVoiceCallNotification(incomingMessagingVoiceCall, notifiedVoiceCallIdsRef.current, () =>
+      answerMessagingVoiceCall(incomingMessagingVoiceCall)
+    );
+    return stopAttention;
+  }, [
+    incomingMessagingVoiceCall?.callId,
+    incomingMessagingVoiceCall?.phase,
+    incomingMessagingVoiceCall?.roomId,
+    incomingMessagingVoiceCall?.title
+  ]);
+
   function openMessagingPanel() {
-    const unreadTarget = firstUnreadChatSummaryRoom(messagingSummary);
-    if (unreadTarget) {
-      requestEmbeddedChatSelection(unreadTarget.selection);
+    const voiceCallTarget = hostVisibleChatVoiceCall(messagingVoiceCall);
+    if (voiceCallTarget?.roomId) {
+      requestEmbeddedChatSelection(voiceCallTarget.roomId);
+    } else {
+      const unreadTarget = firstUnreadChatSummaryRoom(messagingSummary);
+      if (unreadTarget) {
+        requestEmbeddedChatSelection(unreadTarget.selection);
+      }
     }
     setMessagingOpen(true);
     setMessagingPinned(true);
+  }
+
+  function answerMessagingVoiceCall(call: ChatVoiceCallMessage) {
+    requestEmbeddedChatSelection(call.roomId);
+    requestEmbeddedVoiceCallCommand(call, "answer");
+    setMessagingFrameMounted(true);
+    setMessagingOpen(true);
+    setMessagingPinned(true);
+  }
+
+  function rejectMessagingVoiceCall(call: ChatVoiceCallMessage) {
+    requestEmbeddedVoiceCallCommand(call, "reject");
+    setMessagingFrameMounted(true);
+    setMessagingVoiceCall(null);
   }
 
   function shareTransitToEmbeddedChat(transit: ChatTransitSharePayload) {
@@ -6640,6 +6932,7 @@ export function App() {
         <WorkspaceNavigator
           activeWorkspace={activeWorkspace}
           chatUnreadCount={messagingUnreadCount}
+          incomingVoiceCall={Boolean(incomingMessagingVoiceCall)}
           onChange={setActiveWorkspace}
           onOpenMessaging={openMessagingPanel}
           onOpenSettings={() => openSettings("map")}
@@ -7069,8 +7362,16 @@ export function App() {
                   onUpdateZonePolygon={handleAoiRulePolygonUpdate}
                   onPickReportLocation={handleCommunityReportLocationPicked}
                   onPickRadioPoint={handleRadioPointPicked}
-                  onRequestRouteToPoint={(target) => void requestEmergencyRouteToPoint(target)}
-                  onStartNavigationToPoint={openNavigationProfileDialog}
+                  onRequestIsochroneFromPoint={(target) => void requestIsochroneFromPoint(target)}
+                  onRequestNearestAccessToPoint={(target) => void requestNearestAccessToPoint(target)}
+                  onRequestRouteToPoint={(target, profile) => void requestEmergencyRouteToPoint(target, profile)}
+                  onStartNavigationToPoint={(target, profile) => {
+                    if (profile) {
+                      void startNavigationToTarget(target, profile);
+                      return;
+                    }
+                    openNavigationProfileDialog(target);
+                  }}
                   onStartEmergencyNavigation={() =>
                     openNavigationProfileDialog(
                       emergencyRouteTarget ?? navigationTargetFromRouteResponse(emergencyRoute)
@@ -7131,7 +7432,10 @@ export function App() {
               ) : null}
               {navigationDraftTarget ? (
                 <NavigationProfileDialog
+                  availableProfileIds={availableRoutingProfileIds}
                   error={navigationStartError}
+                  profilesStatus={routingProfilesStatus}
+                  profilesStatusMessage={routingProfilesMessage}
                   starting={navigationStarting}
                   target={navigationDraftTarget}
                   onClose={() => {
@@ -7648,6 +7952,7 @@ export function App() {
       <MobileBottomNav
         activeSheet={mobileSheet}
         chatUnreadCount={messagingUnreadCount}
+        incomingVoiceCall={Boolean(incomingMessagingVoiceCall)}
         messagingOpen={messagingOpen}
         settingsOpen={settingsOpen}
         sketchOpen={mobileSketchOpen}
@@ -7815,6 +8120,15 @@ export function App() {
         />
       ) : null}
 
+      {!messagingOpen && incomingMessagingVoiceCall ? (
+        <IncomingVoiceCallAlert
+          call={incomingMessagingVoiceCall}
+          onAnswer={() => answerMessagingVoiceCall(incomingMessagingVoiceCall)}
+          onOpen={openMessagingPanel}
+          onReject={() => rejectMessagingVoiceCall(incomingMessagingVoiceCall)}
+        />
+      ) : null}
+
       {messagingOpen || messagingFrameMounted ? (
         <EmbeddedCopChatPanel
           active={messagingOpen}
@@ -7823,6 +8137,7 @@ export function App() {
           pinned={messagingPinned}
           selection={messagingSelection}
           transitShare={messagingTransitShare}
+          voiceCallCommand={messagingVoiceCallCommand}
           userLocation={userLocation}
           onClose={() => setMessagingOpen(false)}
           onDockWidthChange={(width) => {
@@ -8038,6 +8353,13 @@ interface MessagingSelectionCommand {
 interface MessagingTransitShareCommand {
   nonce: number;
   transit: ChatTransitSharePayload;
+}
+
+interface MessagingVoiceCallCommand {
+  action: ChatVoiceCallCommandAction;
+  callId: string;
+  nonce: number;
+  roomId: string;
 }
 
 interface CommunityGalleryState {
@@ -8474,15 +8796,21 @@ function DisplayedRouteNavigationAction({
 }
 
 function NavigationProfileDialog({
+  availableProfileIds,
   error,
   onClose,
   onStart,
+  profilesStatus,
+  profilesStatusMessage,
   starting,
   target
 }: {
+  availableProfileIds: ReadonlySet<string>;
   error: string | null;
   onClose: () => void;
   onStart: (profile: NavigationProfile) => void;
+  profilesStatus: "degraded" | "idle" | "loading" | "ready";
+  profilesStatusMessage: string | null;
   starting: boolean;
   target: EmergencyRouteTarget;
 }) {
@@ -8494,22 +8822,29 @@ function NavigationProfileDialog({
       onClose={onClose}
       title={target.label ?? "Vybraný cíl"}
     >
+      {profilesStatusMessage ? (
+        <div className={`navigation-profile-status ${profilesStatus}`}>{profilesStatusMessage}</div>
+      ) : null}
       <div className="navigation-profile-grid">
-        <button className="navigation-profile-option" disabled={starting} onClick={() => onStart("car")} type="button">
-          <Car size={20} />
-          <span>Autem</span>
-          <small>Výpočet přes SIM profil car</small>
-        </button>
-        <button
-          className="navigation-profile-option"
-          disabled={starting}
-          onClick={() => onStart("walking")}
-          type="button"
-        >
-          <Footprints size={20} />
-          <span>Pěšky</span>
-          <small>Výpočet přes SIM profil walking</small>
-        </button>
+        {navigationProfileOptions.map((option) => {
+          const unavailable =
+            profilesStatus === "ready" &&
+            availableProfileIds.size > 0 &&
+            !availableProfileIds.has(option.routeProfileId);
+          return (
+            <button
+              className="navigation-profile-option"
+              disabled={starting || unavailable}
+              key={option.id}
+              onClick={() => onStart(option.id)}
+              type="button"
+            >
+              {navigationProfileIcon(option.id, 20)}
+              <span>{option.label}</span>
+              <small>{unavailable ? "SIM profil není hlášen jako dostupný." : option.description}</small>
+            </button>
+          );
+        })}
       </div>
       {starting ? <div className="empty-mini">Připravuji navigaci a offline route balíček...</div> : null}
       {error ? <div className="situation-warning">{error}</div> : null}
@@ -10579,6 +10914,154 @@ export function firstUnreadChatSummaryRoom(summary: ChatSummaryMessage | null): 
   return rooms.slice(1).reduce((best, room) => (room.unreadCount > best.unreadCount ? room : best), firstRoom);
 }
 
+export function hostVisibleChatVoiceCall(
+  call: ChatVoiceCallMessage | null,
+  now = Date.now()
+): ChatVoiceCallMessage | null {
+  if (!call || call.phase === "ended" || call.phase === "failed") {
+    return null;
+  }
+  if (!Number.isFinite(call.at) || call.at > now + 60_000 || now - call.at > chatVoiceCallHostMaxAgeMs) {
+    return null;
+  }
+  return call;
+}
+
+export function hostIncomingChatVoiceCall(call: ChatVoiceCallMessage | null): ChatVoiceCallMessage | null {
+  return call?.direction === "incoming" && call.phase === "ringing" ? call : null;
+}
+
+function IncomingVoiceCallAlert({
+  call,
+  onAnswer,
+  onOpen,
+  onReject
+}: {
+  call: ChatVoiceCallMessage;
+  onAnswer: () => void;
+  onOpen: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div className="host-voice-call-alert" role="alert" aria-live="assertive">
+      <button className="host-voice-call-alert-open" onClick={onOpen} type="button" aria-label="Otevřít hovor">
+        <span className="host-voice-call-alert-icon">
+          <PhoneIncoming size={19} />
+        </span>
+      </button>
+      <button className="host-voice-call-alert-copy" onClick={onOpen} type="button">
+        <strong>{call.title ?? "COP Chat"}</strong>
+        <small>Příchozí hlasový hovor</small>
+      </button>
+      <div className="host-voice-call-alert-controls">
+        <button className="host-voice-call-alert-action accept" onClick={onAnswer} type="button">
+          <PhoneIncoming size={16} />
+          Přijmout
+        </button>
+        <button className="host-voice-call-alert-action reject" onClick={onReject} type="button">
+          <X size={16} />
+          Odmítnout
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function startHostIncomingVoiceCallAttention(): () => void {
+  const stopTone = startHostIncomingVoiceCallTone();
+  const vibrate =
+    typeof navigator !== "undefined" && typeof navigator.vibrate === "function"
+      ? (pattern: VibratePattern) => navigator.vibrate(pattern)
+      : null;
+  let vibrationInterval: number | null = null;
+  if (vibrate) {
+    vibrate([280, 90, 280]);
+    vibrationInterval = window.setInterval(() => vibrate([280, 90, 280]), 2200);
+  }
+  return () => {
+    stopTone();
+    if (vibrationInterval !== null) {
+      window.clearInterval(vibrationInterval);
+    }
+    vibrate?.(0);
+  };
+}
+
+function startHostIncomingVoiceCallTone(): () => void {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+  const audioWindow = window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext };
+  const AudioContextCtor = audioWindow.AudioContext ?? audioWindow.webkitAudioContext;
+  if (!AudioContextCtor) {
+    return () => undefined;
+  }
+  try {
+    const context = new AudioContextCtor();
+    let stopped = false;
+    let nextToneTimer: number | null = null;
+    const playTone = () => {
+      if (stopped || context.state === "closed") {
+        return;
+      }
+      const now = context.currentTime;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, now);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.08, now + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.46);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(now);
+      oscillator.stop(now + 0.5);
+      nextToneTimer = window.setTimeout(playTone, 1450);
+    };
+    void context
+      .resume()
+      .then(playTone)
+      .catch(() => context.close().catch(() => undefined));
+    return () => {
+      stopped = true;
+      if (nextToneTimer !== null) {
+        window.clearTimeout(nextToneTimer);
+      }
+      if (context.state !== "closed") {
+        void context.close().catch(() => undefined);
+      }
+    };
+  } catch {
+    return () => undefined;
+  }
+}
+
+function showHostIncomingVoiceCallNotification(
+  call: ChatVoiceCallMessage,
+  notifiedCallIds: Set<string>,
+  onOpen: () => void
+): void {
+  if (
+    typeof window === "undefined" ||
+    !("Notification" in window) ||
+    window.Notification.permission !== "granted" ||
+    notifiedCallIds.has(call.callId)
+  ) {
+    return;
+  }
+  notifiedCallIds.add(call.callId);
+  const notification = new window.Notification("Příchozí hlasový hovor", {
+    body: `${call.title ?? "COP Chat"} volá`,
+    requireInteraction: true,
+    tag: `cop-call:${call.roomId}:${call.callId}`
+  });
+  notification.onclick = () => {
+    window.focus();
+    onOpen();
+    notification.close();
+  };
+}
+
 function EmbeddedCopChatPanel({
   active,
   dockWidth,
@@ -10586,6 +11069,7 @@ function EmbeddedCopChatPanel({
   pinned,
   selection,
   transitShare,
+  voiceCallCommand,
   userLocation,
   onClose,
   onDockWidthChange
@@ -10596,6 +11080,7 @@ function EmbeddedCopChatPanel({
   pinned: boolean;
   selection: MessagingSelectionCommand | null;
   transitShare: MessagingTransitShareCommand | null;
+  voiceCallCommand: MessagingVoiceCallCommand | null;
   userLocation: UserLocation | null;
   onClose: () => void;
   onDockWidthChange: (width: number) => void;
@@ -10616,6 +11101,20 @@ function EmbeddedCopChatPanel({
     }
     iframeRef.current.contentWindow.postMessage(encodeChatShareTransit(transitShare.transit), window.location.origin);
   }, [transitShare?.nonce]);
+
+  React.useEffect(() => {
+    if (!voiceCallCommand || !iframeRef.current?.contentWindow) {
+      return;
+    }
+    iframeRef.current.contentWindow.postMessage(
+      encodeChatVoiceCallCommand({
+        action: voiceCallCommand.action,
+        callId: voiceCallCommand.callId,
+        roomId: voiceCallCommand.roomId
+      }),
+      window.location.origin
+    );
+  }, [voiceCallCommand?.nonce]);
 
   React.useEffect(() => {
     postCurrentLocationToChat();
@@ -10715,50 +11214,47 @@ function EmbeddedCopChatPanel({
     if (transitShare) {
       target.postMessage(encodeChatShareTransit(transitShare.transit), window.location.origin);
     }
+    if (voiceCallCommand) {
+      target.postMessage(
+        encodeChatVoiceCallCommand({
+          action: voiceCallCommand.action,
+          callId: voiceCallCommand.callId,
+          roomId: voiceCallCommand.roomId
+        }),
+        window.location.origin
+      );
+    }
     postCurrentLocationToChat();
   }
 
   return (
     <aside
+      className={clsx("embedded-chat-panel", pinned && "pinned", active && "active")}
+      style={pinned ? ({ "--messaging-dock-width": `${dockWidth}px` } as React.CSSProperties) : undefined}
       aria-hidden={!active}
-      aria-label="COP Chat"
-      className={clsx("messaging-panel embedded-chat-panel", pinned && "pinned", !active && "hidden")}
-      style={{ "--messaging-dock-width": `${dockWidth}px` } as React.CSSProperties}
     >
-      {pinned ? (
-        <div
-          aria-label="Změnit šířku chatu"
-          className="messaging-resize-handle"
-          onPointerDown={beginDockResize}
-          role="separator"
-        />
-      ) : null}
+      {pinned ? <div className="messaging-resize-handle" onPointerDown={beginDockResize} /> : null}
       <div className="embedded-chat-panel-main">
-        <header className="messaging-panel-header embedded-chat-panel-header">
-          <div className="chat-panel-title">
-            <MessageCircle size={18} />
-            <div>
-              <strong>Chat</strong>
-              <span>Integrovaný COP Chat</span>
-            </div>
+        <header className="embedded-chat-panel-header">
+          <div>
+            <small>Chat</small>
+            <strong>Integrovaný COP Chat</strong>
           </div>
-          <div className="messaging-header-actions">
-            <a className="icon-button" href={chatPath} rel="noreferrer" target="_blank" title="Otevřít chat samostatně">
-              <MonitorUp size={17} />
+          <div className="embedded-chat-panel-actions">
+            <a className="icon-button" href={chatPath} title="Otevřít chat v samostatném okně">
+              <ExternalLink size={17} />
             </a>
-            <button className="icon-button" onClick={onClose} title="Zavřít chat" type="button">
+            <button className="icon-button" onClick={onClose} type="button" title="Zavřít chat">
               <X size={18} />
             </button>
           </div>
         </header>
         <iframe
-          allow="clipboard-read; clipboard-write; geolocation; microphone; camera"
-          className="embedded-chat-frame"
-          onLoad={postPendingChatCommands}
           ref={iframeRef}
-          referrerPolicy="same-origin"
+          className="embedded-chat-frame"
           src={chatFrameSrc}
           title="COP Chat"
+          onLoad={postPendingChatCommands}
         />
       </div>
     </aside>
@@ -10768,6 +11264,7 @@ function EmbeddedCopChatPanel({
 function WorkspaceNavigator({
   activeWorkspace,
   chatUnreadCount,
+  incomingVoiceCall,
   onChange,
   onOpenMessaging,
   onOpenSettings,
@@ -10775,6 +11272,7 @@ function WorkspaceNavigator({
 }: {
   activeWorkspace: WorkspaceModule;
   chatUnreadCount: number;
+  incomingVoiceCall: boolean;
   onChange: (workspace: WorkspaceModule) => void;
   onOpenMessaging: () => void;
   onOpenSettings: () => void;
@@ -10799,10 +11297,17 @@ function WorkspaceNavigator({
           </button>
         );
       })}
-      <button className="workspace-tab" onClick={onOpenMessaging} title="Otevřít komunikaci" type="button">
-        <MessageCircle size={16} />
+      <button
+        className={clsx("workspace-tab", incomingVoiceCall && "incoming-call")}
+        onClick={onOpenMessaging}
+        title={incomingVoiceCall ? "Příchozí hlasový hovor" : "Otevřít komunikaci"}
+        type="button"
+      >
+        {incomingVoiceCall ? <PhoneIncoming size={16} /> : <MessageCircle size={16} />}
         <span>Komunikace</span>
-        {chatUnreadCount > 0 ? (
+        {incomingVoiceCall ? (
+          <strong className="nav-call-badge" aria-label="Příchozí hovor" />
+        ) : chatUnreadCount > 0 ? (
           <strong className="nav-unread-badge">{formatUnreadBadge(chatUnreadCount)}</strong>
         ) : null}
       </button>
@@ -11264,6 +11769,7 @@ function RadioLinkSummary({ link }: { link: RadioLinkCheckResponse }) {
 function MobileBottomNav({
   activeSheet,
   chatUnreadCount,
+  incomingVoiceCall,
   messagingOpen,
   settingsOpen,
   sketchOpen,
@@ -11276,6 +11782,7 @@ function MobileBottomNav({
 }: {
   activeSheet: MobileSheet;
   chatUnreadCount: number;
+  incomingVoiceCall: boolean;
   messagingOpen: boolean;
   settingsOpen: boolean;
   sketchOpen: boolean;
@@ -11304,10 +11811,16 @@ function MobileBottomNav({
         <PenLine size={18} />
         <span>Zákres</span>
       </button>
-      <button className={messagingOpen ? "active" : ""} onClick={onChat} type="button">
-        <MessageCircle size={18} />
+      <button
+        className={clsx(messagingOpen && "active", incomingVoiceCall && "incoming-call")}
+        onClick={onChat}
+        type="button"
+      >
+        {incomingVoiceCall ? <PhoneIncoming size={18} /> : <MessageCircle size={18} />}
         <span>Chat</span>
-        {chatUnreadCount > 0 ? (
+        {incomingVoiceCall ? (
+          <strong className="nav-call-badge" aria-label="Příchozí hovor" />
+        ) : chatUnreadCount > 0 ? (
           <strong className="nav-unread-badge">{formatUnreadBadge(chatUnreadCount)}</strong>
         ) : null}
       </button>
@@ -20753,8 +21266,75 @@ function navigationInstruction(session: NavigationSession): string {
   return "Pokračujte po zobrazené trase";
 }
 
+function navigationProfileIcon(profile: NavigationProfile, size = 16): React.ReactNode {
+  if (profile === "walking" || profile === "evacuation_walking") {
+    return <Footprints size={size} />;
+  }
+  if (profile === "emergency_vehicle" || profile === "large_emergency_vehicle") {
+    return <ShieldCheck size={size} />;
+  }
+  if (profile === "offroad_4x4") {
+    return <Compass size={size} />;
+  }
+  return <Car size={size} />;
+}
+
 function navigationProfileLabel(profile: NavigationProfile): string {
-  return profile === "walking" ? "Pěší navigace" : "Navigace autem";
+  switch (profile) {
+    case "car":
+      return "Navigace autem";
+    case "emergency_vehicle":
+      return "Navigace zásahovým vozidlem";
+    case "evacuation_walking":
+      return "Evakuační pěší navigace";
+    case "large_emergency_vehicle":
+      return "Navigace velkým vozidlem";
+    case "offroad_4x4":
+      return "Navigace 4x4";
+    case "walking":
+      return "Pěší navigace";
+    default:
+      return "Navigace";
+  }
+}
+
+function isWalkingNavigationProfile(profile: NavigationProfile): boolean {
+  return profile === "walking" || profile === "evacuation_walking";
+}
+
+function isVehicleRoutingProfile(profileId: string): boolean {
+  return profileId !== "walking" && profileId !== "evacuation_walking";
+}
+
+function routingAvoidForProfile(profileId: string, override?: string[]): string[] {
+  if (override) {
+    return override;
+  }
+  return isVehicleRoutingProfile(profileId) ? ["road_closure"] : [];
+}
+
+function routingProfileIdFromProfile(profile: Record<string, unknown>): string | undefined {
+  return (
+    stringProperty(profile.profileId) ??
+    stringProperty(profile.id) ??
+    stringProperty(profile.key) ??
+    stringProperty(profile.name)
+  );
+}
+
+function routingPointFromTarget(target: EmergencyRouteTarget): { label?: string; lat: number; lon: number } {
+  return {
+    ...(target.label ? { label: target.label } : {}),
+    lat: target.lat,
+    lon: target.lon
+  };
+}
+
+function primaryRoutingRoute(response: RoutingRouteResponse | null | undefined): Record<string, unknown> | undefined {
+  if (!response) {
+    return undefined;
+  }
+  return response.routes.find((route) => numberProperty(route.rank) === 1) ?? response.routes[0];
 }
 
 function formatNavigationDistance(value: number | undefined): string {
@@ -20996,20 +21576,146 @@ function scopedNavigationStorageKey(scope: string | undefined): string {
 function formatEmergencyRouteSummary(
   route: Record<string, unknown> | undefined,
   fallbackQuality: Record<string, unknown> | undefined,
-  label = "Zásahová trasa"
+  label = "Zásahová trasa",
+  response?: RoutingRouteResponse | null
 ): string {
   const distance = formatRouteDistance(numberProperty(route?.distanceM));
   const duration = formatDurationSeconds(numberProperty(route?.durationSeconds));
   const routeQuality = isRecord(route?.quality) ? route.quality : fallbackQuality;
-  const mode = stringProperty(routeQuality?.mode);
-  const confidence = numberProperty(routeQuality?.confidence);
-  const quality = [
-    mode ? (mode === "osm_graph" ? "OSM graf" : `orientační režim ${mode}`) : undefined,
+  const quality = formatRoutingQuality(routeQuality);
+  const traffic = formatRoutingTraffic(route, response);
+  const warnings = routingWarningSummary(route, response);
+  return `${label}: ${distance}, ETA ${duration}${quality ? ` · ${quality}` : ""}${traffic ? ` · ${traffic}` : ""}${warnings ? ` · ${warnings}` : ""}.`;
+}
+
+function formatGenericRoutingOverlaySummary(response: RoutingRouteResponse, label: string): string {
+  const primary = primaryRoutingRoute(response);
+  if (primary) {
+    return formatEmergencyRouteSummary(primary, response.quality, label, response);
+  }
+  const featureCount = response.features.length;
+  const quality = formatRoutingQuality(response.quality);
+  const warnings = routingWarningSummary(undefined, response);
+  return `${label}: ${featureCount} prvků${quality ? ` · ${quality}` : ""}${warnings ? ` · ${warnings}` : ""}.`;
+}
+
+function routingGenericResponseToRouteResponse(response: RoutingGenericResponse): RoutingRouteResponse {
+  return {
+    contractVersion: typeof response.contractVersion === "string" ? response.contractVersion : undefined,
+    features: Array.isArray(response.features) ? response.features : [],
+    generatedAt: typeof response.generatedAt === "string" ? response.generatedAt : undefined,
+    providerId: typeof response.providerId === "string" ? response.providerId : undefined,
+    quality: isRecord(response.quality) ? response.quality : undefined,
+    routes: Array.isArray(response.routes) ? response.routes.filter(isRecord) : [],
+    traffic: isRecord(response.traffic) ? response.traffic : undefined,
+    warnings: Array.isArray(response.warnings) ? response.warnings.flatMap((item) => stringProperty(item) ?? []) : []
+  };
+}
+
+function formatRoutingQuality(quality: Record<string, unknown> | undefined): string {
+  const mode = stringProperty(quality?.mode);
+  const engine = stringProperty(quality?.engine);
+  const confidence = numberProperty(quality?.confidence);
+  const items = [
+    mode === "direct_fallback"
+      ? "Orientační spojnice, ne navigace po komunikacích"
+      : mode === "engine_route" && engine === "valhalla"
+        ? "Valhalla"
+        : mode === "engine_route"
+          ? `engine route${engine ? ` ${engine}` : ""}`
+          : mode === "osm_graph"
+            ? "OSM graf"
+            : mode
+              ? `orientační režim ${mode}`
+              : undefined,
     confidence !== undefined ? `${Math.round(clamp(confidence, 0, 1) * 100)} % jistota` : undefined
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  return `${label}: ${distance}, ETA ${duration}${quality ? ` · ${quality}` : ""}.`;
+  ];
+  return items.filter(Boolean).join(" · ");
+}
+
+function formatRoutingTraffic(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined
+): string {
+  const trafficRecords = routingTrafficRecords(route, response);
+  if (trafficRecords.length === 0) {
+    return "";
+  }
+  const incidents = trafficRecords.flatMap(routingIncidents);
+  const incidentCount = Math.max(
+    incidents.length,
+    ...trafficRecords.flatMap((traffic) => numberProperty(traffic.incidentCount) ?? [])
+  );
+  const delayPenaltySeconds = Math.max(
+    0,
+    ...trafficRecords.flatMap((traffic) => numberProperty(traffic.delayPenaltySeconds) ?? [])
+  );
+  const sourceStatus = trafficRecords
+    .map((traffic) => stringProperty(traffic.sourceStatus) ?? stringProperty(traffic.status))
+    .find((status) => status && status !== "ok");
+  const hardExclusionApplied = trafficRecords.some((traffic) => trafficHardExclusionIncomplete(traffic)) ? false : true;
+  const caveats = Array.from(
+    new Set(
+      trafficRecords.flatMap((traffic) => [
+        ...recordStringArray(traffic.warnings),
+        ...recordStringArray(traffic.limitations)
+      ])
+    )
+  );
+  const parts = [
+    incidentCount > 0 ? `${incidentCount} dopravní incidenty` : undefined,
+    delayPenaltySeconds && delayPenaltySeconds > 0
+      ? `zdržení ${formatDurationSeconds(delayPenaltySeconds)}`
+      : undefined,
+    sourceStatus && sourceStatus !== "ok" ? `doprava ${sourceStatus}` : undefined,
+    hardExclusionApplied === false ? "uzavírky nemusely být plně vyloučeny" : undefined,
+    ...caveats.slice(0, 2)
+  ];
+  return parts.filter(Boolean).join(" · ");
+}
+
+function routingTrafficRecords(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined
+): Array<Record<string, unknown>> {
+  return [
+    isRecord(route?.traffic) ? route.traffic : null,
+    isRecord(response?.traffic) ? response.traffic : null
+  ].filter((traffic): traffic is Record<string, unknown> => traffic !== null);
+}
+
+function routingIncidents(traffic: Record<string, unknown>): Array<Record<string, unknown>> {
+  return Array.isArray(traffic.incidentsOnRoute) ? traffic.incidentsOnRoute.filter(isRecord) : [];
+}
+
+function trafficHardExclusionIncomplete(traffic: Record<string, unknown>): boolean {
+  const applied =
+    booleanProperty(traffic.hard_exclusion_applied) ??
+    booleanProperty(traffic.hardExclusionApplied) ??
+    booleanProperty(traffic.hardExclusionAppliedForAll);
+  if (applied === false) {
+    return true;
+  }
+  const candidates =
+    numberProperty(traffic.hardExclusionCandidateCount) ?? numberProperty(traffic.hard_exclusion_candidate_count);
+  const appliedCount =
+    numberProperty(traffic.hardExclusionAppliedCount) ?? numberProperty(traffic.hard_exclusion_applied_count);
+  return candidates !== undefined && appliedCount !== undefined && candidates > appliedCount;
+}
+
+function recordStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.flatMap((item) => stringProperty(item) ?? []) : [];
+}
+
+function routingWarningSummary(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined
+): string {
+  const warnings = [
+    ...(Array.isArray(route?.warnings) ? route.warnings.flatMap((item) => stringProperty(item) ?? []) : []),
+    ...(Array.isArray(response?.warnings) ? response.warnings : [])
+  ];
+  return Array.from(new Set(warnings)).slice(0, 3).join(" · ");
 }
 
 function formatRouteDistance(value: number | undefined): string {

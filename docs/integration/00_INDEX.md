@@ -14,3 +14,4 @@
 - [12 COP Notification Decision And Push](12_COP_NOTIFICATION_DECISION_AND_PUSH.md)
 - [13 Event Contract and AsyncAPI Direction](13_EVENT_CONTRACT_AND_ASYNCAPI.md)
 - [14 AI-COP/NIPS Federation Contract](14_AI_COP_NIPS_FEDERATION_CONTRACT.md)
+- [15 SIM Routing Follow-up](15_SIM_ROUTING_FOLLOWUP.md)

@@ -248,13 +248,21 @@ Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/m
 Emergency routing je samostatná server-side integrace přes SIM
 `/situation-data/api/v1/routing/*`. COP API ji vystavuje klientům jen přes
 `/api/v1/routing/*`, aby web ani Chat nevolaly SIM přímo. Pokud `COP_ROUTING_*`
-není nastaveno, adapter dědí `COP_SITUATION_DATA_BASE_URL`,
-`COP_SITUATION_DATA_ENABLED` a `COP_SITUATION_DATA_TIMEOUT_MS`. Mapa zobrazuje
+není nastaveno, adapter používá výchozí interní SIM URL
+`http://docker.home.cz:5020/situation-data/api/v1` a je zapnutý. Explicitní
+`COP_ROUTING_ENABLED=false` ho vypne; pokud není nastavené `COP_ROUTING_ENABLED`
+a je nastavené `COP_SITUATION_DATA_ENABLED`, routing dědí jeho stav. Adapter
+dědí také `COP_SITUATION_DATA_BASE_URL` a `COP_SITUATION_DATA_TIMEOUT_MS`, pokud
+nejsou nastavené routing-specifické hodnoty. Mapa zobrazuje
 vrácené `features[]` jako dočasný operační overlay, v detailu ukazuje
-`routes[].distanceM`, `durationSeconds`, `quality.mode`,
-`quality.confidence` a `warnings[]`. Pokud `quality.mode` není `osm_graph`,
-UI musí trasu označit jako orientační, protože COP nepočítá routovací graf a
-necertifikuje navigaci.
+`routes[].distanceM`, `durationSeconds`, `steps[]`, `quality.mode`,
+`quality.engine`, `quality.confidence`, route/top-level `traffic`,
+`traffic.incidentsOnRoute[]`, `sourceStatus`, `incidentCount`,
+`delayPenaltySeconds`, `hard_exclusion_applied` a `warnings[]`. Plnohodnotná
+serverová trasa je `quality.mode=engine_route` s `quality.engine=valhalla`.
+Pokud SIM vrátí `quality.mode=direct_fallback`, UI musí zobrazit varování
+„Orientační spojnice, ne navigace po komunikacích.“, protože COP nepočítá
+routovací graf a necertifikuje navigaci.
 
 ČHMÚ radar COP načítá pouze přes SIM. Aktuální raster overlay používá SIM clean
 URL z `providerProperties.raster.url`; frame katalog pro animaci jde přes COP

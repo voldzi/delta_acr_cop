@@ -4084,7 +4084,7 @@ paths:
       operationId: runEmergencyRoute
       description: Calculates a primary route between two points through the server-side SIM routing
         provider. COP renders returned GeoJSON features as a temporary operational overlay and
-        displays ETA, distance, quality and warnings.
+        displays ETA, distance, quality, traffic and warnings.
       requestBody:
         required: true
         content:
@@ -12883,7 +12883,16 @@ components:
           items:
             type: string
             maxLength: 80
-          description: Risk or restriction classes requested from SIM, for example flood or road_closure.
+          description: Risk or restriction classes requested from SIM, for example road_closure. Vehicle
+            profiles default to road_closure in COP clients.
+        alternatives:
+          type: integer
+          minimum: 0
+          maximum: 5
+          description: Requested number of alternative routes for SIM alternatives calls.
+        includeSteps:
+          type: boolean
+          description: Whether SIM should include maneuver/step instructions when available.
     RoutingRouteFeature:
       type: object
       required:
@@ -12922,6 +12931,10 @@ components:
         durationSeconds:
           type: number
           minimum: 0
+        rank:
+          type: integer
+          minimum: 1
+          description: SIM route rank; rank 1 is the primary route.
         elevationGainM:
           type: number
         steps:
@@ -12935,7 +12948,12 @@ components:
           properties:
             mode:
               type: string
-              description: SIM computation mode. osm_graph means graph-based route; other modes are orientational.
+              description: SIM computation mode. engine_route with engine valhalla means a full routing-engine
+                route; direct_fallback means an orientational straight connector, not road/path
+                navigation.
+            engine:
+              type: string
+              description: Routing engine used by SIM, for example valhalla.
             confidence:
               type: number
               minimum: 0
@@ -12944,6 +12962,11 @@ components:
           type: array
           items:
             type: string
+        traffic:
+          type: object
+          additionalProperties: true
+          description: SIM traffic context for this route, including incidentsOnRoute, sourceStatus,
+            incidentCount, delayPenaltySeconds and hard_exclusion_applied when available.
     RoutingRouteResponse:
       type: object
       required:
@@ -12961,6 +12984,10 @@ components:
         quality:
           type: object
           additionalProperties: true
+        traffic:
+          type: object
+          additionalProperties: true
+          description: Top-level SIM traffic context for all returned routes.
         features:
           type: array
           items:

@@ -3,7 +3,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { encodeChatCenterLocation, encodeChatSelect, encodeChatSummary } from "@cop/messaging/bridge";
+import {
+  encodeChatCenterLocation,
+  encodeChatSelect,
+  encodeChatSummary,
+  encodeChatVoiceCall,
+  encodeChatVoiceCallCommand
+} from "@cop/messaging/bridge";
 import {
   App,
   buildPriorityAlertSummary,
@@ -11,8 +17,10 @@ import {
   buildStableSituationQueryBounds,
   firstUnreadChatSummaryRoom,
   formatWeatherStationAttribution,
+  hostIncomingChatVoiceCall,
   hostUnreadCountFromChatSummary,
   hostUsableChatSummary,
+  hostVisibleChatVoiceCall,
   mapBoundsContainedBy
 } from "./main";
 import { writeCopOfflineSnapshot } from "./pwa-offline";
@@ -34,6 +42,9 @@ vi.mock("./CopMap", async () => {
       initialView,
       mapInteractionSuspended,
       objects,
+      onRequestIsochroneFromPoint,
+      onRequestNearestAccessToPoint,
+      onRequestRouteToPoint,
       onRequestUserLocation,
       onSelectObject,
       onStartNavigationToPoint,
@@ -54,9 +65,20 @@ vi.mock("./CopMap", async () => {
       initialView?: { center: [number, number]; zoom?: number };
       mapInteractionSuspended?: boolean;
       objects: Array<{ objectId: string }>;
+      onRequestIsochroneFromPoint?: (target: { label?: string; lat: number; lon: number }) => void;
+      onRequestNearestAccessToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
+      onRequestRouteToPoint?: (
+        target: { label?: string; lat: number; lon: number },
+        profile?:
+          "car" | "emergency_vehicle" | "evacuation_walking" | "large_emergency_vehicle" | "offroad_4x4" | "walking"
+      ) => void;
       onRequestUserLocation?: () => void;
       onSelectObject?: (object: { objectId: string }) => void;
-      onStartNavigationToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
+      onStartNavigationToPoint?: (
+        target: { label?: string; lat: number; lon: number },
+        profile?:
+          "car" | "emergency_vehicle" | "evacuation_walking" | "large_emergency_vehicle" | "offroad_4x4" | "walking"
+      ) => void;
       onUserLocationFollowChange?: (value: boolean) => void;
       onUserMapInteraction?: () => void;
       onViewChange?: (view: { bearing?: number; center: [number, number]; pitch?: number; zoom?: number }) => void;
@@ -112,6 +134,60 @@ vi.mock("./CopMap", async () => {
                       type: "button"
                     },
                     "Navigovat z mapy"
+                  )
+                : null,
+              onRequestRouteToPoint
+                ? React.createElement(
+                    "button",
+                    {
+                      "data-testid": "map-request-route-walking",
+                      key: "map-request-route-walking",
+                      onClick: () =>
+                        onRequestRouteToPoint(
+                          {
+                            label: "GROUND_UNIT-1",
+                            lat: 50.15077,
+                            lon: 17.37303
+                          },
+                          "walking"
+                        ),
+                      type: "button"
+                    },
+                    "Trasa pěšky"
+                  )
+                : null,
+              onRequestNearestAccessToPoint
+                ? React.createElement(
+                    "button",
+                    {
+                      "data-testid": "map-request-nearest-access",
+                      key: "map-request-nearest-access",
+                      onClick: () =>
+                        onRequestNearestAccessToPoint({
+                          label: "GROUND_UNIT-1",
+                          lat: 50.15077,
+                          lon: 17.37303
+                        }),
+                      type: "button"
+                    },
+                    "Nejbližší přístup"
+                  )
+                : null,
+              onRequestIsochroneFromPoint
+                ? React.createElement(
+                    "button",
+                    {
+                      "data-testid": "map-request-isochrone",
+                      key: "map-request-isochrone",
+                      onClick: () =>
+                        onRequestIsochroneFromPoint({
+                          label: "GROUND_UNIT-1",
+                          lat: 50.15077,
+                          lon: 17.37303
+                        }),
+                      type: "button"
+                    },
+                    "Dosah 15 min"
                   )
                 : null,
               onRequestUserLocation
@@ -232,6 +308,25 @@ describe("COP web dashboard", () => {
     expect(hostUnreadCountFromChatSummary(hostUsableChatSummary(staleSummary, now))).toBe(0);
     expect(hostUsableChatSummary(syncingSummary, now)).toBeNull();
     expect(firstUnreadChatSummaryRoom(staleSummary)).toBeNull();
+  });
+
+  it("keeps only fresh active chat voice-call snapshots visible to the host", () => {
+    const now = Date.parse("2026-07-07T12:00:00.000Z");
+    const ringingCall = encodeChatVoiceCall({
+      callId: "call-1",
+      direction: "incoming",
+      phase: "ringing",
+      roomId: "!ops",
+      title: "Ops"
+    });
+    const freshCall = { ...ringingCall, at: now };
+    const staleCall = { ...ringingCall, at: now - 6 * 60 * 1000 };
+    const endedCall = { ...ringingCall, at: now, phase: "ended" as const };
+
+    expect(hostVisibleChatVoiceCall(freshCall, now)).toEqual(freshCall);
+    expect(hostIncomingChatVoiceCall(freshCall)).toEqual(freshCall);
+    expect(hostVisibleChatVoiceCall(staleCall, now)).toBeNull();
+    expect(hostVisibleChatVoiceCall(endedCall, now)).toBeNull();
   });
 
   it("formats structured weather station attribution from SIM without rendering objects", () => {
@@ -1364,6 +1459,96 @@ describe("COP web dashboard", () => {
     expect(reopenedFrame?.closest("aside")?.getAttribute("aria-hidden")).toBe("false");
   });
 
+  it("shows an incoming call indicator outside chat and opens the call room", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/map/query")) {
+        return jsonResponse(emptyMapQueryResponse(["public.weather.current"]));
+      }
+      if (url.includes("/api/v1/sources/health")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/sources")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/tracks?includeSynthetic=true")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/track-history?")) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({ items: [], init });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
+    await waitFor(() => expect(document.querySelector("iframe.embedded-chat-frame")).toBeTruthy());
+
+    const firstFrame = document.querySelector("iframe.embedded-chat-frame");
+    expect(firstFrame).toBeTruthy();
+    if (!firstFrame) {
+      throw new Error("Embedded chat iframe was not mounted.");
+    }
+    expect(firstFrame.closest("aside")?.getAttribute("aria-hidden")).toBe("true");
+    const postMessage = vi.fn();
+    Object.defineProperty(firstFrame, "contentWindow", { configurable: true, value: { postMessage } });
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: encodeChatVoiceCall({
+            callId: "call-1",
+            direction: "incoming",
+            phase: "ringing",
+            roomId: "!ops:msg.zeleznalady.cz",
+            title: "COP Operator"
+          }),
+          origin: window.location.origin
+        })
+      );
+    });
+
+    expect(await screen.findByText("Příchozí hlasový hovor")).toBeTruthy();
+    const communicationButton = document.querySelector(
+      'button.workspace-tab[title="Příchozí hlasový hovor"]'
+    ) as HTMLButtonElement | null;
+    expect(communicationButton).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Přijmout"));
+    expect(firstFrame.closest("aside")?.getAttribute("aria-hidden")).toBe("false");
+    await waitFor(() =>
+      expect(postMessage).toHaveBeenCalledWith(encodeChatSelect("!ops:msg.zeleznalady.cz"), window.location.origin)
+    );
+    expect(postMessage).toHaveBeenCalledWith(
+      encodeChatVoiceCallCommand({
+        action: "answer",
+        callId: "call-1",
+        roomId: "!ops:msg.zeleznalady.cz"
+      }),
+      window.location.origin
+    );
+  });
+
   it("requests an emergency route when chat sends a route map action", async () => {
     const getCurrentPosition = vi.fn((success: PositionCallback) => {
       success({
@@ -1405,7 +1590,7 @@ describe("COP web dashboard", () => {
       if (url.includes("/api/v1/map/catalog")) {
         return jsonResponse(testMapCatalogResponse());
       }
-      if (url.includes("/api/v1/routing/route")) {
+      if (url.includes("/api/v1/routing/alternatives")) {
         return jsonResponse({
           contractVersion: "sim-emergency-routing-v1",
           features: [
@@ -1423,16 +1608,28 @@ describe("COP web dashboard", () => {
           ],
           generatedAt: "2026-05-19T08:00:00Z",
           providerId: "sim.situation-data.routing",
-          quality: { confidence: 0.88, mode: "osm_graph" },
+          quality: { confidence: 0.88, engine: "valhalla", mode: "engine_route" },
           routes: [
             {
               distanceM: 2500,
               durationSeconds: 420,
-              quality: { confidence: 0.88, mode: "osm_graph" },
+              quality: { confidence: 0.88, engine: "valhalla", mode: "engine_route" },
+              rank: 1,
               routeId: "primary",
+              traffic: {
+                delayPenaltySeconds: 90,
+                incidentCount: 1,
+                incidentsOnRoute: [{ id: "closure-1", location: { lat: 50.14, lon: 17.37 }, type: "closure" }],
+                sourceStatus: "ok"
+              },
               warnings: []
             }
           ],
+          traffic: {
+            incidentCount: 1,
+            limitations: ["Hard exclusion uses Valhalla exclude_locations only for closure-like candidates."],
+            sourceStatus: "ok"
+          },
           warnings: []
         });
       }
@@ -1499,13 +1696,15 @@ describe("COP web dashboard", () => {
     await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1"));
     await waitFor(() => expect(getCurrentPosition).toHaveBeenCalled());
     await waitFor(() =>
-      expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/routing/route"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/routing/alternatives"))).toBe(true)
     );
-    const routeCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/v1/routing/route"));
+    const routeCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/v1/routing/alternatives"));
     const routeBody = JSON.parse(String((routeCall?.[1] as RequestInit | undefined)?.body));
     expect(routeBody).toMatchObject({
-      avoid: ["flood", "road_closure"],
+      alternatives: 2,
+      avoid: ["road_closure"],
       from: { lat: 50.12952, lon: 17.36285 },
+      includeSteps: true,
       profileId: "emergency_vehicle",
       to: { label: "Mnichov - Černá Opava", lat: 50.15077, lon: 17.37303 }
     });
@@ -1516,6 +1715,9 @@ describe("COP web dashboard", () => {
     expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-features")).toBe("1");
     expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-message")).toContain(
       "Zásahová trasa: 2.5 km"
+    );
+    expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-message")).toContain(
+      "Hard exclusion uses Valhalla exclude_locations"
     );
   });
 
@@ -1561,7 +1763,7 @@ describe("COP web dashboard", () => {
       if (url.includes("/api/v1/map/catalog")) {
         return jsonResponse(testMapCatalogResponse());
       }
-      if (url.includes("/api/v1/routing/route")) {
+      if (url.includes("/api/v1/routing/alternatives")) {
         return jsonResponse({
           contractVersion: "sim-emergency-routing-v1",
           features: [
@@ -1579,13 +1781,14 @@ describe("COP web dashboard", () => {
           ],
           generatedAt: "2026-05-19T08:00:00Z",
           providerId: "sim.situation-data.routing",
-          quality: { confidence: 0.91, mode: "osm_graph" },
+          quality: { confidence: 0.91, engine: "valhalla", mode: "engine_route" },
           routes: [
             {
               distanceM: 2500,
               durationSeconds: 420,
               steps: [{ instruction: "Pokračujte po silnici k cíli." }],
-              quality: { confidence: 0.91, mode: "osm_graph" },
+              quality: { confidence: 0.91, engine: "valhalla", mode: "engine_route" },
+              rank: 1,
               routeId: "primary",
               warnings: []
             }
@@ -1626,15 +1829,18 @@ describe("COP web dashboard", () => {
 
     render(<App />);
     fireEvent.click(await screen.findByTestId("map-start-navigation"));
-    fireEvent.click(await screen.findByRole("button", { name: /Autem/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Auto/ }));
 
     await waitFor(() =>
-      expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/routing/route"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/routing/alternatives"))).toBe(true)
     );
-    const routeCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/v1/routing/route"));
+    const routeCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/v1/routing/alternatives"));
     const routeBody = JSON.parse(String((routeCall?.[1] as RequestInit | undefined)?.body));
     expect(routeBody).toMatchObject({
+      alternatives: 2,
+      avoid: ["road_closure"],
       from: { lat: 50.12952, lon: 17.36285 },
+      includeSteps: true,
       profileId: "car",
       to: { label: "GROUND_UNIT-1", lat: 50.15077, lon: 17.37303 }
     });
@@ -1645,14 +1851,177 @@ describe("COP web dashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: /Přepočítat/ }));
 
     await waitFor(() =>
-      expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/v1/routing/route"))).toHaveLength(2)
+      expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/v1/routing/alternatives"))).toHaveLength(
+        2
+      )
     );
-    const rerouteCall = fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/v1/routing/route"))[1];
+    const rerouteCall = fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/v1/routing/alternatives"))[1];
     const rerouteBody = JSON.parse(String((rerouteCall?.[1] as RequestInit | undefined)?.body));
     expect(rerouteBody).toMatchObject({
+      alternatives: 2,
+      avoid: ["road_closure"],
       from: { lat: 50.12952, lon: 17.36285 },
+      includeSteps: true,
       profileId: "car",
       to: { label: "GROUND_UNIT-1", lat: 50.15077, lon: 17.37303 }
+    });
+  });
+
+  it("runs walking route, nearest-access and isochrone actions from a map point", async () => {
+    installMatchMedia(false);
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: {
+          accuracy: 11,
+          altitude: null,
+          altitudeAccuracy: null,
+          heading: null,
+          latitude: 50.12952,
+          longitude: 17.36285,
+          speed: null
+        },
+        timestamp: Date.parse("2026-05-19T08:00:00Z")
+      } as GeolocationPosition);
+    });
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition }
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: { authMode: "lab", displayName: "Lab operator", subjectId: "lab", username: "lab" },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/routing/profiles")) {
+        return jsonResponse({
+          profiles: [
+            { profileId: "car" },
+            { profileId: "emergency_vehicle" },
+            { profileId: "large_emergency_vehicle" },
+            { profileId: "offroad_4x4" },
+            { profileId: "walking" },
+            { profileId: "evacuation_walking" }
+          ],
+          warnings: []
+        });
+      }
+      if (url.includes("/api/v1/routing/alternatives")) {
+        return jsonResponse({
+          features: [
+            {
+              geometry: {
+                coordinates: [
+                  [17.36285, 50.12952],
+                  [17.37303, 50.15077]
+                ],
+                type: "LineString"
+              },
+              properties: { label: "Pěší trasa", rank: 1, role: "primary", routeId: "walk-primary" },
+              type: "Feature"
+            }
+          ],
+          quality: { confidence: 0.93, engine: "valhalla", mode: "engine_route" },
+          routes: [{ distanceM: 1800, durationSeconds: 1100, rank: 1, routeId: "walk-primary" }],
+          warnings: []
+        });
+      }
+      if (url.includes("/api/v1/routing/nearest-access")) {
+        return jsonResponse({
+          features: [
+            {
+              geometry: { coordinates: [17.371, 50.149], type: "Point" },
+              properties: { label: "Přístup", role: "access" },
+              type: "Feature"
+            }
+          ],
+          warnings: []
+        });
+      }
+      if (url.includes("/api/v1/routing/isochrone")) {
+        return jsonResponse({
+          features: [
+            {
+              geometry: {
+                coordinates: [
+                  [
+                    [17.36, 50.14],
+                    [17.38, 50.14],
+                    [17.38, 50.16],
+                    [17.36, 50.14]
+                  ]
+                ],
+                type: "Polygon"
+              },
+              properties: { label: "15 min", role: "isochrone" },
+              type: "Feature"
+            }
+          ],
+          warnings: []
+        });
+      }
+      if (url.includes("/api/v1/map/query")) {
+        return jsonResponse(emptyMapQueryResponse(["public.weather.current"]));
+      }
+      if (url.includes("/api/v1/sources/health")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/sources")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/tracks?includeSynthetic=true")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/api/v1/cop/track-history?")) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({ items: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("map-request-route-walking"));
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/routing/alternatives"))).toBe(true)
+    );
+    const walkingCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/v1/routing/alternatives"));
+    expect(JSON.parse(String((walkingCall?.[1] as RequestInit | undefined)?.body))).toMatchObject({
+      alternatives: 2,
+      avoid: [],
+      includeSteps: true,
+      profileId: "walking"
+    });
+
+    fireEvent.click(screen.getByTestId("map-request-nearest-access"));
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/routing/nearest-access"))).toBe(true)
+    );
+    const nearestCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/v1/routing/nearest-access"));
+    expect(JSON.parse(String((nearestCall?.[1] as RequestInit | undefined)?.body))).toMatchObject({
+      point: { label: "GROUND_UNIT-1", lat: 50.15077, lon: 17.37303 },
+      profileId: "offroad_4x4"
+    });
+
+    fireEvent.click(screen.getByTestId("map-request-isochrone"));
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/routing/isochrone"))).toBe(true)
+    );
+    const isochroneCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/v1/routing/isochrone"));
+    expect(JSON.parse(String((isochroneCall?.[1] as RequestInit | undefined)?.body))).toMatchObject({
+      profileId: "walking",
+      rangeSeconds: 900
     });
   });
 
@@ -1697,7 +2066,7 @@ describe("COP web dashboard", () => {
       if (url.includes("/api/v1/map/catalog")) {
         return jsonResponse(testMapCatalogResponse());
       }
-      if (url.includes("/api/v1/routing/route")) {
+      if (url.includes("/api/v1/routing/alternatives")) {
         return jsonResponse({
           contractVersion: "sim-emergency-routing-v1",
           features: [
@@ -1715,12 +2084,13 @@ describe("COP web dashboard", () => {
           ],
           generatedAt: "2026-05-19T08:00:00Z",
           providerId: "sim.situation-data.routing",
-          quality: { confidence: 0.88, mode: "osm_graph" },
+          quality: { confidence: 0.88, engine: "valhalla", mode: "engine_route" },
           routes: [
             {
               distanceM: 2500,
               durationSeconds: 420,
-              quality: { confidence: 0.88, mode: "osm_graph" },
+              quality: { confidence: 0.88, engine: "valhalla", mode: "engine_route" },
+              rank: 1,
               routeId: "primary",
               warnings: []
             }
@@ -1791,7 +2161,9 @@ describe("COP web dashboard", () => {
     expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-status")).toBe("idle");
     expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-features")).toBe("0");
     expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-message")).toBe("");
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/v1/routing/route"))).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/v1/routing/alternatives"))).toHaveLength(
+      1
+    );
   });
 
   it("initializes the map from standalone chat COP focus URL parameters", async () => {

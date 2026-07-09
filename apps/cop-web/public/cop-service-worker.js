@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260707-9";
+const COP_SW_VERSION = "cop-pwa-offline-20260709-1";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -90,13 +90,23 @@ self.addEventListener("push", (event) => {
   const payload = parsePushPayload(event.data);
   const title = typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : "CSM";
   const body = typeof payload.body === "string" ? payload.body : undefined;
-  const deepLink = normalizeNotificationUrl(payload.deepLink ?? payload.url ?? notificationPayloadUrl(payload));
+  const deepLink = notificationPayloadDeepLink(payload);
   const severity = notificationPayloadSeverity(payload);
   const tag = notificationPayloadTag(payload);
   const badgeCount = notificationPayloadBadgeCount(payload);
 
   event.waitUntil(
     (async () => {
+      if (isVoiceCallEndedPayload(payload)) {
+        await closeNotificationsByTag(tag);
+        await notifyClients({
+          callId: notificationPayloadCallId(payload),
+          roomId: notificationPayloadRoomId(payload),
+          tag,
+          type: "cop:pwa:voice-call-ended"
+        });
+        return;
+      }
       if (badgeCount !== undefined) {
         await updateAppBadge(badgeCount);
       }
@@ -104,21 +114,24 @@ self.addEventListener("push", (event) => {
         return;
       }
       await self.registration.showNotification(title, {
-        actions: notificationActionsForUrl(deepLink),
+        actions: notificationActionsForPayload(payload, deepLink),
         badge: "/icons/favicon-32.png",
         body,
         data: {
           badgeCount,
+          callId: notificationPayloadCallId(payload),
           receivedAt: Date.now(),
+          roomId: notificationPayloadRoomId(payload),
           severity,
           type: notificationPayloadType(payload),
           url: deepLink
         },
         icon: "/icons/cop-icon-192.png",
-        requireInteraction: ["critical", "high"].includes(severity),
-        renotify: false,
+        requireInteraction: notificationRequiresInteraction(payload, severity),
+        renotify: notificationRenotify(payload),
         tag,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        vibrate: notificationVibrationPattern(payload)
       });
     })()
   );
@@ -596,10 +609,10 @@ function normalizeNotificationUrl(value) {
     return `/?reportId=${encodeURIComponent(trimmed.slice("csm://map/report/".length))}`;
   }
   if (trimmed.startsWith("csm://chat/room/")) {
-    return `/chat/${encodeURIComponent(trimmed.slice("csm://chat/room/".length))}`;
+    return `/chat/${encodeURIComponent(decodeDeepLinkSegment(trimmed.slice("csm://chat/room/".length)))}`;
   }
   if (trimmed.startsWith("csm://chat/conversation/")) {
-    return `/chat/${encodeURIComponent(trimmed.slice("csm://chat/conversation/".length))}`;
+    return `/chat/${encodeURIComponent(decodeDeepLinkSegment(trimmed.slice("csm://chat/conversation/".length)))}`;
   }
   if (trimmed.startsWith("/")) {
     return trimmed;
@@ -613,6 +626,21 @@ function normalizeNotificationUrl(value) {
     // Unknown deep links open the app shell instead of leaking arbitrary URLs.
   }
   return "/";
+}
+
+function decodeDeepLinkSegment(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function notificationPayloadDeepLink(payload) {
+  return normalizeNotificationUrl(
+    firstString(payload?.deepLink, payload?.url, payload?.data?.deepLink, payload?.data?.url) ??
+      notificationPayloadUrl(payload)
+  );
 }
 
 function notificationPayloadUrl(payload) {
@@ -640,13 +668,59 @@ function notificationPayloadUrl(payload) {
   return undefined;
 }
 
-function notificationActionsForUrl(url) {
+function notificationActionsForPayload(payload, url) {
+  if (isVoiceCallIncomingPayload(payload)) {
+    return [
+      { action: "open-call", title: "Přijmout" },
+      { action: "dismiss", title: "Zavřít" }
+    ];
+  }
   const actions = [{ action: "open", title: "Otevřít" }];
   if (url && isChatRequestPath(new URL(url, self.location.origin).pathname)) {
     actions[0] = { action: "open", title: "Otevřít chat" };
   }
   actions.push({ action: "dismiss", title: "Zavřít" });
   return actions;
+}
+
+function notificationRequiresInteraction(payload, severity) {
+  if (typeof payload?.requireInteraction === "boolean") {
+    return payload.requireInteraction;
+  }
+  if (typeof payload?.data?.requireInteraction === "boolean") {
+    return payload.data.requireInteraction;
+  }
+  return isVoiceCallIncomingPayload(payload) || ["critical", "high"].includes(severity);
+}
+
+function notificationRenotify(payload) {
+  if (typeof payload?.renotify === "boolean") {
+    return payload.renotify;
+  }
+  if (typeof payload?.data?.renotify === "boolean") {
+    return payload.data.renotify;
+  }
+  return isVoiceCallIncomingPayload(payload);
+}
+
+function notificationVibrationPattern(payload) {
+  return isVoiceCallIncomingPayload(payload) ? [280, 90, 280, 180, 280] : undefined;
+}
+
+function isVoiceCallIncomingPayload(payload) {
+  return notificationPayloadType(payload) === "chat.voice_call.incoming";
+}
+
+function isVoiceCallEndedPayload(payload) {
+  return notificationPayloadType(payload) === "chat.voice_call.ended";
+}
+
+function notificationPayloadCallId(payload) {
+  return firstString(payload?.callId, payload?.call_id, payload?.data?.callId, payload?.data?.call_id);
+}
+
+function notificationPayloadRoomId(payload) {
+  return firstString(payload?.roomId, payload?.room_id, payload?.data?.roomId, payload?.data?.room_id);
 }
 
 function notificationPayloadSeverity(payload) {
@@ -736,6 +810,11 @@ async function updateAppBadge(count) {
 function notificationPayloadTag(payload) {
   const explicitTag = firstString(payload?.tag, payload?.data?.tag);
   const type = notificationPayloadType(payload);
+  const callId = notificationPayloadCallId(payload);
+  const callRoomId = notificationPayloadRoomId(payload);
+  if (!explicitTag && callId && (type === "chat.voice_call.incoming" || type === "chat.voice_call.ended")) {
+    return `cop-call:${safeNotificationTagPart(callRoomId ?? "room")}:${safeNotificationTagPart(callId)}`;
+  }
   const eventId = firstString(
     payload?.eventId,
     payload?.event_id,
@@ -791,6 +870,20 @@ async function shouldSuppressDuplicateNotification(tag) {
     }
   }
   return false;
+}
+
+async function closeNotificationsByTag(tag) {
+  if (!tag || typeof self.registration.getNotifications !== "function") {
+    return;
+  }
+  try {
+    const notifications = await self.registration.getNotifications({ tag });
+    for (const notification of notifications) {
+      notification.close();
+    }
+  } catch {
+    // Closing old call notifications is best effort.
+  }
 }
 
 function pruneRecentNotificationTags(now = Date.now()) {

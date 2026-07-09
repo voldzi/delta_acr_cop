@@ -106,7 +106,7 @@ import type {
   ServerUserProfile,
   UserDirectoryEntry
 } from "@cop/core/cop-data";
-import { publishChatSummarySnapshot, rotateMatrixDeviceId } from "@cop/messaging/runtime";
+import { publishChatSummarySnapshot, publishChatVoiceCallSnapshot, rotateMatrixDeviceId } from "@cop/messaging/runtime";
 import {
   enableWebPushNotifications,
   fetchWebPushConfig,
@@ -129,8 +129,10 @@ import type {
 import {
   decodeChatCurrentLocation,
   decodeChatShareTransit,
+  decodeChatVoiceCallCommand,
   decodeCopMapFocusSearch,
   encodeChatLiveLocations,
+  type ChatVoiceCallMessage,
   type ChatSummaryMessage,
   type ChatSummarySyncState,
   type ChatSummaryUnreadRoom,
@@ -285,6 +287,8 @@ export interface ChatListItem {
   type: "direct" | "group" | "room";
   unreadCount: number;
 }
+
+type ChatVoiceCallBridgeSnapshot = Omit<ChatVoiceCallMessage, "at" | "type">;
 
 interface DemoConversationMetadata {
   media: DemoConversationMedia[];
@@ -643,6 +647,7 @@ export function ChatApp() {
   const notifiedEventIdsRef = React.useRef<Set<string>>(new Set());
   const notificationPrimedRoomIdsRef = React.useRef<Set<string>>(new Set());
   const notificationRoomWatermarksRef = React.useRef<Map<string, number>>(new Map());
+  const lastVoiceCallBridgeSnapshotRef = React.useRef<ChatVoiceCallBridgeSnapshot | null>(null);
   const authSessionRef = React.useRef(authSession);
   const selectedRoomIdRef = React.useRef<string | null>(null);
   const timelineCacheRef = React.useRef<Map<string, MatrixTimelineMessage[]>>(new Map());
@@ -892,6 +897,10 @@ export function ChatApp() {
   const voiceCallChat = voiceCall ? (chatItems.find((item) => item.roomId === voiceCall.roomId) ?? null) : null;
   const activeVoiceCall =
     voiceCall && activeChat?.roomId === voiceCall.roomId && voiceCall.phase !== "ended" ? voiceCall : null;
+  const voiceCallTitle =
+    voiceCall && voiceCall.roomId
+      ? (voiceCallChat?.title ?? rooms.find((room) => room.roomId === voiceCall.roomId)?.name)
+      : undefined;
   const canStartVoiceCall = Boolean(
     activeChat?.type === "direct" &&
     activeChat.roomId &&
@@ -910,6 +919,26 @@ export function ChatApp() {
   React.useEffect(() => {
     updateApplicationBadge(totalUnreadCount);
   }, [totalUnreadCount]);
+  React.useEffect(() => {
+    if (voiceCall?.callId && voiceCall.roomId) {
+      const snapshot: ChatVoiceCallBridgeSnapshot = {
+        callId: voiceCall.callId,
+        direction: voiceCall.direction,
+        phase: voiceCall.phase,
+        roomId: voiceCall.roomId,
+        ...(voiceCallTitle ? { title: voiceCallTitle } : {})
+      };
+      lastVoiceCallBridgeSnapshotRef.current =
+        voiceCall.phase === "ended" || voiceCall.phase === "failed" ? null : snapshot;
+      publishChatVoiceCallSnapshot(snapshot);
+      return;
+    }
+    const previous = lastVoiceCallBridgeSnapshotRef.current;
+    if (previous) {
+      publishChatVoiceCallSnapshot({ ...previous, phase: "ended" });
+      lastVoiceCallBridgeSnapshotRef.current = null;
+    }
+  }, [voiceCall?.callId, voiceCall?.direction, voiceCall?.phase, voiceCall?.roomId, voiceCallTitle]);
   const activeMessageRetentionSeconds =
     selectedRoomId && Object.prototype.hasOwnProperty.call(retentionOverrideByRoom, selectedRoomId)
       ? (retentionOverrideByRoom[selectedRoomId] ?? null)
@@ -1649,6 +1678,20 @@ export function ChatApp() {
         });
         return;
       }
+      const voiceCallCommand = decodeChatVoiceCallCommand(event.data);
+      if (voiceCallCommand) {
+        resetRouteOpenAttempt();
+        void applyAndOpenRouteSelection(voiceCallCommand.roomId);
+        const currentCall = voiceCall?.callId === voiceCallCommand.callId ? voiceCall : matrixSession?.getVoiceCall();
+        if (currentCall?.callId === voiceCallCommand.callId) {
+          if (voiceCallCommand.action === "answer") {
+            void answerVoiceCall(currentCall);
+          } else if (voiceCallCommand.action === "reject") {
+            void rejectVoiceCall(currentCall);
+          }
+        }
+        return;
+      }
       const selection = embeddedChatSelectionFromMessage(event.data);
       if (!selection) {
         return;
@@ -1658,7 +1701,7 @@ export function ChatApp() {
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [authenticated, chatItems, chatReady, matrixSession, preparingChatId, selectedRoomId]);
+  }, [authenticated, chatItems, chatReady, matrixSession, preparingChatId, selectedRoomId, voiceCall]);
 
   React.useEffect(() => {
     if (!embedded || window.parent === window) {
@@ -3525,10 +3568,9 @@ export function ChatApp() {
     setError(null);
     setNotice(null);
     try {
-      await requestVoiceCallMicrophoneAccess();
       await matrixSession.startVoiceCall(roomId);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Hovor se nepodařilo zahájit.");
+      setError(userFacingVoiceCallError(caught, "Hovor se nepodařilo zahájit."));
     }
   }
 
@@ -3540,10 +3582,9 @@ export function ChatApp() {
     }
     setError(null);
     try {
-      await requestVoiceCallMicrophoneAccess();
       await session.answerVoiceCall(call.callId);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Hovor se nepodařilo přijmout.");
+      setError(userFacingVoiceCallError(caught, "Hovor se nepodařilo přijmout."));
     }
   }
 
@@ -6495,29 +6536,33 @@ function voiceCallStatusText(call: MatrixVoiceCallSnapshot, now: number): string
   return call.direction === "incoming" ? "Připravuji hovor..." : "Spojuji hovor...";
 }
 
-async function requestVoiceCallMicrophoneAccess(): Promise<void> {
-  const mediaDevices = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
-  if (!mediaDevices?.getUserMedia) {
-    throw new Error("Tento prohlížeč neumí zpřístupnit mikrofon pro hlasové hovory.");
+function userFacingVoiceCallError(error: unknown, fallback: string): string {
+  if (isVoiceCallMicrophoneAccessError(error)) {
+    return voiceCallMicrophoneAccessErrorMessage(error);
   }
+  return error instanceof Error && error.message ? error.message : fallback;
+}
 
-  let stream: MediaStream | null = null;
-  try {
-    stream = await mediaDevices.getUserMedia({ audio: true, video: false });
-  } catch (caught) {
-    throw new Error(voiceCallMicrophoneAccessErrorMessage(caught));
-  } finally {
-    stream?.getTracks().forEach((track) => track.stop());
-  }
+function isVoiceCallMicrophoneAccessError(error: unknown): boolean {
+  const isDomException = typeof DOMException !== "undefined" && error instanceof DOMException;
+  const name = isDomException ? error.name : error instanceof Error ? error.name : "";
+  const message = error instanceof Error ? error.message : "";
+  return (
+    name === "NotAllowedError" ||
+    name === "SecurityError" ||
+    name === "NotFoundError" ||
+    name === "DevicesNotFoundError" ||
+    name === "NotReadableError" ||
+    name === "TrackStartError" ||
+    name === "AbortError" ||
+    /denied|permission|not allowed|no_user_media|user media|microphone|mikrofon/iu.test(message)
+  );
 }
 
 function voiceCallMicrophoneAccessErrorMessage(error: unknown): string {
   const isDomException = typeof DOMException !== "undefined" && error instanceof DOMException;
   const name = isDomException ? error.name : error instanceof Error ? error.name : "";
   const message = error instanceof Error ? error.message : "";
-  if (name === "NotAllowedError" || name === "SecurityError" || /denied|permission|not allowed/iu.test(message)) {
-    return "Mikrofon je pro COP zakázaný. V iOS povolte mikrofon pro Safari nebo pro web cop.zeleznalady.cz, potom PWA úplně zavřete a otevřete znovu.";
-  }
   if (name === "NotFoundError" || name === "DevicesNotFoundError") {
     return "iPhone nehlásí dostupný mikrofon. Zkontrolujte, že mikrofon není omezený systémem nebo profilem zařízení.";
   }
@@ -6526,6 +6571,13 @@ function voiceCallMicrophoneAccessErrorMessage(error: unknown): string {
   }
   if (name === "AbortError") {
     return "Žádost o mikrofon byla přerušena. Klepněte na Přijmout nebo Volat znovu.";
+  }
+  if (
+    name === "NotAllowedError" ||
+    name === "SecurityError" ||
+    /denied|permission|not allowed|no_user_media|user media|microphone|mikrofon/iu.test(message)
+  ) {
+    return "Mikrofon je pro COP zakázaný. V iOS povolte mikrofon pro Safari nebo pro web cop.zeleznalady.cz, potom PWA úplně zavřete a otevřete znovu.";
   }
   return "Mikrofon není dostupný nebo nemá povolený přístup.";
 }

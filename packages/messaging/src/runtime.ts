@@ -2,11 +2,15 @@ import type { MessagingBootstrapResponse } from "./types.js";
 import {
   chatBridgeChannelName,
   chatUnreadStorageKey,
+  chatVoiceCallStorageKey,
+  decodeChatVoiceCall,
   decodeChatSummary,
   decodeChatUnread,
+  encodeChatVoiceCall,
   encodeChatSummary,
   encodeChatUnread,
-  type ChatSummaryMessage
+  type ChatSummaryMessage,
+  type ChatVoiceCallMessage
 } from "./bridge.js";
 
 const matrixDeviceIdStoragePrefix = "cop.messaging.matrixDeviceId.v2";
@@ -54,14 +58,28 @@ export function publishChatSummarySnapshot(input: {
   publishChatBridgePayload(payload);
 }
 
-function publishChatBridgePayload(payload: ChatSummaryMessage | ReturnType<typeof encodeChatUnread>): void {
+export function publishChatVoiceCallSnapshot(input: {
+  callId: string;
+  direction: ChatVoiceCallMessage["direction"];
+  phase: ChatVoiceCallMessage["phase"];
+  roomId: string;
+  title?: string;
+}): void {
+  const payload = encodeChatVoiceCall(input);
+  publishChatBridgePayload(payload, chatVoiceCallStorageKey);
+}
+
+function publishChatBridgePayload(
+  payload: ChatSummaryMessage | ChatVoiceCallMessage | ReturnType<typeof encodeChatUnread>,
+  storageKey = chatUnreadStorageKey
+): void {
   if (window.parent !== window) {
     window.parent.postMessage(payload, window.location.origin);
   }
   try {
-    window.localStorage.setItem(chatUnreadStorageKey, JSON.stringify(payload));
+    window.localStorage.setItem(storageKey, JSON.stringify(payload));
   } catch {
-    // Same-origin host badge sync is best effort; chat must keep working when storage is blocked.
+    // Same-origin host bridge sync is best effort; chat must keep working when storage is blocked.
   }
   if (typeof BroadcastChannel !== "undefined") {
     try {
@@ -83,15 +101,21 @@ export function applyChatUnreadPayload(value: unknown, onCount: (count: number) 
   return true;
 }
 
-export function applyChatSummaryPayload(
-  value: unknown,
-  onSummary: (summary: ChatSummaryMessage) => void
-): boolean {
+export function applyChatSummaryPayload(value: unknown, onSummary: (summary: ChatSummaryMessage) => void): boolean {
   const summary = decodeChatSummary(value);
   if (!summary) {
     return false;
   }
   onSummary(summary);
+  return true;
+}
+
+export function applyChatVoiceCallPayload(value: unknown, onVoiceCall: (call: ChatVoiceCallMessage) => void): boolean {
+  const call = decodeChatVoiceCall(value);
+  if (!call) {
+    return false;
+  }
+  onVoiceCall(call);
   return true;
 }
 
@@ -119,6 +143,15 @@ export function readStoredChatSummarySnapshot(): ChatSummaryMessage | null {
   try {
     const stored = window.localStorage.getItem(chatUnreadStorageKey);
     return stored ? decodeChatSummary(JSON.parse(stored) as unknown) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function readStoredChatVoiceCallSnapshot(): ChatVoiceCallMessage | null {
+  try {
+    const stored = window.localStorage.getItem(chatVoiceCallStorageKey);
+    return stored ? decodeChatVoiceCall(JSON.parse(stored) as unknown) : null;
   } catch {
     return null;
   }

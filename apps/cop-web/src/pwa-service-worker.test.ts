@@ -10,8 +10,14 @@ interface ServiceWorkerContext {
   isChatRequestPath: (pathname: string) => boolean;
   isImmutableRuntimeAssetRequest: (request: Request, url: URL) => boolean;
   networkFirstAppShell: (request: Request) => Promise<Response>;
+  notificationActionsForPayload: (
+    payload: Record<string, unknown>,
+    url?: string
+  ) => Array<{ action: string; title: string }>;
   notificationPayloadBadgeCount: (payload: Record<string, unknown>) => number | undefined;
+  notificationPayloadDeepLink: (payload: Record<string, unknown>) => string;
   notificationPayloadTag: (payload: Record<string, unknown>) => string | undefined;
+  notificationRequiresInteraction: (payload: Record<string, unknown>, severity: string) => boolean;
   self: {
     registration: {
       clearAppBadge: ReturnType<typeof vi.fn>;
@@ -180,6 +186,26 @@ describe("COP PWA service worker notifications", () => {
         }
       })
     ).toBe("cop-chat-!room:cop.local-$event-1");
+  });
+
+  it("builds urgent tags and actions for incoming voice calls", () => {
+    const serviceWorker = loadServiceWorkerContext();
+    const payload = {
+      callId: "call-1",
+      data: {
+        deepLink: "csm://chat/room/%21ops%3Amsg.zeleznalady.cz",
+        type: "chat.voice_call.incoming"
+      },
+      roomId: "!ops:msg.zeleznalady.cz"
+    };
+
+    expect(serviceWorker.notificationPayloadTag(payload)).toBe("cop-call:!ops:msg.zeleznalady.cz:call-1");
+    expect(serviceWorker.notificationPayloadDeepLink(payload)).toBe("/chat/!ops%3Amsg.zeleznalady.cz");
+    expect(serviceWorker.notificationActionsForPayload(payload, "/chat/!ops")).toEqual([
+      { action: "open-call", title: "Přijmout" },
+      { action: "dismiss", title: "Zavřít" }
+    ]);
+    expect(serviceWorker.notificationRequiresInteraction(payload, "info")).toBe(true);
   });
 
   it("reads zero unread counts from Matrix push payloads", () => {

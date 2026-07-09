@@ -4,10 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyChatSummaryPayload,
   applyChatUnreadPayload,
+  applyChatVoiceCallPayload,
   publishChatSummarySnapshot,
   publishChatUnreadCount,
+  publishChatVoiceCallSnapshot,
   readStoredChatSummarySnapshot,
-  readStoredChatUnreadCount
+  readStoredChatUnreadCount,
+  readStoredChatVoiceCallSnapshot
 } from "./runtime.js";
 
 // Unread-badge bridge contract (chat → web: cop-chat:unread). cop-web's shell badge
@@ -18,6 +21,7 @@ import {
 // try/catch for exactly this reason (private browsing, blocked storage, etc.).
 
 const unreadStorageKey = "cop.chat.unread.v1";
+const voiceCallStorageKey = "cop.chat.voiceCall.v1";
 
 function installLocalStorageStub(): void {
   const store = new Map<string, string>();
@@ -80,6 +84,31 @@ describe("publishChatSummarySnapshot", () => {
   });
 });
 
+describe("publishChatVoiceCallSnapshot", () => {
+  it("persists a cop-chat:voice-call payload under the call storage key", () => {
+    publishChatVoiceCallSnapshot({
+      callId: "call-1",
+      direction: "incoming",
+      phase: "ringing",
+      roomId: "!ops",
+      title: "Ops"
+    });
+    const raw = window.localStorage.getItem(voiceCallStorageKey);
+    expect(raw).toBeTruthy();
+    const payload = JSON.parse(raw as string) as { callId: string; phase: string; type: string };
+    expect(payload.type).toBe("cop-chat:voice-call");
+    expect(payload.callId).toBe("call-1");
+    expect(payload.phase).toBe("ringing");
+    expect(readStoredChatVoiceCallSnapshot()).toMatchObject({
+      callId: "call-1",
+      direction: "incoming",
+      phase: "ringing",
+      roomId: "!ops",
+      title: "Ops"
+    });
+  });
+});
+
 describe("applyChatUnreadPayload", () => {
   it("accepts a valid payload and reports the clamped count", () => {
     const onCount = vi.fn();
@@ -123,6 +152,38 @@ describe("applyChatSummaryPayload", () => {
     const onSummary = vi.fn();
     expect(applyChatSummaryPayload({ totalUnread: 2, type: "other" }, onSummary)).toBe(false);
     expect(onSummary).not.toHaveBeenCalled();
+  });
+});
+
+describe("applyChatVoiceCallPayload", () => {
+  it("accepts a valid voice-call payload", () => {
+    const onVoiceCall = vi.fn();
+    expect(
+      applyChatVoiceCallPayload(
+        {
+          callId: "call-1",
+          direction: "incoming",
+          phase: "ringing",
+          roomId: "!ops",
+          type: "cop-chat:voice-call"
+        },
+        onVoiceCall
+      )
+    ).toBe(true);
+    expect(onVoiceCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callId: "call-1",
+        direction: "incoming",
+        phase: "ringing",
+        roomId: "!ops"
+      })
+    );
+  });
+
+  it("rejects malformed voice-call payloads", () => {
+    const onVoiceCall = vi.fn();
+    expect(applyChatVoiceCallPayload({ callId: "call-1", type: "other" }, onVoiceCall)).toBe(false);
+    expect(onVoiceCall).not.toHaveBeenCalled();
   });
 });
 

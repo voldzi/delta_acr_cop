@@ -1110,8 +1110,10 @@ export interface RoutingPoint {
 }
 
 export interface RoutingRouteRequest {
+  alternatives?: number;
   avoid?: string[];
   from: RoutingPoint;
+  includeSteps?: boolean;
   profileId?: RoutingProfileId;
   to: RoutingPoint;
 }
@@ -1120,9 +1122,18 @@ export interface RoutingRouteFeature {
   geometry:
     | { coordinates: Array<[number, number]>; type: "LineString" }
     | { coordinates: Array<Array<[number, number]>>; type: "MultiLineString" }
-    | { coordinates: [number, number]; type: "Point" };
+    | { coordinates: [number, number]; type: "Point" }
+    | { coordinates: Array<Array<[number, number]>>; type: "Polygon" }
+    | { coordinates: Array<Array<Array<[number, number]>>>; type: "MultiPolygon" };
   properties?: Record<string, unknown>;
   type: "Feature";
+}
+
+export interface RoutingProfilesResponse {
+  contractVersion?: string;
+  generatedAt?: string;
+  profiles: Array<Record<string, unknown>>;
+  warnings: string[];
 }
 
 export interface RoutingRouteResponse {
@@ -1132,7 +1143,20 @@ export interface RoutingRouteResponse {
   providerId?: string;
   quality?: Record<string, unknown>;
   routes: Array<Record<string, unknown>>;
+  traffic?: Record<string, unknown>;
   warnings: string[];
+}
+
+export interface RoutingGenericResponse {
+  contractVersion?: string;
+  features?: RoutingRouteFeature[];
+  generatedAt?: string;
+  providerId?: string;
+  quality?: Record<string, unknown>;
+  routes?: Array<Record<string, unknown>>;
+  traffic?: Record<string, unknown>;
+  warnings?: string[];
+  [key: string]: unknown;
 }
 
 export interface MissionArenaTeamScore {
@@ -2940,6 +2964,60 @@ export async function runEmergencyRoute(
   request: RoutingRouteRequest
 ): Promise<RoutingRouteResponse> {
   return fetchJson<RoutingRouteResponse>(`${apiBase}/api/v1/routing/route`, {
+    body: JSON.stringify(request),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function fetchEmergencyRoutingProfiles(
+  apiBase: string,
+  token: string | undefined
+): Promise<RoutingProfilesResponse> {
+  return fetchJson<RoutingProfilesResponse>(`${apiBase}/api/v1/routing/profiles`, {
+    headers: authHeaders(token)
+  });
+}
+
+export async function runEmergencyRouteAlternatives(
+  apiBase: string,
+  token: string | undefined,
+  request: RoutingRouteRequest
+): Promise<RoutingRouteResponse> {
+  return fetchJson<RoutingRouteResponse>(`${apiBase}/api/v1/routing/alternatives`, {
+    body: JSON.stringify(request),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function runEmergencyRoutingIsochrone(
+  apiBase: string,
+  token: string | undefined,
+  request: Record<string, unknown>
+): Promise<RoutingGenericResponse> {
+  return fetchJson<RoutingGenericResponse>(`${apiBase}/api/v1/routing/isochrone`, {
+    body: JSON.stringify(request),
+    headers: {
+      ...(authHeaders(token) ?? {}),
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function runEmergencyRoutingNearestAccess(
+  apiBase: string,
+  token: string | undefined,
+  request: Record<string, unknown>
+): Promise<RoutingGenericResponse> {
+  return fetchJson<RoutingGenericResponse>(`${apiBase}/api/v1/routing/nearest-access`, {
     body: JSON.stringify(request),
     headers: {
       ...(authHeaders(token) ?? {}),

@@ -919,27 +919,38 @@ The minimal route request is:
   "profileId": "emergency_vehicle",
   "from": { "lon": 17.36285, "lat": 50.12952, "label": "Moje poloha" },
   "to": { "lon": 17.37303, "lat": 50.15077, "label": "Mnichov - Černá Opava" },
-  "avoid": ["flood", "road_closure"]
+  "avoid": ["road_closure"],
+  "alternatives": 2,
+  "includeSteps": true
 }
 ```
 
 COP renders returned `features[]` as a temporary map overlay and shows
 `routes[].distanceM`, `durationSeconds`, `steps[]`, `quality.mode`,
-`quality.confidence`, `warnings[]` and any provider caveats in route detail.
-If `quality.mode` is not `osm_graph`, the UI must label the route as
-orientational. Chat map actions may request `action=route`; COP then asks for
-the user's current position, calls `/api/v1/routing/route` and draws the SIM
-route over the map.
+`quality.engine`, `quality.confidence`, `warnings[]`, top-level `traffic`,
+route `traffic.incidentsOnRoute[]`, `sourceStatus`, `incidentCount`,
+`delayPenaltySeconds`, `hard_exclusion_applied` and any provider caveats in
+route detail. `routes[].rank === 1` is the primary route; alternatives remain
+clickable but are rendered less prominently. If `quality.mode` is
+`engine_route` and `quality.engine` is `valhalla`, COP labels the route as a
+full SIM engine route. If `quality.mode` is `direct_fallback`, the UI must show
+the exact caveat "Orientační spojnice, ne navigace po komunikacích." Chat map
+actions may request `action=route`; COP then asks for the user's current
+position, calls `/api/v1/routing/alternatives` with `includeSteps: true` and
+draws the SIM route over the map.
 
 The web PWA can promote a displayed route into a navigation session. The
-client asks SIM through COP with profile `car` or `walking`, stores the route
-geometry/summary locally and asks the service worker to prefetch raster map
-tiles along the route corridor. This is an offline-continuation package, not
-offline rerouting: if the operator leaves the route while offline, the client
-can show deviation and the nearest saved route, but a new route calculation
-requires COP API connectivity. While online, the PWA can manually rerun
-`/api/v1/routing/route` from the current device position with the active
-navigation profile and replace the stored route package.
+client asks SIM through COP with one of the supported profiles (`car`,
+`emergency_vehicle`, `large_emergency_vehicle`, `offroad_4x4`, `walking`,
+`evacuation_walking`), stores the route geometry/summary locally and asks the
+service worker to prefetch raster map tiles along the route corridor. This is
+an offline-continuation package, not offline rerouting: if the operator leaves
+the route while offline, the client can show deviation and the nearest saved
+route, but a new route calculation requires COP API connectivity. While online,
+the PWA can manually rerun `/api/v1/routing/alternatives` from the current
+device position with the active navigation profile and replace the stored route
+package. Point actions also expose `/api/v1/routing/nearest-access` for graph
+access and `/api/v1/routing/isochrone` for reachable-area overlays.
 
 COP must not expose `mobile_coverage` as a normal public layer. Diagnostic
 mobile layers such as `diagnostic.mobile.coverage`,

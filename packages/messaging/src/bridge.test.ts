@@ -4,6 +4,7 @@ import {
   chatBridgeChannelName,
   chatBridgeMessageTypes,
   chatUnreadStorageKey,
+  chatVoiceCallStorageKey,
   decodeCopMapFocusSearch,
   decodeChatCenterLocation,
   decodeChatCurrentLocation,
@@ -12,6 +13,8 @@ import {
   decodeChatShareTransit,
   decodeChatSummary,
   decodeChatUnread,
+  decodeChatVoiceCall,
+  decodeChatVoiceCallCommand,
   encodeCopMapFocusUrl,
   encodeChatCenterLocation,
   encodeChatCurrentLocation,
@@ -19,7 +22,9 @@ import {
   encodeChatSelect,
   encodeChatShareTransit,
   encodeChatSummary,
-  encodeChatUnread
+  encodeChatUnread,
+  encodeChatVoiceCall,
+  encodeChatVoiceCallCommand
 } from "./bridge.js";
 
 // Single source of truth for the cop-chat <-> cop-web wire contract. These tests
@@ -34,10 +39,13 @@ describe("contract constants", () => {
       select: "cop-chat:select",
       shareTransit: "cop-chat:share-transit",
       summary: "cop-chat:summary",
-      unread: "cop-chat:unread"
+      unread: "cop-chat:unread",
+      voiceCall: "cop-chat:voice-call",
+      voiceCallCommand: "cop-chat:voice-call-command"
     });
     expect(chatBridgeChannelName).toBe("cop-chat");
     expect(chatUnreadStorageKey).toBe("cop.chat.unread.v1");
+    expect(chatVoiceCallStorageKey).toBe("cop.chat.voiceCall.v1");
   });
 });
 
@@ -218,6 +226,79 @@ describe("summary (chat -> web)", () => {
         ]
       })?.unreadRooms
     ).toEqual([{ selection: "y", title: "Y", unreadCount: 1 }]);
+  });
+});
+
+describe("voice-call (chat -> web)", () => {
+  it("encodes a compact voice-call state snapshot", () => {
+    const payload = encodeChatVoiceCall({
+      callId: " call-1 ",
+      direction: "incoming",
+      phase: "ringing",
+      roomId: " !ops:example.cz ",
+      title: " COP Operator "
+    });
+
+    expect(payload).toMatchObject({
+      callId: "call-1",
+      direction: "incoming",
+      phase: "ringing",
+      roomId: "!ops:example.cz",
+      title: "COP Operator",
+      type: "cop-chat:voice-call"
+    });
+    expect(typeof payload.at).toBe("number");
+    expect(decodeChatVoiceCall(payload)).toEqual(payload);
+  });
+
+  it("rejects malformed or foreign voice-call payloads", () => {
+    expect(() => encodeChatVoiceCall({ callId: "", direction: "incoming", phase: "ringing", roomId: "!ops" })).toThrow(
+      "Voice call bridge payload requires callId, roomId, direction and phase."
+    );
+    expect(
+      decodeChatVoiceCall({ callId: "call-1", direction: "incoming", phase: "ringing", roomId: "!ops", type: "other" })
+    ).toBeNull();
+    expect(
+      decodeChatVoiceCall({
+        callId: "call-1",
+        direction: "sideways",
+        phase: "ringing",
+        roomId: "!ops",
+        type: "cop-chat:voice-call"
+      })
+    ).toBeNull();
+  });
+});
+
+describe("voice-call-command (web -> chat)", () => {
+  it("encodes host voice-call commands", () => {
+    const payload = encodeChatVoiceCallCommand({
+      action: "answer",
+      callId: " call-1 ",
+      roomId: " !ops:example.cz "
+    });
+
+    expect(payload).toEqual({
+      action: "answer",
+      callId: "call-1",
+      roomId: "!ops:example.cz",
+      type: "cop-chat:voice-call-command"
+    });
+    expect(decodeChatVoiceCallCommand(payload)).toEqual(payload);
+  });
+
+  it("rejects malformed host voice-call commands", () => {
+    expect(() => encodeChatVoiceCallCommand({ action: "answer", callId: "", roomId: "!ops" })).toThrow(
+      "Voice call command requires action, callId and roomId."
+    );
+    expect(
+      decodeChatVoiceCallCommand({
+        action: "transfer",
+        callId: "call-1",
+        roomId: "!ops",
+        type: "cop-chat:voice-call-command"
+      })
+    ).toBeNull();
   });
 });
 

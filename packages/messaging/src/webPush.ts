@@ -62,12 +62,7 @@ export function readWebPushPermissionState(): WebPushUiState {
     registered,
     ...(confirmedRegistration ? { registrationConfirmedAt: confirmedRegistration.registeredAt } : {}),
     standalone: isPwaStandalone(),
-    status:
-      permission === "denied"
-        ? "permission-denied"
-        : registered
-          ? "registered"
-          : "available",
+    status: permission === "denied" ? "permission-denied" : registered ? "registered" : "available",
     warnings: []
   };
 }
@@ -106,8 +101,7 @@ export async function fetchWebPushConfig(apiBase: string): Promise<WebPushUiStat
 
   const hasStoredRegistration = Boolean(current.deviceId) && current.permission === "granted";
   const confirmedRegistration = readStoredRegistration();
-  const hasConfirmedRegistration =
-    Boolean(confirmedRegistration?.deviceId) && current.permission === "granted";
+  const hasConfirmedRegistration = Boolean(confirmedRegistration?.deviceId) && current.permission === "granted";
   const registered = hasConfirmedRegistration && browserState.subscriptionActive;
   const staleWarnings =
     hasStoredRegistration && !browserState.subscriptionActive
@@ -179,6 +173,7 @@ export async function enableWebPushNotifications(apiBase: string, token: string)
           communityReports: true,
           safetyAlerts: true,
           system: true,
+          voiceCalls: true,
           watchedAreaAlerts: true
         },
         subscription: subscription.toJSON(),

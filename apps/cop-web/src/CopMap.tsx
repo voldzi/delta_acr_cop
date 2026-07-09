@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Camera,
+  Car,
   ChevronDown,
   ChevronUp,
   Circle as CircleIcon,
@@ -264,6 +265,7 @@ const selectedTransitRouteLineLayerId = "cop-selected-transit-route-line";
 const selectedTransitRouteStopLayerId = "cop-selected-transit-route-stop";
 const selectedTransitRouteStopLabelLayerId = "cop-selected-transit-route-stop-label";
 const emergencyRouteSourceId = "cop-emergency-route";
+const emergencyRouteFillLayerId = "cop-emergency-route-fill";
 const emergencyRouteLineCasingLayerId = "cop-emergency-route-line-casing";
 const emergencyRouteLineLayerId = "cop-emergency-route-line";
 const emergencyRoutePointLayerId = "cop-emergency-route-point";
@@ -469,6 +471,7 @@ const mapPointRaiseLayerIds = [
   trackClusterCountLayerId,
   trackClusterSelectedHaloLayerId,
   emergencyRouteLineLayerId,
+  emergencyRouteFillLayerId,
   emergencyRoutePointLayerId,
   emergencyRoutePointLabelLayerId,
   trackClusterSymbolLayerId,
@@ -593,16 +596,25 @@ export interface EmergencyRouteFeatureCollection {
   features: Array<{
     type: "Feature";
     geometry:
-      { type: "LineString"; coordinates: Array<[number, number]> } | { type: "Point"; coordinates: [number, number] };
+      | { type: "LineString"; coordinates: Array<[number, number]> }
+      | { type: "Point"; coordinates: [number, number] }
+      | { type: "Polygon"; coordinates: Array<Array<[number, number]>> }
+      | { type: "MultiPolygon"; coordinates: Array<Array<Array<[number, number]>>> };
     properties: {
-      kind: "route-line" | "route-point";
+      kind: "route-area" | "route-line" | "route-point";
       label: string;
-      role: "alternative" | "destination" | "origin" | "primary";
+      qualityMode?: string;
+      rank?: number;
+      role: "access" | "alternative" | "destination" | "incident" | "isochrone" | "origin" | "primary";
       routeId: string;
       sequence?: number;
+      trafficSeverity?: string;
     };
   }>;
 }
+
+type RoutingActionProfile =
+  "car" | "emergency_vehicle" | "evacuation_walking" | "large_emergency_vehicle" | "offroad_4x4" | "walking";
 
 export interface SituationContextFeatureCollection {
   type: "FeatureCollection";
@@ -757,9 +769,17 @@ interface CopMapProps {
   onAutoFitChange: (value: boolean) => void;
   onClearSelection?: () => void;
   onClearEmergencyRoute?: () => void;
-  onRequestRouteToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
+  onRequestIsochroneFromPoint?: (target: { label?: string; lat: number; lon: number }) => void;
+  onRequestNearestAccessToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
+  onRequestRouteToPoint?: (
+    target: { label?: string; lat: number; lon: number },
+    profile?: RoutingActionProfile
+  ) => void;
   onStartEmergencyNavigation?: () => void;
-  onStartNavigationToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
+  onStartNavigationToPoint?: (
+    target: { label?: string; lat: number; lon: number },
+    profile?: RoutingActionProfile
+  ) => void;
   onRequestUserLocation: () => void;
   onUserLocationFollowChange: (value: boolean) => void;
   onUserMapInteraction?: () => void;
@@ -872,6 +892,11 @@ interface MapSelectionCard {
   variant?: "aircraft" | "default";
 }
 
+interface EmergencyRouteSelectionInfo {
+  card: MapSelectionCard;
+  coordinate: [number, number];
+}
+
 function CopMapComponent({
   alerts,
   aoiRules,
@@ -919,6 +944,8 @@ function CopMapComponent({
   onClearSelection,
   onCreateZonePolygon,
   onPickReportLocation,
+  onRequestIsochroneFromPoint,
+  onRequestNearestAccessToPoint,
   onRequestRouteToPoint,
   onRequestUserLocation,
   onStartEmergencyNavigation,
@@ -1021,6 +1048,8 @@ function CopMapComponent({
   const [zoneDraftPoints, setZoneDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
   const [sketchDraftPoints, setSketchDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
   const [selectedSharedLiveLocationId, setSelectedSharedLiveLocationId] = React.useState<string | null>(null);
+  const [selectedEmergencyRouteInfo, setSelectedEmergencyRouteInfo] =
+    React.useState<EmergencyRouteSelectionInfo | null>(null);
   const [selectedSketchVertexIndex, setSelectedSketchVertexIndex] = React.useState<number | null>(null);
   const [selectedEditVertexIndex, setSelectedEditVertexIndex] = React.useState<number | null>(null);
   const [sketchToolsExpanded, setSketchToolsExpanded] = React.useState(false);
@@ -1137,9 +1166,12 @@ function CopMapComponent({
               } satisfies MapSelectionCard)
             : selectedSharedLiveLocation
               ? formatSharedLiveLocationSelectionCard(selectedSharedLiveLocation)
-              : null,
+              : selectedEmergencyRouteInfo
+                ? selectedEmergencyRouteInfo.card
+                : null,
     [
       effectiveSelectedTransitRouteDetail,
+      selectedEmergencyRouteInfo,
       selectedObject,
       selectedSharedLiveLocation,
       selectedSituationFeature,
@@ -1148,6 +1180,7 @@ function CopMapComponent({
   );
   const clearMapSelection = React.useCallback(() => {
     setSelectedSharedLiveLocationId(null);
+    setSelectedEmergencyRouteInfo(null);
     onClearSelection?.();
   }, [onClearSelection]);
   React.useEffect(() => {
@@ -1159,8 +1192,16 @@ function CopMapComponent({
         ? selectionAnchorCoordinate(selectedObject, selectedSituationFeature, selectedSketchDrawing)
         : selectedSharedLiveLocation
           ? ([selectedSharedLiveLocation.lon, selectedSharedLiveLocation.lat] as [number, number])
-          : null,
-    [selectedObject, selectedSharedLiveLocation, selectedSituationFeature, selectedSketchDrawing]
+          : selectedEmergencyRouteInfo
+            ? selectedEmergencyRouteInfo.coordinate
+            : null,
+    [
+      selectedEmergencyRouteInfo,
+      selectedObject,
+      selectedSharedLiveLocation,
+      selectedSituationFeature,
+      selectedSketchDrawing
+    ]
   );
   const selectedRouteFeatureCollection = React.useMemo(
     () =>
@@ -1316,6 +1357,7 @@ function CopMapComponent({
       selectedSketchDrawingId
     ) {
       setSelectedSharedLiveLocationId(null);
+      setSelectedEmergencyRouteInfo(null);
     }
   }, [selectedObjectId, selectedSituationFeatureId, selectedSituationFeatureStableKey, selectedSketchDrawingId]);
 
@@ -2235,6 +2277,18 @@ function CopMapComponent({
         });
 
         map.addLayer({
+          id: emergencyRouteFillLayerId,
+          type: "fill",
+          source: emergencyRouteSourceId,
+          filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+          paint: {
+            "fill-color": "#22c55e",
+            "fill-opacity": ["case", ["==", ["get", "role"], "isochrone"], 0.2, 0.14],
+            "fill-outline-color": "#047857"
+          }
+        });
+
+        map.addLayer({
           id: emergencyRouteLineCasingLayerId,
           type: "line",
           source: emergencyRouteSourceId,
@@ -2260,9 +2314,18 @@ function CopMapComponent({
             "line-join": "round"
           },
           paint: {
-            "line-color": ["case", ["==", ["get", "role"], "alternative"], "#0ea5e9", "#dc2626"],
+            "line-color": [
+              "case",
+              ["==", ["get", "qualityMode"], "direct_fallback"],
+              "#64748b",
+              ["==", ["get", "role"], "alternative"],
+              "#0ea5e9",
+              "#dc2626"
+            ],
             "line-dasharray": [
               "case",
+              ["==", ["get", "qualityMode"], "direct_fallback"],
+              ["literal", [0.8, 1.2]],
               ["==", ["get", "role"], "alternative"],
               ["literal", [1.6, 1.1]],
               ["literal", [1000, 0.0001]]
@@ -2278,7 +2341,16 @@ function CopMapComponent({
           source: emergencyRouteSourceId,
           filter: ["==", ["geometry-type"], "Point"],
           paint: {
-            "circle-color": ["case", ["==", ["get", "role"], "origin"], "#16a34a", "#dc2626"],
+            "circle-color": [
+              "case",
+              ["==", ["get", "role"], "origin"],
+              "#16a34a",
+              ["==", ["get", "role"], "incident"],
+              "#f59e0b",
+              ["==", ["get", "role"], "access"],
+              "#0ea5e9",
+              "#dc2626"
+            ],
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 4, 13, 6.5, 17, 9],
             "circle-stroke-color": "#ffffff",
             "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 8, 1.6, 13, 2.4, 17, 3.2]
@@ -4299,11 +4371,29 @@ function CopMapComponent({
           if (clickedCluster) {
             return;
           }
+          const clickedEmergencyRoute = queryRenderedFeatureByLayerPriority(map, event.point, [
+            emergencyRoutePointLayerId,
+            emergencyRouteLineLayerId,
+            emergencyRouteFillLayerId
+          ]);
+          if (clickedEmergencyRoute) {
+            event.preventDefault();
+            const properties = isRecord(clickedEmergencyRoute.properties) ? clickedEmergencyRoute.properties : {};
+            setSelectedSharedLiveLocationId(null);
+            onClearSelectionRef.current?.();
+            setSelectedEmergencyRouteInfo({
+              card: formatEmergencyRouteSelectionCard(properties),
+              coordinate: [event.lngLat.lng, event.lngLat.lat]
+            });
+            return;
+          }
           const clickedFeature = queryRenderedFeatureByLayerPriority(map, event.point, mapFeatureClickPriorityLayerIds);
           if (selectRenderedFeature(clickedFeature)) {
+            setSelectedEmergencyRouteInfo(null);
             return;
           }
           setSelectedSharedLiveLocationId(null);
+          setSelectedEmergencyRouteInfo(null);
           onClearSelectionRef.current?.();
         };
         map.on("dragstart", handleUserMapInteraction);
@@ -5904,41 +5994,133 @@ function CopMapComponent({
                   ))}
                 </div>
               ) : null}
-              {selectedAnchorCoordinate && onRequestRouteToPoint ? (
-                <button
-                  className="map-object-popover-route"
-                  disabled={emergencyRouteStatus === "loading"}
-                  onClick={(event) => {
-                    stopMapToolbarEvent(event);
-                    onRequestRouteToPoint({
-                      label: selectionCard.title,
-                      lat: selectedAnchorCoordinate[1],
-                      lon: selectedAnchorCoordinate[0]
-                    });
-                  }}
-                  type="button"
-                >
-                  <Compass size={14} strokeWidth={2.2} />
-                  <span>{emergencyRouteStatus === "loading" ? "Počítám zásahovou trasu..." : "Trasa z mé polohy"}</span>
-                </button>
-              ) : null}
-              {selectedAnchorCoordinate && onStartNavigationToPoint ? (
-                <button
-                  className="map-object-popover-route primary"
-                  disabled={emergencyRouteStatus === "loading"}
-                  onClick={(event) => {
-                    stopMapToolbarEvent(event);
-                    onStartNavigationToPoint({
-                      label: selectionCard.title,
-                      lat: selectedAnchorCoordinate[1],
-                      lon: selectedAnchorCoordinate[0]
-                    });
-                  }}
-                  type="button"
-                >
-                  <Compass size={14} strokeWidth={2.2} />
-                  <span>Navigovat</span>
-                </button>
+              {selectedAnchorCoordinate &&
+              (onRequestRouteToPoint ||
+                onStartNavigationToPoint ||
+                onRequestNearestAccessToPoint ||
+                onRequestIsochroneFromPoint) ? (
+                <div className="map-object-popover-route-actions">
+                  {onRequestRouteToPoint ? (
+                    <>
+                      <button
+                        className="map-object-popover-route"
+                        disabled={emergencyRouteStatus === "loading"}
+                        onClick={(event) => {
+                          stopMapToolbarEvent(event);
+                          onRequestRouteToPoint(
+                            {
+                              label: selectionCard.title,
+                              lat: selectedAnchorCoordinate[1],
+                              lon: selectedAnchorCoordinate[0]
+                            },
+                            "car"
+                          );
+                        }}
+                        type="button"
+                      >
+                        <Car size={14} strokeWidth={2.2} />
+                        <span>{emergencyRouteStatus === "loading" ? "Počítám trasu..." : "Trasa autem"}</span>
+                      </button>
+                      <button
+                        className="map-object-popover-route"
+                        disabled={emergencyRouteStatus === "loading"}
+                        onClick={(event) => {
+                          stopMapToolbarEvent(event);
+                          onRequestRouteToPoint(
+                            {
+                              label: selectionCard.title,
+                              lat: selectedAnchorCoordinate[1],
+                              lon: selectedAnchorCoordinate[0]
+                            },
+                            "walking"
+                          );
+                        }}
+                        type="button"
+                      >
+                        <Compass size={14} strokeWidth={2.2} />
+                        <span>Trasa pěšky</span>
+                      </button>
+                    </>
+                  ) : null}
+                  {onStartNavigationToPoint ? (
+                    <>
+                      <button
+                        className="map-object-popover-route primary"
+                        disabled={emergencyRouteStatus === "loading"}
+                        onClick={(event) => {
+                          stopMapToolbarEvent(event);
+                          onStartNavigationToPoint(
+                            {
+                              label: selectionCard.title,
+                              lat: selectedAnchorCoordinate[1],
+                              lon: selectedAnchorCoordinate[0]
+                            },
+                            "car"
+                          );
+                        }}
+                        type="button"
+                      >
+                        <Navigation size={14} strokeWidth={2.2} />
+                        <span>Navigovat autem</span>
+                      </button>
+                      <button
+                        className="map-object-popover-route primary"
+                        disabled={emergencyRouteStatus === "loading"}
+                        onClick={(event) => {
+                          stopMapToolbarEvent(event);
+                          onStartNavigationToPoint(
+                            {
+                              label: selectionCard.title,
+                              lat: selectedAnchorCoordinate[1],
+                              lon: selectedAnchorCoordinate[0]
+                            },
+                            "walking"
+                          );
+                        }}
+                        type="button"
+                      >
+                        <Navigation size={14} strokeWidth={2.2} />
+                        <span>Navigovat pěšky</span>
+                      </button>
+                    </>
+                  ) : null}
+                  {onRequestNearestAccessToPoint ? (
+                    <button
+                      className="map-object-popover-route"
+                      disabled={emergencyRouteStatus === "loading"}
+                      onClick={(event) => {
+                        stopMapToolbarEvent(event);
+                        onRequestNearestAccessToPoint({
+                          label: selectionCard.title,
+                          lat: selectedAnchorCoordinate[1],
+                          lon: selectedAnchorCoordinate[0]
+                        });
+                      }}
+                      type="button"
+                    >
+                      <MapPin size={14} strokeWidth={2.2} />
+                      <span>Nejbližší přístup</span>
+                    </button>
+                  ) : null}
+                  {onRequestIsochroneFromPoint ? (
+                    <button
+                      className="map-object-popover-route"
+                      disabled={emergencyRouteStatus === "loading"}
+                      onClick={(event) => {
+                        stopMapToolbarEvent(event);
+                        onRequestIsochroneFromPoint({
+                          label: selectionCard.title,
+                          lat: selectedAnchorCoordinate[1],
+                          lon: selectedAnchorCoordinate[0]
+                        });
+                      }}
+                      type="button"
+                    >
+                      <Compass size={14} strokeWidth={2.2} />
+                      <span>Dosah 15 min</span>
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
               {selectedRouteFeatureCollection.features.length > 0 ? (
                 <div className="map-object-popover-route">
@@ -9887,7 +10069,12 @@ function objectTypeLegendLabel(objectType: string): string {
 
 function situationLegendLabel(properties: Record<string, unknown>): string {
   const layer = stringProperty(properties.layer) ?? stringProperty(properties.layerId) ?? "";
-  if (properties.weatherForecastArea || properties.weatherObservation || properties.weatherGrid || layer.includes("weather")) {
+  if (
+    properties.weatherForecastArea ||
+    properties.weatherObservation ||
+    properties.weatherGrid ||
+    layer.includes("weather")
+  ) {
     return "Počasí";
   }
   if (properties.weatherCamera) {
@@ -11870,6 +12057,55 @@ function isRecoverableRasterOverlayRequestError(message: string): boolean {
   );
 }
 
+function formatEmergencyRouteSelectionCard(properties: Record<string, unknown>): MapSelectionCard {
+  const label = stringProperty(properties.label) ?? "Routing prvek";
+  const role = stringProperty(properties.role);
+  const rank = numberProperty(properties.rank);
+  const qualityMode = stringProperty(properties.qualityMode);
+  const trafficSeverity = stringProperty(properties.trafficSeverity);
+  const detailRows = [
+    role ? { label: "Role", value: formatEmergencyRouteRole(role) } : null,
+    rank !== undefined ? { label: "Pořadí", value: String(rank) } : null,
+    qualityMode ? { label: "Kvalita", value: qualityMode } : null,
+    trafficSeverity ? { label: "Incident", value: trafficSeverity } : null
+  ].filter((row): row is { label: string; value: string } => row !== null);
+  return {
+    compactSubtitle: role ? formatEmergencyRouteRole(role) : "Routing overlay",
+    detailRows,
+    eyebrow: role === "incident" ? "Dopravní incident na trase" : "SIM routing",
+    key: `route:${stringProperty(properties.routeId) ?? label}:${role ?? ""}`,
+    metaItems: [
+      role ? formatEmergencyRouteRole(role) : undefined,
+      rank !== undefined ? `rank ${rank}` : undefined,
+      qualityMode
+    ].filter((item): item is string => Boolean(item)),
+    statusTone: role === "incident" ? "warn" : undefined,
+    subtitle: role ? formatEmergencyRouteRole(role) : "Routing overlay",
+    title: label
+  };
+}
+
+function formatEmergencyRouteRole(role: string): string {
+  switch (role) {
+    case "access":
+      return "Přístupový bod";
+    case "alternative":
+      return "Alternativní trasa";
+    case "destination":
+      return "Cíl";
+    case "incident":
+      return "Dopravní incident";
+    case "isochrone":
+      return "Dosahová oblast";
+    case "origin":
+      return "Start";
+    case "primary":
+      return "Primární trasa";
+    default:
+      return role;
+  }
+}
+
 function emergencyRouteToFeatureCollection(
   response: RoutingRouteResponse | null | undefined
 ): EmergencyRouteFeatureCollection {
@@ -11878,6 +12114,23 @@ function emergencyRouteToFeatureCollection(
   }
   const features: EmergencyRouteFeatureCollection["features"] = [];
   for (const [index, feature] of response.features.entries()) {
+    const area = routeAreaGeometry(feature.geometry);
+    if (area) {
+      features.push({
+        geometry: area,
+        properties: {
+          kind: "route-area",
+          label: routeFeatureLabel(feature.properties, index),
+          qualityMode: routeFeatureQualityMode(feature.properties, response.quality),
+          rank: routeFeatureRank(feature.properties),
+          role: routeFeatureRole(feature.properties, index),
+          routeId: routeFeatureId(feature.properties, index),
+          sequence: index
+        },
+        type: "Feature"
+      });
+      continue;
+    }
     const geometry = routeLineGeometry(feature.geometry);
     if (geometry) {
       features.push({
@@ -11885,6 +12138,8 @@ function emergencyRouteToFeatureCollection(
         properties: {
           kind: "route-line",
           label: routeFeatureLabel(feature.properties, index),
+          qualityMode: routeFeatureQualityMode(feature.properties, response.quality),
+          rank: routeFeatureRank(feature.properties),
           role: routeFeatureRole(feature.properties, index),
           routeId: routeFeatureId(feature.properties, index),
           sequence: index
@@ -11900,6 +12155,8 @@ function emergencyRouteToFeatureCollection(
         properties: {
           kind: "route-point",
           label: routeFeatureLabel(feature.properties, index),
+          qualityMode: routeFeatureQualityMode(feature.properties, response.quality),
+          rank: routeFeatureRank(feature.properties),
           role: routeFeatureRole(feature.properties, index),
           routeId: routeFeatureId(feature.properties, index),
           sequence: index
@@ -11919,6 +12176,8 @@ function emergencyRouteToFeatureCollection(
         properties: {
           kind: "route-line",
           label: routeFeatureLabel(route, index),
+          qualityMode: routeFeatureQualityMode(route, response.quality),
+          rank: routeFeatureRank(route),
           role: routeFeatureRole(route, index),
           routeId: routeFeatureId(route, index),
           sequence: index
@@ -11927,6 +12186,7 @@ function emergencyRouteToFeatureCollection(
       });
     }
   }
+  appendRoutingTrafficIncidentFeatures(features, response);
   const firstLine = features.find((feature) => feature.geometry.type === "LineString");
   if (firstLine?.geometry.type === "LineString" && firstLine.geometry.coordinates.length >= 2) {
     const first = firstLine.geometry.coordinates[0]!;
@@ -11977,6 +12237,28 @@ function routeLineGeometry(value: unknown): { coordinates: Array<[number, number
   return null;
 }
 
+function routeAreaGeometry(
+  value: unknown
+):
+  | { coordinates: Array<Array<[number, number]>>; type: "Polygon" }
+  | { coordinates: Array<Array<Array<[number, number]>>>; type: "MultiPolygon" }
+  | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  if (value.type === "Polygon" && Array.isArray(value.coordinates)) {
+    const coordinates = normalizeRoutePolygon(value.coordinates);
+    return coordinates.length > 0 ? { coordinates, type: "Polygon" } : null;
+  }
+  if (value.type === "MultiPolygon" && Array.isArray(value.coordinates)) {
+    const coordinates = value.coordinates
+      .flatMap((polygon) => (Array.isArray(polygon) ? [normalizeRoutePolygon(polygon)] : []))
+      .filter((polygon) => polygon.length > 0);
+    return coordinates.length > 0 ? { coordinates, type: "MultiPolygon" } : null;
+  }
+  return null;
+}
+
 function routePointGeometry(value: unknown): { coordinates: [number, number]; type: "Point" } | null {
   if (!isRecord(value) || value.type !== "Point" || !Array.isArray(value.coordinates)) {
     return null;
@@ -12000,6 +12282,13 @@ function routeLineGeometryFromRecord(
     return coordinates.length >= 2 ? { coordinates, type: "LineString" } : null;
   }
   return null;
+}
+
+function normalizeRoutePolygon(value: unknown[]): Array<Array<[number, number]>> {
+  return value.flatMap((ring) => {
+    const coordinates = Array.isArray(ring) ? normalizeRouteCoordinates(ring) : [];
+    return coordinates.length >= 3 ? [coordinates] : [];
+  });
 }
 
 function normalizeRouteCoordinates(value: unknown[]): Array<[number, number]> {
@@ -12030,15 +12319,110 @@ function routeFeatureId(properties: Record<string, unknown> | undefined, index: 
   return stringProperty(properties?.routeId) ?? stringProperty(properties?.id) ?? `route-${index + 1}`;
 }
 
+function routeFeatureRank(properties: Record<string, unknown> | undefined): number | undefined {
+  return numberProperty(properties?.rank);
+}
+
+function routeFeatureQualityMode(
+  properties: Record<string, unknown> | undefined,
+  fallbackQuality: Record<string, unknown> | undefined
+): string | undefined {
+  const quality = isRecord(properties?.quality) ? properties.quality : fallbackQuality;
+  return stringProperty(quality?.mode);
+}
+
 function routeFeatureRole(
   properties: Record<string, unknown> | undefined,
   index: number
 ): EmergencyRouteFeatureCollection["features"][number]["properties"]["role"] {
-  const role = stringProperty(properties?.role)?.toLowerCase();
-  if (role === "origin" || role === "destination" || role === "alternative" || role === "primary") {
+  const role = (stringProperty(properties?.role) ?? stringProperty(properties?.styleHint))?.toLowerCase();
+  if (
+    role === "access" ||
+    role === "origin" ||
+    role === "destination" ||
+    role === "alternative" ||
+    role === "incident" ||
+    role === "isochrone" ||
+    role === "primary"
+  ) {
     return role;
   }
+  if (numberProperty(properties?.rank) === 1) {
+    return "primary";
+  }
   return index === 0 ? "primary" : "alternative";
+}
+
+function appendRoutingTrafficIncidentFeatures(
+  features: EmergencyRouteFeatureCollection["features"],
+  response: RoutingRouteResponse
+): void {
+  const seen = new Set<string>();
+  const trafficRecords = [
+    ...response.routes.flatMap((route) => (isRecord(route.traffic) ? [route.traffic] : [])),
+    ...(isRecord(response.traffic) ? [response.traffic] : [])
+  ];
+  for (const traffic of trafficRecords) {
+    const incidents = Array.isArray(traffic.incidentsOnRoute) ? traffic.incidentsOnRoute.filter(isRecord) : [];
+    for (const [index, incident] of incidents.entries()) {
+      const coordinate = routeIncidentCoordinate(incident);
+      if (!coordinate) {
+        continue;
+      }
+      const incidentId =
+        stringProperty(incident.incidentId) ?? stringProperty(incident.id) ?? `${coordinate.join(",")}:${index}`;
+      if (seen.has(incidentId)) {
+        continue;
+      }
+      seen.add(incidentId);
+      features.push({
+        geometry: { coordinates: coordinate, type: "Point" },
+        properties: {
+          kind: "route-point",
+          label:
+            stringProperty(incident.label) ??
+            stringProperty(incident.title) ??
+            stringProperty(incident.type) ??
+            "Dopravní incident",
+          role: "incident",
+          routeId: `traffic:${incidentId}`,
+          sequence: features.length,
+          trafficSeverity: stringProperty(incident.severity)
+        },
+        type: "Feature"
+      });
+    }
+  }
+}
+
+function routeIncidentCoordinate(record: Record<string, unknown>): [number, number] | null {
+  const directGeometry = routePointGeometry(record.geometry);
+  if (directGeometry) {
+    return directGeometry.coordinates;
+  }
+  for (const key of ["point", "location", "coordinate", "coordinates"]) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      const coordinate = normalizeRouteCoordinate(value);
+      if (coordinate) {
+        return coordinate;
+      }
+    }
+    if (isRecord(value)) {
+      const nestedGeometry = routePointGeometry(value.geometry);
+      if (nestedGeometry) {
+        return nestedGeometry.coordinates;
+      }
+      const lat = numberProperty(value.lat) ?? numberProperty(value.latitude);
+      const lon = numberProperty(value.lon) ?? numberProperty(value.lng) ?? numberProperty(value.longitude);
+      if (lat !== undefined && lon !== undefined) {
+        return [lon, lat];
+      }
+    }
+  }
+  const lat = numberProperty(record.lat) ?? numberProperty(record.latitude);
+  const lon = numberProperty(record.lon) ?? numberProperty(record.lng) ?? numberProperty(record.longitude);
+  return lat !== undefined && lon !== undefined ? [lon, lat] : null;
 }
 
 function fitMapToEmergencyRoute(map: maplibregl.Map, collection: EmergencyRouteFeatureCollection): boolean {
@@ -12169,11 +12553,7 @@ function DynamicLegendItemView({ item }: { item: DynamicLegendItem }) {
   return (
     <div className="legend-item dynamic" title={`${item.label}: ${item.count.toLocaleString("cs-CZ")} v záběru`}>
       <span
-        className={[
-          "legend-dynamic-symbol",
-          item.shape,
-          item.disposition ? `disposition-${item.disposition}` : ""
-        ]
+        className={["legend-dynamic-symbol", item.shape, item.disposition ? `disposition-${item.disposition}` : ""]
           .filter(Boolean)
           .join(" ")}
         style={{ borderColor: item.color }}

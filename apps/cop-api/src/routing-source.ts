@@ -1,13 +1,7 @@
 import { createSituationDataSourceConfigFromEnv } from "./situation-data-source.js";
 
 export type RoutingProfileId =
-  | "car"
-  | "emergency_vehicle"
-  | "evacuation_walking"
-  | "large_emergency_vehicle"
-  | "offroad_4x4"
-  | "walking"
-  | string;
+  "car" | "emergency_vehicle" | "evacuation_walking" | "large_emergency_vehicle" | "offroad_4x4" | "walking" | string;
 
 export interface RoutingSourceConfig {
   baseUrl: string;
@@ -22,8 +16,10 @@ export interface RoutingPoint {
 }
 
 export interface RoutingRouteRequest {
+  alternatives?: number;
   avoid?: string[];
   from: RoutingPoint;
+  includeSteps?: boolean;
   profileId?: RoutingProfileId;
   to: RoutingPoint;
 }
@@ -42,6 +38,7 @@ export interface RoutingRouteResponse {
   providerId?: string;
   quality?: Record<string, unknown>;
   routes: Array<Record<string, unknown>>;
+  traffic?: Record<string, unknown>;
   warnings: string[];
 }
 
@@ -56,20 +53,29 @@ export interface RoutingSource {
 
 const defaultConfig: RoutingSourceConfig = {
   baseUrl: "http://docker.home.cz:5020/situation-data/api/v1",
-  enabled: false,
+  enabled: true,
   timeoutMs: 12000
 };
 
-export function createRoutingSourceConfigFromEnv(env: Record<string, string | undefined> = process.env): RoutingSourceConfig {
+export function createRoutingSourceConfigFromEnv(
+  env: Record<string, string | undefined> = process.env
+): RoutingSourceConfig {
   const situationConfig = createSituationDataSourceConfigFromEnv(env);
   return {
     baseUrl: trimTrailingSlash(env.COP_ROUTING_BASE_URL ?? situationConfig.baseUrl ?? defaultConfig.baseUrl),
     enabled: readBoolean(env.COP_ROUTING_ENABLED, readBoolean(env.COP_SITUATION_DATA_ENABLED, defaultConfig.enabled)),
-    timeoutMs: readInteger(env.COP_ROUTING_TIMEOUT_MS, situationConfig.timeoutMs ?? defaultConfig.timeoutMs, 1000, 60000)
+    timeoutMs: readInteger(
+      env.COP_ROUTING_TIMEOUT_MS,
+      env.COP_SITUATION_DATA_TIMEOUT_MS !== undefined ? situationConfig.timeoutMs : defaultConfig.timeoutMs,
+      1000,
+      60000
+    )
   };
 }
 
-export function createRoutingSourceFromEnv(env: Record<string, string | undefined> = process.env): RoutingSource | undefined {
+export function createRoutingSourceFromEnv(
+  env: Record<string, string | undefined> = process.env
+): RoutingSource | undefined {
   const config = createRoutingSourceConfigFromEnv(env);
   return config.enabled ? new RoutingSourceAdapter(config) : undefined;
 }
@@ -78,15 +84,29 @@ export class RoutingSourceAdapter implements RoutingSource {
   constructor(readonly config: RoutingSourceConfig) {}
 
   async fetchProfiles(requestNow: Date): Promise<RoutingProfilesResponse> {
-    return normalizeRoutingProfilesResponse(await fetchJson(routingUrl(this.config, "profiles"), this.config, requestNow));
+    return normalizeRoutingProfilesResponse(
+      await fetchJson(routingUrl(this.config, "profiles"), this.config, requestNow)
+    );
   }
 
   async route(request: RoutingRouteRequest, requestNow: Date): Promise<RoutingRouteResponse> {
-    return normalizeRoutingRouteResponse(await postRoutingJson(this.config, "route", normalizeRoutingRouteRequest(request), requestNow));
+    return normalizeRoutingRouteResponse(
+      await postRoutingJson(
+        this.config,
+        "alternatives",
+        normalizeRoutingRouteRequest({
+          ...request,
+          alternatives: request.alternatives ?? 1
+        }),
+        requestNow
+      )
+    );
   }
 
   async alternatives(request: RoutingRouteRequest, requestNow: Date): Promise<RoutingRouteResponse> {
-    return normalizeRoutingRouteResponse(await postRoutingJson(this.config, "alternatives", normalizeRoutingRouteRequest(request), requestNow));
+    return normalizeRoutingRouteResponse(
+      await postRoutingJson(this.config, "alternatives", normalizeRoutingRouteRequest(request), requestNow)
+    );
   }
 
   async isochrone(request: Record<string, unknown>, requestNow: Date): Promise<Record<string, unknown>> {
@@ -101,9 +121,14 @@ export class RoutingSourceAdapter implements RoutingSource {
 function normalizeRoutingRouteRequest(request: RoutingRouteRequest): RoutingRouteRequest {
   const from = normalizeRoutingPoint(request.from, "from");
   const to = normalizeRoutingPoint(request.to, "to");
+  const alternatives = normalizeAlternatives(request.alternatives);
   return {
-    ...(Array.isArray(request.avoid) ? { avoid: request.avoid.flatMap((item) => optionalString(item) ?? []).slice(0, 20) } : {}),
+    ...(alternatives !== undefined ? { alternatives } : {}),
+    ...(Array.isArray(request.avoid)
+      ? { avoid: request.avoid.flatMap((item) => optionalString(item) ?? []).slice(0, 20) }
+      : {}),
     from,
+    ...(typeof request.includeSteps === "boolean" ? { includeSteps: request.includeSteps } : {}),
     profileId: optionalString(request.profileId) ?? "emergency_vehicle",
     to
   };
@@ -130,11 +155,7 @@ function normalizeRoutingProfilesResponse(value: unknown): RoutingProfilesRespon
   if (!isRecord(value)) {
     throw new Error("Routing profiles response is not an object.");
   }
-  const rawProfiles = Array.isArray(value.profiles)
-    ? value.profiles
-    : Array.isArray(value.items)
-      ? value.items
-      : [];
+  const rawProfiles = Array.isArray(value.profiles) ? value.profiles : Array.isArray(value.items) ? value.items : [];
   return {
     contractVersion: optionalString(value.contractVersion),
     generatedAt: optionalString(value.generatedAt),
@@ -154,6 +175,7 @@ function normalizeRoutingRouteResponse(value: unknown): RoutingRouteResponse {
     providerId: optionalString(value.providerId),
     quality: isRecord(value.quality) ? value.quality : undefined,
     routes: Array.isArray(value.routes) ? value.routes.filter(isRecord) : [],
+    traffic: isRecord(value.traffic) ? value.traffic : undefined,
     warnings: normalizeWarnings(value.warnings)
   };
 }
@@ -165,7 +187,12 @@ function normalizeRoutingGenericResponse(value: unknown): Record<string, unknown
   return value;
 }
 
-async function postRoutingJson(config: RoutingSourceConfig, path: string, body: unknown, requestNow: Date): Promise<unknown> {
+async function postRoutingJson(
+  config: RoutingSourceConfig,
+  path: string,
+  body: unknown,
+  requestNow: Date
+): Promise<unknown> {
   return fetchJson(routingUrl(config, path), config, requestNow, {
     body: JSON.stringify(body),
     method: "POST"
@@ -177,14 +204,20 @@ type FetchJsonInit = RequestInit & { timeoutMs?: number };
 class RoutingHttpError extends Error {
   readonly status: number;
 
-  constructor(status: number, statusText: string, url: URL) {
-    super(`${status} ${statusText || "SIM routing request failed"} for ${url.pathname}`);
+  constructor(status: number, statusText: string, url: URL, detail?: string) {
+    const suffix = detail ? `: ${detail}` : "";
+    super(`SIM routing upstream returned ${status} ${statusText || "request failed"} for ${url.pathname}${suffix}`);
     this.name = "RoutingHttpError";
     this.status = status;
   }
 }
 
-async function fetchJson(url: URL, config: RoutingSourceConfig, requestNow: Date, init: FetchJsonInit = {}): Promise<unknown> {
+async function fetchJson(
+  url: URL,
+  config: RoutingSourceConfig,
+  requestNow: Date,
+  init: FetchJsonInit = {}
+): Promise<unknown> {
   const controller = new AbortController();
   const { timeoutMs, ...requestInit } = init;
   const timeout = setTimeout(() => controller.abort(), timeoutMs ?? config.timeoutMs);
@@ -200,11 +233,38 @@ async function fetchJson(url: URL, config: RoutingSourceConfig, requestNow: Date
       signal: controller.signal
     });
     if (!response.ok) {
-      throw new RoutingHttpError(response.status, response.statusText, url);
+      throw new RoutingHttpError(response.status, response.statusText, url, await readRoutingErrorDetail(response));
     }
     return response.json();
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function readRoutingErrorDetail(response: Response): Promise<string | undefined> {
+  try {
+    const contentType = response.headers.get("content-type") ?? "";
+    const text = await response.clone().text();
+    if (!text.trim()) {
+      return undefined;
+    }
+    if (contentType.toLowerCase().includes("application/json")) {
+      const body = JSON.parse(text) as unknown;
+      if (isRecord(body)) {
+        const message =
+          optionalString(body.message) ??
+          (isRecord(body.error)
+            ? (optionalString(body.error.message) ?? optionalString(body.error.code))
+            : undefined) ??
+          optionalString(body.detail);
+        if (message) {
+          return message.slice(0, 500);
+        }
+      }
+    }
+    return text.replace(/\s+/gu, " ").trim().slice(0, 500);
+  } catch {
+    return undefined;
   }
 }
 
@@ -213,9 +273,7 @@ function routingUrl(config: RoutingSourceConfig, path: string): URL {
 }
 
 function normalizeWarnings(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.flatMap((item) => optionalString(item) ?? [])
-    : [];
+  return Array.isArray(value) ? value.flatMap((item) => optionalString(item) ?? []) : [];
 }
 
 function readBoolean(value: string | undefined, fallback: boolean): boolean {
@@ -240,6 +298,14 @@ function optionalString(value: unknown): string | undefined {
 function finiteCoordinate(value: unknown, min: number, max: number): number | undefined {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : undefined;
+}
+
+function normalizeAlternatives(value: unknown): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(5, Math.max(0, Math.round(parsed))) : undefined;
 }
 
 function trimTrailingSlash(value: string): string {
