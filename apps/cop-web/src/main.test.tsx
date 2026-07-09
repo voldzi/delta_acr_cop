@@ -1149,7 +1149,11 @@ describe("COP web dashboard", () => {
     await waitFor(() => expect(screen.getAllByText("AIR_SIM_AIRCRAFT-0001").length).toBeGreaterThan(0));
     expect(screen.getByTestId("cop-map").textContent).toContain("AIR_SIM_UAV-0001");
     expect(screen.getByTestId("cop-map").getAttribute("data-map-interaction-suspended")).toBe("false");
-    fireEvent.click(screen.getByRole("button", { name: "Komunikace" }));
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "Situační pracovní plocha" })).getByRole("button", {
+        name: "Chat"
+      })
+    );
     expect(screen.getByTestId("cop-map").getAttribute("data-map-interaction-suspended")).toBe("false");
     expect(screen.getByText("Standardní operační symbol")).toBeTruthy();
     expect(screen.queryByText("APP6-AIR-FRIEND-AIRCRAFT-ACTIVE")).toBeNull();
@@ -1199,8 +1203,16 @@ describe("COP web dashboard", () => {
     expect(
       screen.getAllByText("UAV").some((node) => node.closest(".source-layer-toggle")?.textContent?.includes("1"))
     ).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: /Zdroje/u }));
-    expect(screen.getByRole("button", { name: /Zdroje/u }).getAttribute("aria-pressed")).toBe("true");
+    const workspaceNavigation = screen.getByRole("navigation", { name: "Situační pracovní plocha" });
+    const moreSummary = within(workspaceNavigation).getByText("Další").closest("summary");
+    expect(moreSummary).toBeTruthy();
+    if (!moreSummary) {
+      throw new Error("More tools menu was not rendered.");
+    }
+    fireEvent.click(moreSummary);
+    const sourcesButton = within(workspaceNavigation).getByRole("button", { name: /Zdroje/u });
+    fireEvent.click(sourcesButton);
+    expect(sourcesButton.classList.contains("active")).toBe(true);
     expect(screen.getAllByText("COP Air Situation Simulator").length).toBeGreaterThan(0);
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/cop/tracks?includeSynthetic=true"), {
       headers: { Authorization: "Bearer dev-lab-token" }
@@ -1209,7 +1221,7 @@ describe("COP web dashboard", () => {
       headers: { Authorization: "Bearer dev-lab-token" }
     });
 
-    fireEvent.click(screen.getByTitle("Nastavení operátora"));
+    fireEvent.click(screen.getByTitle("Moje nastavení"));
     fireEvent.click(screen.getByRole("tab", { name: "Mapa" }));
     expect(screen.getByText("Čas historie")).toBeTruthy();
     expect(screen.getByRole("button", { name: "60s" }).getAttribute("aria-pressed")).toBe("true");
@@ -1333,7 +1345,11 @@ describe("COP web dashboard", () => {
       { timeout: 2500 }
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Komunikace" }));
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "Situační pracovní plocha" })).getByRole("button", {
+        name: "Chat"
+      })
+    );
     expect(screen.getByText("Integrovaný COP Chat")).toBeTruthy();
 
     act(() => {
@@ -1499,7 +1515,9 @@ describe("COP web dashboard", () => {
 
     render(<App />);
     await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "Mobilní navigace" })).getByRole("button", { name: "Chat" })
+    );
     const chatFrame = screen.getByTitle("COP Chat");
     expect(chatFrame.closest("aside")?.getAttribute("aria-hidden")).toBe("false");
 
@@ -1601,7 +1619,7 @@ describe("COP web dashboard", () => {
     await waitFor(() => expect(document.querySelector(".nav-unread-badge")?.textContent).toBe("2"));
 
     const communicationButton = document.querySelector(
-      'button.workspace-tab[title="Otevřít komunikaci"]'
+      'button.workspace-tab[title="Otevřít chat"]'
     ) as HTMLButtonElement | null;
     expect(communicationButton).toBeTruthy();
     if (!communicationButton) {

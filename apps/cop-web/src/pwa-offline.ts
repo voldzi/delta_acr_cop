@@ -1,3 +1,4 @@
+import { registerCopPwaServiceWorker } from "@cop/core/pwa-release";
 import type { CopDashboardData } from "./cop-data";
 
 const snapshotKey = "cop.offline.snapshot.v1";
@@ -41,28 +42,7 @@ export interface CopRouteTileCacheWarmupRequest {
 }
 
 export function registerCopServiceWorker(): void {
-  if (typeof window === "undefined" || typeof navigator === "undefined") {
-    return;
-  }
-  if (!import.meta.env.PROD || !("serviceWorker" in navigator)) {
-    return;
-  }
-
-  window.addEventListener("load", () => {
-    void navigator.serviceWorker
-      .register("/cop-service-worker.js", { scope: "/", updateViaCache: "none" })
-      .then((registration) => {
-        void registration.update().catch(() => undefined);
-        document.addEventListener("visibilitychange", () => {
-          if (document.visibilityState === "visible") {
-            void registration.update().catch(() => undefined);
-          }
-        });
-      })
-      .catch(() => {
-        // The app must remain usable even when a browser or policy blocks service workers.
-      });
-  });
+  registerCopPwaServiceWorker({ enabled: import.meta.env.PROD });
 }
 
 export function requestCopPwaCacheWarmup(): void {

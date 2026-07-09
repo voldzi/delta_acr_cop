@@ -16,6 +16,10 @@
     "./cop-data": {
       "types": "./dist/cop-data.d.ts",
       "import": "./dist/cop-data.js"
+    },
+    "./pwa-release": {
+      "types": "./dist/pwa-release.d.ts",
+      "import": "./dist/pwa-release.js"
     }
   },
   "scripts": {

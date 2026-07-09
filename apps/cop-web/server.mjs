@@ -194,6 +194,7 @@ function cacheControl(filePath, options) {
   if (
     options.fallbackIndex ||
     relative === "index.html" ||
+    relative === "asset-manifest.json" ||
     relative === "cop-service-worker.js" ||
     relative === "site.webmanifest"
   ) {

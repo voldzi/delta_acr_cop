@@ -29,6 +29,7 @@ const budgets = [
     required: true,
     entries: [
       { label: "app shell", pattern: /^index-[\w-]+\.js$/, maxBytes: 135 * KiB },
+      { label: "React runtime", pattern: /^react-runtime-[\w-]+\.js$/, maxBytes: 60 * KiB },
       { label: "matrix sdk", pattern: /^matrix-[\w-]+\.js$/, maxBytes: 360 * KiB },
       { label: "matrix crypto wasm", pattern: /^matrix_sdk_crypto_wasm_bg-[\w-]+\.wasm$/, maxBytes: 1_950 * KiB },
       { label: "pdf viewer", pattern: /^pdf-[\w-]+\.js$/, maxBytes: 130 * KiB },

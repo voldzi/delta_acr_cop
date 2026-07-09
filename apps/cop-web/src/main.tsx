@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot, type Root } from "react-dom/client";
 import clsx from "clsx";
+import { recoverStalePwaRelease } from "@cop/core/pwa-release";
 import {
   Activity,
   AlertTriangle,
@@ -39,6 +40,7 @@ import {
   MessageCircle,
   Minimize2,
   MonitorUp,
+  MoreHorizontal,
   MousePointer2,
   Move,
   Navigation,
@@ -274,15 +276,19 @@ import {
 import {
   chatUnreadStorageKey,
   chatVoiceCallStorageKey,
+  copReportDraftSearchParams,
   decodeChatCenterLocation,
   decodeChatLiveLocations,
+  decodeChatReportDraft,
   decodeCopMapFocusSearch,
+  decodeCopReportDraftSearch,
   encodeChatCurrentLocation,
   encodeChatSelect,
   encodeChatShareTransit,
   encodeChatVoiceCallCommand,
   type ChatCenterLocationMessage,
   type ChatLiveLocationPayload,
+  type ChatReportDraftPayload,
   type ChatSummaryMessage,
   type ChatSummaryUnreadRoom,
   type ChatTransitSharePayload,
@@ -910,6 +916,7 @@ export function App() {
   );
   const initialAlertPreferences = React.useMemo(() => readLocalAlertPreferences(userStorageScope), [userStorageScope]);
   const initialMapFocus = React.useMemo(() => decodeCopMapFocusSearch(window.location.search), []);
+  const initialChatReportDraft = React.useMemo(() => decodeCopReportDraftSearch(window.location.search), []);
   const [activeWorkspace, setActiveWorkspace] = React.useState<WorkspaceModule>(() =>
     normalizeWorkspaceModule(initialPreferences.activeWorkspace)
   );
@@ -1042,6 +1049,7 @@ export function App() {
   );
   const [trackHistory, setTrackHistory] = React.useState<TrackHistory>({});
   const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [settingsTab, setSettingsTab] = React.useState<SettingsTab>("map");
   const [demoScenario, setDemoScenario] = React.useState<DemoScenarioResponse | null>(null);
   const [demoScenarioBusy, setDemoScenarioBusy] = React.useState<"loading" | "resetting" | "seeding" | null>(null);
@@ -1120,6 +1128,9 @@ export function App() {
   const [communityReportSuccess, setCommunityReportSuccess] = React.useState<string | null>(null);
   const [communityUploadProgress, setCommunityUploadProgress] = React.useState<CommunityUploadUiState | null>(null);
   const [communityReportLocationPickMode, setCommunityReportLocationPickMode] = React.useState(false);
+  const [pendingChatReportDraft, setPendingChatReportDraft] = React.useState<ChatReportDraftPayload | null>(
+    initialChatReportDraft
+  );
   const [communityRefreshNonce, setCommunityRefreshNonce] = React.useState(0);
   const [communityGallery, setCommunityGallery] = React.useState<CommunityGalleryState | null>(null);
   const [loginPromptReason, setLoginPromptReason] = React.useState<LoginPromptReason | null>(null);
@@ -1323,6 +1334,14 @@ export function App() {
         setSharedLiveLocations(liveLocations.filter((location) => location.status === "live"));
         return;
       }
+      const reportDraft = decodeChatReportDraft(data);
+      if (reportDraft) {
+        setPendingChatReportDraft(reportDraft);
+        setActiveWorkspace("map");
+        setMessagingOpen(false);
+        setMobileSheet(null);
+        return;
+      }
       const center = decodeChatCenterLocation(data);
       if (center) {
         setActiveWorkspace("map");
@@ -1471,6 +1490,22 @@ export function App() {
   const mobilePairCodeFromPath = React.useMemo(readMobilePairCodeFromLocation, []);
   const authSubjectId = subjectIdFromAuthSession(authSession);
   const messagingRuntimeEnabled = Boolean(authToken);
+
+  React.useEffect(() => {
+    if (!pendingChatReportDraft) {
+      return;
+    }
+    setActiveWorkspace("map");
+    setMessagingOpen(false);
+    setMobileSheet(null);
+    if (!profileAccessReady) {
+      openLoginPrompt("report");
+      return;
+    }
+    startCommunityReportCapture(pendingChatReportDraft);
+    setPendingChatReportDraft(null);
+    clearChatReportDraftSearch();
+  }, [pendingChatReportDraft, profileAccessReady]);
 
   React.useEffect(() => {
     let active = true;
@@ -5703,18 +5738,28 @@ export function App() {
     setAuthSession({ status: "anonymous" });
   }
 
-  function startCommunityReportCapture() {
+  function startCommunityReportCapture(source?: ChatReportDraftPayload) {
     if (!profileAccessReady) {
       setProfileSyncError("Vlastní hlášení s polohou a přílohami je dostupné po přihlášení.");
       openLoginPrompt("report");
       return;
     }
-    setCommunityReportDraft(createCommunityReportDraft(resolveCommunityReportLocation(null, mapView)));
+    const draft = createCommunityReportDraft(resolveCommunityReportLocation(null, mapView));
+    setCommunityReportDraft({
+      ...draft,
+      ...(source?.groupId ? { groupId: source.groupId } : {}),
+      ...(source?.groupId && source.title ? { groupName: source.title } : {}),
+      ...(source?.title ? { description: `Podnět z chatu „${source.title}“. ` } : {})
+    });
     setCommunityReportError(null);
     setCommunityReportSuccess(null);
     setCommunityReportLocationPickMode(false);
     setCommunityReportOpen(true);
-    setLocationStatus("Sběr hlášení: doplňte popis, riziko, platnost a případné přílohy.");
+    setLocationStatus(
+      source
+        ? "Hlášení z chatu: ověřte polohu, popis, riziko a platnost před zveřejněním."
+        : "Sběr hlášení: doplňte popis, riziko, platnost a případné přílohy."
+    );
   }
 
   function setCommunityReportLocationFromUser() {
@@ -5833,9 +5878,10 @@ export function App() {
           : undefined,
         visibility: "community"
       } as const;
-      linkedGroup = communityReportDraft.reportId
-        ? null
-        : await createCommunityReportChatGroup(authToken, communityReportDraft);
+      linkedGroup =
+        communityReportDraft.reportId || communityReportDraft.groupId
+          ? null
+          : await createCommunityReportChatGroup(authToken, communityReportDraft);
       const report = communityReportDraft.reportId
         ? await updateCommunityReport(apiBase, authToken, communityReportDraft.reportId, reportPayload)
         : await createCommunityReport(apiBase, authToken, {
@@ -6702,6 +6748,9 @@ export function App() {
     () => mergeOperatorProfile(authSession, operatorProfile),
     [authSession, operatorProfile]
   );
+  const mapDetailSelected = Boolean(selectedEmergencyRouteInfo || selectedSituationFeature || selectedObject);
+  const effectiveRightPanelMode =
+    activeWorkspace === "map" && !mapDetailSelected ? "hidden" : workspaceLayout.rightPanelMode;
   const shellClassName = clsx(
     "shell",
     "app-shell-v2",
@@ -6716,7 +6765,7 @@ export function App() {
     "workspace",
     `workspace-${activeWorkspace}`,
     `workspace-left-${workspaceLayout.leftPanelMode}`,
-    `workspace-right-${workspaceLayout.rightPanelMode}`
+    `workspace-right-${effectiveRightPanelMode}`
   );
   const shellStyle = React.useMemo(() => {
     const style: React.CSSProperties = {
@@ -6935,9 +6984,9 @@ export function App() {
           {priorityAlertAdditionalLabel ? <small>{priorityAlertAdditionalLabel}</small> : null}
         </div>
         <div className="topbar-actions">
-          <button className="top-command-button record" onClick={startCommunityReportCapture} type="button">
+          <button className="top-command-button record" onClick={() => startCommunityReportCapture()} type="button">
             <span className="record-dot" />
-            Záznam
+            Nahlásit
           </button>
           <button
             className="top-command-button"
@@ -6992,7 +7041,7 @@ export function App() {
             ) : (
               <>
                 <span>
-                  Operátor
+                  Profil
                   <strong>{operatorDisplayName(authSession, authConfig, effectiveOperatorProfile)}</strong>
                 </span>
                 <ChevronDown size={15} />
@@ -7818,9 +7867,9 @@ export function App() {
             )}
           </section>
 
-          {workspaceLayout.rightPanelMode !== "hidden" ? (
+          {effectiveRightPanelMode !== "hidden" ? (
             <aside className="panel right-panel">
-              {workspaceLayout.rightPanelMode === "collapsed" ? (
+              {effectiveRightPanelMode === "collapsed" ? (
                 <CollapsedPanelRail
                   icon={<Database size={18} />}
                   label={selectedEmergencyRouteInfo || selectedSituationFeature || selectedObject ? "Detail" : "Info"}
@@ -7979,7 +8028,7 @@ export function App() {
                   ) : null}
                 </>
               )}
-              {workspaceLayout.rightPanelMode === "open" ? (
+              {effectiveRightPanelMode === "open" ? (
                 <button
                   aria-label="Změnit šířku pravého panelu"
                   className="panel-resize-handle left"
@@ -8116,20 +8165,53 @@ export function App() {
         </MobileSheetSurface>
       ) : null}
 
+      {mobileMenuOpen ? (
+        <CitizenMobileMenu
+          authenticated={profileAccessReady}
+          onAccount={() => {
+            setMobileMenuOpen(false);
+            if (profileAccessReady || !isOidcEnabled(authConfig)) {
+              openSettings("account");
+            } else {
+              loginOperator({ promptLogin: true });
+            }
+          }}
+          onClose={() => setMobileMenuOpen(false)}
+          onHelp={() => {
+            setMobileMenuOpen(false);
+            setHelpSection("overview");
+          }}
+          onSettings={() => {
+            setMobileMenuOpen(false);
+            openSettings("map");
+          }}
+          onSketch={() => {
+            setMobileMenuOpen(false);
+            setActiveWorkspace("map");
+            setMobileSketchOpen(true);
+          }}
+          onWorkspace={(workspace) => {
+            setMobileMenuOpen(false);
+            setActiveWorkspace(workspace);
+          }}
+        />
+      ) : null}
+
       <MobileBottomNav
         activeSheet={mobileSheet}
         chatUnreadCount={messagingUnreadCount}
         incomingVoiceCall={Boolean(incomingMessagingVoiceCall)}
         messagingOpen={messagingOpen}
-        settingsOpen={settingsOpen}
-        sketchOpen={mobileSketchOpen}
+        menuOpen={mobileMenuOpen}
         onChat={() => {
+          setMobileMenuOpen(false);
           setSettingsOpen(false);
           setMobileSheet(null);
           setMobileSketchOpen(false);
           openMessagingPanel();
         }}
         onLayers={() => {
+          setMobileMenuOpen(false);
           setSettingsOpen(false);
           setMessagingOpen(false);
           setActiveWorkspace("map");
@@ -8144,6 +8226,7 @@ export function App() {
           setMobileSheet((current) => (current === "layers" ? null : "layers"));
         }}
         onMap={() => {
+          setMobileMenuOpen(false);
           setSettingsOpen(false);
           setMessagingOpen(false);
           setActiveWorkspace("map");
@@ -8151,28 +8234,19 @@ export function App() {
           setMobileSheet(null);
         }}
         onMenu={() => {
+          setSettingsOpen(false);
           setMobileSheet(null);
           setMobileSketchOpen(false);
           setMessagingOpen(false);
-          if (settingsOpen) {
-            setSettingsOpen(false);
-            return;
-          }
-          openSettings("map");
+          setMobileMenuOpen((current) => !current);
         }}
         onReport={() => {
+          setMobileMenuOpen(false);
           setSettingsOpen(false);
           setMessagingOpen(false);
           setMobileSheet(null);
           setMobileSketchOpen(false);
           startCommunityReportCapture();
-        }}
-        onSketch={() => {
-          setSettingsOpen(false);
-          setActiveWorkspace("map");
-          setMobileSheet(null);
-          setMessagingOpen(false);
-          setMobileSketchOpen((current) => !current);
         }}
       />
 
@@ -8183,7 +8257,7 @@ export function App() {
           ) : null}
           <span className={streamStatusTone(streamStatus)}>
             <Activity size={15} />
-            Spojení {streamStatusLabel(streamStatus)}
+            Datový stream {streamStatusLabel(streamStatus)}
           </span>
           <span className={operatingModeTone(operatingMode)}>
             <Wifi size={15} />
@@ -11481,17 +11555,41 @@ function WorkspaceNavigator({
   onOpenSettings: () => void;
   onStartReport: () => void;
 }) {
-  const modules: WorkspaceModule[] = ["data", "map", "alerts", "sources", "radio", "replay"];
+  const moreRef = React.useRef<HTMLDetailsElement | null>(null);
+  const primaryModules: WorkspaceModule[] = ["map", "alerts"];
+  const secondaryModules: WorkspaceModule[] = ["data", "sources", "radio", "replay"];
+  const selectWorkspace = (module: WorkspaceModule) => {
+    onChange(module);
+    moreRef.current?.removeAttribute("open");
+  };
+  const closeMoreAndRun = (action: () => void) => {
+    moreRef.current?.removeAttribute("open");
+    action();
+  };
   return (
     <nav className="workspace-nav app-module-rail" aria-label="Situační pracovní plocha">
-      {modules.map((module) => {
+      <button
+        className={clsx("workspace-tab", incomingVoiceCall && "incoming-call")}
+        onClick={() => closeMoreAndRun(onOpenMessaging)}
+        title={incomingVoiceCall ? "Příchozí hlasový hovor" : "Otevřít chat"}
+        type="button"
+      >
+        {incomingVoiceCall ? <PhoneIncoming size={16} /> : <MessageCircle size={16} />}
+        <span>Chat</span>
+        {incomingVoiceCall ? (
+          <strong className="nav-call-badge" aria-label="Příchozí hovor" />
+        ) : chatUnreadCount > 0 ? (
+          <strong className="nav-unread-badge">{formatUnreadBadge(chatUnreadCount)}</strong>
+        ) : null}
+      </button>
+      {primaryModules.map((module) => {
         const metadata = workspaceMetadata(module);
         return (
           <button
             aria-pressed={activeWorkspace === module}
             className={`workspace-tab ${activeWorkspace === module ? "active" : ""}`}
             key={module}
-            onClick={() => onChange(module)}
+            onClick={() => selectWorkspace(module)}
             title={metadata.description}
             type="button"
           >
@@ -11501,24 +11599,43 @@ function WorkspaceNavigator({
         );
       })}
       <button
-        className={clsx("workspace-tab", incomingVoiceCall && "incoming-call")}
-        onClick={onOpenMessaging}
-        title={incomingVoiceCall ? "Příchozí hlasový hovor" : "Otevřít komunikaci"}
+        className="workspace-tab"
+        onClick={() => closeMoreAndRun(onStartReport)}
+        title="Vložit nové hlášení"
         type="button"
       >
-        {incomingVoiceCall ? <PhoneIncoming size={16} /> : <MessageCircle size={16} />}
-        <span>Komunikace</span>
-        {incomingVoiceCall ? (
-          <strong className="nav-call-badge" aria-label="Příchozí hovor" />
-        ) : chatUnreadCount > 0 ? (
-          <strong className="nav-unread-badge">{formatUnreadBadge(chatUnreadCount)}</strong>
-        ) : null}
-      </button>
-      <button className="workspace-tab" onClick={onStartReport} title="Vložit nové hlášení" type="button">
         <Plus size={16} />
         <span>Nahlásit</span>
       </button>
-      <button className="workspace-settings-button" onClick={onOpenSettings} title="Nastavení operátora" type="button">
+      <details className="workspace-more" ref={moreRef}>
+        <summary className="workspace-tab" title="Další nástroje">
+          <MoreHorizontal size={17} />
+          <span>Další</span>
+        </summary>
+        <div className="workspace-more-menu">
+          {secondaryModules.map((module) => {
+            const metadata = workspaceMetadata(module);
+            return (
+              <button
+                className={activeWorkspace === module ? "active" : ""}
+                key={module}
+                onClick={() => selectWorkspace(module)}
+                title={metadata.description}
+                type="button"
+              >
+                {workspaceIcon(module)}
+                <span>{workspaceRailLabel(module)}</span>
+              </button>
+            );
+          })}
+        </div>
+      </details>
+      <button
+        className="workspace-settings-button"
+        onClick={() => closeMoreAndRun(onOpenSettings)}
+        title="Moje nastavení"
+        type="button"
+      >
         <Settings size={16} />
         <span>Nastavení</span>
       </button>
@@ -11969,51 +12086,93 @@ function RadioLinkSummary({ link }: { link: RadioLinkCheckResponse }) {
   );
 }
 
+function CitizenMobileMenu({
+  authenticated,
+  onAccount,
+  onClose,
+  onHelp,
+  onSettings,
+  onSketch,
+  onWorkspace
+}: {
+  authenticated: boolean;
+  onAccount: () => void;
+  onClose: () => void;
+  onHelp: () => void;
+  onSettings: () => void;
+  onSketch: () => void;
+  onWorkspace: (workspace: WorkspaceModule) => void;
+}) {
+  return (
+    <MobileSheetSurface onClose={onClose} subtitle="CSM" title="Menu">
+      <div className="citizen-mobile-menu">
+        <button onClick={onAccount} type="button">
+          {authenticated ? <UserCircle size={20} /> : <LogIn size={20} />}
+          <span>
+            <strong>{authenticated ? "Můj profil" : "Přihlásit"}</strong>
+            <small>{authenticated ? "Účet, zařízení a upozornění" : "Synchronizovat chat a nastavení"}</small>
+          </span>
+        </button>
+        <button onClick={onSettings} type="button">
+          <Settings size={20} />
+          <span>
+            <strong>Nastavení</strong>
+            <small>Mapa, výstrahy a vzhled</small>
+          </span>
+        </button>
+        <button onClick={onSketch} type="button">
+          <PenLine size={20} />
+          <span>
+            <strong>Zákres do mapy</strong>
+            <small>Body, linie a oblasti</small>
+          </span>
+        </button>
+        <button onClick={onHelp} type="button">
+          <HelpCircle size={20} />
+          <span>
+            <strong>Nápověda</strong>
+            <small>Postupy a vysvětlení stavů</small>
+          </span>
+        </button>
+        <div className="citizen-mobile-menu-section" aria-label="Další nástroje">
+          <span>Další nástroje</span>
+          {(["alerts", "data", "sources", "radio", "replay"] as WorkspaceModule[]).map((workspace) => (
+            <button key={workspace} onClick={() => onWorkspace(workspace)} type="button">
+              {workspaceIcon(workspace)}
+              <strong>{workspaceRailLabel(workspace)}</strong>
+            </button>
+          ))}
+        </div>
+      </div>
+    </MobileSheetSurface>
+  );
+}
+
 function MobileBottomNav({
   activeSheet,
   chatUnreadCount,
   incomingVoiceCall,
   messagingOpen,
-  settingsOpen,
-  sketchOpen,
+  menuOpen,
   onChat,
   onLayers,
   onMap,
   onMenu,
-  onReport,
-  onSketch
+  onReport
 }: {
   activeSheet: MobileSheet;
   chatUnreadCount: number;
   incomingVoiceCall: boolean;
   messagingOpen: boolean;
-  settingsOpen: boolean;
-  sketchOpen: boolean;
+  menuOpen: boolean;
   onChat: () => void;
   onLayers: () => void;
   onMap: () => void;
   onMenu: () => void;
   onReport: () => void;
-  onSketch: () => void;
 }) {
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobilní navigace">
-      <button
-        className={!activeSheet && !messagingOpen && !settingsOpen && !sketchOpen ? "active" : ""}
-        onClick={onMap}
-        type="button"
-      >
-        <Layers size={18} />
-        <span>Mapa</span>
-      </button>
-      <button className={activeSheet === "layers" ? "active" : ""} onClick={onLayers} type="button">
-        <ListFilter size={18} />
-        <span>Vrstvy</span>
-      </button>
-      <button className={sketchOpen ? "active" : ""} onClick={onSketch} type="button">
-        <PenLine size={18} />
-        <span>Zákres</span>
-      </button>
       <button
         className={clsx(messagingOpen && "active", incomingVoiceCall && "incoming-call")}
         onClick={onChat}
@@ -12027,11 +12186,19 @@ function MobileBottomNav({
           <strong className="nav-unread-badge">{formatUnreadBadge(chatUnreadCount)}</strong>
         ) : null}
       </button>
+      <button className={!activeSheet && !messagingOpen && !menuOpen ? "active" : ""} onClick={onMap} type="button">
+        <Layers size={18} />
+        <span>Mapa</span>
+      </button>
+      <button className={activeSheet === "layers" ? "active" : ""} onClick={onLayers} type="button">
+        <ListFilter size={18} />
+        <span>Vrstvy</span>
+      </button>
       <button className="report" onClick={onReport} type="button">
         <Plus size={19} />
         <span>Nahlásit</span>
       </button>
-      <button className={settingsOpen ? "active" : ""} onClick={onMenu} type="button">
+      <button className={menuOpen ? "active" : ""} onClick={onMenu} type="button">
         <Settings size={18} />
         <span>Menu</span>
       </button>
@@ -12877,11 +13044,11 @@ function SettingsDrawer({
 }) {
   return (
     <div className="settings-backdrop" role="presentation">
-      <aside className="settings-drawer" aria-label="Nastavení operátora">
+      <aside className="settings-drawer" aria-label="Moje nastavení">
         <div className="settings-header">
           <div>
-            <span>Operátor</span>
-            <strong>Nastavení</strong>
+            <span>CSM</span>
+            <strong>Moje nastavení</strong>
           </div>
           <button className="icon-button" onClick={onClose} title="Zavřít nastavení" type="button">
             <X size={16} />
@@ -24377,21 +24544,35 @@ function sourceQualityWarningText(warning: string): string {
     : normalized;
 }
 
+function clearChatReportDraftSearch(): void {
+  const url = new URL(window.location.href);
+  for (const key of Object.values(copReportDraftSearchParams)) {
+    url.searchParams.delete(key);
+  }
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
 registerCopServiceWorker();
 
 interface RootErrorBoundaryState {
   error: Error | null;
+  recovering: boolean;
 }
 
 class RootErrorBoundary extends React.Component<React.PropsWithChildren, RootErrorBoundaryState> {
-  state: RootErrorBoundaryState = { error: null };
+  state: RootErrorBoundaryState = { error: null, recovering: false };
 
   static getDerivedStateFromError(error: Error): RootErrorBoundaryState {
-    return { error };
+    return { error, recovering: false };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
     console.error("[cop-web] Root render failed", error, info.componentStack);
+    void recoverStalePwaRelease(error).then((recovering) => {
+      if (recovering) {
+        this.setState({ recovering: true });
+      }
+    });
   }
 
   render(): React.ReactNode {
@@ -24401,10 +24582,11 @@ class RootErrorBoundary extends React.Component<React.PropsWithChildren, RootErr
     return (
       <main className="app-fatal-fallback">
         <div className="app-fatal-card">
-          <strong>Aplikaci se nepodařilo vykreslit</strong>
+          <strong>{this.state.recovering ? "Načítám aktuální verzi" : "Aplikaci se nepodařilo vykreslit"}</strong>
           <span>
-            Prohlížeč narazil na chybu při vykreslení mapy. Obnovte stránku; pokud se stav opakuje, odešlete správci
-            název prohlížeče a čas výskytu.
+            {this.state.recovering
+              ? "Odstraňuji neúplnou lokální verzi aplikace a znovu ji načítám."
+              : "Obnovte stránku; pokud se stav opakuje, odešlete správci název prohlížeče a čas výskytu."}
           </span>
           <code>{this.state.error.message || "Neznámá chyba"}</code>
           <button onClick={() => window.location.reload()} type="button">

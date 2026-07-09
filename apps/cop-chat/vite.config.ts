@@ -25,6 +25,7 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 2300,
+    manifest: "asset-manifest.json",
     modulePreload: {
       resolveDependencies(_url, deps) {
         return deps.filter((dep) => !/(^|\/)matrix-[^/]+\.js$/u.test(dep));
@@ -33,6 +34,13 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (
+            id.includes("/node_modules/react/") ||
+            id.includes("/node_modules/react-dom/") ||
+            id.includes("/node_modules/scheduler/")
+          ) {
+            return "react-runtime";
+          }
           return id.includes("/node_modules/matrix-js-sdk/") ? "matrix" : undefined;
         }
       }

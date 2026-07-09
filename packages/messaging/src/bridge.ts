@@ -11,6 +11,7 @@ export const chatBridgeMessageTypes = {
   centerLocation: "cop-chat:center-location",
   currentLocation: "cop-chat:current-location",
   liveLocations: "cop-chat:live-locations",
+  reportDraft: "cop-chat:report-draft",
   select: "cop-chat:select",
   shareTransit: "cop-chat:share-transit",
   summary: "cop-chat:summary",
@@ -122,6 +123,26 @@ export interface ChatLiveLocationsMessage {
   locations: ChatLiveLocationPayload[];
   type: typeof chatBridgeMessageTypes.liveLocations;
 }
+
+export interface ChatReportDraftPayload {
+  conversationId?: string;
+  groupId?: string;
+  roomId?: string;
+  title?: string;
+}
+
+export interface ChatReportDraftMessage {
+  report: ChatReportDraftPayload;
+  type: typeof chatBridgeMessageTypes.reportDraft;
+}
+
+export const copReportDraftSearchParams = {
+  conversationId: "copReportConversationId",
+  groupId: "copReportGroupId",
+  open: "copReport",
+  roomId: "copReportRoomId",
+  title: "copReportTitle"
+} as const;
 
 export const copMapFocusSearchParams = {
   action: "copAction",
@@ -418,6 +439,52 @@ export function decodeChatLiveLocations(value: unknown): ChatLiveLocationPayload
   return normalizeLiveLocations(data.locations);
 }
 
+// chat → web: open an explicit report draft without exposing message content.
+export function encodeChatReportDraft(report: ChatReportDraftPayload): ChatReportDraftMessage {
+  const normalized = normalizeChatReportDraft(report);
+  if (!normalized) {
+    throw new Error("Chat report draft requires conversation context.");
+  }
+  return { report: normalized, type: chatBridgeMessageTypes.reportDraft };
+}
+
+export function decodeChatReportDraft(value: unknown): ChatReportDraftPayload | null {
+  const data = asRecord(value);
+  if (!data || data.type !== chatBridgeMessageTypes.reportDraft) {
+    return null;
+  }
+  return normalizeChatReportDraft(data.report);
+}
+
+export function encodeCopReportDraftUrl(baseUrl: string | URL, report: ChatReportDraftPayload): string {
+  const normalized = normalizeChatReportDraft(report);
+  if (!normalized) {
+    throw new Error("Chat report draft requires conversation context.");
+  }
+  const url = new URL(baseUrl.toString());
+  url.searchParams.set(copReportDraftSearchParams.open, "1");
+  for (const [key, value] of Object.entries(normalized)) {
+    if (value) {
+      url.searchParams.set(copReportDraftSearchParams[key as keyof ChatReportDraftPayload], value);
+    }
+  }
+  return url.toString();
+}
+
+export function decodeCopReportDraftSearch(search: string | URLSearchParams): ChatReportDraftPayload | null {
+  const params =
+    typeof search === "string" ? new URLSearchParams(search.startsWith("?") ? search : `?${search}`) : search;
+  if (params.get(copReportDraftSearchParams.open) !== "1") {
+    return null;
+  }
+  return normalizeChatReportDraft({
+    conversationId: params.get(copReportDraftSearchParams.conversationId),
+    groupId: params.get(copReportDraftSearchParams.groupId),
+    roomId: params.get(copReportDraftSearchParams.roomId),
+    title: params.get(copReportDraftSearchParams.title)
+  });
+}
+
 // web → chat: open a specific conversation in the embedded chat.
 export function encodeChatSelect(selection: string): ChatSelectMessage {
   return { selection, type: chatBridgeMessageTypes.select };
@@ -543,6 +610,20 @@ function normalizeLiveLocation(value: unknown): ChatLiveLocationPayload | null {
     status: data.status === "ended" ? "ended" : "live",
     updatedAt
   }) as ChatLiveLocationPayload;
+}
+
+function normalizeChatReportDraft(value: unknown): ChatReportDraftPayload | null {
+  const data = asRecord(value);
+  if (!data) {
+    return null;
+  }
+  const normalized = compactRecord({
+    conversationId: normalizeBridgeText(data.conversationId, 160),
+    groupId: normalizeBridgeText(data.groupId, 160),
+    roomId: normalizeBridgeText(data.roomId, 240),
+    title: normalizeBridgeText(data.title, 180)
+  }) as ChatReportDraftPayload;
+  return normalized.conversationId || normalized.groupId || normalized.roomId ? normalized : null;
 }
 
 function normalizeChatSummarySyncState(value: unknown): ChatSummarySyncState {

@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { centerLocationInCop, embeddedChatSelectionFromMessage, readRouteSelection, writeChatRoute } from "./ChatApp";
+import {
+  centerLocationInCop,
+  embeddedChatSelectionFromMessage,
+  openReportDraftInCop,
+  readRouteSelection,
+  writeChatRoute
+} from "./ChatApp";
 import type { MatrixLocationShare } from "@cop/messaging/types";
 
 // Bridge / wire-protocol contract tests. These pin the exact cross-app contract
@@ -50,6 +56,35 @@ describe("centerLocationInCop (chat → web: cop-chat:center-location)", () => {
     centerLocationInCop(location);
     expect(open).toHaveBeenCalledWith(expect.stringContaining("copLat=50.0755"), "_self", "noopener,noreferrer");
     expect(open.mock.calls[0]?.[0]).toContain("copLon=14.4378");
+  });
+});
+
+describe("openReportDraftInCop (chat → web: cop-chat:report-draft)", () => {
+  it("posts only sanitized conversation context when embedded", () => {
+    const postMessage = vi.fn();
+    const originalParent = window.parent;
+    Object.defineProperty(window, "parent", { configurable: true, value: { postMessage } });
+    try {
+      openReportDraftInCop({ groupId: " group-1 ", roomId: " !room:example.cz ", title: " Okolí " });
+    } finally {
+      Object.defineProperty(window, "parent", { configurable: true, value: originalParent });
+    }
+
+    expect(postMessage).toHaveBeenCalledWith(
+      {
+        report: { groupId: "group-1", roomId: "!room:example.cz", title: "Okolí" },
+        type: "cop-chat:report-draft"
+      },
+      window.location.origin
+    );
+  });
+
+  it("opens the COP report URL in standalone chat", () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    openReportDraftInCop({ roomId: "!room:example.cz", title: "Okolí" });
+
+    expect(open).toHaveBeenCalledWith(expect.stringContaining("copReport=1"), "_self", "noopener,noreferrer");
+    expect(open.mock.calls[0]?.[0]).toContain("copReportRoomId=%21room%3Aexample.cz");
   });
 });
 

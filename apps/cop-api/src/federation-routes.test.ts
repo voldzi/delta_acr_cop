@@ -509,6 +509,10 @@ describe("federation runtime routes", () => {
           }),
           expect.objectContaining({
             mode: "read_only",
+            toolId: "cop.community.reports.search"
+          }),
+          expect.objectContaining({
+            mode: "read_only",
             toolId: "cop.fusion.explain"
           }),
           expect.objectContaining({
@@ -525,7 +529,7 @@ describe("federation runtime routes", () => {
           })
         ]),
         summary: {
-          count: 7
+          count: 8
         }
       });
 
@@ -581,6 +585,48 @@ describe("federation runtime routes", () => {
           totalAvailable: 1
         }
       });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("searches policy-filtered community reports through MCP without chat or media disclosure", async () => {
+    const app = buildServer({ now: () => new Date("2026-06-19T12:00:00Z") });
+    try {
+      const invocation = await app.inject({
+        headers: authHeaders,
+        method: "POST",
+        payload: {
+          input: {
+            bbox: [13.75, 49.75, 15.6, 50.65],
+            includeExpired: false,
+            limit: 25,
+            severities: ["critical", "warning"]
+          }
+        },
+        url: "/api/v1/mcp/tools/cop.community.reports.search/invoke"
+      });
+
+      expect(invocation.statusCode).toBe(200);
+      expect(invocation.json()).toMatchObject({
+        result: {
+          contractVersion: "cop-community-report-search-v1",
+          items: [],
+          safety: {
+            chatMessagesIncluded: false,
+            mediaUrlsIncluded: false,
+            personalIdentitiesIncluded: false,
+            policyFiltered: true
+          },
+          summary: { count: 0 }
+        },
+        tool: {
+          mode: "read_only",
+          toolId: "cop.community.reports.search"
+        }
+      });
+      expect(invocation.body).not.toContain("contentUrl");
+      expect(invocation.body).not.toContain("createdBy");
     } finally {
       await app.close();
     }

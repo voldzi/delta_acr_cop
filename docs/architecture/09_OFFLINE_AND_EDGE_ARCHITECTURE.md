@@ -29,11 +29,16 @@ protože změna buildu mění jejich název. To drží offline start rychlý, al
 zároveň brání tomu, aby po produkčním nasazení PWA dlouho běžela na starém
 shellu.
 
-Při instalaci service worker navíc zahřívá runtime cache ze same-origin assetů
-odkazovaných přímo z HTML shellu mapy a chatu. Díky tomu další spuštění PWA
-nečeká na základní JS/CSS chunky mapy ani integrovaného chatu. Volitelné těžké
-části, například Matrix/E2EE nebo PDF zpracování, se předem nestahují; ukládají
-se cache-first až při prvním skutečném použití.
+Při instalaci service worker zahřívá runtime cache ze same-origin assetů
+odkazovaných z HTML i z Vite build manifestů mapy a chatu. Instalační krok je
+úspěšný jen tehdy, když je dostupný aktuální shell i všechny content-hashované
+lazy chunky. Předchozí release cache zůstává po jednu verzi zachovaná, aby již
+otevřená záložka mohla dokončit lazy import během nasazení nové verze.
+
+Pokud starší service worker přesto zanechá online klienta s chybějícím lazy
+chunkem, root error boundary rozpozná browser chybu dynamického importu,
+jednorázově odstraní neúplné COP PWA cache, odregistruje starý worker a načte
+aktuální release. Offline klient cache nemaže a ponechá poslední funkční shell.
 
 Po registraci service workeru a při návratu aplikace do popředí web shell posílá
 zprávu `cop:pwa:warm-cache`. Service worker zopakuje bezpečné dohřátí shell
@@ -42,9 +47,9 @@ cache. Nastavení aplikace tak rozlišuje samotnou registraci service workeru od
 praktické připravenosti PWA cache.
 
 Manifest `site.webmanifest` je společný pro mapu i chat pod stejným veřejným
-originem. Aplikace běží v `standalone` režimu, nefixuje orientaci zařízení a
-nabízí zkratku do `/chat/`, aby připnutý COP působil jako jedna aplikace s
-integrovanou komunikací. Pokud prohlížeč podporuje Badging API, COP shell i
+originem. Aplikace běží v `standalone` režimu, nefixuje orientaci zařízení,
+startuje v `/chat/` a nabízí samostatnou zkratku do situační mapy `/`. Pokud
+prohlížeč podporuje Badging API, COP shell i
 samostatná chat stránka synchronizují počet nepřečtených zpráv na ikonu
 instalované aplikace. Tato badge synchronizace je best effort a nesmí nahrazovat
 serverový audit doručení notifikací.

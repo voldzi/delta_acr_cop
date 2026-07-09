@@ -184,7 +184,10 @@ async function sendFile(filePath, method, request, response) {
   const type = contentType(filePath);
   const compression = compressionForRequest(request, type);
   const headers = {
-    "Cache-Control": filePath.endsWith("index.html") ? "no-cache" : "public, max-age=31536000, immutable",
+    "Cache-Control":
+      filePath.endsWith("index.html") || filePath.endsWith("asset-manifest.json")
+        ? "no-cache"
+        : "public, max-age=31536000, immutable",
     "Content-Type": type,
     Vary: "Accept-Encoding"
   };

@@ -17,13 +17,13 @@ SIM, CSM Messaging a budoucí lokální uzly.
 
 ## Typy Uzelů
 
-| nodeRole | Popis | Příklady |
+| nodeRole               | Popis                                                         | Příklady                        |
 | --- | --- | --- |
-| `central-orchestrator` | centrální COP backend, audit, AI/MCP, notifikační rozhodování | COP API |
-| `civil-crisis-node` | civilní operační pracovní plocha | COP Web workspace |
-| `edge-node` | lokální/offline klient nebo lokální server | iOS/iPadOS, PWA offline |
-| `provider-node` | server-to-server datový provider | SIM, TAK Gateway, Mission Arena |
-| `messaging-node` | komunikace, zařízení, push | CSM Messaging |
+| `central-orchestrator` | centrální COP backend, audit, AI/MCP, notifikační rozhodování | COP API                         |
+| `civil-crisis-node`    | civilní operační pracovní plocha                              | COP Web workspace               |
+| `edge-node`            | lokální/offline klient nebo lokální server                    | iOS/iPadOS, PWA offline         |
+| `provider-node`        | server-to-server datový provider                              | SIM, TAK Gateway, Mission Arena |
+| `messaging-node`       | komunikace, zařízení, push                                    | CSM Messaging                   |
 
 ## Node Identity
 
@@ -121,29 +121,29 @@ policy-filtered výsledek a domain event `ai.tool.invoked`.
 Aktuální endpointy jsou chráněné bearer autentizací a nejsou veřejným klientským
 API:
 
-| Endpoint | Účel |
+| Endpoint                                                 | Účel                                                                    |
 | --- | --- |
-| `GET /api/v1/federation/nodes` | seznam registrovaných uzlů |
-| `GET /api/v1/federation/nodes/{nodeId}` | detail uzlu |
-| `POST /api/v1/federation/nodes/{nodeId}/heartbeat` | registrace/heartbeat uzlu |
-| `POST /api/v1/events/domain` | publikace COP domain eventu |
-| `POST /api/v1/edge/outbox/flush` | dávkové odeslání offline eventů registrovaného edge uzlu |
-| `GET /api/v1/edge/replay-cursors/{nodeId}` | čtení potvrzeného replay cursoru edge uzlu |
-| `POST /api/v1/edge/replay-cursors/{nodeId}/ack` | monotónní potvrzení zpracovaného replay offsetu |
-| `GET /api/v1/edge/replay/{nodeId}` | policy-filtered replay centrálních eventů pro registrovaný edge uzel |
-| `GET /api/v1/events/domain` | replay eventů podle offsetu, času, typu nebo entity |
-| `GET /api/v1/events/dead-letter` | audit odmítnutých eventů |
-| `GET /api/v1/events/dead-letter/{deadLetterId}` | detail odmítnutého eventu |
-| `POST /api/v1/events/dead-letter/{deadLetterId}/redrive` | opětovné vložení opraveného eventu do runtime logu |
-| `POST /api/v1/events/dead-letter/{deadLetterId}/resolve` | uzavření DLQ záznamu bez publikace náhradního eventu |
-| `GET /mcp` | standalone MCP gateway popis endpointu pro externí agenty |
-| `POST /mcp` | standalone MCP JSON-RPC endpoint pro externí agenty |
-| `GET /mcp/tools` | standalone seznam allowlistovaných COP MCP nástrojů |
-| `POST /mcp/tools/{toolId}/invoke` | standalone facade pro auditované volání read-only COP MCP nástroje |
-| `GET /api/v1/mcp` | interní/kompatibilní client-safe popis MCP JSON-RPC endpointu v COP API |
-| `POST /api/v1/mcp` | interní/kompatibilní MCP JSON-RPC endpoint v COP API |
-| `GET /api/v1/mcp/tools` | interní/kompatibilní seznam allowlistovaných COP MCP nástrojů |
-| `POST /api/v1/mcp/tools/{toolId}/invoke` | interní/kompatibilní auditované volání read-only COP MCP nástroje |
+| `GET /api/v1/federation/nodes`                           | seznam registrovaných uzlů                                              |
+| `GET /api/v1/federation/nodes/{nodeId}`                  | detail uzlu                                                             |
+| `POST /api/v1/federation/nodes/{nodeId}/heartbeat`       | registrace/heartbeat uzlu                                               |
+| `POST /api/v1/events/domain`                             | publikace COP domain eventu                                             |
+| `POST /api/v1/edge/outbox/flush`                         | dávkové odeslání offline eventů registrovaného edge uzlu                |
+| `GET /api/v1/edge/replay-cursors/{nodeId}`               | čtení potvrzeného replay cursoru edge uzlu                              |
+| `POST /api/v1/edge/replay-cursors/{nodeId}/ack`          | monotónní potvrzení zpracovaného replay offsetu                         |
+| `GET /api/v1/edge/replay/{nodeId}`                       | policy-filtered replay centrálních eventů pro registrovaný edge uzel    |
+| `GET /api/v1/events/domain`                              | replay eventů podle offsetu, času, typu nebo entity                     |
+| `GET /api/v1/events/dead-letter`                         | audit odmítnutých eventů                                                |
+| `GET /api/v1/events/dead-letter/{deadLetterId}`          | detail odmítnutého eventu                                               |
+| `POST /api/v1/events/dead-letter/{deadLetterId}/redrive` | opětovné vložení opraveného eventu do runtime logu                      |
+| `POST /api/v1/events/dead-letter/{deadLetterId}/resolve` | uzavření DLQ záznamu bez publikace náhradního eventu                    |
+| `GET /mcp`                                               | standalone MCP gateway popis endpointu pro externí agenty               |
+| `POST /mcp`                                              | standalone MCP JSON-RPC endpoint pro externí agenty                     |
+| `GET /mcp/tools`                                         | standalone seznam allowlistovaných COP MCP nástrojů                     |
+| `POST /mcp/tools/{toolId}/invoke`                        | standalone facade pro auditované volání read-only COP MCP nástroje      |
+| `GET /api/v1/mcp`                                        | interní/kompatibilní client-safe popis MCP JSON-RPC endpointu v COP API |
+| `POST /api/v1/mcp`                                       | interní/kompatibilní MCP JSON-RPC endpoint v COP API                    |
+| `GET /api/v1/mcp/tools`                                  | interní/kompatibilní seznam allowlistovaných COP MCP nástrojů           |
+| `POST /api/v1/mcp/tools/{toolId}/invoke`                 | interní/kompatibilní auditované volání read-only COP MCP nástroje       |
 
 `POST /api/v1/events/domain` přijímá zjednodušený COP event command i
 CloudEvents-like pole. COP jej normalizuje do CloudEvent `specversion=1.0`,
@@ -203,6 +203,7 @@ client-safe metadata. Aktuální implementované nástroje jsou read-only:
 
 - `cop.federation.nodes.list`,
 - `cop.area.summary`,
+- `cop.community.reports.search`,
 - `cop.fusion.explain`,
 - `cop.sources.health`,
 - `cop.events.replay`,
@@ -217,6 +218,10 @@ nikoli provider tokeny, plaintext chat zprávy ani citlivé binární přílohy.
 cestu jako mapové vrstvy. Vrací jen kompaktní situační souhrn, zdroje,
 confidence a nejistoty; nevrací celé GeoJSON payloady ani žádná mutační
 doporučení.
+`cop.community.reports.search` vrací pouze policy-filtered odeslaná a
+publikovaná komunitní hlášení ve vyžádaném bbox. Výstup neobsahuje plaintext
+chat zprávy, identitu autora ani URL médií a uvádí explicitní safety příznaky,
+že tato data nebyla zahrnuta.
 `cop.fusion.explain` navazuje na stejný souhrn a deterministicky sestaví
 vysvětlitelné priority podle závažnosti, providerů, kategorie, polohy,
 aktuálnosti a nejistot. Výstup obsahuje evidenci a doporučený další krok pro
@@ -268,23 +273,23 @@ COP payload musí obsahovat:
 
 ## Minimální Event Catalog
 
-| Event | Význam |
+| Event                        | Význam                                |
 | --- | --- |
-| `incident.created` | vznik incidentu |
-| `incident.updated` | změna incidentu |
-| `incident.merged` | sloučení incidentů potvrzené člověkem |
-| `unit.status.updated` | změna stavu jednotky/prostředku |
-| `resource.capacity.updated` | změna dostupné kapacity |
-| `sensor.observation.created` | nové měření/modelovaná hodnota |
-| `alert.raised` | vznik výstrahy |
-| `alert.acknowledged` | potvrzení výstrahy člověkem |
-| `task.created` | vznik pracovního úkolu |
-| `task.status.changed` | změna stavu úkolu |
-| `node.disconnected` | ztráta uzlu |
-| `node.reconnected` | návrat uzlu |
-| `sync.conflict.detected` | konflikt synchronizace |
-| `ai.summary.generated` | AI shrnutí |
-| `ai.tool.invoked` | volání MCP/AI nástroje |
+| `incident.created`           | vznik incidentu                       |
+| `incident.updated`           | změna incidentu                       |
+| `incident.merged`            | sloučení incidentů potvrzené člověkem |
+| `unit.status.updated`        | změna stavu jednotky/prostředku       |
+| `resource.capacity.updated`  | změna dostupné kapacity               |
+| `sensor.observation.created` | nové měření/modelovaná hodnota        |
+| `alert.raised`               | vznik výstrahy                        |
+| `alert.acknowledged`         | potvrzení výstrahy člověkem           |
+| `task.created`               | vznik pracovního úkolu                |
+| `task.status.changed`        | změna stavu úkolu                     |
+| `node.disconnected`          | ztráta uzlu                           |
+| `node.reconnected`           | návrat uzlu                           |
+| `sync.conflict.detected`     | konflikt synchronizace                |
+| `ai.summary.generated`       | AI shrnutí                            |
+| `ai.tool.invoked`            | volání MCP/AI nástroje                |
 
 Existující COP eventy jako `report.created`, `media.attached`,
 `sketch.drawing.created` a `notification.requested` zůstávají povolené a mapují

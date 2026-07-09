@@ -16024,9 +16024,13 @@
             "type": "string",
             "enum": [
               "cop.audit.events.list",
+              "cop.area.summary",
+              "cop.community.reports.search",
               "cop.events.dead_letters.list",
               "cop.events.replay",
-              "cop.federation.nodes.list"
+              "cop.federation.nodes.list",
+              "cop.fusion.explain",
+              "cop.sources.health"
             ]
           },
           "title": {

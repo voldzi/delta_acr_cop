@@ -2,6 +2,7 @@ import React from "react";
 import clsx from "clsx";
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowDown,
   ArrowLeft,
   Bell,
@@ -24,6 +25,7 @@ import {
   Lock,
   LogIn,
   LogOut,
+  Map as MapIcon,
   MapPin,
   MessageCircle,
   MessageSquarePlus,
@@ -132,6 +134,9 @@ import {
   decodeChatVoiceCallCommand,
   decodeCopMapFocusSearch,
   encodeChatLiveLocations,
+  encodeChatReportDraft,
+  encodeCopReportDraftUrl,
+  type ChatReportDraftPayload,
   type ChatVoiceCallMessage,
   type ChatSummaryMessage,
   type ChatSummarySyncState,
@@ -413,6 +418,16 @@ export function shouldPublishChatUnreadBridgeSnapshot({
   return chatAvailable === true && matrixSessionActive;
 }
 
+export function openReportDraftInCop(report: ChatReportDraftPayload): void {
+  const message = encodeChatReportDraft(report);
+  if (window.parent !== window) {
+    window.parent.postMessage(message, window.location.origin);
+    return;
+  }
+  const target = encodeCopReportDraftUrl(new URL("/", window.location.origin), message.report);
+  window.open(target, "_self", "noopener,noreferrer");
+}
+
 export function chatSummarySnapshotFromItems(
   items: ChatListItem[],
   state: {
@@ -654,6 +669,8 @@ export function ChatApp() {
   const timelinePersistFingerprintRef = React.useRef<Map<string, string>>(new Map());
   const conversationsRef = React.useRef<MessagingConversationSummary[]>(conversations);
   const memberAddPendingIdsRef = React.useRef<Set<string>>(new Set());
+
+  React.useEffect(() => installChatHapticFeedback(), []);
 
   const authToken = getAuthorizationToken(authSession, labToken);
   const authenticated = Boolean(authToken) || isAuthSessionRetainedForOffline(authSession);
@@ -4147,9 +4164,14 @@ export function ChatApp() {
         <header className="list-header">
           <div>
             <h1>Chaty</h1>
-            <span>{statusLabel}</span>
+            <span className={clsx("chat-connection-status", statusLabel === "online" && "online")}>{statusLabel}</span>
           </div>
           <div className="list-actions">
+            {!embedded ? (
+              <a className="round-icon mobile-map-action" href="/" aria-label="Otevřít mapu" title="Mapa">
+                <MapIcon size={21} />
+              </a>
+            ) : null}
             {authenticated ? (
               <NotificationToggleButton
                 busy={webPushBusy}
@@ -4189,6 +4211,7 @@ export function ChatApp() {
         <div className="filter-tabs" role="tablist" aria-label="Filtr chatů">
           <button
             className={chatFilter === "all" ? "active" : ""}
+            aria-selected={chatFilter === "all"}
             onClick={() => setChatFilter("all")}
             role="tab"
             type="button"
@@ -4197,6 +4220,7 @@ export function ChatApp() {
           </button>
           <button
             className={chatFilter === "direct" ? "active" : ""}
+            aria-selected={chatFilter === "direct"}
             onClick={() => setChatFilter("direct")}
             role="tab"
             type="button"
@@ -4205,6 +4229,7 @@ export function ChatApp() {
           </button>
           <button
             className={chatFilter === "group" ? "active" : ""}
+            aria-selected={chatFilter === "group"}
             onClick={() => setChatFilter("group")}
             role="tab"
             type="button"
@@ -4229,13 +4254,21 @@ export function ChatApp() {
           {!authenticated ? (
             <ListPrompt
               actionLabel={isOidcEnabled(authConfig) ? "Přihlásit" : undefined}
-              title={authConfig.mode === "lab" ? "Lab režim nemá chatovou identitu." : "Přihlaste se."}
+              secondaryAction={{ href: "/", label: "Otevřít mapu" }}
+              text="Chaty jsou navázané na ověřenou identitu a synchronizují se mezi vašimi zařízeními."
+              title={authConfig.mode === "lab" ? "Lab režim nemá chatovou identitu" : "Přihlaste se do chatu"}
               onAction={isOidcEnabled(authConfig) ? () => void beginLogin(authConfig) : undefined}
             />
           ) : loading && regularChatItems.length === 0 && pinnedChatItems.length === 0 ? (
             <ChatSkeleton />
           ) : regularChatItems.length === 0 && pinnedChatItems.length === 0 ? (
-            <ListPrompt actionLabel="Nový chat" title="Žádné chaty" onAction={() => setComposeMode("direct")} />
+            <ListPrompt
+              actionLabel="Napsat zprávu"
+              secondaryAction={{ label: "Založit skupinu", onClick: () => setComposeMode("group") }}
+              text="Najděte člověka nebo vytvořte skupinu pro rodinu, sousedy či komunitu."
+              title="Začněte konverzaci"
+              onAction={() => setComposeMode("direct")}
+            />
           ) : (
             regularChatItems.map((item) => (
               <ChatRowMemo
@@ -4293,10 +4326,32 @@ export function ChatApp() {
               </div>
               <div className="conversation-actions">
                 {selectedRoom?.encrypted ? (
-                  <span className="e2ee-chip">
+                  <span className="e2ee-chip" title="Soukromá konverzace je šifrovaná mezi zařízeními">
                     <ShieldCheck size={14} /> E2EE
                   </span>
                 ) : null}
+                <button
+                  className="report-chat-action"
+                  onClick={() => {
+                    try {
+                      openReportDraftInCop({
+                        ...(selectedConversation?.conversationId
+                          ? { conversationId: selectedConversation.conversationId }
+                          : {}),
+                        ...(selectedGroup?.groupId ? { groupId: selectedGroup.groupId } : {}),
+                        ...(selectedRoomId ? { roomId: selectedRoomId } : {}),
+                        title: activeChat.title
+                      });
+                    } catch (caught) {
+                      setError(caught instanceof Error ? caught.message : "Hlášení se nepodařilo otevřít.");
+                    }
+                  }}
+                  title="Vytvořit situační hlášení z tohoto chatu"
+                  type="button"
+                >
+                  <AlertTriangle size={18} />
+                  <span>Nahlásit</span>
+                </button>
                 <button
                   className="round-icon video-call-action"
                   onClick={() => setNotice(chatText("calls.videoComingSoon"))}
@@ -4582,6 +4637,8 @@ export function ChatApp() {
             authConfig={authConfig}
             onLogin={() => void beginLogin(authConfig)}
             onNewChat={() => setComposeMode("direct")}
+            onNewGroup={() => setComposeMode("group")}
+            onOpenMap={() => window.open("/", "_self", "noopener,noreferrer")}
           />
         )}
       </section>
@@ -6383,12 +6440,16 @@ function WelcomePane({
   authenticated,
   authConfig,
   onLogin,
-  onNewChat
+  onNewChat,
+  onNewGroup,
+  onOpenMap
 }: {
   authenticated: boolean;
   authConfig: AuthConfig;
   onLogin: () => void;
   onNewChat: () => void;
+  onNewGroup: () => void;
+  onOpenMap: () => void;
 }) {
   return (
     <div className="welcome-pane">
@@ -6396,16 +6457,25 @@ function WelcomePane({
         <MessageCircle size={34} />
       </span>
       <h2>Vyberte chat</h2>
+      <p>Soukromé konverzace jsou šifrované. Důležitou událost můžete kdykoli převést do situačního hlášení.</p>
       <div className="welcome-actions">
         {authenticated ? (
-          <button className="primary-dialog-action" onClick={onNewChat} type="button">
-            Nový chat
-          </button>
+          <>
+            <button className="primary-dialog-action" onClick={onNewChat} type="button">
+              Napsat zprávu
+            </button>
+            <button className="secondary-dialog-action" onClick={onNewGroup} type="button">
+              Založit skupinu
+            </button>
+          </>
         ) : isOidcEnabled(authConfig) ? (
           <button className="primary-dialog-action" onClick={onLogin} type="button">
             Přihlásit
           </button>
         ) : null}
+        <button className="secondary-dialog-action" onClick={onOpenMap} type="button">
+          Otevřít mapu
+        </button>
       </div>
     </div>
   );
@@ -6619,16 +6689,38 @@ function StatusBanner({
   );
 }
 
-function ListPrompt({ actionLabel, title, onAction }: { actionLabel?: string; title: string; onAction?: () => void }) {
+function ListPrompt({
+  actionLabel,
+  secondaryAction,
+  text,
+  title,
+  onAction
+}: {
+  actionLabel?: string;
+  secondaryAction?: { href?: string; label: string; onClick?: () => void };
+  text?: string;
+  title: string;
+  onAction?: () => void;
+}) {
   return (
     <div className="list-prompt">
       <MessageCircle size={24} />
       <strong>{title}</strong>
-      {actionLabel && onAction ? (
-        <button onClick={onAction} type="button">
-          {actionLabel}
-        </button>
-      ) : null}
+      {text ? <p>{text}</p> : null}
+      <div className="list-prompt-actions">
+        {actionLabel && onAction ? (
+          <button onClick={onAction} type="button">
+            {actionLabel}
+          </button>
+        ) : null}
+        {secondaryAction?.href ? (
+          <a href={secondaryAction.href}>{secondaryAction.label}</a>
+        ) : secondaryAction?.onClick ? (
+          <button className="secondary" onClick={secondaryAction.onClick} type="button">
+            {secondaryAction.label}
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -9022,6 +9114,30 @@ function statusLabelFor(
     return "vypnuto";
   }
   return "čeká";
+}
+
+function installChatHapticFeedback(): () => void {
+  if (typeof window === "undefined" || typeof navigator === "undefined" || typeof navigator.vibrate !== "function") {
+    return () => undefined;
+  }
+  if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return () => undefined;
+  }
+  const handlePointerDown = (event: PointerEvent) => {
+    if (event.pointerType === "mouse") {
+      return;
+    }
+    const target = event.target instanceof Element ? event.target : null;
+    if (
+      target?.closest(
+        'button:not(:disabled), a[href], [role="button"], input[type="checkbox"]:not(:disabled), input[type="radio"]:not(:disabled), summary'
+      )
+    ) {
+      navigator.vibrate(8);
+    }
+  };
+  window.addEventListener("pointerdown", handlePointerDown, { passive: true });
+  return () => window.removeEventListener("pointerdown", handlePointerDown);
 }
 
 function chatConnectionStateFor(

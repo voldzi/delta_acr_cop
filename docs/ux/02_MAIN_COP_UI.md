@@ -1,5 +1,19 @@
 # 02 Main COP UI
 
+## Občanský výchozí tok
+
+CSM je pro běžného občana chat-first aplikace. Instalovaná PWA startuje v
+`/chat/`, kde nabízí přímé a skupinové E2EE konverzace, reakce, přílohy,
+polohu, hlasové hovory a upozornění. Mapa je první situační doplněk, nikoli
+podmínka použití chatu.
+
+V hlavní navigaci jsou primární `Chat`, `Mapa`, `Výstrahy` a `Nahlásit`.
+Technická pracoviště Data, Zdroje, Radio a Replay jsou dostupná pod `Další`.
+Mobilní navigace používá pět stabilních položek `Chat`, `Mapa`, `Vrstvy`,
+`Nahlásit`, `Menu`; zákres a technické moduly jsou v menu nebo mapových
+nástrojích. Role záchranných složek nejsou součástí této informační
+architektury.
+
 Hlavní UI má šest oblastí:
 
 - top status bar: stav systému, latency, aktivní zdroje, počet objektů, online/degraded/offline a AI provider status,
@@ -25,9 +39,11 @@ prostor a navigační vstup.
 
 Chatový composer musí v `cop-chat` podporovat text, fotku, video, soubor a
 polohu jako primární akce. Pokud má informace z chatu přejít do mapového světa,
-uživatel použije v COP akci `Nahlásit`; tím vzniká COP komunitní hlášení s
-vlastní platností, závažností, polohou, ACL a auditem. COP UI nesmí udržovat
-druhou správu chatových skupin.
+uživatel použije přímo v konverzaci akci `Nahlásit`. Bridge přenese jen ID
+konverzace/skupiny a její název; nepřenáší zprávy. COP otevře editovatelný
+návrh komunitního hlášení s vlastní platností, závažností, polohou, ACL a
+auditem. Zveřejnění vyžaduje potvrzení uživatele. COP UI nesmí udržovat druhou
+správu chatových skupin.
 
 Pravý horní roh top baru obsahuje operátorský vstup. Přihlášený uživatel zde vidí avatar a jméno z `preferences.operatorProfile`; nepřihlášený uživatel vidí pouze akci `Přihlásit`. Profilová karta může obsahovat avatar, zobrazované jméno, roli, organizaci, telefon, e-mail a kontaktní poznámku.
 

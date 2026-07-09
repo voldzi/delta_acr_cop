@@ -315,11 +315,31 @@ button {
   font-size: 0.84rem;
 }
 
+.chat-connection-status::before {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #91a0aa;
+  content: "";
+}
+
+.chat-connection-status.online::before {
+  background: #25a56a;
+  box-shadow: 0 0 0 3px rgba(37, 165, 106, 0.12);
+}
+
 .list-actions {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 4px;
+}
+
+.mobile-map-action {
+  display: none;
+  text-decoration: none;
 }
 
 .identity-strip {
@@ -859,6 +879,20 @@ button {
   font-size: 0.95rem;
 }
 
+.list-prompt p {
+  max-width: 300px;
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.list-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
 .list-prompt button,
 .primary-dialog-action {
   min-height: 38px;
@@ -872,6 +906,21 @@ button {
 
 .list-prompt button {
   padding: 0 14px;
+}
+
+.list-prompt a,
+.list-prompt button.secondary {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border: 1px solid #cbd5da;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #33434d;
+  font-weight: 740;
+  text-decoration: none;
 }
 
 .primary-dialog-action {
@@ -979,6 +1028,27 @@ button {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.report-chat-action {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid #dfb44a;
+  border-radius: 8px;
+  background: #fff8df;
+  color: #73561a;
+  cursor: pointer;
+  font-weight: 760;
+}
+
+.report-chat-action:hover,
+.report-chat-action:focus-visible {
+  border-color: #c9951d;
+  background: #fff2be;
+  outline: none;
 }
 
 .chat-menu-anchor {
@@ -2713,7 +2783,11 @@ button {
 }
 
 .welcome-actions {
+  display: flex;
   min-height: 38px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
 }
 
 .dialog-backdrop,
@@ -4696,6 +4770,10 @@ button {
     display: inline-grid;
   }
 
+  .mobile-map-action {
+    display: inline-grid;
+  }
+
   .conversation-header {
     min-height: 60px;
     padding: 8px 10px;
@@ -4707,6 +4785,17 @@ button {
 
   .conversation-actions .e2ee-chip,
   .conversation-actions .video-call-action {
+    display: none;
+  }
+
+  .report-chat-action {
+    width: 42px;
+    min-height: 42px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .report-chat-action span {
     display: none;
   }
 

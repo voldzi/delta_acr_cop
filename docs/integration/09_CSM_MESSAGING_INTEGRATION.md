@@ -14,7 +14,20 @@ The user-facing web surface intentionally uses the term **Konverzace/Chat**
 instead of technical provider names. The panel can be opened as a floating
 conversation window or pinned next to the map on larger screens. On a phone the
 pinned panel becomes the active workspace and replaces the map until the user
-closes or unpins it.
+closes or unpins it. The installed citizen PWA starts directly at `/chat/` and
+offers a persistent map action in the mobile chat header.
+
+## Chat to Report Boundary
+
+`cop-chat` can request an explicit report draft through the shared bridge
+message `cop-chat:report-draft`. Its payload is limited to `conversationId`,
+`groupId`, `roomId` and a display `title`. Message bodies, sender identities,
+reactions, keys and attachments are not part of this contract.
+
+COP closes the embedded chat, opens the map report form and requires the user
+to verify the title, description, location, severity and validity before
+submission. An existing community group is reused when `groupId` is present;
+COP does not silently create a duplicate chat group.
 
 ## Current Provider Contract
 

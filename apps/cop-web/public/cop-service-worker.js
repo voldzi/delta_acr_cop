@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260709-1";
+const COP_SW_VERSION = "cop-pwa-offline-20260709-2";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -8,6 +8,8 @@ const APP_SHELL_URLS = [
   "/",
   "/index.html",
   "/chat/",
+  "/asset-manifest.json",
+  "/chat/asset-manifest.json",
   "/site.webmanifest",
   "/icons/cop-icon.svg",
   "/icons/favicon-32.png",
@@ -18,7 +20,11 @@ const APP_SHELL_URLS = [
 ];
 const API_PATH_PREFIXES = ["/api/", "/health", "/metrics"];
 const APP_SHELL_ASSET_ATTRIBUTE_PATTERN = /\b(?:href|src)=["']([^"']+)["']/giu;
-const MAX_WARMED_APP_SHELL_ASSETS = 32;
+const APP_SHELL_MANIFESTS = [
+  { basePath: "/", url: "/asset-manifest.json" },
+  { basePath: "/chat/", url: "/chat/asset-manifest.json" }
+];
+const MAX_WARMED_APP_SHELL_ASSETS = 96;
 const MAX_RUNTIME_ENTRIES = 120;
 const MAX_TILE_ENTRIES = 1200;
 const MAX_ROUTE_TILE_ENTRIES = 900;
@@ -31,8 +37,8 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(APP_SHELL_CACHE)
-      .then((cache) => Promise.all(APP_SHELL_URLS.map((url) => cache.add(url).catch(() => undefined))))
-      .then(() => warmAppShellAssets().catch(() => undefined))
+      .then((cache) => cache.addAll(APP_SHELL_URLS))
+      .then(() => warmAppShellAssets({ strict: true }))
       .then(() => self.skipWaiting())
   );
 });
@@ -41,13 +47,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key.startsWith("cop-pwa-offline-") && !key.startsWith(COP_SW_VERSION))
-            .map((key) => caches.delete(key))
-        )
-      )
+      .then((keys) => Promise.all(releaseCacheKeysToDelete(keys).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
@@ -262,6 +262,11 @@ async function cacheFirst(request, cacheName, maxEntries) {
     await cache.delete(request);
   }
 
+  const retainedReleaseResponse = await caches.match(request);
+  if (retainedReleaseResponse?.ok && retainedReleaseResponse.type !== "opaque") {
+    return retainedReleaseResponse;
+  }
+
   const response = await fetch(request);
   // Cross-origin map resources must stay CORS-readable. Do not persist no-cors opaque responses.
   if (response && response.ok && response.type !== "opaque") {
@@ -283,11 +288,15 @@ async function routeCacheFirst(request) {
   return cacheFirst(request, TILE_CACHE, MAX_TILE_ENTRIES);
 }
 
-async function warmAppShellAssets() {
+async function warmAppShellAssets(options = {}) {
   const shellCache = await caches.open(APP_SHELL_CACHE);
   const runtimeCache = await caches.open(RUNTIME_CACHE);
   const assetUrls = await collectAppShellAssetUrls(shellCache);
-  await Promise.all(assetUrls.map((url) => runtimeCache.add(url).catch(() => undefined)));
+  if (options.strict) {
+    await runtimeCache.addAll(assetUrls);
+  } else {
+    await Promise.all(assetUrls.map((url) => runtimeCache.add(url).catch(() => undefined)));
+  }
   await trimCache(runtimeCache, MAX_RUNTIME_ENTRIES);
   return assetUrls;
 }
@@ -397,7 +406,72 @@ async function collectAppShellAssetUrls(shellCache) {
       }
     })
   );
+  await Promise.all(
+    APP_SHELL_MANIFESTS.map(async ({ basePath, url }) => {
+      const response = await shellCache.match(url);
+      if (!response?.ok) {
+        return;
+      }
+      let manifest;
+      try {
+        manifest = await response.clone().json();
+      } catch {
+        return;
+      }
+      for (const assetUrl of extractManifestAssetUrls(manifest, basePath)) {
+        assetUrls.add(assetUrl);
+      }
+    })
+  );
   return Array.from(assetUrls).slice(0, MAX_WARMED_APP_SHELL_ASSETS);
+}
+
+function extractManifestAssetUrls(manifest, basePath = "/") {
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    return [];
+  }
+  const urls = new Set();
+  for (const entry of Object.values(manifest)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    for (const value of [
+      entry.file,
+      ...(Array.isArray(entry.css) ? entry.css : []),
+      ...(Array.isArray(entry.assets) ? entry.assets : [])
+    ]) {
+      if (typeof value !== "string" || !value.trim()) {
+        continue;
+      }
+      try {
+        const url = new URL(value, new URL(basePath, self.location.origin));
+        if (url.origin === self.location.origin) {
+          urls.add(`${url.pathname}${url.search}`);
+        }
+      } catch {
+        // Ignore malformed manifest entries.
+      }
+    }
+  }
+  return Array.from(urls);
+}
+
+function releaseCacheKeysToDelete(keys) {
+  const releasePattern = /^(cop-pwa-offline-[^:]+):/u;
+  const releases = Array.from(
+    new Set(
+      keys.flatMap((key) => {
+        const release = key.match(releasePattern)?.[1];
+        return release ? [release] : [];
+      })
+    )
+  ).sort((left, right) => right.localeCompare(left));
+  const previousRelease = releases.find((release) => release !== COP_SW_VERSION);
+  const retained = new Set([COP_SW_VERSION, ...(previousRelease ? [previousRelease] : [])]);
+  return keys.filter((key) => {
+    const release = key.match(releasePattern)?.[1];
+    return Boolean(release && !retained.has(release));
+  });
 }
 
 function extractSameOriginAssetUrls(html, basePath = "/") {

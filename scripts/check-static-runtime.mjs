@@ -9,13 +9,13 @@ const checks = [
     app: "cop-web",
     distDir: "apps/cop-web/dist",
     indexPath: "apps/cop-web/dist/index.html",
-    requiredFiles: ["cop-service-worker.js", "site.webmanifest"]
+    requiredFiles: ["asset-manifest.json", "cop-service-worker.js", "site.webmanifest"]
   },
   {
     app: "cop-chat",
     distDir: "apps/cop-chat/dist",
     indexPath: "apps/cop-chat/dist/index.html",
-    requiredFiles: []
+    requiredFiles: ["asset-manifest.json"]
   }
 ];
 
@@ -85,6 +85,10 @@ async function verifyStaticServers() {
       contentTypeIncludes: "application/manifest+json",
       status: 200
     });
+    await expectHeader("cop-web", "http://127.0.0.1:49311/asset-manifest.json", {
+      cacheIncludes: "no-cache",
+      status: 200
+    });
 
     await expectHeader("cop-chat", `http://127.0.0.1:49314/chat/${chatAsset}`, {
       cacheIncludes: "immutable",
@@ -93,6 +97,10 @@ async function verifyStaticServers() {
     });
     await expectHeader("cop-chat", "http://127.0.0.1:49314/chat/assets/__missing__.js", { status: 404 });
     await expectHeader("cop-chat", "http://127.0.0.1:49314/chat/conv_demo", { status: 200 });
+    await expectHeader("cop-chat", "http://127.0.0.1:49314/chat/asset-manifest.json", {
+      cacheIncludes: "no-cache",
+      status: 200
+    });
     ok("static runtime smoke verified");
   } finally {
     stopServer(web);

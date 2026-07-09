@@ -5,10 +5,12 @@ import {
   chatBridgeMessageTypes,
   chatUnreadStorageKey,
   chatVoiceCallStorageKey,
+  decodeCopReportDraftSearch,
   decodeCopMapFocusSearch,
   decodeChatCenterLocation,
   decodeChatCurrentLocation,
   decodeChatLiveLocations,
+  decodeChatReportDraft,
   decodeChatSelect,
   decodeChatShareTransit,
   decodeChatSummary,
@@ -16,9 +18,11 @@ import {
   decodeChatVoiceCall,
   decodeChatVoiceCallCommand,
   encodeCopMapFocusUrl,
+  encodeCopReportDraftUrl,
   encodeChatCenterLocation,
   encodeChatCurrentLocation,
   encodeChatLiveLocations,
+  encodeChatReportDraft,
   encodeChatSelect,
   encodeChatShareTransit,
   encodeChatSummary,
@@ -36,6 +40,7 @@ describe("contract constants", () => {
       centerLocation: "cop-chat:center-location",
       currentLocation: "cop-chat:current-location",
       liveLocations: "cop-chat:live-locations",
+      reportDraft: "cop-chat:report-draft",
       select: "cop-chat:select",
       shareTransit: "cop-chat:share-transit",
       summary: "cop-chat:summary",
@@ -46,6 +51,45 @@ describe("contract constants", () => {
     expect(chatBridgeChannelName).toBe("cop-chat");
     expect(chatUnreadStorageKey).toBe("cop.chat.unread.v1");
     expect(chatVoiceCallStorageKey).toBe("cop.chat.voiceCall.v1");
+  });
+});
+
+describe("report-draft (chat -> web)", () => {
+  it("round-trips sanitized conversation context without message content", () => {
+    const payload = encodeChatReportDraft({
+      conversationId: " conv-1 ",
+      groupId: " group-1 ",
+      roomId: " !room:example.cz ",
+      title: " Povodeň v okolí "
+    });
+
+    expect(payload).toEqual({
+      report: {
+        conversationId: "conv-1",
+        groupId: "group-1",
+        roomId: "!room:example.cz",
+        title: "Povodeň v okolí"
+      },
+      type: "cop-chat:report-draft"
+    });
+    expect(decodeChatReportDraft(payload)).toEqual(payload.report);
+    expect(JSON.stringify(payload)).not.toContain("message");
+  });
+
+  it("encodes standalone report URLs and rejects empty contexts", () => {
+    const url = encodeCopReportDraftUrl("https://cop.example.test/", {
+      roomId: "!room:example.cz",
+      title: "Okolí"
+    });
+
+    expect(decodeCopReportDraftSearch(new URL(url).search)).toEqual({
+      roomId: "!room:example.cz",
+      title: "Okolí"
+    });
+    expect(decodeCopReportDraftSearch("?copReport=0&copReportRoomId=x")).toBeNull();
+    expect(() => encodeChatReportDraft({ title: "Bez kontextu" })).toThrow(
+      "Chat report draft requires conversation context."
+    );
   });
 });
 

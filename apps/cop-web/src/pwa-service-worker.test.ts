@@ -5,11 +5,13 @@ import { describe, expect, it, vi } from "vitest";
 
 interface ServiceWorkerContext {
   appShellCacheKeyForRequest: (request: Request) => string;
+  extractManifestAssetUrls: (manifest: unknown, basePath?: string) => string[];
   extractSameOriginAssetUrls: (html: string, basePath?: string) => string[];
   isAppAssetRequest: (request: Request, url: URL) => boolean;
   isChatRequestPath: (pathname: string) => boolean;
   isImmutableRuntimeAssetRequest: (request: Request, url: URL) => boolean;
   networkFirstAppShell: (request: Request) => Promise<Response>;
+  releaseCacheKeysToDelete: (keys: string[]) => string[];
   notificationActionsForPayload: (
     payload: Record<string, unknown>,
     url?: string
@@ -145,6 +147,42 @@ describe("COP PWA service worker routing", () => {
       "/chat/assets/index.css?v=1",
       "/site.webmanifest"
     ]);
+  });
+
+  it("warms lazy chunks from web and chat build manifests", () => {
+    const serviceWorker = loadServiceWorkerContext();
+    const manifest = {
+      "index.html": {
+        css: ["assets/index.css"],
+        dynamicImports: ["src/CopMap.tsx"],
+        file: "assets/index.js"
+      },
+      "src/CopMap.tsx": {
+        assets: ["assets/map-marker.png"],
+        file: "assets/CopMap.js"
+      }
+    };
+
+    expect(serviceWorker.extractManifestAssetUrls(manifest, "/chat/")).toEqual([
+      "/chat/assets/index.js",
+      "/chat/assets/index.css",
+      "/chat/assets/CopMap.js",
+      "/chat/assets/map-marker.png"
+    ]);
+  });
+
+  it("keeps the current and immediately previous PWA release caches", () => {
+    const serviceWorker = loadServiceWorkerContext();
+    const keys = [
+      "cop-pwa-offline-20260709-2:shell",
+      "cop-pwa-offline-20260709-2:runtime",
+      "cop-pwa-offline-20260709-1:shell",
+      "cop-pwa-offline-20260709-1:runtime",
+      "cop-pwa-offline-20260708-8:shell",
+      "third-party-cache"
+    ];
+
+    expect(serviceWorker.releaseCacheKeysToDelete(keys)).toEqual(["cop-pwa-offline-20260708-8:shell"]);
   });
 
   it("prefers a fresh network app shell for online chat navigations", async () => {

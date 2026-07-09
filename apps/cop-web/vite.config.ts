@@ -73,6 +73,7 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 1200,
+    manifest: "asset-manifest.json",
     target: ["es2020", "safari16"],
     rollupOptions: {
       output: {

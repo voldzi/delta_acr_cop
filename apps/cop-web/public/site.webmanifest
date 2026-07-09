@@ -1,12 +1,12 @@
 {
-  "name": "Civilní situační mapa",
-  "short_name": "Situační mapa",
-  "description": "Mapa rizik v okolí, výstrah a sdílených situačních informací.",
+  "name": "CSM Chat a situační mapa",
+  "short_name": "CSM",
+  "description": "Důvěryhodný šifrovaný chat, komunitní hlášení a situační mapa pro každodenní použití i krizové situace.",
   "id": "/",
-  "start_url": "/",
+  "start_url": "/chat/",
   "scope": "/",
   "lang": "cs",
-  "categories": ["navigation", "productivity", "utilities"],
+  "categories": ["social", "navigation", "productivity", "utilities"],
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "browser"],
   "orientation": "any",
@@ -44,6 +44,19 @@
       "short_name": "Chat",
       "description": "Otevřít COP Chat.",
       "url": "/chat/",
+      "icons": [
+        {
+          "src": "/icons/cop-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Situační mapa",
+      "short_name": "Mapa",
+      "description": "Otevřít mapu rizik a hlášení v okolí.",
+      "url": "/",
       "icons": [
         {
           "src": "/icons/cop-icon-192.png",

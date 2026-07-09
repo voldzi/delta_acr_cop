@@ -396,6 +396,7 @@ interface MobileSnapshotQuery {
 type CopMcpToolId =
   | "cop.area.summary"
   | "cop.audit.events.list"
+  | "cop.community.reports.search"
   | "cop.events.dead_letters.list"
   | "cop.events.replay"
   | "cop.federation.nodes.list"
@@ -475,6 +476,68 @@ const copMcpTools: CopMcpToolDefinition[] = [
     output: "cop-area-summary-v1",
     title: "Summarize area situation",
     toolId: "cop.area.summary"
+  },
+  {
+    description:
+      "Search policy-filtered submitted and published community reports in an area. The tool returns report facts and provenance without chat messages, author identities or media URLs.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: {
+        bbox: {
+          description: "Bounding box as [west,south,east,north] or {west,south,east,north}.",
+          oneOf: [
+            {
+              items: { type: "number" },
+              maxItems: 4,
+              minItems: 4,
+              type: "array"
+            },
+            {
+              additionalProperties: false,
+              properties: {
+                east: { type: "number" },
+                north: { type: "number" },
+                south: { type: "number" },
+                west: { type: "number" }
+              },
+              required: ["west", "south", "east", "north"],
+              type: "object"
+            }
+          ]
+        },
+        categories: {
+          items: {
+            enum: [
+              "fire",
+              "flood",
+              "bridge_damage",
+              "road_blockage",
+              "infrastructure_damage",
+              "medical",
+              "utility_outage",
+              "hazard",
+              "other"
+            ],
+            type: "string"
+          },
+          maxItems: 9,
+          type: "array"
+        },
+        includeExpired: { type: "boolean" },
+        limit: { maximum: 200, minimum: 1, type: "integer" },
+        severities: {
+          items: { enum: ["advisory", "warning", "critical"], type: "string" },
+          maxItems: 3,
+          type: "array"
+        }
+      },
+      required: ["bbox"],
+      type: "object"
+    },
+    mode: "read_only",
+    output: "cop-community-report-search-v1",
+    title: "Search community reports",
+    toolId: "cop.community.reports.search"
   },
   {
     description:
@@ -8806,6 +8869,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         result = await buildCopAreaSummaryToolResult(input, actor ?? null, invocationId);
         break;
       }
+      case "cop.community.reports.search": {
+        result = await buildCopCommunityReportSearchToolResult(input, actor ?? null);
+        break;
+      }
       case "cop.fusion.explain": {
         result = await buildCopAreaFusionToolResult(input, actor ?? null, invocationId);
         break;
@@ -9013,6 +9080,81 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       invocationId,
       priorityLimit: optionalFiniteNumber(input.priorityLimit, 1, 20) ?? 8
     });
+  }
+
+  async function buildCopCommunityReportSearchToolResult(
+    input: Record<string, unknown>,
+    actor: AuthenticatedActor | null
+  ): Promise<Record<string, unknown>> {
+    const requestNow = now();
+    const bbox = parseMapQueryBbox(input.bbox) ?? floodDemoBbox;
+    const categories = Array.isArray(input.categories)
+      ? Array.from(new Set(input.categories.filter(isCommunityReportCategory))).slice(0, 9)
+      : [];
+    const severities = Array.isArray(input.severities)
+      ? Array.from(new Set(input.severities.filter(isCommunityReportHazardSeverity))).slice(0, 3)
+      : [];
+    const includeExpired = parseBooleanQuery(input.includeExpired);
+    const limit = optionalFiniteNumber(input.limit, 1, 200) ?? 50;
+    const reports = (
+      await listCommunityReports({
+        bbox,
+        ...(categories.length > 0 ? { categories } : {}),
+        limit: Math.min(limit * 2, 400),
+        statuses: ["submitted", "published"]
+      })
+    )
+      .filter((report) => canReadCommunityReport(report, actor))
+      .filter((report) => includeExpired || !isCommunityReportStale(report, requestNow))
+      .filter((report) => severities.length === 0 || severities.includes(communityReportSeverity(report)))
+      .sort((left, right) => Date.parse(right.observedAt) - Date.parse(left.observedAt))
+      .slice(0, limit);
+    const items = reports.map((report) =>
+      compactRecord({
+        attachmentCount: report.attachments.filter((attachment) => attachment.status === "uploaded").length,
+        category: report.category,
+        description: report.description?.slice(0, 600),
+        location: {
+          accuracyM: report.location.accuracyM,
+          lat: roundCoordinate(report.location.lat),
+          lon: roundCoordinate(report.location.lon),
+          source: report.location.source
+        },
+        observedAt: report.observedAt,
+        reportId: report.reportId,
+        severity: communityReportSeverity(report),
+        stale: isCommunityReportStale(report, requestNow),
+        status: report.status,
+        submittedAt: report.submittedAt,
+        title: report.title,
+        updatedAt: report.updatedAt,
+        validUntil: communityReportValidUntil(report),
+        visibility: report.visibility
+      })
+    );
+    return {
+      contractVersion: "cop-community-report-search-v1",
+      generatedAt: requestNow.toISOString(),
+      items,
+      query: {
+        bbox,
+        categories,
+        includeExpired,
+        limit,
+        severities
+      },
+      safety: {
+        chatMessagesIncluded: false,
+        mediaUrlsIncluded: false,
+        personalIdentitiesIncluded: false,
+        policyFiltered: true
+      },
+      summary: {
+        count: items.length,
+        criticalCount: reports.filter((report) => communityReportSeverity(report) === "critical").length,
+        staleCount: reports.filter((report) => isCommunityReportStale(report, requestNow)).length
+      }
+    };
   }
 
   function buildCopSourcesHealthToolResult(input: Record<string, unknown>): Record<string, unknown> {
