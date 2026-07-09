@@ -20,6 +20,8 @@ import {
   Palette,
   Pentagon,
   PenLine,
+  Pin,
+  PinOff,
   Plus,
   Ruler,
   Shield,
@@ -146,6 +148,7 @@ import {
   type SketchSymbolPreset,
   type SketchToolMode
 } from "./map-sketch-features";
+import { RouteElevationProfileView, type RouteElevationProfileSummary } from "./route-elevation-profile";
 
 export {
   alertAreasToFeatureCollection,
@@ -770,6 +773,7 @@ interface CopMapProps {
   onClearSelection?: () => void;
   onClearEmergencyRoute?: () => void;
   onActivateEmergencyRoute?: (routeId: string) => void;
+  onSelectEmergencyRoute?: (info: EmergencyRouteSelectionInfo | null) => void;
   onRequestIsochroneFromPoint?: (target: { label?: string; lat: number; lon: number }) => void;
   onRequestNearestAccessToPoint?: (target: { label?: string; lat: number; lon: number }) => void;
   onRequestRouteToPoint?: (
@@ -878,7 +882,7 @@ interface ClusterInfo {
   zoom: number;
 }
 
-interface MapSelectionCard {
+export interface MapSelectionCard {
   analysisSections?: Array<{
     items: string[];
     title: string;
@@ -898,22 +902,11 @@ interface MapSelectionCard {
   variant?: "aircraft" | "default";
 }
 
-interface EmergencyRouteSelectionInfo {
+export interface EmergencyRouteSelectionInfo {
   canActivate?: boolean;
   card: MapSelectionCard;
   coordinate: [number, number];
   routeId?: string;
-}
-
-interface RouteElevationProfileSummary {
-  gainM?: number;
-  lossM?: number;
-  maxM?: number;
-  minM?: number;
-  points: Array<{
-    distanceM: number;
-    elevationM: number;
-  }>;
 }
 
 function CopMapComponent({
@@ -957,6 +950,7 @@ function CopMapComponent({
   onSelectObject,
   onSelectSituationFeature,
   onActivateEmergencyRoute,
+  onSelectEmergencyRoute,
   onStartReport,
   onAutoFitChange,
   onCancelZoneCreation,
@@ -995,6 +989,16 @@ function CopMapComponent({
   onUpdateSketchDrawing
 }: CopMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const selectionPopoverRef = React.useRef<HTMLDivElement | null>(null);
+  const selectionPopoverDragRef = React.useRef<{
+    detachedAtStart: boolean;
+    height: number;
+    originX: number;
+    originY: number;
+    startX: number;
+    startY: number;
+    width: number;
+  } | null>(null);
   const sketchPaletteRef = React.useRef<HTMLDivElement | null>(null);
   const sketchPaletteDragRef = React.useRef<{
     height: number;
@@ -1021,6 +1025,7 @@ function CopMapComponent({
   const onBoundsChangeRef = React.useRef(onBoundsChange);
   const onSelectObjectRef = React.useRef(onSelectObject);
   const onSelectSituationFeatureRef = React.useRef(onSelectSituationFeature);
+  const onSelectEmergencyRouteRef = React.useRef(onSelectEmergencyRoute);
   const onAutoFitChangeRef = React.useRef(onAutoFitChange);
   const onCancelZoneCreationRef = React.useRef(onCancelZoneCreation);
   const onCancelZoneEditingRef = React.useRef(onCancelZoneEditing);
@@ -1064,6 +1069,8 @@ function CopMapComponent({
     y: number;
     yOffset: number;
   } | null>(null);
+  const [selectionPopoverPosition, setSelectionPopoverPosition] = React.useState<{ x: number; y: number } | null>(null);
+  const [selectionPopoverDragging, setSelectionPopoverDragging] = React.useState(false);
   const [hoveredObjectId, setHoveredObjectId] = React.useState<string | undefined>();
   const [zoneDraftPoints, setZoneDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
   const [sketchDraftPoints, setSketchDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
@@ -1186,10 +1193,11 @@ function CopMapComponent({
               } satisfies MapSelectionCard)
             : selectedSharedLiveLocation
               ? formatSharedLiveLocationSelectionCard(selectedSharedLiveLocation)
-              : null,
+              : (selectedEmergencyRouteInfo?.card ?? null),
     [
       effectiveSelectedTransitRouteDetail,
       selectedObject,
+      selectedEmergencyRouteInfo?.card,
       selectedSharedLiveLocation,
       selectedSituationFeature,
       selectedSketchDrawing
@@ -1198,10 +1206,12 @@ function CopMapComponent({
   const clearMapSelection = React.useCallback(() => {
     setSelectedSharedLiveLocationId(null);
     setSelectedEmergencyRouteInfo(null);
+    onSelectEmergencyRoute?.(null);
     onClearSelection?.();
-  }, [onClearSelection]);
+  }, [onClearSelection, onSelectEmergencyRoute]);
   React.useEffect(() => {
-    setSelectionPopoverCollapsed(false);
+    setSelectionPopoverCollapsed(true);
+    setSelectionPopoverPosition(null);
   }, [selectionCard?.key]);
   const selectedAnchorCoordinate = React.useMemo(
     () =>
@@ -1209,8 +1219,14 @@ function CopMapComponent({
         ? selectionAnchorCoordinate(selectedObject, selectedSituationFeature, selectedSketchDrawing)
         : selectedSharedLiveLocation
           ? ([selectedSharedLiveLocation.lon, selectedSharedLiveLocation.lat] as [number, number])
-          : null,
-    [selectedObject, selectedSharedLiveLocation, selectedSituationFeature, selectedSketchDrawing]
+          : (selectedEmergencyRouteInfo?.coordinate ?? null),
+    [
+      selectedEmergencyRouteInfo?.coordinate,
+      selectedObject,
+      selectedSharedLiveLocation,
+      selectedSituationFeature,
+      selectedSketchDrawing
+    ]
   );
   const selectedRouteFeatureCollection = React.useMemo(
     () =>
@@ -1311,6 +1327,7 @@ function CopMapComponent({
   onBoundsChangeRef.current = onBoundsChange;
   onSelectObjectRef.current = onSelectObject;
   onSelectSituationFeatureRef.current = onSelectSituationFeature;
+  onSelectEmergencyRouteRef.current = onSelectEmergencyRoute;
   onAutoFitChangeRef.current = onAutoFitChange;
   onCancelZoneCreationRef.current = onCancelZoneCreation;
   onCancelZoneEditingRef.current = onCancelZoneEditing;
@@ -1440,6 +1457,8 @@ function CopMapComponent({
       const object = objectsRef.current.find((candidate) => candidate.objectId === objectId);
       if (object) {
         setSelectedSharedLiveLocationId(null);
+        setSelectedEmergencyRouteInfo(null);
+        onSelectEmergencyRouteRef.current?.(null);
         onSelectObjectRef.current(object);
         return true;
       }
@@ -1449,6 +1468,8 @@ function CopMapComponent({
       );
       if (situationFeature) {
         setSelectedSharedLiveLocationId(null);
+        setSelectedEmergencyRouteInfo(null);
+        onSelectEmergencyRouteRef.current?.(null);
         onSelectSituationFeatureRef.current(situationFeature);
         return true;
       }
@@ -1456,6 +1477,8 @@ function CopMapComponent({
       const sketchDrawing = sketchDrawingsRef.current.find((candidate) => candidate.id === drawingId);
       if (sketchDrawing) {
         setSelectedSharedLiveLocationId(null);
+        setSelectedEmergencyRouteInfo(null);
+        onSelectEmergencyRouteRef.current?.(null);
         onSelectSketchDrawingRef.current?.(sketchDrawing);
         return true;
       }
@@ -1464,6 +1487,8 @@ function CopMapComponent({
       if (sharedLiveLocation) {
         onClearSelectionRef.current?.();
         onSelectSketchDrawingRef.current?.(null);
+        setSelectedEmergencyRouteInfo(null);
+        onSelectEmergencyRouteRef.current?.(null);
         setSelectedSharedLiveLocationId(sharedLiveLocation.shareId);
         return true;
       }
@@ -4357,11 +4382,15 @@ function CopMapComponent({
             const drawing = sketchDrawingsRef.current.find((candidate) => candidate.id === drawingId);
             if (drawing) {
               setSelectedSharedLiveLocationId(null);
+              setSelectedEmergencyRouteInfo(null);
+              onSelectEmergencyRouteRef.current?.(null);
               onSelectSketchDrawingRef.current?.(drawing);
               return;
             }
             setSelectedSketchVertexIndex(null);
             setSelectedSharedLiveLocationId(null);
+            setSelectedEmergencyRouteInfo(null);
+            onSelectEmergencyRouteRef.current?.(null);
             onSelectSketchDrawingRef.current?.(null);
             return;
           }
@@ -4389,14 +4418,16 @@ function CopMapComponent({
             event.preventDefault();
             const properties = isRecord(clickedEmergencyRoute.properties) ? clickedEmergencyRoute.properties : {};
             const routeSelection = emergencyRouteSelectionContext(properties, emergencyRoute);
-            setSelectedSharedLiveLocationId(null);
-            onClearSelectionRef.current?.();
-            setSelectedEmergencyRouteInfo({
+            const routeInfo: EmergencyRouteSelectionInfo = {
               canActivate: routeSelection.canActivate,
               card: formatEmergencyRouteSelectionCard(properties, emergencyRoute),
               coordinate: [event.lngLat.lng, event.lngLat.lat],
               routeId: routeSelection.routeId
-            });
+            };
+            setSelectedSharedLiveLocationId(null);
+            onClearSelectionRef.current?.();
+            setSelectedEmergencyRouteInfo(routeInfo);
+            onSelectEmergencyRouteRef.current?.(routeInfo);
             return;
           }
           const clickedFeature = queryRenderedFeatureByLayerPriority(map, event.point, mapFeatureClickPriorityLayerIds);
@@ -4406,6 +4437,7 @@ function CopMapComponent({
           }
           setSelectedSharedLiveLocationId(null);
           setSelectedEmergencyRouteInfo(null);
+          onSelectEmergencyRouteRef.current?.(null);
           onClearSelectionRef.current?.();
         };
         map.on("dragstart", handleUserMapInteraction);
@@ -5460,6 +5492,97 @@ function CopMapComponent({
     };
   }, [mapControlsPosition]);
 
+  const beginSelectionPopoverDrag = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target?.closest("button,a,input,textarea,select")) {
+        return;
+      }
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      const popoverRect = selectionPopoverRef.current?.getBoundingClientRect();
+      if (!containerRect || !popoverRect) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      const currentPosition = selectionPopoverPosition ?? {
+        x: popoverRect.left - containerRect.left,
+        y: popoverRect.top - containerRect.top
+      };
+      selectionPopoverDragRef.current = {
+        detachedAtStart: selectionPopoverPosition !== null,
+        height: popoverRect.height,
+        originX: currentPosition.x,
+        originY: currentPosition.y,
+        startX: event.clientX,
+        startY: event.clientY,
+        width: popoverRect.width
+      };
+      setSelectionPopoverPosition(currentPosition);
+      setSelectionPopoverDragging(true);
+    },
+    [selectionPopoverPosition]
+  );
+
+  React.useEffect(() => {
+    if (!selectionPopoverDragging) {
+      return undefined;
+    }
+    const handlePointerMove = (event: PointerEvent) => {
+      const drag = selectionPopoverDragRef.current;
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      if (!drag || !containerRect) {
+        return;
+      }
+      const popoverRect = selectionPopoverRef.current?.getBoundingClientRect();
+      const popoverWidth = popoverRect?.width ?? drag.width;
+      const popoverHeight = popoverRect?.height ?? drag.height;
+      const deltaX = event.clientX - drag.startX;
+      const deltaY = event.clientY - drag.startY;
+      if (!drag.detachedAtStart && Math.hypot(deltaX, deltaY) < 4) {
+        return;
+      }
+      const nextX = drag.originX + deltaX;
+      const nextY = drag.originY + deltaY;
+      setSelectionPopoverPosition({
+        x: clampValue(nextX, 8, Math.max(8, containerRect.width - popoverWidth - 8)),
+        y: clampValue(nextY, 8, Math.max(8, containerRect.height - popoverHeight - 8))
+      });
+    };
+    const handlePointerUp = () => {
+      selectionPopoverDragRef.current = null;
+      setSelectionPopoverDragging(false);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", handlePointerUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [selectionPopoverDragging]);
+
+  const selectionPopoverDetached = Boolean(selectionPopoverPosition);
+  const selectionPopoverStyle = React.useMemo<React.CSSProperties | undefined>(() => {
+    if (selectionPopoverPosition) {
+      return {
+        left: `${selectionPopoverPosition.x}px`,
+        top: `${selectionPopoverPosition.y}px`
+      };
+    }
+    if (!selectionPopupPoint) {
+      return undefined;
+    }
+    return {
+      "--popover-arrow-x": `${selectionPopupPoint.arrowX}px`,
+      "--popover-gap": `${selectionPopupPoint.yOffset}px`,
+      left: `${selectionPopupPoint.x}px`,
+      top: `${selectionPopupPoint.y}px`
+    } as React.CSSProperties;
+  }, [selectionPopoverPosition, selectionPopupPoint]);
+
   React.useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map || !selectedAnchorCoordinate) {
@@ -5511,12 +5634,6 @@ function CopMapComponent({
     emergencyRouteStatus === "ready"
       ? formatEmergencyRouteCardSummary(emergencyRoute, emergencyRouteMessage)
       : emergencyRouteMessage;
-  const openActiveEmergencyRouteDetail = React.useCallback(() => {
-    const info = primaryEmergencyRouteSelectionInfo(emergencyRoute, emergencyRouteFeatureCollection);
-    if (info) {
-      setSelectedEmergencyRouteInfo(info);
-    }
-  }, [emergencyRoute, emergencyRouteFeatureCollection]);
 
   return (
     <div
@@ -5958,25 +6075,32 @@ function CopMapComponent({
           </>
         )}
       </div>
-      {selectionCard && selectionPopupPoint ? (
+      {selectionCard && selectionPopupPoint && selectionPopoverStyle ? (
         <div
-          className={`map-object-popover ${selectionCard.variant ? `variant-${selectionCard.variant}` : ""} ${selectionPopupPoint.placement === "below" ? "below" : ""} ${selectionPopoverCollapsed ? "collapsed" : ""} ${selectionCard.statusTone ? `tone-${selectionCard.statusTone}` : ""}`}
+          className={`map-object-popover ${selectionCard.variant ? `variant-${selectionCard.variant}` : ""} ${!selectionPopoverDetached && selectionPopupPoint.placement === "below" ? "below" : ""} ${selectionPopoverCollapsed ? "collapsed" : ""} ${selectionPopoverDetached ? "detached" : ""} ${selectionPopoverDragging ? "dragging" : ""} ${selectionCard.statusTone ? `tone-${selectionCard.statusTone}` : ""}`}
           onClick={stopMapToolbarEvent}
           onDoubleClick={stopMapToolbarEvent}
           onPointerDown={stopMapToolbarEvent}
           onWheel={stopMapToolbarEvent}
-          style={
-            {
-              "--popover-arrow-x": `${selectionPopupPoint.arrowX}px`,
-              "--popover-gap": `${selectionPopupPoint.yOffset}px`,
-              left: `${selectionPopupPoint.x}px`,
-              top: `${selectionPopupPoint.y}px`
-            } as React.CSSProperties
-          }
+          ref={selectionPopoverRef}
+          style={selectionPopoverStyle}
         >
-          <div className="map-object-popover-header">
+          <div className="map-object-popover-header" onPointerDown={beginSelectionPopoverDrag}>
             <span>{selectionCard.eyebrow}</span>
             <div className="map-object-popover-actions">
+              <button
+                aria-label={
+                  selectionPopoverDetached ? "Připnout mini detail zpět k bodu" : "Mini detail je připnutý k bodu"
+                }
+                onClick={(event) => {
+                  stopMapToolbarEvent(event);
+                  setSelectionPopoverPosition(null);
+                }}
+                title={selectionPopoverDetached ? "Připnout zpět k bodu" : "Připnuto k bodu"}
+                type="button"
+              >
+                {selectionPopoverDetached ? <PinOff size={14} /> : <Pin size={14} />}
+              </button>
               <button
                 aria-label={selectionPopoverCollapsed ? "Rozbalit popis" : "Minimalizovat popis"}
                 onClick={() => setSelectionPopoverCollapsed((current) => !current)}
@@ -6008,18 +6132,20 @@ function CopMapComponent({
               ) : null}
               {selectionCard.detailRows?.length ? (
                 <div className="map-object-popover-details">
-                  {selectionCard.detailRows.map((row) => (
-                    <div key={`${row.label}:${row.value}`}>
-                      <span>{row.label}</span>
-                      <strong>{row.value}</strong>
-                    </div>
-                  ))}
+                  {(selectedEmergencyRouteInfo ? selectionCard.detailRows.slice(0, 4) : selectionCard.detailRows).map(
+                    (row) => (
+                      <div key={`${row.label}:${row.value}`}>
+                        <span>{row.label}</span>
+                        <strong>{row.value}</strong>
+                      </div>
+                    )
+                  )}
                 </div>
               ) : null}
-              {selectionCard.elevationProfile ? (
+              {!selectedEmergencyRouteInfo && selectionCard.elevationProfile ? (
                 <RouteElevationProfileView profile={selectionCard.elevationProfile} />
               ) : null}
-              {selectionCard.analysisSections?.length ? (
+              {!selectedEmergencyRouteInfo && selectionCard.analysisSections?.length ? (
                 <div className="map-object-popover-sections">
                   {selectionCard.analysisSections.map((section) => (
                     <div className="map-object-popover-section" key={section.title}>
@@ -6041,6 +6167,7 @@ function CopMapComponent({
                       stopMapToolbarEvent(event);
                       onActivateEmergencyRoute(selectedEmergencyRouteInfo.routeId!);
                       setSelectedEmergencyRouteInfo(null);
+                      onSelectEmergencyRoute?.(null);
                     }}
                     type="button"
                   >
@@ -6049,7 +6176,8 @@ function CopMapComponent({
                   </button>
                 </div>
               ) : null}
-              {selectedAnchorCoordinate &&
+              {!selectedEmergencyRouteInfo &&
+              selectedAnchorCoordinate &&
               (onRequestRouteToPoint ||
                 onStartNavigationToPoint ||
                 onRequestNearestAccessToPoint ||
@@ -6177,13 +6305,13 @@ function CopMapComponent({
                   ) : null}
                 </div>
               ) : null}
-              {selectedRouteFeatureCollection.features.length > 0 ? (
+              {!selectedEmergencyRouteInfo && selectedRouteFeatureCollection.features.length > 0 ? (
                 <div className="map-object-popover-route">
                   <ArrowRight size={14} strokeWidth={2.2} />
                   <span>Trasa je zvýrazněná v mapě</span>
                 </div>
               ) : null}
-              {emergencyRouteFeatureCollection.features.length > 0 ? (
+              {!selectedEmergencyRouteInfo && emergencyRouteFeatureCollection.features.length > 0 ? (
                 <div className="map-object-popover-route">
                   <Compass size={14} strokeWidth={2.2} />
                   <span>Zásahová trasa je zvýrazněná v mapě</span>
@@ -6193,41 +6321,13 @@ function CopMapComponent({
           )}
         </div>
       ) : null}
-      {selectedEmergencyRouteInfo ? (
-        <RouteDetailPanel
-          info={selectedEmergencyRouteInfo}
-          onActivate={
-            selectedEmergencyRouteInfo.routeId && selectedEmergencyRouteInfo.canActivate && onActivateEmergencyRoute
-              ? () => {
-                  onActivateEmergencyRoute(selectedEmergencyRouteInfo.routeId!);
-                  setSelectedEmergencyRouteInfo(null);
-                }
-              : undefined
-          }
-          onClose={() => setSelectedEmergencyRouteInfo(null)}
-          onStartNavigation={emergencyRouteStatus === "ready" ? onStartEmergencyNavigation : undefined}
-        />
-      ) : null}
-      {!selectedEmergencyRouteInfo && emergencyRouteStatus !== "idle" && emergencyRouteCardMessage ? (
+      {emergencyRouteStatus !== "idle" && emergencyRouteCardMessage ? (
         <div className={`map-emergency-route-card ${emergencyRouteStatus}`}>
           <div className="map-emergency-route-card-body">
             <strong>Zásahová trasa</strong>
             <span>{emergencyRouteCardMessage}</span>
           </div>
           <div className="map-emergency-route-card-actions">
-            {emergencyRouteStatus === "ready" ? (
-              <button
-                aria-label="Otevřít detail zásahové trasy"
-                onClick={(event) => {
-                  stopMapToolbarEvent(event);
-                  openActiveEmergencyRouteDetail();
-                }}
-                type="button"
-              >
-                <HelpCircle size={14} />
-                <span>Detail</span>
-              </button>
-            ) : null}
             {emergencyRouteStatus === "ready" && onStartEmergencyNavigation ? (
               <button
                 aria-label="Spustit navigaci po trase"
@@ -12771,165 +12871,6 @@ function uniqueRouteStrings(values: Array<string | undefined>): string[] {
     result.push(normalized);
   }
   return result;
-}
-
-function RouteElevationProfileView({ profile }: { profile: RouteElevationProfileSummary }) {
-  const width = 240;
-  const height = 58;
-  const paddingX = 4;
-  const paddingY = 5;
-  const points = profile.points;
-  const minDistance = points[0]?.distanceM ?? 0;
-  const maxDistance = points[points.length - 1]?.distanceM ?? minDistance + points.length - 1;
-  const minElevation = profile.minM ?? Math.min(...points.map((point) => point.elevationM));
-  const maxElevation = profile.maxM ?? Math.max(...points.map((point) => point.elevationM));
-  const distanceSpan = Math.max(1, maxDistance - minDistance);
-  const elevationSpan = Math.max(1, maxElevation - minElevation);
-  const polyline = points
-    .map((point, index) => {
-      const x =
-        paddingX +
-        (((Number.isFinite(point.distanceM) ? point.distanceM : index) - minDistance) / distanceSpan) *
-          (width - paddingX * 2);
-      const y = paddingY + (1 - (point.elevationM - minElevation) / elevationSpan) * (height - paddingY * 2);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-  return (
-    <div className="map-object-popover-elevation">
-      <div>
-        <span>Výškový profil</span>
-        <strong>
-          {Math.round(minElevation)}-{Math.round(maxElevation)} m
-        </strong>
-      </div>
-      <svg aria-hidden="true" preserveAspectRatio="none" viewBox={`0 0 ${width} ${height}`}>
-        <polyline points={polyline} />
-      </svg>
-      <small>
-        {profile.gainM !== undefined ? `Stoupání ${Math.round(profile.gainM)} m` : "Stoupání n/a"}
-        {profile.lossM !== undefined ? ` · klesání ${Math.round(profile.lossM)} m` : ""}
-      </small>
-    </div>
-  );
-}
-
-function RouteDetailPanel({
-  info,
-  onActivate,
-  onClose,
-  onStartNavigation
-}: {
-  info: EmergencyRouteSelectionInfo;
-  onActivate?: () => void;
-  onClose: () => void;
-  onStartNavigation?: () => void;
-}) {
-  const card = info.card;
-  return (
-    <section
-      aria-label="Detail zásahové trasy"
-      className={`map-route-detail-panel ${card.statusTone ? `tone-${card.statusTone}` : ""}`}
-      data-testid="map-route-detail-panel"
-      onClick={stopMapToolbarEvent}
-      onDoubleClick={stopMapToolbarEvent}
-      onPointerDown={stopMapToolbarEvent}
-      onWheel={stopMapToolbarEvent}
-    >
-      <div className="map-route-detail-header">
-        <div>
-          <span>{card.eyebrow}</span>
-          <strong>{card.title}</strong>
-          <small>{card.subtitle}</small>
-        </div>
-        <button aria-label="Zavřít detail trasy" onClick={onClose} type="button">
-          <X size={15} />
-        </button>
-      </div>
-      {card.metaItems.length > 0 ? (
-        <div className="map-route-detail-meta">
-          {card.metaItems.map((item) => (
-            <span key={item}>{item}</span>
-          ))}
-        </div>
-      ) : null}
-      {card.detailRows?.length ? (
-        <div className="map-route-detail-grid">
-          {card.detailRows.map((row) => (
-            <div key={`${row.label}:${row.value}`}>
-              <span>{row.label}</span>
-              <strong>{row.value}</strong>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {card.elevationProfile ? <RouteElevationProfileView profile={card.elevationProfile} /> : null}
-      {card.analysisSections?.length ? (
-        <div className="map-route-detail-sections">
-          {card.analysisSections.map((section) => (
-            <section key={section.title}>
-              <span>{section.title}</span>
-              {section.items.map((item) => (
-                <p key={item}>{item}</p>
-              ))}
-            </section>
-          ))}
-        </div>
-      ) : null}
-      <div className="map-route-detail-actions">
-        {onActivate ? (
-          <button className="primary" onClick={onActivate} type="button">
-            <ArrowRight size={14} />
-            <span>Použít variantu</span>
-          </button>
-        ) : null}
-        {onStartNavigation ? (
-          <button onClick={onStartNavigation} type="button">
-            <Navigation size={14} />
-            <span>Navigovat</span>
-          </button>
-        ) : null}
-        <button onClick={onClose} type="button">
-          <X size={14} />
-          <span>Zavřít</span>
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function primaryEmergencyRouteSelectionInfo(
-  response: RoutingRouteResponse | null | undefined,
-  collection: EmergencyRouteFeatureCollection
-): EmergencyRouteSelectionInfo | null {
-  const route = activeRouteRecord(response);
-  if (!route) {
-    return null;
-  }
-  const routeId = routeRecordId(route) ?? "route-1";
-  const rank = numberProperty(route.rank) ?? 1;
-  const line = collection.features.find(
-    (feature) =>
-      feature.geometry.type === "LineString" &&
-      (feature.properties.routeId === routeId || numberProperty(feature.properties.rank) === rank)
-  );
-  const coordinate =
-    line?.geometry.type === "LineString"
-      ? line.geometry.coordinates[Math.floor(line.geometry.coordinates.length / 2)]!
-      : ([0, 0] as [number, number]);
-  const properties: Record<string, unknown> = {
-    label: routeDisplayLabel(route, {}, rank),
-    rank,
-    role: "primary",
-    routeId
-  };
-  const context = emergencyRouteSelectionContext(properties, response);
-  return {
-    canActivate: context.canActivate,
-    card: formatEmergencyRouteSelectionCard(properties, response),
-    coordinate,
-    routeId: context.routeId
-  };
 }
 
 function formatEmergencyRouteCardSummary(

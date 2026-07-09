@@ -4,6 +4,7 @@ import clsx from "clsx";
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   BellRing,
   BookOpen,
   Bot,
@@ -228,7 +229,12 @@ import {
   type TransitVehicleDetailResponse,
   type WeatherRadarFrame
 } from "./cop-data";
-import type { CreateSketchDrawingRequest, SketchToolMode, UpdateSketchDrawingRequest } from "./CopMap";
+import type {
+  CreateSketchDrawingRequest,
+  EmergencyRouteSelectionInfo,
+  SketchToolMode,
+  UpdateSketchDrawingRequest
+} from "./CopMap";
 import {
   buildObjectDetailModel,
   type ConfidenceFactor,
@@ -237,6 +243,7 @@ import {
   type ObjectHistoryEntry
 } from "./object-detail";
 import { buildProximityAlerts, type ProximityAlert, type UserLocation } from "./proximity-alerts";
+import { RouteElevationProfileView } from "./route-elevation-profile";
 import { buildSafetyAreaAlertMatches, type SafetyAreaAlertMatch } from "./safety-area-alerts";
 import {
   createInitialStreamTelemetry,
@@ -1139,6 +1146,8 @@ export function App() {
   const [emergencyRouteTarget, setEmergencyRouteTarget] = React.useState<EmergencyRouteTarget | null>(
     () => initialNavigationSession?.target ?? null
   );
+  const [selectedEmergencyRouteInfo, setSelectedEmergencyRouteInfo] =
+    React.useState<EmergencyRouteSelectionInfo | null>(null);
   const [routingProfiles, setRoutingProfiles] = React.useState<Array<Record<string, unknown>>>([]);
   const [routingProfilesStatus, setRoutingProfilesStatus] = React.useState<"degraded" | "idle" | "loading" | "ready">(
     "idle"
@@ -5015,6 +5024,7 @@ export function App() {
         routeRequestIdRef.current += 1;
         setPendingRouteTarget(null);
         setEmergencyRoute(null);
+        setSelectedEmergencyRouteInfo(null);
         setEmergencyRouteTarget(null);
         setEmergencyRouteStatus("idle");
         setEmergencyRouteMessage(null);
@@ -5026,6 +5036,7 @@ export function App() {
       const requestId = routeRequestIdRef.current + 1;
       routeRequestIdRef.current = requestId;
       setEmergencyRoute(null);
+      setSelectedEmergencyRouteInfo(null);
       setEmergencyRouteTarget(normalizedTarget);
       setEmergencyRouteStatus("loading");
       setEmergencyRouteMessage(
@@ -5210,6 +5221,7 @@ export function App() {
         routeRequestIdRef.current += 1;
         setPendingRouteTarget(null);
         setEmergencyRoute(null);
+        setSelectedEmergencyRouteInfo(null);
         setEmergencyRouteTarget(null);
         setEmergencyRouteStatus("idle");
         setEmergencyRouteMessage(null);
@@ -5217,6 +5229,7 @@ export function App() {
         return;
       }
       if (!userLocation) {
+        setSelectedEmergencyRouteInfo(null);
         setEmergencyRouteStatus("loading");
         setEmergencyRouteMessage("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
         setLocationStatus("Pro výpočet trasy potřebuji aktuální polohu. Zkouším ji zaměřit.");
@@ -5258,6 +5271,7 @@ export function App() {
       const requestId = routeRequestIdRef.current + 1;
       routeRequestIdRef.current = requestId;
       setEmergencyRoute(null);
+      setSelectedEmergencyRouteInfo(null);
       setEmergencyRouteTarget(normalizedTarget);
       setEmergencyRouteStatus("loading");
       setEmergencyRouteMessage(`Hledám nejbližší přístup k bodu ${normalizedTarget.label ?? "vybraný bod"}...`);
@@ -5302,6 +5316,7 @@ export function App() {
       const requestId = routeRequestIdRef.current + 1;
       routeRequestIdRef.current = requestId;
       setEmergencyRoute(null);
+      setSelectedEmergencyRouteInfo(null);
       setEmergencyRouteTarget(normalizedTarget);
       setEmergencyRouteStatus("loading");
       setEmergencyRouteMessage(`Počítám 15min dosah z bodu ${normalizedTarget.label ?? "vybraný bod"}...`);
@@ -5494,6 +5509,7 @@ export function App() {
         nextRoute
       );
       setEmergencyRoute(nextRoute);
+      setSelectedEmergencyRouteInfo(null);
       setEmergencyRouteStatus("ready");
       setEmergencyRouteMessage(summary);
       setLocationStatus(summary);
@@ -6699,6 +6715,7 @@ export function App() {
       setSelectedSituationFeatureId(null);
       setSelectedSituationFeatureStableKey(null);
       setSelectedSketchDrawingId(null);
+      setSelectedEmergencyRouteInfo(null);
       setMobileSketchOpen(false);
       setMobileSheet(mobileDetailSheetForSelection(isSelected));
     },
@@ -6715,6 +6732,7 @@ export function App() {
       setSelectedSituationFeatureStableKey(isSelected ? null : stableSituationFeatureSelectionKey(feature));
       setSelectedObjectId(null);
       setSelectedSketchDrawingId(null);
+      setSelectedEmergencyRouteInfo(null);
       setMobileSketchOpen(false);
       setMobileSheet(mobileDetailSheetForSelection(isSelected));
     },
@@ -6729,6 +6747,7 @@ export function App() {
       setSelectedSituationFeatureStableKey(stableSituationFeatureSelectionKey(feature));
       setSelectedObjectId(null);
       setSelectedSketchDrawingId(null);
+      setSelectedEmergencyRouteInfo(null);
       setMobileSketchOpen(false);
       setMobileSheet(mobileDetailSheetForSelection(false));
       setSafetyAreaPopup(null);
@@ -6740,6 +6759,7 @@ export function App() {
     setSelectedObjectId(null);
     setSelectedSituationFeatureId(null);
     setSelectedSituationFeatureStableKey(null);
+    setSelectedEmergencyRouteInfo(null);
     setMobileSketchOpen(false);
     setMobileSheet(null);
   }, []);
@@ -6750,6 +6770,7 @@ export function App() {
       setSelectedObjectId(null);
       setSelectedSituationFeatureId(null);
       setSelectedSituationFeatureStableKey(null);
+      setSelectedEmergencyRouteInfo(null);
     }
   }, []);
 
@@ -7369,9 +7390,21 @@ export function App() {
                   onSelectObject={handleMapSelectObject}
                   onSelectSituationFeature={handleMapSelectSituationFeature}
                   onActivateEmergencyRoute={activateEmergencyRouteVariant}
+                  onSelectEmergencyRoute={(info) => {
+                    setSelectedEmergencyRouteInfo(info);
+                    if (info) {
+                      setSelectedObjectId(null);
+                      setSelectedSituationFeatureId(null);
+                      setSelectedSituationFeatureStableKey(null);
+                      setSelectedSketchDrawingId(null);
+                      setMobileSketchOpen(false);
+                      setMobileSheet(mobileDetailSheetForSelection(false));
+                    }
+                  }}
                   onAutoFitChange={setAutoFit}
                   onClearEmergencyRoute={() => {
                     setEmergencyRoute(null);
+                    setSelectedEmergencyRouteInfo(null);
                     setEmergencyRouteTarget(null);
                     setNavigationSession(null);
                     setEmergencyRouteStatus("idle");
@@ -7619,6 +7652,7 @@ export function App() {
                           )
                     );
                     setSelectedObjectId(null);
+                    setSelectedEmergencyRouteInfo(null);
                     setMobileSheet(mobileDetailSheetForSelection(isSelected));
                   }}
                 />
@@ -7674,6 +7708,7 @@ export function App() {
                         setSelectedObjectId(isSelected ? null : objectId);
                         setSelectedSituationFeatureId(null);
                         setSelectedSituationFeatureStableKey(null);
+                        setSelectedEmergencyRouteInfo(null);
                         setMobileSheet(mobileDetailSheetForSelection(isSelected));
                       }}
                     />
@@ -7738,7 +7773,7 @@ export function App() {
               {workspaceLayout.rightPanelMode === "collapsed" ? (
                 <CollapsedPanelRail
                   icon={<Database size={18} />}
-                  label={selectedSituationFeature || selectedObject ? "Detail" : "Info"}
+                  label={selectedEmergencyRouteInfo || selectedSituationFeature || selectedObject ? "Detail" : "Info"}
                   onExpand={() => updateWorkspaceLayout({ rightPanelMode: "open" })}
                 />
               ) : (
@@ -7754,9 +7789,36 @@ export function App() {
 
                   <PanelTitle
                     icon={<Database size={17} />}
-                    title={selectedSituationFeature ? "Detail prvku" : "Detail objektu"}
+                    title={
+                      selectedEmergencyRouteInfo
+                        ? "Detail trasy"
+                        : selectedSituationFeature
+                          ? "Detail prvku"
+                          : "Detail objektu"
+                    }
                   />
-                  {selectedSituationFeature ? (
+                  {selectedEmergencyRouteInfo ? (
+                    <RouteDetailContent
+                      info={selectedEmergencyRouteInfo}
+                      onActivate={
+                        selectedEmergencyRouteInfo.routeId && selectedEmergencyRouteInfo.canActivate
+                          ? () => {
+                              activateEmergencyRouteVariant(selectedEmergencyRouteInfo.routeId!);
+                              setSelectedEmergencyRouteInfo(null);
+                            }
+                          : undefined
+                      }
+                      onClose={() => setSelectedEmergencyRouteInfo(null)}
+                      onStartNavigation={
+                        emergencyRouteStatus === "ready"
+                          ? () =>
+                              openNavigationProfileDialog(
+                                emergencyRouteTarget ?? navigationTargetFromRouteResponse(emergencyRoute)
+                              )
+                          : undefined
+                      }
+                    />
+                  ) : selectedSituationFeature ? (
                     <SituationFeatureDetail
                       apiBase={apiBase}
                       authToken={authToken}
@@ -7923,11 +7985,44 @@ export function App() {
 
       {mobileSheet === "detail" ? (
         <MobileSheetSurface
-          title={selectedSituationFeature ? "Detail prvku" : explicitlySelectedObject ? "Detail objektu" : "Detail"}
+          title={
+            selectedEmergencyRouteInfo
+              ? "Detail trasy"
+              : selectedSituationFeature
+                ? "Detail prvku"
+                : explicitlySelectedObject
+                  ? "Detail objektu"
+                  : "Detail"
+          }
           subtitle="Mapa"
           onClose={() => setMobileSheet(null)}
         >
-          {selectedSituationFeature ? (
+          {selectedEmergencyRouteInfo ? (
+            <RouteDetailContent
+              info={selectedEmergencyRouteInfo}
+              onActivate={
+                selectedEmergencyRouteInfo.routeId && selectedEmergencyRouteInfo.canActivate
+                  ? () => {
+                      activateEmergencyRouteVariant(selectedEmergencyRouteInfo.routeId!);
+                      setSelectedEmergencyRouteInfo(null);
+                      setMobileSheet(null);
+                    }
+                  : undefined
+              }
+              onClose={() => {
+                setSelectedEmergencyRouteInfo(null);
+                setMobileSheet(null);
+              }}
+              onStartNavigation={
+                emergencyRouteStatus === "ready"
+                  ? () =>
+                      openNavigationProfileDialog(
+                        emergencyRouteTarget ?? navigationTargetFromRouteResponse(emergencyRoute)
+                      )
+                  : undefined
+              }
+            />
+          ) : selectedSituationFeature ? (
             <SituationFeatureDetail
               apiBase={apiBase}
               authToken={authToken}
@@ -15625,6 +15720,75 @@ function EventStream({ events }: { events: Array<{ id: string; title: string; de
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function RouteDetailContent({
+  info,
+  onActivate,
+  onClose,
+  onStartNavigation
+}: {
+  info: EmergencyRouteSelectionInfo;
+  onActivate?: () => void;
+  onClose: () => void;
+  onStartNavigation?: () => void;
+}) {
+  const card = info.card;
+  return (
+    <div className={`route-detail-content ${card.statusTone ? `tone-${card.statusTone}` : ""}`}>
+      <div className="route-detail-heading">
+        <span>{card.eyebrow}</span>
+        <strong>{card.title}</strong>
+        <small>{card.subtitle}</small>
+      </div>
+      {card.metaItems.length > 0 ? (
+        <div className="route-detail-meta">
+          {card.metaItems.map((item) => (
+            <StatusBadge key={item} label={item} tone="neutral" />
+          ))}
+        </div>
+      ) : null}
+      {card.detailRows?.length ? (
+        <div className="route-detail-metrics">
+          {card.detailRows.map((row) => (
+            <DataMetric key={`${row.label}:${row.value}`} label={row.label} value={row.value} tone="neutral" />
+          ))}
+        </div>
+      ) : null}
+      {card.elevationProfile ? (
+        <ObjectDetailSection title="Výškový profil">
+          <RouteElevationProfileView profile={card.elevationProfile} />
+        </ObjectDetailSection>
+      ) : null}
+      {card.analysisSections?.map((section) => (
+        <ObjectDetailSection key={section.title} title={section.title}>
+          <div className="route-detail-section-list">
+            {section.items.map((item) => (
+              <p key={item}>{item}</p>
+            ))}
+          </div>
+        </ObjectDetailSection>
+      ))}
+      <div className="route-detail-actions">
+        {onActivate ? (
+          <button className="primary-button" onClick={onActivate} type="button">
+            <ArrowRight size={15} />
+            Použít variantu
+          </button>
+        ) : null}
+        {onStartNavigation ? (
+          <button className="primary-button secondary" onClick={onStartNavigation} type="button">
+            <Navigation size={15} />
+            Navigovat
+          </button>
+        ) : null}
+        <button className="primary-button secondary" onClick={onClose} type="button">
+          <X size={15} />
+          Zavřít detail
+        </button>
+      </div>
     </div>
   );
 }
