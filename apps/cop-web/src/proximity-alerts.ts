@@ -4,8 +4,10 @@ import { predictPosition, type PredictionMode, type TrackHistory } from "./track
 
 export interface UserLocation {
   accuracyM?: number | null;
+  headingDeg?: number | null;
   lat: number;
   lon: number;
+  speedMps?: number | null;
   updatedAt: string;
 }
 

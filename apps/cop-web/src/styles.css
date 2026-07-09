@@ -548,6 +548,10 @@ h1 {
   overflow: hidden;
 }
 
+.embedded-chat-panel.mobile-compact .embedded-chat-panel-main {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .embedded-chat-panel-header {
   min-height: 58px;
   padding: 10px 12px;
@@ -5171,6 +5175,191 @@ h1 {
   pointer-events: auto;
   touch-action: manipulation;
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+}
+
+.map-compass-widget {
+  position: absolute;
+  top: 14px;
+  right: 72px;
+  z-index: 33;
+  display: grid;
+  gap: 8px;
+  width: max-content;
+  color: #edf6ff;
+  pointer-events: auto;
+}
+
+.map-compass-bubble {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 74px;
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid rgba(140, 182, 216, 0.42);
+  border-radius: 999px;
+  background: rgba(7, 12, 18, 0.86);
+  color: #edf6ff;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(14px);
+}
+
+.map-compass-bubble svg {
+  color: #c8f08d;
+}
+
+.map-compass-bubble:hover,
+.map-compass-bubble:focus-visible {
+  border-color: rgba(200, 240, 141, 0.62);
+  background: rgba(13, 28, 24, 0.92);
+  outline: none;
+}
+
+.map-compass-panel {
+  display: grid;
+  gap: 10px;
+  width: 236px;
+  padding: 12px;
+  border: 1px solid rgba(140, 182, 216, 0.38);
+  border-radius: 8px;
+  background: rgba(7, 12, 18, 0.91);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(16px);
+}
+
+.map-compass-dial {
+  position: relative;
+  width: 118px;
+  height: 118px;
+  justify-self: center;
+  border: 1px solid rgba(140, 182, 216, 0.42);
+  border-radius: 999px;
+  background: radial-gradient(circle at center, rgba(200, 240, 141, 0.11), transparent 34%), rgba(10, 18, 27, 0.84);
+}
+
+.map-compass-cardinal {
+  position: absolute;
+  color: #a8b6c4;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.map-compass-cardinal.north {
+  top: 8px;
+  left: 50%;
+  color: #f4f8ff;
+  transform: translateX(-50%);
+}
+
+.map-compass-cardinal.east {
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+}
+
+.map-compass-cardinal.south {
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.map-compass-cardinal.west {
+  top: 50%;
+  left: 8px;
+  transform: translateY(-50%);
+}
+
+.map-compass-map-arrow,
+.map-compass-device-arrow {
+  position: absolute;
+  inset: 13px;
+  border-radius: 999px;
+  transform-origin: center;
+  transition: transform 160ms ease;
+}
+
+.map-compass-map-arrow::before,
+.map-compass-device-arrow::before {
+  position: absolute;
+  top: 0;
+  left: calc(50% - 5px);
+  width: 0;
+  height: 0;
+  border-right: 5px solid transparent;
+  border-bottom: 38px solid #dceaff;
+  border-left: 5px solid transparent;
+  content: "";
+}
+
+.map-compass-device-arrow::before {
+  top: 16px;
+  left: calc(50% - 4px);
+  border-right-width: 4px;
+  border-bottom-width: 30px;
+  border-left-width: 4px;
+  border-bottom-color: #c8f08d;
+}
+
+.map-compass-readout {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.map-compass-readout div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 1px solid rgba(140, 182, 216, 0.18);
+  background: rgba(13, 23, 34, 0.76);
+}
+
+.map-compass-readout dt {
+  color: #a8b6c4;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.map-compass-readout dd {
+  margin: 0;
+  color: #edf6ff;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.map-compass-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.map-compass-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(140, 182, 216, 0.36);
+  background: rgba(12, 22, 33, 0.9);
+  color: #edf6ff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.map-compass-actions button:hover,
+.map-compass-actions button:focus-visible {
+  border-color: rgba(200, 240, 141, 0.62);
+  color: #f0ffd7;
+  outline: none;
+}
+
+.map-compass-actions button:disabled {
+  opacity: 0.45;
 }
 
 .map-control-palette.moved {
@@ -10466,6 +10655,15 @@ dd {
     opacity: 0.38;
   }
 
+  .map-compass-widget {
+    top: calc(env(safe-area-inset-top) + 10px);
+    right: 66px;
+  }
+
+  .map-compass-panel {
+    width: min(218px, calc(100vw - 96px));
+  }
+
   .shell.app-shell-v2 .messaging-panel,
   .shell.app-shell-v2 .messaging-panel.pinned {
     inset: 0 0 calc(var(--mobile-bottom-nav-height, 64px) + env(safe-area-inset-bottom)) 0;
@@ -10500,6 +10698,10 @@ dd {
     min-height: 0;
     max-height: 100%;
     overflow: hidden;
+  }
+
+  .shell.app-shell-v2 .embedded-chat-panel.mobile-compact .embedded-chat-panel-main {
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .shell.app-shell-v2 .embedded-chat-frame {

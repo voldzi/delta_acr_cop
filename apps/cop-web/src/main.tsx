@@ -904,7 +904,10 @@ export function App() {
   const [offlineSnapshotState, setOfflineSnapshotState] = React.useState<OfflineSnapshotState>(() =>
     initialOfflineSnapshotState(userStorageScope)
   );
-  const initialPreferences = React.useMemo(() => readUserPreferences(userStorageScope), [userStorageScope]);
+  const initialPreferences = React.useMemo(
+    () => readStartupUserPreferences(authSession, userStorageScope),
+    [authSession.profile?.subjectId, authSession.profile?.username, authSession.status, userStorageScope]
+  );
   const initialAlertPreferences = React.useMemo(() => readLocalAlertPreferences(userStorageScope), [userStorageScope]);
   const initialMapFocus = React.useMemo(() => decodeCopMapFocusSearch(window.location.search), []);
   const [activeWorkspace, setActiveWorkspace] = React.useState<WorkspaceModule>(() =>
@@ -1441,6 +1444,8 @@ export function App() {
   React.useEffect(() => {
     updateApplicationBadge(messagingUnreadCount);
   }, [messagingUnreadCount]);
+
+  React.useEffect(() => installHapticInteractionFeedback(), []);
 
   const [incidentTaskDraft, setIncidentTaskDraft] = React.useState("");
   const [incidentWorkflowLoading, setIncidentWorkflowLoading] = React.useState(false);
@@ -4159,6 +4164,34 @@ export function App() {
 
   React.useEffect(() => clearUserLocationWatch, [clearUserLocationWatch]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+    if (
+      pendingRouteTarget ||
+      navigationSessionRef.current ||
+      typeof navigator === "undefined" ||
+      !navigator.geolocation
+    ) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    readCurrentUserLocation()
+      .then((location) => {
+        if (!cancelled) {
+          applyLiveUserLocation(location);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLocationStatus("Poloha není zaměřená.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const currentPreferences = React.useMemo<UserPreferences>(
     () => ({
       activeWorkspace,
@@ -4236,7 +4269,7 @@ export function App() {
     profileHydratedRef.current = false;
     profileLoadKeyRef.current = null;
     skipNextPreferenceWriteRef.current = true;
-    const scopedPreferences = readUserPreferences(userStorageScope);
+    const scopedPreferences = readStartupUserPreferences(authSession, userStorageScope);
     const scopedAlertPreferences = readLocalAlertPreferences(userStorageScope);
     catalogSelectionInitializedRef.current = scopedPreferences.catalogLayerIds !== undefined;
     setVisibleCatalogLayerIds(normalizeCatalogLayerIds(scopedPreferences.catalogLayerIds));
@@ -8268,6 +8301,7 @@ export function App() {
           active={messagingOpen}
           dockWidth={messagingDockWidth}
           mapView={mapView}
+          mobileCompact={mobileSheetViewport}
           pinned={messagingPinned}
           selection={messagingSelection}
           transitShare={messagingTransitShare}
@@ -11225,6 +11259,7 @@ function EmbeddedCopChatPanel({
   active,
   dockWidth,
   mapView,
+  mobileCompact,
   pinned,
   selection,
   transitShare,
@@ -11236,6 +11271,7 @@ function EmbeddedCopChatPanel({
   active: boolean;
   dockWidth: number;
   mapView: MapViewState | undefined;
+  mobileCompact: boolean;
   pinned: boolean;
   selection: MessagingSelectionCommand | null;
   transitShare: MessagingTransitShareCommand | null;
@@ -11388,26 +11424,34 @@ function EmbeddedCopChatPanel({
 
   return (
     <aside
-      className={clsx("messaging-panel", "embedded-chat-panel", pinned && "pinned", active ? "active" : "hidden")}
+      className={clsx(
+        "messaging-panel",
+        "embedded-chat-panel",
+        pinned && "pinned",
+        mobileCompact && "mobile-compact",
+        active ? "active" : "hidden"
+      )}
       style={pinned ? ({ "--messaging-dock-width": `${dockWidth}px` } as React.CSSProperties) : undefined}
       aria-hidden={!active}
     >
       {pinned ? <div className="messaging-resize-handle" onPointerDown={beginDockResize} /> : null}
       <div className="embedded-chat-panel-main">
-        <header className="embedded-chat-panel-header">
-          <div>
-            <small>Chat</small>
-            <strong>Integrovaný COP Chat</strong>
-          </div>
-          <div className="embedded-chat-panel-actions">
-            <a className="icon-button" href={chatPath} title="Otevřít chat v samostatném okně">
-              <ExternalLink size={17} />
-            </a>
-            <button className="icon-button" onClick={onClose} type="button" title="Zavřít chat">
-              <X size={18} />
-            </button>
-          </div>
-        </header>
+        {!mobileCompact ? (
+          <header className="embedded-chat-panel-header">
+            <div>
+              <small>Chat</small>
+              <strong>Integrovaný COP Chat</strong>
+            </div>
+            <div className="embedded-chat-panel-actions">
+              <a className="icon-button" href={chatPath} title="Otevřít chat v samostatném okně">
+                <ExternalLink size={17} />
+              </a>
+              <button className="icon-button" onClick={onClose} type="button" title="Zavřít chat">
+                <X size={18} />
+              </button>
+            </div>
+          </header>
+        ) : null}
         <iframe
           ref={iframeRef}
           className="embedded-chat-frame"
@@ -21802,8 +21846,10 @@ function readCurrentUserLocationFromWatch(options: PositionOptions): Promise<Use
 function userLocationFromPosition(position: GeolocationPosition): UserLocation {
   const location: UserLocation = {
     accuracyM: position.coords.accuracy,
+    headingDeg: Number.isFinite(position.coords.heading) ? position.coords.heading : null,
     lat: position.coords.latitude,
     lon: position.coords.longitude,
+    speedMps: Number.isFinite(position.coords.speed) ? position.coords.speed : null,
     updatedAt: new Date().toISOString()
   };
   if (!isValidMapPoint(location)) {
@@ -22364,6 +22410,30 @@ function shouldPreferLocalAlertPreferences(localUpdatedAt: string | null, server
   return !Number.isFinite(serverTime) || localTime > serverTime;
 }
 
+function readStartupUserPreferences(session: AuthSession, scope: string): UserPreferences {
+  const storedPreferences = readUserPreferences(scope);
+  if (canRestoreScopedUserPreferences(session)) {
+    return storedPreferences;
+  }
+  return stripAnonymousStartupLayers(storedPreferences);
+}
+
+function canRestoreScopedUserPreferences(session: AuthSession): boolean {
+  return session.status === "authenticated" || session.status === "lab";
+}
+
+function stripAnonymousStartupLayers(preferences: UserPreferences): UserPreferences {
+  return {
+    ...preferences,
+    catalogLayerIds: [],
+    safetyLayerIds: [],
+    situationLayerIds: [],
+    situationSourceIds: [],
+    takLayerIds: [],
+    trackLayerIds: []
+  };
+}
+
 function userPreferenceScope(session: AuthSession): string {
   if (session.profile?.subjectId) {
     return session.profile.subjectId;
@@ -22375,6 +22445,32 @@ function userPreferenceScope(session: AuthSession): string {
     return session.profile.email;
   }
   return session.status === "lab" ? "lab" : "anonymous";
+}
+
+function installHapticInteractionFeedback(): () => void {
+  if (typeof window === "undefined" || typeof navigator === "undefined" || typeof navigator.vibrate !== "function") {
+    return () => undefined;
+  }
+  const reducedMotion =
+    typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reducedMotion) {
+    return () => undefined;
+  }
+  const handlePointerDown = (event: PointerEvent) => {
+    if (event.pointerType === "mouse") {
+      return;
+    }
+    const target = event.target instanceof Element ? event.target : null;
+    const interactive = target?.closest(
+      'button:not(:disabled), a[href], [role="button"], input[type="checkbox"]:not(:disabled), input[type="radio"]:not(:disabled), select:not(:disabled), summary'
+    );
+    if (!interactive) {
+      return;
+    }
+    navigator.vibrate(8);
+  };
+  window.addEventListener("pointerdown", handlePointerDown, { passive: true });
+  return () => window.removeEventListener("pointerdown", handlePointerDown);
 }
 
 function workspaceMetadata(module: WorkspaceModule): { description: string; label: string } {

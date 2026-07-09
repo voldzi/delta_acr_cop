@@ -815,6 +815,14 @@ interface CopMapProps {
   onUpdateSketchDrawing?: (drawingId: string, input: UpdateSketchDrawingRequest) => void;
 }
 
+type DeviceCompassStatus = "active" | "denied" | "idle" | "unsupported";
+
+interface DeviceCompassState {
+  headingDeg?: number;
+  message?: string;
+  status: DeviceCompassStatus;
+}
+
 const sketchToolItems: Array<{
   Icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
   label: string;
@@ -1059,6 +1067,9 @@ function CopMapComponent({
   const [mapError, setMapError] = React.useState<string | null>(null);
   const [clusterInfo, setClusterInfo] = React.useState<ClusterInfo | null>(null);
   const [mapFullscreen, setMapFullscreen] = React.useState(false);
+  const [mapBearingDeg, setMapBearingDeg] = React.useState(() => normalizeCompassDegrees(initialView?.bearing ?? 0));
+  const [deviceCompass, setDeviceCompass] = React.useState<DeviceCompassState>(() => initialDeviceCompassState());
+  const [compassExpanded, setCompassExpanded] = React.useState(false);
   const [mapControlsCollapsed, setMapControlsCollapsed] = React.useState(false);
   const [mapControlsPosition, setMapControlsPosition] = React.useState<{ x: number; y: number } | null>(null);
   const [mapControlsDragging, setMapControlsDragging] = React.useState(false);
@@ -4446,7 +4457,13 @@ function CopMapComponent({
         map.on("rotatestart", handleUserMapInteraction);
         map.on("zoomstart", handleUserMapInteraction);
         map.on("click", handleMapClick);
-        map.on("moveend", () => emitMapViewport(map, onViewChangeRef, onBoundsChangeRef));
+        const updateMapBearing = () => setMapBearingDeg(normalizeCompassDegrees(map.getBearing()));
+        const handleMoveEnd = () => {
+          updateMapBearing();
+          emitMapViewport(map, onViewChangeRef, onBoundsChangeRef);
+        };
+        map.on("rotate", updateMapBearing);
+        map.on("moveend", handleMoveEnd);
         const handleTrackHover = (event: MapLayerMouseEvent) => {
           const objectId = event.features?.[0]?.properties?.objectId as string | undefined;
           if (objectId) {
@@ -4774,6 +4791,7 @@ function CopMapComponent({
         });
         setMapReady(true);
         requestMapResize(map);
+        updateMapBearing();
         emitMapViewport(map, onViewChangeRef, onBoundsChangeRef);
       })().catch((error: unknown) => {
         setMapError(error instanceof Error ? error.message : "NATO symboly nejsou dostupné.");
@@ -5160,12 +5178,59 @@ function CopMapComponent({
   }, [mapFullscreen]);
 
   React.useEffect(() => {
+    if (!mapFullscreen) {
+      setCompassExpanded(false);
+      return undefined;
+    }
+    if (deviceCompass.status === "unsupported" || deviceCompass.status === "denied") {
+      return undefined;
+    }
+    const handleOrientation = (event: DeviceOrientationEvent) => {
+      const headingDeg = deviceCompassHeading(event);
+      if (headingDeg === undefined) {
+        setDeviceCompass((current) =>
+          current.status === "active" ? { ...current, message: "Senzor zatím neposílá absolutní heading." } : current
+        );
+        return;
+      }
+      setDeviceCompass({
+        headingDeg,
+        message: "Heading zařízení dostupný.",
+        status: "active"
+      });
+    };
+    window.addEventListener("deviceorientationabsolute", handleOrientation, true);
+    window.addEventListener("deviceorientation", handleOrientation, true);
+    return () => {
+      window.removeEventListener("deviceorientationabsolute", handleOrientation, true);
+      window.removeEventListener("deviceorientation", handleOrientation, true);
+    };
+  }, [deviceCompass.status, mapFullscreen]);
+
+  React.useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map) {
       return;
     }
     setMapInteractionSuspended(map, mapInteractionSuspended);
   }, [mapInteractionSuspended, mapReady]);
+
+  async function requestCompassSensor() {
+    const permission = await requestDeviceOrientationPermission();
+    if (permission === "unsupported") {
+      setDeviceCompass({ message: "Prohlížeč neposkytuje orientační senzor.", status: "unsupported" });
+      return;
+    }
+    if (permission === "denied") {
+      setDeviceCompass({ message: "Přístup k orientačnímu senzoru je zamítnutý.", status: "denied" });
+      return;
+    }
+    setDeviceCompass((current) => ({
+      ...current,
+      message: "Čekám na data ze senzoru zařízení.",
+      status: "active"
+    }));
+  }
 
   const finishZoneDraft = React.useCallback(() => {
     if (zoneDraftPoints.length < 3) {
@@ -5949,6 +6014,17 @@ function CopMapComponent({
           </div>
         </div>
       ) : null}
+      {mapFullscreen ? (
+        <FullscreenCompassWidget
+          deviceCompass={deviceCompass}
+          expanded={compassExpanded}
+          mapBearingDeg={mapBearingDeg}
+          userHeadingDeg={normalizeCompassDegrees(userLocation?.headingDeg)}
+          onRequestSensor={() => void requestCompassSensor()}
+          onResetNorth={() => mapRef.current?.easeTo({ bearing: 0, duration: 180, pitch: 0 })}
+          onToggle={() => setCompassExpanded((current) => !current)}
+        />
+      ) : null}
       <div
         className={[
           "map-control-palette",
@@ -6416,6 +6492,161 @@ function CopMapComponent({
       ) : null}
     </div>
   );
+}
+
+function FullscreenCompassWidget({
+  deviceCompass,
+  expanded,
+  mapBearingDeg,
+  userHeadingDeg,
+  onRequestSensor,
+  onResetNorth,
+  onToggle
+}: {
+  deviceCompass: DeviceCompassState;
+  expanded: boolean;
+  mapBearingDeg: number | undefined;
+  userHeadingDeg: number | undefined;
+  onRequestSensor: () => void;
+  onResetNorth: () => void;
+  onToggle: () => void;
+}) {
+  const normalizedMapBearing = normalizeCompassDegrees(mapBearingDeg) ?? 0;
+  const sensorHeading = normalizeCompassDegrees(deviceCompass.headingDeg);
+  const movementHeading = normalizeCompassDegrees(userHeadingDeg);
+  const effectiveDeviceHeading = sensorHeading ?? movementHeading;
+  const statusLabel = formatCompassStatus(deviceCompass, movementHeading);
+  return (
+    <div
+      className={`map-compass-widget ${expanded ? "expanded" : "collapsed"}`}
+      onClick={stopMapToolbarEvent}
+      onDoubleClick={stopMapToolbarEvent}
+      onPointerDown={stopMapToolbarEvent}
+      onWheel={stopMapToolbarEvent}
+    >
+      <button
+        aria-expanded={expanded}
+        aria-label="Buzola a natočení mapy"
+        className="map-compass-bubble"
+        onClick={onToggle}
+        title="Buzola a natočení mapy"
+        type="button"
+      >
+        <Compass size={17} strokeWidth={2.2} />
+        <span>{formatCompassDegrees(normalizedMapBearing)}</span>
+      </button>
+      {expanded ? (
+        <div className="map-compass-panel">
+          <div className="map-compass-dial" aria-hidden="true">
+            <span className="map-compass-cardinal north">S</span>
+            <span className="map-compass-cardinal east">V</span>
+            <span className="map-compass-cardinal south">J</span>
+            <span className="map-compass-cardinal west">Z</span>
+            <span className="map-compass-map-arrow" style={{ transform: `rotate(${-normalizedMapBearing}deg)` }} />
+            {effectiveDeviceHeading !== undefined ? (
+              <span
+                className="map-compass-device-arrow"
+                style={{ transform: `rotate(${effectiveDeviceHeading - normalizedMapBearing}deg)` }}
+              />
+            ) : null}
+          </div>
+          <dl className="map-compass-readout">
+            <div>
+              <dt>Mapa</dt>
+              <dd>{formatCompassDegrees(normalizedMapBearing)}</dd>
+            </div>
+            <div>
+              <dt>Zařízení</dt>
+              <dd>{effectiveDeviceHeading !== undefined ? formatCompassDegrees(effectiveDeviceHeading) : "n/a"}</dd>
+            </div>
+            <div>
+              <dt>Stav</dt>
+              <dd>{statusLabel}</dd>
+            </div>
+          </dl>
+          <div className="map-compass-actions">
+            <button onClick={onResetNorth} type="button">
+              Sever
+            </button>
+            <button
+              disabled={deviceCompass.status === "unsupported" || deviceCompass.status === "denied"}
+              onClick={onRequestSensor}
+              type="button"
+            >
+              Buzola
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function initialDeviceCompassState(): DeviceCompassState {
+  if (typeof window === "undefined" || !("DeviceOrientationEvent" in window)) {
+    return { message: "Prohlížeč neposkytuje orientační senzor.", status: "unsupported" };
+  }
+  return { message: "Buzolu lze aktivovat po tapnutí.", status: "idle" };
+}
+
+type DeviceOrientationPermissionResult = "denied" | "granted" | "unsupported";
+
+async function requestDeviceOrientationPermission(): Promise<DeviceOrientationPermissionResult> {
+  if (typeof window === "undefined" || !("DeviceOrientationEvent" in window)) {
+    return "unsupported";
+  }
+  const OrientationEventConstructor = window.DeviceOrientationEvent as
+    | (typeof DeviceOrientationEvent & {
+        requestPermission?: () => Promise<PermissionState>;
+      })
+    | undefined;
+  if (typeof OrientationEventConstructor?.requestPermission !== "function") {
+    return "granted";
+  }
+  try {
+    const permission = await OrientationEventConstructor.requestPermission();
+    return permission === "granted" ? "granted" : "denied";
+  } catch {
+    return "denied";
+  }
+}
+
+function deviceCompassHeading(event: DeviceOrientationEvent): number | undefined {
+  const webkitHeading = (event as DeviceOrientationEvent & { webkitCompassHeading?: number }).webkitCompassHeading;
+  if (typeof webkitHeading === "number" && Number.isFinite(webkitHeading)) {
+    return normalizeCompassDegrees(webkitHeading);
+  }
+  if (event.absolute === true && typeof event.alpha === "number" && Number.isFinite(event.alpha)) {
+    return normalizeCompassDegrees(360 - event.alpha);
+  }
+  return undefined;
+}
+
+function normalizeCompassDegrees(value: number | null | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return ((value % 360) + 360) % 360;
+}
+
+function formatCompassDegrees(value: number | undefined): string {
+  return value === undefined ? "n/a" : `${Math.round(value)}°`;
+}
+
+function formatCompassStatus(deviceCompass: DeviceCompassState, movementHeading: number | undefined): string {
+  if (deviceCompass.status === "active" && deviceCompass.headingDeg !== undefined) {
+    return "senzor aktivní";
+  }
+  if (movementHeading !== undefined) {
+    return "směr pohybu";
+  }
+  if (deviceCompass.status === "denied") {
+    return "zamítnuto";
+  }
+  if (deviceCompass.status === "unsupported") {
+    return "nedostupné";
+  }
+  return deviceCompass.message ?? "čeká";
 }
 
 function enableMapInteractions(map: maplibregl.Map): void {

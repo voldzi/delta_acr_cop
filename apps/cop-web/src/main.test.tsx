@@ -40,6 +40,7 @@ vi.mock("./CopMap", async () => {
       focusView,
       focusViewRequest,
       initialView,
+      mapLayerLabel,
       mapInteractionSuspended,
       objects,
       onActivateEmergencyRoute,
@@ -65,6 +66,7 @@ vi.mock("./CopMap", async () => {
       focusView?: { center: [number, number]; zoom?: number };
       focusViewRequest?: number;
       initialView?: { center: [number, number]; zoom?: number };
+      mapLayerLabel?: string;
       mapInteractionSuspended?: boolean;
       objects: Array<{ objectId: string }>;
       onActivateEmergencyRoute?: (routeId: string) => void;
@@ -112,6 +114,7 @@ vi.mock("./CopMap", async () => {
           "data-initial-center": initialView
             ? `${initialView.center[0].toFixed(5)},${initialView.center[1].toFixed(5)}`
             : "",
+          "data-map-layer-label": mapLayerLabel ?? "",
           "data-emergency-route-features": String(emergencyRoute?.features?.length ?? 0),
           "data-emergency-route-message": emergencyRouteMessage ?? "",
           "data-emergency-route-status": emergencyRouteStatus ?? "idle",
@@ -327,6 +330,7 @@ afterEach(() => {
     configurable: true,
     value: initialGeolocation
   });
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -734,6 +738,45 @@ describe("COP web dashboard", () => {
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe(expectedCenter);
   });
 
+  it("does not restore selected layers from anonymous local storage on a fresh anonymous start", async () => {
+    vi.stubEnv("VITE_COP_AUTH_MODE", "hybrid");
+    vi.stubEnv("VITE_COP_OIDC_ISSUER", "https://auth.example.test/realms/cop");
+    vi.stubEnv("VITE_COP_OIDC_CLIENT_ID", "cop-web");
+    window.localStorage.setItem(
+      "cop.user.preferences.v1.anonymous",
+      JSON.stringify({
+        catalogLayerIds: ["public.mobile.network"],
+        safetyLayerIds: ["warnings"],
+        situationLayerIds: ["weather"],
+        takLayerIds: ["mobile"],
+        trackLayerIds: ["air-situation"]
+      })
+    );
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: undefined
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      return jsonResponse({ init, items: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-map-layer-label")).toBe("žádná vrstva")
+    );
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/me/preferences"))).toBe(false);
+  });
+
   it("focuses the map on the current device location after the location button is clicked", async () => {
     installMatchMedia(true);
     const getCurrentPosition = vi.fn((success: PositionCallback) => {
@@ -791,6 +834,65 @@ describe("COP web dashboard", () => {
     await waitFor(() => expect(getCurrentPosition).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1"));
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42100,50.08700");
+  });
+
+  it("loads the device location on startup without enabling map follow", async () => {
+    installMatchMedia(true);
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: {
+          accuracy: 9,
+          altitude: null,
+          altitudeAccuracy: null,
+          heading: 87,
+          latitude: 50.087,
+          longitude: 14.421,
+          speed: 1.2
+        },
+        timestamp: Date.parse("2026-05-19T08:00:00Z")
+      } as GeolocationPosition);
+    });
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition }
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/map/features")) {
+        return jsonResponse(emptyMapQueryResponse([]));
+      }
+      return jsonResponse({ init, items: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await waitFor(() => expect(getCurrentPosition).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByTestId("cop-map").getAttribute("data-user-location")).toBe("14.42100,50.08700")
+    );
+    expect(screen.getByTestId("cop-map").getAttribute("data-user-location-follow-enabled")).toBe("false");
+    expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("0");
   });
 
   it("keeps the user location marker live and follows it only when enabled", async () => {
@@ -1398,7 +1500,8 @@ describe("COP web dashboard", () => {
     render(<App />);
     await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Chat" }));
-    expect(screen.getByTitle("Zavřít chat")).toBeTruthy();
+    const chatFrame = screen.getByTitle("COP Chat");
+    expect(chatFrame.closest("aside")?.getAttribute("aria-hidden")).toBe("false");
 
     act(() => {
       window.dispatchEvent(
@@ -1418,7 +1521,7 @@ describe("COP web dashboard", () => {
 
     await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1"));
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("17.38420,50.11870");
-    expect(screen.getByTitle("Zavřít chat").closest("aside")?.getAttribute("aria-hidden")).toBe("true");
+    expect(chatFrame.closest("aside")?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("keeps the embedded chat iframe mounted between panel opens", async () => {
@@ -1768,7 +1871,7 @@ describe("COP web dashboard", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    getCurrentPosition.mockClear();
+    expect(getCurrentPosition).toHaveBeenCalled();
 
     await act(async () => {
       window.dispatchEvent(
@@ -1788,7 +1891,6 @@ describe("COP web dashboard", () => {
     });
 
     await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1"));
-    await waitFor(() => expect(getCurrentPosition).toHaveBeenCalled());
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/v1/routing/alternatives"))).toBe(true)
     );
@@ -1802,7 +1904,6 @@ describe("COP web dashboard", () => {
       profileId: "emergency_vehicle",
       to: { label: "Mnichov - Černá Opava", lat: 50.15077, lon: 17.37303 }
     });
-    expect(getCurrentPosition).toHaveBeenCalled();
     await waitFor(() =>
       expect(screen.getByTestId("cop-map").getAttribute("data-emergency-route-status")).toBe("ready")
     );
@@ -2312,6 +2413,50 @@ describe("COP web dashboard", () => {
     await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
 
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("17.38420,50.11870");
+  });
+
+  it("opens mobile chat without duplicate host chrome", async () => {
+    const restoreMatchMedia = installMatchMedia(true);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: {},
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/map/features")) {
+        return jsonResponse(emptyMapQueryResponse([]));
+      }
+      return jsonResponse({ init, items: [] });
+    });
+
+    try {
+      vi.stubGlobal("fetch", fetchMock);
+      render(<App />);
+
+      await waitFor(() => expect(screen.getByTestId("cop-map")).toBeTruthy());
+      fireEvent.click(screen.getAllByRole("button", { name: /Chat/u }).at(-1)!);
+
+      await waitFor(() => expect(screen.getByTitle("COP Chat")).toBeTruthy());
+      expect(screen.queryByText("Integrovaný COP Chat")).toBeNull();
+      expect(screen.queryByTitle("Zavřít chat")).toBeNull();
+    } finally {
+      restoreMatchMedia();
+    }
   });
 
   it("opens the mobile detail sheet when a map object is selected", async () => {
