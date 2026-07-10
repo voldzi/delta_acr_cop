@@ -47,6 +47,7 @@ COP_CHAT_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
 COP_CHAT_BASE_PATH=/chat/
 COP_WEB_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
 COP_CHAT_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
+COP_CHAT_ICE_FALLBACK_URLS=stun:stun.l.google.com:19302
 COP_API_ALLOWED_ORIGINS=https://cop.zeleznalady.cz,http://docker.home.cz:4311,http://docker.home.cz:4314
 COP_API_RATE_LIMIT_MAX=2400
 COP_API_RATE_LIMIT_WINDOW=1 minute
@@ -68,6 +69,12 @@ Web Storage spolehlivě.
 aby endpoint neodrážel libovolný cizí origin.
 `COP_CHAT_PROXY_TARGET` používá pouze lokální Vite dev server mapové aplikace,
 aby iframe `/chat/` v COP při vývoji směroval na samostatný `cop-chat`.
+
+`COP_CHAT_ICE_FALLBACK_URLS` je čárkou oddělený seznam STUN/TURN URI přidaný k
+ICE konfiguraci z Matrixu. Výchozí veřejný STUN pomáhá vytvořit přímou trasu,
+ale nenahrazuje TURN. Pro produkční TURN musí být z internetu přístupný UDP i
+TCP port 3478 a celý relay rozsah nastavený v Coturnu (v pilotu
+`49160-49240`, minimálně UDP). Hodnota `none` fallback vypne.
 
 COP API registruje produkční ochranné hlavičky, kompresi odpovědí, rate-limit a
 kontrolu event-loop tlaku. `COP_API_ALLOWED_ORIGINS` je browser CORS allow-list;

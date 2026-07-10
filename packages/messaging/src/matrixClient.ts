@@ -33,6 +33,8 @@ import {
 const matrixVoiceCallPreflightEventType = "cz.zeleznalady.cop.call.preflight";
 const matrixVoiceCallPreflightAckEventType = "cz.zeleznalady.cop.call.preflight_ack";
 const matrixVoiceCallPreflightTimeoutMs = 1_200;
+const matrixVoiceCallConnectingTimeoutMs = 45_000;
+const matrixVoiceCallIceFailureMessage = "Hovor se nepodařilo spojit. Pravděpodobně chybí dostupný TURN server.";
 
 interface MatrixClientLike {
   createRoom?: (options: Record<string, unknown>) => Promise<{ room_id?: string; roomId?: string }>;
@@ -40,6 +42,7 @@ interface MatrixClientLike {
   getJoinedRooms?: () => Promise<{ joined_rooms?: unknown } | unknown[]>;
   getProfileInfo?: (userId: string) => Promise<Record<string, unknown>>;
   getRooms?: () => unknown[];
+  getTurnServers?: () => RTCIceServer[];
   getUserId?: () => string | null;
   getUser?: (userId: string) => MatrixUserPresenceLike | undefined;
   initRustCrypto?: (args?: { cryptoDatabasePrefix?: string }) => Promise<void>;
@@ -293,6 +296,7 @@ export async function createMatrixMessagingSession(
     ...(syncStore ? { store: syncStore } : {}),
     userId: activeBootstrap.userId
   });
+  installAdditionalMatrixIceServers(client, callbacks.voip?.additionalIceServerUrls);
   installMatrixVoipSignalingFallback(client, () => activeBootstrap, tlsVoiceCallIds);
   await syncStore?.startup().catch(() => undefined);
 
@@ -352,6 +356,8 @@ export async function createMatrixMessagingSession(
   let activeVoiceCallStartedAt: string | undefined;
   let activeVoiceCallError: string | undefined;
   let activeVoiceCallClearTimer: ReturnType<typeof setTimeout> | undefined;
+  let activeVoiceCallConnectingTimer: ReturnType<typeof setTimeout> | undefined;
+  let activeVoiceCallConnectingCallId: string | undefined;
   const sentVoiceCallWakeKeys = new Set<string>();
   const voiceCallWakeChains = new Map<string, Promise<void>>();
   const voiceCallPreflightSettlers = new Map<string, (ready: boolean) => void>();
@@ -429,38 +435,40 @@ export async function createMatrixMessagingSession(
       })
       .catch(() => undefined);
   };
-  const verifyEncryptedVoiceCallSignaling = async (roomId: string): Promise<boolean> => {
+  const verifyEncryptedVoiceCallSignaling = (roomId: string): Promise<boolean> => {
     const crypto = client.getCrypto?.();
     if (!client.sendEvent || !crypto?.forceDiscardSession) {
-      return true;
-    }
-    try {
-      await crypto.forceDiscardSession(roomId);
-    } catch {
-      return false;
+      return Promise.resolve(true);
     }
     const probeId = createMatrixTransactionId("cop-call-probe");
-    const acknowledged = new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => {
-        voiceCallPreflightSettlers.delete(probeId);
-        resolve(false);
-      }, matrixVoiceCallPreflightTimeoutMs);
-      voiceCallPreflightSettlers.set(probeId, (ready) => {
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout>;
+      const settle = (ready: boolean) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         clearTimeout(timer);
-        voiceCallPreflightSettlers.delete(probeId);
+        if (voiceCallPreflightSettlers.get(probeId) === settle) {
+          voiceCallPreflightSettlers.delete(probeId);
+        }
         resolve(ready);
-      });
+      };
+      timer = setTimeout(() => settle(false), matrixVoiceCallPreflightTimeoutMs);
+      voiceCallPreflightSettlers.set(probeId, settle);
+      void (async () => {
+        await crypto.forceDiscardSession?.(roomId);
+        if (voiceCallPreflightSettlers.get(probeId) !== settle || sessionDisposed) {
+          return;
+        }
+        await client.sendEvent?.(roomId, matrixVoiceCallPreflightEventType, {
+          probe_id: probeId,
+          sender_device_id: activeBootstrap.deviceId,
+          timestamp: Date.now()
+        });
+      })().catch(() => settle(false));
     });
-    try {
-      await client.sendEvent(roomId, matrixVoiceCallPreflightEventType, {
-        probe_id: probeId,
-        sender_device_id: activeBootstrap.deviceId,
-        timestamp: Date.now()
-      });
-    } catch {
-      voiceCallPreflightSettlers.get(probeId)?.(false);
-    }
-    return acknowledged;
   };
   const flushNotifications = () => {
     notifyScheduled = false;
@@ -581,7 +589,42 @@ export async function createMatrixMessagingSession(
       });
     return inviteJoinInFlight;
   };
+  const clearVoiceCallConnectingWatchdog = () => {
+    if (activeVoiceCallConnectingTimer !== undefined) {
+      clearTimeout(activeVoiceCallConnectingTimer);
+      activeVoiceCallConnectingTimer = undefined;
+    }
+    activeVoiceCallConnectingCallId = undefined;
+  };
+  const syncVoiceCallConnectingWatchdog = (call: MatrixCallLike | null) => {
+    const callId = call?.callId;
+    if (!call || !callId || matrixVoiceCallPhase(call.state, activeVoiceCallError) !== "connecting") {
+      clearVoiceCallConnectingWatchdog();
+      return;
+    }
+    if (activeVoiceCallConnectingTimer !== undefined && activeVoiceCallConnectingCallId === callId) {
+      return;
+    }
+    clearVoiceCallConnectingWatchdog();
+    activeVoiceCallConnectingCallId = callId;
+    activeVoiceCallConnectingTimer = setTimeout(() => {
+      activeVoiceCallConnectingTimer = undefined;
+      activeVoiceCallConnectingCallId = undefined;
+      if (
+        sessionDisposed ||
+        activeVoiceCall !== call ||
+        matrixVoiceCallPhase(call.state, activeVoiceCallError) !== "connecting"
+      ) {
+        return;
+      }
+      activeVoiceCallError = matrixVoiceCallIceFailureMessage;
+      call.hangup?.("ice_failed", false);
+      publishVoiceCall();
+      clearVoiceCallSoon();
+    }, matrixVoiceCallConnectingTimeoutMs);
+  };
   const publishVoiceCall = () => {
+    syncVoiceCallConnectingWatchdog(activeVoiceCall);
     callbacks.onVoiceCallChanged?.(
       activeVoiceCall ? matrixVoiceCallSnapshot(activeVoiceCall, activeVoiceCallStartedAt, activeVoiceCallError) : null
     );
@@ -596,6 +639,7 @@ export async function createMatrixMessagingSession(
         activeVoiceCall = null;
         activeVoiceCallStartedAt = undefined;
         activeVoiceCallError = undefined;
+        clearVoiceCallConnectingWatchdog();
         publishVoiceCall();
       }
     }, 1_800);
@@ -661,6 +705,9 @@ export async function createMatrixMessagingSession(
     scheduleNotify({ rooms: true, timeline: true });
     schedulePresenceRefresh();
   };
+  const receivedVoipEventListener = (eventValue?: unknown) => {
+    handleVoiceCallSignalingEvent(eventValue);
+  };
   const presenceListener = () => {
     scheduleNotify({ rooms: true });
     schedulePresenceRefresh(750);
@@ -672,6 +719,7 @@ export async function createMatrixMessagingSession(
   client.on?.("sync", syncListener);
   client.on?.("Room.timeline", timelineListener);
   client.on?.("Event.decrypted", timelineListener);
+  client.on?.("received_voip_event", receivedVoipEventListener);
   client.on?.("User.presence", presenceListener);
   client.on?.("RoomMember.membership", membershipListener);
   client.on?.("Call.incoming", incomingCallListener);
@@ -699,6 +747,15 @@ export async function createMatrixMessagingSession(
       }
       assertBrowserCanUseVoiceCalls();
       try {
+        if (!tlsVoiceCallIds.has(callId)) {
+          if (!call.roomId) {
+            throw new Error("Příchozí hovor nemá platnou místnost.");
+          }
+          const encryptedSignalingReady = await verifyEncryptedVoiceCallSignaling(call.roomId);
+          if (!encryptedSignalingReady) {
+            tlsVoiceCallIds.add(callId);
+          }
+        }
         await call.answer(true, false);
         activeVoiceCall = call;
         publishVoiceCall();
@@ -1107,12 +1164,14 @@ export async function createMatrixMessagingSession(
       client.off?.("sync", syncListener);
       client.off?.("Room.timeline", timelineListener);
       client.off?.("Event.decrypted", timelineListener);
+      client.off?.("received_voip_event", receivedVoipEventListener);
       client.off?.("User.presence", presenceListener);
       client.off?.("RoomMember.membership", membershipListener);
       client.off?.("Call.incoming", incomingCallListener);
       if (activeVoiceCallClearTimer !== undefined) {
         clearTimeout(activeVoiceCallClearTimer);
       }
+      clearVoiceCallConnectingWatchdog();
       for (const settle of Array.from(voiceCallPreflightSettlers.values())) {
         settle(false);
       }
@@ -1201,7 +1260,7 @@ function matrixVoiceCallErrorMessage(error: unknown): string {
       return "Mikrofon není dostupný nebo nemá povolený přístup.";
     }
     if (code === "ice_failed") {
-      return "Hovor se nepodařilo spojit. Pravděpodobně chybí dostupný TURN server.";
+      return matrixVoiceCallIceFailureMessage;
     }
   }
   return errorMessage(error);
@@ -2469,6 +2528,33 @@ async function assertBrowserCanReachHomeserver(baseUrl: string): Promise<void> {
   } catch (caught) {
     throw formatMatrixClientError(caught, baseUrl, "ověřit službu zpráv v prohlížeči");
   }
+}
+
+function installAdditionalMatrixIceServers(client: MatrixClientLike, configuredUrls: string[] | undefined): void {
+  const configuredUrlKeys = new Set<string>();
+  const additionalUrls = (configuredUrls ?? []).flatMap((configuredUrl) => {
+    const value = configuredUrl.trim();
+    const key = value.toLowerCase();
+    if (!/^(?:stun|stuns|turn|turns):/iu.test(value) || configuredUrlKeys.has(key)) {
+      return [];
+    }
+    configuredUrlKeys.add(key);
+    return [value];
+  });
+  if (additionalUrls.length === 0) {
+    return;
+  }
+  const originalGetTurnServers = client.getTurnServers?.bind(client);
+  client.getTurnServers = () => {
+    const existingServers = originalGetTurnServers?.() ?? [];
+    const existingUrls = new Set(
+      existingServers
+        .flatMap((server) => (Array.isArray(server.urls) ? server.urls : [server.urls]))
+        .map((value) => value.trim().toLowerCase())
+    );
+    const missingUrls = additionalUrls.filter((value) => !existingUrls.has(value.toLowerCase()));
+    return missingUrls.length > 0 ? [...existingServers, { urls: missingUrls }] : existingServers;
+  };
 }
 
 function installMatrixVoipSignalingFallback(

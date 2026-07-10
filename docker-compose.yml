@@ -218,6 +218,7 @@ services:
         VITE_COP_OIDC_CLIENT_ID: "${COP_OIDC_CLIENT_ID:-cop-web}"
         VITE_COP_OIDC_SCOPE: "${COP_OIDC_SCOPE:-openid profile email}"
         VITE_COP_OIDC_TOKEN_ENDPOINT: "${COP_CHAT_OIDC_TOKEN_ENDPOINT:-/chat/oidc/token}"
+        VITE_COP_CHAT_ICE_FALLBACK_URLS: "${COP_CHAT_ICE_FALLBACK_URLS:-stun:stun.l.google.com:19302}"
         COP_CHAT_BASE_PATH: "${COP_CHAT_BASE_PATH:-/chat/}"
     image: delta-acr-cop-chat:local
     environment:

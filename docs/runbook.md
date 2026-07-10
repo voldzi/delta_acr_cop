@@ -23,3 +23,11 @@ pnpm check
 curl -fsS http://localhost:4310/health/ready
 curl -fsS http://localhost:4310/health/dependencies
 ```
+
+For voice-call incidents, Matrix and CSM readiness is not sufficient: it only
+proves that TURN configuration can be fetched and may probe it from inside the
+deployment network. Test `turn.zeleznalady.cz:3478` from outside the LAN over
+both UDP and TCP, verify the Coturn relay range is forwarded, and confirm that a
+real browser offer contains a `relay` candidate. Repeated `m.call.negotiate`
+events with only `host` candidates identify an ICE/TURN path failure after
+successful Matrix signalling.

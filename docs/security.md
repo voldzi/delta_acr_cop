@@ -33,3 +33,7 @@ Matrix credential renewal for the same user and device updates only the active
 client access token. It does not recreate or clear the Rust crypto store. Full
 session replacement is generation-guarded and limited to identity/device change,
 logout or explicit account-store recovery as recorded in ADR-0014.
+
+Voice-call ICE discovery may contact the operations-configured STUN fallback
+from ADR-0015. The STUN operator can observe the client's public IP and binding
+traffic, but receives no Matrix room keys, chat content or DTLS-SRTP media.

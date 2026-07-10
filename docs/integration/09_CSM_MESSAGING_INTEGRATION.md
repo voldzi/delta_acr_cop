@@ -186,8 +186,12 @@ One-to-one voice calls are client-side Matrix VoIP/WebRTC calls between direct
 rooms. COP Chat may offer audio call controls after Matrix bootstrap and E2EE
 recovery are ready, but COP API still must not proxy call media, SDP payloads or
 plaintext chat content. Browsers require microphone permission, WebRTC support
-and reachable ICE/TURN infrastructure from the Matrix deployment. An awake COP
-map keeps the embedded chat runtime mounted and shows the incoming call in a
+and reachable ICE/TURN infrastructure from the Matrix deployment. COP appends
+the comma-separated `COP_CHAT_ICE_FALLBACK_URLS` STUN list to the Matrix ICE
+configuration as a direct-path fallback; it does not replace TURN for restrictive
+NAT. A call that cannot leave the connecting phase within 45 seconds is ended
+with an explicit ICE/TURN error. An awake COP map keeps the embedded chat runtime
+mounted and shows the incoming call in a
 global host alert. A suspended or closed PWA uses an urgent Web Push wake and
 the operating system notification UI. Web/PWA still cannot guarantee continuous
 lock-screen audio ringing after the browser process is terminated; that remains
@@ -791,6 +795,7 @@ COP_WEB_MESSAGING_LAUNCHER_ENABLED=true
 COP_CHAT_PORT=4314
 COP_CHAT_BASE_PATH=/chat/
 COP_CHAT_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
+COP_CHAT_ICE_FALLBACK_URLS=stun:stun.l.google.com:19302
 ```
 
 If `COP_CSM_MESSAGING_ENABLED=false`, the chat launcher can still be visible,

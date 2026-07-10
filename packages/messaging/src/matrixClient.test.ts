@@ -7,6 +7,7 @@ type MockMatrixClient = {
   getJoinedRooms?: () => Promise<{ joined_rooms: string[] }>;
   getProfileInfo?: (userId: string) => Promise<Record<string, unknown>>;
   getRooms: () => unknown[];
+  getTurnServers?: () => RTCIceServer[];
   getUserId: () => string;
   initRustCrypto: () => Promise<void>;
   isRoomEncrypted: () => boolean;
@@ -38,6 +39,7 @@ type MockMatrixCall = {
   roomId: string;
   state: string;
   answer: (audio?: boolean, video?: boolean) => Promise<void>;
+  emitEvent: (event: string, ...args: unknown[]) => void;
   hangup: (reason: string, suppressEvent: boolean) => void;
   isMicrophoneMuted: () => boolean;
   off: MatrixEventSubscription;
@@ -389,6 +391,40 @@ describe("Matrix client diagnostics", () => {
     );
   });
 
+  it("appends configured ICE server URLs without duplicating homeserver URLs", async () => {
+    const existingServers: RTCIceServer[] = [
+      {
+        credential: "turn-password",
+        urls: ["turn:relay.cop.local:3478?transport=udp", "stun:existing.cop.local:3478"],
+        username: "turn-user"
+      }
+    ];
+    const client = createMockMatrixClient({
+      getTurnServers: vi.fn(() => existingServers),
+      rooms: []
+    });
+    matrixSdkMock.createClient.mockReturnValue(client);
+
+    await createMatrixMessagingSession(createBootstrap(), {
+      voip: {
+        additionalIceServerUrls: [
+          " stun:existing.cop.local:3478 ",
+          "stun:backup.cop.local:3478",
+          "STUN:BACKUP.COP.LOCAL:3478",
+          "turns:relay-backup.cop.local:443?transport=tcp",
+          "https://not-an-ice-server.example"
+        ]
+      }
+    });
+
+    expect(client.getTurnServers?.()).toEqual([
+      existingServers[0],
+      {
+        urls: ["stun:backup.cop.local:3478", "turns:relay-backup.cop.local:443?transport=tcp"]
+      }
+    ]);
+  });
+
   it("delivers an ended wake only after the matching invite wake completes", async () => {
     stubVoiceCallBrowserSupport();
     const call = createMockVoiceCall({ direction: "outbound", roomId: "!chat:cop.local" });
@@ -568,6 +604,100 @@ describe("Matrix client diagnostics", () => {
     );
   });
 
+  it("falls back when discarding the outbound encryption session never settles", async () => {
+    vi.useFakeTimers();
+    stubVoiceCallBrowserSupport();
+    const neverSettles = new Promise<void>(() => undefined);
+    const forceDiscardSession = vi.fn(() => neverSettles);
+    const rawSend = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ event_id: "$call-invite" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    matrixSdkMock.createNewMatrixCall.mockImplementation((client: { sendEvent: MatrixSendEvent }, roomId: string) => {
+      const call = createMockVoiceCall({ direction: "outbound", roomId });
+      call.placeVoiceCall = vi.fn(async () => {
+        await client.sendEvent(roomId, "m.call.invite", {
+          call_id: "call-1",
+          lifetime: 60_000,
+          version: "1"
+        });
+        call.state = "invite_sent";
+      });
+      return call;
+    });
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        crypto: { forceDiscardSession },
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
+        rooms: [createRoom({ roomId: "!chat:cop.local" })],
+        sendEvent: rawSend
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    const startCall = session.startVoiceCall("!chat:cop.local");
+    await vi.advanceTimersByTimeAsync(1_200);
+    await startCall;
+
+    expect(forceDiscardSession).toHaveBeenCalledWith("!chat:cop.local");
+    expect(rawSend).not.toHaveBeenCalledWith(
+      "!chat:cop.local",
+      "cz.zeleznalady.cop.call.preflight",
+      expect.any(Object)
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/rooms/!chat%3Acop.local/send/m.call.invite/"),
+      expect.objectContaining({ method: "PUT" })
+    );
+  });
+
+  it("falls back when sending the encrypted preflight never settles", async () => {
+    vi.useFakeTimers();
+    stubVoiceCallBrowserSupport();
+    const forceDiscardSession = vi.fn().mockResolvedValue(undefined);
+    const rawSend = vi.fn<MatrixSendEvent>((_roomId, eventType) =>
+      eventType === "cz.zeleznalady.cop.call.preflight"
+        ? new Promise<unknown>(() => undefined)
+        : Promise.resolve(undefined)
+    );
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ event_id: "$call-invite" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    matrixSdkMock.createNewMatrixCall.mockImplementation((client: { sendEvent: MatrixSendEvent }, roomId: string) => {
+      const call = createMockVoiceCall({ direction: "outbound", roomId });
+      call.placeVoiceCall = vi.fn(async () => {
+        await client.sendEvent(roomId, "m.call.invite", {
+          call_id: "call-1",
+          lifetime: 60_000,
+          version: "1"
+        });
+        call.state = "invite_sent";
+      });
+      return call;
+    });
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        crypto: { forceDiscardSession },
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
+        rooms: [createRoom({ roomId: "!chat:cop.local" })],
+        sendEvent: rawSend
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    const startCall = session.startVoiceCall("!chat:cop.local");
+    await vi.advanceTimersByTimeAsync(1_200);
+    await startCall;
+
+    expect(rawSend).toHaveBeenCalledWith(
+      "!chat:cop.local",
+      "cz.zeleznalady.cop.call.preflight",
+      expect.objectContaining({ probe_id: expect.any(String) })
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/rooms/!chat%3Acop.local/send/m.call.invite/"),
+      expect.objectContaining({ method: "PUT" })
+    );
+  });
+
   it("answers an incoming TLS-fallback call through the same signalling path", async () => {
     stubVoiceCallBrowserSupport();
     const listeners = new Map<string, (...args: unknown[]) => void>();
@@ -583,18 +713,76 @@ describe("Matrix client diagnostics", () => {
     });
     const call = createMockVoiceCall({ direction: "inbound", roomId: "!chat:cop.local", state: "ringing" });
     call.answer = vi.fn(async () => {
-      await client.sendEvent?.("!chat:cop.local", "m.call.answer", { call_id: "call-1", version: "1" });
-      call.state = "connected";
+      call.state = "connecting";
+      call.emitEvent("state", "connecting", "ringing", call);
+      queueMicrotask(() => {
+        void client.sendEvent?.("!chat:cop.local", "m.call.answer", { call_id: "call-1", version: "1" }).then(() => {
+          call.state = "connected";
+          call.emitEvent("state", "connected", "connecting", call);
+        });
+      });
     });
     matrixSdkMock.createClient.mockReturnValue(client);
 
     const session = await createMatrixMessagingSession(createBootstrap());
-    listeners.get("Room.timeline")?.(
+    listeners.get("received_voip_event")?.(
       createCallEvent("m.call.invite", Date.now(), "$plain-call-invite", "@peer:cop.local")
     );
     listeners.get("Call.incoming")?.(call);
     await session.answerVoiceCall("call-1");
 
+    expect(rawSend).not.toHaveBeenCalledWith("!chat:cop.local", "m.call.answer", expect.any(Object));
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/rooms/!chat%3Acop.local/send/m.call.answer/"),
+        expect.objectContaining({ body: JSON.stringify({ call_id: "call-1", version: "1" }), method: "PUT" })
+      )
+    );
+  });
+
+  it("falls back before a delayed incoming answer when that device preflight hangs", async () => {
+    vi.useFakeTimers();
+    stubVoiceCallBrowserSupport();
+    const listeners = new Map<string, (...args: unknown[]) => void>();
+    const on = vi.fn<MatrixEventSubscription>((event, listener) => listeners.set(event, listener));
+    const forceDiscardSession = vi.fn().mockResolvedValue(undefined);
+    const rawSend = vi.fn<MatrixSendEvent>((_roomId, eventType) =>
+      eventType === "cz.zeleznalady.cop.call.preflight"
+        ? new Promise<unknown>(() => undefined)
+        : Promise.resolve(undefined)
+    );
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ event_id: "$call-answer" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createMockMatrixClient({
+      crypto: { forceDiscardSession },
+      getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
+      on,
+      rooms: [createRoom({ roomId: "!chat:cop.local" })],
+      sendEvent: rawSend
+    });
+    const call = createMockVoiceCall({ direction: "inbound", roomId: "!chat:cop.local", state: "ringing" });
+    call.answer = vi.fn(async () => {
+      call.state = "connecting";
+      call.emitEvent("state", "connecting", "ringing", call);
+      queueMicrotask(() => {
+        void client.sendEvent?.("!chat:cop.local", "m.call.answer", { call_id: "call-1", version: "1" });
+      });
+    });
+    matrixSdkMock.createClient.mockReturnValue(client);
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    listeners.get("Call.incoming")?.(call);
+    const answerCall = session.answerVoiceCall("call-1");
+    await vi.advanceTimersByTimeAsync(1_200);
+    await answerCall;
+    await vi.runAllTicks();
+
+    expect(forceDiscardSession).toHaveBeenCalledWith("!chat:cop.local");
+    expect(rawSend).toHaveBeenCalledWith(
+      "!chat:cop.local",
+      "cz.zeleznalady.cop.call.preflight",
+      expect.objectContaining({ probe_id: expect.any(String) })
+    );
     expect(rawSend).not.toHaveBeenCalledWith("!chat:cop.local", "m.call.answer", expect.any(Object));
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/rooms/!chat%3Acop.local/send/m.call.answer/"),
@@ -630,6 +818,52 @@ describe("Matrix client diagnostics", () => {
     expect(onVoiceCallChanged).toHaveBeenLastCalledWith(
       expect.objectContaining({ callId: "call-1", phase: "connected" })
     );
+  });
+
+  it("ends a call that remains connecting for 45 seconds with the TURN error", async () => {
+    vi.useFakeTimers();
+    stubVoiceCallBrowserSupport();
+    const call = createMockVoiceCall({ direction: "outbound", roomId: "!chat:cop.local" });
+    matrixSdkMock.createNewMatrixCall.mockReturnValue(call);
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
+        rooms: [createRoom({ roomId: "!chat:cop.local" })]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    await session.startVoiceCall("!chat:cop.local");
+    await vi.advanceTimersByTimeAsync(45_000);
+
+    expect(call.hangup).toHaveBeenCalledWith("ice_failed", false);
+    expect(session.getVoiceCall()).toMatchObject({
+      callId: "call-1",
+      error: "Hovor se nepodařilo spojit. Pravděpodobně chybí dostupný TURN server.",
+      phase: "failed"
+    });
+  });
+
+  it("clears the connecting watchdog when the call connects", async () => {
+    vi.useFakeTimers();
+    stubVoiceCallBrowserSupport();
+    const call = createMockVoiceCall({ direction: "outbound", roomId: "!chat:cop.local" });
+    matrixSdkMock.createNewMatrixCall.mockReturnValue(call);
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
+        rooms: [createRoom({ roomId: "!chat:cop.local" })]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    await session.startVoiceCall("!chat:cop.local");
+    call.state = "connected";
+    call.emitEvent("state", "connected", "invite_sent", call);
+    await vi.advanceTimersByTimeAsync(45_000);
+
+    expect(call.hangup).not.toHaveBeenCalled();
+    expect(session.getVoiceCall()).toMatchObject({ callId: "call-1", phase: "connected" });
   });
 
   it("refreshes direct chat avatars from Matrix profile info when room member state has no avatar", async () => {
@@ -1024,6 +1258,7 @@ describe("Matrix client diagnostics", () => {
 
     session.stop();
     expect(off).toHaveBeenCalledWith("Event.decrypted", expect.any(Function));
+    expect(off).toHaveBeenCalledWith("received_voip_event", expect.any(Function));
   });
 
   it("does not flush timeline callbacks scheduled after the session stops", async () => {
@@ -2048,6 +2283,7 @@ function createMockMatrixClient({
   crypto,
   getJoinedRooms,
   getProfileInfo,
+  getTurnServers,
   leave,
   mxcUrlToHttp,
   redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined),
@@ -2069,6 +2305,7 @@ function createMockMatrixClient({
   crypto?: MockMatrixCrypto;
   getJoinedRooms?: MockMatrixClient["getJoinedRooms"];
   getProfileInfo?: MockMatrixClient["getProfileInfo"];
+  getTurnServers?: MockMatrixClient["getTurnServers"];
   leave?: MockMatrixClient["leave"];
   mxcUrlToHttp?: MockMatrixClient["mxcUrlToHttp"];
   off?: MockMatrixClient["off"];
@@ -2092,6 +2329,7 @@ function createMockMatrixClient({
     ...(getJoinedRooms ? { getJoinedRooms } : {}),
     ...(getProfileInfo ? { getProfileInfo } : {}),
     getRooms: () => rooms,
+    ...(getTurnServers ? { getTurnServers } : {}),
     getUserId: () => "@operator:cop.local",
     initRustCrypto: () => Promise.resolve(),
     isRoomEncrypted: () => true,
@@ -2138,6 +2376,7 @@ function createMockVoiceCall({
     }),
     callId: "call-1",
     direction,
+    emitEvent: emit,
     hangup: vi.fn(() => {
       call.state = "ended";
       emit("state", "ended", state, call);

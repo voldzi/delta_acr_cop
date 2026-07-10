@@ -16,6 +16,8 @@ import type {
   MatrixWebPushPusherOptions
 } from "@cop/messaging/types";
 
+const defaultMatrixAdditionalIceServerUrls = ["stun:stun.l.google.com:19302"];
+
 export type MatrixSessionLifecycle = "idle" | "starting" | "ready" | "recovery-needed" | "error";
 
 export interface MatrixSessionState {
@@ -266,6 +268,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
           const matrixWebPushDeviceId =
             latestOptions.matrixWebPushDeviceId ?? latestOptions.matrixWebPushFallbackDeviceId;
           const matrixPushGatewayUrl = browserMatrixPushGatewayUrl();
+          const matrixAdditionalIceServerUrls = browserMatrixAdditionalIceServerUrls();
           let callbackSession: MatrixMessagingSession | null = null;
           const callbacksAreCurrent = () =>
             generation === startGenerationRef.current ||
@@ -300,6 +303,9 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
               }
             },
             profile: latestOptions.matrixProfile,
+            voip: {
+              additionalIceServerUrls: matrixAdditionalIceServerUrls
+            },
             webPush: {
               ...(matrixWebPushDeviceId ? { deviceId: matrixWebPushDeviceId } : {}),
               lang: typeof navigator !== "undefined" ? navigator.language || "cs" : "cs",
@@ -460,4 +466,16 @@ function browserMatrixPushGatewayUrl(): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function browserMatrixAdditionalIceServerUrls(): string[] {
+  const configured = import.meta.env.VITE_COP_CHAT_ICE_FALLBACK_URLS?.trim();
+  if (configured?.toLowerCase() === "none") {
+    return [];
+  }
+  const rawValues: string[] = configured ? configured.split(",") : defaultMatrixAdditionalIceServerUrls;
+  const values = rawValues
+    .map((value: string) => value.trim())
+    .filter((value: string) => /^(?:stun|stuns|turn|turns):/u.test(value));
+  return [...new Set(values)];
 }

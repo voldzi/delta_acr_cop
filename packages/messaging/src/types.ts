@@ -92,6 +92,7 @@ export interface MatrixVoiceCallSnapshot {
 }
 
 export interface MatrixVoiceCallOptions {
+  additionalIceServerUrls?: string[];
   fallbackIceServerAllowed?: boolean;
   forceTurn?: boolean;
 }

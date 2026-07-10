@@ -28,6 +28,12 @@ reported in `/health/dependencies` as `ok` with an `idle; waiting for first
 request` detail. This prevents an unused optional layer from making the PoC
 health view look degraded before an operator opens that layer.
 
+Messaging readiness does not prove that public clients can reach the TURN NAT
+mapping or relay port range. Voice-call diagnosis must distinguish signalling
+(`invite`, `answer`, `select_answer`) from media establishment and record only
+low-cardinality call phase/mode/timeout data; SDP, ICE candidate values and room
+keys must not enter COP telemetry.
+
 ## OpenTelemetry Status
 
 OpenTelemetry is not currently wired into the COP runtime. The application has
