@@ -698,12 +698,41 @@ button {
   outline: none;
 }
 
+.row-actions-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  z-index: 2;
+  display: none;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 999px;
+  background: #f0f2f5;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.row-actions-toggle:focus-visible,
+.row-actions-toggle[aria-expanded="true"] {
+  background: #dcefe9;
+  color: var(--accent-dark);
+  outline: 2px solid rgba(0, 128, 105, 0.34);
+  outline-offset: 2px;
+}
+
 .chat-swipe-actions {
   position: absolute;
   inset: 0;
   z-index: 0;
   display: flex;
   align-items: stretch;
+  pointer-events: none;
+}
+
+.chat-swipe-actions[aria-hidden="false"] {
   pointer-events: auto;
 }
 
@@ -2829,21 +2858,23 @@ button {
   z-index: 20;
   display: grid;
   place-items: center;
-  padding: 18px;
+  padding: calc(18px + env(safe-area-inset-top, 0px)) 18px calc(18px + env(safe-area-inset-bottom, 0px));
   background: rgba(17, 27, 33, 0.38);
   animation: cop-backdrop-fade 150ms ease both;
 }
 
 .info-backdrop {
   justify-items: end;
-  padding: 0;
+  padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
 }
 
 .info-panel {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   width: min(920px, calc(100vw - 72px));
-  height: 100dvh;
+  height: 100%;
+  max-height: 100%;
   overflow: hidden;
   background: #ffffff;
   box-shadow: var(--shadow);
@@ -2898,8 +2929,11 @@ button {
 
 .info-content {
   min-width: 0;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: #ffffff;
+  -webkit-overflow-scrolling: touch;
 }
 
 .info-hero {
@@ -3231,7 +3265,7 @@ button {
 .retention-dialog {
   display: grid;
   width: min(640px, 100%);
-  max-height: min(780px, 92dvh);
+  max-height: min(780px, 100%);
   overflow-y: auto;
   gap: 16px;
   border-radius: 20px;
@@ -3360,7 +3394,7 @@ button {
 .recovery-dialog {
   display: grid;
   width: min(600px, 100%);
-  max-height: min(760px, 92dvh);
+  max-height: min(760px, 100%);
   overflow-y: auto;
   gap: 16px;
   border-radius: 20px;
@@ -3576,13 +3610,22 @@ button {
 .ai-situation-dialog,
 .ai-agent-dialog {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(680px, 100%);
-  max-height: min(760px, 92dvh);
+  max-height: min(760px, 100%);
+  min-height: 0;
   overflow: hidden;
   border-radius: 8px;
   background: #ffffff;
   box-shadow: var(--shadow);
   animation: cop-sheet-rise 180ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
+}
+
+.ai-dialog-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .ai-situation-dialog header,
@@ -3678,8 +3721,6 @@ button {
 }
 
 .ai-situation-output {
-  overflow-y: auto;
-  max-height: min(390px, 52dvh);
   margin: 16px;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
@@ -3860,7 +3901,7 @@ button {
 .preview-dialog,
 .forward-dialog {
   width: min(520px, 100%);
-  max-height: min(720px, 92dvh);
+  max-height: min(720px, 100%);
   overflow: hidden;
   border-radius: 8px;
   background: #ffffff;
@@ -4772,6 +4813,24 @@ button {
   }
 }
 
+@media (pointer: coarse) {
+  .row-actions-toggle {
+    display: grid;
+  }
+
+  .row-pin {
+    display: none;
+  }
+
+  .chat-row {
+    padding-right: 0;
+  }
+
+  .chat-row-open {
+    padding-right: 44px;
+  }
+}
+
 @media (max-width: 820px) {
   body {
     overflow: hidden;
@@ -4975,8 +5034,12 @@ button {
 
   .info-panel {
     grid-template-columns: 1fr;
-    width: 100vw;
-    height: 100dvh;
+    grid-template-rows: auto minmax(0, 1fr);
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    border-radius: 12px;
   }
 
   .info-nav {
@@ -5036,13 +5099,43 @@ button {
   .preview-dialog,
   .forward-dialog {
     width: 100%;
-    max-height: 100dvh;
+    max-height: 100%;
     border-radius: 8px;
   }
 
   .dialog-backdrop,
-  .preview-backdrop {
-    padding: 8px;
+  .preview-backdrop,
+  .info-backdrop,
+  .mute-backdrop {
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 8px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .info-backdrop {
+    align-items: stretch;
+  }
+
+  .ai-situation-dialog footer,
+  .ai-agent-dialog footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 8px 12px 12px;
+  }
+
+  .ai-situation-dialog footer .primary-dialog-action,
+  .ai-agent-dialog footer .primary-dialog-action {
+    grid-column: 1 / -1;
+  }
+
+  .ai-situation-dialog footer button,
+  .ai-agent-dialog footer button {
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .retention-dialog,
+  .recovery-dialog,
+  .preview-dialog.with-document-preview {
+    max-height: 100%;
   }
 }
 
@@ -5062,6 +5155,29 @@ button {
   inset: 0;
   height: 100%;
   min-height: 0;
+  max-height: 100%;
+}
+
+.wa-shell.embedded .dialog-backdrop,
+.wa-shell.embedded .preview-backdrop,
+.wa-shell.embedded .info-backdrop,
+.wa-shell.embedded .mute-backdrop {
+  position: absolute;
+  max-height: 100%;
+}
+
+.wa-shell.embedded .info-panel {
+  height: 100%;
+  max-height: 100%;
+}
+
+.wa-shell.embedded .new-chat-dialog,
+.wa-shell.embedded .ai-situation-dialog,
+.wa-shell.embedded .ai-agent-dialog,
+.wa-shell.embedded .preview-dialog,
+.wa-shell.embedded .forward-dialog,
+.wa-shell.embedded .retention-dialog,
+.wa-shell.embedded .recovery-dialog {
   max-height: 100%;
 }
 

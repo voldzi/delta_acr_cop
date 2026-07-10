@@ -54,6 +54,61 @@ describe("cop-chat embedded mobile layout CSS", () => {
     expect(textareaBlocks.some((block) => block.includes("user-select: text"))).toBe(true);
     expect(textareaBlocks.some((block) => block.includes("font-size: 16px"))).toBe(true);
   });
+
+  it("routes taps only to the currently visible swipe action panel", () => {
+    expect(cssBlock(".chat-swipe-actions")).toContain("pointer-events: none");
+    expect(cssBlock('.chat-swipe-actions[aria-hidden="false"]')).toContain("pointer-events: auto");
+    expect(cssBlocks(".row-actions-toggle").some((block) => block.includes("display: grid"))).toBe(true);
+  });
+
+  it("keeps embedded overlays inside the iframe instead of the top-level viewport", () => {
+    const embeddedDialogBackdrop = cssBlock(
+      ".wa-shell.embedded .dialog-backdrop,\n.wa-shell.embedded .preview-backdrop,\n.wa-shell.embedded .info-backdrop,\n.wa-shell.embedded .mute-backdrop"
+    );
+    const embeddedInfoPanel = cssBlocks(".wa-shell.embedded .info-panel");
+    const embeddedDialog = cssBlock(
+      ".wa-shell.embedded .new-chat-dialog,\n.wa-shell.embedded .ai-situation-dialog,\n.wa-shell.embedded .ai-agent-dialog,\n.wa-shell.embedded .preview-dialog,\n.wa-shell.embedded .forward-dialog,\n.wa-shell.embedded .retention-dialog,\n.wa-shell.embedded .recovery-dialog"
+    );
+
+    expect(embeddedDialogBackdrop).toContain("position: absolute");
+    expect(embeddedDialogBackdrop).toContain("max-height: 100%");
+    expect(embeddedInfoPanel.some((block) => block.includes("height: 100%"))).toBe(true);
+    expect(embeddedInfoPanel.every((block) => !block.includes("100dvh"))).toBe(true);
+    expect(embeddedDialog).toContain("max-height: 100%");
+  });
+
+  it("uses one bounded scroll body between fixed AI dialog chrome", () => {
+    const dialogBlocks = cssBlocks(".ai-situation-dialog,\n.ai-agent-dialog");
+    const bodyBlock = cssBlock(".ai-dialog-body");
+
+    expect(dialogBlocks.some((block) => block.includes("grid-template-rows: auto minmax(0, 1fr) auto"))).toBe(true);
+    expect(bodyBlock).toContain("min-height: 0");
+    expect(bodyBlock).toContain("overflow-y: auto");
+    expect(bodyBlock).toContain("overscroll-behavior: contain");
+  });
+
+  it("bounds mobile information content below its safe-area navigation", () => {
+    const panelBlocks = cssBlocks(".info-panel");
+    const contentBlock = cssBlock(".info-content");
+    const backdropBlocks = cssBlocks(".dialog-backdrop,\n  .preview-backdrop,\n  .info-backdrop,\n  .mute-backdrop");
+
+    expect(panelBlocks.some((block) => block.includes("grid-template-rows: auto minmax(0, 1fr)"))).toBe(true);
+    expect(panelBlocks.some((block) => block.includes("height: 100%"))).toBe(true);
+    expect(contentBlock).toContain("min-height: 0");
+    expect(contentBlock).toContain("overflow-y: auto");
+    expect(backdropBlocks.some((block) => block.includes("env(safe-area-inset-top, 0px)"))).toBe(true);
+    expect(backdropBlocks.some((block) => block.includes("env(safe-area-inset-bottom, 0px)"))).toBe(true);
+  });
+
+  it("applies safe-area overlay bounds before the mobile breakpoint so iPads are covered", () => {
+    const baseBackdrop = cssBlock(".dialog-backdrop,\n.preview-backdrop,\n.info-backdrop,\n.mute-backdrop");
+    const baseInfoPanel = cssBlock(".info-panel");
+
+    expect(baseBackdrop).toContain("env(safe-area-inset-top, 0px)");
+    expect(baseBackdrop).toContain("env(safe-area-inset-bottom, 0px)");
+    expect(baseInfoPanel).toContain("height: 100%");
+    expect(baseInfoPanel).not.toContain("100dvh");
+  });
 });
 
 function cssBlock(selector: string): string {

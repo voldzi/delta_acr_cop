@@ -5048,7 +5048,7 @@ function PinnedChats({
   );
 }
 
-function ChatRow({
+export function ChatRow({
   connectionState,
   item,
   mediaAccessToken,
@@ -5073,9 +5073,24 @@ function ChatRow({
   const [dragOffset, setDragOffset] = React.useState(0);
   const pointerStartRef = React.useRef<{ x: number; y: number } | null>(null);
   const swipedRef = React.useRef(false);
+  const leadingPinActionRef = React.useRef<HTMLButtonElement>(null);
+  const rowActionsToggleRef = React.useRef<HTMLButtonElement>(null);
+  const focusLeadingActionRef = React.useRef(false);
+  const returnFocusToToggleRef = React.useRef(false);
+  const leadingActionsId = React.useId();
   const swipeOffset = openActions === "leading" ? 136 : openActions === "trailing" ? -136 : 0;
   const rowOffset = dragOffset || swipeOffset;
   const unreadActionLabel = item.unreadCount > 0 || item.manuallyUnread ? "Přečtené" : "Nepřečtené";
+
+  React.useEffect(() => {
+    if (openActions === "leading" && focusLeadingActionRef.current) {
+      focusLeadingActionRef.current = false;
+      leadingPinActionRef.current?.focus();
+    } else if (openActions === null && returnFocusToToggleRef.current) {
+      returnFocusToToggleRef.current = false;
+      rowActionsToggleRef.current?.focus();
+    }
+  }, [openActions]);
 
   function closeSwipeActions() {
     setOpenActions(null);
@@ -5143,7 +5158,23 @@ function ChatRow({
   }
 
   function runSwipeAction(action: () => void) {
+    returnFocusToToggleRef.current = true;
     action();
+    closeSwipeActions();
+  }
+
+  function openLeadingActionsFromButton() {
+    focusLeadingActionRef.current = true;
+    setDragOffset(0);
+    setOpenActions("leading");
+  }
+
+  function handleSwipeActionsKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Escape") {
+      return;
+    }
+    event.preventDefault();
+    returnFocusToToggleRef.current = true;
     closeSwipeActions();
   }
 
@@ -5158,8 +5189,15 @@ function ChatRow({
       )}
       role="listitem"
     >
-      <div className="chat-swipe-actions chat-swipe-leading" aria-hidden={openActions !== "leading"}>
+      <div
+        className="chat-swipe-actions chat-swipe-leading"
+        id={leadingActionsId}
+        aria-hidden={openActions !== "leading"}
+        aria-label={`Akce chatu ${item.title}`}
+        onKeyDown={handleSwipeActionsKeyDown}
+      >
         <button
+          ref={leadingPinActionRef}
           onClick={() => runSwipeAction(() => onTogglePinned(item))}
           tabIndex={openActions === "leading" ? 0 : -1}
           type="button"
@@ -5238,6 +5276,17 @@ function ChatRow({
           aria-label={item.pinned ? `Odepnout ${item.title}` : `Připnout ${item.title}`}
         >
           {item.pinned ? <PinOff size={15} /> : <Pin size={15} />}
+        </button>
+        <button
+          ref={rowActionsToggleRef}
+          className="row-actions-toggle"
+          aria-controls={leadingActionsId}
+          aria-expanded={openActions === "leading"}
+          aria-label={`Akce chatu ${item.title}`}
+          onClick={openLeadingActionsFromButton}
+          type="button"
+        >
+          <MoreVertical size={18} />
         </button>
         {item.unreadCount > 0 && !item.muted ? <span className="unread-badge">{item.unreadCount}</span> : null}
       </div>

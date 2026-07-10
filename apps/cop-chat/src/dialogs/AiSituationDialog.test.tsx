@@ -87,6 +87,13 @@ describe("AiSituationDialog", () => {
     expect(screen.getByText("Zdrojové citace")).toBeTruthy();
     expect(screen.getByText("Aktivní výstraha")).toBeTruthy();
 
+    const dialog = screen.getByRole("dialog", { name: "AI situační souhrn" });
+    const scrollBody = dialog.querySelector(".ai-dialog-body");
+    expect(scrollBody).toBeTruthy();
+    expect(scrollBody?.contains(screen.getByText("Aktivní výstrahy jsou bez kritických konfliktů."))).toBe(true);
+    expect(scrollBody?.contains(screen.getByText("Zdrojové citace"))).toBe(true);
+    expect(scrollBody?.contains(screen.getByRole("button", { name: /Odeslat do chatu/u }))).toBe(false);
+
     fireEvent.click(screen.getByRole("button", { name: /Odeslat do chatu/u }));
     expect(onSendToChat).toHaveBeenCalledWith("Aktivní výstrahy jsou bez kritických konfliktů.");
   });

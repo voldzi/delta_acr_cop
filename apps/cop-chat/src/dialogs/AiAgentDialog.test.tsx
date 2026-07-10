@@ -121,6 +121,12 @@ describe("AiAgentDialog", () => {
     expect(screen.getByText("Background index")).toBeTruthy();
     expect(screen.getByText("Stoupající hladina řeky")).toBeTruthy();
 
+    const dialog = screen.getByRole("dialog", { name: "AI agent" });
+    const scrollBody = dialog.querySelector(".ai-dialog-body");
+    expect(scrollBody?.contains(screen.getByPlaceholderText(/Co je teď/u))).toBe(true);
+    expect(scrollBody?.contains(screen.getByText("Zdrojové citace"))).toBe(true);
+    expect(scrollBody?.contains(screen.getByRole("button", { name: /Odeslat odpověď/u }))).toBe(false);
+
     fireEvent.click(screen.getByRole("button", { name: /Odeslat odpověď/u }));
     expect(onSendToChat).toHaveBeenCalledWith("Zdroje jsou online, ale část letových stop může mít zpoždění.");
   });

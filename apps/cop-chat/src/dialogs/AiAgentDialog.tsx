@@ -73,95 +73,97 @@ export default function AiAgentDialog({
           </button>
         </header>
 
-        <label className="ai-agent-question">
-          <span>Dotaz pro COP AI agenta</span>
-          <textarea
-            autoFocus
-            data-modal-autofocus="true"
-            disabled={working}
-            maxLength={2000}
-            placeholder="Např. Co je teď v okolí nejisté a které zdroje jsou zpožděné?"
-            rows={4}
-            value={question}
-            onChange={(event) => {
-              setCopyState("idle");
-              onQuestionChange(event.target.value);
-            }}
-          />
-        </label>
+        <div className="ai-dialog-body">
+          <label className="ai-agent-question">
+            <span>Dotaz pro COP AI agenta</span>
+            <textarea
+              autoFocus
+              data-modal-autofocus="true"
+              disabled={working}
+              maxLength={2000}
+              placeholder="Např. Co je teď v okolí nejisté a které zdroje jsou zpožděné?"
+              rows={4}
+              value={question}
+              onChange={(event) => {
+                setCopyState("idle");
+                onQuestionChange(event.target.value);
+              }}
+            />
+          </label>
 
-        <div className="dialog-tabs ai-agent-model-tabs" role="group" aria-label="Model AI agenta">
-          <button
-            className={modelPreference === "auto" ? "active" : ""}
-            disabled={working}
-            onClick={() => onModelPreferenceChange("auto")}
-            type="button"
-          >
-            Auto
-          </button>
-          <button
-            className={modelPreference === "fast" ? "active" : ""}
-            disabled={working}
-            onClick={() => onModelPreferenceChange("fast")}
-            type="button"
-          >
-            Rychlý
-          </button>
-          <button
-            className={modelPreference === "reasoning" ? "active" : ""}
-            disabled={working}
-            onClick={() => onModelPreferenceChange("reasoning")}
-            type="button"
-          >
-            Reasoning
-          </button>
-        </div>
+          <div className="dialog-tabs ai-agent-model-tabs" role="group" aria-label="Model AI agenta">
+            <button
+              className={modelPreference === "auto" ? "active" : ""}
+              disabled={working}
+              onClick={() => onModelPreferenceChange("auto")}
+              type="button"
+            >
+              Auto
+            </button>
+            <button
+              className={modelPreference === "fast" ? "active" : ""}
+              disabled={working}
+              onClick={() => onModelPreferenceChange("fast")}
+              type="button"
+            >
+              Rychlý
+            </button>
+            <button
+              className={modelPreference === "reasoning" ? "active" : ""}
+              disabled={working}
+              onClick={() => onModelPreferenceChange("reasoning")}
+              type="button"
+            >
+              Reasoning
+            </button>
+          </div>
 
-        {working ? (
-          <div className="ai-situation-status compact">
-            <Loader2 className="spin" size={22} />
-            <strong>AI agent odpovídá</strong>
-            {jobStatus ? <p>{jobStatus}</p> : null}
-          </div>
-        ) : error ? (
-          <div className="ai-situation-error compact">
-            <strong>AI agent neodpověděl</strong>
-            <p>{error}</p>
-          </div>
-        ) : response ? (
-          <>
-            <div className="ai-situation-output">
-              <AiMarkdownOutput text={answer} variant="dialog" />
+          {working ? (
+            <div className="ai-situation-status compact">
+              <Loader2 className="spin" size={22} />
+              <strong>AI agent odpovídá</strong>
+              {jobStatus ? <p>{jobStatus}</p> : null}
             </div>
-            <dl className="ai-situation-meta">
-              <div>
-                <dt>Stav</dt>
-                <dd>{aiStatusLabel(response.status)}</dd>
+          ) : error ? (
+            <div className="ai-situation-error compact">
+              <strong>AI agent neodpověděl</strong>
+              <p>{error}</p>
+            </div>
+          ) : response ? (
+            <>
+              <div className="ai-situation-output">
+                <AiMarkdownOutput text={answer} variant="dialog" />
               </div>
-              <div>
-                <dt>Provider</dt>
-                <dd>
-                  {response.provider ?? "auto"}
-                  {response.model ? ` / ${response.model}` : ""}
-                </dd>
-              </div>
-              <div>
-                <dt>Audit</dt>
-                <dd>{response.auditId}</dd>
-              </div>
-              <div>
-                <dt>Policy</dt>
-                <dd>{response.policy.reason}</dd>
-              </div>
-            </dl>
-            <AiEvidencePanel response={response} />
-          </>
-        ) : (
-          <div className="ai-situation-empty compact">
-            <Sparkles size={24} />
-            <strong>Agent použije jen auditovaný COP kontext, ne šifrovanou historii místnosti.</strong>
-          </div>
-        )}
+              <dl className="ai-situation-meta">
+                <div>
+                  <dt>Stav</dt>
+                  <dd>{aiStatusLabel(response.status)}</dd>
+                </div>
+                <div>
+                  <dt>Provider</dt>
+                  <dd>
+                    {response.provider ?? "auto"}
+                    {response.model ? ` / ${response.model}` : ""}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Audit</dt>
+                  <dd>{response.auditId}</dd>
+                </div>
+                <div>
+                  <dt>Policy</dt>
+                  <dd>{response.policy.reason}</dd>
+                </div>
+              </dl>
+              <AiEvidencePanel response={response} />
+            </>
+          ) : (
+            <div className="ai-situation-empty compact">
+              <Sparkles size={24} />
+              <strong>Agent použije jen auditovaný COP kontext, ne šifrovanou historii místnosti.</strong>
+            </div>
+          )}
+        </div>
 
         <footer>
           <button className="secondary-dialog-action" disabled={!canAsk} onClick={onAsk} type="button">

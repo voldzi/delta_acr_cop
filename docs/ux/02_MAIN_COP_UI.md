@@ -43,6 +43,12 @@ embedded režim `cop-chat` bez vlastní aplikační lišty. Funkce konverzací,
 skupin, reakcí, příloh a notifikací vlastní `cop-chat`; COP web pouze poskytuje
 prostor a navigační vstup.
 
+Na mobilu musí standalone i embedded chat respektovat horní a spodní safe area.
+Dialogy a detail kontaktu/skupiny se omezují na skutečnou výšku aplikace nebo
+iframe, nikoli na nadřazené `dvh`. Dlouhý obsah používá jedinou vnitřní
+scrollovací oblast mezi stále dostupnou hlavičkou a akcemi; skryté swipe panely
+nesmějí zachytávat dotyky určené odkrytým akcím.
+
 Chatový composer musí v `cop-chat` podporovat text, fotku, video, soubor a
 polohu jako primární akce. Pokud má informace z chatu přejít do mapového světa,
 uživatel použije přímo v konverzaci akci `Nahlásit`. Bridge přenese jen ID

@@ -62,50 +62,52 @@ export default function AiSituationDialog({
           </button>
         </header>
 
-        {working ? (
-          <div className="ai-situation-status">
-            <Loader2 className="spin" size={22} />
-            <strong>Připravuji souhrn</strong>
-          </div>
-        ) : error ? (
-          <div className="ai-situation-error">
-            <strong>Souhrn se nepodařilo vytvořit</strong>
-            <p>{error}</p>
-          </div>
-        ) : response ? (
-          <>
-            <div className="ai-situation-output">
-              <AiMarkdownOutput text={summary} variant="dialog" />
+        <div className="ai-dialog-body">
+          {working ? (
+            <div className="ai-situation-status">
+              <Loader2 className="spin" size={22} />
+              <strong>Připravuji souhrn</strong>
             </div>
-            <dl className="ai-situation-meta">
-              <div>
-                <dt>Stav</dt>
-                <dd>{aiStatusLabel(response.status)}</dd>
+          ) : error ? (
+            <div className="ai-situation-error">
+              <strong>Souhrn se nepodařilo vytvořit</strong>
+              <p>{error}</p>
+            </div>
+          ) : response ? (
+            <>
+              <div className="ai-situation-output">
+                <AiMarkdownOutput text={summary} variant="dialog" />
               </div>
-              <div>
-                <dt>Provider</dt>
-                <dd>
-                  {response.provider ?? "auto"}
-                  {response.model ? ` / ${response.model}` : ""}
-                </dd>
-              </div>
-              <div>
-                <dt>Audit</dt>
-                <dd>{response.auditId}</dd>
-              </div>
-              <div>
-                <dt>Policy</dt>
-                <dd>{response.policy.reason}</dd>
-              </div>
-            </dl>
-            <AiEvidencePanel response={response} />
-          </>
-        ) : (
-          <div className="ai-situation-empty">
-            <Sparkles size={24} />
-            <strong>Souhrn zatím není vytvořený.</strong>
-          </div>
-        )}
+              <dl className="ai-situation-meta">
+                <div>
+                  <dt>Stav</dt>
+                  <dd>{aiStatusLabel(response.status)}</dd>
+                </div>
+                <div>
+                  <dt>Provider</dt>
+                  <dd>
+                    {response.provider ?? "auto"}
+                    {response.model ? ` / ${response.model}` : ""}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Audit</dt>
+                  <dd>{response.auditId}</dd>
+                </div>
+                <div>
+                  <dt>Policy</dt>
+                  <dd>{response.policy.reason}</dd>
+                </div>
+              </dl>
+              <AiEvidencePanel response={response} />
+            </>
+          ) : (
+            <div className="ai-situation-empty">
+              <Sparkles size={24} />
+              <strong>Souhrn zatím není vytvořený.</strong>
+            </div>
+          )}
+        </div>
 
         <footer>
           <button className="secondary-dialog-action" disabled={working} onClick={onRefresh} type="button">

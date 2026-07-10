@@ -602,6 +602,10 @@ The phase-0 implementation focus is trust and control:
   local browser object URLs rather than by placing access tokens in image URLs.
 - Chat and group management must be reachable from the opened conversation menu
   and group detail panel, not only from mobile swipe actions in the chat list.
+- Mobile swipe actions accept input only on the revealed action side. Chat
+  overlays respect iOS safe areas in both standalone and embedded modes; long AI
+  output and group/contact detail keep their header and actions visible while a
+  single bounded middle region scrolls inside the available app or iframe box.
 - Adding members belongs in the group member surface and must respect COP group
   management permissions. COP group membership remains the source of truth for
   COP media/report ACL; Matrix membership is only the messaging projection.
