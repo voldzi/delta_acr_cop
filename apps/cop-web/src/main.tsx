@@ -116,6 +116,7 @@ import {
   fetchIncidents,
   fetchMapCatalog,
   fetchMapFeatures,
+  fetchMessagingConversations,
   fetchMobileDevices,
   fetchMobilePairingSession,
   fetchMobileTowerViewshed,
@@ -173,6 +174,7 @@ import {
   type CommunityReportHazardSeverity,
   type CommunityReportLocation,
   type CommunityMediaAccessMode,
+  type MessagingConversationSummary,
   type CommunityMediaAccessPolicy,
   type CommunityVideoSpatialMode,
   type FlightDataAttributes,
@@ -313,6 +315,7 @@ import {
 import { ModalDialog } from "./ui/dialog";
 import { SelectField } from "./ui/select";
 import { Tooltip } from "./ui/tooltip";
+import { useModalFocus } from "./ui/useModalFocus";
 import {
   clamp,
   defaultMapCenter,
@@ -356,6 +359,12 @@ import {
   writeCopOfflineSnapshotAsync,
   type CopOfflineSnapshot
 } from "./pwa-offline";
+import {
+  mapWithConcurrency,
+  nextOfflineSnapshotPersistDelay,
+  shouldLoadWeatherWebcamDetail,
+  weatherWebcamDetailCandidateKey
+} from "./runtime-scheduling";
 import {
   filterCitizenSituationLayers,
   filterCitizenSituationSources,
@@ -1476,6 +1485,7 @@ export function App() {
   const [aiResult, setAiResult] = React.useState("AI asistent je připraven zkontrolovat kvalitu zobrazených dat.");
   const loadInFlightRef = React.useRef(false);
   const offlineBootstrapScopeRef = React.useRef<string | null>(null);
+  const offlineSnapshotLastPersistedRef = React.useRef({ at: 0, scope: "" });
   const situationFeatureRequestRef = React.useRef<StableFeatureRequest | null>(null);
   const profileHydratedRef = React.useRef(false);
   const profileLoadKeyRef = React.useRef<string | null>(null);
@@ -1490,7 +1500,7 @@ export function App() {
   const authSessionRetainedForOffline = isAuthSessionRetainedForOffline(authSession);
   const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken) || authSessionRetainedForOffline;
   const profileAccessReady = Boolean(authToken);
-  const mobilePairCodeFromPath = React.useMemo(readMobilePairCodeFromLocation, []);
+  const [mobilePairCodeFromPath, setMobilePairCodeFromPath] = React.useState(readMobilePairCodeFromLocation);
   const authSubjectId = subjectIdFromAuthSession(authSession);
   const messagingRuntimeEnabled = Boolean(authToken);
 
@@ -2153,6 +2163,7 @@ export function App() {
 
   const persistOfflineSnapshot = React.useCallback(
     (data: CopDashboardData, savedAt = new Date().toISOString()) => {
+      offlineSnapshotLastPersistedRef.current = { at: Date.now(), scope: userStorageScope };
       void writeCopOfflineSnapshotAsync(data, userStorageScope, savedAt).then((snapshot) => {
         if (!snapshot) {
           return;
@@ -2254,15 +2265,13 @@ export function App() {
     window.addEventListener("pageshow", resumeCallbackIfNeeded);
     window.addEventListener("focus", resumeCallbackIfNeeded);
     window.addEventListener("popstate", resumeCallbackIfNeeded);
-    window.addEventListener("visibilitychange", resumeCallbackIfNeeded);
-    const callbackPoll = window.setInterval(resumeCallbackIfNeeded, 1000);
+    document.addEventListener("visibilitychange", resumeCallbackIfNeeded);
     return () => {
       cancelled = true;
-      window.clearInterval(callbackPoll);
       window.removeEventListener("pageshow", resumeCallbackIfNeeded);
       window.removeEventListener("focus", resumeCallbackIfNeeded);
       window.removeEventListener("popstate", resumeCallbackIfNeeded);
-      window.removeEventListener("visibilitychange", resumeCallbackIfNeeded);
+      document.removeEventListener("visibilitychange", resumeCallbackIfNeeded);
     };
   }, [authConfig]);
 
@@ -2825,80 +2834,87 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [autoRefresh, dataAccessReady, weatherRadarSelected]);
 
+  const weatherWebcamDetailCandidates = React.useMemo(
+    () =>
+      (situationFeatures?.features ?? [])
+        .filter(isWeatherWebcamFeature)
+        .flatMap((feature) => {
+          const metadata = weatherWebcamMetadata(feature);
+          const detailUrl = metadata.detailUrl;
+          const key = weatherWebcamDetailCacheKey(feature);
+          return detailUrl && key ? [{ detailUrl, feature, key }] : [];
+        })
+        .slice(0, 60),
+    [situationFeatures]
+  );
+  const weatherWebcamDetailCandidatesRef = React.useRef(weatherWebcamDetailCandidates);
+  weatherWebcamDetailCandidatesRef.current = weatherWebcamDetailCandidates;
+  const weatherWebcamDetailCacheRef = React.useRef(weatherWebcamDetailCache);
+  weatherWebcamDetailCacheRef.current = weatherWebcamDetailCache;
+  const weatherWebcamCandidateKey = weatherWebcamDetailCandidateKey(weatherWebcamDetailCandidates);
+
   React.useEffect(() => {
-    const candidates = (situationFeatures?.features ?? [])
-      .filter(isWeatherWebcamFeature)
-      .flatMap((feature) => {
-        const metadata = weatherWebcamMetadata(feature);
-        const detailUrl = metadata.detailUrl;
-        const key = weatherWebcamDetailCacheKey(feature);
-        return detailUrl && key ? [{ detailUrl, feature, key }] : [];
-      })
-      .filter(({ feature, key }) => {
-        const entry = weatherWebcamDetailCache[key];
-        return (
-          !entry ||
-          (entry.status === "ready" && !entry.locationLabel && isGenericWeatherWebcamLabel(weatherWebcamTitle(feature)))
-        );
-      })
-      .slice(0, 60);
+    // Live situation updates replace the GeoJSON array frequently even when the
+    // webcam catalogue is unchanged. Depend on its stable content key so those
+    // updates cannot abort and restart the bounded detail batch indefinitely.
+    const candidates = weatherWebcamDetailCandidatesRef.current.filter(({ key }) =>
+      shouldLoadWeatherWebcamDetail(weatherWebcamDetailCacheRef.current[key]?.status)
+    );
     if (candidates.length === 0) {
-      return;
+      return undefined;
     }
-    setWeatherWebcamDetailCache((current) => {
-      let changed = false;
-      const next = { ...current };
-      candidates.forEach(({ key }) => {
-        if (!next[key] || next[key].status === "error") {
-          next[key] = { status: "loading" };
-          changed = true;
-        }
-      });
-      return changed ? next : current;
-    });
     let cancelled = false;
-    candidates.forEach(({ detailUrl, feature, key }) => {
-      const proxyUrl = weatherCameraProxyUrl(detailUrl);
-      if (!proxyUrl) {
-        setWeatherWebcamDetailCache((current) => ({ ...current, [key]: { status: "error" } }));
-        return;
-      }
-      void fetch(proxyUrl, {
-        headers: {
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-          Accept: "application/json"
+    const abortController = new AbortController();
+    void mapWithConcurrency(
+      candidates,
+      6,
+      async ({ detailUrl, feature, key }): Promise<{ entry: WeatherWebcamDetailCacheEntry; key: string }> => {
+        const proxyUrl = weatherCameraProxyUrl(detailUrl);
+        if (!proxyUrl) {
+          return { entry: { status: "error" }, key };
         }
-      })
-        .then((response) => {
+        try {
+          const response = await fetch(proxyUrl, {
+            headers: {
+              ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+              Accept: "application/json"
+            },
+            signal: abortController.signal
+          });
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
           }
-          return response.json();
-        })
-        .then((value) => {
-          if (cancelled) {
-            return;
-          }
+          const value = await response.json();
           const detail = normalizeWeatherWebcamDetail(value);
-          setWeatherWebcamDetailCache((current) => ({
-            ...current,
-            [key]: {
+          return {
+            entry: {
               detail,
               locationLabel: weatherWebcamLocationLabel(feature, detail),
               status: "ready"
-            }
-          }));
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setWeatherWebcamDetailCache((current) => ({ ...current, [key]: { status: "error" } }));
-          }
+            },
+            key
+          };
+        } catch {
+          return { entry: { status: "error" }, key };
+        }
+      }
+    ).then((entries) => {
+      if (cancelled) {
+        return;
+      }
+      setWeatherWebcamDetailCache((current) => {
+        const next = { ...current };
+        entries.forEach(({ entry, key }) => {
+          next[key] = entry;
         });
+        return next;
+      });
     });
     return () => {
       cancelled = true;
+      abortController.abort();
     };
-  }, [authToken, situationFeatures, weatherWebcamDetailCache]);
+  }, [authToken, weatherWebcamCandidateKey]);
 
   React.useEffect(() => {
     if (!weatherRadarPlaybackEnabled || weatherRadarFrames.length < 2) {
@@ -3537,6 +3553,10 @@ export function App() {
     if (!dataAccessReady || !health || offlineSnapshotState.kind === "active" || streamStatus !== "live") {
       return;
     }
+    const lastPersisted = offlineSnapshotLastPersistedRef.current;
+    const persistDelay = nextOfflineSnapshotPersistDelay(
+      lastPersisted.scope === userStorageScope ? lastPersisted.at : 0
+    );
     const timer = window.setTimeout(() => {
       persistOfflineSnapshot({
         alerts: serverAlerts,
@@ -3547,7 +3567,7 @@ export function App() {
         streamHealth: streamHealth ?? undefined,
         trackHistory
       });
-    }, 400);
+    }, persistDelay);
     return () => window.clearTimeout(timer);
   }, [
     dataAccessReady,
@@ -3560,7 +3580,8 @@ export function App() {
     sources,
     streamHealth,
     streamStatus,
-    trackHistory
+    trackHistory,
+    userStorageScope
   ]);
 
   React.useEffect(() => {
@@ -4314,6 +4335,8 @@ export function App() {
       workspaceSkin
     ]
   );
+  const currentPreferencesRef = React.useRef(currentPreferences);
+  currentPreferencesRef.current = currentPreferences;
 
   React.useEffect(() => {
     profileHydratedRef.current = false;
@@ -4377,10 +4400,11 @@ export function App() {
           setLocalAlertPreferencesUpdatedAt(mirrorUpdatedAt);
         }
         const localPreferences = readUserPreferences(userStorageScope);
+        const latestPreferences = currentPreferencesRef.current;
         const hydratedPreferences = mergeHydratedUserPreferences(
           serverPreferences,
           localPreferences,
-          currentPreferences
+          latestPreferences
         );
         const hasHydratedPreferences = Object.keys(hydratedPreferences).length > 0;
         const shouldMirrorPreferences =
@@ -4395,7 +4419,7 @@ export function App() {
         if (localAlertPreferencesWin || shouldMirrorPreferences || Object.keys(serverPreferences).length === 0) {
           savedProfile = await saveUserProfile(apiBase, authToken, {
             alertPreferences: nextAlertPreferences,
-            preferences: hasHydratedPreferences ? hydratedPreferences : currentPreferences
+            preferences: hasHydratedPreferences ? hydratedPreferences : latestPreferences
           });
         }
         if (savedProfile && !cancelled) {
@@ -4430,7 +4454,6 @@ export function App() {
     authSession.profile?.username,
     authSession.status,
     authToken,
-    currentPreferences,
     profileAccessReady,
     userStorageScope
   ]);
@@ -4454,13 +4477,15 @@ export function App() {
     setLocalAlertPreferencesUpdatedAt(updatedAt);
   }, [alertPreferences]);
 
+  const deferRemoteProfileSyncForLiveLocation = navigationSession !== null || userLocationFollowEnabled;
+
   React.useEffect(() => {
     if (skipNextPreferenceWriteRef.current) {
       skipNextPreferenceWriteRef.current = false;
       return;
     }
     writeUserPreferences(currentPreferences, userStorageScope);
-    if (!profileAccessReady || !authToken || !profileHydratedRef.current) {
+    if (!profileAccessReady || !authToken || !profileHydratedRef.current || deferRemoteProfileSyncForLiveLocation) {
       return;
     }
     if (profileSaveTimerRef.current !== undefined) {
@@ -4485,7 +4510,14 @@ export function App() {
           setProfileSyncError(error instanceof Error ? error.message : "Uložení profilu selhalo.");
         });
     }, 650);
-  }, [alertPreferences, authToken, currentPreferences, profileAccessReady, userStorageScope]);
+  }, [
+    alertPreferences,
+    authToken,
+    currentPreferences,
+    deferRemoteProfileSyncForLiveLocation,
+    profileAccessReady,
+    userStorageScope
+  ]);
 
   React.useEffect(() => {
     const focus = initialMapFeatureFocusRef.current;
@@ -8445,6 +8477,7 @@ export function App() {
         <CommunityReportDialog
           apiBase={apiBase}
           authToken={authToken}
+          authSubjectId={authSubjectId}
           draft={communityReportDraft}
           error={communityReportError}
           isSubmitting={communityReportSubmitting}
@@ -8486,7 +8519,15 @@ export function App() {
         />
       ) : null}
       {tomatoGameOpen ? <TomatoGameDialog onClose={() => setTomatoGameOpen(false)} /> : null}
-      {mobilePairCodeFromPath ? <MobilePairLandingOverlay code={mobilePairCodeFromPath} /> : null}
+      {mobilePairCodeFromPath ? (
+        <MobilePairLandingOverlay
+          code={mobilePairCodeFromPath}
+          onClose={() => {
+            window.history.replaceState({}, "", "/");
+            setMobilePairCodeFromPath(null);
+          }}
+        />
+      ) : null}
     </main>
   );
 }
@@ -8503,24 +8544,19 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
 }
 
 function TomatoGameDialog({ onClose }: { onClose: () => void }) {
-  React.useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
+  const modal = useModalFocus<HTMLElement>(onClose);
 
   return (
     <div className="tomato-game-backdrop" role="presentation" onClick={onClose}>
       <section
+        ref={modal.dialogRef}
         aria-label="Rajčatová sklizeň"
         aria-modal="true"
         className="tomato-game-dialog"
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={modal.onDialogKeyDown}
         role="dialog"
+        tabIndex={-1}
       >
         <header className="tomato-game-header">
           <div>
@@ -8564,8 +8600,9 @@ function readMobilePairCodeFromLocation(): string | null {
   return match?.[1] ?? null;
 }
 
-function MobilePairLandingOverlay({ code }: { code: string }) {
+function MobilePairLandingOverlay({ code, onClose }: { code: string; onClose: () => void }) {
   const [copied, setCopied] = React.useState(false);
+  const modal = useModalFocus<HTMLElement>(onClose);
   const universalLink = `${window.location.origin}/mobile/pair/${encodeURIComponent(code)}`;
   const customSchemeUrl = `csm://pair?code=${encodeURIComponent(code)}`;
 
@@ -8579,8 +8616,16 @@ function MobilePairLandingOverlay({ code }: { code: string }) {
   };
 
   return (
-    <div className="mobile-pair-landing-backdrop" role="dialog" aria-modal="true" aria-label="Spárování CSM Messenger">
-      <div className="mobile-pair-landing-card">
+    <div className="mobile-pair-landing-backdrop" role="presentation">
+      <section
+        ref={modal.dialogRef}
+        className="mobile-pair-landing-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Spárování CSM Messenger"
+        tabIndex={-1}
+        onKeyDown={modal.onDialogKeyDown}
+      >
         <div className="mobile-pair-landing-icon">
           <Smartphone size={42} />
         </div>
@@ -8600,10 +8645,10 @@ function MobilePairLandingOverlay({ code }: { code: string }) {
             {copied ? "Zkopírováno" : "Kopírovat link"}
           </button>
         </div>
-        <button className="mini-button wide" onClick={() => window.history.replaceState({}, "", "/")} type="button">
+        <button className="mini-button wide" onClick={onClose} type="button">
           Pokračovat do COP
         </button>
-      </div>
+      </section>
     </div>
   );
 }
@@ -8660,6 +8705,7 @@ interface CommunityUploadUiState {
 
 interface CommunityReportDialogProps {
   apiBase: string;
+  authSubjectId?: string;
   authToken?: string;
   draft: CommunityReportDraft;
   error: string | null;
@@ -8678,6 +8724,7 @@ interface CommunityReportDialogProps {
 
 function CommunityReportDialog({
   apiBase,
+  authSubjectId,
   authToken,
   draft,
   error,
@@ -8693,6 +8740,50 @@ function CommunityReportDialog({
   onLocationFromUser,
   onSubmit
 }: CommunityReportDialogProps) {
+  const [chatContacts, setChatContacts] = React.useState<UserDirectoryEntry[]>([]);
+  const [chatContactsLoading, setChatContactsLoading] = React.useState(false);
+  const chatContactsLoadedRef = React.useRef(false);
+  const chatContactsMountedRef = React.useRef(true);
+  const searchContacts = React.useCallback(
+    async (query: string) => {
+      if (!authToken) {
+        return [];
+      }
+      return (await searchUserDirectory(apiBase, authToken, query, 25)).items;
+    },
+    [apiBase, authToken]
+  );
+
+  React.useEffect(() => {
+    chatContactsMountedRef.current = true;
+    return () => {
+      chatContactsMountedRef.current = false;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!authToken || draft.mediaAccessMode !== "users" || chatContactsLoadedRef.current) {
+      return undefined;
+    }
+    chatContactsLoadedRef.current = true;
+    setChatContactsLoading(true);
+    fetchMessagingConversations(apiBase, authToken)
+      .then((response) => {
+        if (chatContactsMountedRef.current) {
+          setChatContacts(communityReportChatContacts(response.conversations, authSubjectId));
+        }
+      })
+      .catch(() => {
+        // Directory search remains available when the optional actor-scoped chat contact list is unavailable.
+      })
+      .finally(() => {
+        if (chatContactsMountedRef.current) {
+          setChatContactsLoading(false);
+        }
+      });
+    return undefined;
+  }, [apiBase, authSubjectId, authToken, draft.mediaAccessMode]);
+
   return (
     <ModalDialog
       actions={
@@ -8805,6 +8896,8 @@ function CommunityReportDialog({
           {draft.mediaAccessMode === "users" ? (
             <CommunityContactPicker
               disabled={!authToken || isSubmitting}
+              suggestions={chatContacts}
+              suggestionsLoading={chatContactsLoading}
               selectedSubjectIds={parseSubjectIdList(draft.mediaAccessUserSubjectIds)}
               onChange={(selectedSubjectIds) =>
                 onChange((current) => ({
@@ -8812,12 +8905,7 @@ function CommunityReportDialog({
                   mediaAccessUserSubjectIds: selectedSubjectIds.join("\n")
                 }))
               }
-              onSearch={async (query) => {
-                if (!authToken) {
-                  return [];
-                }
-                return (await searchUserDirectory(apiBase, authToken, query, 12)).items;
-              }}
+              onSearch={searchContacts}
             />
           ) : null}
           <span className="report-field-hint">
@@ -8854,13 +8942,66 @@ function CommunityReportDialog({
   );
 }
 
+export function communityReportChatContacts(
+  conversations: MessagingConversationSummary[],
+  ownSubjectId?: string
+): UserDirectoryEntry[] {
+  const contacts = new Map<string, UserDirectoryEntry>();
+  const ownId = ownSubjectId?.trim();
+  const addContact = (subjectIdValue: string, displayNameValue?: string) => {
+    const subjectId = subjectIdValue.trim();
+    if (!subjectId || subjectId === ownId || /^@[^:]+:.+$/u.test(subjectId)) {
+      return;
+    }
+    const displayName = displayNameValue?.trim() || subjectId;
+    const existing = contacts.get(subjectId);
+    if (existing && existing.displayName !== existing.subjectId) {
+      return;
+    }
+    contacts.set(subjectId, {
+      displayName,
+      subjectId,
+      username: subjectId
+    });
+  };
+
+  for (const conversation of conversations) {
+    if (conversation.directPeer) {
+      addContact(conversation.directPeer.userId, conversation.directPeer.displayName || conversation.title);
+    }
+    for (const member of conversation.members ?? []) {
+      addContact(member.userId, member.displayName);
+    }
+  }
+  return Array.from(contacts.values()).sort((left, right) =>
+    left.displayName.localeCompare(right.displayName, "cs", { sensitivity: "base" })
+  );
+}
+
+function normalizedContactSearch(value: string): string {
+  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase("cs").trim();
+}
+
+function contactMatchesQuery(entry: UserDirectoryEntry, normalizedQuery: string): boolean {
+  if (!normalizedQuery) {
+    return true;
+  }
+  return [entry.displayName, entry.username, entry.email, entry.subjectId].some(
+    (value) => typeof value === "string" && normalizedContactSearch(value).includes(normalizedQuery)
+  );
+}
+
 export function CommunityContactPicker({
   disabled,
+  suggestions = [],
+  suggestionsLoading = false,
   selectedSubjectIds,
   onChange,
   onSearch
 }: {
   disabled: boolean;
+  suggestions?: UserDirectoryEntry[];
+  suggestionsLoading?: boolean;
   selectedSubjectIds: string[];
   onChange: (subjectIds: string[]) => void;
   onSearch: (query: string) => Promise<UserDirectoryEntry[]>;
@@ -8870,28 +9011,35 @@ export function CommunityContactPicker({
   const [selectedEntries, setSelectedEntries] = React.useState<Record<string, UserDirectoryEntry>>({});
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const normalizedQuery = query.trim();
+  const [completedQuery, setCompletedQuery] = React.useState<string | null>(null);
+  const trimmedQuery = query.trim();
+  const normalizedQuery = normalizedContactSearch(trimmedQuery);
 
   React.useEffect(() => {
-    if (disabled || normalizedQuery.length < 2) {
+    if (disabled || trimmedQuery.length < 2) {
       setResults([]);
       setBusy(false);
       setError(null);
+      setCompletedQuery(null);
       return undefined;
     }
+    setResults([]);
+    setCompletedQuery(null);
     let cancelled = false;
     const timer = window.setTimeout(() => {
       setBusy(true);
       setError(null);
-      onSearch(normalizedQuery)
+      onSearch(trimmedQuery)
         .then((items) => {
           if (!cancelled) {
             setResults(items);
+            setCompletedQuery(trimmedQuery);
           }
         })
         .catch((caught: unknown) => {
           if (!cancelled) {
             setResults([]);
+            setCompletedQuery(trimmedQuery);
             setError(caught instanceof Error ? caught.message : "Kontakty se nepodařilo načíst.");
           }
         })
@@ -8905,9 +9053,23 @@ export function CommunityContactPicker({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [disabled, normalizedQuery, onSearch]);
+  }, [disabled, onSearch, trimmedQuery]);
 
-  const selectedSet = new Set(selectedSubjectIds);
+  const selectedSet = React.useMemo(() => new Set(selectedSubjectIds), [selectedSubjectIds]);
+  const displayedResults = React.useMemo(() => {
+    const merged = new Map<string, UserDirectoryEntry>();
+    for (const entry of suggestions) {
+      if (contactMatchesQuery(entry, normalizedQuery)) {
+        merged.set(entry.subjectId, entry);
+      }
+    }
+    if (completedQuery === trimmedQuery) {
+      for (const entry of results) {
+        merged.set(entry.subjectId, entry);
+      }
+    }
+    return Array.from(merged.values()).slice(0, 25);
+  }, [completedQuery, normalizedQuery, results, suggestions, trimmedQuery]);
   const addContact = (entry: UserDirectoryEntry) => {
     setSelectedEntries((current) => ({ ...current, [entry.subjectId]: entry }));
     onChange(Array.from(new Set([...selectedSubjectIds, entry.subjectId])));
@@ -8928,7 +9090,7 @@ export function CommunityContactPicker({
             aria-label="Vyhledat kontakt"
             autoComplete="off"
             disabled={disabled}
-            placeholder="Jméno nebo uživatelské jméno"
+            placeholder="Jméno nebo účet"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -8939,7 +9101,8 @@ export function CommunityContactPicker({
       {selectedSubjectIds.length > 0 ? (
         <div className="report-contact-chips" aria-label="Vybrané kontakty">
           {selectedSubjectIds.map((subjectId) => {
-            const entry = selectedEntries[subjectId];
+            const entry =
+              selectedEntries[subjectId] ?? suggestions.find((candidate) => candidate.subjectId === subjectId);
             const label = entry?.displayName || entry?.username || subjectId;
             return (
               <span className="report-contact-chip" key={subjectId}>
@@ -8963,13 +9126,25 @@ export function CommunityContactPicker({
         <span className="report-field-hint">Vyhledejte a vyberte osoby, které smějí otevřít přílohy.</span>
       )}
 
-      {normalizedQuery.length > 0 && normalizedQuery.length < 2 ? (
-        <span className="report-field-hint">Napište alespoň dva znaky.</span>
+      {trimmedQuery.length > 0 && trimmedQuery.length < 2 ? (
+        <span className="report-field-hint">
+          Adresář se prohledává od dvou znaků; známé chatové kontakty už jsou filtrovány.
+        </span>
+      ) : null}
+      {!trimmedQuery && suggestionsLoading ? (
+        <span className="report-field-hint report-contact-status" role="status">
+          <RefreshCw className="spin" size={14} /> Načítám kontakty z chatu…
+        </span>
       ) : null}
       {error ? <span className="report-contact-error">{error}</span> : null}
-      {results.length > 0 ? (
-        <div className="report-contact-results" role="listbox" aria-label="Nalezené kontakty">
-          {results.map((entry) => {
+      {!busy && completedQuery === trimmedQuery && displayedResults.length === 0 && !error ? (
+        <span className="report-field-hint" role="status">
+          Pro tento dotaz nebyl nalezen žádný kontakt.
+        </span>
+      ) : null}
+      {displayedResults.length > 0 ? (
+        <div className="report-contact-results" role="listbox" aria-label="Kontakty z chatu a adresáře">
+          {displayedResults.map((entry) => {
             const selected = selectedSet.has(entry.subjectId);
             const label = entry.displayName || entry.username;
             return (
@@ -8986,7 +9161,7 @@ export function CommunityContactPicker({
                 </span>
                 <span>
                   <strong>{label}</strong>
-                  <small>@{entry.username}</small>
+                  <small>{entry.username === entry.subjectId ? "Kontakt z chatu" : `@${entry.username}`}</small>
                 </span>
                 {selected ? <CheckCircle2 size={18} /> : <Plus size={18} />}
               </button>
@@ -9114,6 +9289,7 @@ function CommunityMediaGallery({
   onClose: () => void;
   onMove: (direction: -1 | 1) => void;
 }) {
+  const modal = useModalFocus<HTMLElement>(onClose);
   const attachment = gallery.attachments[gallery.index];
   const spatialMode = attachment?.kind === "video" ? communityAttachmentSpatialMode(attachment) : "none";
   const xrVideoUrl = attachment ? buildXrVideoUrl(attachment) : null;
@@ -9127,7 +9303,27 @@ function CommunityMediaGallery({
   }
   return (
     <div className="community-gallery-backdrop" role="presentation">
-      <section className="community-gallery" aria-modal="true" role="dialog" aria-label="Galerie médií">
+      <section
+        ref={modal.dialogRef}
+        className="community-gallery"
+        aria-modal="true"
+        role="dialog"
+        aria-label="Galerie médií"
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft" && gallery.attachments.length > 1) {
+            event.preventDefault();
+            onMove(-1);
+            return;
+          }
+          if (event.key === "ArrowRight" && gallery.attachments.length > 1) {
+            event.preventDefault();
+            onMove(1);
+            return;
+          }
+          modal.onDialogKeyDown(event);
+        }}
+      >
         <header className="community-gallery-header">
           <div>
             <span>{gallery.subtitle ?? "Komunitní média"}</span>
@@ -9152,13 +9348,13 @@ function CommunityMediaGallery({
               ‹
             </button>
           ) : null}
-          {photoUrl ? <img alt={attachment.fileName ?? "Fotografie hlášení"} src={photoUrl} /> : null}
+          {photoUrl ? <img alt={attachment.fileName ?? "Fotografie hlášení"} decoding="async" src={photoUrl} /> : null}
           {attachment.contentUrl && attachment.kind === "video" ? (
             <video controls playsInline preload="metadata" src={attachment.contentUrl} />
           ) : null}
           {!attachment.contentUrl && videoPosterUrl ? (
             <div className="community-gallery-video-poster">
-              <img alt={attachment.fileName ?? "Video hlášení"} src={videoPosterUrl} />
+              <img alt={attachment.fileName ?? "Video hlášení"} decoding="async" src={videoPosterUrl} />
               <span>
                 <Play size={28} />
                 Demo náhled videa
@@ -9170,7 +9366,7 @@ function CommunityMediaGallery({
           ) : null}
           {!attachment.contentUrl && documentPreviewUrl ? (
             <div className="community-gallery-document-preview">
-              <img alt={attachment.fileName ?? "PDF příloha"} src={documentPreviewUrl} />
+              <img alt={attachment.fileName ?? "PDF příloha"} decoding="async" src={documentPreviewUrl} />
               <strong>{attachment.fileName ?? "PDF příloha"}</strong>
             </div>
           ) : null}
@@ -12569,6 +12765,12 @@ function MobileSheetSurface({
         aria-label={title}
         className="mobile-sheet-surface"
         data-testid="mobile-sheet-surface"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onClose();
+          }
+        }}
         role="dialog"
         style={{ "--mobile-sheet-offset": `${dragOffset}px` } as React.CSSProperties}
       >
@@ -14830,41 +15032,30 @@ function ManualDialog({
 }) {
   const entry = manualSections[section];
   return (
-    <div className="ui-dialog-backdrop" role="presentation">
-      <section className="ui-dialog manual-dialog" aria-modal="true" role="dialog" aria-labelledby="manual-title">
-        <div className="ui-dialog-header">
-          <div>
-            <span>Manuál</span>
-            <strong id="manual-title">{entry.title}</strong>
-          </div>
-          <button className="icon-button" onClick={onClose} title="Zavřít manuál" type="button">
-            <X size={16} />
-          </button>
-        </div>
-        <div className="manual-layout">
-          <nav aria-label="Sekce manuálu">
-            {Object.entries(manualSections).map(([key, item]) => (
-              <button
-                className={key === section ? "active" : ""}
-                key={key}
-                onClick={() => onSectionChange(key as HelpSection)}
-                type="button"
-              >
-                {item.label}
-              </button>
+    <ModalDialog className="manual-dialog" eyebrow="Manuál" onClose={onClose} title={entry.title}>
+      <div className="manual-layout">
+        <nav aria-label="Sekce manuálu">
+          {Object.entries(manualSections).map(([key, item]) => (
+            <button
+              className={key === section ? "active" : ""}
+              key={key}
+              onClick={() => onSectionChange(key as HelpSection)}
+              type="button"
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        <article>
+          <p>{entry.body}</p>
+          <ul>
+            {entry.points.map((point) => (
+              <li key={point}>{point}</li>
             ))}
-          </nav>
-          <article>
-            <p>{entry.body}</p>
-            <ul>
-              {entry.points.map((point) => (
-                <li key={point}>{point}</li>
-              ))}
-            </ul>
-          </article>
-        </div>
-      </section>
-    </div>
+          </ul>
+        </article>
+      </div>
+    </ModalDialog>
   );
 }
 

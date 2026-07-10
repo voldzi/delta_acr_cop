@@ -34,21 +34,26 @@ interface ComputedVirtualTimelineWindow {
   startIndex: number;
 }
 
+interface TimelineMeasurements {
+  heights: number[];
+  offsets: number[];
+  totalHeight: number;
+}
+
+interface MeasuredVirtualTimelineWindowInput extends Omit<VirtualTimelineWindowInput, "overscan" | "threshold"> {
+  measurements: TimelineMeasurements;
+  overscan: number;
+  threshold: number;
+}
+
 export function useVirtualTimelineRows(
   rows: TimelineRow[],
   containerRef: React.RefObject<HTMLElement | null>
 ): VirtualTimelineWindow {
   const [viewport, setViewport] = React.useState({ clientHeight: 0, scrollTop: 0 });
+  const viewportFrameRef = React.useRef<number | null>(null);
   const enabled = rows.length > timelineVirtualizationThreshold;
-  const heights = React.useMemo(() => rows.map(estimateTimelineRowHeight), [rows]);
-  const offsets = React.useMemo(() => {
-    const nextOffsets = new Array<number>(heights.length + 1);
-    nextOffsets[0] = 0;
-    heights.forEach((height, index) => {
-      nextOffsets[index + 1] = (nextOffsets[index] ?? 0) + height;
-    });
-    return nextOffsets;
-  }, [heights]);
+  const measurements = React.useMemo(() => measureTimelineRows(rows), [rows]);
 
   const refreshViewport = React.useCallback(() => {
     const node = containerRef.current;
@@ -61,6 +66,30 @@ export function useVirtualTimelineRows(
     });
   }, [containerRef]);
 
+  const scheduleViewportRefresh = React.useCallback(() => {
+    if (viewportFrameRef.current !== null) {
+      return;
+    }
+    if (typeof window.requestAnimationFrame !== "function") {
+      refreshViewport();
+      return;
+    }
+    viewportFrameRef.current = window.requestAnimationFrame(() => {
+      viewportFrameRef.current = null;
+      refreshViewport();
+    });
+  }, [refreshViewport]);
+
+  React.useEffect(
+    () => () => {
+      if (viewportFrameRef.current !== null && typeof window.cancelAnimationFrame === "function") {
+        window.cancelAnimationFrame(viewportFrameRef.current);
+      }
+      viewportFrameRef.current = null;
+    },
+    []
+  );
+
   React.useLayoutEffect(() => {
     refreshViewport();
   }, [refreshViewport, rows.length]);
@@ -70,19 +99,19 @@ export function useVirtualTimelineRows(
     if (!node) {
       return;
     }
-    node.addEventListener("scroll", refreshViewport, { passive: true });
-    return () => node.removeEventListener("scroll", refreshViewport);
-  }, [containerRef, refreshViewport]);
+    node.addEventListener("scroll", scheduleViewportRefresh, { passive: true });
+    return () => node.removeEventListener("scroll", scheduleViewportRefresh);
+  }, [containerRef, scheduleViewportRefresh]);
 
   React.useEffect(() => {
     const node = containerRef.current;
     if (!node || typeof ResizeObserver === "undefined") {
       return;
     }
-    const observer = new ResizeObserver(() => refreshViewport());
+    const observer = new ResizeObserver(() => scheduleViewportRefresh());
     observer.observe(node);
     return () => observer.disconnect();
-  }, [containerRef, refreshViewport]);
+  }, [containerRef, scheduleViewportRefresh]);
 
   const scrollToRow = React.useCallback(
     (index: number, block: "center" | "end" | "start" = "center") => {
@@ -90,17 +119,17 @@ export function useVirtualTimelineRows(
       if (!node) {
         return;
       }
-      const rowStart = offsets[Math.max(0, Math.min(index, rows.length - 1))] ?? 0;
-      const rowHeight = heights[Math.max(0, Math.min(index, heights.length - 1))] ?? 52;
+      const rowStart = measurements.offsets[Math.max(0, Math.min(index, rows.length - 1))] ?? 0;
+      const rowHeight = measurements.heights[Math.max(0, Math.min(index, measurements.heights.length - 1))] ?? 52;
       const nextTop =
         block === "start"
           ? rowStart
           : block === "end"
             ? rowStart + rowHeight - node.clientHeight
             : rowStart - Math.max(0, (node.clientHeight - rowHeight) / 2);
-      node.scrollTo({ behavior: "smooth", top: Math.max(0, nextTop) });
+      node.scrollTo({ behavior: preferredChatScrollBehavior(), top: Math.max(0, nextTop) });
     },
-    [containerRef, heights, offsets, rows.length]
+    [containerRef, measurements, rows.length]
   );
 
   if (!enabled) {
@@ -108,8 +137,9 @@ export function useVirtualTimelineRows(
   }
 
   return {
-    ...computeVirtualTimelineWindow({
+    ...computeVirtualTimelineWindowFromMeasurements({
       clientHeight: viewport.clientHeight,
+      measurements,
       overscan: timelineVirtualizationOverscan,
       rows,
       scrollTop: viewport.scrollTop,
@@ -126,16 +156,28 @@ export function computeVirtualTimelineWindow({
   scrollTop,
   threshold = timelineVirtualizationThreshold
 }: VirtualTimelineWindowInput): ComputedVirtualTimelineWindow {
+  return computeVirtualTimelineWindowFromMeasurements({
+    clientHeight,
+    measurements: measureTimelineRows(rows),
+    overscan,
+    rows,
+    scrollTop,
+    threshold
+  });
+}
+
+function computeVirtualTimelineWindowFromMeasurements({
+  clientHeight,
+  measurements,
+  overscan,
+  rows,
+  scrollTop,
+  threshold
+}: MeasuredVirtualTimelineWindowInput): ComputedVirtualTimelineWindow {
   if (rows.length <= threshold) {
     return { enabled: false, endIndex: rows.length, paddingBottom: 0, paddingTop: 0, rows, startIndex: 0 };
   }
-  const heights = rows.map(estimateTimelineRowHeight);
-  const offsets = new Array<number>(heights.length + 1);
-  offsets[0] = 0;
-  heights.forEach((height, index) => {
-    offsets[index + 1] = (offsets[index] ?? 0) + height;
-  });
-  const totalHeight = offsets[offsets.length - 1] ?? 0;
+  const { offsets, totalHeight } = measurements;
   const visibleStart = Math.max(0, scrollTop - 360);
   const visibleEnd = Math.min(totalHeight, scrollTop + clientHeight + 360);
   const startIndex = Math.max(0, lowerBound(offsets, visibleStart) - overscan);
@@ -148,6 +190,22 @@ export function computeVirtualTimelineWindow({
     rows: rows.slice(startIndex, endIndex),
     startIndex
   };
+}
+
+function measureTimelineRows(rows: TimelineRow[]): TimelineMeasurements {
+  const heights = rows.map(estimateTimelineRowHeight);
+  const offsets = new Array<number>(heights.length + 1);
+  offsets[0] = 0;
+  heights.forEach((height, index) => {
+    offsets[index + 1] = (offsets[index] ?? 0) + height;
+  });
+  return { heights, offsets, totalHeight: offsets[offsets.length - 1] ?? 0 };
+}
+
+export function preferredChatScrollBehavior(): ScrollBehavior {
+  return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ? "auto"
+    : "smooth";
 }
 
 function lowerBound(values: number[], target: number): number {

@@ -172,6 +172,76 @@ describe("cop-chat embedded mobile layout CSS", () => {
     expect(footers.some((block) => block.includes("grid-template-columns: 1fr"))).toBe(true);
     expect(footerButtons.some((block) => block.includes("width: 100%"))).toBe(true);
   });
+
+  it("keeps swipe gestures compositor-friendly without a permanently promoted layer", () => {
+    const chatRow = cssBlock(".chat-row");
+    const activeSwipe = cssBlock(".chat-row-shell.swiping .chat-row,\n.chat-row-shell.swipe-open .chat-row");
+    const dragging = cssBlock(".chat-row-shell.swiping .chat-row");
+    const messageCanvas = cssBlocks(".message-canvas");
+
+    expect(chatRow).not.toContain("will-change");
+    expect(activeSwipe).toContain("will-change: transform");
+    expect(dragging).toContain("transition: none");
+    expect(messageCanvas.some((block) => block.includes("overscroll-behavior-y: contain"))).toBe(true);
+    expect(messageCanvas.some((block) => block.includes("-webkit-overflow-scrolling: touch"))).toBe(true);
+    expect(styles).not.toMatch(/(^|\n)\s*filter:\s*blur/gu);
+  });
+
+  it("uses solid mobile action surfaces instead of animating expensive backdrop blur", () => {
+    const mobileSurfaces = cssBlocks(
+      ".chat-action-menu,\n  .message-action-backdrop,\n  .reaction-strip,\n  .sticker-tray,\n  .message-action-list,\n  .mute-dialog,\n  .retention-dialog"
+    );
+    const mobileActionCards = cssBlocks(".reaction-strip,\n  .sticker-tray,\n  .message-action-list");
+
+    expect(mobileSurfaces.some((block) => block.includes("backdrop-filter: none"))).toBe(true);
+    expect(mobileActionCards.some((block) => block.includes("background: #ffffff"))).toBe(true);
+  });
+
+  it("keeps compact-phone actions touch-sized and critical colors readable", () => {
+    const compactReportAction = cssBlocks(".conversation-actions .report-chat-action");
+    const headerActions = cssBlocks(
+      ".list-actions .round-icon,\n  .conversation-header .round-icon,\n  .info-nav header .round-icon,\n  .new-chat-dialog header .round-icon,\n  .preview-dialog header .round-icon,\n  .forward-dialog header .round-icon"
+    );
+    const compactActions = cssBlocks(
+      ".filter-tabs button,\n  .media-tabs button,\n  .member-row-action,\n  .forward-send,\n  .voice-call-control"
+    );
+    const compactToolbarActions = cssBlocks(".selection-toolbar button,\n  .search-done,\n  .chat-action-menu button");
+    const compactIconActions = cssBlocks(".report-chat-action,\n  .message-search-bar .round-icon");
+    const rowActions = cssBlocks(".row-actions-toggle");
+
+    expect(headerActions.some((block) => block.includes("width: 44px"))).toBe(true);
+    expect(compactReportAction.some((block) => block.includes("display: none"))).toBe(true);
+    expect(compactActions.some((block) => block.includes("min-height: 44px"))).toBe(true);
+    expect(compactToolbarActions.some((block) => block.includes("min-height: 44px"))).toBe(true);
+    expect(compactIconActions.some((block) => block.includes("width: 44px"))).toBe(true);
+    expect(rowActions.some((block) => block.includes("height: 44px"))).toBe(true);
+    expect(cssBlock(".unread-badge")).toContain("background: var(--accent-dark)");
+    expect(cssBlock(".chat-swipe-leading button:last-child")).toContain("background: #007a5e");
+    expect(cssBlock(".reaction-strip button.selected,\n.sticker-tray button.selected")).toContain(
+      "background: #0968b8"
+    );
+    expect(cssBlock(".connection-dot.online")).toContain("background: #16834f");
+    expect(cssBlock(".connection-dot.syncing")).toContain("background: #b77900");
+    expect(cssBlock(".connection-dot.offline")).toContain("background: #c74343");
+    expect(styles).toContain("--faint: #687984");
+  });
+
+  it("keeps reactions and stickers touch-sized on mobile timelines", () => {
+    const reactionButtons = cssBlocks(".reaction-strip button");
+    const stickerButtons = cssBlocks(".sticker-tray button");
+
+    expect(reactionButtons.some((block) => block.includes("flex: 0 0 44px"))).toBe(true);
+    expect(reactionButtons.some((block) => block.includes("height: 44px"))).toBe(true);
+    expect(stickerButtons.some((block) => block.includes("width: 44px"))).toBe(true);
+    expect(stickerButtons.some((block) => block.includes("height: 44px"))).toBe(true);
+  });
+
+  it("prevents iOS from zooming any chat text control", () => {
+    const mobileTextControls = cssBlocks("input,\n  textarea");
+
+    expect(mobileTextControls.some((block) => block.includes("font-size: 16px"))).toBe(true);
+    expect(mobileTextControls.some((block) => block.includes("-webkit-text-size-adjust: 100%"))).toBe(true);
+  });
 });
 
 function cssBlock(selector: string): string {

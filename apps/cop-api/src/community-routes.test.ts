@@ -1638,6 +1638,14 @@ describe("community report routes", () => {
       subjectId: "000dfd66-0000-4000-8000-000000007ef1",
       username: "cop.operator1"
     });
+    await userProfileStore.upsertProfile({
+      alertPreferences: {},
+      displayName: "Jiřina Volková",
+      email: "jirina@example.test",
+      preferences: {},
+      subjectId: "000dfd66-0000-4000-8000-000000007ef2",
+      username: "jirina.volkova"
+    });
     const app = buildServer({
       mediaStorage: new FakeMediaStorage(),
       now: () => new Date("2026-05-20T12:00:00Z"),
@@ -1656,6 +1664,22 @@ describe("community report routes", () => {
           displayName: "COP Operator 1",
           subjectId: "000dfd66-0000-4000-8000-000000007ef1",
           username: "cop.operator1"
+        }
+      ]
+    });
+
+    const accentInsensitiveSearchResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/users/search?q=jirina"
+    });
+    expect(accentInsensitiveSearchResponse.statusCode).toBe(200);
+    expect(accentInsensitiveSearchResponse.json()).toMatchObject({
+      items: [
+        {
+          displayName: "Jiřina Volková",
+          subjectId: "000dfd66-0000-4000-8000-000000007ef2",
+          username: "jirina.volkova"
         }
       ]
     });

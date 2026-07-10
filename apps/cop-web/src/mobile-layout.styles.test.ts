@@ -23,6 +23,19 @@ describe("COP mobile report dialog layout", () => {
     expect(mobileBlocks.some((block) => block.includes("env(safe-area-inset-bottom, 0px)"))).toBe(true);
   });
 
+  it("prevents iOS focus zoom and min-content overflow in the selected-contact mode", () => {
+    const mobileTextControls = cssBlocks(
+      '.report-dialog input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),\n  .report-dialog textarea,\n  .report-dialog .ui-select-trigger'
+    ).find((block) => block.includes("font-size: 16px"));
+    const accessHeader = cssBlock(".report-access-header");
+    const accessPanel = cssBlock(".report-access-panel");
+
+    expect(mobileTextControls).toBeTruthy();
+    expect(accessHeader).toContain("display: flex");
+    expect(accessHeader).toContain("flex-wrap: wrap");
+    expect(accessPanel).toContain("min-width: 0");
+  });
+
   it("keeps the modal overlay and its actions above the fixed mobile navigation", () => {
     const overlayZIndex = cssNumericProperty(".ui-dialog-overlay", "z-index");
     const contentZIndex = cssNumericProperty(".ui-dialog-content", "z-index");
@@ -80,9 +93,24 @@ describe("COP standalone iPhone safe areas", () => {
 
   it("anchors the map legend to the responsive map edge instead of reserving the navigation twice", () => {
     const mobileLegend = cssBlocks(".shell.app-shell-v2 .map-legend").find((block) => block.includes("left: 12px"));
+    const collapsedLegend = cssBlock(".shell.app-shell-v2 .map-legend.collapsed");
 
     expect(mobileLegend).toContain("bottom: 12px");
+    expect(mobileLegend).toContain("right: 72px");
+    expect(collapsedLegend).toContain("right: 12px");
     expect(mobileLegend).not.toContain("--mobile-bottom-nav-height");
+  });
+
+  it("keeps fullscreen map controls outside every iPhone safe area", () => {
+    const fullscreenSearch = cssBlock(".map-container.fullscreen .map-global-search");
+    const fullscreenControls = cssBlock(".map-container.fullscreen .map-control-palette");
+    const fullscreenLegend = cssBlock(".map-container.fullscreen .map-legend");
+
+    expect(fullscreenSearch).toContain("env(safe-area-inset-top, 0px)");
+    expect(fullscreenControls).toContain("env(safe-area-inset-right, 0px)");
+    expect(fullscreenControls).toContain("env(safe-area-inset-bottom, 0px)");
+    expect(fullscreenLegend).toContain("env(safe-area-inset-bottom, 0px)");
+    expect(styles).not.toMatch(/env\(safe-area-inset-(?:top|right|bottom|left)\)/u);
   });
 });
 
@@ -141,6 +169,53 @@ describe("COP compact phone design floor", () => {
     expect(settingsTabs).toBeTruthy();
   });
 
+  it("keeps every mobile map control, legend toggle and search action at least 40px", () => {
+    const mapControls = cssBlocks(
+      ".map-control-drag,\n  .map-control-main,\n  .map-control-button.icon-only,\n  .map-control-button"
+    ).find((block) => block.includes("width: 40px"));
+    const legendToggle = cssBlocks(".shell.app-shell-v2 .map-legend-toggle").find((block) =>
+      block.includes("width: 40px")
+    );
+    const searchActions = cssBlocks(
+      ".shell.app-shell-v2 .map-global-search-drag,\n  .shell.app-shell-v2 .map-global-search-docked-mark,\n  .shell.app-shell-v2 .map-global-search-clear,\n  .shell.app-shell-v2 .map-global-search-dock,\n  .shell.app-shell-v2 .map-global-search-reset"
+    ).find((block) => block.includes("width: 40px"));
+    const palette = cssBlocks(".map-control-palette").find((block) => block.includes("max-height: calc(100% - 86px)"));
+
+    expect(mapControls).toContain("min-height: 40px");
+    expect(legendToggle).toContain("height: 40px");
+    expect(searchActions).toContain("min-height: 40px");
+    expect(palette).toContain("overflow-y: auto");
+  });
+
+  it("lets docked search expand to the phone width without losing its compact launcher", () => {
+    const expanded = cssBlocks(".shell.app-shell-v2 .map-global-search.is-docked").find((block) =>
+      block.includes("position: absolute")
+    );
+    const collapsed = cssBlock(".shell.app-shell-v2 .map-global-search.is-docked.is-collapsed");
+
+    expect(expanded).toContain("right: 12px");
+    expect(expanded).toContain("width: auto");
+    expect(collapsed).toContain("right: auto");
+    expect(collapsed).toContain("width: 52px");
+  });
+
+  it("prevents iOS focus zoom across all native text controls", () => {
+    const mobileTextControls = cssBlock(
+      'html :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea)'
+    );
+
+    expect(mobileTextControls).toContain("font-size: 16px");
+  });
+
+  it("removes full-screen backdrop blur from the mobile compositing path", () => {
+    const mobileBackdrops = cssBlock(
+      ".ui-dialog-overlay,\n  .tomato-game-backdrop,\n  .community-gallery-backdrop,\n  .settings-backdrop,\n  .mobile-pair-landing-backdrop,\n  .shell.app-shell-v2 .messaging-panel"
+    );
+
+    expect(mobileBackdrops).toContain("-webkit-backdrop-filter: none");
+    expect(mobileBackdrops).toContain("backdrop-filter: none");
+  });
+
   it("turns settings and help into bounded full-height compact surfaces", () => {
     const settingsDrawer = cssBlocks(".settings-drawer").find((block) => block.includes("max-height: 100%"));
     const settingsContent = cssBlocks(".settings-content").find((block) =>
@@ -152,6 +227,25 @@ describe("COP compact phone design floor", () => {
     expect(settingsDrawer).toContain("height: 100%");
     expect(settingsContent).toContain("overscroll-behavior: contain");
     expect(manualDialog).toContain("max-height: 100dvh");
+  });
+
+  it("gives the Radix manual a bounded surface with one scroll owner", () => {
+    const manualDialog = cssBlocks(".manual-dialog").find((block) =>
+      block.includes("grid-template-rows: auto minmax(0, 1fr)")
+    );
+    const manualContent = cssBlock(".manual-dialog .manual-layout");
+    const responsiveManualContent = cssBlocks(".manual-dialog .manual-layout").find((block) =>
+      block.includes("grid-template-columns: 1fr")
+    );
+    const compactManual = cssBlocks(".manual-dialog").find((block) => block.includes("height: 100dvh"));
+
+    expect(manualDialog).toContain("max-height: min(720px, calc(100svh - 32px))");
+    expect(manualDialog).toContain("overflow: hidden");
+    expect(manualContent).toContain("min-height: 0");
+    expect(manualContent).toContain("overflow: auto");
+    expect(responsiveManualContent).toContain("grid-template-columns: 1fr");
+    expect(compactManual).toContain("env(safe-area-inset-top, 0px)");
+    expect(compactManual).toContain("env(safe-area-inset-bottom, 0px)");
   });
 
   it("bounds authentication dialogs on short phones", () => {

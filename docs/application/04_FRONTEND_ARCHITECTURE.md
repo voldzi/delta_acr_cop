@@ -39,11 +39,15 @@ krátký portrétní viewport od 568 CSS pixelů. Na této hranici platí:
 - stránka nesmí vytvářet horizontální scroll ani ořezávat kritický stav;
 - primární akce a zavírací prvky mají nejméně 44px dotykovou plochu, pouze
   sekundární mapové úchyty mohou mít 40px při zachování okolního prostoru;
+- textové `input`, `select` a `textarea` mají na mobilu nejméně 16px písmo,
+  aby WebKit při fokusu nezvětšil viewport a nerozbil šířku dialogu;
 - dlouhý dialog má pevnou hlavičku a akce a právě jeden vnitřní scroll;
 - dvousloupcové metriky, menu a akce se na 320–360 px skládají do jednoho
   sloupce;
 - PWA safe-area se vlastní právě jednou: hostitelská spodní navigace ji nesmí
   duplikovat ve vloženém chatu;
+- celoplošné mobilní overlaye nepoužívají `backdrop-filter`; pevný průsvitný
+  povrch zachovává čitelnost bez drahé průběžné kompozice na iOS;
 - text stavu se nesmí zobrazit jako bezvýznamná useknutá zkratka; na nejmenším
   telefonu se zachová stručný stavový badge a podrobný text je dostupný v
   detailu.
@@ -105,3 +109,22 @@ Při dalších úpravách platí:
   se nezapíná skokově, aby nezaneslo velký historický churn mimo aktuální
   vlastnictví,
 - veřejný build nesmí obsahovat serverové tokeny ani interní provider URL.
+
+PWA shell instaluje novou verzi teprve po ověření kritického HTML, manifestů a
+všech odkazovaných entry assetů. Jednotlivé volitelné ikony instalaci
+nezablokují, kritické požadavky mají omezený retry a pomalé obnovení navigace
+zůstává připojené k `FetchEvent.waitUntil`. Registrace opakuje kontrolu po
+krátkém výpadku i po návratu online. Po převzetí kontroly se dokument obnoví
+jednou, ale až když v textovém poli nebo file pickeru nezůstává rozepsaný obsah.
+
+Velké situační offline snapshoty patří primárně do IndexedDB; synchronní
+`localStorage` je pouze fallback a starý záznam se po úspěšné migraci odstraní.
+Live stream ukládání slučuje nejvýše na jednu verzi za 10 sekund. Detailní
+metadata webkamer se načítají v dávce nejvýše po šesti souběžných požadavcích a
+stabilní klíč katalogu brání tomu, aby běžná výměna GeoJSON pole rozpracovanou
+dávku stále rušila. XR polling se nepřekrývá a na skryté stránce se pozastaví.
+
+Chat slučuje scroll a swipe změny přes `requestAnimationFrame`, memoizuje
+odhadované výšky dlouhé timeline a respektuje `prefers-reduced-motion` i pro
+skriptované posuny. Mobilní akční povrchy nepoužívají animovaný blur a barevné
+akce s bílým textem používají kontrastní tmavší odstín značky.

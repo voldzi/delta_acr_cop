@@ -98,7 +98,15 @@ export function readCopOfflineSnapshot(scope?: string): CopOfflineSnapshot | nul
 export async function readCopOfflineSnapshotAsync(scope?: string): Promise<CopOfflineSnapshot | null> {
   const key = scopedStorageKey(snapshotKey, scope);
   const indexedSnapshot = await readSnapshotFromIndexedDb(key);
-  return newestSnapshot(indexedSnapshot, readCopOfflineSnapshot(scope));
+  const localSnapshot = readCopOfflineSnapshot(scope);
+  const snapshot = newestSnapshot(indexedSnapshot, localSnapshot);
+  if (!localSnapshot) {
+    return snapshot;
+  }
+  if (snapshot === indexedSnapshot || (snapshot === localSnapshot && (await writeSnapshotToIndexedDb(key, snapshot)))) {
+    removeSnapshotFromLocalStorage(key);
+  }
+  return snapshot;
 }
 
 export function writeCopOfflineSnapshot(
@@ -120,9 +128,12 @@ export async function writeCopOfflineSnapshotAsync(
 ): Promise<CopOfflineSnapshot | null> {
   const snapshot = createCopOfflineSnapshot(data, savedAt);
   const key = scopedStorageKey(snapshotKey, scope);
-  const localStored = writeSnapshotToLocalStorage(key, snapshot);
   const indexedStored = await writeSnapshotToIndexedDb(key, snapshot);
-  return localStored || indexedStored ? snapshot : null;
+  if (indexedStored) {
+    removeSnapshotFromLocalStorage(key);
+    return snapshot;
+  }
+  return writeSnapshotToLocalStorage(key, snapshot) ? snapshot : null;
 }
 
 export async function requestCopPersistentStorage(): Promise<CopStoragePersistenceState> {
@@ -243,6 +254,17 @@ function writeSnapshotToLocalStorage(key: string, snapshot: CopOfflineSnapshot):
   }
 }
 
+function removeSnapshotFromLocalStorage(key: string): void {
+  if (typeof window === "undefined" || typeof window.localStorage?.removeItem !== "function") {
+    return;
+  }
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Storage cleanup is best-effort; the IndexedDB snapshot remains authoritative.
+  }
+}
+
 async function readSnapshotFromIndexedDb(key: string): Promise<CopOfflineSnapshot | null> {
   const db = await openOfflineDatabase();
   if (!db) {
@@ -297,7 +319,12 @@ function openOfflineDatabase(): Promise<IDBDatabase | null> {
     request.onerror = () => resolve(null);
     request.onblocked = () => resolve(null);
   });
-  return offlineDatabasePromise;
+  return offlineDatabasePromise.then((database) => {
+    if (!database) {
+      offlineDatabasePromise = null;
+    }
+    return database;
+  });
 }
 
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {

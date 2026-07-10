@@ -7,11 +7,25 @@ interface ServiceWorkerContext {
   appShellCacheKeyForRequest: (request: Request) => string;
   extractManifestAssetUrls: (manifest: unknown, basePath?: string) => string[];
   extractSameOriginAssetUrls: (html: string, basePath?: string) => string[];
+  fetchAndCacheWithRetry: (
+    cache: MockServiceWorkerCache,
+    url: string,
+    options?: { attempts?: number; retryBaseMs?: number }
+  ) => Promise<Response>;
   isAppAssetRequest: (request: Request, url: URL) => boolean;
   isChatRequestPath: (pathname: string) => boolean;
   isImmutableRuntimeAssetRequest: (request: Request, url: URL) => boolean;
-  networkFirstAppShell: (request: Request) => Promise<Response>;
+  networkFirstAppShell: (
+    request: Request,
+    event?: { waitUntil: (promise: Promise<unknown>) => void }
+  ) => Promise<Response>;
+  refreshAppShellCache: (options?: {
+    includeOptional?: boolean;
+    retryBaseMs?: number;
+    strict?: boolean;
+  }) => Promise<number>;
   releaseCacheKeysToDelete: (keys: string[]) => string[];
+  warmAppShellAssets: (options?: { refreshShell?: boolean; strict?: boolean }) => Promise<string[]>;
   notificationActionsForPayload: (
     payload: Record<string, unknown>,
     url?: string
@@ -183,6 +197,8 @@ describe("COP PWA service worker routing", () => {
   it("keeps the current and immediately previous PWA release caches", () => {
     const serviceWorker = loadServiceWorkerContext();
     const keys = [
+      "cop-pwa-offline-20260710-18:shell",
+      "cop-pwa-offline-20260710-18:runtime",
       "cop-pwa-offline-20260710-17:shell",
       "cop-pwa-offline-20260710-17:runtime",
       "cop-pwa-offline-20260710-15:shell",
@@ -224,6 +240,8 @@ describe("COP PWA service worker routing", () => {
     ];
 
     expect(serviceWorker.releaseCacheKeysToDelete(keys)).toEqual([
+      "cop-pwa-offline-20260710-15:shell",
+      "cop-pwa-offline-20260710-15:runtime",
       "cop-pwa-offline-20260710-14:shell",
       "cop-pwa-offline-20260710-14:runtime",
       "cop-pwa-offline-20260710-13:shell",
@@ -283,6 +301,110 @@ describe("COP PWA service worker routing", () => {
     const response = await serviceWorker.networkFirstAppShell(new Request("https://cop.example.test/chat/"));
 
     await expect(response.text()).resolves.toBe("offline chat shell");
+  });
+
+  it("retries a transient critical shell request before caching it", async () => {
+    const shellCache = createMockCache();
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("temporary network failure"))
+      .mockResolvedValueOnce(new Response("fresh chat shell", { status: 200 }));
+    const serviceWorker = loadServiceWorkerContext({ fetch, shellCache });
+
+    await expect(
+      serviceWorker.fetchAndCacheWithRetry(shellCache, "/chat/", { attempts: 3, retryBaseMs: 0 })
+    ).resolves.toBeInstanceOf(Response);
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await expect(shellCache.entries.get("/chat/")?.text()).resolves.toBe("fresh chat shell");
+  });
+
+  it("does not abort a strict shell refresh when an optional icon is unavailable", async () => {
+    const shellCache = createMockCache();
+    const fetch = vi.fn(async (request: Request) => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname === "/icons/favicon-32.png") {
+        return new Response("missing", { status: 503 });
+      }
+      return new Response(pathname, { status: 200 });
+    });
+    const serviceWorker = loadServiceWorkerContext({ fetch, shellCache });
+
+    await expect(serviceWorker.refreshAppShellCache({ retryBaseMs: 0, strict: true })).resolves.toBe(4);
+
+    expect(shellCache.entries.has("/index.html")).toBe(true);
+    expect(shellCache.entries.has("/chat/")).toBe(true);
+    expect(shellCache.entries.has("/icons/favicon-32.png")).toBe(false);
+  });
+
+  it("refreshes stale chat HTML and its manifest before warming entry assets", async () => {
+    const shellCache = createMockCache({
+      "/chat/": new Response('<link rel="stylesheet" href="/chat/assets/old.css">', { status: 200 }),
+      "/chat/asset-manifest.json": new Response(
+        JSON.stringify({ "index.html": { file: "assets/old.js", isEntry: true } }),
+        { status: 200 }
+      )
+    });
+    const fetch = vi.fn(async (request: Request) => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname === "/chat/") {
+        return new Response('<link rel="stylesheet" href="/chat/assets/new.css">', { status: 200 });
+      }
+      if (pathname === "/chat/asset-manifest.json") {
+        return new Response(JSON.stringify({ "index.html": { file: "assets/new.js", isEntry: true } }), {
+          status: 200
+        });
+      }
+      if (pathname === "/index.html") {
+        return new Response('<script type="module" src="/assets/web.js"></script>', { status: 200 });
+      }
+      if (pathname === "/asset-manifest.json") {
+        return new Response(JSON.stringify({ "index.html": { file: "assets/web.js", isEntry: true } }), {
+          status: 200
+        });
+      }
+      return new Response(pathname, { status: 200 });
+    });
+    const serviceWorker = loadServiceWorkerContext({ fetch, shellCache });
+
+    const warmed = await serviceWorker.warmAppShellAssets();
+
+    expect(warmed).toContain("/chat/assets/new.css");
+    expect(warmed).toContain("/chat/assets/new.js");
+    expect(warmed).not.toContain("/chat/assets/old.css");
+    expect(warmed).not.toContain("/chat/assets/old.js");
+    await expect(shellCache.entries.get("/chat/")?.text()).resolves.toContain("new.css");
+  });
+
+  it("keeps a slow shell refresh alive after returning the cached navigation", async () => {
+    vi.useFakeTimers();
+    try {
+      const shellCache = createMockCache({ "/chat/": new Response("cached chat shell", { status: 200 }) });
+      let resolveFetch: ((response: Response) => void) | undefined;
+      const fetch = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveFetch = resolve;
+          })
+      );
+      const serviceWorker = loadServiceWorkerContext({ fetch, shellCache });
+      const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
+
+      const responsePromise = serviceWorker.networkFirstAppShell(new Request("https://cop.example.test/chat/"), {
+        waitUntil
+      });
+      await vi.advanceTimersByTimeAsync(2_500);
+      const response = await responsePromise;
+
+      await expect(response.text()).resolves.toBe("cached chat shell");
+      expect(waitUntil).toHaveBeenCalledTimes(1);
+
+      resolveFetch?.(new Response("fresh chat shell", { status: 200 }));
+      await waitUntil.mock.calls[0]?.[0];
+      await expect(shellCache.entries.get("/chat/")?.text()).resolves.toBe("fresh chat shell");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -72,16 +72,16 @@ export class InMemoryUserProfileStore implements UserProfileStore {
   }
 
   async searchProfiles(query: string, limit = 10): Promise<UserProfileRecord[]> {
-    const normalized = query.trim().toLowerCase();
+    const normalized = normalizeProfileSearchText(query);
     if (normalized.length < 2) {
       return [];
     }
     return Array.from(this.profiles.values())
       .filter((profile) =>
-        profile.subjectId.toLowerCase() === normalized ||
-        profile.username.toLowerCase().includes(normalized) ||
-        profile.displayName.toLowerCase().includes(normalized) ||
-        profile.email?.toLowerCase().includes(normalized) === true
+        normalizeProfileSearchText(profile.subjectId) === normalized ||
+        normalizeProfileSearchText(profile.username).includes(normalized) ||
+        normalizeProfileSearchText(profile.displayName).includes(normalized) ||
+        (profile.email ? normalizeProfileSearchText(profile.email).includes(normalized) : false)
       )
       .sort((left, right) => profileSearchRank(left, normalized) - profileSearchRank(right, normalized))
       .slice(0, boundedProfileSearchLimit(limit));
@@ -140,7 +140,7 @@ export class PostgresUserProfileStore implements UserProfileStore {
   }
 
   async searchProfiles(query: string, limit = 10): Promise<UserProfileRecord[]> {
-    const normalized = query.trim().toLowerCase();
+    const normalized = normalizeProfileSearchText(query);
     if (normalized.length < 2) {
       return [];
     }
@@ -148,21 +148,21 @@ export class PostgresUserProfileStore implements UserProfileStore {
     const result = await this.pool.query<UserProfileRow>(
       `SELECT subject_id, username, display_name, email, preferences, alert_preferences, created_at, updated_at
       FROM cop_user_profiles
-      WHERE lower(subject_id) = $1
-        OR lower(username) LIKE $2 ESCAPE '\\'
-        OR lower(display_name) LIKE $2 ESCAPE '\\'
-        OR lower(coalesce(email, '')) LIKE $2 ESCAPE '\\'
+      WHERE translate(lower(subject_id), $4, $5) = $1
+        OR translate(lower(username), $4, $5) LIKE $2 ESCAPE '\\'
+        OR translate(lower(display_name), $4, $5) LIKE $2 ESCAPE '\\'
+        OR translate(lower(coalesce(email, '')), $4, $5) LIKE $2 ESCAPE '\\'
       ORDER BY
         CASE
-          WHEN lower(subject_id) = $1 THEN 0
-          WHEN lower(username) = $1 THEN 1
-          WHEN lower(coalesce(email, '')) = $1 THEN 2
-          WHEN lower(display_name) = $1 THEN 3
+          WHEN translate(lower(subject_id), $4, $5) = $1 THEN 0
+          WHEN translate(lower(username), $4, $5) = $1 THEN 1
+          WHEN translate(lower(coalesce(email, '')), $4, $5) = $1 THEN 2
+          WHEN translate(lower(display_name), $4, $5) = $1 THEN 3
           ELSE 4
         END,
         updated_at DESC
       LIMIT $3`,
-      [normalized, like, boundedProfileSearchLimit(limit)]
+      [normalized, like, boundedProfileSearchLimit(limit), czechSearchDiacritics, czechSearchAscii]
     );
     return result.rows.map(profileFromRow);
   }
@@ -429,17 +429,28 @@ function escapePostgresLike(value: string): string {
   return value.replace(/[\\%_]/gu, (match) => `\\${match}`);
 }
 
+const czechSearchDiacritics = "áčďéěíňóřšťúůýž";
+const czechSearchAscii = "acdeeinorstuuyz";
+
+function normalizeProfileSearchText(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase("cs")
+    .trim();
+}
+
 function profileSearchRank(profile: UserProfileRecord, normalizedQuery: string): number {
-  if (profile.subjectId.toLowerCase() === normalizedQuery) {
+  if (normalizeProfileSearchText(profile.subjectId) === normalizedQuery) {
     return 0;
   }
-  if (profile.username.toLowerCase() === normalizedQuery) {
+  if (normalizeProfileSearchText(profile.username) === normalizedQuery) {
     return 1;
   }
-  if (profile.email?.toLowerCase() === normalizedQuery) {
+  if (profile.email && normalizeProfileSearchText(profile.email) === normalizedQuery) {
     return 2;
   }
-  if (profile.displayName.toLowerCase() === normalizedQuery) {
+  if (normalizeProfileSearchText(profile.displayName) === normalizedQuery) {
     return 3;
   }
   return 4;

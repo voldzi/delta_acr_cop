@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260710-17";
+const COP_SW_VERSION = "cop-pwa-offline-20260710-18";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -18,6 +18,7 @@ const APP_SHELL_URLS = [
   "/icons/cop-icon-512.png",
   "/icons/cop-icon-maskable-512.png"
 ];
+const CRITICAL_APP_SHELL_URLS = ["/index.html", "/chat/", "/asset-manifest.json", "/chat/asset-manifest.json"];
 const API_PATH_PREFIXES = ["/api/", "/health", "/metrics"];
 const APP_SHELL_ASSET_ATTRIBUTE_PATTERN = /\b(?:href|src)=["']([^"']+)["']/giu;
 const APP_SHELL_MANIFESTS = [
@@ -30,17 +31,13 @@ const MAX_TILE_ENTRIES = 1200;
 const MAX_ROUTE_TILE_ENTRIES = 900;
 const MAX_ROUTE_TILE_WARMUP_URLS = 650;
 const APP_SHELL_NETWORK_TIMEOUT_MS = 2500;
+const APP_SHELL_FETCH_ATTEMPTS = 3;
+const APP_SHELL_FETCH_RETRY_BASE_MS = 250;
 const RECENT_NOTIFICATION_TAG_TTL_MS = 120_000;
 const recentNotificationTags = new Map();
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches
-      .open(APP_SHELL_CACHE)
-      .then((cache) => cache.addAll(APP_SHELL_URLS))
-      .then(() => warmAppShellAssets({ strict: true }))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil(prepareAppShellRelease().then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {
@@ -64,7 +61,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    event.respondWith(networkFirstAppShell(request));
+    event.respondWith(networkFirstAppShell(request, event));
     return;
   }
 
@@ -208,7 +205,7 @@ self.addEventListener("message", (event) => {
   }
 });
 
-async function networkFirstAppShell(request) {
+async function networkFirstAppShell(request, event) {
   const cache = await caches.open(APP_SHELL_CACHE);
   const cacheKey = appShellCacheKeyForRequest(request);
   const cached = await cache.match(cacheKey);
@@ -222,6 +219,10 @@ async function networkFirstAppShell(request) {
     .catch(() => undefined);
 
   if (cached) {
+    // Returning the cached shell resolves respondWith after the timeout. Keep the
+    // network refresh attached to the fetch event so WebKit cannot terminate the
+    // worker before a slow response replaces the stale shell for the next launch.
+    event?.waitUntil?.(refresh.then(() => undefined));
     return (await Promise.race([refresh, delay(APP_SHELL_NETWORK_TIMEOUT_MS)])) || cached;
   }
 
@@ -298,14 +299,79 @@ async function routeCacheFirst(request) {
   return cacheFirst(request, TILE_CACHE, MAX_TILE_ENTRIES);
 }
 
+async function prepareAppShellRelease() {
+  await refreshAppShellCache({ strict: true });
+  await warmAppShellAssets({ refreshShell: false, strict: true });
+}
+
+async function refreshAppShellCache(options = {}) {
+  const strict = options.strict === true;
+  const shellCache = await caches.open(APP_SHELL_CACHE);
+  const criticalResults = await Promise.allSettled(
+    CRITICAL_APP_SHELL_URLS.map((url) =>
+      fetchAndCacheWithRetry(shellCache, url, {
+        retryBaseMs: options.retryBaseMs
+      })
+    )
+  );
+  const criticalFailure = criticalResults.find((result) => result.status === "rejected");
+  if (strict && criticalFailure?.status === "rejected") {
+    throw criticalFailure.reason;
+  }
+
+  if (options.includeOptional !== false) {
+    const optionalUrls = APP_SHELL_URLS.filter((url) => !CRITICAL_APP_SHELL_URLS.includes(url));
+    await Promise.allSettled(
+      optionalUrls.map((url) =>
+        fetchAndCacheWithRetry(shellCache, url, {
+          attempts: strict ? 2 : 1,
+          retryBaseMs: options.retryBaseMs
+        })
+      )
+    );
+  }
+  return criticalResults.filter((result) => result.status === "fulfilled").length;
+}
+
+async function fetchAndCacheWithRetry(cache, url, options = {}) {
+  const attempts = Math.max(1, Math.trunc(options.attempts ?? APP_SHELL_FETCH_ATTEMPTS));
+  const retryBaseMs = Math.max(0, Math.trunc(options.retryBaseMs ?? APP_SHELL_FETCH_RETRY_BASE_MS));
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const request = new Request(new URL(url, self.location.origin).href, { cache: "no-cache" });
+      const response = await fetch(request);
+      if (!response?.ok) {
+        throw new Error(`PWA shell request failed (${response?.status ?? "network"}): ${url}`);
+      }
+      await cache.put(url, response.clone());
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt + 1 < attempts && retryBaseMs > 0) {
+        await delay(retryBaseMs * 2 ** attempt);
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`PWA shell request failed: ${url}`);
+}
+
 async function warmAppShellAssets(options = {}) {
+  if (options.refreshShell !== false) {
+    await refreshAppShellCache({
+      includeOptional: options.strict === true,
+      strict: options.strict === true
+    });
+  }
   const shellCache = await caches.open(APP_SHELL_CACHE);
   const runtimeCache = await caches.open(RUNTIME_CACHE);
   const assetUrls = await collectAppShellAssetUrls(shellCache);
   if (options.strict) {
-    await runtimeCache.addAll(assetUrls);
+    await Promise.all(assetUrls.map((url) => fetchAndCacheWithRetry(runtimeCache, url)));
   } else {
-    await Promise.all(assetUrls.map((url) => runtimeCache.add(url).catch(() => undefined)));
+    await Promise.all(
+      assetUrls.map((url) => fetchAndCacheWithRetry(runtimeCache, url, { attempts: 1 }).catch(() => undefined))
+    );
   }
   await trimCache(runtimeCache, MAX_RUNTIME_ENTRIES);
   return assetUrls;

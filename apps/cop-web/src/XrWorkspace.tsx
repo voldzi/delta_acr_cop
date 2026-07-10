@@ -78,6 +78,7 @@ type XrSupportState = "checking" | "supported" | "unsupported";
 export default function XrWorkspace() {
   const mountRef = React.useRef<HTMLDivElement | null>(null);
   const sceneRef = React.useRef<XrSceneHandles | null>(null);
+  const dashboardLoadInFlightRef = React.useRef(false);
   const [dashboardData, setDashboardData] = React.useState<CopDashboardData | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -115,6 +116,10 @@ export default function XrWorkspace() {
   const summary = React.useMemo(() => summarizeXrObjects(objectModels, sources), [objectModels, sources]);
 
   const loadDashboardData = React.useCallback(async () => {
+    if (dashboardLoadInFlightRef.current) {
+      return;
+    }
+    dashboardLoadInFlightRef.current = true;
     setLoading(true);
     try {
       const data = await fetchCopDashboardData(apiBase, labToken || undefined, {
@@ -127,14 +132,24 @@ export default function XrWorkspace() {
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Nepodařilo se načíst COP data pro XR režim.");
     } finally {
+      dashboardLoadInFlightRef.current = false;
       setLoading(false);
     }
   }, []);
 
   React.useEffect(() => {
-    void loadDashboardData();
-    const timer = window.setInterval(() => void loadDashboardData(), 8000);
-    return () => window.clearInterval(timer);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== "hidden") {
+        void loadDashboardData();
+      }
+    };
+    refreshWhenVisible();
+    const timer = window.setInterval(refreshWhenVisible, 8000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [loadDashboardData]);
 
   React.useEffect(() => {

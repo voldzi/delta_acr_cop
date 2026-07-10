@@ -27,6 +27,7 @@ describe("Avatar", () => {
     const avatar = container.querySelector(".avatar.ai.image");
     const image = avatar?.querySelector("img");
     expect(image?.getAttribute("src")).toContain("data:image/svg+xml");
+    expect(image?.getAttribute("decoding")).toBe("async");
     expect(container.textContent).not.toContain("AI");
   });
 

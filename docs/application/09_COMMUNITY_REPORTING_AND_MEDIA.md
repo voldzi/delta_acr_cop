@@ -103,7 +103,7 @@ Podporované přílohy v první verzi:
 - video: `video/mp4`, `video/quicktime`,
 - dokument: `application/pdf`.
 
-Mobilní formulář používá jeden zřetelný picker pro fotoaparát, knihovnu fotografií a aplikaci Soubory, zobrazuje vybrané položky ještě před uložením a umožňuje je jednotlivě odebrat. Režim přístupu `users` používá vyhledávání v COP adresáři; uživatel vybírá podle jména a klient do ACL ukládá kanonické `subjectId`, nikoli ručně opisovaný technický identifikátor.
+Mobilní formulář používá jeden zřetelný picker pro fotoaparát, knihovnu fotografií a aplikaci Soubory, zobrazuje vybrané položky ještě před uložením a umožňuje je jednotlivě odebrat. Režim přístupu `users` spojuje vyhledávání v COP adresáři s kontakty z konverzací dostupných právě přihlášenému uživateli. Díky tomu lze zvolit i existující chatový kontakt, jehož profil ještě není v lokálním výsledku adresáře. Do ACL klient vždy ukládá kanonické `subjectId`/messaging `userId` podle integračního kontraktu, nikoli ručně opisovaný technický identifikátor; samotný Matrix identifikátor ve tvaru `@user:server` se do ACL nenabízí. Adresář vrací až 25 shod a česká jména vyhledává bez ohledu na diakritiku, například `Jiri` najde `Jiří`.
 
 Video přílohy mohou nést metadata `metadata.spatialVideo`:
 
@@ -330,6 +330,9 @@ Webové tlačítko `Nahlásit` otevře formulář pro kategorii, popis, uživate
 Na úzkém mobilním viewportu se obsah formuláře posouvá samostatně mezi pevnou
 hlavičkou a pevnou spodní lištou akcí. `Zrušit` a `Uložit hlášení` tak zůstávají
 dosažitelné bez ohledu na délku formuláře, klávesnici a spodní iOS safe area.
+Textové ovladače formuláře mají na iOS nejméně 16px písmo, takže fokus
+vyhledávání kontaktu nezpůsobí automatické přiblížení a horizontální oříznutí
+dialogu. Každý vnitřní grid zároveň dovoluje smrštění na 320px viewport.
 Po úspěšném odeslání klient explicitně obnoví komunitní mapovou vrstvu a zapne
 její katalogové vrstvy, takže nové hlášení není závislé na následném posunu mapy
 nebo ručním přepnutí vrstvy. Mapa se současně zaměří na polohu uloženého

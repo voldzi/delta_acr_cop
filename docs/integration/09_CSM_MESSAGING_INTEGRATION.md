@@ -620,6 +620,13 @@ The phase-0 implementation focus is trust and control:
   the conversation title. Contact metrics, AI evidence and dialog action rows
   collapse to one column rather than creating clipped or horizontally scrolling
   content.
+- Mobile chat scrolling and swipe feedback are frame-coalesced. Long timelines
+  reuse their measured row offsets instead of rebuilding them for every scroll
+  event, and swipe rows disable transform easing while the finger is moving.
+  Mobile action surfaces avoid full-screen backdrop blur, filled controls use
+  the darker accessible brand tone, and every text input computes to at least
+  16 px so focusing it cannot trigger iOS viewport zoom. Scripted scrolling also
+  follows `prefers-reduced-motion`.
 - Adding members belongs in the group member surface and must respect COP group
   management permissions. COP group membership remains the source of truth for
   COP media/report ACL; Matrix membership is only the messaging projection.

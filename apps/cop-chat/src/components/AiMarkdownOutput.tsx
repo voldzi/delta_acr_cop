@@ -32,7 +32,7 @@ export function AiMarkdownOutput({ media = [], query = "", text, variant = "bubb
         <div className="ai-output-media-grid">
           {media.map((item, index) => (
             <figure className="ai-output-media-card" key={`${item.src}-${index}`}>
-              <img alt={item.alt ?? item.title ?? "AI náhled"} src={item.src} />
+              <img alt={item.alt ?? item.title ?? "AI náhled"} decoding="async" loading="lazy" src={item.src} />
               {item.title ? <figcaption>{item.title}</figcaption> : null}
             </figure>
           ))}

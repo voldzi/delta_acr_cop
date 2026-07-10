@@ -33,6 +33,7 @@ beforeEach(() => {
 
 afterEach(() => {
   window.localStorage.clear();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -59,6 +60,22 @@ describe("PWA offline snapshot", () => {
 
     expect(snapshot?.objectCount).toBe(1);
     expect((await readCopOfflineSnapshotAsync("operator-one"))?.data.objects[0]?.objectId).toBe("AIR_SIM_UAV-0001");
+  });
+
+  it("keeps the normal async path in IndexedDB without serializing the snapshot into localStorage", async () => {
+    const indexedRecords = new Map<string, unknown>();
+    vi.stubGlobal("indexedDB", createIndexedDbStub(indexedRecords));
+
+    const snapshot = await writeCopOfflineSnapshotAsync(
+      sampleDashboardData(),
+      "indexed-operator",
+      "2026-05-19T08:05:00.000Z"
+    );
+
+    expect(snapshot?.objectCount).toBe(1);
+    expect(localStorageData.has("cop.offline.snapshot.v1.indexed-operator")).toBe(false);
+    expect(indexedRecords.has("cop.offline.snapshot.v1.indexed-operator")).toBe(true);
+    expect((await readCopOfflineSnapshotAsync("indexed-operator"))?.savedAt).toBe("2026-05-19T08:05:00.000Z");
   });
 
   it("returns null for invalid cached payloads", () => {
@@ -153,4 +170,61 @@ function sampleDashboardData(): CopDashboardData {
       ]
     }
   };
+}
+
+function createIndexedDbStub(records: Map<string, unknown>): IDBFactory {
+  let storeCreated = false;
+  const database = {
+    createObjectStore: () => {
+      storeCreated = true;
+      return {};
+    },
+    objectStoreNames: {
+      contains: () => storeCreated
+    },
+    transaction: () => {
+      const transaction = {
+        onabort: null as (() => void) | null,
+        oncomplete: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+        objectStore: () => ({
+          get: (key: string) => {
+            const request = {
+              error: null,
+              onerror: null as (() => void) | null,
+              onsuccess: null as (() => void) | null,
+              result: undefined as unknown
+            };
+            queueMicrotask(() => {
+              request.result = records.get(key);
+              request.onsuccess?.();
+            });
+            return request;
+          },
+          put: (value: { key: string }) => {
+            records.set(value.key, value);
+            queueMicrotask(() => transaction.oncomplete?.());
+          }
+        })
+      };
+      return transaction;
+    }
+  };
+  return {
+    open: () => {
+      const request = {
+        error: null,
+        onblocked: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+        onsuccess: null as (() => void) | null,
+        onupgradeneeded: null as (() => void) | null,
+        result: database
+      };
+      queueMicrotask(() => {
+        request.onupgradeneeded?.();
+        request.onsuccess?.();
+      });
+      return request;
+    }
+  } as unknown as IDBFactory;
 }

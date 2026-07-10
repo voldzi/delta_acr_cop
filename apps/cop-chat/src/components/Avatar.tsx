@@ -80,6 +80,7 @@ export function Avatar({
       {imageSrc ? (
         <img
           alt=""
+          decoding="async"
           src={imageSrc}
           onError={() => setFailedSrc(primaryImageSrc ? (src ?? primaryImageSrc) : imageSrc)}
         />

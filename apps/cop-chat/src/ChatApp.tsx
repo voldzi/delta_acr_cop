@@ -159,7 +159,7 @@ import {
 import { deriveChatWorkflowState } from "./hooks/chatWorkflowState";
 import { useMatrixSession } from "./hooks/useMatrixSession";
 import { useEventCallback, useModalFocus } from "./hooks/useModalFocus";
-import { useVirtualTimelineRows, type TimelineRow } from "./hooks/useVirtualTimelineRows";
+import { preferredChatScrollBehavior, useVirtualTimelineRows, type TimelineRow } from "./hooks/useVirtualTimelineRows";
 import {
   buildTimelineRows,
   filterTimelineByRetention,
@@ -647,6 +647,8 @@ export function ChatApp() {
   const messageMenuRef = React.useRef<HTMLDivElement | null>(null);
   const messageCanvasRef = React.useRef<HTMLDivElement | null>(null);
   const timelineEndRef = React.useRef<HTMLDivElement | null>(null);
+  const showJumpToLatestRef = React.useRef(false);
+  const jumpVisibilityFrameRef = React.useRef<number | null>(null);
   const matrixAttemptKeyRef = React.useRef<string | null>(null);
   const matrixResumeInFlightRef = React.useRef(false);
   const matrixWebPushPusherDeviceIdRef = React.useRef<string | undefined>(undefined);
@@ -672,6 +674,35 @@ export function ChatApp() {
   const memberAddPendingIdsRef = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => installChatHapticFeedback(), []);
+
+  const updateJumpToLatestVisibility = useEventCallback((node: HTMLElement) => {
+    const nextVisible = node.scrollHeight - node.scrollTop - node.clientHeight > 180;
+    if (nextVisible === showJumpToLatestRef.current) {
+      return;
+    }
+    showJumpToLatestRef.current = nextVisible;
+    const commitVisibility = () => {
+      jumpVisibilityFrameRef.current = null;
+      setShowJumpToLatest(showJumpToLatestRef.current);
+    };
+    if (typeof window.requestAnimationFrame !== "function") {
+      commitVisibility();
+      return;
+    }
+    if (jumpVisibilityFrameRef.current === null) {
+      jumpVisibilityFrameRef.current = window.requestAnimationFrame(commitVisibility);
+    }
+  });
+
+  React.useEffect(
+    () => () => {
+      if (jumpVisibilityFrameRef.current !== null && typeof window.cancelAnimationFrame === "function") {
+        window.cancelAnimationFrame(jumpVisibilityFrameRef.current);
+      }
+      jumpVisibilityFrameRef.current = null;
+    },
+    []
+  );
 
   const authToken = getAuthorizationToken(authSession, labToken);
   const authenticated = Boolean(authToken) || isAuthSessionRetainedForOffline(authSession);
@@ -1218,6 +1249,12 @@ export function ChatApp() {
     setMessageSearchOpen(false);
     setMessageSearchQuery("");
     setActiveSearchIndex(0);
+    showJumpToLatestRef.current = false;
+    if (jumpVisibilityFrameRef.current !== null && typeof window.cancelAnimationFrame === "function") {
+      window.cancelAnimationFrame(jumpVisibilityFrameRef.current);
+      jumpVisibilityFrameRef.current = null;
+    }
+    setShowJumpToLatest(false);
     setMessageActionPopover(null);
     setReplyDraft(null);
   }, [selectedConversationId, selectedGroupId, selectedRoomId]);
@@ -1233,7 +1270,7 @@ export function ChatApp() {
     const selector = `[data-message-id="${cssEscape(activeSearchMessageId)}"]`;
     const existingNode = document.querySelector<HTMLElement>(selector);
     if (existingNode) {
-      existingNode.scrollIntoView({ block: "center", behavior: "smooth" });
+      existingNode.scrollIntoView({ block: "center", behavior: preferredChatScrollBehavior() });
       return;
     }
     const rowIndex = timelineRows.findIndex(
@@ -4579,12 +4616,7 @@ export function ChatApp() {
                 <div
                   ref={messageCanvasRef}
                   className={clsx("message-canvas", messageActionPopover && "action-focus-active")}
-                  onScroll={(event) => {
-                    const node = event.currentTarget;
-                    // Keep the virtual timeline window synchronized with the real scroll position.
-                    // State updates are cheap here because only the visible row slice changes.
-                    setShowJumpToLatest(node.scrollHeight - node.scrollTop - node.clientHeight > 180);
-                  }}
+                  onScroll={(event) => updateJumpToLatestVisibility(event.currentTarget)}
                 >
                   <HistoryLoader
                     exhausted={historyExhausted}
@@ -4671,7 +4703,12 @@ export function ChatApp() {
                     onAttachmentPick={pickAttachment}
                     onReplyClear={() => setReplyDraft(null)}
                     onSend={sendMessage}
-                    onJumpToLatest={() => timelineEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" })}
+                    onJumpToLatest={() =>
+                      timelineEndRef.current?.scrollIntoView({
+                        block: "end",
+                        behavior: preferredChatScrollBehavior()
+                      })
+                    }
                     onUseAiLocation={() =>
                       void requestStandaloneAiLocation({ reportNotice: true }).catch(() => undefined)
                     }
@@ -4934,24 +4971,19 @@ export function ChatApp() {
 }
 
 function TomatoGameDialog({ onClose }: { onClose: () => void }) {
-  React.useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
+  const modal = useModalFocus<HTMLElement>(onClose);
 
   return (
     <div className="dialog-backdrop" role="presentation" onClick={onClose}>
       <section
+        ref={modal.dialogRef}
         aria-label="Rajčatová sklizeň"
         aria-modal="true"
         className="tomato-game-dialog"
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={modal.onDialogKeyDown}
         role="dialog"
+        tabIndex={-1}
       >
         <header>
           <span>
@@ -5071,6 +5103,8 @@ export function ChatRow({
 }) {
   const [openActions, setOpenActions] = React.useState<"leading" | "trailing" | null>(null);
   const [dragOffset, setDragOffset] = React.useState(0);
+  const dragOffsetRef = React.useRef(0);
+  const dragFrameRef = React.useRef<number | null>(null);
   const pointerStartRef = React.useRef<{ x: number; y: number } | null>(null);
   const swipedRef = React.useRef(false);
   const leadingPinActionRef = React.useRef<HTMLButtonElement>(null);
@@ -5092,9 +5126,43 @@ export function ChatRow({
     }
   }, [openActions]);
 
+  React.useEffect(
+    () => () => {
+      if (dragFrameRef.current !== null && typeof window.cancelAnimationFrame === "function") {
+        window.cancelAnimationFrame(dragFrameRef.current);
+      }
+      dragFrameRef.current = null;
+    },
+    []
+  );
+
+  function scheduleDragOffset(nextOffset: number) {
+    dragOffsetRef.current = nextOffset;
+    if (dragFrameRef.current !== null) {
+      return;
+    }
+    if (typeof window.requestAnimationFrame !== "function") {
+      setDragOffset(nextOffset);
+      return;
+    }
+    dragFrameRef.current = window.requestAnimationFrame(() => {
+      dragFrameRef.current = null;
+      setDragOffset(dragOffsetRef.current);
+    });
+  }
+
+  function resetDragOffset() {
+    if (dragFrameRef.current !== null && typeof window.cancelAnimationFrame === "function") {
+      window.cancelAnimationFrame(dragFrameRef.current);
+    }
+    dragFrameRef.current = null;
+    dragOffsetRef.current = 0;
+    setDragOffset(0);
+  }
+
   function closeSwipeActions() {
     setOpenActions(null);
-    setDragOffset(0);
+    resetDragOffset();
   }
 
   function handleOpen(event: React.MouseEvent<HTMLButtonElement>) {
@@ -5129,7 +5197,7 @@ export function ChatRow({
     swipedRef.current = true;
     const baseOffset = openActions === "leading" ? 136 : openActions === "trailing" ? -136 : 0;
     const nextOffset = Math.max(-148, Math.min(148, baseOffset + dx));
-    setDragOffset(nextOffset);
+    scheduleDragOffset(nextOffset);
     event.preventDefault();
   }
 
@@ -5140,10 +5208,10 @@ export function ChatRow({
     const start = pointerStartRef.current;
     pointerStartRef.current = null;
     if (!start) {
-      setDragOffset(0);
+      resetDragOffset();
       return;
     }
-    const totalOffset = dragOffset || event.clientX - start.x;
+    const totalOffset = dragOffsetRef.current || event.clientX - start.x;
     if (totalOffset > 56) {
       setOpenActions("leading");
     } else if (totalOffset < -56) {
@@ -5151,7 +5219,7 @@ export function ChatRow({
     } else {
       setOpenActions(null);
     }
-    setDragOffset(0);
+    resetDragOffset();
     window.setTimeout(() => {
       swipedRef.current = false;
     }, 250);
@@ -5165,7 +5233,7 @@ export function ChatRow({
 
   function openLeadingActionsFromButton() {
     focusLeadingActionRef.current = true;
-    setDragOffset(0);
+    resetDragOffset();
     setOpenActions("leading");
   }
 
@@ -5185,6 +5253,7 @@ export function ChatRow({
         "chat-row-shell",
         item.active && "active",
         item.unreadCount > 0 && "unread",
+        dragOffset !== 0 && "swiping",
         openActions && "swipe-open"
       )}
       role="listitem"
@@ -6494,12 +6563,12 @@ function AttachmentMessage({
           aria-label={`Otevřít ${attachment.fileName}`}
         >
           {message.kind === "image" && (objectUrl || thumbnailUrl) ? (
-            <img alt="" src={objectUrl ?? thumbnailUrl ?? ""} />
+            <img alt="" decoding="async" loading="lazy" src={objectUrl ?? thumbnailUrl ?? ""} />
           ) : null}
           {message.kind === "video" && objectUrl ? <video muted playsInline src={objectUrl} /> : null}
           {message.kind === "video" && !objectUrl && thumbnailUrl ? (
             <span className="attachment-video-poster">
-              <img alt="" src={thumbnailUrl} />
+              <img alt="" decoding="async" loading="lazy" src={thumbnailUrl} />
               <span>
                 <Video size={18} /> Video
               </span>
@@ -7166,7 +7235,7 @@ function ChatInfoPanel({
                         type="button"
                       >
                         {gridImageUrl && (message.kind === "image" || message.kind === "video") ? (
-                          <img alt="" src={gridImageUrl} />
+                          <img alt="" decoding="async" loading="lazy" src={gridImageUrl} />
                         ) : message.kind === "location" ? (
                           <MapPin size={24} />
                         ) : message.kind === "file" ? (
