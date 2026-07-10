@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMatrixMessagingSession, formatMatrixClientError, normalizeMatrixMessageBody } from "./matrixClient.js";
-import type { MessagingBootstrapResponse } from "./types.js";
+import type { MatrixVoiceCallWakeRequest, MessagingBootstrapResponse } from "./types.js";
 
 type MockMatrixClient = {
   getCrypto?: () => MockMatrixCrypto;
@@ -361,6 +361,39 @@ describe("Matrix client diagnostics", () => {
         roomId: "!chat:cop.local"
       })
     );
+  });
+
+  it("delivers an ended wake only after the matching invite wake completes", async () => {
+    stubVoiceCallBrowserSupport();
+    const call = createMockVoiceCall({ direction: "outbound", roomId: "!chat:cop.local" });
+    let resolveInvite: (() => void) | undefined;
+    const pendingInvite = new Promise<void>((resolve) => {
+      resolveInvite = resolve;
+    });
+    const wakeActions: MatrixVoiceCallWakeRequest["action"][] = [];
+    const onVoiceCallWake = vi.fn(async ({ action }: MatrixVoiceCallWakeRequest) => {
+      wakeActions.push(action);
+      if (action === "invite") {
+        await pendingInvite;
+      }
+    });
+    matrixSdkMock.createNewMatrixCall.mockReturnValue(call);
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
+        rooms: [createRoom({ roomId: "!chat:cop.local" })]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap(), { onVoiceCallWake });
+    await session.startVoiceCall("!chat:cop.local");
+    await vi.waitFor(() => expect(wakeActions).toEqual(["invite"]));
+
+    await session.hangupVoiceCall("call-1");
+    expect(wakeActions).toEqual(["invite"]);
+
+    resolveInvite?.();
+    await vi.waitFor(() => expect(wakeActions).toEqual(["invite", "ended"]));
   });
 
   it("keeps Matrix voice call signalling on the SDK encryption path", async () => {

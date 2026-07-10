@@ -338,20 +338,33 @@ export async function createMatrixMessagingSession(
   let activeVoiceCallError: string | undefined;
   let activeVoiceCallClearTimer: ReturnType<typeof setTimeout> | undefined;
   const sentVoiceCallWakeKeys = new Set<string>();
-  const notifyVoiceCallWake = async (action: MatrixVoiceCallWakeRequest["action"], call: MatrixCallLike) => {
-    if (!callbacks.onVoiceCallWake || !call.callId || !call.roomId) {
-      return;
+  const voiceCallWakeChains = new Map<string, Promise<void>>();
+  const notifyVoiceCallWake = (action: MatrixVoiceCallWakeRequest["action"], call: MatrixCallLike): Promise<void> => {
+    const onVoiceCallWake = callbacks.onVoiceCallWake;
+    const callId = call.callId;
+    const roomId = call.roomId;
+    if (!onVoiceCallWake || !callId || !roomId) {
+      return Promise.resolve();
     }
-    const key = `${action}:${call.callId}`;
+    const key = `${action}:${callId}`;
     if (sentVoiceCallWakeKeys.has(key)) {
-      return;
+      return voiceCallWakeChains.get(callId) ?? Promise.resolve();
     }
     sentVoiceCallWakeKeys.add(key);
-    try {
-      await callbacks.onVoiceCallWake({ action, callId: call.callId, roomId: call.roomId });
-    } catch {
-      sentVoiceCallWakeKeys.delete(key);
-    }
+    const previous = voiceCallWakeChains.get(callId) ?? Promise.resolve();
+    const current = previous
+      .catch(() => undefined)
+      .then(() => onVoiceCallWake({ action, callId, roomId }))
+      .catch(() => {
+        sentVoiceCallWakeKeys.delete(key);
+      });
+    voiceCallWakeChains.set(callId, current);
+    void current.finally(() => {
+      if (voiceCallWakeChains.get(callId) === current) {
+        voiceCallWakeChains.delete(callId);
+      }
+    });
+    return current;
   };
   const flushNotifications = () => {
     notifyScheduled = false;
