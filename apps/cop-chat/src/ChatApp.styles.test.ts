@@ -6,6 +6,11 @@ const stylesPath = fileURLToPath(new URL("./styles.css", import.meta.url));
 const styles = readFileSync(stylesPath, "utf8");
 
 describe("cop-chat embedded mobile layout CSS", () => {
+  it("applies the compact quality floor through the 430px iPhone Max breakpoint", () => {
+    expect(styles.match(/@media \(max-width: 430px\)/gu)?.length).toBeGreaterThanOrEqual(2);
+    expect(styles).not.toContain("@media (max-width: 420px)");
+  });
+
   it("binds the embedded shell to the iframe box instead of the viewport", () => {
     const rootBlock = cssBlock("html,\nbody,\n#root");
     expect(rootBlock).toContain("height: 100%");

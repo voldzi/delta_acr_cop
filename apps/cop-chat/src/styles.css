@@ -5295,7 +5295,7 @@ button {
   max-height: 100%;
 }
 
-@media (max-width: 420px) {
+@media (max-width: 430px) {
   .list-header {
     min-height: calc(62px + env(safe-area-inset-top, 0px));
     padding: calc(12px + env(safe-area-inset-top, 0px)) 14px 8px;
@@ -5400,7 +5400,7 @@ button {
 
 /* Compact-phone quality floor shared by the list, conversation and every
    modal surface. 320px devices must never need horizontal scrolling. */
-@media (max-width: 420px) {
+@media (max-width: 430px) {
   .conversation-actions .report-chat-action {
     display: none;
   }
