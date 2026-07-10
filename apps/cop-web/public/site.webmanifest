@@ -9,7 +9,7 @@
   "categories": ["social", "navigation", "productivity", "utilities"],
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "browser"],
-  "orientation": "any",
+  "orientation": "portrait",
   "background_color": "#090d10",
   "theme_color": "#0f171d",
   "icons": [

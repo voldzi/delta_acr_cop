@@ -2969,13 +2969,13 @@ function readRoomDirectPeer(
   }
   const cached = presenceByUserId?.get(userId);
   const user = client.getUser?.(userId) ?? member.user;
-  const displayName =
-    trimmedMatrixString(member.name) ??
-    trimmedMatrixString(member.rawDisplayName) ??
-    trimmedMatrixString(member.displayName) ??
-    trimmedMatrixString(cached?.displayName) ??
-    trimmedMatrixString(user?.displayName) ??
-    matrixLocalpart(userId);
+  const displayName = preferredMatrixDisplayName(userId, [
+    member.name,
+    member.rawDisplayName,
+    member.displayName,
+    cached?.displayName,
+    user?.displayName
+  ]);
   const avatarUrl = readMemberAvatarUrl(member, client, homeserverBaseUrl, cached);
   return {
     ...(avatarUrl ? { avatarUrl } : {}),
@@ -3008,6 +3008,24 @@ function trimmedMatrixString(value: unknown): string | undefined {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function preferredMatrixDisplayName(userId: string, values: unknown[]): string {
+  const candidates = values.map(trimmedMatrixString).filter((value): value is string => Boolean(value));
+  return (
+    candidates.find((value) => !isOpaqueMatrixIdentityLabel(value, userId)) ?? candidates[0] ?? matrixLocalpart(userId)
+  );
+}
+
+function isOpaqueMatrixIdentityLabel(value: string, userId: string): boolean {
+  const normalizedValue = value.trim().toLocaleLowerCase("cs-CZ");
+  const normalizedUserId = userId.trim().toLocaleLowerCase("cs-CZ");
+  const normalizedLocalpart = matrixLocalpart(userId).trim().toLocaleLowerCase("cs-CZ");
+  return (
+    normalizedValue === normalizedUserId ||
+    normalizedValue === normalizedLocalpart ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(normalizedValue)
+  );
 }
 
 function matrixLocalpart(userId: string): string {

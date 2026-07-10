@@ -9960,6 +9960,10 @@ dd {
   display: none;
 }
 
+.pwa-orientation-guard {
+  display: none;
+}
+
 .mobile-sheet-pull-handle {
   display: none;
 }
@@ -10924,6 +10928,53 @@ dd {
   .shell.app-shell-v2 .messaging-panel textarea,
   .shell.app-shell-v2 .messaging-panel select {
     touch-action: manipulation;
+  }
+}
+
+@media (max-width: 860px) {
+  .shell.app-shell-v2.pwa-standalone {
+    height: calc(100% + env(safe-area-inset-top, 0px));
+  }
+}
+
+@media (orientation: landscape) and (max-height: 600px) and (pointer: coarse) {
+  .shell.app-shell-v2.pwa-standalone > .pwa-orientation-guard {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    grid-template-columns: auto minmax(0, 360px);
+    align-content: center;
+    justify-content: center;
+    gap: 16px;
+    width: 100vw;
+    height: calc(100% + env(safe-area-inset-top, 0px));
+    padding: max(24px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-right, 0px))
+      max(24px, env(safe-area-inset-bottom, 0px)) max(24px, env(safe-area-inset-left, 0px));
+    background: linear-gradient(145deg, #0b131b, #05090e 72%);
+    color: #edf6ff;
+    text-align: left;
+  }
+
+  .shell.app-shell-v2.pwa-standalone > .pwa-orientation-guard > svg {
+    align-self: center;
+    color: var(--lime);
+  }
+
+  .shell.app-shell-v2.pwa-standalone > .pwa-orientation-guard > div {
+    display: grid;
+    align-content: center;
+    gap: 6px;
+  }
+
+  .shell.app-shell-v2.pwa-standalone > .pwa-orientation-guard strong {
+    font-size: 20px;
+  }
+
+  .shell.app-shell-v2.pwa-standalone > .pwa-orientation-guard span {
+    color: #a9bbc9;
+    font-size: 13px;
+    line-height: 1.4;
   }
 }
 

@@ -3256,7 +3256,6 @@ export function App() {
   }, [
     apiBase,
     authToken,
-    communityRefreshNonce,
     dataAccessReady,
     effectiveVisibleCatalogLayerIds,
     effectiveVisibleCatalogLayerKey,
@@ -3402,6 +3401,7 @@ export function App() {
   }, [
     apiBase,
     authToken,
+    communityRefreshNonce,
     dataAccessReady,
     effectiveVisibleCatalogLayerIds,
     effectiveVisibleCatalogLayerKey,
@@ -5969,6 +5969,13 @@ export function App() {
       setSelectedSituationFeatureId(`community:${submitted.reportId}`);
       setSelectedSituationFeatureStableKey(null);
       setSelectedObjectId(null);
+      setMapView({
+        bearing: mapView?.bearing ?? 0,
+        center: [submitted.location.lon, submitted.location.lat],
+        pitch: mapView?.pitch ?? 0,
+        zoom: Math.max(mapView?.zoom ?? 10, 14)
+      });
+      setFocusViewRequest((current) => current + 1);
       if (linkedGroup) {
         requestEmbeddedChatSelection(linkedGroup.groupId);
       }
@@ -6768,6 +6775,7 @@ export function App() {
     "shell",
     "app-shell-v2",
     `app-skin-${workspaceSkin}`,
+    isStandalonePwaRuntime() && "pwa-standalone",
     isWebKitRuntime() && "webkit-runtime",
     mobileSheet && `mobile-sheet-${mobileSheet}`,
     mobileSheet && "mobile-sheet-open",
@@ -6970,6 +6978,13 @@ export function App() {
 
   return (
     <main className={shellClassName} ref={shellRef} style={shellStyle}>
+      <div className="pwa-orientation-guard" role="status">
+        <Smartphone aria-hidden="true" size={42} />
+        <div>
+          <strong>Otočte zařízení na výšku</strong>
+          <span>Mobilní PWA je navržena pro bezpečné ovládání v režimu na výšku.</span>
+        </div>
+      </div>
       <header className="topbar">
         <div className="brand">
           <button
@@ -23768,6 +23783,18 @@ function isWebKitRuntime(): boolean {
   }
   const userAgent = navigator.userAgent;
   return /AppleWebKit/u.test(userAgent) && !/Chrome|Chromium|CriOS|Edg|OPR|Firefox/u.test(userAgent);
+}
+
+function isStandalonePwaRuntime(): boolean {
+  if (typeof window === "undefined" || typeof navigator === "undefined") {
+    return false;
+  }
+  const standaloneNavigator = navigator as Navigator & { standalone?: boolean };
+  return Boolean(
+    standaloneNavigator.standalone === true ||
+    window.matchMedia?.("(display-mode: standalone)").matches ||
+    window.matchMedia?.("(display-mode: fullscreen)").matches
+  );
 }
 
 function normalizeAppLanguage(value: string | undefined): AppLanguage {

@@ -17,6 +17,10 @@ pinned panel becomes the active workspace and replaces the map until the user
 closes or unpins it. The installed citizen PWA starts directly at `/chat/` and
 offers a persistent map action in the mobile chat header.
 
+Direct-chat labels prefer the current Matrix user profile over an opaque
+subject UUID retained in an older room membership event. The UUID remains only
+as a last-resort technical fallback when no readable profile name is available.
+
 ## Chat to Report Boundary
 
 `cop-chat` can request an explicit report draft through the shared bridge

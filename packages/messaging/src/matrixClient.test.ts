@@ -909,6 +909,40 @@ describe("Matrix client diagnostics", () => {
     );
   });
 
+  it("prefers the current Matrix profile name over an opaque UUID stored in room membership", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 404 }))
+    );
+    const peerUserId = "@c6abf160-f5af-48fb-a79d-07511380e06a:cop.local";
+    const onRoomsChanged = vi.fn();
+    const getProfileInfo = vi.fn<NonNullable<MockMatrixClient["getProfileInfo"]>>(async (userId) =>
+      userId === peerUserId ? { displayname: "Daniel Bambušek" } : {}
+    );
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getProfileInfo,
+        rooms: [
+          createRoom({
+            members: [
+              { displayName: "COP Operator", userId: "@operator:cop.local" },
+              { displayName: "c6abf160-f5af-48fb-a79d-07511380e06a", userId: peerUserId }
+            ],
+            roomId: "!direct-uuid:cop.local"
+          })
+        ]
+      })
+    );
+
+    await createMatrixMessagingSession(createBootstrap(), { onRoomsChanged });
+    await vi.runOnlyPendingTimersAsync();
+
+    const latestRooms = onRoomsChanged.mock.calls.at(-1)?.[0];
+    expect(getProfileInfo).toHaveBeenCalledWith(peerUserId);
+    expect(latestRooms?.[0]?.directPeer?.displayName).toBe("Daniel Bambušek");
+  });
+
   it("fills missing peer avatar from the Matrix HTTP profile when SDK profile is partial", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

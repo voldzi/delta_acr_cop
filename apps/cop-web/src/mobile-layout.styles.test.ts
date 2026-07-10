@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest";
 
 const mainPath = fileURLToPath(new URL("./main.tsx", import.meta.url));
 const stylesPath = fileURLToPath(new URL("./styles.css", import.meta.url));
+const manifestPath = fileURLToPath(new URL("../public/site.webmanifest", import.meta.url));
 const mainSource = readFileSync(mainPath, "utf8");
 const styles = readFileSync(stylesPath, "utf8");
+const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { orientation?: string };
 
 describe("COP mobile report dialog layout", () => {
   it("keeps the long form scrollable while actions remain in a fixed dialog row", () => {
@@ -49,9 +51,7 @@ describe("COP standalone iPhone safe areas", () => {
     const mobileShell = cssBlocks(".shell.app-shell-v2").find((block) =>
       block.includes("grid-template-rows: auto minmax(0, 1fr) auto")
     );
-    const mobileBody = cssBlocks(".shell.app-shell-v2 .app-shell-body").find((block) =>
-      block.includes("grid-row: 2")
-    );
+    const mobileBody = cssBlocks(".shell.app-shell-v2 .app-shell-body").find((block) => block.includes("grid-row: 2"));
     const mobileNavigation = cssBlocks(".mobile-bottom-nav").find((block) => block.includes("grid-row: 3"));
 
     expect(mobileShell).toContain("height: 100%");
@@ -62,10 +62,24 @@ describe("COP standalone iPhone safe areas", () => {
     expect(mobileNavigation).toContain("max(7px, env(safe-area-inset-bottom, 0px))");
   });
 
+  it("extends an installed iPhone shell by the top inset that iOS omits from the percentage viewport", () => {
+    const standaloneShell = cssBlock(".shell.app-shell-v2.pwa-standalone");
+
+    expect(mainSource).toContain('isStandalonePwaRuntime() && "pwa-standalone"');
+    expect(standaloneShell).toContain("height: calc(100% + env(safe-area-inset-top, 0px))");
+  });
+
+  it("requests portrait PWA orientation and provides a landscape fallback guard", () => {
+    const orientationGuard = cssBlock(".shell.app-shell-v2.pwa-standalone > .pwa-orientation-guard");
+
+    expect(manifest.orientation).toBe("portrait");
+    expect(mainSource).toContain('className="pwa-orientation-guard"');
+    expect(orientationGuard).toContain("z-index: 1000");
+    expect(orientationGuard).toContain("height: calc(100% + env(safe-area-inset-top, 0px))");
+  });
+
   it("anchors the map legend to the responsive map edge instead of reserving the navigation twice", () => {
-    const mobileLegend = cssBlocks(".shell.app-shell-v2 .map-legend").find((block) =>
-      block.includes("left: 12px")
-    );
+    const mobileLegend = cssBlocks(".shell.app-shell-v2 .map-legend").find((block) => block.includes("left: 12px"));
 
     expect(mobileLegend).toContain("bottom: 12px");
     expect(mobileLegend).not.toContain("--mobile-bottom-nav-height");

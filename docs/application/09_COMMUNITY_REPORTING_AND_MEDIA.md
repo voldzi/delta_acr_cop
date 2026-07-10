@@ -328,6 +328,10 @@ Webové tlačítko `Nahlásit` otevře formulář pro kategorii, popis, uživate
 Na úzkém mobilním viewportu se obsah formuláře posouvá samostatně mezi pevnou
 hlavičkou a pevnou spodní lištou akcí. `Zrušit` a `Uložit hlášení` tak zůstávají
 dosažitelné bez ohledu na délku formuláře, klávesnici a spodní iOS safe area.
+Po úspěšném odeslání klient explicitně obnoví komunitní mapovou vrstvu a zapne
+její katalogové vrstvy, takže nové hlášení není závislé na následném posunu mapy
+nebo ručním přepnutí vrstvy. Mapa se současně zaměří na polohu uloženého
+hlášení, i když byla převzata z GPS nebo médií mimo předchozí výřez.
 
 ## AI
 

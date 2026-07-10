@@ -14,6 +14,12 @@ Mobilní navigace používá pět stabilních položek `Chat`, `Mapa`, `Vrstvy`,
 nástrojích. Role záchranných složek nejsou součástí této informační
 architektury.
 
+Instalovaná PWA na telefonu požaduje portrétní orientaci. Pokud iOS tento
+požadavek při již běžící aplikaci ignoruje, landscape režim překryje pracovní
+plochu jednoduchou výzvou k otočení místo přepnutí do desktopové konzole.
+Mobilní shell vyplňuje i spodní část obrazovky, kterou iOS standalone viewport
+na některých Max modelech nezapočítá do procentní výšky.
+
 Hlavní UI má šest oblastí:
 
 - top status bar: stav systému, latency, aktivní zdroje, počet objektů, online/degraded/offline a AI provider status,
