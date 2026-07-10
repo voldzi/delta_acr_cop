@@ -83,6 +83,8 @@ const civilAircraftIconAssetByKind: Record<CivilAircraftIconKind, string> = {
   vtol_drone: "drone_05_vtol_hybrid",
   wide_body_airliner: "aircraft_07_widebody_airliner"
 };
+const civilAircraftAssetImagePromises = new Map<string, Promise<HTMLImageElement>>();
+const civilAircraftSymbolImageInFlight = new Map<string, Promise<ImageData>>();
 const transitIconPrefix = "cop-transit";
 const osmCategoryIconPrefix = "cop-osm-category";
 export const osmCategoryIconIds = [
@@ -418,35 +420,86 @@ export async function createCivilAircraftSymbolImage(
   tone: CivilAircraftIconTone = "normal"
 ): Promise<ImageData> {
   try {
-    const response = await fetch(`/symbols/aircraft/${civilAircraftIconAssetByKind[kind]}.svg`, {
-      cache: "force-cache"
-    });
-    if (!response.ok) {
-      throw new Error(`Mapový symbol se nepodařilo načíst: ${response.status}`);
-    }
-    const svg = (await response.text())
-      .replaceAll("currentColor", civilAircraftIconToneColor(tone))
-      .replace(/<svg\b/, `<svg color="${civilAircraftIconToneColor(tone)}"`);
-    const image = await loadSvgImage(svg);
-    const canvas = document.createElement("canvas");
-    const size = 128;
-    canvas.width = size;
-    canvas.height = size;
-    const context = canvas.getContext("2d");
-    if (!context) {
-      return new ImageData(size, size);
-    }
-    context.clearRect(0, 0, size, size);
-    context.save();
-    context.shadowBlur = 7;
-    context.shadowColor = "rgba(2, 6, 23, 0.88)";
-    context.drawImage(image, 10, 10, 108, 108);
-    context.restore();
-    context.drawImage(image, 10, 10, 108, 108);
-    return context.getImageData(0, 0, size, size);
+    return await getCivilAircraftSymbolImage(civilAircraftIconAssetByKind[kind], tone);
   } catch {
     return createFallbackCivilAircraftSymbolImage(kind, tone);
   }
+}
+
+function getCivilAircraftSymbolImage(asset: string, tone: CivilAircraftIconTone): Promise<ImageData> {
+  const cacheKey = `${asset}:${tone}`;
+  const cached = civilAircraftSymbolImageInFlight.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = renderCivilAircraftSymbolImage(asset, tone);
+  civilAircraftSymbolImageInFlight.set(cacheKey, pending);
+  const clearPending = () => {
+    if (civilAircraftSymbolImageInFlight.get(cacheKey) === pending) {
+      civilAircraftSymbolImageInFlight.delete(cacheKey);
+    }
+  };
+  void pending.then(clearPending, clearPending);
+  return pending;
+}
+
+async function renderCivilAircraftSymbolImage(asset: string, tone: CivilAircraftIconTone): Promise<ImageData> {
+  const image = await loadCivilAircraftAssetImage(asset);
+  const glyphSize = 108;
+  const glyphCanvas = document.createElement("canvas");
+  glyphCanvas.width = glyphSize;
+  glyphCanvas.height = glyphSize;
+  const glyphContext = glyphCanvas.getContext("2d");
+  if (!glyphContext) {
+    return new ImageData(128, 128);
+  }
+  glyphContext.clearRect(0, 0, glyphSize, glyphSize);
+  glyphContext.drawImage(image, 0, 0, glyphSize, glyphSize);
+  glyphContext.globalCompositeOperation = "source-in";
+  glyphContext.fillStyle = civilAircraftIconToneColor(tone);
+  glyphContext.fillRect(0, 0, glyphSize, glyphSize);
+  glyphContext.globalCompositeOperation = "source-over";
+
+  const canvas = document.createElement("canvas");
+  const size = 128;
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return new ImageData(size, size);
+  }
+  context.clearRect(0, 0, size, size);
+  context.save();
+  context.shadowBlur = 7;
+  context.shadowColor = "rgba(2, 6, 23, 0.88)";
+  context.drawImage(glyphCanvas, 10, 10);
+  context.restore();
+  context.drawImage(glyphCanvas, 10, 10);
+  return context.getImageData(0, 0, size, size);
+}
+
+function loadCivilAircraftAssetImage(asset: string): Promise<HTMLImageElement> {
+  const cached = civilAircraftAssetImagePromises.get(asset);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = fetch(`/symbols/aircraft/${asset}.svg`, { cache: "force-cache" })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`Mapový symbol se nepodařilo načíst: ${response.status}`);
+      }
+      return response.text();
+    })
+    .then((svg) => loadSvgImage(svg.replaceAll("currentColor", "#ffffff")));
+  civilAircraftAssetImagePromises.set(asset, pending);
+  void pending.catch(() => {
+    if (civilAircraftAssetImagePromises.get(asset) === pending) {
+      civilAircraftAssetImagePromises.delete(asset);
+    }
+  });
+  return pending;
 }
 
 function createFallbackCivilAircraftSymbolImage(

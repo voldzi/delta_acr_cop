@@ -17,6 +17,8 @@ import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
 import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { Readable } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { buildCopAlerts, type AoiRule, type AoiRuleAffiliationScope, type CopAlert } from "./alerts.js";
 import {
   createCommunityReportStoreFromEnv,
@@ -6110,9 +6112,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const readUrl = await mediaStorage.createReadUrl({ objectKey: attachment.objectKey }, requestNow);
       const range = typeof request.headers.range === "string" ? request.headers.range : undefined;
-      const mediaResponse = await fetch(readUrl, {
-        headers: range ? { range } : undefined
-      });
+      const mediaResponse = await fetchMediaStorageContent(readUrl, range);
       if (!mediaResponse.ok && mediaResponse.status !== 206) {
         return sendError(
           reply,
@@ -6139,7 +6139,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (acceptRanges) {
         reply.header("Accept-Ranges", acceptRanges);
       }
-      return reply.send(Buffer.from(await mediaResponse.arrayBuffer()));
+      return reply.send(readableResponseBody(mediaResponse));
     },
 
     getReportAttachmentDerivativeContent: async (request, reply) => {
@@ -6211,9 +6211,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const readUrl = await mediaStorage.createReadUrl({ objectKey: derivative.objectKey }, requestNow);
       const range = typeof request.headers.range === "string" ? request.headers.range : undefined;
-      const mediaResponse = await fetch(readUrl, {
-        headers: range ? { range } : undefined
-      });
+      const mediaResponse = await fetchMediaStorageContent(readUrl, range);
       if (!mediaResponse.ok && mediaResponse.status !== 206) {
         return sendError(
           reply,
@@ -6241,7 +6239,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (acceptRanges) {
         reply.header("Accept-Ranges", acceptRanges);
       }
-      return reply.send(Buffer.from(await mediaResponse.arrayBuffer()));
+      return reply.send(readableResponseBody(mediaResponse));
     }
   });
 
@@ -15192,6 +15190,25 @@ function isAllowedRasterOverlayUrl(url: URL, env: Record<string, string | undefi
     return false;
   }
   return true;
+}
+
+async function fetchMediaStorageContent(readUrl: string, range?: string): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    return await fetch(readUrl, {
+      headers: range ? { range } : undefined,
+      signal: controller.signal
+    });
+  } finally {
+    // Fetch resolves after response headers arrive. The body remains connected to
+    // the returned stream and is cancelled automatically when the client closes it.
+    clearTimeout(timeout);
+  }
+}
+
+function readableResponseBody(response: Response): Readable {
+  return response.body ? Readable.fromWeb(response.body as unknown as NodeReadableStream) : Readable.from([]);
 }
 
 async function fetchWeatherCameraResource(url: URL): Promise<Response> {

@@ -324,13 +324,29 @@ export async function createMatrixMessagingSession(
   const roomPresenceByUserId = new Map<string, MatrixUserPresenceLike & { fetchedAt: number }>();
   const profileLookupAttemptByUserId = new Map<string, number>();
   const readOverrideByRoomId = new Map<string, string>();
+  const timelineByRoomId = new Map<string, MatrixTimelineMessage[]>();
+  const invalidateTimeline = (roomId?: string) => {
+    if (roomId) {
+      timelineByRoomId.delete(roomId);
+      return;
+    }
+    timelineByRoomId.clear();
+  };
   const refreshJoinedRoomIds = async () => {
-    joinedRoomIds = await readServerJoinedRoomIds(
+    const refreshedRoomIds = await readServerJoinedRoomIds(
       client,
       homeserverBaseUrl,
       activeBootstrap.accessToken,
       joinedRoomIds
     );
+    joinedRoomIds = refreshedRoomIds;
+    if (refreshedRoomIds) {
+      for (const cachedRoomId of timelineByRoomId.keys()) {
+        if (!refreshedRoomIds.has(cachedRoomId)) {
+          invalidateTimeline(cachedRoomId);
+        }
+      }
+    }
   };
   const readVisibleRooms = () =>
     readRooms(client, {
@@ -340,6 +356,22 @@ export async function createMatrixMessagingSession(
       presenceByUserId: roomPresenceByUserId,
       readOverrideByRoomId
     });
+  const readVisibleTimeline = (roomId: string) => {
+    const room = findMatrixRoom(client, roomId);
+    // A retained message can expire without a Matrix event, so those rooms are
+    // intentionally read live. Normal rooms keep a stable snapshot until the
+    // SDK reports a timeline/decryption/sync mutation.
+    if (room && readRoomRetentionSeconds(room)) {
+      return readTimeline(client, roomId, homeserverBaseUrl);
+    }
+    const cached = timelineByRoomId.get(roomId);
+    if (cached) {
+      return cached;
+    }
+    const timeline = readTimeline(client, roomId, homeserverBaseUrl);
+    timelineByRoomId.set(roomId, timeline);
+    return timeline;
+  };
   const publishRooms = () => {
     callbacks.onRoomsChanged?.(readVisibleRooms());
   };
@@ -701,14 +733,15 @@ export async function createMatrixMessagingSession(
   };
 
   const syncListener = (state: unknown) => {
+    invalidateTimeline();
     callbacks.onSyncState?.(typeof state === "string" ? state : "sync");
     scheduleNotify({ rooms: true, timeline: true });
     schedulePresenceRefresh();
   };
   const timelineListener = (eventValue?: unknown, roomValue?: unknown) => {
+    invalidateTimeline(asEvent(eventValue)?.getRoomId?.() ?? asRoom(roomValue)?.roomId ?? undefined);
     handleVoiceCallSignalingEvent(eventValue, roomValue);
     scheduleNotify({ rooms: true, timeline: true });
-    schedulePresenceRefresh();
   };
   const receivedVoipEventListener = (eventValue?: unknown) => {
     handleVoiceCallSignalingEvent(eventValue);
@@ -718,6 +751,7 @@ export async function createMatrixMessagingSession(
     schedulePresenceRefresh(750);
   };
   const membershipListener = () => {
+    invalidateTimeline();
     presenceListener();
     void joinInvitedRooms().then(() => scheduleNotify({ rooms: true, timeline: true }));
   };
@@ -829,7 +863,7 @@ export async function createMatrixMessagingSession(
     },
     getEncryptionRecoveryStatus: async () => readMatrixEncryptionRecoveryStatus(client),
     getRooms: readVisibleRooms,
-    getTimeline: (roomId) => readTimeline(client, roomId, homeserverBaseUrl),
+    getTimeline: readVisibleTimeline,
     getVoiceCall: () =>
       activeVoiceCall ? matrixVoiceCallSnapshot(activeVoiceCall, activeVoiceCallStartedAt, activeVoiceCallError) : null,
     hangupVoiceCall: async (callId) => {
@@ -865,6 +899,7 @@ export async function createMatrixMessagingSession(
       try {
         await client.leave(roomId);
         joinedRoomIds?.delete(roomId);
+        invalidateTimeline(roomId);
         publishRooms();
       } catch (caught) {
         throw formatMatrixClientError(caught, homeserverBaseUrl, "opustit skupinu");
@@ -874,14 +909,14 @@ export async function createMatrixMessagingSession(
       if (exhaustedTimelineRooms.has(roomId)) {
         return {
           exhausted: true,
-          messages: readTimeline(client, roomId, homeserverBaseUrl)
+          messages: readVisibleTimeline(roomId)
         };
       }
       if (typeof client.scrollback !== "function") {
         exhaustedTimelineRooms.add(roomId);
         return {
           exhausted: true,
-          messages: readTimeline(client, roomId, homeserverBaseUrl)
+          messages: readVisibleTimeline(roomId)
         };
       }
       try {
@@ -892,6 +927,7 @@ export async function createMatrixMessagingSession(
           return { exhausted: false, messages: [] };
         }
         await client.scrollback(room, Math.max(1, Math.min(250, Math.trunc(limit))));
+        invalidateTimeline(roomId);
         const nextRoom = findMatrixRoom(client, roomId) ?? room;
         const exhausted = nextRoom.oldState?.paginationToken === null;
         if (exhausted) {
@@ -899,7 +935,7 @@ export async function createMatrixMessagingSession(
         }
         return {
           exhausted,
-          messages: readTimeline(client, roomId, homeserverBaseUrl)
+          messages: readVisibleTimeline(roomId)
         };
       } catch (caught) {
         throw formatMatrixClientError(caught, homeserverBaseUrl, "načíst starší zprávy");
@@ -965,6 +1001,7 @@ export async function createMatrixMessagingSession(
     restoreEncryptionRecovery: async (recoveryKey) => {
       await restoreUserControlledEncryptionRecovery(client, recoveryController, recoveryKey);
       await writeStoredMatrixRecoveryKey(activeBootstrap, recoveryKey);
+      invalidateTimeline();
       scheduleNotify({ rooms: true, timeline: true });
     },
     setMessageRetentionPolicy: async (roomId, seconds) => {
@@ -980,6 +1017,7 @@ export async function createMatrixMessagingSession(
           seconds && seconds > 0 ? { max_lifetime: seconds * 1000 } : {},
           ""
         );
+        invalidateTimeline(roomId);
         publishRooms();
       } catch (caught) {
         if (isLikelyMatrixForbiddenError(caught)) {
@@ -1162,6 +1200,7 @@ export async function createMatrixMessagingSession(
         return;
       }
       sessionDisposed = true;
+      invalidateTimeline();
       if (presenceRefreshTimer !== undefined) {
         clearTimeout(presenceRefreshTimer);
       }
@@ -3195,9 +3234,9 @@ function readRoomLatestMessage(
   currentUserId: string | undefined
 ): MatrixTimelineMessage | undefined {
   const retentionSeconds = room ? readRoomRetentionSeconds(room) : undefined;
-  const events = (room?.timeline ?? []).map(asEvent).filter((event): event is MatrixEventLike => Boolean(event));
+  const events = room?.timeline ?? [];
   for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
+    const event = asEvent(events[index]);
     if (!event || !isTimelineMessageEvent(event)) {
       continue;
     }
@@ -3213,9 +3252,9 @@ function readRoomLatestMessage(
 }
 
 function latestReadableMessageEvent(room: MatrixRoomLike | undefined): MatrixEventLike | undefined {
-  const events = (room?.timeline ?? []).map(asEvent).filter((event): event is MatrixEventLike => Boolean(event));
+  const events = room?.timeline ?? [];
   for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
+    const event = asEvent(events[index]);
     if (
       event &&
       matrixTimelineEventType(event) === "m.room.message" &&

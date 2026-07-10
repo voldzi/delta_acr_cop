@@ -1312,6 +1312,86 @@ describe("Matrix client diagnostics", () => {
     expect(session.getRooms().map((room) => room.roomId)).toEqual(["!active:cop.local"]);
   });
 
+  it("reads a room preview from the timeline tail without walking old history", async () => {
+    const events = Array.from({ length: 2_000 }, (_, index) =>
+      createMessageEvent(`message-${index}`, Date.parse("2026-06-24T10:00:00.000Z") + index * 1_000)
+    );
+    let indexedReads = 0;
+    const timeline = new Proxy(events, {
+      get(target, property, receiver) {
+        if (typeof property === "string" && /^\d+$/u.test(property)) {
+          indexedReads += 1;
+        }
+        return Reflect.get(target, property, receiver);
+      }
+    });
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({ rooms: [createRoom({ roomId: "!chat:cop.local", timeline })] })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    indexedReads = 0;
+
+    expect(session.getRooms()[0]?.latestMessage?.body).toBe("message-1999");
+    expect(indexedReads).toBeLessThanOrEqual(2);
+    session.stop();
+  });
+
+  it("reuses a stable mapped timeline until Matrix reports a room mutation", async () => {
+    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+    const timeline = [createMessageEvent("first", Date.parse("2026-06-24T10:00:00.000Z"), "$first")];
+    const room = createRoom({ roomId: "!chat:cop.local", timeline });
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        on: (event, listener) => listeners.set(event, [...(listeners.get(event) ?? []), listener]),
+        rooms: [room]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    const first = session.getTimeline("!chat:cop.local");
+
+    expect(session.getTimeline("!chat:cop.local")).toBe(first);
+
+    const secondEvent = createMessageEvent("second", Date.parse("2026-06-24T10:01:00.000Z"), "$second");
+    timeline.push(secondEvent);
+    for (const listener of listeners.get("Room.timeline") ?? []) {
+      listener(secondEvent, room);
+    }
+
+    const refreshed = session.getTimeline("!chat:cop.local");
+    expect(refreshed).not.toBe(first);
+    expect(refreshed.map((message) => message.eventId)).toEqual(["$first", "$second"]);
+    session.stop();
+  });
+
+  it("does not schedule a second presence refresh for every timeline event", async () => {
+    vi.useFakeTimers();
+    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+    const onRoomsChanged = vi.fn();
+    const room = createRoom({ roomId: "!chat:cop.local" });
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        on: (event, listener) => listeners.set(event, [...(listeners.get(event) ?? []), listener]),
+        rooms: [room]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap(), { onRoomsChanged });
+    await vi.runOnlyPendingTimersAsync();
+    onRoomsChanged.mockClear();
+
+    for (const listener of listeners.get("Room.timeline") ?? []) {
+      listener(createMessageEvent("new", Date.now()), room);
+    }
+    await Promise.resolve();
+    expect(onRoomsChanged).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(onRoomsChanged).toHaveBeenCalledTimes(1);
+    session.stop();
+  });
+
   it("coalesces a burst of decrypted events into a single timeline callback", async () => {
     const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
     const on = vi.fn<MatrixEventSubscription>((event, listener) => {

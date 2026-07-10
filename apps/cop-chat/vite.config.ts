@@ -2,6 +2,8 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { fileURLToPath, URL } from "node:url";
 
+import { chatChunkFileName, chatManualChunk } from "./vite-chunks";
+
 const apiBase = process.env.COP_API_BASE_URL ?? "http://localhost:4310";
 const deployDomain = process.env.COP_DEPLOY_DOMAIN ?? "docker.home.cz";
 const chatBase = process.env.COP_CHAT_BASE_PATH ?? "/chat/";
@@ -33,16 +35,8 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (
-            id.includes("/node_modules/react/") ||
-            id.includes("/node_modules/react-dom/") ||
-            id.includes("/node_modules/scheduler/")
-          ) {
-            return "react-runtime";
-          }
-          return id.includes("/node_modules/matrix-js-sdk/") ? "matrix" : undefined;
-        }
+        chunkFileNames: chatChunkFileName,
+        manualChunks: chatManualChunk
       }
     }
   },

@@ -431,6 +431,40 @@ describe("collectIncomingChatNotifications", () => {
       )
     ).toEqual([{ chat: null, message: fresh, room }]);
   });
+
+  it("checks only the chronological timeline tail after a room watermark", () => {
+    const state = tracker();
+    const messages = Array.from({ length: 2_000 }, (_, index) =>
+      incoming(`$old-${index}`, new Date(Date.parse("2026-07-07T09:00:00.000Z") + index * 1_000).toISOString())
+    );
+    let indexedReads = 0;
+    const timeline = new Proxy(messages, {
+      get(target, property, receiver) {
+        if (typeof property === "string" && /^\d+$/u.test(property)) {
+          indexedReads += 1;
+        }
+        return Reflect.get(target, property, receiver);
+      }
+    });
+
+    collectIncomingChatNotifications(
+      [{ activeFocused: false, chat: null, messages: timeline, muted: false, room }],
+      state,
+      Date.parse("2026-07-07T10:05:00.000Z")
+    );
+    expect(indexedReads).toBeLessThanOrEqual(3);
+
+    messages.push(incoming("$fresh-tail", "2026-07-07T10:06:00.000Z"));
+    indexedReads = 0;
+    expect(
+      collectIncomingChatNotifications(
+        [{ activeFocused: false, chat: null, messages: timeline, muted: false, room }],
+        state,
+        Date.parse("2026-07-07T10:06:01.000Z")
+      ).map((candidate) => candidate.message.eventId)
+    ).toEqual(["$fresh-tail"]);
+    expect(indexedReads).toBeLessThanOrEqual(5);
+  });
 });
 
 describe("AI share body formatters", () => {

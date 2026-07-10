@@ -421,6 +421,7 @@ import {
   type WebPushUiState
 } from "./web-push";
 import { collectTrackIdentityTokens, formatTrackLabel } from "./track-label";
+import { useDocumentVisible } from "./use-document-visibility";
 import "./styles.css";
 
 export { formatWeatherStationAttribution } from "./weather-detail";
@@ -431,10 +432,21 @@ const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_
 const CopMap = React.lazy(() => import("./CopMap").then((module) => ({ default: module.CopMap })));
 const TrackTable = React.lazy(() => import("./TrackTable"));
 const XrWorkspace = React.lazy(() => import("./XrWorkspace"));
+const emptySketchDrawings: SketchDrawingFeature[] = [];
 
 async function createPairingQrDataUrl(universalLink: string): Promise<string> {
   const QRCode = await import("qrcode");
   return QRCode.toDataURL(universalLink, { margin: 1, scale: 6, width: 192 });
+}
+
+function useEventCallback<Args extends unknown[], Result>(
+  callback: (...args: Args) => Result
+): (...args: Args) => Result {
+  const callbackRef = React.useRef(callback);
+  React.useLayoutEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+  return React.useCallback((...args: Args) => callbackRef.current(...args), []);
 }
 
 type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
@@ -911,6 +923,7 @@ const tomatoKeyboardSequence = "tomato";
 const tomatoBrandClickThreshold = 5;
 
 export function App() {
+  const documentVisible = useDocumentVisible();
   const authConfig = React.useMemo(() => readAuthConfig(), []);
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
   const [authRefreshRetry, setAuthRefreshRetry] = React.useState(0);
@@ -1484,6 +1497,7 @@ export function App() {
   const [incidentWorkflowStatus, setIncidentWorkflowStatus] = React.useState<string | null>(null);
   const [aiResult, setAiResult] = React.useState("AI asistent je připraven zkontrolovat kvalitu zobrazených dat.");
   const loadInFlightRef = React.useRef(false);
+  const alertsLoadInFlightRef = React.useRef(false);
   const offlineBootstrapScopeRef = React.useRef<string | null>(null);
   const offlineSnapshotLastPersistedRef = React.useRef({ at: 0, scope: "" });
   const situationFeatureRequestRef = React.useRef<StableFeatureRequest | null>(null);
@@ -2113,17 +2127,21 @@ export function App() {
     window.addEventListener("focus", refreshOnResume);
     window.addEventListener("online", refreshOnResume);
     document.addEventListener("visibilitychange", refreshOnResume);
-    const timer = window.setInterval(refreshOnResume, 60_000);
-    refreshOnResume();
+    const timer = documentVisible ? window.setInterval(refreshOnResume, 60_000) : null;
+    if (documentVisible) {
+      refreshOnResume();
+    }
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      if (timer !== null) {
+        window.clearInterval(timer);
+      }
       window.removeEventListener("pageshow", refreshOnResume);
       window.removeEventListener("focus", refreshOnResume);
       window.removeEventListener("online", refreshOnResume);
       document.removeEventListener("visibilitychange", refreshOnResume);
     };
-  }, [authConfig, ensureFreshAuthSession]);
+  }, [authConfig, documentVisible, ensureFreshAuthSession]);
 
   React.useEffect(() => {
     if (!communityReportSubmitting) {
@@ -2347,13 +2365,16 @@ export function App() {
   ]);
 
   const loadAlerts = React.useCallback(async () => {
-    if (!authToken) {
+    if (!authToken || alertsLoadInFlightRef.current) {
       return;
     }
+    alertsLoadInFlightRef.current = true;
     try {
       setServerAlerts(await fetchCopAlerts(apiBase, authToken));
     } catch {
       // Main data loading already reports API errors; alert refresh should not obscure the current situation view.
+    } finally {
+      alertsLoadInFlightRef.current = false;
     }
   }, [authToken]);
 
@@ -2592,17 +2613,17 @@ export function App() {
   ]);
 
   React.useEffect(() => {
-    if (!autoRefresh || streamStatus === "live" || streamStatus === "offline") {
+    if (!documentVisible || !autoRefresh || streamStatus === "live" || streamStatus === "offline") {
       return;
     }
     const timer = window.setInterval(() => {
       void load();
     }, refreshSeconds * 1000);
     return () => window.clearInterval(timer);
-  }, [autoRefresh, load, refreshSeconds, streamStatus]);
+  }, [autoRefresh, documentVisible, load, refreshSeconds, streamStatus]);
 
   React.useEffect(() => {
-    if (!authToken) {
+    if (!authToken || !documentVisible) {
       return;
     }
     const timer = window.setInterval(
@@ -2612,7 +2633,7 @@ export function App() {
       Math.max(refreshSeconds, 5) * 1000
     );
     return () => window.clearInterval(timer);
-  }, [authToken, loadAlerts, refreshSeconds]);
+  }, [authToken, documentVisible, loadAlerts, refreshSeconds]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -2782,7 +2803,13 @@ export function App() {
   }, [mapCatalog, visibleCatalogLayerKey]);
 
   React.useEffect(() => {
-    if (!autoRefresh || !dataAccessReady || !mapBounds || situationRasterRefreshSeconds === undefined) {
+    if (
+      !documentVisible ||
+      !autoRefresh ||
+      !dataAccessReady ||
+      !mapBounds ||
+      situationRasterRefreshSeconds === undefined
+    ) {
       return;
     }
     const timer = window.setInterval(() => {
@@ -2790,7 +2817,7 @@ export function App() {
       setSituationRasterRefreshTick((current) => current + 1);
     }, situationRasterRefreshSeconds * 1000);
     return () => window.clearInterval(timer);
-  }, [autoRefresh, dataAccessReady, mapBounds, situationRasterRefreshSeconds]);
+  }, [autoRefresh, dataAccessReady, documentVisible, mapBounds, situationRasterRefreshSeconds]);
 
   React.useEffect(() => {
     if (!dataAccessReady || !weatherRadarSelected) {
@@ -2825,14 +2852,14 @@ export function App() {
   }, [apiBase, authToken, dataAccessReady, weatherRadarFrameCatalogTick, weatherRadarSelected]);
 
   React.useEffect(() => {
-    if (!autoRefresh || !dataAccessReady || !weatherRadarSelected) {
+    if (!documentVisible || !autoRefresh || !dataAccessReady || !weatherRadarSelected) {
       return;
     }
     const timer = window.setInterval(() => {
       setWeatherRadarFrameCatalogTick((current) => current + 1);
     }, 300 * 1000);
     return () => window.clearInterval(timer);
-  }, [autoRefresh, dataAccessReady, weatherRadarSelected]);
+  }, [autoRefresh, dataAccessReady, documentVisible, weatherRadarSelected]);
 
   const weatherWebcamDetailCandidates = React.useMemo(
     () =>
@@ -2917,14 +2944,14 @@ export function App() {
   }, [authToken, weatherWebcamCandidateKey]);
 
   React.useEffect(() => {
-    if (!weatherRadarPlaybackEnabled || weatherRadarFrames.length < 2) {
+    if (!documentVisible || !weatherRadarPlaybackEnabled || weatherRadarFrames.length < 2) {
       return;
     }
     const timer = window.setInterval(() => {
       setWeatherRadarFrameIndex((current) => (current + 1) % weatherRadarFrames.length);
     }, 1400);
     return () => window.clearInterval(timer);
-  }, [weatherRadarFrames.length, weatherRadarPlaybackEnabled]);
+  }, [documentVisible, weatherRadarFrames.length, weatherRadarPlaybackEnabled]);
 
   React.useEffect(() => {
     if (!dataAccessReady) {
@@ -3025,14 +3052,28 @@ export function App() {
   ]);
 
   React.useEffect(() => {
-    if (!autoRefresh || !dataAccessReady || !mapBounds || !mapCatalog || trafficRefreshPlans.length === 0) {
+    if (
+      !documentVisible ||
+      !autoRefresh ||
+      !dataAccessReady ||
+      !mapBounds ||
+      !mapCatalog ||
+      trafficRefreshPlans.length === 0
+    ) {
       return;
     }
     if (shouldSkipSituationFeatureLoad(mapBounds, mapView?.zoom)) {
       return;
     }
     const queryBounds = buildStableSituationQueryBounds(mapBounds);
+    let cancelled = false;
+    const inFlightLayerKeys = new Set<string>();
     const refreshTrafficLayers = (layerIds: string[]) => {
+      const layerKey = layerIds.join(",");
+      if (cancelled || inFlightLayerKeys.has(layerKey)) {
+        return;
+      }
+      inFlightLayerKeys.add(layerKey);
       const requestGroups = buildSituationMapRequestGroups(
         layerIds,
         mapView?.zoom,
@@ -3049,6 +3090,9 @@ export function App() {
         )
       )
         .then((responses) => {
+          if (cancelled) {
+            return;
+          }
           const collection = mergeSituationMapFeatureResponses(responses);
           setSituationFeatures((current) => replaceTrafficFeaturesInSituationCollection(current, collection, layerIds));
           const responseWarnings = uniqueStrings(responses.flatMap((response) => response.warnings));
@@ -3064,17 +3108,24 @@ export function App() {
           );
         })
         .catch((error: unknown) => {
+          if (cancelled) {
+            return;
+          }
           setSituationWarnings((current) =>
             sourceQualityWarnings(
               uniqueStrings([...current, error instanceof Error ? error.message : "Dopravní vrstva není dostupná."])
             )
           );
+        })
+        .finally(() => {
+          inFlightLayerKeys.delete(layerKey);
         });
     };
     const timers = trafficRefreshPlans.map((plan) =>
       window.setInterval(() => refreshTrafficLayers(plan.layerIds), plan.refreshSeconds * 1000)
     );
     return () => {
+      cancelled = true;
       timers.forEach((timer) => window.clearInterval(timer));
     };
   }, [
@@ -3083,6 +3134,7 @@ export function App() {
     autoRefresh,
     coverageTechnology,
     dataAccessReady,
+    documentVisible,
     effectiveVisibleCatalogLayerIds,
     effectiveVisibleCatalogLayerKey,
     mapBounds,
@@ -3589,14 +3641,14 @@ export function App() {
   }, [trackHistoryLimit, trackHistoryWindowSeconds]);
 
   React.useEffect(() => {
-    if (!replayRunning) {
+    if (!documentVisible || !replayRunning) {
       return;
     }
     const timer = window.setInterval(() => {
       setReplayPosition((current) => Math.min(100, current + 2));
     }, 800);
     return () => window.clearInterval(timer);
-  }, [replayRunning]);
+  }, [documentVisible, replayRunning]);
 
   React.useEffect(() => {
     if (replayRunning && replayPosition >= 100) {
@@ -3803,6 +3855,10 @@ export function App() {
   const displayedRouteNavigationTarget = React.useMemo(
     () => navigationTargetFromDisplayedRoute(selectedSituationFeature, selectedTransitRouteDetail),
     [selectedSituationFeature, selectedTransitRouteDetail]
+  );
+  const selectedTransitRouteShape = React.useMemo(
+    () => transitRouteShapeForMap(selectedTransitRouteDetail),
+    [selectedTransitRouteDetail]
   );
   const visibleFlightLayerCount = React.useMemo(
     () => countVisibleFlightReferenceLayers(mapCatalog, visibleCatalogLayerIds),
@@ -6937,6 +6993,54 @@ export function App() {
     }
   }, []);
 
+  const copMapSelectEmergencyRoute = useEventCallback((info: EmergencyRouteSelectionInfo | null) => {
+    setSelectedEmergencyRouteInfo(info);
+    if (!info) {
+      return;
+    }
+    setSelectedObjectId(null);
+    setSelectedSituationFeatureId(null);
+    setSelectedSituationFeatureStableKey(null);
+    setSelectedSketchDrawingId(null);
+    setMobileSketchOpen(false);
+    setMobileSheet(mobileDetailSheetForSelection(false));
+  });
+  const copMapClearEmergencyRoute = useEventCallback(() => {
+    setEmergencyRoute(null);
+    setSelectedEmergencyRouteInfo(null);
+    setEmergencyRouteTarget(null);
+    setNavigationSession(null);
+    setEmergencyRouteStatus("idle");
+    setEmergencyRouteMessage(null);
+  });
+  const copMapCancelZoneCreation = useEventCallback(() => setZoneCreationMode(false));
+  const copMapCancelZoneEditing = useEventCallback(() => setEditingZoneId(null));
+  const copMapCreateZonePolygon = useEventCallback(handleCreateAoiRuleFromPolygon);
+  const copMapUpdateZonePolygon = useEventCallback(handleAoiRulePolygonUpdate);
+  const copMapPickReportLocation = useEventCallback(handleCommunityReportLocationPicked);
+  const copMapRequestIsochrone = useEventCallback((target: EmergencyRouteTarget) => {
+    void requestIsochroneFromPoint(target);
+  });
+  const copMapRequestNearestAccess = useEventCallback((target: EmergencyRouteTarget) => {
+    void requestNearestAccessToPoint(target);
+  });
+  const copMapRequestRoute = useEventCallback((target: EmergencyRouteTarget, profile?: NavigationProfile) => {
+    void requestEmergencyRouteToPoint(target, profile);
+  });
+  const copMapStartNavigation = useEventCallback((target: EmergencyRouteTarget, profile?: NavigationProfile) => {
+    if (profile) {
+      void startNavigationToTarget(target, profile);
+      return;
+    }
+    openNavigationProfileDialog(target);
+  });
+  const copMapCreateSketchDrawing = useEventCallback(handleCreateSketchDrawing);
+  const copMapDeleteSketchDrawing = useEventCallback(handleDeleteSketchDrawing);
+  const copMapUpdateSketchDrawing = useEventCallback(handleUpdateSketchDrawing);
+  const copMapRequestUserLocation = useEventCallback(() => locateUser());
+  const copMapUserLocationFollowChange = useEventCallback(handleUserLocationFollowChange);
+  const copMapUserInteraction = useEventCallback(handleMapUserInteraction);
+
   const updateWorkspaceLayout = React.useCallback((patch: Partial<WorkspaceLayoutPreferences>) => {
     setWorkspaceLayout((current) => normalizeWorkspaceLayout({ ...current, ...patch }));
   }, []);
@@ -7547,57 +7651,34 @@ export function App() {
                   mapLayerLabel={mapLayerLabel}
                   situationFeatures={combinedSituationFeatures}
                   selectedTransitRouteDetail={selectedTransitRouteDetail}
-                  selectedTransitRouteShape={transitRouteShapeForMap(selectedTransitRouteDetail)}
+                  selectedTransitRouteShape={selectedTransitRouteShape}
                   sharedLiveLocations={sharedLiveLocations}
                   onBoundsChange={setMapBounds}
                   onSelectObject={handleMapSelectObject}
                   onSelectSituationFeature={handleMapSelectSituationFeature}
                   onActivateEmergencyRoute={activateEmergencyRouteVariant}
-                  onSelectEmergencyRoute={(info) => {
-                    setSelectedEmergencyRouteInfo(info);
-                    if (info) {
-                      setSelectedObjectId(null);
-                      setSelectedSituationFeatureId(null);
-                      setSelectedSituationFeatureStableKey(null);
-                      setSelectedSketchDrawingId(null);
-                      setMobileSketchOpen(false);
-                      setMobileSheet(mobileDetailSheetForSelection(false));
-                    }
-                  }}
+                  onSelectEmergencyRoute={copMapSelectEmergencyRoute}
                   onAutoFitChange={setAutoFit}
-                  onClearEmergencyRoute={() => {
-                    setEmergencyRoute(null);
-                    setSelectedEmergencyRouteInfo(null);
-                    setEmergencyRouteTarget(null);
-                    setNavigationSession(null);
-                    setEmergencyRouteStatus("idle");
-                    setEmergencyRouteMessage(null);
-                  }}
+                  onClearEmergencyRoute={copMapClearEmergencyRoute}
                   onClearSelection={handleMapClearSelection}
-                  onCancelZoneCreation={() => setZoneCreationMode(false)}
-                  onCancelZoneEditing={() => setEditingZoneId(null)}
-                  onCreateZonePolygon={handleCreateAoiRuleFromPolygon}
-                  onUpdateZonePolygon={handleAoiRulePolygonUpdate}
-                  onPickReportLocation={handleCommunityReportLocationPicked}
+                  onCancelZoneCreation={copMapCancelZoneCreation}
+                  onCancelZoneEditing={copMapCancelZoneEditing}
+                  onCreateZonePolygon={copMapCreateZonePolygon}
+                  onUpdateZonePolygon={copMapUpdateZonePolygon}
+                  onPickReportLocation={copMapPickReportLocation}
                   onPickRadioPoint={handleRadioPointPicked}
-                  onRequestIsochroneFromPoint={(target) => void requestIsochroneFromPoint(target)}
-                  onRequestNearestAccessToPoint={(target) => void requestNearestAccessToPoint(target)}
-                  onRequestRouteToPoint={(target, profile) => void requestEmergencyRouteToPoint(target, profile)}
-                  onStartNavigationToPoint={(target, profile) => {
-                    if (profile) {
-                      void startNavigationToTarget(target, profile);
-                      return;
-                    }
-                    openNavigationProfileDialog(target);
-                  }}
-                  onCreateSketchDrawing={handleCreateSketchDrawing}
-                  onDeleteSketchDrawing={handleDeleteSketchDrawing}
+                  onRequestIsochroneFromPoint={copMapRequestIsochrone}
+                  onRequestNearestAccessToPoint={copMapRequestNearestAccess}
+                  onRequestRouteToPoint={copMapRequestRoute}
+                  onStartNavigationToPoint={copMapStartNavigation}
+                  onCreateSketchDrawing={copMapCreateSketchDrawing}
+                  onDeleteSketchDrawing={copMapDeleteSketchDrawing}
                   onSelectSketchDrawing={handleMapSelectSketchDrawing}
                   onSketchModeChange={handleMapSketchModeChange}
-                  onUpdateSketchDrawing={handleUpdateSketchDrawing}
-                  onRequestUserLocation={locateUser}
-                  onUserLocationFollowChange={handleUserLocationFollowChange}
-                  onUserMapInteraction={handleMapUserInteraction}
+                  onUpdateSketchDrawing={copMapUpdateSketchDrawing}
+                  onRequestUserLocation={copMapRequestUserLocation}
+                  onUserLocationFollowChange={copMapUserLocationFollowChange}
+                  onUserMapInteraction={copMapUserInteraction}
                   onViewChange={setMapView}
                   radioPointPickActive={Boolean(radioPointPickTarget)}
                   radioPointPickLabel={
@@ -7607,7 +7688,7 @@ export function App() {
                   selectedSketchDrawingId={selectedSketchDrawingId}
                   showAlertAreas={false}
                   showProximityAlertRadius={proximityAlertEnabled}
-                  sketchDrawings={visibleSketchLayerEnabled ? sketchDrawings : []}
+                  sketchDrawings={visibleSketchLayerEnabled ? sketchDrawings : emptySketchDrawings}
                   sketchMode={sketchMode}
                   userLocation={userLocation}
                   userLocationFollowEnabled={userLocationFollowEnabled}
@@ -14058,12 +14139,15 @@ function MobileDevicePairingPanel({
   authenticated: boolean;
   authToken: string | undefined;
 }) {
+  const documentVisible = useDocumentVisible();
   const [busy, setBusy] = React.useState<"confirming" | "loading" | "pairing" | "revoking" | null>(null);
   const [copyState, setCopyState] = React.useState<"copied" | "idle">("idle");
   const [devices, setDevices] = React.useState<MobileDeviceRecord[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = React.useState<string | null>(null);
   const [session, setSession] = React.useState<MobilePairingSessionResponse | null>(null);
+  const pairingCode = session?.pairing.code;
+  const pollPairingStatus = session?.pairing.status;
 
   const loadDevices = React.useCallback(async () => {
     if (!authenticated || !authToken) {
@@ -14112,13 +14196,25 @@ function MobileDevicePairingPanel({
   }, [session?.pairing.links.universalLink]);
 
   React.useEffect(() => {
-    if (!authenticated || !authToken || !session || !["pending", "claimed"].includes(session.pairing.status)) {
+    if (
+      !documentVisible ||
+      !authenticated ||
+      !authToken ||
+      !pairingCode ||
+      !pollPairingStatus ||
+      !["pending", "claimed"].includes(pollPairingStatus)
+    ) {
       return;
     }
     let cancelled = false;
+    let pollInFlight = false;
     const poll = async () => {
+      if (pollInFlight) {
+        return;
+      }
+      pollInFlight = true;
       try {
-        const next = await fetchMobilePairingSession(apiBase, authToken, session.pairing.code);
+        const next = await fetchMobilePairingSession(apiBase, authToken, pairingCode);
         if (!cancelled) {
           setSession(next);
           if (next.pairing.status === "confirmed") {
@@ -14127,6 +14223,8 @@ function MobileDevicePairingPanel({
         }
       } catch {
         // Polling is opportunistic; explicit actions surface errors to the user.
+      } finally {
+        pollInFlight = false;
       }
     };
     const interval = window.setInterval(() => void poll(), 2500);
@@ -14134,7 +14232,7 @@ function MobileDevicePairingPanel({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [apiBase, authToken, authenticated, loadDevices, session]);
+  }, [apiBase, authToken, authenticated, documentVisible, loadDevices, pairingCode, pollPairingStatus]);
 
   const createSession = async () => {
     if (!authToken) {

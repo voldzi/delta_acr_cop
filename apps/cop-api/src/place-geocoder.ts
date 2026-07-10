@@ -61,8 +61,10 @@ export interface PlaceGeocoder {
 
 interface NominatimGeocoderConfig {
   baseUrl: string;
+  cacheMaxEntries?: number;
   cacheTtlSeconds: number;
   email?: string;
+  timeoutMs?: number;
   userAgent: string;
 }
 
@@ -87,7 +89,9 @@ interface NominatimSearchResult {
   type?: string;
 }
 
-export function createPlaceGeocoderFromEnv(env: Record<string, string | undefined> = process.env): PlaceGeocoder | undefined {
+export function createPlaceGeocoderFromEnv(
+  env: Record<string, string | undefined> = process.env
+): PlaceGeocoder | undefined {
   const provider = (env.COP_GEOCODER_PROVIDER ?? "nominatim").trim().toLowerCase();
   if (provider === "disabled" || provider === "off" || provider === "none") {
     return undefined;
@@ -106,11 +110,12 @@ export function createPlaceGeocoderFromEnv(env: Record<string, string | undefine
 export class NominatimPlaceGeocoder implements PlaceGeocoder {
   readonly providerId = "nominatim";
   private readonly cache = new Map<string, CachedGeocodeResponse>();
+  private readonly inflight = new Map<string, Promise<PlaceGeocodeResponse>>();
 
   constructor(private readonly config: NominatimGeocoderConfig) {}
 
   diagnostics(): string {
-    return `provider=nominatim; cache=${this.cache.size}; ttl=${this.config.cacheTtlSeconds}s`;
+    return `provider=nominatim; cache=${this.cache.size}/${this.cacheMaxEntries()}; inflight=${this.inflight.size}; ttl=${this.config.cacheTtlSeconds}s`;
   }
 
   async search(query: PlaceGeocodeQuery, now: Date): Promise<PlaceGeocodeResponse> {
@@ -122,17 +127,61 @@ export class NominatimPlaceGeocoder implements PlaceGeocoder {
     const cacheKey = `${language}:${limit}:${normalizedQuery.toLowerCase()}:${bbox ? `${bbox.west},${bbox.south},${bbox.east},${bbox.north}` : ""}:${bounded ? "bounded" : "unbounded"}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > now.getTime()) {
+      this.cache.delete(cacheKey);
+      this.cache.set(cacheKey, cached);
       return {
         ...cached.response,
         cache: { ...cached.response.cache, status: "hit" },
         serverTimestamp: now.toISOString()
       };
     }
+    if (cached) {
+      this.cache.delete(cacheKey);
+    }
 
     if (normalizedQuery.length < 3) {
       return this.response(normalizedQuery, language, limit, [], now, cacheKey, "disabled");
     }
 
+    const pending = this.inflight.get(cacheKey);
+    if (pending) {
+      const response = await pending;
+      return {
+        ...response,
+        cache: { ...response.cache, status: "hit" },
+        serverTimestamp: now.toISOString()
+      };
+    }
+
+    const operation = this.fetchResponse(normalizedQuery, language, limit, now, cacheKey, bbox, bounded);
+    this.inflight.set(cacheKey, operation);
+    try {
+      const result = await operation;
+      this.storeCached(
+        cacheKey,
+        {
+          expiresAt: now.getTime() + this.config.cacheTtlSeconds * 1000,
+          response: result
+        },
+        now.getTime()
+      );
+      return result;
+    } finally {
+      if (this.inflight.get(cacheKey) === operation) {
+        this.inflight.delete(cacheKey);
+      }
+    }
+  }
+
+  private async fetchResponse(
+    normalizedQuery: string,
+    language: string,
+    limit: number,
+    now: Date,
+    cacheKey: string,
+    bbox: PlaceGeocodeQuery["bbox"] | undefined,
+    bounded: boolean
+  ): Promise<PlaceGeocodeResponse> {
     const url = new URL(this.config.baseUrl);
     url.searchParams.set("format", "jsonv2");
     url.searchParams.set("q", normalizedQuery);
@@ -149,32 +198,61 @@ export class NominatimPlaceGeocoder implements PlaceGeocoder {
       url.searchParams.set("email", this.config.email);
     }
 
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": this.config.userAgent
+    const controller = new AbortController();
+    const timeoutMs = clampInteger(this.config.timeoutMs, 250, 30_000, 8_000);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": this.config.userAgent
+        },
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        throw new Error(`Nominatim returned HTTP ${response.status}`);
       }
-    });
-    if (!response.ok) {
-      throw new Error(`Nominatim returned HTTP ${response.status}`);
+      const payload = (await response.json()) as NominatimSearchResult[];
+      return this.response(
+        normalizedQuery,
+        language,
+        limit,
+        payload.map(nominatimResultToPlace).filter((item): item is PlaceGeocodeResult => Boolean(item)),
+        now,
+        cacheKey,
+        "miss",
+        bbox,
+        bounded
+      );
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error(`Nominatim timed out after ${timeoutMs} ms.`, { cause: error });
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
-    const payload = await response.json() as NominatimSearchResult[];
-    const result = this.response(
-      normalizedQuery,
-      language,
-      limit,
-      payload.map(nominatimResultToPlace).filter((item): item is PlaceGeocodeResult => Boolean(item)),
-      now,
-      cacheKey,
-      "miss",
-      bbox,
-      bounded
-    );
-    this.cache.set(cacheKey, {
-      expiresAt: now.getTime() + this.config.cacheTtlSeconds * 1000,
-      response: result
-    });
-    return result;
+  }
+
+  private storeCached(key: string, value: CachedGeocodeResponse, nowMs: number): void {
+    for (const [cachedKey, cached] of this.cache) {
+      if (cached.expiresAt <= nowMs) {
+        this.cache.delete(cachedKey);
+      }
+    }
+    this.cache.delete(key);
+    while (this.cache.size >= this.cacheMaxEntries()) {
+      const oldestKey = this.cache.keys().next().value;
+      if (typeof oldestKey !== "string") {
+        break;
+      }
+      this.cache.delete(oldestKey);
+    }
+    this.cache.set(key, value);
+  }
+
+  private cacheMaxEntries(): number {
+    return clampInteger(this.config.cacheMaxEntries, 1, 10_000, 1_000);
   }
 
   private response(
@@ -298,7 +376,10 @@ function normalizeQuery(value: string): string {
 }
 
 function normalizeLanguage(value: string | undefined): string {
-  const normalized = (value ?? "cs,en").trim().replace(/[^\w, -]/gu, "").slice(0, 40);
+  const normalized = (value ?? "cs,en")
+    .trim()
+    .replace(/[^\w, -]/gu, "")
+    .slice(0, 40);
   return normalized || "cs,en";
 }
 

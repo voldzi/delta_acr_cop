@@ -28,6 +28,16 @@ reported in `/health/dependencies` as `ok` with an `idle; waiting for first
 request` detail. This prevents an unused optional layer from making the PoC
 health view look degraded before an operator opens that layer.
 
+Source-health aggregation indexes the current in-memory events and objects by
+`sourceSystemId` once per snapshot. Adding more configured providers therefore
+does not rescan the full event and track collections for every provider; the
+aggregation cost remains linear in sources, events and current objects.
+
+External Nominatim requests are protected by a bounded least-recently-used
+cache, identical concurrent-query coalescing and an upstream timeout. Provider
+diagnostics expose current/max cache entries and in-flight request count without
+including search text or personal location data.
+
 Messaging readiness does not prove that public clients can reach the TURN NAT
 mapping or relay port range. Voice-call diagnosis must distinguish signalling
 (`invite`, `answer`, `select_answer`) from media establishment and record only

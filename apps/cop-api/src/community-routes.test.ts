@@ -323,24 +323,33 @@ describe("community report routes", () => {
     process.env.COP_PUBLIC_READ_ENABLED = "true";
     process.env.COP_MEDIA_ACCESS_TOKEN_SECRET = "test-media-ticket-secret";
     const mediaStorage = new FakeMediaStorage();
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (!url.startsWith("https://media.example.test/read/")) {
-        return new Response(null, { status: 404 });
-      }
-      const objectKey = decodeURIComponent(url.slice("https://media.example.test/read/".length));
-      const body = mediaStorage.objects.get(objectKey);
-      return body
-        ? new Response(new Uint8Array(body), {
+    const bufferedMediaRead = vi.fn(async () => {
+      throw new Error("Media proxy must stream instead of buffering the full object.");
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (!url.startsWith("https://media.example.test/read/")) {
+          return new Response(null, { status: 404 });
+        }
+        const objectKey = decodeURIComponent(url.slice("https://media.example.test/read/".length));
+        const body = mediaStorage.objects.get(objectKey);
+        if (body) {
+          const response = new Response(new Uint8Array(body), {
             headers: {
               "accept-ranges": "bytes",
               "content-length": String(body.length),
               "content-type": "image/jpeg"
             },
             status: 200
-          })
-        : new Response(null, { status: 404 });
-    }));
+          });
+          Object.defineProperty(response, "arrayBuffer", { value: bufferedMediaRead });
+          return response;
+        }
+        return new Response(null, { status: 404 });
+      })
+    );
     const app = buildServer({
       mediaStorage,
       now: () => new Date("2026-05-20T12:00:00Z")
@@ -432,6 +441,7 @@ describe("community report routes", () => {
     });
     expect(contentWithoutBearer.statusCode).toBe(200);
     expect(contentWithoutBearer.body).toBe("group-photo");
+    expect(bufferedMediaRead).not.toHaveBeenCalled();
 
     const contentWithoutTicket = await app.inject({
       method: "GET",

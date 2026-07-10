@@ -56,6 +56,7 @@ import {
   type TransitVehicleDetailResponse
 } from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
+import { useDocumentVisible } from "./use-document-visibility";
 import type { ChatLiveLocationPayload } from "@cop/messaging/bridge";
 import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
 import {
@@ -996,6 +997,7 @@ function CopMapComponent({
   onSketchModeChange,
   onUpdateSketchDrawing
 }: CopMapProps) {
+  const documentVisible = useDocumentVisible();
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const selectionPopoverRef = React.useRef<HTMLDivElement | null>(null);
   const selectionPopoverDragRef = React.useRef<{
@@ -5052,7 +5054,7 @@ function CopMapComponent({
 
   React.useEffect(() => {
     const map = mapRef.current;
-    if (!mapReady || !map || typeof window === "undefined") {
+    if (!documentVisible || !mapReady || !map || typeof window === "undefined") {
       return;
     }
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
@@ -5072,7 +5074,7 @@ function CopMapComponent({
     return () => {
       window.clearInterval(timer);
     };
-  }, [mapReady]);
+  }, [documentVisible, mapReady]);
 
   React.useEffect(() => {
     if (!mapReady || !userLocation || focusUserLocationRequest === 0) {

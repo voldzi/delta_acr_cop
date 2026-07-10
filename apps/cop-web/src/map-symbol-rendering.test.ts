@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  civilAircraftIconKinds,
+  civilAircraftIconTones,
+  createCivilAircraftSymbolImage,
   createFloodTrendSymbolImage,
   createMobileNetworkSymbolImage,
   createOsmCategorySymbolImage,
@@ -20,6 +23,7 @@ import {
   normalizeWeatherConditionIconId,
   osmCategoryIconIds,
   riskIconIds,
+  registerCivilAircraftSymbolImages,
   weatherCameraIconKey,
   weatherConditionIconIds,
   weatherWindIconKey
@@ -57,6 +61,7 @@ class TestGradient {
 class TestCanvasContext {
   fillStyle = "";
   font = "";
+  globalCompositeOperation = "source-over";
   globalAlpha = 1;
   lineCap = "butt";
   lineJoin = "miter";
@@ -224,6 +229,42 @@ describe("map symbol rendering contract", () => {
     expect(normalizeWeatherConditionIconId("measurement")).toBe("measurement");
     expect(normalizeWeatherConditionIconId("wind-gauge")).toBe("measurement_wind");
     expect(normalizeWeatherConditionIconId("unknown-provider-state")).toBe("unknown");
+  });
+
+  it("loads and decodes each shared civil aircraft asset only once", async () => {
+    let decodedImages = 0;
+    class TestImage {
+      height = 100;
+      onerror: (() => void) | null = null;
+      onload: (() => void) | null = null;
+      width = 100;
+
+      set src(_value: string) {
+        decodedImages += 1;
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL) =>
+        new Response('<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M0 0h10v10z"/></svg>')
+    );
+    vi.stubGlobal("Image", TestImage);
+    vi.stubGlobal("fetch", fetchMock);
+    const addImage = vi.fn();
+
+    await registerCivilAircraftSymbolImages({
+      addImage,
+      hasImage: () => false
+    } as never);
+
+    const requestedUrls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(addImage).toHaveBeenCalledTimes(civilAircraftIconKinds.length * civilAircraftIconTones.length);
+    expect(fetchMock).toHaveBeenCalledTimes(new Set(requestedUrls).size);
+    expect(fetchMock.mock.calls.length).toBeLessThan(civilAircraftIconKinds.length);
+    expect(decodedImages).toBe(fetchMock.mock.calls.length);
+    await expect(createCivilAircraftSymbolImage("small_aircraft", "normal")).resolves.toBeInstanceOf(TestImageData);
+    expect(fetchMock).toHaveBeenCalledTimes(new Set(requestedUrls).size);
+    expect(decodedImages).toBe(fetchMock.mock.calls.length);
   });
 
   it("renders weather, hydro, camera, network, OSM, transport and risk icons with stable dimensions", () => {

@@ -29,6 +29,7 @@ import { defaultMapCenter } from "./user-preferences";
 
 const initialMatchMedia = window.matchMedia;
 const initialGeolocation = navigator.geolocation;
+const initialVisibilityState = document.visibilityState;
 
 vi.mock("./CopMap", async () => {
   const React = await import("react");
@@ -330,6 +331,10 @@ afterEach(() => {
   Object.defineProperty(navigator, "geolocation", {
     configurable: true,
     value: initialGeolocation
+  });
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    value: initialVisibilityState
   });
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
@@ -2706,6 +2711,29 @@ describe("COP web dashboard", () => {
     expect(screen.queryByText("Čekám na georeferencované situační objekty.")).toBeNull();
   });
 
+  it("clears active background polling when the document becomes hidden", async () => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const clearIntervalSpy = vi.spyOn(window, "clearInterval");
+    const fetchMock = createEmptyDashboardFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/cop/tracks?includeSynthetic=true"),
+        expect.any(Object)
+      )
+    );
+    const clearedBeforeHide = clearIntervalSpy.mock.calls.length;
+
+    act(() => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    await waitFor(() => expect(clearIntervalSpy.mock.calls.length).toBeGreaterThan(clearedBeforeHide));
+  });
+
   it("restores the last local snapshot when the COP API is unavailable", async () => {
     installTestLocalStorage();
     writeCopOfflineSnapshot(
@@ -2759,6 +2787,33 @@ describe("COP web dashboard", () => {
     expect(screen.getByText(/Uloženo/u)).toBeTruthy();
   });
 });
+
+function createEmptyDashboardFetchMock() {
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/health/ready")) {
+      return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+    }
+    if (url.includes("/api/v1/me/preferences")) {
+      return jsonResponse({
+        actor: { authMode: "lab", displayName: "Lab operator", subjectId: "lab", username: "lab" },
+        alertPreferences: {},
+        preferences: { trackHistoryLimit: 120, trackHistoryWindowSeconds: 180 },
+        updatedAt: "2026-05-19T08:00:00Z"
+      });
+    }
+    if (url.includes("/api/v1/sources/health") || url.includes("/api/v1/sources")) {
+      return jsonResponse({ items: [] });
+    }
+    if (url.includes("/api/v1/cop/tracks?includeSynthetic=true")) {
+      return jsonResponse({ items: [] });
+    }
+    if (url.includes("/api/v1/cop/track-history?seconds=180&limit=120")) {
+      return jsonResponse({ items: [] });
+    }
+    throw new Error(`Unexpected request ${url}`);
+  });
+}
 
 function testMapCatalogResponse(): unknown {
   return {

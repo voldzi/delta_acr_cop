@@ -19,6 +19,7 @@ import {
   type XrObjectModel
 } from "./xr-model";
 import { readUserPreferences, type UserPreferences } from "./user-preferences";
+import { useDocumentVisible } from "./use-document-visibility";
 import "./styles.css";
 
 const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
@@ -76,6 +77,7 @@ interface XrInputState {
 type XrSupportState = "checking" | "supported" | "unsupported";
 
 export default function XrWorkspace() {
+  const documentVisible = useDocumentVisible();
   const mountRef = React.useRef<HTMLDivElement | null>(null);
   const sceneRef = React.useRef<XrSceneHandles | null>(null);
   const dashboardLoadInFlightRef = React.useRef(false);
@@ -138,19 +140,13 @@ export default function XrWorkspace() {
   }, []);
 
   React.useEffect(() => {
-    const refreshWhenVisible = () => {
-      if (document.visibilityState !== "hidden") {
-        void loadDashboardData();
-      }
-    };
-    refreshWhenVisible();
-    const timer = window.setInterval(refreshWhenVisible, 8000);
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-    };
-  }, [loadDashboardData]);
+    if (!documentVisible) {
+      return;
+    }
+    void loadDashboardData();
+    const timer = window.setInterval(() => void loadDashboardData(), 8000);
+    return () => window.clearInterval(timer);
+  }, [documentVisible, loadDashboardData]);
 
   React.useEffect(() => {
     const xr = readNavigatorXr();

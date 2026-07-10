@@ -160,6 +160,7 @@ import { deriveChatWorkflowState } from "./hooks/chatWorkflowState";
 import { useMatrixSession } from "./hooks/useMatrixSession";
 import { useEventCallback, useModalFocus } from "./hooks/useModalFocus";
 import { preferredChatScrollBehavior, useVirtualTimelineRows, type TimelineRow } from "./hooks/useVirtualTimelineRows";
+import { useVisibleNow } from "./hooks/useVisibleNow";
 import {
   buildTimelineRows,
   filterTimelineByRetention,
@@ -172,6 +173,7 @@ import {
   type ChatPreferences
 } from "./chat-model";
 import { deleteStoredRoomTimeline, readStoredRoomTimeline, writeStoredRoomTimeline } from "./timeline-cache";
+import { createAsyncRefreshCoordinator } from "./async-refresh-coordinator";
 import type { ForwardTarget } from "./dialogs/ForwardDialog";
 import type { MediaPreviewItem } from "./dialogs/MediaPreviewDialog";
 import type { MuteChoice } from "./dialogs/MuteDialog";
@@ -672,6 +674,19 @@ export function ChatApp() {
   const timelinePersistFingerprintRef = React.useRef<Map<string, string>>(new Map());
   const conversationsRef = React.useRef<MessagingConversationSummary[]>(conversations);
   const memberAddPendingIdsRef = React.useRef<Set<string>>(new Set());
+  const webPushRefreshCoordinator = React.useMemo(
+    () =>
+      createAsyncRefreshCoordinator({
+        load: () => fetchWebPushConfig(apiBase),
+        onError: () =>
+          setWebPushState({
+            ...readWebPushPermissionState(),
+            warnings: ["Stav webových push notifikací se nepodařilo ověřit."]
+          }),
+        onSuccess: setWebPushState
+      }),
+    []
+  );
 
   React.useEffect(() => installChatHapticFeedback(), []);
 
@@ -1163,30 +1178,13 @@ export function ChatApp() {
     setChatPreferences(readChatPreferences(preferencesOwner));
   }, [preferencesOwner]);
 
-  const refreshChatWebPushState = React.useCallback(async () => {
-    try {
-      setWebPushState(await fetchWebPushConfig(apiBase));
-    } catch {
-      setWebPushState({
-        ...readWebPushPermissionState(),
-        warnings: ["Stav webových push notifikací se nepodařilo ověřit."]
-      });
-    }
-  }, []);
+  const refreshChatWebPushState = React.useCallback(
+    (force = false) => webPushRefreshCoordinator.refresh({ force }),
+    [webPushRefreshCoordinator]
+  );
 
   React.useEffect(() => {
-    void refreshChatWebPushState();
-    const refresh = () => {
-      void refreshChatWebPushState();
-    };
-    window.addEventListener("focus", refresh);
-    window.addEventListener("online", refresh);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      window.removeEventListener("focus", refresh);
-      window.removeEventListener("online", refresh);
-      document.removeEventListener("visibilitychange", refresh);
-    };
+    void refreshChatWebPushState(true);
   }, [refreshChatWebPushState, refreshNonce]);
 
   React.useEffect(() => {
@@ -1463,17 +1461,38 @@ export function ChatApp() {
   }, [matrixSessionRef, resetMatrixSession]);
 
   React.useEffect(() => {
-    const resume = () => {
-      void refreshChatWebPushState();
-      if (document.visibilityState === "visible") {
-        void ensureFreshChatAuthSession()
-          .then((session) => {
-            if (session.status === "authenticated") {
-              resumeMatrixSessionIfNeeded();
-            }
-          })
-          .catch(() => undefined);
+    let watchdogTimer: number | null = null;
+    const clearWatchdog = () => {
+      if (watchdogTimer !== null) {
+        window.clearTimeout(watchdogTimer);
+        watchdogTimer = null;
       }
+    };
+    const scheduleWatchdog = () => {
+      clearWatchdog();
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      watchdogTimer = window.setTimeout(() => {
+        watchdogTimer = null;
+        resumeMatrixSessionIfNeeded();
+        scheduleWatchdog();
+      }, 30_000);
+    };
+    const resume = () => {
+      if (document.visibilityState !== "visible") {
+        clearWatchdog();
+        return;
+      }
+      void refreshChatWebPushState();
+      void ensureFreshChatAuthSession()
+        .then((session) => {
+          if (session.status === "authenticated") {
+            resumeMatrixSessionIfNeeded();
+          }
+        })
+        .catch(() => undefined);
+      scheduleWatchdog();
     };
     const onPageShow = () => resume();
     const onVisibilityChange = () => resume();
@@ -1481,17 +1500,13 @@ export function ChatApp() {
     window.addEventListener("focus", resume);
     window.addEventListener("online", resume);
     document.addEventListener("visibilitychange", onVisibilityChange);
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
-        resumeMatrixSessionIfNeeded();
-      }
-    }, 30_000);
+    scheduleWatchdog();
     return () => {
       window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener("focus", resume);
       window.removeEventListener("online", resume);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      window.clearInterval(timer);
+      clearWatchdog();
     };
   }, [ensureFreshChatAuthSession, refreshChatWebPushState, resumeMatrixSessionIfNeeded]);
 
@@ -1606,7 +1621,7 @@ export function ChatApp() {
     }
     const liveTimeline = matrixSession.getTimeline(selectedRoomId);
     setTimeline(rememberRoomTimeline(selectedRoomId, liveTimeline));
-  }, [matrixSession, rooms, selectedRoomId, timelineRevision]);
+  }, [matrixSession, selectedRoomId, timelineRevision]);
 
   React.useEffect(() => {
     if (!matrixSession || !selectedRoomId) {
@@ -1967,6 +1982,9 @@ export function ChatApp() {
     allowEmpty = false
   ): MatrixTimelineMessage[] {
     const cached = timelineCacheRef.current.get(roomId) ?? [];
+    if (messages === cached) {
+      return cached;
+    }
     if (messages.length === 0 && cached.length > 0 && !allowEmpty) {
       return cached;
     }
@@ -6619,14 +6637,7 @@ function LocationMessage({
 }) {
   const location = message.location;
   const live = location?.live;
-  const [now, setNow] = React.useState(() => Date.now());
-  React.useEffect(() => {
-    if (!live?.expiresAt || live.status !== "live") {
-      return undefined;
-    }
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
-  }, [live?.expiresAt, live?.status]);
+  const now = useVisibleNow(Boolean(live?.expiresAt && live.status === "live"), 30_000);
   if (!location) {
     return null;
   }
@@ -6765,15 +6776,7 @@ function VoiceCallBar({
   onToggleMute: () => void;
 }) {
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
-  const [now, setNow] = React.useState(() => Date.now());
-
-  React.useEffect(() => {
-    if (call.phase !== "connected") {
-      return undefined;
-    }
-    const intervalId = window.setInterval(() => setNow(Date.now()), 1_000);
-    return () => window.clearInterval(intervalId);
-  }, [call.phase, call.startedAt]);
+  const now = useVisibleNow(call.phase === "connected", 1_000);
 
   React.useEffect(() => {
     const audio = audioRef.current;
@@ -9909,8 +9912,9 @@ export function collectIncomingChatNotifications(
     const roomId = snapshot.room.roomId;
     const latestTimestamp = latestNotificationTimestamp(snapshot.messages);
     if (!tracker.primedRoomIds.has(roomId)) {
-      for (const message of snapshot.messages) {
-        tracker.notifiedEventIds.add(message.eventId);
+      const latestMessage = snapshot.messages.at(-1);
+      if (latestMessage) {
+        tracker.notifiedEventIds.add(latestMessage.eventId);
       }
       tracker.primedRoomIds.add(roomId);
       tracker.roomWatermarks.set(roomId, Math.max(latestTimestamp ?? observedAt, observedAt));
@@ -9919,7 +9923,7 @@ export function collectIncomingChatNotifications(
 
     const currentWatermark = tracker.roomWatermarks.get(roomId) ?? observedAt;
     let nextWatermark = Math.max(currentWatermark, latestTimestamp ?? currentWatermark);
-    for (const message of snapshot.messages) {
+    for (const message of notificationMessagesAfterWatermark(snapshot.messages, currentWatermark)) {
       const messageTimestamp = notificationTimestampMillis(message);
       if (Number.isFinite(messageTimestamp)) {
         nextWatermark = Math.max(nextWatermark, messageTimestamp);
@@ -9977,14 +9981,40 @@ export function chatNotificationTag(roomId: string, eventId: string): string {
 }
 
 function latestNotificationTimestamp(messages: MatrixTimelineMessage[]): number | undefined {
-  let latest: number | undefined;
-  for (const message of messages) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message) {
+      continue;
+    }
     const timestamp = notificationTimestampMillis(message);
     if (Number.isFinite(timestamp)) {
-      latest = latest === undefined ? timestamp : Math.max(latest, timestamp);
+      return timestamp;
     }
   }
-  return latest;
+  return undefined;
+}
+
+function notificationMessagesAfterWatermark(
+  messages: MatrixTimelineMessage[],
+  watermark: number
+): MatrixTimelineMessage[] {
+  // Matrix and the local merge cache both expose timelines chronologically.
+  // Walk backwards and stop at the first acknowledged event so a notification
+  // tick costs O(new messages), not O(all retained history).
+  const recent: MatrixTimelineMessage[] = [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message) {
+      continue;
+    }
+    const timestamp = notificationTimestampMillis(message);
+    if (Number.isFinite(timestamp) && timestamp <= watermark) {
+      break;
+    }
+    recent.push(message);
+  }
+  recent.reverse();
+  return recent;
 }
 
 function notificationTimestampMillis(message: MatrixTimelineMessage): number {

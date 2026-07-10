@@ -160,6 +160,12 @@ Endpoint `GET /attachments/{attachmentId}/content` u stejného média vrací zá
 
 Pro chráněná média API vrací `contentUrl` jako krátkodobý podepsaný odkaz s query parametrem `mediaToken`. Token se vydá pouze při autorizovaném API čtení reportu nebo feature kolekce a obsahuje vazbu na `reportId`, `attachmentId`, volitelný `derivativeId` a expiraci. Je to nutné proto, že HTML prvky `img`, `video`, `audio`, `iframe` a otevření PDF v novém okně neposílají aplikační `Authorization: Bearer ...` hlavičku.
 
+Same-origin media endpoint po ověření ACL a tokenu streamuje odpověď z objektového
+úložiště s backpressure a zachovává hlavičky `Range`, `Content-Range` a
+`Accept-Ranges`. API proto před zahájením přehrávání nedrží celé video nebo XR
+derivát v paměti; připojení k úložišti má zároveň omezený čas na získání HTTP
+hlaviček.
+
 Podepsaný media token:
 
 - neobsahuje service token, SeaweedFS credential ani Matrix/Keycloak token;
