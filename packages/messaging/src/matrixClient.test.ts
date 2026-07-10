@@ -1053,6 +1053,32 @@ describe("Matrix client diagnostics", () => {
     });
   });
 
+  it("suppresses undecrypted E2EE preflight artifacts adjacent to plaintext call signaling", async () => {
+    const preflightAt = Date.parse("2026-07-10T13:09:15.000Z");
+    const unrelated = createEncryptedEvent(preflightAt - 6_000, "$unrelated", "@peer:cop.local");
+    const callPreflight = createEncryptedEvent(preflightAt, "$call-preflight", "@peer:cop.local");
+    const otherSender = createEncryptedEvent(preflightAt + 1_000, "$other-sender", "@other:cop.local");
+    const callInvite = createCallEvent("m.call.invite", preflightAt + 4_000, "$call-invite", "@peer:cop.local");
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [
+          createRoom({
+            roomId: "!chat:cop.local",
+            timeline: [unrelated, callPreflight, otherSender, callInvite]
+          })
+        ]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    expect(session.getTimeline("!chat:cop.local").map((message) => message.eventId)).toEqual([
+      "$unrelated",
+      "$other-sender"
+    ]);
+    expect(session.getRooms()[0]?.latestMessage?.eventId).toBe("$other-sender");
+  });
+
   it("maps decrypted encrypted events from Matrix clear content", async () => {
     const decrypted = createEncryptedEvent(Date.parse("2026-07-07T13:18:00.000Z"), "$decrypted", "@peer:cop.local", {
       body: "obnovená zpráva",

@@ -8685,152 +8685,156 @@ function CommunityReportDialog({
       onClose={onClose}
       title={draft.reportId ? "Upravit hlášení" : "Nahlásit událost v okolí"}
     >
-      <div className="report-form-grid">
-        <label>
-          Typ události
-          <SelectField<CommunityReportCategory>
-            ariaLabel="Typ události"
-            options={communityReportCategoryOptions}
-            value={draft.category}
-            onValueChange={(category) => onChange((current) => ({ ...current, category }))}
-          />
-        </label>
-        <label>
-          Odhad rizika
-          <SelectField<CommunityReportHazardSeverity>
-            ariaLabel="Odhad rizika"
-            options={communityHazardSeverityOptions}
-            value={draft.hazardSeverity}
-            onValueChange={(hazardSeverity) => onChange((current) => ({ ...current, hazardSeverity }))}
-          />
-        </label>
-      </div>
-
-      <label className="report-field">
-        Název
-        <input
-          maxLength={120}
-          placeholder="Např. Požár u lesa"
-          value={draft.title}
-          onChange={(event) => onChange((current) => ({ ...current, title: event.target.value }))}
-        />
-      </label>
-
-      <label className="report-field">
-        Popis
-        <textarea
-          maxLength={2000}
-          placeholder="Stručně popište, co je vidět a proč je to důležité."
-          value={draft.description}
-          onChange={(event) => onChange((current) => ({ ...current, description: event.target.value }))}
-        />
-      </label>
-
-      <div className="report-form-grid">
-        <label>
-          Platnost rizika
-          <input
-            type="datetime-local"
-            value={draft.validUntil}
-            onChange={(event) => onChange((current) => ({ ...current, validUntil: event.target.value }))}
-          />
-        </label>
-        <div className="report-coordinate-box">
-          <span>Poloha</span>
-          <strong>{formatReportLocation(draft.location)}</strong>
-        </div>
-      </div>
-      {draft.mediaLocationHint ? <div className="report-dialog-message success">{draft.mediaLocationHint}</div> : null}
-
-      <div className="report-location-actions">
-        <button className="mini-button" onClick={onLocationFromUser} type="button">
-          Moje poloha
-        </button>
-        <button className="mini-button" onClick={onLocationFromMap} type="button">
-          Střed mapy
-        </button>
-        <button className="mini-button" onClick={onLocationFromMapClick} type="button">
-          Vybrat v mapě
-        </button>
-      </div>
-
-      <section className="report-access-panel">
-        <div className="report-access-header">
-          <strong>Přístup k přílohám</strong>
-          <span>{communityMediaAccessLabel(draft.mediaAccessMode)}</span>
-        </div>
-        <span className="report-field-hint">
-          Hlášení zůstane mapový objekt. Skupiny a konverzace řeší samostatná aplikace Chat.
-        </span>
-        <SelectField<CommunityMediaAccessMode>
-          ariaLabel="Přístup k médiím"
-          options={communityMediaAccessOptions}
-          value={draft.mediaAccessMode}
-          onValueChange={(mediaAccessMode) => onChange((current) => ({ ...current, mediaAccessMode }))}
-        />
-        {draft.mediaAccessMode === "users" ? (
-          <label className="report-field">
-            Uživatelé
-            <textarea
-              maxLength={1200}
-              placeholder="Každý řádek jeden subjectId uživatele. Později zde bude adresář kontaktů."
-              value={draft.mediaAccessUserSubjectIds}
-              onChange={(event) =>
-                onChange((current) => ({ ...current, mediaAccessUserSubjectIds: event.target.value }))
-              }
+      <div className="report-dialog-scroll">
+        <div className="report-form-grid">
+          <label>
+            Typ události
+            <SelectField<CommunityReportCategory>
+              ariaLabel="Typ události"
+              options={communityReportCategoryOptions}
+              value={draft.category}
+              onValueChange={(category) => onChange((current) => ({ ...current, category }))}
             />
           </label>
-        ) : null}
-        <span className="report-field-hint">
-          Text hlášení a stupeň výstrahy se zobrazují v mapě. Fotky, PDF a videa respektují zvolený přístup.
-        </span>
-      </section>
+          <label>
+            Odhad rizika
+            <SelectField<CommunityReportHazardSeverity>
+              ariaLabel="Odhad rizika"
+              options={communityHazardSeverityOptions}
+              value={draft.hazardSeverity}
+              onValueChange={(hazardSeverity) => onChange((current) => ({ ...current, hazardSeverity }))}
+            />
+          </label>
+        </div>
 
-      <label className="report-field">
-        Přílohy
-        <input
-          accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,video/mp4,video/quicktime"
-          multiple
-          type="file"
-          onChange={(event) => onFilesSelected(Array.from(event.target.files ?? []))}
-        />
-      </label>
-      {draft.files.some(isCommunityVideoFile) ? (
         <label className="report-field">
-          Režim videa
-          <SelectField<CommunityVideoSpatialMode>
-            ariaLabel="Režim videa"
-            options={communityVideoSpatialOptions}
-            value={draft.videoSpatialMode}
-            onValueChange={(videoSpatialMode) => onChange((current) => ({ ...current, videoSpatialMode }))}
+          Název
+          <input
+            maxLength={120}
+            placeholder="Např. Požár u lesa"
+            value={draft.title}
+            onChange={(event) => onChange((current) => ({ ...current, title: event.target.value }))}
           />
-          <span className="report-field-hint">
-            Side-by-side a over-under se přehrají v XR přímo. iPhone Spatial MOV se uloží jako originál a server
-            připraví 3D XR kopii.
-          </span>
         </label>
-      ) : null}
-      <div className="report-attachment-list">
-        {draft.files.length === 0 ? (
-          <span>Bez příloh. Lze vložit fotografii, PDF nebo video.</span>
-        ) : (
-          draft.files.map((file) => (
-            <div className="report-attachment-row" key={`${file.name}-${file.size}-${file.lastModified}`}>
-              <span>{file.name || "Soubor"}</span>
-              <strong>
-                {communityAttachmentKindLabel(
-                  communityAttachmentKindFromContentType(normalizeCommunityFileContentType(file))
-                )}{" "}
-                · {formatFileSize(file.size)}
-              </strong>
-            </div>
-          ))
-        )}
-      </div>
 
-      {uploadProgress ? <CommunityUploadProgressPanel progress={uploadProgress} /> : null}
-      {error ? <div className="report-dialog-message error">{error}</div> : null}
-      {success ? <div className="report-dialog-message success">{success}</div> : null}
+        <label className="report-field">
+          Popis
+          <textarea
+            maxLength={2000}
+            placeholder="Stručně popište, co je vidět a proč je to důležité."
+            value={draft.description}
+            onChange={(event) => onChange((current) => ({ ...current, description: event.target.value }))}
+          />
+        </label>
+
+        <div className="report-form-grid">
+          <label>
+            Platnost rizika
+            <input
+              type="datetime-local"
+              value={draft.validUntil}
+              onChange={(event) => onChange((current) => ({ ...current, validUntil: event.target.value }))}
+            />
+          </label>
+          <div className="report-coordinate-box">
+            <span>Poloha</span>
+            <strong>{formatReportLocation(draft.location)}</strong>
+          </div>
+        </div>
+        {draft.mediaLocationHint ? (
+          <div className="report-dialog-message success">{draft.mediaLocationHint}</div>
+        ) : null}
+
+        <div className="report-location-actions">
+          <button className="mini-button" onClick={onLocationFromUser} type="button">
+            Moje poloha
+          </button>
+          <button className="mini-button" onClick={onLocationFromMap} type="button">
+            Střed mapy
+          </button>
+          <button className="mini-button" onClick={onLocationFromMapClick} type="button">
+            Vybrat v mapě
+          </button>
+        </div>
+
+        <section className="report-access-panel">
+          <div className="report-access-header">
+            <strong>Přístup k přílohám</strong>
+            <span>{communityMediaAccessLabel(draft.mediaAccessMode)}</span>
+          </div>
+          <span className="report-field-hint">
+            Hlášení zůstane mapový objekt. Skupiny a konverzace řeší samostatná aplikace Chat.
+          </span>
+          <SelectField<CommunityMediaAccessMode>
+            ariaLabel="Přístup k médiím"
+            options={communityMediaAccessOptions}
+            value={draft.mediaAccessMode}
+            onValueChange={(mediaAccessMode) => onChange((current) => ({ ...current, mediaAccessMode }))}
+          />
+          {draft.mediaAccessMode === "users" ? (
+            <label className="report-field">
+              Uživatelé
+              <textarea
+                maxLength={1200}
+                placeholder="Každý řádek jeden subjectId uživatele. Později zde bude adresář kontaktů."
+                value={draft.mediaAccessUserSubjectIds}
+                onChange={(event) =>
+                  onChange((current) => ({ ...current, mediaAccessUserSubjectIds: event.target.value }))
+                }
+              />
+            </label>
+          ) : null}
+          <span className="report-field-hint">
+            Text hlášení a stupeň výstrahy se zobrazují v mapě. Fotky, PDF a videa respektují zvolený přístup.
+          </span>
+        </section>
+
+        <label className="report-field">
+          Přílohy
+          <input
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,video/mp4,video/quicktime"
+            multiple
+            type="file"
+            onChange={(event) => onFilesSelected(Array.from(event.target.files ?? []))}
+          />
+        </label>
+        {draft.files.some(isCommunityVideoFile) ? (
+          <label className="report-field">
+            Režim videa
+            <SelectField<CommunityVideoSpatialMode>
+              ariaLabel="Režim videa"
+              options={communityVideoSpatialOptions}
+              value={draft.videoSpatialMode}
+              onValueChange={(videoSpatialMode) => onChange((current) => ({ ...current, videoSpatialMode }))}
+            />
+            <span className="report-field-hint">
+              Side-by-side a over-under se přehrají v XR přímo. iPhone Spatial MOV se uloží jako originál a server
+              připraví 3D XR kopii.
+            </span>
+          </label>
+        ) : null}
+        <div className="report-attachment-list">
+          {draft.files.length === 0 ? (
+            <span>Bez příloh. Lze vložit fotografii, PDF nebo video.</span>
+          ) : (
+            draft.files.map((file) => (
+              <div className="report-attachment-row" key={`${file.name}-${file.size}-${file.lastModified}`}>
+                <span>{file.name || "Soubor"}</span>
+                <strong>
+                  {communityAttachmentKindLabel(
+                    communityAttachmentKindFromContentType(normalizeCommunityFileContentType(file))
+                  )}{" "}
+                  · {formatFileSize(file.size)}
+                </strong>
+              </div>
+            ))
+          )}
+        </div>
+
+        {uploadProgress ? <CommunityUploadProgressPanel progress={uploadProgress} /> : null}
+        {error ? <div className="report-dialog-message error">{error}</div> : null}
+        {success ? <div className="report-dialog-message success">{success}</div> : null}
+      </div>
     </ModalDialog>
   );
 }

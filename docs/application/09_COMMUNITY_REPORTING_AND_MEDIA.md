@@ -325,6 +325,10 @@ UI nyní zobrazuje panel režimu účtu a zamyká ukládání vlastních profil�
 
 Webové tlačítko `Nahlásit` otevře formulář pro kategorii, popis, uživatelský stupeň rizika, odhad platnosti, polohu a přílohy. Poloha se bere z GPS, ze středu mapy nebo interaktivním kliknutím do mapy. Každá příloha dostane stejnou polohu pořízení, pokud soubor sám neposkytne ověřená geodata.
 
+Na úzkém mobilním viewportu se obsah formuláře posouvá samostatně mezi pevnou
+hlavičkou a pevnou spodní lištou akcí. `Zrušit` a `Uložit hlášení` tak zůstávají
+dosažitelné bez ohledu na délku formuláře, klávesnici a spodní iOS safe area.
+
 ## AI
 
 AI nesmí být nutná pro základní provoz. Doporučený model:

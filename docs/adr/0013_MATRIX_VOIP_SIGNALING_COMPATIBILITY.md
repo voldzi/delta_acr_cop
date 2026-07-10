@@ -30,6 +30,13 @@ Chat messages, attachments, locations and recovery material remain E2EE. WebRTC
 media remains protected by DTLS-SRTP and never traverses COP API or CSM
 Messaging.
 
+The failed encrypted preflight and acknowledgement can otherwise appear as
+undecryptable chat bubbles before the plaintext compatibility events arrive.
+COP suppresses only undecrypted events from the same sender that immediately
+precede a visible Matrix call-control event within a bounded five-second
+correlation window. Undecryptable events outside that call window remain
+visible so an actual missing user message is not silently hidden.
+
 ## Consequences
 
 - Active compatible peers retain end-to-end encrypted call signaling.
@@ -38,8 +45,8 @@ Messaging.
 - In compatibility mode, the self-hosted Synapse service can observe call
   control metadata, SDP and ICE candidates. It still cannot decrypt WebRTC
   media or chat content.
-- The timeline collapses short consecutive runs of undecryptable events into a
-  single diagnostic row.
+- The timeline collapses ordinary short runs of undecryptable events and does
+  not expose correlated VoIP preflight artifacts as user messages.
 
 ## Alternatives Considered
 

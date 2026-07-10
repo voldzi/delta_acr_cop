@@ -218,6 +218,10 @@ compatibility mode the self-hosted Synapse service can observe SDP/ICE signallin
 metadata, but chat content and recovery material remain E2EE. WebRTC media
 remains protected by DTLS-SRTP, and COP API does not proxy signalling or media
 payloads. The decision and accepted trade-off are recorded in ADR-0013.
+An undecrypted custom preflight immediately followed by plaintext call control
+from the same sender is treated as a VoIP control artifact and omitted from the
+chat timeline within a bounded five-second correlation window. Other
+undecryptable encrypted events remain visible as missing-history diagnostics.
 
 CSM notification intake responds with the provider envelope
 `{contractVersion, providerId, notification}`. COP reads `notificationId` and

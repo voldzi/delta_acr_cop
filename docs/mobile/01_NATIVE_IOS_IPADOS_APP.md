@@ -311,6 +311,9 @@ iPhone:
 - detail objektu jako sheet z mapy,
 - zákresy jako samostatný mapový režim s explicitním přepnutím mezi pohybem mapy a kreslením,
 - alert banner nesmí zakrýt mapové ovládání,
+- samostatný i vložený webový chat musí odsazovat seznam i konverzační hlavičku
+  podle horní iOS safe area; systémový čas, Dynamic Island ani stavové ikony
+  nesmí překrývat ovládání chatu,
 - režim `OFFLINE/DEGRADED` viditelný v horní stavové liště.
 
 iPad:

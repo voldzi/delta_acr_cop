@@ -815,14 +815,32 @@ h1 {
 
 .report-dialog {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 12px;
   width: min(620px, 100%);
   max-height: min(760px, calc(100svh - 36px));
-  overflow: auto;
+  overflow: hidden;
   padding: 16px;
   border: 1px solid rgba(140, 182, 216, 0.42);
   background: rgba(8, 13, 18, 0.96);
   box-shadow: 0 26px 80px rgba(0, 0, 0, 0.55);
+}
+
+.report-dialog-scroll {
+  display: grid;
+  min-height: 0;
+  gap: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.report-dialog > .ui-dialog-actions {
+  padding-top: 12px;
+  border-top: 1px solid rgba(142, 157, 170, 0.2);
+  background: rgba(8, 13, 18, 0.98);
 }
 
 .ui-dialog-header,
@@ -9533,17 +9551,22 @@ dd {
 
   .report-dialog {
     width: 100%;
-    max-height: calc(100svh - 20px);
+    max-height: none;
     padding: 12px;
   }
 
   .ui-dialog-content.report-dialog {
-    top: auto;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
     right: 10px;
-    bottom: 10px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
     left: 10px;
     width: auto;
+    max-height: none;
     transform: none;
+  }
+
+  .report-dialog-scroll {
+    padding-right: 4px;
   }
 
   .report-form-grid {

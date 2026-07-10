@@ -32,6 +32,7 @@ import {
 
 const matrixVoiceCallPreflightEventType = "cz.zeleznalady.cop.call.preflight";
 const matrixVoiceCallPreflightAckEventType = "cz.zeleznalady.cop.call.preflight_ack";
+const matrixVoiceCallPreflightCorrelationWindowMs = 5_000;
 const matrixVoiceCallPreflightTimeoutMs = 1_200;
 const matrixVoiceCallConnectingTimeoutMs = 45_000;
 const matrixVoiceCallIceFailureMessage = "Hovor se nepodařilo spojit. Pravděpodobně chybí dostupný TURN server.";
@@ -3045,6 +3046,7 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
   const timelineEvents = (room?.timeline ?? [])
     .map(asEvent)
     .filter((event): event is MatrixEventLike => Boolean(event));
+  const hiddenVoiceCallControlEventIds = likelyUndecryptedVoiceCallControlEventIds(timelineEvents);
   const messageEvents = timelineEvents.filter(isTimelineMessageEvent);
   const readableMessageEvents = messageEvents.filter((event) => matrixTimelineEventType(event) === "m.room.message");
   const redactedEventIds = readRedactedEventIds(timelineEvents);
@@ -3062,6 +3064,9 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
         return [];
       }
       if (matrixTimelineEventType(event) === "m.room.encrypted") {
+        if (hiddenVoiceCallControlEventIds.has(eventId)) {
+          return [];
+        }
         return [mapUndecryptedMatrixEvent(room ?? undefined, event, currentUserId)];
       }
       const mapped = mapMatrixMessageEvent(
@@ -3100,6 +3105,48 @@ function matrixTimelineWireEventType(event: MatrixEventLike): string | undefined
 
 function isMatrixCallEventType(type: string | undefined): boolean {
   return Boolean(type?.startsWith("m.call.") || type?.startsWith("org.matrix.call."));
+}
+
+function likelyUndecryptedVoiceCallControlEventIds(events: MatrixEventLike[]): Set<string> {
+  const plaintextCallTimestampsBySender = new Map<string, number[]>();
+  for (const event of events) {
+    const eventType = matrixTimelineEventType(event);
+    const sender = event.getSender?.();
+    const timestamp = event.getTs?.();
+    if (
+      !isMatrixCallEventType(eventType) ||
+      matrixTimelineWireEventType(event) === "m.room.encrypted" ||
+      !sender ||
+      typeof timestamp !== "number" ||
+      !Number.isFinite(timestamp)
+    ) {
+      continue;
+    }
+    const senderTimestamps = plaintextCallTimestampsBySender.get(sender) ?? [];
+    senderTimestamps.push(timestamp);
+    plaintextCallTimestampsBySender.set(sender, senderTimestamps);
+  }
+
+  const hiddenEventIds = new Set<string>();
+  for (const event of events) {
+    if (matrixTimelineEventType(event) !== "m.room.encrypted") {
+      continue;
+    }
+    const eventId = event.getId?.();
+    const sender = event.getSender?.();
+    const timestamp = event.getTs?.();
+    if (!eventId || !sender || typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
+      continue;
+    }
+    const matchesCallControlWindow = (plaintextCallTimestampsBySender.get(sender) ?? []).some(
+      (callTimestamp) =>
+        callTimestamp >= timestamp && callTimestamp - timestamp <= matrixVoiceCallPreflightCorrelationWindowMs
+    );
+    if (matchesCallControlWindow) {
+      hiddenEventIds.add(eventId);
+    }
+  }
+  return hiddenEventIds;
 }
 
 function matrixTimelineEventContent(event: MatrixEventLike): Record<string, unknown> {
@@ -3184,12 +3231,17 @@ function readRoomLatestMessage(
 ): MatrixTimelineMessage | undefined {
   const retentionSeconds = room ? readRoomRetentionSeconds(room) : undefined;
   const events = (room?.timeline ?? []).map(asEvent).filter((event): event is MatrixEventLike => Boolean(event));
+  const hiddenVoiceCallControlEventIds = likelyUndecryptedVoiceCallControlEventIds(events);
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (!event || !isTimelineMessageEvent(event)) {
       continue;
     }
     if (matrixTimelineEventType(event) === "m.room.encrypted") {
+      const eventId = event.getId?.();
+      if (eventId && hiddenVoiceCallControlEventIds.has(eventId)) {
+        continue;
+      }
       const mapped = mapUndecryptedMatrixEvent(room, event, currentUserId);
       return messageWithinRetention(mapped, retentionSeconds) ? mapped : undefined;
     }
@@ -3203,9 +3255,11 @@ function readRoomLatestMessage(
 
 function latestReadableMessageEvent(room: MatrixRoomLike | undefined): MatrixEventLike | undefined {
   const events = (room?.timeline ?? []).map(asEvent).filter((event): event is MatrixEventLike => Boolean(event));
+  const hiddenVoiceCallControlEventIds = likelyUndecryptedVoiceCallControlEventIds(events);
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (event && isTimelineMessageEvent(event) && event.getId?.()) {
+    const eventId = event?.getId?.();
+    if (event && isTimelineMessageEvent(event) && eventId && !hiddenVoiceCallControlEventIds.has(eventId)) {
       return event;
     }
   }

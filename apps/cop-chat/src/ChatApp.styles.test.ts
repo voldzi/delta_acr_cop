@@ -28,13 +28,27 @@ describe("cop-chat embedded mobile layout CSS", () => {
     expect(conversationPaneBlock).not.toContain("position: fixed");
     expect(conversationPaneBlock).not.toContain("100dvh");
   });
+
+  it("keeps mobile list, conversation and composer controls outside iPhone safe areas", () => {
+    expect(cssBlocks(".list-header").some((block) => block.includes("env(safe-area-inset-top, 0px)"))).toBe(true);
+    expect(cssBlocks(".conversation-header").some((block) => block.includes("env(safe-area-inset-top, 0px)"))).toBe(
+      true
+    );
+    expect(cssBlocks(".composer").some((block) => block.includes("env(safe-area-inset-bottom, 0px)"))).toBe(true);
+  });
 });
 
 function cssBlock(selector: string): string {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\n/g, "\\s*");
-  const match = styles.match(new RegExp(`${escaped}\\s*\\{(?<body>[^}]*)\\}`, "u"));
-  if (!match?.groups?.body) {
+  const blocks = cssBlocks(selector);
+  if (!blocks[0]) {
     throw new Error(`CSS selector not found: ${selector}`);
   }
-  return match.groups.body;
+  return blocks[0];
+}
+
+function cssBlocks(selector: string): string[] {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\n/g, "\\s*");
+  return Array.from(styles.matchAll(new RegExp(`${escaped}\\s*\\{(?<body>[^}]*)\\}`, "gu")))
+    .map((match) => match.groups?.body)
+    .filter((body): body is string => Boolean(body));
 }
