@@ -628,6 +628,41 @@ describe("buildChatItems", () => {
     expect(item?.preferenceKey).toBeTruthy();
   });
 
+  it("keeps the COP profile name when a later Matrix room summary contains only the peer UUID", () => {
+    const peerId = "c6abf160-f5af-48fb-a79d-07511380e06a";
+    const roomId = "!direct-uuid:example.cz";
+    const conversation = {
+      conversationId: "c-daniel",
+      matrix: { roomId },
+      memberCount: 2,
+      members: [{ displayName: "Daniel Bambušek", userId: peerId }],
+      title: "Daniel Bambušek",
+      type: "direct",
+      updatedAt: "2026-07-10T16:38:00.000Z"
+    } as unknown as MessagingConversationSummary;
+    const room = {
+      directPeer: { displayName: peerId, userId: `@${peerId}:example.cz` },
+      roomId,
+      unreadCount: 0
+    } as unknown as MatrixRoomSummary;
+
+    const items = buildChatItems({
+      authSubjectId: "operator",
+      conversations: [conversation],
+      filter: "all",
+      groups: [],
+      ownIdentityIds: new Set(["operator"]),
+      query: "",
+      rooms: [room],
+      selectedConversationId: null,
+      selectedGroupId: null,
+      selectedRoomId: null
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe("Daniel Bambušek");
+  });
+
   it("shows the sender in a group chat row preview", () => {
     const conversation = {
       conversationId: "c-group",

@@ -7510,11 +7510,28 @@ function chatTitleForConversation(
   if (conversation.type !== "direct") {
     return conversation.title;
   }
-  return (
-    room?.directPeer?.displayName ??
-    conversationDirectPeer(conversation, authSubjectId, ownIdentityIds)?.displayName ??
-    conversation.title
+  const conversationPeer = conversationDirectPeer(conversation, authSubjectId, ownIdentityIds);
+  const candidates = [room?.directPeer?.displayName, conversationPeer?.displayName, conversation.title]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  const identityIds = [room?.directPeer?.userId, conversationPeer?.userId].filter((value): value is string =>
+    Boolean(value)
   );
+  return (
+    candidates.find((value) => !isOpaqueChatIdentityLabel(value, identityIds)) ?? candidates[0] ?? conversation.title
+  );
+}
+
+function isOpaqueChatIdentityLabel(value: string, identityIds: string[]): boolean {
+  const normalizedValue = value.trim().toLocaleLowerCase("cs-CZ");
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(normalizedValue)) {
+    return true;
+  }
+  return identityIds.some((identityId) => {
+    const normalizedIdentityId = identityId.trim().toLocaleLowerCase("cs-CZ");
+    const matrixLocalpart = /^@([^:]+):/u.exec(normalizedIdentityId)?.[1];
+    return normalizedValue === normalizedIdentityId || normalizedValue === matrixLocalpart;
+  });
 }
 
 function conversationDirectPeer(

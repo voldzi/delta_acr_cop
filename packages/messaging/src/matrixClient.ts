@@ -522,6 +522,11 @@ export async function createMatrixMessagingSession(
         ...cachedProfile,
         ...currentProfile,
         ...livePresence,
+        displayName: preferredMatrixDisplayName(userId, [
+          livePresence?.displayName,
+          currentProfile?.displayName,
+          cachedProfile?.displayName
+        ]),
         fetchedAt: currentProfile?.fetchedAt ?? cachedProfile?.fetchedAt ?? 0,
         userId
       };
@@ -534,8 +539,8 @@ export async function createMatrixMessagingSession(
         hydratedFromCache = true;
       }
       if (
-        !nextProfile.displayName &&
-        !nextProfile.avatarUrl &&
+        ((!nextProfile.displayName && !nextProfile.avatarUrl) ||
+          (Boolean(nextProfile.displayName) && isOpaqueMatrixIdentityLabel(nextProfile.displayName, userId))) &&
         nowMs - (profileLookupAttemptByUserId.get(userId) ?? 0) > matrixMissingProfileRetryMs
       ) {
         missingProfileUserIds.push(userId);
@@ -2409,12 +2414,17 @@ async function fetchMatrixUserProfile(
   const sdkProfile = client.getProfileInfo ? await client.getProfileInfo(userId).catch(() => undefined) : undefined;
   const sdkDisplayName = stringValue(sdkProfile?.displayname) ?? stringValue(sdkProfile?.displayName);
   const sdkAvatarUrl = stringValue(sdkProfile?.avatar_url) ?? stringValue(sdkProfile?.avatarUrl);
-  const needsHttpFallback = !sdkProfile || !sdkDisplayName || !sdkAvatarUrl;
+  const needsHttpFallback =
+    !sdkProfile || !sdkDisplayName || isOpaqueMatrixIdentityLabel(sdkDisplayName, userId) || !sdkAvatarUrl;
   const httpProfile = needsHttpFallback ? await fetchMatrixProfile(homeserverBaseUrl, accessToken, userId) : undefined;
   if (!sdkProfile && !httpProfile) {
     return undefined;
   }
-  const displayName = sdkDisplayName ?? stringValue(httpProfile?.displayname) ?? stringValue(httpProfile?.displayName);
+  const displayName = preferredMatrixDisplayName(userId, [
+    sdkDisplayName,
+    httpProfile?.displayname,
+    httpProfile?.displayName
+  ]);
   const avatarUrl = sdkAvatarUrl ?? stringValue(httpProfile?.avatar_url) ?? stringValue(httpProfile?.avatarUrl);
   if (!displayName && !avatarUrl) {
     return undefined;

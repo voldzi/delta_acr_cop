@@ -8,6 +8,7 @@ type MockMatrixClient = {
   getProfileInfo?: (userId: string) => Promise<Record<string, unknown>>;
   getRooms: () => unknown[];
   getTurnServers?: () => RTCIceServer[];
+  getUser?: (userId: string) => { displayName?: string; userId?: string } | undefined;
   getUserId: () => string;
   initRustCrypto: (args?: { cryptoDatabasePrefix?: string }) => Promise<void>;
   isRoomEncrypted: () => boolean;
@@ -911,6 +912,7 @@ describe("Matrix client diagnostics", () => {
 
   it("prefers the current Matrix profile name over an opaque UUID stored in room membership", async () => {
     vi.useFakeTimers();
+    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(null, { status: 404 }))
@@ -923,6 +925,11 @@ describe("Matrix client diagnostics", () => {
     matrixSdkMock.createClient.mockReturnValue(
       createMockMatrixClient({
         getProfileInfo,
+        getUser: (userId) =>
+          userId === peerUserId ? { displayName: "c6abf160-f5af-48fb-a79d-07511380e06a", userId } : undefined,
+        on: (event, listener) => {
+          listeners.set(event, [...(listeners.get(event) ?? []), listener]);
+        },
         rooms: [
           createRoom({
             members: [
@@ -941,6 +948,13 @@ describe("Matrix client diagnostics", () => {
     const latestRooms = onRoomsChanged.mock.calls.at(-1)?.[0];
     expect(getProfileInfo).toHaveBeenCalledWith(peerUserId);
     expect(latestRooms?.[0]?.directPeer?.displayName).toBe("Daniel Bambušek");
+
+    for (const listener of listeners.get("User.presence") ?? []) {
+      listener();
+    }
+    await vi.advanceTimersByTimeAsync(750);
+
+    expect(onRoomsChanged.mock.calls.at(-1)?.[0]?.[0]?.directPeer?.displayName).toBe("Daniel Bambušek");
   });
 
   it("fills missing peer avatar from the Matrix HTTP profile when SDK profile is partial", async () => {
@@ -2369,6 +2383,7 @@ function createMockMatrixClient({
   getJoinedRooms,
   getProfileInfo,
   getTurnServers,
+  getUser,
   initRustCrypto = vi.fn().mockResolvedValue(undefined),
   leave,
   mxcUrlToHttp,
@@ -2392,6 +2407,7 @@ function createMockMatrixClient({
   getJoinedRooms?: MockMatrixClient["getJoinedRooms"];
   getProfileInfo?: MockMatrixClient["getProfileInfo"];
   getTurnServers?: MockMatrixClient["getTurnServers"];
+  getUser?: MockMatrixClient["getUser"];
   initRustCrypto?: MockMatrixClient["initRustCrypto"];
   leave?: MockMatrixClient["leave"];
   mxcUrlToHttp?: MockMatrixClient["mxcUrlToHttp"];
@@ -2417,6 +2433,7 @@ function createMockMatrixClient({
     ...(getProfileInfo ? { getProfileInfo } : {}),
     getRooms: () => rooms,
     ...(getTurnServers ? { getTurnServers } : {}),
+    ...(getUser ? { getUser } : {}),
     getUserId: () => "@operator:cop.local",
     initRustCrypto,
     isRoomEncrypted: () => true,
