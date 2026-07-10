@@ -204,6 +204,12 @@ metadata, but chat content and recovery material remain E2EE. WebRTC media
 remains protected by DTLS-SRTP, and COP API does not proxy signalling or media
 payloads. The decision and accepted trade-off are recorded in ADR-0013.
 
+CSM notification intake responds with the provider envelope
+`{contractVersion, providerId, notification}`. COP reads `notificationId` and
+`deduplicated` from the nested `notification` object; it also accepts the older
+flat notification response during a compatibility rollout. A successful nested
+response must remain a COP `202` rather than being downgraded to `502`.
+
 ## Native iOS/iPadOS Pairing
 
 COP exposes a metadata-only pairing flow for CSM Messenger iOS/iPadOS. The

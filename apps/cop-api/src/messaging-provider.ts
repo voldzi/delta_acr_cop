@@ -1453,12 +1453,13 @@ function normalizeRoomBindingResponse(value: Record<string, unknown>): CsmMessag
 }
 
 function normalizeNotificationResponse(value: Record<string, unknown>): CsmMessagingNotificationProviderResponse {
+  const notification = isRecord(value.notification) ? value.notification : value;
   return {
     contractVersion: optionalString(value.contractVersion),
-    deduplicated: typeof value.deduplicated === "boolean" ? value.deduplicated : undefined,
-    notificationId: optionalString(value.notificationId) ?? optionalString(value.id),
+    deduplicated: typeof notification.deduplicated === "boolean" ? notification.deduplicated : typeof value.deduplicated === "boolean" ? value.deduplicated : undefined,
+    notificationId: optionalString(notification.notificationId) ?? optionalString(notification.id) ?? optionalString(value.notificationId) ?? optionalString(value.id),
     providerId: optionalString(value.providerId),
-    status: optionalString(value.status),
+    status: optionalString(value.status) ?? optionalString(notification.status),
     warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
   };
 }

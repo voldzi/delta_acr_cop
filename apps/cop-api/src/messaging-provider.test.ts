@@ -601,10 +601,14 @@ describe("CsmMessagingProvider", () => {
           "x-csm-user-id": "lab"
         });
         return new Response(JSON.stringify({
-          contractVersion: "csm-notification-v1",
-          notificationId: "notif_call",
-          providerId: "csm.messaging",
-          status: "accepted"
+          contractVersion: "csm-messaging-provider-v1",
+          notification: {
+            deduplicated: false,
+            notificationId: "notif_call",
+            targetDeviceCount: 1,
+            type: "chat.voice_call.incoming"
+          },
+          providerId: "csm.messaging"
         }), { status: 202 });
       }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
@@ -1441,11 +1445,14 @@ describe("CsmMessagingProvider", () => {
       expect(String(init?.body)).not.toContain("apns");
       expect(String(init?.body)).not.toContain("deviceToken");
       return new Response(JSON.stringify({
-        contractVersion: "csm-notification-v1",
-        deduplicated: false,
-        notificationId: "notif_1",
+        contractVersion: "csm-messaging-provider-v1",
+        notification: {
+          deduplicated: false,
+          notificationId: "notif_1",
+          targetDeviceCount: 1,
+          type: "safety.alert"
+        },
         providerId: "csm.messaging",
-        status: "accepted",
         warnings: []
       }), { status: 202 });
     });
