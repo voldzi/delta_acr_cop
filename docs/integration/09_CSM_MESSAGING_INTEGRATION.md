@@ -600,6 +600,10 @@ The phase-0 implementation focus is trust and control:
 - Matrix profile avatars and media thumbnails that require authenticated media
   access must be fetched with the scoped Matrix user token and rendered through
   local browser object URLs rather than by placing access tokens in image URLs.
+- The group member surface reconciles COP membership with conversation avatar
+  metadata and the signed-in COP profile. Member avatars keep a fixed square
+  footprint on narrow PWA layouts so row text and management actions cannot
+  stretch them.
 - Chat and group management must be reachable from the opened conversation menu
   and group detail panel, not only from mobile swipe actions in the chat list.
 - Mobile swipe actions accept input only on the revealed action side. Chat

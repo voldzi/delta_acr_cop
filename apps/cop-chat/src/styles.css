@@ -3154,7 +3154,14 @@ button {
   border-bottom: 1px solid var(--line-soft);
 }
 
-.member-row span {
+.member-row > .avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  aspect-ratio: 1;
+}
+
+.member-row-copy {
   flex: 1 1 auto;
   min-width: 0;
 }

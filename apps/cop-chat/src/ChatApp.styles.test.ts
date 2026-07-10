@@ -109,6 +109,18 @@ describe("cop-chat embedded mobile layout CSS", () => {
     expect(baseInfoPanel).toContain("height: 100%");
     expect(baseInfoPanel).not.toContain("100dvh");
   });
+
+  it("keeps member avatars square instead of stretching them as row copy", () => {
+    const avatarBlock = cssBlock(".member-row > .avatar");
+    const copyBlock = cssBlock(".member-row-copy");
+
+    expect(avatarBlock).toContain("width: 34px");
+    expect(avatarBlock).toContain("height: 34px");
+    expect(avatarBlock).toContain("flex: 0 0 34px");
+    expect(avatarBlock).toContain("aspect-ratio: 1");
+    expect(copyBlock).toContain("flex: 1 1 auto");
+    expect(styles).not.toContain(".member-row span {");
+  });
 });
 
 function cssBlock(selector: string): string {

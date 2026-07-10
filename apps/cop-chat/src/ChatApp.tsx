@@ -253,7 +253,8 @@ interface LocalUserPreferences {
   };
 }
 
-interface ChatInfoMember {
+export interface ChatInfoMember {
+  avatarUrl?: string;
   id: string;
   name: string;
   role?: CommunityGroup["members"][number]["role"];
@@ -4828,6 +4829,7 @@ export function ChatApp() {
         <ChatInfoPanel
           activeChat={activeChat}
           authSession={authSession}
+          ownAvatarUrl={chatIdentity.avatarUrl}
           aiAgentUpdating={aiAgentGroupUpdating}
           canAddMember={canManageSelectedGroupMembers}
           conversation={selectedConversation}
@@ -6867,6 +6869,7 @@ function ChatSkeleton() {
 function ChatInfoPanel({
   activeChat,
   authSession,
+  ownAvatarUrl,
   aiAgentUpdating,
   canAddMember,
   conversation,
@@ -6894,6 +6897,7 @@ function ChatInfoPanel({
 }: {
   activeChat: ChatListItem;
   authSession: AuthSession;
+  ownAvatarUrl?: string;
   aiAgentUpdating: boolean;
   canAddMember: boolean;
   conversation: MessagingConversationSummary | null;
@@ -6921,7 +6925,7 @@ function ChatInfoPanel({
 }) {
   const isDirect = activeChat.type === "direct";
   const aiAssistant = group ? communityGroupAiAssistantMetadata(group) : null;
-  const members = infoMembersForChat(activeChat, conversation, group, authSession);
+  const members = infoMembersForChat(activeChat, conversation, group, authSession, ownAvatarUrl);
   const mediaMessages = messages.filter(
     (message) => message.attachment && (message.kind === "image" || message.kind === "video")
   );
@@ -7138,8 +7142,8 @@ function ChatInfoPanel({
               ) : null}
               {members.map((member) => (
                 <div className="member-row" key={member.id}>
-                  <Avatar label={member.name} small />
-                  <span>
+                  <Avatar label={member.name} mediaAccessToken={mediaAccessToken} small src={member.avatarUrl} />
+                  <span className="member-row-copy">
                     <strong>{member.name}</strong>
                     <small>{member.subtitle}</small>
                   </span>
@@ -7158,7 +7162,7 @@ function ChatInfoPanel({
               {!isDirect && aiAssistant?.enabled ? (
                 <div className="member-row ai-agent-member">
                   <Avatar label={aiAssistant.label} small variant="ai" />
-                  <span>
+                  <span className="member-row-copy">
                     <strong>{aiAssistant.label}</strong>
                     <small>
                       {aiAssistantStatusLabel(aiAssistant)} • {aiAssistantE2eeLabel(aiAssistant)}
@@ -9654,21 +9658,33 @@ function cssEscape(value: string): string {
   return value.replace(/["\\]/gu, "\\$&");
 }
 
-function infoMembersForChat(
+export function infoMembersForChat(
   activeChat: ChatListItem,
   conversation: MessagingConversationSummary | null,
   group: CommunityGroup | null,
-  session: AuthSession
+  session: AuthSession,
+  ownAvatarUrl?: string
 ): ChatInfoMember[] {
   if (group) {
-    return group.members.map((member) => ({
-      id: member.subjectId,
-      name: member.displayName || member.username || member.subjectId,
-      role: member.role,
-      status: member.status,
-      subjectId: member.subjectId,
-      subtitle: communityGroupMemberSubtitle(member)
-    }));
+    const ownIds = ownChatIdentityIds(session, undefined);
+    return group.members.map((member) => {
+      const conversationMember = conversation?.members?.find((candidate) =>
+        identityMatches(candidate.userId, [member.subjectId, member.username])
+      );
+      const isOwnMember = [member.subjectId, member.username].some((candidate) =>
+        ownIds.has(normalizeIdentityId(candidate))
+      );
+      const avatarUrl = isOwnMember ? (ownAvatarUrl ?? conversationMember?.avatarUrl) : conversationMember?.avatarUrl;
+      return {
+        ...(avatarUrl ? { avatarUrl } : {}),
+        id: member.subjectId,
+        name: member.displayName || member.username || member.subjectId,
+        role: member.role,
+        status: member.status,
+        subjectId: member.subjectId,
+        subtitle: communityGroupMemberSubtitle(member)
+      };
+    });
   }
   const ownId = session.profile?.subjectId ?? session.profile?.username ?? "";
   const members = conversation?.members ?? [];
@@ -9676,6 +9692,7 @@ function infoMembersForChat(
   if (contact) {
     return [
       {
+        ...(contact.avatarUrl ? { avatarUrl: contact.avatarUrl } : {}),
         id: contact.userId,
         name: contact.displayName || activeChat.title,
         subtitle: contact.userId
@@ -9689,6 +9706,19 @@ function infoMembersForChat(
       subtitle: activeChat.type === "direct" ? "kontakt" : "chat"
     }
   ];
+}
+
+function identityMatches(value: string, candidates: string[]): boolean {
+  const aliases = new Set(
+    [value, matrixUserIdLocalpart(value)]
+      .filter((candidate): candidate is string => Boolean(candidate))
+      .map(normalizeIdentityId)
+  );
+  return candidates.some((candidate) => {
+    const normalized = normalizeIdentityId(candidate);
+    const localpart = matrixUserIdLocalpart(candidate);
+    return aliases.has(normalized) || Boolean(localpart && aliases.has(normalizeIdentityId(localpart)));
+  });
 }
 
 function communityGroupMemberSubtitle(member: CommunityGroup["members"][number]): string {

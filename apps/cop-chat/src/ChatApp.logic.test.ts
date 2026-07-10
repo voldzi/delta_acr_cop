@@ -9,6 +9,7 @@ import {
   chatSummarySnapshotFromItems,
   chatPreferenceSnapshot,
   dedupeChatItems,
+  infoMembersForChat,
   isAiAgentChatItem,
   sameAuthSessionIdentity,
   shouldPublishChatUnreadBridgeSnapshot,
@@ -25,7 +26,7 @@ import {
 } from "./chat-model";
 import type { ChatListItem } from "./ChatApp";
 import type { MatrixRoomSummary, MatrixTimelineMessage } from "@cop/messaging/types";
-import type { MessagingConversationSummary } from "@cop/core/cop-data";
+import type { CommunityGroup, MessagingConversationSummary } from "@cop/core/cop-data";
 import type { AuthSession } from "@cop/core/auth";
 
 // These are characterization tests: they pin the *current* observable behavior of
@@ -92,6 +93,50 @@ describe("sameAuthSessionIdentity", () => {
         profile: { name: "COP Operator", subjectId: "operator-2", username: "operator" }
       })
     ).toBe(false);
+  });
+});
+
+describe("infoMembersForChat", () => {
+  it("uses the PWA profile avatar for the signed-in group member and Matrix avatars for peers", () => {
+    const session: AuthSession = {
+      profile: { name: "Jiří Volek", subjectId: "operator-1", username: "voldzi" },
+      status: "authenticated"
+    };
+    const group = {
+      members: [
+        {
+          displayName: "Jiří Volek",
+          requestedAt: "2026-07-10T18:00:00.000Z",
+          role: "owner",
+          status: "active",
+          subjectId: "operator-1",
+          username: "voldzi"
+        },
+        {
+          displayName: "Daniel Bambušek",
+          requestedAt: "2026-07-10T18:00:00.000Z",
+          role: "member",
+          status: "active",
+          subjectId: "member-2",
+          username: "daniel"
+        }
+      ]
+    } as CommunityGroup;
+    const conversation = {
+      conversationId: "conversation-1",
+      members: [
+        { avatarUrl: "https://matrix.example/operator.png", userId: "operator-1" },
+        { avatarUrl: "https://matrix.example/daniel.png", userId: "@member-2:matrix.example" }
+      ],
+      title: "Skupina",
+      type: "group"
+    } as MessagingConversationSummary;
+    const activeChat = chatItem({ title: "Skupina", type: "group" });
+
+    expect(infoMembersForChat(activeChat, conversation, group, session, "data:image/png;base64,profile")).toEqual([
+      expect.objectContaining({ avatarUrl: "data:image/png;base64,profile", id: "operator-1" }),
+      expect.objectContaining({ avatarUrl: "https://matrix.example/daniel.png", id: "member-2" })
+    ]);
   });
 });
 
