@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260710-10";
+const COP_SW_VERSION = "cop-pwa-offline-20260710-11";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -491,7 +491,7 @@ function releaseCacheKeysToDelete(keys) {
         return release ? [release] : [];
       })
     )
-  ).sort((left, right) => right.localeCompare(left));
+  ).sort((left, right) => right.localeCompare(left, undefined, { numeric: true }));
   const previousRelease = releases.find((release) => release !== COP_SW_VERSION);
   const retained = new Set([COP_SW_VERSION, ...(previousRelease ? [previousRelease] : [])]);
   return keys.filter((key) => {

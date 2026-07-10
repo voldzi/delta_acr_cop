@@ -32,12 +32,9 @@ describe("COP mobile report dialog layout", () => {
 });
 
 describe("COP standalone iPhone safe areas", () => {
-  it("keeps the top bar below the status area and subtracts it from the map viewport", () => {
+  it("keeps the top bar below the status area", () => {
     const mobileTopbar = cssBlocks(".shell.app-shell-v2 .topbar").find((block) =>
       block.includes("env(safe-area-inset-top, 0px)")
-    );
-    const mobileBody = cssBlocks(".shell.app-shell-v2 .app-shell-body").find((block) =>
-      block.includes("height: calc(100dvh")
     );
     const mobileSheet = cssBlocks(".mobile-sheet-layer").find((block) =>
       block.includes("env(safe-area-inset-top, 0px)")
@@ -45,8 +42,33 @@ describe("COP standalone iPhone safe areas", () => {
 
     expect(mobileTopbar).toContain("min-height: calc(54px + env(safe-area-inset-top, 0px))");
     expect(mobileTopbar).toContain("padding: calc(6px + env(safe-area-inset-top, 0px)) 8px 6px");
-    expect(mobileBody).toContain("height: calc(100dvh - 54px - env(safe-area-inset-top, 0px))");
     expect(mobileSheet).toContain("top: calc(54px + env(safe-area-inset-top, 0px))");
+  });
+
+  it("fills both compact and Max screens without relying on the shorter iOS dvh viewport", () => {
+    const mobileShell = cssBlocks(".shell.app-shell-v2").find((block) =>
+      block.includes("grid-template-rows: auto minmax(0, 1fr) auto")
+    );
+    const mobileBody = cssBlocks(".shell.app-shell-v2 .app-shell-body").find((block) =>
+      block.includes("grid-row: 2")
+    );
+    const mobileNavigation = cssBlocks(".mobile-bottom-nav").find((block) => block.includes("grid-row: 3"));
+
+    expect(mobileShell).toContain("height: 100%");
+    expect(mobileShell).not.toContain("100dvh");
+    expect(mobileBody).toContain("height: auto");
+    expect(mobileBody).toContain("padding-bottom: 0");
+    expect(mobileNavigation).toContain("position: relative");
+    expect(mobileNavigation).toContain("max(7px, env(safe-area-inset-bottom, 0px))");
+  });
+
+  it("anchors the map legend to the responsive map edge instead of reserving the navigation twice", () => {
+    const mobileLegend = cssBlocks(".shell.app-shell-v2 .map-legend").find((block) =>
+      block.includes("left: 12px")
+    );
+
+    expect(mobileLegend).toContain("bottom: 12px");
+    expect(mobileLegend).not.toContain("--mobile-bottom-nav-height");
   });
 });
 
