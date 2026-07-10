@@ -20,7 +20,40 @@ describe("COP mobile report dialog layout", () => {
     expect(mobileBlocks.some((block) => block.includes("env(safe-area-inset-top, 0px)"))).toBe(true);
     expect(mobileBlocks.some((block) => block.includes("env(safe-area-inset-bottom, 0px)"))).toBe(true);
   });
+
+  it("keeps the modal overlay and its actions above the fixed mobile navigation", () => {
+    const overlayZIndex = cssNumericProperty(".ui-dialog-overlay", "z-index");
+    const contentZIndex = cssNumericProperty(".ui-dialog-content", "z-index");
+    const mobileNavigationZIndex = cssNumericProperty(".mobile-bottom-nav", "z-index");
+
+    expect(overlayZIndex).toBeGreaterThan(mobileNavigationZIndex);
+    expect(contentZIndex).toBeGreaterThan(overlayZIndex);
+  });
 });
+
+describe("COP mobile layer catalog layout", () => {
+  it("normalizes iOS button rendering without clipping the active weather border", () => {
+    const catalogButton = cssBlocks(".catalog-rail-button").find((block) => block.includes("appearance:"));
+    const mobileCatalogButton = cssBlocks(".mobile-sheet-surface .catalog-rail-button").find((block) =>
+      block.includes("contain: layout style")
+    );
+
+    expect(catalogButton).toContain("appearance: none");
+    expect(catalogButton).toContain("-webkit-appearance: none");
+    expect(catalogButton).toContain("background-clip: padding-box");
+    expect(mobileCatalogButton).toContain("contain: layout style");
+    expect(mobileCatalogButton).not.toContain("paint");
+  });
+});
+
+function cssNumericProperty(selector: string, property: string): number {
+  const match = cssBlock(selector).match(new RegExp(`${property}:\\s*(?<value>\\d+)`, "u"));
+  const value = Number(match?.groups?.value);
+  if (!Number.isFinite(value)) {
+    throw new Error(`Numeric CSS property not found: ${selector} ${property}`);
+  }
+  return value;
+}
 
 function cssBlock(selector: string): string {
   const block = cssBlocks(selector)[0];

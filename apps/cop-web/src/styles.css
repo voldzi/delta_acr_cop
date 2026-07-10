@@ -799,7 +799,7 @@ h1 {
 .ui-dialog-overlay {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 200;
   background: rgba(3, 8, 12, 0.62);
   backdrop-filter: blur(8px);
 }
@@ -808,7 +808,7 @@ h1 {
   position: fixed;
   top: 50%;
   left: 50%;
-  z-index: 91;
+  z-index: 201;
   transform: translate(-50%, -50%);
   outline: none;
 }
@@ -2912,6 +2912,9 @@ h1 {
   position: relative;
   width: 50px;
   height: 50px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-clip: padding-box;
   color: var(--cyan);
   cursor: pointer;
   touch-action: manipulation;
@@ -10435,6 +10438,7 @@ dd {
 
   .mobile-sheet-surface .catalog-rail-button {
     padding: 0;
+    contain: layout style;
     transform: none !important;
   }
 
