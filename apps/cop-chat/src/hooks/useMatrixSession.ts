@@ -11,7 +11,9 @@ import type {
   MatrixMessagingSession,
   MatrixRoomSummary,
   MatrixUserProfileSyncInput,
-  MatrixVoiceCallSnapshot
+  MatrixVoiceCallSnapshot,
+  MatrixVoiceCallWakeRequest,
+  MatrixWebPushPusherOptions
 } from "@cop/messaging/types";
 
 export type MatrixSessionLifecycle = "idle" | "starting" | "ready" | "recovery-needed" | "error";
@@ -87,7 +89,8 @@ export function matrixSessionReducer(state: MatrixSessionState, action: MatrixSe
         error: null,
         lastStartedAt: action.observedAt ?? Date.now(),
         lifecycle: "starting",
-        loading: true
+        loading: true,
+        syncState: "starting"
       };
     case "sync-state":
       return {
@@ -142,6 +145,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
     session?: MatrixMessagingSession | null
   ) => Promise<MatrixEncryptionRecoveryStatus | null>;
   resetMatrixSession: () => void;
+  updateMatrixWebPushPusher: () => Promise<void>;
   startMatrixSession: (
     preferredSelection?: string | null,
     allowStoreRecovery?: boolean,
@@ -167,6 +171,23 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
     },
     []
   );
+
+  const updateMatrixWebPushPusher = React.useCallback(async (): Promise<void> => {
+    const session = sessionRef.current;
+    if (!session) {
+      return;
+    }
+    const currentOptions = optionsRef.current;
+    const deviceId = currentOptions.matrixWebPushDeviceId ?? currentOptions.matrixWebPushFallbackDeviceId;
+    const pushGatewayUrl = browserMatrixPushGatewayUrl();
+    const pusher: MatrixWebPushPusherOptions = {
+      ...(deviceId ? { deviceId } : {}),
+      lang: typeof navigator !== "undefined" ? navigator.language || "cs" : "cs",
+      ...(pushGatewayUrl ? { pushGatewayUrl } : {}),
+      registered: Boolean(currentOptions.matrixWebPushDeviceId)
+    };
+    await session.syncWebPushPusher(pusher);
+  }, []);
 
   const startMatrixSession = React.useCallback(
     async (
@@ -204,6 +225,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
           },
           onSyncState: (nextSyncState) => dispatch({ type: "sync-state", syncState: nextSyncState }),
           onTimelineChanged: currentOptions.onTimelineChanged,
+          onVoiceCallWake: (request) => wakeMatrixVoiceCall(currentOptions.apiBase, effectiveAuthToken, request),
           onVoiceCallChanged: currentOptions.onVoiceCallChanged,
           profile: currentOptions.matrixProfile,
           webPush: {
@@ -219,7 +241,6 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
         dispatch({ type: "ready", recoveryStatus, session: nextSession });
         currentOptions.onRoomsChanged(nextRooms, preferredSelection);
         currentOptions.onTimelineChanged();
-        dispatch({ type: "sync-state", syncState: "starting" });
         return nextSession;
       } catch (caught) {
         if (allowStoreRecovery && isMatrixAccountStoreMismatchError(caught)) {
@@ -297,8 +318,28 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
     refreshEncryptionRecoveryStatus,
     resetMatrixSession,
     startMatrixSession,
+    updateMatrixWebPushPusher,
     syncState: state.syncState
   };
+}
+
+async function wakeMatrixVoiceCall(
+  apiBase: string,
+  authToken: string,
+  request: MatrixVoiceCallWakeRequest
+): Promise<void> {
+  const response = await fetch(`${apiBase}/api/v1/messaging/calls/wake`, {
+    body: JSON.stringify(request),
+    headers: {
+      Authorization: `Bearer ${authToken}`,
+      "Content-Type": "application/json"
+    },
+    keepalive: true,
+    method: "POST"
+  });
+  if (!response.ok) {
+    throw new Error(`Voice call wake failed: HTTP ${response.status}`);
+  }
 }
 
 function browserMatrixPushGatewayUrl(): string | undefined {

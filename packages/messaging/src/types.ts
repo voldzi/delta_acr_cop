@@ -96,6 +96,22 @@ export interface MatrixVoiceCallOptions {
   forceTurn?: boolean;
 }
 
+export interface MatrixVoiceCallWakeRequest {
+  action: "ended" | "invite";
+  callId: string;
+  roomId: string;
+}
+
+export interface MatrixWebPushPusherOptions {
+  appDisplayName?: string;
+  appId?: string;
+  deviceDisplayName?: string;
+  deviceId?: string;
+  lang?: string;
+  pushGatewayUrl?: string;
+  registered?: boolean;
+}
+
 export interface MatrixAttachmentUpload {
   caption?: string;
   file: File;
@@ -259,6 +275,7 @@ export interface MatrixMessagingSession {
   sendTransitShare(roomId: string, transit: MatrixTransitShare): Promise<void>;
   startVoiceCall(roomId: string): Promise<void>;
   setReaction(roomId: string, eventId: string, key: string): Promise<void>;
+  syncWebPushPusher(options: MatrixWebPushPusherOptions | undefined): Promise<void>;
   syncUserProfile(profile: MatrixUserProfileSyncInput | undefined): Promise<void>;
   stop(): void;
 }

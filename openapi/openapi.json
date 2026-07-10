@@ -3810,6 +3810,63 @@
         }
       }
     },
+    "/api/v1/messaging/calls/wake": {
+      "post": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "Dispatch a metadata-only Matrix voice-call wake notification.",
+        "description": "The authenticated caller asks COP to notify the other members of a bound Matrix room about an incoming or ended call. COP resolves recipients server-side and forwards identifiers and presentation metadata only; SDP, ICE candidates, media and plaintext Matrix content are not accepted.\n",
+        "operationId": "wakeMessagingVoiceCall",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessagingVoiceCallWakeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Voice-call wake accepted by CSM Messaging.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagingNotificationIntakeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "502": {
+            "description": "CSM Messaging did not accept the wake notification.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagingNotificationIntakeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/messaging/conversations": {
       "get": {
         "tags": [
@@ -13972,6 +14029,83 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "providerId": {
+            "type": "string",
+            "enum": [
+              "csm.messaging"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "online",
+              "degraded",
+              "disabled"
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MessagingVoiceCallWakeRequest": {
+        "type": "object",
+        "required": [
+          "action",
+          "callId",
+          "roomId"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "invite",
+              "ended"
+            ]
+          },
+          "callId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[A-Za-z0-9._:=@-]{1,160}$"
+          },
+          "roomId": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 512,
+            "pattern": "^![^\\s:]+:.+$"
+          }
+        }
+      },
+      "MessagingNotificationIntakeResponse": {
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "enabled",
+          "providerId",
+          "status",
+          "warnings"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-messaging-notification-v1"
+            ]
+          },
+          "deduplicated": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "notificationId": {
+            "type": "string"
           },
           "providerId": {
             "type": "string",

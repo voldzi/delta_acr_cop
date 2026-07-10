@@ -546,6 +546,93 @@ describe("CsmMessagingProvider", () => {
     expect(JSON.stringify(response.json())).not.toContain("provider-token");
   });
 
+  it("sends an authenticated voice-call wake notification without call signalling content", async () => {
+    vi.stubEnv("COP_AUTH_MODE", "lab");
+    vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if ((url.endsWith("/api/v1/conversations") || url.includes("/api/v1/conversations?")) && (init?.method ?? "GET") === "GET") {
+        return new Response(JSON.stringify({
+          contractVersion: "csm-messaging-provider-v1",
+          conversations: [{
+            conversationId: "conv_call",
+            matrix: { roomId: "!call:docker.home.cz" },
+            memberCount: 2,
+            status: "matrix_ready",
+            title: "Přímý chat",
+            type: "direct"
+          }],
+          count: 1,
+          providerId: "csm.messaging"
+        }), { status: 200 });
+      }
+      if (url.endsWith("/api/v1/conversations/conv_call")) {
+        return new Response(JSON.stringify({
+          contractVersion: "csm-messaging-provider-v1",
+          conversation: {
+            conversationId: "conv_call",
+            matrix: { roomId: "!call:docker.home.cz" },
+            members: [
+              { displayName: "Lab operator", userId: "lab" },
+              { displayName: "Příjemce", userId: "citizen-2" }
+            ],
+            status: "matrix_ready",
+            title: "Přímý chat",
+            type: "direct"
+          }
+        }), { status: 200 });
+      }
+      if (url.endsWith("/api/v1/notifications")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        expect(body).toMatchObject({
+          audience: { userIds: ["citizen-2"] },
+          metadata: {
+            callId: "call-123",
+            roomId: "!call:docker.home.cz",
+            sender: "lab"
+          },
+          type: "chat.voice_call.incoming"
+        });
+        expect(JSON.stringify(body)).not.toContain("offer");
+        expect(JSON.stringify(body)).not.toContain("candidate");
+        expect(init?.headers).toMatchObject({
+          Authorization: "Bearer provider-token",
+          "Idempotency-Key": expect.stringMatching(/^voice-call:invite:/u),
+          "x-csm-user-id": "lab"
+        });
+        return new Response(JSON.stringify({
+          contractVersion: "csm-notification-v1",
+          notificationId: "notif_call",
+          providerId: "csm.messaging",
+          status: "accepted"
+        }), { status: 202 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000,
+        token: "provider-token"
+      }),
+      now: () => new Date("2026-07-10T06:00:00Z")
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "POST",
+      payload: { action: "invite", callId: "call-123", roomId: "!call:docker.home.cz" },
+      url: "/api/v1/messaging/calls/wake"
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({ notificationId: "notif_call", status: "online" });
+    await app.close();
+  });
+
   it("proxies conversation metadata server-side without plaintext message fields", async () => {
     vi.stubEnv("COP_AUTH_MODE", "lab");
     vi.stubEnv("COP_LAB_TOKEN", "lab-secret");

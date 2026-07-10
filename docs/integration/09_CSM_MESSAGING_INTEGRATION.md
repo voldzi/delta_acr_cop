@@ -180,16 +180,18 @@ One-to-one voice calls are client-side Matrix VoIP/WebRTC calls between direct
 rooms. COP Chat may offer audio call controls after Matrix bootstrap and E2EE
 recovery are ready, but COP API still must not proxy call media, SDP payloads or
 plaintext chat content. Browsers require microphone permission, WebRTC support
-and reachable ICE/TURN infrastructure from the Matrix deployment. On iOS PWA,
-incoming calls can be handled only while the web app runtime is awake; reliable
-lock-screen ringing remains a native CSM Messenger capability.
+and reachable ICE/TURN infrastructure from the Matrix deployment. An awake COP
+map keeps the embedded chat runtime mounted and shows the incoming call in a
+global host alert. A suspended or closed PWA uses an urgent Web Push wake and
+the operating system notification UI. Web/PWA still cannot guarantee continuous
+lock-screen audio ringing after the browser process is terminated; that remains
+a native-client capability.
 
 COP Chat sends Matrix VoIP signalling events (`m.call.*` and
-`org.matrix.call.*`) as normal Matrix room events over authenticated HTTPS,
-without wrapping them in room message E2EE. This keeps call setup independent
-from delayed or missing Megolm room keys and prevents call signalling failures
-from surfacing as undecryptable chat bubbles. WebRTC media remains protected by
-DTLS-SRTP and COP API still does not receive call signalling or media payloads.
+`org.matrix.call.*`) through the Matrix SDK over authenticated HTTPS. In an
+encrypted room the SDK applies the room E2EE policy; COP must not bypass it with
+direct plaintext room-event requests. WebRTC media remains protected by
+DTLS-SRTP and COP API does not receive Matrix call signalling or media payloads.
 
 ## Native iOS/iPadOS Pairing
 
@@ -369,6 +371,24 @@ ordinary message notifications. When the payload includes a concrete Matrix
 quick messages in the same room do not replace each other in the PWA
 notification center.
 
+Encrypted room events reach the Matrix push gateway as `m.room.encrypted`, so
+the gateway cannot reliably infer that an encrypted payload contains a call.
+After sending or ending a call through Matrix SDK, COP Chat therefore calls the
+authenticated metadata-only wake endpoint:
+
+```http
+POST /api/v1/messaging/calls/wake
+Authorization: Bearer <COP user access token>
+Content-Type: application/json
+
+{"action":"invite","callId":"<matrixCallId>","roomId":"<matrixRoomId>"}
+```
+
+COP resolves the bound conversation and recipients server-side and forwards
+only `callId`, `roomId`, sender presentation, notification tag and TTL to CSM
+Messaging. The endpoint rejects SDP, ICE candidates and arbitrary signalling
+metadata. `action=ended` closes the matching visible call notification.
+
 When a registered browser device opens COP Chat, the Matrix client also registers
 an HTTP pusher:
 
@@ -389,8 +409,10 @@ forwards the payload server-side to CSM Messaging at
 `/api/v1/matrix/push/notify`. The browser never receives provider tokens or Web
 Push private credentials.
 
-When the browser no longer has a confirmed COP Web Push registration, COP Chat
-removes the Matrix pusher with `kind=null` for the last known web device id.
+Changing Web Push registration updates or removes the Matrix pusher on the live
+Matrix session; it does not restart sync or crypto. When the browser no longer
+has a confirmed COP Web Push registration, COP Chat removes the Matrix pusher
+with `kind=null` for the last known web device id.
 This prevents Matrix from retaining stale pushkeys after a browser subscription
 was lost, re-created or rejected by the CSM Messaging device registry.
 
@@ -467,6 +489,11 @@ same source of truth. A stored summary is only a short startup hint; if it is
 older than ten minutes, not in `ready` sync state or only available as the
 legacy numeric payload, COP web waits for the embedded chat runtime instead of
 showing a stale unread badge from a previous session.
+The Matrix SDK sync store is persisted in IndexedDB under the same stable
+user/device scope as the crypto store. Startup restores cached room state before
+the incremental sync, requests a bounded initial timeline and lazy-loads room
+members. Profile fallback lookups are bounded and cached; COP does not fan out a
+presence REST request for every room member on every sync cycle.
 When an unread room is opened from the shell, COP Chat keeps the unread state
 until the latest unread Matrix event is present in the visible timeline; it then
 marks the room as read locally and sends the Matrix read marker. This prevents a
@@ -496,6 +523,11 @@ notification permission, incoming Matrix messages can also raise browser-native
 in-page notifications. The client suppresses notifications for the operator's
 own messages, muted chats and the currently focused open room. Background push
 for a closed browser uses the Matrix HTTP pusher described above.
+Incoming call wakes are also forwarded by the service worker to every open COP
+window. The map shell converts that message to the same global incoming-call
+state used by the embedded chat bridge, including answer/reject controls, tone
+and best-effort vibration. An ended wake clears that state and closes the system
+notification with the same tag.
 
 COP Chat also exposes per-chat automatic message removal in the conversation
 information panel. The client stores the selected interval in Matrix room state

@@ -285,6 +285,7 @@ import {
   encodeChatCurrentLocation,
   encodeChatSelect,
   encodeChatShareTransit,
+  encodeChatVoiceCall,
   encodeChatVoiceCallCommand,
   type ChatCenterLocationMessage,
   type ChatLiveLocationPayload,
@@ -1627,6 +1628,18 @@ export function App() {
       }
     };
     const handleServiceWorkerMessage = (event: MessageEvent) => {
+      const voiceCallUpdate = pwaVoiceCallUpdateFromServiceWorkerMessage(event.data);
+      if (voiceCallUpdate?.action === "incoming") {
+        setMessagingVoiceCall(voiceCallUpdate.call);
+      } else if (voiceCallUpdate?.action === "ended") {
+        setMessagingVoiceCall((current) =>
+          current &&
+          (!voiceCallUpdate.callId || current.callId === voiceCallUpdate.callId) &&
+          (!voiceCallUpdate.roomId || current.roomId === voiceCallUpdate.roomId)
+            ? null
+            : current
+        );
+      }
       if (
         (event.data?.type === "cop:pwa:pushsubscriptionchange" ||
           event.data?.type === "cop:pwa:notification-clicked") &&
@@ -11196,6 +11209,44 @@ export function hostVisibleChatVoiceCall(
 
 export function hostIncomingChatVoiceCall(call: ChatVoiceCallMessage | null): ChatVoiceCallMessage | null {
   return call?.direction === "incoming" && call.phase === "ringing" ? call : null;
+}
+
+export function pwaVoiceCallUpdateFromServiceWorkerMessage(
+  value: unknown
+): { action: "ended"; callId?: string; roomId?: string } | { action: "incoming"; call: ChatVoiceCallMessage } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const data = value as Record<string, unknown>;
+  const callId = typeof data.callId === "string" ? data.callId.trim().slice(0, 160) : "";
+  const roomId = typeof data.roomId === "string" ? data.roomId.trim().slice(0, 512) : "";
+  if (data.type === "cop:pwa:voice-call-ended") {
+    return callId || roomId
+      ? {
+          action: "ended",
+          ...(callId ? { callId } : {}),
+          ...(roomId ? { roomId } : {})
+        }
+      : null;
+  }
+  if (data.type !== "cop:pwa:voice-call-incoming" || !callId || !roomId) {
+    return null;
+  }
+  const senderDisplayName =
+    typeof data.senderDisplayName === "string" ? data.senderDisplayName.trim().slice(0, 240) : "";
+  return {
+    action: "incoming",
+    call: {
+      ...encodeChatVoiceCall({
+        callId,
+        direction: "incoming",
+        phase: "ringing",
+        roomId,
+        ...(senderDisplayName ? { title: senderDisplayName } : {})
+      }),
+      at: typeof data.receivedAt === "number" && Number.isFinite(data.receivedAt) ? data.receivedAt : Date.now()
+    }
+  };
 }
 
 function IncomingVoiceCallAlert({

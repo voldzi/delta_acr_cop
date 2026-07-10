@@ -13,6 +13,7 @@ export interface MessagingRouteHandlers {
   resolveConversation: RouteHandlerMethod;
   resolveMatrixIdentities: RouteHandlerMethod;
   status: RouteHandlerMethod;
+  wakeVoiceCall: RouteHandlerMethod;
   webPushConfig: RouteHandlerMethod;
 }
 
@@ -23,6 +24,11 @@ export function registerMessagingRoutes(app: FastifyInstance, handlers: Messagin
   app.post("/api/v1/push/web/devices", handlers.registerWebPushDevice);
   app.delete("/api/v1/push/web/devices/:deviceId", handlers.deleteWebPushDevice);
   app.post("/api/v1/messaging/bootstrap", handlers.bootstrap);
+  app.post(
+    "/api/v1/messaging/calls/wake",
+    { config: { rateLimit: { max: 12, timeWindow: "1 minute" } } },
+    handlers.wakeVoiceCall
+  );
   app.get("/api/v1/messaging/conversations", handlers.conversations);
   app.get("/api/v1/messaging/conversations/resolve", handlers.resolveConversation);
   app.get("/api/v1/messaging/conversations/:conversationId", handlers.conversationDetail);

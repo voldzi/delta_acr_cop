@@ -648,9 +648,11 @@ export class CsmMessagingProvider implements MessagingProvider {
     }
     const list = await this.fetchConversations(actor, requestNow);
     const conversation = list.conversations.find((item) => item.matrix?.roomId === roomId);
+    if (conversation) {
+      return this.fetchConversation(actor, requestNow, conversation.conversationId);
+    }
     return {
       contractVersion: "cop-messaging-conversations-v1",
-      ...(conversation ? { conversation } : {}),
       enabled: list.enabled,
       providerId: "csm.messaging",
       status: list.status,

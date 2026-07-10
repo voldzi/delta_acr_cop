@@ -15,6 +15,8 @@ import type {
   MatrixVoiceCallOptions,
   MatrixVoiceCallPhase,
   MatrixVoiceCallSnapshot,
+  MatrixVoiceCallWakeRequest,
+  MatrixWebPushPusherOptions,
   MatrixUserProfileSyncInput,
   MatrixPresenceState,
   MatrixRoomSummary,
@@ -83,13 +85,7 @@ interface MatrixClientLike {
 
 type MatrixSendEventArgs =
   | [roomId: string, eventType: string, content: Record<string, unknown>, txnId?: string]
-  | [
-      roomId: string,
-      threadId: string | null,
-      eventType: string,
-      content: Record<string, unknown>,
-      txnId?: string
-    ];
+  | [roomId: string, threadId: string | null, eventType: string, content: Record<string, unknown>, txnId?: string];
 
 type MatrixSendEventLike = (...args: MatrixSendEventArgs) => Promise<unknown>;
 
@@ -157,16 +153,17 @@ interface MatrixSdkLike {
       processPollEvents?: (events: unknown[]) => Promise<void> | void;
     };
   };
+  IndexedDBStore?: new (options: {
+    dbName?: string;
+    indexedDB: IDBFactory;
+    localStorage?: Storage;
+  }) => MatrixSyncStoreLike;
 }
 
-interface MatrixWebPushPusherOptions {
-  appDisplayName?: string;
-  appId?: string;
-  deviceDisplayName?: string;
-  deviceId?: string;
-  lang?: string;
-  pushGatewayUrl?: string;
-  registered?: boolean;
+interface MatrixSyncStoreLike {
+  destroy?: () => Promise<void>;
+  save?: (force?: boolean) => Promise<void>;
+  startup: () => Promise<void>;
 }
 
 interface MatrixRoomLike {
@@ -255,6 +252,7 @@ export async function createMatrixMessagingSession(
     onTimelineChanged?: () => void;
     webPush?: MatrixWebPushPusherOptions;
     voip?: MatrixVoiceCallOptions;
+    onVoiceCallWake?: (request: MatrixVoiceCallWakeRequest) => Promise<void> | void;
     onVoiceCallChanged?: (call: MatrixVoiceCallSnapshot | null) => void;
   } = {}
 ): Promise<MatrixMessagingSession> {
@@ -275,6 +273,7 @@ export async function createMatrixMessagingSession(
   disableMatrixPollAggregation(typedMatrixSdk);
   const createClient = typedMatrixSdk.createClient;
   const recoveryController = createUserControlledRecoveryController(initialRecoveryKey);
+  const syncStore = createMatrixSyncStore(typedMatrixSdk, bootstrap);
   const client = createClient({
     accessToken: bootstrap.accessToken,
     baseUrl: homeserverBaseUrl,
@@ -282,9 +281,10 @@ export async function createMatrixMessagingSession(
     fallbackICEServerAllowed: callbacks.voip?.fallbackIceServerAllowed === true,
     forceTURN: callbacks.voip?.forceTurn === true,
     cryptoCallbacks: recoveryController.cryptoCallbacks,
+    ...(syncStore ? { store: syncStore } : {}),
     userId: bootstrap.userId
   });
-  installMatrixVoipSignalingBypass(client, bootstrap);
+  await syncStore?.startup().catch(() => undefined);
 
   let restoreKeyBackupOnStart = false;
   if (bootstrap.e2eeRequired) {
@@ -305,10 +305,10 @@ export async function createMatrixMessagingSession(
   }
 
   let inviteJoinInFlight: Promise<void> | null = null;
-  const canReadServerJoinedRooms = typeof client.getJoinedRooms === "function" || typeof window !== "undefined";
-  let joinedRoomIds: Set<string> | null = canReadServerJoinedRooms ? new Set() : null;
+  let joinedRoomIds: Set<string> | null = null;
   let presenceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   const roomPresenceByUserId = new Map<string, MatrixUserPresenceLike & { fetchedAt: number }>();
+  const profileLookupAttemptByUserId = new Map<string, number>();
   const readOverrideByRoomId = new Map<string, string>();
   const refreshJoinedRoomIds = async () => {
     joinedRoomIds = await readServerJoinedRoomIds(client, homeserverBaseUrl, bootstrap.accessToken, joinedRoomIds);
@@ -337,6 +337,22 @@ export async function createMatrixMessagingSession(
   let activeVoiceCallStartedAt: string | undefined;
   let activeVoiceCallError: string | undefined;
   let activeVoiceCallClearTimer: ReturnType<typeof setTimeout> | undefined;
+  const sentVoiceCallWakeKeys = new Set<string>();
+  const notifyVoiceCallWake = async (action: MatrixVoiceCallWakeRequest["action"], call: MatrixCallLike) => {
+    if (!callbacks.onVoiceCallWake || !call.callId || !call.roomId) {
+      return;
+    }
+    const key = `${action}:${call.callId}`;
+    if (sentVoiceCallWakeKeys.has(key)) {
+      return;
+    }
+    sentVoiceCallWakeKeys.add(key);
+    try {
+      await callbacks.onVoiceCallWake({ action, callId: call.callId, roomId: call.roomId });
+    } catch {
+      sentVoiceCallWakeKeys.delete(key);
+    }
+  };
   const flushNotifications = () => {
     notifyScheduled = false;
     if (sessionDisposed) {
@@ -379,46 +395,60 @@ export async function createMatrixMessagingSession(
       }
     }
     let hydratedFromCache = false;
+    const nowMs = Date.now();
+    const missingProfileUserIds: string[] = [];
     for (const userId of userIds) {
-      if (roomPresenceByUserId.has(userId)) {
-        continue;
-      }
       const cachedProfile = readCachedMatrixUserProfile(userId);
-      if (!cachedProfile) {
-        continue;
+      const currentProfile = roomPresenceByUserId.get(userId);
+      const livePresence = client.getUser?.(userId);
+      const nextProfile = {
+        ...cachedProfile,
+        ...currentProfile,
+        ...livePresence,
+        fetchedAt: currentProfile?.fetchedAt ?? cachedProfile?.fetchedAt ?? 0,
+        userId
+      };
+      if (livePresence || cachedProfile) {
+        if (nextProfile.fetchedAt === 0 && (nextProfile.displayName || nextProfile.avatarUrl)) {
+          nextProfile.fetchedAt = nowMs;
+          writeCachedMatrixUserProfile(userId, nextProfile);
+        }
+        roomPresenceByUserId.set(userId, nextProfile);
+        hydratedFromCache = true;
       }
-      roomPresenceByUserId.set(userId, cachedProfile);
-      hydratedFromCache = true;
+      if (
+        !nextProfile.displayName &&
+        !nextProfile.avatarUrl &&
+        nowMs - (profileLookupAttemptByUserId.get(userId) ?? 0) > matrixMissingProfileRetryMs
+      ) {
+        missingProfileUserIds.push(userId);
+      }
     }
     if (hydratedFromCache) {
       scheduleNotify({ rooms: true });
     }
-    const nowMs = Date.now();
-    const staleUserIds = Array.from(userIds)
-      .filter((userId) => nowMs - (roomPresenceByUserId.get(userId)?.fetchedAt ?? 0) > 30_000)
-      .slice(0, 48);
-    if (staleUserIds.length === 0) {
+    if (missingProfileUserIds.length === 0) {
       return;
     }
-    await Promise.all(
-      staleUserIds.map(async (userId) => {
-        const [presence, profile] = await Promise.all([
-          fetchMatrixPresence(homeserverBaseUrl, bootstrap.accessToken, userId),
-          fetchMatrixUserProfile(client, homeserverBaseUrl, bootstrap.accessToken, userId)
-        ]);
-        if (presence || profile) {
+    for (let index = 0; index < Math.min(missingProfileUserIds.length, 12); index += 4) {
+      await Promise.all(
+        missingProfileUserIds.slice(index, index + 4).map(async (userId) => {
+          profileLookupAttemptByUserId.set(userId, nowMs);
+          const profile = await fetchMatrixUserProfile(client, homeserverBaseUrl, bootstrap.accessToken, userId);
+          if (!profile) {
+            return;
+          }
           const nextPresence = {
             ...roomPresenceByUserId.get(userId),
-            ...presence,
             ...profile,
             fetchedAt: Date.now(),
             userId
           };
           roomPresenceByUserId.set(userId, nextPresence);
           writeCachedMatrixUserProfile(userId, nextPresence);
-        }
-      })
-    );
+        })
+      );
+    }
   };
   const schedulePresenceRefresh = (delayMs = 250) => {
     if (presenceRefreshTimer !== undefined) {
@@ -468,6 +498,7 @@ export async function createMatrixMessagingSession(
         activeVoiceCallStartedAt = new Date().toISOString();
       }
       if (phase === "ended") {
+        void notifyVoiceCallWake("ended", call);
         clearVoiceCallSoon();
       }
       publishVoiceCall();
@@ -514,10 +545,7 @@ export async function createMatrixMessagingSession(
   const syncListener = (state: unknown) => {
     callbacks.onSyncState?.(typeof state === "string" ? state : "sync");
     scheduleNotify({ rooms: true, timeline: true });
-    void joinInvitedRooms().then(() => {
-      scheduleNotify({ rooms: true, timeline: true });
-      schedulePresenceRefresh();
-    });
+    schedulePresenceRefresh();
   };
   const timelineListener = () => {
     scheduleNotify({ rooms: true, timeline: true });
@@ -527,14 +555,18 @@ export async function createMatrixMessagingSession(
     scheduleNotify({ rooms: true });
     schedulePresenceRefresh(750);
   };
+  const membershipListener = () => {
+    presenceListener();
+    void joinInvitedRooms().then(() => scheduleNotify({ rooms: true, timeline: true }));
+  };
   client.on?.("sync", syncListener);
   client.on?.("Room.timeline", timelineListener);
   client.on?.("Event.decrypted", timelineListener);
   client.on?.("User.presence", presenceListener);
-  client.on?.("RoomMember.membership", presenceListener);
+  client.on?.("RoomMember.membership", membershipListener);
   client.on?.("Call.incoming", incomingCallListener);
-  await refreshJoinedRoomIds();
-  await client.startClient?.({ initialSyncLimit: 30 });
+  publishRooms();
+  await client.startClient?.({ initialSyncLimit: 20, lazyLoadMembers: true });
   void syncMatrixUserProfile(client, bootstrap, callbacks.profile).catch(() => undefined);
   void syncMatrixWebPushPusher(client, homeserverBaseUrl, callbacks.webPush).catch(() => undefined);
   void client.setPresence?.({ presence: "online" }).catch(() => undefined);
@@ -630,6 +662,7 @@ export async function createMatrixMessagingSession(
     hangupVoiceCall: async (callId) => {
       const call = requireActiveVoiceCall(activeVoiceCall, callId);
       call.hangup?.("user_hangup", false);
+      void notifyVoiceCallWake("ended", call);
       publishVoiceCall();
       clearVoiceCallSoon();
     },
@@ -743,6 +776,7 @@ export async function createMatrixMessagingSession(
       } else {
         call.hangup?.("user_hangup", false);
       }
+      void notifyVoiceCallWake("ended", call);
       publishVoiceCall();
       clearVoiceCallSoon();
     },
@@ -888,6 +922,7 @@ export async function createMatrixMessagingSession(
         activeVoiceCallError = undefined;
         publishVoiceCall();
         await call.placeVoiceCall();
+        void notifyVoiceCallWake("invite", call);
         publishVoiceCall();
       } catch (caught) {
         activeVoiceCallError = matrixVoiceCallErrorMessage(caught);
@@ -934,6 +969,7 @@ export async function createMatrixMessagingSession(
         throw formatMatrixClientError(caught, homeserverBaseUrl, "změnit reakci");
       }
     },
+    syncWebPushPusher: async (options) => syncMatrixWebPushPusher(client, homeserverBaseUrl, options),
     syncUserProfile: async (profile) => syncMatrixUserProfile(client, bootstrap, profile),
     stop: () => {
       sessionDisposed = true;
@@ -945,15 +981,23 @@ export async function createMatrixMessagingSession(
       client.off?.("Room.timeline", timelineListener);
       client.off?.("Event.decrypted", timelineListener);
       client.off?.("User.presence", presenceListener);
-      client.off?.("RoomMember.membership", presenceListener);
+      client.off?.("RoomMember.membership", membershipListener);
       client.off?.("Call.incoming", incomingCallListener);
       if (activeVoiceCallClearTimer !== undefined) {
         clearTimeout(activeVoiceCallClearTimer);
       }
-      activeVoiceCall?.hangup?.("user_hangup", false);
+      if (activeVoiceCall) {
+        void notifyVoiceCallWake("ended", activeVoiceCall);
+        activeVoiceCall.hangup?.("user_hangup", false);
+      }
       activeVoiceCall = null;
       callbacks.onVoiceCallChanged?.(null);
       client.stopClient?.();
+      if (syncStore) {
+        void (syncStore.save?.(true) ?? Promise.resolve())
+          .catch(() => undefined)
+          .finally(() => syncStore.destroy?.().catch(() => undefined));
+      }
     }
   };
 }
@@ -1873,6 +1917,24 @@ function matrixCryptoDatabasePrefix(bootstrap: MessagingBootstrapResponse): stri
     .slice(0, 140)}`;
 }
 
+function createMatrixSyncStore(
+  matrixSdk: MatrixSdkLike,
+  bootstrap: MessagingBootstrapResponse
+): MatrixSyncStoreLike | undefined {
+  if (typeof window === "undefined" || !window.indexedDB || !matrixSdk.IndexedDBStore) {
+    return undefined;
+  }
+  try {
+    return new matrixSdk.IndexedDBStore({
+      dbName: `${matrixCryptoDatabasePrefix(bootstrap)}-sync-v1`,
+      indexedDB: window.indexedDB,
+      localStorage: window.localStorage
+    });
+  } catch {
+    return undefined;
+  }
+}
+
 async function joinInvitedRoomsOnce(client: MatrixClientLike, homeserverBaseUrl: string): Promise<void> {
   const invitedRoomIds = (client.getRooms?.() ?? [])
     .map(asRoom)
@@ -1952,6 +2014,7 @@ async function fetchJoinedRooms(
 
 const matrixUserProfileCachePrefix = "cop.matrix.profile.v1";
 const matrixUserProfileCacheTtlMs = 7 * 24 * 60 * 60 * 1000;
+const matrixMissingProfileRetryMs = 5 * 60 * 1000;
 const matrixWebPushPusherStorageKey = "cop.matrix.webPushPusher.v1";
 const matrixRecoveryKeyStoragePrefix = "cop.matrix.recoveryKey.v1";
 
@@ -2144,41 +2207,6 @@ function writeCachedMatrixUserProfile(
   }
 }
 
-async function fetchMatrixPresence(
-  homeserverBaseUrl: string,
-  accessToken: string | undefined,
-  userId: string
-): Promise<MatrixUserPresenceLike | undefined> {
-  if (!accessToken || typeof fetch !== "function") {
-    return undefined;
-  }
-  try {
-    const response = await fetch(
-      `${homeserverBaseUrl.replace(/\/+$/u, "")}/_matrix/client/v3/presence/${encodeURIComponent(userId)}/status`,
-      {
-        cache: "no-store",
-        credentials: "omit",
-        headers: { Authorization: `Bearer ${accessToken}` },
-        mode: "cors"
-      }
-    );
-    if (!response.ok) {
-      return undefined;
-    }
-    const payload = (await response.json()) as Record<string, unknown>;
-    const lastActiveAgo = typeof payload.last_active_ago === "number" ? payload.last_active_ago : undefined;
-    const presence = typeof payload.presence === "string" ? payload.presence : undefined;
-    return {
-      currentlyActive: payload.currently_active === true,
-      ...(lastActiveAgo !== undefined ? { lastActiveAgo } : {}),
-      ...(presence ? { presence } : {}),
-      userId
-    };
-  } catch {
-    return undefined;
-  }
-}
-
 async function fetchMatrixUserProfile(
   client: MatrixClientLike,
   homeserverBaseUrl: string,
@@ -2289,92 +2317,6 @@ async function assertBrowserCanReachHomeserver(baseUrl: string): Promise<void> {
   } catch (caught) {
     throw formatMatrixClientError(caught, baseUrl, "ověřit službu zpráv v prohlížeči");
   }
-}
-
-function installMatrixVoipSignalingBypass(client: MatrixClientLike, bootstrap: MessagingBootstrapResponse): void {
-  const originalSendEvent = client.sendEvent?.bind(client);
-  if (!originalSendEvent || !bootstrap.accessToken || !bootstrap.homeserverBaseUrl) {
-    return;
-  }
-  client.sendEvent = (...args) => {
-    const parsed = parseMatrixSendEventArgs(args);
-    if (parsed && isMatrixCallEventType(parsed.eventType)) {
-      return sendMatrixEventWithoutRoomEncryption(
-        bootstrap,
-        parsed.roomId,
-        parsed.eventType,
-        parsed.content,
-        parsed.txnId
-      );
-    }
-    return originalSendEvent(...args);
-  };
-}
-
-function parseMatrixSendEventArgs(args: MatrixSendEventArgs):
-  | {
-      content: Record<string, unknown>;
-      eventType: string;
-      roomId: string;
-      txnId?: string;
-    }
-  | undefined {
-  const [roomId, second, third, fourth, fifth] = args;
-  const directContent = asRecord(third);
-  if (typeof second === "string" && directContent) {
-    return {
-      content: directContent,
-      eventType: second,
-      roomId,
-      ...(typeof fourth === "string" ? { txnId: fourth } : {})
-    };
-  }
-  const threadedContent = asRecord(fourth);
-  if ((typeof second === "string" || second === null) && typeof third === "string" && threadedContent) {
-    return {
-      content: threadedContent,
-      eventType: third,
-      roomId,
-      ...(typeof fifth === "string" ? { txnId: fifth } : {})
-    };
-  }
-  return undefined;
-}
-
-async function sendMatrixEventWithoutRoomEncryption(
-  bootstrap: MessagingBootstrapResponse,
-  roomId: string,
-  eventType: string,
-  content: Record<string, unknown>,
-  txnId?: string
-): Promise<unknown> {
-  if (typeof fetch !== "function") {
-    throw new Error("Hlasovou signalizaci se nepodařilo odeslat bez dostupného síťového rozhraní.");
-  }
-  const transactionId = txnId ?? createMatrixTransactionId("cop-voip");
-  const homeserverBaseUrl = bootstrap.homeserverBaseUrl?.replace(/\/+$/u, "");
-  const accessToken = bootstrap.accessToken;
-  if (!homeserverBaseUrl || !accessToken) {
-    throw new Error("Hlasovou signalizaci se nepodařilo odeslat bez přihlášení ke službě zpráv.");
-  }
-  const response = await fetch(
-    `${homeserverBaseUrl}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/send/${encodeURIComponent(eventType)}/${encodeURIComponent(transactionId)}`,
-    {
-      body: JSON.stringify(content),
-      cache: "no-store",
-      credentials: "omit",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json"
-      },
-      method: "PUT",
-      mode: "cors"
-    }
-  );
-  if (!response.ok) {
-    throw new Error(`Matrix voice call signalling failed: HTTP ${response.status}`);
-  }
-  return response.json().catch(() => ({}));
 }
 
 function createMatrixTransactionId(prefix: string): string {
@@ -2524,7 +2466,19 @@ function readRooms(
         unreadCount
       };
     })
-    .sort((left, right) => left.name.localeCompare(right.name, "cs"));
+    .sort((left, right) => {
+      const latestDifference = matrixRoomLatestTimestamp(right) - matrixRoomLatestTimestamp(left);
+      return latestDifference || left.name.localeCompare(right.name, "cs");
+    });
+}
+
+function matrixRoomLatestTimestamp(room: MatrixRoomSummary): number {
+  const timestamp = room.latestMessage?.timestamp;
+  if (!timestamp) {
+    return 0;
+  }
+  const parsed = Date.parse(timestamp);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function roomUnreadCount(

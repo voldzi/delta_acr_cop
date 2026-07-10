@@ -113,12 +113,14 @@ type MatrixMxcUrlToHttp = (
 
 const matrixSdkMock = vi.hoisted(() => ({
   createClient: vi.fn(),
-  createNewMatrixCall: vi.fn()
+  createNewMatrixCall: vi.fn(),
+  IndexedDBStore: vi.fn()
 }));
 
 vi.mock("matrix-js-sdk/lib/browser-index.js", () => ({
   createClient: matrixSdkMock.createClient,
   createNewMatrixCall: matrixSdkMock.createNewMatrixCall,
+  IndexedDBStore: matrixSdkMock.IndexedDBStore,
   Room: {
     prototype: {}
   }
@@ -127,11 +129,42 @@ vi.mock("matrix-js-sdk/lib/browser-index.js", () => ({
 afterEach(() => {
   matrixSdkMock.createClient.mockReset();
   matrixSdkMock.createNewMatrixCall.mockReset();
+  matrixSdkMock.IndexedDBStore.mockReset();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
 describe("Matrix client diagnostics", () => {
+  it("restores and saves the persistent Matrix sync store when IndexedDB is available", async () => {
+    const store = {
+      destroy: vi.fn().mockResolvedValue(undefined),
+      save: vi.fn().mockResolvedValue(undefined),
+      startup: vi.fn().mockResolvedValue(undefined)
+    };
+    matrixSdkMock.IndexedDBStore.mockImplementation(function IndexedDbStoreMock() {
+      return store;
+    });
+    vi.stubGlobal("window", {
+      indexedDB: {},
+      localStorage: {}
+    });
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({ getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }), rooms: [] })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    expect(matrixSdkMock.IndexedDBStore).toHaveBeenCalledWith(
+      expect.objectContaining({ dbName: expect.stringContaining("cop-web-matrix-") })
+    );
+    expect(matrixSdkMock.createClient).toHaveBeenCalledWith(expect.objectContaining({ store }));
+    expect(store.startup).toHaveBeenCalledTimes(1);
+
+    session.stop();
+    await vi.waitFor(() => expect(store.save).toHaveBeenCalledWith(true));
+    await vi.waitFor(() => expect(store.destroy).toHaveBeenCalledTimes(1));
+  });
+
   it("turns browser network failures into user-facing messaging errors", () => {
     const error = formatMatrixClientError(
       new TypeError("fetch failed: Load failed"),
@@ -297,6 +330,7 @@ describe("Matrix client diagnostics", () => {
   it("starts an outgoing Matrix voice call and publishes call state", async () => {
     stubVoiceCallBrowserSupport();
     const call = createMockVoiceCall({ direction: "outbound", roomId: "!chat:cop.local" });
+    const onVoiceCallWake = vi.fn().mockResolvedValue(undefined);
     const onVoiceCallChanged = vi.fn();
     matrixSdkMock.createNewMatrixCall.mockReturnValue(call);
     matrixSdkMock.createClient.mockReturnValue(
@@ -306,7 +340,7 @@ describe("Matrix client diagnostics", () => {
       })
     );
 
-    const session = await createMatrixMessagingSession(createBootstrap(), { onVoiceCallChanged });
+    const session = await createMatrixMessagingSession(createBootstrap(), { onVoiceCallChanged, onVoiceCallWake });
     await session.startVoiceCall("!chat:cop.local");
 
     expect(matrixSdkMock.createNewMatrixCall).toHaveBeenCalledWith(expect.any(Object), "!chat:cop.local");
@@ -320,9 +354,16 @@ describe("Matrix client diagnostics", () => {
     expect(onVoiceCallChanged).toHaveBeenCalledWith(
       expect.objectContaining({ callId: "call-1", direction: "outgoing" })
     );
+    await vi.waitFor(() =>
+      expect(onVoiceCallWake).toHaveBeenCalledWith({
+        action: "invite",
+        callId: "call-1",
+        roomId: "!chat:cop.local"
+      })
+    );
   });
 
-  it("sends Matrix voice call room signalling without room encryption", async () => {
+  it("keeps Matrix voice call signalling on the SDK encryption path", async () => {
     stubVoiceCallBrowserSupport();
     const rawSend = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined);
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ event_id: "$call-invite" }), { status: 200 }));
@@ -350,18 +391,14 @@ describe("Matrix client diagnostics", () => {
     const session = await createMatrixMessagingSession(createBootstrap());
     await session.startVoiceCall("!chat:cop.local");
 
-    expect(rawSend).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("/_matrix/client/v3/rooms/!chat%3Acop.local/send/m.call.invite/"),
-      expect.objectContaining({
-        body: JSON.stringify({ call_id: "call-1", lifetime: 60_000, version: "1" }),
-        headers: expect.objectContaining({
-          Authorization: "Bearer test-token",
-          "Content-Type": "application/json"
-        }),
-        method: "PUT"
-      })
-    );
+    expect(rawSend).toHaveBeenCalledWith("!chat:cop.local", "m.call.invite", {
+      call_id: "call-1",
+      lifetime: 60_000,
+      version: "1"
+    });
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes("/rooms/") && String(url).includes("m.call.invite"))
+    ).toBe(false);
   });
 
   it("answers an incoming Matrix voice call", async () => {

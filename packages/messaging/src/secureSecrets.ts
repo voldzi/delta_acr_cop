@@ -216,10 +216,7 @@ function isStoredSealedSecretForScope(value: unknown, scope: BrowserSecretScope)
 
 function isStoredWrappingKey(value: unknown): value is StoredWrappingKey {
   return (
-    isRecord(value) &&
-    value.version === sealedSecretVersion &&
-    typeof value.id === "string" &&
-    isCryptoKey(value.key)
+    isRecord(value) && value.version === sealedSecretVersion && typeof value.id === "string" && isCryptoKey(value.key)
   );
 }
 
@@ -232,19 +229,21 @@ function wrappingKeyIdForScope(scope: BrowserSecretScope): string {
 }
 
 function secretScopeAdditionalData(scope: BrowserSecretScope): Uint8Array<ArrayBuffer> {
-  return new TextEncoder().encode(`${scope.id}\n${scope.userId}\n${scope.homeserverBaseUrl}`) as Uint8Array<ArrayBuffer>;
+  return new TextEncoder().encode(
+    `${scope.id}\n${scope.userId}\n${scope.homeserverBaseUrl}`
+  ) as Uint8Array<ArrayBuffer>;
 }
 
 function encodeBase64Url(bytes: Uint8Array): string {
-  const base64 =
-    typeof btoa === "function"
-      ? btoa(bytesToBinary(bytes))
-      : Buffer.from(bytes).toString("base64");
+  const base64 = typeof btoa === "function" ? btoa(bytesToBinary(bytes)) : Buffer.from(bytes).toString("base64");
   return base64.replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "");
 }
 
 function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
-  const padded = value.replace(/-/gu, "+").replace(/_/gu, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const padded = value
+    .replace(/-/gu, "+")
+    .replace(/_/gu, "/")
+    .padEnd(Math.ceil(value.length / 4) * 4, "=");
   const binary = typeof atob === "function" ? atob(padded) : Buffer.from(padded, "base64").toString("binary");
   const bytes = new Uint8Array(binary.length) as Uint8Array<ArrayBuffer>;
   for (let index = 0; index < binary.length; index += 1) {

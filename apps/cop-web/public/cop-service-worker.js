@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260709-2";
+const COP_SW_VERSION = "cop-pwa-offline-20260710-1";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;
@@ -106,6 +106,16 @@ self.addEventListener("push", (event) => {
           type: "cop:pwa:voice-call-ended"
         });
         return;
+      }
+      if (isVoiceCallIncomingPayload(payload)) {
+        await notifyClients({
+          callId: notificationPayloadCallId(payload),
+          receivedAt: Date.now(),
+          roomId: notificationPayloadRoomId(payload),
+          senderDisplayName: notificationPayloadSenderDisplayName(payload),
+          tag,
+          type: "cop:pwa:voice-call-incoming"
+        }).catch(() => undefined);
       }
       if (badgeCount !== undefined) {
         await updateAppBadge(badgeCount);
@@ -431,7 +441,18 @@ function extractManifestAssetUrls(manifest, basePath = "/") {
     return [];
   }
   const urls = new Set();
-  for (const entry of Object.values(manifest)) {
+  const entries = Object.entries(manifest);
+  const pendingKeys = entries.flatMap(([key, entry]) =>
+    entry && typeof entry === "object" && !Array.isArray(entry) && entry.isEntry === true ? [key] : []
+  );
+  const visitedKeys = new Set();
+  while (pendingKeys.length > 0) {
+    const key = pendingKeys.shift();
+    if (!key || visitedKeys.has(key)) {
+      continue;
+    }
+    visitedKeys.add(key);
+    const entry = manifest[key];
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       continue;
     }
@@ -450,6 +471,11 @@ function extractManifestAssetUrls(manifest, basePath = "/") {
         }
       } catch {
         // Ignore malformed manifest entries.
+      }
+    }
+    for (const importedKey of Array.isArray(entry.imports) ? entry.imports : []) {
+      if (typeof importedKey === "string" && !visitedKeys.has(importedKey)) {
+        pendingKeys.push(importedKey);
       }
     }
   }
@@ -745,7 +771,7 @@ function notificationPayloadUrl(payload) {
 function notificationActionsForPayload(payload, url) {
   if (isVoiceCallIncomingPayload(payload)) {
     return [
-      { action: "open-call", title: "Přijmout" },
+      { action: "open-call", title: "Otevřít hovor" },
       { action: "dismiss", title: "Zavřít" }
     ];
   }
@@ -795,6 +821,15 @@ function notificationPayloadCallId(payload) {
 
 function notificationPayloadRoomId(payload) {
   return firstString(payload?.roomId, payload?.room_id, payload?.data?.roomId, payload?.data?.room_id);
+}
+
+function notificationPayloadSenderDisplayName(payload) {
+  return firstString(
+    payload?.senderDisplayName,
+    payload?.sender_display_name,
+    payload?.data?.senderDisplayName,
+    payload?.data?.sender_display_name
+  );
 }
 
 function notificationPayloadSeverity(payload) {

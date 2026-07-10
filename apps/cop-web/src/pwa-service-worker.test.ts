@@ -149,13 +149,22 @@ describe("COP PWA service worker routing", () => {
     ]);
   });
 
-  it("warms lazy chunks from web and chat build manifests", () => {
+  it("warms only entry assets from web and chat build manifests", () => {
     const serviceWorker = loadServiceWorkerContext();
     const manifest = {
       "index.html": {
         css: ["assets/index.css"],
         dynamicImports: ["src/CopMap.tsx"],
-        file: "assets/index.js"
+        file: "assets/index.js",
+        imports: ["_vendor.js"],
+        isEntry: true
+      },
+      "_vendor.js": {
+        file: "assets/vendor.js",
+        imports: ["_runtime.js"]
+      },
+      "_runtime.js": {
+        file: "assets/runtime.js"
       },
       "src/CopMap.tsx": {
         assets: ["assets/map-marker.png"],
@@ -166,14 +175,16 @@ describe("COP PWA service worker routing", () => {
     expect(serviceWorker.extractManifestAssetUrls(manifest, "/chat/")).toEqual([
       "/chat/assets/index.js",
       "/chat/assets/index.css",
-      "/chat/assets/CopMap.js",
-      "/chat/assets/map-marker.png"
+      "/chat/assets/vendor.js",
+      "/chat/assets/runtime.js"
     ]);
   });
 
   it("keeps the current and immediately previous PWA release caches", () => {
     const serviceWorker = loadServiceWorkerContext();
     const keys = [
+      "cop-pwa-offline-20260710-1:shell",
+      "cop-pwa-offline-20260710-1:runtime",
       "cop-pwa-offline-20260709-2:shell",
       "cop-pwa-offline-20260709-2:runtime",
       "cop-pwa-offline-20260709-1:shell",
@@ -182,7 +193,11 @@ describe("COP PWA service worker routing", () => {
       "third-party-cache"
     ];
 
-    expect(serviceWorker.releaseCacheKeysToDelete(keys)).toEqual(["cop-pwa-offline-20260708-8:shell"]);
+    expect(serviceWorker.releaseCacheKeysToDelete(keys)).toEqual([
+      "cop-pwa-offline-20260709-1:shell",
+      "cop-pwa-offline-20260709-1:runtime",
+      "cop-pwa-offline-20260708-8:shell"
+    ]);
   });
 
   it("prefers a fresh network app shell for online chat navigations", async () => {
@@ -240,7 +255,7 @@ describe("COP PWA service worker notifications", () => {
     expect(serviceWorker.notificationPayloadTag(payload)).toBe("cop-call:!ops:msg.zeleznalady.cz:call-1");
     expect(serviceWorker.notificationPayloadDeepLink(payload)).toBe("/chat/!ops%3Amsg.zeleznalady.cz");
     expect(serviceWorker.notificationActionsForPayload(payload, "/chat/!ops")).toEqual([
-      { action: "open-call", title: "Přijmout" },
+      { action: "open-call", title: "Otevřít hovor" },
       { action: "dismiss", title: "Zavřít" }
     ]);
     expect(serviceWorker.notificationRequiresInteraction(payload, "info")).toBe(true);

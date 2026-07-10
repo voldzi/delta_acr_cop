@@ -4119,6 +4119,90 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       return messagingProvider.fetchMatrixBootstrap(actor, now(), deviceId);
     },
+    wakeVoiceCall: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const wake = normalizeMessagingVoiceCallWakeRequest(request.body);
+      if (!wake) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Voice call wake requires action, callId and a canonical Matrix roomId.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const conversationResult = await messagingProvider.fetchConversationByRoomId(actor, now(), wake.roomId);
+      const conversation = conversationResult.conversation;
+      if (!conversation) {
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Voice call room is not bound to an accessible conversation.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const recipientUserIds = Array.from(
+        new Set(
+          (conversation.members ?? [])
+            .map((member) => member.userId)
+            .filter((userId) => userId && userId !== actor.subjectId)
+        )
+      );
+      if (recipientUserIds.length === 0) {
+        return sendError(
+          reply,
+          409,
+          "NO_CALL_RECIPIENT",
+          "Voice call conversation has no other registered member.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const incoming = wake.action === "invite";
+      const requestNow = now();
+      const notification = await messagingProvider.sendNotification(
+        actor,
+        requestNow,
+        voiceCallWakeIdempotencyKey(actor.subjectId, wake),
+        {
+          audience: { userIds: recipientUserIds },
+          body: incoming
+            ? {
+                cs: `${actor.displayName || actor.username} volá`,
+                en: `${actor.displayName || actor.username} is calling`
+              }
+            : { cs: "Hovor byl ukončen.", en: "The call ended." },
+          deepLink: `csm://chat/room/${encodeURIComponent(wake.roomId)}`,
+          expiresAt: new Date(requestNow.getTime() + 90_000).toISOString(),
+          metadata: {
+            callId: wake.callId,
+            renotify: incoming,
+            requireInteraction: incoming,
+            roomId: wake.roomId,
+            sender: actor.subjectId,
+            senderDisplayName: actor.displayName || actor.username,
+            tag: `cop-call:${wake.roomId}:${wake.callId}`,
+            ttlSeconds: 90
+          },
+          priority: "high",
+          severity: "info",
+          source: {
+            featureId: "matrix.voice_call",
+            layerId: "messaging",
+            providerId: "csm.messaging",
+            sourceName: "COP Chat"
+          },
+          title: incoming
+            ? { cs: "Příchozí hlasový hovor", en: "Incoming voice call" }
+            : { cs: "Hovor ukončen", en: "Call ended" },
+          type: incoming ? "chat.voice_call.incoming" : "chat.voice_call.ended"
+        }
+      );
+      return reply.code(notification.status === "online" ? 202 : 502).send(notification);
+    },
     conversationDetail: async (request, reply) => {
       const actor = requireActor(request, reply);
       if (!actor) {
@@ -13047,6 +13131,32 @@ function normalizeMessagingConversationId(value: unknown): string | undefined {
 function normalizeMatrixRoomId(value: unknown): string | undefined {
   const roomId = optionalTrimmedString(value, 512);
   return roomId && /^![^\s:]+:.+$/u.test(roomId) ? roomId : undefined;
+}
+
+function normalizeMessagingVoiceCallWakeRequest(
+  value: unknown
+): { action: "ended" | "invite"; callId: string; roomId: string } | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const action = value.action === "invite" || value.action === "ended" ? value.action : undefined;
+  const callId = optionalTrimmedString(value.callId, 160);
+  const roomId = normalizeMatrixRoomId(value.roomId);
+  if (!action || !callId || !roomId || !/^[A-Za-z0-9._:=@-]{1,160}$/u.test(callId)) {
+    return null;
+  }
+  return { action, callId, roomId };
+}
+
+function voiceCallWakeIdempotencyKey(
+  subjectId: string,
+  wake: { action: "ended" | "invite"; callId: string; roomId: string }
+): string {
+  const digest = createHash("sha256")
+    .update(`${subjectId}\0${wake.roomId}\0${wake.callId}\0${wake.action}`)
+    .digest("hex")
+    .slice(0, 48);
+  return `voice-call:${wake.action}:${digest}`;
 }
 
 function normalizeMatrixIdentityResolutionRequest(value: unknown): string[] | null {

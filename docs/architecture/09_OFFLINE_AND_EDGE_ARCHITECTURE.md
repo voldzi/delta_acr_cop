@@ -30,10 +30,13 @@ zároveň brání tomu, aby po produkčním nasazení PWA dlouho běžela na sta
 shellu.
 
 Při instalaci service worker zahřívá runtime cache ze same-origin assetů
-odkazovaných z HTML i z Vite build manifestů mapy a chatu. Instalační krok je
-úspěšný jen tehdy, když je dostupný aktuální shell i všechny content-hashované
-lazy chunky. Předchozí release cache zůstává po jednu verzi zachovaná, aby již
-otevřená záložka mohla dokončit lazy import během nasazení nové verze.
+odkazovaných z HTML a ze vstupních (`isEntry`) položek Vite manifestů mapy a
+chatu včetně jejich tranzitivních statických `imports`, které jsou nutné pro
+start. Nestahuje preventivně `dynamicImports`, všechny lazy mapové knihovny,
+WASM ani exportní nástroje; ty se uloží při prvním použití. Instalace a
+foreground warm-up tak nezatěžují mobilní síť ani úložiště celým buildem.
+Předchozí release cache zůstává po jednu verzi zachovaná, aby již otevřená
+záložka mohla dokončit lazy import během nasazení nové verze.
 
 Pokud starší service worker přesto zanechá online klienta s chybějícím lazy
 chunkem, root error boundary rozpozná browser chybu dynamického importu,

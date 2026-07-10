@@ -47,6 +47,7 @@ function sessionStub(): MatrixMessagingSession {
     setReaction: vi.fn(),
     startVoiceCall: vi.fn(),
     stop: vi.fn(),
+    syncWebPushPusher: vi.fn(),
     syncUserProfile: vi.fn()
   };
 }

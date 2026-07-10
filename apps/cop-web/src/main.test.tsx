@@ -21,7 +21,8 @@ import {
   hostUnreadCountFromChatSummary,
   hostUsableChatSummary,
   hostVisibleChatVoiceCall,
-  mapBoundsContainedBy
+  mapBoundsContainedBy,
+  pwaVoiceCallUpdateFromServiceWorkerMessage
 } from "./main";
 import { writeCopOfflineSnapshot } from "./pwa-offline";
 import { defaultMapCenter } from "./user-preferences";
@@ -391,6 +392,39 @@ describe("COP web dashboard", () => {
     expect(hostIncomingChatVoiceCall(freshCall)).toEqual(freshCall);
     expect(hostVisibleChatVoiceCall(staleCall, now)).toBeNull();
     expect(hostVisibleChatVoiceCall(endedCall, now)).toBeNull();
+  });
+
+  it("turns service-worker call wake messages into global host call state", () => {
+    const receivedAt = Date.parse("2026-07-07T12:00:00.000Z");
+
+    expect(
+      pwaVoiceCallUpdateFromServiceWorkerMessage({
+        callId: "call-1",
+        receivedAt,
+        roomId: "!ops:msg.zeleznalady.cz",
+        senderDisplayName: "Jana Nováková",
+        type: "cop:pwa:voice-call-incoming"
+      })
+    ).toEqual({
+      action: "incoming",
+      call: {
+        at: receivedAt,
+        callId: "call-1",
+        direction: "incoming",
+        phase: "ringing",
+        roomId: "!ops:msg.zeleznalady.cz",
+        title: "Jana Nováková",
+        type: "cop-chat:voice-call"
+      }
+    });
+    expect(
+      pwaVoiceCallUpdateFromServiceWorkerMessage({
+        callId: "call-1",
+        roomId: "!ops:msg.zeleznalady.cz",
+        type: "cop:pwa:voice-call-ended"
+      })
+    ).toEqual({ action: "ended", callId: "call-1", roomId: "!ops:msg.zeleznalady.cz" });
+    expect(pwaVoiceCallUpdateFromServiceWorkerMessage({ type: "cop:pwa:voice-call-incoming" })).toBeNull();
   });
 
   it("formats structured weather station attribution from SIM without rendering objects", () => {

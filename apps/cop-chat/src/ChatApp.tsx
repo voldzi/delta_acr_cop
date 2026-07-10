@@ -703,9 +703,6 @@ export function ChatApp() {
   const handleMatrixTimelineChanged = React.useCallback(() => setTimelineRevision((value) => value + 1), []);
   const handleMatrixVoiceCallChanged = React.useCallback((nextCall: MatrixVoiceCallSnapshot | null) => {
     setVoiceCall(nextCall);
-    if (nextCall?.direction === "incoming" && nextCall.phase === "ringing" && nextCall.roomId) {
-      setSelectedRoomId(nextCall.roomId);
-    }
   }, []);
   const {
     encryptionRecoveryStatus,
@@ -720,6 +717,7 @@ export function ChatApp() {
     refreshEncryptionRecoveryStatus,
     resetMatrixSession,
     startMatrixSession,
+    updateMatrixWebPushPusher,
     syncState
   } = useMatrixSession({
     apiBase,
@@ -912,8 +910,7 @@ export function ChatApp() {
   const regularChatItems = React.useMemo(() => chatItems.filter((item) => !item.pinned), [chatItems]);
   const activeChat = chatItems.find((item) => item.active) ?? null;
   const voiceCallChat = voiceCall ? (chatItems.find((item) => item.roomId === voiceCall.roomId) ?? null) : null;
-  const activeVoiceCall =
-    voiceCall && activeChat?.roomId === voiceCall.roomId && voiceCall.phase !== "ended" ? voiceCall : null;
+  const activeVoiceCall = voiceCall && voiceCall.phase !== "ended" ? voiceCall : null;
   const voiceCallTitle =
     voiceCall && voiceCall.roomId
       ? (voiceCallChat?.title ?? rooms.find((room) => room.roomId === voiceCall.roomId)?.name)
@@ -1299,23 +1296,19 @@ export function ChatApp() {
       return;
     }
     const nextWebPushPusherStateKey = matrixWebPushPusherStateKey;
-    matrixAttemptKeyRef.current = null;
-    resetMatrixSession();
-    void startMatrixSession(selectedRoomId ?? selectedConversationId ?? selectedGroupId ?? readRouteSelection()).then(
-      (session) => {
-        matrixWebPushPusherDeviceIdRef.current = session ? nextWebPushPusherStateKey : undefined;
-      }
-    );
+    void updateMatrixWebPushPusher()
+      .then(() => {
+        matrixWebPushPusherDeviceIdRef.current = nextWebPushPusherStateKey;
+      })
+      .catch(() => {
+        matrixWebPushPusherDeviceIdRef.current = undefined;
+      });
   }, [
     authToken,
     matrixSession,
     matrixSessionRef,
     matrixWebPushPusherStateKey,
-    resetMatrixSession,
-    selectedConversationId,
-    selectedGroupId,
-    selectedRoomId,
-    startMatrixSession,
+    updateMatrixWebPushPusher,
     status?.chatAvailable
   ]);
 
@@ -1329,12 +1322,11 @@ export function ChatApp() {
     }
     const syncStateNormalized = syncState.toUpperCase();
     const lastActivityAt = matrixLastSyncAt ?? matrixLastReadyAt;
-    const staleSession = Boolean(matrixSessionRef.current && lastActivityAt && nowMs - lastActivityAt > 75_000);
-    const brokenSession =
-      matrixSessionLifecycle === "error" ||
-      syncStateNormalized.includes("ERROR") ||
-      syncStateNormalized.includes("STOPPED");
-    if (matrixSessionRef.current && !staleSession && !brokenSession) {
+    const stoppedSession = syncStateNormalized.includes("STOPPED");
+    const prolongedError =
+      Boolean(lastActivityAt && nowMs - lastActivityAt > 5 * 60_000) &&
+      (matrixSessionLifecycle === "error" || syncStateNormalized.includes("ERROR"));
+    if (matrixSessionRef.current && !stoppedSession && !prolongedError) {
       return;
     }
     matrixResumeInFlightRef.current = true;
@@ -4467,7 +4459,7 @@ export function ChatApp() {
             {activeVoiceCall ? (
               <VoiceCallBar
                 call={activeVoiceCall}
-                title={voiceCallChat?.title ?? activeChat.title}
+                title={voiceCallChat?.title ?? voiceCallTitle ?? activeChat.title}
                 onAnswer={() => void answerVoiceCall(activeVoiceCall)}
                 onHangup={() => void hangupVoiceCall(activeVoiceCall)}
                 onReject={() => void rejectVoiceCall(activeVoiceCall)}
