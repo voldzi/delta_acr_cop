@@ -36,6 +36,14 @@ describe("cop-chat embedded mobile layout CSS", () => {
     );
     expect(cssBlocks(".composer").some((block) => block.includes("env(safe-area-inset-bottom, 0px)"))).toBe(true);
   });
+
+  it("reserves long press for message reactions without blocking vertical scrolling", () => {
+    const messageRowBlock = cssBlock(".message-row");
+    expect(messageRowBlock).toContain("-webkit-touch-callout: none");
+    expect(messageRowBlock).toContain("-webkit-user-select: none");
+    expect(messageRowBlock).toContain("user-select: none");
+    expect(messageRowBlock).toContain("touch-action: pan-y pinch-zoom");
+  });
 });
 
 function cssBlock(selector: string): string {

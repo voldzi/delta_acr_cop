@@ -922,6 +922,9 @@ export function ChatApp() {
     voiceCall && voiceCall.roomId
       ? (voiceCallChat?.title ?? rooms.find((room) => room.roomId === voiceCall.roomId)?.name)
       : undefined;
+  const voiceCallDifferentChat = Boolean(
+    activeVoiceCall && voiceCallRoomToFocusAfterAnswer(activeVoiceCall.roomId, selectedRoomId)
+  );
   const canStartVoiceCall = Boolean(
     activeChat?.type === "direct" &&
     activeChat.roomId &&
@@ -1696,8 +1699,6 @@ export function ChatApp() {
       }
       const voiceCallCommand = decodeChatVoiceCallCommand(event.data);
       if (voiceCallCommand) {
-        resetRouteOpenAttempt();
-        void applyAndOpenRouteSelection(voiceCallCommand.roomId);
         const currentCall = voiceCall?.callId === voiceCallCommand.callId ? voiceCall : matrixSession?.getVoiceCall();
         if (currentCall?.callId === voiceCallCommand.callId) {
           if (voiceCallCommand.action === "answer") {
@@ -3639,6 +3640,13 @@ export function ChatApp() {
       await session.answerVoiceCall(call.callId);
     } catch (caught) {
       setError(userFacingVoiceCallError(caught, "Hovor se nepodařilo přijmout."));
+      return;
+    }
+
+    const roomId = voiceCallRoomToFocusAfterAnswer(call.roomId, selectedRoomIdRef.current);
+    if (roomId) {
+      resetRouteOpenAttempt();
+      await applyAndOpenRouteSelection(roomId);
     }
   }
 
@@ -4507,7 +4515,12 @@ export function ChatApp() {
             {activeVoiceCall ? (
               <VoiceCallBar
                 call={activeVoiceCall}
-                title={voiceCallChat?.title ?? voiceCallTitle ?? activeChat.title}
+                differentChat={voiceCallDifferentChat}
+                title={
+                  voiceCallChat?.title ??
+                  voiceCallTitle ??
+                  (activeVoiceCall.roomId === activeChat.roomId ? activeChat.title : "Neznámý volající")
+                }
                 onAnswer={() => void answerVoiceCall(activeVoiceCall)}
                 onHangup={() => void hangupVoiceCall(activeVoiceCall)}
                 onReject={() => void rejectVoiceCall(activeVoiceCall)}
@@ -5878,10 +5891,10 @@ function MessageRow({
         }
       }}
       onContextMenu={(event) => {
+        event.preventDefault();
         if (selectable || isInteractiveMessageTarget(event.target)) {
           return;
         }
-        event.preventDefault();
         openActions(false);
       }}
       onPointerDown={(event) => {
@@ -5897,6 +5910,7 @@ function MessageRow({
         }, 460);
       }}
       onPointerLeave={clearLongPressTimer}
+      onPointerCancel={clearLongPressTimer}
       onPointerMove={(event) => {
         if (event.pointerType === "mouse") {
           return;
@@ -6551,6 +6565,7 @@ function ChatLockedState({
 
 function VoiceCallBar({
   call,
+  differentChat,
   title,
   onAnswer,
   onHangup,
@@ -6558,6 +6573,7 @@ function VoiceCallBar({
   onToggleMute
 }: {
   call: MatrixVoiceCallSnapshot;
+  differentChat: boolean;
   title: string;
   onAnswer: () => void;
   onHangup: () => void;
@@ -6590,14 +6606,18 @@ function VoiceCallBar({
   const status = voiceCallStatusText(call, now);
 
   return (
-    <div className={clsx("voice-call-bar", call.phase)} role="status" aria-live="polite">
+    <div
+      className={clsx("voice-call-bar", call.phase, differentChat && "different-chat")}
+      role="status"
+      aria-live="polite"
+    >
       <audio ref={audioRef} autoPlay playsInline />
       <span className="voice-call-icon">
         <Phone size={18} />
       </span>
       <div className="voice-call-copy">
-        <strong>{title}</strong>
-        <span>{status}</span>
+        <strong>{incomingRinging ? `Volá ${title}` : title}</strong>
+        <span>{incomingRinging && differentChat ? "Jiný chat · po přijetí se otevře správná konverzace" : status}</span>
       </div>
       <div className="voice-call-controls">
         {incomingRinging ? (
@@ -6628,6 +6648,10 @@ function VoiceCallBar({
       </div>
     </div>
   );
+}
+
+export function voiceCallRoomToFocusAfterAnswer(callRoomId: string, selectedRoomId: string | null): string | null {
+  return callRoomId !== selectedRoomId ? callRoomId : null;
 }
 
 function voiceCallStatusText(call: MatrixVoiceCallSnapshot, now: number): string {

@@ -1219,6 +1219,20 @@ button {
   border-bottom-color: rgba(14, 116, 144, 0.22);
 }
 
+.voice-call-bar.ringing.different-chat {
+  border-bottom-color: rgba(180, 115, 0, 0.34);
+  background: #fff6d8;
+  color: #5f4100;
+}
+
+.voice-call-bar.ringing.different-chat .voice-call-icon {
+  color: #a66300;
+}
+
+.voice-call-bar.ringing.different-chat .voice-call-copy span {
+  color: #765717;
+}
+
 .voice-call-bar.failed {
   background: #fff0ef;
   border-bottom-color: #f2cbc7;
@@ -1391,6 +1405,16 @@ button {
   justify-content: flex-start;
   align-items: center;
   gap: 9px;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: pan-y pinch-zoom;
+}
+
+.message-row * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .message-row.own {

@@ -12,7 +12,8 @@ import {
   isAiAgentChatItem,
   sameAuthSessionIdentity,
   shouldPublishChatUnreadBridgeSnapshot,
-  userFacingError
+  userFacingError,
+  voiceCallRoomToFocusAfterAnswer
 } from "./ChatApp";
 import {
   buildTimelineRows,
@@ -91,6 +92,13 @@ describe("sameAuthSessionIdentity", () => {
         profile: { name: "COP Operator", subjectId: "operator-2", username: "operator" }
       })
     ).toBe(false);
+  });
+});
+
+describe("voiceCallRoomToFocusAfterAnswer", () => {
+  it("switches to the caller room only when the call came from another chat", () => {
+    expect(voiceCallRoomToFocusAfterAnswer("!caller:example.test", "!open:example.test")).toBe("!caller:example.test");
+    expect(voiceCallRoomToFocusAfterAnswer("!caller:example.test", "!caller:example.test")).toBeNull();
   });
 });
 
