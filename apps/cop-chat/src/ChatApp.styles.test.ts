@@ -144,6 +144,34 @@ describe("cop-chat embedded mobile layout CSS", () => {
     expect(heroAvatarBlocks.some((block) => block.includes("width: 56px"))).toBe(true);
     expect(contactSection).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
   });
+
+  it("keeps the composer shrinkable and dialog actions touch sized on compact phones", () => {
+    expect(cssBlocks(".message-input").some((block) => block.includes("min-width: 0"))).toBe(true);
+    expect(cssBlocks(".composer-row").some((block) => block.includes("min-width: 0"))).toBe(true);
+    expect(
+      cssBlocks(
+        ".dialog-tabs button,\n  .primary-dialog-action,\n  .secondary-dialog-action,\n  .secondary-danger-action"
+      ).some((block) => block.includes("min-height: 44px"))
+    ).toBe(true);
+  });
+
+  it("stacks contact metrics and AI evidence for 320px phones", () => {
+    const compactColumns = cssBlocks(".contact-info-section,\n  .ai-situation-meta");
+    const evidenceRows = cssBlocks(".ai-evidence-group li");
+
+    expect(compactColumns.some((block) => block.includes("grid-template-columns: 1fr"))).toBe(true);
+    expect(evidenceRows.some((block) => block.includes("grid-template-columns: auto minmax(0, 1fr)"))).toBe(true);
+  });
+
+  it("uses one-column action rows for compact recovery and AI dialogs", () => {
+    const footers = cssBlocks(".recovery-dialog footer,\n  .ai-situation-dialog footer,\n  .ai-agent-dialog footer");
+    const footerButtons = cssBlocks(
+      ".recovery-dialog footer button,\n  .ai-situation-dialog footer button,\n  .ai-agent-dialog footer button,\n  .ai-situation-dialog footer .primary-dialog-action,\n  .ai-agent-dialog footer .primary-dialog-action"
+    );
+
+    expect(footers.some((block) => block.includes("grid-template-columns: 1fr"))).toBe(true);
+    expect(footerButtons.some((block) => block.includes("width: 100%"))).toBe(true);
+  });
 });
 
 function cssBlock(selector: string): string {

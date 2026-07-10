@@ -11324,3 +11324,199 @@ dd {
     -webkit-line-clamp: 3;
   }
 }
+
+/* Compact-phone quality floor: every critical control stays tappable and every
+   long surface owns exactly one bounded scroll area down to 320 CSS pixels. */
+@media (max-width: 420px) {
+  .shell.app-shell-v2 .brand {
+    min-width: 96px;
+  }
+
+  .shell.app-shell-v2 .brand-mark {
+    width: 42px;
+    height: 42px;
+    flex-basis: 42px;
+    margin: -5px;
+  }
+
+  .shell.app-shell-v2 .brand-mark img {
+    width: 32px;
+    height: 32px;
+  }
+
+  .shell.app-shell-v2 .mission-strip {
+    padding: 0 6px;
+  }
+
+  .shell.app-shell-v2 .mission-strip > span {
+    min-width: 0;
+    padding: 0 6px;
+    white-space: nowrap;
+  }
+
+  .shell.app-shell-v2 .map-global-search-field {
+    min-height: 44px;
+  }
+
+  .shell.app-shell-v2 .map-global-search-drag,
+  .shell.app-shell-v2 .map-global-search-dock {
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .mobile-bottom-nav span {
+    font-size: 9px;
+  }
+
+  .mobile-sheet-header button,
+  .settings-header .icon-button,
+  .ui-dialog-header .icon-button {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .settings-drawer {
+    width: 100vw;
+    height: 100%;
+    max-height: 100%;
+    border-left: 0;
+  }
+
+  .settings-header {
+    min-height: calc(64px + env(safe-area-inset-top, 0px));
+    padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px;
+  }
+
+  .settings-tabs {
+    padding: 6px;
+  }
+
+  .settings-tabs button {
+    min-height: 44px;
+    padding: 0 2px;
+    font-size: 10px;
+  }
+
+  .settings-content {
+    padding: 14px 12px calc(18px + env(safe-area-inset-bottom, 0px));
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .workspace-skin-editor,
+  .workspace-layout-editor,
+  .profile-editor,
+  .report-access-panel {
+    padding: 10px;
+  }
+
+  .report-field input,
+  .report-form-grid input,
+  .report-form-grid select,
+  .report-contact-search {
+    min-height: 44px;
+  }
+
+  .report-contact-chip {
+    min-height: 40px;
+  }
+
+  .report-contact-chip button,
+  .report-attachment-row button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .report-file-picker-button {
+    min-height: 64px;
+    padding: 10px;
+  }
+
+  .report-file-picker-button small {
+    line-height: 1.35;
+  }
+
+  .community-gallery-header,
+  .community-gallery-footer {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .navigation-overlay.expanded .navigation-header-actions,
+  .navigation-controls,
+  .citizen-mobile-menu-section {
+    grid-template-columns: 1fr;
+  }
+
+  .citizen-mobile-menu-section > span {
+    grid-column: 1;
+  }
+
+  .manual-dialog {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+
+  .login-required-dialog,
+  .account-changed-dialog {
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .manual-layout {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px;
+  }
+}
+
+@media (max-width: 360px) {
+  .shell.app-shell-v2 .topbar {
+    gap: 6px;
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+
+  .shell.app-shell-v2 .brand {
+    min-width: 92px;
+  }
+
+  .shell.app-shell-v2 .mission-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shell.app-shell-v2 .mission-strip strong,
+  .shell.app-shell-v2 .mission-strip small {
+    display: none;
+  }
+
+  .shell.app-shell-v2 .mission-strip > span {
+    justify-content: center;
+  }
+
+  .mobile-sheet-header {
+    gap: 8px;
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .mobile-sheet-header strong {
+    font-size: 16px;
+  }
+
+  .ui-dialog-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .ui-dialog-actions .primary-button,
+  .ui-dialog-actions .ghost-button {
+    width: 100%;
+    min-height: 46px;
+  }
+}

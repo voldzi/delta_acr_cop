@@ -5361,3 +5361,227 @@ button {
 .chat-fatal-error button:focus-visible {
   background: var(--accent-dark);
 }
+
+/* Compact-phone quality floor shared by the list, conversation and every
+   modal surface. 320px devices must never need horizontal scrolling. */
+@media (max-width: 420px) {
+  .list-header-actions .round-icon,
+  .conversation-header .round-icon,
+  .info-nav header .round-icon,
+  .new-chat-dialog header .round-icon,
+  .preview-dialog header .round-icon,
+  .forward-dialog header .round-icon {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+
+  .message-input {
+    min-width: 0;
+  }
+
+  .conversation-title {
+    min-width: 0;
+  }
+
+  .conversation-title strong,
+  .conversation-title span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .composer-row {
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .composer-tools-popover {
+    width: min(300px, calc(100vw - 16px));
+  }
+
+  .new-chat-dialog header > .round-icon:last-child {
+    display: none;
+  }
+
+  .new-chat-dialog header,
+  .preview-dialog header,
+  .forward-dialog header,
+  .ai-situation-dialog header,
+  .ai-agent-dialog header {
+    min-height: 54px;
+    padding: 6px 8px;
+  }
+
+  .new-chat-dialog header strong,
+  .preview-dialog header strong,
+  .forward-dialog header strong,
+  .ai-situation-dialog header strong,
+  .ai-agent-dialog header strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dialog-tabs,
+  .dialog-search,
+  .forward-search {
+    margin-right: 10px;
+    margin-left: 10px;
+  }
+
+  .dialog-tabs {
+    padding: 10px 0;
+  }
+
+  .dialog-tabs button,
+  .primary-dialog-action,
+  .secondary-dialog-action,
+  .secondary-danger-action {
+    min-height: 44px;
+  }
+
+  .primary-dialog-action {
+    margin-right: 10px;
+    margin-left: 10px;
+  }
+
+  .info-nav {
+    padding: 8px;
+  }
+
+  .info-nav header {
+    min-height: 44px;
+    margin-bottom: 2px;
+  }
+
+  .info-nav header strong {
+    overflow: hidden;
+    font-size: 1.08rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .info-nav > button {
+    min-height: 46px;
+    font-size: 0.69rem;
+  }
+
+  .info-hero,
+  .info-section {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .contact-info-section,
+  .ai-situation-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .contact-info-section .info-actions-row,
+  .contact-info-section .info-setting-row {
+    grid-column: 1;
+  }
+
+  .info-setting-row {
+    align-items: flex-start;
+  }
+
+  .info-setting-row > strong {
+    max-width: 48%;
+    overflow-wrap: anywhere;
+    text-align: right;
+    white-space: normal;
+  }
+
+  .ai-situation-output,
+  .ai-situation-meta,
+  .ai-evidence-panel,
+  .ai-agent-question {
+    margin-right: 10px;
+    margin-left: 10px;
+  }
+
+  .ai-situation-output {
+    padding: 12px;
+  }
+
+  .ai-evidence-group li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .ai-evidence-location {
+    grid-column: 2;
+  }
+
+  .retention-dialog,
+  .recovery-dialog,
+  .mute-dialog {
+    gap: 12px;
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .retention-illustration,
+  .recovery-illustration {
+    width: 76px;
+    height: 76px;
+  }
+
+  .retention-options button {
+    min-height: 56px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .recovery-dialog footer,
+  .ai-situation-dialog footer,
+  .ai-agent-dialog footer {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .recovery-dialog footer button,
+  .ai-situation-dialog footer button,
+  .ai-agent-dialog footer button,
+  .ai-situation-dialog footer .primary-dialog-action,
+  .ai-agent-dialog footer .primary-dialog-action {
+    grid-column: 1;
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 360px) {
+  .conversation-header {
+    gap: 6px;
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+
+  .conversation-actions .report-chat-action {
+    display: none;
+  }
+
+  .message-canvas {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .message-bubble,
+  .message-row.ai-message .message-bubble {
+    max-width: 94%;
+  }
+
+  .composer {
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+
+  .info-nav > button {
+    padding-right: 2px;
+    padding-left: 2px;
+    font-size: 0.65rem;
+  }
+}

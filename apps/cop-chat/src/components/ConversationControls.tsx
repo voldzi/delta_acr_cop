@@ -7,6 +7,7 @@ import {
   Forward,
   Info,
   KeyRound,
+  AlertTriangle,
   Pin,
   PinOff,
   Search,
@@ -34,6 +35,7 @@ export function ChatActionMenu({
   onInfo,
   onManage,
   onMute,
+  onReport,
   onRecovery,
   onSearch,
   onSelect,
@@ -55,6 +57,7 @@ export function ChatActionMenu({
   onInfo: () => void;
   onManage: () => void;
   onMute: () => void;
+  onReport?: () => void;
   onRecovery: () => void;
   onSearch: () => void;
   onSelect: () => void;
@@ -72,6 +75,12 @@ export function ChatActionMenu({
         <Info size={17} />
         {infoLabel}
       </button>
+      {onReport ? (
+        <button onClick={onReport} role="menuitem" type="button">
+          <AlertTriangle size={17} />
+          Vytvořit situační hlášení
+        </button>
+      ) : null}
       {activeChat.type !== "direct" && canAddMember && onAddMember ? (
         <button onClick={onAddMember} role="menuitem" type="button">
           <UserPlus size={17} />

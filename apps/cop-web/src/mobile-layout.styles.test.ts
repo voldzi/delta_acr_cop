@@ -114,6 +114,66 @@ describe("COP mobile layer catalog layout", () => {
   });
 });
 
+describe("COP compact phone design floor", () => {
+  it("removes clipped mission copy and preserves the alert badge at 360px", () => {
+    const compactMission = cssBlocks(".shell.app-shell-v2 .mission-strip").find((block) =>
+      block.includes("grid-template-columns: minmax(0, 1fr)")
+    );
+    const compactMissionCopy = cssBlocks(
+      ".shell.app-shell-v2 .mission-strip strong,\n  .shell.app-shell-v2 .mission-strip small"
+    ).find((block) => block.includes("display: none"));
+
+    expect(compactMission).toBeTruthy();
+    expect(compactMissionCopy).toBeTruthy();
+  });
+
+  it("keeps map search, sheet and settings actions touch sized", () => {
+    const searchActions = cssBlocks(
+      ".shell.app-shell-v2 .map-global-search-drag,\n  .shell.app-shell-v2 .map-global-search-dock"
+    ).find((block) => block.includes("min-height: 40px"));
+    const sheetAndDialogActions = cssBlocks(
+      ".mobile-sheet-header button,\n  .settings-header .icon-button,\n  .ui-dialog-header .icon-button"
+    ).find((block) => block.includes("min-height: 44px"));
+    const settingsTabs = cssBlocks(".settings-tabs button").find((block) => block.includes("min-height: 44px"));
+
+    expect(searchActions).toContain("min-width: 40px");
+    expect(sheetAndDialogActions).toContain("min-width: 44px");
+    expect(settingsTabs).toBeTruthy();
+  });
+
+  it("turns settings and help into bounded full-height compact surfaces", () => {
+    const settingsDrawer = cssBlocks(".settings-drawer").find((block) => block.includes("max-height: 100%"));
+    const settingsContent = cssBlocks(".settings-content").find((block) =>
+      block.includes("env(safe-area-inset-bottom, 0px)")
+    );
+    const manualDialog = cssBlocks(".manual-dialog").find((block) => block.includes("height: 100dvh"));
+
+    expect(settingsDrawer).toContain("width: 100vw");
+    expect(settingsDrawer).toContain("height: 100%");
+    expect(settingsContent).toContain("overscroll-behavior: contain");
+    expect(manualDialog).toContain("max-height: 100dvh");
+  });
+
+  it("bounds authentication dialogs on short phones", () => {
+    const authDialogs = cssBlocks(".login-required-dialog,\n  .account-changed-dialog").find((block) =>
+      block.includes("max-height: calc(100dvh")
+    );
+
+    expect(authDialogs).toContain("overflow-y: auto");
+    expect(authDialogs).toContain("overscroll-behavior: contain");
+  });
+
+  it("stacks critical report actions on 360px screens", () => {
+    const actions = cssBlocks(".ui-dialog-actions").find((block) => block.includes("grid-template-columns: 1fr"));
+    const buttons = cssBlocks(".ui-dialog-actions .primary-button,\n  .ui-dialog-actions .ghost-button").find((block) =>
+      block.includes("min-height: 46px")
+    );
+
+    expect(actions).toBeTruthy();
+    expect(buttons).toContain("width: 100%");
+  });
+});
+
 function cssNumericProperty(selector: string, property: string): number {
   const match = cssBlock(selector).match(new RegExp(`${property}:\\s*(?<value>\\d+)`, "u"));
   const value = Number(match?.groups?.value);

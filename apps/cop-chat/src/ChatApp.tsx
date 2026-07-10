@@ -2183,6 +2183,23 @@ export function ChatApp() {
     setInfoPanelOpen(true);
   }
 
+  function openActiveChatReport() {
+    if (!activeChat) {
+      return;
+    }
+    setMessageMenuOpen(false);
+    try {
+      openReportDraftInCop({
+        ...(selectedConversation?.conversationId ? { conversationId: selectedConversation.conversationId } : {}),
+        ...(selectedGroup?.groupId ? { groupId: selectedGroup.groupId } : {}),
+        ...(selectedRoomId ? { roomId: selectedRoomId } : {}),
+        title: activeChat.title
+      });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Hlášení se nepodařilo otevřít.");
+    }
+  }
+
   function openAddMemberDialog() {
     if (!selectedGroup) {
       setError("Nejdřív otevřete skupinu, do které chcete člena přidat.");
@@ -4381,20 +4398,7 @@ export function ChatApp() {
                 ) : null}
                 <button
                   className="report-chat-action"
-                  onClick={() => {
-                    try {
-                      openReportDraftInCop({
-                        ...(selectedConversation?.conversationId
-                          ? { conversationId: selectedConversation.conversationId }
-                          : {}),
-                        ...(selectedGroup?.groupId ? { groupId: selectedGroup.groupId } : {}),
-                        ...(selectedRoomId ? { roomId: selectedRoomId } : {}),
-                        title: activeChat.title
-                      });
-                    } catch (caught) {
-                      setError(caught instanceof Error ? caught.message : "Hlášení se nepodařilo otevřít.");
-                    }
-                  }}
+                  onClick={openActiveChatReport}
                   title="Vytvořit situační hlášení z tohoto chatu"
                   type="button"
                 >
@@ -4450,6 +4454,7 @@ export function ChatApp() {
                         setMessageMenuOpen(false);
                         setMuteDialogOpen(true);
                       }}
+                      onReport={openActiveChatReport}
                       onRecovery={() => {
                         setMessageMenuOpen(false);
                         setGeneratedRecoveryKey(null);

@@ -614,6 +614,12 @@ The phase-0 implementation focus is trust and control:
   under the composer plus menu instead of consuming a permanent row. The
   jump-to-latest control is part of the message field, and embedded mode does
   not reserve a second bottom safe area already owned by the host PWA.
+- On 320–360px phones the conversation header preserves the back action,
+  identity, voice call and overflow menu. The report shortcut remains available
+  in that overflow menu when the duplicate header button is hidden to protect
+  the conversation title. Contact metrics, AI evidence and dialog action rows
+  collapse to one column rather than creating clipped or horizontally scrolling
+  content.
 - Adding members belongs in the group member surface and must respect COP group
   management permissions. COP group membership remains the source of truth for
   COP media/report ACL; Matrix membership is only the messaging projection.

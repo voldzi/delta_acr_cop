@@ -31,6 +31,28 @@ immutable`,
 
 UI musí jasně odlišit syntetická data, stale objekty, konflikty zdrojů a degraded režim. UI nesmí obsahovat targeting, navádění ani workflow použití síly.
 
+### Mobilní design baseline
+
+Hlavní PWA i samostatný chat podporují kompaktní telefon od 320 CSS pixelů a
+krátký portrétní viewport od 568 CSS pixelů. Na této hranici platí:
+
+- stránka nesmí vytvářet horizontální scroll ani ořezávat kritický stav;
+- primární akce a zavírací prvky mají nejméně 44px dotykovou plochu, pouze
+  sekundární mapové úchyty mohou mít 40px při zachování okolního prostoru;
+- dlouhý dialog má pevnou hlavičku a akce a právě jeden vnitřní scroll;
+- dvousloupcové metriky, menu a akce se na 320–360 px skládají do jednoho
+  sloupce;
+- PWA safe-area se vlastní právě jednou: hostitelská spodní navigace ji nesmí
+  duplikovat ve vloženém chatu;
+- text stavu se nesmí zobrazit jako bezvýznamná useknutá zkratka; na nejmenším
+  telefonu se zachová stručný stavový badge a podrobný text je dostupný v
+  detailu.
+
+Statické kontrakty pro tuto hranici jsou v
+`apps/cop-web/src/mobile-layout.styles.test.ts` a
+`apps/cop-chat/src/ChatApp.styles.test.ts`. Změny mobilního shellu se ověřují
+také vizuálně na 320 × 568 a na aktuálním iPhone Max viewportu.
+
 ## Mapový podklad
 
 Frontend používá MapLibre. Mapový styl je konfigurovatelný:

@@ -183,8 +183,8 @@ describe("COP PWA service worker routing", () => {
   it("keeps the current and immediately previous PWA release caches", () => {
     const serviceWorker = loadServiceWorkerContext();
     const keys = [
-      "cop-pwa-offline-20260710-16:shell",
-      "cop-pwa-offline-20260710-16:runtime",
+      "cop-pwa-offline-20260710-17:shell",
+      "cop-pwa-offline-20260710-17:runtime",
       "cop-pwa-offline-20260710-15:shell",
       "cop-pwa-offline-20260710-15:runtime",
       "cop-pwa-offline-20260710-14:shell",
