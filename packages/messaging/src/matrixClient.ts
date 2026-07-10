@@ -30,6 +30,10 @@ import {
   type BrowserSecretScope
 } from "./secureSecrets.js";
 
+const matrixVoiceCallPreflightEventType = "cz.zeleznalady.cop.call.preflight";
+const matrixVoiceCallPreflightAckEventType = "cz.zeleznalady.cop.call.preflight_ack";
+const matrixVoiceCallPreflightTimeoutMs = 1_200;
+
 interface MatrixClientLike {
   createRoom?: (options: Record<string, unknown>) => Promise<{ room_id?: string; roomId?: string }>;
   getCrypto?: () => MatrixCryptoApiLike | undefined;
@@ -121,6 +125,7 @@ interface MatrixCryptoApiLike {
   checkKeyBackupAndEnable?: () => Promise<unknown>;
   createRecoveryKeyFromPassphrase?: (password?: string) => Promise<unknown>;
   disableKeyStorage?: () => Promise<void>;
+  forceDiscardSession?: (roomId: string) => Promise<void>;
   getActiveSessionBackupVersion?: () => Promise<string | null>;
   getKeyBackupInfo?: () => Promise<unknown | null>;
   isCrossSigningReady?: () => Promise<boolean>;
@@ -241,6 +246,7 @@ interface MatrixEventLike {
   getStateKey?: () => string | undefined;
   getTs?: () => number | undefined;
   getType?: () => string | undefined;
+  getWireType?: () => string | undefined;
 }
 
 export async function createMatrixMessagingSession(
@@ -274,6 +280,7 @@ export async function createMatrixMessagingSession(
   const createClient = typedMatrixSdk.createClient;
   const recoveryController = createUserControlledRecoveryController(initialRecoveryKey);
   const syncStore = createMatrixSyncStore(typedMatrixSdk, bootstrap);
+  const tlsVoiceCallIds = new Set<string>();
   const client = createClient({
     accessToken: bootstrap.accessToken,
     baseUrl: homeserverBaseUrl,
@@ -284,6 +291,7 @@ export async function createMatrixMessagingSession(
     ...(syncStore ? { store: syncStore } : {}),
     userId: bootstrap.userId
   });
+  installMatrixVoipSignalingFallback(client, bootstrap, tlsVoiceCallIds);
   await syncStore?.startup().catch(() => undefined);
 
   let restoreKeyBackupOnStart = false;
@@ -339,6 +347,8 @@ export async function createMatrixMessagingSession(
   let activeVoiceCallClearTimer: ReturnType<typeof setTimeout> | undefined;
   const sentVoiceCallWakeKeys = new Set<string>();
   const voiceCallWakeChains = new Map<string, Promise<void>>();
+  const voiceCallPreflightSettlers = new Map<string, (ready: boolean) => void>();
+  const handledVoiceCallControlEvents = new Set<string>();
   const notifyVoiceCallWake = (action: MatrixVoiceCallWakeRequest["action"], call: MatrixCallLike): Promise<void> => {
     const onVoiceCallWake = callbacks.onVoiceCallWake;
     const callId = call.callId;
@@ -365,6 +375,85 @@ export async function createMatrixMessagingSession(
       }
     });
     return current;
+  };
+  const handleVoiceCallSignalingEvent = (eventValue: unknown, roomValue?: unknown) => {
+    const event = asEvent(eventValue);
+    if (!event) {
+      return;
+    }
+    const eventType = matrixTimelineEventType(event);
+    const content = matrixTimelineEventContent(event);
+    const sender = event.getSender?.();
+    const roomId = event.getRoomId?.() ?? asRoom(roomValue)?.roomId;
+    if (isMatrixCallEventType(eventType) && matrixTimelineWireEventType(event) !== "m.room.encrypted") {
+      const callId = stringValue(content.call_id);
+      if (callId) {
+        tlsVoiceCallIds.add(callId);
+      }
+    }
+    if (
+      (eventType !== matrixVoiceCallPreflightEventType && eventType !== matrixVoiceCallPreflightAckEventType) ||
+      !sender ||
+      sender === bootstrap.userId
+    ) {
+      return;
+    }
+    const probeId = stringValue(content.probe_id);
+    if (!probeId) {
+      return;
+    }
+    if (eventType === matrixVoiceCallPreflightAckEventType) {
+      voiceCallPreflightSettlers.get(probeId)?.(true);
+      return;
+    }
+    if (!roomId || !client.sendEvent) {
+      return;
+    }
+    const dedupeKey = event.getId?.() ?? `${eventType}:${sender}:${probeId}`;
+    if (handledVoiceCallControlEvents.has(dedupeKey)) {
+      return;
+    }
+    handledVoiceCallControlEvents.add(dedupeKey);
+    void client
+      .sendEvent(roomId, matrixVoiceCallPreflightAckEventType, {
+        probe_id: probeId,
+        recipient_device_id: bootstrap.deviceId,
+        timestamp: Date.now()
+      })
+      .catch(() => undefined);
+  };
+  const verifyEncryptedVoiceCallSignaling = async (roomId: string): Promise<boolean> => {
+    const crypto = client.getCrypto?.();
+    if (!client.sendEvent || !crypto?.forceDiscardSession) {
+      return true;
+    }
+    try {
+      await crypto.forceDiscardSession(roomId);
+    } catch {
+      return false;
+    }
+    const probeId = createMatrixTransactionId("cop-call-probe");
+    const acknowledged = new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        voiceCallPreflightSettlers.delete(probeId);
+        resolve(false);
+      }, matrixVoiceCallPreflightTimeoutMs);
+      voiceCallPreflightSettlers.set(probeId, (ready) => {
+        clearTimeout(timer);
+        voiceCallPreflightSettlers.delete(probeId);
+        resolve(ready);
+      });
+    });
+    try {
+      await client.sendEvent(roomId, matrixVoiceCallPreflightEventType, {
+        probe_id: probeId,
+        sender_device_id: bootstrap.deviceId,
+        timestamp: Date.now()
+      });
+    } catch {
+      voiceCallPreflightSettlers.get(probeId)?.(false);
+    }
+    return acknowledged;
   };
   const flushNotifications = () => {
     notifyScheduled = false;
@@ -560,7 +649,8 @@ export async function createMatrixMessagingSession(
     scheduleNotify({ rooms: true, timeline: true });
     schedulePresenceRefresh();
   };
-  const timelineListener = () => {
+  const timelineListener = (eventValue?: unknown, roomValue?: unknown) => {
+    handleVoiceCallSignalingEvent(eventValue, roomValue);
     scheduleNotify({ rooms: true, timeline: true });
     schedulePresenceRefresh();
   };
@@ -934,6 +1024,10 @@ export async function createMatrixMessagingSession(
         activeVoiceCallStartedAt = undefined;
         activeVoiceCallError = undefined;
         publishVoiceCall();
+        const encryptedSignalingReady = await verifyEncryptedVoiceCallSignaling(roomId);
+        if (!encryptedSignalingReady) {
+          tlsVoiceCallIds.add(call.callId);
+        }
         await call.placeVoiceCall();
         void notifyVoiceCallWake("invite", call);
         publishVoiceCall();
@@ -998,6 +1092,9 @@ export async function createMatrixMessagingSession(
       client.off?.("Call.incoming", incomingCallListener);
       if (activeVoiceCallClearTimer !== undefined) {
         clearTimeout(activeVoiceCallClearTimer);
+      }
+      for (const settle of Array.from(voiceCallPreflightSettlers.values())) {
+        settle(false);
       }
       if (activeVoiceCall) {
         void notifyVoiceCallWake("ended", activeVoiceCall);
@@ -2332,6 +2429,97 @@ async function assertBrowserCanReachHomeserver(baseUrl: string): Promise<void> {
   }
 }
 
+function installMatrixVoipSignalingFallback(
+  client: MatrixClientLike,
+  bootstrap: MessagingBootstrapResponse,
+  tlsVoiceCallIds: ReadonlySet<string>
+): void {
+  const originalSendEvent = client.sendEvent?.bind(client);
+  if (!originalSendEvent) {
+    return;
+  }
+  client.sendEvent = (...args) => {
+    const parsed = parseMatrixSendEventArgs(args);
+    const callId = parsed ? stringValue(parsed.content.call_id) : undefined;
+    if (parsed && callId && isMatrixCallEventType(parsed.eventType) && tlsVoiceCallIds.has(callId)) {
+      return sendMatrixEventOverAuthenticatedTls(
+        bootstrap,
+        parsed.roomId,
+        parsed.eventType,
+        parsed.content,
+        parsed.txnId
+      );
+    }
+    return originalSendEvent(...args);
+  };
+}
+
+function parseMatrixSendEventArgs(args: MatrixSendEventArgs):
+  | {
+      content: Record<string, unknown>;
+      eventType: string;
+      roomId: string;
+      txnId?: string;
+    }
+  | undefined {
+  const [roomId, second, third, fourth, fifth] = args;
+  const directContent = asRecord(third);
+  if (typeof second === "string" && directContent) {
+    return {
+      content: directContent,
+      eventType: second,
+      roomId,
+      ...(typeof fourth === "string" ? { txnId: fourth } : {})
+    };
+  }
+  const threadedContent = asRecord(fourth);
+  if ((typeof second === "string" || second === null) && typeof third === "string" && threadedContent) {
+    return {
+      content: threadedContent,
+      eventType: third,
+      roomId,
+      ...(typeof fifth === "string" ? { txnId: fifth } : {})
+    };
+  }
+  return undefined;
+}
+
+async function sendMatrixEventOverAuthenticatedTls(
+  bootstrap: MessagingBootstrapResponse,
+  roomId: string,
+  eventType: string,
+  content: Record<string, unknown>,
+  txnId?: string
+): Promise<unknown> {
+  if (typeof fetch !== "function") {
+    throw new Error("Hlasovou signalizaci se nepodařilo odeslat bez dostupného síťového rozhraní.");
+  }
+  const homeserverBaseUrl = bootstrap.homeserverBaseUrl?.replace(/\/+$/u, "");
+  const accessToken = bootstrap.accessToken;
+  if (!homeserverBaseUrl || !accessToken) {
+    throw new Error("Hlasovou signalizaci se nepodařilo odeslat bez přihlášení ke službě zpráv.");
+  }
+  const transactionId = txnId ?? createMatrixTransactionId("cop-voip-tls");
+  const response = await fetch(
+    `${homeserverBaseUrl}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/send/${encodeURIComponent(eventType)}/${encodeURIComponent(transactionId)}`,
+    {
+      body: JSON.stringify(content),
+      cache: "no-store",
+      credentials: "omit",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      method: "PUT",
+      mode: "cors"
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`Matrix voice call signalling failed: HTTP ${response.status}`);
+  }
+  return response.json().catch(() => ({}));
+}
+
 function createMatrixTransactionId(prefix: string): string {
   const random =
     typeof globalThis.crypto?.randomUUID === "function"
@@ -2776,6 +2964,10 @@ function matrixTimelineEventType(event: MatrixEventLike): string | undefined {
     return effectiveType;
   }
   return type;
+}
+
+function matrixTimelineWireEventType(event: MatrixEventLike): string | undefined {
+  return event.getWireType?.() ?? event.getType?.();
 }
 
 function isMatrixCallEventType(type: string | undefined): boolean {

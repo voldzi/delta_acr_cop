@@ -60,6 +60,7 @@ type MockMatrixCrypto = {
   }) => Promise<void>;
   checkKeyBackupAndEnable?: () => Promise<unknown>;
   createRecoveryKeyFromPassphrase?: () => Promise<unknown>;
+  forceDiscardSession?: (roomId: string) => Promise<void>;
   getActiveSessionBackupVersion?: () => Promise<string | null>;
   getKeyBackupInfo?: () => Promise<unknown | null>;
   isCrossSigningReady?: () => Promise<boolean>;
@@ -432,6 +433,148 @@ describe("Matrix client diagnostics", () => {
     expect(
       fetchMock.mock.calls.some(([url]) => String(url).includes("/rooms/") && String(url).includes("m.call.invite"))
     ).toBe(false);
+  });
+
+  it("keeps call signalling encrypted when the peer acknowledges the E2EE preflight", async () => {
+    stubVoiceCallBrowserSupport();
+    const listeners = new Map<string, (...args: unknown[]) => void>();
+    const on = vi.fn<MatrixEventSubscription>((event, listener) => listeners.set(event, listener));
+    const forceDiscardSession = vi.fn().mockResolvedValue(undefined);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ event_id: "$unexpected" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const rawSend = vi.fn<MatrixSendEvent>(async (roomId, eventType, content) => {
+      if (eventType === "cz.zeleznalady.cop.call.preflight") {
+        listeners.get("Event.decrypted")?.(
+          createCallControlEvent(
+            "cz.zeleznalady.cop.call.preflight_ack",
+            { probe_id: content.probe_id },
+            "$preflight-ack",
+            "@peer:cop.local",
+            roomId,
+            "m.room.encrypted"
+          )
+        );
+      }
+    });
+    matrixSdkMock.createNewMatrixCall.mockImplementation((client: { sendEvent: MatrixSendEvent }, roomId: string) => {
+      const call = createMockVoiceCall({ direction: "outbound", roomId });
+      call.placeVoiceCall = vi.fn(async () => {
+        await client.sendEvent(roomId, "m.call.invite", {
+          call_id: "call-1",
+          lifetime: 60_000,
+          version: "1"
+        });
+        call.state = "invite_sent";
+      });
+      return call;
+    });
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        crypto: { forceDiscardSession },
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
+        on,
+        rooms: [createRoom({ roomId: "!chat:cop.local" })],
+        sendEvent: rawSend
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    await session.startVoiceCall("!chat:cop.local");
+
+    expect(forceDiscardSession).toHaveBeenCalledWith("!chat:cop.local");
+    expect(rawSend).toHaveBeenCalledWith(
+      "!chat:cop.local",
+      "cz.zeleznalady.cop.call.preflight",
+      expect.objectContaining({ probe_id: expect.any(String), sender_device_id: "TESTDEVICE" })
+    );
+    expect(rawSend).toHaveBeenCalledWith("!chat:cop.local", "m.call.invite", {
+      call_id: "call-1",
+      lifetime: 60_000,
+      version: "1"
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to authenticated TLS call signalling when the peer cannot acknowledge E2EE", async () => {
+    vi.useFakeTimers();
+    stubVoiceCallBrowserSupport();
+    const forceDiscardSession = vi.fn().mockResolvedValue(undefined);
+    const rawSend = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ event_id: "$call-invite" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    matrixSdkMock.createNewMatrixCall.mockImplementation((client: { sendEvent: MatrixSendEvent }, roomId: string) => {
+      const call = createMockVoiceCall({ direction: "outbound", roomId });
+      call.placeVoiceCall = vi.fn(async () => {
+        await client.sendEvent(roomId, "m.call.invite", {
+          call_id: "call-1",
+          lifetime: 60_000,
+          version: "1"
+        });
+        call.state = "invite_sent";
+      });
+      return call;
+    });
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        crypto: { forceDiscardSession },
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
+        rooms: [createRoom({ roomId: "!chat:cop.local" })],
+        sendEvent: rawSend
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    const startCall = session.startVoiceCall("!chat:cop.local");
+    await vi.advanceTimersByTimeAsync(1_200);
+    await startCall;
+
+    expect(rawSend).toHaveBeenCalledWith(
+      "!chat:cop.local",
+      "cz.zeleznalady.cop.call.preflight",
+      expect.objectContaining({ probe_id: expect.any(String) })
+    );
+    expect(rawSend).not.toHaveBeenCalledWith("!chat:cop.local", "m.call.invite", expect.any(Object));
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/rooms/!chat%3Acop.local/send/m.call.invite/"),
+      expect.objectContaining({
+        body: JSON.stringify({ call_id: "call-1", lifetime: 60_000, version: "1" }),
+        method: "PUT"
+      })
+    );
+  });
+
+  it("answers an incoming TLS-fallback call through the same signalling path", async () => {
+    stubVoiceCallBrowserSupport();
+    const listeners = new Map<string, (...args: unknown[]) => void>();
+    const on = vi.fn<MatrixEventSubscription>((event, listener) => listeners.set(event, listener));
+    const rawSend = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ event_id: "$call-answer" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createMockMatrixClient({
+      getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
+      on,
+      rooms: [createRoom({ roomId: "!chat:cop.local" })],
+      sendEvent: rawSend
+    });
+    const call = createMockVoiceCall({ direction: "inbound", roomId: "!chat:cop.local", state: "ringing" });
+    call.answer = vi.fn(async () => {
+      await client.sendEvent?.("!chat:cop.local", "m.call.answer", { call_id: "call-1", version: "1" });
+      call.state = "connected";
+    });
+    matrixSdkMock.createClient.mockReturnValue(client);
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    listeners.get("Room.timeline")?.(
+      createCallEvent("m.call.invite", Date.now(), "$plain-call-invite", "@peer:cop.local")
+    );
+    listeners.get("Call.incoming")?.(call);
+    await session.answerVoiceCall("call-1");
+
+    expect(rawSend).not.toHaveBeenCalledWith("!chat:cop.local", "m.call.answer", expect.any(Object));
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/rooms/!chat%3Acop.local/send/m.call.answer/"),
+      expect.objectContaining({ body: JSON.stringify({ call_id: "call-1", version: "1" }), method: "PUT" })
+    );
   });
 
   it("answers an incoming Matrix voice call", async () => {
@@ -2067,9 +2210,32 @@ function createCallEvent(eventType: string, timestamp: number, eventId: string, 
       version: "1"
     }),
     getId: () => eventId,
+    getRoomId: () => "!chat:cop.local",
     getSender: () => sender,
     getTs: () => timestamp,
-    getType: () => eventType
+    getType: () => eventType,
+    getWireType: () => eventType
+  };
+}
+
+function createCallControlEvent(
+  eventType: string,
+  content: Record<string, unknown>,
+  eventId: string,
+  sender: string,
+  roomId: string,
+  wireType = eventType
+) {
+  return {
+    getClearContent: () => content,
+    getContent: () => content,
+    getEffectiveEvent: () => ({ content, type: eventType }),
+    getId: () => eventId,
+    getRoomId: () => roomId,
+    getSender: () => sender,
+    getTs: () => Date.now(),
+    getType: () => eventType,
+    getWireType: () => wireType
   };
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  collapseUndecryptableTimelineMessages,
   mergeTimelineMessages,
   selectReadableTimelineMessagesForStorage,
   timelineNeedsBridgeBackfill
@@ -126,6 +127,49 @@ describe("mergeTimelineMessages", () => {
 
     expect(selectReadableTimelineMessagesForStorage([readableLocation, undecryptableOwnMessage])).toEqual([
       readableLocation
+    ]);
+  });
+
+  it("collapses a short burst of undecryptable call events into one diagnostic", () => {
+    const messages = Array.from({ length: 8 }, (_, index): MatrixTimelineMessage => ({
+      body: undecryptableBody,
+      decryptionState: "undecryptable",
+      eventId: `$call-${index}`,
+      kind: "text",
+      own: index % 2 === 0,
+      sender: index % 2 === 0 ? "@voldzi:msg.zeleznalady.cz" : "@peer:msg.zeleznalady.cz",
+      timestamp: new Date(Date.parse("2026-07-10T06:24:00.000Z") + index * 10_000).toISOString()
+    }));
+
+    expect(collapseUndecryptableTimelineMessages(messages)).toEqual([messages[0]]);
+  });
+
+  it("keeps undecryptable diagnostics separated by a readable message or a longer interval", () => {
+    const first: MatrixTimelineMessage = {
+      body: undecryptableBody,
+      decryptionState: "undecryptable",
+      eventId: "$first",
+      kind: "text",
+      own: false,
+      sender: "@peer:msg.zeleznalady.cz",
+      timestamp: "2026-07-10T06:24:00.000Z"
+    };
+    const readable: MatrixTimelineMessage = {
+      body: "Ahoj",
+      eventId: "$readable",
+      kind: "text",
+      own: false,
+      sender: "@peer:msg.zeleznalady.cz",
+      timestamp: "2026-07-10T06:25:00.000Z"
+    };
+    const afterReadable = { ...first, eventId: "$after-readable", timestamp: "2026-07-10T06:25:10.000Z" };
+    const later = { ...first, eventId: "$later", timestamp: "2026-07-10T06:30:00.000Z" };
+
+    expect(collapseUndecryptableTimelineMessages([first, readable, afterReadable, later])).toEqual([
+      first,
+      readable,
+      afterReadable,
+      later
     ]);
   });
 });

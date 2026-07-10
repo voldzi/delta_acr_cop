@@ -187,11 +187,16 @@ the operating system notification UI. Web/PWA still cannot guarantee continuous
 lock-screen audio ringing after the browser process is terminated; that remains
 a native-client capability.
 
-COP Chat sends Matrix VoIP signalling events (`m.call.*` and
-`org.matrix.call.*`) through the Matrix SDK over authenticated HTTPS. In an
-encrypted room the SDK applies the room E2EE policy; COP must not bypass it with
-direct plaintext room-event requests. WebRTC media remains protected by
-DTLS-SRTP and COP API does not receive Matrix call signalling or media payloads.
+COP Chat first prepares a fresh Megolm session and verifies the live E2EE path
+with an encrypted metadata-only preflight acknowledged by the other Matrix
+user. When acknowledged, Matrix VoIP signalling events (`m.call.*` and
+`org.matrix.call.*`) stay on the Matrix SDK room-E2EE path. If the peer is
+suspended or cannot decrypt the preflight within 1.2 seconds, COP uses the
+authenticated HTTPS Matrix room-event API only for that call id. In this
+compatibility mode the self-hosted Synapse service can observe SDP/ICE signalling
+metadata, but chat content and recovery material remain E2EE. WebRTC media
+remains protected by DTLS-SRTP, and COP API does not proxy signalling or media
+payloads. The decision and accepted trade-off are recorded in ADR-0013.
 
 ## Native iOS/iPadOS Pairing
 

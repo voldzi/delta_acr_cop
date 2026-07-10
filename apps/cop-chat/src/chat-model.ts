@@ -1,6 +1,8 @@
 import type { MatrixTimelineMessage } from "@cop/messaging/types";
 import type { MessageRetentionSeconds } from "./dialogs/messageRetention";
 
+const undecryptableCollapseWindowMs = 3 * 60_000;
+
 export interface ChatPreferences {
   hiddenByKey: Record<string, string>;
   manualUnreadKeys: string[];
@@ -19,7 +21,7 @@ export function buildTimelineRows(
   > = [];
   let previousDay = "";
   let previousSender = "";
-  messages.forEach((message) => {
+  collapseUndecryptableTimelineMessages(messages).forEach((message) => {
     const day = formatDate(message.timestamp);
     if (day !== previousDay) {
       rows.push({ id: `date-${day}`, kind: "date", label: day });
@@ -31,6 +33,30 @@ export function buildTimelineRows(
     previousSender = message.sender;
   });
   return rows;
+}
+
+export function collapseUndecryptableTimelineMessages(
+  messages: MatrixTimelineMessage[],
+  windowMs = undecryptableCollapseWindowMs
+): MatrixTimelineMessage[] {
+  const collapsed: MatrixTimelineMessage[] = [];
+  for (const message of messages) {
+    const previous = collapsed.at(-1);
+    if (previous && isUndecryptableTimelineMessage(previous) && isUndecryptableTimelineMessage(message)) {
+      const previousAt = Date.parse(previous.timestamp);
+      const currentAt = Date.parse(message.timestamp);
+      if (
+        Number.isFinite(previousAt) &&
+        Number.isFinite(currentAt) &&
+        currentAt >= previousAt &&
+        currentAt - previousAt <= windowMs
+      ) {
+        continue;
+      }
+    }
+    collapsed.push(message);
+  }
+  return collapsed;
 }
 
 export function filterTimelineByRetention(
