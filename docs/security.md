@@ -28,3 +28,8 @@ Voice-call rule: COP verifies the room-E2EE signaling path before a one-to-one
 call. If the peer cannot acknowledge that preflight, only that call's Matrix
 VoIP control events may use the authenticated HTTPS compatibility path described
 in ADR-0013. Chat content remains E2EE and WebRTC media remains DTLS-SRTP.
+
+Matrix credential renewal for the same user and device updates only the active
+client access token. It does not recreate or clear the Rust crypto store. Full
+session replacement is generation-guarded and limited to identity/device change,
+logout or explicit account-store recovery as recorded in ADR-0014.

@@ -134,6 +134,12 @@ the browser Matrix device id and Matrix crypto store. This is required for E2EE:
 browser reloads, frontend rebuilds and ordinary login refreshes must not make
 the web client look like a new Matrix device.
 
+For an unchanged homeserver, Matrix user, device id and E2EE policy, bootstrap
+renewal updates the access token on the running Matrix client. It must not stop
+sync, Rust crypto, an active WebRTC call or a live-location watch. A full client
+replacement is reserved for logout, identity/device change and explicit crypto
+store recovery; see ADR-0014.
+
 COP deletes local Matrix crypto state only during explicit account-store mismatch
 recovery for the current `userId` + `deviceId` bootstrap. It must not broadly
 delete Matrix/crypto/Olm IndexedDB databases during normal logout or temporary

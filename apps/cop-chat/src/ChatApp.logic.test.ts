@@ -10,6 +10,7 @@ import {
   chatPreferenceSnapshot,
   dedupeChatItems,
   isAiAgentChatItem,
+  sameAuthSessionIdentity,
   shouldPublishChatUnreadBridgeSnapshot,
   userFacingError
 } from "./ChatApp";
@@ -24,6 +25,7 @@ import {
 import type { ChatListItem } from "./ChatApp";
 import type { MatrixRoomSummary, MatrixTimelineMessage } from "@cop/messaging/types";
 import type { MessagingConversationSummary } from "@cop/core/cop-data";
+import type { AuthSession } from "@cop/core/auth";
 
 // These are characterization tests: they pin the *current* observable behavior of
 // the pure functions before the Phase 1/2 refactor so any accidental change of
@@ -71,6 +73,25 @@ function chatItem(overrides: Partial<ChatListItem> = {}): ChatListItem {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("sameAuthSessionIdentity", () => {
+  it("keeps Matrix alive for a token refresh of the same principal", () => {
+    const current: AuthSession = {
+      accessToken: "old-token",
+      profile: { name: "Jiří Volek", subjectId: "operator-1", username: "voldzi" },
+      status: "authenticated"
+    };
+
+    expect(sameAuthSessionIdentity(current, { ...current, accessToken: "new-token" })).toBe(true);
+    expect(
+      sameAuthSessionIdentity(current, {
+        ...current,
+        accessToken: "other-token",
+        profile: { name: "COP Operator", subjectId: "operator-2", username: "operator" }
+      })
+    ).toBe(false);
+  });
 });
 
 describe("buildTimelineRows", () => {

@@ -39,6 +39,7 @@ export type MatrixSessionAction =
       session: MatrixMessagingSession;
     }
   | { type: "recovery-status"; recoveryStatus: MatrixEncryptionRecoveryStatus | null }
+  | { type: "replace" }
   | { type: "reset" }
   | { type: "start"; observedAt?: number }
   | { type: "sync-state"; observedAt?: number; syncState: string };
@@ -80,6 +81,14 @@ export function matrixSessionReducer(state: MatrixSessionState, action: MatrixSe
         ...state,
         lifecycle: matrixSessionLifecycleFor(state.session, action.recoveryStatus),
         recoveryStatus: action.recoveryStatus
+      };
+    case "replace":
+      return {
+        ...state,
+        lifecycle: "starting",
+        loading: true,
+        recoveryStatus: null,
+        session: null
       };
     case "reset":
       return initialMatrixSessionState;
@@ -156,6 +165,8 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
 } {
   const [state, dispatch] = React.useReducer(matrixSessionReducer, initialMatrixSessionState);
   const sessionRef = React.useRef<MatrixMessagingSession | null>(null);
+  const startGenerationRef = React.useRef(0);
+  const startPromiseRef = React.useRef<Promise<MatrixMessagingSession | null> | null>(null);
   const optionsRef = React.useRef(options);
   optionsRef.current = options;
 
@@ -190,90 +201,182 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
   }, []);
 
   const startMatrixSession = React.useCallback(
-    async (
+    (
       preferredSelection?: string | null,
       allowStoreRecovery = true,
       authTokenOverride?: string | null,
       matrixDeviceIdOverride?: string | null
     ): Promise<MatrixMessagingSession | null> => {
-      const currentOptions = optionsRef.current;
-      const effectiveAuthToken = authTokenOverride ?? currentOptions.authToken;
-      if (!effectiveAuthToken) {
-        return null;
+      if (startPromiseRef.current) {
+        return startPromiseRef.current;
       }
+      const initialOptions = optionsRef.current;
+      const initialAuthToken = authTokenOverride ?? initialOptions.authToken;
+      if (!initialAuthToken) {
+        return Promise.resolve(null);
+      }
+      const generation = ++startGenerationRef.current;
       dispatch({ type: "start" });
-      currentOptions.onError(null);
-      try {
-        const bootstrap = await fetchMessagingBootstrap(
-          currentOptions.apiBase,
-          effectiveAuthToken,
-          matrixDeviceIdOverride ?? getOrCreateMatrixDeviceId(currentOptions.authSubjectId ?? "anonymous")
-        );
-        if (!bootstrap.chatAvailable || !bootstrap.tokenAvailable || !bootstrap.accessToken) {
-          const message = bootstrap.detail ?? bootstrap.warnings[0] ?? "Zabezpečený chat není připravený.";
-          currentOptions.onError(message);
-          dispatch({ type: "error", message });
-          return null;
-        }
-        sessionRef.current?.stop();
-        const matrixWebPushDeviceId =
-          currentOptions.matrixWebPushDeviceId ?? currentOptions.matrixWebPushFallbackDeviceId;
-        const matrixPushGatewayUrl = browserMatrixPushGatewayUrl();
-        const nextSession = await createMatrixMessagingSession(bootstrap, {
-          onRoomsChanged: (nextRooms) => {
-            currentOptions.onRoomsChanged(nextRooms, preferredSelection);
-          },
-          onSyncState: (nextSyncState) => dispatch({ type: "sync-state", syncState: nextSyncState }),
-          onTimelineChanged: currentOptions.onTimelineChanged,
-          onVoiceCallWake: (request) => wakeMatrixVoiceCall(currentOptions.apiBase, effectiveAuthToken, request),
-          onVoiceCallChanged: currentOptions.onVoiceCallChanged,
-          profile: currentOptions.matrixProfile,
-          webPush: {
-            ...(matrixWebPushDeviceId ? { deviceId: matrixWebPushDeviceId } : {}),
-            lang: typeof navigator !== "undefined" ? navigator.language || "cs" : "cs",
-            ...(matrixPushGatewayUrl ? { pushGatewayUrl: matrixPushGatewayUrl } : {}),
-            registered: Boolean(currentOptions.matrixWebPushDeviceId)
-          }
-        });
-        const nextRooms = nextSession.getRooms();
-        const recoveryStatus = await nextSession.getEncryptionRecoveryStatus();
-        sessionRef.current = nextSession;
-        dispatch({ type: "ready", recoveryStatus, session: nextSession });
-        currentOptions.onRoomsChanged(nextRooms, preferredSelection);
-        currentOptions.onTimelineChanged();
-        return nextSession;
-      } catch (caught) {
-        if (allowStoreRecovery && isMatrixAccountStoreMismatchError(caught)) {
-          try {
-            const latestOptions = optionsRef.current;
-            const latestAuthToken = authTokenOverride ?? latestOptions.authToken;
-            if (!latestAuthToken) {
-              return null;
-            }
-            const replacementDeviceId = rotateMatrixDeviceId(latestOptions.authSubjectId ?? "anonymous");
-            const bootstrap = await fetchMessagingBootstrap(
-              latestOptions.apiBase,
-              latestAuthToken,
-              replacementDeviceId
-            );
-            await clearMatrixMessagingCryptoStateForBootstrap(bootstrap);
-            latestOptions.onNotice("Lokální šifrovací stav byl obnoven na novém webovém zařízení.");
-            return startMatrixSession(preferredSelection, false, latestAuthToken, replacementDeviceId);
-          } catch (recoveryCaught) {
-            const message =
-              recoveryCaught instanceof Error
-                ? recoveryCaught.message
-                : "Lokální šifrovací stav se nepodařilo obnovit.";
-            optionsRef.current.onError(message);
-            dispatch({ type: "error", message });
+      initialOptions.onError(null);
+
+      const runStart = async (
+        canRecoverStore: boolean,
+        tokenOverride: string | null | undefined,
+        deviceIdOverride: string | null | undefined
+      ): Promise<MatrixMessagingSession | null> => {
+        let candidateSession: MatrixMessagingSession | null = null;
+        try {
+          const currentOptions = optionsRef.current;
+          const effectiveAuthToken = tokenOverride ?? currentOptions.authToken;
+          if (!effectiveAuthToken || generation !== startGenerationRef.current) {
             return null;
           }
+          const bootstrap = await fetchMessagingBootstrap(
+            currentOptions.apiBase,
+            effectiveAuthToken,
+            deviceIdOverride ?? getOrCreateMatrixDeviceId(currentOptions.authSubjectId ?? "anonymous")
+          );
+          if (generation !== startGenerationRef.current) {
+            return null;
+          }
+          if (!bootstrap.chatAvailable || !bootstrap.tokenAvailable || !bootstrap.accessToken) {
+            throw new Error(bootstrap.detail ?? bootstrap.warnings[0] ?? "Zabezpečený chat není připravený.");
+          }
+
+          const currentSession = sessionRef.current;
+          if (currentSession?.refreshBootstrap(bootstrap)) {
+            const recoveryStatus = await currentSession.getEncryptionRecoveryStatus();
+            if (generation !== startGenerationRef.current || sessionRef.current !== currentSession) {
+              return null;
+            }
+            const latestOptions = optionsRef.current;
+            dispatch({ type: "ready", recoveryStatus, session: currentSession });
+            latestOptions.onRoomsChanged(currentSession.getRooms(), preferredSelection);
+            latestOptions.onTimelineChanged();
+            return currentSession;
+          }
+
+          if (currentSession && sessionRef.current === currentSession) {
+            sessionRef.current = null;
+            dispatch({ type: "replace" });
+            currentSession.stop();
+          }
+
+          const latestOptions = optionsRef.current;
+          const matrixWebPushDeviceId =
+            latestOptions.matrixWebPushDeviceId ?? latestOptions.matrixWebPushFallbackDeviceId;
+          const matrixPushGatewayUrl = browserMatrixPushGatewayUrl();
+          let callbackSession: MatrixMessagingSession | null = null;
+          const callbacksAreCurrent = () =>
+            generation === startGenerationRef.current ||
+            Boolean(callbackSession && sessionRef.current === callbackSession);
+          candidateSession = await createMatrixMessagingSession(bootstrap, {
+            onRoomsChanged: (nextRooms) => {
+              if (callbacksAreCurrent()) {
+                optionsRef.current.onRoomsChanged(nextRooms, preferredSelection);
+              }
+            },
+            onSyncState: (nextSyncState) => {
+              if (callbacksAreCurrent()) {
+                dispatch({ type: "sync-state", syncState: nextSyncState });
+              }
+            },
+            onTimelineChanged: () => {
+              if (callbacksAreCurrent()) {
+                optionsRef.current.onTimelineChanged();
+              }
+            },
+            onVoiceCallWake: (request) => {
+              const wakeOptions = optionsRef.current;
+              const wakeAuthToken = wakeOptions.authToken ?? effectiveAuthToken;
+              if (!wakeAuthToken) {
+                throw new Error("Voice call wake failed: COP authentication is unavailable");
+              }
+              return wakeMatrixVoiceCall(wakeOptions.apiBase, wakeAuthToken, request);
+            },
+            onVoiceCallChanged: (call) => {
+              if (callbacksAreCurrent()) {
+                optionsRef.current.onVoiceCallChanged?.(call);
+              }
+            },
+            profile: latestOptions.matrixProfile,
+            webPush: {
+              ...(matrixWebPushDeviceId ? { deviceId: matrixWebPushDeviceId } : {}),
+              lang: typeof navigator !== "undefined" ? navigator.language || "cs" : "cs",
+              ...(matrixPushGatewayUrl ? { pushGatewayUrl: matrixPushGatewayUrl } : {}),
+              registered: Boolean(latestOptions.matrixWebPushDeviceId)
+            }
+          });
+          callbackSession = candidateSession;
+          if (generation !== startGenerationRef.current) {
+            candidateSession.stop();
+            return null;
+          }
+          const nextRooms = candidateSession.getRooms();
+          const recoveryStatus = await candidateSession.getEncryptionRecoveryStatus();
+          if (generation !== startGenerationRef.current) {
+            candidateSession.stop();
+            return null;
+          }
+          sessionRef.current = candidateSession;
+          dispatch({ type: "ready", recoveryStatus, session: candidateSession });
+          optionsRef.current.onRoomsChanged(nextRooms, preferredSelection);
+          optionsRef.current.onTimelineChanged();
+          const readySession = candidateSession;
+          candidateSession = null;
+          return readySession;
+        } catch (caught) {
+          candidateSession?.stop();
+          if (generation !== startGenerationRef.current) {
+            return null;
+          }
+          if (canRecoverStore && isMatrixAccountStoreMismatchError(caught)) {
+            try {
+              const latestOptions = optionsRef.current;
+              const latestAuthToken = tokenOverride ?? latestOptions.authToken;
+              if (!latestAuthToken) {
+                return null;
+              }
+              const replacementDeviceId = rotateMatrixDeviceId(latestOptions.authSubjectId ?? "anonymous");
+              const replacementBootstrap = await fetchMessagingBootstrap(
+                latestOptions.apiBase,
+                latestAuthToken,
+                replacementDeviceId
+              );
+              if (generation !== startGenerationRef.current) {
+                return null;
+              }
+              await clearMatrixMessagingCryptoStateForBootstrap(replacementBootstrap);
+              latestOptions.onNotice("Lokální šifrovací stav byl obnoven na novém webovém zařízení.");
+              return runStart(false, latestAuthToken, replacementDeviceId);
+            } catch (recoveryCaught) {
+              if (generation !== startGenerationRef.current) {
+                return null;
+              }
+              const message =
+                recoveryCaught instanceof Error
+                  ? recoveryCaught.message
+                  : "Lokální šifrovací stav se nepodařilo obnovit.";
+              optionsRef.current.onError(message);
+              dispatch({ type: "error", message });
+              return null;
+            }
+          }
+          const message = caught instanceof Error ? caught.message : "Matrix spojení se nepodařilo spustit.";
+          optionsRef.current.onError(message);
+          dispatch({ type: "error", message });
+          return sessionRef.current;
         }
-        const message = caught instanceof Error ? caught.message : "Matrix spojení se nepodařilo spustit.";
-        optionsRef.current.onError(message);
-        dispatch({ type: "error", message });
-        return null;
-      }
+      };
+
+      const startPromise = runStart(allowStoreRecovery, authTokenOverride, matrixDeviceIdOverride);
+      startPromiseRef.current = startPromise;
+      void startPromise.finally(() => {
+        if (startPromiseRef.current === startPromise) {
+          startPromiseRef.current = null;
+        }
+      });
+      return startPromise;
     },
     []
   );
@@ -293,15 +396,21 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
   );
 
   const resetMatrixSession = React.useCallback(() => {
-    sessionRef.current?.stop();
+    startGenerationRef.current += 1;
+    startPromiseRef.current = null;
+    const currentSession = sessionRef.current;
     sessionRef.current = null;
+    currentSession?.stop();
     dispatch({ type: "reset" });
   }, []);
 
   React.useEffect(() => {
     return () => {
-      sessionRef.current?.stop();
+      startGenerationRef.current += 1;
+      startPromiseRef.current = null;
+      const currentSession = sessionRef.current;
       sessionRef.current = null;
+      currentSession?.stop();
     };
   }, []);
 

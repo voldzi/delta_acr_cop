@@ -774,12 +774,15 @@ export function ChatApp() {
       return null;
     });
     if (refreshed?.status === "authenticated") {
+      const identityChanged = !sameAuthSessionIdentity(currentSession, refreshed);
       authSessionRef.current = refreshed;
       setAuthRefreshRetry(0);
       setAuthSession(refreshed);
-      matrixAttemptKeyRef.current = null;
-      resetMatrixSession();
-      setRefreshNonce((value) => value + 1);
+      if (identityChanged) {
+        matrixAttemptKeyRef.current = null;
+        resetMatrixSession();
+        setRefreshNonce((value) => value + 1);
+      }
       return refreshed;
     }
     const offlineRetainedSession = retainAuthSessionAfterRefreshFailure(currentSession, refreshError);
@@ -821,11 +824,15 @@ export function ChatApp() {
           if (cancelled) {
             return;
           }
+          const identityChanged = !sameAuthSessionIdentity(authSessionRef.current, nextSession);
+          authSessionRef.current = nextSession;
           setAuthRefreshRetry(0);
           setAuthSession(nextSession);
-          matrixAttemptKeyRef.current = null;
-          resetMatrixSession();
-          setRefreshNonce((value) => value + 1);
+          if (identityChanged) {
+            matrixAttemptKeyRef.current = null;
+            resetMatrixSession();
+            setRefreshNonce((value) => value + 1);
+          }
         })
         .catch((caught: unknown) => {
           if (cancelled) {
@@ -3839,11 +3846,11 @@ export function ChatApp() {
     }
   }
 
-  function scheduleLiveLocationExpiry(session: ActiveLiveLocationSession, sessionApi: MatrixMessagingSession): void {
+  function scheduleLiveLocationExpiry(session: ActiveLiveLocationSession): void {
     clearLiveLocationExpiryTimer();
     const delayMs = Math.max(0, Date.parse(session.expiresAt) - Date.now());
     liveLocationExpiryTimerRef.current = window.setTimeout(() => {
-      void stopLiveLocationShare({ reason: "expired", sessionApi });
+      void stopLiveLocationShare({ reason: "expired" });
     }, delayMs);
   }
 
@@ -3862,7 +3869,7 @@ export function ChatApp() {
     liveLocationWatchIdRef.current = null;
   }
 
-  function startLiveLocationWatch(session: ActiveLiveLocationSession, sessionApi: MatrixMessagingSession): void {
+  function startLiveLocationWatch(session: ActiveLiveLocationSession): void {
     clearLiveLocationWatch();
     if (!navigator.geolocation?.watchPosition) {
       return;
@@ -3875,7 +3882,7 @@ export function ChatApp() {
         }
         const now = Date.now();
         if (now >= Date.parse(activeSession.expiresAt)) {
-          void stopLiveLocationShare({ reason: "expired", sessionApi });
+          void stopLiveLocationShare({ reason: "expired" });
           return;
         }
         const location = matrixLocationFromGeolocationPosition(position);
@@ -3887,8 +3894,12 @@ export function ChatApp() {
         if (liveLocationSendInFlightRef.current) {
           return;
         }
+        const currentSessionApi = matrixSessionRef.current;
+        if (!currentSessionApi) {
+          return;
+        }
         liveLocationSendInFlightRef.current = true;
-        void sendLiveLocationUpdate(activeSession, location, "live", sessionApi)
+        void sendLiveLocationUpdate(activeSession, location, "live", currentSessionApi)
           .catch((caught) =>
             setError(caught instanceof Error ? caught.message : "Živou polohu se nepodařilo aktualizovat.")
           )
@@ -3920,7 +3931,7 @@ export function ChatApp() {
     setError(null);
     try {
       if (liveLocationSessionRef.current) {
-        await stopLiveLocationShare({ notify: false, sessionApi: matrixSession });
+        await stopLiveLocationShare({ notify: false });
       }
       const startedAt = new Date().toISOString();
       const expiresAt = new Date(Date.now() + durationSeconds * 1000).toISOString();
@@ -3937,8 +3948,8 @@ export function ChatApp() {
       liveLocationSessionRef.current = session;
       setLiveLocationSession(session);
       await sendLiveLocationUpdate(session, location, "live", matrixSession);
-      startLiveLocationWatch(session, matrixSession);
-      scheduleLiveLocationExpiry(session, matrixSession);
+      startLiveLocationWatch(session);
+      scheduleLiveLocationExpiry(session);
       setNotice(`Živá poloha se sdílí ${formatLiveLocationDuration(durationSeconds)}.`);
     } catch (caught) {
       liveLocationSessionRef.current = null;
@@ -3953,21 +3964,20 @@ export function ChatApp() {
 
   async function stopLiveLocationShare({
     notify = true,
-    reason = "manual",
-    sessionApi = matrixSession as MatrixMessagingSession | null
+    reason = "manual"
   }: {
     notify?: boolean;
     reason?: "expired" | "manual";
-    sessionApi?: MatrixMessagingSession | null;
   } = {}): Promise<void> {
     const session = liveLocationSessionRef.current;
     clearLiveLocationWatch();
     clearLiveLocationExpiryTimer();
     liveLocationSessionRef.current = null;
     setLiveLocationSession(null);
-    if (session && sessionApi && liveLocationLastPositionRef.current) {
+    const currentSessionApi = matrixSessionRef.current;
+    if (session && currentSessionApi && liveLocationLastPositionRef.current) {
       try {
-        await sendLiveLocationUpdate(session, liveLocationLastPositionRef.current, "ended", sessionApi);
+        await sendLiveLocationUpdate(session, liveLocationLastPositionRef.current, "ended", currentSessionApi);
       } catch (caught) {
         if (notify) {
           setError(caught instanceof Error ? caught.message : "Ukončení sdílení polohy se nepodařilo odeslat.");
@@ -7465,6 +7475,14 @@ function ownChatIdentityIds(session: AuthSession, matrixUserId: string | undefin
     matrixUserId ? matrixUserIdLocalpart(matrixUserId) : undefined
   ];
   return new Set(values.map((value) => (value ? normalizeIdentityId(value) : "")).filter(Boolean));
+}
+
+export function sameAuthSessionIdentity(left: AuthSession, right: AuthSession): boolean {
+  const leftIdentity = left.profile?.subjectId ?? left.profile?.username ?? left.profile?.email;
+  const rightIdentity = right.profile?.subjectId ?? right.profile?.username ?? right.profile?.email;
+  return Boolean(
+    leftIdentity && rightIdentity && normalizeIdentityId(leftIdentity) === normalizeIdentityId(rightIdentity)
+  );
 }
 
 function normalizeIdentityId(value: string): string {

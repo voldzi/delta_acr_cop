@@ -19,6 +19,7 @@ type MockMatrixClient = {
   sendEvent?: MatrixSendEvent;
   sendMessage?: MatrixSendMessage;
   sendStateEvent?: MatrixSendStateEvent;
+  setAccessToken?: (accessToken: string) => void;
   setRoomReadMarkers?: MatrixSetRoomReadMarkers;
   setAvatarUrl?: (mxcUrl: string) => Promise<unknown>;
   setDisplayName?: (displayName: string) => Promise<unknown>;
@@ -164,6 +165,30 @@ describe("Matrix client diagnostics", () => {
     session.stop();
     await vi.waitFor(() => expect(store.save).toHaveBeenCalledWith(true));
     await vi.waitFor(() => expect(store.destroy).toHaveBeenCalledTimes(1));
+  });
+
+  it("renews compatible Matrix bootstrap credentials without replacing crypto state", async () => {
+    const setAccessToken = vi.fn();
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }),
+        rooms: [],
+        setAccessToken
+      })
+    );
+    const session = await createMatrixMessagingSession(createBootstrap());
+    const renewedBootstrap = {
+      ...createBootstrap(),
+      accessToken: "renewed-matrix-token",
+      expiresAt: "2026-07-10T12:30:00.000Z"
+    };
+
+    expect(session.refreshBootstrap(renewedBootstrap)).toBe(true);
+    expect(setAccessToken).toHaveBeenCalledWith("renewed-matrix-token");
+    expect(session.bootstrap).toEqual(renewedBootstrap);
+
+    expect(session.refreshBootstrap({ ...renewedBootstrap, deviceId: "OTHERDEVICE" })).toBe(false);
+    expect(setAccessToken).toHaveBeenCalledTimes(1);
   });
 
   it("turns browser network failures into user-facing messaging errors", () => {
@@ -2033,6 +2058,7 @@ function createMockMatrixClient({
   sendEvent = vi.fn<MatrixSendEvent>().mockResolvedValue(undefined),
   sendMessage = vi.fn<MatrixSendMessage>().mockResolvedValue(undefined),
   sendStateEvent = vi.fn<MatrixSendStateEvent>().mockResolvedValue(undefined),
+  setAccessToken = vi.fn(),
   setRoomReadMarkers,
   setAvatarUrl,
   setDisplayName,
@@ -2053,6 +2079,7 @@ function createMockMatrixClient({
   sendEvent?: MockMatrixClient["sendEvent"];
   sendMessage?: MockMatrixClient["sendMessage"];
   sendStateEvent?: MockMatrixClient["sendStateEvent"];
+  setAccessToken?: MockMatrixClient["setAccessToken"];
   setRoomReadMarkers?: MockMatrixClient["setRoomReadMarkers"];
   setAvatarUrl?: MockMatrixClient["setAvatarUrl"];
   setDisplayName?: MockMatrixClient["setDisplayName"];
@@ -2077,6 +2104,7 @@ function createMockMatrixClient({
     sendEvent,
     sendMessage,
     sendStateEvent,
+    setAccessToken,
     ...(setRoomReadMarkers ? { setRoomReadMarkers } : {}),
     ...(setAvatarUrl ? { setAvatarUrl } : {}),
     ...(setDisplayName ? { setDisplayName } : {}),

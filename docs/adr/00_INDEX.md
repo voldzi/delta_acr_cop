@@ -14,3 +14,4 @@
 - [0011 Shared Messaging Workspace Package](0011_SHARED_MESSAGING_WORKSPACE_PACKAGE.md)
 - [0012 Citizen Chat-First Application](0012_CITIZEN_CHAT_FIRST_APPLICATION.md)
 - [0013 Matrix VoIP Signaling Compatibility](0013_MATRIX_VOIP_SIGNALING_COMPATIBILITY.md)
+- [0014 Matrix Session Credential Renewal](0014_MATRIX_SESSION_CREDENTIAL_RENEWAL.md)

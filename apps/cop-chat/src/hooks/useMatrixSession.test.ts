@@ -35,6 +35,7 @@ function sessionStub(): MatrixMessagingSession {
     loadMoreTimeline: vi.fn(),
     markRoomRead: vi.fn(),
     prepareEncryptionRecoveryForMobile: vi.fn(),
+    refreshBootstrap: vi.fn(() => false),
     rejectVoiceCall: vi.fn(),
     restoreEncryptionRecovery: vi.fn(),
     setMessageRetentionPolicy: vi.fn(),

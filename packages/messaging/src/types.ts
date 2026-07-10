@@ -260,6 +260,7 @@ export interface MatrixMessagingSession {
   loadMoreTimeline(roomId: string, limit?: number): Promise<{ exhausted: boolean; messages: MatrixTimelineMessage[] }>;
   markRoomRead(roomId: string): Promise<void>;
   prepareEncryptionRecoveryForMobile(): Promise<string>;
+  refreshBootstrap(bootstrap: MessagingBootstrapResponse): boolean;
   rejectVoiceCall(callId: string): Promise<void>;
   restoreEncryptionRecovery(recoveryKey: string): Promise<void>;
   setMessageRetentionPolicy(roomId: string, seconds: number | null): Promise<void>;

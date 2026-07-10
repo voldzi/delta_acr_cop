@@ -70,6 +70,7 @@ interface MatrixClientLike {
     stateKey?: string
   ) => Promise<unknown>;
   sendTextMessage?: (roomId: string, body: string) => Promise<unknown>;
+  setAccessToken?: (accessToken: string) => void;
   setRoomReadMarkers?: (
     roomId: string,
     readMarkerEventId: string,
@@ -263,12 +264,13 @@ export async function createMatrixMessagingSession(
   } = {}
 ): Promise<MatrixMessagingSession> {
   validateBootstrap(bootstrap);
-  const homeserverBaseUrl = bootstrap.homeserverBaseUrl;
+  let activeBootstrap: MessagingBootstrapResponse = { ...bootstrap };
+  const homeserverBaseUrl = activeBootstrap.homeserverBaseUrl;
   if (!homeserverBaseUrl) {
     throw new Error("Zabezpečený chat nemá připravenou adresu služby.");
   }
   const durableStorageWarmup = requestDurableBrowserStorage();
-  const storedRecoveryKey = readStoredMatrixRecoveryKey(bootstrap);
+  const storedRecoveryKey = readStoredMatrixRecoveryKey(activeBootstrap);
   await assertBrowserCanReachHomeserver(homeserverBaseUrl);
   const [matrixSdk, initialRecoveryKey] = await Promise.all([
     import("matrix-js-sdk/lib/browser-index.js") as Promise<unknown>,
@@ -279,29 +281,29 @@ export async function createMatrixMessagingSession(
   disableMatrixPollAggregation(typedMatrixSdk);
   const createClient = typedMatrixSdk.createClient;
   const recoveryController = createUserControlledRecoveryController(initialRecoveryKey);
-  const syncStore = createMatrixSyncStore(typedMatrixSdk, bootstrap);
+  const syncStore = createMatrixSyncStore(typedMatrixSdk, activeBootstrap);
   const tlsVoiceCallIds = new Set<string>();
   const client = createClient({
-    accessToken: bootstrap.accessToken,
+    accessToken: activeBootstrap.accessToken,
     baseUrl: homeserverBaseUrl,
-    deviceId: bootstrap.deviceId,
+    deviceId: activeBootstrap.deviceId,
     fallbackICEServerAllowed: callbacks.voip?.fallbackIceServerAllowed === true,
     forceTURN: callbacks.voip?.forceTurn === true,
     cryptoCallbacks: recoveryController.cryptoCallbacks,
     ...(syncStore ? { store: syncStore } : {}),
-    userId: bootstrap.userId
+    userId: activeBootstrap.userId
   });
-  installMatrixVoipSignalingFallback(client, bootstrap, tlsVoiceCallIds);
+  installMatrixVoipSignalingFallback(client, () => activeBootstrap, tlsVoiceCallIds);
   await syncStore?.startup().catch(() => undefined);
 
   let restoreKeyBackupOnStart = false;
-  if (bootstrap.e2eeRequired) {
+  if (activeBootstrap.e2eeRequired) {
     if (typeof client.initRustCrypto !== "function") {
       throw new Error("Tento prohlížeč nepodporuje potřebné šifrování zpráv.");
     }
     try {
       await client.initRustCrypto({
-        cryptoDatabasePrefix: matrixCryptoDatabasePrefix(bootstrap)
+        cryptoDatabasePrefix: matrixCryptoDatabasePrefix(activeBootstrap)
       });
     } catch (caught) {
       if (isMatrixAccountStoreMismatch(caught)) {
@@ -319,13 +321,18 @@ export async function createMatrixMessagingSession(
   const profileLookupAttemptByUserId = new Map<string, number>();
   const readOverrideByRoomId = new Map<string, string>();
   const refreshJoinedRoomIds = async () => {
-    joinedRoomIds = await readServerJoinedRoomIds(client, homeserverBaseUrl, bootstrap.accessToken, joinedRoomIds);
+    joinedRoomIds = await readServerJoinedRoomIds(
+      client,
+      homeserverBaseUrl,
+      activeBootstrap.accessToken,
+      joinedRoomIds
+    );
   };
   const readVisibleRooms = () =>
     readRooms(client, {
       allowedRoomIds: joinedRoomIds,
       homeserverBaseUrl,
-      ownUserId: bootstrap.userId,
+      ownUserId: activeBootstrap.userId,
       presenceByUserId: roomPresenceByUserId,
       readOverrideByRoomId
     });
@@ -394,7 +401,7 @@ export async function createMatrixMessagingSession(
     if (
       (eventType !== matrixVoiceCallPreflightEventType && eventType !== matrixVoiceCallPreflightAckEventType) ||
       !sender ||
-      sender === bootstrap.userId
+      sender === activeBootstrap.userId
     ) {
       return;
     }
@@ -417,7 +424,7 @@ export async function createMatrixMessagingSession(
     void client
       .sendEvent(roomId, matrixVoiceCallPreflightAckEventType, {
         probe_id: probeId,
-        recipient_device_id: bootstrap.deviceId,
+        recipient_device_id: activeBootstrap.deviceId,
         timestamp: Date.now()
       })
       .catch(() => undefined);
@@ -447,7 +454,7 @@ export async function createMatrixMessagingSession(
     try {
       await client.sendEvent(roomId, matrixVoiceCallPreflightEventType, {
         probe_id: probeId,
-        sender_device_id: bootstrap.deviceId,
+        sender_device_id: activeBootstrap.deviceId,
         timestamp: Date.now()
       });
     } catch {
@@ -491,7 +498,7 @@ export async function createMatrixMessagingSession(
     for (const room of rooms) {
       for (const member of readRoomJoinedMembers(room)) {
         const userId = member.userId;
-        if (userId && userId !== bootstrap.userId) {
+        if (userId && userId !== activeBootstrap.userId) {
           userIds.add(userId);
         }
       }
@@ -536,7 +543,7 @@ export async function createMatrixMessagingSession(
       await Promise.all(
         missingProfileUserIds.slice(index, index + 4).map(async (userId) => {
           profileLookupAttemptByUserId.set(userId, nowMs);
-          const profile = await fetchMatrixUserProfile(client, homeserverBaseUrl, bootstrap.accessToken, userId);
+          const profile = await fetchMatrixUserProfile(client, homeserverBaseUrl, activeBootstrap.accessToken, userId);
           if (!profile) {
             return;
           }
@@ -670,7 +677,7 @@ export async function createMatrixMessagingSession(
   client.on?.("Call.incoming", incomingCallListener);
   publishRooms();
   await client.startClient?.({ initialSyncLimit: 20, lazyLoadMembers: true });
-  void syncMatrixUserProfile(client, bootstrap, callbacks.profile).catch(() => undefined);
+  void syncMatrixUserProfile(client, activeBootstrap, callbacks.profile).catch(() => undefined);
   void syncMatrixWebPushPusher(client, homeserverBaseUrl, callbacks.webPush).catch(() => undefined);
   void client.setPresence?.({ presence: "online" }).catch(() => undefined);
   await joinInvitedRooms();
@@ -681,9 +688,10 @@ export async function createMatrixMessagingSession(
     restoreUserKeyBackupInBackground(client.getCrypto?.(), () => scheduleNotify({ rooms: true, timeline: true }));
   }
   const exhaustedTimelineRooms = new Set<string>();
+  let sessionApi: MatrixMessagingSession;
 
-  return {
-    bootstrap,
+  sessionApi = {
+    bootstrap: activeBootstrap,
     answerVoiceCall: async (callId) => {
       const call = requireActiveVoiceCall(activeVoiceCall, callId);
       if (typeof call.answer !== "function") {
@@ -702,7 +710,7 @@ export async function createMatrixMessagingSession(
     },
     createEncryptionRecovery: async (reset = false) => {
       const recoveryKey = await createUserControlledEncryptionRecovery(client, recoveryController, { reset });
-      await writeStoredMatrixRecoveryKey(bootstrap, recoveryKey);
+      await writeStoredMatrixRecoveryKey(activeBootstrap, recoveryKey);
       return recoveryKey;
     },
     createGroupRoom: async (name, inviteUserIds = []) => {
@@ -713,7 +721,7 @@ export async function createMatrixMessagingSession(
       try {
         response = await client.createRoom({
           invite: inviteUserIds,
-          initial_state: bootstrap.e2eeRequired
+          initial_state: activeBootstrap.e2eeRequired
             ? [
                 {
                   content: {
@@ -755,7 +763,7 @@ export async function createMatrixMessagingSession(
       if (!message.attachment) {
         throw new Error("Zpráva neobsahuje přílohu ke stažení.");
       }
-      return downloadMatrixAttachment(client, bootstrap, homeserverBaseUrl, message.attachment);
+      return downloadMatrixAttachment(client, activeBootstrap, homeserverBaseUrl, message.attachment);
     },
     getEncryptionRecoveryStatus: async () => readMatrixEncryptionRecoveryStatus(client),
     getRooms: readVisibleRooms,
@@ -869,8 +877,17 @@ export async function createMatrixMessagingSession(
         mobileCompatible: true,
         reset: true
       });
-      await writeStoredMatrixRecoveryKey(bootstrap, recoveryKey);
+      await writeStoredMatrixRecoveryKey(activeBootstrap, recoveryKey);
       return recoveryKey;
+    },
+    refreshBootstrap: (nextBootstrap) => {
+      if (!client.setAccessToken || !canRefreshMatrixBootstrap(activeBootstrap, nextBootstrap)) {
+        return false;
+      }
+      client.setAccessToken(nextBootstrap.accessToken as string);
+      activeBootstrap = { ...nextBootstrap };
+      sessionApi.bootstrap = activeBootstrap;
+      return true;
     },
     rejectVoiceCall: async (callId) => {
       const call = requireActiveVoiceCall(activeVoiceCall, callId);
@@ -885,7 +902,7 @@ export async function createMatrixMessagingSession(
     },
     restoreEncryptionRecovery: async (recoveryKey) => {
       await restoreUserControlledEncryptionRecovery(client, recoveryController, recoveryKey);
-      await writeStoredMatrixRecoveryKey(bootstrap, recoveryKey);
+      await writeStoredMatrixRecoveryKey(activeBootstrap, recoveryKey);
       scheduleNotify({ rooms: true, timeline: true });
     },
     setMessageRetentionPolicy: async (roomId, seconds) => {
@@ -1077,8 +1094,11 @@ export async function createMatrixMessagingSession(
       }
     },
     syncWebPushPusher: async (options) => syncMatrixWebPushPusher(client, homeserverBaseUrl, options),
-    syncUserProfile: async (profile) => syncMatrixUserProfile(client, bootstrap, profile),
+    syncUserProfile: async (profile) => syncMatrixUserProfile(client, activeBootstrap, profile),
     stop: () => {
+      if (sessionDisposed) {
+        return;
+      }
       sessionDisposed = true;
       if (presenceRefreshTimer !== undefined) {
         clearTimeout(presenceRefreshTimer);
@@ -1097,6 +1117,9 @@ export async function createMatrixMessagingSession(
         settle(false);
       }
       if (activeVoiceCall) {
+        if (activeVoiceCall.callId) {
+          tlsVoiceCallIds.add(activeVoiceCall.callId);
+        }
         void notifyVoiceCallWake("ended", activeVoiceCall);
         activeVoiceCall.hangup?.("user_hangup", false);
       }
@@ -1110,6 +1133,7 @@ export async function createMatrixMessagingSession(
       }
     }
   };
+  return sessionApi;
 }
 
 function asMatrixCallLike(value: unknown): MatrixCallLike | null {
@@ -2410,6 +2434,24 @@ function validateBootstrap(bootstrap: MessagingBootstrapResponse): void {
   }
 }
 
+function canRefreshMatrixBootstrap(
+  current: MessagingBootstrapResponse,
+  next: MessagingBootstrapResponse
+): next is MessagingBootstrapResponse & { accessToken: string } {
+  try {
+    validateBootstrap(next);
+  } catch {
+    return false;
+  }
+  const normalizeBaseUrl = (value: string | undefined) => value?.replace(/\/+$/u, "");
+  return (
+    normalizeBaseUrl(current.homeserverBaseUrl) === normalizeBaseUrl(next.homeserverBaseUrl) &&
+    current.userId === next.userId &&
+    current.deviceId === next.deviceId &&
+    current.e2eeRequired === next.e2eeRequired
+  );
+}
+
 async function assertBrowserCanReachHomeserver(baseUrl: string): Promise<void> {
   if (typeof window === "undefined" || typeof window.fetch !== "function") {
     return;
@@ -2431,7 +2473,7 @@ async function assertBrowserCanReachHomeserver(baseUrl: string): Promise<void> {
 
 function installMatrixVoipSignalingFallback(
   client: MatrixClientLike,
-  bootstrap: MessagingBootstrapResponse,
+  getBootstrap: () => MessagingBootstrapResponse,
   tlsVoiceCallIds: ReadonlySet<string>
 ): void {
   const originalSendEvent = client.sendEvent?.bind(client);
@@ -2443,7 +2485,7 @@ function installMatrixVoipSignalingFallback(
     const callId = parsed ? stringValue(parsed.content.call_id) : undefined;
     if (parsed && callId && isMatrixCallEventType(parsed.eventType) && tlsVoiceCallIds.has(callId)) {
       return sendMatrixEventOverAuthenticatedTls(
-        bootstrap,
+        getBootstrap(),
         parsed.roomId,
         parsed.eventType,
         parsed.content,
