@@ -3401,6 +3401,19 @@ button {
   color: var(--accent-dark);
 }
 
+.recovery-device-repair {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--panel-soft);
+  padding: 12px 14px;
+}
+
+.recovery-device-repair .secondary-dialog-action {
+  justify-self: start;
+}
+
 .recovery-key-box {
   display: grid;
   gap: 10px;

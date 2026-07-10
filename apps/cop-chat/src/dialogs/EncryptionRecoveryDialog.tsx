@@ -1,6 +1,6 @@
 import * as React from "react";
 import clsx from "clsx";
-import { ArrowLeft, Check, Copy, KeyRound, Loader2 } from "lucide-react";
+import { ArrowLeft, Check, Copy, KeyRound, Loader2, RefreshCcw } from "lucide-react";
 import type { MatrixEncryptionRecoveryStatus } from "@cop/messaging/types";
 import { useModalFocus } from "../hooks/useModalFocus";
 
@@ -14,6 +14,7 @@ export interface EncryptionRecoveryDialogProps {
   onCreate: () => void;
   onManualRestore: () => void;
   onPrepareMobile: () => void;
+  onRepairDevice?: () => void;
   onRecoveryKeyInputChange: (value: string) => void;
   onReset: () => void;
   onRestore: () => void;
@@ -29,6 +30,7 @@ export default function EncryptionRecoveryDialog({
   onCreate,
   onManualRestore,
   onPrepareMobile,
+  onRepairDevice,
   onRecoveryKeyInputChange,
   onReset,
   onRestore
@@ -91,6 +93,19 @@ export default function EncryptionRecoveryDialog({
         <div className="recovery-illustration" aria-hidden="true">
           <KeyRound size={54} />
         </div>
+
+        {onRepairDevice && !generatedRecoveryKey ? (
+          <aside className="recovery-device-repair" aria-label="Oprava tohoto webového zařízení">
+            <p>
+              Pokud je šifrování poškozené jen v tomto prohlížeči, vytvoří se nová Matrix šifrovací identita pouze pro
+              toto webové zařízení. Účet, ostatní zařízení ani E2EE záloha se tím neresetují.
+            </p>
+            <button disabled={saving} className="secondary-dialog-action" onClick={onRepairDevice} type="button">
+              <RefreshCcw size={18} />
+              Opravit pouze toto webové zařízení
+            </button>
+          </aside>
+        ) : null}
 
         {generatedRecoveryKey ? (
           <>

@@ -9,7 +9,7 @@ type MockMatrixClient = {
   getRooms: () => unknown[];
   getTurnServers?: () => RTCIceServer[];
   getUserId: () => string;
-  initRustCrypto: () => Promise<void>;
+  initRustCrypto: (args?: { cryptoDatabasePrefix?: string }) => Promise<void>;
   isRoomEncrypted: () => boolean;
   leave?: MatrixLeaveRoom;
   mxcUrlToHttp?: MatrixMxcUrlToHttp;
@@ -2092,11 +2092,12 @@ describe("Matrix client diagnostics", () => {
     await vi.waitFor(() => expect(onTimelineChanged).toHaveBeenCalled());
   }, 10_000);
 
-  it("seals the locally stored recovery key in IndexedDB when available", async () => {
+  it("reuses a sealed recovery key after rotating to a distinct Matrix device crypto store", async () => {
     const storage = installLocalStorageStub();
     const indexedDb = installIndexedDbStub();
     const recoveryKey = await createValidRecoveryKey(13);
     const expectedPrivateKey = new Uint8Array(32).fill(13);
+    const cryptoDatabasePrefixes: Array<string | undefined> = [];
     let decodedLoads = 0;
     matrixSdkMock.createClient.mockImplementation((options: Record<string, unknown>) => {
       const cryptoCallbacks = options.cryptoCallbacks as {
@@ -2121,6 +2122,9 @@ describe("Matrix client diagnostics", () => {
       return createMockMatrixClient({
         crypto,
         getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }),
+        initRustCrypto: vi.fn(async (args?: { cryptoDatabasePrefix?: string }) => {
+          cryptoDatabasePrefixes.push(args?.cryptoDatabasePrefix);
+        }),
         rooms: []
       });
     });
@@ -2131,9 +2135,15 @@ describe("Matrix client diagnostics", () => {
     expect(Array.from(storage.values()).join("\n")).not.toContain(recoveryKey);
     expect(indexedDb.dump()).not.toContain(recoveryKey);
 
-    await createMatrixMessagingSession(createBootstrap());
+    firstSession.stop();
+    const repairedSession = await createMatrixMessagingSession({ ...createBootstrap(), deviceId: "COPWEB.REPAIRED" });
 
     expect(decodedLoads).toBe(2);
+    expect(cryptoDatabasePrefixes).toHaveLength(2);
+    expect(cryptoDatabasePrefixes[0]).toContain("testdevice");
+    expect(cryptoDatabasePrefixes[1]).toContain("copweb.repaired");
+    expect(new Set(cryptoDatabasePrefixes).size).toBe(2);
+    repairedSession.stop();
   }, 10_000);
 });
 
@@ -2284,6 +2294,7 @@ function createMockMatrixClient({
   getJoinedRooms,
   getProfileInfo,
   getTurnServers,
+  initRustCrypto = vi.fn().mockResolvedValue(undefined),
   leave,
   mxcUrlToHttp,
   redactEvent = vi.fn<MatrixRedactEvent>().mockResolvedValue(undefined),
@@ -2306,6 +2317,7 @@ function createMockMatrixClient({
   getJoinedRooms?: MockMatrixClient["getJoinedRooms"];
   getProfileInfo?: MockMatrixClient["getProfileInfo"];
   getTurnServers?: MockMatrixClient["getTurnServers"];
+  initRustCrypto?: MockMatrixClient["initRustCrypto"];
   leave?: MockMatrixClient["leave"];
   mxcUrlToHttp?: MockMatrixClient["mxcUrlToHttp"];
   off?: MockMatrixClient["off"];
@@ -2331,7 +2343,7 @@ function createMockMatrixClient({
     getRooms: () => rooms,
     ...(getTurnServers ? { getTurnServers } : {}),
     getUserId: () => "@operator:cop.local",
-    initRustCrypto: () => Promise.resolve(),
+    initRustCrypto,
     isRoomEncrypted: () => true,
     ...(leave ? { leave } : {}),
     ...(mxcUrlToHttp ? { mxcUrlToHttp } : {}),

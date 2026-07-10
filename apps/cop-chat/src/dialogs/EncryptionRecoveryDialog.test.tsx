@@ -83,6 +83,46 @@ describe("EncryptionRecoveryDialog", () => {
 
     expect(onRecoveryKeyInputChange).toHaveBeenCalledWith("NEW");
     expect(onRestore).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Opravit pouze toto webové zařízení" })).toBeNull();
+  });
+
+  it("repairs only this web device without replacing the existing recovery actions", () => {
+    const onRepairDevice = vi.fn();
+    render(
+      <EncryptionRecoveryDialog
+        generatedRecoveryKey={null}
+        manualRestore={false}
+        recoveryKeyInput="SECRET"
+        saving={false}
+        status={{
+          canPrepareForMobile: false,
+          crossSigningReady: true,
+          keyBackupEnabled: false,
+          keyBackupExists: true,
+          matrixRustCompatible: false,
+          needsRecovery: true,
+          needsSetup: false,
+          ready: false,
+          secretStorageReady: true,
+          supported: true
+        }}
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onManualRestore={vi.fn()}
+        onPrepareMobile={vi.fn()}
+        onRepairDevice={onRepairDevice}
+        onRecoveryKeyInputChange={vi.fn()}
+        onReset={vi.fn()}
+        onRestore={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Účet, ostatní zařízení ani E2EE záloha se tím neresetují/u)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Obnovit zařízení/u })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Opravit pouze toto webové zařízení" }));
+
+    expect(onRepairDevice).toHaveBeenCalledTimes(1);
   });
 
   it("does not force a web reset when key backup is active but iOS metadata are incomplete", () => {

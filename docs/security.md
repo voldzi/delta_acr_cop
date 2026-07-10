@@ -34,6 +34,12 @@ client access token. It does not recreate or clear the Rust crypto store. Full
 session replacement is generation-guarded and limited to identity/device change,
 logout or explicit account-store recovery as recorded in ADR-0014.
 
+A targeted browser-device repair rotates only that browser's Matrix device id
+and creates a separate Rust crypto store. It preserves the previous store and
+does not reset account-wide recovery metadata or other devices. The sealed
+recovery key remains scoped to Matrix user and homeserver; direct database
+deletion of Matrix one-time/fallback keys is not an approved repair path.
+
 Voice-call ICE discovery may contact the operations-configured STUN fallback
 from ADR-0015. The STUN operator can observe the client's public IP and binding
 traffic, but receives no Matrix room keys, chat content or DTLS-SRTP media.

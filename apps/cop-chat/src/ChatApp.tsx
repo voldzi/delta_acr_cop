@@ -2687,6 +2687,44 @@ export function ChatApp() {
     }
   }
 
+  async function repairCurrentMatrixDevice(): Promise<void> {
+    if (
+      !window.confirm(
+        "Opravit šifrování pouze v tomto webovém zařízení? Nejdříve zavřete ostatní karty COP chatu v tomto prohlížeči. Účet, telefon ani E2EE záloha se neresetují."
+      )
+    ) {
+      return;
+    }
+    setRecoveryWorking(true);
+    setError(null);
+    try {
+      const session = await startFreshMatrixSessionForRecovery();
+      const nextStatus = await refreshEncryptionRecoveryStatus(session);
+      setGeneratedRecoveryKey(null);
+      if (nextStatus?.ready) {
+        setRecoveryKeyInput("");
+        setRecoveryManualRestore(false);
+        setRecoveryDialogOpen(false);
+        setNotice(
+          "Toto webové zařízení má novou šifrovací identitu. E2EE záloha je odemčená a klíče se obnovují; ostatní zařízení zůstala beze změny."
+        );
+      } else if (nextStatus?.needsRecovery || nextStatus?.keyBackupExists) {
+        setRecoveryManualRestore(true);
+        setNotice("Nová šifrovací identita je připravená. Dokončete opravu zadáním uloženého obnovovacího klíče.");
+      } else {
+        setRecoveryKeyInput("");
+        setRecoveryManualRestore(false);
+        setNotice("Nová šifrovací identita je připravená. Dokončete nastavení vytvořením obnovovacího klíče.");
+      }
+    } catch (caught) {
+      setError(
+        userFacingError(caught instanceof Error ? caught.message : "Toto webové zařízení se nepodařilo opravit.")
+      );
+    } finally {
+      setRecoveryWorking(false);
+    }
+  }
+
   async function restoreEncryptionRecovery(): Promise<void> {
     const session =
       matrixSessionRef.current ??
@@ -4870,6 +4908,7 @@ export function ChatApp() {
               setRecoveryManualRestore(true);
             }}
             onPrepareMobile={() => void prepareEncryptionRecoveryForMobile()}
+            onRepairDevice={() => void repairCurrentMatrixDevice()}
             onRecoveryKeyInputChange={setRecoveryKeyInput}
             onReset={() => void createEncryptionRecovery(true)}
             onRestore={() => void restoreEncryptionRecovery()}

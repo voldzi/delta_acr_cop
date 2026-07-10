@@ -29,6 +29,15 @@ invalidates an unfinished start, clears the published session before stopping
 it and rejects a late result. A full client replacement remains permitted for
 logout, identity/device changes and explicit account-store recovery.
 
+If the server-side device key no longer matches the one-time/fallback keys
+uploaded under the same browser device id, COP offers a targeted repair for
+that web device. The repair rotates only the Matrix device id and starts a new
+device-scoped Rust crypto store. It does not delete the previous store, reset
+account-wide secret storage/cross-signing/key backup, or change another device.
+The locally sealed recovery key is scoped to Matrix user and homeserver rather
+than device id, so the replacement device can reuse it; otherwise the user is
+asked to enter the recovery key explicitly.
+
 Long-lived work such as live-location watches resolves the currently published
 Matrix session for each send instead of retaining a session that may have been
 replaced. Stopping a client is idempotent; final call hangup signaling uses the
@@ -41,5 +50,8 @@ existing authenticated HTTPS compatibility path before crypto shutdown.
   state or session reference.
 - Device rotation still causes a deliberate call/sync interruption and must be
   reserved for recovery or identity change.
+- Targeted device repair preserves the previous local store for forensic or
+  manual recovery and must not be implemented as broad IndexedDB deletion or
+  direct deletion of server one-time keys.
 - Frontend releases that change this lifecycle bump the PWA cache version so an
   installed web app receives the corrected runtime.

@@ -31,3 +31,20 @@ both UDP and TCP, verify the Coturn relay range is forwarded, and confirm that a
 real browser offer contains a `relay` candidate. Repeated `m.call.negotiate`
 events with only `host` candidates identify an ICE/TURN path failure after
 successful Matrix signalling.
+
+For repeated undecryptable placeholders, `Cannot ensure Olm sessions: shutting
+down`, or duplicate one-time-key uploads, first distinguish an old encrypted
+history gap from a broken current device identity. If the current server device
+key does not verify the signatures on that device's one-time/fallback keys:
+
+1. Close every other COP Chat tab/window in the affected browser profile.
+2. Reopen COP, open the E2EE warning dialog and choose **Opravit pouze toto
+   webové zařízení**.
+3. Enter the existing recovery key only if automatic key-backup restore is not
+   ready.
+4. Verify a fresh message decrypts in both directions and the replacement
+   device uploads keys with signatures valid for its current device key.
+5. Revoke the superseded server device through a supported Matrix device API
+   only after the replacement is verified. Never delete one-time keys directly
+   in Synapse SQL and do not reset account-wide E2EE merely to repair one
+   browser.

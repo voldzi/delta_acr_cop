@@ -167,6 +167,17 @@ finishes restoring room keys, COP Chat refreshes room summaries and the visible
 timeline so previously undecrypted events can be rendered without another
 manual key entry.
 
+If one browser reused a stable Matrix device id after its local Rust crypto
+identity changed, its device key can disagree with previously uploaded
+one-time/fallback keys. The supported repair is **Opravit pouze toto webové
+zařízení** after closing other COP Chat tabs in that browser. COP stops the
+current client, rotates only that browser's Matrix device id and starts a new
+device-scoped crypto store. The old store is retained, the account-wide E2EE
+backup and other devices are not reset, and the user-scoped sealed recovery key
+is reused when available. If automatic restore is not possible, the dialog asks
+for the existing recovery key. Server one-time keys must not be deleted
+directly from the database.
+
 If the user loses every trusted device and the recovery key, strong E2EE means
 old room keys cannot be reconstructed from authentication alone. The supported
 operational recovery is to start a new E2EE key cycle, accepting that older
