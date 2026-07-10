@@ -610,6 +610,10 @@ The phase-0 implementation focus is trust and control:
   overlays respect iOS safe areas in both standalone and embedded modes; long AI
   output and group/contact detail keep their header and actions visible while a
   single bounded middle region scrolls inside the available app or iframe box.
+- On narrow mobile layouts, attachments and all location-sharing variants live
+  under the composer plus menu instead of consuming a permanent row. The
+  jump-to-latest control is part of the message field, and embedded mode does
+  not reserve a second bottom safe area already owned by the host PWA.
 - Adding members belongs in the group member surface and must respect COP group
   management permissions. COP group membership remains the source of truth for
   COP media/report ACL; Matrix membership is only the messaging projection.

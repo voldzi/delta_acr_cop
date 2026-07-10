@@ -4631,15 +4631,6 @@ export function ChatApp() {
                   ) : null}
                   <div ref={timelineEndRef} aria-hidden="true" />
                 </div>
-                {showJumpToLatest ? (
-                  <button
-                    className="jump-latest"
-                    onClick={() => timelineEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" })}
-                    type="button"
-                  >
-                    <ArrowDown size={17} />
-                  </button>
-                ) : null}
                 {aiAgentInlineStatus ? (
                   <div className="ai-inline-status" role="status" aria-live="polite">
                     <span className="ai-inline-status-icon">
@@ -4670,10 +4661,12 @@ export function ChatApp() {
                     pendingAttachment={pendingAttachment}
                     replyTo={replyDraft}
                     sending={sending}
+                    showJumpToLatest={showJumpToLatest}
                     onAttachmentClear={clearPendingAttachment}
                     onAttachmentPick={pickAttachment}
                     onReplyClear={() => setReplyDraft(null)}
                     onSend={sendMessage}
+                    onJumpToLatest={() => timelineEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" })}
                     onUseAiLocation={() =>
                       void requestStandaloneAiLocation({ reportNotice: true }).catch(() => undefined)
                     }
@@ -5458,10 +5451,12 @@ export function Composer({
   pendingAttachment,
   replyTo,
   sending,
+  showJumpToLatest,
   onAttachmentClear,
   onAttachmentPick,
   onReplyClear,
   onSend,
+  onJumpToLatest,
   onUseAiLocation,
   onShareLocation,
   onStartLiveLocation,
@@ -5476,10 +5471,12 @@ export function Composer({
   pendingAttachment: PendingChatAttachment | null;
   replyTo: MatrixTimelineMessage | null;
   sending: boolean;
+  showJumpToLatest: boolean;
   onAttachmentClear: () => void;
   onAttachmentPick: (kind: MatrixAttachmentKind) => void;
   onReplyClear: () => void;
   onSend: (text: string) => Promise<boolean> | void;
+  onJumpToLatest: () => void;
   onUseAiLocation: () => void;
   onShareLocation: () => void;
   onStartLiveLocation: (durationSeconds: number) => void;
@@ -5489,6 +5486,7 @@ export function Composer({
   // whole ChatApp tree (timeline, chat list, panels). The draft intentionally
   // persists across chat switches, matching the previous shared-state behavior.
   const [text, setText] = React.useState("");
+  const [toolsOpen, setToolsOpen] = React.useState(false);
   const [suggestionsDismissedFor, setSuggestionsDismissedFor] = React.useState<string | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const canSend = Boolean(text.trim() || pendingAttachment) && !disabled;
@@ -5527,6 +5525,17 @@ export function Composer({
   React.useLayoutEffect(() => {
     syncTextareaHeight();
   }, [syncTextareaHeight, text, pendingAttachment, replyTo]);
+
+  React.useEffect(() => {
+    if (disabled) {
+      setToolsOpen(false);
+    }
+  }, [disabled]);
+
+  const runComposerTool = (action: () => void) => {
+    setToolsOpen(false);
+    action();
+  };
 
   return (
     <form
@@ -5638,41 +5647,63 @@ export function Composer({
           ) : null}
         </div>
       ) : null}
-      {visibleSuggestions.length === 0 ? (
-        <div className="composer-location-quickbar" aria-label="Sdílení polohy">
-          <button disabled={disabled} onClick={onShareLocation} type="button">
-            <MapPin size={14} />
-            Poloha
+      <div className="composer-row">
+        <div className="composer-tools">
+          <button
+            aria-expanded={toolsOpen}
+            aria-haspopup="menu"
+            aria-label="Přílohy a poloha"
+            className={clsx("round-icon", toolsOpen && "active")}
+            disabled={disabled}
+            onClick={() => setToolsOpen((current) => !current)}
+            type="button"
+          >
+            <Plus size={24} />
           </button>
-          {liveLocationDurationOptions.map((option) => (
-            <button
-              disabled={disabled || liveLocationActive}
-              key={option.seconds}
-              onClick={() => onStartLiveLocation(option.seconds)}
-              type="button"
-            >
-              <Navigation size={14} />
-              {option.label}
-            </button>
-          ))}
-          {liveLocationActive ? (
-            <button className="danger" disabled={disabled} onClick={onStopLiveLocation} type="button">
-              <X size={14} />
-              Ukončit
-            </button>
+          {toolsOpen ? (
+            <div className="composer-tools-popover" role="menu" aria-label="Přílohy a poloha">
+              <button onClick={() => runComposerTool(() => onAttachmentPick("image"))} role="menuitem" type="button">
+                <ImageIcon size={18} />
+                Fotografie
+              </button>
+              <button onClick={() => runComposerTool(() => onAttachmentPick("video"))} role="menuitem" type="button">
+                <Video size={18} />
+                Video
+              </button>
+              <button onClick={() => runComposerTool(() => onAttachmentPick("file"))} role="menuitem" type="button">
+                <FileText size={18} />
+                Dokument nebo soubor
+              </button>
+              <button onClick={() => runComposerTool(onShareLocation)} role="menuitem" type="button">
+                <MapPin size={18} />
+                Odeslat aktuální polohu
+              </button>
+              {liveLocationDurationOptions.map((option) => (
+                <button
+                  disabled={liveLocationActive}
+                  key={option.seconds}
+                  onClick={() => runComposerTool(() => onStartLiveLocation(option.seconds))}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Navigation size={18} />
+                  Sdílet živou polohu · {option.label}
+                </button>
+              ))}
+              {liveLocationActive ? (
+                <button
+                  className="danger"
+                  onClick={() => runComposerTool(onStopLiveLocation)}
+                  role="menuitem"
+                  type="button"
+                >
+                  <X size={18} />
+                  Ukončit sdílení polohy
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
-      ) : null}
-      <div className="composer-row">
-        <button
-          className="round-icon"
-          disabled={disabled}
-          onClick={() => onAttachmentPick("file")}
-          type="button"
-          aria-label="Příloha"
-        >
-          <Plus size={24} />
-        </button>
         <button
           className="round-icon desktop-tool"
           disabled={disabled}
@@ -5691,7 +5722,13 @@ export function Composer({
         >
           <MapPin size={21} />
         </button>
-        <div className="message-input" onClick={focusTextarea}>
+        <div
+          className="message-input"
+          onClick={() => {
+            setToolsOpen(false);
+            focusTextarea();
+          }}
+        >
           <Smile size={21} />
           <textarea
             ref={textareaRef}
@@ -5735,6 +5772,19 @@ export function Composer({
             spellCheck
             value={text}
           />
+          {showJumpToLatest ? (
+            <button
+              aria-label="Přejít na konec chatu"
+              className="composer-jump-latest"
+              onClick={(event) => {
+                event.stopPropagation();
+                onJumpToLatest();
+              }}
+              type="button"
+            >
+              <ArrowDown size={18} />
+            </button>
+          ) : null}
         </div>
         <button
           className="send-button"
@@ -6986,7 +7036,7 @@ function ChatInfoPanel({
           </header>
 
           {tab === "info" ? (
-            <div className="info-section">
+            <div className={clsx("info-section", isDirect && "contact-info-section")}>
               <InfoMetric label="Typ" value={isDirect ? "Soukromý chat" : "Veřejná skupina"} />
               <InfoMetric
                 label="Šifrování"
@@ -6994,13 +7044,17 @@ function ChatInfoPanel({
               />
               <InfoMetric label="Upozornění" value={muted ? "Ztlumeno" : "Zapnuto"} />
               <InfoMetric label="Připnutí" value={pinned ? "Chat je připnutý" : "Chat není připnutý"} />
-              <InfoMetric label="Aplikace" value={deviceDiagnostics.pwaStandalone ? "PWA režim" : "Prohlížeč"} />
-              <InfoMetric label="Web Push" value={webPushDiagnosticsLabel(deviceDiagnostics)} />
-              <InfoMetric label="Matrix sync" value={matrixSyncDiagnosticsLabel(deviceDiagnostics)} />
-              <InfoMetric
-                label="E2EE zařízení"
-                value={deviceDiagnostics.e2eeReady ? "Připravené" : "Vyžaduje obnovu"}
-              />
+              {!isDirect ? (
+                <>
+                  <InfoMetric label="Aplikace" value={deviceDiagnostics.pwaStandalone ? "PWA režim" : "Prohlížeč"} />
+                  <InfoMetric label="Web Push" value={webPushDiagnosticsLabel(deviceDiagnostics)} />
+                  <InfoMetric label="Matrix sync" value={matrixSyncDiagnosticsLabel(deviceDiagnostics)} />
+                  <InfoMetric
+                    label="E2EE zařízení"
+                    value={deviceDiagnostics.e2eeReady ? "Připravené" : "Vyžaduje obnovu"}
+                  />
+                </>
+              ) : null}
               <button className="info-setting-row" onClick={onOpenRetentionSettings} type="button">
                 <span>
                   <Clock3 size={20} />

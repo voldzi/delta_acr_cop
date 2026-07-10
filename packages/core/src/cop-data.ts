@@ -3913,11 +3913,25 @@ export async function uploadCommunityAttachmentFile(
   slot: { attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot },
   onProgress?: CommunityAttachmentUploadProgressHandler
 ): Promise<CommunityReportAttachment> {
-  const directUpload = await tryDirectCommunityAttachmentUpload(apiBase, token, reportId, file, slot, onProgress);
+  const directUpload = directCommunityAttachmentUploadAllowed(slot.upload.uploadUrl)
+    ? await tryDirectCommunityAttachmentUpload(apiBase, token, reportId, file, slot, onProgress)
+    : null;
   if (directUpload) {
     return directUpload;
   }
   return uploadCommunityAttachmentViaApi(apiBase, token, reportId, slot.attachment.attachmentId, file, onProgress);
+}
+
+export function directCommunityAttachmentUploadAllowed(
+  uploadUrl: string,
+  pageProtocol = typeof window === "undefined" ? "https:" : window.location.protocol
+): boolean {
+  try {
+    const protocol = new URL(uploadUrl).protocol;
+    return pageProtocol !== "https:" || protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function uploadFileWithProgress(

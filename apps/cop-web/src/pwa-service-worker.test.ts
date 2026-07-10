@@ -183,6 +183,8 @@ describe("COP PWA service worker routing", () => {
   it("keeps the current and immediately previous PWA release caches", () => {
     const serviceWorker = loadServiceWorkerContext();
     const keys = [
+      "cop-pwa-offline-20260710-16:shell",
+      "cop-pwa-offline-20260710-16:runtime",
       "cop-pwa-offline-20260710-15:shell",
       "cop-pwa-offline-20260710-15:runtime",
       "cop-pwa-offline-20260710-14:shell",
@@ -222,6 +224,8 @@ describe("COP PWA service worker routing", () => {
     ];
 
     expect(serviceWorker.releaseCacheKeysToDelete(keys)).toEqual([
+      "cop-pwa-offline-20260710-14:shell",
+      "cop-pwa-offline-20260710-14:runtime",
       "cop-pwa-offline-20260710-13:shell",
       "cop-pwa-offline-20260710-13:runtime",
       "cop-pwa-offline-20260710-12:shell",

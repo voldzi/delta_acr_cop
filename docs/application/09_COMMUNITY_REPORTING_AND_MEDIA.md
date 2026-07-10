@@ -103,6 +103,8 @@ Podporované přílohy v první verzi:
 - video: `video/mp4`, `video/quicktime`,
 - dokument: `application/pdf`.
 
+Mobilní formulář používá jeden zřetelný picker pro fotoaparát, knihovnu fotografií a aplikaci Soubory, zobrazuje vybrané položky ještě před uložením a umožňuje je jednotlivě odebrat. Režim přístupu `users` používá vyhledávání v COP adresáři; uživatel vybírá podle jména a klient do ACL ukládá kanonické `subjectId`, nikoli ručně opisovaný technický identifikátor.
+
 Video přílohy mohou nést metadata `metadata.spatialVideo`:
 
 - `mode: "none"`: běžné 2D video, přehrání přes HTML5 `video`,
@@ -249,7 +251,7 @@ Proměnné:
 
 ```env
 COP_MEDIA_STORE=s3
-COP_MEDIA_S3_ENDPOINT=http://docker.home.cz:8333
+COP_MEDIA_S3_ENDPOINT=http://host.docker.internal:8334
 COP_MEDIA_S3_PUBLIC_ENDPOINT=https://media.zeleznalady.cz
 COP_MEDIA_S3_REGION=us-east-1
 COP_MEDIA_S3_BUCKET=cop-community-media
@@ -267,9 +269,9 @@ COP_MEDIA_SPATIAL_CONVERSION_TIMEOUT_MS=600000
 Pro produkci doporučuji samostatný bucket `cop-community-media` a samostatné S3 credentials jen pro COP.
 API při startu ověří dostupnost bucketu a při HTTP 404 se ho pokusí založit. Stav je vidět v `/health/dependencies` jako `media-storage`.
 
-Aktuální pilot na `docker.home.cz` používá SeaweedFS S3 gateway `http://docker.home.cz:8334`. Port `8333` běží v SeaweedFS `mini` režimu s externí URL jiné aplikace a pro COP S3 podpisy nepoužívat.
+Aktuální pilot na `docker.home.cz` používá SeaweedFS S3 gateway publikovanou na hostitelském portu `8334`. Kontejner `cop-api` se k ní připojuje přes `http://host.docker.internal:8334`; adresa `http://docker.home.cz:8334` uvnitř kontejneru závisí na VPN/DNS routě a nesmí se používat jako interní endpoint. Port `8333` běží v SeaweedFS `mini` režimu s externí URL jiné aplikace a pro COP S3 podpisy nepoužívat.
 
-Poznámka k veřejnému provozu: `COP_MEDIA_S3_PUBLIC_ENDPOINT` musí být dosažitelný z klienta, který přílohu nahrává. Pro web na `https://cop.zeleznalady.cz` má být cílový endpoint také HTTPS, typicky samostatný reverse proxy vhost `https://media.zeleznalady.cz` na SeaweedFS S3 gateway `http://docker.home.cz:8334`. Do doby zřízení veřejného media vhostu je `http://docker.home.cz:8334` použitelné hlavně z interní sítě a pro backendové ověření.
+Poznámka k veřejnému provozu: `COP_MEDIA_S3_PUBLIC_ENDPOINT` musí být dosažitelný z klienta, který přílohu nahrává. Pro web na `https://cop.zeleznalady.cz` má být cílový endpoint také HTTPS, typicky samostatný reverse proxy vhost `https://media.zeleznalady.cz` na SeaweedFS S3 gateway `http://docker.home.cz:8334`. Dokud veřejný media vhost není dostupný, HTTPS PWA přímý HTTP upload přeskočí a použije zabezpečený same-origin fallback `POST /attachments/{attachmentId}/upload`; vlastní API přistupuje k SeaweedFS přes `host.docker.internal`.
 
 ## iOS tok
 

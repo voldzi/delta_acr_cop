@@ -17,10 +17,12 @@ function composer(overrides: Partial<React.ComponentProps<typeof Composer>> = {}
       pendingAttachment={null}
       replyTo={null}
       sending={false}
+      showJumpToLatest={false}
       onAttachmentClear={vi.fn()}
       onAttachmentPick={vi.fn()}
       onReplyClear={vi.fn()}
       onSend={vi.fn()}
+      onJumpToLatest={vi.fn()}
       onShareLocation={vi.fn()}
       onStartLiveLocation={vi.fn()}
       onStopLiveLocation={vi.fn()}
@@ -72,5 +74,32 @@ describe("mobile Composer", () => {
     await act(async () => finishSend?.(true));
 
     expect(textarea.value).toBe("další zpráva");
+  });
+
+  it("keeps location actions under the plus menu instead of a permanent mobile row", () => {
+    const onShareLocation = vi.fn();
+    render(composer({ onShareLocation }));
+
+    expect(screen.queryByRole("menuitem", { name: "Odeslat aktuální polohu" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Přílohy a poloha" }));
+
+    expect(screen.getByRole("menuitem", { name: "Fotografie" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Dokument nebo soubor" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Sdílet živou polohu · 15 min" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Odeslat aktuální polohu" }));
+
+    expect(onShareLocation).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("menuitem", { name: "Odeslat aktuální polohu" })).toBeNull();
+  });
+
+  it("places the jump-to-latest action inside the message field", () => {
+    const onJumpToLatest = vi.fn();
+    render(composer({ onJumpToLatest, showJumpToLatest: true }));
+    const jumpButton = screen.getByRole("button", { name: "Přejít na konec chatu" });
+
+    expect(jumpButton.closest(".message-input")).toBeTruthy();
+    fireEvent.click(jumpButton);
+
+    expect(onJumpToLatest).toHaveBeenCalledOnce();
   });
 });

@@ -974,6 +974,215 @@ h1 {
   font-weight: 900;
 }
 
+.report-contact-picker {
+  display: grid;
+  gap: 9px;
+}
+
+.report-contact-search {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid rgba(140, 182, 216, 0.34);
+  background: rgba(17, 25, 33, 0.92);
+  color: #8fb3ce;
+}
+
+.report-contact-search:focus-within {
+  border-color: rgba(200, 240, 141, 0.68);
+  box-shadow: 0 0 0 2px rgba(200, 240, 141, 0.1);
+}
+
+.report-contact-search input {
+  min-width: 0;
+  width: 100%;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #eef5fb;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  outline: none;
+  text-transform: none;
+}
+
+.report-contact-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.report-contact-chip {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 5px 4px 7px;
+  border: 1px solid rgba(200, 240, 141, 0.34);
+  border-radius: 999px;
+  background: rgba(151, 199, 104, 0.1);
+  color: #eaf5df;
+}
+
+.report-contact-chip strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-contact-chip button,
+.report-attachment-row button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: #dce8f2;
+  cursor: pointer;
+}
+
+.report-contact-avatar {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #cdece5, #b7d4f7 58%, #f0d8c5);
+  color: #006b58;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.report-contact-results {
+  display: grid;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid rgba(140, 182, 216, 0.28);
+  background: rgba(5, 9, 12, 0.55);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.report-contact-results > button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 52px;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 1px solid rgba(140, 182, 216, 0.16);
+  background: transparent;
+  color: #eef5fb;
+  cursor: pointer;
+  text-align: left;
+}
+
+.report-contact-results > button:last-child {
+  border-bottom: 0;
+}
+
+.report-contact-results > button:hover,
+.report-contact-results > button:focus-visible {
+  background: rgba(151, 199, 104, 0.12);
+  outline: none;
+}
+
+.report-contact-results > button:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.report-contact-results > button span:nth-child(2),
+.report-contact-results strong,
+.report-contact-results small {
+  display: block;
+  min-width: 0;
+}
+
+.report-contact-results strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-contact-results small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.report-contact-error {
+  color: #fecaca;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.report-attachment-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.report-attachment-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.report-file-picker-button {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 12px;
+  border: 1px dashed rgba(200, 240, 141, 0.54);
+  background: rgba(151, 199, 104, 0.08);
+  color: var(--lime);
+  cursor: pointer;
+}
+
+.report-file-picker-button:hover,
+.report-file-picker-button:focus-within {
+  border-style: solid;
+  background: rgba(151, 199, 104, 0.14);
+}
+
+.report-file-picker-button.disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.report-file-picker-button span,
+.report-file-picker-button strong,
+.report-file-picker-button small {
+  display: block;
+  min-width: 0;
+}
+
+.report-file-picker-button strong {
+  font-size: 13px;
+}
+
+.report-file-picker-button small {
+  margin-top: 2px;
+  color: #b8c7d3;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .report-group-picker {
   display: grid;
   gap: 8px;
@@ -1243,6 +1452,24 @@ h1 {
   flex: 0 0 auto;
   color: var(--muted);
   font-size: 11px;
+}
+
+.report-attachment-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-attachment-kind {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(140, 182, 216, 0.12);
+  color: #8ed8ff !important;
 }
 
 .report-dialog-message {
@@ -9570,6 +9797,29 @@ dd {
 
   .report-dialog-scroll {
     padding-right: 4px;
+  }
+
+  .report-access-panel {
+    padding: 10px;
+  }
+
+  .report-contact-results {
+    max-height: 180px;
+  }
+
+  .report-attachment-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .report-attachment-row strong {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  .report-attachment-row button {
+    grid-column: 3;
+    grid-row: 1 / span 2;
   }
 
   .report-form-grid {

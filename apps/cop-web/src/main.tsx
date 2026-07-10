@@ -147,6 +147,7 @@ import {
   runEmergencyRoutingNearestAccess,
   runRadioLinkCheck,
   runRadioSiteSearch,
+  searchUserDirectory,
   updateCommunityGroupMetadata,
   updateSketchDrawing,
   updateCommunityReport,
@@ -231,6 +232,7 @@ import {
   type TransitStopDetailResponse,
   type TransitStopRoute,
   type TransitVehicleDetailResponse,
+  type UserDirectoryEntry,
   type WeatherRadarFrame
 } from "./cop-data";
 import type {
@@ -5825,7 +5827,7 @@ export function App() {
   async function handleCommunityReportFilesSelected(files: File[]) {
     setCommunityReportDraft((current) => ({
       ...current,
-      files,
+      files: mergeCommunityReportFiles(current.files, files),
       mediaLocationHint: ""
     }));
     if (files.length === 0) {
@@ -8441,6 +8443,8 @@ export function App() {
 
       {communityReportOpen ? (
         <CommunityReportDialog
+          apiBase={apiBase}
+          authToken={authToken}
           draft={communityReportDraft}
           error={communityReportError}
           isSubmitting={communityReportSubmitting}
@@ -8455,6 +8459,12 @@ export function App() {
           onLocationFromMapClick={startCommunityReportMapPick}
           onLocationFromUser={setCommunityReportLocationFromUser}
           onFilesSelected={(files) => void handleCommunityReportFilesSelected(files)}
+          onRemoveFile={(index) =>
+            setCommunityReportDraft((current) => ({
+              ...current,
+              files: current.files.filter((_file, fileIndex) => fileIndex !== index)
+            }))
+          }
           onSubmit={() => void submitCommunityReportDraft()}
         />
       ) : null}
@@ -8649,6 +8659,8 @@ interface CommunityUploadUiState {
 }
 
 interface CommunityReportDialogProps {
+  apiBase: string;
+  authToken?: string;
   draft: CommunityReportDraft;
   error: string | null;
   isSubmitting: boolean;
@@ -8657,6 +8669,7 @@ interface CommunityReportDialogProps {
   onChange: React.Dispatch<React.SetStateAction<CommunityReportDraft>>;
   onClose: () => void;
   onFilesSelected: (files: File[]) => void;
+  onRemoveFile: (index: number) => void;
   onLocationFromMap: () => void;
   onLocationFromMapClick: () => void;
   onLocationFromUser: () => void;
@@ -8664,6 +8677,8 @@ interface CommunityReportDialogProps {
 }
 
 function CommunityReportDialog({
+  apiBase,
+  authToken,
   draft,
   error,
   isSubmitting,
@@ -8672,6 +8687,7 @@ function CommunityReportDialog({
   onChange,
   onClose,
   onFilesSelected,
+  onRemoveFile,
   onLocationFromMap,
   onLocationFromMapClick,
   onLocationFromUser,
@@ -8787,32 +8803,34 @@ function CommunityReportDialog({
             onValueChange={(mediaAccessMode) => onChange((current) => ({ ...current, mediaAccessMode }))}
           />
           {draft.mediaAccessMode === "users" ? (
-            <label className="report-field">
-              Uživatelé
-              <textarea
-                maxLength={1200}
-                placeholder="Každý řádek jeden subjectId uživatele. Později zde bude adresář kontaktů."
-                value={draft.mediaAccessUserSubjectIds}
-                onChange={(event) =>
-                  onChange((current) => ({ ...current, mediaAccessUserSubjectIds: event.target.value }))
+            <CommunityContactPicker
+              disabled={!authToken || isSubmitting}
+              selectedSubjectIds={parseSubjectIdList(draft.mediaAccessUserSubjectIds)}
+              onChange={(selectedSubjectIds) =>
+                onChange((current) => ({
+                  ...current,
+                  mediaAccessUserSubjectIds: selectedSubjectIds.join("\n")
+                }))
+              }
+              onSearch={async (query) => {
+                if (!authToken) {
+                  return [];
                 }
-              />
-            </label>
+                return (await searchUserDirectory(apiBase, authToken, query, 12)).items;
+              }}
+            />
           ) : null}
           <span className="report-field-hint">
             Text hlášení a stupeň výstrahy se zobrazují v mapě. Fotky, PDF a videa respektují zvolený přístup.
           </span>
         </section>
 
-        <label className="report-field">
-          Přílohy
-          <input
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,video/mp4,video/quicktime"
-            multiple
-            type="file"
-            onChange={(event) => onFilesSelected(Array.from(event.target.files ?? []))}
-          />
-        </label>
+        <CommunityAttachmentPicker
+          disabled={isSubmitting}
+          files={draft.files}
+          onFilesSelected={onFilesSelected}
+          onRemoveFile={onRemoveFile}
+        />
         {draft.files.some(isCommunityVideoFile) ? (
           <label className="report-field">
             Režim videa
@@ -8828,29 +8846,230 @@ function CommunityReportDialog({
             </span>
           </label>
         ) : null}
-        <div className="report-attachment-list">
-          {draft.files.length === 0 ? (
-            <span>Bez příloh. Lze vložit fotografii, PDF nebo video.</span>
-          ) : (
-            draft.files.map((file) => (
-              <div className="report-attachment-row" key={`${file.name}-${file.size}-${file.lastModified}`}>
-                <span>{file.name || "Soubor"}</span>
-                <strong>
-                  {communityAttachmentKindLabel(
-                    communityAttachmentKindFromContentType(normalizeCommunityFileContentType(file))
-                  )}{" "}
-                  · {formatFileSize(file.size)}
-                </strong>
-              </div>
-            ))
-          )}
-        </div>
-
         {uploadProgress ? <CommunityUploadProgressPanel progress={uploadProgress} /> : null}
         {error ? <div className="report-dialog-message error">{error}</div> : null}
         {success ? <div className="report-dialog-message success">{success}</div> : null}
       </div>
     </ModalDialog>
+  );
+}
+
+export function CommunityContactPicker({
+  disabled,
+  selectedSubjectIds,
+  onChange,
+  onSearch
+}: {
+  disabled: boolean;
+  selectedSubjectIds: string[];
+  onChange: (subjectIds: string[]) => void;
+  onSearch: (query: string) => Promise<UserDirectoryEntry[]>;
+}) {
+  const [query, setQuery] = React.useState("");
+  const [results, setResults] = React.useState<UserDirectoryEntry[]>([]);
+  const [selectedEntries, setSelectedEntries] = React.useState<Record<string, UserDirectoryEntry>>({});
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const normalizedQuery = query.trim();
+
+  React.useEffect(() => {
+    if (disabled || normalizedQuery.length < 2) {
+      setResults([]);
+      setBusy(false);
+      setError(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setBusy(true);
+      setError(null);
+      onSearch(normalizedQuery)
+        .then((items) => {
+          if (!cancelled) {
+            setResults(items);
+          }
+        })
+        .catch((caught: unknown) => {
+          if (!cancelled) {
+            setResults([]);
+            setError(caught instanceof Error ? caught.message : "Kontakty se nepodařilo načíst.");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setBusy(false);
+          }
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [disabled, normalizedQuery, onSearch]);
+
+  const selectedSet = new Set(selectedSubjectIds);
+  const addContact = (entry: UserDirectoryEntry) => {
+    setSelectedEntries((current) => ({ ...current, [entry.subjectId]: entry }));
+    onChange(Array.from(new Set([...selectedSubjectIds, entry.subjectId])));
+    setQuery("");
+    setResults([]);
+  };
+  const removeContact = (subjectId: string) => {
+    onChange(selectedSubjectIds.filter((item) => item !== subjectId));
+  };
+
+  return (
+    <section className="report-contact-picker" aria-label="Vybraní uživatelé">
+      <label className="report-field">
+        Vyhledat kontakt
+        <span className="report-contact-search">
+          <Search size={17} />
+          <input
+            aria-label="Vyhledat kontakt"
+            autoComplete="off"
+            disabled={disabled}
+            placeholder="Jméno nebo uživatelské jméno"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {busy ? <RefreshCw className="spin" size={16} /> : null}
+        </span>
+      </label>
+
+      {selectedSubjectIds.length > 0 ? (
+        <div className="report-contact-chips" aria-label="Vybrané kontakty">
+          {selectedSubjectIds.map((subjectId) => {
+            const entry = selectedEntries[subjectId];
+            const label = entry?.displayName || entry?.username || subjectId;
+            return (
+              <span className="report-contact-chip" key={subjectId}>
+                <span className="report-contact-avatar" aria-hidden="true">
+                  {contactInitials(label)}
+                </span>
+                <strong>{label}</strong>
+                <button
+                  aria-label={`Odebrat kontakt ${label}`}
+                  disabled={disabled}
+                  onClick={() => removeContact(subjectId)}
+                  type="button"
+                >
+                  <X size={14} />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <span className="report-field-hint">Vyhledejte a vyberte osoby, které smějí otevřít přílohy.</span>
+      )}
+
+      {normalizedQuery.length > 0 && normalizedQuery.length < 2 ? (
+        <span className="report-field-hint">Napište alespoň dva znaky.</span>
+      ) : null}
+      {error ? <span className="report-contact-error">{error}</span> : null}
+      {results.length > 0 ? (
+        <div className="report-contact-results" role="listbox" aria-label="Nalezené kontakty">
+          {results.map((entry) => {
+            const selected = selectedSet.has(entry.subjectId);
+            const label = entry.displayName || entry.username;
+            return (
+              <button
+                aria-label={`${selected ? "Vybraný kontakt" : "Vybrat kontakt"} ${label}`}
+                disabled={disabled || selected}
+                key={entry.subjectId}
+                onClick={() => addContact(entry)}
+                role="option"
+                type="button"
+              >
+                <span className="report-contact-avatar" aria-hidden="true">
+                  {contactInitials(label)}
+                </span>
+                <span>
+                  <strong>{label}</strong>
+                  <small>@{entry.username}</small>
+                </span>
+                {selected ? <CheckCircle2 size={18} /> : <Plus size={18} />}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+export function CommunityAttachmentPicker({
+  disabled,
+  files,
+  onFilesSelected,
+  onRemoveFile
+}: {
+  disabled: boolean;
+  files: File[];
+  onFilesSelected: (files: File[]) => void;
+  onRemoveFile: (index: number) => void;
+}) {
+  return (
+    <section className="report-attachment-picker" aria-label="Přílohy">
+      <span className="report-attachment-label">Přílohy</span>
+      <label className={clsx("report-file-picker-button", disabled && "disabled")}>
+        <Camera size={19} />
+        <span>
+          <strong>Přidat fotografie nebo soubory</strong>
+          <small>Foto, video nebo PDF</small>
+        </span>
+        <input
+          accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,video/mp4,video/quicktime"
+          aria-label="Vybrat fotografie nebo soubory"
+          className="visually-hidden"
+          disabled={disabled}
+          multiple
+          type="file"
+          onChange={(event) => {
+            onFilesSelected(Array.from(event.currentTarget.files ?? []));
+            event.currentTarget.value = "";
+          }}
+        />
+      </label>
+      <span className="report-field-hint">
+        Na iPhonu můžete po klepnutí vyfotit snímek, vybrat fotku nebo otevřít aplikaci Soubory.
+      </span>
+      <div className="report-attachment-list">
+        {files.length === 0 ? (
+          <span>Bez příloh.</span>
+        ) : (
+          files.map((file, index) => (
+            <div className="report-attachment-row" key={`${file.name}-${file.size}-${file.lastModified}-${index}`}>
+              <span className="report-attachment-kind" aria-hidden="true">
+                {file.type.startsWith("image/") ? <Image size={17} /> : <FileText size={17} />}
+              </span>
+              <span>{file.name || "Soubor"}</span>
+              <strong>
+                {communityAttachmentKindLabel(
+                  communityAttachmentKindFromContentType(normalizeCommunityFileContentType(file))
+                )}{" "}
+                · {formatFileSize(file.size)}
+              </strong>
+              <button
+                aria-label={`Odebrat přílohu ${file.name || "Soubor"}`}
+                disabled={disabled}
+                onClick={() => onRemoveFile(index)}
+                type="button"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function contactInitials(value: string): string {
+  const parts = value.trim().split(/\s+/u).filter(Boolean);
+  return (parts.length > 1 ? `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}` : value.slice(0, 2)).toLocaleUpperCase(
+    "cs-CZ"
   );
 }
 
@@ -18292,6 +18511,14 @@ function communityAttachmentKindLabel(kind: CommunityAttachmentKind | null): str
 
 function isCommunityVideoFile(file: File): boolean {
   return communityAttachmentKindFromContentType(normalizeCommunityFileContentType(file)) === "video";
+}
+
+export function mergeCommunityReportFiles(current: File[], incoming: File[]): File[] {
+  const files = new Map<string, File>();
+  for (const file of [...current, ...incoming]) {
+    files.set(`${file.name}\u0000${file.size}\u0000${file.lastModified}\u0000${file.type}`, file);
+  }
+  return Array.from(files.values());
 }
 
 function buildCommunityAttachmentMetadata(

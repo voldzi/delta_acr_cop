@@ -121,6 +121,29 @@ describe("cop-chat embedded mobile layout CSS", () => {
     expect(copyBlock).toContain("flex: 1 1 auto");
     expect(styles).not.toContain(".member-row span {");
   });
+
+  it("keeps mobile location tools under plus and the jump action inside the message field", () => {
+    const toolsBlock = cssBlock(".composer-tools-popover");
+    const jumpBlock = cssBlock(".composer-jump-latest");
+    const embeddedComposer = cssBlock(".wa-shell.embedded .composer");
+
+    expect(toolsBlock).toContain("position: absolute");
+    expect(toolsBlock).toContain("bottom: calc(100% + 9px)");
+    expect(jumpBlock).toContain("flex: 0 0 34px");
+    expect(embeddedComposer).toContain("padding-bottom: 8px");
+    expect(styles).not.toContain(".composer-location-quickbar");
+    expect(styles).not.toContain(".jump-latest {");
+  });
+
+  it("uses compact stacked tabs and a smaller hero in the mobile contact panel", () => {
+    const navButtonBlocks = cssBlocks(".info-nav > button");
+    const heroAvatarBlocks = cssBlocks(".info-hero .avatar");
+    const contactSection = cssBlock(".contact-info-section");
+
+    expect(navButtonBlocks.some((block) => block.includes("flex-direction: column"))).toBe(true);
+    expect(heroAvatarBlocks.some((block) => block.includes("width: 56px"))).toBe(true);
+    expect(contactSection).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
+  });
 });
 
 function cssBlock(selector: string): string {
