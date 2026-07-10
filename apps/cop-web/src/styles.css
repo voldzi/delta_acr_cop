@@ -10484,9 +10484,11 @@ dd {
   }
 
   .mobile-sheet-surface .catalog-layer-list {
+    align-content: start;
     min-height: 0;
     overflow: auto;
     align-self: stretch;
+    grid-auto-rows: max-content;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
   }
@@ -10494,6 +10496,7 @@ dd {
   .mobile-sheet-surface .catalog-layer-row {
     grid-template-rows: auto auto;
     align-content: start;
+    align-self: start;
     min-height: 0;
     padding: 12px 10px;
     gap: 8px;

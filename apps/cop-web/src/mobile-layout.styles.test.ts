@@ -44,6 +44,19 @@ describe("COP mobile layer catalog layout", () => {
     expect(mobileCatalogButton).toContain("contain: layout style");
     expect(mobileCatalogButton).not.toContain("paint");
   });
+
+  it("keeps weather metadata inside each scrollable catalog row", () => {
+    const catalogList = cssBlocks(".mobile-sheet-surface .catalog-layer-list").find((block) =>
+      block.includes("grid-auto-rows:")
+    );
+    const catalogRow = cssBlocks(".mobile-sheet-surface .catalog-layer-row").find((block) =>
+      block.includes("align-self:")
+    );
+
+    expect(catalogList).toContain("align-content: start");
+    expect(catalogList).toContain("grid-auto-rows: max-content");
+    expect(catalogRow).toContain("align-self: start");
+  });
 });
 
 function cssNumericProperty(selector: string, property: string): number {
