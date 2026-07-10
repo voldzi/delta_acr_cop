@@ -10095,8 +10095,8 @@ dd {
     z-index: 82;
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 8px;
-    min-height: 54px;
-    padding: 6px 8px;
+    min-height: calc(54px + env(safe-area-inset-top, 0px));
+    padding: calc(6px + env(safe-area-inset-top, 0px)) 8px 6px;
   }
 
   .shell.app-shell-v2 .brand {
@@ -10196,7 +10196,7 @@ dd {
 
   .shell.app-shell-v2 .app-shell-body {
     grid-template-columns: minmax(0, 1fr);
-    height: calc(100dvh - 54px);
+    height: calc(100dvh - 54px - env(safe-area-inset-top, 0px));
     min-height: 0;
     overflow: hidden;
     padding-bottom: 68px;
@@ -10245,7 +10245,7 @@ dd {
 
   .mobile-sheet-layer {
     position: fixed;
-    top: 54px;
+    top: calc(54px + env(safe-area-inset-top, 0px));
     right: 0;
     bottom: calc(var(--mobile-bottom-nav-height, 64px) + env(safe-area-inset-bottom));
     left: 0;
@@ -10271,7 +10271,13 @@ dd {
     left: 0;
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
-    max-height: min(calc(100dvh - 54px - var(--mobile-bottom-nav-height, 64px) - env(safe-area-inset-bottom)), 720px);
+    max-height: min(
+      calc(
+        100dvh - 54px - env(safe-area-inset-top, 0px) - var(--mobile-bottom-nav-height, 64px) -
+          env(safe-area-inset-bottom, 0px)
+      ),
+      720px
+    );
     min-height: min(54dvh, 520px);
     overflow: hidden;
     border: 1px solid rgba(122, 148, 172, 0.32);

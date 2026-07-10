@@ -31,6 +31,25 @@ describe("COP mobile report dialog layout", () => {
   });
 });
 
+describe("COP standalone iPhone safe areas", () => {
+  it("keeps the top bar below the status area and subtracts it from the map viewport", () => {
+    const mobileTopbar = cssBlocks(".shell.app-shell-v2 .topbar").find((block) =>
+      block.includes("env(safe-area-inset-top, 0px)")
+    );
+    const mobileBody = cssBlocks(".shell.app-shell-v2 .app-shell-body").find((block) =>
+      block.includes("height: calc(100dvh")
+    );
+    const mobileSheet = cssBlocks(".mobile-sheet-layer").find((block) =>
+      block.includes("env(safe-area-inset-top, 0px)")
+    );
+
+    expect(mobileTopbar).toContain("min-height: calc(54px + env(safe-area-inset-top, 0px))");
+    expect(mobileTopbar).toContain("padding: calc(6px + env(safe-area-inset-top, 0px)) 8px 6px");
+    expect(mobileBody).toContain("height: calc(100dvh - 54px - env(safe-area-inset-top, 0px))");
+    expect(mobileSheet).toContain("top: calc(54px + env(safe-area-inset-top, 0px))");
+  });
+});
+
 describe("COP mobile layer catalog layout", () => {
   it("normalizes iOS button rendering without clipping the active weather border", () => {
     const catalogButton = cssBlocks(".catalog-rail-button").find((block) => block.includes("appearance:"));
