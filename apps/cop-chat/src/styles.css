@@ -2624,6 +2624,9 @@ button {
   padding: 10px 12px;
   border-radius: 22px;
   background: #ffffff;
+  cursor: text;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .message-input > svg {
@@ -2649,6 +2652,9 @@ button {
   overflow-y: hidden;
   resize: none;
   scrollbar-width: thin;
+  touch-action: manipulation;
+  -webkit-user-select: text;
+  user-select: text;
   -webkit-text-size-adjust: 100%;
 }
 

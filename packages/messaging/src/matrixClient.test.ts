@@ -1027,7 +1027,7 @@ describe("Matrix client diagnostics", () => {
     expect(session.getTimeline("!chat:cop.local").map((message) => message.body)).toEqual(["recent"]);
   });
 
-  it("keeps undecrypted encrypted events visible in timeline and chat previews", async () => {
+  it("keeps undecrypted encrypted events pending until Matrix can decrypt them", async () => {
     const readable = createMessageEvent(
       "readable",
       Date.parse("2026-07-07T13:13:00.000Z"),
@@ -1044,16 +1044,34 @@ describe("Matrix client diagnostics", () => {
     const session = await createMatrixMessagingSession(createBootstrap());
 
     expect(session.getTimeline("!chat:cop.local").map((message) => [message.eventId, message.body])).toEqual([
-      ["$readable", "readable"],
-      ["$undecrypted", "Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy."]
+      ["$readable", "readable"]
     ]);
     expect(session.getRooms()[0]?.latestMessage).toMatchObject({
-      body: "Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy.",
-      eventId: "$undecrypted"
+      body: "readable",
+      eventId: "$readable"
     });
   });
 
-  it("suppresses undecrypted E2EE preflight artifacts adjacent to plaintext call signaling", async () => {
+  it("does not expose a synthetic Matrix decryption diagnostic as a sender message", async () => {
+    const diagnostic = createMessageEvent(
+      "** Unable to decrypt: DecryptionError: The sender's device has not sent us the keys for this message. **",
+      Date.parse("2026-07-10T13:51:00.000Z"),
+      "$diagnostic",
+      "@peer:cop.local"
+    );
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        rooms: [createRoom({ roomId: "!chat:cop.local", timeline: [diagnostic] })]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+
+    expect(session.getTimeline("!chat:cop.local")).toEqual([]);
+    expect(session.getRooms()[0]?.latestMessage).toBeUndefined();
+  });
+
+  it("keeps all undecrypted E2EE events out of messages and previews", async () => {
     const preflightAt = Date.parse("2026-07-10T13:09:15.000Z");
     const unrelated = createEncryptedEvent(preflightAt - 6_000, "$unrelated", "@peer:cop.local");
     const callPreflight = createEncryptedEvent(preflightAt, "$call-preflight", "@peer:cop.local");
@@ -1072,11 +1090,8 @@ describe("Matrix client diagnostics", () => {
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
-    expect(session.getTimeline("!chat:cop.local").map((message) => message.eventId)).toEqual([
-      "$unrelated",
-      "$other-sender"
-    ]);
-    expect(session.getRooms()[0]?.latestMessage?.eventId).toBe("$other-sender");
+    expect(session.getTimeline("!chat:cop.local")).toEqual([]);
+    expect(session.getRooms()[0]?.latestMessage).toBeUndefined();
   });
 
   it("maps decrypted encrypted events from Matrix clear content", async () => {

@@ -44,6 +44,16 @@ describe("cop-chat embedded mobile layout CSS", () => {
     expect(messageRowBlock).toContain("user-select: none");
     expect(messageRowBlock).toContain("touch-action: pan-y pinch-zoom");
   });
+
+  it("keeps the mobile composer directly focusable by iOS", () => {
+    const messageInputBlocks = cssBlocks(".message-input");
+    const textareaBlocks = cssBlocks(".message-input textarea");
+    expect(messageInputBlocks.some((block) => block.includes("touch-action: manipulation"))).toBe(true);
+    expect(textareaBlocks.some((block) => block.includes("touch-action: manipulation"))).toBe(true);
+    expect(textareaBlocks.some((block) => block.includes("-webkit-user-select: text"))).toBe(true);
+    expect(textareaBlocks.some((block) => block.includes("user-select: text"))).toBe(true);
+    expect(textareaBlocks.some((block) => block.includes("font-size: 16px"))).toBe(true);
+  });
 });
 
 function cssBlock(selector: string): string {

@@ -4663,7 +4663,7 @@ export function ChatApp() {
                     aiAgentAvailable={selectedAiAgentDirectChat || selectedGroupAiAssistantEnabled}
                     aiLocationActive={Boolean(aiContextLocation)}
                     aiLocationBusy={standaloneAiLocationBusy}
-                    disabled={!composerEnabled || sending}
+                    disabled={!composerEnabled}
                     embedded={embedded}
                     liveLocationActive={Boolean(liveLocationSession)}
                     pendingAttachment={pendingAttachment}
@@ -5397,7 +5397,7 @@ function HistoryLoader({ exhausted, loading, onLoad }: { exhausted: boolean; loa
   );
 }
 
-function Composer({
+export function Composer({
   aiAgentAvailable,
   aiLocationActive,
   aiLocationBusy,
@@ -5441,19 +5441,24 @@ function Composer({
   const [suggestionsDismissedFor, setSuggestionsDismissedFor] = React.useState<string | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const canSend = Boolean(text.trim() || pendingAttachment) && !disabled;
+  const canSubmit = canSend && !sending;
   const suggestions = composerSuggestions(text, aiAgentAvailable);
   const visibleSuggestions = suggestionsDismissedFor === text ? [] : suggestions;
   const quickActions = composerQuickActions(aiAgentAvailable);
   const submitDraft = async () => {
-    if (!canSend) {
+    if (!canSubmit) {
       return;
     }
-    const result = await onSend(text);
+    const submittedText = text;
+    const result = await onSend(submittedText);
     if (result !== false) {
-      setText("");
+      setText((current) => (current === submittedText ? "" : current));
       setSuggestionsDismissedFor(null);
     }
   };
+  const focusTextarea = React.useCallback(() => {
+    textareaRef.current?.focus();
+  }, []);
   const syncTextareaHeight = React.useCallback(() => {
     const textarea = textareaRef.current;
     if (!textarea) {
@@ -5520,7 +5525,7 @@ function Composer({
               onClick={() => {
                 setText(suggestion.value);
                 setSuggestionsDismissedFor(null);
-                window.setTimeout(() => textareaRef.current?.focus(), 0);
+                focusTextarea();
               }}
               role="option"
               type="button"
@@ -5545,7 +5550,7 @@ function Composer({
               onClick={() => {
                 setText(action.value);
                 setSuggestionsDismissedFor(null);
-                window.setTimeout(() => textareaRef.current?.focus(), 0);
+                focusTextarea();
               }}
               title={action.description}
               type="button"
@@ -5635,12 +5640,16 @@ function Composer({
         >
           <MapPin size={21} />
         </button>
-        <div className="message-input">
+        <div className="message-input" onClick={focusTextarea}>
           <Smile size={21} />
           <textarea
             ref={textareaRef}
             aria-label="Zpráva"
+            autoCapitalize="sentences"
+            autoComplete="off"
             disabled={disabled}
+            enterKeyHint="send"
+            inputMode="text"
             onChange={(event) => {
               setText(event.target.value);
               setSuggestionsDismissedFor(null);
@@ -5663,7 +5672,6 @@ function Composer({
                 event.preventDefault();
                 setText(visibleSuggestions[0]?.value ?? text);
                 setSuggestionsDismissedFor(null);
-                window.setTimeout(() => textareaRef.current?.focus(), 0);
                 return;
               }
               if (event.key === "Enter" && !event.shiftKey) {
@@ -5673,12 +5681,13 @@ function Composer({
             }}
             placeholder={disabled ? "Chat není připravený" : "Zpráva"}
             rows={1}
+            spellCheck
             value={text}
           />
         </div>
         <button
           className="send-button"
-          disabled={!canSend || sending}
+          disabled={!canSubmit}
           type="submit"
           aria-label={canSend ? "Odeslat" : "Hlasová zpráva"}
         >

@@ -145,10 +145,13 @@ recovery for the current `userId` + `deviceId` bootstrap. It must not broadly
 delete Matrix/crypto/Olm IndexedDB databases during normal logout or temporary
 anonymous/authenticating transitions. Messages sent before this browser device
 received room keys are recoverable only through Matrix E2EE recovery that the
-user controls. COP Chat therefore requires Matrix secret storage + key backup
-before sending new messages from the standalone chat app. The browser creates
-the recovery key locally, shows it to the user once, and uses it to unlock the
-Matrix key backup on additional devices.
+user controls. An active per-device Matrix crypto session can encrypt new
+messages even before that device unlocks account key backup, so recovery status
+must not disable the composer or prevent the mobile keyboard from opening. COP
+Chat keeps the recovery warning visible and strongly guides the user to create
+or restore Matrix secret storage + key backup. The browser creates the recovery
+key locally, shows it to the user once, and uses it to unlock the Matrix key
+backup on additional devices.
 
 The PWA requests browser persistent storage and stores the local recovery key
 preferentially as a sealed browser secret in IndexedDB: the value is encrypted
@@ -733,13 +736,15 @@ AI assistants follow the same boundary:
 - Proactive AI notices should be rendered as system situation cards with source
   evidence, not as hidden reads of encrypted conversations.
 
-For standalone `cop-chat`, composing is gated on active E2EE recovery. If the
-Matrix account has no key backup, the user must create and save a recovery key
-first. If a key backup exists but the current browser has not unlocked it, the
-user must enter the recovery key or intentionally start a new key cycle without
-old history. This prevents new messages from being stranded in one local browser
-crypto store. The reset action also rebuilds cross-signing metadata so iOS and
-other Matrix Rust SDK clients can import the new recovery material strictly.
+For standalone `cop-chat`, composing is gated on an authenticated, active Matrix
+crypto session and a selected room, not on active key backup. If the Matrix
+account has no key backup, or the current browser has not unlocked it, the UI
+keeps an explicit recovery warning while still allowing new E2EE messages. An
+encrypted room event that has not decrypted yet remains pending inside the
+Matrix SDK timeline and is not rendered as a sender-authored chat bubble or chat
+preview; `Event.decrypted` makes it visible once clear content is available. The
+reset action also rebuilds cross-signing metadata so iOS and other Matrix Rust
+SDK clients can import the new recovery material strictly.
 
 The browser may send:
 

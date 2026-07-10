@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { deriveChatWorkflowState, type ChatWorkflowInput } from "./hooks/chatWorkflowState";
 
 describe("chat workflow scenarios", () => {
-  it("keeps login blocked until Matrix session and E2EE recovery are ready", () => {
+  it("requires a Matrix session but keeps composing available while older E2EE keys need recovery", () => {
     const input: ChatWorkflowInput = {
       authenticated: true,
       chatAvailable: true,
@@ -27,7 +27,8 @@ describe("chat workflow scenarios", () => {
       matrixSessionActive: true
     });
     expect(recoveryMissing.needsRecovery).toBe(true);
-    expect(recoveryMissing.canSendMessage).toBe(false);
+    expect(recoveryMissing.composerEnabled).toBe(true);
+    expect(recoveryMissing.canSendMessage).toBe(true);
 
     const ready = deriveChatWorkflowState({
       ...input,

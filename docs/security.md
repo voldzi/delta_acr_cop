@@ -24,6 +24,13 @@ sync refresh. This plaintext cache stays on the user's device/browser origin and
 is not sent to COP API; Matrix access tokens, recovery keys and room keys remain
 out of logs, commits and server-side COP storage.
 
+Pending encrypted room events stay in the Matrix SDK timeline until decryption
+succeeds. They are excluded from message bubbles, chat previews and local
+readable-history storage so a crypto diagnostic is never attributed to a human
+sender. An active device crypto session may send new E2EE messages while key
+backup recovery is pending; the recovery warning remains visible because older
+history may still be unavailable.
+
 Voice-call rule: COP verifies the room-E2EE signaling path before a one-to-one
 call. If the peer cannot acknowledge that preflight, only that call's Matrix
 VoIP control events may use the authenticated HTTPS compatibility path described
