@@ -4,6 +4,19 @@ Tento dokument popisuje, co je potřeba pro samostatnou nativní aplikaci pro iP
 
 ## Rozsah první verze
 
+### Thin-host integrace nativního kompasu
+
+Webová mapa v COP Mobile používá při dostupném
+`window.__COP_DEVICE_NATIVE_TRANSPORT__` verzovaný Device API handshake a
+`heading.startUpdates`. Před startem čte `permissions.getStatus` pro
+`location`; systémové oprávnění žádá pouze po explicitním tapnutí na tlačítko
+„Buzola“. Event `heading.updated` má přednost před browserovým
+`DeviceOrientationEvent`, který zůstává fallbackem pro Safari/PWA mimo nativní
+host. Zavření fullscreen mapy nebo unmount mapy odešle `heading.stopUpdates`.
+
+Web nesmí stav `DeviceOrientationEvent.requestPermission() === "denied"` ve
+`WKWebView` vydávat za zamítnutí nativního Core Location headingu.
+
 První nativní verze má nahradit PWA na iPhone/iPad tam, kde je potřeba lepší offline UX, bezpečnější lokální úložiště, přesnější geolokace, příprava na MDM a napojení na push notifikace doručované přes CSM Messaging.
 
 Součástí v1:

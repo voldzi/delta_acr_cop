@@ -57,6 +57,7 @@ import {
 } from "./cop-data";
 import type { UserLocation } from "./proximity-alerts";
 import { useDocumentVisible } from "./use-document-visibility";
+import { nativeCompassAvailable, NativeDeviceBridgeError, startNativeHeading } from "./cop-device-native";
 import type { ChatLiveLocationPayload } from "@cop/messaging/bridge";
 import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
 import {
@@ -1064,6 +1065,7 @@ function CopMapComponent({
   const lastFitSignatureRef = React.useRef("");
   const handledFocusViewRequestRef = React.useRef(0);
   const resizeObserverRef = React.useRef<ResizeObserver | null>(null);
+  const nativeHeadingStopRef = React.useRef<(() => void) | null>(null);
   const [mapReady, setMapReady] = React.useState(false);
   const [mapTilesReady, setMapTilesReady] = React.useState(false);
   const [mapError, setMapError] = React.useState<string | null>(null);
@@ -1088,6 +1090,14 @@ function CopMapComponent({
   const [zoneDraftPoints, setZoneDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
   const [sketchDraftPoints, setSketchDraftPoints] = React.useState<Array<{ lat: number; lon: number }>>([]);
   const [selectedSharedLiveLocationId, setSelectedSharedLiveLocationId] = React.useState<string | null>(null);
+
+  React.useEffect(
+    () => () => {
+      nativeHeadingStopRef.current?.();
+      nativeHeadingStopRef.current = null;
+    },
+    []
+  );
   const [selectedEmergencyRouteInfo, setSelectedEmergencyRouteInfo] =
     React.useState<EmergencyRouteSelectionInfo | null>(null);
   const [selectedSketchVertexIndex, setSelectedSketchVertexIndex] = React.useState<number | null>(null);
@@ -5181,10 +5191,12 @@ function CopMapComponent({
 
   React.useEffect(() => {
     if (!mapFullscreen) {
+      nativeHeadingStopRef.current?.();
+      nativeHeadingStopRef.current = null;
       setCompassExpanded(false);
       return undefined;
     }
-    if (deviceCompass.status === "unsupported" || deviceCompass.status === "denied") {
+    if (nativeCompassAvailable() || deviceCompass.status === "unsupported" || deviceCompass.status === "denied") {
       return undefined;
     }
     const handleOrientation = (event: DeviceOrientationEvent) => {
@@ -5218,6 +5230,30 @@ function CopMapComponent({
   }, [mapInteractionSuspended, mapReady]);
 
   async function requestCompassSensor() {
+    if (nativeCompassAvailable()) {
+      nativeHeadingStopRef.current?.();
+      nativeHeadingStopRef.current = null;
+      setDeviceCompass({ message: "Čekám na data z nativního kompasu.", status: "active" });
+      try {
+        nativeHeadingStopRef.current = await startNativeHeading((sample) => {
+          const headingDeg = sample.trueHeadingDeg ?? sample.magneticHeadingDeg;
+          setDeviceCompass({
+            headingDeg,
+            message: sample.valid
+              ? `Nativní heading ±${Math.round(sample.accuracyDeg)}°.`
+              : "Kompas vyžaduje kalibraci.",
+            status: "active"
+          });
+        });
+      } catch (error) {
+        const denied = error instanceof NativeDeviceBridgeError && error.code.startsWith("PERMISSION_");
+        setDeviceCompass({
+          message: error instanceof Error ? error.message : "Nativní kompas není dostupný.",
+          status: denied ? "denied" : "unsupported"
+        });
+      }
+      return;
+    }
     const permission = await requestDeviceOrientationPermission();
     if (permission === "unsupported") {
       setDeviceCompass({ message: "Prohlížeč neposkytuje orientační senzor.", status: "unsupported" });
@@ -6585,6 +6621,9 @@ function FullscreenCompassWidget({
 }
 
 function initialDeviceCompassState(): DeviceCompassState {
+  if (nativeCompassAvailable()) {
+    return { message: "Nativní buzolu lze aktivovat po tapnutí.", status: "idle" };
+  }
   if (typeof window === "undefined" || !("DeviceOrientationEvent" in window)) {
     return { message: "Prohlížeč neposkytuje orientační senzor.", status: "unsupported" };
   }
