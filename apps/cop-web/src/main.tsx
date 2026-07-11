@@ -14195,8 +14195,9 @@ function WebPushSettingsPanel({
   state: WebPushUiState;
 }) {
   const nativeNotifications = nativeCompassAvailable();
-  const canEnable =
-    authenticated && state.enabled && state.status !== "unsupported" && state.status !== "permission-denied";
+  const canEnable = notificationEnableAvailable(authenticated, nativeNotifications, state);
+  const nativeRegistrationPending = nativeNotifications && !state.registered;
+  const visibleWarnings = nativeNotifications && state.status === "unsupported" ? [] : state.warnings;
   const buttonLabel = state.registered
     ? nativeNotifications
       ? "Nativní oznámení jsou aktivní"
@@ -14216,10 +14217,18 @@ function WebPushSettingsPanel({
           ? "Aplikace může přijímat výstrahy, zprávy a příchozí hovory přes APNs. Doručení zajišťuje CSM Messaging."
           : "Prohlížeč může přijímat výstrahy a zprávy i mimo otevřené okno aplikace. COP registruje jen tento prohlížeč; doručení zajišťuje CSM Messaging."}
       </p>
-      <ReadinessRow label="Stav" value={webPushStatusLabel(state)} tone={webPushStatusTone(state)} />
       <ReadinessRow
-        label="Oprávnění prohlížeče"
-        value={webPushPermissionLabel(state.permission)}
+        label="Stav"
+        value={nativeRegistrationPending ? "čeká na aktivaci" : webPushStatusLabel(state)}
+        tone={webPushStatusTone(state)}
+      />
+      <ReadinessRow
+        label={nativeNotifications ? "Oprávnění iOS" : "Oprávnění prohlížeče"}
+        value={
+          nativeRegistrationPending && state.permission === "unsupported"
+            ? "čeká na povolení"
+            : webPushPermissionLabel(state.permission)
+        }
         tone={state.permission === "granted" ? "ok" : state.permission === "denied" ? "warn" : "neutral"}
       />
       <ReadinessRow
@@ -14259,9 +14268,12 @@ function WebPushSettingsPanel({
         />
       ) : null}
       {!authenticated ? (
-        <div className="empty-mini">Webové notifikace vyžadují přihlášení. Mapa zůstává dostupná i bez účtu.</div>
+        <div className="empty-mini">
+          {nativeNotifications ? "Oznámení aplikace" : "Webové notifikace"} vyžadují přihlášení. Mapa zůstává dostupná i
+          bez účtu.
+        </div>
       ) : null}
-      {state.warnings.length > 0 ? <div className="empty-mini">{state.warnings.slice(0, 2).join(" ")}</div> : null}
+      {visibleWarnings.length > 0 ? <div className="empty-mini">{visibleWarnings.slice(0, 2).join(" ")}</div> : null}
       <div className="settings-button-row">
         <button
           className={state.registered ? "primary-button secondary" : "primary-button"}
@@ -14275,6 +14287,16 @@ function WebPushSettingsPanel({
       </div>
     </div>
   );
+}
+
+export function notificationEnableAvailable(
+  authenticated: boolean,
+  nativeNotifications: boolean,
+  state: WebPushUiState
+): boolean {
+  if (!authenticated) return false;
+  if (nativeNotifications) return true;
+  return state.enabled && state.status !== "unsupported" && state.status !== "permission-denied";
 }
 
 function MobileDevicePairingPanel({

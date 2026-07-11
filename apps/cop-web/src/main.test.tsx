@@ -23,6 +23,7 @@ import {
   hostUsableChatSummary,
   hostVisibleChatVoiceCall,
   mapBoundsContainedBy,
+  notificationEnableAvailable,
   pwaVoiceCallUpdateFromServiceWorkerMessage
 } from "./main";
 import { writeCopOfflineSnapshot } from "./pwa-offline";
@@ -342,6 +343,21 @@ afterEach(() => {
 });
 
 describe("COP web dashboard", () => {
+  it("allows native APNs activation when WKWebView does not support browser push", () => {
+    const unsupportedWebPush = {
+      enabled: false,
+      permission: "unsupported" as const,
+      registered: false,
+      standalone: true,
+      status: "unsupported" as const,
+      warnings: ["Tento prohlížeč nepodporuje webové push notifikace."]
+    };
+
+    expect(notificationEnableAvailable(true, true, unsupportedWebPush)).toBe(true);
+    expect(notificationEnableAvailable(true, false, unsupportedWebPush)).toBe(false);
+    expect(notificationEnableAvailable(false, true, unsupportedWebPush)).toBe(false);
+  });
+
   it("chooses the strongest unread chat room from a summary snapshot", () => {
     expect(
       firstUnreadChatSummaryRoom({
