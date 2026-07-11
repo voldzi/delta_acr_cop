@@ -319,7 +319,11 @@ export async function createMatrixMessagingSession(
   }
 
   let inviteJoinInFlight: Promise<void> | null = null;
+  // Until the first membership lookup finishes, expose no cached rooms.
+  // IndexedDB can legitimately retain rooms that the user has already left.
   let joinedRoomIds: Set<string> | null = null;
+  let joinedRoomIdsChecked = false;
+  const noJoinedRooms = new Set<string>();
   let presenceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   const roomPresenceByUserId = new Map<string, MatrixUserPresenceLike & { fetchedAt: number }>();
   const profileLookupAttemptByUserId = new Map<string, number>();
@@ -340,6 +344,7 @@ export async function createMatrixMessagingSession(
       joinedRoomIds
     );
     joinedRoomIds = refreshedRoomIds;
+    joinedRoomIdsChecked = true;
     if (refreshedRoomIds) {
       for (const cachedRoomId of timelineByRoomId.keys()) {
         if (!refreshedRoomIds.has(cachedRoomId)) {
@@ -350,7 +355,7 @@ export async function createMatrixMessagingSession(
   };
   const readVisibleRooms = () =>
     readRooms(client, {
-      allowedRoomIds: joinedRoomIds,
+      allowedRoomIds: joinedRoomIdsChecked ? joinedRoomIds : noJoinedRooms,
       homeserverBaseUrl,
       ownUserId: activeBootstrap.userId,
       presenceByUserId: roomPresenceByUserId,
@@ -735,7 +740,7 @@ export async function createMatrixMessagingSession(
   const syncListener = (state: unknown) => {
     invalidateTimeline();
     callbacks.onSyncState?.(typeof state === "string" ? state : "sync");
-    scheduleNotify({ rooms: true, timeline: true });
+    void refreshJoinedRoomIds().finally(() => scheduleNotify({ rooms: true, timeline: true }));
     schedulePresenceRefresh();
   };
   const timelineListener = (eventValue?: unknown, roomValue?: unknown) => {
@@ -753,7 +758,9 @@ export async function createMatrixMessagingSession(
   const membershipListener = () => {
     invalidateTimeline();
     presenceListener();
-    void joinInvitedRooms().then(() => scheduleNotify({ rooms: true, timeline: true }));
+    void joinInvitedRooms()
+      .then(refreshJoinedRoomIds)
+      .finally(() => scheduleNotify({ rooms: true, timeline: true }));
   };
   client.on?.("sync", syncListener);
   client.on?.("Room.timeline", timelineListener);

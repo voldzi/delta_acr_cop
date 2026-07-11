@@ -604,6 +604,84 @@ describe("aiMatrixBotInvitePlan", () => {
 });
 
 describe("buildChatItems", () => {
+  const communityGroup = (
+    status: "active" | "left" | "pending" | undefined,
+    overrides: Partial<CommunityGroup> = {}
+  ): CommunityGroup => ({
+    createdAt: "2026-07-11T08:00:00.000Z",
+    createdBy: { displayName: "Owner", subjectId: "owner-1", username: "owner" },
+    groupId: "group-vodvaz",
+    members: [
+      {
+        displayName: "Owner",
+        requestedAt: "2026-07-11T07:00:00.000Z",
+        role: "owner",
+        status: "active",
+        subjectId: "owner-1",
+        username: "owner"
+      },
+      ...(status ? [{
+        displayName: "COP Operator",
+        requestedAt: "2026-07-11T08:00:00.000Z",
+        role: "member" as const,
+        status,
+        subjectId: "operator-1",
+        username: "cop.operator"
+      }] : [])
+    ],
+    name: "VODVAZ",
+    updatedAt: "2026-07-11T08:00:00.000Z",
+    visibility: "public",
+    ...overrides
+  });
+
+  it("does not turn public, pending or former group membership into a chat", () => {
+    for (const status of [undefined, "pending", "left"] as const) {
+      const group = communityGroup(status, {
+        metadata: { chat: { matrixRoomId: "!vodvaz:example.cz" } }
+      });
+      const items = buildChatItems({
+        authSubjectId: "operator-1",
+        conversations: [],
+        filter: "all",
+        groups: [group],
+        ownIdentityIds: new Set(["operator-1"]),
+        query: "",
+        rooms: [
+          {
+            encrypted: true,
+            name: "VODVAZ",
+            roomId: "!vodvaz:example.cz",
+            unreadCount: 0
+          } as MatrixRoomSummary
+        ],
+        selectedConversationId: null,
+        selectedGroupId: null,
+        selectedRoomId: null
+      });
+
+      expect(items, status).toEqual([]);
+    }
+  });
+
+  it("shows a community group chat only to an active member", () => {
+    const items = buildChatItems({
+      authSubjectId: "operator-1",
+      conversations: [],
+      filter: "all",
+      groups: [communityGroup("active")],
+      ownIdentityIds: new Set(["operator-1"]),
+      query: "",
+      rooms: [],
+      selectedConversationId: null,
+      selectedGroupId: null,
+      selectedRoomId: null
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe("VODVAZ");
+  });
+
   it("marks the dedicated AI direct chat with the AI avatar variant", () => {
     const conversation = {
       conversationId: "c-ai",

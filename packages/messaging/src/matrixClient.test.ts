@@ -1312,6 +1312,24 @@ describe("Matrix client diagnostics", () => {
     expect(session.getRooms().map((room) => room.roomId)).toEqual(["!active:cop.local"]);
   });
 
+  it("publishes no cached rooms before the first homeserver membership check", async () => {
+    const onRoomsChanged = vi.fn();
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!active:cop.local"] }),
+        rooms: [createRoom({ roomId: "!active:cop.local" }), createRoom({ roomId: "!stale:cop.local" })]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap(), { onRoomsChanged });
+
+    expect(onRoomsChanged.mock.calls[0]?.[0]).toEqual([]);
+    expect(onRoomsChanged.mock.calls.at(-1)?.[0]?.map((room: { roomId: string }) => room.roomId)).toEqual([
+      "!active:cop.local"
+    ]);
+    session.stop();
+  });
+
   it("reads a room preview from the timeline tail without walking old history", async () => {
     const events = Array.from({ length: 2_000 }, (_, index) =>
       createMessageEvent(`message-${index}`, Date.parse("2026-06-24T10:00:00.000Z") + index * 1_000)

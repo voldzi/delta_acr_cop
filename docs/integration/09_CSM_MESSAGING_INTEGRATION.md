@@ -630,6 +630,12 @@ The phase-0 implementation focus is trust and control:
 - Adding members belongs in the group member surface and must respect COP group
   management permissions. COP group membership remains the source of truth for
   COP media/report ACL; Matrix membership is only the messaging projection.
+- The chat list contains a linked community group only when the authenticated
+  COP subject has an `active` membership. Public groups remain discoverable in
+  the community catalog and `pending` requests remain visible there, but neither
+  state creates a chat row. Until Matrix confirms current joined-room IDs, the
+  client exposes no IndexedDB-cached rooms; a room left on another device must
+  not flash into the list during initial synchronization.
 - Managers remove a group member through
   `DELETE /api/v1/community/groups/{groupId}/members/{subjectId}`. The removed
   member is marked `left`; only active COP members are forwarded to CSM

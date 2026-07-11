@@ -7389,6 +7389,18 @@ export function buildChatItems({
   const byRoomId = new Map<string, string>();
   const byGroupId = new Map<string, string>();
   const byTitleAndType = new Map<string, string>();
+  const activeGroups = groups.filter((group) => groupHasActiveMember(group, authSubjectId));
+  const inactiveGroupRoomIds = new Set(
+    groups
+      .filter((group) => !groupHasActiveMember(group, authSubjectId))
+      .map(communityGroupMatrixRoomId)
+      .filter((roomId): roomId is string => Boolean(roomId))
+  );
+  const inactiveGroupTitleKeys = new Set(
+    groups
+      .filter((group) => !groupHasActiveMember(group, authSubjectId))
+      .map((group) => titleTypeKey(group.name, "group"))
+  );
 
   const remember = (item: ChatListItem) => {
     items.set(item.id, item);
@@ -7407,6 +7419,9 @@ export function buildChatItems({
 
   conversations.forEach((conversation) => {
     const group = groupForConversation(conversation, groups);
+    if (group && !groupHasActiveMember(group, authSubjectId)) {
+      return;
+    }
     const groupId = conversationCommunityGroupId(conversation) ?? group?.groupId;
     const roomId = conversation.matrix?.roomId ?? (group ? communityGroupMatrixRoomId(group) : undefined);
     const room = roomId ? rooms.find((item) => item.roomId === roomId) : undefined;
@@ -7458,7 +7473,7 @@ export function buildChatItems({
     });
   });
 
-  groups.forEach((group) => {
+  activeGroups.forEach((group) => {
     const groupKey = byGroupId.get(group.groupId);
     if (groupKey) {
       const current = items.get(groupKey);
@@ -7524,6 +7539,12 @@ export function buildChatItems({
   rooms.forEach((room) => {
     const roomKey = byRoomId.get(room.roomId);
     if (roomKey) {
+      return;
+    }
+    if (
+      inactiveGroupRoomIds.has(room.roomId) ||
+      (!room.directPeer && inactiveGroupTitleKeys.has(titleTypeKey(room.name, "group")))
+    ) {
       return;
     }
     const latest = room.latestMessage;
