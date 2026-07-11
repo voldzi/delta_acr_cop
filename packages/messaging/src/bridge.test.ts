@@ -329,6 +329,9 @@ describe("voice-call-command (web -> chat)", () => {
       type: "cop-chat:voice-call-command"
     });
     expect(decodeChatVoiceCallCommand(payload)).toEqual(payload);
+    expect(
+      decodeChatVoiceCallCommand({ ...payload, action: "hangup" })
+    ).toEqual({ ...payload, action: "hangup" });
   });
 
   it("rejects malformed host voice-call commands", () => {

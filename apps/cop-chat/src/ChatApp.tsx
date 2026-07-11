@@ -1758,6 +1758,8 @@ export function ChatApp() {
             void answerVoiceCall(currentCall);
           } else if (voiceCallCommand.action === "reject") {
             void rejectVoiceCall(currentCall);
+          } else if (voiceCallCommand.action === "hangup") {
+            void hangupVoiceCall(currentCall);
           }
         }
         return;

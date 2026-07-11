@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from "vitest";
-import { nativeCompassAvailable, startNativeHeading } from "./cop-device-native";
+import { nativeCompassAvailable, startNativeHeading, subscribeNativeCallActions } from "./cop-device-native";
 
 describe("native COP device heading adapter", () => {
   it("handshakes, checks permission and forwards native heading events", async () => {
@@ -52,6 +52,22 @@ describe("native COP device heading adapter", () => {
     expect(nativeCompassAvailable()).toBe(true);
     expect(methods).toEqual(["permissions.getStatus", "heading.startUpdates"]);
     expect(heading).toHaveBeenCalledWith(expect.objectContaining({ trueHeadingDeg: 184 }));
+
+    const callAction = vi.fn();
+    const stopCalls = await subscribeNativeCallActions(callAction);
+    listeners.forEach((listener) =>
+      listener({
+        kind: "event",
+        payload: { callId: "call-1", roomId: "!ops:example.cz" },
+        type: "calls.answerRequested"
+      })
+    );
+    expect(callAction).toHaveBeenCalledWith({
+      action: "answer",
+      callId: "call-1",
+      roomId: "!ops:example.cz"
+    });
+    stopCalls();
     stop();
   });
 });

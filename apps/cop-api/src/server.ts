@@ -4149,9 +4149,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const recipientUserIds = Array.from(
         new Set(
-          (conversation.members ?? [])
-            .map((member) => member.userId)
-            .filter((userId) => userId && userId !== actor.subjectId)
+          (conversation.members ?? []).map((member) => member.userId).filter((userId) => {
+            if (!userId) return false;
+            return wake.action === "ended" || userId !== actor.subjectId;
+          })
         )
       );
       if (recipientUserIds.length === 0) {

@@ -432,6 +432,17 @@ only `callId`, `roomId`, sender presentation, notification tag and TTL to CSM
 Messaging. The endpoint rejects SDP, ICE candidates and arbitrary signalling
 metadata. `action=ended` closes the matching visible call notification.
 
+COP Mobile additionally registers a separate PushKit token directly with CSM
+Messaging through the existing one-time device ticket. For a device carrying
+that token, incoming and ended wake events use the bundle `.voip` APNs topic and
+CallKit; every other notification remains a normal APNs alert. CallKit answer,
+reject and end actions cross the exact-origin Device Bridge and reuse the
+host-to-chat voice command contract. Matrix remains the only signalling/media
+owner, and neither VoIP push nor native code receives SDP, ICE candidates,
+Matrix credentials or decrypted content. `action=ended` includes the sender's
+own registered devices so a locally answered CallKit surface is closed when the
+web call ends.
+
 When a registered browser device opens COP Chat, the Matrix client also registers
 an HTTP pusher:
 

@@ -64,7 +64,7 @@ export interface ChatVoiceCallMessage {
   type: typeof chatBridgeMessageTypes.voiceCall;
 }
 
-export type ChatVoiceCallCommandAction = "answer" | "open" | "reject";
+export type ChatVoiceCallCommandAction = "answer" | "hangup" | "open" | "reject";
 
 export interface ChatVoiceCallCommandMessage {
   action: ChatVoiceCallCommandAction;
@@ -712,7 +712,7 @@ function normalizeChatVoiceCallCommand(value: unknown): ChatVoiceCallCommandMess
 }
 
 function normalizeVoiceCallCommandAction(value: unknown): ChatVoiceCallCommandAction | undefined {
-  return value === "answer" || value === "open" || value === "reject" ? value : undefined;
+  return value === "answer" || value === "hangup" || value === "open" || value === "reject" ? value : undefined;
 }
 
 function normalizeCenterZoom(value: unknown): number | undefined {

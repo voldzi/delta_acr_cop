@@ -422,7 +422,12 @@ import {
 } from "./web-push";
 import { collectTrackIdentityTokens, formatTrackLabel } from "./track-label";
 import { useDocumentVisible } from "./use-document-visibility";
-import { enableNativeRemoteNotifications, nativeCompassAvailable } from "./cop-device-native";
+import {
+  enableNativeRemoteNotifications,
+  nativeCompassAvailable,
+  refreshNativeRemoteNotificationRegistration,
+  subscribeNativeCallActions
+} from "./cop-device-native";
 import "./styles.css";
 
 export { formatWeatherStationAttribution } from "./weather-detail";
@@ -1492,6 +1497,31 @@ export function App() {
 
   React.useEffect(() => installHapticInteractionFeedback(), []);
 
+  React.useEffect(() => {
+    if (!nativeCompassAvailable()) return undefined;
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    void subscribeNativeCallActions((action) => {
+      if (cancelled) return;
+      messagingSelectionNonceRef.current += 1;
+      messagingVoiceCallCommandNonceRef.current += 1;
+      setMessagingSelection({ id: action.roomId, nonce: messagingSelectionNonceRef.current });
+      setMessagingVoiceCallCommand({ ...action, nonce: messagingVoiceCallCommandNonceRef.current });
+      setMessagingFrameMounted(true);
+      setMessagingOpen(true);
+      setMessagingPinned(true);
+    })
+      .then((stop) => {
+        if (cancelled) stop();
+        else unsubscribe = stop;
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
+
   const [incidentTaskDraft, setIncidentTaskDraft] = React.useState("");
   const [incidentWorkflowLoading, setIncidentWorkflowLoading] = React.useState(false);
   const [incidentWorkflowError, setIncidentWorkflowError] = React.useState<string | null>(null);
@@ -1512,12 +1542,38 @@ export function App() {
   const authSessionRef = React.useRef(authSession);
   const authToken = getAuthorizationToken(authSession, labToken);
   const authenticatedSessionActive = isAuthSessionActive(authSession);
+  const nativePushRefreshKeyRef = React.useRef<string | null>(null);
   const authSessionRetainedForOffline = isAuthSessionRetainedForOffline(authSession);
   const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken) || authSessionRetainedForOffline;
   const profileAccessReady = Boolean(authToken);
   const [mobilePairCodeFromPath, setMobilePairCodeFromPath] = React.useState(readMobilePairCodeFromLocation);
   const authSubjectId = subjectIdFromAuthSession(authSession);
   const messagingRuntimeEnabled = Boolean(authToken);
+
+  React.useEffect(() => {
+    if (!authenticatedSessionActive || !authToken || !nativeCompassAvailable()) return;
+    const key = `${authSession.profile?.subjectId ?? authSession.profile?.username ?? "native"}:${authToken.slice(-12)}`;
+    if (nativePushRefreshKeyRef.current === key) return;
+    nativePushRefreshKeyRef.current = key;
+    void refreshNativeRemoteNotificationRegistration(apiBase, authToken)
+      .then((registration) => {
+        if (!registration) return;
+        setWebPushState((current) => ({
+          ...current,
+          deviceId: registration.deviceId,
+          enabled: true,
+          permission: "granted",
+          registered: true,
+          registrationConfirmedAt: new Date().toISOString(),
+          standalone: true,
+          status: "registered",
+          warnings: []
+        }));
+      })
+      .catch(() => {
+        nativePushRefreshKeyRef.current = null;
+      });
+  }, [authToken, authenticatedSessionActive, authSession.profile?.subjectId, authSession.profile?.username]);
 
   React.useEffect(() => {
     if (!pendingChatReportDraft) {

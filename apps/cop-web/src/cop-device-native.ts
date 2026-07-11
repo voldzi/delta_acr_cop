@@ -24,6 +24,12 @@ export interface NativeHeadingSample {
   valid: boolean;
 }
 
+export interface NativeCallAction {
+  action: "answer" | "hangup" | "reject";
+  callId: string;
+  roomId: string;
+}
+
 export class NativeDeviceBridgeError extends Error {
   constructor(
     message: string,
@@ -76,14 +82,26 @@ class NativeDeviceClient {
 
   async enableRemoteNotifications(apiBase: string, authToken: string): Promise<{ deviceId: string }> {
     await this.ready();
-    const context = await this.request("notifications.getRegistrationContext", {});
-    if (!isRecord(context) || typeof context.appInstanceId !== "string" || typeof context.bundleId !== "string") {
-      throw new NativeDeviceBridgeError("Nativní registrační kontext je neplatný.", "INVALID_STATE");
-    }
     const permission = await this.request("notifications.requestAuthorization", {});
     const authorization = isRecord(permission) ? permission.authorization : undefined;
     if (!isGrantedNotificationAuthorization(authorization)) {
       throw new NativeDeviceBridgeError("Oznámení jsou v systému zamítnutá.", "PERMISSION_DENIED");
+    }
+    return this.registerRemoteNotifications(apiBase, authToken);
+  }
+
+  async refreshRemoteNotifications(apiBase: string, authToken: string): Promise<{ deviceId: string } | null> {
+    await this.ready();
+    const status = await this.request("notifications.getStatus", {});
+    const authorization = isRecord(status) ? status.authorization : undefined;
+    if (!isGrantedNotificationAuthorization(authorization)) return null;
+    return this.registerRemoteNotifications(apiBase, authToken);
+  }
+
+  private async registerRemoteNotifications(apiBase: string, authToken: string): Promise<{ deviceId: string }> {
+    const context = await this.request("notifications.getRegistrationContext", {});
+    if (!isRecord(context) || typeof context.appInstanceId !== "string" || typeof context.bundleId !== "string") {
+      throw new NativeDeviceBridgeError("Nativní registrační kontext je neplatný.", "INVALID_STATE");
     }
     const response = await fetch(`${apiBase}/api/v1/mobile/device-registration-tickets`, {
       body: JSON.stringify({ appInstanceId: context.appInstanceId, bundleId: context.bundleId }),
@@ -105,6 +123,21 @@ class NativeDeviceClient {
       throw new NativeDeviceBridgeError("CSM Messaging registraci nepotvrdil.", "TRANSPORT_UNAVAILABLE");
     }
     return { deviceId: registration.deviceId };
+  }
+
+  async subscribeCallActions(listener: (action: NativeCallAction) => void): Promise<() => void> {
+    const eventListener = (message: NativeBridgeMessage) => {
+      const action = nativeCallAction(message);
+      if (action) listener(action);
+    };
+    this.eventListeners.add(eventListener);
+    try {
+      await this.ready();
+    } catch (error) {
+      this.eventListeners.delete(eventListener);
+      throw error;
+    }
+    return () => this.eventListeners.delete(eventListener);
   }
 
   private ready(): Promise<void> {
@@ -222,6 +255,43 @@ export async function enableNativeRemoteNotifications(
   if (!transport) throw new NativeDeviceBridgeError("Nativní bridge není dostupný.", "UNSUPPORTED");
   client ??= new NativeDeviceClient(transport);
   return client.enableRemoteNotifications(apiBase, authToken);
+}
+
+export async function refreshNativeRemoteNotificationRegistration(
+  apiBase: string,
+  authToken: string
+): Promise<{ deviceId: string } | null> {
+  const transport =
+    typeof window === "undefined" ? undefined : (window as NativeWindow).__COP_DEVICE_NATIVE_TRANSPORT__;
+  if (!transport) return null;
+  client ??= new NativeDeviceClient(transport);
+  return client.refreshRemoteNotifications(apiBase, authToken);
+}
+
+export async function subscribeNativeCallActions(
+  listener: (action: NativeCallAction) => void
+): Promise<() => void> {
+  const transport =
+    typeof window === "undefined" ? undefined : (window as NativeWindow).__COP_DEVICE_NATIVE_TRANSPORT__;
+  if (!transport) throw new NativeDeviceBridgeError("Nativní bridge není dostupný.", "UNSUPPORTED");
+  client ??= new NativeDeviceClient(transport);
+  return client.subscribeCallActions(listener);
+}
+
+function nativeCallAction(message: NativeBridgeMessage): NativeCallAction | null {
+  if (message.kind !== "event" || !isRecord(message.payload)) return null;
+  const type = message.type;
+  const action =
+    type === "calls.answerRequested"
+      ? "answer"
+      : type === "calls.rejectRequested"
+        ? "reject"
+        : type === "calls.endRequested"
+          ? "hangup"
+          : null;
+  const callId = message.payload.callId;
+  const roomId = message.payload.roomId;
+  return action && typeof callId === "string" && typeof roomId === "string" ? { action, callId, roomId } : null;
 }
 
 function permissionStatus(value: unknown): string {
