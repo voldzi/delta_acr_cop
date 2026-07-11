@@ -200,8 +200,10 @@ storage records. Recovery keys shown in screenshots or otherwise exposed to a
 human support channel are treated as compromised and must be replaced through
 this reset flow before enrolling additional devices.
 
-One-to-one voice calls are client-side Matrix VoIP/WebRTC calls between direct
-rooms. COP Chat may offer audio call controls after Matrix bootstrap and E2EE
+Voice calls are client-side Matrix VoIP/WebRTC calls. Direct rooms retain the
+one-to-one path; group rooms use the Matrix SDK encrypted `GroupCall` peer mesh
+with a six-participant limit. COP Chat may offer audio call controls after
+Matrix bootstrap and E2EE
 recovery are ready, but COP API still must not proxy call media, SDP payloads or
 plaintext chat content. Browsers require microphone permission, WebRTC support
 and reachable ICE/TURN infrastructure from the Matrix deployment. COP appends
@@ -427,6 +429,12 @@ Content-Type: application/json
 {"action":"invite","callId":"<matrixCallId>","roomId":"<matrixRoomId>"}
 ```
 
+To add people to an existing group call, the same request may include
+`"participantUserIds":["<matrixUserId>"]`. The subset is allowed only for an
+invite, contains at most five unique users and is validated server-side against
+the active members of the accessible conversation. The authenticated caller
+cannot target itself or an identity outside the room.
+
 COP resolves the bound conversation and recipients server-side and forwards
 only `callId`, `roomId`, sender presentation, notification tag and TTL to CSM
 Messaging. The endpoint rejects SDP, ICE candidates and arbitrary signalling
@@ -436,7 +444,7 @@ COP Mobile additionally registers a separate PushKit token directly with CSM
 Messaging through the existing one-time device ticket. For a device carrying
 that token, incoming and ended wake events use the bundle `.voip` APNs topic and
 CallKit; every other notification remains a normal APNs alert. CallKit answer,
-reject and end actions cross the exact-origin Device Bridge and reuse the
+reject, end, group-start and add-participant actions cross the exact-origin Device Bridge and reuse the
 host-to-chat voice command contract. A native action carries a stable
 `actionId`; COP Chat keeps it pending until the matching Matrix call exists,
 deduplicates retries and returns a success/failure acknowledgement only after
@@ -450,6 +458,11 @@ owner, and neither VoIP push nor native code receives SDP, ICE candidates,
 Matrix credentials or decrypted content. `action=ended` includes the sender's
 own registered devices so a locally answered CallKit surface is closed when the
 web call ends.
+
+For a group call the bridge additionally carries only the bounded participant
+presentation (`userId`, display name and connected flag). Matrix room
+membership remains authoritative, and the web runtime revalidates every native
+selection before requesting a targeted wake. See ADR-0016.
 
 When a registered browser device opens COP Chat, the Matrix client also registers
 an HTTP pusher:

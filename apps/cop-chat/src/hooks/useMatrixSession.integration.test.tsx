@@ -181,6 +181,7 @@ function sessionStub(): MatrixMessagingSession {
     getVoiceCall: vi.fn(() => null),
     hangupVoiceCall: vi.fn(),
     inviteUsersToRoom: vi.fn(),
+    inviteVoiceCallParticipants: vi.fn(),
     joinInvitedRooms: vi.fn(),
     leaveRoom: vi.fn(),
     loadMoreTimeline: vi.fn(),

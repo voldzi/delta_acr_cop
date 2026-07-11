@@ -43,6 +43,13 @@ pretending the call state changed.
 The native host also invalidates and reloads the web media owner on that failure,
 so an unacknowledged command cannot leave a hidden microphone track running.
 
+Group-call start and add-participant commands follow the same metadata-only
+bridge rule. COP API accepts at most five unique targeted recipients, verifies
+that each is an active member of the actor's accessible Matrix conversation and
+rejects the actor or any outside identity. The encrypted Matrix peer mesh is
+limited to six participants; no SDP, ICE candidate, media stream, Matrix token
+or room key is carried in the native presentation contract. See ADR-0016.
+
 Matrix credential renewal for the same user and device updates only the active
 client access token. It does not recreate or clear the Rust crypto store. Full
 session replacement is generation-guarded and limited to identity/device change,

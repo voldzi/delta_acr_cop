@@ -4147,14 +4147,27 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
-      const recipientUserIds = Array.from(
-        new Set(
-          (conversation.members ?? []).map((member) => member.userId).filter((userId) => {
-            if (!userId) return false;
-            return wake.action === "ended" || userId !== actor.subjectId;
-          })
-        )
+      const conversationMemberUserIds = new Set(
+        (conversation.members ?? [])
+          .map((member) => member.userId)
+          .filter((userId): userId is string => Boolean(userId))
       );
+      if (
+        wake.participantUserIds?.some((userId) => userId === actor.subjectId || !conversationMemberUserIds.has(userId))
+      ) {
+        return sendError(
+          reply,
+          403,
+          "FORBIDDEN",
+          "Voice call recipients must be active members of the accessible conversation.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const recipientUserIds = wake.participantUserIds?.length
+        ? wake.participantUserIds
+        : Array.from(conversationMemberUserIds).filter(
+            (userId) => wake.action === "ended" || userId !== actor.subjectId
+          );
       if (recipientUserIds.length === 0) {
         return sendError(
           reply,
@@ -13191,25 +13204,44 @@ function normalizeMatrixRoomId(value: unknown): string | undefined {
 
 function normalizeMessagingVoiceCallWakeRequest(
   value: unknown
-): { action: "ended" | "invite"; callId: string; roomId: string } | null {
+): { action: "ended" | "invite"; callId: string; participantUserIds?: string[]; roomId: string } | null {
   if (!isRecord(value)) {
     return null;
   }
   const action = value.action === "invite" || value.action === "ended" ? value.action : undefined;
   const callId = optionalTrimmedString(value.callId, 160);
   const roomId = normalizeMatrixRoomId(value.roomId);
-  if (!action || !callId || !roomId || !/^[A-Za-z0-9._:=@-]{1,160}$/u.test(callId)) {
+  const rawParticipantUserIds = value.participantUserIds;
+  const participantUserIds = Array.isArray(rawParticipantUserIds)
+    ? rawParticipantUserIds.map((item) => optionalTrimmedString(item, 160))
+    : undefined;
+  const validParticipantSubset =
+    rawParticipantUserIds === undefined ||
+    (action === "invite" &&
+      Array.isArray(rawParticipantUserIds) &&
+      rawParticipantUserIds.length >= 1 &&
+      rawParticipantUserIds.length <= 5 &&
+      participantUserIds?.every((item): item is string => Boolean(item)) &&
+      new Set(participantUserIds).size === participantUserIds.length);
+  if (!action || !callId || !roomId || !/^[A-Za-z0-9._:=@-]{1,160}$/u.test(callId) || !validParticipantSubset) {
     return null;
   }
-  return { action, callId, roomId };
+  return {
+    action,
+    callId,
+    ...(participantUserIds?.length ? { participantUserIds: participantUserIds as string[] } : {}),
+    roomId
+  };
 }
 
 function voiceCallWakeIdempotencyKey(
   subjectId: string,
-  wake: { action: "ended" | "invite"; callId: string; roomId: string }
+  wake: { action: "ended" | "invite"; callId: string; participantUserIds?: string[]; roomId: string }
 ): string {
   const digest = createHash("sha256")
-    .update(`${subjectId}\0${wake.roomId}\0${wake.callId}\0${wake.action}`)
+    .update(
+      `${subjectId}\0${wake.roomId}\0${wake.callId}\0${wake.action}\0${[...(wake.participantUserIds ?? [])].sort().join(",")}`
+    )
     .digest("hex")
     .slice(0, 48);
   return `voice-call:${wake.action}:${digest}`;

@@ -3,8 +3,10 @@ import { createMatrixMessagingSession, formatMatrixClientError, normalizeMatrixM
 import type { MatrixVoiceCallWakeRequest, MessagingBootstrapResponse } from "./types.js";
 
 type MockMatrixClient = {
+  createGroupCall?: (roomId: string, type: string, isPtt: boolean, intent: string) => Promise<MockMatrixGroupCall>;
   getCrypto?: () => MockMatrixCrypto;
   getJoinedRooms?: () => Promise<{ joined_rooms: string[] }>;
+  getGroupCallForRoom?: (roomId: string) => MockMatrixGroupCall | null;
   getProfileInfo?: (userId: string) => Promise<Record<string, unknown>>;
   getRooms: () => unknown[];
   getTurnServers?: () => RTCIceServer[];
@@ -32,6 +34,21 @@ type MockMatrixClient = {
     file: Blob | File,
     opts?: Record<string, unknown>
   ) => Promise<{ content_uri?: string; contentUri?: string }>;
+  waitUntilRoomReadyForGroupCalls?: (roomId: string) => Promise<void>;
+};
+
+type MockMatrixGroupCall = {
+  groupCallId: string;
+  participants: Map<{ displayName?: string; userId: string }, Map<string, unknown>>;
+  room: ReturnType<typeof createRoom>;
+  state: string;
+  userMediaFeeds: Array<{ stream?: MediaStream; userId?: string }>;
+  enter: () => Promise<void>;
+  leave: () => void;
+  off: MatrixEventSubscription;
+  on: MatrixEventSubscription;
+  setMicrophoneMuted: (muted: boolean) => Promise<boolean>;
+  terminate: (emitStateEvent?: boolean) => Promise<void>;
 };
 
 type MockMatrixCall = {
@@ -390,6 +407,90 @@ describe("Matrix client diagnostics", () => {
         roomId: "!chat:cop.local"
       })
     );
+  });
+
+  it("starts an encrypted Matrix group voice call and rings room members", async () => {
+    stubVoiceCallBrowserSupport();
+    const room = createRoom({
+      members: [
+        { displayName: "Operátor", userId: "@operator:cop.local" },
+        { displayName: "Alice", userId: "@alice:cop.local" },
+        { displayName: "Bob", userId: "@bob:cop.local" }
+      ],
+      roomId: "!group:cop.local"
+    });
+    const groupCall = createMockGroupVoiceCall(room);
+    const createGroupCall = vi.fn().mockResolvedValue(groupCall);
+    const waitUntilRoomReadyForGroupCalls = vi.fn().mockResolvedValue(undefined);
+    const onVoiceCallWake = vi.fn().mockResolvedValue(undefined);
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        createGroupCall,
+        getGroupCallForRoom: vi.fn(() => null),
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!group:cop.local"] }),
+        rooms: [room],
+        waitUntilRoomReadyForGroupCalls
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap(), { onVoiceCallWake });
+    await session.startVoiceCall("!group:cop.local", { group: true });
+
+    expect(waitUntilRoomReadyForGroupCalls).toHaveBeenCalledWith("!group:cop.local");
+    expect(createGroupCall).toHaveBeenCalledWith("!group:cop.local", "m.voice", false, "m.ring");
+    expect(groupCall.enter).toHaveBeenCalledTimes(1);
+    expect(session.getVoiceCall()).toMatchObject({
+      callId: "group-call-1",
+      kind: "group",
+      phase: "connected",
+      roomId: "!group:cop.local"
+    });
+    expect(session.getVoiceCall()?.eligibleParticipants?.map((participant) => participant.userId)).toEqual([
+      "@alice:cop.local",
+      "@bob:cop.local"
+    ]);
+    expect(onVoiceCallWake).toHaveBeenCalledWith({
+      action: "invite",
+      callId: "group-call-1",
+      roomId: "!group:cop.local"
+    });
+  });
+
+  it("rings only selected eligible members when extending a group call", async () => {
+    stubVoiceCallBrowserSupport();
+    const operator = { displayName: "Operátor", userId: "@operator:cop.local" };
+    const alice = { displayName: "Alice", userId: "@alice:cop.local" };
+    const bob = { displayName: "Bob", userId: "@bob:cop.local" };
+    const room = createRoom({ members: [operator, alice, bob], roomId: "!group:cop.local" });
+    const groupCall = createMockGroupVoiceCall(
+      room,
+      new Map([
+        [operator, new Map([["DEVICE", {}]])],
+        [alice, new Map([["DEVICE", {}]])]
+      ])
+    );
+    const onVoiceCallWake = vi.fn().mockResolvedValue(undefined);
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        createGroupCall: vi.fn().mockResolvedValue(groupCall),
+        getGroupCallForRoom: vi.fn(() => groupCall),
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!group:cop.local"] }),
+        rooms: [room],
+        waitUntilRoomReadyForGroupCalls: vi.fn().mockResolvedValue(undefined)
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap(), { onVoiceCallWake });
+    await session.startVoiceCall("!group:cop.local", { group: true });
+    await session.inviteVoiceCallParticipants("group-call-1", ["@alice:cop.local", "@bob:cop.local"]);
+
+    expect(onVoiceCallWake).toHaveBeenLastCalledWith({
+      action: "invite",
+      callId: "group-call-1",
+      participantUserIds: ["@bob:cop.local"],
+      roomId: "!group:cop.local"
+    });
+    expect(onVoiceCallWake).toHaveBeenCalledTimes(2);
   });
 
   it("appends configured ICE server URLs without duplicating homeserver URLs", async () => {
@@ -2477,7 +2578,9 @@ function createBootstrap(): MessagingBootstrapResponse {
 }
 
 function createMockMatrixClient({
+  createGroupCall,
   crypto,
+  getGroupCallForRoom,
   getJoinedRooms,
   getProfileInfo,
   getTurnServers,
@@ -2499,9 +2602,12 @@ function createMockMatrixClient({
   setDisplayName,
   setPusher,
   scrollback,
-  uploadContent
+  uploadContent,
+  waitUntilRoomReadyForGroupCalls
 }: {
+  createGroupCall?: MockMatrixClient["createGroupCall"];
   crypto?: MockMatrixCrypto;
+  getGroupCallForRoom?: MockMatrixClient["getGroupCallForRoom"];
   getJoinedRooms?: MockMatrixClient["getJoinedRooms"];
   getProfileInfo?: MockMatrixClient["getProfileInfo"];
   getTurnServers?: MockMatrixClient["getTurnServers"];
@@ -2524,9 +2630,12 @@ function createMockMatrixClient({
   setPusher?: MockMatrixClient["setPusher"];
   scrollback?: MockMatrixClient["scrollback"];
   uploadContent?: MockMatrixClient["uploadContent"];
+  waitUntilRoomReadyForGroupCalls?: MockMatrixClient["waitUntilRoomReadyForGroupCalls"];
 }): MockMatrixClient {
   return {
+    ...(createGroupCall ? { createGroupCall } : {}),
     ...(crypto ? { getCrypto: () => crypto } : {}),
+    ...(getGroupCallForRoom ? { getGroupCallForRoom } : {}),
     ...(getJoinedRooms ? { getJoinedRooms } : {}),
     ...(getProfileInfo ? { getProfileInfo } : {}),
     getRooms: () => rooms,
@@ -2551,7 +2660,8 @@ function createMockMatrixClient({
     ...(setPusher ? { setPusher } : {}),
     ...(scrollback ? { scrollback } : {}),
     ...(uploadContent ? { uploadContent } : {}),
-    startClient: () => Promise.resolve()
+    startClient: () => Promise.resolve(),
+    ...(waitUntilRoomReadyForGroupCalls ? { waitUntilRoomReadyForGroupCalls } : {})
   };
 }
 
@@ -2608,6 +2718,48 @@ function createMockVoiceCall({
       return microphoneMuted;
     }),
     state
+  };
+  return call;
+}
+
+function createMockGroupVoiceCall(
+  room: ReturnType<typeof createRoom>,
+  participants = new Map<{ displayName?: string; userId: string }, Map<string, unknown>>()
+): MockMatrixGroupCall {
+  const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+  const emit = (event: string, ...args: unknown[]) => {
+    for (const listener of listeners.get(event) ?? []) listener(...args);
+  };
+  let microphoneMuted = false;
+  const call: MockMatrixGroupCall = {
+    enter: vi.fn(async () => {
+      call.state = "entered";
+      emit("group_call_state_changed", "entered", "local_call_feed_initialized");
+    }),
+    groupCallId: "group-call-1",
+    leave: vi.fn(() => {
+      call.state = "local_call_feed_initialized";
+      emit("group_call_state_changed", call.state, "entered");
+    }),
+    off: (event, listener) => listeners.get(event)?.delete(listener),
+    on: (event, listener) => {
+      const current = listeners.get(event) ?? new Set();
+      current.add(listener);
+      listeners.set(event, current);
+    },
+    participants,
+    room,
+    setMicrophoneMuted: vi.fn(async (muted: boolean) => {
+      microphoneMuted = muted;
+      emit("local_mute_state_changed", microphoneMuted, true);
+      return microphoneMuted;
+    }),
+    state: "local_call_feed_initialized",
+    terminate: vi.fn(async () => {
+      call.state = "ended";
+      emit("group_call_state_changed", "ended", "entered");
+    }),
+    userMediaFeeds: []
   };
   return call;
 }

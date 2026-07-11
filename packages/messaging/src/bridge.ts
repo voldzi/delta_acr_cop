@@ -55,23 +55,34 @@ export interface ChatSummaryMessage {
 export type ChatVoiceCallDirection = "incoming" | "outgoing";
 export type ChatVoiceCallPhase = "connected" | "connecting" | "ended" | "failed" | "ringing";
 
+export interface ChatVoiceCallParticipant {
+  connected: boolean;
+  displayName: string;
+  userId: string;
+}
+
 export interface ChatVoiceCallMessage {
   at: number;
   callId: string;
   direction: ChatVoiceCallDirection;
+  eligibleParticipants: ChatVoiceCallParticipant[];
+  kind: "direct" | "group";
+  participants: ChatVoiceCallParticipant[];
   phase: ChatVoiceCallPhase;
   roomId: string;
   title?: string;
   type: typeof chatBridgeMessageTypes.voiceCall;
 }
 
-export type ChatVoiceCallCommandAction = "answer" | "hangup" | "mute" | "open" | "reject";
+export type ChatVoiceCallCommandAction = "addParticipants" | "answer" | "hangup" | "mute" | "open" | "reject" | "start";
 
 export interface ChatVoiceCallCommandMessage {
   action: ChatVoiceCallCommandAction;
   actionId?: string;
   callId: string;
+  kind?: "direct" | "group";
   muted?: boolean;
+  participantUserIds?: string[];
   roomId: string;
   type: typeof chatBridgeMessageTypes.voiceCallCommand;
 }
@@ -259,6 +270,9 @@ export function decodeChatSummary(value: unknown): ChatSummaryMessage | null {
 export function encodeChatVoiceCall(input: {
   callId: string;
   direction: ChatVoiceCallDirection;
+  eligibleParticipants?: ChatVoiceCallParticipant[];
+  kind?: "direct" | "group";
+  participants?: ChatVoiceCallParticipant[];
   phase: ChatVoiceCallPhase;
   roomId: string;
   title?: string;
@@ -282,7 +296,9 @@ export function encodeChatVoiceCallCommand(input: {
   action: ChatVoiceCallCommandAction;
   actionId?: string;
   callId: string;
+  kind?: "direct" | "group";
   muted?: boolean;
+  participantUserIds?: string[];
   roomId: string;
 }): ChatVoiceCallCommandMessage {
   const normalized = normalizeChatVoiceCallCommand(input);
@@ -713,6 +729,9 @@ function normalizeChatVoiceCall(value: unknown): ChatVoiceCallMessage | null {
     at: typeof data.at === "number" && Number.isFinite(data.at) ? data.at : Date.now(),
     callId,
     direction,
+    eligibleParticipants: normalizeVoiceCallParticipants(data.eligibleParticipants),
+    kind: data.kind === "group" ? "group" : "direct",
+    participants: normalizeVoiceCallParticipants(data.participants),
     phase,
     roomId,
     title: normalizeBridgeText(data.title, 180),
@@ -746,11 +765,21 @@ function normalizeChatVoiceCallCommand(value: unknown): ChatVoiceCallCommandMess
   if (action === "mute" && typeof data.muted !== "boolean") {
     return null;
   }
+  const participantUserIds = normalizeVoiceCallParticipantUserIds(data.participantUserIds);
+  if (action === "addParticipants" && participantUserIds.length === 0) {
+    return null;
+  }
+  const kind = data.kind === "direct" || data.kind === "group" ? data.kind : undefined;
+  if (action === "start" && !kind) {
+    return null;
+  }
   return compactRecord({
     action,
     actionId,
     callId,
+    kind: action === "start" ? kind : undefined,
     muted: action === "mute" ? data.muted : undefined,
+    participantUserIds: action === "addParticipants" ? participantUserIds : undefined,
     roomId,
     type: chatBridgeMessageTypes.voiceCallCommand
   }) as ChatVoiceCallCommandMessage;
@@ -777,9 +806,40 @@ function normalizeChatVoiceCallCommandAcknowledgement(
 }
 
 function normalizeVoiceCallCommandAction(value: unknown): ChatVoiceCallCommandAction | undefined {
-  return value === "answer" || value === "hangup" || value === "mute" || value === "open" || value === "reject"
+  return value === "addParticipants" ||
+    value === "answer" ||
+    value === "hangup" ||
+    value === "mute" ||
+    value === "open" ||
+    value === "reject" ||
+    value === "start"
     ? value
     : undefined;
+}
+
+function normalizeVoiceCallParticipants(value: unknown): ChatVoiceCallParticipant[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .flatMap((item) => {
+      const data = asRecord(item);
+      const userId = normalizeBridgeText(data?.userId, 160);
+      const displayName = normalizeBridgeText(data?.displayName, 180);
+      if (!data || !userId || !displayName || typeof data.connected !== "boolean") return [];
+      return [{ connected: data.connected, displayName, userId }];
+    })
+    .slice(0, 20);
+}
+
+function normalizeVoiceCallParticipantUserIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value.flatMap((item) => {
+        const userId = normalizeBridgeText(item, 160);
+        return userId ? [userId] : [];
+      })
+    )
+  ].slice(0, 5);
 }
 
 function normalizeBridgeUUID(value: unknown): string | undefined {

@@ -987,7 +987,7 @@ export function ChatApp() {
     activeVoiceCall && voiceCallRoomToFocusAfterAnswer(activeVoiceCall.roomId, selectedRoomId)
   );
   const canStartVoiceCall = Boolean(
-    activeChat?.type === "direct" &&
+    (activeChat?.type === "direct" || activeChat?.type === "group") &&
     activeChat.roomId &&
     selectedRoomId &&
     matrixSession &&
@@ -1009,6 +1009,9 @@ export function ChatApp() {
       const snapshot: ChatVoiceCallBridgeSnapshot = {
         callId: voiceCall.callId,
         direction: voiceCall.direction,
+        eligibleParticipants: voiceCall.eligibleParticipants ?? [],
+        kind: voiceCall.kind,
+        participants: voiceCall.participants,
         phase: voiceCall.phase,
         roomId: voiceCall.roomId,
         ...(voiceCallTitle ? { title: voiceCallTitle } : {})
@@ -1023,7 +1026,16 @@ export function ChatApp() {
       publishChatVoiceCallSnapshot({ ...previous, phase: "ended" });
       lastVoiceCallBridgeSnapshotRef.current = null;
     }
-  }, [voiceCall?.callId, voiceCall?.direction, voiceCall?.phase, voiceCall?.roomId, voiceCallTitle]);
+  }, [
+    voiceCall?.callId,
+    voiceCall?.direction,
+    voiceCall?.eligibleParticipants,
+    voiceCall?.kind,
+    voiceCall?.participants,
+    voiceCall?.phase,
+    voiceCall?.roomId,
+    voiceCallTitle
+  ]);
   const activeMessageRetentionSeconds =
     selectedRoomId && Object.prototype.hasOwnProperty.call(retentionOverrideByRoom, selectedRoomId)
       ? (retentionOverrideByRoom[selectedRoomId] ?? null)
@@ -3763,7 +3775,10 @@ export function ChatApp() {
         currentCall?.callId === pending.command.callId && currentCall.roomId === pending.command.roomId
           ? currentCall
           : null;
-      if (pending.command.action !== "open" && (!session || !matchingCall)) {
+      if (pending.command.action !== "open" && pending.command.action !== "start" && (!session || !matchingCall)) {
+        continue;
+      }
+      if (pending.command.action === "start" && !session) {
         continue;
       }
 
@@ -3782,6 +3797,11 @@ export function ChatApp() {
       if (command.action === "open") {
         resetRouteOpenAttempt();
         await applyAndOpenRouteSelection(command.roomId);
+      } else if (command.action === "start") {
+        if (!session) return;
+        resetRouteOpenAttempt();
+        await applyAndOpenRouteSelection(command.roomId);
+        await session.startVoiceCall(command.roomId, { group: command.kind === "group" });
       } else {
         if (!session || !call) {
           return;
@@ -3804,6 +3824,9 @@ export function ChatApp() {
             break;
           case "mute":
             await session.setVoiceCallMuted(call.callId, command.muted === true);
+            break;
+          case "addParticipants":
+            await session.inviteVoiceCallParticipants(call.callId, command.participantUserIds ?? []);
             break;
         }
       }
@@ -3866,7 +3889,7 @@ export function ChatApp() {
     setError(null);
     setNotice(null);
     try {
-      await matrixSession.startVoiceCall(roomId);
+      await matrixSession.startVoiceCall(roomId, { group: activeChat?.type === "group" });
     } catch (caught) {
       setError(userFacingVoiceCallError(caught, "Hovor se nepodařilo zahájit."));
     }
@@ -6949,19 +6972,8 @@ function VoiceCallBar({
   onReject: () => void;
   onToggleMute: () => void;
 }) {
-  const audioRef = React.useRef<HTMLAudioElement | null>(null);
   const now = useVisibleNow(call.phase === "connected", 1_000);
-
-  React.useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) {
-      return;
-    }
-    audio.srcObject = call.remoteStream ?? null;
-    if (call.remoteStream) {
-      void audio.play().catch(() => undefined);
-    }
-  }, [call.remoteStream]);
+  const remoteStreams = call.remoteStreams?.length ? call.remoteStreams : call.remoteStream ? [call.remoteStream] : [];
 
   const incomingRinging = call.direction === "incoming" && call.phase === "ringing";
   const status = voiceCallStatusText(call, now);
@@ -6972,7 +6984,9 @@ function VoiceCallBar({
       role="status"
       aria-live="polite"
     >
-      <audio ref={audioRef} autoPlay playsInline />
+      {remoteStreams.map((stream) => (
+        <VoiceCallRemoteAudio key={stream.id} stream={stream} />
+      ))}
       <span className="voice-call-icon">
         <Phone size={18} />
       </span>
@@ -7009,6 +7023,20 @@ function VoiceCallBar({
       </div>
     </div>
   );
+}
+
+function VoiceCallRemoteAudio({ stream }: { stream: MediaStream }) {
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+  React.useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.srcObject = stream;
+    void audio.play().catch(() => undefined);
+    return () => {
+      audio.srcObject = null;
+    };
+  }, [stream]);
+  return <audio ref={audioRef} autoPlay playsInline />;
 }
 
 export function voiceCallRoomToFocusAfterAnswer(callRoomId: string, selectedRoomId: string | null): string | null {

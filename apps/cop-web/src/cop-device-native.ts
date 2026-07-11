@@ -25,10 +25,12 @@ export interface NativeHeadingSample {
 }
 
 export interface NativeCallAction {
-  action: "answer" | "hangup" | "mute" | "reject";
+  action: "addParticipants" | "answer" | "hangup" | "mute" | "reject" | "start";
   actionId: string;
   callId: string;
+  kind?: "direct" | "group";
   muted?: boolean;
+  participantUserIds?: string[];
   roomId: string;
 }
 
@@ -42,6 +44,9 @@ export interface NativeCallActionAcknowledgement {
 export interface NativeCallPresentation {
   callId: string;
   direction: "incoming" | "outgoing";
+  eligibleParticipants?: Array<{ connected: boolean; displayName: string; userId: string }>;
+  kind?: "direct" | "group";
+  participants?: Array<{ connected: boolean; displayName: string; userId: string }>;
   phase: "connecting" | "connected" | "ended" | "failed" | "ringing";
   roomId: string;
   title?: string;
@@ -161,6 +166,9 @@ class NativeDeviceClient {
     await this.request("calls.updatePresentation", {
       callId: call.callId,
       direction: call.direction,
+      ...(call.eligibleParticipants ? { eligibleParticipants: call.eligibleParticipants } : {}),
+      ...(call.kind ? { kind: call.kind } : {}),
+      ...(call.participants ? { participants: call.participants } : {}),
       phase: call.phase,
       roomId: call.roomId,
       ...(call.title ? { title: call.title } : {})
@@ -351,19 +359,33 @@ function nativeCallAction(message: NativeBridgeMessage): NativeCallAction | null
   if (message.kind !== "event" || !isRecord(message.payload)) return null;
   const type = message.type;
   const action =
-    type === "calls.answerRequested"
-      ? "answer"
-      : type === "calls.rejectRequested"
-        ? "reject"
-        : type === "calls.endRequested"
-          ? "hangup"
-          : type === "calls.muteRequested"
-            ? "mute"
-            : null;
+    type === "calls.startRequested"
+      ? "start"
+      : type === "calls.answerRequested"
+        ? "answer"
+        : type === "calls.rejectRequested"
+          ? "reject"
+          : type === "calls.addParticipantsRequested"
+            ? "addParticipants"
+            : type === "calls.endRequested"
+              ? "hangup"
+              : type === "calls.muteRequested"
+                ? "mute"
+                : null;
   const callId = message.payload.callId;
   const actionId = message.payload.actionId;
   const roomId = message.payload.roomId;
   if (!action || !isUUIDString(actionId) || typeof callId !== "string" || typeof roomId !== "string") return null;
+  if (action === "start") {
+    const kind = message.payload.kind === "group" ? "group" : message.payload.kind === "direct" ? "direct" : null;
+    return kind ? { action, actionId, callId, kind, roomId } : null;
+  }
+  if (action === "addParticipants") {
+    const participantUserIds = Array.isArray(message.payload.participantUserIds)
+      ? message.payload.participantUserIds.filter((value): value is string => typeof value === "string").slice(0, 5)
+      : [];
+    return participantUserIds.length > 0 ? { action, actionId, callId, participantUserIds, roomId } : null;
+  }
   if (action === "mute") {
     return typeof message.payload.muted === "boolean"
       ? { action, actionId, callId, muted: message.payload.muted, roomId }

@@ -546,7 +546,7 @@ describe("CsmMessagingProvider", () => {
     expect(JSON.stringify(response.json())).not.toContain("provider-token");
   });
 
-  it("sends an authenticated voice-call wake notification without call signalling content", async () => {
+  it("rings only a server-validated subset of group members without call signalling content", async () => {
     vi.stubEnv("COP_AUTH_MODE", "lab");
     vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -557,7 +557,7 @@ describe("CsmMessagingProvider", () => {
           conversations: [{
             conversationId: "conv_call",
             matrix: { roomId: "!call:docker.home.cz" },
-            memberCount: 2,
+            memberCount: 3,
             status: "matrix_ready",
             title: "Přímý chat",
             type: "direct"
@@ -574,7 +574,8 @@ describe("CsmMessagingProvider", () => {
             matrix: { roomId: "!call:docker.home.cz" },
             members: [
               { displayName: "Lab operator", userId: "lab" },
-              { displayName: "Příjemce", userId: "citizen-2" }
+              { displayName: "Příjemce", userId: "citizen-2" },
+              { displayName: "Další člen", userId: "citizen-3" }
             ],
             status: "matrix_ready",
             title: "Přímý chat",
@@ -585,7 +586,7 @@ describe("CsmMessagingProvider", () => {
       if (url.endsWith("/api/v1/notifications")) {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         expect(body).toMatchObject({
-          audience: { userIds: ["citizen-2"] },
+          audience: { userIds: ["citizen-3"] },
           metadata: {
             callId: "call-123",
             roomId: "!call:docker.home.cz",
@@ -628,12 +629,31 @@ describe("CsmMessagingProvider", () => {
     const response = await app.inject({
       headers: { authorization: "Bearer lab-secret" },
       method: "POST",
-      payload: { action: "invite", callId: "call-123", roomId: "!call:docker.home.cz" },
+      payload: {
+        action: "invite",
+        callId: "call-123",
+        participantUserIds: ["citizen-3"],
+        roomId: "!call:docker.home.cz"
+      },
       url: "/api/v1/messaging/calls/wake"
     });
 
     expect(response.statusCode).toBe(202);
     expect(response.json()).toMatchObject({ notificationId: "notif_call", status: "online" });
+
+    const forbidden = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "POST",
+      payload: {
+        action: "invite",
+        callId: "call-123",
+        participantUserIds: ["outsider"],
+        roomId: "!call:docker.home.cz"
+      },
+      url: "/api/v1/messaging/calls/wake"
+    });
+    expect(forbidden.statusCode).toBe(403);
+    expect(forbidden.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
     await app.close();
   });
 

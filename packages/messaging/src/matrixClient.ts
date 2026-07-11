@@ -35,12 +35,15 @@ const matrixVoiceCallPreflightAckEventType = "cz.zeleznalady.cop.call.preflight_
 const matrixVoiceCallPreflightTimeoutMs = 1_200;
 const matrixVoiceCallConnectingTimeoutMs = 45_000;
 const matrixVoiceCallIceFailureMessage = "Hovor se nepodařilo spojit. Pravděpodobně chybí dostupný TURN server.";
+const matrixGroupVoiceCallParticipantLimit = 6;
 
 interface MatrixClientLike {
   createRoom?: (options: Record<string, unknown>) => Promise<{ room_id?: string; roomId?: string }>;
+  createGroupCall?: (roomId: string, type: string, isPtt: boolean, intent: string) => Promise<MatrixGroupCallLike>;
   getCrypto?: () => MatrixCryptoApiLike | undefined;
   getJoinedRooms?: () => Promise<{ joined_rooms?: unknown } | unknown[]>;
   getProfileInfo?: (userId: string) => Promise<Record<string, unknown>>;
+  getGroupCallForRoom?: (roomId: string) => MatrixGroupCallLike | null;
   getRooms?: () => unknown[];
   getTurnServers?: () => RTCIceServer[];
   getUserId?: () => string | null;
@@ -89,6 +92,7 @@ interface MatrixClientLike {
     file: Blob | File,
     opts?: Record<string, unknown>
   ) => Promise<{ content_uri?: string; contentUri?: string }>;
+  waitUntilRoomReadyForGroupCalls?: (roomId: string) => Promise<void>;
 }
 
 type MatrixSendEventArgs =
@@ -114,6 +118,27 @@ interface MatrixCallLike {
   placeVoiceCall?: () => Promise<void>;
   reject?: () => void;
   setMicrophoneMuted?: (muted: boolean) => Promise<boolean>;
+}
+
+interface MatrixCallFeedLike {
+  stream?: MediaStream;
+  userId?: string;
+}
+
+interface MatrixGroupCallLike {
+  groupCallId?: string;
+  localCallFeed?: MatrixCallFeedLike;
+  participants?: Map<MatrixRoomMemberLike, Map<string, unknown>>;
+  room?: MatrixRoomLike;
+  state?: string;
+  userMediaFeeds?: MatrixCallFeedLike[];
+  enter?: () => Promise<void>;
+  isMicrophoneMuted?: () => boolean;
+  leave?: () => void;
+  off?: (event: string, listener: (...args: unknown[]) => void) => void;
+  on?: (event: string, listener: (...args: unknown[]) => void) => void;
+  setMicrophoneMuted?: (muted: boolean) => Promise<boolean>;
+  terminate?: (emitStateEvent?: boolean) => Promise<void>;
 }
 
 interface MatrixCryptoApiLike {
@@ -296,6 +321,7 @@ export async function createMatrixMessagingSession(
     ...(syncStore ? { store: syncStore } : {}),
     userId: activeBootstrap.userId
   });
+  const ownMatrixUserId = () => activeBootstrap.userId ?? client.getUserId?.() ?? "";
   installAdditionalMatrixIceServers(client, callbacks.voip?.additionalIceServerUrls);
   installMatrixVoipSignalingFallback(client, () => activeBootstrap, tlsVoiceCallIds);
   await syncStore?.startup().catch(() => undefined);
@@ -390,6 +416,10 @@ export async function createMatrixMessagingSession(
   let pendingTimelineNotify = false;
   let sessionDisposed = false;
   let activeVoiceCall: MatrixCallLike | null = null;
+  let activeGroupVoiceCall: MatrixGroupCallLike | null = null;
+  let activeGroupVoiceCallDirection: "incoming" | "outgoing" = "incoming";
+  let activeGroupVoiceCallStartedAt: string | undefined;
+  let activeGroupVoiceCallError: string | undefined;
   let activeVoiceCallStartedAt: string | undefined;
   let activeVoiceCallError: string | undefined;
   let activeVoiceCallClearTimer: ReturnType<typeof setTimeout> | undefined;
@@ -399,14 +429,14 @@ export async function createMatrixMessagingSession(
   const voiceCallWakeChains = new Map<string, Promise<void>>();
   const voiceCallPreflightSettlers = new Map<string, (ready: boolean) => void>();
   const handledVoiceCallControlEvents = new Set<string>();
-  const notifyVoiceCallWake = (action: MatrixVoiceCallWakeRequest["action"], call: MatrixCallLike): Promise<void> => {
+  const notifyVoiceCallWakeRequest = (request: MatrixVoiceCallWakeRequest): Promise<void> => {
     const onVoiceCallWake = callbacks.onVoiceCallWake;
-    const callId = call.callId;
-    const roomId = call.roomId;
+    const { action, callId, roomId } = request;
     if (!onVoiceCallWake || !callId || !roomId) {
       return Promise.resolve();
     }
-    const key = `${action}:${callId}`;
+    const participantKey = [...(request.participantUserIds ?? [])].sort().join(",");
+    const key = `${action}:${callId}:${participantKey}`;
     if (sentVoiceCallWakeKeys.has(key)) {
       return voiceCallWakeChains.get(callId) ?? Promise.resolve();
     }
@@ -414,7 +444,7 @@ export async function createMatrixMessagingSession(
     const previous = voiceCallWakeChains.get(callId) ?? Promise.resolve();
     const current = previous
       .catch(() => undefined)
-      .then(() => onVoiceCallWake({ action, callId, roomId }))
+      .then(() => onVoiceCallWake(request))
       .catch(() => {
         sentVoiceCallWakeKeys.delete(key);
       });
@@ -426,6 +456,19 @@ export async function createMatrixMessagingSession(
     });
     return current;
   };
+  const notifyVoiceCallWake = (action: MatrixVoiceCallWakeRequest["action"], call: MatrixCallLike): Promise<void> =>
+    notifyVoiceCallWakeRequest({ action, callId: call.callId ?? "", roomId: call.roomId ?? "" });
+  const notifyGroupVoiceCallWake = (
+    action: MatrixVoiceCallWakeRequest["action"],
+    call: MatrixGroupCallLike,
+    participantUserIds?: string[]
+  ): Promise<void> =>
+    notifyVoiceCallWakeRequest({
+      action,
+      callId: call.groupCallId ?? "",
+      ...(participantUserIds?.length ? { participantUserIds } : {}),
+      roomId: call.room?.roomId ?? ""
+    });
   const handleVoiceCallSignalingEvent = (eventValue: unknown, roomValue?: unknown) => {
     const event = asEvent(eventValue);
     if (!event) {
@@ -668,7 +711,17 @@ export async function createMatrixMessagingSession(
   const publishVoiceCall = () => {
     syncVoiceCallConnectingWatchdog(activeVoiceCall);
     callbacks.onVoiceCallChanged?.(
-      activeVoiceCall ? matrixVoiceCallSnapshot(activeVoiceCall, activeVoiceCallStartedAt, activeVoiceCallError) : null
+      activeGroupVoiceCall
+        ? matrixGroupVoiceCallSnapshot(
+            activeGroupVoiceCall,
+            activeGroupVoiceCallDirection,
+            activeGroupVoiceCallStartedAt,
+            activeGroupVoiceCallError,
+            ownMatrixUserId()
+          )
+        : activeVoiceCall
+          ? matrixVoiceCallSnapshot(activeVoiceCall, activeVoiceCallStartedAt, activeVoiceCallError)
+          : null
     );
   };
   const clearVoiceCallSoon = () => {
@@ -718,6 +771,39 @@ export async function createMatrixMessagingSession(
     call.on?.("error", errorListener);
     return call;
   };
+  const clearGroupVoiceCall = () => {
+    activeGroupVoiceCall = null;
+    activeGroupVoiceCallStartedAt = undefined;
+    activeGroupVoiceCallError = undefined;
+    publishVoiceCall();
+  };
+  const bindGroupVoiceCall = (call: MatrixGroupCallLike, direction: "incoming" | "outgoing"): MatrixGroupCallLike => {
+    activeGroupVoiceCallDirection = direction;
+    const stateListener = (state: unknown) => {
+      const currentState = typeof state === "string" ? state : call.state;
+      if (currentState === "entered" && !activeGroupVoiceCallStartedAt) {
+        activeGroupVoiceCallStartedAt = new Date().toISOString();
+      }
+      if (currentState === "ended") {
+        clearGroupVoiceCall();
+        return;
+      }
+      publishVoiceCall();
+    };
+    const updateListener = () => publishVoiceCall();
+    const errorListener = (error: unknown) => {
+      if (activeGroupVoiceCall === call) {
+        activeGroupVoiceCallError = matrixVoiceCallErrorMessage(error);
+        publishVoiceCall();
+      }
+    };
+    call.on?.("group_call_state_changed", stateListener);
+    call.on?.("participants_changed", updateListener);
+    call.on?.("user_media_feeds_changed", updateListener);
+    call.on?.("local_mute_state_changed", updateListener);
+    call.on?.("group_call_error", errorListener);
+    return call;
+  };
   const incomingCallListener = (call: unknown) => {
     const nextCall = asMatrixCallLike(call);
     if (!nextCall?.callId || !nextCall.roomId) {
@@ -735,6 +821,29 @@ export async function createMatrixMessagingSession(
     activeVoiceCallStartedAt = undefined;
     activeVoiceCallError = undefined;
     publishVoiceCall();
+  };
+  const incomingGroupCallListener = (callValue: unknown) => {
+    const call = asMatrixGroupCallLike(callValue);
+    if (!call?.groupCallId || !call.room?.roomId) {
+      return;
+    }
+    if (
+      (activeVoiceCall && matrixVoiceCallPhase(activeVoiceCall.state) !== "ended") ||
+      (activeGroupVoiceCall && activeGroupVoiceCall.groupCallId !== call.groupCallId)
+    ) {
+      return;
+    }
+    activeVoiceCall = null;
+    activeGroupVoiceCall = bindGroupVoiceCall(call, "incoming");
+    activeGroupVoiceCallStartedAt = undefined;
+    activeGroupVoiceCallError = undefined;
+    publishVoiceCall();
+  };
+  const endedGroupCallListener = (callValue: unknown) => {
+    const call = asMatrixGroupCallLike(callValue);
+    if (call?.groupCallId && call.groupCallId === activeGroupVoiceCall?.groupCallId) {
+      clearGroupVoiceCall();
+    }
   };
 
   const syncListener = (state: unknown) => {
@@ -769,6 +878,8 @@ export async function createMatrixMessagingSession(
   client.on?.("User.presence", presenceListener);
   client.on?.("RoomMember.membership", membershipListener);
   client.on?.("Call.incoming", incomingCallListener);
+  client.on?.("GroupCall.incoming", incomingGroupCallListener);
+  client.on?.("GroupCall.ended", endedGroupCallListener);
   publishRooms();
   await client.startClient?.({ initialSyncLimit: 20, lazyLoadMembers: true });
   void syncMatrixUserProfile(client, activeBootstrap, callbacks.profile).catch(() => undefined);
@@ -787,6 +898,20 @@ export async function createMatrixMessagingSession(
   sessionApi = {
     bootstrap: activeBootstrap,
     answerVoiceCall: async (callId) => {
+      if (activeGroupVoiceCall?.groupCallId === callId) {
+        assertBrowserCanUseVoiceCalls();
+        try {
+          await primeMicrophoneForWebKit();
+          await activeGroupVoiceCall.enter?.();
+          activeGroupVoiceCallStartedAt = new Date().toISOString();
+          publishVoiceCall();
+          return;
+        } catch (caught) {
+          activeGroupVoiceCallError = matrixVoiceCallErrorMessage(caught);
+          publishVoiceCall();
+          throw formatMatrixClientError(caught, homeserverBaseUrl, "přijmout skupinový hovor");
+        }
+      }
       const call = requireActiveVoiceCall(activeVoiceCall, callId);
       if (typeof call.answer !== "function") {
         throw new Error("Příchozí hovor se nepodařilo přijmout.");
@@ -873,8 +998,32 @@ export async function createMatrixMessagingSession(
     getRooms: readVisibleRooms,
     getTimeline: readVisibleTimeline,
     getVoiceCall: () =>
-      activeVoiceCall ? matrixVoiceCallSnapshot(activeVoiceCall, activeVoiceCallStartedAt, activeVoiceCallError) : null,
+      activeGroupVoiceCall
+        ? matrixGroupVoiceCallSnapshot(
+            activeGroupVoiceCall,
+            activeGroupVoiceCallDirection,
+            activeGroupVoiceCallStartedAt,
+            activeGroupVoiceCallError,
+            ownMatrixUserId()
+          )
+        : activeVoiceCall
+          ? matrixVoiceCallSnapshot(activeVoiceCall, activeVoiceCallStartedAt, activeVoiceCallError)
+          : null,
     hangupVoiceCall: async (callId) => {
+      if (activeGroupVoiceCall?.groupCallId === callId) {
+        const call = activeGroupVoiceCall;
+        const participantCount = matrixGroupVoiceCallParticipants(call, ownMatrixUserId()).filter(
+          (participant) => participant.connected
+        ).length;
+        if (participantCount <= 1 && typeof call.terminate === "function") {
+          await call.terminate(true);
+          void notifyGroupVoiceCallWake("ended", call);
+        } else {
+          call.leave?.();
+        }
+        clearGroupVoiceCall();
+        return;
+      }
       const call = requireActiveVoiceCall(activeVoiceCall, callId);
       call.hangup?.("user_hangup", false);
       void notifyVoiceCallWake("ended", call);
@@ -898,6 +1047,25 @@ export async function createMatrixMessagingSession(
       } catch (caught) {
         throw formatMatrixClientError(caught, homeserverBaseUrl, "pozvat člena do chatové místnosti");
       }
+    },
+    inviteVoiceCallParticipants: async (callId, participantUserIds) => {
+      const call = requireActiveGroupVoiceCall(activeGroupVoiceCall, callId);
+      const participants = matrixGroupVoiceCallParticipants(call, ownMatrixUserId());
+      const connectedUserIds = new Set(
+        participants.filter((participant) => participant.connected).map((participant) => participant.userId)
+      );
+      const eligibleUserIds = new Set(
+        participants
+          .filter((participant) => participant.userId !== ownMatrixUserId())
+          .map((participant) => participant.userId)
+      );
+      const selected = [...new Set(participantUserIds)]
+        .filter((userId) => eligibleUserIds.has(userId) && !connectedUserIds.has(userId))
+        .slice(0, Math.max(0, matrixGroupVoiceCallParticipantLimit - connectedUserIds.size));
+      if (selected.length === 0) {
+        throw new Error("Vybraní členové už v hovoru jsou nebo je nelze pozvat.");
+      }
+      await notifyGroupVoiceCallWake("invite", call, selected);
     },
     joinInvitedRooms,
     leaveRoom: async (roomId) => {
@@ -996,6 +1164,11 @@ export async function createMatrixMessagingSession(
       return true;
     },
     rejectVoiceCall: async (callId) => {
+      if (activeGroupVoiceCall?.groupCallId === callId) {
+        activeGroupVoiceCall.leave?.();
+        clearGroupVoiceCall();
+        return;
+      }
       const call = requireActiveVoiceCall(activeVoiceCall, callId);
       if (typeof call.reject === "function" && matrixVoiceCallPhase(call.state) === "ringing") {
         call.reject();
@@ -1035,6 +1208,14 @@ export async function createMatrixMessagingSession(
       }
     },
     setVoiceCallMuted: async (callId, muted) => {
+      if (activeGroupVoiceCall?.groupCallId === callId) {
+        if (typeof activeGroupVoiceCall.setMicrophoneMuted !== "function") {
+          throw new Error("Ztlumení mikrofonu tento prohlížeč nepodporuje.");
+        }
+        const nextMuted = await activeGroupVoiceCall.setMicrophoneMuted(muted);
+        publishVoiceCall();
+        return nextMuted;
+      }
       const call = requireActiveVoiceCall(activeVoiceCall, callId);
       if (typeof call.setMicrophoneMuted !== "function") {
         throw new Error("Ztlumení mikrofonu tento prohlížeč nepodporuje.");
@@ -1130,19 +1311,46 @@ export async function createMatrixMessagingSession(
         throw formatMatrixClientError(caught, homeserverBaseUrl, "odeslat reakci");
       }
     },
-    startVoiceCall: async (roomId) => {
+    startVoiceCall: async (roomId, options) => {
       assertBrowserCanUseVoiceCalls();
-      if (!typedMatrixSdk.createNewMatrixCall) {
+      if (!options?.group && !typedMatrixSdk.createNewMatrixCall) {
         throw new Error("Hlasové hovory nejsou v této verzi chatu dostupné.");
       }
-      if (activeVoiceCall && matrixVoiceCallPhase(activeVoiceCall.state) !== "ended") {
+      if ((activeVoiceCall && matrixVoiceCallPhase(activeVoiceCall.state) !== "ended") || activeGroupVoiceCall) {
         throw new Error("Nejdřív ukončete aktuální hovor.");
       }
       try {
         await primeMicrophoneForWebKit();
         await joinInvitedRooms();
         await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
-        const call = typedMatrixSdk.createNewMatrixCall(client, roomId);
+        if (options?.group) {
+          if (
+            typeof client.waitUntilRoomReadyForGroupCalls !== "function" ||
+            typeof client.getGroupCallForRoom !== "function" ||
+            typeof client.createGroupCall !== "function"
+          ) {
+            throw new Error("Skupinové hovory nejsou v této verzi chatu dostupné.");
+          }
+          await client.waitUntilRoomReadyForGroupCalls(roomId);
+          let groupCall = client.getGroupCallForRoom(roomId);
+          if (!groupCall) {
+            groupCall = await client.createGroupCall(roomId, "m.voice", false, "m.ring");
+          }
+          if (!groupCall.groupCallId || !groupCall.room?.roomId || typeof groupCall.enter !== "function") {
+            throw new Error("Skupinový hovor se nepodařilo připravit.");
+          }
+          activeVoiceCall = null;
+          activeGroupVoiceCall = bindGroupVoiceCall(groupCall, "outgoing");
+          activeGroupVoiceCallStartedAt = undefined;
+          activeGroupVoiceCallError = undefined;
+          publishVoiceCall();
+          await groupCall.enter();
+          activeGroupVoiceCallStartedAt = new Date().toISOString();
+          await notifyGroupVoiceCallWake("invite", groupCall);
+          publishVoiceCall();
+          return;
+        }
+        const call = typedMatrixSdk.createNewMatrixCall!(client, roomId);
         if (!call?.callId || typeof call.placeVoiceCall !== "function") {
           throw new Error("Hlasový hovor se nepodařilo připravit.");
         }
@@ -1158,7 +1366,11 @@ export async function createMatrixMessagingSession(
         void notifyVoiceCallWake("invite", call);
         publishVoiceCall();
       } catch (caught) {
-        activeVoiceCallError = matrixVoiceCallErrorMessage(caught);
+        if (activeGroupVoiceCall) {
+          activeGroupVoiceCallError = matrixVoiceCallErrorMessage(caught);
+        } else {
+          activeVoiceCallError = matrixVoiceCallErrorMessage(caught);
+        }
         publishVoiceCall();
         throw formatMatrixClientError(caught, homeserverBaseUrl, "zahájit hovor");
       }
@@ -1221,6 +1433,8 @@ export async function createMatrixMessagingSession(
       client.off?.("User.presence", presenceListener);
       client.off?.("RoomMember.membership", membershipListener);
       client.off?.("Call.incoming", incomingCallListener);
+      client.off?.("GroupCall.incoming", incomingGroupCallListener);
+      client.off?.("GroupCall.ended", endedGroupCallListener);
       if (activeVoiceCallClearTimer !== undefined) {
         clearTimeout(activeVoiceCallClearTimer);
       }
@@ -1228,6 +1442,10 @@ export async function createMatrixMessagingSession(
       for (const settle of Array.from(voiceCallPreflightSettlers.values())) {
         settle(false);
       }
+      if (activeGroupVoiceCall) {
+        activeGroupVoiceCall.leave?.();
+      }
+      activeGroupVoiceCall = null;
       if (activeVoiceCall) {
         if (activeVoiceCall.callId) {
           tlsVoiceCallIds.add(activeVoiceCall.callId);
@@ -1250,6 +1468,10 @@ export async function createMatrixMessagingSession(
 
 function asMatrixCallLike(value: unknown): MatrixCallLike | null {
   return typeof value === "object" && value !== null ? (value as MatrixCallLike) : null;
+}
+
+function asMatrixGroupCallLike(value: unknown): MatrixGroupCallLike | null {
+  return typeof value === "object" && value !== null ? (value as MatrixGroupCallLike) : null;
 }
 
 function assertBrowserCanUseVoiceCalls(): void {
@@ -1276,6 +1498,13 @@ function requireActiveVoiceCall(call: MatrixCallLike | null, callId: string): Ma
   return call;
 }
 
+function requireActiveGroupVoiceCall(call: MatrixGroupCallLike | null, callId: string): MatrixGroupCallLike {
+  if (!call || call.groupCallId !== callId) {
+    throw new Error("Aktuální skupinový hovor už není dostupný.");
+  }
+  return call;
+}
+
 function matrixVoiceCallSnapshot(
   call: MatrixCallLike,
   startedAt: string | undefined,
@@ -1286,14 +1515,100 @@ function matrixVoiceCallSnapshot(
     callId: call.callId ?? "unknown",
     direction: call.direction === "inbound" ? "incoming" : "outgoing",
     ...(error ? { error } : {}),
+    kind: "direct",
     ...(call.localUsermediaStream ? { localStream: call.localUsermediaStream } : {}),
     microphoneMuted: Boolean(call.isMicrophoneMuted?.()),
     ...(call.getOpponentMember?.()?.userId ? { opponentUserId: call.getOpponentMember?.()?.userId } : {}),
+    participants: call.getOpponentMember?.()?.userId
+      ? [
+          {
+            connected: phase === "connected",
+            displayName: call.getOpponentMember?.()?.userId ?? "Účastník",
+            userId: call.getOpponentMember?.()?.userId ?? "unknown"
+          }
+        ]
+      : [],
     phase,
     ...(call.remoteUsermediaStream ? { remoteStream: call.remoteUsermediaStream } : {}),
     roomId: call.roomId ?? "",
     ...(startedAt ? { startedAt } : {})
   };
+}
+
+function matrixGroupVoiceCallSnapshot(
+  call: MatrixGroupCallLike,
+  direction: "incoming" | "outgoing",
+  startedAt: string | undefined,
+  error: string | undefined,
+  ownUserId: string
+): MatrixVoiceCallSnapshot {
+  const participants = matrixGroupVoiceCallParticipants(call, ownUserId);
+  const remoteStreams = (call.userMediaFeeds ?? [])
+    .filter((feed) => feed.userId !== ownUserId && feed.stream)
+    .map((feed) => feed.stream as MediaStream);
+  const phase = matrixGroupVoiceCallPhase(call.state, direction, error);
+  return {
+    callId: call.groupCallId ?? "unknown",
+    direction,
+    eligibleParticipants: participants.filter(
+      (participant) => participant.userId !== ownUserId && !participant.connected
+    ),
+    ...(error ? { error } : {}),
+    kind: "group",
+    ...(call.localCallFeed?.stream ? { localStream: call.localCallFeed.stream } : {}),
+    microphoneMuted: Boolean(call.isMicrophoneMuted?.()),
+    participants,
+    phase,
+    ...(remoteStreams[0] ? { remoteStream: remoteStreams[0] } : {}),
+    remoteStreams,
+    roomId: call.room?.roomId ?? "",
+    ...(startedAt ? { startedAt } : {})
+  };
+}
+
+function matrixGroupVoiceCallParticipants(
+  call: MatrixGroupCallLike,
+  ownUserId: string
+): MatrixVoiceCallSnapshot["participants"] {
+  const connectedUserIds = new Set<string>();
+  for (const [member, devices] of call.participants ?? []) {
+    if (member.userId && devices.size > 0) {
+      connectedUserIds.add(member.userId);
+    }
+  }
+  const roomMembers = call.room ? readRoomJoinedMembers(call.room) : [];
+  const byUserId = new Map(roomMembers.flatMap((member) => (member.userId ? [[member.userId, member] as const] : [])));
+  if (ownUserId && !byUserId.has(ownUserId)) {
+    byUserId.set(ownUserId, { displayName: "Vy", userId: ownUserId });
+  }
+  return [...byUserId.values()]
+    .flatMap((member) => {
+      const userId = member.userId;
+      if (!userId) return [];
+      return [
+        {
+          ...(member.avatarUrl ? { avatarUrl: member.avatarUrl } : {}),
+          connected: connectedUserIds.has(userId) || (userId === ownUserId && call.state === "entered"),
+          displayName: member.displayName ?? member.rawDisplayName ?? member.name ?? userId,
+          userId
+        }
+      ];
+    })
+    .sort(
+      (left, right) =>
+        Number(right.connected) - Number(left.connected) || left.displayName.localeCompare(right.displayName, "cs-CZ")
+    );
+}
+
+function matrixGroupVoiceCallPhase(
+  state: string | undefined,
+  direction: "incoming" | "outgoing",
+  error?: string
+): MatrixVoiceCallPhase {
+  if (error) return "failed";
+  if (state === "ended") return "ended";
+  if (state === "entered") return "connected";
+  return direction === "incoming" ? "ringing" : "connecting";
 }
 
 function matrixVoiceCallPhase(state: string | undefined, error?: string): MatrixVoiceCallPhase {

@@ -117,9 +117,50 @@ describe("native COP device heading adapter", () => {
       muted: true,
       roomId: "!ops:example.cz"
     });
+    listeners.forEach((listener) =>
+      listener({
+        kind: "event",
+        payload: {
+          actionId: "30000000-0000-4000-8000-000000000003",
+          callId: "call-1",
+          participantUserIds: ["@bob:example.cz"],
+          roomId: "!ops:example.cz"
+        },
+        type: "calls.addParticipantsRequested"
+      })
+    );
+    expect(callAction).toHaveBeenCalledWith({
+      action: "addParticipants",
+      actionId: "30000000-0000-4000-8000-000000000003",
+      callId: "call-1",
+      participantUserIds: ["@bob:example.cz"],
+      roomId: "!ops:example.cz"
+    });
+    listeners.forEach((listener) =>
+      listener({
+        kind: "event",
+        payload: {
+          actionId: "40000000-0000-4000-8000-000000000004",
+          callId: "native-call-1",
+          kind: "group",
+          roomId: "!ops:example.cz"
+        },
+        type: "calls.startRequested"
+      })
+    );
+    expect(callAction).toHaveBeenCalledWith({
+      action: "start",
+      actionId: "40000000-0000-4000-8000-000000000004",
+      callId: "native-call-1",
+      kind: "group",
+      roomId: "!ops:example.cz"
+    });
     await updateNativeCallPresentation({
       callId: "call-1",
       direction: "incoming",
+      eligibleParticipants: [{ connected: false, displayName: "Bob", userId: "@bob:example.cz" }],
+      kind: "group",
+      participants: [{ connected: true, displayName: "Alice", userId: "@alice:example.cz" }],
       phase: "connected",
       roomId: "!ops:example.cz",
       title: "Operační"

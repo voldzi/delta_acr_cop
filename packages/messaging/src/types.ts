@@ -76,17 +76,30 @@ export type MatrixAttachmentKind = "file" | "image" | "video";
 
 export type MatrixVoiceCallDirection = "incoming" | "outgoing";
 
+export type MatrixVoiceCallKind = "direct" | "group";
+
+export interface MatrixVoiceCallParticipant {
+  avatarUrl?: string;
+  connected: boolean;
+  displayName: string;
+  userId: string;
+}
+
 export type MatrixVoiceCallPhase = "connecting" | "connected" | "ended" | "failed" | "ringing";
 
 export interface MatrixVoiceCallSnapshot {
   callId: string;
   direction: MatrixVoiceCallDirection;
+  eligibleParticipants?: MatrixVoiceCallParticipant[];
   error?: string;
+  kind: MatrixVoiceCallKind;
   localStream?: MediaStream;
   microphoneMuted: boolean;
   opponentUserId?: string;
+  participants: MatrixVoiceCallParticipant[];
   phase: MatrixVoiceCallPhase;
   remoteStream?: MediaStream;
+  remoteStreams?: MediaStream[];
   roomId: string;
   startedAt?: string;
 }
@@ -100,6 +113,7 @@ export interface MatrixVoiceCallOptions {
 export interface MatrixVoiceCallWakeRequest {
   action: "ended" | "invite";
   callId: string;
+  participantUserIds?: string[];
   roomId: string;
 }
 
@@ -255,6 +269,7 @@ export interface MatrixMessagingSession {
   getTimeline(roomId: string): MatrixTimelineMessage[];
   getVoiceCall(): MatrixVoiceCallSnapshot | null;
   hangupVoiceCall(callId: string): Promise<void>;
+  inviteVoiceCallParticipants(callId: string, participantUserIds: string[]): Promise<void>;
   inviteUsersToRoom(roomId: string, userIds: string[]): Promise<void>;
   joinInvitedRooms(): Promise<void>;
   leaveRoom(roomId: string): Promise<void>;
@@ -275,7 +290,7 @@ export interface MatrixMessagingSession {
   ): Promise<void>;
   sendReaction(roomId: string, eventId: string, key: string): Promise<void>;
   sendTransitShare(roomId: string, transit: MatrixTransitShare): Promise<void>;
-  startVoiceCall(roomId: string): Promise<void>;
+  startVoiceCall(roomId: string, options?: { group?: boolean }): Promise<void>;
   setReaction(roomId: string, eventId: string, key: string): Promise<void>;
   syncWebPushPusher(options: MatrixWebPushPusherOptions | undefined): Promise<void>;
   syncUserProfile(profile: MatrixUserProfileSyncInput | undefined): Promise<void>;

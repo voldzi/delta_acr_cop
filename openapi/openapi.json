@@ -14124,6 +14124,18 @@
             "maxLength": 160,
             "pattern": "^[A-Za-z0-9._:=@-]{1,160}$"
           },
+          "participantUserIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "description": "Optional server-validated subset of active conversation members to ring when adding people to an existing group call. Allowed only for action=invite."
+          },
           "roomId": {
             "type": "string",
             "minLength": 4,

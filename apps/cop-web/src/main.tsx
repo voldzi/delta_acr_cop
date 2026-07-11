@@ -1534,6 +1534,9 @@ export function App() {
     void updateNativeCallPresentation({
       callId: nativeCall.callId,
       direction: nativeCall.direction,
+      eligibleParticipants: nativeCall.eligibleParticipants,
+      kind: nativeCall.kind,
+      participants: nativeCall.participants,
       phase: nativeCall.phase,
       roomId: nativeCall.roomId,
       ...(nativeCall.title ? { title: nativeCall.title } : {})
@@ -1541,6 +1544,9 @@ export function App() {
   }, [
     messagingVoiceCall?.callId,
     messagingVoiceCall?.direction,
+    messagingVoiceCall?.eligibleParticipants,
+    messagingVoiceCall?.kind,
+    messagingVoiceCall?.participants,
     messagingVoiceCall?.phase,
     messagingVoiceCall?.roomId,
     messagingVoiceCall?.title
@@ -8875,8 +8881,10 @@ interface MessagingVoiceCallCommand {
   action: ChatVoiceCallCommandAction;
   actionId?: string;
   callId: string;
+  kind?: "direct" | "group";
   muted?: boolean;
   nonce: number;
+  participantUserIds?: string[];
   roomId: string;
 }
 
@@ -12071,7 +12079,11 @@ function EmbeddedCopChatPanel({
         action: voiceCallCommand.action,
         ...(voiceCallCommand.actionId ? { actionId: voiceCallCommand.actionId } : {}),
         callId: voiceCallCommand.callId,
+        ...(voiceCallCommand.kind ? { kind: voiceCallCommand.kind } : {}),
         ...(typeof voiceCallCommand.muted === "boolean" ? { muted: voiceCallCommand.muted } : {}),
+        ...(voiceCallCommand.participantUserIds?.length
+          ? { participantUserIds: voiceCallCommand.participantUserIds }
+          : {}),
         roomId: voiceCallCommand.roomId
       }),
       window.location.origin
@@ -12182,7 +12194,11 @@ function EmbeddedCopChatPanel({
           action: voiceCallCommand.action,
           ...(voiceCallCommand.actionId ? { actionId: voiceCallCommand.actionId } : {}),
           callId: voiceCallCommand.callId,
+          ...(voiceCallCommand.kind ? { kind: voiceCallCommand.kind } : {}),
           ...(typeof voiceCallCommand.muted === "boolean" ? { muted: voiceCallCommand.muted } : {}),
+          ...(voiceCallCommand.participantUserIds?.length
+            ? { participantUserIds: voiceCallCommand.participantUserIds }
+            : {}),
           roomId: voiceCallCommand.roomId
         }),
         window.location.origin

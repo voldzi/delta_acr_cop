@@ -61,6 +61,9 @@ export function publishChatSummarySnapshot(input: {
 export function publishChatVoiceCallSnapshot(input: {
   callId: string;
   direction: ChatVoiceCallMessage["direction"];
+  eligibleParticipants?: ChatVoiceCallMessage["eligibleParticipants"];
+  kind?: ChatVoiceCallMessage["kind"];
+  participants?: ChatVoiceCallMessage["participants"];
   phase: ChatVoiceCallMessage["phase"];
   roomId: string;
   title?: string;

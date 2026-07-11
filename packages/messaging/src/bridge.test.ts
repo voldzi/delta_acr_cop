@@ -281,6 +281,9 @@ describe("voice-call (chat -> web)", () => {
     const payload = encodeChatVoiceCall({
       callId: " call-1 ",
       direction: "incoming",
+      eligibleParticipants: [{ connected: false, displayName: " Bob ", userId: " @bob:example.cz " }],
+      kind: "group",
+      participants: [{ connected: true, displayName: " Alice ", userId: " @alice:example.cz " }],
       phase: "ringing",
       roomId: " !ops:example.cz ",
       title: " COP Operator "
@@ -289,6 +292,9 @@ describe("voice-call (chat -> web)", () => {
     expect(payload).toMatchObject({
       callId: "call-1",
       direction: "incoming",
+      eligibleParticipants: [{ connected: false, displayName: "Bob", userId: "@bob:example.cz" }],
+      kind: "group",
+      participants: [{ connected: true, displayName: "Alice", userId: "@alice:example.cz" }],
       phase: "ringing",
       roomId: "!ops:example.cz",
       title: "COP Operator",
@@ -338,6 +344,30 @@ describe("voice-call-command (web -> chat)", () => {
       action: "mute",
       muted: true
     });
+    expect(
+      decodeChatVoiceCallCommand({
+        action: "addParticipants",
+        callId: "call-1",
+        participantUserIds: ["@bob:example.cz", "@bob:example.cz"],
+        roomId: "!ops:example.cz",
+        type: "cop-chat:voice-call-command"
+      })
+    ).toEqual({
+      action: "addParticipants",
+      callId: "call-1",
+      participantUserIds: ["@bob:example.cz"],
+      roomId: "!ops:example.cz",
+      type: "cop-chat:voice-call-command"
+    });
+    expect(
+      decodeChatVoiceCallCommand({
+        action: "start",
+        callId: "native-call-1",
+        kind: "group",
+        roomId: "!ops:example.cz",
+        type: "cop-chat:voice-call-command"
+      })
+    ).toMatchObject({ action: "start", kind: "group" });
   });
 
   it("round-trips a stable native action id and its acknowledgement", () => {
@@ -374,6 +404,15 @@ describe("voice-call-command (web -> chat)", () => {
       decodeChatVoiceCallCommand({
         action: "transfer",
         callId: "call-1",
+        roomId: "!ops",
+        type: "cop-chat:voice-call-command"
+      })
+    ).toBeNull();
+    expect(
+      decodeChatVoiceCallCommand({
+        action: "addParticipants",
+        callId: "call-1",
+        participantUserIds: [],
         roomId: "!ops",
         type: "cop-chat:voice-call-command"
       })
