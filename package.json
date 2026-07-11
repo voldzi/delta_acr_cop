@@ -13,7 +13,7 @@
     "dev:web": "pnpm --filter @cop/cop-web dev",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:contracts": "vitest run tests/contract packages/nato-symbol-renderer/test",
+    "test:contracts": "vitest run tests/contract packages/nato-symbol-renderer/test packages/cop-device-contract/test packages/cop-device-sdk/src",
     "typecheck": "tsc -b --pretty false",
     "lint": "pnpm typecheck && pnpm lint:eslint",
     "lint:eslint": "eslint . --max-warnings=0",
@@ -24,7 +24,7 @@
     "check:release": "pnpm build && pnpm check:bundles && pnpm check:static-runtime",
     "openapi:sync-yaml": "node scripts/sync-openapi-yaml.mjs",
     "validate:openapi": "redocly lint openapi/openapi.json",
-    "validate:schemas": "tsx scripts/validate-schemas.ts",
+    "validate:schemas": "tsx scripts/validate-schemas.ts && pnpm --filter @cop/cop-device-contract validate",
     "check": "pnpm validate:schemas && pnpm validate:openapi && pnpm format:check && pnpm lint && pnpm test"
   },
   "devDependencies": {

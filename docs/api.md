@@ -20,7 +20,9 @@ Human API documentation remains in the established numbered documentation set:
 - [COP notification decision and push](integration/12_COP_NOTIFICATION_DECISION_AND_PUSH.md)
 - [AI-COP/NIPS federation contract](integration/14_AI_COP_NIPS_FEDERATION_CONTRACT.md)
 - [Local AI provider and assistant endpoints](ai/05_LOCAL_LLM_PROVIDER.md)
-- [Native iOS/iPadOS API guide](mobile/01_NATIVE_IOS_IPADOS_APP.md)
+- [COP Device API v1](mobile/02_COP_DEVICE_API.md)
+- [COP Device bridge protocol 1.0.0](mobile/03_DEVICE_BRIDGE_PROTOCOL.md)
+- [Legacy native iOS/iPadOS REST guide](mobile/01_NATIVE_IOS_IPADOS_APP.md)
 - [PoC demo runbook and resettable seed](runbooks/14_CLIENT_POC_DEMO_GUIDE.md)
 
 Existing live system endpoints are `/health/live`, `/health/ready` and

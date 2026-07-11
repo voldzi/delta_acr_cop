@@ -422,6 +422,7 @@ import {
 } from "./web-push";
 import { collectTrackIdentityTokens, formatTrackLabel } from "./track-label";
 import { useDocumentVisible } from "./use-document-visibility";
+import { DeviceCapabilityPanel } from "./DeviceCapabilityPanel";
 import "./styles.css";
 
 export { formatWeatherStationAttribution } from "./weather-detail";
@@ -13960,6 +13961,7 @@ function SettingsDrawer({
                 onDisable={onDisableWebPush}
                 onEnable={onEnableWebPush}
               />
+              <DeviceCapabilityPanel />
               <MobileDevicePairingPanel
                 apiBase={apiBase}
                 authenticated={authSession.status === "authenticated"}

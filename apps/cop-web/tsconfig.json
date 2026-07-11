@@ -10,6 +10,7 @@
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
   "references": [
+    { "path": "../../packages/cop-device-sdk" },
     { "path": "../../packages/core" },
     { "path": "../../packages/messaging" },
     { "path": "../../packages/nato-symbol-renderer" }

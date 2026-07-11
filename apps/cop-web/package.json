@@ -8,6 +8,7 @@
     "preview": "node server.mjs"
   },
   "dependencies": {
+    "@cop/cop-device-sdk": "workspace:*",
     "@cop/core": "workspace:*",
     "@cop/messaging": "workspace:*",
     "@cop/nato-symbol-renderer": "workspace:*",

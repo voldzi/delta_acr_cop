@@ -1,5 +1,12 @@
 # Native iOS/iPadOS COP App
 
+> **Status: legacy REST/API baseline.** The fully native client direction in
+> this document was superseded by the thin iOS/iPadOS 26+ host decision in
+> [ADR-0016](../adr/0016_THIN_NATIVE_HOST_AND_DEVICE_API.md). Existing mobile
+> REST endpoints remain current and binding through `openapi/openapi.json`.
+> New device integration must follow [COP Device API v1](02_COP_DEVICE_API.md)
+> and the [bridge protocol](03_DEVICE_BRIDGE_PROTOCOL.md).
+
 Tento dokument popisuje, co je potřeba pro samostatnou nativní aplikaci pro iPhone a iPad. Cílem je profesionální mobilní klient Civilní situační mapy: rychlý situační obraz, civilní vrstvy rizik, offline/degraded provoz, alerty, zdrojová důvěryhodnost a bezpečná práce s identitou. Aplikace nesmí obsahovat targeting, navádění, weapon workflow ani doporučení použití síly.
 
 ## Rozsah první verze

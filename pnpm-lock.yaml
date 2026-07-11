@@ -186,6 +186,9 @@ importers:
 
   apps/cop-web:
     dependencies:
+      '@cop/cop-device-sdk':
+        specifier: workspace:*
+        version: link:../../packages/cop-device-sdk
       '@cop/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -278,6 +281,31 @@ importers:
   packages/ai-guardrails: {}
 
   packages/canonical-model: {}
+
+  packages/cop-device-contract:
+    devDependencies:
+      ajv:
+        specifier: ^8.18.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: ^3.0.1
+        version: 3.0.1(ajv@8.20.0)
+      tsx:
+        specifier: ^4.21.0
+        version: 4.22.4
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  packages/cop-device-sdk:
+    dependencies:
+      '@cop/cop-device-contract':
+        specifier: workspace:*
+        version: link:../cop-device-contract
+    devDependencies:
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
 
   packages/core: {}
 
