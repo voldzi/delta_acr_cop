@@ -793,6 +793,7 @@ export async function createMatrixMessagingSession(
       }
       assertBrowserCanUseVoiceCalls();
       try {
+        await primeMicrophoneForWebKit();
         if (!tlsVoiceCallIds.has(callId)) {
           if (!call.roomId) {
             throw new Error("Příchozí hovor nemá platnou místnost.");
@@ -1138,6 +1139,7 @@ export async function createMatrixMessagingSession(
         throw new Error("Nejdřív ukončete aktuální hovor.");
       }
       try {
+        await primeMicrophoneForWebKit();
         await joinInvitedRooms();
         await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
         const call = typedMatrixSdk.createNewMatrixCall(client, roomId);
@@ -1260,6 +1262,13 @@ function assertBrowserCanUseVoiceCalls(): void {
   }
 }
 
+async function primeMicrophoneForWebKit(): Promise<void> {
+  const mediaDevices = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+  if (!mediaDevices?.getUserMedia) return;
+  const stream = await mediaDevices.getUserMedia({ audio: true, video: false });
+  stream?.getTracks?.().forEach((track) => track.stop());
+}
+
 function requireActiveVoiceCall(call: MatrixCallLike | null, callId: string): MatrixCallLike {
   if (!call || call.callId !== callId) {
     throw new Error("Aktuální hovor už není dostupný.");
@@ -1308,7 +1317,13 @@ function matrixVoiceCallErrorMessage(error: unknown): string {
   if (record) {
     const code = stringValue(record.code);
     if (code === "no_user_media") {
-      return "Mikrofon není dostupný nebo nemá povolený přístup.";
+      const nested = asRecord(record.err);
+      const nestedName = nested ? stringValue(nested.name) : undefined;
+      const nestedMessage = nested ? stringValue(nested.message) : undefined;
+      const detail = [nestedName, nestedMessage].filter(Boolean).join(": ");
+      return detail
+        ? `Mikrofon není dostupný nebo nemá povolený přístup. (${detail})`
+        : "Mikrofon není dostupný nebo nemá povolený přístup.";
     }
     if (code === "ice_failed") {
       return matrixVoiceCallIceFailureMessage;
