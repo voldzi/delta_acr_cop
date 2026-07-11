@@ -4,6 +4,7 @@ export interface MobileRouteHandlers {
   appleAppSiteAssociation: RouteHandlerMethod;
   bootstrap: RouteHandlerMethod;
   deviceRegister: RouteHandlerMethod;
+  deviceRegistrationTicket: RouteHandlerMethod;
   deviceRevoke: RouteHandlerMethod;
   devices: RouteHandlerMethod;
   meshAcks: RouteHandlerMethod;
@@ -27,6 +28,7 @@ export function registerMobileRoutes(app: FastifyInstance, handlers: MobileRoute
   app.post("/api/v1/mobile/pairing/sessions/:code/confirm", handlers.pairingConfirm);
   app.get("/api/v1/mobile/devices", handlers.devices);
   app.post("/api/v1/mobile/devices", handlers.deviceRegister);
+  app.post("/api/v1/mobile/device-registration-tickets", handlers.deviceRegistrationTicket);
   app.delete("/api/v1/mobile/devices/:deviceId", handlers.deviceRevoke);
   app.post("/api/v1/mobile/mesh/ingest", handlers.meshIngest);
   app.get("/api/v1/mobile/mesh/acks", handlers.meshAcks);

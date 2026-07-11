@@ -192,6 +192,18 @@ csm://map/report/<reportId>
 
 ## iOS Contract
 
+Thin-host COP Mobile obtains a 120-second, one-time registration credential via
+`POST /api/v1/mobile/device-registration-tickets`. The request is authenticated
+with the current COP web session and binds the ticket to the subject, iOS
+platform, approved bundle ID and native app-instance UUID. Web passes only this
+ticket to the native bridge; the APNs token remains native-only and is sent
+directly to CSM Messaging `POST /api/v1/devices`.
+
+COP and CSM Messaging share
+`COP_DEVICE_REGISTRATION_TICKET_SECRET`/`CSM_DEVICE_REGISTRATION_TICKET_SECRET`
+as server-only configuration. CSM Messaging validates and consumes `jti` once.
+Neither service logs the ticket or APNs token.
+
 The iOS CSM Messenger app must register APNs devices directly with CSM
 Messaging:
 

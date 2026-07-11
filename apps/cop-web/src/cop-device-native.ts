@@ -74,6 +74,39 @@ class NativeDeviceClient {
     };
   }
 
+  async enableRemoteNotifications(apiBase: string, authToken: string): Promise<{ deviceId: string }> {
+    await this.ready();
+    const context = await this.request("notifications.getRegistrationContext", {});
+    if (!isRecord(context) || typeof context.appInstanceId !== "string" || typeof context.bundleId !== "string") {
+      throw new NativeDeviceBridgeError("Nativní registrační kontext je neplatný.", "INVALID_STATE");
+    }
+    const permission = await this.request("notifications.requestAuthorization", {});
+    const authorization = isRecord(permission) ? permission.authorization : undefined;
+    if (!isGrantedNotificationAuthorization(authorization)) {
+      throw new NativeDeviceBridgeError("Oznámení jsou v systému zamítnutá.", "PERMISSION_DENIED");
+    }
+    const response = await fetch(`${apiBase}/api/v1/mobile/device-registration-tickets`, {
+      body: JSON.stringify({ appInstanceId: context.appInstanceId, bundleId: context.bundleId }),
+      headers: { Authorization: `Bearer ${authToken}`, "Content-Type": "application/json" },
+      method: "POST"
+    });
+    if (!response.ok) {
+      throw new NativeDeviceBridgeError("COP nevydal registrační ticket pro oznámení.", "TRANSPORT_UNAVAILABLE");
+    }
+    const ticket = (await response.json()) as unknown;
+    if (!isRecord(ticket) || typeof ticket.ticket !== "string" || typeof ticket.messagingBaseUrl !== "string") {
+      throw new NativeDeviceBridgeError("COP vrátil neplatný registrační ticket.", "INVALID_STATE");
+    }
+    const registration = await this.request("notifications.registerRemote", {
+      messagingBaseUrl: ticket.messagingBaseUrl,
+      ticket: ticket.ticket
+    });
+    if (!isRecord(registration) || registration.registered !== true || typeof registration.deviceId !== "string") {
+      throw new NativeDeviceBridgeError("CSM Messaging registraci nepotvrdil.", "TRANSPORT_UNAVAILABLE");
+    }
+    return { deviceId: registration.deviceId };
+  }
+
   private ready(): Promise<void> {
     if (this.sessionId) {
       return Promise.resolve();
@@ -180,6 +213,17 @@ export async function startNativeHeading(listener: (sample: NativeHeadingSample)
   return client.startHeading(listener);
 }
 
+export async function enableNativeRemoteNotifications(
+  apiBase: string,
+  authToken: string
+): Promise<{ deviceId: string }> {
+  const transport =
+    typeof window === "undefined" ? undefined : (window as NativeWindow).__COP_DEVICE_NATIVE_TRANSPORT__;
+  if (!transport) throw new NativeDeviceBridgeError("Nativní bridge není dostupný.", "UNSUPPORTED");
+  client ??= new NativeDeviceClient(transport);
+  return client.enableRemoteNotifications(apiBase, authToken);
+}
+
 function permissionStatus(value: unknown): string {
   return isRecord(value) && typeof value.status === "string" ? value.status : "unavailable";
 }
@@ -204,4 +248,8 @@ function isHeadingSample(value: unknown): value is NativeHeadingSample {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isGrantedNotificationAuthorization(value: unknown): boolean {
+  return value === "authorized" || value === "provisional" || value === "ephemeral";
 }

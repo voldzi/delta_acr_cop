@@ -422,6 +422,7 @@ import {
 } from "./web-push";
 import { collectTrackIdentityTokens, formatTrackLabel } from "./track-label";
 import { useDocumentVisible } from "./use-document-visibility";
+import { enableNativeRemoteNotifications, nativeCompassAvailable } from "./cop-device-native";
 import "./styles.css";
 
 export { formatWeatherStationAttribution } from "./weather-detail";
@@ -1850,7 +1851,21 @@ export function App() {
 
     setWebPushBusy(true);
     try {
-      setWebPushState(await enableWebPushNotifications(apiBase, authToken));
+      if (nativeCompassAvailable()) {
+        const registration = await enableNativeRemoteNotifications(apiBase, authToken);
+        setWebPushState({
+          deviceId: registration.deviceId,
+          enabled: true,
+          permission: "granted",
+          registered: true,
+          registrationConfirmedAt: new Date().toISOString(),
+          standalone: true,
+          status: "registered",
+          warnings: []
+        });
+      } else {
+        setWebPushState(await enableWebPushNotifications(apiBase, authToken));
+      }
     } catch (error) {
       setWebPushState((current) => ({
         ...current,
@@ -14064,16 +14079,27 @@ function WebPushSettingsPanel({
   pwaStorageState: CopStoragePersistenceState;
   state: WebPushUiState;
 }) {
+  const nativeNotifications = nativeCompassAvailable();
   const canEnable =
     authenticated && state.enabled && state.status !== "unsupported" && state.status !== "permission-denied";
-  const buttonLabel = state.registered ? "Vypnout v tomto prohlížeči" : "Zapnout v tomto prohlížeči";
+  const buttonLabel = state.registered
+    ? nativeNotifications
+      ? "Nativní oznámení jsou aktivní"
+      : "Vypnout v tomto prohlížeči"
+    : nativeNotifications
+      ? "Zapnout v aplikaci"
+      : "Zapnout v tomto prohlížeči";
 
   return (
     <div className="settings-subsection">
-      <PanelTitle icon={<BellRing size={17} />} title="Webové notifikace" />
+      <PanelTitle
+        icon={<BellRing size={17} />}
+        title={nativeNotifications ? "Oznámení aplikace" : "Webové notifikace"}
+      />
       <p className="settings-help">
-        Prohlížeč může přijímat výstrahy a zprávy i mimo otevřené okno aplikace. COP registruje jen tento prohlížeč;
-        doručení zajišťuje CSM Messaging.
+        {nativeNotifications
+          ? "Aplikace může přijímat výstrahy, zprávy a příchozí hovory přes APNs. Doručení zajišťuje CSM Messaging."
+          : "Prohlížeč může přijímat výstrahy a zprávy i mimo otevřené okno aplikace. COP registruje jen tento prohlížeč; doručení zajišťuje CSM Messaging."}
       </p>
       <ReadinessRow label="Stav" value={webPushStatusLabel(state)} tone={webPushStatusTone(state)} />
       <ReadinessRow
@@ -14107,7 +14133,13 @@ function WebPushSettingsPanel({
       {state.deviceId ? (
         <ReadinessRow
           label="Zařízení"
-          value={state.registered ? "registrovaný prohlížeč" : "čeká na opětovnou registraci"}
+          value={
+            state.registered
+              ? nativeNotifications
+                ? "registrovaná aplikace"
+                : "registrovaný prohlížeč"
+              : "čeká na opětovnou registraci"
+          }
           tone={state.registered ? "ok" : "warn"}
         />
       ) : null}
@@ -14118,7 +14150,7 @@ function WebPushSettingsPanel({
       <div className="settings-button-row">
         <button
           className={state.registered ? "primary-button secondary" : "primary-button"}
-          disabled={busy || (!state.registered && !canEnable)}
+          disabled={busy || (nativeNotifications && state.registered) || (!state.registered && !canEnable)}
           onClick={state.registered ? onDisable : onEnable}
           type="button"
         >

@@ -913,6 +913,37 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/mobile/device-registration-tickets:
+    post:
+      tags:
+        - Mobile
+        - Notifications
+      summary: Issue a one-time APNs device-registration ticket for COP Mobile.
+      operationId: createMobileDeviceRegistrationTicket
+      description: Returns a short-lived bearer ticket bound to the authenticated subject, iOS app
+        instance and approved bundle ID. The ticket can authorize only one direct APNs device
+        registration at CSM Messaging and never contains an APNs token.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobileDeviceRegistrationTicketRequest"
+      responses:
+        "201":
+          description: One-time registration ticket issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileDeviceRegistrationTicketResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/mobile/devices:
     post:
       tags:
@@ -7032,6 +7063,43 @@ components:
           type: string
           enum:
             - encrypted-device-storage
+    MobileDeviceRegistrationTicketRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - appInstanceId
+        - bundleId
+      properties:
+        appInstanceId:
+          type: string
+          format: uuid
+        bundleId:
+          type: string
+          const: cz.zeleznalady.csm.messenger
+    MobileDeviceRegistrationTicketResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - expiresAt
+        - messagingBaseUrl
+        - ticket
+      properties:
+        contractVersion:
+          type: string
+          const: cop-device-registration-ticket-v1
+        expiresAt:
+          type: string
+          format: date-time
+        messagingBaseUrl:
+          type: string
+          format: uri
+          pattern: ^https://
+        ticket:
+          type: string
+          pattern: ^csmrt1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$
+          minLength: 64
+          maxLength: 4096
     MobileDeviceRegistrationRequest:
       type: object
       required:

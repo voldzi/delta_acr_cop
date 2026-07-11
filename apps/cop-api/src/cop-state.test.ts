@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createPublicFlightAggregateSourceSystem, type Affiliation, type CanonicalEventEnvelope, type ObjectStatus, type ObservedObject } from "@cop/canonical-model";
+import {
+  createPublicFlightAggregateSourceSystem,
+  type Affiliation,
+  type CanonicalEventEnvelope,
+  type ObjectStatus,
+  type ObservedObject
+} from "@cop/canonical-model";
 import type { CopStreamBus, CopStreamBusMetrics } from "./cop-stream-bus.js";
 import type { CopStreamMessage } from "./cop-stream.js";
 import type { FlightDataSource } from "./flight-data-source.js";
@@ -25,7 +31,9 @@ describe("COP state temporal history", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    const body = response.json() as { items: Array<{ objectId: string; points: Array<{ lat: number; timestamp: string }> }> };
+    const body = response.json() as {
+      items: Array<{ objectId: string; points: Array<{ lat: number; timestamp: string }> }>;
+    };
     expect(body.items).toHaveLength(1);
     expect(body.items[0]?.points.map((point) => point.timestamp)).toEqual([
       "2026-05-19T08:01:30Z",
@@ -293,16 +301,18 @@ describe("COP state temporal history", () => {
     });
 
     expect(healthResponse.statusCode).toBe(200);
-    expect((healthResponse.json() as { items: unknown[] }).items).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        acceptedEvents: 1,
-        currentTracks: 1,
-        health: "ONLINE",
-        sourceSystemId: "flight-data-api",
-        sourceType: "PUBLIC_FLIGHT_AGGREGATE",
-        totalTracks: 1
-      })
-    ]));
+    expect((healthResponse.json() as { items: unknown[] }).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          acceptedEvents: 1,
+          currentTracks: 1,
+          health: "ONLINE",
+          sourceSystemId: "flight-data-api",
+          sourceType: "PUBLIC_FLIGHT_AGGREGATE",
+          totalTracks: 1
+        })
+      ])
+    );
 
     await app.close();
   });
@@ -382,7 +392,9 @@ describe("COP state temporal history", () => {
       url: "/api/v1/cop/alerts"
     });
     expect(alertsResponse.statusCode).toBe(200);
-    const alertsBody = alertsResponse.json() as { items: Array<{ alertId: string; objectId?: string; status: string; type: string }> };
+    const alertsBody = alertsResponse.json() as {
+      items: Array<{ alertId: string; objectId?: string; status: string; type: string }>;
+    };
     const lowConfidenceAlert = alertsBody.items.find((alert) => alert.type === "LOW_CONFIDENCE");
     expect(lowConfidenceAlert).toMatchObject({
       objectId: "AIR_SIM_UAV-0001",
@@ -412,9 +424,11 @@ describe("COP state temporal history", () => {
       method: "GET",
       url: "/api/v1/cop/alerts"
     });
-    expect((activeOnlyResponse.json() as { items: Array<{ alertId: string }> }).items.some((alert) => alert.alertId === lowConfidenceAlert!.alertId)).toBe(
-      false
-    );
+    expect(
+      (activeOnlyResponse.json() as { items: Array<{ alertId: string }> }).items.some(
+        (alert) => alert.alertId === lowConfidenceAlert!.alertId
+      )
+    ).toBe(false);
 
     const withAcknowledgedResponse = await app.inject({
       headers: {
@@ -423,7 +437,8 @@ describe("COP state temporal history", () => {
       method: "GET",
       url: "/api/v1/cop/alerts?includeAcknowledged=true"
     });
-    const acknowledgedItems = (withAcknowledgedResponse.json() as { items: Array<{ alertId: string; status: string }> }).items;
+    const acknowledgedItems = (withAcknowledgedResponse.json() as { items: Array<{ alertId: string; status: string }> })
+      .items;
     expect(acknowledgedItems.find((alert) => alert.alertId === lowConfidenceAlert!.alertId)).toMatchObject({
       alertId: lowConfidenceAlert!.alertId,
       status: "ACKNOWLEDGED"
@@ -472,9 +487,16 @@ describe("COP state temporal history", () => {
     });
 
     expect(alertsResponse.statusCode).toBe(200);
-    const alert = (alertsResponse.json() as { items: Array<{ evidence?: Record<string, unknown>; map?: { radiusKm: number }; objectId?: string; type: string }> }).items.find(
-      (item) => item.type === "AOI_ENTRY"
-    );
+    const alert = (
+      alertsResponse.json() as {
+        items: Array<{
+          evidence?: Record<string, unknown>;
+          map?: { radiusKm: number };
+          objectId?: string;
+          type: string;
+        }>;
+      }
+    ).items.find((item) => item.type === "AOI_ENTRY");
     expect(alert).toMatchObject({
       objectId: "AIR_SIM_UAV-0001",
       map: {
@@ -542,9 +564,9 @@ describe("COP state temporal history", () => {
     });
 
     expect(alertsResponse.statusCode).toBe(200);
-    const alert = (alertsResponse.json() as { items: Array<{ evidence?: Record<string, unknown>; objectId?: string; type: string }> }).items.find(
-      (item) => item.type === "AOI_ENTRY"
-    );
+    const alert = (
+      alertsResponse.json() as { items: Array<{ evidence?: Record<string, unknown>; objectId?: string; type: string }> }
+    ).items.find((item) => item.type === "AOI_ENTRY");
     expect(alert).toMatchObject({
       objectId: "AIR_SIM_UAV-0001"
     });
@@ -660,6 +682,36 @@ describe("COP state temporal history", () => {
     });
     expect(JSON.stringify(response.json())).not.toContain("apns-token-redacted-in-response");
     await app.close();
+  });
+
+  it("issues a short-lived APNs registration ticket bound to the current subject and app instance", async () => {
+    const previous = process.env.COP_DEVICE_REGISTRATION_TICKET_SECRET;
+    process.env.COP_DEVICE_REGISTRATION_TICKET_SECRET = "t".repeat(32);
+    const app = buildServer({ now: () => new Date("2026-05-19T08:02:10Z") });
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        appInstanceId: "40000000-0000-4000-8000-000000000001",
+        bundleId: "cz.zeleznalady.csm.messenger"
+      },
+      url: "/api/v1/mobile/device-registration-tickets"
+    });
+    expect(response.statusCode).toBe(201);
+    const body = response.json() as { expiresAt: string; ticket: string };
+    expect(body.ticket).toMatch(/^csmrt1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    const claims = JSON.parse(Buffer.from(body.ticket.split(".")[1]!, "base64url").toString("utf8"));
+    expect(claims).toMatchObject({
+      appInstanceId: "40000000-0000-4000-8000-000000000001",
+      aud: "csm-messaging-device-registration",
+      bundleId: "cz.zeleznalady.csm.messenger",
+      purpose: "apns-device-registration",
+      sub: "lab"
+    });
+    expect(claims.exp - claims.iat).toBe(120);
+    await app.close();
+    if (previous === undefined) delete process.env.COP_DEVICE_REGISTRATION_TICKET_SECRET;
+    else process.env.COP_DEVICE_REGISTRATION_TICKET_SECRET = previous;
   });
 
   it("pairs iOS devices through short-lived web-confirmed sessions", async () => {
@@ -931,7 +983,10 @@ class FakeTrackHistoryStore implements TrackHistoryStore {
     return Array.from(this.current.values());
   }
 
-  async query(_query: TrackHistoryQuery, _now: Date): Promise<Array<{ objectId: string; points: TrackHistoryPoint[] }>> {
+  async query(
+    _query: TrackHistoryQuery,
+    _now: Date
+  ): Promise<Array<{ objectId: string; points: TrackHistoryPoint[] }>> {
     this.queryCalls += 1;
     return [
       {

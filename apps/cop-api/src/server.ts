@@ -5347,6 +5347,63 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         serverTimestamp: requestNow.toISOString()
       });
     },
+    deviceRegistrationTicket: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) return reply;
+      const body = isRecord(request.body) ? request.body : {};
+      const appInstanceId = optionalTrimmedString(body.appInstanceId, 200);
+      const bundleId = optionalTrimmedString(body.bundleId, 200);
+      if (
+        !appInstanceId ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(appInstanceId) ||
+        bundleId !== "cz.zeleznalady.csm.messenger"
+      ) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Device registration ticket binding is invalid.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const secret = optionalTrimmedString(process.env.COP_DEVICE_REGISTRATION_TICKET_SECRET, 4096);
+      if (!secret || Buffer.byteLength(secret) < 32) {
+        return sendError(
+          reply,
+          503,
+          "DEPENDENCY_NOT_READY",
+          "Device registration ticket issuer is not configured.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const issuedAt = Math.floor(now().getTime() / 1000);
+      const expiresAt = issuedAt + 120;
+      const claims = {
+        appInstanceId,
+        aud: "csm-messaging-device-registration",
+        bundleId,
+        exp: expiresAt,
+        iat: issuedAt,
+        jti: randomUUID(),
+        platform: "ios",
+        purpose: "apns-device-registration",
+        sub: actor.subjectId
+      };
+      const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
+      const signature = createHmac("sha256", secret).update(payload).digest("base64url");
+      appendAudit(
+        state,
+        "MOBILE_DEVICE_REGISTRATION_TICKET_ISSUED",
+        { actorSubjectId: actor.subjectId, appInstanceId, expiresAt: new Date(expiresAt * 1000).toISOString() },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+      return reply.code(201).send({
+        contractVersion: "cop-device-registration-ticket-v1",
+        expiresAt: new Date(expiresAt * 1000).toISOString(),
+        messagingBaseUrl: process.env.COP_CSM_MESSAGING_PUBLIC_URL ?? "https://msg.zeleznalady.cz",
+        ticket: `csmrt1.${payload}.${signature}`
+      });
+    },
     deviceRevoke: async (request, reply) => {
       const actor = requireActor(request, reply);
       if (!actor) {
