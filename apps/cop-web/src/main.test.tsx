@@ -1631,6 +1631,7 @@ describe("COP web dashboard", () => {
     if (!firstFrame) {
       throw new Error("Embedded chat iframe was not mounted.");
     }
+    expect(firstFrame.getAttribute("allow")).toBe("microphone");
     expect(firstFrame?.closest("aside")?.getAttribute("aria-hidden")).toBe("true");
     const postMessage = vi.fn();
     Object.defineProperty(firstFrame, "contentWindow", { configurable: true, value: { postMessage } });

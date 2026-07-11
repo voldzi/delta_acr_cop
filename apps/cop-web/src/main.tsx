@@ -12164,6 +12164,7 @@ function EmbeddedCopChatPanel({
           </header>
         ) : null}
         <iframe
+          allow="microphone"
           ref={iframeRef}
           className="embedded-chat-frame"
           src={chatFrameSrc}
