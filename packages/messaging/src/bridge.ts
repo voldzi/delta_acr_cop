@@ -17,7 +17,8 @@ export const chatBridgeMessageTypes = {
   summary: "cop-chat:summary",
   unread: "cop-chat:unread",
   voiceCall: "cop-chat:voice-call",
-  voiceCallCommand: "cop-chat:voice-call-command"
+  voiceCallCommand: "cop-chat:voice-call-command",
+  voiceCallCommandAcknowledgement: "cop-chat:voice-call-command-ack"
 } as const;
 
 export const chatBridgeChannelName = "cop-chat";
@@ -64,13 +65,25 @@ export interface ChatVoiceCallMessage {
   type: typeof chatBridgeMessageTypes.voiceCall;
 }
 
-export type ChatVoiceCallCommandAction = "answer" | "hangup" | "open" | "reject";
+export type ChatVoiceCallCommandAction = "answer" | "hangup" | "mute" | "open" | "reject";
 
 export interface ChatVoiceCallCommandMessage {
   action: ChatVoiceCallCommandAction;
+  actionId?: string;
   callId: string;
+  muted?: boolean;
   roomId: string;
   type: typeof chatBridgeMessageTypes.voiceCallCommand;
+}
+
+export type ChatVoiceCallCommandAcknowledgementStatus = "failed" | "succeeded";
+
+export interface ChatVoiceCallCommandAcknowledgementMessage {
+  actionId: string;
+  callId: string;
+  roomId: string;
+  status: ChatVoiceCallCommandAcknowledgementStatus;
+  type: typeof chatBridgeMessageTypes.voiceCallCommandAcknowledgement;
 }
 
 export interface ChatCenterLocationMessage {
@@ -267,7 +280,9 @@ export function decodeChatVoiceCall(value: unknown): ChatVoiceCallMessage | null
 
 export function encodeChatVoiceCallCommand(input: {
   action: ChatVoiceCallCommandAction;
+  actionId?: string;
   callId: string;
+  muted?: boolean;
   roomId: string;
 }): ChatVoiceCallCommandMessage {
   const normalized = normalizeChatVoiceCallCommand(input);
@@ -283,6 +298,30 @@ export function decodeChatVoiceCallCommand(value: unknown): ChatVoiceCallCommand
     return null;
   }
   return normalizeChatVoiceCallCommand(data);
+}
+
+// chat → web: end-to-end acknowledgement for a native CallKit command.
+export function encodeChatVoiceCallCommandAcknowledgement(input: {
+  actionId: string;
+  callId: string;
+  roomId: string;
+  status: ChatVoiceCallCommandAcknowledgementStatus;
+}): ChatVoiceCallCommandAcknowledgementMessage {
+  const normalized = normalizeChatVoiceCallCommandAcknowledgement(input);
+  if (!normalized) {
+    throw new Error("Voice call command acknowledgement requires actionId, callId, roomId and status.");
+  }
+  return normalized;
+}
+
+export function decodeChatVoiceCallCommandAcknowledgement(
+  value: unknown
+): ChatVoiceCallCommandAcknowledgementMessage | null {
+  const data = asRecord(value);
+  if (!data || data.type !== chatBridgeMessageTypes.voiceCallCommandAcknowledgement) {
+    return null;
+  }
+  return normalizeChatVoiceCallCommandAcknowledgement(data);
 }
 
 // chat → web: center the map on a shared location and optionally focus a map entity.
@@ -698,21 +737,56 @@ function normalizeVoiceCallPhase(value: unknown): ChatVoiceCallPhase | undefined
 function normalizeChatVoiceCallCommand(value: unknown): ChatVoiceCallCommandMessage | null {
   const data = asRecord(value);
   const action = normalizeVoiceCallCommandAction(data?.action);
+  const actionId = normalizeBridgeUUID(data?.actionId);
   const callId = normalizeBridgeText(data?.callId, 240);
   const roomId = normalizeBridgeText(data?.roomId, 240);
   if (!data || !action || !callId || !roomId) {
     return null;
   }
-  return {
+  if (action === "mute" && typeof data.muted !== "boolean") {
+    return null;
+  }
+  return compactRecord({
     action,
+    actionId,
     callId,
+    muted: action === "mute" ? data.muted : undefined,
     roomId,
     type: chatBridgeMessageTypes.voiceCallCommand
+  }) as ChatVoiceCallCommandMessage;
+}
+
+function normalizeChatVoiceCallCommandAcknowledgement(
+  value: unknown
+): ChatVoiceCallCommandAcknowledgementMessage | null {
+  const data = asRecord(value);
+  const actionId = normalizeBridgeUUID(data?.actionId);
+  const callId = normalizeBridgeText(data?.callId, 240);
+  const roomId = normalizeBridgeText(data?.roomId, 240);
+  const status = data?.status === "succeeded" || data?.status === "failed" ? data.status : undefined;
+  if (!data || !actionId || !callId || !roomId || !status) {
+    return null;
+  }
+  return {
+    actionId,
+    callId,
+    roomId,
+    status,
+    type: chatBridgeMessageTypes.voiceCallCommandAcknowledgement
   };
 }
 
 function normalizeVoiceCallCommandAction(value: unknown): ChatVoiceCallCommandAction | undefined {
-  return value === "answer" || value === "hangup" || value === "open" || value === "reject" ? value : undefined;
+  return value === "answer" || value === "hangup" || value === "mute" || value === "open" || value === "reject"
+    ? value
+    : undefined;
+}
+
+function normalizeBridgeUUID(value: unknown): string | undefined {
+  const normalized = normalizeBridgeText(value, 64);
+  return normalized && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(normalized)
+    ? normalized.toLowerCase()
+    : undefined;
 }
 
 function normalizeCenterZoom(value: unknown): number | undefined {

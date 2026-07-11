@@ -437,7 +437,15 @@ Messaging through the existing one-time device ticket. For a device carrying
 that token, incoming and ended wake events use the bundle `.voip` APNs topic and
 CallKit; every other notification remains a normal APNs alert. CallKit answer,
 reject and end actions cross the exact-origin Device Bridge and reuse the
-host-to-chat voice command contract. Matrix remains the only signalling/media
+host-to-chat voice command contract. A native action carries a stable
+`actionId`; COP Chat keeps it pending until the matching Matrix call exists,
+deduplicates retries and returns a success/failure acknowledgement only after
+the Matrix command settles. iOS keeps the corresponding `CXAction` pending,
+retries delivery with the same ID and fails closed on acknowledgement timeout.
+Negative or missing acknowledgement forces COP Mobile to invalidate and reload
+the web media engine, remove the native call and deactivate audio; an end/reject
+action is fulfilled only after that forced close, while answer/mute fails.
+Matrix remains the only signalling/media
 owner, and neither VoIP push nor native code receives SDP, ICE candidates,
 Matrix credentials or decrypted content. `action=ended` includes the sender's
 own registered devices so a locally answered CallKit surface is closed when the

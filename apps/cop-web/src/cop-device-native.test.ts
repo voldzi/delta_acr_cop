@@ -1,21 +1,47 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from "vitest";
-import { nativeCompassAvailable, startNativeHeading, subscribeNativeCallActions } from "./cop-device-native";
+import {
+  acknowledgeNativeCallAction,
+  nativeCompassAvailable,
+  presentNativeChat,
+  startNativeHeading,
+  subscribeNativeCallActions,
+  updateNativeCallPresentation
+} from "./cop-device-native";
 
 describe("native COP device heading adapter", () => {
   it("handshakes, checks permission and forwards native heading events", async () => {
     const listeners = new Set<(message: Record<string, unknown>) => void>();
     const methods: string[] = [];
+    let expireNextSession = false;
+    let handshakeCount = 0;
     const transport = {
       postMessage(message: Record<string, unknown>) {
         if (message.kind === "hello") {
+          handshakeCount += 1;
           listeners.forEach((listener) =>
-            listener({ id: message.id, kind: "ready", sessionId: "20000000-0000-4000-8000-000000000001" })
+            listener({
+              id: message.id,
+              kind: "ready",
+              sessionId: `20000000-0000-4000-8000-${String(handshakeCount).padStart(12, "0")}`
+            })
           );
           return;
         }
         methods.push(String(message.method));
+        if (expireNextSession) {
+          expireNextSession = false;
+          listeners.forEach((listener) =>
+            listener({
+              error: { code: "SESSION_EXPIRED", message: "expired" },
+              id: message.id,
+              kind: "response",
+              ok: false
+            })
+          );
+          return;
+        }
         listeners.forEach((listener) =>
           listener({
             id: message.id,
@@ -58,15 +84,66 @@ describe("native COP device heading adapter", () => {
     listeners.forEach((listener) =>
       listener({
         kind: "event",
-        payload: { callId: "call-1", roomId: "!ops:example.cz" },
+        payload: {
+          actionId: "10000000-0000-4000-8000-000000000001",
+          callId: "call-1",
+          roomId: "!ops:example.cz"
+        },
         type: "calls.answerRequested"
       })
     );
     expect(callAction).toHaveBeenCalledWith({
       action: "answer",
+      actionId: "10000000-0000-4000-8000-000000000001",
       callId: "call-1",
       roomId: "!ops:example.cz"
     });
+    listeners.forEach((listener) =>
+      listener({
+        kind: "event",
+        payload: {
+          actionId: "20000000-0000-4000-8000-000000000002",
+          callId: "call-1",
+          muted: true,
+          roomId: "!ops:example.cz"
+        },
+        type: "calls.muteRequested"
+      })
+    );
+    expect(callAction).toHaveBeenCalledWith({
+      action: "mute",
+      actionId: "20000000-0000-4000-8000-000000000002",
+      callId: "call-1",
+      muted: true,
+      roomId: "!ops:example.cz"
+    });
+    await updateNativeCallPresentation({
+      callId: "call-1",
+      direction: "incoming",
+      phase: "connected",
+      roomId: "!ops:example.cz",
+      title: "Operační"
+    });
+    expect(methods).toContain("calls.updatePresentation");
+    await acknowledgeNativeCallAction({
+      actionId: "10000000-0000-4000-8000-000000000001",
+      callId: "call-1",
+      roomId: "!ops:example.cz",
+      status: "succeeded"
+    });
+    expect(methods).toContain("calls.acknowledgeAction");
+    expireNextSession = true;
+    await expect(
+      acknowledgeNativeCallAction({
+        actionId: "10000000-0000-4000-8000-000000000001",
+        callId: "call-1",
+        roomId: "!ops:example.cz",
+        status: "succeeded"
+      })
+    ).rejects.toMatchObject({ code: "SESSION_EXPIRED" });
+    expect(handshakeCount).toBe(2);
+    await presentNativeChat();
+    expect(methods).toContain("communications.openChat");
     stopCalls();
     stop();
   });

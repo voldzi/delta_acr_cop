@@ -135,8 +135,11 @@ import {
   decodeCopMapFocusSearch,
   encodeChatLiveLocations,
   encodeChatReportDraft,
+  encodeChatVoiceCallCommandAcknowledgement,
   encodeCopReportDraftUrl,
   type ChatReportDraftPayload,
+  type ChatVoiceCallCommandAcknowledgementMessage,
+  type ChatVoiceCallCommandMessage,
   type ChatVoiceCallMessage,
   type ChatSummaryMessage,
   type ChatSummarySyncState,
@@ -297,6 +300,11 @@ export interface ChatListItem {
 }
 
 type ChatVoiceCallBridgeSnapshot = Omit<ChatVoiceCallMessage, "at" | "type">;
+
+interface PendingVoiceCallCommand {
+  command: ChatVoiceCallCommandMessage;
+  timeoutId: number;
+}
 
 interface DemoConversationMetadata {
   media: DemoConversationMedia[];
@@ -668,6 +676,12 @@ export function ChatApp() {
   const notificationPrimedRoomIdsRef = React.useRef<Set<string>>(new Set());
   const notificationRoomWatermarksRef = React.useRef<Map<string, number>>(new Map());
   const lastVoiceCallBridgeSnapshotRef = React.useRef<ChatVoiceCallBridgeSnapshot | null>(null);
+  const voiceCallRef = React.useRef<MatrixVoiceCallSnapshot | null>(null);
+  const pendingVoiceCallCommandsRef = React.useRef<Map<string, PendingVoiceCallCommand>>(new Map());
+  const executingVoiceCallCommandIdsRef = React.useRef<Set<string>>(new Set());
+  const completedVoiceCallCommandAcksRef = React.useRef<Map<string, ChatVoiceCallCommandAcknowledgementMessage>>(
+    new Map()
+  );
   const authSessionRef = React.useRef(authSession);
   const selectedRoomIdRef = React.useRef<string | null>(null);
   const timelineCacheRef = React.useRef<Map<string, MatrixTimelineMessage[]>>(new Map());
@@ -1159,6 +1173,22 @@ export function ChatApp() {
   React.useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId;
   }, [selectedRoomId]);
+
+  React.useEffect(() => {
+    voiceCallRef.current = voiceCall;
+    void drainPendingVoiceCallCommands();
+  }, [matrixSession, voiceCall?.callId, voiceCall?.phase, voiceCall?.roomId]);
+
+  React.useEffect(
+    () => () => {
+      for (const pending of pendingVoiceCallCommandsRef.current.values()) {
+        window.clearTimeout(pending.timeoutId);
+      }
+      pendingVoiceCallCommandsRef.current.clear();
+      executingVoiceCallCommandIdsRef.current.clear();
+    },
+    []
+  );
 
   React.useEffect(() => {
     conversationsRef.current = conversations;
@@ -1752,16 +1782,7 @@ export function ChatApp() {
       }
       const voiceCallCommand = decodeChatVoiceCallCommand(event.data);
       if (voiceCallCommand) {
-        const currentCall = voiceCall?.callId === voiceCallCommand.callId ? voiceCall : matrixSession?.getVoiceCall();
-        if (currentCall?.callId === voiceCallCommand.callId) {
-          if (voiceCallCommand.action === "answer") {
-            void answerVoiceCall(currentCall);
-          } else if (voiceCallCommand.action === "reject") {
-            void rejectVoiceCall(currentCall);
-          } else if (voiceCallCommand.action === "hangup") {
-            void hangupVoiceCall(currentCall);
-          }
-        }
+        queueVoiceCallCommand(voiceCallCommand);
         return;
       }
       const selection = embeddedChatSelectionFromMessage(event.data);
@@ -3689,6 +3710,153 @@ export function ChatApp() {
     }
   }
 
+  function queueVoiceCallCommand(command: ChatVoiceCallCommandMessage): void {
+    if (command.actionId) {
+      const completed = completedVoiceCallCommandAcksRef.current.get(command.actionId);
+      if (completed) {
+        postVoiceCallCommandAcknowledgement(completed);
+        return;
+      }
+    }
+
+    const commandKey = command.actionId ?? `legacy:${crypto.randomUUID()}`;
+    if (pendingVoiceCallCommandsRef.current.has(commandKey)) {
+      void drainPendingVoiceCallCommands();
+      return;
+    }
+    if (pendingVoiceCallCommandsRef.current.size >= 32) {
+      const oldestKey = pendingVoiceCallCommandsRef.current.keys().next().value as string | undefined;
+      if (oldestKey) {
+        expirePendingVoiceCallCommand(oldestKey);
+      }
+    }
+    const timeoutId = window.setTimeout(() => expirePendingVoiceCallCommand(commandKey), 9_000);
+    pendingVoiceCallCommandsRef.current.set(commandKey, { command, timeoutId });
+    void drainPendingVoiceCallCommands();
+  }
+
+  function expirePendingVoiceCallCommand(commandKey: string): void {
+    const pending = pendingVoiceCallCommandsRef.current.get(commandKey);
+    if (!pending) {
+      return;
+    }
+    window.clearTimeout(pending.timeoutId);
+    pendingVoiceCallCommandsRef.current.delete(commandKey);
+    executingVoiceCallCommandIdsRef.current.delete(commandKey);
+    if (pending.command.actionId) {
+      completeVoiceCallCommand(pending.command, "failed");
+    }
+  }
+
+  async function drainPendingVoiceCallCommands(): Promise<void> {
+    const session = matrixSessionRef.current;
+    for (const [commandKey, pending] of pendingVoiceCallCommandsRef.current) {
+      if (executingVoiceCallCommandIdsRef.current.has(commandKey)) {
+        continue;
+      }
+      const currentCall =
+        voiceCallRef.current?.callId === pending.command.callId &&
+        voiceCallRef.current.roomId === pending.command.roomId
+          ? voiceCallRef.current
+          : session?.getVoiceCall();
+      const matchingCall =
+        currentCall?.callId === pending.command.callId && currentCall.roomId === pending.command.roomId
+          ? currentCall
+          : null;
+      if (pending.command.action !== "open" && (!session || !matchingCall)) {
+        continue;
+      }
+
+      executingVoiceCallCommandIdsRef.current.add(commandKey);
+      void executePendingVoiceCallCommand(commandKey, pending.command, session, matchingCall);
+    }
+  }
+
+  async function executePendingVoiceCallCommand(
+    commandKey: string,
+    command: ChatVoiceCallCommandMessage,
+    session: MatrixMessagingSession | null,
+    call: MatrixVoiceCallSnapshot | null
+  ): Promise<void> {
+    try {
+      if (command.action === "open") {
+        resetRouteOpenAttempt();
+        await applyAndOpenRouteSelection(command.roomId);
+      } else {
+        if (!session || !call) {
+          return;
+        }
+        switch (command.action) {
+          case "answer": {
+            await session.answerVoiceCall(call.callId);
+            const roomId = voiceCallRoomToFocusAfterAnswer(call.roomId, selectedRoomIdRef.current);
+            if (roomId) {
+              resetRouteOpenAttempt();
+              await applyAndOpenRouteSelection(roomId);
+            }
+            break;
+          }
+          case "reject":
+            await session.rejectVoiceCall(call.callId);
+            break;
+          case "hangup":
+            await session.hangupVoiceCall(call.callId);
+            break;
+          case "mute":
+            await session.setVoiceCallMuted(call.callId, command.muted === true);
+            break;
+        }
+      }
+      if (pendingVoiceCallCommandsRef.current.has(commandKey)) {
+        completeVoiceCallCommand(command, "succeeded", commandKey);
+      }
+    } catch (caught) {
+      setError(userFacingVoiceCallError(caught, "Nativní povel hovoru se nepodařilo provést."));
+      if (pendingVoiceCallCommandsRef.current.has(commandKey)) {
+        completeVoiceCallCommand(command, "failed", commandKey);
+      }
+    } finally {
+      executingVoiceCallCommandIdsRef.current.delete(commandKey);
+    }
+  }
+
+  function completeVoiceCallCommand(
+    command: ChatVoiceCallCommandMessage,
+    status: "failed" | "succeeded",
+    commandKey = command.actionId
+  ): void {
+    if (commandKey) {
+      const pending = pendingVoiceCallCommandsRef.current.get(commandKey);
+      if (pending) {
+        window.clearTimeout(pending.timeoutId);
+        pendingVoiceCallCommandsRef.current.delete(commandKey);
+      }
+    }
+    if (!command.actionId) {
+      return;
+    }
+    const acknowledgement = encodeChatVoiceCallCommandAcknowledgement({
+      actionId: command.actionId,
+      callId: command.callId,
+      roomId: command.roomId,
+      status
+    });
+    completedVoiceCallCommandAcksRef.current.set(command.actionId, acknowledgement);
+    if (completedVoiceCallCommandAcksRef.current.size > 64) {
+      const oldest = completedVoiceCallCommandAcksRef.current.keys().next().value as string | undefined;
+      if (oldest) {
+        completedVoiceCallCommandAcksRef.current.delete(oldest);
+      }
+    }
+    postVoiceCallCommandAcknowledgement(acknowledgement);
+  }
+
+  function postVoiceCallCommandAcknowledgement(acknowledgement: ChatVoiceCallCommandAcknowledgementMessage): void {
+    if (embedded && window.parent !== window) {
+      window.parent.postMessage(acknowledgement, window.location.origin);
+    }
+  }
+
   async function startVoiceCall(): Promise<void> {
     const roomId = activeChat?.roomId;
     if (!canStartVoiceCall || !matrixSession || !roomId) {
@@ -3752,12 +3920,16 @@ export function ChatApp() {
   }
 
   async function toggleVoiceCallMute(call: MatrixVoiceCallSnapshot): Promise<void> {
+    await setVoiceCallMute(call, !call.microphoneMuted);
+  }
+
+  async function setVoiceCallMute(call: MatrixVoiceCallSnapshot, muted: boolean): Promise<void> {
     const session = matrixSessionRef.current;
     if (!session) {
       return;
     }
     try {
-      await session.setVoiceCallMuted(call.callId, !call.microphoneMuted);
+      await session.setVoiceCallMuted(call.callId, muted);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Mikrofon se nepodařilo přepnout.");
     }

@@ -18,6 +18,7 @@ import {
   firstUnreadChatSummaryRoom,
   formatWeatherStationAttribution,
   hostIncomingChatVoiceCall,
+  hostNativeChatVoiceCall,
   hostUnreadCountFromChatSummary,
   hostUsableChatSummary,
   hostVisibleChatVoiceCall,
@@ -397,6 +398,9 @@ describe("COP web dashboard", () => {
     expect(hostIncomingChatVoiceCall(freshCall)).toEqual(freshCall);
     expect(hostVisibleChatVoiceCall(staleCall, now)).toBeNull();
     expect(hostVisibleChatVoiceCall(endedCall, now)).toBeNull();
+    expect(hostNativeChatVoiceCall(freshCall, now)).toEqual(freshCall);
+    expect(hostNativeChatVoiceCall(staleCall, now)).toBeNull();
+    expect(hostNativeChatVoiceCall(endedCall, now)).toEqual(endedCall);
   });
 
   it("turns service-worker call wake messages into global host call state", () => {

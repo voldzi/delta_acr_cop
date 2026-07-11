@@ -274,8 +274,7 @@ import {
   applyChatSummaryPayload,
   applyChatUnreadPayload,
   applyChatVoiceCallPayload,
-  readStoredChatSummarySnapshot,
-  readStoredChatVoiceCallSnapshot
+  readStoredChatSummarySnapshot
 } from "@cop/messaging/runtime";
 import {
   chatUnreadStorageKey,
@@ -284,6 +283,7 @@ import {
   decodeChatCenterLocation,
   decodeChatLiveLocations,
   decodeChatReportDraft,
+  decodeChatVoiceCallCommandAcknowledgement,
   decodeCopMapFocusSearch,
   decodeCopReportDraftSearch,
   encodeChatCurrentLocation,
@@ -423,10 +423,13 @@ import {
 import { collectTrackIdentityTokens, formatTrackLabel } from "./track-label";
 import { useDocumentVisible } from "./use-document-visibility";
 import {
+  acknowledgeNativeCallAction,
   enableNativeRemoteNotifications,
   nativeCompassAvailable,
+  presentNativeChat,
   refreshNativeRemoteNotificationRegistration,
-  subscribeNativeCallActions
+  subscribeNativeCallActions,
+  updateNativeCallPresentation
 } from "./cop-device-native";
 import "./styles.css";
 
@@ -1264,9 +1267,7 @@ export function App() {
   const [messagingUnreadCount, setMessagingUnreadCount] = React.useState(() =>
     hostUnreadCountFromChatSummary(hostUsableChatSummary(readStoredChatSummarySnapshot()))
   );
-  const [messagingVoiceCall, setMessagingVoiceCall] = React.useState<ChatVoiceCallMessage | null>(() =>
-    hostVisibleChatVoiceCall(readStoredChatVoiceCallSnapshot())
-  );
+  const [messagingVoiceCall, setMessagingVoiceCall] = React.useState<ChatVoiceCallMessage | null>(null);
   const [sharedLiveLocations, setSharedLiveLocations] = React.useState<ChatLiveLocationPayload[]>([]);
   const messagingSelectionNonceRef = React.useRef(0);
   const messagingTransitShareNonceRef = React.useRef(0);
@@ -1331,15 +1332,13 @@ export function App() {
         setMessagingUnreadCount(hostUnreadCountFromChatSummary(usableSummary));
       });
     const applyUnread = (value: unknown) => applyChatUnreadPayload(value, setMessagingUnreadCount);
-    const applyVoiceCall = (value: unknown) =>
-      applyChatVoiceCallPayload(value, (call) => setMessagingVoiceCall(hostVisibleChatVoiceCall(call)));
+    const applyVoiceCall = (value: unknown) => applyChatVoiceCallPayload(value, (call) => setMessagingVoiceCall(call));
     const hydrateStoredUnread = () => {
       const summary = hostUsableChatSummary(readStoredChatSummarySnapshot());
       if (summary) {
         setMessagingSummary(summary);
         setMessagingUnreadCount(hostUnreadCountFromChatSummary(summary));
       }
-      setMessagingVoiceCall(hostVisibleChatVoiceCall(readStoredChatVoiceCallSnapshot()));
     };
     const handleChatMessage = (event: MessageEvent) => {
       if (
@@ -1358,6 +1357,11 @@ export function App() {
         return;
       }
       if (applyVoiceCall(data)) {
+        return;
+      }
+      const voiceCallAcknowledgement = decodeChatVoiceCallCommandAcknowledgement(data);
+      if (voiceCallAcknowledgement) {
+        void acknowledgeNativeCallAction(voiceCallAcknowledgement).catch(() => undefined);
         return;
       }
       const liveLocations = decodeChatLiveLocations(data);
@@ -1508,8 +1512,10 @@ export function App() {
       setMessagingSelection({ id: action.roomId, nonce: messagingSelectionNonceRef.current });
       setMessagingVoiceCallCommand({ ...action, nonce: messagingVoiceCallCommandNonceRef.current });
       setMessagingFrameMounted(true);
-      setMessagingOpen(true);
-      setMessagingPinned(true);
+      if (action.action !== "mute") {
+        setMessagingOpen(true);
+        setMessagingPinned(true);
+      }
     })
       .then((stop) => {
         if (cancelled) stop();
@@ -1521,6 +1527,24 @@ export function App() {
       unsubscribe?.();
     };
   }, []);
+
+  React.useEffect(() => {
+    const nativeCall = hostNativeChatVoiceCall(messagingVoiceCall);
+    if (!nativeCall || !nativeCompassAvailable()) return;
+    void updateNativeCallPresentation({
+      callId: nativeCall.callId,
+      direction: nativeCall.direction,
+      phase: nativeCall.phase,
+      roomId: nativeCall.roomId,
+      ...(nativeCall.title ? { title: nativeCall.title } : {})
+    }).catch(() => undefined);
+  }, [
+    messagingVoiceCall?.callId,
+    messagingVoiceCall?.direction,
+    messagingVoiceCall?.phase,
+    messagingVoiceCall?.roomId,
+    messagingVoiceCall?.title
+  ]);
 
   const [incidentTaskDraft, setIncidentTaskDraft] = React.useState("");
   const [incidentWorkflowLoading, setIncidentWorkflowLoading] = React.useState(false);
@@ -1719,7 +1743,7 @@ export function App() {
           current &&
           (!voiceCallUpdate.callId || current.callId === voiceCallUpdate.callId) &&
           (!voiceCallUpdate.roomId || current.roomId === voiceCallUpdate.roomId)
-            ? null
+            ? { ...current, at: Date.now(), phase: "ended" }
             : current
         );
       }
@@ -6169,11 +6193,16 @@ export function App() {
     });
   }
 
-  function requestEmbeddedVoiceCallCommand(call: ChatVoiceCallMessage, action: ChatVoiceCallCommandAction) {
+  function requestEmbeddedVoiceCallCommand(
+    call: ChatVoiceCallMessage,
+    action: ChatVoiceCallCommandAction,
+    muted?: boolean
+  ) {
     messagingVoiceCallCommandNonceRef.current += 1;
     setMessagingVoiceCallCommand({
       action,
       callId: call.callId,
+      ...(typeof muted === "boolean" ? { muted } : {}),
       nonce: messagingVoiceCallCommandNonceRef.current,
       roomId: call.roomId
     });
@@ -6199,6 +6228,16 @@ export function App() {
   ]);
 
   function openMessagingPanel() {
+    if (nativeCompassAvailable()) {
+      void presentNativeChat().catch(() => {
+        openEmbeddedMessagingPanel();
+      });
+      return;
+    }
+    openEmbeddedMessagingPanel();
+  }
+
+  function openEmbeddedMessagingPanel() {
     const voiceCallTarget = hostVisibleChatVoiceCall(messagingVoiceCall);
     if (voiceCallTarget?.roomId) {
       requestEmbeddedChatSelection(voiceCallTarget.roomId);
@@ -8834,7 +8873,9 @@ interface MessagingTransitShareCommand {
 
 interface MessagingVoiceCallCommand {
   action: ChatVoiceCallCommandAction;
+  actionId?: string;
   callId: string;
+  muted?: boolean;
   nonce: number;
   roomId: string;
 }
@@ -11793,6 +11834,19 @@ export function hostVisibleChatVoiceCall(
   return call;
 }
 
+export function hostNativeChatVoiceCall(
+  call: ChatVoiceCallMessage | null,
+  now = Date.now()
+): ChatVoiceCallMessage | null {
+  if (!call) {
+    return null;
+  }
+  if (call.phase === "ended" || call.phase === "failed") {
+    return call;
+  }
+  return hostVisibleChatVoiceCall(call, now);
+}
+
 export function hostIncomingChatVoiceCall(call: ChatVoiceCallMessage | null): ChatVoiceCallMessage | null {
   return call?.direction === "incoming" && call.phase === "ringing" ? call : null;
 }
@@ -12015,7 +12069,9 @@ function EmbeddedCopChatPanel({
     iframeRef.current.contentWindow.postMessage(
       encodeChatVoiceCallCommand({
         action: voiceCallCommand.action,
+        ...(voiceCallCommand.actionId ? { actionId: voiceCallCommand.actionId } : {}),
         callId: voiceCallCommand.callId,
+        ...(typeof voiceCallCommand.muted === "boolean" ? { muted: voiceCallCommand.muted } : {}),
         roomId: voiceCallCommand.roomId
       }),
       window.location.origin
@@ -12124,7 +12180,9 @@ function EmbeddedCopChatPanel({
       target.postMessage(
         encodeChatVoiceCallCommand({
           action: voiceCallCommand.action,
+          ...(voiceCallCommand.actionId ? { actionId: voiceCallCommand.actionId } : {}),
           callId: voiceCallCommand.callId,
+          ...(typeof voiceCallCommand.muted === "boolean" ? { muted: voiceCallCommand.muted } : {}),
           roomId: voiceCallCommand.roomId
         }),
         window.location.origin

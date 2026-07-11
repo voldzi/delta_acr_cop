@@ -25,9 +25,26 @@ export interface NativeHeadingSample {
 }
 
 export interface NativeCallAction {
-  action: "answer" | "hangup" | "reject";
+  action: "answer" | "hangup" | "mute" | "reject";
+  actionId: string;
+  callId: string;
+  muted?: boolean;
+  roomId: string;
+}
+
+export interface NativeCallActionAcknowledgement {
+  actionId: string;
   callId: string;
   roomId: string;
+  status: "failed" | "succeeded";
+}
+
+export interface NativeCallPresentation {
+  callId: string;
+  direction: "incoming" | "outgoing";
+  phase: "connecting" | "connected" | "ended" | "failed" | "ringing";
+  roomId: string;
+  title?: string;
 }
 
 export class NativeDeviceBridgeError extends Error {
@@ -140,6 +157,30 @@ class NativeDeviceClient {
     return () => this.eventListeners.delete(eventListener);
   }
 
+  async updateCallPresentation(call: NativeCallPresentation): Promise<void> {
+    await this.request("calls.updatePresentation", {
+      callId: call.callId,
+      direction: call.direction,
+      phase: call.phase,
+      roomId: call.roomId,
+      ...(call.title ? { title: call.title } : {})
+    });
+  }
+
+  async acknowledgeCallAction(acknowledgement: NativeCallActionAcknowledgement): Promise<boolean> {
+    const result = await this.request("calls.acknowledgeAction", {
+      actionId: acknowledgement.actionId,
+      callId: acknowledgement.callId,
+      outcome: acknowledgement.status,
+      roomId: acknowledgement.roomId
+    });
+    return isRecord(result) && result.acknowledged === true;
+  }
+
+  async openChat(): Promise<void> {
+    await this.request("communications.openChat", {});
+  }
+
   private ready(): Promise<void> {
     if (this.sessionId) {
       return Promise.resolve();
@@ -218,10 +259,16 @@ class NativeDeviceClient {
     this.pending.delete(id);
     if (message.kind === "blocked" || message.ok === false) {
       const error = isRecord(message.error) ? message.error : {};
+      const code = typeof error.code === "string" ? error.code : "INTERNAL";
+      if (code === "SESSION_EXPIRED") {
+        this.sessionId = undefined;
+        this.readyPromise = undefined;
+        void this.ready().catch(() => undefined);
+      }
       pending.reject(
         new NativeDeviceBridgeError(
           typeof error.message === "string" ? error.message : "Nativní operace selhala.",
-          typeof error.code === "string" ? error.code : "INTERNAL"
+          code
         )
       );
       return;
@@ -268,14 +315,36 @@ export async function refreshNativeRemoteNotificationRegistration(
   return client.refreshRemoteNotifications(apiBase, authToken);
 }
 
-export async function subscribeNativeCallActions(
-  listener: (action: NativeCallAction) => void
-): Promise<() => void> {
+export async function subscribeNativeCallActions(listener: (action: NativeCallAction) => void): Promise<() => void> {
   const transport =
     typeof window === "undefined" ? undefined : (window as NativeWindow).__COP_DEVICE_NATIVE_TRANSPORT__;
   if (!transport) throw new NativeDeviceBridgeError("Nativní bridge není dostupný.", "UNSUPPORTED");
   client ??= new NativeDeviceClient(transport);
   return client.subscribeCallActions(listener);
+}
+
+export async function updateNativeCallPresentation(call: NativeCallPresentation): Promise<void> {
+  const transport =
+    typeof window === "undefined" ? undefined : (window as NativeWindow).__COP_DEVICE_NATIVE_TRANSPORT__;
+  if (!transport) return;
+  client ??= new NativeDeviceClient(transport);
+  await client.updateCallPresentation(call);
+}
+
+export async function acknowledgeNativeCallAction(acknowledgement: NativeCallActionAcknowledgement): Promise<boolean> {
+  const transport =
+    typeof window === "undefined" ? undefined : (window as NativeWindow).__COP_DEVICE_NATIVE_TRANSPORT__;
+  if (!transport) return false;
+  client ??= new NativeDeviceClient(transport);
+  return client.acknowledgeCallAction(acknowledgement);
+}
+
+export async function presentNativeChat(): Promise<void> {
+  const transport =
+    typeof window === "undefined" ? undefined : (window as NativeWindow).__COP_DEVICE_NATIVE_TRANSPORT__;
+  if (!transport) throw new NativeDeviceBridgeError("Nativní bridge není dostupný.", "UNSUPPORTED");
+  client ??= new NativeDeviceClient(transport);
+  await client.openChat();
 }
 
 function nativeCallAction(message: NativeBridgeMessage): NativeCallAction | null {
@@ -288,10 +357,19 @@ function nativeCallAction(message: NativeBridgeMessage): NativeCallAction | null
         ? "reject"
         : type === "calls.endRequested"
           ? "hangup"
-          : null;
+          : type === "calls.muteRequested"
+            ? "mute"
+            : null;
   const callId = message.payload.callId;
+  const actionId = message.payload.actionId;
   const roomId = message.payload.roomId;
-  return action && typeof callId === "string" && typeof roomId === "string" ? { action, callId, roomId } : null;
+  if (!action || !isUUIDString(actionId) || typeof callId !== "string" || typeof roomId !== "string") return null;
+  if (action === "mute") {
+    return typeof message.payload.muted === "boolean"
+      ? { action, actionId, callId, muted: message.payload.muted, roomId }
+      : null;
+  }
+  return { action, actionId, callId, roomId };
 }
 
 function permissionStatus(value: unknown): string {
@@ -318,6 +396,10 @@ function isHeadingSample(value: unknown): value is NativeHeadingSample {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isUUIDString(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(value);
 }
 
 function isGrantedNotificationAuthorization(value: unknown): boolean {

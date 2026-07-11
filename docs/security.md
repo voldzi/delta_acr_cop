@@ -35,6 +35,13 @@ Voice-call rule: COP verifies the room-E2EE signaling path before a one-to-one
 call. If the peer cannot acknowledge that preflight, only that call's Matrix
 VoIP control events may use the authenticated HTTPS compatibility path described
 in ADR-0013. Chat content remains E2EE and WebRTC media remains DTLS-SRTP.
+Native CallKit commands use a bounded opaque `actionId` and an identity-bound
+chat-to-host-to-native acknowledgement. Retries with the same action ID are
+idempotent; a command is not acknowledged before its Matrix operation settles,
+and a missing/negative acknowledgement fails the CallKit action instead of
+pretending the call state changed.
+The native host also invalidates and reloads the web media owner on that failure,
+so an unacknowledged command cannot leave a hidden microphone track running.
 
 Matrix credential renewal for the same user and device updates only the active
 client access token. It does not recreate or clear the Rust crypto store. Full

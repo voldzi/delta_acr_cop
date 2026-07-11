@@ -17,6 +17,7 @@ import {
   decodeChatUnread,
   decodeChatVoiceCall,
   decodeChatVoiceCallCommand,
+  decodeChatVoiceCallCommandAcknowledgement,
   encodeCopMapFocusUrl,
   encodeCopReportDraftUrl,
   encodeChatCenterLocation,
@@ -28,7 +29,8 @@ import {
   encodeChatSummary,
   encodeChatUnread,
   encodeChatVoiceCall,
-  encodeChatVoiceCallCommand
+  encodeChatVoiceCallCommand,
+  encodeChatVoiceCallCommandAcknowledgement
 } from "./bridge.js";
 
 // Single source of truth for the cop-chat <-> cop-web wire contract. These tests
@@ -46,7 +48,8 @@ describe("contract constants", () => {
       summary: "cop-chat:summary",
       unread: "cop-chat:unread",
       voiceCall: "cop-chat:voice-call",
-      voiceCallCommand: "cop-chat:voice-call-command"
+      voiceCallCommand: "cop-chat:voice-call-command",
+      voiceCallCommandAcknowledgement: "cop-chat:voice-call-command-ack"
     });
     expect(chatBridgeChannelName).toBe("cop-chat");
     expect(chatUnreadStorageKey).toBe("cop.chat.unread.v1");
@@ -329,9 +332,38 @@ describe("voice-call-command (web -> chat)", () => {
       type: "cop-chat:voice-call-command"
     });
     expect(decodeChatVoiceCallCommand(payload)).toEqual(payload);
-    expect(
-      decodeChatVoiceCallCommand({ ...payload, action: "hangup" })
-    ).toEqual({ ...payload, action: "hangup" });
+    expect(decodeChatVoiceCallCommand({ ...payload, action: "hangup" })).toEqual({ ...payload, action: "hangup" });
+    expect(decodeChatVoiceCallCommand({ ...payload, action: "mute", muted: true })).toEqual({
+      ...payload,
+      action: "mute",
+      muted: true
+    });
+  });
+
+  it("round-trips a stable native action id and its acknowledgement", () => {
+    const command = encodeChatVoiceCallCommand({
+      action: "answer",
+      actionId: "10000000-0000-4000-8000-000000000001",
+      callId: "call-1",
+      roomId: "!ops:example.cz"
+    });
+    expect(decodeChatVoiceCallCommand(command)).toEqual(command);
+
+    const acknowledgement = encodeChatVoiceCallCommandAcknowledgement({
+      actionId: "10000000-0000-4000-8000-000000000001",
+      callId: "call-1",
+      roomId: "!ops:example.cz",
+      status: "succeeded"
+    });
+    expect(acknowledgement).toEqual({
+      actionId: "10000000-0000-4000-8000-000000000001",
+      callId: "call-1",
+      roomId: "!ops:example.cz",
+      status: "succeeded",
+      type: "cop-chat:voice-call-command-ack"
+    });
+    expect(decodeChatVoiceCallCommandAcknowledgement(acknowledgement)).toEqual(acknowledgement);
+    expect(decodeChatVoiceCallCommandAcknowledgement({ ...acknowledgement, status: "pending" })).toBeNull();
   });
 
   it("rejects malformed host voice-call commands", () => {
