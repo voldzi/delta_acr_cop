@@ -2775,7 +2775,7 @@ export function ChatApp() {
     setRecoveryWorking(true);
     setError(null);
     try {
-      const session = await startFreshMatrixSessionForRecovery();
+      const session = matrixSessionRef.current ?? (await startFreshMatrixSessionForRecovery());
       const recoveryKey = await session.prepareEncryptionRecoveryForMobile();
       setGeneratedRecoveryKey(recoveryKey);
       setRecoveryKeyInput("");
