@@ -165,6 +165,40 @@ describe("EncryptionRecoveryDialog", () => {
     expect(onPrepareMobile).not.toHaveBeenCalled();
   });
 
+  it("keeps mobile recovery rotation visible while the manual key form is open", () => {
+    const onPrepareMobile = vi.fn();
+    render(
+      <EncryptionRecoveryDialog
+        generatedRecoveryKey={null}
+        manualRestore
+        recoveryKeyInput=""
+        saving={false}
+        status={{
+          canPrepareForMobile: true,
+          crossSigningReady: false,
+          keyBackupEnabled: true,
+          keyBackupExists: true,
+          matrixRustCompatible: false,
+          needsRecovery: false,
+          needsSetup: false,
+          ready: true,
+          secretStorageReady: true,
+          supported: true
+        }}
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onManualRestore={vi.fn()}
+        onPrepareMobile={onPrepareMobile}
+        onRecoveryKeyInputChange={vi.fn()}
+        onReset={vi.fn()}
+        onRestore={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Vygenerovat nový klíč pro iPhone/iPad" }));
+    expect(onPrepareMobile).toHaveBeenCalledTimes(1);
+  });
+
   it("lets a ready browser enter the recovery key again for undecrypted history", () => {
     const onRestore = vi.fn();
     const onRecoveryKeyInputChange = vi.fn();
@@ -201,5 +235,39 @@ describe("EncryptionRecoveryDialog", () => {
 
     expect(onRecoveryKeyInputChange).toHaveBeenCalledWith("NEW");
     expect(onRestore).toHaveBeenCalled();
+  });
+
+  it("labels mobile recovery rotation explicitly even when the browser reports full readiness", () => {
+    const onPrepareMobile = vi.fn();
+    render(
+      <EncryptionRecoveryDialog
+        generatedRecoveryKey={null}
+        manualRestore={false}
+        recoveryKeyInput=""
+        saving={false}
+        status={{
+          canPrepareForMobile: true,
+          crossSigningReady: true,
+          keyBackupEnabled: true,
+          keyBackupExists: true,
+          matrixRustCompatible: true,
+          needsRecovery: false,
+          needsSetup: false,
+          ready: true,
+          secretStorageReady: true,
+          supported: true
+        }}
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onManualRestore={vi.fn()}
+        onPrepareMobile={onPrepareMobile}
+        onRecoveryKeyInputChange={vi.fn()}
+        onReset={vi.fn()}
+        onRestore={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Vygenerovat nový klíč pro iPhone/iPad" }));
+    expect(onPrepareMobile).toHaveBeenCalledTimes(1);
   });
 });

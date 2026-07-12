@@ -167,6 +167,12 @@ export default function EncryptionRecoveryDialog({
               <button disabled={saving} className="secondary-dialog-action" onClick={onClose} type="button">
                 Zavřít
               </button>
+              {status?.canPrepareForMobile ? (
+                <button disabled={saving} className="secondary-dialog-action" onClick={onPrepareMobile} type="button">
+                  {saving ? <Loader2 className="spin" size={18} /> : <KeyRound size={18} />}
+                  Vygenerovat nový klíč pro iPhone/iPad
+                </button>
+              ) : null}
               <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
                 Nouzově začít znovu bez staré historie
               </button>
@@ -186,7 +192,7 @@ export default function EncryptionRecoveryDialog({
                 Zadat klíč znovu
               </button>
               <button disabled={saving} className="secondary-dialog-action" onClick={onPrepareMobile} type="button">
-                Vygenerovat nový klíč
+                Vygenerovat nový klíč pro iPhone/iPad
               </button>
               <button disabled={saving} className="secondary-danger-action" onClick={onReset} type="button">
                 Nouzově začít znovu
