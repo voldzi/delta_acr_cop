@@ -136,6 +136,52 @@ describe("useMatrixSession lifecycle", () => {
     expect(result.current.matrixSession).toBeNull();
     expect(result.current.matrixSessionRef.current).toBeNull();
   });
+
+  it("restarts atomically and reports the original browser failure to a sensitive action", async () => {
+    const initialSession = sessionStub();
+    const browserFailure = new Error("IndexedDB is blocked by another Matrix connection");
+    mocks.fetchBootstrap
+      .mockResolvedValueOnce(bootstrap("matrix-token-1", "2026-07-10T12:20:00.000Z"))
+      .mockResolvedValueOnce({
+        ...bootstrap("matrix-token-2", "2026-07-10T12:40:00.000Z"),
+        deviceId: "COPWEB.REPLACEMENT"
+      });
+    mocks.createSession.mockResolvedValueOnce(initialSession).mockRejectedValueOnce(browserFailure);
+    const onError = vi.fn();
+    const { result } = renderHook(() =>
+      useMatrixSession({
+        apiBase: "https://cop.example.test",
+        authSubjectId: "operator-1",
+        authToken: "cop-token-1",
+        conversationsRef: { current: [] },
+        matrixProfile: undefined,
+        onError,
+        onNotice: vi.fn(),
+        onRoomsChanged: vi.fn(),
+        onTimelineChanged: vi.fn()
+      })
+    );
+
+    await act(async () => {
+      await result.current.startMatrixSession();
+    });
+
+    await act(async () => {
+      await expect(
+        result.current.restartMatrixSession(null, true, "fresh-cop-token", "COPWEB.REPLACEMENT")
+      ).rejects.toThrow(browserFailure.message);
+    });
+
+    expect(initialSession.stop).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchBootstrap).toHaveBeenNthCalledWith(
+      2,
+      "https://cop.example.test",
+      "fresh-cop-token",
+      "COPWEB.REPLACEMENT"
+    );
+    expect(onError).toHaveBeenLastCalledWith(browserFailure.message);
+    expect(result.current.matrixSession).toBeNull();
+  });
 });
 
 function bootstrap(accessToken: string, expiresAt: string): MessagingBootstrapResponse {

@@ -156,12 +156,19 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
     session?: MatrixMessagingSession | null
   ) => Promise<MatrixEncryptionRecoveryStatus | null>;
   resetMatrixSession: () => void;
+  restartMatrixSession: (
+    preferredSelection?: string | null,
+    allowStoreRecovery?: boolean,
+    authTokenOverride?: string | null,
+    matrixDeviceIdOverride?: string | null
+  ) => Promise<MatrixMessagingSession>;
   updateMatrixWebPushPusher: () => Promise<void>;
   startMatrixSession: (
     preferredSelection?: string | null,
     allowStoreRecovery?: boolean,
     authTokenOverride?: string | null,
-    matrixDeviceIdOverride?: string | null
+    matrixDeviceIdOverride?: string | null,
+    throwOnError?: boolean
   ) => Promise<MatrixMessagingSession | null>;
   syncState: string;
 } {
@@ -169,6 +176,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
   const sessionRef = React.useRef<MatrixMessagingSession | null>(null);
   const startGenerationRef = React.useRef(0);
   const startPromiseRef = React.useRef<Promise<MatrixMessagingSession | null> | null>(null);
+  const startFailureRef = React.useRef<{ error: unknown; generation: number } | null>(null);
   const optionsRef = React.useRef(options);
   optionsRef.current = options;
 
@@ -207,10 +215,20 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
       preferredSelection?: string | null,
       allowStoreRecovery = true,
       authTokenOverride?: string | null,
-      matrixDeviceIdOverride?: string | null
+      matrixDeviceIdOverride?: string | null,
+      throwOnError = false
     ): Promise<MatrixMessagingSession | null> => {
       if (startPromiseRef.current) {
-        return startPromiseRef.current;
+        const activeGeneration = startGenerationRef.current;
+        return throwOnError
+          ? startPromiseRef.current.then((session) => {
+              const failure = startFailureRef.current;
+              if (!session && failure?.generation === activeGeneration) {
+                throw failure.error;
+              }
+              return session;
+            })
+          : startPromiseRef.current;
       }
       const initialOptions = optionsRef.current;
       const initialAuthToken = authTokenOverride ?? initialOptions.authToken;
@@ -218,6 +236,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
         return Promise.resolve(null);
       }
       const generation = ++startGenerationRef.current;
+      startFailureRef.current = null;
       dispatch({ type: "start" });
       initialOptions.onError(null);
 
@@ -363,12 +382,16 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
                 recoveryCaught instanceof Error
                   ? recoveryCaught.message
                   : "Lokální šifrovací stav se nepodařilo obnovit.";
+              const recoveryError = recoveryCaught instanceof Error ? recoveryCaught : new Error(message);
+              startFailureRef.current = { error: recoveryError, generation };
               optionsRef.current.onError(message);
               dispatch({ type: "error", message });
               return null;
             }
           }
           const message = caught instanceof Error ? caught.message : "Matrix spojení se nepodařilo spustit.";
+          const startError = caught instanceof Error ? caught : new Error(message);
+          startFailureRef.current = { error: startError, generation };
           optionsRef.current.onError(message);
           dispatch({ type: "error", message });
           return sessionRef.current;
@@ -382,9 +405,47 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
           startPromiseRef.current = null;
         }
       });
-      return startPromise;
+      if (!throwOnError) {
+        return startPromise;
+      }
+      return startPromise.then((session) => {
+        const failure = startFailureRef.current;
+        if (!session && failure?.generation === generation) {
+          throw failure.error;
+        }
+        return session;
+      });
     },
     []
+  );
+
+  const restartMatrixSession = React.useCallback(
+    async (
+      preferredSelection?: string | null,
+      allowStoreRecovery = true,
+      authTokenOverride?: string | null,
+      matrixDeviceIdOverride?: string | null
+    ): Promise<MatrixMessagingSession> => {
+      startGenerationRef.current += 1;
+      startPromiseRef.current = null;
+      startFailureRef.current = null;
+      const currentSession = sessionRef.current;
+      sessionRef.current = null;
+      currentSession?.stop();
+      dispatch({ type: "replace" });
+      const nextSession = await startMatrixSession(
+        preferredSelection,
+        allowStoreRecovery,
+        authTokenOverride,
+        matrixDeviceIdOverride,
+        true
+      );
+      if (!nextSession) {
+        throw new Error("Chatové spojení se nepodařilo znovu připravit.");
+      }
+      return nextSession;
+    },
+    [startMatrixSession]
   );
 
   const ensureMatrixSession = React.useCallback(
@@ -404,6 +465,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
   const resetMatrixSession = React.useCallback(() => {
     startGenerationRef.current += 1;
     startPromiseRef.current = null;
+    startFailureRef.current = null;
     const currentSession = sessionRef.current;
     sessionRef.current = null;
     currentSession?.stop();
@@ -414,6 +476,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
     return () => {
       startGenerationRef.current += 1;
       startPromiseRef.current = null;
+      startFailureRef.current = null;
       const currentSession = sessionRef.current;
       sessionRef.current = null;
       currentSession?.stop();
@@ -432,6 +495,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
     matrixSessionRef: sessionRef,
     refreshEncryptionRecoveryStatus,
     resetMatrixSession,
+    restartMatrixSession,
     startMatrixSession,
     updateMatrixWebPushPusher,
     syncState: state.syncState

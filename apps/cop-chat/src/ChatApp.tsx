@@ -777,6 +777,7 @@ export function ChatApp() {
     matrixSessionRef,
     refreshEncryptionRecoveryStatus,
     resetMatrixSession,
+    restartMatrixSession,
     startMatrixSession,
     updateMatrixWebPushPusher,
     syncState
@@ -2726,14 +2727,8 @@ export function ChatApp() {
     if (!latestAuthToken) {
       throw new Error("Pro tuto akci je potřeba platné přihlášení do COP.");
     }
-    matrixAttemptKeyRef.current = null;
-    resetMatrixSession();
     const freshMatrixDeviceId = rotateMatrixDeviceId(authSubjectId ?? "anonymous");
-    const session = await startMatrixSession(preferredSelection, true, latestAuthToken, freshMatrixDeviceId);
-    if (!session) {
-      throw new Error("Chatové spojení se nepodařilo znovu připravit. Zkuste stránku obnovit a akci opakovat.");
-    }
-    return session;
+    return restartMatrixSession(preferredSelection, true, latestAuthToken, freshMatrixDeviceId);
   }
 
   async function createEncryptionRecovery(reset = false): Promise<void> {

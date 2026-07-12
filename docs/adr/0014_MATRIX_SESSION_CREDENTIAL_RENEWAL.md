@@ -28,6 +28,11 @@ Session creation is single-flight and generation guarded. Explicit reset
 invalidates an unfinished start, clears the published session before stopping
 it and rejects a late result. A full client replacement remains permitted for
 logout, identity/device changes and explicit account-store recovery.
+User-initiated recovery replaces the client through one atomic `starting`
+transition so the ordinary automatic startup effect cannot race it with a
+second Matrix device. If that replacement fails, the sensitive recovery action
+receives the original browser/Matrix error instead of replacing it with a
+generic connection message.
 
 If the server-side device key no longer matches the one-time/fallback keys
 uploaded under the same browser device id, COP offers a targeted repair for
