@@ -2748,9 +2748,10 @@ export function ChatApp() {
     setRecoveryWorking(true);
     setError(null);
     try {
+      const preferredSelection = selectedConversationId ?? selectedGroupId ?? selectedRoomId;
       const session = reset
         ? await startFreshMatrixSessionForRecovery()
-        : (matrixSessionRef.current ?? (await startFreshMatrixSessionForRecovery()));
+        : await ensureMatrixSession(preferredSelection);
       const recoveryKey = await session.createEncryptionRecovery(reset);
       setGeneratedRecoveryKey(recoveryKey);
       setRecoveryKeyInput("");
@@ -2779,7 +2780,8 @@ export function ChatApp() {
     setRecoveryWorking(true);
     setError(null);
     try {
-      const session = matrixSessionRef.current ?? (await startFreshMatrixSessionForRecovery());
+      const preferredSelection = selectedConversationId ?? selectedGroupId ?? selectedRoomId;
+      const session = await ensureMatrixSession(preferredSelection);
       const recoveryKey = await session.prepareEncryptionRecoveryForMobile();
       setGeneratedRecoveryKey(recoveryKey);
       setRecoveryKeyInput("");

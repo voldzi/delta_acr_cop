@@ -226,10 +226,13 @@ identity, secret storage and key backup pass the compatibility check. The
 endpoint rejects message content, recovery keys, room keys, private
 cross-signing material and unknown fields. Neither COP nor the browser receives
 the Matrix password or the temporary Matrix token used by CSM Messaging.
-An already running trusted Matrix session performs this rotation in place; a
-new Matrix web device is created only when no session is available. The browser
-homeserver preflight is bounded by an eight-second abort timeout so a stalled
-network request cannot leave the recovery dialog permanently busy.
+The normal web+iOS rotation waits for and reuses the single shared Matrix
+session, including when its initial start is still in progress. It must not
+create a second session merely because the UI opened before the first session
+became ready. A new Matrix web device is reserved for explicit emergency reset
+or local-device repair. The browser homeserver preflight is bounded by an
+eight-second abort timeout so a stalled network request cannot leave the
+recovery dialog permanently busy.
 
 Voice calls are client-side Matrix VoIP/WebRTC calls. Direct rooms retain the
 one-to-one path; group rooms use the Matrix SDK encrypted `GroupCall` peer mesh
