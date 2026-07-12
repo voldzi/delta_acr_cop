@@ -30,6 +30,10 @@ type MockMatrixClient = {
   setPusher?: (pusher: Record<string, unknown>) => Promise<unknown>;
   scrollback?: MatrixScrollback;
   startClient: () => Promise<void>;
+  syncApi?: {
+    stop: () => void;
+    sync: () => Promise<void>;
+  };
   uploadContent?: (
     file: Blob | File,
     opts?: Record<string, unknown>
@@ -1888,9 +1892,19 @@ describe("Matrix client diagnostics", () => {
   });
 
   it("creates a web and iOS compatible user-held Matrix recovery key without reading stale secrets", async () => {
+    const recoverySteps: string[] = [];
+    const syncApi = {
+      stop: vi.fn(() => {
+        recoverySteps.push("sync-stop");
+      }),
+      sync: vi.fn(async () => {
+        recoverySteps.push("sync-resume");
+      })
+    };
     const bootstrapCrossSigning = vi
       .fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>()
       .mockImplementation(async (options) => {
+        recoverySteps.push("cross-signing");
         if (!options.setupNewCrossSigning) {
           throw new Error("Content is not encrypted!");
         }
@@ -1912,7 +1926,12 @@ describe("Matrix client diagnostics", () => {
       isSecretStorageReady: vi.fn().mockResolvedValue(true)
     };
     matrixSdkMock.createClient.mockReturnValue(
-      createMockMatrixClient({ crypto, getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }), rooms: [] })
+      createMockMatrixClient({
+        crypto,
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: [] }),
+        rooms: [],
+        syncApi
+      })
     );
 
     const session = await createMatrixMessagingSession(createBootstrap());
@@ -1931,6 +1950,9 @@ describe("Matrix client diagnostics", () => {
         setupNewSecretStorage: true
       })
     );
+    expect(recoverySteps).toEqual(["sync-stop", "cross-signing", "sync-resume"]);
+    expect(syncApi.stop).toHaveBeenCalledTimes(1);
+    expect(syncApi.sync).toHaveBeenCalledTimes(1);
   });
 
   it("prepares a complete Matrix Rust compatible recovery set for iPhone and iPad", async () => {
@@ -2686,6 +2708,7 @@ function createMockMatrixClient({
   setDisplayName,
   setPusher,
   scrollback,
+  syncApi,
   uploadContent,
   waitUntilRoomReadyForGroupCalls
 }: {
@@ -2713,6 +2736,7 @@ function createMockMatrixClient({
   setDisplayName?: MockMatrixClient["setDisplayName"];
   setPusher?: MockMatrixClient["setPusher"];
   scrollback?: MockMatrixClient["scrollback"];
+  syncApi?: MockMatrixClient["syncApi"];
   uploadContent?: MockMatrixClient["uploadContent"];
   waitUntilRoomReadyForGroupCalls?: MockMatrixClient["waitUntilRoomReadyForGroupCalls"];
 }): MockMatrixClient {
@@ -2743,6 +2767,7 @@ function createMockMatrixClient({
     ...(setDisplayName ? { setDisplayName } : {}),
     ...(setPusher ? { setPusher } : {}),
     ...(scrollback ? { scrollback } : {}),
+    ...(syncApi ? { syncApi } : {}),
     ...(uploadContent ? { uploadContent } : {}),
     startClient: () => Promise.resolve(),
     ...(waitUntilRoomReadyForGroupCalls ? { waitUntilRoomReadyForGroupCalls } : {})

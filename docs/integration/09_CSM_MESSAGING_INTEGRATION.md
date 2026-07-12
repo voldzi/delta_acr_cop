@@ -210,10 +210,15 @@ to `POST /api/v1/messaging/e2ee/reset-auth`. COP forwards that authenticated
 request to CSM Messaging, which performs password UIA internally and returns
 only completion status. The chat refreshes its COP/OIDC credential immediately
 before this sensitive callback; it must not reuse the token captured when the
-long-lived Matrix session was created. The endpoint rejects message content, recovery keys,
-room keys, private cross-signing material and unknown fields. Neither COP nor
-the browser receives the Matrix password or the temporary Matrix token used by
-CSM Messaging.
+long-lived Matrix session was created. While the replacement identity waits for
+that UIA round-trip, the web client pauses only the Matrix `/sync` loop. This
+prevents a response containing the previous server identity from invalidating
+the newly generated private keys before the replacement public identity is
+published. The crypto backend remains active and `/sync` resumes after the new
+identity, secret storage and key backup pass the compatibility check. The
+endpoint rejects message content, recovery keys, room keys, private
+cross-signing material and unknown fields. Neither COP nor the browser receives
+the Matrix password or the temporary Matrix token used by CSM Messaging.
 
 Voice calls are client-side Matrix VoIP/WebRTC calls. Direct rooms retain the
 one-to-one path; group rooms use the Matrix SDK encrypted `GroupCall` peer mesh
