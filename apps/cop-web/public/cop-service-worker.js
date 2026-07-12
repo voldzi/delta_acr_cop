@@ -1,4 +1,4 @@
-const COP_SW_VERSION = "cop-pwa-offline-20260712-2";
+const COP_SW_VERSION = "cop-pwa-offline-20260712-3";
 const APP_SHELL_CACHE = `${COP_SW_VERSION}:shell`;
 const RUNTIME_CACHE = `${COP_SW_VERSION}:runtime`;
 const TILE_CACHE = `${COP_SW_VERSION}:tiles`;

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   MatrixMessagingSession,
   MatrixVoiceCallWakeRequest,
@@ -10,6 +10,7 @@ import type {
 
 const mocks = vi.hoisted(() => ({
   clearCryptoState: vi.fn(),
+  completeResetAuth: vi.fn(),
   createSession: vi.fn(),
   fetchBootstrap: vi.fn(),
   getDeviceId: vi.fn(() => "COPWEB.TESTDEVICE"),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@cop/core/cop-data", () => ({
+  completeMessagingE2eeResetAuth: mocks.completeResetAuth,
   fetchMessagingBootstrap: mocks.fetchBootstrap
 }));
 
@@ -33,6 +35,10 @@ vi.mock("@cop/messaging/runtime", () => ({
 }));
 
 import { useMatrixSession } from "./useMatrixSession";
+
+beforeEach(() => {
+  mocks.completeResetAuth.mockReset().mockResolvedValue({ completed: true, warnings: [] });
+});
 
 afterEach(() => {
   mocks.clearCryptoState.mockReset();
@@ -55,6 +61,7 @@ describe("useMatrixSession lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
     const onRoomsChanged = vi.fn();
     const onTimelineChanged = vi.fn();
+    const getSensitiveActionAuthToken = vi.fn().mockResolvedValue("cop-token-sensitive");
     const { result, rerender, unmount } = renderHook(
       ({ authToken }) =>
         useMatrixSession({
@@ -62,6 +69,7 @@ describe("useMatrixSession lifecycle", () => {
           authSubjectId: "operator-1",
           authToken,
           conversationsRef: { current: [] },
+          getSensitiveActionAuthToken,
           matrixProfile: undefined,
           onError: vi.fn(),
           onNotice: vi.fn(),
@@ -93,6 +101,27 @@ describe("useMatrixSession lifecycle", () => {
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: "Bearer cop-token-2" })
       })
+    );
+
+    const signingCallbacks = mocks.createSession.mock.calls[0]?.[1] as {
+      completeDeviceSigningAuth?: (request: {
+        deviceId: string;
+        masterKey: Record<string, unknown>;
+        selfSigningKey: Record<string, unknown>;
+        userSigningKey: Record<string, unknown>;
+      }) => Promise<void>;
+    };
+    await signingCallbacks.completeDeviceSigningAuth?.({
+      deviceId: "COPWEB.TESTDEVICE",
+      masterKey: { usage: ["master"] },
+      selfSigningKey: { usage: ["self_signing"] },
+      userSigningKey: { usage: ["user_signing"] }
+    });
+    expect(getSensitiveActionAuthToken).toHaveBeenCalledTimes(1);
+    expect(mocks.completeResetAuth).toHaveBeenCalledWith(
+      "https://cop.example.test",
+      "cop-token-sensitive",
+      expect.objectContaining({ deviceId: "COPWEB.TESTDEVICE" })
     );
 
     unmount();

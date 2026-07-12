@@ -136,6 +136,7 @@ interface UseMatrixSessionOptions {
   authSubjectId: string | undefined;
   authToken: string | null | undefined;
   conversationsRef: React.MutableRefObject<MessagingConversationSummary[]>;
+  getSensitiveActionAuthToken?: () => Promise<string | null | undefined>;
   matrixProfile: MatrixUserProfileSyncInput | undefined;
   matrixWebPushDeviceId?: string;
   matrixWebPushFallbackDeviceId?: string;
@@ -298,12 +299,22 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
             Boolean(callbackSession && sessionRef.current === callbackSession);
           candidateSession = await createMatrixMessagingSession(bootstrap, {
             completeDeviceSigningAuth: async (request) => {
-              const completion = await completeMessagingE2eeResetAuth(currentOptions.apiBase, effectiveAuthToken, {
-                deviceId: request.deviceId,
-                masterKey: { ...request.masterKey },
-                selfSigningKey: { ...request.selfSigningKey },
-                userSigningKey: { ...request.userSigningKey }
-              });
+              const callbackOptions = optionsRef.current;
+              const refreshedAuthToken = await callbackOptions.getSensitiveActionAuthToken?.();
+              const sensitiveActionAuthToken = refreshedAuthToken ?? callbackOptions.authToken ?? effectiveAuthToken;
+              if (!sensitiveActionAuthToken) {
+                throw new Error("Pro reset E2EE je potřeba platné přihlášení do COP.");
+              }
+              const completion = await completeMessagingE2eeResetAuth(
+                callbackOptions.apiBase,
+                sensitiveActionAuthToken,
+                {
+                  deviceId: request.deviceId,
+                  masterKey: { ...request.masterKey },
+                  selfSigningKey: { ...request.selfSigningKey },
+                  userSigningKey: { ...request.userSigningKey }
+                }
+              );
               if (!completion.completed) {
                 throw new Error(completion.warnings[0] ?? "Serverové ověření resetu E2EE nebylo dokončeno.");
               }

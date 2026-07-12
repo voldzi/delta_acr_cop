@@ -786,6 +786,7 @@ export function ChatApp() {
     authSubjectId,
     authToken,
     conversationsRef,
+    getSensitiveActionAuthToken: refreshAuthTokenForSensitiveMatrixAction,
     matrixProfile: chatIdentity.matrixProfile,
     matrixWebPushDeviceId,
     matrixWebPushFallbackDeviceId,
@@ -2717,7 +2718,7 @@ export function ChatApp() {
       setAuthSession(nextSession);
       return getAuthorizationToken(nextSession, labToken);
     } catch {
-      return authToken;
+      return null;
     }
   }
 
