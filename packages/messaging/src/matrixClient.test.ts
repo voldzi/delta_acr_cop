@@ -85,6 +85,7 @@ type MockMatrixCrypto = {
   }) => Promise<void>;
   checkKeyBackupAndEnable?: () => Promise<unknown>;
   createRecoveryKeyFromPassphrase?: () => Promise<unknown>;
+  disableKeyStorage?: () => Promise<void>;
   forceDiscardSession?: (roomId: string) => Promise<void>;
   getActiveSessionBackupVersion?: () => Promise<string | null>;
   getKeyBackupInfo?: () => Promise<unknown | null>;
@@ -1922,6 +1923,9 @@ describe("Matrix client diagnostics", () => {
       }),
       getActiveSessionBackupVersion: vi.fn().mockResolvedValue("1"),
       getKeyBackupInfo: vi.fn().mockResolvedValue({ version: "1" }),
+      disableKeyStorage: vi.fn(async () => {
+        recoverySteps.push("disable-old-storage");
+      }),
       isCrossSigningReady: vi.fn().mockResolvedValue(true),
       isSecretStorageReady: vi.fn().mockResolvedValue(true)
     };
@@ -1950,7 +1954,8 @@ describe("Matrix client diagnostics", () => {
         setupNewSecretStorage: true
       })
     );
-    expect(recoverySteps).toEqual(["sync-stop", "cross-signing", "sync-resume"]);
+    expect(recoverySteps).toEqual(["sync-stop", "disable-old-storage", "cross-signing", "sync-resume"]);
+    expect(crypto.disableKeyStorage).toHaveBeenCalledTimes(1);
     expect(syncApi.stop).toHaveBeenCalledTimes(1);
     expect(syncApi.sync).toHaveBeenCalledTimes(1);
   });
