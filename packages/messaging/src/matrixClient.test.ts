@@ -1904,7 +1904,8 @@ describe("Matrix client diagnostics", () => {
     };
     const bootstrapCrossSigning = vi
       .fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>()
-      .mockImplementation(async (options) => {
+      .mockImplementation(async function (this: MockMatrixCrypto, options) {
+        expect(this).toBe(crypto);
         recoverySteps.push("cross-signing");
         if (!options.setupNewCrossSigning) {
           throw new Error("Content is not encrypted!");
