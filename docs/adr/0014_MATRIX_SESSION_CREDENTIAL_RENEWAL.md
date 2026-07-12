@@ -34,6 +34,13 @@ second Matrix device. If that replacement fails, the sensitive recovery action
 receives the original browser/Matrix error instead of replacing it with a
 generic connection message.
 
+When Synapse requires password UIA for replacement device-signing keys, the
+browser routes only the generated public cross-signing set through the
+authenticated COP/CSM Messaging completion endpoint. CSM Messaging owns the
+encrypted per-user Matrix password and completes UIA server-side. Returning the
+password to the browser, proxying private E2EE material, or granting the browser
+an application-service token are explicitly rejected.
+
 If the server-side device key no longer matches the one-time/fallback keys
 uploaded under the same browser device id, COP offers a targeted repair for
 that web device. The repair rotates only the Matrix device id and starts a new

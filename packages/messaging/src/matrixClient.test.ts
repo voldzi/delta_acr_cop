@@ -2212,6 +2212,72 @@ describe("Matrix client diagnostics", () => {
     expect(authAttempts).toEqual([null, { session: "UIA_SESSION", type: "m.login.dummy" }]);
   });
 
+  it("delegates password UIA with public cross-signing keys while keeping the password server-side", async () => {
+    let createClientOptions: Record<string, unknown> | undefined;
+    const masterKey = signingPublicKey("master");
+    const selfSigningKey = signingPublicKey("self_signing");
+    const userSigningKey = signingPublicKey("user_signing");
+    const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
+      await options.createSecretStorageKey?.();
+    });
+    const resetEncryption = vi.fn<NonNullable<MockMatrixCrypto["resetEncryption"]>>(
+      async (authUploadDeviceSigningKeys) => {
+        await authUploadDeviceSigningKeys(async (authData) => {
+          if (!authData) {
+            throw Object.assign(new Error("UIA required"), {
+              data: {
+                flows: [{ stages: ["m.login.password"] }],
+                session: "PASSWORD_UIA"
+              }
+            });
+          }
+          const fetchFn = createClientOptions?.fetchFn as typeof fetch | undefined;
+          const response = await fetchFn?.("https://matrix.example.test/_matrix/client/v3/keys/device_signing/upload", {
+            body: JSON.stringify({
+              auth: authData,
+              master_key: masterKey,
+              self_signing_key: selfSigningKey,
+              user_signing_key: userSigningKey
+            }),
+            method: "POST"
+          });
+          expect(response?.status).toBe(200);
+          return response?.json();
+        });
+      }
+    );
+    const crypto: MockMatrixCrypto = {
+      bootstrapCrossSigning: vi.fn(),
+      bootstrapSecretStorage,
+      checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
+      createRecoveryKeyFromPassphrase: vi.fn().mockResolvedValue({
+        encodedPrivateKey: "EsTK delegated uia recovery key",
+        privateKey: new Uint8Array([4, 5, 6])
+      }),
+      getActiveSessionBackupVersion: vi.fn().mockResolvedValue("1"),
+      getKeyBackupInfo: vi.fn().mockResolvedValue({ version: "1" }),
+      isCrossSigningReady: vi.fn().mockResolvedValue(true),
+      isSecretStorageReady: vi.fn().mockResolvedValue(true),
+      resetEncryption
+    };
+    matrixSdkMock.createClient.mockImplementation((options: Record<string, unknown>) => {
+      createClientOptions = options;
+      return createMockMatrixClient({ crypto, rooms: [] });
+    });
+    const completeDeviceSigningAuth = vi.fn().mockResolvedValue(undefined);
+
+    const session = await createMatrixMessagingSession(createBootstrap(), { completeDeviceSigningAuth });
+
+    await expect(session.prepareEncryptionRecoveryForMobile()).resolves.toBe("EsTK delegated uia recovery key");
+    expect(completeDeviceSigningAuth).toHaveBeenCalledWith({
+      deviceId: "TESTDEVICE",
+      masterKey,
+      selfSigningKey,
+      userSigningKey
+    });
+    expect(JSON.stringify(completeDeviceSigningAuth.mock.calls)).not.toMatch(/password|PASSWORD_UIA/u);
+  });
+
   it("surfaces Matrix UIA requirements instead of masking them as COP login failures", async () => {
     const resetEncryption = vi.fn<NonNullable<MockMatrixCrypto["resetEncryption"]>>(
       async (authUploadDeviceSigningKeys) => {
@@ -2574,6 +2640,14 @@ function createBootstrap(): MessagingBootstrapResponse {
     tokenAvailable: true,
     userId: "@operator:cop.local",
     warnings: []
+  };
+}
+
+function signingPublicKey(usage: "master" | "self_signing" | "user_signing") {
+  return {
+    keys: { [`ed25519:${usage}`]: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" },
+    usage: [usage],
+    user_id: "@operator:cop.local"
   };
 }
 

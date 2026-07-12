@@ -259,11 +259,35 @@ export interface MessagingWebPushDeviceDeletionResponse {
   warnings: string[];
 }
 
+export interface MessagingCrossSigningPublicKey {
+  keys: Record<string, string>;
+  signatures?: Record<string, Record<string, string>>;
+  usage: ["master" | "self_signing" | "user_signing"];
+  user_id: string;
+}
+
+export interface MessagingE2eeResetAuthRequest {
+  deviceId: string;
+  masterKey: MessagingCrossSigningPublicKey;
+  selfSigningKey: MessagingCrossSigningPublicKey;
+  userSigningKey: MessagingCrossSigningPublicKey;
+}
+
+export interface MessagingE2eeResetAuthResponse {
+  completed: boolean;
+  contractVersion: "cop-messaging-e2ee-reset-auth-v1";
+  enabled: boolean;
+  providerId: "csm.messaging";
+  status: MessagingIntegrationRuntimeStatus;
+  warnings: string[];
+}
+
 export interface MessagingProvider {
   readonly config: MessagingProviderConfig;
   fetchStatus(requestNow: Date): Promise<MessagingProviderStatus>;
   fetchWebPushConfig(requestNow: Date): Promise<MessagingWebPushConfigResponse>;
   fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date, deviceId?: string): Promise<MessagingMatrixBootstrap>;
+  completeE2eeResetAuth(actor: AuthenticatedActor, requestNow: Date, input: MessagingE2eeResetAuthRequest): Promise<MessagingE2eeResetAuthResponse>;
   fetchConversations(actor: AuthenticatedActor, requestNow: Date): Promise<MessagingConversationList>;
   fetchConversation(actor: AuthenticatedActor, requestNow: Date, conversationId: string): Promise<MessagingConversationDetailResponse>;
   fetchConversationByRoomId(actor: AuthenticatedActor, requestNow: Date, roomId: string): Promise<MessagingConversationDetailResponse>;
@@ -304,6 +328,14 @@ interface CsmMessagingMatrixTokenResponse {
   status?: string;
   tokenAvailable?: boolean;
   userId?: string;
+  warnings?: string[];
+}
+
+interface CsmMessagingE2eeResetAuthProviderResponse {
+  completed?: boolean;
+  contractVersion?: string;
+  providerId?: string;
+  status?: string;
   warnings?: string[];
 }
 
@@ -544,6 +576,58 @@ export class CsmMessagingProvider implements MessagingProvider {
       };
     } catch (error) {
       return degradedMatrixBootstrap(requestNow, this.config, errorMessage(error));
+    }
+  }
+
+  async completeE2eeResetAuth(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    input: MessagingE2eeResetAuthRequest
+  ): Promise<MessagingE2eeResetAuthResponse> {
+    if (!this.config.enabled) {
+      return disabledE2eeResetAuth("Messaging provider integration is disabled.");
+    }
+    try {
+      const result = await fetchJsonWithStatus(
+        new URL(`${this.config.baseUrl}/api/v1/matrix/e2ee/reset-auth`),
+        this.config,
+        requestNow,
+        {
+          body: JSON.stringify(input),
+          headers: {
+            ...actorHeaders(actor, input.deviceId),
+            "Content-Type": "application/json"
+          },
+          method: "POST"
+        }
+      );
+      if (!isRecord(result.body)) {
+        return degradedE2eeResetAuth("Messaging E2EE reset auth response is not valid JSON.");
+      }
+      const response = normalizeE2eeResetAuthResponse(result.body);
+      const warnings = [
+        ...(response.contractVersion === "csm-messaging-e2ee-reset-auth-v1"
+          ? []
+          : [`Messaging E2EE reset auth contract version is ${response.contractVersion ?? "unknown"}.`]),
+        ...(response.providerId === "csm.messaging"
+          ? []
+          : [`Messaging E2EE reset auth provider id is ${response.providerId ?? "unknown"}.`]),
+        ...(response.warnings ?? []).map(sanitizeProviderWarning)
+      ];
+      const completed = result.ok && response.completed === true && response.status === "ready";
+      if (!completed) {
+        warnings.push("CSM Messaging did not complete Matrix E2EE reset authentication.");
+      }
+      return {
+        completed,
+        contractVersion: "cop-messaging-e2ee-reset-auth-v1",
+        enabled: true,
+        providerId: "csm.messaging",
+        status: completed ? "online" : "degraded",
+        warnings: Array.from(new Set(warnings))
+      };
+    } catch (error) {
+      return degradedE2eeResetAuth(errorMessage(error));
     }
   }
 
@@ -1084,6 +1168,28 @@ function degradedMatrixBootstrap(_requestNow: Date, config: MessagingProviderCon
   };
 }
 
+function disabledE2eeResetAuth(detail: string): MessagingE2eeResetAuthResponse {
+  return {
+    completed: false,
+    contractVersion: "cop-messaging-e2ee-reset-auth-v1",
+    enabled: false,
+    providerId: "csm.messaging",
+    status: "disabled",
+    warnings: [detail]
+  };
+}
+
+function degradedE2eeResetAuth(detail: string): MessagingE2eeResetAuthResponse {
+  return {
+    completed: false,
+    contractVersion: "cop-messaging-e2ee-reset-auth-v1",
+    enabled: true,
+    providerId: "csm.messaging",
+    status: "degraded",
+    warnings: [detail]
+  };
+}
+
 function disabledConversationList(): MessagingConversationList {
   return {
     contractVersion: "cop-messaging-conversations-v1",
@@ -1409,6 +1515,16 @@ function normalizeMatrixTokenResponse(value: Record<string, unknown>): CsmMessag
     status: optionalString(value.status),
     tokenAvailable: typeof value.tokenAvailable === "boolean" ? value.tokenAvailable : undefined,
     userId: optionalString(value.userId),
+    warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
+  };
+}
+
+function normalizeE2eeResetAuthResponse(value: Record<string, unknown>): CsmMessagingE2eeResetAuthProviderResponse {
+  return {
+    completed: typeof value.completed === "boolean" ? value.completed : undefined,
+    contractVersion: optionalString(value.contractVersion),
+    providerId: optionalString(value.providerId),
+    status: optionalString(value.status),
     warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
   };
 }

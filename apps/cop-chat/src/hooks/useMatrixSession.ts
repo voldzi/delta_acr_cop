@@ -1,5 +1,9 @@
 import * as React from "react";
-import { fetchMessagingBootstrap, type MessagingConversationSummary } from "@cop/core/cop-data";
+import {
+  completeMessagingE2eeResetAuth,
+  fetchMessagingBootstrap,
+  type MessagingConversationSummary
+} from "@cop/core/cop-data";
 import {
   clearMatrixMessagingCryptoStateForBootstrap,
   createMatrixMessagingSession,
@@ -293,6 +297,17 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
             generation === startGenerationRef.current ||
             Boolean(callbackSession && sessionRef.current === callbackSession);
           candidateSession = await createMatrixMessagingSession(bootstrap, {
+            completeDeviceSigningAuth: async (request) => {
+              const completion = await completeMessagingE2eeResetAuth(currentOptions.apiBase, effectiveAuthToken, {
+                deviceId: request.deviceId,
+                masterKey: { ...request.masterKey },
+                selfSigningKey: { ...request.selfSigningKey },
+                userSigningKey: { ...request.userSigningKey }
+              });
+              if (!completion.completed) {
+                throw new Error(completion.warnings[0] ?? "Serverové ověření resetu E2EE nebylo dokončeno.");
+              }
+            },
             onRoomsChanged: (nextRooms) => {
               if (callbacksAreCurrent()) {
                 optionsRef.current.onRoomsChanged(nextRooms, preferredSelection);

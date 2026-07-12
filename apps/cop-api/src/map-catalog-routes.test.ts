@@ -2501,6 +2501,10 @@ class HangingMessagingProvider implements MessagingProvider {
     throw new Error("not implemented");
   }
 
+  async completeE2eeResetAuth(): Promise<never> {
+    throw new Error("not implemented");
+  }
+
   async fetchConversations(): Promise<never> {
     throw new Error("not implemented");
   }

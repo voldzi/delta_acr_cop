@@ -16,6 +16,20 @@ export interface MessagingBootstrapResponse {
   warnings: string[];
 }
 
+export interface MatrixCrossSigningPublicKey {
+  keys: Record<string, string>;
+  signatures?: Record<string, Record<string, string>>;
+  usage: ["master" | "self_signing" | "user_signing"];
+  user_id: string;
+}
+
+export interface MatrixDeviceSigningAuthRequest {
+  deviceId: string;
+  masterKey: MatrixCrossSigningPublicKey;
+  selfSigningKey: MatrixCrossSigningPublicKey;
+  userSigningKey: MatrixCrossSigningPublicKey;
+}
+
 export interface MatrixUserProfileSyncInput {
   avatarUrl?: string;
   displayName?: string;

@@ -200,6 +200,16 @@ storage records. Recovery keys shown in screenshots or otherwise exposed to a
 human support channel are treated as compromised and must be replaced through
 this reset flow before enrolling additional devices.
 
+Synapse protects replacement cross-signing uploads with user-interactive
+authentication. COP users do not receive their server-managed Matrix password,
+so the browser delegates only the three generated **public** cross-signing keys
+to `POST /api/v1/messaging/e2ee/reset-auth`. COP forwards that authenticated
+request to CSM Messaging, which performs password UIA internally and returns
+only completion status. The endpoint rejects message content, recovery keys,
+room keys, private cross-signing material and unknown fields. Neither COP nor
+the browser receives the Matrix password or the temporary Matrix token used by
+CSM Messaging.
+
 Voice calls are client-side Matrix VoIP/WebRTC calls. Direct rooms retain the
 one-to-one path; group rooms use the Matrix SDK encrypted `GroupCall` peer mesh
 with a six-participant limit. COP Chat may offer audio call controls after

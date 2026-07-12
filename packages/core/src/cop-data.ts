@@ -2157,6 +2157,22 @@ export interface MessagingBootstrapResponse {
   warnings: string[];
 }
 
+export interface MessagingE2eeResetAuthRequest {
+  deviceId: string;
+  masterKey: Record<string, unknown>;
+  selfSigningKey: Record<string, unknown>;
+  userSigningKey: Record<string, unknown>;
+}
+
+export interface MessagingE2eeResetAuthResponse {
+  completed: boolean;
+  contractVersion: "cop-messaging-e2ee-reset-auth-v1";
+  enabled: boolean;
+  providerId: "csm.messaging";
+  status: "degraded" | "disabled" | "online";
+  warnings: string[];
+}
+
 export interface MessagingConversationSummary {
   avatarDataUrl?: string;
   avatarUrl?: string;
@@ -3468,6 +3484,21 @@ export async function fetchMessagingBootstrap(
 ): Promise<MessagingBootstrapResponse> {
   return fetchJson<MessagingBootstrapResponse>(`${apiBase}/api/v1/messaging/bootstrap`, {
     body: JSON.stringify({ deviceId }),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function completeMessagingE2eeResetAuth(
+  apiBase: string,
+  token: string,
+  input: MessagingE2eeResetAuthRequest
+): Promise<MessagingE2eeResetAuthResponse> {
+  return fetchJson<MessagingE2eeResetAuthResponse>(`${apiBase}/api/v1/messaging/e2ee/reset-auth`, {
+    body: JSON.stringify(input),
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"

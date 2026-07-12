@@ -208,8 +208,8 @@ export default function EncryptionRecoveryDialog({
             <p>
               Účet ale nemá kompletní cross-signing/secret-storage metadata, která vyžaduje nativní iPhone/iPad
               aplikace. Pokud jste recovery reset provedli v iOS, web už nemusí vytvářet nový klíč. Webový reset
-              používejte jen jako pokročilou opravu, protože Matrix může vyžádat dodatečné ověření účtu, které prohlížeč
-              nemusí umět dokončit.
+              používejte jen jako pokročilou opravu. Požadované Matrix ověření dokončí CSM Messaging bez zpřístupnění
+              hesla nebo soukromých šifrovacích klíčů prohlížeči.
             </p>
             <footer>
               <button className="primary-dialog-action" onClick={onClose} type="button">

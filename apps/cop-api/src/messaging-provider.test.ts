@@ -546,6 +546,92 @@ describe("CsmMessagingProvider", () => {
     expect(JSON.stringify(response.json())).not.toContain("provider-token");
   });
 
+  it("delegates Matrix password UIA using only validated public cross-signing keys", async () => {
+    vi.stubEnv("COP_AUTH_MODE", "lab");
+    vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
+    const matrixUserId = "@lab:msg.zeleznalady.cz";
+    const signingKey = (usage: "master" | "self_signing" | "user_signing") => ({
+      keys: { [`ed25519:${usage}`]: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" },
+      usage: [usage],
+      user_id: matrixUserId
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://messaging.local:4050/api/v1/matrix/e2ee/reset-auth");
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer provider-token",
+        "x-csm-device-id": "COPWEB.route-test"
+      });
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body).toMatchObject({ deviceId: "COPWEB.route-test" });
+      expect(JSON.stringify(body)).not.toMatch(/password|private|message|recovery/iu);
+      return new Response(JSON.stringify({
+        completed: true,
+        contractVersion: "csm-messaging-e2ee-reset-auth-v1",
+        providerId: "csm.messaging",
+        status: "ready",
+        warnings: []
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000,
+        token: "provider-token"
+      }),
+      now: () => new Date("2026-05-22T12:00:00Z")
+    });
+
+    const response = await app.inject({
+      body: {
+        deviceId: "COPWEB.route-test",
+        masterKey: signingKey("master"),
+        selfSigningKey: signingKey("self_signing"),
+        userSigningKey: signingKey("user_signing")
+      },
+      headers: { authorization: "Bearer lab-secret" },
+      method: "POST",
+      url: "/api/v1/messaging/e2ee/reset-auth"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ completed: true, status: "online" });
+    expect(JSON.stringify(response.json())).not.toMatch(/provider-token|password|private/iu);
+  });
+
+  it("rejects private or malformed E2EE reset material before calling CSM Messaging", async () => {
+    vi.stubEnv("COP_AUTH_MODE", "lab");
+    vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000,
+        token: "provider-token"
+      })
+    });
+
+    const response = await app.inject({
+      body: {
+        deviceId: "COPWEB.route-test",
+        masterKey: { private_key: "must-not-pass" },
+        selfSigningKey: {},
+        userSigningKey: {}
+      },
+      headers: { authorization: "Bearer lab-secret" },
+      method: "POST",
+      url: "/api/v1/messaging/e2ee/reset-auth"
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("rings only a server-validated subset of group members without call signalling content", async () => {
     vi.stubEnv("COP_AUTH_MODE", "lab");
     vi.stubEnv("COP_LAB_TOKEN", "lab-secret");

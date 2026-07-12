@@ -8,6 +8,7 @@ export interface MessagingRouteHandlers {
   conversations: RouteHandlerMethod;
   createConversation: RouteHandlerMethod;
   deleteWebPushDevice: RouteHandlerMethod;
+  e2eeResetAuth: RouteHandlerMethod;
   matrixPushGateway: RouteHandlerMethod;
   registerWebPushDevice: RouteHandlerMethod;
   resolveConversation: RouteHandlerMethod;
@@ -24,6 +25,11 @@ export function registerMessagingRoutes(app: FastifyInstance, handlers: Messagin
   app.post("/api/v1/push/web/devices", handlers.registerWebPushDevice);
   app.delete("/api/v1/push/web/devices/:deviceId", handlers.deleteWebPushDevice);
   app.post("/api/v1/messaging/bootstrap", handlers.bootstrap);
+  app.post(
+    "/api/v1/messaging/e2ee/reset-auth",
+    { config: { rateLimit: { max: 3, timeWindow: "1 minute" } } },
+    handlers.e2eeResetAuth
+  );
   app.post(
     "/api/v1/messaging/calls/wake",
     { config: { rateLimit: { max: 12, timeWindow: "1 minute" } } },

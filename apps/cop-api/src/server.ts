@@ -166,6 +166,7 @@ import {
   createMessagingProviderFromEnv,
   type MessagingConversationCreateRequest,
   type MessagingConversationMember,
+  type MessagingE2eeResetAuthRequest,
   type MessagingMatrixBootstrap,
   type MessagingMatrixRoomBindingRequest,
   type MessagingMapLink,
@@ -4120,6 +4121,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       return messagingProvider.fetchMatrixBootstrap(actor, now(), deviceId);
+    },
+    e2eeResetAuth: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const input = normalizeMessagingE2eeResetAuthRequest(request.body);
+      if (!input) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Matrix E2EE reset auth accepts only a deviceId and public master, self-signing and user-signing keys.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const result = await messagingProvider.completeE2eeResetAuth(actor, now(), input);
+      return reply.code(result.completed ? 200 : 502).send(result);
     },
     wakeVoiceCall: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -13119,6 +13138,108 @@ function normalizeMessagingConversationCreateRequest(value: unknown): MessagingC
 function normalizeMatrixDeviceId(value: unknown): string | undefined {
   const deviceId = optionalTrimmedString(value, 64);
   return deviceId && /^[A-Za-z0-9._=-]{1,64}$/u.test(deviceId) ? deviceId : undefined;
+}
+
+function normalizeMessagingE2eeResetAuthRequest(value: unknown): MessagingE2eeResetAuthRequest | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const allowedFields = new Set(["deviceId", "masterKey", "selfSigningKey", "userSigningKey"]);
+  if (Object.keys(value).some((key) => !allowedFields.has(key))) {
+    return null;
+  }
+  const deviceId = normalizeMatrixDeviceId(value.deviceId);
+  const masterKey = normalizeMatrixCrossSigningPublicKey(value.masterKey, "master");
+  const selfSigningKey = normalizeMatrixCrossSigningPublicKey(value.selfSigningKey, "self_signing");
+  const userSigningKey = normalizeMatrixCrossSigningPublicKey(value.userSigningKey, "user_signing");
+  if (
+    !deviceId ||
+    !masterKey ||
+    !selfSigningKey ||
+    !userSigningKey ||
+    masterKey.user_id !== selfSigningKey.user_id ||
+    masterKey.user_id !== userSigningKey.user_id
+  ) {
+    return null;
+  }
+  return { deviceId, masterKey, selfSigningKey, userSigningKey };
+}
+
+function normalizeMatrixCrossSigningPublicKey(
+  value: unknown,
+  expectedUsage: "master" | "self_signing" | "user_signing"
+): MessagingE2eeResetAuthRequest["masterKey"] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const allowedFields = new Set(["keys", "signatures", "usage", "user_id"]);
+  if (Object.keys(value).some((key) => !allowedFields.has(key))) {
+    return null;
+  }
+  const userId = optionalTrimmedString(value.user_id, 255);
+  const usage = Array.isArray(value.usage) ? value.usage : [];
+  const keys = normalizeMatrixPublicKeyMap(value.keys, 4);
+  const signatures = value.signatures === undefined ? undefined : normalizeMatrixSignatureMap(value.signatures);
+  if (
+    !userId ||
+    !/^@[^:\s]{1,180}:[^\s]{1,180}$/u.test(userId) ||
+    usage.length !== 1 ||
+    usage[0] !== expectedUsage ||
+    !keys ||
+    (value.signatures !== undefined && !signatures)
+  ) {
+    return null;
+  }
+  return {
+    keys,
+    ...(signatures ? { signatures } : {}),
+    usage: [expectedUsage],
+    user_id: userId
+  };
+}
+
+function normalizeMatrixPublicKeyMap(value: unknown, maxEntries: number): Record<string, string> | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const entries = Object.entries(value);
+  if (entries.length < 1 || entries.length > maxEntries) {
+    return null;
+  }
+  const normalized: Record<string, string> = {};
+  for (const [keyId, publicValue] of entries) {
+    if (
+      !/^ed25519:[A-Za-z0-9._=+\/-]{1,192}$/u.test(keyId) ||
+      typeof publicValue !== "string" ||
+      !/^[A-Za-z0-9._=+\/-]{16,1024}$/u.test(publicValue)
+    ) {
+      return null;
+    }
+    normalized[keyId] = publicValue;
+  }
+  return normalized;
+}
+
+function normalizeMatrixSignatureMap(value: unknown): Record<string, Record<string, string>> | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const entries = Object.entries(value);
+  if (entries.length > 8) {
+    return null;
+  }
+  const normalized: Record<string, Record<string, string>> = {};
+  for (const [userId, signatures] of entries) {
+    if (!/^@[^:\s]{1,180}:[^\s]{1,180}$/u.test(userId)) {
+      return null;
+    }
+    const normalizedSignatures = normalizeMatrixPublicKeyMap(signatures, 16);
+    if (!normalizedSignatures) {
+      return null;
+    }
+    normalized[userId] = normalizedSignatures;
+  }
+  return normalized;
 }
 
 function normalizeWebPushDeviceId(value: unknown): string | undefined {

@@ -5,6 +5,7 @@ import type {
   MatrixCopAiMessageMetadata,
   MatrixCopMapAction,
   MatrixCopMessageMetadata,
+  MatrixDeviceSigningAuthRequest,
   MatrixEncryptedFileRef,
   MatrixEncryptionRecoveryStatus,
   MatrixLocationShare,
@@ -36,6 +37,7 @@ const matrixVoiceCallPreflightTimeoutMs = 1_200;
 const matrixVoiceCallConnectingTimeoutMs = 45_000;
 const matrixVoiceCallIceFailureMessage = "Hovor se nepodařilo spojit. Pravděpodobně chybí dostupný TURN server.";
 const matrixGroupVoiceCallParticipantLimit = 6;
+const matrixServerManagedAuthType = "cz.zeleznalady.cop.server_managed_password";
 
 interface MatrixClientLike {
   createRoom?: (options: Record<string, unknown>) => Promise<{ room_id?: string; roomId?: string }>;
@@ -281,6 +283,7 @@ interface MatrixEventLike {
 export async function createMatrixMessagingSession(
   bootstrap: MessagingBootstrapResponse,
   callbacks: {
+    completeDeviceSigningAuth?: (request: MatrixDeviceSigningAuthRequest) => Promise<void>;
     onRoomsChanged?: (rooms: MatrixRoomSummary[]) => void;
     profile?: MatrixUserProfileSyncInput;
     onSyncState?: (state: string) => void;
@@ -318,6 +321,11 @@ export async function createMatrixMessagingSession(
     fallbackICEServerAllowed: callbacks.voip?.fallbackIceServerAllowed === true,
     forceTURN: callbacks.voip?.forceTurn === true,
     cryptoCallbacks: recoveryController.cryptoCallbacks,
+    ...(callbacks.completeDeviceSigningAuth && activeBootstrap.deviceId
+      ? {
+          fetchFn: createMatrixServerManagedAuthFetch(callbacks.completeDeviceSigningAuth, activeBootstrap.deviceId)
+        }
+      : {}),
     ...(syncStore ? { store: syncStore } : {}),
     userId: activeBootstrap.userId
   });
@@ -938,7 +946,12 @@ export async function createMatrixMessagingSession(
       }
     },
     createEncryptionRecovery: async (reset = false) => {
-      const recoveryKey = await createUserControlledEncryptionRecovery(client, recoveryController, { reset });
+      const recoveryKey = await createUserControlledEncryptionRecovery(
+        client,
+        recoveryController,
+        { reset },
+        Boolean(callbacks.completeDeviceSigningAuth)
+      );
       await writeStoredMatrixRecoveryKey(activeBootstrap, recoveryKey);
       return recoveryKey;
     },
@@ -1147,10 +1160,15 @@ export async function createMatrixMessagingSession(
       }
     },
     prepareEncryptionRecoveryForMobile: async () => {
-      const recoveryKey = await createUserControlledEncryptionRecovery(client, recoveryController, {
-        mobileCompatible: true,
-        reset: true
-      });
+      const recoveryKey = await createUserControlledEncryptionRecovery(
+        client,
+        recoveryController,
+        {
+          mobileCompatible: true,
+          reset: true
+        },
+        Boolean(callbacks.completeDeviceSigningAuth)
+      );
       await writeStoredMatrixRecoveryKey(activeBootstrap, recoveryKey);
       return recoveryKey;
     },
@@ -1984,7 +2002,8 @@ async function readMatrixEncryptionRecoveryStatus(client: MatrixClientLike): Pro
 async function createUserControlledEncryptionRecovery(
   client: MatrixClientLike,
   recoveryController: MatrixRecoveryController,
-  options: { mobileCompatible?: boolean; reset?: boolean } = {}
+  options: { mobileCompatible?: boolean; reset?: boolean } = {},
+  serverManagedPasswordAuth = false
 ): Promise<string> {
   const crypto = requireMatrixCrypto(client);
   if (
@@ -1997,7 +2016,7 @@ async function createUserControlledEncryptionRecovery(
 
   let resetEncryptionApplied = false;
   if (options.reset) {
-    resetEncryptionApplied = await resetMatrixEncryptionForRecovery(crypto);
+    resetEncryptionApplied = await resetMatrixEncryptionForRecovery(crypto, serverManagedPasswordAuth);
   }
 
   let encodedRecoveryKey = "";
@@ -2009,7 +2028,7 @@ async function createUserControlledEncryptionRecovery(
   };
 
   try {
-    const authUploadDeviceSigningKeys = createDefaultMatrixInteractiveAuthCallback();
+    const authUploadDeviceSigningKeys = createDefaultMatrixInteractiveAuthCallback(serverManagedPasswordAuth);
     if (!options.reset) {
       await crypto.bootstrapCrossSigning({
         authUploadDeviceSigningKeys,
@@ -2074,8 +2093,11 @@ async function acceptCompletedRecoveryAfterDuplicateOneTimeKeyUpload(
   }
 }
 
-async function resetMatrixEncryptionForRecovery(crypto: MatrixCryptoApiLike): Promise<boolean> {
-  const authUploadDeviceSigningKeys = createDefaultMatrixInteractiveAuthCallback();
+async function resetMatrixEncryptionForRecovery(
+  crypto: MatrixCryptoApiLike,
+  serverManagedPasswordAuth: boolean
+): Promise<boolean> {
+  const authUploadDeviceSigningKeys = createDefaultMatrixInteractiveAuthCallback(serverManagedPasswordAuth);
   try {
     if (typeof crypto.resetEncryption === "function") {
       await crypto.resetEncryption(authUploadDeviceSigningKeys);
@@ -2092,7 +2114,88 @@ async function resetMatrixEncryptionForRecovery(crypto: MatrixCryptoApiLike): Pr
   }
 }
 
-function createDefaultMatrixInteractiveAuthCallback(): MatrixInteractiveAuthCallback {
+function createMatrixServerManagedAuthFetch(
+  completeDeviceSigningAuth: (request: MatrixDeviceSigningAuthRequest) => Promise<void>,
+  deviceId: string
+): typeof globalThis.fetch {
+  return async (resource, options) => {
+    const url = matrixFetchUrl(resource);
+    const method = (options?.method ?? matrixFetchRequestMethod(resource)).toUpperCase();
+    if (url?.pathname === "/_matrix/client/v3/keys/device_signing/upload" && method === "POST") {
+      const body = await matrixFetchRequestBody(resource, options);
+      const parsed = body ? asRecord(safeJsonParse(body)) : null;
+      const auth = asRecord(parsed?.auth);
+      if (auth?.type === matrixServerManagedAuthType) {
+        const masterKey = asRecord(parsed?.master_key);
+        const selfSigningKey = asRecord(parsed?.self_signing_key);
+        const userSigningKey = asRecord(parsed?.user_signing_key);
+        if (!masterKey || !selfSigningKey || !userSigningKey) {
+          return matrixAuthProxyResponse(400, "Veřejné cross-signing klíče nejsou kompletní.");
+        }
+        try {
+          await completeDeviceSigningAuth({
+            deviceId,
+            masterKey: masterKey as unknown as MatrixDeviceSigningAuthRequest["masterKey"],
+            selfSigningKey: selfSigningKey as unknown as MatrixDeviceSigningAuthRequest["selfSigningKey"],
+            userSigningKey: userSigningKey as unknown as MatrixDeviceSigningAuthRequest["userSigningKey"]
+          });
+          return new Response("{}", {
+            headers: { "Content-Type": "application/json" },
+            status: 200
+          });
+        } catch {
+          return matrixAuthProxyResponse(502, "CSM Messaging nedokončil ověření resetu E2EE.");
+        }
+      }
+    }
+    return globalThis.fetch(resource, options);
+  };
+}
+
+function matrixFetchUrl(resource: RequestInfo | URL): URL | null {
+  try {
+    if (resource instanceof URL) {
+      return resource;
+    }
+    if (typeof resource === "string") {
+      return new URL(resource);
+    }
+    return new URL(resource.url);
+  } catch {
+    return null;
+  }
+}
+
+function matrixFetchRequestMethod(resource: RequestInfo | URL): string {
+  return typeof Request !== "undefined" && resource instanceof Request ? resource.method : "GET";
+}
+
+async function matrixFetchRequestBody(resource: RequestInfo | URL, options?: RequestInit): Promise<string | null> {
+  if (typeof options?.body === "string") {
+    return options.body;
+  }
+  if (typeof Request !== "undefined" && resource instanceof Request) {
+    return resource.clone().text();
+  }
+  return null;
+}
+
+function matrixAuthProxyResponse(status: number, message: string): Response {
+  return new Response(JSON.stringify({ errcode: "M_COP_UIA_FAILED", error: message }), {
+    headers: { "Content-Type": "application/json" },
+    status
+  });
+}
+
+function safeJsonParse(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function createDefaultMatrixInteractiveAuthCallback(serverManagedPasswordAuth = false): MatrixInteractiveAuthCallback {
   return async (makeRequest) => {
     try {
       return await makeRequest(null);
@@ -2106,6 +2209,13 @@ function createDefaultMatrixInteractiveAuthCallback(): MatrixInteractiveAuthCall
           });
         } catch (dummyCaught) {
           throw new MatrixInteractiveAuthRequiredError(dummyCaught, authData);
+        }
+      }
+      if (authData && serverManagedPasswordAuth && matrixInteractiveAuthSupportsPassword(authData)) {
+        try {
+          return await makeRequest({ type: matrixServerManagedAuthType });
+        } catch (serverManagedCaught) {
+          throw new MatrixInteractiveAuthRequiredError(serverManagedCaught, authData);
         }
       }
       throw new MatrixInteractiveAuthRequiredError(caught, authData);
@@ -2150,6 +2260,10 @@ function readMatrixInteractiveAuthData(caught: unknown): MatrixInteractiveAuthDa
 
 function matrixInteractiveAuthSupportsDummy(authData: MatrixInteractiveAuthData): boolean {
   return authData.flows.some((flow) => flow.stages.includes("m.login.dummy"));
+}
+
+function matrixInteractiveAuthSupportsPassword(authData: MatrixInteractiveAuthData): boolean {
+  return authData.flows.some((flow) => flow.stages.includes("m.login.password"));
 }
 
 function summarizeMatrixInteractiveAuthFlows(authData: MatrixInteractiveAuthData | null): string {
