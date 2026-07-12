@@ -87,6 +87,7 @@ interface MatrixClientLike {
   setPresence?: (options: { presence: "offline" | "online" | "unavailable" }) => Promise<unknown>;
   startClient?: (options?: Record<string, unknown>) => Promise<void> | void;
   stopClient?: () => void;
+  syncApi?: MatrixSyncApiLike;
   scrollback?: (room: MatrixRoomLike, limit?: number) => Promise<unknown>;
   setAvatarUrl?: (mxcUrl: string) => Promise<unknown>;
   setDisplayName?: (displayName: string) => Promise<unknown>;
@@ -95,6 +96,11 @@ interface MatrixClientLike {
     opts?: Record<string, unknown>
   ) => Promise<{ content_uri?: string; contentUri?: string }>;
   waitUntilRoomReadyForGroupCalls?: (roomId: string) => Promise<void>;
+}
+
+interface MatrixSyncApiLike {
+  stop: () => void;
+  sync: () => Promise<void>;
 }
 
 type MatrixSendEventArgs =
@@ -946,16 +952,20 @@ export async function createMatrixMessagingSession(
       }
     },
     createEncryptionRecovery: async (reset = false) => {
-      const recoveryKey = await createUserControlledEncryptionRecovery(
+      const recoveryKey = await runWithMatrixSyncPausedForRecovery(
         client,
-        recoveryController,
-        // Every newly issued COP recovery key is promised to work on both the
-        // web client and the Matrix Rust SDK used by iOS.  In particular, do
-        // not let the initial-setup path read legacy cross-signing account-data
-        // records: an interrupted reset intentionally leaves those records as
-        // empty objects, which ServerSideSecretStorage rejects as unencrypted.
-        { mobileCompatible: true, reset },
-        Boolean(callbacks.completeDeviceSigningAuth)
+        async () =>
+          createUserControlledEncryptionRecovery(
+            client,
+            recoveryController,
+            // Every newly issued COP recovery key is promised to work on both the
+            // web client and the Matrix Rust SDK used by iOS.  In particular, do
+            // not let the initial-setup path read legacy cross-signing account-data
+            // records: an interrupted reset intentionally leaves those records as
+            // empty objects, which ServerSideSecretStorage rejects as unencrypted.
+            { mobileCompatible: true, reset },
+            Boolean(callbacks.completeDeviceSigningAuth)
+          )
       );
       await writeStoredMatrixRecoveryKey(activeBootstrap, recoveryKey);
       return recoveryKey;
@@ -1165,14 +1175,18 @@ export async function createMatrixMessagingSession(
       }
     },
     prepareEncryptionRecoveryForMobile: async () => {
-      const recoveryKey = await createUserControlledEncryptionRecovery(
+      const recoveryKey = await runWithMatrixSyncPausedForRecovery(
         client,
-        recoveryController,
-        {
-          mobileCompatible: true,
-          reset: true
-        },
-        Boolean(callbacks.completeDeviceSigningAuth)
+        async () =>
+          createUserControlledEncryptionRecovery(
+            client,
+            recoveryController,
+            {
+              mobileCompatible: true,
+              reset: true
+            },
+            Boolean(callbacks.completeDeviceSigningAuth)
+          )
       );
       await writeStoredMatrixRecoveryKey(activeBootstrap, recoveryKey);
       return recoveryKey;
@@ -1487,6 +1501,30 @@ export async function createMatrixMessagingSession(
     }
   };
   return sessionApi;
+}
+
+async function runWithMatrixSyncPausedForRecovery<T>(
+  client: MatrixClientLike,
+  action: () => Promise<T>
+): Promise<T> {
+  const syncApi = client.syncApi;
+  if (!syncApi) {
+    return action();
+  }
+
+  // Password UIA can take several seconds. During that window the server still
+  // advertises the previous public cross-signing identity. If an ordinary
+  // /sync response imports it after Rust generated the replacement identity,
+  // Rust correctly discards the new private keys as mismatched. Pause only the
+  // sync loop (not the crypto backend) until the replacement identity and 4S
+  // records have been published and verified.
+  syncApi.stop();
+  await Promise.resolve();
+  try {
+    return await action();
+  } finally {
+    void syncApi.sync().catch(() => undefined);
+  }
 }
 
 function asMatrixCallLike(value: unknown): MatrixCallLike | null {
