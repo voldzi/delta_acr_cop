@@ -1887,10 +1887,14 @@ describe("Matrix client diagnostics", () => {
     });
   });
 
-  it("creates a user-held Matrix recovery key without server-managed recovery material", async () => {
+  it("creates a web and iOS compatible user-held Matrix recovery key without reading stale secrets", async () => {
     const bootstrapCrossSigning = vi
       .fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>()
-      .mockResolvedValue(undefined);
+      .mockImplementation(async (options) => {
+        if (!options.setupNewCrossSigning) {
+          throw new Error("Content is not encrypted!");
+        }
+      });
     const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
       await options.createSecretStorageKey?.();
     });
@@ -1915,7 +1919,12 @@ describe("Matrix client diagnostics", () => {
     const recoveryKey = await session.createEncryptionRecovery();
 
     expect(recoveryKey).toBe("EsTK aBCd user held recovery key");
-    expect(bootstrapCrossSigning).toHaveBeenCalled();
+    expect(bootstrapCrossSigning).toHaveBeenCalledTimes(1);
+    expect(bootstrapCrossSigning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupNewCrossSigning: true
+      })
+    );
     expect(bootstrapSecretStorage).toHaveBeenCalledWith(
       expect.objectContaining({
         setupNewKeyBackup: true,
@@ -2347,6 +2356,7 @@ describe("Matrix client diagnostics", () => {
 
     expect(recoveryKey).toBe("EsTK replacement recovery key");
     expect(resetEncryption).toHaveBeenCalled();
+    expect(bootstrapCrossSigning).not.toHaveBeenCalled();
     expect(bootstrapSecretStorage).toHaveBeenCalledWith(
       expect.objectContaining({
         setupNewKeyBackup: false,

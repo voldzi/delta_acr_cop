@@ -949,7 +949,12 @@ export async function createMatrixMessagingSession(
       const recoveryKey = await createUserControlledEncryptionRecovery(
         client,
         recoveryController,
-        { reset },
+        // Every newly issued COP recovery key is promised to work on both the
+        // web client and the Matrix Rust SDK used by iOS.  In particular, do
+        // not let the initial-setup path read legacy cross-signing account-data
+        // records: an interrupted reset intentionally leaves those records as
+        // empty objects, which ServerSideSecretStorage rejects as unencrypted.
+        { mobileCompatible: true, reset },
         Boolean(callbacks.completeDeviceSigningAuth)
       );
       await writeStoredMatrixRecoveryKey(activeBootstrap, recoveryKey);

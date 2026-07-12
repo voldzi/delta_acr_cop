@@ -196,7 +196,10 @@ When the standalone web chat starts a new E2EE key cycle, it must rotate the
 Matrix recovery material as a complete set: secret storage, cross-signing
 secrets and key backup. This keeps native Matrix Rust SDK clients compatible
 with accounts that may have legacy or incomplete `m.cross_signing.*` secret
-storage records. Recovery keys shown in screenshots or otherwise exposed to a
+storage records. Initial recovery setup and a resumed, previously interrupted
+reset both create fresh cross-signing keys before writing new secret storage;
+they must not try to decrypt the empty account-data tombstones left by the
+reset. Recovery keys shown in screenshots or otherwise exposed to a
 human support channel are treated as compromised and must be replaced through
 this reset flow before enrolling additional devices.
 
