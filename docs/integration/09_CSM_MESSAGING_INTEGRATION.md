@@ -199,7 +199,11 @@ with accounts that may have legacy or incomplete `m.cross_signing.*` secret
 storage records. Initial recovery setup and a resumed, previously interrupted
 reset both create fresh cross-signing keys before writing new secret storage;
 they must not try to decrypt the empty account-data tombstones left by the
-reset. Recovery keys shown in screenshots or otherwise exposed to a
+reset. Before a non-emergency web+iOS rotation, the client disables an existing
+unavailable key-storage configuration so Rust does not try to export the new
+cross-signing private keys under an old recovery key. The same transaction then
+creates replacement secret storage and key backup under the new user-held key.
+Recovery keys shown in screenshots or otherwise exposed to a
 human support channel are treated as compromised and must be replaced through
 this reset flow before enrolling additional devices.
 

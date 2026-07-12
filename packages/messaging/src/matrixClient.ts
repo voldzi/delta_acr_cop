@@ -2073,6 +2073,14 @@ async function createUserControlledEncryptionRecovery(
   try {
     const authUploadDeviceSigningKeys = createDefaultMatrixInteractiveAuthCallback(serverManagedPasswordAuth);
     if (!options.reset) {
+      if (options.mobileCompatible) {
+        // A previously interrupted setup can leave a default 4S key that this
+        // browser cannot unlock. Rust's cross-signing reset would otherwise try
+        // to export the new private keys under that old key before UIA and fail
+        // before publishing anything. The flow below immediately replaces 4S
+        // and key backup with the newly generated user-held recovery key.
+        await crypto.disableKeyStorage?.();
+      }
       await crypto.bootstrapCrossSigning({
         authUploadDeviceSigningKeys,
         ...(options.mobileCompatible ? { setupNewCrossSigning: true } : {})
