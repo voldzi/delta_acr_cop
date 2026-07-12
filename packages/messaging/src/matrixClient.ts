@@ -2072,7 +2072,7 @@ async function createUserControlledEncryptionRecovery(
     // ServerSideSecretStorage waits for account-data echoes from /sync when it
     // changes the default key, and pausing around that work would deadlock.
     await runWithMatrixSyncPausedForRecovery(client, () =>
-      bootstrapCrossSigning({
+      bootstrapCrossSigning.call(crypto, {
         authUploadDeviceSigningKeys,
         ...(options.mobileCompatible ? { setupNewCrossSigning: true } : {})
       })
