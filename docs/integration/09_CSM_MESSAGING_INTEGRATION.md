@@ -208,7 +208,9 @@ authentication. COP users do not receive their server-managed Matrix password,
 so the browser delegates only the three generated **public** cross-signing keys
 to `POST /api/v1/messaging/e2ee/reset-auth`. COP forwards that authenticated
 request to CSM Messaging, which performs password UIA internally and returns
-only completion status. The endpoint rejects message content, recovery keys,
+only completion status. The chat refreshes its COP/OIDC credential immediately
+before this sensitive callback; it must not reuse the token captured when the
+long-lived Matrix session was created. The endpoint rejects message content, recovery keys,
 room keys, private cross-signing material and unknown fields. Neither COP nor
 the browser receives the Matrix password or the temporary Matrix token used by
 CSM Messaging.
