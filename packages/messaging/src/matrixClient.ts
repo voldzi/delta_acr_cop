@@ -3059,17 +3059,24 @@ async function assertBrowserCanReachHomeserver(baseUrl: string): Promise<void> {
     return;
   }
   const versionsUrl = `${baseUrl.replace(/\/+$/u, "")}/_matrix/client/versions`;
+  const controller = typeof AbortController === "function" ? new AbortController() : undefined;
+  const timeout = controller ? window.setTimeout(() => controller.abort(), 8_000) : undefined;
   try {
     const response = await window.fetch(versionsUrl, {
       cache: "no-store",
       credentials: "omit",
-      mode: "cors"
+      mode: "cors",
+      ...(controller ? { signal: controller.signal } : {})
     });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
   } catch (caught) {
     throw formatMatrixClientError(caught, baseUrl, "ověřit službu zpráv v prohlížeči");
+  } finally {
+    if (timeout !== undefined) {
+      window.clearTimeout(timeout);
+    }
   }
 }
 
