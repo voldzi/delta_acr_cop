@@ -210,7 +210,10 @@ to `POST /api/v1/messaging/e2ee/reset-auth`. COP forwards that authenticated
 request to CSM Messaging, which performs password UIA internally and returns
 only completion status. The chat refreshes its COP/OIDC credential immediately
 before this sensitive callback; it must not reuse the token captured when the
-long-lived Matrix session was created. While the replacement identity waits for
+long-lived Matrix session was created. If a rotating refresh-token request
+fails transiently while the current COP access token is still valid, the
+callback may fall back to that current rendered-session token and let the API
+perform the authoritative validity check. While the replacement identity waits for
 that UIA round-trip, the web client pauses only the Matrix `/sync` loop. This
 prevents a response containing the previous server identity from invalidating
 the newly generated private keys before the replacement public identity is

@@ -2718,7 +2718,11 @@ export function ChatApp() {
       setAuthSession(nextSession);
       return getAuthorizationToken(nextSession, labToken);
     } catch {
-      return null;
+      // The current access token can remain valid even when a rotating refresh
+      // token request fails transiently. The Matrix callback asks this function
+      // just in time, so this is the latest rendered COP token rather than the
+      // stale token formerly captured when the Matrix session was created.
+      return authToken;
     }
   }
 
