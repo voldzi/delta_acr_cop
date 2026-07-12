@@ -952,20 +952,16 @@ export async function createMatrixMessagingSession(
       }
     },
     createEncryptionRecovery: async (reset = false) => {
-      const recoveryKey = await runWithMatrixSyncPausedForRecovery(
+      const recoveryKey = await createUserControlledEncryptionRecovery(
         client,
-        async () =>
-          createUserControlledEncryptionRecovery(
-            client,
-            recoveryController,
-            // Every newly issued COP recovery key is promised to work on both the
-            // web client and the Matrix Rust SDK used by iOS.  In particular, do
-            // not let the initial-setup path read legacy cross-signing account-data
-            // records: an interrupted reset intentionally leaves those records as
-            // empty objects, which ServerSideSecretStorage rejects as unencrypted.
-            { mobileCompatible: true, reset },
-            Boolean(callbacks.completeDeviceSigningAuth)
-          )
+        recoveryController,
+        // Every newly issued COP recovery key is promised to work on both the
+        // web client and the Matrix Rust SDK used by iOS.  In particular, do
+        // not let the initial-setup path read legacy cross-signing account-data
+        // records: an interrupted reset intentionally leaves those records as
+        // empty objects, which ServerSideSecretStorage rejects as unencrypted.
+        { mobileCompatible: true, reset },
+        Boolean(callbacks.completeDeviceSigningAuth)
       );
       await writeStoredMatrixRecoveryKey(activeBootstrap, recoveryKey);
       return recoveryKey;
@@ -1175,18 +1171,14 @@ export async function createMatrixMessagingSession(
       }
     },
     prepareEncryptionRecoveryForMobile: async () => {
-      const recoveryKey = await runWithMatrixSyncPausedForRecovery(
+      const recoveryKey = await createUserControlledEncryptionRecovery(
         client,
-        async () =>
-          createUserControlledEncryptionRecovery(
-            client,
-            recoveryController,
-            {
-              mobileCompatible: true,
-              reset: true
-            },
-            Boolean(callbacks.completeDeviceSigningAuth)
-          )
+        recoveryController,
+        {
+          mobileCompatible: true,
+          reset: true
+        },
+        Boolean(callbacks.completeDeviceSigningAuth)
       );
       await writeStoredMatrixRecoveryKey(activeBootstrap, recoveryKey);
       return recoveryKey;
@@ -2056,11 +2048,7 @@ async function createUserControlledEncryptionRecovery(
   ) {
     throw new Error("Tento prohlížeč nepodporuje vytvoření obnovovacího klíče.");
   }
-
-  let resetEncryptionApplied = false;
-  if (options.reset) {
-    resetEncryptionApplied = await resetMatrixEncryptionForRecovery(crypto, serverManagedPasswordAuth);
-  }
+  const bootstrapCrossSigning = crypto.bootstrapCrossSigning;
 
   let encodedRecoveryKey = "";
   const createSecretStorageKey = async () => {
@@ -2072,23 +2060,26 @@ async function createUserControlledEncryptionRecovery(
 
   try {
     const authUploadDeviceSigningKeys = createDefaultMatrixInteractiveAuthCallback(serverManagedPasswordAuth);
-    if (!options.reset) {
-      if (options.mobileCompatible) {
-        // A previously interrupted setup can leave a default 4S key that this
-        // browser cannot unlock. Rust's cross-signing reset would otherwise try
-        // to export the new private keys under that old key before UIA and fail
-        // before publishing anything. The flow below immediately replaces 4S
-        // and key backup with the newly generated user-held recovery key.
-        await crypto.disableKeyStorage?.();
-      }
-      await crypto.bootstrapCrossSigning({
+    if (options.mobileCompatible) {
+      // Removing 4S waits for an account-data event delivered by /sync. It must
+      // therefore finish before the sync loop is paused below. A previously
+      // interrupted setup can leave a default key that this browser cannot
+      // unlock, so always replace it before generating the new identity.
+      await crypto.disableKeyStorage?.();
+    }
+    // Pause /sync only while Rust generates and publishes the replacement
+    // cross-signing identity. Resuming before bootstrapping 4S is intentional:
+    // ServerSideSecretStorage waits for account-data echoes from /sync when it
+    // changes the default key, and pausing around that work would deadlock.
+    await runWithMatrixSyncPausedForRecovery(client, () =>
+      bootstrapCrossSigning({
         authUploadDeviceSigningKeys,
         ...(options.mobileCompatible ? { setupNewCrossSigning: true } : {})
-      });
-    }
+      })
+    );
     await crypto.bootstrapSecretStorage({
       createSecretStorageKey,
-      setupNewKeyBackup: !resetEncryptionApplied,
+      setupNewKeyBackup: true,
       setupNewSecretStorage: true
     });
     // The mobile preparation path has just reset cross-signing and exported the
@@ -2141,27 +2132,6 @@ async function acceptCompletedRecoveryAfterDuplicateOneTimeKeyUpload(
     return status.ready && status.matrixRustCompatible;
   } catch {
     return false;
-  }
-}
-
-async function resetMatrixEncryptionForRecovery(
-  crypto: MatrixCryptoApiLike,
-  serverManagedPasswordAuth: boolean
-): Promise<boolean> {
-  const authUploadDeviceSigningKeys = createDefaultMatrixInteractiveAuthCallback(serverManagedPasswordAuth);
-  try {
-    if (typeof crypto.resetEncryption === "function") {
-      await crypto.resetEncryption(authUploadDeviceSigningKeys);
-      return true;
-    }
-    await crypto.disableKeyStorage?.();
-    await crypto.bootstrapCrossSigning?.({
-      authUploadDeviceSigningKeys,
-      setupNewCrossSigning: true
-    });
-    return false;
-  } catch (caught) {
-    throw new Error(`Reset E2EE metadat se nepodařil: ${errorMessage(caught)}`);
   }
 }
 
