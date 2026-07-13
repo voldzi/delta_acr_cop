@@ -86,11 +86,13 @@ type MockMatrixCrypto = {
   checkKeyBackupAndEnable?: () => Promise<unknown>;
   createRecoveryKeyFromPassphrase?: () => Promise<unknown>;
   disableKeyStorage?: () => Promise<void>;
+  exportRoomKeys?: () => Promise<unknown[]>;
   forceDiscardSession?: (roomId: string) => Promise<void>;
   getActiveSessionBackupVersion?: () => Promise<string | null>;
   getKeyBackupInfo?: () => Promise<unknown | null>;
   isCrossSigningReady?: () => Promise<boolean>;
   isSecretStorageReady?: () => Promise<boolean>;
+  importRoomKeys?: (keys: unknown[], options?: Record<string, unknown>) => Promise<void>;
   loadSessionBackupPrivateKeyFromSecretStorage?: () => Promise<void>;
   resetEncryption?: (
     authUploadDeviceSigningKeys: (
@@ -1181,7 +1183,7 @@ describe("Matrix client diagnostics", () => {
     expect(session.getTimeline("!chat:cop.local").map((message) => message.body)).toEqual(["recent"]);
   });
 
-  it("keeps undecrypted encrypted events pending until Matrix can decrypt them", async () => {
+  it("keeps undecrypted encrypted events visible until Matrix can decrypt them", async () => {
     const readable = createMessageEvent(
       "readable",
       Date.parse("2026-07-07T13:13:00.000Z"),
@@ -1197,12 +1199,15 @@ describe("Matrix client diagnostics", () => {
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
-    expect(session.getTimeline("!chat:cop.local").map((message) => [message.eventId, message.body])).toEqual([
-      ["$readable", "readable"]
-    ]);
+    expect(session.getTimeline("!chat:cop.local").map((message) => [message.eventId, message.decryptionState])).toEqual(
+      [
+        ["$readable", undefined],
+        ["$undecrypted", "undecryptable"]
+      ]
+    );
     expect(session.getRooms()[0]?.latestMessage).toMatchObject({
-      body: "readable",
-      eventId: "$readable"
+      decryptionState: "undecryptable",
+      eventId: "$undecrypted"
     });
   });
 
@@ -1225,7 +1230,7 @@ describe("Matrix client diagnostics", () => {
     expect(session.getRooms()[0]?.latestMessage).toBeUndefined();
   });
 
-  it("keeps all undecrypted E2EE events out of messages and previews", async () => {
+  it("renders undecrypted E2EE events as history placeholders", async () => {
     const preflightAt = Date.parse("2026-07-10T13:09:15.000Z");
     const unrelated = createEncryptedEvent(preflightAt - 6_000, "$unrelated", "@peer:cop.local");
     const callPreflight = createEncryptedEvent(preflightAt, "$call-preflight", "@peer:cop.local");
@@ -1244,8 +1249,18 @@ describe("Matrix client diagnostics", () => {
 
     const session = await createMatrixMessagingSession(createBootstrap());
 
-    expect(session.getTimeline("!chat:cop.local")).toEqual([]);
-    expect(session.getRooms()[0]?.latestMessage).toBeUndefined();
+    expect(session.getTimeline("!chat:cop.local").map((message) => message.eventId)).toEqual([
+      "$unrelated",
+      "$call-preflight",
+      "$other-sender"
+    ]);
+    expect(session.getTimeline("!chat:cop.local").every((message) => message.decryptionState === "undecryptable")).toBe(
+      true
+    );
+    expect(session.getRooms()[0]?.latestMessage).toMatchObject({
+      decryptionState: "undecryptable",
+      eventId: "$other-sender"
+    });
   });
 
   it("maps decrypted encrypted events from Matrix clear content", async () => {
@@ -1973,6 +1988,8 @@ describe("Matrix client diagnostics", () => {
         await authUploadDeviceSigningKeys((authData) => Promise.resolve(authData));
       }
     );
+    const exportedRoomKeys = [{ room_id: "!ops:cop.local", session_id: "session-1" }];
+    const importRoomKeys = vi.fn<NonNullable<MockMatrixCrypto["importRoomKeys"]>>().mockResolvedValue(undefined);
     const crypto: MockMatrixCrypto = {
       bootstrapCrossSigning,
       bootstrapSecretStorage,
@@ -1981,8 +1998,10 @@ describe("Matrix client diagnostics", () => {
         encodedPrivateKey: "EsTK mobile compatible recovery key",
         privateKey: new Uint8Array([7, 8, 9])
       }),
+      exportRoomKeys: vi.fn().mockResolvedValue(exportedRoomKeys),
       getActiveSessionBackupVersion: vi.fn().mockResolvedValue("2"),
-      getKeyBackupInfo: vi.fn().mockResolvedValue({ version: "2" }),
+      getKeyBackupInfo: vi.fn().mockResolvedValue({ count: 1, version: "2" }),
+      importRoomKeys,
       isCrossSigningReady: vi.fn().mockResolvedValue(true),
       isSecretStorageReady: vi.fn().mockResolvedValue(true),
       resetEncryption
@@ -1996,14 +2015,16 @@ describe("Matrix client diagnostics", () => {
 
     expect(recoveryKey).toBe("EsTK mobile compatible recovery key");
     expect(resetEncryption).not.toHaveBeenCalled();
-    expect(bootstrapCrossSigning).toHaveBeenCalledWith(
-      expect.objectContaining({ setupNewCrossSigning: true })
-    );
+    expect(bootstrapCrossSigning).toHaveBeenCalledWith(expect.objectContaining({ setupNewCrossSigning: true }));
     expect(bootstrapSecretStorage).toHaveBeenCalledWith(
       expect.objectContaining({
         setupNewKeyBackup: true,
         setupNewSecretStorage: true
       })
+    );
+    expect(importRoomKeys).toHaveBeenCalledWith(
+      exportedRoomKeys,
+      expect.objectContaining({ progressCallback: expect.any(Function) })
     );
     await expect(session.getEncryptionRecoveryStatus()).resolves.toMatchObject({
       matrixRustCompatible: true,
@@ -2170,9 +2191,7 @@ describe("Matrix client diagnostics", () => {
 
     await expect(session.prepareEncryptionRecoveryForMobile()).resolves.toBe("EsTK mobile compatible recovery key");
     expect(resetEncryption).not.toHaveBeenCalled();
-    expect(bootstrapCrossSigning).toHaveBeenCalledWith(
-      expect.objectContaining({ setupNewCrossSigning: true })
-    );
+    expect(bootstrapCrossSigning).toHaveBeenCalledWith(expect.objectContaining({ setupNewCrossSigning: true }));
   });
 
   it("resets legacy Matrix E2EE metadata before preparing iOS recovery", async () => {
@@ -2206,9 +2225,7 @@ describe("Matrix client diagnostics", () => {
     await expect(session.prepareEncryptionRecoveryForMobile()).resolves.toBe("EsTK clean mobile recovery key");
     expect(resetEncryption).not.toHaveBeenCalled();
     expect(disableKeyStorage).toHaveBeenCalled();
-    expect(bootstrapCrossSigning).toHaveBeenCalledWith(
-      expect.objectContaining({ setupNewCrossSigning: true })
-    );
+    expect(bootstrapCrossSigning).toHaveBeenCalledWith(expect.objectContaining({ setupNewCrossSigning: true }));
     expect(bootstrapSecretStorage).toHaveBeenCalledWith(
       expect.objectContaining({
         setupNewKeyBackup: true,
@@ -2392,9 +2409,7 @@ describe("Matrix client diagnostics", () => {
 
     expect(recoveryKey).toBe("EsTK replacement recovery key");
     expect(resetEncryption).not.toHaveBeenCalled();
-    expect(bootstrapCrossSigning).toHaveBeenCalledWith(
-      expect.objectContaining({ setupNewCrossSigning: true })
-    );
+    expect(bootstrapCrossSigning).toHaveBeenCalledWith(expect.objectContaining({ setupNewCrossSigning: true }));
     expect(bootstrapSecretStorage).toHaveBeenCalledWith(
       expect.objectContaining({
         setupNewKeyBackup: true,

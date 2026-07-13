@@ -162,11 +162,13 @@ interface MatrixCryptoApiLike {
   checkKeyBackupAndEnable?: () => Promise<unknown>;
   createRecoveryKeyFromPassphrase?: (password?: string) => Promise<unknown>;
   disableKeyStorage?: () => Promise<void>;
+  exportRoomKeys?: () => Promise<unknown[]>;
   forceDiscardSession?: (roomId: string) => Promise<void>;
   getActiveSessionBackupVersion?: () => Promise<string | null>;
   getKeyBackupInfo?: () => Promise<unknown | null>;
   isCrossSigningReady?: () => Promise<boolean>;
   isSecretStorageReady?: () => Promise<boolean>;
+  importRoomKeys?: (keys: unknown[], options?: Record<string, unknown>) => Promise<void>;
   loadSessionBackupPrivateKeyFromSecretStorage?: () => Promise<void>;
   resetEncryption?: (authUploadDeviceSigningKeys: MatrixInteractiveAuthCallback) => Promise<void>;
   restoreKeyBackup?: (options?: Record<string, unknown>) => Promise<unknown>;
@@ -1495,10 +1497,7 @@ export async function createMatrixMessagingSession(
   return sessionApi;
 }
 
-async function runWithMatrixSyncPausedForRecovery<T>(
-  client: MatrixClientLike,
-  action: () => Promise<T>
-): Promise<T> {
+async function runWithMatrixSyncPausedForRecovery<T>(client: MatrixClientLike, action: () => Promise<T>): Promise<T> {
   const syncApi = client.syncApi;
   if (!syncApi) {
     return action();
@@ -2049,6 +2048,10 @@ async function createUserControlledEncryptionRecovery(
     throw new Error("Tento prohlížeč nepodporuje vytvoření obnovovacího klíče.");
   }
   const bootstrapCrossSigning = crypto.bootstrapCrossSigning;
+  // Snapshot every locally known Megolm session before replacing 4S and the
+  // server backup. The recovery key is useful on another device only when the
+  // new backup has actually received these room keys.
+  const localRoomKeys = crypto.exportRoomKeys ? await crypto.exportRoomKeys() : [];
 
   let encodedRecoveryKey = "";
   const createSecretStorageKey = async () => {
@@ -2090,6 +2093,10 @@ async function createUserControlledEncryptionRecovery(
       await crypto.bootstrapCrossSigning({ authUploadDeviceSigningKeys });
     }
     await crypto.checkKeyBackupAndEnable?.();
+    if (localRoomKeys.length > 0 && crypto.importRoomKeys) {
+      await crypto.importRoomKeys(localRoomKeys, { progressCallback: () => undefined });
+    }
+    await waitForLocalRoomKeysInBackup(crypto, localRoomKeys.length);
     const status = await readMatrixEncryptionRecoveryStatus(client);
     if (!status.matrixRustCompatible) {
       throw new Error(
@@ -2110,6 +2117,24 @@ async function createUserControlledEncryptionRecovery(
     throw new Error("Matrix nevydal obnovovací klíč. Zkuste nastavení zopakovat.");
   }
   return encodedRecoveryKey;
+}
+
+async function waitForLocalRoomKeysInBackup(crypto: MatrixCryptoApiLike, expectedCount: number): Promise<void> {
+  if (expectedCount <= 0 || typeof crypto.getKeyBackupInfo !== "function") {
+    return;
+  }
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const info = asRecord(await crypto.getKeyBackupInfo().catch(() => null));
+    const count = Number(info?.count ?? 0);
+    if (Number.isFinite(count) && count >= expectedCount) {
+      return;
+    }
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 250));
+  }
+  throw new Error(
+    `Nová E2EE záloha neobsahuje všechny lokálně dostupné klíče (${expectedCount}). Akci bezpečně zopakujte.`
+  );
 }
 
 async function acceptCompletedRecoveryAfterDuplicateOneTimeKeyUpload(
@@ -3608,10 +3633,10 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
         return [];
       }
       if (matrixTimelineEventType(event) === "m.room.encrypted") {
-        // Keep pending encrypted events in the Matrix SDK timeline so they can
-        // appear as soon as Event.decrypted fires, but never present a crypto
-        // diagnostic as if it were a chat message from the sender.
-        return [];
+        // Preserve the event in the visible history even when this device does
+        // not own its Megolm key. The placeholder is replaced by the normal
+        // mapped event when Event.decrypted fires.
+        return [mapUndecryptableMatrixEvent(room, event, currentUserId)];
       }
       const mapped = mapMatrixMessageEvent(
         client,
@@ -3624,6 +3649,25 @@ function readTimeline(client: MatrixClientLike, roomId: string, homeserverBaseUr
       return mapped && mapped.decryptionState !== "undecryptable" ? [mapped] : [];
     })
     .filter((message) => messageWithinRetention(message, retentionSeconds));
+}
+
+function mapUndecryptableMatrixEvent(
+  room: MatrixRoomLike | undefined,
+  event: MatrixEventLike,
+  currentUserId: string | undefined
+): MatrixTimelineMessage {
+  const sender = event.getSender?.() ?? "";
+  const senderDisplayName = displayNameForMatrixSender(room, sender);
+  return {
+    body: undecryptableMatrixMessageBody,
+    decryptionState: "undecryptable",
+    eventId: event.getId?.() ?? `${sender || "sender"}-${event.getTs?.() ?? Date.now()}`,
+    kind: "text",
+    own: Boolean(currentUserId && sender === currentUserId),
+    sender,
+    ...(senderDisplayName ? { senderDisplayName } : {}),
+    timestamp: new Date(event.getTs?.() ?? Date.now()).toISOString()
+  };
 }
 
 function isTimelineMessageEvent(event: MatrixEventLike): boolean {
@@ -3720,6 +3764,10 @@ function readRoomLatestMessage(
       continue;
     }
     if (matrixTimelineEventType(event) === "m.room.encrypted") {
+      const placeholder = mapUndecryptableMatrixEvent(room, event, currentUserId);
+      if (messageWithinRetention(placeholder, retentionSeconds)) {
+        return placeholder;
+      }
       continue;
     }
     const mapped = mapMatrixMessageEvent(client, room, homeserverBaseUrl, event, currentUserId);
