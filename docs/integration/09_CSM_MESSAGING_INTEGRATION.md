@@ -172,7 +172,11 @@ restore before reporting the device as restored. On later PWA starts the locally
 sealed recovery key is used to enable key backup automatically; once Matrix
 finishes restoring room keys, COP Chat refreshes room summaries and the visible
 timeline so previously undecrypted events can be rendered without another
-manual key entry.
+manual key entry. Encrypted timeline events for which the current device still
+lacks a Megolm session remain visible as explicit missing-key placeholders; a
+room with server history must not look empty merely because plaintext cannot be
+reconstructed on this device. The placeholder is replaced in place when Matrix
+later decrypts the same event.
 
 If one browser reused a stable Matrix device id after its local Rust crypto
 identity changed, its device key can disagree with previously uploaded
@@ -203,6 +207,11 @@ reset. Before a non-emergency web+iOS rotation, the client disables an existing
 unavailable key-storage configuration so Rust does not try to export the new
 cross-signing private keys under an old recovery key. The same transaction then
 creates replacement secret storage and key backup under the new user-held key.
+Before removing old key storage, the browser exports all locally known Megolm
+sessions in memory. After enabling the replacement backup it reimports that
+snapshot to trigger backup processing and does not report success until the
+server backup count covers every locally available session. No room key leaves
+the Matrix crypto API or enters COP REST.
 Recovery keys shown in screenshots or otherwise exposed to a
 human support channel are treated as compromised and must be replaced through
 this reset flow before enrolling additional devices.
