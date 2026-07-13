@@ -1743,6 +1743,48 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("recovers the persistent user directory after a transient startup failure", async () => {
+    const userProfileStore = new TransientInitFailureUserProfileStore();
+    await userProfileStore.upsertProfile({
+      alertPreferences: {},
+      displayName: "Josef Čavrnoch",
+      email: "cavrnoch@example.test",
+      preferences: {},
+      subjectId: "ccbbfb45-b01e-413d-98e8-79e650de4c9f",
+      username: "cava"
+    });
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-05-20T12:00:00Z"),
+      userProfileStore
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/users/search?q=cava"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      items: [
+        {
+          displayName: "Josef Čavrnoch",
+          subjectId: "ccbbfb45-b01e-413d-98e8-79e650de4c9f",
+          username: "cava"
+        }
+      ]
+    });
+    expect(userProfileStore.initAttempts).toBe(2);
+
+    const dependencies = await app.inject({ method: "GET", url: "/health/dependencies" });
+    expect(dependencies.json().dependencies).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "user-profile-store", status: "ok" })])
+    );
+
+    await app.close();
+  });
+
   it("links reports to groups and lets the author edit and delete the report", async () => {
     const app = buildServer({
       mediaStorage: new FakeMediaStorage(),
@@ -3456,6 +3498,18 @@ class FakeEmbeddingProvider extends OllamaEmbeddingProvider {
       embedding: [1, 0],
       model: "bge-m3:test"
     };
+  }
+}
+
+class TransientInitFailureUserProfileStore extends InMemoryUserProfileStore {
+  initAttempts = 0;
+
+  override async init(): Promise<void> {
+    this.initAttempts += 1;
+    if (this.initAttempts === 1) {
+      throw new Error("database is starting");
+    }
+    await super.init();
   }
 }
 
