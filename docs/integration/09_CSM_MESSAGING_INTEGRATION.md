@@ -1099,8 +1099,10 @@ The response contains only directory fields needed by the operator UI:
 }
 ```
 
-The chat UI must add members from this directory result or from a
-CSM Messaging-safe identity lookup. Legacy COP group endpoints keep a
+The chat UI must add members only from this directory result. Username and
+email are search handles; clients must never manufacture a conversation member
+from an unresolved string or ask the operator for a separate display name.
+Legacy COP group endpoints keep a
 server-side safety net: if `POST /api/v1/community/groups/{groupId}/members`
 receives a username/email-like value, it attempts to resolve it to exactly one
 known COP profile and stores the canonical `subjectId`. Unknown human login
@@ -1111,3 +1113,8 @@ Operationally, every user must sign in to COP at least once so `/api/v1/me/prefe
 can create the corresponding `cop_user_profiles` row. Historical rows where
 `cop_community_group_members.subject_id` contains `preferred_username` should be
 backfilled to OIDC `sub` before any legacy group membership resync is used.
+If PostgreSQL is still starting when COP API boots, `user-profile-store` may
+temporarily report `degraded`; the next profile read/search/upsert retries the
+persistent store and returns it to `ok` after a successful initialization. The
+directory must not remain pinned to the process-local fallback after the
+database has recovered.

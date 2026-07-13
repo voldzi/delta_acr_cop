@@ -774,6 +774,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   let trackHistoryStoreDetail = trackHistoryStore ? `${trackHistoryStore.name}: initializing` : "in-memory only";
   let userProfileStoreStatus: DependencyStatus = "degraded";
   let userProfileStoreDetail = `${userProfileStore.name}: initializing`;
+  let userProfileStoreRecovery: Promise<boolean> | undefined;
   let communityReportStoreStatus: DependencyStatus = communityReportStore ? "degraded" : "disabled";
   let communityReportStoreDetail = communityReportStore ? `${communityReportStore.name}: initializing` : "disabled";
   let incidentStoreStatus: DependencyStatus = incidentStore ? "degraded" : "disabled";
@@ -1195,6 +1196,38 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     app.log.error({ error }, "User profile store failed; using in-memory fallback.");
   }
 
+  function markUserProfileStoreReady(): void {
+    userProfileStoreStatus = "ok";
+    userProfileStoreDetail = `${userProfileStore.name}: ready`;
+  }
+
+  async function ensureUserProfileStoreReady(): Promise<boolean> {
+    if (userProfileStoreStatus === "ok") {
+      return true;
+    }
+    if (userProfileStoreRecovery) {
+      return userProfileStoreRecovery;
+    }
+
+    const recovery = (async () => {
+      try {
+        await userProfileStore.init();
+        markUserProfileStoreReady();
+        app.log.info({ store: userProfileStore.name }, "User profile store recovered; using persistent directory again.");
+        return true;
+      } catch (error) {
+        markUserProfileStoreDegraded(error);
+        return false;
+      }
+    })();
+    userProfileStoreRecovery = recovery;
+    try {
+      return await recovery;
+    } finally {
+      userProfileStoreRecovery = undefined;
+    }
+  }
+
   function userProfileStoreDependencyDetail(): string {
     const diagnostics = userProfileStore.diagnostics?.();
     return diagnostics ? `${userProfileStoreDetail}; ${diagnostics}` : userProfileStoreDetail;
@@ -1316,10 +1349,6 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         }
       );
     });
-  }
-
-  function activeUserProfileStore(): UserProfileStore {
-    return userProfileStoreStatus === "ok" ? userProfileStore : userProfileFallbackStore;
   }
 
   function activeMobileDeviceStore(): MobileDeviceStore {
@@ -2604,8 +2633,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   async function readUserProfileBySubject(subjectId: string): Promise<UserProfileRecord | null> {
+    if (!(await ensureUserProfileStoreReady())) {
+      return userProfileFallbackStore.getProfile(subjectId);
+    }
     try {
-      return await activeUserProfileStore().getProfile(subjectId);
+      return await userProfileStore.getProfile(subjectId);
     } catch (error) {
       markUserProfileStoreDegraded(error);
       return userProfileFallbackStore.getProfile(subjectId);
@@ -2613,8 +2645,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   async function searchUserProfiles(query: string, limit = 10): Promise<UserProfileRecord[]> {
+    if (!(await ensureUserProfileStoreReady())) {
+      return userProfileFallbackStore.searchProfiles(query, limit);
+    }
     try {
-      return await activeUserProfileStore().searchProfiles(query, limit);
+      return await userProfileStore.searchProfiles(query, limit);
     } catch (error) {
       markUserProfileStoreDegraded(error);
       return userProfileFallbackStore.searchProfiles(query, limit);
@@ -2624,8 +2659,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   async function upsertUserProfile(
     profile: Omit<UserProfileRecord, "createdAt" | "updatedAt">
   ): Promise<UserProfileRecord> {
+    if (!(await ensureUserProfileStoreReady())) {
+      return userProfileFallbackStore.upsertProfile(profile);
+    }
     try {
-      return await activeUserProfileStore().upsertProfile(profile);
+      return await userProfileStore.upsertProfile(profile);
     } catch (error) {
       markUserProfileStoreDegraded(error);
       return userProfileFallbackStore.upsertProfile(profile);
@@ -2633,8 +2671,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   async function readAlertAcknowledgements(actor: AuthenticatedActor): Promise<Map<string, AlertAcknowledgement>> {
+    if (!(await ensureUserProfileStoreReady())) {
+      return userProfileFallbackStore.getAlertAcknowledgements(actor.subjectId);
+    }
     try {
-      return await activeUserProfileStore().getAlertAcknowledgements(actor.subjectId);
+      return await userProfileStore.getAlertAcknowledgements(actor.subjectId);
     } catch (error) {
       markUserProfileStoreDegraded(error);
       return userProfileFallbackStore.getAlertAcknowledgements(actor.subjectId);
@@ -2645,8 +2686,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     actor: AuthenticatedActor,
     acknowledgement: AlertAcknowledgement
   ): Promise<void> {
+    if (!(await ensureUserProfileStoreReady())) {
+      await userProfileFallbackStore.acknowledgeAlert(actor.subjectId, acknowledgement);
+      return;
+    }
     try {
-      await activeUserProfileStore().acknowledgeAlert(actor.subjectId, acknowledgement);
+      await userProfileStore.acknowledgeAlert(actor.subjectId, acknowledgement);
     } catch (error) {
       markUserProfileStoreDegraded(error);
       await userProfileFallbackStore.acknowledgeAlert(actor.subjectId, acknowledgement);
