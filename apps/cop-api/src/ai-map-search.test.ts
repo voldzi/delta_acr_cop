@@ -134,6 +134,52 @@ describe("AI map search", () => {
     expect(simSearchSourceSystemsForAiMapSearchIntent(intent)).toEqual(["weather_forecast", "chmi_weather_radar"]);
   });
 
+  it.each([
+    ["Hoří v okolí?", ["fire_incident"], ["fire_incident"]],
+    ["Kde je nejbližší hasičská stanice?", ["fire_station"], ["fire_station"]],
+    ["Kde je nejbližší AED?", ["defibrillator"], ["public_resource"]],
+    ["Jsou v okolí dopravní omezení?", ["road_closure"], ["road_closure"]],
+    ["Je v okolí výpadek elektřiny?", ["critical_infrastructure"], ["critical_infrastructure"]],
+    ["Jaké jsou aktivní výstrahy?", ["safety_alert"], ["safety_alert", "weather_warning"]]
+  ])("maps operational question %s to SIM entity types", (question, categoryIds, entityTypes) => {
+    const intent = inferAiMapSearchIntent(question, {});
+
+    expect(intent).toMatchObject({ categoryIds, requested: true });
+    expect(simSearchEntityTypesForAiMapSearchIntent(intent)).toEqual(entityTypes);
+  });
+
+  it("keeps coordinates out of ordinary nearest-object answers", () => {
+    const aiRequest: AiCopQuery = {
+      context: {
+        mapSearch: {
+          results: [{
+            category: "police_station",
+            distanceText: "1,2 km",
+            location: { lat: 50.12, lon: 17.38 },
+            mapFeatureId: "police:vrbno",
+            sourceName: "osm_reference",
+            status: "active",
+            title: "Policie ČR Vrbno"
+          }]
+        },
+        question: "Kde je nejbližší policie?"
+      },
+      outputFormat: "MARKDOWN",
+      prompt: "test",
+      providerPreference: "auto",
+      purpose: "COP_EXPLANATION",
+      requestId: "test-police-user-facing",
+      safetyScope: "COP_DATA_ASSISTANCE_ONLY"
+    };
+
+    const response = aiMapSearchFallbackResponse(aiRequest, new Date("2026-07-15T19:30:00Z"), "test");
+
+    expect(response?.result.summary).toContain("Nejbližší odpovídající místo");
+    expect(response?.result.summary).toContain("1,2 km");
+    expect(response?.result.summary).not.toContain("50.12");
+    expect(response?.result.summary).not.toContain("osm_reference");
+  });
+
   it("answers direct rain questions from SIM weather metrics", () => {
     const aiRequest: AiCopQuery = {
       context: {

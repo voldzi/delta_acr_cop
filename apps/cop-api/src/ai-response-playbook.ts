@@ -1,6 +1,9 @@
 export type AiResponseIntentDomain =
   | "application"
   | "chat"
+  | "community"
+  | "data"
+  | "emergency"
   | "fire"
   | "flood"
   | "infrastructure"
@@ -9,22 +12,34 @@ export type AiResponseIntentDomain =
   | "navigation"
   | "reporting"
   | "security"
+  | "situation"
   | "traffic"
   | "weather";
 
 export type AiResponseIntentId =
   | "app.location.permission"
+  | "alerts.active"
   | "chat.notification.status"
+  | "chat.delivery.status"
+  | "chat.encryption.recovery"
+  | "chat.conversation.summary"
+  | "community.reports.summary"
+  | "cop.capabilities.help"
+  | "emergency.immediate.help"
   | "fire.current.risk"
   | "flood.risk.summary"
   | "flood.water_level"
   | "infrastructure.outage"
   | "map.nearest.medical"
   | "map.nearest.police"
+  | "map.nearest.fire_station"
+  | "map.nearest.aed"
   | "map.nearest.shelter"
   | "navigation.to_target"
   | "pwa.offline.status"
   | "report.create"
+  | "situation.summary"
+  | "source.health"
   | "traffic.restrictions"
   | "weather.radar.show"
   | "weather.rain.now"
@@ -91,6 +106,168 @@ const commonAnswerContract: AiResponseAnswerContract = {
 };
 
 export const aiResponsePlaybookRules: AiResponsePlaybookRule[] = [
+  {
+    allowedActions: ["share-location"],
+    answerContract: {
+      ...commonAnswerContract,
+      citeSources: false,
+      mustMention: ["tísňovou linku", "bezpečí volajícího", "pokyny dispečera"],
+      mustNotInvent: ["diagnózu", "taktický zásah", "potvrzení, že pomoc už byla vyslána"],
+      style: "step-by-step"
+    },
+    description: "Bezprostřední ohrožení života, zdraví nebo bezpečnosti, které vyžaduje tísňovou linku.",
+    domain: "emergency",
+    evalTemplates: [
+      "Člověk {location} nedýchá, co mám dělat?",
+      "Je tu silné krvácení {location}.",
+      "Jsem v bezprostředním nebezpečí {location}.",
+      "Hoří dům {location}, potřebuji okamžitou pomoc.",
+      "Emergency help {location}."
+    ],
+    forbiddenActions: ["route"],
+    intentId: "emergency.immediate.help",
+    patterns: [
+      /\bnedycha\b/u,
+      /\bbezvedom/u,
+      /\bsiln(?:e|y)\s+krvac/u,
+      /\bbezprostredn(?:i|im)\s+nebezpec/u,
+      /\bohrozeni\s+zivota\b/u,
+      /\bokamzit(?:a|ou)\s+pomoc\b/u,
+      /\bhori\s+(?:dum|byt|budova)\b/u,
+      /\bemergency\s+help\b/u
+    ],
+    priority: 140,
+    requiredSources: []
+  },
+  {
+    allowedActions: ["focus-map", "open-chat", "report", "settings", "share-location"],
+    answerContract: {
+      ...commonAnswerContract,
+      citeSources: false,
+      includeUncertainty: false,
+      mustMention: ["dostupné schopnosti", "omezení", "příklad dotazu"],
+      mustNotInvent: ["schopnost provést akci bez potvrzení", "přístup k neviditelným datům"],
+      style: "brief"
+    },
+    description: "Nápověda k tomu, s čím COP AI umí bezpečně pomoci.",
+    domain: "application",
+    evalTemplates: [
+      "Co umíš?",
+      "S čím mi COP AI pomůže?",
+      "Ukaž nápovědu.",
+      "Jaké dotazy ti mohu položit?",
+      "What can you do?"
+    ],
+    forbiddenActions: ["route"],
+    intentId: "cop.capabilities.help",
+    patterns: [/\bco\s+umis\b/u, /\bs\s+cim\s+(?:mi\s+)?(?:cop\s+ai\s+)?(?:pomuze|pomuzes|pomoci)\b/u, /\bnapoved/u, /\bjake\s+dotazy\b/u, /\bwhat\s+can\s+you\s+do\b/u],
+    priority: 100,
+    requiredSources: []
+  },
+  {
+    allowedActions: ["focus-map"],
+    answerContract: {
+      ...commonAnswerContract,
+      mustMention: ["nejdůležitější události", "čas dat", "chybějící pokrytí"],
+      mustNotInvent: ["události mimo dostupný COP kontext", "jistotu bez zdroje"],
+      style: "operational"
+    },
+    description: "Souhrn aktuální civilní situace z výstrah, incidentů, hlášení a mapových dat.",
+    domain: "situation",
+    evalTemplates: [
+      "Jaká je situace {location}?",
+      "Co se děje {location}?",
+      "Dej mi situační přehled {location}.",
+      "Shrň aktuální rizika {location}.",
+      "Situation summary {location}."
+    ],
+    forbiddenActions: ["route"],
+    intentId: "situation.summary",
+    patterns: [/\bjaka\s+je\s+situace\b/u, /\bco\s+se\s+deje\b/u, /\bsituacni\s+prehled\b/u, /\bshrn\w*\s+(?:aktualni\s+)?rizik/u, /\bsituation\s+summary\b/u],
+    priority: 58,
+    requiredSources: ["semantic-context", "indexed-context", "map-search"]
+  },
+  {
+    allowedActions: ["focus-map"],
+    answerContract: commonAnswerContract,
+    description: "Aktivní výstrahy a varování v dostupném COP kontextu.",
+    domain: "situation",
+    evalTemplates: [
+      "Jaké jsou aktivní výstrahy {location}?",
+      "Je vydané nějaké varování {location}?",
+      "Ukaž aktuální upozornění {location}.",
+      "Hrozí něco nebezpečného {location}?",
+      "Active alerts {location}."
+    ],
+    forbiddenActions: ["route"],
+    intentId: "alerts.active",
+    patterns: [/\baktivni\s+vystrah/u, /\bvarovan/u, /\baktualni\s+upozornen/u, /\bhrozi\s+neco\s+nebezpec/u, /\bactive\s+alerts?\b/u],
+    priority: 79,
+    requiredSources: ["semantic-context", "indexed-context", "map-search"]
+  },
+  {
+    allowedActions: ["focus-map", "report"],
+    answerContract: commonAnswerContract,
+    description: "Souhrn publikovaných komunitních hlášení dostupných uživateli.",
+    domain: "community",
+    evalTemplates: [
+      "Jaká jsou hlášení od lidí {location}?",
+      "Shrň komunitní hlášení {location}.",
+      "Co nahlásili občané {location}?",
+      "Ukaž poslední reporty komunity {location}.",
+      "Community reports {location}."
+    ],
+    forbiddenActions: ["route"],
+    intentId: "community.reports.summary",
+    patterns: [/\bhlaseni\s+od\s+lidi\b/u, /\bkomunitni\s+hlasen/u, /\bco\s+nahlasili\s+obcan/u, /\breporty\s+komunit/u, /\bcommunity\s+reports?\b/u],
+    priority: 80,
+    requiredSources: ["semantic-context", "indexed-context"]
+  },
+  {
+    allowedActions: ["settings"],
+    answerContract: {
+      ...commonAnswerContract,
+      mustMention: ["stav zdrojů", "stáří dat", "omezení pokrytí"],
+      mustNotInvent: ["online stav bez diagnostiky", "příčinu výpadku bez evidence"]
+    },
+    description: "Zdraví, čerstvost a dostupnost datových zdrojů COP/SIM.",
+    domain: "data",
+    evalTemplates: [
+      "Jsou datové zdroje v pořádku?",
+      "Jak čerstvá jsou data?",
+      "Které zdroje mají problém?",
+      "Funguje SIM napojení?",
+      "Data source health."
+    ],
+    forbiddenActions: ["route"],
+    intentId: "source.health",
+    patterns: [/\bdatove\s+zdroje\b/u, /\bcerstv\w*\s+jsou\s+data\b/u, /\bktere\s+zdroje\s+maji\s+problem\b/u, /\bsim\s+napojen/u, /\bdata\s+source\s+health\b/u],
+    priority: 84,
+    requiredSources: ["app-runtime", "indexed-context"]
+  },
+  {
+    allowedActions: ["open-chat"],
+    answerContract: {
+      ...commonAnswerContract,
+      citeSources: false,
+      mustMention: ["viditelný výňatek chatu", "hlavní témata", "nevyřešené body"],
+      mustNotInvent: ["neviděnou historii", "obsah nečitelných zpráv"]
+    },
+    description: "Shrnutí viditelné dešifrované části aktuální konverzace.",
+    domain: "chat",
+    evalTemplates: [
+      "Shrň tento chat.",
+      "Co jsme v konverzaci řešili?",
+      "Jaké jsou nevyřešené body diskuze?",
+      "Udělej souhrn posledních zpráv.",
+      "Summarize this conversation."
+    ],
+    forbiddenActions: ["route"],
+    intentId: "chat.conversation.summary",
+    patterns: [/\bshrn\w*\s+(?:tento\s+)?chat\b/u, /\bco\s+jsme\s+v\s+konverzaci\s+resili\b/u, /\bnevyresene\s+body\s+diskuze\b/u, /\bsouhrn\s+poslednich\s+zprav\b/u, /\bsummarize\s+this\s+conversation\b/u],
+    priority: 92,
+    requiredSources: ["chat-context"]
+  },
   {
     allowedActions: ["focus-map"],
     answerContract: {
@@ -285,6 +462,42 @@ export const aiResponsePlaybookRules: AiResponsePlaybookRule[] = [
   {
     allowedActions: ["focus-map", "route"],
     answerContract: commonAnswerContract,
+    description: "Vyhledání nejbližší hasičské stanice; nejde o potvrzení probíhajícího zásahu.",
+    domain: "fire",
+    evalTemplates: [
+      "Kde je nejbližší hasičská stanice {location}?",
+      "Najdi hasiče {location}.",
+      "Ukaž požární stanici {location}.",
+      "Fire station near me {location}.",
+      "Kam k hasičům {location}?"
+    ],
+    forbiddenActions: [],
+    intentId: "map.nearest.fire_station",
+    patterns: [/\bhasicsk\w*\s+stanic/u, /\bpozarni\s+stanic/u, /\bnejbliz\w*\s+hasic/u, /\b(?:kde\s+jsou|najdi)\s+hasic/u, /\bkam\s+k\s+hasic/u, /\bfire\s+station\b/u],
+    priority: 88,
+    requiredSources: ["map-search"]
+  },
+  {
+    allowedActions: ["focus-map", "route"],
+    answerContract: commonAnswerContract,
+    description: "Vyhledání veřejně dostupného AED nebo defibrilátoru.",
+    domain: "medical",
+    evalTemplates: [
+      "Kde je nejbližší AED {location}?",
+      "Najdi defibrilátor {location}.",
+      "Ukaž veřejný defibrilátor {location}.",
+      "AED near me {location}.",
+      "Kam pro defibrilátor {location}?"
+    ],
+    forbiddenActions: [],
+    intentId: "map.nearest.aed",
+    patterns: [/\baed\b/u, /\bdefibril/u],
+    priority: 87,
+    requiredSources: ["map-search"]
+  },
+  {
+    allowedActions: ["focus-map", "route"],
+    answerContract: commonAnswerContract,
     description: "Vyhledání nemocnice, lékaře, lékárny nebo zdravotnické pomoci.",
     domain: "medical",
     evalTemplates: [
@@ -339,18 +552,18 @@ export const aiResponsePlaybookRules: AiResponsePlaybookRule[] = [
   {
     allowedActions: ["focus-map"],
     answerContract: commonAnswerContract,
-    description: "Požár, kouř, hotspot nebo dostupnost hasičů.",
+    description: "Aktivní požár, kouř, hotspot nebo požární riziko.",
     domain: "fire",
     evalTemplates: [
       "Hoří {location}?",
       "Je vidět kouř {location}?",
       "Ukaž požáry {location}.",
-      "Kde jsou hasiči {location}?",
+      "Je hlášen požární zásah {location}?",
       "Fire risk {location}."
     ],
     forbiddenActions: [],
     intentId: "fire.current.risk",
-    patterns: [/\bpozar/u, /\bhori\b/u, /\bkour/u, /\bhasic/u, /\bhotspot\b/u, /\bfire\b/u],
+    patterns: [/\bpozar/u, /\bhori\b/u, /\bkour/u, /\bhotspot\b/u, /\bfire\b/u],
     priority: 68,
     requiredSources: ["sim-search-data", "map-search"]
   },
@@ -425,6 +638,52 @@ export const aiResponsePlaybookRules: AiResponsePlaybookRule[] = [
     intentId: "chat.notification.status",
     patterns: [/\bchat\b/u, /\bzprav/u, /\bnotifik/u, /\bbadge\b/u, /\bneprecten/u, /\bunread\b/u],
     priority: 66,
+    requiredSources: ["app-runtime", "chat-context"]
+  },
+  {
+    allowedActions: ["open-chat"],
+    answerContract: {
+      ...commonAnswerContract,
+      citeSources: false,
+      mustMention: ["stav odeslání", "automatické opakování", "neduplikovat zprávu"],
+      mustNotInvent: ["doručení bez serverového potvrzení", "přečtení bez receipt"]
+    },
+    description: "Čekající, neodeslané nebo duplicitně zobrazené zprávy a jejich bezpečné opakování.",
+    domain: "chat",
+    evalTemplates: [
+      "Proč zpráva pořád čeká?",
+      "Zpráva se neodeslala.",
+      "Vidím odeslanou zprávu dvakrát.",
+      "Mám stejnou zprávu poslat znovu?",
+      "Message delivery status?"
+    ],
+    forbiddenActions: ["route"],
+    intentId: "chat.delivery.status",
+    patterns: [/\bzprav\w*\s+(?:porad\s+)?ceka\b/u, /\bneodesl/u, /\bzprav\w*\s+dvakrat\b/u, /\bstejn\w*\s+zprav\w*\s+poslat\s+znovu\b/u, /\bmessage\s+delivery\s+status\b/u],
+    priority: 98,
+    requiredSources: ["app-runtime", "chat-context"]
+  },
+  {
+    allowedActions: ["open-chat", "settings"],
+    answerContract: {
+      ...commonAnswerContract,
+      citeSources: false,
+      mustMention: ["E2EE stav", "obnovovací klíč", "omezení dostupné historie"],
+      mustNotInvent: ["dešifrovaný obsah", "uložení obnovovacího klíče na serveru"]
+    },
+    description: "Vysvětlení E2EE obnovy, nečitelných starších zpráv a obnovovacího klíče.",
+    domain: "chat",
+    evalTemplates: [
+      "Proč nejdou dešifrovat staré zprávy?",
+      "Kam vložit obnovovací klíč?",
+      "Chat po mně znovu chce E2EE klíč.",
+      "Proč vidím zašifrované zprávy?",
+      "How do I recover encrypted messages?"
+    ],
+    forbiddenActions: ["route"],
+    intentId: "chat.encryption.recovery",
+    patterns: [/\bdesifr/u, /\bobnovovac\w*\s+klic/u, /\be2ee\b/u, /\bzasifrovan\w*\s+zprav/u, /\brecover\w*\s+encrypted\s+messages\b/u],
+    priority: 110,
     requiredSources: ["app-runtime", "chat-context"]
   },
   {

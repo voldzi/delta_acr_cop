@@ -17,6 +17,7 @@ velkou eval sadou českých i anglických parafrází.
 Aktivní katalog je v:
 
 - `apps/cop-api/src/ai-response-playbook.ts`
+- `apps/cop-api/src/ai-grounded-response.ts`
 
 Katalog obsahuje pravidla `AiResponsePlaybookRule`:
 
@@ -35,6 +36,20 @@ Chat-agent pipeline v `apps/cop-api/src/server.ts` vkládá playbook do:
 - prompt instrukce,
 - `context.responsePlaybook`,
 - `result.structured.evidence.responsePlaybook`.
+
+Za providerem běží ještě výstupní quality gate. Odmítá chybové odpovědi,
+prázdné souhrny a technické řetězce určené jen pro diagnostiku (například
+interní názvy vrstev, provider identifikátory, stack trace nebo Matrix error
+kódy). Místo nich vytvoří `grounded-playbook-v1` odpověď z autorizovaného COP
+kontextu. Stejná ochrana se používá v chatu, situačním souhrnu a vysvětlení
+stavu datových zdrojů.
+
+Deterministická odpověď se používá také tam, kde LLM nepřináší hodnotu nebo by
+mohl zhoršit bezpečnost: tísňové kontakty, vysvětlení schopností COP AI,
+příprava hlášení, stav odesílání zpráv a E2EE obnova. Meteorologické, mapové a
+operační dotazy se při dostupných strukturovaných datech odpovídají přímo z
+COP/SIM výsledku; model nesmí přepsat naměřené hodnoty ani do UI propustit
+technické metadata.
 
 API zároveň filtruje `result.structured.mapActions` podle playbooku. Například
 počasí může nabídnout nejvýše jeden mapový odkaz a nikdy trasu, pokud ji
@@ -61,6 +76,8 @@ radarový fallback; agent si místo vyžádá běžnou otázkou.
 Test:
 
 - `apps/cop-api/src/ai-response-playbook.test.ts`
+- `apps/cop-api/src/ai-grounded-response.test.ts`
+- `apps/cop-api/src/ai-map-search.test.ts`
 
 Ověřuje:
 
@@ -85,11 +102,14 @@ Ověřuje:
 - počasí: souhrnná předpověď, déšť, bouřka, radar, teplota, vítr,
 - voda a povodně: hladina, průtok, riziko záplavy,
 - mapa: policie, zdravotní pomoc, kryt,
+- mapa: hasičská stanice a veřejně dostupný AED,
 - doprava,
-- požár,
+- aktivní požár a požární riziko,
 - infrastruktura,
 - navigace,
-- chat a notifikace,
+- aktivní výstrahy, situační souhrn a komunitní hlášení,
+- zdraví a čerstvost datových zdrojů,
+- chat, notifikace, čekající/duplicitní odeslání a E2EE obnova,
 - PWA/offline stav,
 - poloha zařízení,
 - hlášení.

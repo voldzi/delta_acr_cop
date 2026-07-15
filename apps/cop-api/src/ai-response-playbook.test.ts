@@ -53,6 +53,22 @@ describe("AI response playbook", () => {
     expect(promptGuidance).toContain("Forbidden UI actions: route");
   });
 
+  it.each([
+    ["Co umíš?", "cop.capabilities.help"],
+    ["Jaká je situace v okolí?", "situation.summary"],
+    ["Jaké jsou aktivní výstrahy?", "alerts.active"],
+    ["Shrň komunitní hlášení.", "community.reports.summary"],
+    ["Jsou datové zdroje v pořádku?", "source.health"],
+    ["Shrň tento chat.", "chat.conversation.summary"],
+    ["Kde je nejbližší hasičská stanice?", "map.nearest.fire_station"],
+    ["Najdi defibrilátor.", "map.nearest.aed"],
+    ["Vidím odeslanou zprávu dvakrát.", "chat.delivery.status"],
+    ["Proč nejdou dešifrovat staré zprávy?", "chat.encryption.recovery"],
+    ["Člověk nedýchá, co mám dělat?", "emergency.immediate.help"]
+  ])("classifies broader assistant question %s", (question, intentId) => {
+    expect(classifyAiResponseIntent(question)).toMatchObject({ intentId });
+  });
+
   it("generates a ten-thousand-query eval set that maps back to expected intents", () => {
     const cases = buildAiResponsePlaybookEvalCases(10_000);
     const uniqueQuestions = new Set(cases.map((item) => item.question));

@@ -1127,12 +1127,57 @@ describe("community report routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      model: "timeout-fallback",
-      status: "NEEDS_HUMAN_REVIEW",
+      model: "grounded-playbook-v1",
+      provider: "local",
+      status: "COMPLETED",
       result: {
-        summary: expect.stringContaining("časovém limitu")
+        summary: expect.stringContaining("nejsou v aktuálně dostupném COP kontextu")
       }
     });
+
+    await app.close();
+  });
+
+  it("replaces technical source-health provider output with a grounded summary", async () => {
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "technical-source-health-provider",
+      async execute() {
+        return {
+          summary: "ClientError stack trace: providerId=sim.search-data sourceSystemId=internal"
+        };
+      },
+      async health() {
+        return { detail: "test provider", status: "ok" };
+      }
+    };
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-05-20T12:00:00Z")
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {},
+      url: "/api/v1/ai/source-health-summary"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      model: "grounded-playbook-v1",
+      provider: "local",
+      status: "COMPLETED",
+      result: {
+        summary: expect.stringContaining("dostupných zdrojů")
+      }
+    });
+    expect(response.json().result.summary).not.toContain("providerId");
+    expect(response.json().result.summary).not.toContain("stack trace");
 
     await app.close();
   });
@@ -2615,7 +2660,7 @@ describe("community report routes", () => {
     await app.close();
   });
 
-  it("uses the AI provider to synthesize a general weather forecast for a known location", async () => {
+  it("answers a general weather forecast deterministically for a known location", async () => {
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {
       available: true,
@@ -2654,14 +2699,15 @@ describe("community report routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(capturedQueries).toHaveLength(1);
-    expect(capturedQueries[0]?.context).toMatchObject({
-      responsePlaybook: { intentId: "weather.summary.forecast" }
-    });
-    expect(capturedQueries[0]?.prompt).toContain("Interní identifikátory zdrojů a vrstev");
+    expect(capturedQueries).toHaveLength(0);
     const aiResponse = response.json() as AiCopResponse;
-    expect(aiResponse.provider).toBe("mock");
-    expect(aiResponse.result.summary).toContain("V okolí Vrbna");
+    expect(aiResponse).toMatchObject({
+      model: "map-search-fallback",
+      provider: "local",
+      status: "COMPLETED"
+    });
+    expect(aiResponse.result.summary).toContain("Pro nejbližší dostupné období");
+    expect(aiResponse.result.summary).toContain("pravděpodobnost srážek 70 %");
     expect(aiResponse.result.summary).not.toContain("MAX_Z");
 
     await app.close();
@@ -3084,7 +3130,7 @@ describe("community report routes", () => {
     });
 
     let completed: Record<string, unknown> | undefined;
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    for (let attempt = 0; attempt < 240; attempt += 1) {
       const pollResponse = await app.inject({
         headers: { authorization: "Bearer dev-lab-token" },
         url: `/api/v1/ai/chat-agent/jobs/${String(started.jobId)}`

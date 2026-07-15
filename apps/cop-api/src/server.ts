@@ -42,6 +42,11 @@ import {
 } from "./community-report-store.js";
 import { correlationIdFrom, sendError } from "./errors.js";
 import {
+  aiGroundedPlaybookResponse,
+  aiProviderResponseNeedsUserFacingFallback,
+  shouldAnswerAiPlaybookDeterministically
+} from "./ai-grounded-response.js";
+import {
   aiMapSearchFallbackResponse,
   aiMapSearchNoResultFallbackResponse,
   aiMapSearchResultCompare,
@@ -2044,9 +2049,6 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     mapSearch: AiMapSearchContext | undefined
   ): boolean {
     if (!mapSearch || mapSearch.results.length === 0) {
-      return false;
-    }
-    if (isGeneralWeatherForecastQuestion(question)) {
       return false;
     }
     const intent = inferAiMapSearchIntent(question, body);
@@ -8636,6 +8638,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       contractVersion: "cop-ai-situation-summary-v1",
       generatedAt: requestNow.toISOString(),
       retrievalIntent,
+      responsePlaybook: {
+        intentId: "situation.summary"
+      },
       scope,
       priorityContext,
       contextCompression: promptContext.contextCompression,
@@ -8667,7 +8672,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
     const providerStartedAt = Date.now();
-    const providerResponse = await queryCopAssistantForAi(aiRequest, requestNow, "situation-summary");
+    const candidateProviderResponse = await queryCopAssistantForAi(aiRequest, requestNow, "situation-summary");
+    const providerResponse = aiProviderResponseNeedsUserFacingFallback(candidateProviderResponse)
+      ? aiGroundedPlaybookResponse(
+          aiRequest,
+          requestNow,
+          "The AI provider did not return a safe situation summary; COP used current authorized context."
+        )
+      : candidateProviderResponse;
     const providerDurationMs = Date.now() - providerStartedAt;
     const pipelineObservability = buildAiPipelineObservability({
       compressedContext,
@@ -8997,7 +9009,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       prompt: [
         `Odpověz jako viditelný AI agent v COP chatu v jazyce ${aiLanguage(body.language)}.`,
         "Použij přiložený COP kontext napříč objekty, výstrahami, komunitními hlášeními, incidenty, stavem zdrojů a explicitně poskytnutým chatContext.",
-        "Pro dotazy typu najdi/vyhledej/nejbližší použij mapSearch a priorityContext.mapSnapshot před obecnou semantickou evidencí; pokud mapSearch obsahuje výsledky, uveď konkrétní název, vzdálenost, souřadnice a citaci.",
+        "Pro dotazy typu najdi/vyhledej/nejbližší použij mapSearch a priorityContext.mapSnapshot před obecnou semantickou evidencí; pokud mapSearch obsahuje výsledky, uveď konkrétní název, vzdálenost a citaci. Souřadnice uveď jen na výslovnou žádost uživatele.",
         "U mapových vyhledávacích dotazů odpověz stručně jako konkrétní nález a další možný krok; nevytvářej obecný situační přehled, pokud uživatel žádá jen vyhledání místa nebo objektu.",
         "Použij priorityContext pro krizovou důležitost, semanticContext jako requestově aktuální bge-m3 výběr COP entit a chatových výňatků a indexedContext jako širší background COP index s geo/časovým filtrem; uveď, když je retrieval degraded nebo prázdný.",
         "Bezpečnostní priority jsou voda/povodeň, požár, zdravotní riziko, infrastruktura, dopravní omezení, bezpečnostní/policejní incident a komunitní hlášení; civilní lety a stale civilní letové tracky nejsou priorita a zmiň je jen při explicitním leteckém dotazu nebo přímé bezpečnostní souvislosti.",
@@ -9021,6 +9033,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       ? aiWeatherLocationClarificationResponse(aiRequest, requestNow)
       : undefined;
     const deterministicMapSearchResponse = !weatherLocationClarificationResponse
+      && !shouldAnswerAiPlaybookDeterministically(aiRequest)
       && shouldAnswerAiChatAgentWithMapSearchResult(question, body, aiMapSearch)
       ? aiMapSearchFallbackResponse(
           aiRequest,
@@ -9030,6 +9043,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       : undefined;
     const deterministicEmptyMapSearchResponse =
       !weatherLocationClarificationResponse
+      && !shouldAnswerAiPlaybookDeterministically(aiRequest)
       && !deterministicMapSearchResponse
       && shouldAnswerAiChatAgentWithEmptyMapSearchResult(question, body, aiMapSearch)
         ? aiMapSearchNoResultFallbackResponse(
@@ -9038,26 +9052,33 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             "Explicit COP map search returned no matching object."
           )
         : undefined;
+    const deterministicPlaybookResponse = !weatherLocationClarificationResponse
+      && shouldAnswerAiPlaybookDeterministically(aiRequest)
+        ? aiGroundedPlaybookResponse(
+            aiRequest,
+            requestNow,
+            "The response playbook selected a deterministic user-facing answer."
+          )
+        : undefined;
     const providerStartedAt = Date.now();
+    const providerWasInvoked = !weatherLocationClarificationResponse
+      && !deterministicPlaybookResponse
+      && !deterministicMapSearchResponse
+      && !deterministicEmptyMapSearchResponse;
     const candidateProviderResponse =
       weatherLocationClarificationResponse ??
+      deterministicPlaybookResponse ??
       deterministicMapSearchResponse ??
       deterministicEmptyMapSearchResponse ??
       (await queryCopAssistantForAi(aiRequest, requestNow, "chat-agent"));
-    const providerResponse =
-      isGeneralWeatherForecastQuestion(question)
-      && candidateProviderResponse.status !== "COMPLETED"
-      && aiMapSearch
-        ? aiMapSearchFallbackResponse(
-            aiRequest,
-            requestNow,
-            "The AI provider did not complete the weather synthesis; COP used a verified weather-data fallback."
-          ) ?? candidateProviderResponse
-        : candidateProviderResponse;
-    const providerDurationMs =
-      weatherLocationClarificationResponse || deterministicMapSearchResponse || deterministicEmptyMapSearchResponse
-        ? 0
-        : Date.now() - providerStartedAt;
+    const providerResponse = providerWasInvoked && aiProviderResponseNeedsUserFacingFallback(candidateProviderResponse)
+      ? aiGroundedPlaybookResponse(
+          aiRequest,
+          requestNow,
+          "The AI provider did not return a safe user-facing answer; COP used the grounded playbook fallback."
+        )
+      : candidateProviderResponse;
+    const providerDurationMs = providerWasInvoked ? Date.now() - providerStartedAt : 0;
     const pipelineObservability = buildAiPipelineObservability({
       compressedContext,
       contextCompression: promptContext.contextCompression,
@@ -9107,6 +9128,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const requestNow = now();
     const body = isRecord(request.body) ? request.body : {};
     const sourceHealth = buildSourceHealthItems(state, requestNow, trackLifecycle);
+    const summarizedSourceHealth = sourceHealth.map(summarizeSourceHealthForAi);
     const aiRequest: AiCopQuery = {
       requestId: aiRequestId(body.requestId),
       purpose: "DATA_QUALITY_CHECK",
@@ -9118,13 +9140,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       context: {
         contractVersion: "cop-ai-source-health-summary-v1",
         generatedAt: requestNow.toISOString(),
-        sources: sourceHealth.map(summarizeSourceHealthForAi)
+        responsePlaybook: {
+          intentId: "source.health"
+        },
+        sourceHealth: summarizedSourceHealth,
+        sources: summarizedSourceHealth
       },
       providerPreference: "auto",
       outputFormat: "MARKDOWN",
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
-    const response = await aiGateway.queryCopAssistant(aiRequest);
+    const candidateResponse = await aiGateway.queryCopAssistant(aiRequest);
+    const response = aiProviderResponseNeedsUserFacingFallback(candidateResponse)
+      ? aiGroundedPlaybookResponse(
+          aiRequest,
+          requestNow,
+          "The AI provider did not return a safe source-health summary; COP used current diagnostics."
+        )
+      : candidateResponse;
     appendAudit(state, `AI_SOURCE_HEALTH_SUMMARY_${response.status}`, aiAuditMetadata(response, actor), correlationId);
     return response;
   });

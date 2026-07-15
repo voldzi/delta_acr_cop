@@ -46,7 +46,19 @@ export function inferAiMapSearchIntent(question: string, body: Record<string, un
   const explicitSearchRequested = /(?:^|\b)(najdi|najit|vyhledej|hledej|ukaz|ukaž|zobraz|kde je|kde jsou|kde se|nejbliz|nejblizsi|nejbli|nearest|closest|find|show)(?:\b|$)/u.test(normalized);
   const hydroMeasurementRequested = /\b(?:vyska vody|stav vody|hladina|hladinu|prutok|vodomer|vodomerna|hydro|kde se meri|water level|river gauge|discharge)\b/u.test(normalized);
   const weatherMeasurementRequested = /\b(?:pocasi|bude prset|prsi|prset|dest|deste|srazky|bourka|bourky|blizi se bourka|vitr|teplota|radar|weather|rain|storm|thunderstorm|wind|temperature)\b/u.test(normalized);
-  const requested = explicitSearchRequested || hydroMeasurementRequested || weatherMeasurementRequested;
+  const fireStationRequested = /\b(?:hasicska stanice|pozarni stanice|nejblizsi hasici|kde jsou hasici|najdi hasice|kam k hasicum|fire station)\b/u.test(normalized);
+  const fireIncidentRequested = /\b(?:pozar|hori|kour|hotspot|fire incident|wildfire)\b/u.test(normalized);
+  const trafficRestrictionRequested = /\b(?:dopravni omezeni|uzavirka|nehoda|neprujezd|prujezdn|road closure|traffic restriction)\b/u.test(normalized);
+  const infrastructureOutageRequested = /\b(?:vypadek|nefunguje elektrina|nefunguje vodovod|problem s plynem|critical infrastructure|utility outage)\b/u.test(normalized);
+  const activeAlertRequested = /\b(?:aktivni vystraha|aktivni vystrahy|varovani|krizove upozorneni|active alert)\b/u.test(normalized);
+  const requested = explicitSearchRequested
+    || hydroMeasurementRequested
+    || weatherMeasurementRequested
+    || fireStationRequested
+    || fireIncidentRequested
+    || trafficRestrictionRequested
+    || infrastructureOutageRequested
+    || activeAlertRequested;
   const layerIds = new Set<string>();
   const categoryIds = new Set<string>();
   const searchTerms = new Set<string>();
@@ -59,8 +71,11 @@ export function inferAiMapSearchIntent(question: string, body: Record<string, un
   if (/(polic|bezpec|security|krade|kradez|zlod|crime)/u.test(normalized)) {
     addInfrastructureCategory("reference.infrastructure.emergency", ["police"], ["police", "security"]);
   }
-  if (/(hasic|pozar|požar|pozarn|fire)/u.test(normalized)) {
-    addInfrastructureCategory("reference.infrastructure.emergency", ["fire_station"], ["fire_station", "fire"]);
+  if (fireStationRequested) {
+    addInfrastructureCategory("reference.infrastructure.emergency", ["fire_station"], ["fire_station", "hasic"]);
+  }
+  if (fireIncidentRequested) {
+    addInfrastructureCategory("public.safety.fire", ["fire_incident"], ["fire_incident", "fire", "wildfire", "smoke"]);
   }
   if (/(zachran|zachrann|ambulanc|zdravotnicka zachranna|zzs)/u.test(normalized)) {
     addInfrastructureCategory("reference.infrastructure.emergency", ["ambulance_station"], ["ambulance_station"]);
@@ -92,6 +107,28 @@ export function inferAiMapSearchIntent(question: string, body: Record<string, un
     ].forEach((layerId) => layerIds.add(layerId));
     categoryIds.add("weather");
     ["weather", "rain", "precipitation", "storm", "wind", "temperature"].forEach((term) => searchTerms.add(term));
+  }
+  if (trafficRestrictionRequested) {
+    categoryIds.add("road_closure");
+    ["road_closure", "traffic", "restriction", "accident"].forEach((term) => searchTerms.add(term));
+  }
+  if (infrastructureOutageRequested) {
+    categoryIds.add("critical_infrastructure");
+    ["critical_infrastructure", "outage"].forEach((term) => searchTerms.add(term));
+    if (/\b(?:elektr|proud|electric)/u.test(normalized)) {
+      searchTerms.add("electricity");
+    }
+    if (/\b(?:vodovod|pitna voda|water utility)/u.test(normalized)) {
+      searchTerms.add("water_utility");
+    }
+    if (/\b(?:plyn|gas)/u.test(normalized)) {
+      searchTerms.add("gas");
+    }
+  }
+  if (activeAlertRequested) {
+    ["public.safety.warnings", "public.safety.weather_alerts"].forEach((layerId) => layerIds.add(layerId));
+    categoryIds.add("safety_alert");
+    ["safety_alert", "warning", "alert"].forEach((term) => searchTerms.add(term));
   }
   aiMapSearchTermsFromQuestion(question).forEach((term) => searchTerms.add(term));
 
@@ -304,6 +341,19 @@ export function simSearchEntityTypesForAiMapSearchIntent(intent: AiMapSearchInte
         entityTypes.add("hydro_measurement");
         entityTypes.add("flood_risk_area");
         break;
+      case "fire_incident":
+        entityTypes.add("fire_incident");
+        break;
+      case "road_closure":
+        entityTypes.add("road_closure");
+        break;
+      case "critical_infrastructure":
+        entityTypes.add("critical_infrastructure");
+        break;
+      case "safety_alert":
+        entityTypes.add("safety_alert");
+        entityTypes.add("weather_warning");
+        break;
       case "weather":
         entityTypes.add("weather_forecast");
         entityTypes.add("weather_nowcast");
@@ -323,11 +373,18 @@ export function simSearchEntityTypesForAiMapSearchIntent(intent: AiMapSearchInte
     entityTypes.add("hospital");
     entityTypes.add("medical_emergency");
   }
-  if (terms.some((term) => /^(pozar|fire|hasic)/u.test(term))) {
+  if (terms.some((term) => /^(hasic|fire_station)/u.test(term))) {
     entityTypes.add("fire_station");
+  }
+  if (!intent.categoryIds.includes("fire_station")
+    && terms.some((term) => /^(pozar|fire$|fire_incident|hori|kour|smoke|wildfire|hotspot)/u.test(term))) {
     entityTypes.add("fire_incident");
   }
-  if (terms.some((term) => /^(povod|vystrah|varovan|warning|alert|flood)/u.test(term))) {
+  if (terms.some((term) => /^(vystrah|varovan|warning|alert)/u.test(term))) {
+    entityTypes.add("weather_warning");
+    entityTypes.add("safety_alert");
+  }
+  if (terms.some((term) => /^(povod|flood)/u.test(term))) {
     entityTypes.add("weather_warning");
     entityTypes.add("safety_alert");
     entityTypes.add("flood_risk_area");
@@ -561,10 +618,19 @@ export function aiMapSearchFallbackResponse(
   const distanceText = optionalText(summaryResult.distanceText);
   const location = aiLocationFromRecord(summaryResult.location);
   const citationId = citationForAiMapSearchResult(context, summaryResult);
-  const locationText = location ? `Souřadnice: ${location.lat}, ${location.lon}.` : undefined;
+  const locationText = location && aiQuestionRequestsCoordinates(question)
+    ? `Souřadnice: ${location.lat}, ${location.lon}.`
+    : undefined;
   const distanceSentence = distanceText ? `Vzdálenost od zadané polohy: ${distanceText}.` : undefined;
   const citationText = citationId ? `Zdroj: [${citationId}].` : "Zdroj: COP mapové vyhledávání.";
   const summary = aiMeasurementMapSearchSummary(summaryResult, {
+    category,
+    citationText,
+    distanceSentence,
+    locationText,
+    question,
+    title
+  }) ?? aiOperationalMapSearchSummary(summaryResult, {
     category,
     citationText,
     distanceSentence,
@@ -626,7 +692,7 @@ export function aiMapSearchNoResultFallbackResponse(
     ? mapSearch.warnings.map((warning) => optionalText(warning)).filter((warning): warning is string => Boolean(warning)).slice(0, 3)
     : [];
   const geoText = center
-    ? `Prohledal jsem dostupné COP mapové zdroje v okolí polohy ${center.lat}, ${center.lon}.`
+    ? "Prohledal jsem dostupné COP mapové zdroje v okolí zadané polohy."
     : bbox
       ? "Prohledal jsem dostupné COP mapové zdroje v zadané oblasti."
       : "Prohledal jsem dostupné COP mapové zdroje bez polohového omezení.";
@@ -673,6 +739,27 @@ function aiMapSearchDomainNoResultText(categoryIds: string[]): string {
       "Nenašel jsem odpovídající hydrologickou stanici nebo aktuální měření hladiny v dostupném COP/SIM mapovém indexu.",
       "Pro krizové rozhodnutí je potřeba ověřit ČHMÚ/SIM hydrologický zdroj nebo zadat konkrétnější řeku či místo."
     ].join(" ");
+  }
+  if (categoryIds.includes("fire_incident")) {
+    return "V dostupných COP/SIM zdrojích jsem pro zadanou oblast nenašel potvrzený aktivní požár. To není důkaz, že v oblasti nehoří; ověřte aktuální výstrahy a při bezprostředním nebezpečí volejte 112 nebo 150.";
+  }
+  if (categoryIds.includes("road_closure")) {
+    return "V dostupných dopravních datech COP/SIM jsem pro zadanou oblast nenašel potvrzenou uzavírku ani nehodu. Dopravní situace se může změnit rychle; před cestou ověřte čas poslední aktualizace.";
+  }
+  if (categoryIds.includes("critical_infrastructure")) {
+    return "V dostupném COP/SIM kontextu jsem pro zadanou oblast nenašel potvrzený výpadek infrastruktury. To nevylučuje lokální poruchu, která ještě nebyla publikována.";
+  }
+  if (categoryIds.includes("safety_alert")) {
+    return "V dostupném COP/SIM kontextu jsem pro zadanou oblast nenašel aktivní výstrahu. Pokrytí zdrojů může být opožděné nebo neúplné.";
+  }
+  if (categoryIds.some((categoryId) => ["police", "fire_station", "ambulance_station"].includes(categoryId))) {
+    return "V dostupném mapovém indexu jsem v zadané oblasti nenašel odpovídající složku pomoci. Při bezprostředním ohrožení nečekejte na mapový výsledek a volejte 112.";
+  }
+  if (categoryIds.some((categoryId) => ["hospital", "clinic", "doctors", "pharmacy"].includes(categoryId))) {
+    return "V dostupném mapovém indexu jsem v zadané oblasti nenašel odpovídající zdravotnické místo. Při akutním ohrožení zdraví volejte 155 nebo 112.";
+  }
+  if (categoryIds.some((categoryId) => ["shelter", "assembly_point"].includes(categoryId))) {
+    return "V dostupném mapovém indexu jsem v zadané oblasti nenašel potvrzený kryt ani shromažďovací místo. Řiďte se pokyny místních orgánů a aktuálními výstrahami.";
   }
   return "Nenašel jsem odpovídající objekt v aktuálně dostupném COP mapovém indexu.";
 }
@@ -799,6 +886,92 @@ function aiMeasurementMapSearchSummary(
   }
 
   return undefined;
+}
+
+function aiOperationalMapSearchSummary(
+  result: Record<string, unknown>,
+  input: {
+    category: string | undefined;
+    citationText: string;
+    distanceSentence: string | undefined;
+    locationText: string | undefined;
+    question?: string;
+    title: string;
+  }
+): string {
+  const haystack = aiMapSearchResultHaystack(result);
+  const category = normalizeCategoryId(input.category ?? "");
+  const detail = aiUserFacingMapDetail(optionalText(result.detail));
+  const status = aiUserFacingMapStatus(optionalText(result.status));
+  const updatedAt = optionalText(result.updatedAt) ?? optionalText(result.observedAt) ?? optionalText(result.validFrom);
+  const updatedText = updatedAt ? `Aktualizováno: ${formatAiCzechDateTime(updatedAt)}.` : undefined;
+  const sourceText = `Zdroj: ${aiUserFacingMapSource(result)}.`;
+  const common = [detail, status, input.distanceSentence, input.locationText, updatedText, sourceText]
+    .filter(Boolean)
+    .join(" ");
+
+  if (category.includes("fire") || /\b(?:fire_incident|wildfire|pozar|hotspot)\b/u.test(haystack)) {
+    return `Požární informace: ${input.title}. ${common}`.trim();
+  }
+  if (category.includes("road") || category.includes("traffic") || /\b(?:road_closure|traffic_restriction|dopravni|uzavirka)\b/u.test(haystack)) {
+    return `Dopravní informace: ${input.title}. ${common}`.trim();
+  }
+  if (category.includes("infrastructure") || category.includes("outage") || /\b(?:critical_infrastructure|utility|outage)\b/u.test(haystack)) {
+    return `Informace o infrastruktuře: ${input.title}. ${common}`.trim();
+  }
+  if (category.includes("alert") || category.includes("warning") || /\b(?:safety_alert|weather_warning)\b/u.test(haystack)) {
+    return `Aktivní výstraha: ${input.title}. ${common}`.trim();
+  }
+  if (/\b(?:police|hospital|clinic|doctors|pharmacy|medical|shelter|assembly_point|fire_station|ambulance_station)\b/u.test(haystack)) {
+    return `Nejbližší odpovídající místo v dostupných datech je ${input.title}. ${common}`.trim();
+  }
+  return `Našel jsem v dostupných datech COP: ${input.title}. ${common || input.citationText}`.trim();
+}
+
+function aiQuestionRequestsCoordinates(question: string | undefined): boolean {
+  const normalized = normalizeAiMapSearchText(question ?? "");
+  return /\b(?:souradnic|gps|latitude|longitude|lat|lon)\b/u.test(normalized);
+}
+
+function aiUserFacingMapDetail(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  if (/\b(?:contractVersion|providerId|sourceSystemId|mapFeatureId|MAX_Z|chmi_weather_radar)\b/iu.test(value)) {
+    return undefined;
+  }
+  return value.length <= 260 ? value : `${value.slice(0, 259).trimEnd()}…`;
+}
+
+function aiUserFacingMapStatus(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = normalizeAiMapSearchText(value);
+  const translated = normalized === "active" ? "aktivní"
+    : normalized === "monitoring" ? "sledováno"
+      : normalized === "closed" ? "ukončeno"
+        : normalized === "stale" ? "data mohou být zastaralá"
+          : normalized === "forecast" ? "předpověď"
+            : undefined;
+  return translated ? `Stav: ${translated}.` : undefined;
+}
+
+function aiUserFacingMapSource(result: Record<string, unknown>): string {
+  const haystack = aiMapSearchResultHaystack(result);
+  if (/\b(?:chmi|chmu)\b/u.test(haystack)) {
+    return "ČHMÚ prostřednictvím COP/SIM";
+  }
+  if (/\b(?:road_srti_lod|ndic|rsd)\b/u.test(haystack)) {
+    return "dopravní data ŘSD/NDIC prostřednictvím COP/SIM";
+  }
+  if (/\b(?:hzs|fire_incident)\b/u.test(haystack)) {
+    return "HZS a bezpečnostní zdroje prostřednictvím COP/SIM";
+  }
+  if (/\b(?:osm|openstreetmap|police_station|hospital|shelter)\b/u.test(haystack)) {
+    return "referenční mapová data COP/SIM";
+  }
+  return "ověřený kontext COP/SIM";
 }
 
 function aiWeatherDirectAnswer(question: string | undefined, metrics: Record<string, unknown>, result: Record<string, unknown>): string | undefined {
