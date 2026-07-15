@@ -3646,7 +3646,7 @@
         ],
         "summary": "Ask a visible COP chat AI agent using server-side policy-filtered context.",
         "operationId": "queryAiChatAgent",
-        "description": "Creates an audit-backed AI response for an explicit chat question. COP builds the context from authorized COP data and may accept an optional client-supplied chatContext containing visible/decrypted timeline excerpts; the endpoint does not independently read encrypted Matrix history.",
+        "description": "Creates an audit-backed AI response for an explicit chat question. COP builds the context from authorized COP data and may accept an optional client-supplied chatContext containing visible/decrypted timeline excerpts; the endpoint does not independently read encrypted Matrix history. Short follow-up questions may inherit only the latest unambiguous question from that supplied excerpt. The structured response includes bounded conversation guidance, confidence and suggested follow-up questions.",
         "requestBody": {
           "required": true,
           "content": {
@@ -17180,6 +17180,24 @@
           "provider": {
             "type": "string",
             "maxLength": 80
+          },
+          "question": {
+            "type": "string",
+            "maxLength": 1200
+          },
+          "responsePlaybook": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "domain": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "intentId": {
+                "type": "string",
+                "maxLength": 120
+              }
+            }
           },
           "status": {
             "type": "string",

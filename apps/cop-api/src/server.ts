@@ -41,6 +41,11 @@ import {
   type CommunityReportVisibility
 } from "./community-report-store.js";
 import { correlationIdFrom, sendError } from "./errors.js";
+import { resolveAiConversationContinuity } from "./ai-conversation-continuity.js";
+import {
+  aiConversationClarificationResponse,
+  withAiConversationGuidance
+} from "./ai-conversation-guidance.js";
 import {
   aiGroundedPlaybookResponse,
   aiProviderResponseNeedsUserFacingFallback,
@@ -8841,6 +8846,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
     }
     const chatContext = summarizeAiChatContextForAi(body.chatContext);
+    const conversationContinuity = resolveAiConversationContinuity(question, chatContext);
+    const effectiveQuestion = conversationContinuity.resolvedQuestion;
+    const effectiveBody = conversationContinuity.explicitLocation
+      ? { ...body, placeQuery: conversationContinuity.explicitLocation }
+      : body;
     const modelPreference = aiModelPreference(body.modelPreference) ?? "auto";
     const requestId = aiRequestId(body.requestId);
     const subject = defaultSystemSubject();
@@ -8876,8 +8886,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const aiSourceHealth = sourceHealth.map(summarizeSourceHealthForAi);
     const aiMapSearch = await resolveAiMapSearchContextForChatAgent({
       actor,
-      body,
-      question,
+      body: effectiveBody,
+      question: effectiveQuestion,
       requestId,
       requestNow
     });
@@ -8891,10 +8901,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       objects: aiObjects,
       sourceHealth: aiSourceHealth
     });
-    const retrievalIntent = inferAiRetrievalIntent(question);
-    const responsePlaybook = aiResponsePlaybookGuidanceForQuestion(question);
-    const responsePlaybookPrompt = aiResponsePlaybookPromptGuidance(question);
-    const retrievalQuery = buildAiRetrievalQuery(question, retrievalIntent);
+    const retrievalIntent = inferAiRetrievalIntent(effectiveQuestion);
+    const responsePlaybook = aiResponsePlaybookGuidanceForQuestion(effectiveQuestion);
+    const responsePlaybookPrompt = aiResponsePlaybookPromptGuidance(effectiveQuestion);
+    const retrievalQuery = buildAiRetrievalQuery(effectiveQuestion, retrievalIntent);
     const semanticStartedAt = Date.now();
     const semanticContext = await retrieveAiSemanticContext({
       documents: limitAiSemanticDocuments(
@@ -8919,9 +8929,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const indexedStartedAt = Date.now();
     const indexedContext = await queryAiContextIndexForAi({
       actor,
-      body,
+      body: effectiveBody,
       correlationId,
-      geoQuery: question,
+      geoQuery: effectiveQuestion,
       query: retrievalQuery,
       retrievalIntent,
       requestId,
@@ -8965,7 +8975,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const uncompressedContext = {
       contractVersion: "cop-ai-chat-agent-query-v1",
       generatedAt: requestNow.toISOString(),
-      question,
+      conversationContinuity,
+      originalQuestion: question,
+      question: effectiveQuestion,
       retrievalIntent,
       responsePlaybook,
       chat,
@@ -8985,7 +8997,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const compressedContext = {
       contractVersion: "cop-ai-chat-agent-query-v1",
       generatedAt: requestNow.toISOString(),
-      question,
+      conversationContinuity,
+      originalQuestion: question,
+      question: effectiveQuestion,
       retrievalIntent,
       responsePlaybook,
       chat,
@@ -9020,6 +9034,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           ? `Respektuj responsePlaybook pro záměr, zdroje, nejistotu a UI akce. ${responsePlaybookPrompt}`
           : "Pokud responsePlaybook není k dispozici, drž se obecného COP kontextu a nevyvozuj UI akce bez dat.",
         "ChatContext ber jen jako výňatek viditelné dešifrované timeline poskytnutý klientem; nedovozuj neviděnou historii místnosti.",
+        conversationContinuity.followUp
+          ? `Aktuální dotaz je krátké navázání. Pracuj s conversationContinuity, výslovně respektuj jeho assumptions a odpověz na interpretovaný dotaz: ${effectiveQuestion}`
+          : "Aktuální dotaz je samostatný; nehledej pro něj skryté konverzační předpoklady.",
         "Jasně odděl ověřená data, odhady a chybějící informace. Neformuluj taktické pokyny, targeting ani doporučení použití síly.",
         `Dotaz uživatele: ${question}`
       ].join(" "),
@@ -9029,12 +9046,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       outputFormat: "MARKDOWN",
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
-    const weatherLocationClarificationResponse = shouldClarifyAiWeatherLocation(question, aiMapSearch)
+    const conversationClarificationResponse = conversationContinuity.needsClarification
+      ? aiConversationClarificationResponse(aiRequest, requestNow, conversationContinuity)
+      : undefined;
+    const weatherLocationClarificationResponse = !conversationClarificationResponse
+      && shouldClarifyAiWeatherLocation(effectiveQuestion, aiMapSearch)
       ? aiWeatherLocationClarificationResponse(aiRequest, requestNow)
       : undefined;
-    const deterministicMapSearchResponse = !weatherLocationClarificationResponse
+    const needsGenerativeFollowUp = conversationContinuity.followUpKind === "explanation"
+      || conversationContinuity.followUpKind === "detail";
+    const deterministicMapSearchResponse = !conversationClarificationResponse
+      && !weatherLocationClarificationResponse
+      && !needsGenerativeFollowUp
       && !shouldAnswerAiPlaybookDeterministically(aiRequest)
-      && shouldAnswerAiChatAgentWithMapSearchResult(question, body, aiMapSearch)
+      && shouldAnswerAiChatAgentWithMapSearchResult(effectiveQuestion, effectiveBody, aiMapSearch)
       ? aiMapSearchFallbackResponse(
           aiRequest,
           requestNow,
@@ -9043,16 +9068,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       : undefined;
     const deterministicEmptyMapSearchResponse =
       !weatherLocationClarificationResponse
+      && !conversationClarificationResponse
+      && !needsGenerativeFollowUp
       && !shouldAnswerAiPlaybookDeterministically(aiRequest)
       && !deterministicMapSearchResponse
-      && shouldAnswerAiChatAgentWithEmptyMapSearchResult(question, body, aiMapSearch)
+      && shouldAnswerAiChatAgentWithEmptyMapSearchResult(effectiveQuestion, effectiveBody, aiMapSearch)
         ? aiMapSearchNoResultFallbackResponse(
             aiRequest,
             requestNow,
             "Explicit COP map search returned no matching object."
           )
         : undefined;
-    const deterministicPlaybookResponse = !weatherLocationClarificationResponse
+    const deterministicPlaybookResponse = !conversationClarificationResponse
+      && !weatherLocationClarificationResponse
+      && !needsGenerativeFollowUp
       && shouldAnswerAiPlaybookDeterministically(aiRequest)
         ? aiGroundedPlaybookResponse(
             aiRequest,
@@ -9061,11 +9090,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           )
         : undefined;
     const providerStartedAt = Date.now();
-    const providerWasInvoked = !weatherLocationClarificationResponse
+    const providerWasInvoked = !conversationClarificationResponse
+      && !weatherLocationClarificationResponse
       && !deterministicPlaybookResponse
       && !deterministicMapSearchResponse
       && !deterministicEmptyMapSearchResponse;
     const candidateProviderResponse =
+      conversationClarificationResponse ??
       weatherLocationClarificationResponse ??
       deterministicPlaybookResponse ??
       deterministicMapSearchResponse ??
@@ -9089,14 +9120,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       semanticDurationMs,
       uncompressedContext
     });
-    const response = withAiResponseEvidence(providerResponse, {
-      indexedContext,
-      mapSearch: aiMapSearch,
-      observability: pipelineObservability,
-      priorityContext,
-      requestContext: aiRequest.context ?? {},
-      semanticContext
-    });
+    const response = withAiConversationGuidance(
+      withAiResponseEvidence(providerResponse, {
+        indexedContext,
+        mapSearch: aiMapSearch,
+        observability: pipelineObservability,
+        priorityContext,
+        requestContext: aiRequest.context ?? {},
+        semanticContext
+      }),
+      {
+        continuity: conversationContinuity,
+        responsePlaybook
+      }
+    );
     appendAudit(
       state,
       `AI_CHAT_AGENT_${response.status}`,
@@ -9105,6 +9142,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         chatMessageCount:
           chatContext && isRecord(chatContext) ? readBoundedInteger(chatContext.includedMessageCount, 0, 0, 60) : 0,
         conversationId: optionalText(body.conversationId),
+        conversationFollowUp: conversationContinuity.followUp,
+        conversationFollowUpKind: conversationContinuity.followUpKind,
+        conversationNeedsClarification: conversationContinuity.needsClarification,
         groupId: group?.groupId,
         indexedDocumentCount: indexedContext.semanticContext.includedDocumentCount,
         indexedStatus: indexedContext.semanticContext.status,
@@ -16715,6 +16755,13 @@ function summarizeAiChatMessageForAi(value: unknown): Record<string, unknown> | 
       ? compactRecord({
           auditId: optionalTrimmedString(ai.auditId, 160),
           provider: optionalTrimmedString(ai.provider, 80),
+          question: optionalTrimmedString(ai.question, 1200),
+          responsePlaybook: isRecord(ai.responsePlaybook)
+            ? compactRecord({
+                domain: optionalTrimmedString(ai.responsePlaybook.domain, 80),
+                intentId: optionalTrimmedString(ai.responsePlaybook.intentId, 120)
+              })
+            : undefined,
           status: optionalTrimmedString(ai.status, 40),
           type: optionalTrimmedString(ai.type, 80)
         })

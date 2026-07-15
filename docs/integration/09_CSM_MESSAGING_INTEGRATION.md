@@ -755,6 +755,13 @@ The phase-0 implementation focus is trust and control:
   reading. Sending the answer to Matrix remains an explicit user action unless
   a leading `@COP AI ...` mention returns a completed answer that does not
   require human review.
+- The common AI route resolves bounded multi-turn follow-ups only from the last
+  unambiguous question contained in that client-visible `chatContext`. It never
+  queries Matrix for hidden history. The response exposes
+  `structured.conversation` with the original and interpreted questions,
+  assumptions, clarification state, evidence-based confidence and up to two
+  intent-aware follow-up suggestions. Without a safe anchor a question such as
+  “Proč?” produces a human clarification rather than a guessed topic.
 - AI situation answers use a server-side `priorityContext` before semantic
   retrieval. Flood/water state, fires, medical risks, infrastructure, traffic,
   security or police incidents, community reports and active alerts outrank
@@ -780,7 +787,11 @@ The phase-0 implementation focus is trust and control:
   `kind`, `requestId`, `auditId`, provider/model, policy reason and the
   original question when present. It also carries bounded semantic/indexed
   source counts so the timeline can show whether an answer used request-time
-  COP context and the background index. Map-search answers may additionally
+  COP context and the background index. Answers may additionally carry bounded
+  `cz.cop.ai.conversation` guidance. COP Web renders its
+  suggestions as explicit chips that submit a new normal AI question; the
+  plaintext fallback repeats the same suggestions so native clients remain
+  functional before adding specialized chip rendering. Map-search answers may additionally
   carry `cz.cop.ai.mapActions[]` with `focus-map` actions, validated
   coordinates and a display label. COP Chat renders those as action buttons in
   the AI bubble and sends the existing `cop-chat:center-location` bridge message

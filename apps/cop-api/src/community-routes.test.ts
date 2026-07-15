@@ -2760,6 +2760,99 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("resolves a short weather follow-up from the last client-visible AI exchange", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return { summary: "Provider should not be called for grounded weather data", structured: {} };
+      },
+      async health() {
+        return { detail: "test provider", status: "ok" };
+      }
+    };
+    const simSearchDataSource = new FakeAiMapSearchSimSearchDataSource();
+    simSearchDataSource.weatherForecastResult = true;
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-07-15T19:30:00Z"),
+      simSearchDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        chatContext: {
+          encrypted: true,
+          messages: [
+            { body: "Jaké bude počasí ve Vrbně pod Pradědem?", eventId: "$q1", own: true },
+            {
+              ai: { question: "Jaké bude počasí ve Vrbně pod Pradědem?", type: "chat-agent" },
+              body: "Ve Vrbně bude polojasno.",
+              eventId: "$a1",
+              own: true
+            },
+            { body: "A zítra?", eventId: "$q2", own: true }
+          ]
+        },
+        currentLocation: { lat: 50.15077, lon: 17.37303, radiusKm: 30 },
+        question: "A zítra?"
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedQueries).toHaveLength(0);
+    const aiResponse = response.json() as AiCopResponse;
+    const structured = aiResponse.result.structured as Record<string, unknown>;
+    expect(structured.conversation).toMatchObject({
+      followUp: true,
+      followUpKind: "time",
+      needsClarification: false,
+      originalQuestion: "A zítra?",
+      previousQuestion: "Jaké bude počasí ve Vrbně pod Pradědem?",
+      resolvedQuestion: expect.stringContaining("Časové upřesnění")
+    });
+    expect(aiResponse.result.summary).toContain("Můžete navázat:");
+    expect(aiResponse.result.summary).not.toContain("MAX_Z");
+
+    await app.close();
+  });
+
+  it("asks a human clarification for an elliptical question without visible context", async () => {
+    const app = buildServer({ now: () => new Date("2026-07-15T19:30:00Z") });
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: { question: "Proč?" },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const aiResponse = response.json() as AiCopResponse;
+    expect(aiResponse).toMatchObject({
+      model: "conversation-clarification-v1",
+      provider: "local",
+      status: "COMPLETED"
+    });
+    expect(aiResponse.result.summary).toContain("Na co má otázka „Proč?“ navazovat?");
+    expect(aiResponse.result.structured).toMatchObject({
+      conversation: {
+        followUp: true,
+        needsClarification: true
+      }
+    });
+
+    await app.close();
+  });
+
   it("returns an explicit no-data weather response when SIM has no current meteo entity", async () => {
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {
@@ -3150,7 +3243,7 @@ describe("community report routes", () => {
       response: {
         provider: "mock",
         result: {
-          summary: "Async job COP assistant response"
+          summary: expect.stringContaining("Async job COP assistant response")
         },
         status: "COMPLETED"
       },

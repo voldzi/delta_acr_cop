@@ -28,6 +28,16 @@ the canonical conversation id and, for community groups, the canonical
 delivery. Generated AI response bodies are excluded from command detection so
 offline synchronization cannot recursively invoke AI.
 
+The backend owns a shared bounded conversation-continuity layer. It may resolve
+only an explicitly short follow-up such as “A zítra?”, “Proč?” or “Ukaž to na
+mapě” against the latest unambiguous question in that client-supplied timeline.
+It records the interpreted question and assumptions in the response, never
+crosses into hidden Matrix history and asks for clarification when no safe
+anchor exists. Responses also carry evidence-based confidence and at most two
+intent-aware follow-up suggestions. The text fallback includes the suggestions
+for clients without structured rendering; COP Web renders the same suggestions
+as explicit user-triggered chips.
+
 The clients also recognize the stable `COP AI agent` plaintext fallback
 envelope used when the Matrix adapter cannot attach richer COP metadata. The
 envelope is removed from the visible body and the message is presented under
@@ -45,3 +55,5 @@ named by its user outcome; it does not masquerade as the server COP AI agent.
 - Group AI requests reach the same authorization path through `groupId`.
 - Offline delivery does not lose or duplicate an AI job.
 - New commands require matching parser tests and documentation in both clients.
+- Short follow-ups have the same server-side meaning on web and iOS without
+  introducing a plaintext server-side conversation store.

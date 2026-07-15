@@ -1839,6 +1839,43 @@ button {
   white-space: nowrap;
 }
 
+.message-ai-followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.message-ai-followup {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid rgba(29, 104, 196, 0.2);
+  border-radius: 999px;
+  background: rgba(235, 244, 255, 0.82);
+  color: #175caa;
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 780;
+  gap: 5px;
+  line-height: 1.2;
+  padding: 6px 9px;
+  text-align: left;
+}
+
+.message-ai-followup:hover,
+.message-ai-followup:focus-visible {
+  border-color: rgba(29, 104, 196, 0.42);
+  background: rgba(247, 251, 255, 0.98);
+}
+
+.message-ai-followup span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .message-text mark {
   border-radius: 3px;
   background: #fff0a8;

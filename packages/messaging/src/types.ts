@@ -169,6 +169,7 @@ export interface MatrixCopMessageMetadata {
 
 export interface MatrixCopAiMessageMetadata {
   auditId?: string;
+  conversation?: MatrixCopAiConversationMetadata;
   indexedDocumentCount?: number;
   indexedStatus?: "degraded" | "disabled" | "ok";
   mapActions?: MatrixCopMapAction[];
@@ -182,6 +183,23 @@ export interface MatrixCopAiMessageMetadata {
   semanticStatus?: "degraded" | "disabled" | "ok";
   status?: "COMPLETED" | "NEEDS_HUMAN_REVIEW" | "REJECTED";
   type?: "chat-agent" | "situation-summary";
+}
+
+export interface MatrixCopAiConversationMetadata {
+  confidence?: {
+    label?: string;
+    level?: "high" | "low" | "medium";
+  };
+  followUp?: boolean;
+  followUpKind?: string;
+  followUpSuggestions?: MatrixCopAiFollowUpSuggestion[];
+  needsClarification?: boolean;
+}
+
+export interface MatrixCopAiFollowUpSuggestion {
+  id: string;
+  label: string;
+  question: string;
 }
 
 export interface MatrixCopAiResponsePlaybookMetadata {

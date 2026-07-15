@@ -123,6 +123,8 @@ import type {
   MatrixAttachmentKind,
   MatrixAttachmentUpload,
   MatrixCopAiResponsePlaybookMetadata,
+  MatrixCopAiConversationMetadata,
+  MatrixCopAiFollowUpSuggestion,
   MatrixCopMapAction,
   MatrixCopMessageMetadata,
   MatrixLocationShare,
@@ -4325,6 +4327,14 @@ export function ChatApp() {
   const handleDownloadAttachment = useEventCallback((message: MatrixTimelineMessage) => {
     void downloadAttachment(message);
   });
+  const handleAskAiFollowUp = useEventCallback((question: string) => {
+    if (!selectedAiAgentDirectChat && !selectedGroupAiAssistantEnabled) {
+      setNotice("COP AI agent už pro tuto konverzaci není dostupný.");
+      return;
+    }
+    const message = selectedAiAgentDirectChat ? question : `@COP AI ${question}`;
+    void sendMessage(message);
+  });
   const handleOpenMessageActions = useEventCallback(
     (
       message: MatrixTimelineMessage,
@@ -4781,6 +4791,7 @@ export function ChatApp() {
                         selectable={selectionMode}
                         selected={selectedMessageIds.has(row.message.eventId)}
                         senderLabel={messageSenderLabel(row.message, selectedConversation, authSession)}
+                        onAskAiFollowUp={handleAskAiFollowUp}
                         onDownloadAttachment={handleDownloadAttachment}
                         onOpenActions={handleOpenMessageActions}
                         onOpenPreview={setPreviewItem}
@@ -6079,6 +6090,7 @@ function MessageRow({
   selected,
   senderLabel,
   onDownloadAttachment,
+  onAskAiFollowUp,
   onOpenActions,
   onOpenPreview,
   onReact,
@@ -6095,6 +6107,7 @@ function MessageRow({
   selected: boolean;
   senderLabel: string;
   onDownloadAttachment: (message: MatrixTimelineMessage) => void;
+  onAskAiFollowUp: (question: string) => void;
   onOpenActions: (
     message: MatrixTimelineMessage,
     rect: DOMRect,
@@ -6224,11 +6237,12 @@ function MessageRow({
           />
         ) : hasAiMetadata ? (
           <>
-            <AiMarkdownOutput query={searchQuery} text={messageDisplayBody(message)} />
+            <AiMarkdownOutput query={searchQuery} text={aiMessageDisplayBody(message)} />
             <MessageAiMapActions
               actions={aiMapActionsForMessage(message)}
               responsePlaybook={message.cop?.ai?.responsePlaybook}
             />
+            <MessageAiFollowUps conversation={message.cop?.ai?.conversation} onAsk={onAskAiFollowUp} />
           </>
         ) : (
           <HighlightedMessageText query={searchQuery} text={messageDisplayBody(message)} />
@@ -6272,6 +6286,45 @@ function MessageRow({
       </div>
     </article>
   );
+}
+
+function MessageAiFollowUps({
+  conversation,
+  onAsk
+}: {
+  conversation?: MatrixCopAiConversationMetadata;
+  onAsk: (question: string) => void;
+}) {
+  const suggestions = conversation?.followUpSuggestions?.slice(0, 2) ?? [];
+  if (suggestions.length === 0) {
+    return null;
+  }
+  return (
+    <div className="message-ai-followups" aria-label="Možné navazující dotazy">
+      {suggestions.map((suggestion) => (
+        <button
+          className="message-ai-followup"
+          key={suggestion.id}
+          onClick={(event) => {
+            event.stopPropagation();
+            onAsk(suggestion.question);
+          }}
+          type="button"
+        >
+          <Sparkles size={13} />
+          <span>{suggestion.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function aiMessageDisplayBody(message: MatrixTimelineMessage): string {
+  const body = messageDisplayBody(message);
+  if (!message.cop?.ai?.conversation?.followUpSuggestions?.length) {
+    return body;
+  }
+  return body.replace(/\n\nMůžete navázat:\s*.+$/isu, "").trimEnd();
 }
 
 function MessageAiMapActions({
@@ -8714,6 +8767,19 @@ export function buildAiChatContextSnapshot(
               ai: {
                 ...(message.cop.ai.auditId ? { auditId: message.cop.ai.auditId } : {}),
                 ...(message.cop.ai.provider ? { provider: message.cop.ai.provider } : {}),
+                ...(message.cop.ai.question ? { question: message.cop.ai.question } : {}),
+                ...(message.cop.ai.responsePlaybook
+                  ? {
+                      responsePlaybook: {
+                        ...(message.cop.ai.responsePlaybook.domain
+                          ? { domain: message.cop.ai.responsePlaybook.domain }
+                          : {}),
+                        ...(message.cop.ai.responsePlaybook.intentId
+                          ? { intentId: message.cop.ai.responsePlaybook.intentId }
+                          : {})
+                      }
+                    }
+                  : {}),
                 ...(message.cop.ai.status ? { status: message.cop.ai.status } : {}),
                 ...(message.cop.ai.type ? { type: message.cop.ai.type } : {})
               }
@@ -8813,9 +8879,11 @@ function buildAiMessageMetadata(
   const evidence = aiResponseEvidenceMetadata(response);
   const mapActions = aiMapActionsFromResponse(response);
   const responsePlaybook = aiResponsePlaybookMetadata(response);
+  const conversation = aiConversationMetadata(response);
   return {
     ai: {
       ...(response?.auditId ? { auditId: response.auditId } : {}),
+      ...(conversation ? { conversation } : {}),
       ...(evidence.indexedDocumentCount !== undefined ? { indexedDocumentCount: evidence.indexedDocumentCount } : {}),
       ...(evidence.indexedStatus ? { indexedStatus: evidence.indexedStatus } : {}),
       ...(mapActions.length > 0 ? { mapActions } : {}),
@@ -8835,6 +8903,48 @@ function buildAiMessageMetadata(
     kind: options.kind,
     source: "cop-chat"
   };
+}
+
+export function aiConversationMetadata(response: AiCopResponse | null): MatrixCopAiConversationMetadata | undefined {
+  const structured = asRecord(response?.result.structured);
+  const conversation = asRecord(structured?.conversation);
+  if (!conversation) {
+    return undefined;
+  }
+  const confidenceRecord = asRecord(conversation.confidence);
+  const level = optionalAiText(confidenceRecord?.level);
+  const confidenceLevel: "high" | "low" | "medium" | undefined =
+    level === "high" || level === "medium" || level === "low" ? level : undefined;
+  const confidence: MatrixCopAiConversationMetadata["confidence"] = confidenceRecord
+    ? {
+        ...(optionalAiText(confidenceRecord.label) ? { label: optionalAiText(confidenceRecord.label) } : {}),
+        ...(confidenceLevel ? { level: confidenceLevel } : {})
+      }
+    : undefined;
+  const followUpSuggestions = Array.isArray(conversation.followUpSuggestions)
+    ? conversation.followUpSuggestions
+        .map(normalizeAiFollowUpSuggestion)
+        .filter((item): item is MatrixCopAiFollowUpSuggestion => Boolean(item))
+        .slice(0, 3)
+    : [];
+  const metadata: MatrixCopAiConversationMetadata = {
+    ...(confidence && Object.keys(confidence).length > 0 ? { confidence } : {}),
+    ...(typeof conversation.followUp === "boolean" ? { followUp: conversation.followUp } : {}),
+    ...(optionalAiText(conversation.followUpKind) ? { followUpKind: optionalAiText(conversation.followUpKind) } : {}),
+    ...(followUpSuggestions.length > 0 ? { followUpSuggestions } : {}),
+    ...(typeof conversation.needsClarification === "boolean"
+      ? { needsClarification: conversation.needsClarification }
+      : {})
+  };
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
+function normalizeAiFollowUpSuggestion(value: unknown): MatrixCopAiFollowUpSuggestion | undefined {
+  const record = asRecord(value);
+  const id = optionalAiText(record?.id);
+  const label = optionalAiText(record?.label);
+  const question = optionalAiText(record?.question);
+  return id && label && question ? { id, label, question } : undefined;
 }
 
 function aiResponsePlaybookMetadata(response: AiCopResponse | null): MatrixCopAiResponsePlaybookMetadata | undefined {

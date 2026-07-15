@@ -10,6 +10,7 @@ import {
   aiMapActionsAllowedByPlaybook,
   aiMapActionsForMessage,
   aiMapActionsFromResponse,
+  aiConversationMetadata,
   aiQuestionNeedsCurrentLocation,
   buildAiChatContextSnapshot,
   buildAiRequestContextOptions,
@@ -620,6 +621,39 @@ describe("aiMapActionsFromResponse", () => {
   });
 });
 
+describe("aiConversationMetadata", () => {
+  it("keeps safe follow-up prompts in encrypted Matrix metadata", () => {
+    const response: AiCopResponse = {
+      auditId: "audit-conversation",
+      model: "grounded-playbook-v1",
+      policy: { allowed: true, reason: "ok", redactionsApplied: false },
+      provider: "local",
+      requestId: "request-conversation",
+      result: {
+        structured: {
+          conversation: {
+            confidence: { label: "Vysoká opora v datech", level: "high" },
+            followUp: true,
+            followUpKind: "time",
+            followUpSuggestions: [{ id: "weather-next", label: "A co zítra?", question: "A co zítra?" }],
+            needsClarification: false
+          }
+        },
+        summary: "Bude polojasno."
+      },
+      status: "COMPLETED"
+    };
+
+    expect(aiConversationMetadata(response)).toEqual({
+      confidence: { label: "Vysoká opora v datech", level: "high" },
+      followUp: true,
+      followUpKind: "time",
+      followUpSuggestions: [{ id: "weather-next", label: "A co zítra?", question: "A co zítra?" }],
+      needsClarification: false
+    });
+  });
+});
+
 describe("aiMapActionsForMessage", () => {
   it("derives a clickable map action from an older AI text fallback with coordinates", () => {
     const message: MatrixTimelineMessage = {
@@ -762,6 +796,11 @@ describe("buildAiChatContextSnapshot", () => {
               ai: {
                 auditId: "audit-31",
                 provider: "mock",
+                question: "Jaká jsou rizika?",
+                responsePlaybook: {
+                  domain: "situation",
+                  intentId: "situation.summary"
+                },
                 status: "COMPLETED",
                 type: "chat-agent"
               },
@@ -786,7 +825,12 @@ describe("buildAiChatContextSnapshot", () => {
       visibleMessageCount: 33
     });
     expect(snapshot.messages?.[0]?.eventId).toBe("$event-3");
-    expect(snapshot.messages?.at(-2)?.ai).toMatchObject({ auditId: "audit-31", provider: "mock" });
+    expect(snapshot.messages?.at(-2)?.ai).toMatchObject({
+      auditId: "audit-31",
+      provider: "mock",
+      question: "Jaká jsou rizika?",
+      responsePlaybook: { domain: "situation", intentId: "situation.summary" }
+    });
     expect(snapshot.messages?.at(-1)).toMatchObject({
       body: "@COP AI shrň rizika",
       eventId: "local:current-ai-question",

@@ -163,6 +163,11 @@ export interface AiChatAgentContextMessage {
   ai?: {
     auditId?: string;
     provider?: string;
+    question?: string;
+    responsePlaybook?: {
+      domain?: string;
+      intentId?: string;
+    };
     status?: string;
     type?: string;
   };
