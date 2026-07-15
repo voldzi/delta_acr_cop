@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  isCopNativeHost,
   readCopOfflineSnapshot,
   readCopOfflineSnapshotAsync,
   requestCopPersistentStorage,
@@ -32,6 +33,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete (window as Window & { __COP_DEVICE_NATIVE_TRANSPORT__?: unknown })
+    .__COP_DEVICE_NATIVE_TRANSPORT__;
   window.localStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -123,6 +126,21 @@ describe("PWA offline snapshot", () => {
       usageBytes: 2 * 1024 * 1024
     });
     expect(persist).toHaveBeenCalled();
+  });
+});
+
+describe("COP PWA runtime selection", () => {
+  it("keeps the service-worker runtime available in an ordinary browser", () => {
+    expect(isCopNativeHost(window)).toBe(false);
+  });
+
+  it("recognizes the document-start transport injected by COP Mobile", () => {
+    Object.defineProperty(window, "__COP_DEVICE_NATIVE_TRANSPORT__", {
+      configurable: true,
+      value: Object.freeze({ postMessage() {}, subscribe() {} })
+    });
+
+    expect(isCopNativeHost(window)).toBe(true);
   });
 });
 

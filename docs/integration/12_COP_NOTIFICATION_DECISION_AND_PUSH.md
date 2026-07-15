@@ -248,6 +248,13 @@ PWA shows a limited state and prompts for a fresh registration. Notification
 clicks are handled in the service worker: chat deep links prefer an existing
 `/chat/...` window, while map alert/report links prefer the map shell.
 
+The SwiftUI thin host injects `__COP_DEVICE_NATIVE_TRANSPORT__` at document
+start. When that transport is present, COP web does not register the browser
+PWA service worker: COP Mobile owns APNs/PushKit and persistent WebKit startup
+recovery itself. This prevents a browser service-worker navigation from
+deadlocking the embedded `WKWebView`, while ordinary Safari/installed-PWA
+clients retain browser push and offline caching.
+
 The integrated chat uses the same Web Push registration helper as the main COP
 map shell. Its notification bell must represent real server registration state:
 browser support, `Notification.permission`, service-worker subscription and COP

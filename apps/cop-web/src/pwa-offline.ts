@@ -41,8 +41,18 @@ export interface CopRouteTileCacheWarmupRequest {
   urls: string[];
 }
 
+interface CopNativeHostWindow extends Window {
+  __COP_DEVICE_NATIVE_TRANSPORT__?: unknown;
+}
+
+export function isCopNativeHost(
+  candidate: Window | undefined = typeof window === "undefined" ? undefined : window
+): boolean {
+  return Boolean((candidate as CopNativeHostWindow | undefined)?.__COP_DEVICE_NATIVE_TRANSPORT__);
+}
+
 export function registerCopServiceWorker(): void {
-  registerCopPwaServiceWorker({ enabled: import.meta.env.PROD });
+  registerCopPwaServiceWorker({ enabled: import.meta.env.PROD && !isCopNativeHost() });
 }
 
 export function requestCopPwaCacheWarmup(): void {
