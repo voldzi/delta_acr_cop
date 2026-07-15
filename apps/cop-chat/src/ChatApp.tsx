@@ -73,7 +73,6 @@ import {
 } from "@cop/core/auth";
 import type { AuthConfig, AuthSession } from "@cop/core/auth";
 import {
-  bindMessagingConversationMatrixRoom,
   createAiSituationSummary,
   createCommunityGroup,
   createMessagingConversation,
@@ -83,9 +82,9 @@ import {
   fetchMessagingConversations,
   fetchMessagingStatus,
   fetchUserProfile,
+  ensureMessagingConversationMatrixRoom,
   leaveCommunityGroup,
   removeCommunityGroupMember,
-  resolveMessagingMatrixIdentities,
   searchUserDirectory,
   startAiChatAgentJob,
   syncMessagingConversationMembers,
@@ -102,7 +101,6 @@ import type {
   AiModelPreference,
   CommunityGroup,
   MessagingConversationSummary,
-  MessagingMatrixIdentityResolutionResponse,
   MessagingMatrixRoomBindingResponse,
   MessagingStatusResponse,
   ServerUserProfile,
@@ -2487,7 +2485,7 @@ export function ChatApp() {
       target.user
     );
     setConversations((current) => upsertConversation(current, conversation));
-    const roomId = conversation.matrix?.roomId ?? (await createRoomForConversation(conversation, session));
+    const roomId = conversation.matrix?.roomId ?? (await createRoomForConversation(conversation));
     return { roomId, title };
   }
 
@@ -2949,11 +2947,8 @@ export function ChatApp() {
     try {
       if (item.conversation) {
         selectConversation(item.conversation);
-        if (!item.conversation.matrix?.roomId && item.room && chatReady) {
-          await bindExistingRoomToConversation(item.conversation, item.room.roomId, item.group);
-        } else if (!item.conversation.matrix?.roomId && chatReady) {
-          const session = await ensureMatrixSession(item.conversation.conversationId);
-          await createRoomForConversation(item.conversation, session);
+        if (!item.conversation.matrix?.roomId) {
+          await createRoomForConversation(item.conversation);
         }
         return;
       }
@@ -2961,13 +2956,8 @@ export function ChatApp() {
         selectGroup(item.group);
         if (chatReady) {
           const conversation = await createConversationForGroup(item.group);
-          if (item.room) {
-            await bindExistingRoomToConversation(conversation, item.room.roomId, item.group);
-          } else {
-            const session = await ensureMatrixSession(conversation.conversationId);
-            await createRoomForConversation(conversation, session);
-            selectConversation(conversation);
-          }
+          await createRoomForConversation(conversation);
+          selectConversation(conversation);
         }
         return;
       }
@@ -2987,20 +2977,12 @@ export function ChatApp() {
       if (item.conversation.matrix?.roomId) {
         return item.conversation.matrix.roomId;
       }
-      if (item.room) {
-        await bindExistingRoomToConversation(item.conversation, item.room.roomId, item.group);
-        return item.room.roomId;
-      }
-      return createRoomForConversation(item.conversation, session);
+      return createRoomForConversation(item.conversation);
     }
     if (item.group) {
       selectGroup(item.group);
       const conversation = await createConversationForGroup(item.group);
-      if (item.room) {
-        await bindExistingRoomToConversation(conversation, item.room.roomId, item.group);
-        return item.room.roomId;
-      }
-      return createRoomForConversation(conversation, session);
+      return createRoomForConversation(conversation);
     }
     if (item.room) {
       selectRoom(item.room);
@@ -3026,8 +3008,7 @@ export function ChatApp() {
       setDirectSuggestions([]);
       selectConversation(conversationWithMember);
       if (chatReady) {
-        const session = await ensureMatrixSession(conversationWithMember.conversationId);
-        await createRoomForConversation(conversationWithMember, session);
+        await createRoomForConversation(conversationWithMember);
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Přímý chat se nepodařilo založit.");
@@ -3056,8 +3037,7 @@ export function ChatApp() {
       setDirectSuggestions([]);
       selectConversation(conversationWithMember);
       if (chatReady) {
-        const session = await ensureMatrixSession(conversationWithMember.conversationId);
-        await createRoomForConversation(conversationWithMember, session);
+        await createRoomForConversation(conversationWithMember);
       }
       setNotice("Chat s COP AI agentem je připravený.");
     } catch (caught) {
@@ -3075,6 +3055,7 @@ export function ChatApp() {
       throw new Error("Pro založení chatu je potřeba přihlášení.");
     }
     const response = await createMessagingConversation(apiBase, authToken, {
+      conversationKind: "direct",
       members: [{ displayName: title, role: "member", userId: user.subjectId }],
       metadata: {
         externalId: user.subjectId,
@@ -3094,6 +3075,7 @@ export function ChatApp() {
       throw new Error("Pro založení chatu je potřeba přihlášení.");
     }
     const response = await createMessagingConversation(apiBase, authToken, {
+      conversationKind: "personal_ai",
       members: [{ displayName: copAiAgentUser.displayName, role: "bot", userId: copAiAgentUser.subjectId }],
       metadata: {
         externalId: copAiAgentUser.subjectId,
@@ -3119,6 +3101,7 @@ export function ChatApp() {
       return existing;
     }
     const conversationResponse = await createMessagingConversation(apiBase, authToken, {
+      conversationKind: "group",
       members: communityGroupMembersToMessagingMembers(group),
       metadata: {
         externalId: group.groupId,
@@ -3164,8 +3147,7 @@ export function ChatApp() {
       setComposeMode(null);
       selectConversation(conversation);
       if (chatReady) {
-        const session = await ensureMatrixSession(conversation.conversationId);
-        await createRoomForConversation(conversation, session);
+        await createRoomForConversation(conversation);
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Skupinu se nepodařilo založit.");
@@ -3219,19 +3201,6 @@ export function ChatApp() {
           }
         } catch (caught) {
           warnings.push(caught instanceof Error ? caught.message : "Messaging synchronizace selhala.");
-        }
-      }
-      if (selectedRoomId && matrixSession) {
-        try {
-          const resolution = await resolveMessagingMatrixIdentities(apiBase, authToken, [user.subjectId]);
-          const matrixUserIds = matrixUserIdsFromResolution(resolution, [user.subjectId]);
-          if (matrixUserIds.length > 0) {
-            await matrixSession.inviteUsersToRoom(selectedRoomId, matrixUserIds);
-          } else {
-            warnings.push("Matrix identita člena zatím není dostupná.");
-          }
-        } catch (caught) {
-          warnings.push(caught instanceof Error ? caught.message : "Matrix pozvánku se nepodařilo odeslat.");
         }
       }
       setMemberQuery("");
@@ -3560,10 +3529,7 @@ export function ChatApp() {
     }
   }
 
-  async function createRoomForConversation(
-    conversation: MessagingConversationSummary,
-    session = matrixSessionRef.current
-  ): Promise<string> {
+  async function createRoomForConversation(conversation: MessagingConversationSummary): Promise<string> {
     if (conversation.matrix?.roomId) {
       setSelectedRoomId(conversation.matrix.roomId);
       return conversation.matrix.roomId;
@@ -3571,24 +3537,9 @@ export function ChatApp() {
     if (!authToken) {
       throw new Error("Pro založení místnosti je potřeba přihlášení.");
     }
-    if (!session) {
-      throw new Error("Chatové spojení ještě není připravené.");
-    }
-    await ensureEncryptionRecoveryReady(session);
-    const inviteUserIds = await resolveConversationMatrixUsers(conversation);
-    const roomId = await session.createGroupRoom(conversation.title, inviteUserIds);
-    const binding = await bindMessagingConversationMatrixRoom(apiBase, authToken, conversation.conversationId, {
-      encrypted: true,
-      roomId
-    });
-    assertMatrixRoomBindingConfirmed(binding, roomId);
-    const nextConversation = binding.conversation ?? {
-      ...conversation,
-      matrix: {
-        ...(conversation.matrix ?? {}),
-        roomId
-      }
-    };
+    const binding = await ensureMessagingConversationMatrixRoom(apiBase, authToken, conversation.conversationId);
+    const roomId = assertMatrixRoomReady(binding);
+    const nextConversation = binding.conversation!;
     setConversations((current) => upsertConversation(current, nextConversation));
     const linkedGroup = selectedGroupId
       ? (groups.find((group) => group.groupId === selectedGroupId) ?? groupForConversation(nextConversation, groups))
@@ -3609,37 +3560,6 @@ export function ChatApp() {
     setSelectedRoomId(roomId);
     writeChatRoute(nextConversation.conversationId);
     return roomId;
-  }
-
-  async function bindExistingRoomToConversation(
-    conversation: MessagingConversationSummary,
-    roomId: string,
-    group = groupForConversation(conversation, groups) ?? undefined
-  ): Promise<MessagingConversationSummary> {
-    if (!authToken) {
-      throw new Error("Pro uložení místnosti je potřeba přihlášení.");
-    }
-    const binding = await bindMessagingConversationMatrixRoom(apiBase, authToken, conversation.conversationId, {
-      encrypted: true,
-      roomId
-    });
-    assertMatrixRoomBindingConfirmed(binding, roomId);
-    const nextConversation = binding.conversation ?? {
-      ...conversation,
-      matrix: {
-        ...(conversation.matrix ?? {}),
-        roomId
-      }
-    };
-    setConversations((current) => upsertConversation(current, nextConversation));
-    if (group) {
-      await persistGroupChatBindingIfAllowed(group, nextConversation, roomId);
-    }
-    setSelectedConversationId(nextConversation.conversationId);
-    setSelectedGroupId(group?.groupId ?? conversationCommunityGroupId(nextConversation) ?? selectedGroupId);
-    setSelectedRoomId(roomId);
-    writeChatRoute(nextConversation.conversationId);
-    return nextConversation;
   }
 
   async function persistGroupChatBindingIfAllowed(
@@ -3674,20 +3594,6 @@ export function ChatApp() {
     });
     setGroups((current) => current.map((item) => (item.groupId === updated.groupId ? updated : item)));
     return updated;
-  }
-
-  async function resolveConversationMatrixUsers(conversation: MessagingConversationSummary): Promise<string[]> {
-    if (!authToken) {
-      return [];
-    }
-    const userIds = (conversation.members ?? [])
-      .map((member) => member.userId)
-      .filter((userId) => userId && userId !== authSubjectId);
-    if (userIds.length === 0) {
-      return [];
-    }
-    const result = await resolveMessagingMatrixIdentities(apiBase, authToken, userIds);
-    return matrixUserIdsFromResolution(result, userIds);
   }
 
   async function loadOlderMessages(roomId = selectedRoomId, limit = 120, silent = false): Promise<void> {
@@ -7590,27 +7496,12 @@ export function buildChatItems({
   selectedRoomId: string | null;
 }): ChatListItem[] {
   const items = new Map<string, ChatListItem>();
-  const byRoomId = new Map<string, string>();
   const byGroupId = new Map<string, string>();
   const byTitleAndType = new Map<string, string>();
   const activeGroups = groups.filter((group) => groupHasActiveMember(group, authSubjectId));
-  const inactiveGroupRoomIds = new Set(
-    groups
-      .filter((group) => !groupHasActiveMember(group, authSubjectId))
-      .map(communityGroupMatrixRoomId)
-      .filter((roomId): roomId is string => Boolean(roomId))
-  );
-  const inactiveGroupTitleKeys = new Set(
-    groups
-      .filter((group) => !groupHasActiveMember(group, authSubjectId))
-      .map((group) => titleTypeKey(group.name, "group"))
-  );
 
   const remember = (item: ChatListItem) => {
     items.set(item.id, item);
-    if (item.roomId) {
-      byRoomId.set(item.roomId, item.id);
-    }
     if (item.group?.groupId) {
       byGroupId.set(item.group.groupId, item.id);
     }
@@ -7639,8 +7530,7 @@ export function buildChatItems({
         selectedConversationId === conversation.conversationId ||
         selectedRoomId === conversation.matrix?.roomId ||
         selectedGroupId === group?.groupId,
-      ...(conversation.type === "direct" &&
-      (isAiAgentDirectConversation(conversation) || isAiAgentRoomSummary(room) || isAiAgentDisplayName(title))
+      ...(conversation.type === "direct" && isAiAgentDirectConversation(conversation)
         ? { avatarVariant: "ai" as const }
         : {}),
       avatarUrl:
@@ -7740,63 +7630,10 @@ export function buildChatItems({
     });
   });
 
-  rooms.forEach((room) => {
-    const roomKey = byRoomId.get(room.roomId);
-    if (roomKey) {
-      return;
-    }
-    if (
-      inactiveGroupRoomIds.has(room.roomId) ||
-      (!room.directPeer && inactiveGroupTitleKeys.has(titleTypeKey(room.name, "group")))
-    ) {
-      return;
-    }
-    const latest = room.latestMessage;
-    const roomTitle = room.directPeer?.displayName || room.name;
-    const titleKey = byTitleAndType.get(titleTypeKey(room.name, "group"));
-    if (titleKey) {
-      const current = items.get(titleKey);
-      if (current) {
-        items.delete(current.id);
-        const merged = {
-          ...current,
-          active: current.active || selectedRoomId === room.roomId,
-          latest: current.latest ?? latest,
-          preview: latest ? chatListMessagePreview(latest, current.type) : current.preview,
-          room,
-          roomId: room.roomId,
-          sortAt: Math.max(current.sortAt, timestampMillis(latest?.timestamp)),
-          timestamp: latest ? formatShortTimestamp(latest.timestamp) : current.timestamp,
-          unreadCount: room.unreadCount
-        };
-        merged.id = `room:${room.roomId}`;
-        remember(merged);
-      }
-      return;
-    }
-    remember({
-      active: selectedRoomId === room.roomId,
-      ...(room.directPeer && (isAiAgentRoomSummary(room) || isAiAgentDisplayName(roomTitle))
-        ? { avatarVariant: "ai" as const }
-        : {}),
-      avatarUrl: room.avatarUrl ?? room.directPeer?.avatarUrl,
-      id: `room:${room.roomId}`,
-      latest,
-      memberCount: 2,
-      muted: false,
-      pinned: false,
-      preferenceKey: chatPreferenceKeyForRoom(room.roomId),
-      preview: latest ? chatListMessagePreview(latest, room.directPeer ? "direct" : "room") : "Nový chat",
-      room,
-      roomId: room.roomId,
-      searchable: `${roomTitle} ${room.name}`,
-      sortAt: timestampMillis(latest?.timestamp),
-      timestamp: latest ? formatShortTimestamp(latest.timestamp) : undefined,
-      title: roomTitle,
-      type: room.directPeer ? "direct" : "room",
-      unreadCount: room.unreadCount
-    });
-  });
+  // Provider metadata is the authoritative conversation directory. Matrix rooms
+  // without a provider conversation are deliberately hidden instead of being
+  // guessed by title or rendered as raw room IDs. A pre-production reset may
+  // safely discard such orphan rooms.
 
   const normalizedQuery = query.trim().toLocaleLowerCase("cs-CZ");
   return dedupeChatItems(Array.from(items.values()))
@@ -8052,10 +7889,6 @@ function chatPreferenceKeyForGroup(group: CommunityGroup): string {
 
 function chatPreferenceKeyForGroupId(groupId: string): string {
   return `group:${groupId}`;
-}
-
-function chatPreferenceKeyForRoom(roomId: string): string {
-  return `room:${roomId}`;
 }
 
 function groupForConversation(
@@ -8631,12 +8464,7 @@ function findExistingAiAgentDirectConversation(
 }
 
 export function isAiAgentChatItem(item: ChatListItem): boolean {
-  return (
-    item.type === "direct" &&
-    (isAiAgentDirectConversation(item.conversation) ||
-      isAiAgentRoomSummary(item.room) ||
-      isAiAgentDisplayName(item.title))
-  );
+  return item.conversation?.conversationKind === "personal_ai";
 }
 
 function isAiAgentDirectConversation(
@@ -8645,60 +8473,15 @@ function isAiAgentDirectConversation(
   if (!conversation || conversation.type !== "direct") {
     return false;
   }
-  if (
-    conversation.metadata?.source === "cop.ai.direct" ||
-    conversation.metadata?.externalId === copAiAgentUser.subjectId
-  ) {
-    return true;
-  }
-  return Boolean(conversation.members?.some((member) => member.userId === copAiAgentUser.subjectId));
+  return conversation.conversationKind === "personal_ai";
 }
 
-function isAiAgentRoomSummary(room: MatrixRoomSummary | null | undefined): boolean {
-  if (!room?.directPeer) {
-    return false;
+function assertMatrixRoomReady(binding: MessagingMatrixRoomBindingResponse): string {
+  const roomId = binding.conversation?.matrix?.roomId;
+  if (binding.status === "online" && roomId) {
+    return roomId;
   }
-  return isAiAgentUserId(room.directPeer.userId) || isAiAgentDisplayName(room.directPeer.displayName);
-}
-
-function isAiAgentUserId(value: string | undefined): boolean {
-  if (!value) {
-    return false;
-  }
-  const normalized = normalizeIdentityId(value);
-  const localpart = matrixUserIdLocalpart(value);
-  return (
-    normalized === normalizeIdentityId(copAiAgentUser.subjectId) ||
-    normalized === normalizeIdentityId(copAiAgentUser.username) ||
-    (localpart ? normalizeIdentityId(localpart) === normalizeIdentityId(copAiAgentUser.subjectId) : false)
-  );
-}
-
-function isAiAgentDisplayName(value: string | undefined): boolean {
-  return Boolean(value && normalizeTitle(value) === normalizeTitle(copAiAgentUser.displayName));
-}
-
-function matrixUserIdsFromResolution(
-  result: MessagingMatrixIdentityResolutionResponse,
-  requestedUserIds: string[]
-): string[] {
-  if (result.status !== "online") {
-    throw new Error(result.warnings[0] ?? "Některé členy se nepodařilo pozvat do konverzace.");
-  }
-  const requested = Array.from(new Set(requestedUserIds));
-  const resolvedByUserId = new Map(result.identities.map((identity) => [identity.userId, identity.matrixUserId]));
-  const missing = requested.filter((userId) => !resolvedByUserId.get(userId));
-  if (missing.length > 0) {
-    throw new Error(`Některé členy zatím nelze pozvat: ${missing.slice(0, 5).join(", ")}.`);
-  }
-  return Array.from(new Set(requested.flatMap((userId) => resolvedByUserId.get(userId) ?? [])));
-}
-
-function assertMatrixRoomBindingConfirmed(binding: MessagingMatrixRoomBindingResponse, roomId: string): void {
-  if (binding.status === "online" && binding.conversation?.matrix?.roomId === roomId) {
-    return;
-  }
-  throw new Error(binding.warnings[0] ?? "Služba zpráv zatím nepotvrdila zabezpečenou konverzaci.");
+  throw new Error(binding.warnings[0] ?? "Služba zpráv zatím nepřipravila zabezpečenou konverzaci.");
 }
 
 function upsertConversation(

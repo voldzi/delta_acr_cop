@@ -27,39 +27,45 @@ describe("CsmMessagingProvider", () => {
       const url = String(input);
       expect(init?.headers).not.toMatchObject({ Authorization: expect.any(String) });
       if (url.endsWith("/api/v1/capabilities")) {
-        return new Response(JSON.stringify({
-          architecture: {
-            mode: "matrix-backed",
-            plaintextOnServer: false,
-            serverRole: "policy-and-integration"
-          },
-          contractVersion: "csm-messaging-provider-v1",
-          features: {
-            directMessages: true,
-            endToEndEncryptionRequired: true,
-            groups: true,
-            mapObjectLinks: true,
-            matrixIdentityResolution: true,
-            matrixRoomBinding: true,
-            matrixTokenBootstrap: true
-          },
-          providerId: "csm.messaging",
-          security: {
-            authMode: "csm-server-token",
-            readFromBrowser: false,
-            serverSideIntegrationOnly: true
-          },
-          serviceName: "CSM Messaging",
-          status: "online"
-        }), { status: 200 });
+        return new Response(
+          JSON.stringify({
+            architecture: {
+              mode: "matrix-backed",
+              plaintextOnServer: false,
+              serverRole: "policy-and-integration"
+            },
+            contractVersion: "csm-messaging-provider-v1",
+            features: {
+              directMessages: true,
+              endToEndEncryptionRequired: true,
+              groups: true,
+              mapObjectLinks: true,
+              matrixIdentityResolution: true,
+              matrixRoomBinding: true,
+              matrixTokenBootstrap: true
+            },
+            providerId: "csm.messaging",
+            security: {
+              authMode: "csm-server-token",
+              readFromBrowser: false,
+              serverSideIntegrationOnly: true
+            },
+            serviceName: "CSM Messaging",
+            status: "online"
+          }),
+          { status: 200 }
+        );
       }
       if (url === "https://msg.zeleznalady.cz/_matrix/client/versions") {
         return new Response(JSON.stringify({ versions: ["v1.12"] }), { status: 200 });
       }
-      return new Response(JSON.stringify({
-        checks: [],
-        status: "ok"
-      }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          checks: [],
+          status: "ok"
+        }),
+        { status: 200 }
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -88,32 +94,38 @@ describe("CsmMessagingProvider", () => {
   });
 
   it("keeps chat disabled when the public Matrix homeserver URL is not reachable", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/v1/capabilities")) {
-        return new Response(JSON.stringify({
-          architecture: { plaintextOnServer: false },
-          contractVersion: "csm-messaging-provider-v1",
-          features: {
-            endToEndEncryptionRequired: true,
-            matrixIdentityResolution: true,
-            matrixRoomBinding: true,
-            matrixTokenBootstrap: true
-          },
-          providerId: "csm.messaging",
-          security: {
-            readFromBrowser: false,
-            serverSideIntegrationOnly: true
-          },
-          serviceName: "CSM Messaging",
-          status: "online"
-        }), { status: 200 });
-      }
-      if (url.endsWith("/health/ready")) {
-        return new Response(JSON.stringify({ checks: [], status: "ok" }), { status: 200 });
-      }
-      throw new TypeError("fetch failed: DNS lookup failed");
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/capabilities")) {
+          return new Response(
+            JSON.stringify({
+              architecture: { plaintextOnServer: false },
+              contractVersion: "csm-messaging-provider-v1",
+              features: {
+                endToEndEncryptionRequired: true,
+                matrixIdentityResolution: true,
+                matrixRoomBinding: true,
+                matrixTokenBootstrap: true
+              },
+              providerId: "csm.messaging",
+              security: {
+                readFromBrowser: false,
+                serverSideIntegrationOnly: true
+              },
+              serviceName: "CSM Messaging",
+              status: "online"
+            }),
+            { status: 200 }
+          );
+        }
+        if (url.endsWith("/health/ready")) {
+          return new Response(JSON.stringify({ checks: [], status: "ok" }), { status: 200 });
+        }
+        throw new TypeError("fetch failed: DNS lookup failed");
+      })
+    );
 
     const provider = new CsmMessagingProvider({
       baseUrl: "http://messaging.local:4050",
@@ -131,45 +143,54 @@ describe("CsmMessagingProvider", () => {
   });
 
   it("keeps PWA chat available when provider health is degraded only by APNs delivery", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/v1/capabilities")) {
-        return new Response(JSON.stringify({
-          architecture: { plaintextOnServer: false },
-          contractVersion: "csm-messaging-provider-v1",
-          features: {
-            endToEndEncryptionRequired: true,
-            matrixIdentityResolution: true,
-            matrixRoomBinding: true,
-            matrixTokenBootstrap: true,
-            webPushDelivery: true
-          },
-          providerId: "csm.messaging",
-          security: {
-            readFromBrowser: false,
-            serverSideIntegrationOnly: true
-          },
-          serviceName: "CSM Messaging",
-          status: "online"
-        }), { status: 200 });
-      }
-      if (url.endsWith("/health/ready")) {
-        return new Response(JSON.stringify({
-          checks: [
-            { id: "matrix_config", message: "Matrix bootstrap is configured.", status: "ok" },
-            { id: "metadata_store", message: "Conversation metadata store is writable.", status: "ok" },
-            {
-              id: "apns",
-              message: "APNs key material is required for live native delivery.",
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/capabilities")) {
+          return new Response(
+            JSON.stringify({
+              architecture: { plaintextOnServer: false },
+              contractVersion: "csm-messaging-provider-v1",
+              features: {
+                endToEndEncryptionRequired: true,
+                matrixIdentityResolution: true,
+                matrixRoomBinding: true,
+                matrixTokenBootstrap: true,
+                webPushDelivery: true
+              },
+              providerId: "csm.messaging",
+              security: {
+                readFromBrowser: false,
+                serverSideIntegrationOnly: true
+              },
+              serviceName: "CSM Messaging",
+              status: "online"
+            }),
+            { status: 200 }
+          );
+        }
+        if (url.endsWith("/health/ready")) {
+          return new Response(
+            JSON.stringify({
+              checks: [
+                { id: "matrix_config", message: "Matrix bootstrap is configured.", status: "ok" },
+                { id: "metadata_store", message: "Conversation metadata store is writable.", status: "ok" },
+                {
+                  id: "apns",
+                  message: "APNs key material is required for live native delivery.",
+                  status: "degraded"
+                },
+                { id: "web_push", message: "Web Push live delivery is configured.", status: "ok" }
+              ],
               status: "degraded"
-            },
-            { id: "web_push", message: "Web Push live delivery is configured.", status: "ok" }
-          ],
-          status: "degraded"
-        }), { status: 503 });
-      }
-      return new Response(JSON.stringify({ versions: ["v1.12"] }), { status: 200 });
-    }));
+            }),
+            { status: 503 }
+          );
+        }
+        return new Response(JSON.stringify({ versions: ["v1.12"] }), { status: 200 });
+      })
+    );
 
     const provider = new CsmMessagingProvider({
       baseUrl: "http://messaging.local:4050",
@@ -185,7 +206,9 @@ describe("CsmMessagingProvider", () => {
     expect(status.chatAvailable).toBe(true);
     expect(status.detail).toBe("provider=online; health=degraded");
     expect(status.warnings).toContain("apns: APNs key material is required for live native delivery.");
-    expect(status.warnings).not.toContain("Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready.");
+    expect(status.warnings).not.toContain(
+      "Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready."
+    );
   });
 
   it("sends the configured server token only to the messaging provider", async () => {
@@ -193,18 +216,21 @@ describe("CsmMessagingProvider", () => {
       expect(init?.headers).toMatchObject({ Authorization: "Bearer server-token-123" });
       const url = String(input);
       if (url.endsWith("/api/v1/capabilities")) {
-        return new Response(JSON.stringify({
-          contractVersion: "csm-messaging-provider-v1",
-          providerId: "csm.messaging",
-          security: {
-            authMode: "csm-server-token",
-            authRequired: true,
-            readFromBrowser: false,
-            serverSideIntegrationOnly: true
-          },
-          serviceName: "CSM Messaging",
-          status: "online"
-        }), { status: 200 });
+        return new Response(
+          JSON.stringify({
+            contractVersion: "csm-messaging-provider-v1",
+            providerId: "csm.messaging",
+            security: {
+              authMode: "csm-server-token",
+              authRequired: true,
+              readFromBrowser: false,
+              serverSideIntegrationOnly: true
+            },
+            serviceName: "CSM Messaging",
+            status: "online"
+          }),
+          { status: 200 }
+        );
       }
       return new Response(JSON.stringify({ checks: [], status: "ok" }), { status: 200 });
     });
@@ -232,26 +258,32 @@ describe("CsmMessagingProvider", () => {
   });
 
   it("keeps chat disabled when Matrix bootstrap is not advertised", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/v1/capabilities")) {
-        return new Response(JSON.stringify({
-          architecture: { plaintextOnServer: false },
-          contractVersion: "csm-messaging-provider-v1",
-          features: {
-            endToEndEncryptionRequired: true
-          },
-          providerId: "csm.messaging",
-          security: {
-            readFromBrowser: false,
-            serverSideIntegrationOnly: true
-          },
-          serviceName: "CSM Messaging",
-          status: "online"
-        }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ checks: [], status: "ok" }), { status: 200 });
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/capabilities")) {
+          return new Response(
+            JSON.stringify({
+              architecture: { plaintextOnServer: false },
+              contractVersion: "csm-messaging-provider-v1",
+              features: {
+                endToEndEncryptionRequired: true
+              },
+              providerId: "csm.messaging",
+              security: {
+                readFromBrowser: false,
+                serverSideIntegrationOnly: true
+              },
+              serviceName: "CSM Messaging",
+              status: "online"
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response(JSON.stringify({ checks: [], status: "ok" }), { status: 200 });
+      })
+    );
 
     const provider = new CsmMessagingProvider({
       baseUrl: "http://messaging.local:4050",
@@ -263,31 +295,39 @@ describe("CsmMessagingProvider", () => {
     const status = await provider.fetchStatus(new Date("2026-05-22T12:00:00Z"));
 
     expect(status.chatAvailable).toBe(false);
-    expect(status.warnings).toContain("Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready.");
+    expect(status.warnings).toContain(
+      "Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready."
+    );
   });
 
   it("keeps chat disabled when identity resolution or room binding capabilities are missing", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/v1/capabilities")) {
-        return new Response(JSON.stringify({
-          architecture: { plaintextOnServer: false },
-          contractVersion: "csm-messaging-provider-v1",
-          features: {
-            endToEndEncryptionRequired: true,
-            matrixTokenBootstrap: true
-          },
-          providerId: "csm.messaging",
-          security: {
-            readFromBrowser: false,
-            serverSideIntegrationOnly: true
-          },
-          serviceName: "CSM Messaging",
-          status: "online"
-        }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ checks: [], status: "ok" }), { status: 200 });
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/capabilities")) {
+          return new Response(
+            JSON.stringify({
+              architecture: { plaintextOnServer: false },
+              contractVersion: "csm-messaging-provider-v1",
+              features: {
+                endToEndEncryptionRequired: true,
+                matrixTokenBootstrap: true
+              },
+              providerId: "csm.messaging",
+              security: {
+                readFromBrowser: false,
+                serverSideIntegrationOnly: true
+              },
+              serviceName: "CSM Messaging",
+              status: "online"
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response(JSON.stringify({ checks: [], status: "ok" }), { status: 200 });
+      })
+    );
 
     const provider = new CsmMessagingProvider({
       baseUrl: "http://messaging.local:4050",
@@ -305,38 +345,51 @@ describe("CsmMessagingProvider", () => {
       },
       status: "online"
     });
-    expect(status.warnings).toContain("Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready.");
+    expect(status.warnings).toContain(
+      "Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready."
+    );
   });
 
   it("sanitizes provider credential hints from public messaging status", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/api/v1/capabilities")) {
-        return new Response(JSON.stringify({
-          architecture: { plaintextOnServer: false },
-          contractVersion: "csm-messaging-provider-v1",
-          features: {
-            endToEndEncryptionRequired: true,
-            matrixTokenBootstrap: false
-          },
-          providerId: "csm.messaging",
-          security: {
-            readFromBrowser: false,
-            serverSideIntegrationOnly: true
-          },
-          serviceName: "CSM Messaging",
-          status: "degraded"
-        }), { status: 200 });
-      }
-      return new Response(JSON.stringify({
-        checks: [{
-          id: "matrix_config",
-          message: "CSM_MATRIX_ADMIN_TOKEN must be configured before Matrix token bootstrap is operational.",
-          status: "degraded"
-        }],
-        status: "degraded"
-      }), { status: 503 });
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/capabilities")) {
+          return new Response(
+            JSON.stringify({
+              architecture: { plaintextOnServer: false },
+              contractVersion: "csm-messaging-provider-v1",
+              features: {
+                endToEndEncryptionRequired: true,
+                matrixTokenBootstrap: false
+              },
+              providerId: "csm.messaging",
+              security: {
+                readFromBrowser: false,
+                serverSideIntegrationOnly: true
+              },
+              serviceName: "CSM Messaging",
+              status: "degraded"
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            checks: [
+              {
+                id: "matrix_config",
+                message: "CSM_MATRIX_ADMIN_TOKEN must be configured before Matrix token bootstrap is operational.",
+                status: "degraded"
+              }
+            ],
+            status: "degraded"
+          }),
+          { status: 503 }
+        );
+      })
+    );
 
     const provider = new CsmMessagingProvider({
       baseUrl: "http://messaging.local:4050",
@@ -362,20 +415,23 @@ describe("CsmMessagingProvider", () => {
         "x-csm-user-name": "Jiri Volek",
         "x-csm-user-role": "cop_operator"
       });
-      return new Response(JSON.stringify({
-        accessToken: "matrix-user-token",
-        contractVersion: "csm-messaging-provider-v1",
-        deviceId: "COP_WEB_1",
-        e2eeRequired: true,
-        expiresAt: "2026-05-23T12:00:00Z",
-        homeserverBaseUrl: "https://msg.zeleznalady.cz",
-        providerId: "csm.messaging",
-        serverName: "msg.zeleznalady.cz",
-        status: "ready",
-        tokenAvailable: true,
-        userId: "@user:msg.zeleznalady.cz",
-        warnings: []
-      }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          accessToken: "matrix-user-token",
+          contractVersion: "csm-messaging-provider-v1",
+          deviceId: "COP_WEB_1",
+          e2eeRequired: true,
+          expiresAt: "2026-05-23T12:00:00Z",
+          homeserverBaseUrl: "https://msg.zeleznalady.cz",
+          providerId: "csm.messaging",
+          serverName: "msg.zeleznalady.cz",
+          status: "ready",
+          tokenAvailable: true,
+          userId: "@user:msg.zeleznalady.cz",
+          warnings: []
+        }),
+        { status: 200 }
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -387,13 +443,17 @@ describe("CsmMessagingProvider", () => {
       token: "provider-token"
     });
 
-    const bootstrap = await provider.fetchMatrixBootstrap({
-      authMode: "oidc",
-      displayName: "Jiří Volek",
-      roles: ["cop_operator"],
-      subjectId: "user-123",
-      username: "user.one"
-    }, new Date("2026-05-22T12:00:00Z"), "COPWEB.device-1");
+    const bootstrap = await provider.fetchMatrixBootstrap(
+      {
+        authMode: "oidc",
+        displayName: "Jiří Volek",
+        roles: ["cop_operator"],
+        subjectId: "user-123",
+        username: "user.one"
+      },
+      new Date("2026-05-22T12:00:00Z"),
+      "COPWEB.device-1"
+    );
 
     expect(bootstrap).toMatchObject({
       accessToken: "matrix-user-token",
@@ -409,13 +469,22 @@ describe("CsmMessagingProvider", () => {
   });
 
   it("returns a disabled bootstrap state when provider token is not available", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      contractVersion: "csm-messaging-provider-v1",
-      providerId: "csm.messaging",
-      status: "ready",
-      tokenAvailable: false,
-      warnings: ["Matrix token issuer is not configured."]
-    }), { status: 200 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              contractVersion: "csm-messaging-provider-v1",
+              providerId: "csm.messaging",
+              status: "ready",
+              tokenAvailable: false,
+              warnings: ["Matrix token issuer is not configured."]
+            }),
+            { status: 200 }
+          )
+      )
+    );
 
     const provider = new CsmMessagingProvider({
       baseUrl: "http://messaging.local:4050",
@@ -424,12 +493,15 @@ describe("CsmMessagingProvider", () => {
       timeoutMs: 3000
     });
 
-    const bootstrap = await provider.fetchMatrixBootstrap({
-      authMode: "oidc",
-      displayName: "User One",
-      subjectId: "user-123",
-      username: "user.one"
-    }, new Date("2026-05-22T12:00:00Z"));
+    const bootstrap = await provider.fetchMatrixBootstrap(
+      {
+        authMode: "oidc",
+        displayName: "User One",
+        subjectId: "user-123",
+        username: "user.one"
+      },
+      new Date("2026-05-22T12:00:00Z")
+    );
 
     expect(bootstrap).toMatchObject({
       chatAvailable: false,
@@ -499,20 +571,23 @@ describe("CsmMessagingProvider", () => {
         "x-csm-device-id": "COPWEB.route-test"
       });
 
-      return new Response(JSON.stringify({
-        accessToken: "matrix-user-token",
-        contractVersion: "csm-messaging-provider-v1",
-        deviceId: "COPWEB.route-test",
-        e2eeRequired: true,
-        expiresAt: "2026-05-23T12:00:00Z",
-        homeserverBaseUrl: "https://msg.zeleznalady.cz",
-        providerId: "csm.messaging",
-        serverName: "msg.zeleznalady.cz",
-        status: "ready",
-        tokenAvailable: true,
-        userId: "@lab:msg.zeleznalady.cz",
-        warnings: []
-      }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          accessToken: "matrix-user-token",
+          contractVersion: "csm-messaging-provider-v1",
+          deviceId: "COPWEB.route-test",
+          e2eeRequired: true,
+          expiresAt: "2026-05-23T12:00:00Z",
+          homeserverBaseUrl: "https://msg.zeleznalady.cz",
+          providerId: "csm.messaging",
+          serverName: "msg.zeleznalady.cz",
+          status: "ready",
+          tokenAvailable: true,
+          userId: "@lab:msg.zeleznalady.cz",
+          warnings: []
+        }),
+        { status: 200 }
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
@@ -564,13 +639,16 @@ describe("CsmMessagingProvider", () => {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       expect(body).toMatchObject({ deviceId: "COPWEB.route-test" });
       expect(JSON.stringify(body)).not.toMatch(/password|private|message|recovery/iu);
-      return new Response(JSON.stringify({
-        completed: true,
-        contractVersion: "csm-messaging-e2ee-reset-auth-v1",
-        providerId: "csm.messaging",
-        status: "ready",
-        warnings: []
-      }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          completed: true,
+          contractVersion: "csm-messaging-e2ee-reset-auth-v1",
+          providerId: "csm.messaging",
+          status: "ready",
+          warnings: []
+        }),
+        { status: 200 }
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
@@ -637,37 +715,48 @@ describe("CsmMessagingProvider", () => {
     vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if ((url.endsWith("/api/v1/conversations") || url.includes("/api/v1/conversations?")) && (init?.method ?? "GET") === "GET") {
-        return new Response(JSON.stringify({
-          contractVersion: "csm-messaging-provider-v1",
-          conversations: [{
-            conversationId: "conv_call",
-            matrix: { roomId: "!call:docker.home.cz" },
-            memberCount: 3,
-            status: "matrix_ready",
-            title: "Přímý chat",
-            type: "direct"
-          }],
-          count: 1,
-          providerId: "csm.messaging"
-        }), { status: 200 });
+      if (
+        (url.endsWith("/api/v1/conversations") || url.includes("/api/v1/conversations?")) &&
+        (init?.method ?? "GET") === "GET"
+      ) {
+        return new Response(
+          JSON.stringify({
+            contractVersion: "csm-messaging-provider-v1",
+            conversations: [
+              {
+                conversationId: "conv_call",
+                matrix: { roomId: "!call:docker.home.cz" },
+                memberCount: 3,
+                status: "matrix_ready",
+                title: "Přímý chat",
+                type: "direct"
+              }
+            ],
+            count: 1,
+            providerId: "csm.messaging"
+          }),
+          { status: 200 }
+        );
       }
       if (url.endsWith("/api/v1/conversations/conv_call")) {
-        return new Response(JSON.stringify({
-          contractVersion: "csm-messaging-provider-v1",
-          conversation: {
-            conversationId: "conv_call",
-            matrix: { roomId: "!call:docker.home.cz" },
-            members: [
-              { displayName: "Lab operator", userId: "lab" },
-              { displayName: "Příjemce", userId: "citizen-2" },
-              { displayName: "Další člen", userId: "citizen-3" }
-            ],
-            status: "matrix_ready",
-            title: "Přímý chat",
-            type: "direct"
-          }
-        }), { status: 200 });
+        return new Response(
+          JSON.stringify({
+            contractVersion: "csm-messaging-provider-v1",
+            conversation: {
+              conversationId: "conv_call",
+              matrix: { roomId: "!call:docker.home.cz" },
+              members: [
+                { displayName: "Lab operator", userId: "lab" },
+                { displayName: "Příjemce", userId: "citizen-2" },
+                { displayName: "Další člen", userId: "citizen-3" }
+              ],
+              status: "matrix_ready",
+              title: "Přímý chat",
+              type: "direct"
+            }
+          }),
+          { status: 200 }
+        );
       }
       if (url.endsWith("/api/v1/notifications")) {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -687,16 +776,19 @@ describe("CsmMessagingProvider", () => {
           "Idempotency-Key": expect.stringMatching(/^voice-call:invite:/u),
           "x-csm-user-id": "lab"
         });
-        return new Response(JSON.stringify({
-          contractVersion: "csm-messaging-provider-v1",
-          notification: {
-            deduplicated: false,
-            notificationId: "notif_call",
-            targetDeviceCount: 1,
-            type: "chat.voice_call.incoming"
-          },
-          providerId: "csm.messaging"
-        }), { status: 202 });
+        return new Response(
+          JSON.stringify({
+            contractVersion: "csm-messaging-provider-v1",
+            notification: {
+              deduplicated: false,
+              notificationId: "notif_call",
+              targetDeviceCount: 1,
+              type: "chat.voice_call.incoming"
+            },
+            providerId: "csm.messaging"
+          }),
+          { status: 202 }
+        );
       }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
     });
@@ -754,38 +846,72 @@ describe("CsmMessagingProvider", () => {
       });
       const url = String(input);
       if (url.endsWith("/api/v1/conversations") && init?.method === "POST") {
-        expect(init.body).toBe(JSON.stringify({
-          metadata: {
-            externalId: "community-group-1",
-            source: "cop.community"
-          },
-          title: "Povodně Vrbno",
-          type: "group"
-        }));
-        return new Response(JSON.stringify({
-          contractVersion: "csm-messaging-provider-v1",
-          conversation: {
-            conversationId: "conv_1",
-            encrypted: true,
-            e2eeRequired: true,
-            matrix: {
-              roomId: null,
-              state: "pending_matrix_integration"
+        expect(init.body).toBe(
+          JSON.stringify({
+            conversationKind: "group",
+            metadata: {
+              externalId: "community-group-1",
+              source: "cop.community"
             },
-            memberCount: 1,
-            status: "metadata_ready",
             title: "Povodně Vrbno",
             type: "group"
-          },
-          providerId: "csm.messaging"
-        }), { status: 201 });
+          })
+        );
+        return new Response(
+          JSON.stringify({
+            contractVersion: "csm-messaging-provider-v1",
+            conversation: {
+              conversationKind: "group",
+              conversationId: "conv_1",
+              encrypted: true,
+              e2eeRequired: true,
+              matrix: {
+                roomId: null,
+                state: "pending_matrix_integration"
+              },
+              memberCount: 1,
+              status: "metadata_ready",
+              title: "Povodně Vrbno",
+              type: "group"
+            },
+            providerId: "csm.messaging"
+          }),
+          { status: 201 }
+        );
       }
-      return new Response(JSON.stringify({
-        contractVersion: "csm-messaging-provider-v1",
-        conversations: [],
-        count: 0,
-        providerId: "csm.messaging"
-      }), { status: 200 });
+      if (url.endsWith("/api/v1/conversations/conv_1/matrix-room") && init?.method === "POST") {
+        expect(init.body).toBe(JSON.stringify({}));
+        return new Response(
+          JSON.stringify({
+            contractVersion: "csm-messaging-provider-v1",
+            conversation: {
+              conversationId: "conv_1",
+              conversationKind: "group",
+              encrypted: true,
+              e2eeRequired: true,
+              matrix: {
+                roomId: "!server-owned:matrix.example.test",
+                state: "room_bound"
+              },
+              memberCount: 1,
+              status: "matrix_ready",
+              title: "Povodně Vrbno",
+              type: "group"
+            },
+            providerId: "csm.messaging"
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          contractVersion: "csm-messaging-provider-v1",
+          conversations: [],
+          count: 0,
+          providerId: "csm.messaging"
+        }),
+        { status: 200 }
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
@@ -833,6 +959,7 @@ describe("CsmMessagingProvider", () => {
     expect(createResponse.json()).toMatchObject({
       conversation: {
         conversationId: "conv_1",
+        matrix: { roomId: "!server-owned:matrix.example.test" },
         title: "Povodně Vrbno"
       },
       status: "online"
@@ -850,12 +977,15 @@ describe("CsmMessagingProvider", () => {
         "x-csm-user-name": "Jiri Volek",
         "x-csm-user-role": "krizovy-operator"
       });
-      return new Response(JSON.stringify({
-        contractVersion: "csm-messaging-provider-v1",
-        conversations: [],
-        count: 0,
-        providerId: "csm.messaging"
-      }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          contractVersion: "csm-messaging-provider-v1",
+          conversations: [],
+          count: 0,
+          providerId: "csm.messaging"
+        }),
+        { status: 200 }
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     const provider = new CsmMessagingProvider({
@@ -866,13 +996,16 @@ describe("CsmMessagingProvider", () => {
       token: "provider-token"
     });
 
-    const result = await provider.fetchConversations({
-      authMode: "oidc",
-      displayName: "Jiří Volek",
-      roles: ["krizový-operátor"],
-      subjectId: "subject-1",
-      username: "jiri.volek"
-    }, new Date("2026-05-22T12:00:00Z"));
+    const result = await provider.fetchConversations(
+      {
+        authMode: "oidc",
+        displayName: "Jiří Volek",
+        roles: ["krizový-operátor"],
+        subjectId: "subject-1",
+        username: "jiri.volek"
+      },
+      new Date("2026-05-22T12:00:00Z")
+    );
 
     expect(result.status).toBe("online");
   });
@@ -886,27 +1019,30 @@ describe("CsmMessagingProvider", () => {
         "x-csm-user-id": "lab"
       });
       expect(String(input)).toBe("http://messaging.local:4050/api/v1/conversations/conv_1");
-      return new Response(JSON.stringify({
-        contractVersion: "csm-messaging-provider-v1",
-        conversation: {
-          conversationId: "conv_1",
-          encrypted: true,
-          e2eeRequired: true,
-          matrix: {
-            roomId: "!room:msg.zeleznalady.cz",
-            state: "bound"
+      return new Response(
+        JSON.stringify({
+          contractVersion: "csm-messaging-provider-v1",
+          conversation: {
+            conversationId: "conv_1",
+            encrypted: true,
+            e2eeRequired: true,
+            matrix: {
+              roomId: "!room:msg.zeleznalady.cz",
+              state: "bound"
+            },
+            memberCount: 2,
+            metadata: {
+              externalId: "community-group-1",
+              source: "cop.community"
+            },
+            status: "metadata_ready",
+            title: "Povodně Vrbno",
+            type: "group"
           },
-          memberCount: 2,
-          metadata: {
-            externalId: "community-group-1",
-            source: "cop.community"
-          },
-          status: "metadata_ready",
-          title: "Povodně Vrbno",
-          type: "group"
-        },
-        providerId: "csm.messaging"
-      }), { status: 200 });
+          providerId: "csm.messaging"
+        }),
+        { status: 200 }
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
@@ -953,29 +1089,32 @@ describe("CsmMessagingProvider", () => {
         "x-csm-user-id": "lab"
       });
       expect(String(input)).toBe("http://messaging.local:4050/api/v1/conversations");
-      return new Response(JSON.stringify({
-        contractVersion: "csm-messaging-provider-v1",
-        conversations: [
-          {
-            conversationId: "conv_other",
-            matrix: { roomId: "!other:msg.zeleznalady.cz" },
-            title: "Jiná konverzace",
-            type: "group"
-          },
-          {
-            conversationId: "conv_1",
-            matrix: { roomId: "!room:msg.zeleznalady.cz" },
-            metadata: {
-              externalId: "community-group-1",
-              source: "cop.community"
+      return new Response(
+        JSON.stringify({
+          contractVersion: "csm-messaging-provider-v1",
+          conversations: [
+            {
+              conversationId: "conv_other",
+              matrix: { roomId: "!other:msg.zeleznalady.cz" },
+              title: "Jiná konverzace",
+              type: "group"
             },
-            title: "Povodně Vrbno",
-            type: "group"
-          }
-        ],
-        count: 2,
-        providerId: "csm.messaging"
-      }), { status: 200 });
+            {
+              conversationId: "conv_1",
+              matrix: { roomId: "!room:msg.zeleznalady.cz" },
+              metadata: {
+                externalId: "community-group-1",
+                source: "cop.community"
+              },
+              title: "Povodně Vrbno",
+              type: "group"
+            }
+          ],
+          count: 2,
+          providerId: "csm.messaging"
+        }),
+        { status: 200 }
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
@@ -1026,35 +1165,38 @@ describe("CsmMessagingProvider", () => {
       });
       expect(String(input)).toBe("http://messaging.local:4050/api/v1/conversations/conv_1/members");
       expect(init?.method).toBe("POST");
-      expect(init?.body).toBe(JSON.stringify({
-        members: [
-          { displayName: "Responder Three", userId: "user-3" }
-        ]
-      }));
-      return new Response(JSON.stringify({
-        contractVersion: "csm-messaging-provider-v1",
-        conversation: {
-          conversationId: "conv_1",
-          encrypted: true,
-          e2eeRequired: true,
-          matrix: {
-            roomId: null,
-            state: "pending_matrix_integration"
+      expect(init?.body).toBe(
+        JSON.stringify({
+          members: [{ displayName: "Responder Three", userId: "user-3" }]
+        })
+      );
+      return new Response(
+        JSON.stringify({
+          contractVersion: "csm-messaging-provider-v1",
+          conversation: {
+            conversationId: "conv_1",
+            encrypted: true,
+            e2eeRequired: true,
+            matrix: {
+              roomId: null,
+              state: "pending_matrix_integration"
+            },
+            members: [
+              { displayName: "Lab", userId: "lab" },
+              { displayName: "Responder Three", userId: "user-3" }
+            ],
+            metadata: {
+              externalId: "community-group-1",
+              source: "cop.community"
+            },
+            status: "metadata_ready",
+            title: "Povodně Vrbno",
+            type: "group"
           },
-          members: [
-            { displayName: "Lab", userId: "lab" },
-            { displayName: "Responder Three", userId: "user-3" }
-          ],
-          metadata: {
-            externalId: "community-group-1",
-            source: "cop.community"
-          },
-          status: "metadata_ready",
-          title: "Povodně Vrbno",
-          type: "group"
-        },
-        providerId: "csm.messaging"
-      }), { status: 200 });
+          providerId: "csm.messaging"
+        }),
+        { status: 200 }
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
@@ -1072,9 +1214,7 @@ describe("CsmMessagingProvider", () => {
       headers: { authorization: "Bearer lab-secret" },
       method: "POST",
       payload: {
-        members: [
-          { displayName: "Responder Three", userId: "user-3" }
-        ]
+        members: [{ displayName: "Responder Three", userId: "user-3" }]
       },
       url: "/api/v1/messaging/conversations/conv_1/members"
     });
@@ -1095,10 +1235,7 @@ describe("CsmMessagingProvider", () => {
         metadata: {
           externalId: "community-group-1"
         },
-        members: [
-          { userId: "lab" },
-          { userId: "user-3" }
-        ]
+        members: [{ userId: "lab" }, { userId: "user-3" }]
       },
       status: "online"
     });
@@ -1118,32 +1255,35 @@ describe("CsmMessagingProvider", () => {
         "x-csm-user-id": "lab"
       });
       expect(init?.body).toBe(JSON.stringify({}));
-      return new Response(JSON.stringify({
-        contractVersion: "csm-messaging-provider-v1",
-        conversation: {
-          avatarUrl: "mxc://msg.example/room-avatar",
-          conversationId: "conv_1",
-          directPeer: {
-            avatarUrl: "mxc://msg.example/user-avatar",
-            displayName: "COP Operator",
-            userId: "cop.operator"
+      return new Response(
+        JSON.stringify({
+          contractVersion: "csm-messaging-provider-v1",
+          conversation: {
+            avatarUrl: "mxc://msg.example/room-avatar",
+            conversationId: "conv_1",
+            directPeer: {
+              avatarUrl: "mxc://msg.example/user-avatar",
+              displayName: "COP Operator",
+              userId: "cop.operator"
+            },
+            encrypted: true,
+            e2eeRequired: true,
+            matrix: {
+              roomId: "!room:msg.example",
+              state: "ready"
+            },
+            members: [
+              { avatarUrl: "mxc://msg.example/lab-avatar", displayName: "Lab", userId: "lab" },
+              { avatarUrl: "mxc://msg.example/user-avatar", displayName: "COP Operator", userId: "cop.operator" }
+            ],
+            status: "ready",
+            title: "COP Operator",
+            type: "direct"
           },
-          encrypted: true,
-          e2eeRequired: true,
-          matrix: {
-            roomId: "!room:msg.example",
-            state: "ready"
-          },
-          members: [
-            { avatarUrl: "mxc://msg.example/lab-avatar", displayName: "Lab", userId: "lab" },
-            { avatarUrl: "mxc://msg.example/user-avatar", displayName: "COP Operator", userId: "cop.operator" }
-          ],
-          status: "ready",
-          title: "COP Operator",
-          type: "direct"
-        },
-        providerId: "csm.messaging"
-      }), { status: 200 });
+          providerId: "csm.messaging"
+        }),
+        { status: 200 }
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
@@ -1244,16 +1384,17 @@ describe("CsmMessagingProvider", () => {
   it("returns structured degraded Web Push registration responses without browser-visible 502", async () => {
     vi.stubEnv("COP_AUTH_MODE", "lab");
     vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          contractVersion: "csm-device-v1",
-          providerId: "csm.messaging",
-          status: "degraded",
-          warnings: ["Device registry temporarily unavailable."]
-        }),
-        { status: 500 }
-      )
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            contractVersion: "csm-device-v1",
+            providerId: "csm.messaging",
+            status: "degraded",
+            warnings: ["Device registry temporarily unavailable."]
+          }),
+          { status: 500 }
+        )
     );
     vi.stubGlobal("fetch", fetchMock);
     const app = buildServer({
@@ -1325,14 +1466,17 @@ describe("CsmMessagingProvider", () => {
         },
         timezone: "Europe/Prague"
       });
-      return new Response(JSON.stringify({
-        contractVersion: "csm-device-v1",
-        deviceId: "web_device-1",
-        providerId: "csm.messaging",
-        registered: true,
-        status: "registered",
-        warnings: []
-      }), { status: 202 });
+      return new Response(
+        JSON.stringify({
+          contractVersion: "csm-device-v1",
+          deviceId: "web_device-1",
+          providerId: "csm.messaging",
+          registered: true,
+          status: "registered",
+          warnings: []
+        }),
+        { status: 202 }
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     const provider = new CsmMessagingProvider({
@@ -1382,20 +1526,21 @@ describe("CsmMessagingProvider", () => {
   });
 
   it("accepts nested active CSM device responses as successful Web Push registration", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          contractVersion: "csm-messaging-provider-v1",
-          device: {
-            deviceId: "web_device-1",
-            platform: "web",
-            pushProvider: "webpush",
-            status: "active"
-          },
-          providerId: "csm.messaging"
-        }),
-        { status: 201 }
-      )
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            contractVersion: "csm-messaging-provider-v1",
+            device: {
+              deviceId: "web_device-1",
+              platform: "web",
+              pushProvider: "webpush",
+              status: "active"
+            },
+            providerId: "csm.messaging"
+          }),
+          { status: 201 }
+        )
     );
     vi.stubGlobal("fetch", fetchMock);
     const provider = new CsmMessagingProvider({
@@ -1442,16 +1587,17 @@ describe("CsmMessagingProvider", () => {
   });
 
   it("accepts top-level active CSM device responses as successful Web Push registration", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          contractVersion: "csm-device-v1",
-          deviceId: "web_device-1",
-          providerId: "csm.messaging",
-          status: "active"
-        }),
-        { status: 201 }
-      )
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            contractVersion: "csm-device-v1",
+            deviceId: "web_device-1",
+            providerId: "csm.messaging",
+            status: "active"
+          }),
+          { status: 201 }
+        )
     );
     vi.stubGlobal("fetch", fetchMock);
     const provider = new CsmMessagingProvider({
@@ -1550,17 +1696,20 @@ describe("CsmMessagingProvider", () => {
       expect(init?.method).toBe("POST");
       expect(String(init?.body)).not.toContain("apns");
       expect(String(init?.body)).not.toContain("deviceToken");
-      return new Response(JSON.stringify({
-        contractVersion: "csm-messaging-provider-v1",
-        notification: {
-          deduplicated: false,
-          notificationId: "notif_1",
-          targetDeviceCount: 1,
-          type: "safety.alert"
-        },
-        providerId: "csm.messaging",
-        warnings: []
-      }), { status: 202 });
+      return new Response(
+        JSON.stringify({
+          contractVersion: "csm-messaging-provider-v1",
+          notification: {
+            deduplicated: false,
+            notificationId: "notif_1",
+            targetDeviceCount: 1,
+            type: "safety.alert"
+          },
+          providerId: "csm.messaging",
+          warnings: []
+        }),
+        { status: 202 }
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
     const provider = new CsmMessagingProvider({

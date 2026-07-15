@@ -545,9 +545,15 @@ Authorization: Bearer <COP user access token>
 ```
 
 These endpoints are metadata-only. COP rejects plaintext message fields and
-forwards only safe fields such as `title`, `type`, `members`, `mapLinks` and
-approved scalar `metadata` keys. The browser still sends actual messages only
-through Matrix SDK.
+forwards only safe fields such as `title`, explicit `conversationKind`,
+`members`, `mapLinks`, avatar references and approved scalar `metadata` keys.
+The browser still sends actual messages only through Matrix SDK.
+
+Conversation creation is server-owned and idempotent. CSM Messaging derives a
+stable `canonicalKey`, reuses an existing direct or personal AI conversation
+when applicable, and provisions the encrypted Matrix room before COP returns
+`201`. A successful response therefore always carries a usable canonical room
+binding. Clients do not render a metadata-only half-created row.
 
 `GET /api/v1/messaging/conversations/{conversationId}` is the authoritative COP
 detail endpoint for clients that open a notification or deep link. It returns
@@ -571,12 +577,13 @@ metadata for inviting members into Matrix rooms. It never returns passwords or
 access tokens for other users. Member synchronization forwards only CSM user
 IDs, display names, avatar hints and roles from COP community groups. Matrix
 room binding persists only the `roomId`, encryption state and conversation
-metadata returned by Messaging; it does not persist messages. Native clients
-may call `POST /api/v1/messaging/conversations/{conversationId}/matrix-room`
-with an empty JSON body as an ensure/bind request. If CSM Messaging already has
-a Matrix room or can create one server-side, it returns the canonical
-conversation metadata. If it cannot, COP returns the degraded provider result
-instead of creating any plaintext message proxy.
+metadata returned by Messaging; it does not persist messages. All clients call
+`POST /api/v1/messaging/conversations/{conversationId}/matrix-room` with an
+empty JSON body only as an idempotent ensure operation. CSM Messaging returns
+the existing canonical room or creates it server-side. Supplying a room ID is a
+compatibility-only migration path and must not be used by new clients. If the
+provider cannot prepare the room, COP returns a degraded result instead of
+exposing a half-created conversation or plaintext proxy.
 
 After bootstrap, the browser sends and reads messages directly through
 Matrix client-server APIs using Matrix SDK and E2EE. COP must not add any
@@ -974,22 +981,16 @@ not grant administrative or service-level capabilities. `chatAvailable` is
 derived from provider metadata only; the actual `accessToken` is returned only
 from the authenticated bootstrap endpoint.
 
-When `cop-chat` opens a conversation, the chat application:
+When `cop-chat` opens a conversation, the chat application obtains a Matrix
+bootstrap from COP and uses the room ID already bound to the authoritative CSM
+Messaging conversation. If a legacy record has no binding, it calls the empty
+body ensure endpoint and accepts only `status=online` with an encrypted room.
+The browser never creates or binds a canonical room itself.
 
-1. obtains a Matrix bootstrap from COP;
-2. resolves conversation member identities through COP/Messaging;
-3. creates an encrypted Matrix room directly in the browser through Matrix SDK
-   when the provider has not already bound one;
-4. stores the `roomId` back through
-   `POST /api/v1/messaging/conversations/{conversationId}/matrix-room`, or lets
-   the provider return an existing/ensured room through the same endpoint.
-
-Identity resolution and room binding are fail-closed. If identity resolution is
-degraded or omits any requested member, the Matrix room is not created. If room
-binding does not return `status=online` with the same `matrix.roomId`, the COP UI
-does not select or show that room as active. If any step is unavailable, the UI
-remains in a safe disabled/degraded state and does not add a plaintext message
-proxy.
+Conversation metadata and room binding are fail-closed. Raw Matrix rooms that
+have no authoritative COP conversation are ignored by the list instead of being
+shown as UUID/room-ID rows. If the provider is unavailable, the UI remains in a
+safe disabled/degraded state and does not add a plaintext message proxy.
 
 ## Relationship to COP Web and Reports
 

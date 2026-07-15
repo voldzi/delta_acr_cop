@@ -2176,7 +2176,9 @@ export interface MessagingE2eeResetAuthResponse {
 export interface MessagingConversationSummary {
   avatarDataUrl?: string;
   avatarUrl?: string;
+  canonicalKey?: string;
   conversationId: string;
+  conversationKind: "direct" | "group" | "personal_ai";
   createdAt?: string;
   disclaimer?: string;
   directPeer?: {
@@ -3558,6 +3560,8 @@ export async function createMessagingConversation(
   apiBase: string,
   token: string,
   payload: {
+    avatarUrl?: string;
+    conversationKind: "direct" | "group" | "personal_ai";
     members?: Array<{ displayName?: string; role?: string; userId: string }>;
     metadata?: Record<string, string | number | boolean | null | Array<string | number | boolean | null>>;
     title: string;
@@ -3593,7 +3597,7 @@ export async function bindMessagingConversationMatrixRoom(
   apiBase: string,
   token: string,
   conversationId: string,
-  payload: { encrypted?: boolean; roomId: string }
+  payload: { encrypted?: boolean; roomId?: string } = {}
 ): Promise<MessagingMatrixRoomBindingResponse> {
   return fetchJson<MessagingMatrixRoomBindingResponse>(
     `${apiBase}/api/v1/messaging/conversations/${encodeURIComponent(conversationId)}/matrix-room`,
@@ -3606,6 +3610,14 @@ export async function bindMessagingConversationMatrixRoom(
       method: "POST"
     }
   );
+}
+
+export async function ensureMessagingConversationMatrixRoom(
+  apiBase: string,
+  token: string,
+  conversationId: string
+): Promise<MessagingMatrixRoomBindingResponse> {
+  return bindMessagingConversationMatrixRoom(apiBase, token, conversationId, {});
 }
 
 export async function syncMessagingConversationMembers(

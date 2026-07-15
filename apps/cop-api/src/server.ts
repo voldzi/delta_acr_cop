@@ -165,6 +165,7 @@ import { createMediaStorageFromEnv, type MediaStorage } from "./media-storage.js
 import {
   createMessagingProviderFromEnv,
   type MessagingConversationCreateRequest,
+  type MessagingConversationCreateResponse,
   type MessagingConversationMember,
   type MessagingE2eeResetAuthRequest,
   type MessagingMatrixBootstrap,
@@ -1213,7 +1214,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       try {
         await userProfileStore.init();
         markUserProfileStoreReady();
-        app.log.info({ store: userProfileStore.name }, "User profile store recovered; using persistent directory again.");
+        app.log.info(
+          { store: userProfileStore.name },
+          "User profile store recovered; using persistent directory again."
+        );
         return true;
       } catch (error) {
         markUserProfileStoreDegraded(error);
@@ -4326,8 +4330,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
-      const result = await messagingProvider.createConversation(actor, now(), conversationRequest);
-      return reply.code(result.conversation ? 201 : 502).send(result);
+      const requestNow = now();
+      const created = await messagingProvider.createConversation(actor, requestNow, conversationRequest);
+      if (!created.conversation) {
+        return reply.code(502).send(created);
+      }
+      if (created.conversation.matrix?.roomId) {
+        return reply.code(201).send(created);
+      }
+
+      const ensured = await messagingProvider.bindMatrixRoom(
+        actor,
+        requestNow,
+        created.conversation.conversationId,
+        {}
+      );
+      const result: MessagingConversationCreateResponse = {
+        ...created,
+        ...(ensured.conversation ? { conversation: ensured.conversation } : {}),
+        status: ensured.status,
+        warnings: Array.from(new Set([...created.warnings, ...ensured.warnings]))
+      };
+      return reply.code(ensured.conversation?.matrix?.roomId ? 201 : 502).send(result);
     },
     deleteWebPushDevice: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -13147,7 +13171,11 @@ const messagingPlaintextKeys = new Set([
 ]);
 
 const messagingMetadataKeys = new Set([
+  "avatarMediaId",
+  "avatarUrl",
+  "canonicalKey",
   "classification",
+  "conversationKind",
   "csmObjectId",
   "eventId",
   "eventType",
@@ -13171,12 +13199,31 @@ function normalizeMessagingConversationCreateRequest(value: unknown): MessagingC
   const mapLinks = normalizeMessagingMapLinks(value.mapLinks);
   const members = normalizeMessagingMembers(value.members);
   const metadata = normalizeMessagingMetadata(value.metadata);
+  const type = value.type === "direct" ? "direct" : "group";
+  const requestedKind = optionalTrimmedString(value.conversationKind ?? metadata?.conversationKind, 32);
+  const conversationKind =
+    requestedKind === "personal_ai"
+      ? "personal_ai"
+      : requestedKind === "direct" || requestedKind === "group"
+        ? requestedKind
+        : type;
+  if (
+    (conversationKind === "personal_ai" && type !== "direct") ||
+    (conversationKind === "direct" && type !== "direct") ||
+    (conversationKind === "group" && type !== "group")
+  ) {
+    return null;
+  }
   return {
+    ...(normalizeMessagingAvatarUrl(value.avatarUrl)
+      ? { avatarUrl: normalizeMessagingAvatarUrl(value.avatarUrl) }
+      : {}),
+    conversationKind,
     ...(mapLinks ? { mapLinks } : {}),
     ...(members ? { members } : {}),
     ...(metadata ? { metadata } : {}),
     title,
-    type: value.type === "direct" ? "direct" : "group"
+    type
   };
 }
 

@@ -65,7 +65,9 @@ export interface MessagingMapLink {
 export interface MessagingConversationSummary {
   avatarDataUrl?: string;
   avatarUrl?: string;
+  canonicalKey?: string;
   conversationId: string;
+  conversationKind: "direct" | "group" | "personal_ai";
   createdAt?: string;
   disclaimer?: string;
   directPeer?: {
@@ -102,6 +104,8 @@ export interface MessagingConversationList {
 }
 
 export interface MessagingConversationCreateRequest {
+  avatarUrl?: string;
+  conversationKind: "direct" | "group" | "personal_ai";
   mapLinks?: MessagingMapLink[];
   members?: MessagingConversationMember[];
   metadata?: Record<string, string | number | boolean | null | Array<string | number | boolean | null>>;
@@ -286,18 +290,65 @@ export interface MessagingProvider {
   readonly config: MessagingProviderConfig;
   fetchStatus(requestNow: Date): Promise<MessagingProviderStatus>;
   fetchWebPushConfig(requestNow: Date): Promise<MessagingWebPushConfigResponse>;
-  fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date, deviceId?: string): Promise<MessagingMatrixBootstrap>;
-  completeE2eeResetAuth(actor: AuthenticatedActor, requestNow: Date, input: MessagingE2eeResetAuthRequest): Promise<MessagingE2eeResetAuthResponse>;
+  fetchMatrixBootstrap(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    deviceId?: string
+  ): Promise<MessagingMatrixBootstrap>;
+  completeE2eeResetAuth(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    input: MessagingE2eeResetAuthRequest
+  ): Promise<MessagingE2eeResetAuthResponse>;
   fetchConversations(actor: AuthenticatedActor, requestNow: Date): Promise<MessagingConversationList>;
-  fetchConversation(actor: AuthenticatedActor, requestNow: Date, conversationId: string): Promise<MessagingConversationDetailResponse>;
-  fetchConversationByRoomId(actor: AuthenticatedActor, requestNow: Date, roomId: string): Promise<MessagingConversationDetailResponse>;
-  createConversation(actor: AuthenticatedActor, requestNow: Date, input: MessagingConversationCreateRequest): Promise<MessagingConversationCreateResponse>;
-  addConversationMembers(actor: AuthenticatedActor, requestNow: Date, conversationId: string, members: MessagingConversationMember[]): Promise<MessagingConversationMemberSyncResponse>;
-  bindMatrixRoom(actor: AuthenticatedActor, requestNow: Date, conversationId: string, input: MessagingMatrixRoomBindingRequest): Promise<MessagingMatrixRoomBindingResponse>;
-  resolveMatrixIdentities(actor: AuthenticatedActor, requestNow: Date, userIds: string[]): Promise<MessagingMatrixIdentityResolution>;
-  registerWebPushDevice(actor: AuthenticatedActor, requestNow: Date, input: MessagingWebPushDeviceRegistrationRequest): Promise<MessagingWebPushDeviceRegistrationResponse>;
-  deleteWebPushDevice(actor: AuthenticatedActor, requestNow: Date, deviceId: string): Promise<MessagingWebPushDeviceDeletionResponse>;
-  sendNotification(actor: AuthenticatedActor | undefined, requestNow: Date, idempotencyKey: string, input: MessagingNotificationIntakeRequest): Promise<MessagingNotificationIntakeResponse>;
+  fetchConversation(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    conversationId: string
+  ): Promise<MessagingConversationDetailResponse>;
+  fetchConversationByRoomId(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    roomId: string
+  ): Promise<MessagingConversationDetailResponse>;
+  createConversation(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    input: MessagingConversationCreateRequest
+  ): Promise<MessagingConversationCreateResponse>;
+  addConversationMembers(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    conversationId: string,
+    members: MessagingConversationMember[]
+  ): Promise<MessagingConversationMemberSyncResponse>;
+  bindMatrixRoom(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    conversationId: string,
+    input: MessagingMatrixRoomBindingRequest
+  ): Promise<MessagingMatrixRoomBindingResponse>;
+  resolveMatrixIdentities(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    userIds: string[]
+  ): Promise<MessagingMatrixIdentityResolution>;
+  registerWebPushDevice(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    input: MessagingWebPushDeviceRegistrationRequest
+  ): Promise<MessagingWebPushDeviceRegistrationResponse>;
+  deleteWebPushDevice(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    deviceId: string
+  ): Promise<MessagingWebPushDeviceDeletionResponse>;
+  sendNotification(
+    actor: AuthenticatedActor | undefined,
+    requestNow: Date,
+    idempotencyKey: string,
+    input: MessagingNotificationIntakeRequest
+  ): Promise<MessagingNotificationIntakeResponse>;
   forwardMatrixPushNotification(requestNow: Date, input: unknown): Promise<MessagingMatrixPushGatewayForwardResponse>;
 }
 
@@ -390,18 +441,25 @@ const defaultConfig: MessagingProviderConfig = {
   timeoutMs: 3_000
 };
 
-export function createMessagingProviderFromEnv(env: Record<string, string | undefined> = process.env): MessagingProvider {
-  const matrixHomeserverPublicUrl = optionalTrimmedString(env.COP_CSM_MESSAGING_MATRIX_PUBLIC_URL)
-    ?? optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL);
+export function createMessagingProviderFromEnv(
+  env: Record<string, string | undefined> = process.env
+): MessagingProvider {
+  const matrixHomeserverPublicUrl =
+    optionalTrimmedString(env.COP_CSM_MESSAGING_MATRIX_PUBLIC_URL) ??
+    optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL);
   const webPushVapidPublicKey = optionalTrimmedString(env.COP_WEB_PUSH_VAPID_PUBLIC_KEY);
   return new CsmMessagingProvider({
     baseUrl: trimTrailingSlash(env.COP_CSM_MESSAGING_BASE_URL ?? defaultConfig.baseUrl),
     cacheTtlMs: readInteger(env.COP_CSM_MESSAGING_CACHE_TTL_MS, defaultConfig.cacheTtlMs, 1000, 300000),
     enabled: readBoolean(env.COP_CSM_MESSAGING_ENABLED, defaultConfig.enabled),
     ...(matrixHomeserverPublicUrl ? { matrixHomeserverPublicUrl } : {}),
-    ...(optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL) ? { publicUrl: optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL) } : {}),
+    ...(optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL)
+      ? { publicUrl: optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL) }
+      : {}),
     timeoutMs: readInteger(env.COP_CSM_MESSAGING_TIMEOUT_MS, defaultConfig.timeoutMs, 1000, 60000),
-    ...(optionalTrimmedString(env.COP_CSM_MESSAGING_TOKEN) ? { token: optionalTrimmedString(env.COP_CSM_MESSAGING_TOKEN) } : {}),
+    ...(optionalTrimmedString(env.COP_CSM_MESSAGING_TOKEN)
+      ? { token: optionalTrimmedString(env.COP_CSM_MESSAGING_TOKEN) }
+      : {}),
     webPushEnabled: readBoolean(env.COP_WEB_PUSH_ENABLED, false),
     ...(webPushVapidPublicKey ? { webPushVapidPublicKey } : {})
   });
@@ -421,10 +479,9 @@ export class CsmMessagingProvider implements MessagingProvider {
       return this.cachedStatus.value;
     }
     if (!this.inflightStatus) {
-      this.inflightStatus = this.fetchFreshStatus(requestNow)
-        .finally(() => {
-          this.inflightStatus = null;
-        });
+      this.inflightStatus = this.fetchFreshStatus(requestNow).finally(() => {
+        this.inflightStatus = null;
+      });
     }
     const status = await this.inflightStatus;
     this.cachedStatus = {
@@ -467,13 +524,23 @@ export class CsmMessagingProvider implements MessagingProvider {
       const capabilities = normalizeCapabilities(capabilitiesResult.body);
       const health = isRecord(healthResult.body) ? normalizeHealth(healthResult.body) : undefined;
       const warnings = [
-        ...(capabilities.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging contract version is ${capabilities.contractVersion ?? "unknown"}.`]),
-        ...(capabilities.providerId === "csm.messaging" ? [] : [`Messaging provider id is ${capabilities.providerId ?? "unknown"}.`]),
+        ...(capabilities.contractVersion === "csm-messaging-provider-v1"
+          ? []
+          : [`Messaging contract version is ${capabilities.contractVersion ?? "unknown"}.`]),
+        ...(capabilities.providerId === "csm.messaging"
+          ? []
+          : [`Messaging provider id is ${capabilities.providerId ?? "unknown"}.`]),
         ...statusWarnings(capabilities.status, "capabilities"),
         ...statusWarnings(health?.status, "health"),
         ...healthCheckWarnings(health),
-        ...(capabilities.security?.readFromBrowser === true ? ["Messaging provider unexpectedly allows direct browser reads. COP will still use server-side integration only."] : []),
-        ...(capabilities.architecture?.plaintextOnServer === true ? ["Messaging provider reports plaintext server handling; chat UI remains disabled."] : [])
+        ...(capabilities.security?.readFromBrowser === true
+          ? [
+              "Messaging provider unexpectedly allows direct browser reads. COP will still use server-side integration only."
+            ]
+          : []),
+        ...(capabilities.architecture?.plaintextOnServer === true
+          ? ["Messaging provider reports plaintext server handling; chat UI remains disabled."]
+          : [])
       ];
       const providerOk = capabilitiesResult.ok && isOperationalStatus(capabilities.status);
       const healthOk = healthResult.ok && isOperationalStatus(health?.status);
@@ -488,7 +555,9 @@ export class CsmMessagingProvider implements MessagingProvider {
         }
       }
       if (!chatAvailable) {
-        warnings.push("Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready.");
+        warnings.push(
+          "Messaging metadata API is available server-side, but client-safe Matrix/E2EE bootstrap is not ready."
+        );
       }
 
       return {
@@ -496,7 +565,9 @@ export class CsmMessagingProvider implements MessagingProvider {
         chatAvailable,
         checkedAt: requestNow.toISOString(),
         contractVersion: "cop-messaging-status-v1",
-        detail: health?.status ? `provider=${capabilities.status ?? "unknown"}; health=${health.status}` : `provider=${capabilities.status ?? "unknown"}`,
+        detail: health?.status
+          ? `provider=${capabilities.status ?? "unknown"}; health=${health.status}`
+          : `provider=${capabilities.status ?? "unknown"}`,
         enabled: true,
         features: capabilities.features,
         providerId: "csm.messaging",
@@ -511,7 +582,11 @@ export class CsmMessagingProvider implements MessagingProvider {
     }
   }
 
-  async fetchMatrixBootstrap(actor: AuthenticatedActor, requestNow: Date, deviceId?: string): Promise<MessagingMatrixBootstrap> {
+  async fetchMatrixBootstrap(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    deviceId?: string
+  ): Promise<MessagingMatrixBootstrap> {
     if (!this.config.enabled) {
       return disabledMatrixBootstrap(requestNow, this.config);
     }
@@ -534,18 +609,23 @@ export class CsmMessagingProvider implements MessagingProvider {
       }
       const tokenResponse = normalizeMatrixTokenResponse(tokenResult.body);
       const warnings = [
-        ...(tokenResponse.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging token contract version is ${tokenResponse.contractVersion ?? "unknown"}.`]),
-        ...(tokenResponse.providerId === "csm.messaging" ? [] : [`Messaging token provider id is ${tokenResponse.providerId ?? "unknown"}.`]),
+        ...(tokenResponse.contractVersion === "csm-messaging-provider-v1"
+          ? []
+          : [`Messaging token contract version is ${tokenResponse.contractVersion ?? "unknown"}.`]),
+        ...(tokenResponse.providerId === "csm.messaging"
+          ? []
+          : [`Messaging token provider id is ${tokenResponse.providerId ?? "unknown"}.`]),
         ...statusWarnings(tokenResponse.status, "matrix token"),
         ...(tokenResponse.warnings ?? []).map(sanitizeProviderWarning)
       ];
-      const tokenAvailable = tokenResult.ok
-        && tokenResponse.tokenAvailable === true
-        && Boolean(tokenResponse.accessToken)
-        && Boolean(tokenResponse.userId)
-        && Boolean(tokenResponse.deviceId)
-        && Boolean(tokenResponse.homeserverBaseUrl)
-        && tokenResponse.e2eeRequired === true;
+      const tokenAvailable =
+        tokenResult.ok &&
+        tokenResponse.tokenAvailable === true &&
+        Boolean(tokenResponse.accessToken) &&
+        Boolean(tokenResponse.userId) &&
+        Boolean(tokenResponse.deviceId) &&
+        Boolean(tokenResponse.homeserverBaseUrl) &&
+        tokenResponse.e2eeRequired === true;
       const homeserverBaseUrl = tokenResponse.homeserverBaseUrl
         ? clientSafeHomeserverBaseUrl(tokenResponse.homeserverBaseUrl, this.config)
         : undefined;
@@ -649,8 +729,12 @@ export class CsmMessagingProvider implements MessagingProvider {
       }
       const normalized = normalizeConversationListResponse(result.body);
       const warnings = [
-        ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging conversations contract version is ${normalized.contractVersion ?? "unknown"}.`]),
-        ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging conversations provider id is ${normalized.providerId ?? "unknown"}.`])
+        ...(normalized.contractVersion === "csm-messaging-provider-v1"
+          ? []
+          : [`Messaging conversations contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging"
+          ? []
+          : [`Messaging conversations provider id is ${normalized.providerId ?? "unknown"}.`])
       ];
       return {
         contractVersion: "cop-messaging-conversations-v1",
@@ -666,7 +750,11 @@ export class CsmMessagingProvider implements MessagingProvider {
     }
   }
 
-  async fetchConversation(actor: AuthenticatedActor, requestNow: Date, conversationId: string): Promise<MessagingConversationDetailResponse> {
+  async fetchConversation(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    conversationId: string
+  ): Promise<MessagingConversationDetailResponse> {
     if (!this.config.enabled) {
       return disabledConversationDetail();
     }
@@ -689,8 +777,12 @@ export class CsmMessagingProvider implements MessagingProvider {
             providerId: "csm.messaging",
             status: "online",
             warnings: [
-              ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging conversation detail contract version is ${normalized.contractVersion ?? "unknown"}.`]),
-              ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging conversation detail provider id is ${normalized.providerId ?? "unknown"}.`])
+              ...(normalized.contractVersion === "csm-messaging-provider-v1"
+                ? []
+                : [`Messaging conversation detail contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+              ...(normalized.providerId === "csm.messaging"
+                ? []
+                : [`Messaging conversation detail provider id is ${normalized.providerId ?? "unknown"}.`])
             ]
           };
         }
@@ -704,10 +796,16 @@ export class CsmMessagingProvider implements MessagingProvider {
         enabled: fallback.enabled,
         providerId: "csm.messaging",
         status: fallback.status,
-        warnings: Array.from(new Set([
-          ...fallback.warnings,
-          ...(result.ok ? [] : [`Messaging conversation detail endpoint returned HTTP ${result.status}; COP resolved against the conversation list.`])
-        ]))
+        warnings: Array.from(
+          new Set([
+            ...fallback.warnings,
+            ...(result.ok
+              ? []
+              : [
+                  `Messaging conversation detail endpoint returned HTTP ${result.status}; COP resolved against the conversation list.`
+                ])
+          ])
+        )
       };
     } catch (error) {
       const fallback = await this.fetchConversations(actor, requestNow);
@@ -718,15 +816,18 @@ export class CsmMessagingProvider implements MessagingProvider {
         enabled: fallback.enabled,
         providerId: "csm.messaging",
         status: fallback.status === "online" && conversation ? "online" : fallback.status,
-        warnings: Array.from(new Set([
-          ...fallback.warnings,
-          `Messaging conversation detail fallback was used: ${errorMessage(error)}`
-        ]))
+        warnings: Array.from(
+          new Set([...fallback.warnings, `Messaging conversation detail fallback was used: ${errorMessage(error)}`])
+        )
       };
     }
   }
 
-  async fetchConversationByRoomId(actor: AuthenticatedActor, requestNow: Date, roomId: string): Promise<MessagingConversationDetailResponse> {
+  async fetchConversationByRoomId(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    roomId: string
+  ): Promise<MessagingConversationDetailResponse> {
     if (!this.config.enabled) {
       return disabledConversationDetail();
     }
@@ -744,7 +845,11 @@ export class CsmMessagingProvider implements MessagingProvider {
     };
   }
 
-  async createConversation(actor: AuthenticatedActor, requestNow: Date, input: MessagingConversationCreateRequest): Promise<MessagingConversationCreateResponse> {
+  async createConversation(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    input: MessagingConversationCreateRequest
+  ): Promise<MessagingConversationCreateResponse> {
     if (!this.config.enabled) {
       return disabledConversationCreate();
     }
@@ -767,8 +872,12 @@ export class CsmMessagingProvider implements MessagingProvider {
       }
       const normalized = normalizeConversationCreateResponse(result.body);
       const warnings = [
-        ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging conversation contract version is ${normalized.contractVersion ?? "unknown"}.`]),
-        ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging conversation provider id is ${normalized.providerId ?? "unknown"}.`])
+        ...(normalized.contractVersion === "csm-messaging-provider-v1"
+          ? []
+          : [`Messaging conversation contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging"
+          ? []
+          : [`Messaging conversation provider id is ${normalized.providerId ?? "unknown"}.`])
       ];
       if (!result.ok || !normalized.conversation) {
         warnings.push(`Messaging conversation create returned HTTP ${result.status}.`);
@@ -786,7 +895,11 @@ export class CsmMessagingProvider implements MessagingProvider {
     }
   }
 
-  async resolveMatrixIdentities(actor: AuthenticatedActor, requestNow: Date, userIds: string[]): Promise<MessagingMatrixIdentityResolution> {
+  async resolveMatrixIdentities(
+    actor: AuthenticatedActor,
+    requestNow: Date,
+    userIds: string[]
+  ): Promise<MessagingMatrixIdentityResolution> {
     if (!this.config.enabled) {
       return disabledIdentityResolution();
     }
@@ -809,8 +922,12 @@ export class CsmMessagingProvider implements MessagingProvider {
       }
       const normalized = normalizeIdentityResolutionResponse(result.body);
       const warnings = [
-        ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging identity resolution contract version is ${normalized.contractVersion ?? "unknown"}.`]),
-        ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging identity resolution provider id is ${normalized.providerId ?? "unknown"}.`])
+        ...(normalized.contractVersion === "csm-messaging-provider-v1"
+          ? []
+          : [`Messaging identity resolution contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging"
+          ? []
+          : [`Messaging identity resolution provider id is ${normalized.providerId ?? "unknown"}.`])
       ];
       return {
         contractVersion: "cop-messaging-identities-v1",
@@ -853,8 +970,12 @@ export class CsmMessagingProvider implements MessagingProvider {
       }
       const normalized = normalizeConversationCreateResponse(result.body);
       const warnings = [
-        ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging conversation member sync contract version is ${normalized.contractVersion ?? "unknown"}.`]),
-        ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging conversation member sync provider id is ${normalized.providerId ?? "unknown"}.`])
+        ...(normalized.contractVersion === "csm-messaging-provider-v1"
+          ? []
+          : [`Messaging conversation member sync contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging"
+          ? []
+          : [`Messaging conversation member sync provider id is ${normalized.providerId ?? "unknown"}.`])
       ];
       if (!result.ok || !normalized.conversation) {
         warnings.push(`Messaging conversation member sync returned HTTP ${result.status}.`);
@@ -900,8 +1021,12 @@ export class CsmMessagingProvider implements MessagingProvider {
       }
       const normalized = normalizeRoomBindingResponse(result.body);
       const warnings = [
-        ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : [`Messaging room binding contract version is ${normalized.contractVersion ?? "unknown"}.`]),
-        ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging room binding provider id is ${normalized.providerId ?? "unknown"}.`])
+        ...(normalized.contractVersion === "csm-messaging-provider-v1"
+          ? []
+          : [`Messaging room binding contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging"
+          ? []
+          : [`Messaging room binding provider id is ${normalized.providerId ?? "unknown"}.`])
       ];
       return {
         contractVersion: "cop-messaging-room-binding-v1",
@@ -945,8 +1070,14 @@ export class CsmMessagingProvider implements MessagingProvider {
       }
       const normalized = normalizeNotificationResponse(result.body);
       const warnings = [
-        ...(normalized.contractVersion === "csm-messaging-provider-v1" ? [] : normalized.contractVersion === "csm-notification-v1" ? [] : [`Messaging notification contract version is ${normalized.contractVersion ?? "unknown"}.`]),
-        ...(normalized.providerId === "csm.messaging" ? [] : [`Messaging notification provider id is ${normalized.providerId ?? "unknown"}.`]),
+        ...(normalized.contractVersion === "csm-messaging-provider-v1"
+          ? []
+          : normalized.contractVersion === "csm-notification-v1"
+            ? []
+            : [`Messaging notification contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging"
+          ? []
+          : [`Messaging notification provider id is ${normalized.providerId ?? "unknown"}.`]),
         ...(normalized.warnings ?? []).map(sanitizeProviderWarning)
       ];
       if (!result.ok || !normalized.notificationId) {
@@ -1056,8 +1187,12 @@ export class CsmMessagingProvider implements MessagingProvider {
         (normalized.registered === true ||
           (normalized.registered !== false && isSuccessfulWebPushDeviceStatus(normalized.status)));
       const warnings = [
-        ...(normalized.contractVersion === "csm-messaging-provider-v1" || normalized.contractVersion === "csm-device-v1" ? [] : [`Messaging device contract version is ${normalized.contractVersion ?? "unknown"}.`]),
-        ...(normalized.providerId === "csm.messaging" || !normalized.providerId ? [] : [`Messaging device provider id is ${normalized.providerId}.`]),
+        ...(normalized.contractVersion === "csm-messaging-provider-v1" || normalized.contractVersion === "csm-device-v1"
+          ? []
+          : [`Messaging device contract version is ${normalized.contractVersion ?? "unknown"}.`]),
+        ...(normalized.providerId === "csm.messaging" || !normalized.providerId
+          ? []
+          : [`Messaging device provider id is ${normalized.providerId}.`]),
         ...(normalized.warnings ?? []).map(sanitizeProviderWarning)
       ];
       if (!registered) {
@@ -1112,7 +1247,10 @@ export class CsmMessagingProvider implements MessagingProvider {
   }
 }
 
-export function disabledMessagingStatus(requestNow: Date, config: MessagingProviderConfig = defaultConfig): MessagingProviderStatus {
+export function disabledMessagingStatus(
+  requestNow: Date,
+  config: MessagingProviderConfig = defaultConfig
+): MessagingProviderStatus {
   return {
     chatAvailable: false,
     checkedAt: requestNow.toISOString(),
@@ -1127,7 +1265,11 @@ export function disabledMessagingStatus(requestNow: Date, config: MessagingProvi
   };
 }
 
-function degradedMessagingStatus(requestNow: Date, config: MessagingProviderConfig, detail: string): MessagingProviderStatus {
+function degradedMessagingStatus(
+  requestNow: Date,
+  config: MessagingProviderConfig,
+  detail: string
+): MessagingProviderStatus {
   return {
     chatAvailable: false,
     checkedAt: requestNow.toISOString(),
@@ -1142,7 +1284,10 @@ function degradedMessagingStatus(requestNow: Date, config: MessagingProviderConf
   };
 }
 
-function disabledMatrixBootstrap(_requestNow: Date, config: MessagingProviderConfig = defaultConfig): MessagingMatrixBootstrap {
+function disabledMatrixBootstrap(
+  _requestNow: Date,
+  config: MessagingProviderConfig = defaultConfig
+): MessagingMatrixBootstrap {
   return {
     chatAvailable: false,
     contractVersion: "cop-messaging-bootstrap-v1",
@@ -1155,7 +1300,11 @@ function disabledMatrixBootstrap(_requestNow: Date, config: MessagingProviderCon
   };
 }
 
-function degradedMatrixBootstrap(_requestNow: Date, config: MessagingProviderConfig, detail: string): MessagingMatrixBootstrap {
+function degradedMatrixBootstrap(
+  _requestNow: Date,
+  config: MessagingProviderConfig,
+  detail: string
+): MessagingMatrixBootstrap {
   return {
     chatAvailable: false,
     contractVersion: "cop-messaging-bootstrap-v1",
@@ -1392,7 +1541,9 @@ function degradedWebPushDeviceDeletion(detail: string, deviceId?: string): Messa
 }
 
 function isSuccessfulWebPushDeviceStatus(status: string | undefined): boolean {
-  return status === "active" || status === "accepted" || status === "ok" || status === "online" || status === "registered";
+  return (
+    status === "active" || status === "accepted" || status === "ok" || status === "online" || status === "registered"
+  );
 }
 
 async function fetchJsonWithStatus(
@@ -1420,7 +1571,7 @@ async function fetchJsonWithStatus(
     });
     const text = await response.text();
     return {
-      body: text ? JSON.parse(text) as unknown : {},
+      body: text ? (JSON.parse(text) as unknown) : {},
       ok: response.ok,
       status: response.status
     };
@@ -1481,13 +1632,17 @@ function normalizeCapabilities(value: Record<string, unknown>): CsmMessagingCapa
 function normalizeHealth(value: Record<string, unknown>): CsmMessagingHealth {
   return {
     checks: Array.isArray(value.checks)
-      ? value.checks.flatMap((check): Array<{ id?: string; message?: string; status?: string }> => isRecord(check)
-        ? [{
-            id: optionalString(check.id),
-            message: optionalString(check.message),
-            status: optionalString(check.status)
-          }]
-        : [])
+      ? value.checks.flatMap((check): Array<{ id?: string; message?: string; status?: string }> =>
+          isRecord(check)
+            ? [
+                {
+                  id: optionalString(check.id),
+                  message: optionalString(check.message),
+                  status: optionalString(check.status)
+                }
+              ]
+            : []
+        )
       : undefined,
     status: optionalString(value.status)
   };
@@ -1515,7 +1670,9 @@ function normalizeMatrixTokenResponse(value: Record<string, unknown>): CsmMessag
     status: optionalString(value.status),
     tokenAvailable: typeof value.tokenAvailable === "boolean" ? value.tokenAvailable : undefined,
     userId: optionalString(value.userId),
-    warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
+    warnings: Array.isArray(value.warnings)
+      ? value.warnings.filter((warning): warning is string => typeof warning === "string")
+      : undefined
   };
 }
 
@@ -1525,20 +1682,31 @@ function normalizeE2eeResetAuthResponse(value: Record<string, unknown>): CsmMess
     contractVersion: optionalString(value.contractVersion),
     providerId: optionalString(value.providerId),
     status: optionalString(value.status),
-    warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
+    warnings: Array.isArray(value.warnings)
+      ? value.warnings.filter((warning): warning is string => typeof warning === "string")
+      : undefined
   };
 }
 
-function normalizeConversationListResponse(value: Record<string, unknown>): CsmMessagingConversationListResponse & { conversations?: MessagingConversationSummary[] } {
+function normalizeConversationListResponse(
+  value: Record<string, unknown>
+): CsmMessagingConversationListResponse & { conversations?: MessagingConversationSummary[] } {
   return {
     contractVersion: optionalString(value.contractVersion),
-    conversations: Array.isArray(value.conversations) ? value.conversations.flatMap(normalizeConversationSummary) : undefined,
-    count: typeof value.count === "number" && Number.isFinite(value.count) ? Math.max(0, Math.round(value.count)) : undefined,
+    conversations: Array.isArray(value.conversations)
+      ? value.conversations.flatMap(normalizeConversationSummary)
+      : undefined,
+    count:
+      typeof value.count === "number" && Number.isFinite(value.count)
+        ? Math.max(0, Math.round(value.count))
+        : undefined,
     providerId: optionalString(value.providerId)
   };
 }
 
-function normalizeConversationCreateResponse(value: Record<string, unknown>): CsmMessagingConversationCreateProviderResponse & { conversation?: MessagingConversationSummary } {
+function normalizeConversationCreateResponse(
+  value: Record<string, unknown>
+): CsmMessagingConversationCreateProviderResponse & { conversation?: MessagingConversationSummary } {
   return {
     contractVersion: optionalString(value.contractVersion),
     conversation: normalizeConversationSummary(value.conversation)[0],
@@ -1546,12 +1714,10 @@ function normalizeConversationCreateResponse(value: Record<string, unknown>): Cs
   };
 }
 
-function normalizeIdentityResolutionResponse(value: Record<string, unknown>): CsmMessagingIdentityResolutionProviderResponse & { identities?: MessagingMatrixIdentity[] } {
-  const values = Array.isArray(value.identities)
-    ? value.identities
-    : Array.isArray(value.items)
-      ? value.items
-      : [];
+function normalizeIdentityResolutionResponse(
+  value: Record<string, unknown>
+): CsmMessagingIdentityResolutionProviderResponse & { identities?: MessagingMatrixIdentity[] } {
+  const values = Array.isArray(value.identities) ? value.identities : Array.isArray(value.items) ? value.items : [];
   return {
     contractVersion: optionalString(value.contractVersion),
     identities: values.flatMap(normalizeMatrixIdentity),
@@ -1560,7 +1726,9 @@ function normalizeIdentityResolutionResponse(value: Record<string, unknown>): Cs
   };
 }
 
-function normalizeRoomBindingResponse(value: Record<string, unknown>): CsmMessagingRoomBindingProviderResponse & { conversation?: MessagingConversationSummary } {
+function normalizeRoomBindingResponse(
+  value: Record<string, unknown>
+): CsmMessagingRoomBindingProviderResponse & { conversation?: MessagingConversationSummary } {
   return {
     contractVersion: optionalString(value.contractVersion),
     conversation: normalizeConversationSummary(value.conversation)[0],
@@ -1572,11 +1740,22 @@ function normalizeNotificationResponse(value: Record<string, unknown>): CsmMessa
   const notification = isRecord(value.notification) ? value.notification : value;
   return {
     contractVersion: optionalString(value.contractVersion),
-    deduplicated: typeof notification.deduplicated === "boolean" ? notification.deduplicated : typeof value.deduplicated === "boolean" ? value.deduplicated : undefined,
-    notificationId: optionalString(notification.notificationId) ?? optionalString(notification.id) ?? optionalString(value.notificationId) ?? optionalString(value.id),
+    deduplicated:
+      typeof notification.deduplicated === "boolean"
+        ? notification.deduplicated
+        : typeof value.deduplicated === "boolean"
+          ? value.deduplicated
+          : undefined,
+    notificationId:
+      optionalString(notification.notificationId) ??
+      optionalString(notification.id) ??
+      optionalString(value.notificationId) ??
+      optionalString(value.id),
     providerId: optionalString(value.providerId),
     status: optionalString(value.status) ?? optionalString(notification.status),
-    warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
+    warnings: Array.isArray(value.warnings)
+      ? value.warnings.filter((warning): warning is string => typeof warning === "string")
+      : undefined
   };
 }
 
@@ -1585,11 +1764,16 @@ function normalizeWebPushDeviceResponse(value: Record<string, unknown>): CsmMess
   const nestedStatus = nestedDevice ? optionalString(nestedDevice.status) : undefined;
   return {
     contractVersion: optionalString(value.contractVersion),
-    deviceId: optionalString(value.deviceId) ?? optionalString(value.id) ?? (nestedDevice ? optionalString(nestedDevice.deviceId) : undefined),
+    deviceId:
+      optionalString(value.deviceId) ??
+      optionalString(value.id) ??
+      (nestedDevice ? optionalString(nestedDevice.deviceId) : undefined),
     providerId: optionalString(value.providerId),
     registered: typeof value.registered === "boolean" ? value.registered : undefined,
     status: optionalString(value.status) ?? (nestedStatus === "active" ? "registered" : nestedStatus),
-    warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined
+    warnings: Array.isArray(value.warnings)
+      ? value.warnings.filter((warning): warning is string => typeof warning === "string")
+      : undefined
   };
 }
 
@@ -1602,12 +1786,16 @@ function normalizeMatrixIdentity(value: unknown): MessagingMatrixIdentity[] {
   if (!userId || !matrixUserId) {
     return [];
   }
-  return [{
-    ...(normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) ? { avatarUrl: normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) } : {}),
-    ...(optionalString(value.displayName) ? { displayName: optionalString(value.displayName) } : {}),
-    matrixUserId,
-    userId
-  }];
+  return [
+    {
+      ...(normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url)
+        ? { avatarUrl: normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) }
+        : {}),
+      ...(optionalString(value.displayName) ? { displayName: optionalString(value.displayName) } : {}),
+      matrixUserId,
+      userId
+    }
+  ];
 }
 
 function normalizeConversationSummary(value: unknown): MessagingConversationSummary[] {
@@ -1617,39 +1805,60 @@ function normalizeConversationSummary(value: unknown): MessagingConversationSumm
   const conversationId = optionalString(value.conversationId);
   const title = optionalString(value.title);
   const type = optionalString(value.type);
+  const rawKind = optionalString(value.conversationKind) ?? optionalString(value.kind);
+  const conversationKind =
+    rawKind === "personal_ai" || rawKind === "direct" || rawKind === "group"
+      ? rawKind
+      : type === "direct"
+        ? "direct"
+        : "group";
   if (!conversationId || !title || (type !== "direct" && type !== "group")) {
     return [];
   }
-  const matrix = isRecord(value.matrix) ? {
-    ...(optionalString(value.matrix.homeserverBaseUrl) ? { homeserverBaseUrl: optionalString(value.matrix.homeserverBaseUrl) } : {}),
-    ...(optionalString(value.matrix.roomId) ? { roomId: optionalString(value.matrix.roomId) } : value.matrix.roomId === null ? { roomId: null } : {}),
-    ...(optionalString(value.matrix.serverName) ? { serverName: optionalString(value.matrix.serverName) } : {}),
-    ...(optionalString(value.matrix.state) ? { state: optionalString(value.matrix.state) } : {})
-  } : undefined;
-  const members = Array.isArray(value.members)
-    ? value.members.flatMap(normalizeConversationMember)
+  const matrix = isRecord(value.matrix)
+    ? {
+        ...(optionalString(value.matrix.homeserverBaseUrl)
+          ? { homeserverBaseUrl: optionalString(value.matrix.homeserverBaseUrl) }
+          : {}),
+        ...(optionalString(value.matrix.roomId)
+          ? { roomId: optionalString(value.matrix.roomId) }
+          : value.matrix.roomId === null
+            ? { roomId: null }
+            : {}),
+        ...(optionalString(value.matrix.serverName) ? { serverName: optionalString(value.matrix.serverName) } : {}),
+        ...(optionalString(value.matrix.state) ? { state: optionalString(value.matrix.state) } : {})
+      }
     : undefined;
+  const members = Array.isArray(value.members) ? value.members.flatMap(normalizeConversationMember) : undefined;
   const metadata = isRecord(value.metadata) ? normalizeSafeMetadata(value.metadata) : undefined;
   const directPeer = normalizeDirectPeer(value.directPeer ?? value.peer ?? value.direct_peer);
-  return [{
-    ...(normalizeAvatarDataUrl(value.avatarDataUrl ?? value.avatar_data_url) ? { avatarDataUrl: normalizeAvatarDataUrl(value.avatarDataUrl ?? value.avatar_data_url) } : {}),
-    ...(normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) ? { avatarUrl: normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) } : {}),
-    conversationId,
-    ...(optionalString(value.createdAt) ? { createdAt: optionalString(value.createdAt) } : {}),
-    ...(optionalString(value.disclaimer) ? { disclaimer: optionalString(value.disclaimer) } : {}),
-    ...(directPeer ? { directPeer } : {}),
-    ...(typeof value.e2eeRequired === "boolean" ? { e2eeRequired: value.e2eeRequired } : {}),
-    ...(typeof value.encrypted === "boolean" ? { encrypted: value.encrypted } : {}),
-    ...(typeof value.mapLinkCount === "number" ? { mapLinkCount: Math.max(0, Math.round(value.mapLinkCount)) } : {}),
-    ...(matrix ? { matrix } : {}),
-    ...(typeof value.memberCount === "number" ? { memberCount: Math.max(0, Math.round(value.memberCount)) } : {}),
-    ...(members ? { members } : {}),
-    ...(metadata ? { metadata } : {}),
-    ...(optionalString(value.status) ? { status: optionalString(value.status) } : {}),
-    title,
-    type,
-    ...(optionalString(value.updatedAt) ? { updatedAt: optionalString(value.updatedAt) } : {})
-  }];
+  return [
+    {
+      ...(normalizeAvatarDataUrl(value.avatarDataUrl ?? value.avatar_data_url)
+        ? { avatarDataUrl: normalizeAvatarDataUrl(value.avatarDataUrl ?? value.avatar_data_url) }
+        : {}),
+      ...(normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url)
+        ? { avatarUrl: normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) }
+        : {}),
+      ...(optionalString(value.canonicalKey) ? { canonicalKey: optionalString(value.canonicalKey) } : {}),
+      conversationId,
+      conversationKind,
+      ...(optionalString(value.createdAt) ? { createdAt: optionalString(value.createdAt) } : {}),
+      ...(optionalString(value.disclaimer) ? { disclaimer: optionalString(value.disclaimer) } : {}),
+      ...(directPeer ? { directPeer } : {}),
+      ...(typeof value.e2eeRequired === "boolean" ? { e2eeRequired: value.e2eeRequired } : {}),
+      ...(typeof value.encrypted === "boolean" ? { encrypted: value.encrypted } : {}),
+      ...(typeof value.mapLinkCount === "number" ? { mapLinkCount: Math.max(0, Math.round(value.mapLinkCount)) } : {}),
+      ...(matrix ? { matrix } : {}),
+      ...(typeof value.memberCount === "number" ? { memberCount: Math.max(0, Math.round(value.memberCount)) } : {}),
+      ...(members ? { members } : {}),
+      ...(metadata ? { metadata } : {}),
+      ...(optionalString(value.status) ? { status: optionalString(value.status) } : {}),
+      title,
+      type,
+      ...(optionalString(value.updatedAt) ? { updatedAt: optionalString(value.updatedAt) } : {})
+    }
+  ];
 }
 
 function normalizeSafeMetadata(value: Record<string, unknown>): MessagingConversationSummary["metadata"] | undefined {
@@ -1675,13 +1884,17 @@ function normalizeDirectPeer(value: unknown): MessagingConversationSummary["dire
     return undefined;
   }
   return {
-    ...(normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) ? { avatarUrl: normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) } : {}),
+    ...(normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url)
+      ? { avatarUrl: normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) }
+      : {}),
     ...(optionalString(value.displayName) ? { displayName: optionalString(value.displayName) } : {}),
     userId
   };
 }
 
-function normalizeSafeMetadataValue(value: unknown): string | number | boolean | null | Array<string | number | boolean | null> | undefined {
+function normalizeSafeMetadataValue(
+  value: unknown
+): string | number | boolean | null | Array<string | number | boolean | null> | undefined {
   if (value === null || typeof value === "boolean") {
     return value;
   }
@@ -1694,7 +1907,10 @@ function normalizeSafeMetadataValue(value: unknown): string | number | boolean |
   if (Array.isArray(value)) {
     const values = value
       .map(normalizeSafeMetadataValue)
-      .filter((item): item is string | number | boolean | null => item === null || typeof item === "string" || typeof item === "number" || typeof item === "boolean")
+      .filter(
+        (item): item is string | number | boolean | null =>
+          item === null || typeof item === "string" || typeof item === "number" || typeof item === "boolean"
+      )
       .slice(0, 50);
     return values.length ? values : undefined;
   }
@@ -1709,12 +1925,16 @@ function normalizeConversationMember(value: unknown): MessagingConversationMembe
   if (!userId) {
     return [];
   }
-  return [{
-    ...(normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) ? { avatarUrl: normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) } : {}),
-    ...(optionalString(value.displayName) ? { displayName: optionalString(value.displayName) } : {}),
-    ...(optionalString(value.role) ? { role: optionalString(value.role) } : {}),
-    userId
-  }];
+  return [
+    {
+      ...(normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url)
+        ? { avatarUrl: normalizeAvatarUrl(value.avatarUrl ?? value.avatar_url) }
+        : {}),
+      ...(optionalString(value.displayName) ? { displayName: optionalString(value.displayName) } : {}),
+      ...(optionalString(value.role) ? { role: optionalString(value.role) } : {}),
+      userId
+    }
+  ];
 }
 
 function normalizeAvatarUrl(value: unknown): string | undefined {
@@ -1790,15 +2010,21 @@ function containsSensitiveConfigHint(value: string | undefined): boolean {
   return /\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY|ADMIN)[A-Z0-9_]*\b/u.test(value ?? "");
 }
 
-function isClientSafeMatrixBootstrapReady(capabilities: CsmMessagingCapabilities, providerOk: boolean, healthOk: boolean): boolean {
-  return providerOk
-    && healthOk
-    && capabilities.features?.matrixTokenBootstrap === true
-    && capabilities.features?.matrixIdentityResolution === true
-    && capabilities.features?.matrixRoomBinding === true
-    && capabilities.features?.endToEndEncryptionRequired === true
-    && capabilities.security?.readFromBrowser === false
-    && capabilities.architecture?.plaintextOnServer !== true;
+function isClientSafeMatrixBootstrapReady(
+  capabilities: CsmMessagingCapabilities,
+  providerOk: boolean,
+  healthOk: boolean
+): boolean {
+  return (
+    providerOk &&
+    healthOk &&
+    capabilities.features?.matrixTokenBootstrap === true &&
+    capabilities.features?.matrixIdentityResolution === true &&
+    capabilities.features?.matrixRoomBinding === true &&
+    capabilities.features?.endToEndEncryptionRequired === true &&
+    capabilities.security?.readFromBrowser === false &&
+    capabilities.architecture?.plaintextOnServer !== true
+  );
 }
 
 function actorHeaders(actor: AuthenticatedActor, deviceId?: string): Record<string, string> {
@@ -1825,9 +2051,7 @@ function safeHeaderValue(value: string | undefined, fallback: string): string {
 }
 
 function safeHeaderRecord(headers: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(headers).map(([key, value]) => [key, safeHeaderValue(value, value)])
-  );
+  return Object.fromEntries(Object.entries(headers).map(([key, value]) => [key, safeHeaderValue(value, value)]));
 }
 
 function clientSafeHomeserverBaseUrl(providerBaseUrl: string, config: MessagingProviderConfig): string {

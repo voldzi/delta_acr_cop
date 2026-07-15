@@ -460,6 +460,7 @@ describe("dedupeChatItems", () => {
   it("keeps AI conversation metadata when a Matrix room-backed item wins", () => {
     const conversation = {
       conversationId: "c-ai",
+      conversationKind: "personal_ai",
       members: [{ displayName: "COP AI Assistant", role: "bot", userId: "cop.ai.agent" }],
       metadata: {
         externalId: "cop.ai.agent",
@@ -502,7 +503,7 @@ describe("dedupeChatItems", () => {
     expect(isAiAgentChatItem(deduped[0] as ChatListItem)).toBe(true);
   });
 
-  it("recognizes a room-only AI direct chat from the Matrix peer identity", () => {
+  it("does not infer an AI chat from a room-only Matrix peer identity", () => {
     const item = chatItem({
       conversation: undefined,
       room: {
@@ -519,10 +520,10 @@ describe("dedupeChatItems", () => {
       title: "COP AI Assistant"
     });
 
-    expect(isAiAgentChatItem(item)).toBe(true);
+    expect(isAiAgentChatItem(item)).toBe(false);
   });
 
-  it("recognizes a metadata-light AI direct chat by the canonical assistant title", () => {
+  it("does not infer an AI chat from the display title", () => {
     expect(
       isAiAgentChatItem(
         chatItem({
@@ -532,7 +533,7 @@ describe("dedupeChatItems", () => {
           type: "direct"
         })
       )
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 
@@ -620,14 +621,18 @@ describe("buildChatItems", () => {
         subjectId: "owner-1",
         username: "owner"
       },
-      ...(status ? [{
-        displayName: "COP Operator",
-        requestedAt: "2026-07-11T08:00:00.000Z",
-        role: "member" as const,
-        status,
-        subjectId: "operator-1",
-        username: "cop.operator"
-      }] : [])
+      ...(status
+        ? [
+            {
+              displayName: "COP Operator",
+              requestedAt: "2026-07-11T08:00:00.000Z",
+              role: "member" as const,
+              status,
+              subjectId: "operator-1",
+              username: "cop.operator"
+            }
+          ]
+        : [])
     ],
     name: "VODVAZ",
     updatedAt: "2026-07-11T08:00:00.000Z",
@@ -685,6 +690,7 @@ describe("buildChatItems", () => {
   it("marks the dedicated AI direct chat with the AI avatar variant", () => {
     const conversation = {
       conversationId: "c-ai",
+      conversationKind: "personal_ai",
       members: [{ displayName: "COP AI Assistant", role: "bot", userId: "cop.ai.agent" }],
       metadata: {
         externalId: "cop.ai.agent",
@@ -711,6 +717,30 @@ describe("buildChatItems", () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.avatarVariant).toBe("ai");
     expect(isAiAgentChatItem(items[0] as ChatListItem)).toBe(true);
+  });
+
+  it("does not expose an orphan Matrix room as a conversation or raw room id", () => {
+    const items = buildChatItems({
+      authSubjectId: "operator-1",
+      conversations: [],
+      filter: "all",
+      groups: [],
+      ownIdentityIds: new Set(["operator-1"]),
+      query: "",
+      rooms: [
+        {
+          encrypted: true,
+          name: "60489aae-27f2-4a64-bc1e-raw-room",
+          roomId: "!orphan:example.cz",
+          unreadCount: 0
+        } as MatrixRoomSummary
+      ],
+      selectedConversationId: null,
+      selectedGroupId: null,
+      selectedRoomId: null
+    });
+
+    expect(items).toEqual([]);
   });
 
   it("derives latest/preview/unread/sortAt for a room-backed direct conversation from the room summary", () => {

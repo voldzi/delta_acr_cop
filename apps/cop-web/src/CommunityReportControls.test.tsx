@@ -100,6 +100,7 @@ describe("community report contact picker", () => {
         [
           {
             conversationId: "direct-1",
+            conversationKind: "direct",
             directPeer: { displayName: "Daniel Bambušek", userId: "subject-daniel" },
             members: [
               { displayName: "Jiří Volek", userId: "subject-own" },
@@ -110,6 +111,7 @@ describe("community report contact picker", () => {
           },
           {
             conversationId: "group-1",
+            conversationKind: "group",
             members: [{ displayName: "Jiřina Volková", userId: "subject-jirina" }],
             title: "Zásah",
             type: "group"

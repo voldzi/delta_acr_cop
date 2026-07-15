@@ -17,3 +17,4 @@
 - [0014 Matrix Session Credential Renewal](0014_MATRIX_SESSION_CREDENTIAL_RENEWAL.md)
 - [0015 Matrix VoIP ICE Resilience](0015_MATRIX_VOIP_ICE_RESILIENCE.md)
 - [0016 Native-First Matrix Group Voice Calls](0016_MATRIX_GROUP_VOICE_CALLS.md)
+- [0017 Server-Owned Canonical Messaging Conversations](0017_SERVER_OWNED_MESSAGING_CONVERSATIONS.md)

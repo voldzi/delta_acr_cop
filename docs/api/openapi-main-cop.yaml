@@ -2623,10 +2623,11 @@ paths:
     post:
       tags:
         - Messaging
-      summary: Create CSM Messaging conversation metadata.
+      summary: Create or reuse a canonical CSM Messaging conversation.
       description: >
-        Creates only metadata, members and optional map links. Plaintext message fields are
-        rejected; real messages go directly through Matrix SDK.
+        Atomically creates or reuses canonical conversation metadata and ensures its encrypted
+        Matrix room server-side before returning success. Plaintext message fields are rejected;
+        real messages go directly through Matrix SDK.
       operationId: createMessagingConversation
       requestBody:
         required: true
@@ -2636,7 +2637,8 @@ paths:
               $ref: "#/components/schemas/MessagingConversationCreateRequest"
       responses:
         "201":
-          description: Conversation metadata created.
+          description: Canonical conversation is ready and contains a server-owned encrypted Matrix room
+            binding.
           content:
             application/json:
               schema:
@@ -2646,7 +2648,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "502":
-          description: Upstream provider did not create conversation metadata.
+          description: Upstream provider could not prepare a canonical encrypted conversation and room binding.
           content:
             application/json:
               schema:
@@ -2720,11 +2722,11 @@ paths:
     post:
       tags:
         - Messaging
-      summary: Store or ensure the Matrix room binding for a Messaging conversation.
+      summary: Ensure the server-owned Matrix room binding for a Messaging conversation.
       description: >
-        Stores Matrix room metadata only. COP still does not proxy or persist plaintext chat
-        messages. An empty JSON body is accepted as an ensure/bind request for native clients when
-        CSM Messaging can return an existing or server-created room binding.
+        An empty JSON body asks CSM Messaging to return or create the one canonical encrypted Matrix
+        room. A client-supplied roomId remains a compatibility-only migration path. COP never
+        proxies or persists plaintext chat messages.
       operationId: bindMessagingConversationMatrixRoom
       parameters:
         - name: conversationId
@@ -9727,6 +9729,7 @@ components:
     MessagingConversationCreateRequest:
       type: object
       required:
+        - conversationKind
         - title
       additionalProperties: false
       properties:
@@ -9734,6 +9737,14 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        conversationKind:
+          type: string
+          enum:
+            - direct
+            - group
+            - personal_ai
+          description: Authoritative behavior discriminator. personal_ai is a direct conversation unique per
+            authenticated user; clients must not infer it from a title or member identifier.
         type:
           type: string
           enum:
@@ -9754,6 +9765,10 @@ components:
           type: object
           additionalProperties: true
           description: Safe metadata only. Plaintext message fields are rejected by COP and CSM Messaging.
+        avatarUrl:
+          type: string
+          format: uri
+          description: Optional group avatar reference managed as conversation metadata.
     MessagingConversationCreateResponse:
       type: object
       required:
@@ -9899,11 +9914,22 @@ components:
       type: object
       required:
         - conversationId
+        - conversationKind
         - title
         - type
       properties:
         conversationId:
           type: string
+        conversationKind:
+          type: string
+          enum:
+            - direct
+            - group
+            - personal_ai
+        canonicalKey:
+          type: string
+          description: Stable server-generated idempotency key used to collapse duplicate direct, group and
+            personal AI conversations.
         title:
           type: string
         type:
@@ -10070,8 +10096,8 @@ components:
           pattern: ^![^\s:]+:.+$
         encrypted:
           type: boolean
-      description: Optional roomId binding. Empty object is accepted as an ensure/bind request for native
-        clients.
+      description: Empty object is the normal ensure request. Client-supplied roomId is accepted only as a
+        compatibility migration path; new clients never create canonical rooms themselves.
     MessagingMatrixRoomBindingResponse:
       type: object
       required:
