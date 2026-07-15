@@ -8,6 +8,16 @@ import {
 } from "./ai-response-playbook.js";
 
 describe("AI response playbook", () => {
+  it("classifies a general weather question as a forecast summary", () => {
+    const match = classifyAiResponseIntent("Jaké bude počasí?");
+
+    expect(match).toMatchObject({
+      domain: "weather",
+      intentId: "weather.summary.forecast"
+    });
+    expect(match?.rule.answerContract.mustNotInvent).toContain("interní názvy vrstev nebo zdrojů");
+  });
+
   it("classifies weather rain questions with map-only actions", () => {
     const match = classifyAiResponseIntent("Bude dnes pršet?");
 

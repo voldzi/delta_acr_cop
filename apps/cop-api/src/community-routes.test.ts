@@ -2615,6 +2615,105 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("uses the AI provider to synthesize a general weather forecast for a known location", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return {
+          summary: "V okolí Vrbna čekejte v nejbližších třech hodinách déšť, vítr kolem 4 m/s a mírné riziko bouřky. Zdroj: ČHMÚ/SIM.",
+          structured: {}
+        };
+      },
+      async health() {
+        return { detail: "test provider", status: "ok" };
+      }
+    };
+    const simSearchDataSource = new FakeAiMapSearchSimSearchDataSource();
+    simSearchDataSource.weatherForecastResult = true;
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-07-15T19:30:00Z"),
+      simSearchDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        currentLocation: { lat: 50.15077, lon: 17.37303, radiusKm: 30 },
+        question: "Jaké bude počasí?"
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedQueries).toHaveLength(1);
+    expect(capturedQueries[0]?.context).toMatchObject({
+      responsePlaybook: { intentId: "weather.summary.forecast" }
+    });
+    expect(capturedQueries[0]?.prompt).toContain("Interní identifikátory zdrojů a vrstev");
+    const aiResponse = response.json() as AiCopResponse;
+    expect(aiResponse.provider).toBe("mock");
+    expect(aiResponse.result.summary).toContain("V okolí Vrbna");
+    expect(aiResponse.result.summary).not.toContain("MAX_Z");
+
+    await app.close();
+  });
+
+  it("asks for a place instead of using an unbounded radar result for general weather", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return { summary: "Provider should not be called without a weather location", structured: {} };
+      },
+      async health() {
+        return { detail: "test provider", status: "ok" };
+      }
+    };
+    const simSearchDataSource = new FakeAiMapSearchSimSearchDataSource();
+    simSearchDataSource.weatherForecastResult = true;
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-07-15T19:30:00Z"),
+      simSearchDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: { question: "Jaké bude počasí?" },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedQueries).toHaveLength(0);
+    const aiResponse = response.json() as AiCopResponse;
+    expect(aiResponse).toMatchObject({
+      model: "weather-location-clarification",
+      provider: "local",
+      status: "COMPLETED"
+    });
+    expect(aiResponse.result.summary).toContain("Pro jaké místo chcete předpověď?");
+    expect(aiResponse.result.summary).not.toContain("MAX_Z");
+    expect(aiResponse.result.summary).not.toContain("Souřadnice");
+
+    await app.close();
+  });
+
   it("returns an explicit no-data weather response when SIM has no current meteo entity", async () => {
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {

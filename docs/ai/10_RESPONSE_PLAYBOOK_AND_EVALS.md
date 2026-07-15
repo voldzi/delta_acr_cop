@@ -21,7 +21,7 @@ Aktivní katalog je v:
 Katalog obsahuje pravidla `AiResponsePlaybookRule`:
 
 - `intentId` - stabilní identifikátor záměru, například
-  `weather.rain.now` nebo `map.nearest.police`,
+  `weather.summary.forecast`, `weather.rain.now` nebo `map.nearest.police`,
 - `domain` - produktová doména,
 - `patterns` - normalizované regexy pro rychlé rozpoznání dotazu,
 - `requiredSources` - očekávané zdroje jako `sim-search-data`, `map-search`,
@@ -52,6 +52,12 @@ Funkce `buildAiResponsePlaybookEvalCases(10000)` generuje deterministickou
 sadu 10 000 dotazů. Nejde o statické odpovědi; jde o pokrytí parafrází, které
 musí router zařadit do správného záměru.
 
+Kromě routerové sady mají rizikové záměry samostatné výstupní regresní testy.
+Pro obecnou předpověď ověřují výběr strukturované předpovědi před radarovou
+odrazivostí, přirozený souhrn a zákaz technických identifikátorů vrstev,
+zdrojů a surových souřadnic. Bez určeného místa se neprovádí celorepublikový
+radarový fallback; agent si místo vyžádá běžnou otázkou.
+
 Test:
 
 - `apps/cop-api/src/ai-response-playbook.test.ts`
@@ -59,6 +65,7 @@ Test:
 Ověřuje:
 
 - základní problematické scénáře,
+- obecnou předpověď s polohou i bez ní a uživatelsky čitelný fallback,
 - map-only akce pro počasí,
 - route-capable akce pro navigovatelné objekty,
 - 10 000 generovaných dotazů se vrací na očekávaný intent,
@@ -75,7 +82,7 @@ Ověřuje:
 
 ## Aktuální domény
 
-- počasí: déšť, bouřka, radar, teplota, vítr,
+- počasí: souhrnná předpověď, déšť, bouřka, radar, teplota, vítr,
 - voda a povodně: hladina, průtok, riziko záplavy,
 - mapa: policie, zdravotní pomoc, kryt,
 - doprava,

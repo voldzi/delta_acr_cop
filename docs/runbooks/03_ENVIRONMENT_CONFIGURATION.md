@@ -341,6 +341,15 @@ počasí/srážky/bouřka/vítr/teplota používá `weather_forecast`,
 `weather_nowcast`, `weather_radar` a `thunderstorm_risk` se sourceSystems
 `weather_forecast` a `chmi_weather_radar`. COP posílá `validAt` jako čas
 požadavku, meteo hodnoty pouze zobrazuje a nic nedopočítává z `weatherCode`.
+Obecný dotaz typu „Jaké bude počasí?“ vyžaduje `currentLocation`, místo
+odvozené z dotazu nebo omezený mapový kontext. Web a COP Mobile používají
+stejný kontrakt; nativní klient předává polohu jen tehdy, když ji už uživatel
+povolil hlavní COP mapě, a chat sám permission dialog nevyvolává. Bez místa API
+vrátí uživatelskou doplňující otázku. S místem model syntetizuje stručnou
+předpověď ze strukturovaných SIM dat; při nedostupnosti modelu se použije
+deterministický, ale stále uživatelsky čitelný souhrn. Interní identifikátory
+produktů, například `MAX_Z` nebo `chmi_weather_radar`, a surové souřadnice se
+v běžné odpovědi nezobrazují.
 Pokud SIM vrátí hydro metriky (`waterLevelCm`, `discharge`,
 `waterTemperatureC`, `floodStage`) nebo meteo metriky (srážky 10 min / 1 h /
 3 h, pravděpodobnost srážek/bouřky, vítr, nárazy, riziko, dostupnost bleskového

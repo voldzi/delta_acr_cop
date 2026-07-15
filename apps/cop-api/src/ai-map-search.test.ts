@@ -231,6 +231,71 @@ describe("AI map search", () => {
     ]);
   });
 
+  it("prefers a structured forecast and hides technical layer details for general weather", () => {
+    const aiRequest: AiCopQuery = {
+      context: {
+        mapSearch: {
+          results: [
+            {
+              category: "weather_radar",
+              layerId: "public.weather.radar_nowcast",
+              location: { lat: 49.695, lon: 15.0682 },
+              mapFeatureId: "chmi:max-z",
+              sourceName: "chmi_weather_radar",
+              sourceSystemIds: ["chmi_weather_radar"],
+              title: "ČHMÚ radar MAX_Z",
+              updatedAt: "2026-07-15T19:30:00.000Z",
+              validFrom: "2026-07-15T19:30:00.000Z",
+              validUntil: "2026-07-15T19:45:00.000Z"
+            },
+            {
+              category: "rain_storm_forecast",
+              fallbackUsed: true,
+              layerId: "public.weather.forecast_area",
+              location: { lat: 50.15077, lon: 17.37303 },
+              mapFeatureId: "weather_forecast:vrbno:2026-07-15T19",
+              metrics: {
+                precipitation3hMm: 5.9,
+                precipitationProbability: 0.7,
+                risk: "elevated",
+                thunderstormProbability: 0.35,
+                windGustMps: 12,
+                windSpeedMps: 4.2
+              },
+              sourceName: "weather_forecast",
+              sourceSystemIds: ["sim.search-data", "weather_forecast"],
+              title: "Předpověď pro Vrbno pod Pradědem",
+              updatedAt: "2026-07-15T19:30:00.000Z",
+              validFrom: "2026-07-15T19:30:00.000Z",
+              validUntil: "2026-07-15T22:30:00.000Z"
+            }
+          ]
+        },
+        question: "Jaké bude počasí?"
+      },
+      outputFormat: "MARKDOWN",
+      prompt: "Dotaz uživatele: Jaké bude počasí?",
+      providerPreference: "auto",
+      purpose: "COP_EXPLANATION",
+      requestId: "test-weather-summary",
+      safetyScope: "COP_DATA_ASSISTANCE_ONLY"
+    };
+
+    const response = aiMapSearchFallbackResponse(aiRequest, new Date("2026-07-15T19:32:00.000Z"), "test");
+    const structured = response?.result.structured as {
+      mapSearchFallback?: { result?: { title?: string } };
+    } | undefined;
+
+    expect(response?.result.summary).toContain("Pro nejbližší dostupné období");
+    expect(response?.result.summary).toContain("pravděpodobnost srážek 70 %");
+    expect(response?.result.summary).toContain("nárazy do 12 m/s");
+    expect(response?.result.summary).toContain("celkové riziko zvýšené");
+    expect(response?.result.summary).not.toContain("MAX_Z");
+    expect(response?.result.summary).not.toContain("chmi_weather_radar");
+    expect(response?.result.summary).not.toContain("49.695");
+    expect(structured?.mapSearchFallback?.result?.title).toBe("Předpověď pro Vrbno pod Pradědem");
+  });
+
   it("extracts a clean place query from generic map searches with a location phrase", () => {
     const intent = inferAiMapSearchIntent("Najdi vodoměrnou stanici ve Vrbně pod Pradědem.", {});
     const waterGaugeFeature: SituationFeature = {

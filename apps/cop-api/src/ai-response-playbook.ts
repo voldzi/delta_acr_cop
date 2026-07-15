@@ -28,6 +28,7 @@ export type AiResponseIntentId =
   | "traffic.restrictions"
   | "weather.radar.show"
   | "weather.rain.now"
+  | "weather.summary.forecast"
   | "weather.storm.risk"
   | "weather.temperature"
   | "weather.wind";
@@ -90,6 +91,34 @@ const commonAnswerContract: AiResponseAnswerContract = {
 };
 
 export const aiResponsePlaybookRules: AiResponsePlaybookRule[] = [
+  {
+    allowedActions: ["focus-map"],
+    answerContract: {
+      ...commonAnswerContract,
+      mustMention: ["místo", "časové okno", "stručnou předpověď", "výstrahy", "zdroj"],
+      mustNotInvent: [
+        "předpověď bez určeného místa",
+        "hodnoty chybějící ve zdroji",
+        "interní názvy vrstev nebo zdrojů",
+        "souřadnice, pokud si je uživatel nevyžádal"
+      ],
+      style: "brief"
+    },
+    description: "Souhrnná předpověď počasí pro určené místo a nejbližší relevantní časové okno.",
+    domain: "weather",
+    evalTemplates: [
+      "Jaké bude počasí {location} {time}?",
+      "Jaká je předpověď {location} {time}?",
+      "Co čekat od počasí {location} {time}?",
+      "Shrň počasí {location} {time}.",
+      "Weather forecast {location} {time}?"
+    ],
+    forbiddenActions: ["route"],
+    intentId: "weather.summary.forecast",
+    patterns: [/\bpocasi\b/u, /\bpredpoved/u, /\bforecast\b/u, /\bmeteogram\b/u],
+    priority: 50,
+    requiredSources: ["sim-search-data", "map-search"]
+  },
   {
     allowedActions: ["focus-map"],
     answerContract: {

@@ -2046,8 +2046,55 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!mapSearch || mapSearch.results.length === 0) {
       return false;
     }
+    if (isGeneralWeatherForecastQuestion(question)) {
+      return false;
+    }
     const intent = inferAiMapSearchIntent(question, body);
     return intent.requested || intent.layerIds.length > 0 || intent.categoryIds.length > 0;
+  }
+
+  function isGeneralWeatherForecastQuestion(question: string): boolean {
+    const playbook = aiResponsePlaybookGuidanceForQuestion(question);
+    return optionalText(playbook?.intentId) === "weather.summary.forecast";
+  }
+
+  function shouldClarifyAiWeatherLocation(
+    question: string,
+    mapSearch: AiMapSearchContext | undefined
+  ): boolean {
+    if (!isGeneralWeatherForecastQuestion(question)) {
+      return false;
+    }
+    const query = isRecord(mapSearch?.query) ? mapSearch.query : {};
+    return !isRecord(query.center) && !isRecord(query.bbox) && !optionalText(query.placeQuery);
+  }
+
+  function aiWeatherLocationClarificationResponse(
+    aiRequest: AiCopQuery,
+    requestNow: Date
+  ): AiCopResponse {
+    return {
+      auditId: randomUUID(),
+      model: "weather-location-clarification",
+      policy: {
+        allowed: true,
+        reason: "A location is required before retrieving a weather forecast.",
+        redactionsApplied: false
+      },
+      provider: "local",
+      requestId: aiRequest.requestId,
+      result: {
+        structured: {
+          clarification: {
+            field: "location",
+            suggestedActions: ["use-current-location", "enter-place"]
+          },
+          generatedAt: requestNow.toISOString()
+        },
+        summary: "Pro jaké místo chcete předpověď? Napište obec nebo oblast; pokud má COP povolenou polohu, můžete použít aktuální polohu zařízení."
+      },
+      status: "COMPLETED"
+    };
   }
 
   function parseAiContextGeoFilter(body: Record<string, unknown>): AiContextGeoFilter | undefined {
@@ -8956,6 +9003,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         "Bezpečnostní priority jsou voda/povodeň, požár, zdravotní riziko, infrastruktura, dopravní omezení, bezpečnostní/policejní incident a komunitní hlášení; civilní lety a stale civilní letové tracky nejsou priorita a zmiň je jen při explicitním leteckém dotazu nebo přímé bezpečnostní souvislosti.",
         "Důležitá tvrzení cituj pomocí [S1] ze semanticContext.citations, [I1] z indexedContext.citations nebo [P1] z priorityContext.citations.",
         "Respektuj retrievalIntent a contextCompression: pokud jsou záznamy vynechané z promptu, neber to jako důkaz jejich neexistence.",
+        "Odpověz nejprve přímo a lidsky. Interní identifikátory zdrojů a vrstev, například MAX_Z nebo chmi_weather_radar, ani souřadnice nevypisuj, pokud si je uživatel výslovně nevyžádal.",
         responsePlaybookPrompt
           ? `Respektuj responsePlaybook pro záměr, zdroje, nejistotu a UI akce. ${responsePlaybookPrompt}`
           : "Pokud responsePlaybook není k dispozici, drž se obecného COP kontextu a nevyvozuj UI akce bez dat.",
@@ -8969,7 +9017,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       outputFormat: "MARKDOWN",
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
-    const deterministicMapSearchResponse = shouldAnswerAiChatAgentWithMapSearchResult(question, body, aiMapSearch)
+    const weatherLocationClarificationResponse = shouldClarifyAiWeatherLocation(question, aiMapSearch)
+      ? aiWeatherLocationClarificationResponse(aiRequest, requestNow)
+      : undefined;
+    const deterministicMapSearchResponse = !weatherLocationClarificationResponse
+      && shouldAnswerAiChatAgentWithMapSearchResult(question, body, aiMapSearch)
       ? aiMapSearchFallbackResponse(
           aiRequest,
           requestNow,
@@ -8977,7 +9029,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         )
       : undefined;
     const deterministicEmptyMapSearchResponse =
-      !deterministicMapSearchResponse && shouldAnswerAiChatAgentWithEmptyMapSearchResult(question, body, aiMapSearch)
+      !weatherLocationClarificationResponse
+      && !deterministicMapSearchResponse
+      && shouldAnswerAiChatAgentWithEmptyMapSearchResult(question, body, aiMapSearch)
         ? aiMapSearchNoResultFallbackResponse(
             aiRequest,
             requestNow,
@@ -8985,12 +9039,25 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           )
         : undefined;
     const providerStartedAt = Date.now();
-    const providerResponse =
+    const candidateProviderResponse =
+      weatherLocationClarificationResponse ??
       deterministicMapSearchResponse ??
       deterministicEmptyMapSearchResponse ??
       (await queryCopAssistantForAi(aiRequest, requestNow, "chat-agent"));
+    const providerResponse =
+      isGeneralWeatherForecastQuestion(question)
+      && candidateProviderResponse.status !== "COMPLETED"
+      && aiMapSearch
+        ? aiMapSearchFallbackResponse(
+            aiRequest,
+            requestNow,
+            "The AI provider did not complete the weather synthesis; COP used a verified weather-data fallback."
+          ) ?? candidateProviderResponse
+        : candidateProviderResponse;
     const providerDurationMs =
-      deterministicMapSearchResponse || deterministicEmptyMapSearchResponse ? 0 : Date.now() - providerStartedAt;
+      weatherLocationClarificationResponse || deterministicMapSearchResponse || deterministicEmptyMapSearchResponse
+        ? 0
+        : Date.now() - providerStartedAt;
     const pipelineObservability = buildAiPipelineObservability({
       compressedContext,
       contextCompression: promptContext.contextCompression,
