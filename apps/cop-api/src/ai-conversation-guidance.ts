@@ -88,8 +88,16 @@ export function conversationSuggestions(
   const suggestions = suggestionsForIntent(intentId, responsePlaybook);
   const original = normalize(originalQuestion);
   return suggestions
-    .filter((suggestion) => normalize(suggestion.question) !== original)
+    .filter((suggestion) => !isRedundantSuggestion(original, normalize(suggestion.question)))
     .slice(0, 2);
+}
+
+function isRedundantSuggestion(original: string, candidate: string): boolean {
+  if (candidate === original) {
+    return true;
+  }
+  const timeMarkers = ["dnes", "zitra", "pozitri", "rano", "dopoledne", "odpoledne", "vecer", "v noci"];
+  return timeMarkers.some((marker) => original.includes(marker) && candidate.includes(marker));
 }
 
 function suggestionsForIntent(

@@ -51,6 +51,13 @@ describe("AI conversation guidance", () => {
   it("never offers conversational shortcuts for an emergency answer", () => {
     expect(conversationSuggestions("emergency.immediate.help", {}, "Člověk nedýchá")).toEqual([]);
   });
+
+  it("does not repeat the time period the user just asked about", () => {
+    expect(conversationSuggestions("weather.summary.forecast", {}, "A zítra?")).toEqual([
+      { id: "weather-risk", label: "Hrozí bouřka nebo výstraha?", question: "Hrozí bouřka nebo výstraha?" },
+      { id: "weather-evening", label: "A co večer?", question: "A co večer?" }
+    ]);
+  });
 });
 
 function completedResponse(): AiCopResponse {
