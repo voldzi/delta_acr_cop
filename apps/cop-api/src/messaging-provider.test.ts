@@ -22,6 +22,73 @@ describe("CsmMessagingProvider", () => {
     });
   });
 
+  it("keeps the default request budget open for encrypted room provisioning beyond three seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubEnv("COP_CSM_MESSAGING_ENABLED", "true");
+      vi.stubEnv("COP_CSM_MESSAGING_BASE_URL", "http://messaging.local:4050");
+      const fetchMock = vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 3_500));
+        return new Response(
+          JSON.stringify({
+            contractVersion: "csm-messaging-provider-v1",
+            conversation: {
+              canonicalKey: "direct:subject-1:subject-2",
+              conversationId: "conv_slow_room",
+              conversationKind: "direct",
+              encrypted: true,
+              e2eeRequired: true,
+              matrix: {
+                roomId: "!slow-room:msg.zeleznalady.cz",
+                state: "bound"
+              },
+              members: [
+                { userId: "subject-1" },
+                { userId: "subject-2" }
+              ],
+              title: "Jiřina Volková",
+              type: "direct"
+            },
+            providerId: "csm.messaging",
+            status: "online"
+          }),
+          { status: 201 }
+        );
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const provider = createMessagingProviderFromEnv();
+
+      const pending = provider.createConversation(
+        {
+          authMode: "oidc",
+          displayName: "Jiří Volek",
+          roles: ["operator"],
+          subjectId: "subject-1",
+          username: "jiri.volek"
+        },
+        new Date("2026-07-15T06:15:00Z"),
+        {
+          conversationKind: "direct",
+          members: [{ userId: "subject-2" }],
+          title: "Jiřina Volková",
+          type: "direct"
+        }
+      );
+
+      await vi.advanceTimersByTimeAsync(3_500);
+
+      await expect(pending).resolves.toMatchObject({
+        conversation: {
+          conversationId: "conv_slow_room",
+          matrix: { roomId: "!slow-room:msg.zeleznalady.cz" }
+        },
+        status: "online"
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reads provider capabilities and health server-side without exposing a browser token", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

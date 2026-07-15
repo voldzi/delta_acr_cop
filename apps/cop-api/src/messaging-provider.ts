@@ -438,7 +438,12 @@ const defaultConfig: MessagingProviderConfig = {
   baseUrl: "http://comm.home.cz:4050",
   cacheTtlMs: 10_000,
   enabled: false,
-  timeoutMs: 3_000
+  // Provisioning an encrypted Matrix room includes server-side identity and
+  // encryption setup.  It routinely takes longer than a lightweight health
+  // request, especially for the first conversation after a deployment.  The
+  // previous three-second budget could abort COP while Messaging completed the
+  // canonical conversation moments later, leaving clients with a false error.
+  timeoutMs: 15_000
 };
 
 export function createMessagingProviderFromEnv(
