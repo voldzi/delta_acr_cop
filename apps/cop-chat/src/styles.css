@@ -1770,21 +1770,36 @@ button {
 }
 
 .message-ai-audit {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
   color: rgba(84, 101, 111, 0.88);
   font-size: 0.66rem;
   line-height: 1.3;
 }
 
-.message-ai-audit span {
+.message-ai-audit summary {
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.message-ai-audit > span {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.message-ai-audit > span > span {
   max-width: 100%;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.62);
   padding: 2px 6px;
   overflow-wrap: anywhere;
+}
+
+.message-ai-sources {
+  color: rgba(84, 101, 111, 0.88);
+  font-size: 0.68rem;
+  font-weight: 740;
 }
 
 .message-ai-actions {
@@ -3772,7 +3787,32 @@ button {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  margin: 10px 0 0;
+}
+
+.ai-technical-details {
   margin: 0 16px 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
+}
+
+.ai-technical-details summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 780;
+  padding: 10px 12px;
+}
+
+.ai-situation-error .ai-technical-details {
+  margin: 10px 0 0;
+  text-align: left;
+}
+
+.ai-situation-error .ai-technical-details p {
+  padding: 0 12px 10px;
+  overflow-wrap: anywhere;
 }
 
 .ai-situation-meta div {

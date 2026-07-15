@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiCopResponse } from "@cop/core/cop-data";
 
 import AiAgentDialog from "./AiAgentDialog";
+
+afterEach(cleanup);
 
 function response(overrides: Partial<AiCopResponse> = {}): AiCopResponse {
   return {
@@ -106,8 +108,8 @@ describe("AiAgentDialog", () => {
     const onModelPreferenceChange = vi.fn();
     renderDialog({ onModelPreferenceChange });
 
-    expect(screen.getByRole("button", { name: "Rychlý" }).className).toContain("active");
-    fireEvent.click(screen.getByRole("button", { name: "Reasoning" }));
+    expect(screen.getByRole("button", { name: "Stručně" }).className).toContain("active");
+    fireEvent.click(screen.getByRole("button", { name: "Důkladně" }));
     expect(onModelPreferenceChange).toHaveBeenCalledWith("reasoning");
   });
 
@@ -118,7 +120,8 @@ describe("AiAgentDialog", () => {
     expect(screen.getByText("Zdroje jsou online, ale část letových stop může mít zpoždění.")).toBeTruthy();
     expect(screen.getByText("33333333-3333-4333-8333-333333333333")).toBeTruthy();
     expect(screen.getByText("Zdrojové citace")).toBeTruthy();
-    expect(screen.getByText("Background index")).toBeTruthy();
+    expect(screen.getByText("Další relevantní zdroje")).toBeTruthy();
+    expect(screen.getByText("Technické podrobnosti")).toBeTruthy();
     expect(screen.getByText("Stoupající hladina řeky")).toBeTruthy();
 
     const dialog = screen.getByRole("dialog", { name: "AI agent" });

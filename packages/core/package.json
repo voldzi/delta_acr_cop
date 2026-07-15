@@ -13,6 +13,10 @@
       "types": "./dist/auth.d.ts",
       "import": "./dist/auth.js"
     },
+    "./chat-interactions": {
+      "types": "./dist/chat-interactions.d.ts",
+      "import": "./dist/chat-interactions.js"
+    },
     "./cop-data": {
       "types": "./dist/cop-data.d.ts",
       "import": "./dist/cop-data.js"

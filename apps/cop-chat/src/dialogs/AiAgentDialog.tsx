@@ -91,14 +91,14 @@ export default function AiAgentDialog({
             />
           </label>
 
-          <div className="dialog-tabs ai-agent-model-tabs" role="group" aria-label="Model AI agenta">
+          <div className="dialog-tabs ai-agent-model-tabs" role="group" aria-label="Způsob odpovědi">
             <button
               className={modelPreference === "auto" ? "active" : ""}
               disabled={working}
               onClick={() => onModelPreferenceChange("auto")}
               type="button"
             >
-              Auto
+              Automaticky
             </button>
             <button
               className={modelPreference === "fast" ? "active" : ""}
@@ -106,7 +106,7 @@ export default function AiAgentDialog({
               onClick={() => onModelPreferenceChange("fast")}
               type="button"
             >
-              Rychlý
+              Stručně
             </button>
             <button
               className={modelPreference === "reasoning" ? "active" : ""}
@@ -114,7 +114,7 @@ export default function AiAgentDialog({
               onClick={() => onModelPreferenceChange("reasoning")}
               type="button"
             >
-              Reasoning
+              Důkladně
             </button>
           </div>
 
@@ -127,34 +127,41 @@ export default function AiAgentDialog({
           ) : error ? (
             <div className="ai-situation-error compact">
               <strong>AI agent neodpověděl</strong>
-              <p>{error}</p>
+              <p>Odpověď se nepodařilo připravit. Zkuste akci zopakovat.</p>
+              <details className="ai-technical-details">
+                <summary>Podrobnosti pro správce</summary>
+                <p>{error}</p>
+              </details>
             </div>
           ) : response ? (
             <>
               <div className="ai-situation-output">
                 <AiMarkdownOutput text={answer} variant="dialog" />
               </div>
-              <dl className="ai-situation-meta">
-                <div>
-                  <dt>Stav</dt>
-                  <dd>{aiStatusLabel(response.status)}</dd>
-                </div>
-                <div>
-                  <dt>Provider</dt>
-                  <dd>
-                    {response.provider ?? "auto"}
-                    {response.model ? ` / ${response.model}` : ""}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Audit</dt>
-                  <dd>{response.auditId}</dd>
-                </div>
-                <div>
-                  <dt>Policy</dt>
-                  <dd>{response.policy.reason}</dd>
-                </div>
-              </dl>
+              <details className="ai-technical-details">
+                <summary>Technické podrobnosti</summary>
+                <dl className="ai-situation-meta">
+                  <div>
+                    <dt>Stav</dt>
+                    <dd>{aiStatusLabel(response.status)}</dd>
+                  </div>
+                  <div>
+                    <dt>Poskytovatel</dt>
+                    <dd>
+                      {response.provider ?? "automaticky"}
+                      {response.model ? ` / ${response.model}` : ""}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Audit</dt>
+                    <dd>{response.auditId}</dd>
+                  </div>
+                  <div>
+                    <dt>Pravidlo</dt>
+                    <dd>{response.policy.reason}</dd>
+                  </div>
+                </dl>
+              </details>
               <AiEvidencePanel response={response} />
             </>
           ) : (

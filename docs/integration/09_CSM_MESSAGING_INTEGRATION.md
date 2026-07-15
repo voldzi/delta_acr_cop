@@ -790,9 +790,11 @@ The phase-0 implementation focus is trust and control:
   manual map search selection. The metadata is used only for timeline labeling,
   audit visibility and explicit user-triggered map focusing; COP still does
   not persist or proxy Matrix plaintext. In enabled
-  groups the composer also recognizes a leading
-  `@COP AI ...` mention and slash commands `/ai ...`, `/reasoning ...` and
-  `/fast ...`. Completed answers can be posted automatically with the same
+  groups the composer also recognizes a leading `@COP AI ...` mention and a
+  task-oriented slash catalog shared with COP Mobile: `/ai`, `/souhrn`,
+  `/rizika`, `/mapa`, `/hlášení`, `/úkoly` and `/přeložit`. The technical
+  `/fast` and `/reasoning` aliases remain parseable for compatibility but are
+  not presented as primary user choices. Completed answers can be posted automatically with the same
   metadata; answers requiring human review open the explicit AI dialog instead
   of being sent. COP Chat starts these requests through
   `POST /api/v1/ai/chat-agent/jobs` and polls
@@ -801,7 +803,7 @@ The phase-0 implementation focus is trust and control:
 - COP Chat exposes a dedicated direct chat entry for the configured AI agent
   (`cop.ai.agent` / `COP AI Assistant`). In that AI-only chat, plain composer
   messages are treated as authenticated AI-agent questions with
-  `modelPreference=fast` by default, while slash commands can still force
+  `modelPreference=auto` by default, while advanced slash aliases can still force
   `modelPreference=reasoning`, `modelPreference=auto` or
   `modelPreference=fast`. This does not bypass the group-level consent model:
   group room access still requires `chat.aiAssistant.enabled` and visible bot
@@ -809,9 +811,18 @@ The phase-0 implementation focus is trust and control:
   The direct AI chat is scoped to the authenticated user account and the
   configured bot member; other users get their own direct AI conversation unless
   the agent is explicitly added to a shared group.
-- The composer exposes persistent AI quick actions for `AI dotaz`, `Rychle`,
-  `Reasoning` and `Krizový přehled`, plus inline suggestions for `@COP AI`,
-  `@AI`, `/ai`, `/fast` and `/reasoning` after typing `@` or `/`. During async
+- The composer exposes persistent task actions for `AI dotaz`, `Shrnout`,
+  `Rizika` and `Najít v mapě`, plus inline suggestions for the shared mentions
+  and slash catalog after typing `@` or `/`. COP Mobile uses the same parser,
+  prompts and automatic model routing, adds native member mentions, submits
+  visible decrypted timeline context and a canonical community `groupId`, and
+  keeps the same task eligible for processing after an offline outbox delivery.
+  When a native Matrix adapter cannot attach the richer COP event metadata, the
+  stable `COP AI agent` fallback envelope is recognized by both clients,
+  stripped from the visible answer and presented under the AI identity. Raw
+  provider, model, policy and audit identifiers remain collapsed in
+  administrator details; human source labels stay visible.
+  During async
   jobs the conversation shows a dedicated AI work-in-progress status in addition
   to the normal notification banner. Member-add actions are guarded client-side
   against duplicate clicks and already-active group members. COP group

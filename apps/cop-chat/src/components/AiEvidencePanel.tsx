@@ -53,14 +53,10 @@ export function AiEvidencePanel({ response }: { response: AiCopResponse }) {
         <small>{aiEvidenceStatusLabel(evidence)}</small>
       </header>
       <div className="ai-evidence-groups">
-        <AiEvidenceGroup title="Priority" citations={evidence.priority.citations} />
+        <AiEvidenceGroup title="Důležité podklady" citations={evidence.priority.citations} />
+        <AiEvidenceGroup title="Aktuální kontext" citations={evidence.semantic.citations} />
         <AiEvidenceGroup
-          title="Aktuální kontext"
-          citations={evidence.semantic.citations}
-          detail={evidence.semantic.model}
-        />
-        <AiEvidenceGroup
-          title="Background index"
+          title="Další relevantní zdroje"
           citations={evidence.indexed?.citations ?? []}
           detail={
             typeof evidence.indexed?.matchedDocumentCount === "number"
@@ -153,7 +149,7 @@ function aiEvidenceSummary(response: AiCopResponse): AiEvidenceSummary | null {
 function aiEvidenceStatusLabel(evidence: AiEvidenceSummary): string {
   const parts = [
     typeof evidence.semantic.documentCount === "number" ? `${evidence.semantic.documentCount} aktuálních` : undefined,
-    typeof evidence.indexed?.documentCount === "number" ? `${evidence.indexed.documentCount} index` : undefined
+    typeof evidence.indexed?.documentCount === "number" ? `${evidence.indexed.documentCount} archivních` : undefined
   ].filter(Boolean);
   return parts.join(" · ") || "auditovaný COP kontext";
 }

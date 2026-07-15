@@ -73,6 +73,12 @@ import {
 } from "@cop/core/auth";
 import type { AuthConfig, AuthSession } from "@cop/core/auth";
 import {
+  chatComposerSuggestions as sharedChatComposerSuggestions,
+  parseChatAiInvocation as parseSharedChatAiInvocation,
+  parseChatAiMention as parseSharedChatAiMention,
+  type ChatAiCommandId
+} from "@cop/core/chat-interactions";
+import {
   createAiSituationSummary,
   createCommunityGroup,
   createMessagingConversation,
@@ -244,6 +250,7 @@ interface ChatSendOptions {
 }
 
 export interface AiAgentInvocation {
+  commandId?: ChatAiCommandId;
   modelPreference: AiModelPreference;
   question: string;
   trigger: "direct-ai-chat" | "mention" | "slash";
@@ -623,7 +630,7 @@ export function ChatApp() {
   const [aiSituationWorking, setAiSituationWorking] = React.useState(false);
   const [aiAgentDialogOpen, setAiAgentDialogOpen] = React.useState(false);
   const [aiAgentQuestion, setAiAgentQuestion] = React.useState("");
-  const [aiAgentModelPreference, setAiAgentModelPreference] = React.useState<AiModelPreference>("fast");
+  const [aiAgentModelPreference, setAiAgentModelPreference] = React.useState<AiModelPreference>("auto");
   const [aiAgentResponse, setAiAgentResponse] = React.useState<AiCopResponse | null>(null);
   const [aiAgentError, setAiAgentError] = React.useState<string | null>(null);
   const [aiAgentJobStatus, setAiAgentJobStatus] = React.useState<string | null>(null);
@@ -3312,7 +3319,7 @@ export function ChatApp() {
     }
   }
 
-  function openAiAgentDialog(modelPreference: AiModelPreference = "fast") {
+  function openAiAgentDialog(modelPreference: AiModelPreference = "auto") {
     if (selectedGroup && !selectedGroupAiAssistantEnabled) {
       setNotice("AI agent zatím není pro tuto skupinu zapnutý.");
       return;
@@ -6007,49 +6014,7 @@ interface ComposerQuickAction extends ComposerSuggestion {
 }
 
 export function composerSuggestions(text: string, aiAgentAvailable: boolean): ComposerSuggestion[] {
-  const draft = text.trimStart();
-  if (!draft || draft.includes(" ")) {
-    return [];
-  }
-  if (draft.startsWith("/")) {
-    return [
-      {
-        description: "Dotaz na COP AI agenta s automatickou volbou modelu",
-        label: "/ai",
-        value: "/ai "
-      },
-      {
-        description: "Rychlá odpověď přes fast model",
-        label: "/fast",
-        value: "/fast "
-      },
-      {
-        description: "Složitější analýza přes reasoning model",
-        label: "/reasoning",
-        value: "/reasoning "
-      },
-      {
-        description: "Otevřít skrytou minihru Rajčatová sklizeň",
-        label: "/tomato",
-        value: "/tomato"
-      }
-    ].filter((suggestion) => suggestion.label.startsWith(draft.toLocaleLowerCase("cs-CZ")));
-  }
-  if (draft.startsWith("@") && aiAgentAvailable) {
-    return [
-      {
-        description: "Oslovit viditelného COP AI agenta v chatu",
-        label: "@COP AI",
-        value: "@COP AI "
-      },
-      {
-        description: "Krátký alias pro COP AI agenta",
-        label: "@AI",
-        value: "@AI "
-      }
-    ].filter((suggestion) => suggestion.label.toLocaleLowerCase("cs-CZ").startsWith(draft.toLocaleLowerCase("cs-CZ")));
-  }
-  return [];
+  return sharedChatComposerSuggestions(text, { aiAgentAvailable });
 }
 
 export function composerQuickActions(aiAgentAvailable: boolean): ComposerQuickAction[] {
@@ -6064,23 +6029,22 @@ export function composerQuickActions(aiAgentAvailable: boolean): ComposerQuickAc
       value: "/ai "
     },
     {
-      description: "Použít rychlý model pro stručnou odpověď",
+      description: "Shrnout důležité body, rozhodnutí a nejasnosti",
       kind: "fast",
-      label: "Rychle",
-      value: "/fast "
+      label: "Shrnout",
+      value: "/souhrn "
     },
     {
-      description: "Použít reasoning model pro složitější situační analýzu",
+      description: "Vyhodnotit rizika, nejistoty a chybějící informace",
       kind: "reasoning",
-      label: "Reasoning",
-      value: "/reasoning "
+      label: "Rizika",
+      value: "/rizika "
     },
     {
-      description: "Připravit krizový situační přehled nad COP daty a chatem",
+      description: "Najít místo nebo objekt v COP mapě",
       kind: "situation",
-      label: "Krizový přehled",
-      value:
-        "/ai Vytvoř krizový situační přehled pro aktuální oblast. Zaměř se na vodu, počasí, požáry, policii, zdravotní rizika, dopravu, dostupné zdroje a nejistoty. "
+      label: "Najít v mapě",
+      value: "/mapa "
     }
   ];
 }
@@ -6146,7 +6110,8 @@ function MessageRow({
   const longPressHandledRef = React.useRef(false);
   const pointerStartRef = React.useRef<{ x: number; y: number } | null>(null);
   const hasReactions = Boolean(message.reactions?.length);
-  const hasAiMetadata = Boolean(message.cop?.kind);
+  const hasAiMetadata = Boolean(message.cop?.kind) || isAiAgentFallbackMessage(message);
+  const presentedAsOwn = message.own && !isAiAgentFallbackMessage(message);
 
   const clearLongPressTimer = React.useCallback(() => {
     if (longPressTimerRef.current !== null) {
@@ -6172,7 +6137,7 @@ function MessageRow({
       ref={rowRef}
       className={clsx(
         "message-row",
-        message.own && "own",
+        presentedAsOwn && "own",
         grouped && "grouped",
         selectable && "selectable",
         selected && "selected",
@@ -6243,7 +6208,7 @@ function MessageRow({
         </button>
       ) : null}
       <div className="message-bubble">
-        {!message.own && !grouped ? <span className="sender-name">{senderLabel}</span> : null}
+        {!presentedAsOwn && !grouped ? <span className="sender-name">{senderLabel}</span> : null}
         {hasAiMetadata ? <MessageAiMetadata message={message} /> : null}
         {replyToMessage ? <ReplyPreview message={replyToMessage} /> : null}
         {message.kind === "location" && message.location ? (
@@ -6270,7 +6235,7 @@ function MessageRow({
         )}
         <span className="message-time">
           {formatTime(message.timestamp)}
-          {message.own ? <CheckCheck size={15} /> : null}
+          {presentedAsOwn ? <CheckCheck size={15} /> : null}
         </span>
         {message.reactions?.length ? (
           <MessageReactions
@@ -6459,7 +6424,7 @@ export function aiMapActionsForMessage(message: MatrixTimelineMessage): MatrixCo
   if (metadataActions.length > 0) {
     return metadataActions;
   }
-  if (!message.cop?.kind) {
+  if (!message.cop?.kind && !isAiAgentFallbackMessage(message)) {
     return undefined;
   }
   return aiMapActionsFromMessageBody(messageDisplayBody(message));
@@ -6528,13 +6493,16 @@ function MessageAiMetadata({ message }: { message: MatrixTimelineMessage }) {
           {ai.question}
         </span>
       ) : null}
+      {aiEvidenceMetadataLabel(ai) ? <span className="message-ai-sources">{aiEvidenceMetadataLabel(ai)}</span> : null}
       {ai?.auditId || ai?.policyReason || provider ? (
-        <span className="message-ai-audit">
-          {ai?.auditId ? <span>Audit {shortAuditId(ai.auditId)}</span> : null}
-          {provider ? <span>{provider}</span> : null}
-          {aiEvidenceMetadataLabel(ai) ? <span>{aiEvidenceMetadataLabel(ai)}</span> : null}
-          {ai?.policyReason ? <span>{ai.policyReason}</span> : null}
-        </span>
+        <details className="message-ai-audit">
+          <summary>Technické podrobnosti</summary>
+          <span>
+            {ai?.auditId ? <span>Audit {shortAuditId(ai.auditId)}</span> : null}
+            {provider ? <span>{provider}</span> : null}
+            {ai?.policyReason ? <span>{ai.policyReason}</span> : null}
+          </span>
+        </details>
       ) : null}
     </div>
   );
@@ -8520,6 +8488,9 @@ function messageSenderLabel(
   conversation: MessagingConversationSummary | null,
   session: AuthSession
 ): string {
+  if (isAiAgentFallbackMessage(message)) {
+    return "COP AI agent";
+  }
   if (message.own) {
     return "Vy";
   }
@@ -8544,11 +8515,7 @@ function messageSenderLabel(
 }
 
 export function parseAiAgentMention(text: string): string | null {
-  const match = text.match(/^\s*@(?:cop[\s._-]*ai|ai)\b[\s:,-]*(?<question>[\s\S]*)$/iu);
-  if (!match) {
-    return null;
-  }
-  return (match.groups?.question ?? "").trim();
+  return parseSharedChatAiMention(text);
 }
 
 export function parseAiAgentInvocation(
@@ -8558,75 +8525,19 @@ export function parseAiAgentInvocation(
     groupAiAssistantEnabled?: boolean;
   } = {}
 ): AiAgentInvocation | null {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const command = parseAiAgentSlashCommand(trimmed);
-  if (command) {
-    return command;
-  }
-  const mentionQuestion = options.groupAiAssistantEnabled ? parseAiAgentMention(trimmed) : null;
-  if (mentionQuestion !== null) {
-    const normalized = normalizeAiAgentQuestion(mentionQuestion, "fast");
-    return {
-      modelPreference: normalized.modelPreference,
-      question: normalized.question,
-      trigger: "mention"
-    };
-  }
-  if (options.aiDirectChat) {
-    const normalized = normalizeAiAgentQuestion(trimmed, "fast");
-    return {
-      modelPreference: normalized.modelPreference,
-      question: normalized.question,
-      trigger: "direct-ai-chat"
-    };
-  }
-  return null;
-}
-
-function parseAiAgentSlashCommand(text: string): AiAgentInvocation | null {
-  const match = text.match(/^\/(?<command>ai|cop-ai|copai|reasoning|reason|fast)\b[\s:,-]*(?<question>[\s\S]*)$/iu);
-  if (!match?.groups) {
-    return null;
-  }
-  const command = (match.groups.command ?? "").toLocaleLowerCase("cs-CZ");
-  const fallbackPreference: AiModelPreference =
-    command === "reasoning" || command === "reason"
-      ? "reasoning"
-      : command === "fast" || command === "ai" || command === "cop-ai" || command === "copai"
-        ? "fast"
-        : "auto";
-  const normalized = normalizeAiAgentQuestion(match.groups.question ?? "", fallbackPreference);
-  return {
-    modelPreference: normalized.modelPreference,
-    question: normalized.question,
-    trigger: "slash"
-  };
+  const invocation = parseSharedChatAiInvocation(text, options);
+  return invocation
+    ? {
+        ...(invocation.commandId ? { commandId: invocation.commandId } : {}),
+        modelPreference: invocation.modelPreference,
+        question: invocation.question,
+        trigger: invocation.trigger
+      }
+    : null;
 }
 
 function isTomatoSlashCommand(text: string): boolean {
   return /^\/(?:tomato|rajce|rajcata|rajcatova-sklizen)\s*$/iu.test(text.trim());
-}
-
-function normalizeAiAgentQuestion(
-  question: string,
-  fallbackPreference: AiModelPreference
-): { modelPreference: AiModelPreference; question: string } {
-  const trimmed = question.trim();
-  const modelMatch = trimmed.match(/^\/(?<model>reasoning|reason|fast|auto)\b[\s:,-]*(?<question>[\s\S]*)$/iu);
-  if (!modelMatch?.groups) {
-    return {
-      modelPreference: fallbackPreference,
-      question: trimmed
-    };
-  }
-  const model = (modelMatch.groups.model ?? "").toLocaleLowerCase("cs-CZ");
-  return {
-    modelPreference: model === "reasoning" || model === "reason" ? "reasoning" : model === "fast" ? "fast" : "auto",
-    question: (modelMatch.groups.question ?? "").trim()
-  };
 }
 
 export function formatAiAgentShareBody(answer: string, question: string): string {
@@ -8842,9 +8753,9 @@ export function buildAiChatContextSnapshot(
   };
 }
 
-function messageDisplayBody(message: MatrixTimelineMessage): string {
-  if (message.cop?.kind === "ai-agent-response") {
-    return stripAiAgentFallbackBody(message.body, message.cop.ai?.question);
+export function messageDisplayBody(message: MatrixTimelineMessage): string {
+  if (message.cop?.kind === "ai-agent-response" || isAiAgentFallbackMessage(message)) {
+    return stripAiAgentFallbackBody(message.body, message.cop?.ai?.question);
   }
   if (message.cop?.kind === "ai-situation-summary") {
     return stripAiSituationFallbackBody(message.body);
@@ -8860,7 +8771,11 @@ function stripAiAgentFallbackBody(body: string, question?: string): string {
     const pattern = new RegExp(`^Dotaz:\\s*${escapedQuestion}\\s*`, "iu");
     return withoutTitle.replace(pattern, "").trimStart();
   }
-  return withoutTitle.trimStart();
+  return withoutTitle.replace(/^Dotaz:\s*[\s\S]*?\n\s*\n/iu, "").trimStart();
+}
+
+export function isAiAgentFallbackMessage(message: MatrixTimelineMessage): boolean {
+  return !message.cop?.kind && /^\s*COP AI agent(?:\s|$)/iu.test(message.body);
 }
 
 function stripAiSituationFallbackBody(body: string): string {
@@ -9084,11 +8999,11 @@ function aiResponseEvidenceMetadata(response: AiCopResponse | null): {
 }
 
 function aiEvidenceMetadataLabel(ai: MatrixCopMessageMetadata["ai"]): string | undefined {
-  const parts = [
-    typeof ai?.semanticDocumentCount === "number" ? `S:${ai.semanticDocumentCount}` : undefined,
-    typeof ai?.indexedDocumentCount === "number" ? `I:${ai.indexedDocumentCount}` : undefined
-  ].filter(Boolean);
-  return parts.length ? `zdroje ${parts.join(" ")}` : undefined;
+  const count = (ai?.semanticDocumentCount ?? 0) + (ai?.indexedDocumentCount ?? 0);
+  if (count <= 0) {
+    return undefined;
+  }
+  return `Ověřené zdroje: ${count}`;
 }
 
 function aiRetrievalStatus(value: unknown): "degraded" | "disabled" | "ok" | undefined {
@@ -9103,8 +9018,8 @@ function boundedAiDocumentCount(value: unknown): number | undefined {
 
 function latestMessagePreview(message: MatrixTimelineMessage): string {
   const body = messageDisplayBody(message);
-  if (message.cop?.kind === "ai-agent-response") {
-    return `${message.own ? "Vy: " : ""}COP AI agent: ${body}`;
+  if (message.cop?.kind === "ai-agent-response" || isAiAgentFallbackMessage(message)) {
+    return `COP AI agent: ${body}`;
   }
   if (message.cop?.kind === "ai-situation-summary") {
     return `${message.own ? "Vy: " : ""}AI souhrn: ${body}`;

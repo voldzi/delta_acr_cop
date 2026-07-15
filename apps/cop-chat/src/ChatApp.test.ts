@@ -21,6 +21,8 @@ import {
   composerSuggestions,
   formatAiAgentShareBody,
   formatAiSituationShareBody,
+  isAiAgentFallbackMessage,
+  messageDisplayBody,
   parseAiAgentInvocation,
   parseAiAgentMention,
   shouldOfferRouteForAiMapAction,
@@ -219,10 +221,27 @@ describe("parseAiAgentMention", () => {
   });
 });
 
+describe("AI agent fallback interoperability", () => {
+  const nativeFallbackMessage: MatrixTimelineMessage = {
+    body: "COP AI agent\nDotaz: Jaká jsou rizika?\n\nNejvětším rizikem je zpožděný zdroj.",
+    eventId: "$native-ai",
+    kind: "text",
+    own: true,
+    sender: "@operator:msg.zeleznalady.cz",
+    timestamp: "2026-07-15T09:00:00.000Z"
+  };
+
+  it("recognizes and cleans an AI answer sent by the native client", () => {
+    expect(isAiAgentFallbackMessage(nativeFallbackMessage)).toBe(true);
+    expect(messageDisplayBody(nativeFallbackMessage)).toBe("Největším rizikem je zpožděný zdroj.");
+  });
+});
+
 describe("parseAiAgentInvocation", () => {
   it("extracts slash commands with explicit model preferences", () => {
     expect(parseAiAgentInvocation("/ai shrň rizika")).toMatchObject({
-      modelPreference: "fast",
+      commandId: "ai",
+      modelPreference: "auto",
       question: "shrň rizika",
       trigger: "slash"
     });
@@ -240,7 +259,7 @@ describe("parseAiAgentInvocation", () => {
 
   it("uses mentions only when group AI is enabled", () => {
     expect(parseAiAgentInvocation("@AI stav?", { groupAiAssistantEnabled: true })).toMatchObject({
-      modelPreference: "fast",
+      modelPreference: "auto",
       question: "stav?",
       trigger: "mention"
     });
@@ -249,7 +268,7 @@ describe("parseAiAgentInvocation", () => {
 
   it("treats normal messages as AI questions only inside the dedicated AI chat", () => {
     expect(parseAiAgentInvocation("Co je v okolí nejisté?", { aiDirectChat: true })).toMatchObject({
-      modelPreference: "fast",
+      modelPreference: "auto",
       question: "Co je v okolí nejisté?",
       trigger: "direct-ai-chat"
     });
@@ -259,9 +278,30 @@ describe("parseAiAgentInvocation", () => {
 
 describe("composerSuggestions", () => {
   it("suggests slash AI commands", () => {
-    expect(composerSuggestions("/", true).map((item) => item.label)).toEqual(["/ai", "/fast", "/reasoning", "/tomato"]);
-    expect(composerSuggestions("/r", true)).toMatchObject([{ label: "/reasoning", value: "/reasoning " }]);
-    expect(composerSuggestions("/t", true)).toMatchObject([{ label: "/tomato", value: "/tomato" }]);
+    expect(composerSuggestions("/", true).map((item) => item.label)).toEqual([
+      "/ai",
+      "/souhrn",
+      "/rizika",
+      "/mapa",
+      "/hlášení",
+      "/úkoly",
+      "/přeložit"
+    ]);
+    expect(composerSuggestions("/r", true)).toMatchObject([{ label: "/rizika", value: "/rizika " }]);
+    expect(composerSuggestions("/m", true)).toMatchObject([{ label: "/mapa", value: "/mapa " }]);
+  });
+
+  it("turns task commands into explicit grounded AI prompts", () => {
+    expect(parseAiAgentInvocation("/souhrn poslední směna")).toMatchObject({
+      commandId: "summary",
+      modelPreference: "auto",
+      question: expect.stringContaining("poslední směna")
+    });
+    expect(parseAiAgentInvocation("/rizika povodeň")).toMatchObject({
+      commandId: "risks",
+      modelPreference: "reasoning",
+      question: expect.stringContaining("povodeň")
+    });
   });
 
   it("suggests AI mentions only when the agent is available", () => {
@@ -274,9 +314,9 @@ describe("composerQuickActions", () => {
   it("keeps AI actions visible when the agent is available", () => {
     expect(composerQuickActions(true).map((item) => item.label)).toEqual([
       "AI dotaz",
-      "Rychle",
-      "Reasoning",
-      "Krizový přehled"
+      "Shrnout",
+      "Rizika",
+      "Najít v mapě"
     ]);
     expect(composerQuickActions(false)).toEqual([]);
   });

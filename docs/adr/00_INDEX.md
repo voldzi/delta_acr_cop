@@ -18,3 +18,4 @@
 - [0015 Matrix VoIP ICE Resilience](0015_MATRIX_VOIP_ICE_RESILIENCE.md)
 - [0016 Native-First Matrix Group Voice Calls](0016_MATRIX_GROUP_VOICE_CALLS.md)
 - [0017 Server-Owned Canonical Messaging Conversations](0017_SERVER_OWNED_MESSAGING_CONVERSATIONS.md)
+- [0018 Shared Cross-Client Chat Interaction Contract](0018_SHARED_CROSS_CLIENT_CHAT_INTERACTIONS.md)

@@ -969,7 +969,7 @@ describe("community report routes", () => {
       }
     });
     expect(capturedQueries).toHaveLength(1);
-    expect(capturedQueries[0]?.modelPreference).toBe("fast");
+    expect(capturedQueries[0]?.modelPreference).toBe("auto");
     expect(capturedQueries[0]?.prompt).toContain("priorityContext");
     expect(capturedQueries[0]?.prompt).toContain("indexedContext");
     expect(capturedQueries[0]?.prompt).toContain("civilní lety a stale civilní letové tracky nejsou priorita");
