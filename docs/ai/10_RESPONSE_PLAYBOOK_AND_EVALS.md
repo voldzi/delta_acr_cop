@@ -69,6 +69,8 @@ dialogový stav z poslední viditelné, dešifrované výměny:
 - meteorologické podklady se před odpovědí kontrolují proti požadovanému oknu;
   aktuální měření se nesmí vydávat za budoucí předpověď a podklad bez časové
   platnosti se pro explicitní období nepoužije,
+- samotná meteorologická výstraha se u obecného dotazu nezamění za předpověď;
+  AI ji uvede jako důležitý doplněk a otevřeně přizná chybějící hodnoty počasí,
 - při změně období odstraní z interpretovaného dotazu staré výrazy jako
   „dnes“, aby nevznikl konflikt „dnes + zítra“,
 - bez jednoznačné viditelné kotvy si vyžádá upřesnění a historii nedoplňuje.

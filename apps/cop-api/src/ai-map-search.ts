@@ -654,6 +654,16 @@ export function aiMapSearchFallbackResponse(
     return undefined;
   }
   const question = optionalText(context?.question);
+  const weatherAlertOnlyResponse = aiWeatherAlertOnlyFallbackResponse({
+    aiRequest,
+    question,
+    reason,
+    requestNow,
+    results
+  });
+  if (weatherAlertOnlyResponse) {
+    return weatherAlertOnlyResponse;
+  }
   const summaryResult = aiBestMapSearchResultForQuestion(results, question) ?? topResult;
   const mapActions = aiMapActionsFromFallbackResults(results, summaryResult, question);
   const title = optionalText(summaryResult.title) ?? "mapový výsledek";
@@ -715,6 +725,89 @@ export function aiMapSearchFallbackResponse(
     },
     status: "COMPLETED"
   };
+}
+
+function aiWeatherAlertOnlyFallbackResponse(input: {
+  aiRequest: AiCopQuery;
+  question: string | undefined;
+  reason: string;
+  requestNow: Date;
+  results: Record<string, unknown>[];
+}): AiCopResponse | undefined {
+  const normalizedQuestion = normalizeAiMapSearchText(input.question ?? "");
+  if (!aiQuestionAsksWeatherSummary(normalizedQuestion)) {
+    return undefined;
+  }
+  const weatherAlerts = input.results.filter(aiWeatherAlertMapSearchResult);
+  const hasForecastEvidence = input.results.some((result) => !aiWeatherAlertMapSearchResult(result)
+    && aiWeatherSummaryMapSearchResultScore(result) > 0);
+  if (weatherAlerts.length === 0 || hasForecastEvidence) {
+    return undefined;
+  }
+
+  const alertsText = weatherAlerts
+    .slice(0, 3)
+    .map(aiWeatherAlertUserFacingSummary)
+    .join("; ");
+  return {
+    auditId: randomUUID(),
+    model: "map-search-partial-fallback",
+    policy: {
+      allowed: true,
+      reason: `AI provider fallback found weather alerts but no forecast evidence. ${input.reason}`,
+      redactionsApplied: false
+    },
+    provider: "local",
+    requestId: input.aiRequest.requestId,
+    result: {
+      structured: {
+        generatedAt: input.requestNow.toISOString(),
+        mapActions: aiMapActionsFromMapSearchResults(weatherAlerts.slice(0, 3)),
+        mapSearch: {
+          resultCount: input.results.length,
+          results: input.results.slice(0, 5)
+        },
+        mapSearchFallback: {
+          alertOnly: true,
+          reason: input.reason,
+          resultCount: input.results.length
+        }
+      },
+      summary: [
+        "Pro požadované místo a období teď nemám předpověď ani měření s hodnotami teploty, srážek a větru.",
+        `Dostupné jsou pouze platné meteorologické výstrahy: ${alertsText}.`,
+        "Výstrahy jsou důležitým doplňkem, ale samy neurčují průběh počasí. Nechci je proto vydávat za předpověď. Zkuste dotaz zopakovat po aktualizaci předpovědního zdroje."
+      ].join(" ")
+    },
+    status: "COMPLETED"
+  };
+}
+
+function aiWeatherAlertMapSearchResult(result: Record<string, unknown>): boolean {
+  const layerId = normalizeCategoryId(optionalText(result.layerId) ?? "");
+  const category = normalizeCategoryId(optionalText(result.category) ?? "");
+  const haystack = aiMapSearchResultHaystack(result);
+  return layerId === "public.safety.weather_alerts"
+    || /(?:weather_alert|weather_warning|safety_alert)/u.test(category)
+    || /\b(?:weather_alerts|weather_warning|cap weather warnings)\b/u.test(haystack);
+}
+
+function aiWeatherAlertUserFacingSummary(result: Record<string, unknown>): string {
+  const normalized = normalizeAiMapSearchText([
+    optionalText(result.category),
+    optionalText(result.title)
+  ].filter(Boolean).join(" "));
+  const label = /\b(?:heat_stress|heat stress|vedro|horko|tepel)\b/u.test(normalized)
+    ? "zvýšená tepelná zátěž"
+    : /\b(?:thunderstorm|storm|bourk)\b/u.test(normalized)
+      ? "bouřky"
+      : /\b(?:wind|vitr)\b/u.test(normalized)
+        ? "silný vítr"
+        : /\b(?:flood|povod|dest|rain)\b/u.test(normalized)
+          ? "nebezpečné srážky nebo povodňové riziko"
+          : "meteorologická výstraha";
+  const validity = aiMetricValidityText(result);
+  return validity ? `${label} (${validity.replace(/\.$/u, "")})` : label;
 }
 
 export function aiMapSearchNoResultFallbackResponse(

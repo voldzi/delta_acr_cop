@@ -390,6 +390,57 @@ describe("AI map search", () => {
     expect(structured?.mapSearchFallback?.result?.title).toBe("Předpověď pro Vrbno pod Pradědem");
   });
 
+  it("does not present weather alerts as a general forecast", () => {
+    const aiRequest: AiCopQuery = {
+      context: {
+        mapSearch: {
+          results: [
+            {
+              category: "heat_stress",
+              layerId: "public.safety.weather_alerts",
+              mapFeatureId: "weather-alert:heat",
+              sourceName: "CHMI CAP weather warnings",
+              status: "active",
+              title: "heat_stress",
+              validFrom: "2026-07-16T10:00:00.000Z",
+              validUntil: "2026-07-17T17:00:00.000Z"
+            },
+            {
+              category: "thunderstorm",
+              layerId: "public.safety.weather_alerts",
+              mapFeatureId: "weather-alert:storm",
+              sourceName: "CHMI CAP weather warnings",
+              status: "active",
+              title: "thunderstorm",
+              validFrom: "2026-07-17T11:00:00.000Z",
+              validUntil: "2026-07-17T22:00:00.000Z"
+            }
+          ]
+        },
+        question: "Jaké bude zítra počasí?"
+      },
+      outputFormat: "MARKDOWN",
+      prompt: "Dotaz uživatele: Jaké bude zítra počasí?",
+      providerPreference: "auto",
+      purpose: "COP_EXPLANATION",
+      requestId: "test-weather-alerts-not-forecast",
+      safetyScope: "COP_DATA_ASSISTANCE_ONLY"
+    };
+
+    const response = aiMapSearchFallbackResponse(aiRequest, new Date("2026-07-16T10:45:00.000Z"), "test");
+    const structured = response?.result.structured as {
+      mapSearchFallback?: { alertOnly?: boolean };
+    } | undefined;
+
+    expect(response?.model).toBe("map-search-partial-fallback");
+    expect(response?.result.summary).toContain("nemám předpověď ani měření s hodnotami teploty, srážek a větru");
+    expect(response?.result.summary).toContain("zvýšená tepelná zátěž");
+    expect(response?.result.summary).toContain("bouřky");
+    expect(response?.result.summary).toContain("Nechci je proto vydávat za předpověď");
+    expect(response?.result.summary).not.toContain("Našel jsem v dostupných datech COP: heat_stress");
+    expect(structured?.mapSearchFallback?.alertOnly).toBe(true);
+  });
+
   it("extracts a clean place query from generic map searches with a location phrase", () => {
     const intent = inferAiMapSearchIntent("Najdi vodoměrnou stanici ve Vrbně pod Pradědem.", {});
     const waterGaugeFeature: SituationFeature = {
