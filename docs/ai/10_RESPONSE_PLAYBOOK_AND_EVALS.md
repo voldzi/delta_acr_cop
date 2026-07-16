@@ -91,6 +91,17 @@ dialogový stav z poslední viditelné, dešifrované výměny:
   „dnes“, aby nevznikl konflikt „dnes + zítra“,
 - bez jednoznačné viditelné kotvy si vyžádá upřesnění a historii nedoplňuje.
 
+V přímém i skupinovém chatu posílají web a nativní Swift klient stejný omezený
+výřez nejvýše 30 čitelných zpráv. Výřez obsahuje autora, čas a případnou vazbu
+`replyToEventId`; server nikdy nedočítá skrytou Matrix historii. Pro krátké
+navázání se nejprve použije explicitní odpověď na zprávu, jinak poslední
+relevantní AI výměna nebo nedávná diskuse všech účastníků. Do promptu se
+garantovaně zachová nejvýše šest zpráv vybraného tematického okna v původním
+chronologickém pořadí. Rozpoznaná změna domény okno ukončí, takže se například
+starší počasí nepřimíchá do následné dopravní otázky. Výroky účastníků jsou
+diskusní kontext, nikoli automaticky ověřená COP data; agent je má podle
+dostupnosti porovnat s autorizovanými podklady a uvést rozpor nebo nejistotu.
+
 Doména navazujícího dotazu se určí před retrievalem. Meteorologické navázání
 proto vyhledává pouze předpověď, nowcast, radar a bouřkové riziko; nesmí jako
 odpověď zvolit hydrologickou stanici jen proto, že je geograficky blízko.
@@ -141,6 +152,8 @@ Ověřuje:
 - obecnou předpověď s polohou i bez ní a uživatelsky čitelný fallback,
 - navázání „A jak bude zítra?“ s převzetím počasí, místa a správným budoucím
   `validAt`,
+- skupinové navázání nad zprávami více účastníků, prioritu explicitního reply,
+  chronologické zachování relevantního okna a oddělení nesouvisejících domén,
 - dvoukrokové navázání „Jak bude dneska?“ → „Pro aktuální polohu“ s výhradně
   meteorologickými zdroji a bez průniku hydrologických výsledků,
 - samostatné hovorové formulace a negativní příklady, které se nesmí zařadit

@@ -178,7 +178,11 @@ also the server-side execution path for jobs.
 `/api/v1/ai/chat-agent/query` may include a bounded `chatContext` snapshot from
 the client's currently visible/decrypted Matrix timeline. COP API combines that
 explicit client context with authorized server-side COP data; it does not fetch
-or decrypt Matrix room history on the server.
+or decrypt Matrix room history on the server. Web and native clients use the
+same maximum of 30 recent messages and may include `replyToEventId` for an
+explicit reply. The API resolves a small chronological, topic-compatible
+discussion window across participants; participant text remains unverified
+conversation context until corroborated by authorized COP evidence.
 
 Enabling `metadata.chat.aiAssistant.enabled` for a community group now requires
 explicit Matrix-room-member consent. COP provisions the configured AI bot as a

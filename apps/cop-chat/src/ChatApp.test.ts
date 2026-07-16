@@ -794,6 +794,7 @@ describe("buildAiChatContextSnapshot", () => {
       timestamp: `2026-06-26T07:${String(index).padStart(2, "0")}:00.000Z`,
       ...(index === 31
         ? {
+            replyToEventId: "$event-30",
             cop: {
               ai: {
                 auditId: "audit-31",
@@ -833,6 +834,7 @@ describe("buildAiChatContextSnapshot", () => {
       question: "Jaká jsou rizika?",
       responsePlaybook: { domain: "situation", intentId: "situation.summary" }
     });
+    expect(snapshot.messages?.at(-2)?.replyToEventId).toBe("$event-30");
     expect(snapshot.messages?.at(-1)).toMatchObject({
       body: "@COP AI shrň rizika",
       eventId: "local:current-ai-question",

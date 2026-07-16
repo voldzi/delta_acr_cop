@@ -17152,6 +17152,10 @@
           "own": {
             "type": "boolean"
           },
+          "replyToEventId": {
+            "type": "string",
+            "maxLength": 160
+          },
           "sender": {
             "type": "string",
             "maxLength": 160

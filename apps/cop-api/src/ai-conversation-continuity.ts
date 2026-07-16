@@ -6,6 +6,8 @@ export type AiConversationFollowUpKind = "detail" | "explanation" | "location" |
 export interface AiConversationContinuity {
   assumptions: string[];
   contractVersion: "cop-ai-conversation-continuity-v1";
+  contextMessageCount?: number;
+  contextParticipantCount?: number;
   explicitLocation?: string;
   followUp: boolean;
   followUpKind?: AiConversationFollowUpKind;
@@ -38,7 +40,21 @@ interface VisibleChatMessage {
   ai?: Record<string, unknown>;
   body: string;
   eventId?: string;
+  kind?: string;
   own: boolean;
+  replyToEventId?: string;
+  sender?: string;
+  senderDisplayName?: string;
+  timestamp?: string;
+}
+
+interface ConversationAnchor {
+  contextMessageCount: number;
+  contextParticipantCount: number;
+  inheritedDomain?: string;
+  inheritedIntentId?: string;
+  question: string;
+  sourceMessageIds: string[];
 }
 
 interface FollowUpMatch {
@@ -52,14 +68,14 @@ const timeFollowUpPattern = /^(?:a\s+)?(?:(?:co(?:\s+bude)?|jak(?:e|a|y)?(?:\s+t
 const explanationFollowUpPattern = /^(?:a\s+)?(?:proc|co\s+to\s+znamena|jak\s+to|jak\s+moc|je\s+to\s+bezpecne|co\s+z\s+toho\s+plyne)\??$/u;
 const mapFollowUpPattern = /^(?:a\s+)?(?:ukaz|zobraz)(?:\s+to)?\s+na\s+mape\??$/u;
 const detailFollowUpPattern = /^(?:a\s+)?(?:co\s+dal|co\s+mam\s+delat|a\s+nejblizsi|nejblizsi|podrobneji|vice\s+detailu)\??$/u;
-const locationFollowUpPattern = /^(?:a\s+)?(?:co\s+)?(?:v|ve|na|u)\s+(.{2,80}?)\??$/u;
+const locationFollowUpPattern = /^(?:a\s+)?(?:(?:co\s+)?(?:v|ve|na|u|pro|kolem|v\s+okoli|v\s+oblasti)|(?:zmen|zmenit)\s+misto\s+na)\s+(.{2,80}?)\??$/u;
 const currentLocationFollowUpPattern = /^(?:a\s+)?(?:(?:(?:pro|podle)\s+)?(?:(?:aktualni|soucasnou|moji|mou|me)\s+poloh(?:u|y))|tady|u\s+me|kolem\s+me|v\s+mem\s+okoli)\??$/u;
 
 export function resolveAiConversationContinuity(
   originalQuestion: string,
   chatContext: Record<string, unknown> | undefined
 ): AiConversationContinuity {
-  const question = originalQuestion.replace(/\s+/gu, " ").trim();
+  const question = stripAiInvocation(originalQuestion.replace(/\s+/gu, " ").trim());
   const standaloneMeaning = inferAiQueryMeaning(question);
   const match = followUpMatch(question);
   if (!match) {
@@ -96,9 +112,12 @@ export function resolveAiConversationContinuity(
     ...match,
     ...(timeReference ? { timeReference } : {})
   }), inheritedDomain);
-  const assumptions = [
-    `Navazující dotaz byl spojen pouze s posledním viditelným dotazem „${truncate(anchor.question, 180)}“.`
-  ];
+  const assumptions = anchor.contextMessageCount > 1
+    ? [
+        `Navazující dotaz byl vyhodnocen nad ${anchor.contextMessageCount} nedávnými čitelnými zprávami od ${anchor.contextParticipantCount} účastníků; tvrzení účastníků nejsou bez dalšího ověřenými daty COP.`,
+        `Konverzační kotva byla určena jako „${truncate(anchor.question, 180)}“.`
+      ]
+    : [`Navazující dotaz byl spojen s posledním viditelným dotazem „${truncate(anchor.question, 180)}“.`];
   if (match.explicitLocation) {
     assumptions.push(`Místo bylo změněno na „${match.explicitLocation}“ podle aktuálního dotazu.`);
   }
@@ -108,6 +127,8 @@ export function resolveAiConversationContinuity(
   return {
     assumptions,
     contractVersion: "cop-ai-conversation-continuity-v1",
+    contextMessageCount: anchor.contextMessageCount,
+    contextParticipantCount: anchor.contextParticipantCount,
     ...(match.explicitLocation ? { explicitLocation: match.explicitLocation } : {}),
     followUp: true,
     followUpKind: match.kind,
@@ -117,7 +138,7 @@ export function resolveAiConversationContinuity(
     originalQuestion: question,
     previousQuestion: anchor.question,
     resolvedQuestion,
-    sourceMessageIds: anchor.eventId ? [anchor.eventId] : [],
+    sourceMessageIds: anchor.sourceMessageIds,
     ...(timeReference ? { timeReference } : {}),
     ...(match.usesCurrentLocation ? { usesCurrentLocation: true } : {})
   };
@@ -213,7 +234,7 @@ function followUpMatch(question: string): FollowUpMatch | undefined {
   }
   const normalizedLocation = normalized.match(locationFollowUpPattern)?.[1]?.replace(/[?.!]+$/gu, "").trim();
   const explicitLocation = question
-    .match(/^(?:a\s+)?(?:co\s+)?(?:v|ve|na|u)\s+(.{2,80}?)\??$/iu)?.[1]
+    .match(/^(?:a\s+)?(?:(?:co\s+)?(?:v|ve|na|u|pro|kolem|v\s+okolí|v\s+oblasti)|(?:změň|zmen|změnit|zmenit)\s+místo\s+na)\s+(.{2,80}?)\??$/iu)?.[1]
     ?.replace(/[?.!]+$/gu, "")
     .trim();
   if (normalizedLocation && explicitLocation && !/^(?:tom|tomhle|teto|tam|tady|okoli)$/u.test(normalizedLocation)) {
@@ -225,37 +246,173 @@ function followUpMatch(question: string): FollowUpMatch | undefined {
 function previousQuestionAnchor(
   messages: VisibleChatMessage[],
   currentQuestion: string
-): { eventId?: string; inheritedDomain?: string; inheritedIntentId?: string; question: string } | undefined {
-  const relevant = messages.slice(-10);
+): ConversationAnchor | undefined {
+  const currentMessageIndex = lastCurrentQuestionIndex(messages, currentQuestion);
+  const currentMessage = currentMessageIndex >= 0 ? messages[currentMessageIndex] : undefined;
+  const relevant = (currentMessageIndex >= 0 ? messages.slice(0, currentMessageIndex) : messages)
+    .filter((message) => !sameQuestion(message.body, currentQuestion))
+    .slice(-20);
+  const replyTargetIndex = currentMessage?.replyToEventId
+    ? relevant.findIndex((message) => message.eventId === currentMessage.replyToEventId)
+    : -1;
+  if (replyTargetIndex >= 0) {
+    return isAiMessage(relevant[replyTargetIndex]!)
+      ? aiMessageAnchor(relevant[replyTargetIndex]!, currentQuestion)
+      : humanDiscussionAnchor(relevant, replyTargetIndex);
+  }
+
+  let latestAiIndex = -1;
+  let latestAiAnchor: ConversationAnchor | undefined;
   for (let index = relevant.length - 1; index >= 0; index -= 1) {
     const message = relevant[index]!;
-    const aiQuestion = optionalText(message.ai?.question) ?? questionFromAiFallbackBody(message.body);
-    if (aiQuestion && !sameQuestion(aiQuestion, currentQuestion)) {
-      const responsePlaybook = isRecord(message.ai?.responsePlaybook) ? message.ai.responsePlaybook : undefined;
-      return {
-        ...(message.eventId ? { eventId: message.eventId } : {}),
-        ...(optionalText(responsePlaybook?.domain) ? { inheritedDomain: optionalText(responsePlaybook?.domain) } : {}),
-        ...(optionalText(responsePlaybook?.intentId)
-          ? { inheritedIntentId: optionalText(responsePlaybook?.intentId) }
-          : {}),
-        question: stripAiInvocation(aiQuestion)
-      };
+    const candidate = aiMessageAnchor(message, currentQuestion);
+    if (candidate) {
+      latestAiIndex = index;
+      latestAiAnchor = candidate;
+      break;
     }
   }
+
+  const recentHumanIndex = lastHumanMessageIndex(relevant);
+  if (recentHumanIndex > latestAiIndex) {
+    return humanDiscussionAnchor(relevant, recentHumanIndex);
+  }
+  if (latestAiAnchor) {
+    return latestAiAnchor;
+  }
+
   for (let index = relevant.length - 1; index >= 0; index -= 1) {
     const message = relevant[index]!;
-    if (!message.own || isAiMessage(message)) {
+    if (isAiMessage(message)) {
       continue;
     }
     const candidate = stripAiInvocation(message.body);
     if (candidate && !sameQuestion(candidate, currentQuestion)) {
-      return {
-        ...(message.eventId ? { eventId: message.eventId } : {}),
-        question: candidate
-      };
+      return humanDiscussionAnchor(relevant, index);
     }
   }
   return undefined;
+}
+
+function aiMessageAnchor(message: VisibleChatMessage, currentQuestion: string): ConversationAnchor | undefined {
+  const aiQuestion = optionalText(message.ai?.question) ?? questionFromAiFallbackBody(message.body);
+  if (!aiQuestion || sameQuestion(aiQuestion, currentQuestion)) {
+    return undefined;
+  }
+  const responsePlaybook = isRecord(message.ai?.responsePlaybook) ? message.ai.responsePlaybook : undefined;
+  return {
+    contextMessageCount: 1,
+    contextParticipantCount: 0,
+    ...(optionalText(responsePlaybook?.domain) ? { inheritedDomain: optionalText(responsePlaybook?.domain) } : {}),
+    ...(optionalText(responsePlaybook?.intentId)
+      ? { inheritedIntentId: optionalText(responsePlaybook?.intentId) }
+      : {}),
+    question: stripAiInvocation(aiQuestion),
+    sourceMessageIds: message.eventId ? [message.eventId] : []
+  };
+}
+
+function lastCurrentQuestionIndex(messages: VisibleChatMessage[], currentQuestion: string): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (!isAiMessage(messages[index]!) && sameQuestion(messages[index]!.body, currentQuestion)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function lastHumanMessageIndex(messages: VisibleChatMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (!isAiMessage(messages[index]!) && stripAiInvocation(messages[index]!.body)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function humanDiscussionAnchor(messages: VisibleChatMessage[], anchorIndex: number): ConversationAnchor | undefined {
+  const anchorMessage = messages[anchorIndex];
+  if (!anchorMessage || isAiMessage(anchorMessage)) {
+    return undefined;
+  }
+  const question = stripAiInvocation(anchorMessage.body);
+  if (!question) {
+    return undefined;
+  }
+  const playbook = classifyAiResponseIntent(question);
+  const meaning = inferAiQueryMeaning(question);
+  const playbookDomain = playbook?.domain && operationalDiscussionDomains.has(playbook.domain)
+    ? playbook.domain
+    : undefined;
+  const inheritedDomain = meaning?.domain ?? playbookDomain ?? discussionDomain(question);
+  const inheritedIntentId = meaning?.intentId ?? (playbookDomain ? playbook?.intentId : undefined);
+  const selected: VisibleChatMessage[] = [anchorMessage];
+  const anchorTimestamp = timestampMillis(anchorMessage.timestamp);
+  for (let index = anchorIndex - 1; index >= 0 && selected.length < 6; index -= 1) {
+    const candidate = messages[index]!;
+    const candidateTimestamp = timestampMillis(candidate.timestamp);
+    if (anchorTimestamp > 0 && candidateTimestamp > 0 && anchorTimestamp - candidateTimestamp > 6 * 60 * 60 * 1000) {
+      break;
+    }
+    const candidateQuestion = isAiMessage(candidate)
+      ? optionalText(candidate.ai?.question) ?? questionFromAiFallbackBody(candidate.body) ?? candidate.body
+      : stripAiInvocation(candidate.body);
+    const candidateDomain = discussionDomain(candidateQuestion);
+    if (inheritedDomain && candidateDomain && candidateDomain !== inheritedDomain) {
+      break;
+    }
+    selected.unshift(candidate);
+  }
+  const participants = new Set(
+    selected
+      .filter((message) => !isAiMessage(message))
+      .map((message) => message.sender ?? message.senderDisplayName ?? (message.own ? "self" : "participant"))
+  );
+  return {
+    contextMessageCount: selected.length,
+    contextParticipantCount: participants.size,
+    ...(inheritedDomain ? { inheritedDomain } : {}),
+    ...(inheritedIntentId ? { inheritedIntentId } : {}),
+    question,
+    sourceMessageIds: selected.flatMap((message) => (message.eventId ? [message.eventId] : []))
+  };
+}
+
+function discussionDomain(value: string): string | undefined {
+  const question = stripAiInvocation(value);
+  const inferred = inferAiQueryMeaning(question)?.domain ?? classifyAiResponseIntent(question)?.domain;
+  if (inferred && operationalDiscussionDomains.has(inferred)) {
+    return inferred;
+  }
+  const normalized = normalize(question);
+  if (/(?:pocasi|srazk|dest|prset|prsi|snih|bour|vitr|teplot|mraz|radar)/u.test(normalized)) return "weather";
+  if (/(?:doprav|silnic|uzavir|nehod|kolon|prujezd|vozovk)/u.test(normalized)) return "traffic";
+  if (/(?:povod|zaplav|hladin|prutok|vodomer|\b(?:rek(?:a|y|u|ou|e)|vod(?:a|y|u|ou|e))\b)/u.test(normalized)) return "flood";
+  if (/(?:pozar|hori|kour|hasic|hotspot)/u.test(normalized)) return "fire";
+  if (/(?:vypad|elektr|proud|plyn|vodovod|infrastruktur|signal)/u.test(normalized)) return "infrastructure";
+  if (/(?:datov|zdroj|nenacita|cerstv|dostupnost)/u.test(normalized)) return "data";
+  if (/(?:komunit|hlasen|nahlasil|dobrovolnik|svedek)/u.test(normalized)) return "community";
+  if (/(?:situac|vystrah|varovan|rizik|nebezpec)/u.test(normalized)) return "situation";
+  return undefined;
+}
+
+const operationalDiscussionDomains = new Set([
+  "community",
+  "data",
+  "fire",
+  "flood",
+  "infrastructure",
+  "situation",
+  "traffic",
+  "weather"
+]);
+
+function timestampMillis(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function resolvedFollowUpQuestion(
@@ -463,7 +620,12 @@ function visibleMessages(chatContext: Record<string, unknown> | undefined): Visi
       ...(isRecord(item.ai) ? { ai: item.ai } : {}),
       body,
       ...(optionalText(item.eventId) ? { eventId: optionalText(item.eventId) } : {}),
-      own: item.own === true
+      ...(optionalText(item.kind) ? { kind: optionalText(item.kind) } : {}),
+      own: item.own === true,
+      ...(optionalText(item.replyToEventId) ? { replyToEventId: optionalText(item.replyToEventId) } : {}),
+      ...(optionalText(item.sender) ? { sender: optionalText(item.sender) } : {}),
+      ...(optionalText(item.senderDisplayName) ? { senderDisplayName: optionalText(item.senderDisplayName) } : {}),
+      ...(optionalText(item.timestamp) ? { timestamp: optionalText(item.timestamp) } : {})
     }];
   });
 }

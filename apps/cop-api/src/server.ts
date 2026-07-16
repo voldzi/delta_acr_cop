@@ -8989,6 +8989,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       mapFeatures: aiMapFeatures,
       objects: aiObjects,
       priorityContext,
+      requiredChatMessageIds: conversationContinuity.sourceMessageIds,
       retrievalIntent,
       semanticContext,
       sourceHealth: aiSourceHealth
@@ -9075,6 +9076,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           ? `Respektuj responsePlaybook pro záměr, zdroje, nejistotu a UI akce. ${responsePlaybookPrompt}`
           : "Pokud responsePlaybook není k dispozici, drž se obecného COP kontextu a nevyvozuj UI akce bez dat.",
         "ChatContext ber jen jako výňatek viditelné dešifrované timeline poskytnutý klientem; nedovozuj neviděnou historii místnosti.",
+        "Ve skupinové diskusi čti zachované chatContext zprávy chronologicky, rozlišuj jejich autory a vazby replyToEventId. Tvrzení účastníků ber jako diskusní kontext, nikoli automaticky jako ověřená data COP; pokud jsou pro odpověď důležitá, porovnej je s COP podklady a popiš případný rozpor.",
         conversationContinuity.followUp
           ? `Aktuální dotaz je krátké navázání. Pracuj s conversationContinuity, výslovně respektuj jeho assumptions a odpověz na interpretovaný dotaz: ${effectiveQuestion}`
           : "Aktuální dotaz je samostatný; nehledej pro něj skryté konverzační předpoklady.",
@@ -16811,6 +16813,7 @@ function summarizeAiChatMessageForAi(value: unknown): Record<string, unknown> | 
     eventId: optionalTrimmedString(record.eventId, 160),
     kind: optionalTrimmedString(record.kind, 40),
     own: record.own === true,
+    replyToEventId: optionalTrimmedString(record.replyToEventId, 160),
     sender: optionalTrimmedString(record.sender, 160),
     senderDisplayName: optionalTrimmedString(record.senderDisplayName, 160),
     timestamp: optionalTrimmedString(record.timestamp, 80)

@@ -14,6 +14,7 @@ export interface AiPromptContextCompressionInput {
   mapFeatures?: AiPromptRecordSet;
   objects: AiPromptRecordSet;
   priorityContext: Record<string, unknown>;
+  requiredChatMessageIds?: string[];
   retrievalIntent?: AiRetrievalIntent;
   semanticContext: AiSemanticContext;
   sourceHealth: AiPromptRecordSet;
@@ -47,7 +48,12 @@ const semanticPromptTextLimit = 520;
 
 export function buildAiPromptContextCompression(input: AiPromptContextCompressionInput): AiPromptContextCompressionOutput {
   const retrievalIntent = input.retrievalIntent ?? input.semanticContext.retrievalIntent ?? inferAiRetrievalIntent(input.semanticContext.query);
-  const selectedEntityIds = selectedEntityIdsFromEvidence(input.priorityContext, input.semanticContext, input.indexedContext);
+  const selectedEntityIds = selectedEntityIdsFromEvidence(
+    input.priorityContext,
+    input.semanticContext,
+    input.indexedContext,
+    input.requiredChatMessageIds
+  );
   const objects = selectPromptRecords(input.objects, "observedObject", selectedEntityIds, retrievalIntent);
   const alerts = selectPromptRecords(input.alerts, "alert", selectedEntityIds, retrievalIntent);
   const communityReports = selectPromptRecords(input.communityReports, "communityReport", selectedEntityIds, retrievalIntent);
@@ -113,9 +119,13 @@ export function buildAiPromptContextCompression(input: AiPromptContextCompressio
 function selectedEntityIdsFromEvidence(
   priorityContext: Record<string, unknown>,
   semanticContext: AiSemanticContext,
-  indexedContext: AiIndexedContext
+  indexedContext: AiIndexedContext,
+  requiredChatMessageIds: string[] = []
 ): Map<AiSemanticEntityType, Set<string>> {
   const selected = new Map<AiSemanticEntityType, Set<string>>();
+  for (const eventId of requiredChatMessageIds) {
+    addSelectedEntity(selected, "chatMessage", eventId);
+  }
   for (const signal of arrayRecords(priorityContext.prioritySignals)) {
     addSelectedEntity(selected, entityTypeFromValue(signal.entityType), textValue(signal.entityId));
   }
@@ -201,6 +211,8 @@ function compressPromptChatContext(
       || right.timestamp - left.timestamp
       || left.index - right.index
     )
+    .slice(0, limit)
+    .sort((left, right) => left.index - right.index)
     .flatMap((item) => {
       const eventId = textValue(item.message.eventId) ?? `chat-message-${item.index}`;
       if (seen.has(eventId)) {
@@ -208,8 +220,7 @@ function compressPromptChatContext(
       }
       seen.add(eventId);
       return [slimPromptRecord(item.message)];
-    })
-    .slice(0, limit);
+    });
   if (selectedMessages.length === 0) {
     return compactRecord({
       encrypted: chatContext.encrypted === true,

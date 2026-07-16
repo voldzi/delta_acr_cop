@@ -8811,6 +8811,7 @@ export function buildAiChatContextSnapshot(
         eventId: message.eventId,
         kind: message.kind,
         own: message.own,
+        ...(message.replyToEventId ? { replyToEventId: message.replyToEventId } : {}),
         sender: message.sender,
         ...(message.senderDisplayName ? { senderDisplayName: message.senderDisplayName } : {}),
         timestamp: message.timestamp

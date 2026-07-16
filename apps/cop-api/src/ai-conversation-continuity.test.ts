@@ -188,6 +188,137 @@ describe("AI conversation continuity", () => {
     });
   });
 
+  it("uses recent messages from all participants as bounded group-discussion context", () => {
+    const continuity = resolveAiConversationContinuity("@COP AI Co z toho plyne?", {
+      messages: [
+        {
+          body: "U mostu ve Vrbně rychle stoupá voda.",
+          eventId: "$group-1",
+          own: false,
+          sender: "@jirina:cop.local",
+          senderDisplayName: "Jiřina",
+          timestamp: "2026-07-16T10:00:00.000Z"
+        },
+        {
+          body: "Dobrovolníci hlásí vodu na vozovce.",
+          eventId: "$group-2",
+          own: false,
+          sender: "@daniel:cop.local",
+          senderDisplayName: "Daniel",
+          timestamp: "2026-07-16T10:02:00.000Z"
+        },
+        {
+          body: "@COP AI Co z toho plyne?",
+          eventId: "$group-question",
+          own: true,
+          sender: "@me:cop.local",
+          timestamp: "2026-07-16T10:03:00.000Z"
+        }
+      ]
+    });
+
+    expect(continuity).toMatchObject({
+      contextMessageCount: 2,
+      contextParticipantCount: 2,
+      followUp: true,
+      followUpKind: "explanation",
+      inheritedDomain: "flood",
+      needsClarification: false,
+      previousQuestion: "Dobrovolníci hlásí vodu na vozovce."
+    });
+    expect(continuity.sourceMessageIds).toEqual(["$group-1", "$group-2"]);
+    expect(continuity.resolvedQuestion).toContain("vodní a povodňová situace");
+  });
+
+  it("does not mix an older unrelated domain into a group follow-up", () => {
+    const continuity = resolveAiConversationContinuity("Co z toho plyne?", {
+      messages: [
+        {
+          body: "Zítra má ve Vrbně pršet.",
+          eventId: "$weather",
+          own: false,
+          sender: "@weather:cop.local",
+          timestamp: "2026-07-16T09:55:00.000Z"
+        },
+        {
+          body: "Silnice I/45 je kvůli nehodě uzavřená.",
+          eventId: "$traffic",
+          own: false,
+          sender: "@traffic:cop.local",
+          timestamp: "2026-07-16T10:00:00.000Z"
+        },
+        { body: "Co z toho plyne?", eventId: "$question", own: true }
+      ]
+    });
+
+    expect(continuity).toMatchObject({
+      contextMessageCount: 1,
+      inheritedDomain: "traffic",
+      previousQuestion: "Silnice I/45 je kvůli nehodě uzavřená."
+    });
+    expect(continuity.sourceMessageIds).toEqual(["$traffic"]);
+  });
+
+  it("prefers an explicit reply target over newer room messages", () => {
+    const continuity = resolveAiConversationContinuity("Co z toho plyne?", {
+      messages: [
+        {
+          body: "Hladina Opavy ve Vrbně rychle stoupá.",
+          eventId: "$flood-target",
+          own: false,
+          sender: "@jirina:cop.local"
+        },
+        {
+          body: "Na jiné silnici je kolona.",
+          eventId: "$newer-traffic",
+          own: false,
+          sender: "@daniel:cop.local"
+        },
+        {
+          body: "Co z toho plyne?",
+          eventId: "$reply",
+          own: true,
+          replyToEventId: "$flood-target"
+        }
+      ]
+    });
+
+    expect(continuity).toMatchObject({
+      inheritedDomain: "flood",
+      previousQuestion: "Hladina Opavy ve Vrbně rychle stoupá."
+    });
+    expect(continuity.sourceMessageIds).toEqual(["$flood-target"]);
+  });
+
+  it.each([
+    ["Kolem Jeseníku?", "Jeseníku"],
+    ["Pro Bruntál?", "Bruntál"],
+    ["Změň místo na Krnov", "Krnov"]
+  ])("changes location with the natural follow-up %s", (question, location) => {
+    const continuity = resolveAiConversationContinuity(question, {
+      messages: [
+        {
+          ai: {
+            question: "Jaká jsou aktuální dopravní omezení ve Vrbně?",
+            responsePlaybook: { domain: "traffic", intentId: "traffic.restrictions" },
+            type: "chat-agent"
+          },
+          body: "Silnice je průjezdná s omezením.",
+          eventId: "$traffic-answer",
+          own: true
+        }
+      ]
+    });
+
+    expect(continuity).toMatchObject({
+      explicitLocation: location,
+      followUp: true,
+      followUpKind: "location",
+      inheritedDomain: "traffic"
+    });
+    expect(continuity.resolvedQuestion).toContain(`Použij místo ${location}`);
+  });
+
   it("ignores unreadable placeholders and the current question", () => {
     const continuity = resolveAiConversationContinuity("A večer?", {
       messages: [

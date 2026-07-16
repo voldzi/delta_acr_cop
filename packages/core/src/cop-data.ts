@@ -175,6 +175,7 @@ export interface AiChatAgentContextMessage {
   eventId?: string;
   kind?: string;
   own?: boolean;
+  replyToEventId?: string;
   sender?: string;
   senderDisplayName?: string;
   timestamp?: string;

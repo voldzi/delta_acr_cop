@@ -136,6 +136,31 @@ describe("buildAiPromptContextCompression", () => {
       eventId: "$flood"
     });
   });
+
+  it("keeps the selected discussion window in chronological order", () => {
+    const compressed = buildAiPromptContextCompression({
+      alerts: [],
+      chatContext: {
+        messages: [
+          { body: "Ve Vrbně stoupá voda.", eventId: "$older", timestamp: "2026-07-04T09:00:00.000Z" },
+          { body: "Most je zatím průjezdný.", eventId: "$newer", timestamp: "2026-07-04T09:02:00.000Z" },
+          { body: "Domluva na oběd.", eventId: "$unrelated", timestamp: "2026-07-04T09:03:00.000Z" }
+        ]
+      },
+      communityReports: [],
+      generatedAt: new Date("2026-07-04T10:00:00.000Z"),
+      incidents: [],
+      indexedContext: indexedContextFixture(semanticContextFixture({ citationPrefix: "I", items: [] })),
+      objects: [],
+      priorityContext: {},
+      requiredChatMessageIds: ["$newer", "$older"],
+      semanticContext: semanticContextFixture({ citationPrefix: "S", items: [] }),
+      sourceHealth: []
+    });
+
+    expect((compressed.chatContext?.messages as Record<string, unknown>[] | undefined)?.map((message) => message.eventId))
+      .toEqual(["$older", "$newer"]);
+  });
 });
 
 function semanticContextFixture(input: {

@@ -2397,7 +2397,9 @@ paths:
       description: Creates an audit-backed AI response for an explicit chat question. COP builds the
         context from authorized COP data and may accept an optional client-supplied chatContext
         containing visible/decrypted timeline excerpts; the endpoint does not independently read
-        encrypted Matrix history.
+        encrypted Matrix history. Short follow-up questions may inherit only the latest unambiguous
+        question from that supplied excerpt. The structured response includes bounded conversation
+        guidance, confidence and suggested follow-up questions.
       requestBody:
         required: true
         content:
@@ -11918,6 +11920,9 @@ components:
           maxLength: 40
         own:
           type: boolean
+        replyToEventId:
+          type: string
+          maxLength: 160
         sender:
           type: string
           maxLength: 160
@@ -11939,6 +11944,19 @@ components:
         provider:
           type: string
           maxLength: 80
+        question:
+          type: string
+          maxLength: 1200
+        responsePlaybook:
+          type: object
+          additionalProperties: false
+          properties:
+            domain:
+              type: string
+              maxLength: 80
+            intentId:
+              type: string
+              maxLength: 120
         status:
           type: string
           maxLength: 40
