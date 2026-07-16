@@ -63,6 +63,7 @@ import {
   aiSituationFeatureMatchesMapSearchIntent,
   bboxForAiMapSearchGeoFilter,
   dedupeAiMapSearchResults,
+  filterAiMapSearchResultsForTimeWindow,
   inferAiMapSearchIntent,
   simSearchSourceSystemsForAiMapSearchIntent,
   simSearchEntityTypesForAiMapSearchIntent,
@@ -2446,7 +2447,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       warnings.push("Geocoder pro vyhledávání míst je vypnutý.");
     }
 
-    const results = dedupeAiMapSearchResults(mapResults).sort(aiMapSearchResultCompare).slice(0, 12);
+    const requestedTimeWindow = resolveAiContextTimeWindow(input.body);
+    const timeFilteredResults = intent.categoryIds.includes("weather")
+      ? filterAiMapSearchResultsForTimeWindow(mapResults, requestedTimeWindow)
+      : mapResults;
+    if (mapResults.length > 0 && timeFilteredResults.length === 0 && intent.categoryIds.includes("weather")) {
+      warnings.push("Dostupné meteorologické výsledky nepokrývají požadované období.");
+    }
+    const results = dedupeAiMapSearchResults(timeFilteredResults).sort(aiMapSearchResultCompare).slice(0, 12);
     const status = results.length > 0 ? (warnings.length > 0 ? "degraded" : "ok") : "empty";
     const context: AiMapSearchContext = {
       contractVersion: "cop-ai-map-search-v1",
@@ -2459,7 +2467,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         layerIds: intent.layerIds,
         placeQuery: intent.placeQuery,
         requested: intent.requested,
-        searchTerms: intent.searchTerms
+        searchTerms: intent.searchTerms,
+        timeWindow: requestedTimeWindow,
+        validAt: aiMapSearchValidAtFromBody(input.body, input.requestNow)
       }),
       results,
       toolCall: compactRecord({

@@ -66,6 +66,9 @@ dialogový stav z poslední viditelné, dešifrované výměny:
   zítra?“ nebo „A večer?“,
 - relativní čas převádí na absolutní časové okno v `Europe/Prague`, které se
   použije jak pro index, tak jako `validAt` pro SIM search-data,
+- meteorologické podklady se před odpovědí kontrolují proti požadovanému oknu;
+  aktuální měření se nesmí vydávat za budoucí předpověď a podklad bez časové
+  platnosti se pro explicitní období nepoužije,
 - při změně období odstraní z interpretovaného dotazu staré výrazy jako
   „dnes“, aby nevznikl konflikt „dnes + zítra“,
 - bez jednoznačné viditelné kotvy si vyžádá upřesnění a historii nedoplňuje.

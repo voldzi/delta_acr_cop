@@ -6,6 +6,7 @@ import {
   aiMapCatalogLayerMatchesMapSearchIntent,
   aiMapSearchFallbackResponse,
   aiSituationFeatureMatchesMapSearchIntent,
+  filterAiMapSearchResultsForTimeWindow,
   inferAiMapSearchIntent,
   simSearchEntityTypesForAiMapSearchIntent,
   simSearchSourceSystemsForAiMapSearchIntent,
@@ -35,6 +36,53 @@ describe("AI map search", () => {
     },
     type: "Feature"
   };
+
+  it("keeps only forecast evidence that overlaps the requested period", () => {
+    const results = [
+      {
+        category: "weather",
+        mapFeatureId: "weather:today",
+        title: "Aktuální počasí",
+        validFrom: "2026-07-16T10:00:00.000Z",
+        validUntil: "2026-07-16T13:00:00.000Z"
+      },
+      {
+        category: "weather",
+        mapFeatureId: "weather:tomorrow",
+        title: "Předpověď na zítřek",
+        validFrom: "2026-07-17T06:00:00.000Z",
+        validUntil: "2026-07-17T18:00:00.000Z"
+      }
+    ];
+
+    expect(filterAiMapSearchResultsForTimeWindow(results, {
+      from: "2026-07-17T00:00:00.000Z",
+      to: "2026-07-18T00:00:00.000Z"
+    })).toEqual([results[1]]);
+  });
+
+  it("rejects undated weather evidence for a requested future period", () => {
+    const results = [{
+      category: "weather",
+      mapFeatureId: "weather:undated",
+      title: "Počasí bez časové platnosti"
+    }];
+
+    expect(filterAiMapSearchResultsForTimeWindow(results, {
+      from: "2026-07-17T00:00:00.000Z",
+      to: "2026-07-18T00:00:00.000Z"
+    })).toEqual([]);
+  });
+
+  it("does not filter evidence when the question has no explicit period", () => {
+    const results = [{
+      category: "weather",
+      mapFeatureId: "weather:current",
+      title: "Aktuální počasí"
+    }];
+
+    expect(filterAiMapSearchResultsForTimeWindow(results, undefined)).toBe(results);
+  });
 
   it("matches police intent against security-police map categories", () => {
     const intent = inferAiMapSearchIntent("Kde je nejbližší policie?", {});

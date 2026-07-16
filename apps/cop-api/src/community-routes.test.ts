@@ -2914,8 +2914,8 @@ describe("community report routes", () => {
       provider: "local",
       status: "COMPLETED"
     });
-    expect(aiResponse.result.summary).toContain("nenašel aktuální meteo předpověď");
-    expect(aiResponse.result.summary).toContain("To neznamená, že neprší");
+    expect(aiResponse.result.summary).toContain("nenašel předpověď ani měření s odpovídající časovou platností");
+    expect(aiResponse.result.summary).toContain("Nechci proto aktuální nebo zastaralý údaj vydávat za odpověď pro jiné období");
 
     await app.close();
   });
@@ -3339,8 +3339,10 @@ class FakeAiMapSearchSimSearchDataSource implements SimSearchDataSource {
               summary: "Předpověď srážek, větru a bouřkového rizika pro okolí Vrbna.",
               title: "Předpověď pro Vrbno pod Pradědem",
               updatedAt: requestNow.toISOString(),
-              validFrom: requestNow.toISOString(),
-              validUntil: new Date(requestNow.getTime() + 3 * 3600 * 1000).toISOString()
+              validFrom: request.validAt ?? requestNow.toISOString(),
+              validUntil: new Date(
+                Date.parse(request.validAt ?? requestNow.toISOString()) + 3 * 3600 * 1000
+              ).toISOString()
             }
           ],
           summary: {

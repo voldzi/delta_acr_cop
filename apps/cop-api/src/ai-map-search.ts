@@ -269,10 +269,13 @@ export function summarizeMapFeatureForAi(
     title,
     metrics: isRecord(properties.metrics) ? properties.metrics : undefined,
     type: "mapFeature",
+    observedAt: optionalText(properties.observedAt),
     updatedAt: optionalText(properties.observedAt)
       ?? optionalText(properties.updatedAt)
       ?? optionalText(properties.generatedAt)
-      ?? optionalText(properties.receivedAt)
+      ?? optionalText(properties.receivedAt),
+    validFrom: optionalText(properties.validFrom) ?? optionalText(properties.effectiveAt),
+    validUntil: optionalText(properties.validUntil) ?? optionalText(properties.expiresAt)
   });
 }
 
@@ -426,6 +429,46 @@ export function dedupeAiMapSearchResults(results: AiMapSearchResult[]): AiMapSea
     }
   }
   return Array.from(byId.values());
+}
+
+export function filterAiMapSearchResultsForTimeWindow(
+  results: AiMapSearchResult[],
+  timeWindow: { from?: string; to?: string } | undefined
+): AiMapSearchResult[] {
+  const fromMs = timeWindow?.from ? Date.parse(timeWindow.from) : Number.NaN;
+  const toMs = timeWindow?.to ? Date.parse(timeWindow.to) : Number.NaN;
+  if (!Number.isFinite(fromMs) && !Number.isFinite(toMs)) {
+    return results;
+  }
+  const effectiveFrom = Number.isFinite(fromMs) ? fromMs : Number.NEGATIVE_INFINITY;
+  const effectiveTo = Number.isFinite(toMs) ? toMs : Number.POSITIVE_INFINITY;
+  return results.filter((result) => aiMapSearchResultOverlapsTimeWindow(result, effectiveFrom, effectiveTo));
+}
+
+function aiMapSearchResultOverlapsTimeWindow(
+  result: AiMapSearchResult,
+  requestedFromMs: number,
+  requestedToMs: number
+): boolean {
+  const validFromMs = aiMapSearchTimestampMs(result.validFrom);
+  const validUntilMs = aiMapSearchTimestampMs(result.validUntil ?? result.expiresAt);
+  const observedMs = aiMapSearchTimestampMs(result.observedAt ?? result.updatedAt);
+  const resultFromMs = validFromMs ?? observedMs;
+  const resultToMs = validUntilMs ?? validFromMs ?? observedMs;
+  if (resultFromMs === undefined && resultToMs === undefined) {
+    return false;
+  }
+  return (resultToMs ?? Number.POSITIVE_INFINITY) >= requestedFromMs
+    && (resultFromMs ?? Number.NEGATIVE_INFINITY) < requestedToMs;
+}
+
+function aiMapSearchTimestampMs(value: unknown): number | undefined {
+  const text = optionalText(value);
+  if (!text) {
+    return undefined;
+  }
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 export function aiMapSearchResultCompare(left: AiMapSearchResult, right: AiMapSearchResult): number {
@@ -730,8 +773,8 @@ export function aiMapSearchNoResultFallbackResponse(
 function aiMapSearchDomainNoResultText(categoryIds: string[]): string {
   if (categoryIds.includes("weather")) {
     return [
-      "V dostupném COP/SIM kontextu jsem nenašel aktuální meteo předpověď, nowcast, radar ani bouřkové riziko pro dotaz.",
-      "To neznamená, že neprší nebo že se bouřka neblíží; znamená to, že COP teď nemá pro tento dotaz dostupný potvrzený meteo výsledek."
+      "Pro požadované místo a období jsem v dostupných datech COP/SIM nenašel předpověď ani měření s odpovídající časovou platností.",
+      "Nechci proto aktuální nebo zastaralý údaj vydávat za odpověď pro jiné období. Zkuste upřesnit místo či čas nebo dotaz zopakujte po aktualizaci dat."
     ].join(" ");
   }
   if (categoryIds.includes("hydro")) {
