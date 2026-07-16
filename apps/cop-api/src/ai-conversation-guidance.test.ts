@@ -48,6 +48,37 @@ describe("AI conversation guidance", () => {
     });
   });
 
+  it("does not label alert-only weather evidence as a high-confidence forecast", () => {
+    const base = completedResponse();
+    const response = withAiConversationGuidance({
+      ...base,
+      model: "map-search-partial-fallback",
+      result: {
+        structured: {
+          mapSearch: { resultCount: 2 },
+          mapSearchFallback: { alertOnly: true }
+        },
+        summary: "Předpověď není dostupná, platí však meteorologické výstrahy."
+      }
+    }, {
+      continuity: resolveAiConversationContinuity("A jak bude zítra?", undefined),
+      responsePlaybook: { intentId: "weather.summary.forecast" }
+    });
+
+    expect(response.result.structured).toMatchObject({
+      conversation: {
+        confidence: {
+          basis: [
+            "Dostupné výstrahy mají konkrétní časovou platnost.",
+            "Pro požadované období chybí předpověď nebo měření počasí."
+          ],
+          label: "Ověřené výstrahy, chybějící předpověď",
+          level: "medium"
+        }
+      }
+    });
+  });
+
   it("never offers conversational shortcuts for an emergency answer", () => {
     expect(conversationSuggestions("emergency.immediate.help", {}, "Člověk nedýchá")).toEqual([]);
   });

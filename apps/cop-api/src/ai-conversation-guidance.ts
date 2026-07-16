@@ -174,6 +174,7 @@ function conversationConfidence(
 ): Record<string, unknown> {
   const evidence = isRecord(structured.evidence) ? structured.evidence : {};
   const mapSearch = isRecord(structured.mapSearch) ? structured.mapSearch : {};
+  const mapSearchFallback = isRecord(structured.mapSearchFallback) ? structured.mapSearchFallback : {};
   const mapResultCount = finiteNumber(mapSearch.resultCount) ?? 0;
   const semantic = isRecord(evidence.semantic) ? evidence.semantic : {};
   const indexed = isRecord(evidence.indexed) ? evidence.indexed : {};
@@ -183,6 +184,12 @@ function conversationConfidence(
 
   if (response.status !== "COMPLETED") {
     return confidence("low", "Odpověď vyžaduje kontrolu", ["AI požadavek nebyl dokončen bez výhrad."]);
+  }
+  if (mapSearchFallback.alertOnly === true) {
+    return confidence("medium", "Ověřené výstrahy, chybějící předpověď", [
+      "Dostupné výstrahy mají konkrétní časovou platnost.",
+      "Pro požadované období chybí předpověď nebo měření počasí."
+    ]);
   }
   if (mapResultCount > 0) {
     return confidence("high", "Vysoká opora v aktuálních datech", ["Odpověď vychází z konkrétního výsledku COP mapy."]);
