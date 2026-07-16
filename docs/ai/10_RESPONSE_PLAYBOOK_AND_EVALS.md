@@ -55,11 +55,37 @@ API zároveň filtruje `result.structured.mapActions` podle playbooku. Napříkl
 počasí může nabídnout nejvýše jeden mapový odkaz a nikdy trasu, pokud ji
 playbook explicitně nepovolí.
 
+## Dialogový kontext a čas
+
+Navazující dotaz se neřeší seznamem přesných vět. Pipeline vytváří omezený
+dialogový stav z poslední viditelné, dešifrované výměny:
+
+- převezme `domain` a `intentId` z předchozího `responsePlaybook`,
+- zachová téma a místo posledního jednoznačného dotazu,
+- rozpozná přirozené eliptické formulace jako „A jak bude zítra?“, „A co bude
+  zítra?“ nebo „A večer?“,
+- relativní čas převádí na absolutní časové okno v `Europe/Prague`, které se
+  použije jak pro index, tak jako `validAt` pro SIM search-data,
+- při změně období odstraní z interpretovaného dotazu staré výrazy jako
+  „dnes“, aby nevznikl konflikt „dnes + zítra“,
+- bez jednoznačné viditelné kotvy si vyžádá upřesnění a historii nedoplňuje.
+
+Stejný převod času se používá i pro samostatné úplné dotazy obsahující
+`dnes`, `zítra`, `pozítří` nebo část dne. Výsledný stav je auditovatelný v
+`result.structured.conversation.timeReference`; klient nemusí sám hádat časový
+záměr.
+
 COP Chat ukládá zkrácený `responsePlaybook` i do Matrix metadata `cz.cop.ai`.
 Renderer jej používá před starší heuristikou: route tlačítko se zobrazí jen
 tehdy, když je `route` v `allowedActions` a není ve `forbiddenActions`. Tím je
 možné zpětně auditovat, proč odpověď použila konkrétní zdroje a proč byly
 některé UI akce povolené nebo zakázané.
+
+Počet prohledaných dokumentů není počet ověřených tvrzení. Chat proto ukládá
+`cz.cop.ai.citationCount` jen jako počet unikátních podkladů, jejichž citační ID
+se skutečně objevilo v textu odpovědi. Pokud odpověď žádnou citaci nepoužila,
+UI může uvést pouze „Prohledané podklady“, nikdy „Ověřené zdroje“. Detail
+evidence rozlišuje citované a pouze dostupné podklady.
 
 ## Eval sada
 
@@ -78,11 +104,14 @@ Test:
 - `apps/cop-api/src/ai-response-playbook.test.ts`
 - `apps/cop-api/src/ai-grounded-response.test.ts`
 - `apps/cop-api/src/ai-map-search.test.ts`
+- `apps/cop-api/src/ai-conversation-continuity.test.ts`
 
 Ověřuje:
 
 - základní problematické scénáře,
 - obecnou předpověď s polohou i bez ní a uživatelsky čitelný fallback,
+- navázání „A jak bude zítra?“ s převzetím počasí, místa a správným budoucím
+  `validAt`,
 - map-only akce pro počasí,
 - route-capable akce pro navigovatelné objekty,
 - 10 000 generovaných dotazů se vrací na očekávaný intent,

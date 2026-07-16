@@ -8890,6 +8890,7 @@ function buildAiMessageMetadata(
   return {
     ai: {
       ...(response?.auditId ? { auditId: response.auditId } : {}),
+      ...(evidence.citationCount !== undefined ? { citationCount: evidence.citationCount } : {}),
       ...(conversation ? { conversation } : {}),
       ...(evidence.indexedDocumentCount !== undefined ? { indexedDocumentCount: evidence.indexedDocumentCount } : {}),
       ...(evidence.indexedStatus ? { indexedStatus: evidence.indexedStatus } : {}),
@@ -9097,7 +9098,8 @@ function optionalAiTextList(value: unknown): string[] {
   ).slice(0, 16);
 }
 
-function aiResponseEvidenceMetadata(response: AiCopResponse | null): {
+export function aiResponseEvidenceMetadata(response: AiCopResponse | null): {
+  citationCount?: number;
   indexedDocumentCount?: number;
   indexedStatus?: "degraded" | "disabled" | "ok";
   semanticDocumentCount?: number;
@@ -9106,8 +9108,15 @@ function aiResponseEvidenceMetadata(response: AiCopResponse | null): {
   const structured = asRecord(response?.result.structured);
   const evidence = asRecord(structured?.evidence);
   const indexed = asRecord(evidence?.indexed);
+  const priority = asRecord(evidence?.priority);
   const semantic = asRecord(evidence?.semantic);
+  const citationCount = uniqueAiCitationCount(optionalAiText(response?.result.summary) ?? "", [
+    priority?.citations,
+    semantic?.citations,
+    indexed?.citations
+  ]);
   return {
+    ...(citationCount > 0 ? { citationCount } : {}),
     indexedDocumentCount: boundedAiDocumentCount(indexed?.documentCount),
     indexedStatus: aiRetrievalStatus(indexed?.status),
     semanticDocumentCount: boundedAiDocumentCount(semantic?.documentCount),
@@ -9115,12 +9124,44 @@ function aiResponseEvidenceMetadata(response: AiCopResponse | null): {
   };
 }
 
-function aiEvidenceMetadataLabel(ai: MatrixCopMessageMetadata["ai"]): string | undefined {
+export function aiEvidenceMetadataLabel(ai: MatrixCopMessageMetadata["ai"]): string | undefined {
+  if ((ai?.citationCount ?? 0) > 0) {
+    return `Citované podklady: ${ai?.citationCount}`;
+  }
   const count = (ai?.semanticDocumentCount ?? 0) + (ai?.indexedDocumentCount ?? 0);
   if (count <= 0) {
     return undefined;
   }
-  return `Ověřené zdroje: ${count}`;
+  return `Prohledané podklady: ${count}`;
+}
+
+function uniqueAiCitationCount(summary: string, groups: unknown[]): number {
+  const citedIds = new Set(Array.from(summary.matchAll(/\[([PSI]\d+)\]/gu), (match) => match[1]));
+  if (citedIds.size === 0) {
+    return 0;
+  }
+  const keys = new Set<string>();
+  groups.forEach((group) => {
+    if (!Array.isArray(group)) {
+      return;
+    }
+    group
+      .map(asRecord)
+      .filter((citation): citation is Record<string, unknown> => Boolean(citation))
+      .forEach((citation) => {
+      const citationId = optionalAiText(citation.citationId);
+      if (!citationId || !citedIds.has(citationId)) {
+        return;
+      }
+      const entityId = optionalAiText(citation.entityId);
+      const label = optionalAiText(citation.label);
+      const key = entityId ? `entity:${entityId}` : label ? `label:${label}` : citationId ? `citation:${citationId}` : undefined;
+      if (key) {
+        keys.add(key);
+      }
+      });
+  });
+  return keys.size;
 }
 
 function aiRetrievalStatus(value: unknown): "degraded" | "disabled" | "ok" | undefined {

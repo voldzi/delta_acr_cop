@@ -169,6 +169,7 @@ export interface MatrixCopMessageMetadata {
 
 export interface MatrixCopAiMessageMetadata {
   auditId?: string;
+  citationCount?: number;
   conversation?: MatrixCopAiConversationMetadata;
   indexedDocumentCount?: number;
   indexedStatus?: "degraded" | "disabled" | "ok";

@@ -41,7 +41,10 @@ import {
   type CommunityReportVisibility
 } from "./community-report-store.js";
 import { correlationIdFrom, sendError } from "./errors.js";
-import { resolveAiConversationContinuity } from "./ai-conversation-continuity.js";
+import {
+  resolveAiConversationContinuity,
+  resolveAiConversationTimeWindow
+} from "./ai-conversation-continuity.js";
 import {
   aiConversationClarificationResponse,
   withAiConversationGuidance
@@ -2151,6 +2154,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return optionalTrimmedString(geoContext.place ?? geoContext.query ?? body.placeQuery ?? body.place, 120);
   }
 
+  function aiMapSearchValidAtFromBody(body: Record<string, unknown>, requestNow: Date): string {
+    const timeWindow = isRecord(body.timeWindow) ? body.timeWindow : {};
+    const validAt = optionalIsoString(timeWindow.validAt);
+    if (validAt) {
+      return validAt;
+    }
+    const from = optionalIsoString(timeWindow.from ?? timeWindow.since);
+    const to = optionalIsoString(timeWindow.to);
+    const fromMs = from ? Date.parse(from) : Number.NaN;
+    const toMs = to ? Date.parse(to) : Number.NaN;
+    if (Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs > fromMs) {
+      return new Date(fromMs + (toMs - fromMs) / 2).toISOString();
+    }
+    return from ?? to ?? requestNow.toISOString();
+  }
+
   async function resolveAiMapSearchContextForChatAgent(input: {
     actor: AuthenticatedActor;
     body: Record<string, unknown>;
@@ -2188,7 +2207,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         includeStale: false,
         limit: 24,
         text: input.question,
-        validAt: input.requestNow.toISOString()
+        validAt: aiMapSearchValidAtFromBody(input.body, input.requestNow)
       });
       try {
         const response = await simSearchDataSource.query(query, input.requestNow);
@@ -8847,10 +8866,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     const chatContext = summarizeAiChatContextForAi(body.chatContext);
     const conversationContinuity = resolveAiConversationContinuity(question, chatContext);
+    const conversationTimeWindow = resolveAiConversationTimeWindow(conversationContinuity, requestNow);
     const effectiveQuestion = conversationContinuity.resolvedQuestion;
-    const effectiveBody = conversationContinuity.explicitLocation
-      ? { ...body, placeQuery: conversationContinuity.explicitLocation }
-      : body;
+    const effectiveBody = {
+      ...body,
+      ...(conversationContinuity.explicitLocation ? { placeQuery: conversationContinuity.explicitLocation } : {}),
+      ...(conversationTimeWindow
+        ? {
+            timeWindow: {
+              ...(isRecord(body.timeWindow) ? body.timeWindow : {}),
+              from: conversationTimeWindow.from,
+              to: conversationTimeWindow.to,
+              validAt: conversationTimeWindow.validAt
+            }
+          }
+        : {})
+    };
     const modelPreference = aiModelPreference(body.modelPreference) ?? "auto";
     const requestId = aiRequestId(body.requestId);
     const subject = defaultSystemSubject();

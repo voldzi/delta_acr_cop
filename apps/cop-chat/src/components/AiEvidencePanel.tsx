@@ -50,7 +50,7 @@ export function AiEvidencePanel({ response }: { response: AiCopResponse }) {
           <Database size={15} />
           <strong>Zdrojové citace</strong>
         </span>
-        <small>{aiEvidenceStatusLabel(evidence)}</small>
+          <small>{aiEvidenceStatusLabel(evidence, stringValue(response.result.summary) ?? "")}</small>
       </header>
       <div className="ai-evidence-groups">
         <AiEvidenceGroup title="Důležité podklady" citations={evidence.priority.citations} />
@@ -146,12 +146,22 @@ function aiEvidenceSummary(response: AiCopResponse): AiEvidenceSummary | null {
   };
 }
 
-function aiEvidenceStatusLabel(evidence: AiEvidenceSummary): string {
-  const parts = [
-    typeof evidence.semantic.documentCount === "number" ? `${evidence.semantic.documentCount} aktuálních` : undefined,
-    typeof evidence.indexed?.documentCount === "number" ? `${evidence.indexed.documentCount} archivních` : undefined
-  ].filter(Boolean);
-  return parts.join(" · ") || "auditovaný COP kontext";
+function aiEvidenceStatusLabel(evidence: AiEvidenceSummary, summary: string): string {
+  const citedIds = new Set(Array.from(summary.matchAll(/\[([PSI]\d+)\]/gu), (match) => match[1]));
+  const unique = new Set<string>();
+  [evidence.priority.citations, evidence.semantic.citations, evidence.indexed?.citations ?? []]
+    .flat()
+    .filter((citation) => citedIds.has(citation.citationId))
+    .forEach((citation) => unique.add(citation.entityId ?? citation.label ?? citation.citationId));
+  if (unique.size > 0) {
+    return `${unique.size} citovaných podkladů`;
+  }
+  const availableCount = new Set(
+    [evidence.priority.citations, evidence.semantic.citations, evidence.indexed?.citations ?? []]
+      .flat()
+      .map((citation) => citation.entityId ?? citation.label ?? citation.citationId)
+  ).size;
+  return availableCount > 0 ? `${availableCount} dostupných podkladů` : "auditovaný COP kontext";
 }
 
 function citationList(value: unknown): AiEvidenceCitation[] {

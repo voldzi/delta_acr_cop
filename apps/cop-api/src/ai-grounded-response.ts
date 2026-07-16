@@ -107,7 +107,9 @@ function groundedSummary(intentId: string | undefined, context: Record<string, u
     case "report.create":
       return "Mohu pomoci připravit hlášení, ale neodešlu jej bez vašeho potvrzení. Otevřete Nové hlášení, doplňte stručný popis, místo, čas a případnou fotografii; před odesláním zkontrolujte citlivé údaje a správnou viditelnost.";
     default:
-      return "Teď nemám z dostupného COP kontextu dost ověřených podkladů pro spolehlivou odpověď. Doplňte prosím místo, čas a co přesně chcete zjistit. Při bezprostředním ohrožení volejte 112.";
+      return intentId?.startsWith("weather.")
+        ? "Pro požadované místo a období teď nemám v COP/SIM dostupnou ověřenou meteorologickou předpověď. Zadejte prosím obec nebo sdílejte polohu a upřesněte období, například „zítra odpoledne“."
+        : "Teď nemám z dostupného COP kontextu dost ověřených podkladů pro spolehlivou odpověď. Upřesněte prosím místo, období nebo údaj, který chcete zjistit.";
   }
 }
 

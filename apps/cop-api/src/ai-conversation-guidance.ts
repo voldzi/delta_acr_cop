@@ -69,7 +69,8 @@ export function withAiConversationGuidance(
           originalQuestion: input.continuity.originalQuestion,
           ...(input.continuity.previousQuestion ? { previousQuestion: input.continuity.previousQuestion } : {}),
           resolvedQuestion: input.continuity.resolvedQuestion,
-          sourceMessageIds: input.continuity.sourceMessageIds
+          sourceMessageIds: input.continuity.sourceMessageIds,
+          ...(input.continuity.timeReference ? { timeReference: input.continuity.timeReference } : {})
         }
       },
       ...(summary ? { summary: appendSuggestionFooter(summary, suggestions) } : {})

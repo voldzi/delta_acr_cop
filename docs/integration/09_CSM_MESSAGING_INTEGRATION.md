@@ -764,8 +764,13 @@ The phase-0 implementation focus is trust and control:
   queries Matrix for hidden history. The response exposes
   `structured.conversation` with the original and interpreted questions,
   assumptions, clarification state, evidence-based confidence and up to two
-  intent-aware follow-up suggestions. Without a safe anchor a question such as
-  “Proč?” produces a human clarification rather than a guessed topic.
+  intent-aware follow-up suggestions. Natural elliptical time questions such
+  as “A jak bude zítra?” inherit the previous response playbook domain, intent
+  and visible location context. Relative Czech time is converted server-side
+  into an absolute Prague-time query window and SIM `validAt`; clients do not
+  implement a separate weather conversation grammar. Without a safe anchor a
+  question such as “Proč?” produces a human clarification rather than a guessed
+  topic.
 - AI situation answers use a server-side `priorityContext` before semantic
   retrieval. Flood/water state, fires, medical risks, infrastructure, traffic,
   security or police incidents, community reports and active alerts outrank
@@ -790,8 +795,10 @@ The phase-0 implementation focus is trust and control:
 - AI answers sent to Matrix carry namespaced `cz.cop` message metadata with
   `kind`, `requestId`, `auditId`, provider/model, policy reason and the
   original question when present. It also carries bounded semantic/indexed
-  source counts so the timeline can show whether an answer used request-time
-  COP context and the background index. Answers may additionally carry bounded
+  retrieval counts and an optional `citationCount`. Retrieval counts describe
+  searched documents; `citationCount` is the deduplicated count of evidence IDs
+  actually referenced by the answer text. Clients must not label retrieval
+  counts as verified sources. Answers may additionally carry bounded
   `cz.cop.ai.conversation` guidance. COP Web renders its
   suggestions as explicit chips that submit a new normal AI question; the
   plaintext fallback repeats the same suggestions so native clients remain

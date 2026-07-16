@@ -117,6 +117,29 @@ describe("grounded AI responses", () => {
       result: { summary: "V okolí je nyní 15 °C a bez významných srážek. Zdroj: COP/SIM." }
     })).toBe(false);
   });
+
+  it("uses a weather-specific no-data answer without unrelated emergency advice", () => {
+    const response = aiGroundedPlaybookResponse(
+      aiRequest("weather.summary.forecast"),
+      new Date("2026-07-16T08:15:00Z"),
+      "test"
+    );
+
+    expect(response.result.summary).toContain("nemám v COP/SIM dostupnou ověřenou meteorologickou předpověď");
+    expect(response.result.summary).toContain("zítra odpoledne");
+    expect(response.result.summary).not.toContain("112");
+  });
+
+  it("keeps emergency numbers out of a generic harmless no-data fallback", () => {
+    const response = aiGroundedPlaybookResponse(
+      aiRequest("unclassified"),
+      new Date("2026-07-16T08:15:00Z"),
+      "test"
+    );
+
+    expect(response.result.summary).toContain("Upřesněte prosím místo");
+    expect(response.result.summary).not.toContain("112");
+  });
 });
 
 function aiRequest(intentId: string, context: Record<string, unknown> = {}): AiCopQuery {

@@ -2799,11 +2799,11 @@ describe("community report routes", () => {
               eventId: "$a1",
               own: true
             },
-            { body: "A zítra?", eventId: "$q2", own: true }
+            { body: "A jak bude zítra?", eventId: "$q2", own: true }
           ]
         },
         currentLocation: { lat: 50.15077, lon: 17.37303, radiusKm: 30 },
-        question: "A zítra?"
+        question: "A jak bude zítra?"
       },
       url: "/api/v1/ai/chat-agent/query"
     });
@@ -2816,10 +2816,12 @@ describe("community report routes", () => {
       followUp: true,
       followUpKind: "time",
       needsClarification: false,
-      originalQuestion: "A zítra?",
+      originalQuestion: "A jak bude zítra?",
       previousQuestion: "Jaké bude počasí ve Vrbně pod Pradědem?",
-      resolvedQuestion: expect.stringContaining("Časové upřesnění")
+      resolvedQuestion: expect.stringContaining("Časové upřesnění"),
+      timeReference: { dayOffset: 1, label: "zítra" }
     });
+    expect(simSearchDataSource.lastQuery?.validAt).toBe("2026-07-16T10:00:00.000Z");
     expect(aiResponse.result.summary).toContain("Můžete navázat:");
     expect(aiResponse.result.summary).not.toContain("MAX_Z");
 

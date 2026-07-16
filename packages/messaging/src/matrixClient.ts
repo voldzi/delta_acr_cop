@@ -4061,6 +4061,7 @@ function sanitizeCopAiMessageMetadata(value: unknown): MatrixCopMessageMetadata[
       ? record.status
       : undefined;
   const auditId = stringValue(record.auditId)?.slice(0, 160);
+  const citationCount = nonNegativeInteger(record.citationCount, 0, 1000);
   const model = stringValue(record.model)?.slice(0, 120);
   const policyReason = stringValue(record.policyReason)?.slice(0, 240);
   const provider = stringValue(record.provider)?.slice(0, 80);
@@ -4080,6 +4081,7 @@ function sanitizeCopAiMessageMetadata(value: unknown): MatrixCopMessageMetadata[
       : undefined;
   const ai: MatrixCopAiMessageMetadata = {
     ...(auditId ? { auditId } : {}),
+    ...(citationCount !== undefined ? { citationCount } : {}),
     ...(indexedDocumentCount !== undefined ? { indexedDocumentCount } : {}),
     ...(indexedStatus ? { indexedStatus } : {}),
     ...(mapActions ? { mapActions } : {}),

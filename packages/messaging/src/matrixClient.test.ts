@@ -1622,6 +1622,7 @@ describe("Matrix client diagnostics", () => {
       "cz.cop": {
         ai: {
           auditId: "audit-1",
+          citationCount: 3,
           mapActions: [
             {
               action: "focus-map",
@@ -1685,6 +1686,7 @@ describe("Matrix client diagnostics", () => {
       cop: {
         ai: {
           auditId: "audit-1",
+          citationCount: 3,
           mapActions: [
             {
               action: "focus-map",

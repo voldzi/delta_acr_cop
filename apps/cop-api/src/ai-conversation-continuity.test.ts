@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveAiConversationContinuity } from "./ai-conversation-continuity.js";
+import {
+  resolveAiConversationContinuity,
+  resolveAiConversationTimeWindow
+} from "./ai-conversation-continuity.js";
 
 describe("AI conversation continuity", () => {
   it("inherits the last visible weather question for a time follow-up", () => {
@@ -26,8 +29,58 @@ describe("AI conversation continuity", () => {
       previousQuestion: "Jaké bude počasí ve Vrbně pod Pradědem?"
     });
     expect(continuity.resolvedQuestion).toContain("počasí ve Vrbně pod Pradědem");
-    expect(continuity.resolvedQuestion).toContain("A zítra?");
+    expect(continuity.resolvedQuestion).toContain("Časové upřesnění: zítra");
     expect(continuity.sourceMessageIds).toEqual(["$a1"]);
+  });
+
+  it.each(["A jak bude zítra?", "Jak bude zítra?", "A co bude zítra?"])(
+    "understands the natural elliptical weather follow-up %s",
+    (question) => {
+      const continuity = resolveAiConversationContinuity(question, {
+        messages: [
+          {
+            ai: {
+              question: "Jaké bude dnes počasí?",
+              responsePlaybook: { domain: "weather", intentId: "weather.summary.forecast" },
+              type: "chat-agent"
+            },
+            body: "Dnes bude polojasno.",
+            eventId: "$a1",
+            own: true
+          },
+          { body: question, eventId: "$q2", own: true }
+        ]
+      });
+
+      expect(continuity).toMatchObject({
+        followUp: true,
+        followUpKind: "time",
+        inheritedDomain: "weather",
+        inheritedIntentId: "weather.summary.forecast",
+        needsClarification: false,
+        timeReference: { dayOffset: 1, label: "zítra" }
+      });
+      expect(continuity.resolvedQuestion).toBe("Jaké bude počasí. Časové upřesnění: zítra.");
+    }
+  );
+
+  it("turns a tomorrow follow-up into an explicit Prague-time query window", () => {
+    const continuity = resolveAiConversationContinuity("A jak bude zítra?", {
+      messages: [
+        {
+          ai: { question: "Jaké bude dnes počasí?", type: "chat-agent" },
+          body: "Dnes bude polojasno.",
+          own: true
+        }
+      ]
+    });
+
+    expect(resolveAiConversationTimeWindow(continuity, new Date("2026-07-16T08:15:00.000Z"))).toEqual({
+      from: "2026-07-16T22:00:00.000Z",
+      label: "zítra",
+      to: "2026-07-17T22:00:00.000Z",
+      validAt: "2026-07-17T10:00:00.000Z"
+    });
   });
 
   it("uses a new explicit place without relying on a hidden room history", () => {

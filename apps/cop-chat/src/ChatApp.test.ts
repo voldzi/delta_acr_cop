@@ -11,7 +11,9 @@ import {
   aiMapActionsForMessage,
   aiMapActionsFromResponse,
   aiConversationMetadata,
+  aiEvidenceMetadataLabel,
   aiQuestionNeedsCurrentLocation,
+  aiResponseEvidenceMetadata,
   buildAiChatContextSnapshot,
   buildAiRequestContextOptions,
   chatNotificationTag,
@@ -935,6 +937,49 @@ describe("buildAiRequestContextOptions", () => {
         maxAgeSeconds: 604800
       }
     });
+  });
+});
+
+describe("AI evidence metadata", () => {
+  it("counts unique cited entities instead of calling retrieved documents verified sources", () => {
+    const response: AiCopResponse = {
+      auditId: "audit-evidence",
+      model: "test",
+      policy: { allowed: true, reason: "test", redactionsApplied: false },
+      provider: "local",
+      requestId: "request-evidence",
+      result: {
+        structured: {
+          evidence: {
+            indexed: {
+              citations: [{ citationId: "I1", entityId: "weather:vrbno", label: "Předpověď Vrbno" }],
+              documentCount: 7,
+              status: "ok"
+            },
+            priority: {
+              citations: [{ citationId: "P1", entityId: "weather:vrbno", label: "Předpověď Vrbno" }]
+            },
+            semantic: {
+              citations: [{ citationId: "S1", entityId: "alert:storm", label: "Bouřková výstraha" }],
+              documentCount: 5,
+              status: "ok"
+            }
+          }
+        },
+        summary: "Zítra bude polojasno [I1]. Platí bouřková výstraha [S1]."
+      },
+      status: "COMPLETED"
+    };
+
+    const metadata = aiResponseEvidenceMetadata(response);
+    expect(metadata).toMatchObject({ citationCount: 2, indexedDocumentCount: 7, semanticDocumentCount: 5 });
+    expect(aiEvidenceMetadataLabel(metadata)).toBe("Citované podklady: 2");
+  });
+
+  it("labels retrieval counts as searched material when no citation exists", () => {
+    expect(aiEvidenceMetadataLabel({ indexedDocumentCount: 7, semanticDocumentCount: 5 })).toBe(
+      "Prohledané podklady: 12"
+    );
   });
 });
 

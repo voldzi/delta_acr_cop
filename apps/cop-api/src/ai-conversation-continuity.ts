@@ -15,6 +15,21 @@ export interface AiConversationContinuity {
   previousQuestion?: string;
   resolvedQuestion: string;
   sourceMessageIds: string[];
+  timeReference?: AiConversationTimeReference;
+}
+
+export interface AiConversationTimeReference {
+  dayOffset?: number;
+  label: string;
+  offsetMinutes?: number;
+  partOfDay?: "afternoon" | "evening" | "forenoon" | "morning" | "night";
+}
+
+export interface AiConversationTimeWindow {
+  from: string;
+  label: string;
+  to: string;
+  validAt: string;
 }
 
 interface VisibleChatMessage {
@@ -27,9 +42,10 @@ interface VisibleChatMessage {
 interface FollowUpMatch {
   explicitLocation?: string;
   kind: AiConversationFollowUpKind;
+  timeReference?: AiConversationTimeReference;
 }
 
-const timeFollowUpPattern = /^(?:a\s+)?(?:co\s+)?(?:dnes|zitra|pozitri|rano|dopoledne|odpoledne|vecer|v\s+noci|za\s+(?:hodinu|dve\s+hodiny|\d+\s*(?:minut|hodin|dni)))\??$/u;
+const timeFollowUpPattern = /^(?:a\s+)?(?:(?:co(?:\s+bude)?|jak(?:\s+to)?\s+bude|bude)\s+)?(?:(?:dnes|zitra|pozitri)(?:\s+(?:rano|dopoledne|odpoledne|vecer|v\s+noci))?|rano|dopoledne|odpoledne|vecer|v\s+noci|za\s+(?:hodinu|dve\s+hodiny|\d+\s*(?:minut|hodin|dni)))\??$/u;
 const explanationFollowUpPattern = /^(?:a\s+)?(?:proc|co\s+to\s+znamena|jak\s+to|jak\s+moc|je\s+to\s+bezpecne|co\s+z\s+toho\s+plyne)\??$/u;
 const mapFollowUpPattern = /^(?:a\s+)?(?:ukaz|zobraz)(?:\s+to)?\s+na\s+mape\??$/u;
 const detailFollowUpPattern = /^(?:a\s+)?(?:co\s+dal|co\s+mam\s+delat|a\s+nejblizsi|nejblizsi|podrobneji|vice\s+detailu)\??$/u;
@@ -57,7 +73,15 @@ export function resolveAiConversationContinuity(
   }
 
   const playbook = classifyAiResponseIntent(anchor.question);
-  const resolvedQuestion = resolvedFollowUpQuestion(anchor.question, question, match);
+  const timeReference = match.kind === "time"
+    ? inheritTimeReference(match.timeReference, relativeTimeReference(normalize(anchor.question)))
+    : undefined;
+  const inheritedDomain = anchor.inheritedDomain ?? playbook?.domain;
+  const inheritedIntentId = anchor.inheritedIntentId ?? playbook?.intentId;
+  const resolvedQuestion = ensureInheritedTopic(resolvedFollowUpQuestion(anchor.question, question, {
+    ...match,
+    ...(timeReference ? { timeReference } : {})
+  }), inheritedDomain);
   const assumptions = [
     `Navazující dotaz byl spojen pouze s posledním viditelným dotazem „${truncate(anchor.question, 180)}“.`
   ];
@@ -70,17 +94,69 @@ export function resolveAiConversationContinuity(
     ...(match.explicitLocation ? { explicitLocation: match.explicitLocation } : {}),
     followUp: true,
     followUpKind: match.kind,
-    ...(playbook?.domain ? { inheritedDomain: playbook.domain } : {}),
-    ...(playbook?.intentId ? { inheritedIntentId: playbook.intentId } : {}),
+    ...(inheritedDomain ? { inheritedDomain } : {}),
+    ...(inheritedIntentId ? { inheritedIntentId } : {}),
     needsClarification: false,
     originalQuestion: question,
     previousQuestion: anchor.question,
     resolvedQuestion,
-    sourceMessageIds: anchor.eventId ? [anchor.eventId] : []
+    sourceMessageIds: anchor.eventId ? [anchor.eventId] : [],
+    ...(timeReference ? { timeReference } : {})
+  };
+}
+
+export function resolveAiConversationTimeWindow(
+  continuity: AiConversationContinuity,
+  requestNow: Date,
+  timeZone = "Europe/Prague"
+): AiConversationTimeWindow | undefined {
+  const reference = continuity.timeReference;
+  if (!reference) {
+    return undefined;
+  }
+  if (reference.offsetMinutes !== undefined) {
+    const validAt = new Date(requestNow.getTime() + reference.offsetMinutes * 60_000);
+    return {
+      from: new Date(validAt.getTime() - 30 * 60_000).toISOString(),
+      label: reference.label,
+      to: new Date(validAt.getTime() + 90 * 60_000).toISOString(),
+      validAt: validAt.toISOString()
+    };
+  }
+
+  const localDate = localDateParts(requestNow, timeZone);
+  const dayOffset = reference.dayOffset ?? 0;
+  const targetDate = new Date(Date.UTC(localDate.year, localDate.month - 1, localDate.day + dayOffset, 12));
+  const target = {
+    day: targetDate.getUTCDate(),
+    month: targetDate.getUTCMonth() + 1,
+    year: targetDate.getUTCFullYear()
+  };
+  const hours = partOfDayHours(reference.partOfDay);
+  const from = zonedDateTimeToDate({ ...target, hour: hours.from }, timeZone);
+  const toDate = hours.toNextDay
+    ? new Date(Date.UTC(target.year, target.month - 1, target.day + 1, 12))
+    : targetDate;
+  const to = zonedDateTimeToDate({
+    day: toDate.getUTCDate(),
+    hour: hours.to,
+    month: toDate.getUTCMonth() + 1,
+    year: toDate.getUTCFullYear()
+  }, timeZone);
+  const midpoint = new Date(from.getTime() + (to.getTime() - from.getTime()) / 2);
+  const validAt = reference.dayOffset === 0 && !reference.partOfDay && requestNow >= from && requestNow < to
+    ? requestNow
+    : midpoint;
+  return {
+    from: from.toISOString(),
+    label: reference.label,
+    to: to.toISOString(),
+    validAt: validAt.toISOString()
   };
 }
 
 function baseContinuity(question: string): AiConversationContinuity {
+  const timeReference = relativeTimeReference(normalize(question));
   return {
     assumptions: [],
     contractVersion: "cop-ai-conversation-continuity-v1",
@@ -88,7 +164,8 @@ function baseContinuity(question: string): AiConversationContinuity {
     needsClarification: false,
     originalQuestion: question,
     resolvedQuestion: question,
-    sourceMessageIds: []
+    sourceMessageIds: [],
+    ...(timeReference ? { timeReference } : {})
   };
 }
 
@@ -98,7 +175,7 @@ function followUpMatch(question: string): FollowUpMatch | undefined {
     return undefined;
   }
   if (timeFollowUpPattern.test(normalized)) {
-    return { kind: "time" };
+    return { kind: "time", timeReference: relativeTimeReference(normalized) };
   }
   if (explanationFollowUpPattern.test(normalized)) {
     return { kind: "explanation" };
@@ -123,14 +200,19 @@ function followUpMatch(question: string): FollowUpMatch | undefined {
 function previousQuestionAnchor(
   messages: VisibleChatMessage[],
   currentQuestion: string
-): { eventId?: string; question: string } | undefined {
+): { eventId?: string; inheritedDomain?: string; inheritedIntentId?: string; question: string } | undefined {
   const relevant = messages.slice(-10);
   for (let index = relevant.length - 1; index >= 0; index -= 1) {
     const message = relevant[index]!;
     const aiQuestion = optionalText(message.ai?.question) ?? questionFromAiFallbackBody(message.body);
     if (aiQuestion && !sameQuestion(aiQuestion, currentQuestion)) {
+      const responsePlaybook = isRecord(message.ai?.responsePlaybook) ? message.ai.responsePlaybook : undefined;
       return {
         ...(message.eventId ? { eventId: message.eventId } : {}),
+        ...(optionalText(responsePlaybook?.domain) ? { inheritedDomain: optionalText(responsePlaybook?.domain) } : {}),
+        ...(optionalText(responsePlaybook?.intentId)
+          ? { inheritedIntentId: optionalText(responsePlaybook?.intentId) }
+          : {}),
         question: stripAiInvocation(aiQuestion)
       };
     }
@@ -159,7 +241,7 @@ function resolvedFollowUpQuestion(
   const anchor = previousQuestion.replace(/[?.!]+$/gu, "").trim();
   switch (match.kind) {
     case "time":
-      return `${anchor}. Časové upřesnění: ${currentQuestion}`;
+      return `${stripRelativeTime(anchor)}. Časové upřesnění: ${match.timeReference?.label ?? currentQuestion}.`;
     case "location":
       return `${anchor}. Použij místo ${match.explicitLocation}.`;
     case "explanation":
@@ -169,6 +251,147 @@ function resolvedFollowUpQuestion(
     case "detail":
       return `${anchor}. Navazující upřesnění: ${currentQuestion}`;
   }
+}
+
+function relativeTimeReference(normalized: string): AiConversationTimeReference | undefined {
+  const dayOffset = /\bpozitri\b/u.test(normalized) ? 2 : /\bzitra\b/u.test(normalized) ? 1 : /\bdnes\b/u.test(normalized) ? 0 : undefined;
+  const partOfDay = /\bv\s+noci\b/u.test(normalized)
+    ? "night"
+    : /\bvecer\b/u.test(normalized)
+      ? "evening"
+      : /\bodpoledne\b/u.test(normalized)
+        ? "afternoon"
+        : /\bdopoledne\b/u.test(normalized)
+          ? "forenoon"
+          : /\brano\b/u.test(normalized)
+            ? "morning"
+            : undefined;
+  const duration = normalized.match(/\bza\s+(hodinu|dve\s+hodiny|(\d+)\s*(minut|hodin|dni))\b/u);
+  let offsetMinutes: number | undefined;
+  if (duration?.[1] === "hodinu") {
+    offsetMinutes = 60;
+  } else if (duration?.[1] === "dve hodiny") {
+    offsetMinutes = 120;
+  } else if (duration?.[2] && duration[3]) {
+    const amount = Number.parseInt(duration[2], 10);
+    offsetMinutes = duration[3] === "dni" ? amount * 1440 : duration[3] === "hodin" ? amount * 60 : amount;
+  }
+  if (dayOffset === undefined && !partOfDay && offsetMinutes === undefined) {
+    return undefined;
+  }
+  const dayLabel = dayOffset === 0 ? "dnes" : dayOffset === 1 ? "zítra" : dayOffset === 2 ? "pozítří" : undefined;
+  const partLabel = partOfDay === "morning"
+    ? "ráno"
+    : partOfDay === "forenoon"
+      ? "dopoledne"
+      : partOfDay === "afternoon"
+        ? "odpoledne"
+        : partOfDay === "evening"
+          ? "večer"
+          : partOfDay === "night"
+            ? "v noci"
+            : undefined;
+  const durationLabel = offsetMinutes !== undefined ? normalized.match(/\bza\s+.+?(?=\?|$)/u)?.[0] : undefined;
+  return {
+    ...(dayOffset !== undefined ? { dayOffset } : {}),
+    label: [dayLabel, partLabel].filter(Boolean).join(" ") || durationLabel || "později",
+    ...(offsetMinutes !== undefined ? { offsetMinutes } : {}),
+    ...(partOfDay ? { partOfDay } : {})
+  };
+}
+
+function inheritTimeReference(
+  current: AiConversationTimeReference | undefined,
+  previous: AiConversationTimeReference | undefined
+): AiConversationTimeReference | undefined {
+  if (!current) {
+    return undefined;
+  }
+  if (current.dayOffset !== undefined || current.offsetMinutes !== undefined || previous?.dayOffset === undefined) {
+    return current;
+  }
+  const dayLabel = previous.dayOffset === 0 ? "dnes" : previous.dayOffset === 1 ? "zítra" : "pozítří";
+  return {
+    ...current,
+    dayOffset: previous.dayOffset,
+    label: `${dayLabel} ${current.label}`
+  };
+}
+
+function stripRelativeTime(value: string): string {
+  return value
+    .replace(/\b(?:dnes|zítra|zitra|pozítří|pozitri)(?:\s+(?:ráno|rano|dopoledne|odpoledne|večer|vecer|v\s+noci))?\b/giu, "")
+    .replace(/\s+([,.;:!?])/gu, "$1")
+    .replace(/\s+/gu, " ")
+    .replace(/[,.\s]+$/gu, "")
+    .trim();
+}
+
+function ensureInheritedTopic(value: string, inheritedDomain: string | undefined): string {
+  if (inheritedDomain !== "weather" || /(?:^|\s)(?:pocasi|srazk|dest|bour|vitr|teplot|weather|rain|storm|wind|temperature)/u.test(normalize(value))) {
+    return value;
+  }
+  return `${value} Téma: počasí.`;
+}
+
+function localDateParts(value: Date, timeZone: string): { day: number; month: number; year: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone,
+    year: "numeric"
+  }).formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes) => Number.parseInt(parts.find((item) => item.type === type)?.value ?? "0", 10);
+  return { day: part("day"), month: part("month"), year: part("year") };
+}
+
+function partOfDayHours(partOfDay: AiConversationTimeReference["partOfDay"]): {
+  from: number;
+  to: number;
+  toNextDay: boolean;
+} {
+  switch (partOfDay) {
+    case "morning":
+      return { from: 5, to: 9, toNextDay: false };
+    case "forenoon":
+      return { from: 8, to: 12, toNextDay: false };
+    case "afternoon":
+      return { from: 12, to: 18, toNextDay: false };
+    case "evening":
+      return { from: 18, to: 23, toNextDay: false };
+    case "night":
+      return { from: 22, to: 6, toNextDay: true };
+    default:
+      return { from: 0, to: 24, toNextDay: false };
+  }
+}
+
+function zonedDateTimeToDate(
+  value: { day: number; hour: number; month: number; year: number },
+  timeZone: string
+): Date {
+  const normalized = new Date(Date.UTC(value.year, value.month - 1, value.day, value.hour));
+  const target = Date.UTC(
+    normalized.getUTCFullYear(),
+    normalized.getUTCMonth(),
+    normalized.getUTCDate(),
+    normalized.getUTCHours()
+  );
+  let candidate = target;
+  for (let iteration = 0; iteration < 2; iteration += 1) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      day: "2-digit",
+      hour: "2-digit",
+      hourCycle: "h23",
+      month: "2-digit",
+      timeZone,
+      year: "numeric"
+    }).formatToParts(new Date(candidate));
+    const number = (type: Intl.DateTimeFormatPartTypes) => Number.parseInt(parts.find((item) => item.type === type)?.value ?? "0", 10);
+    const represented = Date.UTC(number("year"), number("month") - 1, number("day"), number("hour"));
+    candidate += target - represented;
+  }
+  return new Date(candidate);
 }
 
 function visibleMessages(chatContext: Record<string, unknown> | undefined): VisibleChatMessage[] {
