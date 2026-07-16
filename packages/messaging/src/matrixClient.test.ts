@@ -1910,12 +1910,8 @@ describe("Matrix client diagnostics", () => {
   it("creates a web and iOS compatible user-held Matrix recovery key without reading stale secrets", async () => {
     const recoverySteps: string[] = [];
     const syncApi = {
-      stop: vi.fn(() => {
-        recoverySteps.push("sync-stop");
-      }),
-      sync: vi.fn(async () => {
-        recoverySteps.push("sync-resume");
-      })
+      stop: vi.fn(),
+      sync: vi.fn().mockResolvedValue(undefined)
     };
     const bootstrapCrossSigning = vi
       .fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>()
@@ -1970,10 +1966,10 @@ describe("Matrix client diagnostics", () => {
         setupNewSecretStorage: true
       })
     );
-    expect(recoverySteps).toEqual(["disable-old-storage", "sync-stop", "cross-signing", "sync-resume"]);
+    expect(recoverySteps).toEqual(["disable-old-storage", "cross-signing"]);
     expect(crypto.disableKeyStorage).toHaveBeenCalledTimes(1);
-    expect(syncApi.stop).toHaveBeenCalledTimes(1);
-    expect(syncApi.sync).toHaveBeenCalledTimes(1);
+    expect(syncApi.stop).not.toHaveBeenCalled();
+    expect(syncApi.sync).not.toHaveBeenCalled();
   });
 
   it("uses the fast first-setup path and does not wait for nonexistent old storage or historical keys", async () => {
@@ -2008,6 +2004,9 @@ describe("Matrix client diagnostics", () => {
 
     expect(recoveryKey).toBe("EsTK fast first setup key");
     expect(disableKeyStorage).not.toHaveBeenCalled();
+    expect(crypto.bootstrapCrossSigning).toHaveBeenCalledWith(
+      expect.not.objectContaining({ setupNewCrossSigning: true })
+    );
     expect(exportRoomKeys).toHaveBeenCalledTimes(1);
     expect(phases).toEqual(["checking", "cross-signing", "secret-storage", "backup", "verifying"]);
   });

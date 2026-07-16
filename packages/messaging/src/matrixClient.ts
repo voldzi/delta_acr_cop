@@ -88,7 +88,6 @@ interface MatrixClientLike {
   setPresence?: (options: { presence: "offline" | "online" | "unavailable" }) => Promise<unknown>;
   startClient?: (options?: Record<string, unknown>) => Promise<void> | void;
   stopClient?: () => void;
-  syncApi?: MatrixSyncApiLike;
   scrollback?: (room: MatrixRoomLike, limit?: number) => Promise<unknown>;
   setAvatarUrl?: (mxcUrl: string) => Promise<unknown>;
   setDisplayName?: (displayName: string) => Promise<unknown>;
@@ -97,11 +96,6 @@ interface MatrixClientLike {
     opts?: Record<string, unknown>
   ) => Promise<{ content_uri?: string; contentUri?: string }>;
   waitUntilRoomReadyForGroupCalls?: (roomId: string) => Promise<void>;
-}
-
-interface MatrixSyncApiLike {
-  stop: () => void;
-  sync: () => Promise<void>;
 }
 
 type MatrixSendEventArgs =
@@ -1500,27 +1494,6 @@ export async function createMatrixMessagingSession(
   return sessionApi;
 }
 
-async function runWithMatrixSyncPausedForRecovery<T>(client: MatrixClientLike, action: () => Promise<T>): Promise<T> {
-  const syncApi = client.syncApi;
-  if (!syncApi) {
-    return action();
-  }
-
-  // Password UIA can take several seconds. During that window the server still
-  // advertises the previous public cross-signing identity. If an ordinary
-  // /sync response imports it after Rust generated the replacement identity,
-  // Rust correctly discards the new private keys as mismatched. Pause only the
-  // sync loop (not the crypto backend) until the replacement identity and 4S
-  // records have been published and verified.
-  syncApi.stop();
-  await Promise.resolve();
-  try {
-    return await action();
-  } finally {
-    void syncApi.sync().catch(() => undefined);
-  }
-}
-
 function asMatrixCallLike(value: unknown): MatrixCallLike | null {
   return typeof value === "object" && value !== null ? (value as MatrixCallLike) : null;
 }
@@ -2065,12 +2038,12 @@ async function createUserControlledEncryptionRecovery(
 
   try {
     const authUploadDeviceSigningKeys = createDefaultMatrixInteractiveAuthCallback(serverManagedPasswordAuth);
-    if (
-      options.mobileCompatible &&
-      (options.reset || existingStatus.keyBackupExists || existingStatus.secretStorageReady)
-    ) {
+    const shouldReplaceCrossSigning = Boolean(
+      options.reset || existingStatus.keyBackupExists || existingStatus.secretStorageReady
+    );
+    if (options.mobileCompatible && shouldReplaceCrossSigning) {
       // Removing 4S waits for an account-data event delivered by /sync. It must
-      // therefore finish before the sync loop is paused below. A previously
+      // therefore finish before the replacement keys are generated. A previously
       // interrupted setup can leave a default key that this browser cannot
       // unlock, so replace it before generating a new identity. A genuinely
       // fresh account has nothing to remove; calling disableKeyStorage there
@@ -2078,17 +2051,17 @@ async function createUserControlledEncryptionRecovery(
       onProgress?.("cleaning");
       await crypto.disableKeyStorage?.();
     }
-    // Pause /sync only while Rust generates and publishes the replacement
-    // cross-signing identity. Resuming before bootstrapping 4S is intentional:
-    // ServerSideSecretStorage waits for account-data echoes from /sync when it
-    // changes the default key, and pausing around that work would deadlock.
+    // Keep Matrix /sync running throughout the entire recovery operation.
+    // Cross-signing and secret-storage account-data writes are complete only
+    // after the server echoes them through /sync. Stopping the SDK's private
+    // syncApi can lose that echo and leave bootstrapSecretStorage pending
+    // forever. A fresh setup also reuses or creates the current cross-signing
+    // identity; only an explicit replacement flow rotates it.
     onProgress?.("cross-signing");
-    await runWithMatrixSyncPausedForRecovery(client, () =>
-      bootstrapCrossSigning.call(crypto, {
-        authUploadDeviceSigningKeys,
-        ...(options.mobileCompatible ? { setupNewCrossSigning: true } : {})
-      })
-    );
+    await bootstrapCrossSigning.call(crypto, {
+      authUploadDeviceSigningKeys,
+      ...(options.mobileCompatible && shouldReplaceCrossSigning ? { setupNewCrossSigning: true } : {})
+    });
     onProgress?.("secret-storage");
     await crypto.bootstrapSecretStorage({
       createSecretStorageKey,

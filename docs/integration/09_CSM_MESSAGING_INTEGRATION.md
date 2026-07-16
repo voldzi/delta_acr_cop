@@ -201,9 +201,11 @@ Matrix recovery material as a complete set: secret storage, cross-signing
 secrets and key backup. This keeps native Matrix Rust SDK clients compatible
 with accounts that may have legacy or incomplete `m.cross_signing.*` secret
 storage records. Initial recovery setup and a resumed, previously interrupted
-reset both create fresh cross-signing keys before writing new secret storage;
-they must not try to decrypt the empty account-data tombstones left by the
-reset. Before a non-emergency web+iOS rotation, the client disables an existing
+reset must not try to decrypt the empty account-data tombstones left by the
+reset. An ordinary initial setup creates or reuses the current cross-signing
+identity. Only an explicit reset, or replacement of existing secret storage or
+key backup, creates fresh cross-signing keys. Before a non-emergency web+iOS
+rotation, the client disables an existing
 unavailable key-storage configuration so Rust does not try to export the new
 cross-signing private keys under an old recovery key. A genuinely fresh account
 does not call `disableKeyStorage()`: there is no old 4S key to remove and waiting
@@ -228,12 +230,12 @@ before this sensitive callback; it must not reuse the token captured when the
 long-lived Matrix session was created. If a rotating refresh-token request
 fails transiently while the current COP access token is still valid, the
 callback may fall back to that current rendered-session token and let the API
-perform the authoritative validity check. While the replacement identity waits for
-that UIA round-trip, the web client pauses only the Matrix `/sync` loop. This
-prevents a response containing the previous server identity from invalidating
-the newly generated private keys before the replacement public identity is
-published. The crypto backend remains active and `/sync` resumes after the new
-identity, secret storage and key backup pass the compatibility check. The
+perform the authoritative validity check. Matrix `/sync` remains continuously
+active throughout cross-signing and secret-storage bootstrap. Matrix SDK
+account-data writes are confirmed only after the server echoes them through
+`/sync`; stopping or restarting the SDK's private `syncApi` can lose that echo
+and deadlock key creation at “Ukládám obnovovací údaje…”. Recovery code uses
+only the public Crypto API and never controls the internal sync loop. The
 endpoint rejects message content, recovery keys, room keys, private
 cross-signing material and unknown fields. Neither COP nor the browser receives
 the Matrix password or the temporary Matrix token used by CSM Messaging.
