@@ -64,6 +64,48 @@ describe("AI conversation continuity", () => {
     }
   );
 
+  it.each(["Jak bude dneska?", "Jak bude zejtra?", "Jak bude zítřejší večer?"])(
+    "understands the standalone conversational weather query %s",
+    (question) => {
+      const continuity = resolveAiConversationContinuity(question, undefined);
+
+      expect(continuity).toMatchObject({
+        followUp: false,
+        inheritedDomain: "weather",
+        inheritedIntentId: "weather.summary.forecast",
+        needsClarification: false
+      });
+      expect(continuity.resolvedQuestion).toContain("počasí");
+      expect(continuity.timeReference).toBeDefined();
+    }
+  );
+
+  it("uses an explicit contextual cue to inherit a non-weather topic", () => {
+    const continuity = resolveAiConversationContinuity("A jak to bude dneska?", {
+      messages: [
+        {
+          ai: {
+            question: "Dá se tudy projet?",
+            responsePlaybook: { domain: "traffic", intentId: "traffic.restrictions" },
+            type: "chat-agent"
+          },
+          body: "Silnice je průjezdná s omezením.",
+          eventId: "$traffic-answer",
+          own: true
+        }
+      ]
+    });
+
+    expect(continuity).toMatchObject({
+      followUp: true,
+      inheritedDomain: "traffic",
+      inheritedIntentId: "traffic.restrictions",
+      needsClarification: false,
+      timeReference: { dayOffset: 0, label: "dnes" }
+    });
+    expect(continuity.resolvedQuestion).toContain("dopravní omezení a průjezdnost");
+  });
+
   it("turns a tomorrow follow-up into an explicit Prague-time query window", () => {
     const continuity = resolveAiConversationContinuity("A jak bude zítra?", {
       messages: [

@@ -16,8 +16,17 @@ velkou eval sadou českých i anglických parafrází.
 
 Aktivní katalog je v:
 
+- `apps/cop-api/src/ai-query-understanding.ts`
 - `apps/cop-api/src/ai-response-playbook.ts`
 - `apps/cop-api/src/ai-grounded-response.ts`
+
+Před katalogem běží sdílená interpretační vrstva. Normalizuje hovorové české
+časové výrazy (`dneska`, `zejtra`, `zítřejší`, `teďka`) a bezpečně převádí
+jednoznačné elipsy na auditovatelný kanonický dotaz. Například „Jak bude
+dneska?“ se interně změní na dotaz na dnešní počasí; „Fungujou data?“, „Dá se
+tudy projet?“, „Jak je na tom voda?“ nebo „Co hlásí lidi?“ se přiřadí ke
+zdraví zdrojů, dopravě, vodní situaci nebo komunitním hlášením. Nejednoznačné
+věty se doméně nepřiřazují násilně.
 
 Katalog obsahuje pravidla `AiResponsePlaybookRule`:
 
@@ -64,6 +73,10 @@ dialogový stav z poslední viditelné, dešifrované výměny:
 - zachová téma a místo posledního jednoznačného dotazu,
 - rozpozná přirozené eliptické formulace jako „A jak bude zítra?“, „A co bude
   zítra?“ nebo „A večer?“,
+- rozlišuje samostatnou jednoznačnou elipsu („Jak bude dneska?“ = počasí) od
+  kontextového navázání („A jak to bude dneska?“ = zachovat předchozí téma),
+- u kontextového navázání umí zachovat také dopravu, vodu/povodně, požár,
+  infrastrukturu, zdroje dat, komunitní hlášení a situační přehled,
 - relativní čas převádí na absolutní časové okno v `Europe/Prague`, které se
   použije jak pro index, tak jako `validAt` pro SIM search-data,
 - meteorologické podklady se před odpovědí kontrolují proti požadovanému oknu;
@@ -107,6 +120,7 @@ radarový fallback; agent si místo vyžádá běžnou otázkou.
 Test:
 
 - `apps/cop-api/src/ai-response-playbook.test.ts`
+- `apps/cop-api/src/ai-query-understanding.test.ts`
 - `apps/cop-api/src/ai-grounded-response.test.ts`
 - `apps/cop-api/src/ai-map-search.test.ts`
 - `apps/cop-api/src/ai-conversation-continuity.test.ts`
@@ -117,6 +131,8 @@ Ověřuje:
 - obecnou předpověď s polohou i bez ní a uživatelsky čitelný fallback,
 - navázání „A jak bude zítra?“ s převzetím počasí, místa a správným budoucím
   `validAt`,
+- samostatné hovorové formulace a negativní příklady, které se nesmí zařadit
+  do nesouvisející domény,
 - map-only akce pro počasí,
 - route-capable akce pro navigovatelné objekty,
 - 10 000 generovaných dotazů se vrací na očekávaný intent,

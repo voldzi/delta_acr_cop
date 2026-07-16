@@ -5,6 +5,7 @@ import type { MapCatalogLayer } from "./map-catalog.js";
 import type { PlaceGeocodeResult } from "./place-geocoder.js";
 import type { SimSearchEntity, SimSearchEntityType, SimSearchQueryResponse } from "./sim-search-data-source.js";
 import type { SituationFeature } from "./situation-data-source.js";
+import { normalizeAiQueryText } from "./ai-query-understanding.js";
 
 export interface AiMapSearchContext {
   contractVersion: "cop-ai-map-search-v1";
@@ -1505,12 +1506,7 @@ function aiMapActionFromResult(result: Record<string, unknown>): AiMapAction | u
 }
 
 function normalizeAiMapSearchText(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/gu, "")
-    .replace(/\s+/gu, " ")
-    .trim()
-    .toLocaleLowerCase("cs-CZ");
+  return normalizeAiQueryText(value);
 }
 
 function aiMapSearchTermsFromQuestion(question: string): string[] {

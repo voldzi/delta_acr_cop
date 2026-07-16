@@ -1,3 +1,5 @@
+import { normalizeAiQueryText } from "./ai-query-understanding.js";
+
 export type AiResponseIntentDomain =
   | "application"
   | "chat"
@@ -183,7 +185,7 @@ export const aiResponsePlaybookRules: AiResponsePlaybookRule[] = [
     ],
     forbiddenActions: ["route"],
     intentId: "situation.summary",
-    patterns: [/\bjaka\s+je\s+situace\b/u, /\bco\s+se\s+deje\b/u, /\bsituacni\s+prehled\b/u, /\bshrn\w*\s+(?:aktualni\s+)?rizik/u, /\bsituation\s+summary\b/u],
+    patterns: [/\bjaka\s+je\s+situace\b/u, /\bco\s+se\s+deje\b/u, /\bjak\s+to\s+vypada\b/u, /\bco\s+je\s+nove\b/u, /\bsituacni\s+prehled\b/u, /\bshrn\w*\s+(?:aktualni\s+)?rizik/u, /\bsituation\s+summary\b/u],
     priority: 58,
     requiredSources: ["semantic-context", "indexed-context", "map-search"]
   },
@@ -201,7 +203,7 @@ export const aiResponsePlaybookRules: AiResponsePlaybookRule[] = [
     ],
     forbiddenActions: ["route"],
     intentId: "alerts.active",
-    patterns: [/\baktivni\s+vystrah/u, /\bvarovan/u, /\baktualni\s+upozornen/u, /\bhrozi\s+neco\s+nebezpec/u, /\bactive\s+alerts?\b/u],
+    patterns: [/\baktivni\s+vystrah/u, /\bvarovan/u, /\baktualni\s+upozornen/u, /\bhrozi\s+neco(?:\s+nebezpec)?\b/u, /\bna\s+co\s+si\s+dat\s+pozor\b/u, /\bactive\s+alerts?\b/u],
     priority: 79,
     requiredSources: ["semantic-context", "indexed-context", "map-search"]
   },
@@ -241,7 +243,7 @@ export const aiResponsePlaybookRules: AiResponsePlaybookRule[] = [
     ],
     forbiddenActions: ["route"],
     intentId: "source.health",
-    patterns: [/\bdatove\s+zdroje\b/u, /\bcerstv\w*\s+jsou\s+data\b/u, /\bktere\s+zdroje\s+maji\s+problem\b/u, /\bsim\s+napojen/u, /\bdata\s+source\s+health\b/u],
+    patterns: [/\bdatove\s+zdroje\b/u, /\bcerstv\w*\s+jsou\s+data\b/u, /\b(?:funguji|fungujou|jedou)\s+(?:nam\s+)?data\b/u, /\bjsou\s+data\s+(?:ok|aktualni|cerstva)\b/u, /\bco\s+se\s+nenacita\b/u, /\bodkud\s+jsou\s+data\b/u, /\bktere\s+zdroje\s+maji\s+problem\b/u, /\bsim\s+napojen/u, /\bdata\s+source\s+health\b/u],
     priority: 84,
     requiredSources: ["app-runtime", "indexed-context"]
   },
@@ -292,7 +294,7 @@ export const aiResponsePlaybookRules: AiResponsePlaybookRule[] = [
     ],
     forbiddenActions: ["route"],
     intentId: "weather.summary.forecast",
-    patterns: [/\bpocasi\b/u, /\bpredpoved/u, /\bforecast\b/u, /\bmeteogram\b/u],
+    patterns: [/\bpocasi\b/u, /\bpredpoved/u, /\bforecast\b/u, /\bmeteogram\b/u, /^(?:a\s+)?jak\s+bude(?:\s+(?:(?:dnes|zitra|pozitri|rano|dopoledne|odpoledne|vecer|v\s+noci)(?:\s+.*)?|(?:v|ve|u|na)\s+.+))?\??$/u],
     priority: 50,
     requiredSources: ["sim-search-data", "map-search"]
   },
@@ -437,7 +439,7 @@ export const aiResponsePlaybookRules: AiResponsePlaybookRule[] = [
     ],
     forbiddenActions: [],
     intentId: "flood.risk.summary",
-    patterns: [/\bpovod/u, /\bzaplav/u, /\bflood\b/u, /\briziko\s+vody\b/u],
+    patterns: [/\bpovod/u, /\bzaplav/u, /\bflood\b/u, /\briziko\s+vody\b/u, /\bjak\s+je\s+na\s+tom\s+(?:voda|reka)\b/u, /\bco\s+dela\s+(?:voda|reka)\b/u],
     priority: 78,
     requiredSources: ["sim-search-data", "map-search", "semantic-context"]
   },
@@ -545,7 +547,7 @@ export const aiResponsePlaybookRules: AiResponsePlaybookRule[] = [
     ],
     forbiddenActions: [],
     intentId: "traffic.restrictions",
-    patterns: [/\bdoprav/u, /\buzavir/u, /\bnehod/u, /\bsilnic/u, /\btraffic\b/u, /\broad\b/u],
+    patterns: [/\bdoprav/u, /\buzavir/u, /\bnehod/u, /\bsilnic/u, /\bda\s+se\s+(?:tam|tudy|to|pres\s+\w+)?\s*projet\b/u, /\bkudy\s+nejezdit\b/u, /\btraffic\b/u, /\broad\b/u],
     priority: 64,
     requiredSources: ["sim-search-data", "map-search"]
   },
@@ -581,7 +583,7 @@ export const aiResponsePlaybookRules: AiResponsePlaybookRule[] = [
     ],
     forbiddenActions: [],
     intentId: "infrastructure.outage",
-    patterns: [/\bvypad/u, /\belektr/u, /\bplyn/u, /\bvodovod/u, /\binfrastruktur/u, /\butility\b/u, /\boutage\b/u],
+    patterns: [/\bvypad(?:ek|ku|ky|kem|cich)\b/u, /\belektr/u, /\bplyn/u, /\bvodovod/u, /\binfrastruktur/u, /\butility\b/u, /\boutage\b/u],
     priority: 63,
     requiredSources: ["sim-search-data", "semantic-context"]
   },
@@ -920,10 +922,5 @@ function toPlaybookMatch(
 }
 
 function normalizeAiResponseQuestion(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/gu, "")
-    .replace(/\s+/gu, " ")
-    .trim()
-    .toLocaleLowerCase("cs-CZ");
+  return normalizeAiQueryText(value);
 }

@@ -2713,6 +2713,64 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("understands a conversational standalone weather question without a phrase dictionary fallback", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return { summary: "Provider should not be called for grounded weather data", structured: {} };
+      },
+      async health() {
+        return { detail: "test provider", status: "ok" };
+      }
+    };
+    const simSearchDataSource = new FakeAiMapSearchSimSearchDataSource();
+    simSearchDataSource.weatherForecastResult = true;
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-07-15T19:30:00Z"),
+      simSearchDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        currentLocation: { lat: 50.15077, lon: 17.37303, radiusKm: 30 },
+        question: "Jak bude dneska?"
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedQueries).toHaveLength(0);
+    expect(simSearchDataSource.lastQuery?.validAt).toBe("2026-07-15T19:30:00.000Z");
+    const aiResponse = response.json() as AiCopResponse;
+    expect(aiResponse).toMatchObject({
+      model: "map-search-fallback",
+      provider: "local",
+      status: "COMPLETED"
+    });
+    expect(aiResponse.result.summary).toContain("Pro nejbližší dostupné období");
+    expect(aiResponse.result.summary).not.toContain("Teď nemám z dostupného COP kontextu");
+    expect(aiResponse.result.structured).toMatchObject({
+      conversation: {
+        followUp: false,
+        originalQuestion: "Jak bude dneska?",
+        resolvedQuestion: "Jaké bude počasí dnes?",
+        timeReference: { dayOffset: 0, label: "dnes" }
+      }
+    });
+
+    await app.close();
+  });
+
   it("asks for a place instead of using an unbounded radar result for general weather", async () => {
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {

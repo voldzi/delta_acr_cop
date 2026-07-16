@@ -69,6 +69,17 @@ describe("AI response playbook", () => {
     expect(classifyAiResponseIntent(question)).toMatchObject({ intentId });
   });
 
+  it.each([
+    ["Jak bude dneska?", "weather.summary.forecast"],
+    ["Jak to vypadá?", "situation.summary"],
+    ["Na co si dát pozor?", "alerts.active"],
+    ["Fungujou data?", "source.health"],
+    ["Jak je na tom voda?", "flood.risk.summary"],
+    ["Dá se tudy projet?", "traffic.restrictions"]
+  ])("classifies conversational paraphrase %s", (question, intentId) => {
+    expect(classifyAiResponseIntent(question)).toMatchObject({ intentId });
+  });
+
   it("generates a ten-thousand-query eval set that maps back to expected intents", () => {
     const cases = buildAiResponsePlaybookEvalCases(10_000);
     const uniqueQuestions = new Set(cases.map((item) => item.question));

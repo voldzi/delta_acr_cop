@@ -1,4 +1,5 @@
 import { classifyAiResponseIntent } from "./ai-response-playbook.js";
+import { inferAiQueryMeaning, normalizeAiQueryText, type AiQueryMeaning } from "./ai-query-understanding.js";
 
 export type AiConversationFollowUpKind = "detail" | "explanation" | "location" | "map" | "time";
 
@@ -45,7 +46,7 @@ interface FollowUpMatch {
   timeReference?: AiConversationTimeReference;
 }
 
-const timeFollowUpPattern = /^(?:a\s+)?(?:(?:co(?:\s+bude)?|jak(?:\s+to)?\s+bude|bude)\s+)?(?:(?:dnes|zitra|pozitri)(?:\s+(?:rano|dopoledne|odpoledne|vecer|v\s+noci))?|rano|dopoledne|odpoledne|vecer|v\s+noci|za\s+(?:hodinu|dve\s+hodiny|\d+\s*(?:minut|hodin|dni)))\??$/u;
+const timeFollowUpPattern = /^(?:a\s+)?(?:(?:co(?:\s+bude)?|jak(?:e|a|y)?(?:\s+to)?(?:\s+bude|\s+budou|\s+je|\s+jsou)?|bude|budou)\s+)?(?:(?:dnes|zitra|pozitri)(?:\s+(?:rano|dopoledne|odpoledne|vecer|v\s+noci))?|rano|dopoledne|odpoledne|vecer|v\s+noci|za\s+(?:hodinu|dve\s+hodiny|\d+\s*(?:minut|hodin|dni)))\??$/u;
 const explanationFollowUpPattern = /^(?:a\s+)?(?:proc|co\s+to\s+znamena|jak\s+to|jak\s+moc|je\s+to\s+bezpecne|co\s+z\s+toho\s+plyne)\??$/u;
 const mapFollowUpPattern = /^(?:a\s+)?(?:ukaz|zobraz)(?:\s+to)?\s+na\s+mape\??$/u;
 const detailFollowUpPattern = /^(?:a\s+)?(?:co\s+dal|co\s+mam\s+delat|a\s+nejblizsi|nejblizsi|podrobneji|vice\s+detailu)\??$/u;
@@ -56,14 +57,24 @@ export function resolveAiConversationContinuity(
   chatContext: Record<string, unknown> | undefined
 ): AiConversationContinuity {
   const question = originalQuestion.replace(/\s+/gu, " ").trim();
+  const standaloneMeaning = inferAiQueryMeaning(question);
   const match = followUpMatch(question);
   if (!match) {
-    return baseContinuity(question);
+    return baseContinuity(question, standaloneMeaning);
   }
 
   const messages = visibleMessages(chatContext);
   const anchor = previousQuestionAnchor(messages, question);
+  const anchorDomain = anchor
+    ? anchor.inheritedDomain ?? classifyAiResponseIntent(anchor.question)?.domain
+    : undefined;
+  if (standaloneMeaning && !hasContextualFollowUpCue(question) && anchorDomain !== standaloneMeaning.domain) {
+    return baseContinuity(question, standaloneMeaning);
+  }
   if (!anchor) {
+    if (standaloneMeaning) {
+      return baseContinuity(question, standaloneMeaning);
+    }
     return {
       ...baseContinuity(question),
       followUp: true,
@@ -155,15 +166,19 @@ export function resolveAiConversationTimeWindow(
   };
 }
 
-function baseContinuity(question: string): AiConversationContinuity {
+function baseContinuity(
+  question: string,
+  meaning: AiQueryMeaning | undefined = inferAiQueryMeaning(question)
+): AiConversationContinuity {
   const timeReference = relativeTimeReference(normalize(question));
   return {
-    assumptions: [],
+    assumptions: meaning ? [meaning.interpretation] : [],
     contractVersion: "cop-ai-conversation-continuity-v1",
     followUp: false,
+    ...(meaning ? { inheritedDomain: meaning.domain, inheritedIntentId: meaning.intentId } : {}),
     needsClarification: false,
     originalQuestion: question,
-    resolvedQuestion: question,
+    resolvedQuestion: meaning?.canonicalQuestion ?? question,
     sourceMessageIds: [],
     ...(timeReference ? { timeReference } : {})
   };
@@ -320,7 +335,7 @@ function inheritTimeReference(
 
 function stripRelativeTime(value: string): string {
   return value
-    .replace(/\b(?:dnes|zítra|zitra|pozítří|pozitri)(?:\s+(?:ráno|rano|dopoledne|odpoledne|večer|vecer|v\s+noci))?\b/giu, "")
+    .replace(/\b(?:dnes|dneska|zítra|zitra|zejtra|zítřek|zitrejsek|zítřejší|zitrejsi|pozítří|pozitri|pozítřek|pozitrejsek|pozítřejší|pozitrejsi)(?:\s+(?:ráno|rano|dopoledne|odpoledne|večer|vecer|v\s+noci))?\b/giu, "")
     .replace(/\s+([,.;:!?])/gu, "$1")
     .replace(/\s+/gu, " ")
     .replace(/[,.\s]+$/gu, "")
@@ -328,10 +343,38 @@ function stripRelativeTime(value: string): string {
 }
 
 function ensureInheritedTopic(value: string, inheritedDomain: string | undefined): string {
-  if (inheritedDomain !== "weather" || /(?:^|\s)(?:pocasi|srazk|dest|bour|vitr|teplot|weather|rain|storm|wind|temperature)/u.test(normalize(value))) {
+  const topic = inheritedDomain ? inheritedTopic(inheritedDomain) : undefined;
+  if (!topic || topic.pattern.test(normalize(value))) {
     return value;
   }
-  return `${value} Téma: počasí.`;
+  return `${value} Téma: ${topic.label}.`;
+}
+
+function inheritedTopic(domain: string): { label: string; pattern: RegExp } | undefined {
+  switch (domain) {
+    case "weather":
+      return { label: "počasí", pattern: /(?:^|\s)(?:pocasi|srazk|dest|bour|vitr|teplot|weather|rain|storm|wind|temperature)/u };
+    case "traffic":
+      return { label: "dopravní omezení a průjezdnost", pattern: /(?:doprav|uzavir|nehod|silnic|prujezd)/u };
+    case "flood":
+      return { label: "vodní a povodňová situace", pattern: /(?:povod|zaplav|hladin|prutok|vodomer|voda|reka)/u };
+    case "fire":
+      return { label: "požární situace", pattern: /(?:pozar|hori|kour|hotspot|hasic)/u };
+    case "infrastructure":
+      return { label: "výpadky infrastruktury", pattern: /(?:vypad|elektr|proud|plyn|vodovod|infrastruktur)/u };
+    case "data":
+      return { label: "dostupnost a čerstvost datových zdrojů COP/SIM", pattern: /(?:datov|zdroj|sim|cerstv|nenacita)/u };
+    case "community":
+      return { label: "komunitní hlášení", pattern: /(?:komunit|hlasen|nahlasil|report)/u };
+    case "situation":
+      return { label: "aktuální civilní situace a výstrahy", pattern: /(?:situac|vystrah|varovan|upozornen|rizik)/u };
+    default:
+      return undefined;
+  }
+}
+
+function hasContextualFollowUpCue(question: string): boolean {
+  return /^(?:a\b|jak\s+to\b|co\s+to\b)/u.test(normalize(question));
 }
 
 function localDateParts(value: Date, timeZone: string): { day: number; month: number; year: number } {
@@ -441,12 +484,7 @@ function isUnreadablePlaceholder(value: string): boolean {
 }
 
 function normalize(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/gu, "")
-    .replace(/\s+/gu, " ")
-    .trim()
-    .toLocaleLowerCase("cs-CZ");
+  return normalizeAiQueryText(value);
 }
 
 function optionalText(value: unknown): string | undefined {
