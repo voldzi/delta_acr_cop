@@ -48,3 +48,36 @@ key does not verify the signatures on that device's one-time/fallback keys:
    only after the replacement is verified. Never delete one-time keys directly
    in Synapse SQL and do not reset account-wide E2EE merely to repair one
    browser.
+
+## Matrix stream consistency after database migration or restore
+
+If E2EE recovery remains on **Ukládám obnovovací údaje…**, first verify that a
+new account-data event is visible through an incremental Matrix `/sync`. A full
+sync that contains the event while `/sync?since=...` repeatedly returns the same
+token identifies a homeserver stream-position problem, not slow cryptography or
+a client timeout.
+
+Synapse PostgreSQL migrations and restores must keep every stream sequence at
+or above both its associated table maximum and `stream_positions`. Check at
+least these mappings:
+
+- `events_stream_seq` → `events` / `events.stream_ordering`
+- `presence_stream_sequence` → `presence_stream`
+- `receipts_sequence` → `receipts_linearized`
+- `account_data_sequence` → `account_data`, `room_account_data`,
+  `room_tags_revisions`
+- `push_rules_stream_sequence` → `push_rules_stream`
+- `device_inbox_sequence` → `device_inbox`, `device_federation_outbox`
+- `device_lists_sequence` → all `device_lists_*` streams and
+  `user_signature_stream`
+
+For a repair, stop all Synapse writers, save an audit snapshot of sequences and
+`stream_positions`, and advance each affected PostgreSQL sequence to the
+greatest of its current value, associated table maxima, and the matching live
+stream position. Never move a sequence backwards and do not delete
+`stream_positions` as a permanent workaround. Restart Synapse, then prove the
+repair with a harmless account-data canary: the next incremental `/sync` must
+advance `account_data_key` and return that canary. Only then retry E2EE recovery
+and verify that `m.secret_storage.default_key`, cross-signing secrets, and one
+active key-backup version were created. Do not log access tokens, recovery keys,
+secret-storage content, or room keys during diagnosis.
