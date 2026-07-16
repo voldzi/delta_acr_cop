@@ -1,13 +1,14 @@
 import * as React from "react";
 import clsx from "clsx";
 import { ArrowLeft, Check, Copy, KeyRound, Loader2, RefreshCcw } from "lucide-react";
-import type { MatrixEncryptionRecoveryStatus } from "@cop/messaging/types";
+import type { MatrixEncryptionRecoveryPhase, MatrixEncryptionRecoveryStatus } from "@cop/messaging/types";
 import { useModalFocus } from "../hooks/useModalFocus";
 
 export interface EncryptionRecoveryDialogProps {
   generatedRecoveryKey: string | null;
   manualRestore: boolean;
   recoveryKeyInput: string;
+  recoveryPhase?: MatrixEncryptionRecoveryPhase | null;
   saving: boolean;
   status: MatrixEncryptionRecoveryStatus | null;
   onClose: () => void;
@@ -24,6 +25,7 @@ export default function EncryptionRecoveryDialog({
   generatedRecoveryKey,
   manualRestore,
   recoveryKeyInput,
+  recoveryPhase,
   saving,
   status,
   onClose,
@@ -47,6 +49,7 @@ export default function EncryptionRecoveryDialog({
         ? "Obnovte toto zařízení"
         : "Nastavte více zařízení";
   const [copyState, setCopyState] = React.useState<"copied" | "error" | "idle">("idle");
+  const progressLabel = recoveryPhase ? recoveryProgressLabel(recoveryPhase) : "Připravuji zabezpečení…";
 
   React.useEffect(() => {
     if (copyState === "idle") {
@@ -93,6 +96,16 @@ export default function EncryptionRecoveryDialog({
         <div className="recovery-illustration" aria-hidden="true">
           <KeyRound size={54} />
         </div>
+
+        {saving ? (
+          <div className="recovery-progress" role="status" aria-live="polite">
+            <Loader2 className="spin" size={20} />
+            <span>
+              <strong>{progressLabel}</strong>
+              <small>Klíč se po dokončení zobrazí ihned; starší šifrovací klíče se doplní na pozadí.</small>
+            </span>
+          </div>
+        ) : null}
 
         {onRepairDevice && !generatedRecoveryKey ? (
           <aside className="recovery-device-repair" aria-label="Oprava tohoto webového zařízení">
@@ -278,4 +291,21 @@ export default function EncryptionRecoveryDialog({
       </section>
     </div>
   );
+}
+
+function recoveryProgressLabel(phase: MatrixEncryptionRecoveryPhase): string {
+  switch (phase) {
+    case "checking":
+      return "Kontroluji současné šifrování…";
+    case "cleaning":
+      return "Odstraňuji neúplné staré nastavení…";
+    case "cross-signing":
+      return "Vytvářím bezpečnou identitu zařízení…";
+    case "secret-storage":
+      return "Ukládám obnovovací údaje…";
+    case "backup":
+      return "Aktivuji šifrovanou zálohu…";
+    case "verifying":
+      return "Ověřuji použití na webu a iPhonu/iPadu…";
+  }
 }

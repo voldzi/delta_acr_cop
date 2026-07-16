@@ -7,6 +7,7 @@ import type {
   MatrixCopMessageMetadata,
   MatrixDeviceSigningAuthRequest,
   MatrixEncryptedFileRef,
+  MatrixEncryptionRecoveryProgressCallback,
   MatrixEncryptionRecoveryStatus,
   MatrixLocationShare,
   MatrixMessageReaction,
@@ -953,7 +954,7 @@ export async function createMatrixMessagingSession(
         throw formatMatrixClientError(caught, homeserverBaseUrl, "přijmout hovor");
       }
     },
-    createEncryptionRecovery: async (reset = false) => {
+    createEncryptionRecovery: async (reset = false, onProgress) => {
       const recoveryKey = await createUserControlledEncryptionRecovery(
         client,
         recoveryController,
@@ -963,7 +964,8 @@ export async function createMatrixMessagingSession(
         // records: an interrupted reset intentionally leaves those records as
         // empty objects, which ServerSideSecretStorage rejects as unencrypted.
         { mobileCompatible: true, reset },
-        Boolean(callbacks.completeDeviceSigningAuth)
+        Boolean(callbacks.completeDeviceSigningAuth),
+        onProgress
       );
       await writeStoredMatrixRecoveryKey(activeBootstrap, recoveryKey);
       return recoveryKey;
@@ -1172,7 +1174,7 @@ export async function createMatrixMessagingSession(
         // Read receipts are a best-effort UX signal. Message delivery must not fail because of them.
       }
     },
-    prepareEncryptionRecoveryForMobile: async () => {
+    prepareEncryptionRecoveryForMobile: async (onProgress) => {
       const recoveryKey = await createUserControlledEncryptionRecovery(
         client,
         recoveryController,
@@ -1180,7 +1182,8 @@ export async function createMatrixMessagingSession(
           mobileCompatible: true,
           reset: true
         },
-        Boolean(callbacks.completeDeviceSigningAuth)
+        Boolean(callbacks.completeDeviceSigningAuth),
+        onProgress
       );
       await writeStoredMatrixRecoveryKey(activeBootstrap, recoveryKey);
       return recoveryKey;
@@ -2037,7 +2040,8 @@ async function createUserControlledEncryptionRecovery(
   client: MatrixClientLike,
   recoveryController: MatrixRecoveryController,
   options: { mobileCompatible?: boolean; reset?: boolean } = {},
-  serverManagedPasswordAuth = false
+  serverManagedPasswordAuth = false,
+  onProgress?: MatrixEncryptionRecoveryProgressCallback
 ): Promise<string> {
   const crypto = requireMatrixCrypto(client);
   if (
@@ -2048,10 +2052,8 @@ async function createUserControlledEncryptionRecovery(
     throw new Error("Tento prohlížeč nepodporuje vytvoření obnovovacího klíče.");
   }
   const bootstrapCrossSigning = crypto.bootstrapCrossSigning;
-  // Snapshot every locally known Megolm session before replacing 4S and the
-  // server backup. The recovery key is useful on another device only when the
-  // new backup has actually received these room keys.
-  const localRoomKeys = crypto.exportRoomKeys ? await crypto.exportRoomKeys() : [];
+  onProgress?.("checking");
+  const existingStatus = await readMatrixEncryptionRecoveryStatus(client);
 
   let encodedRecoveryKey = "";
   const createSecretStorageKey = async () => {
@@ -2063,23 +2065,31 @@ async function createUserControlledEncryptionRecovery(
 
   try {
     const authUploadDeviceSigningKeys = createDefaultMatrixInteractiveAuthCallback(serverManagedPasswordAuth);
-    if (options.mobileCompatible) {
+    if (
+      options.mobileCompatible &&
+      (options.reset || existingStatus.keyBackupExists || existingStatus.secretStorageReady)
+    ) {
       // Removing 4S waits for an account-data event delivered by /sync. It must
       // therefore finish before the sync loop is paused below. A previously
       // interrupted setup can leave a default key that this browser cannot
-      // unlock, so always replace it before generating the new identity.
+      // unlock, so replace it before generating a new identity. A genuinely
+      // fresh account has nothing to remove; calling disableKeyStorage there
+      // needlessly waits for an account-data echo that may never arrive.
+      onProgress?.("cleaning");
       await crypto.disableKeyStorage?.();
     }
     // Pause /sync only while Rust generates and publishes the replacement
     // cross-signing identity. Resuming before bootstrapping 4S is intentional:
     // ServerSideSecretStorage waits for account-data echoes from /sync when it
     // changes the default key, and pausing around that work would deadlock.
+    onProgress?.("cross-signing");
     await runWithMatrixSyncPausedForRecovery(client, () =>
       bootstrapCrossSigning.call(crypto, {
         authUploadDeviceSigningKeys,
         ...(options.mobileCompatible ? { setupNewCrossSigning: true } : {})
       })
     );
+    onProgress?.("secret-storage");
     await crypto.bootstrapSecretStorage({
       createSecretStorageKey,
       setupNewKeyBackup: true,
@@ -2092,11 +2102,14 @@ async function createUserControlledEncryptionRecovery(
     if (!options.mobileCompatible) {
       await crypto.bootstrapCrossSigning({ authUploadDeviceSigningKeys });
     }
+    onProgress?.("backup");
     await crypto.checkKeyBackupAndEnable?.();
-    if (localRoomKeys.length > 0 && crypto.importRoomKeys) {
-      await crypto.importRoomKeys(localRoomKeys, { progressCallback: () => undefined });
-    }
-    await waitForLocalRoomKeysInBackup(crypto, localRoomKeys.length);
+    // The recovery key is usable as soon as 4S, cross-signing and the new key
+    // backup are active. Re-exporting every historical Megolm session can take
+    // tens of seconds on an established account, so backfill those keys in the
+    // background instead of blocking display of the newly generated key.
+    backfillLocalRoomKeysToBackupInBackground(crypto);
+    onProgress?.("verifying");
     const status = await readMatrixEncryptionRecoveryStatus(client);
     if (!status.matrixRustCompatible) {
       throw new Error(
@@ -2119,22 +2132,16 @@ async function createUserControlledEncryptionRecovery(
   return encodedRecoveryKey;
 }
 
-async function waitForLocalRoomKeysInBackup(crypto: MatrixCryptoApiLike, expectedCount: number): Promise<void> {
-  if (expectedCount <= 0 || typeof crypto.getKeyBackupInfo !== "function") {
+function backfillLocalRoomKeysToBackupInBackground(crypto: MatrixCryptoApiLike): void {
+  if (typeof crypto.exportRoomKeys !== "function" || typeof crypto.importRoomKeys !== "function") {
     return;
   }
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    const info = asRecord(await crypto.getKeyBackupInfo().catch(() => null));
-    const count = Number(info?.count ?? 0);
-    if (Number.isFinite(count) && count >= expectedCount) {
-      return;
-    }
-    await new Promise((resolve) => globalThis.setTimeout(resolve, 250));
-  }
-  throw new Error(
-    `Nová E2EE záloha neobsahuje všechny lokálně dostupné klíče (${expectedCount}). Akci bezpečně zopakujte.`
-  );
+  void crypto
+    .exportRoomKeys()
+    .then((roomKeys) =>
+      roomKeys.length > 0 ? crypto.importRoomKeys?.(roomKeys, { progressCallback: () => undefined }) : undefined
+    )
+    .catch(() => undefined);
 }
 
 async function acceptCompletedRecoveryAfterDuplicateOneTimeKeyUpload(

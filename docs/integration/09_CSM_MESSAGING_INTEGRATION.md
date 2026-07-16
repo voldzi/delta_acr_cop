@@ -205,13 +205,15 @@ reset both create fresh cross-signing keys before writing new secret storage;
 they must not try to decrypt the empty account-data tombstones left by the
 reset. Before a non-emergency web+iOS rotation, the client disables an existing
 unavailable key-storage configuration so Rust does not try to export the new
-cross-signing private keys under an old recovery key. The same transaction then
-creates replacement secret storage and key backup under the new user-held key.
-Before removing old key storage, the browser exports all locally known Megolm
-sessions in memory. After enabling the replacement backup it reimports that
-snapshot to trigger backup processing and does not report success until the
-server backup count covers every locally available session. No room key leaves
-the Matrix crypto API or enters COP REST.
+cross-signing private keys under an old recovery key. A genuinely fresh account
+does not call `disableKeyStorage()`: there is no old 4S key to remove and waiting
+for a non-existent account-data echo can stall the first setup. The same
+transaction then creates replacement secret storage and key backup under the
+new user-held key. Once secret storage, cross-signing and the new backup are
+active and verified, the key is displayed immediately. Export and reimport of
+locally known historical Megolm sessions runs as best-effort background work;
+it must not block the user-facing key-generation flow. No room key leaves the
+Matrix crypto API or enters COP REST.
 Recovery keys shown in screenshots or otherwise exposed to a
 human support channel are treated as compromised and must be replaced through
 this reset flow before enrolling additional devices.

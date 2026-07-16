@@ -127,6 +127,7 @@ import type {
   MatrixCopAiFollowUpSuggestion,
   MatrixCopMapAction,
   MatrixCopMessageMetadata,
+  MatrixEncryptionRecoveryPhase,
   MatrixLocationShare,
   MatrixMessagingSession,
   MatrixRoomSummary,
@@ -622,6 +623,7 @@ export function ChatApp() {
   const [recoveryKeyInput, setRecoveryKeyInput] = React.useState("");
   const [generatedRecoveryKey, setGeneratedRecoveryKey] = React.useState<string | null>(null);
   const [recoveryWorking, setRecoveryWorking] = React.useState(false);
+  const [recoveryPhase, setRecoveryPhase] = React.useState<MatrixEncryptionRecoveryPhase | null>(null);
   const [chatRemovalWorking, setChatRemovalWorking] = React.useState(false);
   const [memberRemovalCandidate, setMemberRemovalCandidate] = React.useState<MemberRemovalCandidate | null>(null);
   const [memberRemovalWorking, setMemberRemovalWorking] = React.useState(false);
@@ -2753,13 +2755,14 @@ export function ChatApp() {
       return;
     }
     setRecoveryWorking(true);
+    setRecoveryPhase("checking");
     setError(null);
     try {
       const preferredSelection = selectedConversationId ?? selectedGroupId ?? selectedRoomId;
       const session = reset
         ? await startFreshMatrixSessionForRecovery()
         : await ensureMatrixSession(preferredSelection);
-      const recoveryKey = await session.createEncryptionRecovery(reset);
+      const recoveryKey = await session.createEncryptionRecovery(reset, setRecoveryPhase);
       setGeneratedRecoveryKey(recoveryKey);
       setRecoveryKeyInput("");
       setRecoveryManualRestore(false);
@@ -2773,6 +2776,7 @@ export function ChatApp() {
       setError(userFacingError(caught instanceof Error ? caught.message : "Obnovovací klíč se nepodařilo vytvořit."));
     } finally {
       setRecoveryWorking(false);
+      setRecoveryPhase(null);
     }
   }
 
@@ -2785,11 +2789,12 @@ export function ChatApp() {
       return;
     }
     setRecoveryWorking(true);
+    setRecoveryPhase("checking");
     setError(null);
     try {
       const preferredSelection = selectedConversationId ?? selectedGroupId ?? selectedRoomId;
       const session = await ensureMatrixSession(preferredSelection);
-      const recoveryKey = await session.prepareEncryptionRecoveryForMobile();
+      const recoveryKey = await session.prepareEncryptionRecoveryForMobile(setRecoveryPhase);
       setGeneratedRecoveryKey(recoveryKey);
       setRecoveryKeyInput("");
       await refreshEncryptionRecoveryStatus(session);
@@ -2802,6 +2807,7 @@ export function ChatApp() {
       );
     } finally {
       setRecoveryWorking(false);
+      setRecoveryPhase(null);
     }
   }
 
@@ -5086,6 +5092,7 @@ export function ChatApp() {
             generatedRecoveryKey={generatedRecoveryKey}
             manualRestore={recoveryManualRestore}
             recoveryKeyInput={recoveryKeyInput}
+            recoveryPhase={recoveryPhase}
             saving={recoveryWorking}
             status={encryptionRecoveryStatus}
             onClose={() => {

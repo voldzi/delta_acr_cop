@@ -1976,6 +1976,42 @@ describe("Matrix client diagnostics", () => {
     expect(syncApi.sync).toHaveBeenCalledTimes(1);
   });
 
+  it("uses the fast first-setup path and does not wait for nonexistent old storage or historical keys", async () => {
+    const phases: string[] = [];
+    const disableKeyStorage = vi.fn(() => new Promise<void>(() => undefined));
+    const exportRoomKeys = vi.fn(() => new Promise<unknown[]>(() => undefined));
+    const bootstrapSecretStorage = vi.fn<NonNullable<MockMatrixCrypto["bootstrapSecretStorage"]>>(async (options) => {
+      await options.createSecretStorageKey?.();
+    });
+    const crypto: MockMatrixCrypto = {
+      bootstrapCrossSigning: vi.fn().mockResolvedValue(undefined),
+      bootstrapSecretStorage,
+      checkKeyBackupAndEnable: vi.fn().mockResolvedValue(undefined),
+      createRecoveryKeyFromPassphrase: vi.fn().mockResolvedValue({
+        encodedPrivateKey: "EsTK fast first setup key",
+        privateKey: new Uint8Array([1, 2, 3])
+      }),
+      disableKeyStorage,
+      exportRoomKeys,
+      getActiveSessionBackupVersion: vi.fn().mockResolvedValueOnce(null).mockResolvedValue("1"),
+      getKeyBackupInfo: vi.fn().mockResolvedValueOnce(null).mockResolvedValue({ version: "1" }),
+      importRoomKeys: vi.fn().mockResolvedValue(undefined),
+      // A fresh account may already have local cross-signing keys; that alone
+      // does not mean there is old secret storage to disable.
+      isCrossSigningReady: vi.fn().mockResolvedValue(true),
+      isSecretStorageReady: vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true)
+    };
+    matrixSdkMock.createClient.mockReturnValue(createMockMatrixClient({ crypto, rooms: [] }));
+
+    const session = await createMatrixMessagingSession(createBootstrap());
+    const recoveryKey = await session.createEncryptionRecovery(false, (phase) => phases.push(phase));
+
+    expect(recoveryKey).toBe("EsTK fast first setup key");
+    expect(disableKeyStorage).not.toHaveBeenCalled();
+    expect(exportRoomKeys).toHaveBeenCalledTimes(1);
+    expect(phases).toEqual(["checking", "cross-signing", "secret-storage", "backup", "verifying"]);
+  });
+
   it("prepares a complete Matrix Rust compatible recovery set for iPhone and iPad", async () => {
     const bootstrapCrossSigning = vi
       .fn<NonNullable<MockMatrixCrypto["bootstrapCrossSigning"]>>()

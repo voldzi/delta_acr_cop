@@ -3533,6 +3533,28 @@ button {
   color: var(--accent-dark);
 }
 
+.recovery-progress {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(0, 128, 105, 0.2);
+  border-radius: 12px;
+  background: #eefaf7;
+  color: var(--accent-dark);
+  padding: 12px 14px;
+}
+
+.recovery-progress span {
+  display: grid;
+  gap: 3px;
+}
+
+.recovery-progress small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .recovery-status-panel {
   display: flex;
   align-items: flex-start;

@@ -272,4 +272,27 @@ describe("EncryptionRecoveryDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Vygenerovat nový klíč pro iPhone/iPad" }));
     expect(onPrepareMobile).toHaveBeenCalledTimes(1);
   });
+
+  it("shows the actual recovery phase instead of an unexplained spinner", () => {
+    render(
+      <EncryptionRecoveryDialog
+        generatedRecoveryKey={null}
+        manualRestore={false}
+        recoveryKeyInput=""
+        recoveryPhase="cross-signing"
+        saving
+        status={null}
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onManualRestore={vi.fn()}
+        onPrepareMobile={vi.fn()}
+        onRecoveryKeyInputChange={vi.fn()}
+        onReset={vi.fn()}
+        onRestore={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("status").textContent).toContain("Vytvářím bezpečnou identitu zařízení");
+    expect(screen.getByRole("status").textContent).toContain("starší šifrovací klíče se doplní na pozadí");
+  });
 });

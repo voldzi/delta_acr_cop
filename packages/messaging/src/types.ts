@@ -292,7 +292,7 @@ export interface MatrixEncryptedFileRef {
 export interface MatrixMessagingSession {
   bootstrap: MessagingBootstrapResponse;
   answerVoiceCall(callId: string): Promise<void>;
-  createEncryptionRecovery(reset?: boolean): Promise<string>;
+  createEncryptionRecovery(reset?: boolean, onProgress?: MatrixEncryptionRecoveryProgressCallback): Promise<string>;
   createGroupRoom(name: string, inviteUserIds?: string[]): Promise<string>;
   deleteMessage(roomId: string, eventId: string): Promise<void>;
   downloadAttachment(message: MatrixTimelineMessage): Promise<Blob>;
@@ -307,7 +307,7 @@ export interface MatrixMessagingSession {
   leaveRoom(roomId: string): Promise<void>;
   loadMoreTimeline(roomId: string, limit?: number): Promise<{ exhausted: boolean; messages: MatrixTimelineMessage[] }>;
   markRoomRead(roomId: string): Promise<void>;
-  prepareEncryptionRecoveryForMobile(): Promise<string>;
+  prepareEncryptionRecoveryForMobile(onProgress?: MatrixEncryptionRecoveryProgressCallback): Promise<string>;
   refreshBootstrap(bootstrap: MessagingBootstrapResponse): boolean;
   rejectVoiceCall(callId: string): Promise<void>;
   restoreEncryptionRecovery(recoveryKey: string): Promise<void>;
@@ -342,3 +342,8 @@ export interface MatrixEncryptionRecoveryStatus {
   secretStorageReady: boolean;
   supported: boolean;
 }
+
+export type MatrixEncryptionRecoveryPhase =
+  "checking" | "cleaning" | "cross-signing" | "secret-storage" | "backup" | "verifying";
+
+export type MatrixEncryptionRecoveryProgressCallback = (phase: MatrixEncryptionRecoveryPhase) => void;
