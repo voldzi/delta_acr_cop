@@ -771,6 +771,15 @@ The phase-0 implementation focus is trust and control:
   implement a separate weather conversation grammar. Without a safe anchor a
   question such as “Proč?” produces a human clarification rather than a guessed
   topic.
+- Embedded COP Chat does not rely on a one-shot location message sent during
+  iframe loading. After installing its message listener it sends
+  `cop-chat:current-location-request`; COP Web answers with the current device
+  fix when available and otherwise with map context only for passive sync. A
+  question that explicitly or implicitly needs the user's current position
+  sends a device-preferred request and waits for that response before invoking
+  the AI route. Replies such as “Pro aktuální polohu” keep the previous
+  response-playbook domain, so a weather clarification cannot fall through to
+  a generic hydrology/map search.
 - AI situation answers use a server-side `priorityContext` before semantic
   retrieval. Flood/water state, fires, medical risks, infrastructure, traffic,
   security or police incidents, community reports and active alerts outrank

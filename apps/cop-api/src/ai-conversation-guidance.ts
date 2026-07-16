@@ -70,7 +70,8 @@ export function withAiConversationGuidance(
           ...(input.continuity.previousQuestion ? { previousQuestion: input.continuity.previousQuestion } : {}),
           resolvedQuestion: input.continuity.resolvedQuestion,
           sourceMessageIds: input.continuity.sourceMessageIds,
-          ...(input.continuity.timeReference ? { timeReference: input.continuity.timeReference } : {})
+          ...(input.continuity.timeReference ? { timeReference: input.continuity.timeReference } : {}),
+          ...(input.continuity.usesCurrentLocation ? { usesCurrentLocation: true } : {})
         }
       },
       ...(summary ? { summary: appendSuggestionFooter(summary, suggestions) } : {})

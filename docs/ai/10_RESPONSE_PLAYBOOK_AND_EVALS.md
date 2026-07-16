@@ -73,6 +73,9 @@ dialogový stav z poslední viditelné, dešifrované výměny:
 - zachová téma a místo posledního jednoznačného dotazu,
 - rozpozná přirozené eliptické formulace jako „A jak bude zítra?“, „A co bude
   zítra?“ nebo „A večer?“,
+- odpovědi „Pro aktuální polohu“, „U mě“ nebo „Tady“ vyhodnotí jako změnu
+  místa, nikoli jako nový obecný dotaz; zdědí původní doménu (například počasí)
+  a použijí pouze souřadnice explicitně předané klientem,
 - rozlišuje samostatnou jednoznačnou elipsu („Jak bude dneska?“ = počasí) od
   kontextového navázání („A jak to bude dneska?“ = zachovat předchozí téma),
 - u kontextového navázání umí zachovat také dopravu, vodu/povodně, požár,
@@ -87,6 +90,13 @@ dialogový stav z poslední viditelné, dešifrované výměny:
 - při změně období odstraní z interpretovaného dotazu staré výrazy jako
   „dnes“, aby nevznikl konflikt „dnes + zítra“,
 - bez jednoznačné viditelné kotvy si vyžádá upřesnění a historii nedoplňuje.
+
+Doména navazujícího dotazu se určí před retrievalem. Meteorologické navázání
+proto vyhledává pouze předpověď, nowcast, radar a bouřkové riziko; nesmí jako
+odpověď zvolit hydrologickou stanici jen proto, že je geograficky blízko.
+`result.structured.conversation.usesCurrentLocation` auditovatelně potvrzuje,
+že bylo použito zařízení, zatímco chybějící souřadnice vedou k běžnému dotazu
+na místo a ne k domněnce serveru.
 
 Stejný převod času se používá i pro samostatné úplné dotazy obsahující
 `dnes`, `zítra`, `pozítří` nebo část dne. Výsledný stav je auditovatelný v
@@ -131,6 +141,8 @@ Ověřuje:
 - obecnou předpověď s polohou i bez ní a uživatelsky čitelný fallback,
 - navázání „A jak bude zítra?“ s převzetím počasí, místa a správným budoucím
   `validAt`,
+- dvoukrokové navázání „Jak bude dneska?“ → „Pro aktuální polohu“ s výhradně
+  meteorologickými zdroji a bez průniku hydrologických výsledků,
 - samostatné hovorové formulace a negativní příklady, které se nesmí zařadit
   do nesouvisející domény,
 - map-only akce pro počasí,

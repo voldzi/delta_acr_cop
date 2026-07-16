@@ -10,6 +10,7 @@
 export const chatBridgeMessageTypes = {
   centerLocation: "cop-chat:center-location",
   currentLocation: "cop-chat:current-location",
+  currentLocationRequest: "cop-chat:current-location-request",
   liveLocations: "cop-chat:live-locations",
   reportDraft: "cop-chat:report-draft",
   select: "cop-chat:select",
@@ -124,6 +125,11 @@ export interface ChatCurrentLocationPayload {
 export interface ChatCurrentLocationMessage {
   location: ChatCurrentLocationPayload;
   type: typeof chatBridgeMessageTypes.currentLocation;
+}
+
+export interface ChatCurrentLocationRequestMessage {
+  preferDevice: boolean;
+  type: typeof chatBridgeMessageTypes.currentLocationRequest;
 }
 
 export type ChatLiveLocationStatus = "ended" | "live";
@@ -475,6 +481,26 @@ export function decodeChatCurrentLocation(value: unknown): ChatCurrentLocationPa
     return null;
   }
   return normalizeCurrentLocation(data.location);
+}
+
+// chat → web: request location after the iframe listener is ready. A user
+// asking for "current location" can require a device fix instead of silently
+// inheriting an unrelated map center.
+export function encodeChatCurrentLocationRequest(
+  options: { preferDevice?: boolean } = {}
+): ChatCurrentLocationRequestMessage {
+  return {
+    preferDevice: options.preferDevice === true,
+    type: chatBridgeMessageTypes.currentLocationRequest
+  };
+}
+
+export function decodeChatCurrentLocationRequest(value: unknown): { preferDevice: boolean } | null {
+  const data = asRecord(value);
+  if (!data || data.type !== chatBridgeMessageTypes.currentLocationRequest) {
+    return null;
+  }
+  return { preferDevice: data.preferDevice === true };
 }
 
 // chat → web: active live location shares visible in the currently loaded Matrix timeline.

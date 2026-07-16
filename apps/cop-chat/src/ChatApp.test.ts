@@ -1099,5 +1099,9 @@ describe("aiQuestionNeedsCurrentLocation", () => {
     expect(aiQuestionNeedsCurrentLocation("Kde se měří výška vody v okolí? a jaká je nyní hodnota?")).toBe(true);
     expect(aiQuestionNeedsCurrentLocation("Najdi policii ve Vrbně pod Pradědem.")).toBe(false);
     expect(aiQuestionNeedsCurrentLocation("Jaká je situace ve Vrbně pod Pradědem?")).toBe(false);
+    expect(aiQuestionNeedsCurrentLocation("Jak bude dneska?")).toBe(true);
+    expect(aiQuestionNeedsCurrentLocation("Jaké bude počasí?")).toBe(true);
+    expect(aiQuestionNeedsCurrentLocation("Jaké bude počasí ve Vrbně pod Pradědem?")).toBe(false);
+    expect(aiQuestionNeedsCurrentLocation("Bude pršet v Brně?")).toBe(false);
   });
 });

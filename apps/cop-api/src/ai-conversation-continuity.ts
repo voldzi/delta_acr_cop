@@ -17,6 +17,7 @@ export interface AiConversationContinuity {
   resolvedQuestion: string;
   sourceMessageIds: string[];
   timeReference?: AiConversationTimeReference;
+  usesCurrentLocation?: boolean;
 }
 
 export interface AiConversationTimeReference {
@@ -44,6 +45,7 @@ interface FollowUpMatch {
   explicitLocation?: string;
   kind: AiConversationFollowUpKind;
   timeReference?: AiConversationTimeReference;
+  usesCurrentLocation?: boolean;
 }
 
 const timeFollowUpPattern = /^(?:a\s+)?(?:(?:co(?:\s+bude)?|jak(?:e|a|y)?(?:\s+to)?(?:\s+bude|\s+budou|\s+je|\s+jsou)?|bude|budou)\s+)?(?:(?:dnes|zitra|pozitri)(?:\s+(?:rano|dopoledne|odpoledne|vecer|v\s+noci))?|rano|dopoledne|odpoledne|vecer|v\s+noci|za\s+(?:hodinu|dve\s+hodiny|\d+\s*(?:minut|hodin|dni)))\??$/u;
@@ -51,6 +53,7 @@ const explanationFollowUpPattern = /^(?:a\s+)?(?:proc|co\s+to\s+znamena|jak\s+to
 const mapFollowUpPattern = /^(?:a\s+)?(?:ukaz|zobraz)(?:\s+to)?\s+na\s+mape\??$/u;
 const detailFollowUpPattern = /^(?:a\s+)?(?:co\s+dal|co\s+mam\s+delat|a\s+nejblizsi|nejblizsi|podrobneji|vice\s+detailu)\??$/u;
 const locationFollowUpPattern = /^(?:a\s+)?(?:co\s+)?(?:v|ve|na|u)\s+(.{2,80}?)\??$/u;
+const currentLocationFollowUpPattern = /^(?:a\s+)?(?:(?:(?:pro|podle)\s+)?(?:(?:aktualni|soucasnou|moji|mou|me)\s+poloh(?:u|y))|tady|u\s+me|kolem\s+me|v\s+mem\s+okoli)\??$/u;
 
 export function resolveAiConversationContinuity(
   originalQuestion: string,
@@ -99,6 +102,9 @@ export function resolveAiConversationContinuity(
   if (match.explicitLocation) {
     assumptions.push(`Místo bylo změněno na „${match.explicitLocation}“ podle aktuálního dotazu.`);
   }
+  if (match.usesCurrentLocation) {
+    assumptions.push("Jako místo byla použita aktuální poloha zařízení předaná klientem.");
+  }
   return {
     assumptions,
     contractVersion: "cop-ai-conversation-continuity-v1",
@@ -112,7 +118,8 @@ export function resolveAiConversationContinuity(
     previousQuestion: anchor.question,
     resolvedQuestion,
     sourceMessageIds: anchor.eventId ? [anchor.eventId] : [],
-    ...(timeReference ? { timeReference } : {})
+    ...(timeReference ? { timeReference } : {}),
+    ...(match.usesCurrentLocation ? { usesCurrentLocation: true } : {})
   };
 }
 
@@ -201,6 +208,9 @@ function followUpMatch(question: string): FollowUpMatch | undefined {
   if (detailFollowUpPattern.test(normalized)) {
     return { kind: "detail" };
   }
+  if (currentLocationFollowUpPattern.test(normalized)) {
+    return { kind: "location", usesCurrentLocation: true };
+  }
   const normalizedLocation = normalized.match(locationFollowUpPattern)?.[1]?.replace(/[?.!]+$/gu, "").trim();
   const explicitLocation = question
     .match(/^(?:a\s+)?(?:co\s+)?(?:v|ve|na|u)\s+(.{2,80}?)\??$/iu)?.[1]
@@ -258,7 +268,9 @@ function resolvedFollowUpQuestion(
     case "time":
       return `${stripRelativeTime(anchor)}. Časové upřesnění: ${match.timeReference?.label ?? currentQuestion}.`;
     case "location":
-      return `${anchor}. Použij místo ${match.explicitLocation}.`;
+      return match.usesCurrentLocation
+        ? `${anchor}. Použij aktuální polohu zařízení.`
+        : `${anchor}. Použij místo ${match.explicitLocation}.`;
     case "explanation":
       return `${anchor}. Navazující žádost o vysvětlení: ${currentQuestion}`;
     case "map":

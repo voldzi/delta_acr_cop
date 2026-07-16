@@ -9,6 +9,7 @@ import {
   decodeCopMapFocusSearch,
   decodeChatCenterLocation,
   decodeChatCurrentLocation,
+  decodeChatCurrentLocationRequest,
   decodeChatLiveLocations,
   decodeChatReportDraft,
   decodeChatSelect,
@@ -22,6 +23,7 @@ import {
   encodeCopReportDraftUrl,
   encodeChatCenterLocation,
   encodeChatCurrentLocation,
+  encodeChatCurrentLocationRequest,
   encodeChatLiveLocations,
   encodeChatReportDraft,
   encodeChatSelect,
@@ -41,6 +43,7 @@ describe("contract constants", () => {
     expect(chatBridgeMessageTypes).toEqual({
       centerLocation: "cop-chat:center-location",
       currentLocation: "cop-chat:current-location",
+      currentLocationRequest: "cop-chat:current-location-request",
       liveLocations: "cop-chat:live-locations",
       reportDraft: "cop-chat:report-draft",
       select: "cop-chat:select",
@@ -169,6 +172,18 @@ describe("current-location (web -> chat)", () => {
     );
     expect(decodeChatCurrentLocation({ location: { lat: 91, lon: 17 }, type: "cop-chat:current-location" })).toBeNull();
     expect(decodeChatCurrentLocation({ location: { lat: 50, lon: 17 }, type: "other" })).toBeNull();
+  });
+});
+
+describe("current-location-request (chat -> web)", () => {
+  it("distinguishes a passive context sync from an explicit device-location request", () => {
+    expect(decodeChatCurrentLocationRequest(encodeChatCurrentLocationRequest())).toEqual({
+      preferDevice: false
+    });
+    expect(decodeChatCurrentLocationRequest(encodeChatCurrentLocationRequest({ preferDevice: true }))).toEqual({
+      preferDevice: true
+    });
+    expect(decodeChatCurrentLocationRequest({ preferDevice: true, type: "other" })).toBeNull();
   });
 });
 

@@ -281,6 +281,7 @@ import {
   chatVoiceCallStorageKey,
   copReportDraftSearchParams,
   decodeChatCenterLocation,
+  decodeChatCurrentLocationRequest,
   decodeChatLiveLocations,
   decodeChatReportDraft,
   decodeChatVoiceCallCommandAcknowledgement,
@@ -12101,7 +12102,29 @@ function EmbeddedCopChatPanel({
     userLocation?.updatedAt
   ]);
 
-  function postCurrentLocationToChat() {
+  React.useEffect(() => {
+    const handleLocationRequest = (event: MessageEvent) => {
+      const target = iframeRef.current?.contentWindow;
+      if (event.origin !== window.location.origin || !target || event.source !== target) {
+        return;
+      }
+      const request = decodeChatCurrentLocationRequest(event.data);
+      if (!request) {
+        return;
+      }
+      if (!request.preferDevice || userLocation) {
+        postCurrentLocationToChat(userLocation, !request.preferDevice);
+        return;
+      }
+      void readCurrentUserLocation()
+        .then((location) => postCurrentLocationToChat(location, false))
+        .catch(() => postCurrentLocationToChat(null, true));
+    };
+    window.addEventListener("message", handleLocationRequest);
+    return () => window.removeEventListener("message", handleLocationRequest);
+  }, [mapView?.center?.[0], mapView?.center?.[1], userLocation]);
+
+  function postCurrentLocationToChat(deviceLocation: UserLocation | null = userLocation, allowMapFallback = true) {
     const target = iframeRef.current?.contentWindow;
     if (!target) {
       return;
@@ -12114,16 +12137,18 @@ function EmbeddedCopChatPanel({
           source: "map" as const
         }
       : null;
-    const location = userLocation
+    const location = deviceLocation
       ? {
-          ...(typeof userLocation.accuracyM === "number" ? { accuracyM: userLocation.accuracyM } : {}),
+          ...(typeof deviceLocation.accuracyM === "number" ? { accuracyM: deviceLocation.accuracyM } : {}),
           label: "Moje poloha",
-          lat: userLocation.lat,
-          lon: userLocation.lon,
+          lat: deviceLocation.lat,
+          lon: deviceLocation.lon,
           source: "device" as const,
-          updatedAt: userLocation.updatedAt
+          updatedAt: deviceLocation.updatedAt
         }
-      : mapLocation;
+      : allowMapFallback
+        ? mapLocation
+        : null;
     if (!location) {
       return;
     }

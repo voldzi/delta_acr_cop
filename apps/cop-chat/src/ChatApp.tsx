@@ -141,6 +141,7 @@ import {
   decodeChatVoiceCallCommand,
   decodeCopMapFocusSearch,
   encodeChatLiveLocations,
+  encodeChatCurrentLocationRequest,
   encodeChatReportDraft,
   encodeChatVoiceCallCommandAcknowledgement,
   encodeCopReportDraftUrl,
@@ -1818,6 +1819,13 @@ export function ChatApp() {
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [authenticated, chatItems, chatReady, matrixSession, preparingChatId, selectedRoomId, voiceCall]);
+
+  React.useEffect(() => {
+    if (!embedded || window.parent === window) {
+      return;
+    }
+    window.parent.postMessage(encodeChatCurrentLocationRequest(), window.location.origin);
+  }, [embedded]);
 
   React.useEffect(() => {
     if (!embedded || window.parent === window) {
@@ -3953,7 +3961,14 @@ export function ChatApp() {
     const roomId = selectedRoomId;
     const session = matrixSession;
     let geoLocation = aiContextLocation;
-    if (!geoLocation && !embedded && aiQuestionNeedsCurrentLocation(question)) {
+    if (embedded && aiQuestionNeedsCurrentLocation(question) && geoLocation?.source !== "device") {
+      const deviceLocation = await requestEmbeddedAiCurrentLocation();
+      if (deviceLocation) {
+        geoLocation = deviceLocation;
+      } else if (aiQuestionExplicitlyRequestsCurrentLocation(question)) {
+        geoLocation = null;
+      }
+    } else if (!geoLocation && !embedded && aiQuestionNeedsCurrentLocation(question)) {
       geoLocation = await requestStandaloneAiLocation({ reportNotice: false });
     }
 
@@ -9149,16 +9164,22 @@ function uniqueAiCitationCount(summary: string, groups: unknown[]): number {
       .map(asRecord)
       .filter((citation): citation is Record<string, unknown> => Boolean(citation))
       .forEach((citation) => {
-      const citationId = optionalAiText(citation.citationId);
-      if (!citationId || !citedIds.has(citationId)) {
-        return;
-      }
-      const entityId = optionalAiText(citation.entityId);
-      const label = optionalAiText(citation.label);
-      const key = entityId ? `entity:${entityId}` : label ? `label:${label}` : citationId ? `citation:${citationId}` : undefined;
-      if (key) {
-        keys.add(key);
-      }
+        const citationId = optionalAiText(citation.citationId);
+        if (!citationId || !citedIds.has(citationId)) {
+          return;
+        }
+        const entityId = optionalAiText(citation.entityId);
+        const label = optionalAiText(citation.label);
+        const key = entityId
+          ? `entity:${entityId}`
+          : label
+            ? `label:${label}`
+            : citationId
+              ? `citation:${citationId}`
+              : undefined;
+        if (key) {
+          keys.add(key);
+        }
       });
   });
   return keys.size;
@@ -10250,13 +10271,72 @@ export function aiQuestionNeedsCurrentLocation(question: string): boolean {
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
     .toLocaleLowerCase("cs-CZ");
+  const explicitPlace = /\b(?:v|ve|na|u)\s+(?!okoli\b|me\b|moji\b|mou\b|aktualni\b)[a-z]{2,}(?:\s+[a-z]{2,})*/u.test(
+    normalized
+  );
+  const implicitWeather =
+    /\b(?:jak\s+bude|pocasi|predpoved|bude\s+prset|bude\s+bourka|teplota|vitr)\b/u.test(normalized) && !explicitPlace;
   return (
     /\b(nejbliz|nejblizsi|closest|nearest|near me)\b/u.test(normalized) ||
     /\b(u me|ode me|moje poloha|moji polohy|me polohy|blizko me polohy|blizko moji polohy|aktualni poloha|current location)\b/u.test(
       normalized
     ) ||
-    /\b(v okoli|okoli me|okoli moji polohy|pobliz me|pobliz moji polohy|kolem me|around me|nearby)\b/u.test(normalized)
+    /\b(v okoli|okoli me|okoli moji polohy|pobliz me|pobliz moji polohy|kolem me|around me|nearby)\b/u.test(
+      normalized
+    ) ||
+    implicitWeather
   );
+}
+
+function aiQuestionExplicitlyRequestsCurrentLocation(question: string): boolean {
+  const normalized = question
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase("cs-CZ");
+  return /\b(?:aktualni poloha|aktualni polohy|moje poloha|moji polohy|mou polohu|u me|kolem me|current location)\b/u.test(
+    normalized
+  );
+}
+
+async function requestEmbeddedAiCurrentLocation(timeoutMs = 8_000): Promise<MatrixLocationShare | null> {
+  if (typeof window === "undefined" || window.parent === window) {
+    return null;
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (location: MatrixLocationShare | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("message", onMessage);
+      resolve(location);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+      const location = decodeChatCurrentLocation(event.data);
+      if (!location) {
+        return;
+      }
+      if (location.source !== "device") {
+        finish(null);
+        return;
+      }
+      finish({
+        ...(typeof location.accuracyM === "number" ? { accuracyM: location.accuracyM } : {}),
+        label: location.label ?? "Moje poloha",
+        lat: location.lat,
+        lon: location.lon,
+        source: "device"
+      });
+    };
+    const timer = window.setTimeout(() => finish(null), timeoutMs);
+    window.addEventListener("message", onMessage);
+    window.parent.postMessage(encodeChatCurrentLocationRequest({ preferDevice: true }), window.location.origin);
+  });
 }
 
 function geolocationErrorMessage(error: unknown): string {

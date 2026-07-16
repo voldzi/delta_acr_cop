@@ -146,6 +146,39 @@ describe("AI conversation continuity", () => {
     expect(continuity.assumptions).toContain("Místo bylo změněno na „Brně“ podle aktuálního dotazu.");
   });
 
+  it.each(["Pro aktuální polohu", "Podle mojí polohy", "U mě", "Tady"])(
+    "keeps the weather domain for the current-location follow-up %s",
+    (question) => {
+      const continuity = resolveAiConversationContinuity(question, {
+        messages: [
+          {
+            ai: {
+              question: "Jak bude dneska?",
+              responsePlaybook: { domain: "weather", intentId: "weather.summary.forecast" },
+              type: "chat-agent"
+            },
+            body: "Pro jaké místo chcete předpověď?",
+            eventId: "$weather-location-question",
+            own: true
+          }
+        ]
+      });
+
+      expect(continuity).toMatchObject({
+        followUp: true,
+        followUpKind: "location",
+        inheritedDomain: "weather",
+        inheritedIntentId: "weather.summary.forecast",
+        needsClarification: false,
+        previousQuestion: "Jak bude dneska?",
+        usesCurrentLocation: true
+      });
+      expect(continuity.explicitLocation).toBeUndefined();
+      expect(continuity.resolvedQuestion).toContain("počasí");
+      expect(continuity.resolvedQuestion).toContain("Použij aktuální polohu zařízení");
+    }
+  );
+
   it("asks for clarification when a short follow-up has no visible anchor", () => {
     expect(resolveAiConversationContinuity("Proč?", undefined)).toMatchObject({
       followUp: true,

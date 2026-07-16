@@ -2771,6 +2771,114 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("answers a current-location reply as weather instead of selecting an unrelated hydro source", async () => {
+    const capturedQueries: AiCopQuery[] = [];
+    const aiProvider: AiProvider = {
+      available: true,
+      id: "mock",
+      model: "test-cop-ai-provider",
+      async execute(query) {
+        capturedQueries.push(query);
+        return { summary: "Provider should not be called for grounded weather data", structured: {} };
+      },
+      async health() {
+        return { detail: "test provider", status: "ok" };
+      }
+    };
+    const simSearchDataSource = new FakeAiMapSearchSimSearchDataSource();
+    simSearchDataSource.weatherForecastResult = true;
+    const app = buildServer({
+      aiGateway: new AiGateway(new Map([["mock", aiProvider]]), {
+        defaultProvider: "mock",
+        embeddingProvider: new FakeEmbeddingProvider()
+      }),
+      now: () => new Date("2026-07-16T10:37:00Z"),
+      simSearchDataSource
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        chatContext: {
+          messages: [
+            { body: "Jak bude dneska?", eventId: "$weather-question", own: true },
+            {
+              ai: {
+                question: "Jak bude dneska?",
+                responsePlaybook: { domain: "weather", intentId: "weather.summary.forecast" },
+                type: "chat-agent"
+              },
+              body: "Pro jaké místo chcete předpověď?",
+              eventId: "$weather-clarification",
+              own: true
+            },
+            { body: "Pro aktuální polohu", eventId: "$location-reply", own: true }
+          ]
+        },
+        currentLocation: { lat: 50.15077, lon: 17.37303, radiusKm: 30 },
+        question: "Pro aktuální polohu"
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedQueries).toHaveLength(0);
+    expect(simSearchDataSource.lastQuery).toMatchObject({
+      center: { lat: 50.15077, lon: 17.37303 },
+      entityTypes: ["weather_forecast", "weather_nowcast", "weather_radar", "thunderstorm_risk"],
+      sourceSystems: ["weather_forecast", "chmi_weather_radar"]
+    });
+    expect(simSearchDataSource.lastQuery?.entityTypes).not.toContain("hydro_measurement");
+    const aiResponse = response.json() as AiCopResponse;
+    expect(aiResponse).toMatchObject({
+      model: "map-search-fallback",
+      provider: "local",
+      status: "COMPLETED"
+    });
+    expect(aiResponse.result.summary).toContain("pravděpodobnost srážek 70 %");
+    expect(aiResponse.result.summary).not.toContain("Hydrologické měření");
+    expect(aiResponse.result.structured).toMatchObject({
+      conversation: {
+        followUp: true,
+        followUpKind: "location",
+        originalQuestion: "Pro aktuální polohu",
+        previousQuestion: "Jak bude dneska?",
+        resolvedQuestion: expect.stringContaining("Použij aktuální polohu zařízení"),
+        usesCurrentLocation: true
+      }
+    });
+
+    const missingLocationResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        chatContext: {
+          messages: [
+            {
+              ai: {
+                question: "Jak bude dneska?",
+                responsePlaybook: { domain: "weather", intentId: "weather.summary.forecast" },
+                type: "chat-agent"
+              },
+              body: "Pro jaké místo chcete předpověď?",
+              own: true
+            }
+          ]
+        },
+        question: "Pro aktuální polohu"
+      },
+      url: "/api/v1/ai/chat-agent/query"
+    });
+    expect(missingLocationResponse.statusCode).toBe(200);
+    const missingLocationAiResponse = missingLocationResponse.json() as AiCopResponse;
+    expect(missingLocationAiResponse.model).toBe("weather-location-clarification");
+    expect(missingLocationAiResponse.result.summary).toContain("Pro jaké místo chcete předpověď?");
+    expect(missingLocationAiResponse.result.summary).not.toContain("Hydrologické měření");
+
+    await app.close();
+  });
+
   it("asks for a place instead of using an unbounded radar result for general weather", async () => {
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {
