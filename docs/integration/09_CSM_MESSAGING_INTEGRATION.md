@@ -465,8 +465,9 @@ notification center.
 
 Encrypted room events reach the Matrix push gateway as `m.room.encrypted`, so
 the gateway cannot reliably infer that an encrypted payload contains a call.
-After sending or ending a call through Matrix SDK, COP Chat therefore calls the
-authenticated metadata-only wake endpoint:
+Immediately after creating the stable Matrix call identity, and before asking
+WebKit for microphone access or starting WebRTC negotiation, COP Chat therefore
+calls the authenticated metadata-only wake endpoint:
 
 ```http
 POST /api/v1/messaging/calls/wake
@@ -486,6 +487,11 @@ COP resolves the bound conversation and recipients server-side and forwards
 only `callId`, `roomId`, sender presentation, notification tag and TTL to CSM
 Messaging. The endpoint rejects SDP, ICE candidates and arbitrary signalling
 metadata. `action=ended` closes the matching visible call notification.
+If media preparation or encrypted Matrix signalling subsequently fails, COP
+also sends `action=ended`, so a recipient never remains on a stale incoming-call
+surface. COP Mobile can receive the metadata wake before the encrypted Matrix
+invite; its native answer path queues the action until the matching Matrix call
+appears.
 
 V COP Mobile zůstává vložený webový Matrix/WebRTC engine render-active
 off-screen od okamžiku, kdy jej nativní host namountuje, nikoli až od vzniku

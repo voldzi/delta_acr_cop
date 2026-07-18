@@ -533,17 +533,26 @@ async function wakeMatrixVoiceCall(
   authToken: string,
   request: MatrixVoiceCallWakeRequest
 ): Promise<void> {
-  const response = await fetch(`${apiBase}/api/v1/messaging/calls/wake`, {
-    body: JSON.stringify(request),
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-      "Content-Type": "application/json"
-    },
-    keepalive: true,
-    method: "POST"
-  });
-  if (!response.ok) {
-    throw new Error(`Voice call wake failed: HTTP ${response.status}`);
+  const controller = typeof AbortController === "function" ? new AbortController() : undefined;
+  const timeout = controller ? setTimeout(() => controller.abort(), 5_000) : undefined;
+  try {
+    const response = await fetch(`${apiBase}/api/v1/messaging/calls/wake`, {
+      body: JSON.stringify(request),
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        "Content-Type": "application/json"
+      },
+      keepalive: true,
+      method: "POST",
+      ...(controller ? { signal: controller.signal } : {})
+    });
+    if (!response.ok) {
+      throw new Error(`Voice call wake failed: HTTP ${response.status}`);
+    }
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
   }
 }
 

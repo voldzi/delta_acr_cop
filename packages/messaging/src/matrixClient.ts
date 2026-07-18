@@ -1371,13 +1371,20 @@ export async function createMatrixMessagingSession(
           activeGroupVoiceCallStartedAt = undefined;
           activeGroupVoiceCallError = undefined;
           publishVoiceCall();
-          // Publish the stable call identity before WebKit asks native iOS for
-          // microphone access. The native host can then register CallKit and
-          // let CallKit own AVAudioSession activation.
+          // Wake native recipients before WebKit asks for microphone access.
+          // A hidden WKWebView can wait for CallKit-owned AVAudioSession
+          // activation here; placing the wake behind media setup would leave
+          // the recipient unaware of the call and create a deadlock.
+          await notifyGroupVoiceCallWake("invite", groupCall);
+          if (
+            activeGroupVoiceCall !== groupCall ||
+            matrixGroupVoiceCallPhase(groupCall.state, "outgoing") === "ended"
+          ) {
+            return;
+          }
           await primeMicrophoneForWebKit();
           await groupCall.enter();
           activeGroupVoiceCallStartedAt = new Date().toISOString();
-          await notifyGroupVoiceCallWake("invite", groupCall);
           publishVoiceCall();
           return;
         }
@@ -1389,23 +1396,29 @@ export async function createMatrixMessagingSession(
         activeVoiceCallStartedAt = undefined;
         activeVoiceCallError = undefined;
         publishVoiceCall();
-        // CallKit must see the outgoing call snapshot before getUserMedia
-        // enters WKWebView's capture-permission delegate. Otherwise WebKit can
-        // activate AVAudioSession first and CallKit never receives a usable
-        // audio session on one side of the call.
+        // Deliver the metadata-only PushKit wake before media negotiation.
+        // COP Mobile intentionally accepts this wake before the encrypted
+        // Matrix invite and queues the native answer until signalling arrives.
+        await notifyVoiceCallWake("invite", call);
+        if (activeVoiceCall !== call || matrixVoiceCallPhase(call.state) === "ended") {
+          return;
+        }
         await primeMicrophoneForWebKit();
         const encryptedSignalingReady = await verifyEncryptedVoiceCallSignaling(roomId);
         if (!encryptedSignalingReady) {
           tlsVoiceCallIds.add(call.callId);
         }
         await call.placeVoiceCall();
-        void notifyVoiceCallWake("invite", call);
         publishVoiceCall();
       } catch (caught) {
         if (activeGroupVoiceCall) {
           activeGroupVoiceCallError = matrixVoiceCallErrorMessage(caught);
+          void notifyGroupVoiceCallWake("ended", activeGroupVoiceCall);
         } else {
           activeVoiceCallError = matrixVoiceCallErrorMessage(caught);
+          if (activeVoiceCall) {
+            void notifyVoiceCallWake("ended", activeVoiceCall);
+          }
         }
         publishVoiceCall();
         throw formatMatrixClientError(caught, homeserverBaseUrl, "zahájit hovor");
