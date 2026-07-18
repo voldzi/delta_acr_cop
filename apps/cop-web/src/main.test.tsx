@@ -18,6 +18,7 @@ import {
   firstUnreadChatSummaryRoom,
   formatWeatherStationAttribution,
   hostIncomingChatVoiceCall,
+  hostMessagingSurfaceForNativeCall,
   hostNativeChatVoiceCall,
   hostUnreadCountFromChatSummary,
   hostUsableChatSummary,
@@ -343,6 +344,14 @@ afterEach(() => {
 });
 
 describe("COP web dashboard", () => {
+  it("keeps the web chat engine mounted but hidden for native call actions", () => {
+    expect(hostMessagingSurfaceForNativeCall()).toEqual({
+      frameMounted: true,
+      open: false,
+      pinned: false
+    });
+  });
+
   it("allows native APNs activation when WKWebView does not support browser push", () => {
     const unsupportedWebPush = {
       enabled: false,

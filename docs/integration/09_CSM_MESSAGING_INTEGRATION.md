@@ -487,6 +487,13 @@ only `callId`, `roomId`, sender presentation, notification tag and TTL to CSM
 Messaging. The endpoint rejects SDP, ICE candidates and arbitrary signalling
 metadata. `action=ended` closes the matching visible call notification.
 
+V COP Mobile zůstává vložený webový Matrix/WebRTC engine po nativním call
+action namountovaný, ale jeho panel je vždy skrytý a nepřipnutý. Viditelný
+surface vlastní SwiftUI chat a nativní call overlay. Ukončení, odmítnutí,
+timeout ani reload media enginu proto nesmí odkrýt webový chat nebo webový E2EE
+recovery flow. Samostatný webový klient dál otevírá messenger běžným webovým
+ovládáním.
+
 COP Mobile additionally registers a separate PushKit token directly with CSM
 Messaging through the existing one-time device ticket. For a device carrying
 that token, incoming and ended wake events use the bundle `.voip` APNs topic and

@@ -1075,9 +1075,7 @@ export function App() {
   const [mapControlsCollapsed, setMapControlsCollapsed] = React.useState(
     initialPreferences.mapControlsCollapsed ?? false
   );
-  const [mapLegendCollapsed, setMapLegendCollapsed] = React.useState(
-    initialPreferences.mapLegendCollapsed ?? false
-  );
+  const [mapLegendCollapsed, setMapLegendCollapsed] = React.useState(initialPreferences.mapLegendCollapsed ?? false);
   const [predictionMinutes, setPredictionMinutes] = React.useState(() =>
     clamp(initialPreferences.predictionMinutes ?? 10, 2, 20)
   );
@@ -1519,15 +1517,14 @@ export function App() {
     let unsubscribe: (() => void) | undefined;
     void subscribeNativeCallActions((action) => {
       if (cancelled) return;
+      const surface = hostMessagingSurfaceForNativeCall();
       messagingSelectionNonceRef.current += 1;
       messagingVoiceCallCommandNonceRef.current += 1;
       setMessagingSelection({ id: action.roomId, nonce: messagingSelectionNonceRef.current });
       setMessagingVoiceCallCommand({ ...action, nonce: messagingVoiceCallCommandNonceRef.current });
-      setMessagingFrameMounted(true);
-      if (action.action !== "mute") {
-        setMessagingOpen(true);
-        setMessagingPinned(true);
-      }
+      setMessagingFrameMounted(surface.frameMounted);
+      setMessagingOpen(surface.open);
+      setMessagingPinned(surface.pinned);
     })
       .then((stop) => {
         if (cancelled) stop();
@@ -4177,10 +4174,7 @@ export function App() {
   const primaryAoiRule = aoiRules[0] ?? null;
 
   const applyPreferenceSettings = React.useCallback(
-    (
-      settings: PreferenceSettings,
-      options: { focusMap?: boolean; preserveMapView?: boolean } = {}
-    ) => {
+    (settings: PreferenceSettings, options: { focusMap?: boolean; preserveMapView?: boolean } = {}) => {
       if (settings.activeWorkspace !== undefined) {
         setActiveWorkspace(normalizeWorkspaceModule(settings.activeWorkspace));
       }
@@ -8993,6 +8987,18 @@ interface MessagingVoiceCallCommand {
   nonce: number;
   participantUserIds?: string[];
   roomId: string;
+}
+
+export function hostMessagingSurfaceForNativeCall(): {
+  frameMounted: true;
+  open: false;
+  pinned: false;
+} {
+  return {
+    frameMounted: true,
+    open: false,
+    pinned: false
+  };
 }
 
 interface CommunityGalleryState {
