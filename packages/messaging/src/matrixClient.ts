@@ -1348,7 +1348,6 @@ export async function createMatrixMessagingSession(
         throw new Error("Nejdřív ukončete aktuální hovor.");
       }
       try {
-        await primeMicrophoneForWebKit();
         await joinInvitedRooms();
         await ensureJoinedRoom(client, roomId, homeserverBaseUrl);
         if (options?.group) {
@@ -1372,6 +1371,10 @@ export async function createMatrixMessagingSession(
           activeGroupVoiceCallStartedAt = undefined;
           activeGroupVoiceCallError = undefined;
           publishVoiceCall();
+          // Publish the stable call identity before WebKit asks native iOS for
+          // microphone access. The native host can then register CallKit and
+          // let CallKit own AVAudioSession activation.
+          await primeMicrophoneForWebKit();
           await groupCall.enter();
           activeGroupVoiceCallStartedAt = new Date().toISOString();
           await notifyGroupVoiceCallWake("invite", groupCall);
@@ -1386,6 +1389,11 @@ export async function createMatrixMessagingSession(
         activeVoiceCallStartedAt = undefined;
         activeVoiceCallError = undefined;
         publishVoiceCall();
+        // CallKit must see the outgoing call snapshot before getUserMedia
+        // enters WKWebView's capture-permission delegate. Otherwise WebKit can
+        // activate AVAudioSession first and CallKit never receives a usable
+        // audio session on one side of the call.
+        await primeMicrophoneForWebKit();
         const encryptedSignalingReady = await verifyEncryptedVoiceCallSignaling(roomId);
         if (!encryptedSignalingReady) {
           tlsVoiceCallIds.add(call.callId);

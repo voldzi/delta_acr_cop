@@ -8735,6 +8735,7 @@ export function App() {
           active={messagingOpen}
           dockWidth={messagingDockWidth}
           mapView={mapView}
+          mediaActive={visibleMessagingVoiceCall !== null}
           mobileCompact={mobileSheetViewport}
           pinned={messagingPinned}
           selection={messagingSelection}
@@ -12145,6 +12146,7 @@ function EmbeddedCopChatPanel({
   active,
   dockWidth,
   mapView,
+  mediaActive,
   mobileCompact,
   pinned,
   selection,
@@ -12157,6 +12159,7 @@ function EmbeddedCopChatPanel({
   active: boolean;
   dockWidth: number;
   mapView: MapViewState | undefined;
+  mediaActive: boolean;
   mobileCompact: boolean;
   pinned: boolean;
   selection: MessagingSelectionCommand | null;
@@ -12351,6 +12354,7 @@ function EmbeddedCopChatPanel({
         "embedded-chat-panel",
         pinned && "pinned",
         mobileCompact && "mobile-compact",
+        mediaActive && "media-active",
         active ? "active" : "hidden"
       )}
       style={pinned ? ({ "--messaging-dock-width": `${dockWidth}px` } as React.CSSProperties) : undefined}

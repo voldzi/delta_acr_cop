@@ -416,6 +416,42 @@ describe("Matrix client diagnostics", () => {
     );
   });
 
+  it("publishes the outgoing call identity before requesting WebKit microphone capture", async () => {
+    vi.stubGlobal("RTCPeerConnection", class MockRTCPeerConnection {});
+    let resolveMicrophone: ((stream: { getTracks: () => never[] }) => void) | undefined;
+    const microphone = new Promise<{ getTracks: () => never[] }>((resolve) => {
+      resolveMicrophone = resolve;
+    });
+    const getUserMedia = vi.fn(() => microphone);
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
+    const call = createMockVoiceCall({ direction: "outbound", roomId: "!chat:cop.local" });
+    const onVoiceCallChanged = vi.fn();
+    matrixSdkMock.createNewMatrixCall.mockReturnValue(call);
+    matrixSdkMock.createClient.mockReturnValue(
+      createMockMatrixClient({
+        getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!chat:cop.local"] }),
+        rooms: [createRoom({ roomId: "!chat:cop.local" })]
+      })
+    );
+
+    const session = await createMatrixMessagingSession(createBootstrap(), { onVoiceCallChanged });
+    const startingCall = session.startVoiceCall("!chat:cop.local");
+
+    await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1));
+    expect(onVoiceCallChanged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callId: "call-1",
+        direction: "outgoing",
+        roomId: "!chat:cop.local"
+      })
+    );
+    expect(call.placeVoiceCall).not.toHaveBeenCalled();
+
+    resolveMicrophone?.({ getTracks: () => [] });
+    await startingCall;
+    expect(call.placeVoiceCall).toHaveBeenCalledTimes(1);
+  });
+
   it("starts an encrypted Matrix group voice call and rings room members", async () => {
     stubVoiceCallBrowserSupport();
     const room = createRoom({

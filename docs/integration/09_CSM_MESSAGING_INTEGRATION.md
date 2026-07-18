@@ -500,18 +500,30 @@ that token, incoming and ended wake events use the bundle `.voip` APNs topic and
 CallKit; every other notification remains a normal APNs alert. CallKit answer,
 reject, end, group-start and add-participant actions cross the exact-origin Device Bridge and reuse the
 host-to-chat voice command contract. A native action carries a stable
-`actionId`; COP Chat keeps it pending until the matching Matrix call exists,
+`actionId`; COP Chat keeps it for up to 30 seconds until the matching Matrix call exists,
 deduplicates retries and returns a success/failure acknowledgement only after
-the Matrix command settles. iOS keeps the corresponding `CXAction` pending,
+the Matrix command settles. iOS keeps end/reject/mute `CXAction` pending,
 retries delivery with the same ID and fails closed on acknowledgement timeout.
+The system `CXAnswerCallAction` is fulfilled immediately after native audio
+configuration so CallKit can activate `AVAudioSession`; the independently
+reliable Matrix answer remains fail-closed and closes the call if its bounded
+35-second cold-start window expires.
 Negative or missing acknowledgement forces COP Mobile to invalidate and reload
 the web media engine, remove the native call and deactivate audio; an end/reject
-action is fulfilled only after that forced close, while answer/mute fails.
+action is fulfilled only after that forced close, while the Matrix answer and
+mute operation fail.
 Matrix remains the only signalling/media
 owner, and neither VoIP push nor native code receives SDP, ICE candidates,
 Matrix credentials or decrypted content. `action=ended` includes the sender's
 own registered devices so a locally answered CallKit surface is closed when the
 web call ends.
+
+The Matrix runtime publishes the outgoing call identity before requesting
+WebKit microphone capture. This gives the native host time to register CallKit
+before `getUserMedia`; WebKit then waits for `provider(_:didActivate:)` instead
+of activating a CallKit-owned audio session itself. While SwiftUI owns the
+visible call surface, the hidden iframe remains rendered as a noninteractive
+off-screen media host so remote WebRTC audio is not suspended.
 
 For a group call the bridge additionally carries only the bounded participant
 presentation (`userId`, display name and connected flag). Matrix room

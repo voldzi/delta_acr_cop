@@ -352,6 +352,22 @@ describe("COP web dashboard", () => {
     });
   });
 
+  it("keeps a nonterminal chat call visible to the hidden media host", () => {
+    expect(
+      hostVisibleChatVoiceCall({
+        at: Date.now(),
+        callId: "call-1",
+        direction: "outgoing",
+        eligibleParticipants: [],
+        kind: "direct",
+        participants: [],
+        phase: "connecting",
+        roomId: "!room:example.test",
+        type: "cop-chat:voice-call"
+      })
+    ).not.toBeNull();
+  });
+
   it("allows native APNs activation when WKWebView does not support browser push", () => {
     const unsupportedWebPush = {
       enabled: false,

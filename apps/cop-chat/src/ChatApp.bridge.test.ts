@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   centerLocationInCop,
   embeddedChatSelectionFromMessage,
+  nativeVoiceCallCommandReadinessTimeoutMs,
   openReportDraftInCop,
   readRouteSelection,
   writeChatRoute
@@ -17,6 +18,12 @@ import type { MatrixLocationShare } from "@cop/messaging/types";
 afterEach(() => {
   vi.restoreAllMocks();
   window.history.replaceState({}, "", "/");
+});
+
+describe("native call cold-start budget", () => {
+  it("keeps a native CallKit command long enough for an older device to restore Matrix", () => {
+    expect(nativeVoiceCallCommandReadinessTimeoutMs).toBe(30_000);
+  });
 });
 
 describe("embeddedChatSelectionFromMessage (web → chat: cop-chat:select)", () => {

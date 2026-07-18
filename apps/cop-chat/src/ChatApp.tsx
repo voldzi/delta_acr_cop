@@ -198,6 +198,7 @@ import {
 import { aiResponseSummary, aiStatusLabel } from "./dialogs/aiResponse";
 
 const liveLocationUpdateMinIntervalMs = 15_000;
+export const nativeVoiceCallCommandReadinessTimeoutMs = 30_000;
 const liveLocationDurationOptions = [
   { label: "15 min", seconds: 15 * 60 },
   { label: "1 h", seconds: 60 * 60 },
@@ -3673,7 +3674,10 @@ export function ChatApp() {
         expirePendingVoiceCallCommand(oldestKey);
       }
     }
-    const timeoutId = window.setTimeout(() => expirePendingVoiceCallCommand(commandKey), 9_000);
+    const timeoutId = window.setTimeout(
+      () => expirePendingVoiceCallCommand(commandKey),
+      nativeVoiceCallCommandReadinessTimeoutMs
+    );
     pendingVoiceCallCommandsRef.current.set(commandKey, { command, timeoutId });
     void drainPendingVoiceCallCommands();
   }
@@ -6981,9 +6985,31 @@ function VoiceCallRemoteAudio({ stream }: { stream: MediaStream }) {
   React.useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    audio.autoplay = true;
+    audio.muted = false;
+    audio.volume = 1;
     audio.srcObject = stream;
-    void audio.play().catch(() => undefined);
+
+    let disposed = false;
+    const play = () => {
+      if (!disposed) {
+        void audio.play().catch(() => undefined);
+      }
+    };
+    const tracks = stream.getAudioTracks();
+    audio.addEventListener("loadedmetadata", play);
+    audio.addEventListener("canplay", play);
+    stream.addEventListener("addtrack", play);
+    tracks.forEach((track) => track.addEventListener("unmute", play));
+    play();
+
     return () => {
+      disposed = true;
+      audio.removeEventListener("loadedmetadata", play);
+      audio.removeEventListener("canplay", play);
+      stream.removeEventListener("addtrack", play);
+      tracks.forEach((track) => track.removeEventListener("unmute", play));
+      audio.pause();
       audio.srcObject = null;
     };
   }, [stream]);
