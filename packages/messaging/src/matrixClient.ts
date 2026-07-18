@@ -912,6 +912,7 @@ export async function createMatrixMessagingSession(
       if (activeGroupVoiceCall?.groupCallId === callId) {
         assertBrowserCanUseVoiceCalls();
         try {
+          await primeMicrophoneForWebKit();
           await activeGroupVoiceCall.enter?.();
           activeGroupVoiceCallStartedAt = new Date().toISOString();
           publishVoiceCall();
@@ -928,6 +929,7 @@ export async function createMatrixMessagingSession(
       }
       assertBrowserCanUseVoiceCalls();
       try {
+        await primeMicrophoneForWebKit();
         if (!tlsVoiceCallIds.has(callId)) {
           if (!call.roomId) {
             throw new Error("Příchozí hovor nemá platnou místnost.");
@@ -1369,9 +1371,10 @@ export async function createMatrixMessagingSession(
           activeGroupVoiceCallStartedAt = undefined;
           activeGroupVoiceCallError = undefined;
           publishVoiceCall();
-          // The SDK owns its single media capture request. The stable call
-          // identity is already published, so the native host can register
-          // CallKit before `enter()` asks WebKit for microphone access.
+          // Publish the stable call identity before WebKit asks native iOS for
+          // microphone access. The native host can then register CallKit and
+          // let CallKit own AVAudioSession activation.
+          await primeMicrophoneForWebKit();
           await groupCall.enter();
           activeGroupVoiceCallStartedAt = new Date().toISOString();
           await notifyGroupVoiceCallWake("invite", groupCall);
@@ -1386,9 +1389,11 @@ export async function createMatrixMessagingSession(
         activeVoiceCallStartedAt = undefined;
         activeVoiceCallError = undefined;
         publishVoiceCall();
-        // Keep one media acquisition path: matrix-js-sdk requests the stream
-        // inside `placeVoiceCall()`. A separate probe-and-stop stream races
-        // CallKit activation and can leave WebKit without a live audio track.
+        // CallKit must see the outgoing call snapshot before getUserMedia
+        // enters WKWebView's capture-permission delegate. Otherwise WebKit can
+        // activate AVAudioSession first and CallKit never receives a usable
+        // audio session on one side of the call.
+        await primeMicrophoneForWebKit();
         const encryptedSignalingReady = await verifyEncryptedVoiceCallSignaling(roomId);
         if (!encryptedSignalingReady) {
           tlsVoiceCallIds.add(call.callId);
@@ -1513,6 +1518,13 @@ function assertBrowserCanUseVoiceCalls(): void {
   if (!peerConnection || !nav?.mediaDevices?.getUserMedia) {
     throw new Error("Tento prohlížeč nepodporuje hlasové hovory.");
   }
+}
+
+async function primeMicrophoneForWebKit(): Promise<void> {
+  const mediaDevices = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+  if (!mediaDevices?.getUserMedia) return;
+  const stream = await mediaDevices.getUserMedia({ audio: true, video: false });
+  stream?.getTracks?.().forEach((track) => track.stop());
 }
 
 function requireActiveVoiceCall(call: MatrixCallLike | null, callId: string): MatrixCallLike {

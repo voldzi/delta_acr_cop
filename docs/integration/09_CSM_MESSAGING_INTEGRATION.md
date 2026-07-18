@@ -526,15 +526,11 @@ web call ends.
 
 The Matrix runtime publishes the outgoing call identity before requesting
 WebKit microphone capture. This gives the native host time to register CallKit
-before `getUserMedia`. The native permission delegate configures the CallKit
-audio category but does not block its decision on `provider(_:didActivate:)`,
-because that would prevent the Matrix `placeVoiceCall`/`answer` operation that
-drives the same lifecycle. CallKit remains the sole owner of session activation.
-The Matrix SDK performs one live media acquisition; COP no longer opens and
-immediately stops a separate probe stream. While SwiftUI owns the visible call
-surface, the hidden iframe remains rendered as a noninteractive off-screen
-media host from mount through call cleanup so first-command processing and
-remote WebRTC audio are not suspended.
+before `getUserMedia`; WebKit then waits for `provider(_:didActivate:)` instead
+of activating a CallKit-owned audio session itself. While SwiftUI owns the
+visible call surface, the hidden iframe remains rendered as a noninteractive
+off-screen media host from mount through call cleanup so first-command
+processing and remote WebRTC audio are not suspended.
 
 For a group call the bridge additionally carries only the bounded participant
 presentation (`userId`, display name and connected flag). Matrix room
