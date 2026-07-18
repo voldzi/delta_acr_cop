@@ -1020,18 +1020,9 @@ describe("COP web dashboard", () => {
     fireEvent.click(screen.getByTestId("map-request-user-location"));
 
     await waitFor(() => expect(getCurrentPosition).toHaveBeenCalled());
-    await waitFor(() => expect(watchPosition).toHaveBeenCalledTimes(1));
+    expect(watchPosition).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(screen.getByTestId("cop-map").getAttribute("data-user-location")).toBe("14.42100,50.08700")
-    );
-    expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42100,50.08700");
-
-    act(() => {
-      watchCallbacks[0]?.(makePosition(50.088, 14.422));
-    });
-
-    await waitFor(() =>
-      expect(screen.getByTestId("cop-map").getAttribute("data-user-location")).toBe("14.42200,50.08800")
     );
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42100,50.08700");
 
@@ -1040,19 +1031,20 @@ describe("COP web dashboard", () => {
     await waitFor(() =>
       expect(screen.getByTestId("cop-map").getAttribute("data-user-location-follow-enabled")).toBe("true")
     );
+    await waitFor(() => expect(watchPosition).toHaveBeenCalledTimes(1));
     await waitFor(() =>
-      expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42200,50.08800")
+      expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42100,50.08700")
     );
 
     act(() => {
-      watchCallbacks[0]?.(makePosition(50.089, 14.423));
+      watchCallbacks[0]?.(makePosition(50.088, 14.422));
     });
 
     await waitFor(() =>
-      expect(screen.getByTestId("cop-map").getAttribute("data-user-location")).toBe("14.42300,50.08900")
+      expect(screen.getByTestId("cop-map").getAttribute("data-user-location")).toBe("14.42200,50.08800")
     );
     await waitFor(() =>
-      expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42300,50.08900")
+      expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42200,50.08800")
     );
 
     fireEvent.click(screen.getByTestId("map-follow-user-location"));
@@ -1074,15 +1066,14 @@ describe("COP web dashboard", () => {
     await waitFor(() =>
       expect(screen.getByTestId("cop-map").getAttribute("data-user-location-follow-enabled")).toBe("false")
     );
+    expect(clearWatch).toHaveBeenCalledWith(12);
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("15.00000,50.00000");
 
     act(() => {
       watchCallbacks.at(-1)?.(makePosition(50.09, 14.424));
     });
 
-    await waitFor(() =>
-      expect(screen.getByTestId("cop-map").getAttribute("data-user-location")).toBe("14.42400,50.09000")
-    );
+    expect(screen.getByTestId("cop-map").getAttribute("data-user-location")).toBe("14.42200,50.08800");
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("15.00000,50.00000");
   });
 

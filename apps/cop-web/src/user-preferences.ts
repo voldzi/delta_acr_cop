@@ -54,6 +54,8 @@ export interface UserPreferences {
   language?: AppLanguage;
   mapClusterEnabled?: boolean;
   mapBasemapMode?: MapBasemapMode;
+  mapControlsCollapsed?: boolean;
+  mapLegendCollapsed?: boolean;
   mapView?: MapViewState;
   minConfidence?: number;
   operatorProfile?: OperatorProfilePreferences;
@@ -218,6 +220,8 @@ export function normalizeUserPreferences(value: Record<string, unknown>): UserPr
     language: optionalAppLanguage(value.language),
     mapClusterEnabled: optionalBoolean(value.mapClusterEnabled),
     mapBasemapMode: optionalMapBasemapMode(value.mapBasemapMode),
+    mapControlsCollapsed: optionalBoolean(value.mapControlsCollapsed),
+    mapLegendCollapsed: optionalBoolean(value.mapLegendCollapsed),
     mapView: normalizeMapView(value.mapView),
     minConfidence: optionalFiniteNumber(value.minConfidence),
     operatorProfile: normalizeOperatorProfilePreferences(value.operatorProfile),

@@ -48,6 +48,22 @@ uživatelskými kategoriemi, ne s technickými zdroji:
 Technické zdroje, diagnostika, raw feedy a provider metadata patří do detailu
 nebo provozní obrazovky. Nemají být hlavní navigací pro občana.
 
+### Poloha A Pohyb Mapy
+
+Po povolení polohy COP jednorázově zobrazí polohu zařízení, ale nezačne
+automaticky sledovat jeho pohyb. Mapa proto zůstává volně posuvná.
+
+- `Poloha` znovu jednorázově zaměří mapu na aktuální souřadnice.
+- `Sledovat` zapne průběžnou aktualizaci a je po dobu sledování vizuálně aktivní.
+- ruční posun, zoom nebo otočení mapy sledování vypne a vrátí volné prohlížení,
+- navigace a výstrahy blízkosti mohou GPS používat samostatně, aniž by tím
+  automaticky převzaly kameru mapy.
+
+Přihlášenému uživateli se přes profil synchronizují vybrané vrstvy, podklad,
+filtry, poslední volný výřez mapy, stav legendy a hlavního mapového ovládání.
+Živá poloha během sledování se jako profilový výřez neukládá. Nepřihlášenému
+uživateli zůstávají tyto volby pouze v daném prohlížeči.
+
 ### Hlášení
 
 Tlačítko `Nahlásit` slouží pro vložení informace z terénu:
@@ -131,7 +147,11 @@ Mapa je primární plocha aplikace. Uživatel může:
 - skrýt dolní stavový řádek,
 - měnit šířku levého a pravého panelu na desktopu.
 
-Rozložení se ukládá do `preferences.workspaceLayout`. Přihlášený uživatel ho synchronizuje přes `/api/v1/me/preferences`; nepřihlášený uživatel ho má pouze lokálně v prohlížeči.
+Rozložení se ukládá do `preferences.workspaceLayout`. Přihlášený uživatel ho
+synchronizuje přes `/api/v1/me/preferences`; nepřihlášený uživatel ho má pouze
+lokálně v prohlížeči. Stejný profilový kontrakt ukládá i mapové preference
+včetně `mapView`, `mapBasemapMode`, výběru vrstev, `mapControlsCollapsed`,
+`mapLegendCollapsed` a `showAlertAreas`.
 
 ## Skiny a šablony
 

@@ -27,6 +27,8 @@ export interface ViewProfileSettings {
   language?: AppLanguage;
   mapBasemapMode?: MapBasemapMode;
   mapClusterEnabled?: boolean;
+  mapControlsCollapsed?: boolean;
+  mapLegendCollapsed?: boolean;
   mapView?: MapViewState;
   minConfidence?: number;
   predictionMinutes?: number;
@@ -37,6 +39,7 @@ export interface ViewProfileSettings {
   safetyLayerIds?: string[];
   selectedLayer?: CopLayer;
   situationCoverageTechnology?: string;
+  showAlertAreas?: boolean;
   showHistory?: boolean;
   showPrediction?: boolean;
   situationLayerIds?: string[];

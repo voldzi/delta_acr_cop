@@ -58,6 +58,7 @@ import {
 import type { UserLocation } from "./proximity-alerts";
 import { useDocumentVisible } from "./use-document-visibility";
 import { nativeCompassAvailable, NativeDeviceBridgeError, startNativeHeading } from "./cop-device-native";
+import { isPendingMapFocusRequest } from "./map-location-policy";
 import type { ChatLiveLocationPayload } from "@cop/messaging/bridge";
 import { predictPosition, type PredictionMethod, type PredictionMode, type TrackHistory } from "./track-history";
 import {
@@ -744,6 +745,8 @@ interface CopMapProps {
   hasSituationContextEnabled: boolean;
   mapLayerDetailLabel: string;
   mapLayerLabel: string;
+  mapControlsCollapsed: boolean;
+  mapLegendCollapsed: boolean;
   mapInteractionSuspended?: boolean;
   mapResizeSuspended?: boolean;
   mobileSketchControlsOpen?: boolean;
@@ -774,6 +777,8 @@ interface CopMapProps {
   onSelectSituationFeature: (feature: SituationFeature) => void;
   onStartReport?: () => void;
   onAutoFitChange: (value: boolean) => void;
+  onMapControlsCollapsedChange: (value: boolean) => void;
+  onMapLegendCollapsedChange: (value: boolean) => void;
   onClearSelection?: () => void;
   onClearEmergencyRoute?: () => void;
   onActivateEmergencyRoute?: (routeId: string) => void;
@@ -932,6 +937,8 @@ function CopMapComponent({
   hasSituationContextEnabled,
   mapLayerDetailLabel,
   mapLayerLabel,
+  mapControlsCollapsed,
+  mapLegendCollapsed,
   mapInteractionSuspended = false,
   mapResizeSuspended = false,
   mobileSketchControlsOpen = false,
@@ -964,6 +971,8 @@ function CopMapComponent({
   onSelectEmergencyRoute,
   onStartReport,
   onAutoFitChange,
+  onMapControlsCollapsedChange,
+  onMapLegendCollapsedChange,
   onCancelZoneCreation,
   onClearEmergencyRoute,
   onClearSelection,
@@ -1074,7 +1083,6 @@ function CopMapComponent({
   const [mapBearingDeg, setMapBearingDeg] = React.useState(() => normalizeCompassDegrees(initialView?.bearing ?? 0));
   const [deviceCompass, setDeviceCompass] = React.useState<DeviceCompassState>(() => initialDeviceCompassState());
   const [compassExpanded, setCompassExpanded] = React.useState(false);
-  const [mapControlsCollapsed, setMapControlsCollapsed] = React.useState(false);
   const [mapControlsPosition, setMapControlsPosition] = React.useState<{ x: number; y: number } | null>(null);
   const [mapControlsDragging, setMapControlsDragging] = React.useState(false);
   const [selectionPopupPoint, setSelectionPopupPoint] = React.useState<{
@@ -1105,7 +1113,6 @@ function CopMapComponent({
   const [sketchToolsExpanded, setSketchToolsExpanded] = React.useState(false);
   const [sketchPalettePosition, setSketchPalettePosition] = React.useState<{ x: number; y: number } | null>(null);
   const [sketchPaletteDragging, setSketchPaletteDragging] = React.useState(false);
-  const [mapLegendCollapsed, setMapLegendCollapsed] = React.useState(false);
   const [dynamicLegendItems, setDynamicLegendItems] = React.useState<DynamicLegendItem[]>([]);
   const [sketchStroke, setSketchStroke] = React.useState(defaultSketchStyle.stroke);
   const [sketchFill, setSketchFill] = React.useState(defaultSketchStyle.fill);
@@ -1386,8 +1393,8 @@ function CopMapComponent({
       return;
     }
     setSketchToolsExpanded(false);
-    setMapLegendCollapsed(true);
-  }, [mobileSketchControlsOpen]);
+    onMapLegendCollapsedChange(true);
+  }, [mobileSketchControlsOpen, onMapLegendCollapsedChange]);
 
   React.useEffect(() => {
     if (
@@ -5086,10 +5093,17 @@ function CopMapComponent({
     };
   }, [documentVisible, mapReady]);
 
+  const handledFocusUserLocationRequestRef = React.useRef(0);
+
   React.useEffect(() => {
-    if (!mapReady || !userLocation || focusUserLocationRequest === 0) {
+    if (
+      !mapReady ||
+      !userLocation ||
+      !isPendingMapFocusRequest(focusUserLocationRequest, handledFocusUserLocationRequestRef.current)
+    ) {
       return;
     }
+    handledFocusUserLocationRequestRef.current = focusUserLocationRequest;
     const map = mapRef.current;
     if (!map) {
       return;
@@ -6083,7 +6097,7 @@ function CopMapComponent({
           <button
             aria-label="Zobrazit ovládání mapy"
             className="map-control-main"
-            onClick={() => setMapControlsCollapsed(false)}
+            onClick={() => onMapControlsCollapsedChange(false)}
             title="Zobrazit ovládání mapy"
             type="button"
           >
@@ -6180,7 +6194,7 @@ function CopMapComponent({
             <button
               aria-label="Skrýt ovládání mapy"
               className="map-control-button icon-only"
-              onClick={() => setMapControlsCollapsed(true)}
+              onClick={() => onMapControlsCollapsedChange(true)}
               title="Skrýt ovládání mapy"
               type="button"
             >
@@ -6485,7 +6499,7 @@ function CopMapComponent({
           aria-expanded={!mapLegendCollapsed}
           aria-label={mapLegendCollapsed ? "Zobrazit legendu mapy" : "Skrýt legendu mapy"}
           className="map-legend-toggle"
-          onClick={() => setMapLegendCollapsed((current) => !current)}
+          onClick={() => onMapLegendCollapsedChange(!mapLegendCollapsed)}
           type="button"
         >
           <HelpCircle size={17} />

@@ -5119,6 +5119,12 @@ components:
             - outline
         mapClusterEnabled:
           type: boolean
+        mapControlsCollapsed:
+          type: boolean
+          description: Whether the primary map control palette is collapsed.
+        mapLegendCollapsed:
+          type: boolean
+          description: Whether the map legend is collapsed.
         mapView:
           $ref: "#/components/schemas/MapViewPreference"
         minConfidence:

@@ -217,6 +217,13 @@ Nativní klient nemá znovu vymýšlet kontrakty. Použije:
 - `POST /api/v1/ai/community-report/draft` pro pomoc s textem hlášení,
 - `POST /api/v1/ai/cop-assistant/query` pouze pro pokročilé povolené informační dotazy.
 
+Mapová obrazovka nativního klienta musí zachovat stejné významy jako web:
+jednorázové zaměření na polohu nesmí samo zapnout sledování kamery a ruční
+posun mapy musí aktivní sledování ukončit. Podporované mapové volby se ukládají
+do stejného profilu; nepodporovaná pole preferencí musí klient při `PUT`
+zachovat, zejména výběr vrstev, `mapView`, `mapControlsCollapsed`,
+`mapLegendCollapsed` a `showAlertAreas`.
+
 Nativní klient nevolá Ollama, AI KnowledgeBase LLM Gateway ani žádný modelový
 provider přímo. AI kontext skládá COP server podle oprávnění uživatele a výsledek
 audituje.

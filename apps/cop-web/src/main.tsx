@@ -338,6 +338,7 @@ import {
   type WorkspacePanelMode,
   type WorkspaceSkin
 } from "./user-preferences";
+import { shouldMaintainUserLocationWatch } from "./map-location-policy";
 import {
   builtInViewProfiles,
   normalizeWorkspaceModule,
@@ -1056,6 +1057,7 @@ export function App() {
   const [showHistory, setShowHistory] = React.useState(() =>
     readInitialMapToggle("history", initialPreferences.showHistory ?? false)
   );
+  const [showAlertAreas, setShowAlertAreas] = React.useState(initialPreferences.showAlertAreas ?? false);
   const [showPrediction, setShowPrediction] = React.useState(() =>
     readInitialMapToggle("prediction", initialPreferences.showPrediction ?? false)
   );
@@ -1069,6 +1071,12 @@ export function App() {
   const [mapClusterEnabled, setMapClusterEnabled] = React.useState(initialPreferences.mapClusterEnabled ?? false);
   const [mapBasemapMode, setMapBasemapMode] = React.useState<MapBasemapMode>(() =>
     normalizeMapBasemapMode(initialPreferences.mapBasemapMode)
+  );
+  const [mapControlsCollapsed, setMapControlsCollapsed] = React.useState(
+    initialPreferences.mapControlsCollapsed ?? false
+  );
+  const [mapLegendCollapsed, setMapLegendCollapsed] = React.useState(
+    initialPreferences.mapLegendCollapsed ?? false
   );
   const [predictionMinutes, setPredictionMinutes] = React.useState(() =>
     clamp(initialPreferences.predictionMinutes ?? 10, 2, 20)
@@ -1101,6 +1109,7 @@ export function App() {
       ? mapViewFromCopMapFocus(initialMapFocus, initialPreferences.mapView)
       : (normalizeMapView(initialPreferences.mapView) ?? defaultMapViewState())
   );
+  const stableProfileMapViewRef = React.useRef<MapViewState | undefined>(mapView);
   const [mapBounds, setMapBounds] = React.useState<MapBounds>(defaultMapBounds);
   const [focusViewRequest, setFocusViewRequest] = React.useState(0);
   const [mapCatalog, setMapCatalog] = React.useState<MapCatalogResponse | null>(null);
@@ -1224,7 +1233,9 @@ export function App() {
   );
   const routeRequestIdRef = React.useRef(0);
   const userLocationWatchIdRef = React.useRef<number | null>(null);
+  const userLocationWatchGenerationRef = React.useRef(0);
   const userLocationFollowEnabledRef = React.useRef(false);
+  const userClaimedMapCameraRef = React.useRef(false);
   const navigationSessionRef = React.useRef<NavigationSession | null>(initialNavigationSession);
   const [focusUserLocationRequest, setFocusUserLocationRequest] = React.useState(0);
   const [userLocationFollowEnabled, setUserLocationFollowEnabled] = React.useState(false);
@@ -1566,6 +1577,7 @@ export function App() {
   const profileHydratedRef = React.useRef(false);
   const profileLoadKeyRef = React.useRef<string | null>(null);
   const profileSaveTimerRef = React.useRef<number | undefined>(undefined);
+  const lastScheduledProfileFingerprintRef = React.useRef<string | null>(null);
   const skipNextAlertPreferenceWriteRef = React.useRef(false);
   const skipNextPreferenceWriteRef = React.useRef(false);
   const notifiedProximityAlertsRef = React.useRef<Set<string>>(new Set());
@@ -4165,7 +4177,10 @@ export function App() {
   const primaryAoiRule = aoiRules[0] ?? null;
 
   const applyPreferenceSettings = React.useCallback(
-    (settings: PreferenceSettings, options: { focusMap?: boolean } = {}) => {
+    (
+      settings: PreferenceSettings,
+      options: { focusMap?: boolean; preserveMapView?: boolean } = {}
+    ) => {
       if (settings.activeWorkspace !== undefined) {
         setActiveWorkspace(normalizeWorkspaceModule(settings.activeWorkspace));
       }
@@ -4210,6 +4225,9 @@ export function App() {
       if (settings.showHistory !== undefined) {
         setShowHistory(settings.showHistory);
       }
+      if (settings.showAlertAreas !== undefined) {
+        setShowAlertAreas(settings.showAlertAreas);
+      }
       if (settings.trackHistoryDisplayMode !== undefined) {
         setTrackHistoryDisplayMode(normalizeTrackHistoryDisplayMode(settings.trackHistoryDisplayMode));
       }
@@ -4224,6 +4242,12 @@ export function App() {
       }
       if (settings.mapBasemapMode !== undefined) {
         setMapBasemapMode(normalizeMapBasemapMode(settings.mapBasemapMode));
+      }
+      if (settings.mapControlsCollapsed !== undefined) {
+        setMapControlsCollapsed(settings.mapControlsCollapsed);
+      }
+      if (settings.mapLegendCollapsed !== undefined) {
+        setMapLegendCollapsed(settings.mapLegendCollapsed);
       }
       if (settings.catalogLayerIds !== undefined) {
         catalogSelectionInitializedRef.current = true;
@@ -4273,8 +4297,9 @@ export function App() {
       }
 
       const normalizedMapView = normalizeMapView(settings.mapView);
-      if (settings.mapView !== undefined) {
+      if (settings.mapView !== undefined && !options.preserveMapView) {
         setMapView(normalizedMapView ?? defaultMapViewState());
+        stableProfileMapViewRef.current = normalizedMapView ?? defaultMapViewState();
         if (settings.autoFit === undefined) {
           setAutoFit(false);
         }
@@ -4293,6 +4318,7 @@ export function App() {
   }, []);
 
   const focusMapOnUserLocation = React.useCallback((location: UserLocation) => {
+    userClaimedMapCameraRef.current = true;
     setAutoFit(false);
     setMapView((current) => ({
       bearing: current?.bearing ?? 0,
@@ -4305,6 +4331,7 @@ export function App() {
   }, []);
 
   const clearUserLocationWatch = React.useCallback(() => {
+    userLocationWatchGenerationRef.current += 1;
     const watchId = userLocationWatchIdRef.current;
     if (watchId === null || typeof navigator === "undefined" || !navigator.geolocation?.clearWatch) {
       userLocationWatchIdRef.current = null;
@@ -4343,8 +4370,13 @@ export function App() {
     }
 
     try {
+      const watchGeneration = userLocationWatchGenerationRef.current + 1;
+      userLocationWatchGenerationRef.current = watchGeneration;
       userLocationWatchIdRef.current = navigator.geolocation.watchPosition(
         (position) => {
+          if (userLocationWatchGenerationRef.current !== watchGeneration) {
+            return;
+          }
           try {
             applyLiveUserLocation(userLocationFromPosition(position));
           } catch {
@@ -4352,6 +4384,9 @@ export function App() {
           }
         },
         (error) => {
+          if (userLocationWatchGenerationRef.current !== watchGeneration) {
+            return;
+          }
           const message = error.message || "Sledování polohy se přerušilo.";
           setLocationStatus(`Sledování polohy: ${message}`);
           if (error.code === error.PERMISSION_DENIED) {
@@ -4382,14 +4417,23 @@ export function App() {
   }, [navigationSession]);
 
   React.useEffect(() => {
-    if (navigationSession) {
+    const shouldWatch = shouldMaintainUserLocationWatch({
+      followEnabled: userLocationFollowEnabled,
+      navigationActive: Boolean(navigationSession),
+      proximityAlertEnabled
+    });
+    if (!shouldWatch) {
       clearUserLocationWatch();
       return;
     }
-    if (userLocationFollowEnabled) {
-      startUserLocationWatch();
-    }
-  }, [clearUserLocationWatch, navigationSession?.id, startUserLocationWatch, userLocationFollowEnabled]);
+    startUserLocationWatch();
+  }, [
+    clearUserLocationWatch,
+    navigationSession?.id,
+    proximityAlertEnabled,
+    startUserLocationWatch,
+    userLocationFollowEnabled
+  ]);
 
   React.useEffect(() => clearUserLocationWatch, [clearUserLocationWatch]);
 
@@ -4434,6 +4478,8 @@ export function App() {
       language,
       mapClusterEnabled,
       mapBasemapMode,
+      mapControlsCollapsed,
+      mapLegendCollapsed,
       mapView,
       minConfidence,
       operatorProfile,
@@ -4446,6 +4492,7 @@ export function App() {
       selectedLayer,
       situationCoverageTechnology: coverageTechnology,
       showHistory,
+      showAlertAreas,
       showPrediction,
       situationLayerIds: visibleSituationLayerIds,
       situationSourceIds: visibleSituationSourceIds,
@@ -4468,6 +4515,8 @@ export function App() {
       language,
       mapBasemapMode,
       mapClusterEnabled,
+      mapControlsCollapsed,
+      mapLegendCollapsed,
       mapView,
       minConfidence,
       operatorProfile,
@@ -4481,6 +4530,7 @@ export function App() {
       selectedLayer,
       coverageTechnology,
       showHistory,
+      showAlertAreas,
       showPrediction,
       visibleSituationLayerIds,
       visibleSituationSourceIds,
@@ -4510,7 +4560,10 @@ export function App() {
     skipNextAlertPreferenceWriteRef.current = true;
     setAlertPreferences(scopedAlertPreferences.alertPreferences);
     setLocalAlertPreferencesUpdatedAt(scopedAlertPreferences.updatedAt);
-    applyPreferenceSettings(scopedPreferences, { focusMap: true });
+    applyPreferenceSettings(scopedPreferences, {
+      focusMap: !userClaimedMapCameraRef.current,
+      preserveMapView: userClaimedMapCameraRef.current
+    });
     setViewProfiles(readViewProfiles(userStorageScope));
     setOfflineSnapshotState(initialOfflineSnapshotState(userStorageScope));
     setLastProfileName(null);
@@ -4572,7 +4625,10 @@ export function App() {
         if (hasHydratedPreferences) {
           writeUserPreferences(hydratedPreferences, userStorageScope);
           skipNextPreferenceWriteRef.current = true;
-          applyPreferenceSettings(hydratedPreferences, { focusMap: true });
+          applyPreferenceSettings(hydratedPreferences, {
+            focusMap: !userClaimedMapCameraRef.current,
+            preserveMapView: userClaimedMapCameraRef.current
+          });
         }
         if (localAlertPreferencesWin || shouldMirrorPreferences || Object.keys(serverPreferences).length === 0) {
           savedProfile = await saveUserProfile(apiBase, authToken, {
@@ -4635,7 +4691,19 @@ export function App() {
     setLocalAlertPreferencesUpdatedAt(updatedAt);
   }, [alertPreferences]);
 
-  const deferRemoteProfileSyncForLiveLocation = navigationSession !== null || userLocationFollowEnabled;
+  const locationDrivenCameraActive = navigationSession !== null || userLocationFollowEnabled;
+  const profilePreferencesFingerprint = JSON.stringify(
+    locationDrivenCameraActive
+      ? {
+          ...currentPreferences,
+          mapView: stableProfileMapViewRef.current
+        }
+      : currentPreferences
+  );
+  const profilePreferencesForSync = React.useMemo<UserPreferences>(
+    () => JSON.parse(profilePreferencesFingerprint) as UserPreferences,
+    [profilePreferencesFingerprint]
+  );
 
   React.useEffect(() => {
     if (skipNextPreferenceWriteRef.current) {
@@ -4643,17 +4711,27 @@ export function App() {
       return;
     }
     writeUserPreferences(currentPreferences, userStorageScope);
-    if (!profileAccessReady || !authToken || !profileHydratedRef.current || deferRemoteProfileSyncForLiveLocation) {
+    if (!profileAccessReady || !authToken || !profileHydratedRef.current) {
       return;
     }
+    const scheduledFingerprint = JSON.stringify({
+      alertPreferences,
+      preferences: profilePreferencesForSync,
+      userStorageScope
+    });
+    if (lastScheduledProfileFingerprintRef.current === scheduledFingerprint) {
+      return;
+    }
+    lastScheduledProfileFingerprintRef.current = scheduledFingerprint;
     if (profileSaveTimerRef.current !== undefined) {
       window.clearTimeout(profileSaveTimerRef.current);
     }
     setProfileSyncStatus("saving");
     profileSaveTimerRef.current = window.setTimeout(() => {
+      profileSaveTimerRef.current = undefined;
       saveUserProfile(apiBase, authToken, {
         alertPreferences,
-        preferences: currentPreferences
+        preferences: profilePreferencesForSync
       })
         .then((profile) => {
           setServerProfileUpdatedAt(profile.updatedAt);
@@ -4664,6 +4742,7 @@ export function App() {
           setProfileSyncStatus("synced");
         })
         .catch((error: unknown) => {
+          lastScheduledProfileFingerprintRef.current = null;
           setProfileSyncStatus("error");
           setProfileSyncError(error instanceof Error ? error.message : "Uložení profilu selhalo.");
         });
@@ -4672,7 +4751,7 @@ export function App() {
     alertPreferences,
     authToken,
     currentPreferences,
-    deferRemoteProfileSyncForLiveLocation,
+    profilePreferencesForSync,
     profileAccessReady,
     userStorageScope
   ]);
@@ -5439,7 +5518,6 @@ export function App() {
             ? `${formatUserLocation(location)} · mapa sleduje polohu`
             : formatUserLocation(location)
         );
-        startUserLocationWatch();
         if (requestedRouteTarget) {
           setFocusUserLocationRequest((current) => current + 1);
         } else {
@@ -5481,6 +5559,7 @@ export function App() {
       );
       return;
     }
+    setAutoFit(false);
     if (userLocation) {
       setLocationStatus(`${formatUserLocation(userLocation)} · mapa sleduje polohu`);
       focusMapOnUserLocation(userLocation);
@@ -5491,6 +5570,7 @@ export function App() {
   }
 
   function handleMapUserInteraction() {
+    userClaimedMapCameraRef.current = true;
     if (!userLocationFollowEnabledRef.current) {
       return;
     }
@@ -5499,6 +5579,21 @@ export function App() {
     setLocationStatus(
       userLocation ? `${formatUserLocation(userLocation)} · volné prohlížení mapy` : "Volné prohlížení mapy."
     );
+    if (!proximityAlertEnabled) {
+      clearUserLocationWatch();
+    }
+  }
+
+  function handleMapAutoFitChange(enabled: boolean) {
+    setAutoFit(enabled);
+    if (!enabled || !userLocationFollowEnabledRef.current) {
+      return;
+    }
+    userLocationFollowEnabledRef.current = false;
+    setUserLocationFollowEnabled(false);
+    if (!proximityAlertEnabled) {
+      clearUserLocationWatch();
+    }
   }
 
   const requestEmergencyRouteToPoint = React.useCallback(
@@ -7157,6 +7252,13 @@ export function App() {
   const copMapRequestUserLocation = useEventCallback(() => locateUser());
   const copMapUserLocationFollowChange = useEventCallback(handleUserLocationFollowChange);
   const copMapUserInteraction = useEventCallback(handleMapUserInteraction);
+  const copMapAutoFitChange = useEventCallback(handleMapAutoFitChange);
+  const copMapViewChange = useEventCallback((view: MapViewState) => {
+    setMapView(view);
+    if (!userLocationFollowEnabledRef.current && !navigationSessionRef.current) {
+      stableProfileMapViewRef.current = view;
+    }
+  });
 
   const updateWorkspaceLayout = React.useCallback((patch: Partial<WorkspaceLayoutPreferences>) => {
     setWorkspaceLayout((current) => normalizeWorkspaceLayout({ ...current, ...patch }));
@@ -7766,6 +7868,8 @@ export function App() {
                   initialView={mapView}
                   mapLayerDetailLabel={mapLayerDetailLabel}
                   mapLayerLabel={mapLayerLabel}
+                  mapControlsCollapsed={mapControlsCollapsed}
+                  mapLegendCollapsed={mapLegendCollapsed}
                   situationFeatures={combinedSituationFeatures}
                   selectedTransitRouteDetail={selectedTransitRouteDetail}
                   selectedTransitRouteShape={selectedTransitRouteShape}
@@ -7775,7 +7879,9 @@ export function App() {
                   onSelectSituationFeature={handleMapSelectSituationFeature}
                   onActivateEmergencyRoute={activateEmergencyRouteVariant}
                   onSelectEmergencyRoute={copMapSelectEmergencyRoute}
-                  onAutoFitChange={setAutoFit}
+                  onAutoFitChange={copMapAutoFitChange}
+                  onMapControlsCollapsedChange={setMapControlsCollapsed}
+                  onMapLegendCollapsedChange={setMapLegendCollapsed}
                   onClearEmergencyRoute={copMapClearEmergencyRoute}
                   onClearSelection={handleMapClearSelection}
                   onCancelZoneCreation={copMapCancelZoneCreation}
@@ -7796,14 +7902,14 @@ export function App() {
                   onRequestUserLocation={copMapRequestUserLocation}
                   onUserLocationFollowChange={copMapUserLocationFollowChange}
                   onUserMapInteraction={copMapUserInteraction}
-                  onViewChange={setMapView}
+                  onViewChange={copMapViewChange}
                   radioPointPickActive={Boolean(radioPointPickTarget)}
                   radioPointPickLabel={
                     radioPointPickTarget ? radioPointPickTargetLabel(radioPointPickTarget) : undefined
                   }
                   reportLocationPickActive={communityReportLocationPickMode}
                   selectedSketchDrawingId={selectedSketchDrawingId}
-                  showAlertAreas={false}
+                  showAlertAreas={showAlertAreas}
                   showProximityAlertRadius={proximityAlertEnabled}
                   sketchDrawings={visibleSketchLayerEnabled ? sketchDrawings : emptySketchDrawings}
                   sketchMode={sketchMode}

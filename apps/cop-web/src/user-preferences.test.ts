@@ -103,9 +103,20 @@ describe("user preferences helpers", () => {
   });
 
   it("normalizes language and outline basemap preferences", () => {
-    expect(normalizeUserPreferences({ language: "en", mapBasemapMode: "outline" })).toMatchObject({
+    expect(
+      normalizeUserPreferences({
+        language: "en",
+        mapBasemapMode: "outline",
+        mapControlsCollapsed: true,
+        mapLegendCollapsed: true,
+        showAlertAreas: true
+      })
+    ).toMatchObject({
       language: "en",
-      mapBasemapMode: "outline"
+      mapBasemapMode: "outline",
+      mapControlsCollapsed: true,
+      mapLegendCollapsed: true,
+      showAlertAreas: true
     });
     expect(normalizeUserPreferences({ language: "de", mapBasemapMode: "satellite" })).toMatchObject({
       language: undefined,

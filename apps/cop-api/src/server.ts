@@ -15308,6 +15308,8 @@ function normalizeUserPreferences(value: unknown): Record<string, unknown> {
     language: optionalString(value.language, ["cs", "en"]),
     mapClusterEnabled: optionalBoolean(value.mapClusterEnabled),
     mapBasemapMode: optionalString(value.mapBasemapMode, ["standard", "civil", "risk", "dark", "outline"]),
+    mapControlsCollapsed: optionalBoolean(value.mapControlsCollapsed),
+    mapLegendCollapsed: optionalBoolean(value.mapLegendCollapsed),
     mapView: normalizeMapViewPreference(value.mapView),
     minConfidence: optionalFiniteNumber(value.minConfidence, 0, 1),
     operatorProfile: normalizeOperatorProfilePreference(value.operatorProfile),

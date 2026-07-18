@@ -205,7 +205,10 @@ describe("COP API authentication", () => {
           minimumSeverity: "warning"
         },
         preferences: {
+          mapControlsCollapsed: true,
+          mapLegendCollapsed: true,
           selectedLayer: "foreign",
+          showAlertAreas: true,
           trackHistoryWindowSeconds: 60
         }
       },
@@ -221,7 +224,10 @@ describe("COP API authentication", () => {
         minimumSeverity: "warning"
       },
       preferences: {
+        mapControlsCollapsed: true,
+        mapLegendCollapsed: true,
         selectedLayer: "foreign",
+        showAlertAreas: true,
         trackHistoryWindowSeconds: 60
       }
     });
