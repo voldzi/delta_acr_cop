@@ -197,11 +197,10 @@ class NativeDeviceClient {
     if (this.readyPromise) {
       return this.readyPromise;
     }
-    this.readyPromise = new Promise<void>((resolve, reject) => {
+    const readyPromise = new Promise<void>((resolve, reject) => {
       const id = crypto.randomUUID();
       const timeout = setTimeout(() => {
         this.pending.delete(id);
-        this.readyPromise = undefined;
         reject(new NativeDeviceBridgeError("Nativní bridge neodpověděl včas.", "TIMEOUT"));
       }, 15_000);
       this.pending.set(id, {
@@ -225,7 +224,14 @@ class NativeDeviceClient {
         webBuildId: "cop-web"
       });
     });
-    return this.readyPromise;
+    this.readyPromise = readyPromise;
+    void readyPromise.catch(() => {
+      this.sessionId = undefined;
+      if (this.readyPromise === readyPromise) {
+        this.readyPromise = undefined;
+      }
+    });
+    return readyPromise;
   }
 
   private async request(method: string, params: NativeBridgeMessage): Promise<unknown> {

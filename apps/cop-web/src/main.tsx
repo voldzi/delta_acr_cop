@@ -1512,27 +1512,46 @@ export function App() {
   React.useEffect(() => installHapticInteractionFeedback(), []);
 
   React.useEffect(() => {
-    if (!nativeCompassAvailable()) return undefined;
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
-    void subscribeNativeCallActions((action) => {
+    let retryTimer: number | undefined;
+    let retryAttempt = 0;
+    const scheduleRetry = () => {
       if (cancelled) return;
-      const surface = hostMessagingSurfaceForNativeCall();
-      messagingSelectionNonceRef.current += 1;
-      messagingVoiceCallCommandNonceRef.current += 1;
-      setMessagingSelection({ id: action.roomId, nonce: messagingSelectionNonceRef.current });
-      setMessagingVoiceCallCommand({ ...action, nonce: messagingVoiceCallCommandNonceRef.current });
-      setMessagingFrameMounted(surface.frameMounted);
-      setMessagingOpen(surface.open);
-      setMessagingPinned(surface.pinned);
-    })
-      .then((stop) => {
-        if (cancelled) stop();
-        else unsubscribe = stop;
+      const delay = Math.min(5_000, 400 * 2 ** Math.min(retryAttempt, 4));
+      retryAttempt += 1;
+      retryTimer = window.setTimeout(connect, delay);
+    };
+    const connect = () => {
+      if (cancelled) return;
+      if (!nativeCompassAvailable()) {
+        scheduleRetry();
+        return;
+      }
+      void subscribeNativeCallActions((action) => {
+        if (cancelled) return;
+        const surface = hostMessagingSurfaceForNativeCall();
+        messagingSelectionNonceRef.current += 1;
+        messagingVoiceCallCommandNonceRef.current += 1;
+        setMessagingSelection({ id: action.roomId, nonce: messagingSelectionNonceRef.current });
+        setMessagingVoiceCallCommand({ ...action, nonce: messagingVoiceCallCommandNonceRef.current });
+        setMessagingFrameMounted(surface.frameMounted);
+        setMessagingOpen(surface.open);
+        setMessagingPinned(surface.pinned);
       })
-      .catch(() => undefined);
+        .then((stop) => {
+          if (cancelled) stop();
+          else {
+            retryAttempt = 0;
+            unsubscribe = stop;
+          }
+        })
+        .catch(scheduleRetry);
+    };
+    connect();
     return () => {
       cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       unsubscribe?.();
     };
   }, []);
@@ -1591,28 +1610,52 @@ export function App() {
   const messagingRuntimeEnabled = Boolean(authToken);
 
   React.useEffect(() => {
-    if (!authenticatedSessionActive || !authToken || !nativeCompassAvailable()) return;
+    if (!authenticatedSessionActive || !authToken) return;
     const key = `${authSession.profile?.subjectId ?? authSession.profile?.username ?? "native"}:${authToken.slice(-12)}`;
     if (nativePushRefreshKeyRef.current === key) return;
-    nativePushRefreshKeyRef.current = key;
-    void refreshNativeRemoteNotificationRegistration(apiBase, authToken)
-      .then((registration) => {
-        if (!registration) return;
-        setWebPushState((current) => ({
-          ...current,
-          deviceId: registration.deviceId,
-          enabled: true,
-          permission: "granted",
-          registered: true,
-          registrationConfirmedAt: new Date().toISOString(),
-          standalone: true,
-          status: "registered",
-          warnings: []
-        }));
-      })
-      .catch(() => {
-        nativePushRefreshKeyRef.current = null;
-      });
+    let cancelled = false;
+    let retryTimer: number | undefined;
+    let retryAttempt = 0;
+    const scheduleRetry = () => {
+      if (cancelled) return;
+      const delay = Math.min(10_000, 500 * 2 ** Math.min(retryAttempt, 4));
+      retryAttempt += 1;
+      retryTimer = window.setTimeout(refresh, delay);
+    };
+    const refresh = () => {
+      if (cancelled || nativePushRefreshKeyRef.current === key) return;
+      if (!nativeCompassAvailable()) {
+        scheduleRetry();
+        return;
+      }
+      nativePushRefreshKeyRef.current = key;
+      void refreshNativeRemoteNotificationRegistration(apiBase, authToken)
+        .then((registration) => {
+          if (cancelled || !registration) return;
+          setWebPushState((current) => ({
+            ...current,
+            deviceId: registration.deviceId,
+            enabled: true,
+            permission: "granted",
+            registered: true,
+            registrationConfirmedAt: new Date().toISOString(),
+            standalone: true,
+            status: "registered",
+            warnings: []
+          }));
+        })
+        .catch(() => {
+          if (nativePushRefreshKeyRef.current === key) {
+            nativePushRefreshKeyRef.current = null;
+          }
+          scheduleRetry();
+        });
+    };
+    refresh();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
   }, [authToken, authenticatedSessionActive, authSession.profile?.subjectId, authSession.profile?.username]);
 
   React.useEffect(() => {

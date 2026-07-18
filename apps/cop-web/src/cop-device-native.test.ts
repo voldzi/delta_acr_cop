@@ -16,11 +16,23 @@ describe("native COP device heading adapter", () => {
     const methods: string[] = [];
     const requests: Array<{ method: string; params: unknown }> = [];
     let expireNextSession = false;
+    let rejectNextHandshake = true;
     let handshakeCount = 0;
     const transport = {
       postMessage(message: Record<string, unknown>) {
         if (message.kind === "hello") {
           handshakeCount += 1;
+          if (rejectNextHandshake) {
+            rejectNextHandshake = false;
+            listeners.forEach((listener) =>
+              listener({
+                error: { code: "ORIGIN_NOT_ALLOWED", message: "navigation is still committing" },
+                id: message.id,
+                kind: "blocked"
+              })
+            );
+            return;
+          }
           listeners.forEach((listener) =>
             listener({
               id: message.id,
@@ -61,6 +73,7 @@ describe("native COP device heading adapter", () => {
     Object.defineProperty(window, "__COP_DEVICE_NATIVE_TRANSPORT__", { configurable: true, value: transport });
     const heading = vi.fn();
 
+    await expect(startNativeHeading(heading)).rejects.toMatchObject({ code: "ORIGIN_NOT_ALLOWED" });
     const stop = await startNativeHeading(heading);
     listeners.forEach((listener) =>
       listener({
@@ -184,7 +197,7 @@ describe("native COP device heading adapter", () => {
         status: "succeeded"
       })
     ).rejects.toMatchObject({ code: "SESSION_EXPIRED" });
-    expect(handshakeCount).toBe(2);
+    expect(handshakeCount).toBe(3);
     await presentNativeChat("subject-jirina");
     expect(methods).toContain("communications.openChat");
     expect(requests).toContainEqual({

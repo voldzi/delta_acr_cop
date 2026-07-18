@@ -514,7 +514,12 @@ stabilní
 deduplicates retries and returns a success/failure acknowledgement only after
 the Matrix command settles. iOS retries start/answer/end/reject/mute delivery
 with the same ID; start retries cover the interval before the web subscription
-and bridge handshake are ready. iOS keeps end/reject/mute `CXAction` pending
+and bridge handshake are ready. The web host treats every failed initial
+handshake as recoverable, clears the rejected session promise and reconnects
+with bounded backoff; it also waits and retries when the document-start facade
+is not exposed yet. The same recovery rule refreshes the APNs/PushKit
+registration after navigation or a cold WebKit start. iOS keeps
+end/reject/mute `CXAction` pending
 and fails closed on acknowledgement timeout.
 The system `CXAnswerCallAction` is fulfilled immediately after native audio
 configuration so CallKit can activate `AVAudioSession`; the independently
