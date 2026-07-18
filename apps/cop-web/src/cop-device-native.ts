@@ -185,8 +185,9 @@ class NativeDeviceClient {
     return isRecord(result) && result.acknowledged === true;
   }
 
-  async openChat(): Promise<void> {
-    await this.request("communications.openChat", {});
+  async openChat(expectedSubjectId?: string): Promise<void> {
+    const subjectId = expectedSubjectId?.trim();
+    await this.request("communications.openChat", subjectId ? { subjectId } : {});
   }
 
   private ready(): Promise<void> {
@@ -347,12 +348,12 @@ export async function acknowledgeNativeCallAction(acknowledgement: NativeCallAct
   return client.acknowledgeCallAction(acknowledgement);
 }
 
-export async function presentNativeChat(): Promise<void> {
+export async function presentNativeChat(expectedSubjectId?: string): Promise<void> {
   const transport =
     typeof window === "undefined" ? undefined : (window as NativeWindow).__COP_DEVICE_NATIVE_TRANSPORT__;
   if (!transport) throw new NativeDeviceBridgeError("Nativní bridge není dostupný.", "UNSUPPORTED");
   client ??= new NativeDeviceClient(transport);
-  await client.openChat();
+  await client.openChat(expectedSubjectId);
 }
 
 function nativeCallAction(message: NativeBridgeMessage): NativeCallAction | null {

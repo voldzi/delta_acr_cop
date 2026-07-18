@@ -1005,6 +1005,15 @@ conversations.
 - User identity comes from the COP login session. Anonymous users may use the
   map, but they cannot participate in messaging.
 - Production chat requires a dedicated Matrix/E2EE client bootstrap contract.
+- When the authenticated COP web surface opens the native COP Mobile chat, the
+  exact-origin device bridge sends only the bounded opaque OIDC `subjectId` as
+  the expected account. The native communication kit authenticates
+  independently with Authorization Code + PKCE and fails closed unless its
+  bootstrapped actor has the exact same subject. No cookie, bearer/refresh
+  token, Matrix credential, profile or message content crosses the bridge.
+- COP Mobile also supports a native-only user who never opens the web surface:
+  an explicit Chat action starts the native OIDC flow directly and the
+  communication kit uses its own Keychain session.
 
 ## Metadata Flow
 

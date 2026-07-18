@@ -6331,7 +6331,7 @@ export function App() {
 
   function openMessagingPanel() {
     if (nativeCompassAvailable()) {
-      void presentNativeChat().catch(() => {
+      void presentNativeChat(authSubjectId).catch(() => {
         openEmbeddedMessagingPanel();
       });
       return;

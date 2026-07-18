@@ -14,6 +14,7 @@ describe("native COP device heading adapter", () => {
   it("handshakes, checks permission and forwards native heading events", async () => {
     const listeners = new Set<(message: Record<string, unknown>) => void>();
     const methods: string[] = [];
+    const requests: Array<{ method: string; params: unknown }> = [];
     let expireNextSession = false;
     let handshakeCount = 0;
     const transport = {
@@ -30,6 +31,7 @@ describe("native COP device heading adapter", () => {
           return;
         }
         methods.push(String(message.method));
+        requests.push({ method: String(message.method), params: message.params });
         if (expireNextSession) {
           expireNextSession = false;
           listeners.forEach((listener) =>
@@ -183,8 +185,12 @@ describe("native COP device heading adapter", () => {
       })
     ).rejects.toMatchObject({ code: "SESSION_EXPIRED" });
     expect(handshakeCount).toBe(2);
-    await presentNativeChat();
+    await presentNativeChat("subject-jirina");
     expect(methods).toContain("communications.openChat");
+    expect(requests).toContainEqual({
+      method: "communications.openChat",
+      params: { subjectId: "subject-jirina" }
+    });
     stopCalls();
     stop();
   });
