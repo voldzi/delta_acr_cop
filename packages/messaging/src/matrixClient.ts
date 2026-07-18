@@ -2539,9 +2539,35 @@ function createTextMessageContent(
     content.body = `${quoted}\n\n${body}`;
   }
   if (options.cop) {
-    content["cz.cop"] = options.cop;
+    content["cz.cop"] = matrixCopMessageMetadataForWire(options.cop);
   }
   return content;
+}
+
+function matrixCopMessageMetadataForWire(metadata: MatrixCopMessageMetadata): Record<string, unknown> {
+  return matrixCanonicalJsonValue(metadata) as Record<string, unknown>;
+}
+
+function matrixCanonicalJsonValue(value: unknown): unknown {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      return undefined;
+    }
+    return Number.isInteger(value) ? value : String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(matrixCanonicalJsonValue).filter((item) => item !== undefined);
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(record).flatMap(([key, item]) => {
+      const normalized = matrixCanonicalJsonValue(item);
+      return normalized === undefined ? [] : [[key, normalized]];
+    })
+  );
 }
 
 function createLocationMessage(location: MatrixLocationShare): Record<string, unknown> {
@@ -4370,7 +4396,12 @@ function nonNegativeInteger(value: unknown, min: number, max: number): number | 
 }
 
 function finiteNumber(value: unknown, min: number, max: number): number | undefined {
-  const parsed = typeof value === "number" ? value : Number.NaN;
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() && /^-?(?:\d+(?:\.\d+)?|\.\d+)$/u.test(value.trim())
+        ? Number(value)
+        : Number.NaN;
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : undefined;
 }
 

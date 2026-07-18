@@ -1618,7 +1618,7 @@ describe("Matrix client diagnostics", () => {
 
   it("sends and reads COP AI metadata on Matrix text messages", async () => {
     const sendMessage = vi.fn<MatrixSendMessage>().mockResolvedValue(undefined);
-    const content = {
+    const timelineContent = {
       "cz.cop": {
         ai: {
           auditId: "audit-1",
@@ -1660,6 +1660,16 @@ describe("Matrix client diagnostics", () => {
       body: "AI odpověď",
       msgtype: "m.text"
     };
+    const sentContent = structuredClone(timelineContent);
+    const sentCop = sentContent["cz.cop"] as {
+      ai: {
+        mapActions: Array<{ lat: number | string; lon: number | string }>;
+        responsePlaybook: { confidence: number | string };
+      };
+    };
+    sentCop.ai.mapActions[0]!.lat = "50.12076";
+    sentCop.ai.mapActions[0]!.lon = "17.38413";
+    sentCop.ai.responsePlaybook.confidence = "0.9";
     matrixSdkMock.createClient.mockReturnValue(
       createMockMatrixClient({
         rooms: [
@@ -1667,11 +1677,11 @@ describe("Matrix client diagnostics", () => {
             roomId: "!chat:cop.local",
             timeline: [
               createMessageEvent(
-                content.body,
+                timelineContent.body,
                 Date.parse("2026-06-24T11:00:00.000Z"),
                 "$ai",
                 "@operator:cop.local",
-                content
+                sentContent
               )
             ]
           })
@@ -1723,8 +1733,8 @@ describe("Matrix client diagnostics", () => {
       }
     });
 
-    expect(sendMessage).toHaveBeenCalledWith("!chat:cop.local", content);
-    expect(session.getTimeline("!chat:cop.local")[0]?.cop).toEqual(content["cz.cop"]);
+    expect(sendMessage).toHaveBeenCalledWith("!chat:cop.local", sentContent);
+    expect(session.getTimeline("!chat:cop.local")[0]?.cop).toEqual(timelineContent["cz.cop"]);
   });
 
   it("removes the current Matrix reaction when setting the same reaction again", async () => {

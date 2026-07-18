@@ -824,7 +824,15 @@ The phase-0 implementation focus is trust and control:
   and the web map selects that feature, reusing the same detail/popup state as
   manual map search selection. The metadata is used only for timeline labeling,
   audit visibility and explicit user-triggered map focusing; COP still does
-  not persist or proxy Matrix plaintext. In enabled
+  not persist or proxy Matrix plaintext.
+  Matrix event content follows canonical JSON and therefore cannot contain
+  floating-point JSON numbers. Decimal values inside `cz.cop` (for example
+  map coordinates or response confidence) are encoded on the Matrix wire as
+  decimal strings and decoded back to bounded numbers by COP clients. Integer
+  counts remain JSON numbers. Native clients reading these optional metadata
+  must accept both the legacy numeric form and the canonical decimal-string
+  form.
+  In enabled
   groups the composer also recognizes a leading `@COP AI ...` mention and a
   task-oriented slash catalog shared with COP Mobile: `/ai`, `/souhrn`,
   `/rizika`, `/mapa`, `/hlášení`, `/úkoly` and `/přeložit`. The technical
