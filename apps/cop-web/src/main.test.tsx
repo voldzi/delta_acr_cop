@@ -18,6 +18,7 @@ import {
   firstUnreadChatSummaryRoom,
   formatWeatherStationAttribution,
   hostIncomingChatVoiceCall,
+  hostKeepsEmbeddedMediaEngineActive,
   hostMessagingSurfaceForNativeCall,
   hostNativeChatVoiceCall,
   hostUnreadCountFromChatSummary,
@@ -366,6 +367,23 @@ describe("COP web dashboard", () => {
         type: "cop-chat:voice-call"
       })
     ).not.toBeNull();
+  });
+
+  it("keeps the native Matrix/WebRTC engine render-active before the first call snapshot", () => {
+    expect(
+      hostKeepsEmbeddedMediaEngineActive({
+        frameMounted: true,
+        nativeBridgeAvailable: true,
+        voiceCall: null
+      })
+    ).toBe(true);
+    expect(
+      hostKeepsEmbeddedMediaEngineActive({
+        frameMounted: true,
+        nativeBridgeAvailable: false,
+        voiceCall: null
+      })
+    ).toBe(false);
   });
 
   it("allows native APNs activation when WKWebView does not support browser push", () => {

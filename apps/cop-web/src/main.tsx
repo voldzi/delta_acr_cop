@@ -8735,7 +8735,11 @@ export function App() {
           active={messagingOpen}
           dockWidth={messagingDockWidth}
           mapView={mapView}
-          mediaActive={visibleMessagingVoiceCall !== null}
+          mediaActive={hostKeepsEmbeddedMediaEngineActive({
+            frameMounted: messagingFrameMounted,
+            nativeBridgeAvailable: nativeCompassAvailable(),
+            voiceCall: visibleMessagingVoiceCall
+          })}
           mobileCompact={mobileSheetViewport}
           pinned={messagingPinned}
           selection={messagingSelection}
@@ -11967,6 +11971,22 @@ export function hostNativeChatVoiceCall(
     return call;
   }
   return hostVisibleChatVoiceCall(call, now);
+}
+
+export function hostKeepsEmbeddedMediaEngineActive(input: {
+  frameMounted: boolean;
+  nativeBridgeAvailable: boolean;
+  voiceCall: ChatVoiceCallMessage | null;
+}): boolean {
+  // WKWebView may suspend an iframe hidden with `visibility: hidden` before it
+  // can process the first native start/answer command. In COP Mobile the iframe
+  // is the persistent Matrix/WebRTC engine, so keep it rendered off-screen from
+  // the moment the native host mounts it. Browser-only surfaces retain the
+  // narrower behavior and keep it alive only for an active call.
+  return (
+    (input.nativeBridgeAvailable && input.frameMounted) ||
+    hostVisibleChatVoiceCall(input.voiceCall) !== null
+  );
 }
 
 export function hostIncomingChatVoiceCall(call: ChatVoiceCallMessage | null): ChatVoiceCallMessage | null {

@@ -487,23 +487,29 @@ only `callId`, `roomId`, sender presentation, notification tag and TTL to CSM
 Messaging. The endpoint rejects SDP, ICE candidates and arbitrary signalling
 metadata. `action=ended` closes the matching visible call notification.
 
-V COP Mobile zůstává vložený webový Matrix/WebRTC engine po nativním call
-action namountovaný, ale jeho panel je vždy skrytý a nepřipnutý. Viditelný
-surface vlastní SwiftUI chat a nativní call overlay. Ukončení, odmítnutí,
-timeout ani reload media enginu proto nesmí odkrýt webový chat nebo webový E2EE
-recovery flow. Samostatný webový klient dál otevírá messenger běžným webovým
-ovládáním.
+V COP Mobile zůstává vložený webový Matrix/WebRTC engine render-active
+off-screen od okamžiku, kdy jej nativní host namountuje, nikoli až od vzniku
+prvního call snapshotu. Jeho panel je vždy skrytý a nepřipnutý. Tím se přeruší
+kruhová závislost, ve které by suspendovaný `WKWebView` nemohl zpracovat první
+nativní `start` nebo `answer` a vytvořit stav, jenž jej měl teprve aktivovat.
+Viditelný surface vlastní SwiftUI chat a nativní call overlay. Ukončení,
+odmítnutí, timeout ani reload media enginu proto nesmí odkrýt webový chat nebo
+webový E2EE recovery flow. Samostatný webový klient dál otevírá messenger
+běžným webovým ovládáním.
 
 COP Mobile additionally registers a separate PushKit token directly with CSM
 Messaging through the existing one-time device ticket. For a device carrying
 that token, incoming and ended wake events use the bundle `.voip` APNs topic and
 CallKit; every other notification remains a normal APNs alert. CallKit answer,
 reject, end, group-start and add-participant actions cross the exact-origin Device Bridge and reuse the
-host-to-chat voice command contract. A native action carries a stable
+host-to-chat voice command contract. Zahájení hovoru i CallKit user action nesou
+stabilní
 `actionId`; COP Chat keeps it for up to 30 seconds until the matching Matrix call exists,
 deduplicates retries and returns a success/failure acknowledgement only after
-the Matrix command settles. iOS keeps end/reject/mute `CXAction` pending,
-retries delivery with the same ID and fails closed on acknowledgement timeout.
+the Matrix command settles. iOS retries start/answer/end/reject/mute delivery
+with the same ID; start retries cover the interval before the web subscription
+and bridge handshake are ready. iOS keeps end/reject/mute `CXAction` pending
+and fails closed on acknowledgement timeout.
 The system `CXAnswerCallAction` is fulfilled immediately after native audio
 configuration so CallKit can activate `AVAudioSession`; the independently
 reliable Matrix answer remains fail-closed and closes the call if its bounded
@@ -523,7 +529,8 @@ WebKit microphone capture. This gives the native host time to register CallKit
 before `getUserMedia`; WebKit then waits for `provider(_:didActivate:)` instead
 of activating a CallKit-owned audio session itself. While SwiftUI owns the
 visible call surface, the hidden iframe remains rendered as a noninteractive
-off-screen media host so remote WebRTC audio is not suspended.
+off-screen media host from mount through call cleanup so first-command
+processing and remote WebRTC audio are not suspended.
 
 For a group call the bridge additionally carries only the bounded participant
 presentation (`userId`, display name and connected flag). Matrix room

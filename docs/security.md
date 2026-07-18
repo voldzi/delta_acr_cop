@@ -38,6 +38,9 @@ in ADR-0013. Chat content remains E2EE and WebRTC media remains DTLS-SRTP.
 Native CallKit commands use a bounded opaque `actionId` and an identity-bound
 chat-to-host-to-native acknowledgement. Retries with the same action ID are
 idempotent; a command is not acknowledged before its Matrix operation settles.
+The native start command uses the same stable retry/acknowledgement channel, so
+an initial event emitted before the web listener subscribes cannot be treated as
+delivered and lost.
 End/reject/mute keep their CallKit action pending. Answer is the deliberate
 audio-lifecycle exception: after native audio configuration the system answer
 action is fulfilled so CallKit can activate `AVAudioSession`, while the Matrix
