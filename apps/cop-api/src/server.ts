@@ -41,14 +41,8 @@ import {
   type CommunityReportVisibility
 } from "./community-report-store.js";
 import { correlationIdFrom, sendError } from "./errors.js";
-import {
-  resolveAiConversationContinuity,
-  resolveAiConversationTimeWindow
-} from "./ai-conversation-continuity.js";
-import {
-  aiConversationClarificationResponse,
-  withAiConversationGuidance
-} from "./ai-conversation-guidance.js";
+import { resolveAiConversationContinuity, resolveAiConversationTimeWindow } from "./ai-conversation-continuity.js";
+import { aiConversationClarificationResponse, withAiConversationGuidance } from "./ai-conversation-guidance.js";
 import {
   aiGroundedPlaybookResponse,
   aiProviderResponseNeedsUserFacingFallback,
@@ -297,6 +291,19 @@ import {
   type UserProfileRecord,
   type UserProfileStore
 } from "./user-profile-store.js";
+import {
+  createVoiceCallMediaIssuerFromEnv,
+  type VoiceCallMediaCredentials,
+  type VoiceCallMediaIssuer
+} from "./voice-call-media.js";
+import {
+  createVoiceCallStoreFromEnv,
+  isTerminalPhase,
+  voiceCallIncludesSubject,
+  type VoiceCallAction,
+  type VoiceCallRecord,
+  type VoiceCallStore
+} from "./voice-call-store.js";
 
 export interface BuildServerOptions {
   aiGateway?: AiGateway;
@@ -323,6 +330,8 @@ export interface BuildServerOptions {
   streamBroadcaster?: CopStreamBroadcaster;
   mobileDeviceStore?: MobileDeviceStore;
   userProfileStore?: UserProfileStore;
+  voiceCallMediaIssuer?: VoiceCallMediaIssuer;
+  voiceCallStore?: VoiceCallStore;
 }
 
 type DependencyStatus = "disabled" | "degraded" | "ok";
@@ -770,6 +779,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const messagingProvider = options.messagingProvider ?? createMessagingProviderFromEnv();
   const mobileDeviceStore = options.mobileDeviceStore ?? createMobileDeviceStoreFromEnv();
   const mobileDeviceFallbackStore = new InMemoryMobileDeviceStore("memory-fallback");
+  const voiceCallStore = options.voiceCallStore ?? createVoiceCallStoreFromEnv();
+  const voiceCallMediaIssuer = options.voiceCallMediaIssuer ?? createVoiceCallMediaIssuerFromEnv();
   const missionArenaSource = options.missionArenaSource ?? createMissionArenaSourceFromEnv();
   const placeGeocoder = options.placeGeocoder ?? createPlaceGeocoderFromEnv();
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
@@ -800,11 +811,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   let mediaStorageDetail = mediaStorage ? `${mediaStorage.name}: initializing` : "disabled";
   let mobileDeviceStoreStatus: DependencyStatus = "degraded";
   let mobileDeviceStoreDetail = `${mobileDeviceStore.name}: initializing`;
+  let voiceCallStoreStatus: DependencyStatus = "degraded";
+  let voiceCallStoreDetail = `${voiceCallStore.name}: initializing`;
   let streamBusStatus: DependencyStatus = streamBus.name === "memory" ? "ok" : "degraded";
   let streamBusDetail = streamBus.diagnostics();
   let restoredCurrentTrackCount = 0;
   let flightDataPollTimer: ReturnType<typeof setInterval> | undefined;
   let aiContextIndexRefreshTimer: ReturnType<typeof setInterval> | undefined;
+  let voiceCallExpiryTimer: ReturnType<typeof setInterval> | undefined;
   let aiContextIndexRefreshInFlight: Promise<AiContextIndexRefreshResult> | undefined;
   let trackPersistenceFlushTimer: ReturnType<typeof setTimeout> | undefined;
   let trackPersistenceFlushInFlight = false;
@@ -869,6 +883,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await initializeFederationRuntimeStore();
     await initializeUserProfileStore();
     await initializeMobileDeviceStore();
+    try {
+      await voiceCallStore.init();
+      voiceCallStoreStatus = "ok";
+      voiceCallStoreDetail = `${voiceCallStore.name}: ready`;
+      voiceCallExpiryTimer = setInterval(() => {
+        void expireVoiceCalls(now()).catch((error) => {
+          app.log.warn({ error }, "Voice call expiry sweep failed.");
+        });
+      }, 5_000);
+      voiceCallExpiryTimer.unref?.();
+    } catch (error) {
+      voiceCallStoreStatus = "degraded";
+      voiceCallStoreDetail = `${voiceCallStore.name}: ${errorMessage(error)}`;
+      app.log.error({ error }, "Voice call store initialization failed.");
+      throw error;
+    }
     await initializeCommunityReportStore();
     await initializeIncidentStore();
     await initializeSketchDrawingStore();
@@ -901,6 +931,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (aiContextIndexRefreshTimer) {
       clearInterval(aiContextIndexRefreshTimer);
     }
+    if (voiceCallExpiryTimer) {
+      clearInterval(voiceCallExpiryTimer);
+    }
     if (trackPersistenceFlushTimer) {
       clearTimeout(trackPersistenceFlushTimer);
       trackPersistenceFlushTimer = undefined;
@@ -924,6 +957,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await mediaStorage?.close();
     await mobileDeviceStore.close();
     await mobileDeviceFallbackStore.close();
+    await voiceCallStore.close();
   });
 
   registerHealthRoutes(app, {
@@ -981,6 +1015,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           },
           { name: "media-storage", status: mediaStorageStatus, detail: mediaStorageDependencyDetail() },
           { name: "mobile-device-store", status: mobileDeviceStoreStatus, detail: mobileDeviceStoreDependencyDetail() },
+          { name: "voice-call-store", status: voiceCallStoreStatus, detail: voiceCallStoreDetail },
+          {
+            name: "voice-call-media",
+            status: voiceCallMediaIssuer.enabled ? "ok" : "disabled",
+            detail: voiceCallMediaIssuer.enabled ? "LiveKit token issuer ready" : "native voice calls disabled"
+          },
           {
             name: "place-geocoder",
             status: placeGeocoder ? "ok" : "disabled",
@@ -2069,10 +2109,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return optionalText(playbook?.intentId) === "weather.summary.forecast";
   }
 
-  function shouldClarifyAiWeatherLocation(
-    question: string,
-    mapSearch: AiMapSearchContext | undefined
-  ): boolean {
+  function shouldClarifyAiWeatherLocation(question: string, mapSearch: AiMapSearchContext | undefined): boolean {
     if (!isGeneralWeatherForecastQuestion(question)) {
       return false;
     }
@@ -2080,10 +2117,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return !isRecord(query.center) && !isRecord(query.bbox) && !optionalText(query.placeQuery);
   }
 
-  function aiWeatherLocationClarificationResponse(
-    aiRequest: AiCopQuery,
-    requestNow: Date
-  ): AiCopResponse {
+  function aiWeatherLocationClarificationResponse(aiRequest: AiCopQuery, requestNow: Date): AiCopResponse {
     return {
       auditId: randomUUID(),
       model: "weather-location-clarification",
@@ -2102,7 +2136,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           },
           generatedAt: requestNow.toISOString()
         },
-        summary: "Pro jaké místo chcete předpověď? Napište obec nebo oblast; pokud má COP povolenou polohu, můžete použít aktuální polohu zařízení."
+        summary:
+          "Pro jaké místo chcete předpověď? Napište obec nebo oblast; pokud má COP povolenou polohu, můžete použít aktuální polohu zařízení."
       },
       status: "COMPLETED"
     };
@@ -4196,6 +4231,82 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
+  async function expireVoiceCalls(requestNow: Date): Promise<void> {
+    const expired = await voiceCallStore.expireDue(requestNow.toISOString());
+    if (expired.length > 0) {
+      app.log.info(
+        { callIds: expired.map((call) => call.callId), count: expired.length },
+        "Voice calls expired as missed."
+      );
+      await Promise.allSettled(
+        expired.map((call) =>
+          sendVoiceCallLifecycleNotification({
+            action: call.phase === "missed" ? "missed" : "ended",
+            call,
+            recipientUserIds: [call.initiatorSubjectId, ...call.participantSubjectIds],
+            requestNow
+          })
+        )
+      );
+    }
+  }
+
+  async function sendVoiceCallLifecycleNotification(input: {
+    action: "ended" | "incoming" | "missed";
+    actor?: AuthenticatedActor;
+    call: VoiceCallRecord;
+    recipientUserIds: string[];
+    requestNow: Date;
+  }) {
+    const incoming = input.action === "incoming";
+    const missed = input.action === "missed";
+    const actorName = input.actor?.displayName || input.actor?.username || input.call.title || "COP kontakt";
+    return messagingProvider.sendNotification(
+      input.actor,
+      input.requestNow,
+      voiceCallLifecycleIdempotencyKey(input.call, input.action, input.recipientUserIds),
+      {
+        audience: { userIds: input.recipientUserIds },
+        body: incoming
+          ? {
+              cs: `${actorName} volá`,
+              en: `${actorName} is calling`
+            }
+          : missed
+            ? { cs: "Nepřijatý hovor.", en: "Missed call." }
+            : { cs: "Hovor byl ukončen.", en: "The call ended." },
+        deepLink: `csm://chat/room/${encodeURIComponent(input.call.roomId)}`,
+        expiresAt: new Date(input.requestNow.getTime() + 90_000).toISOString(),
+        metadata: {
+          callId: input.call.callId,
+          renotify: incoming,
+          requireInteraction: incoming,
+          roomId: input.call.roomId,
+          sender: input.actor?.subjectId ?? input.call.initiatorSubjectId,
+          senderDisplayName: actorName,
+          tag: `cop-call:${input.call.roomId}:${input.call.callId}`,
+          ttlSeconds: 90
+        },
+        priority: "high",
+        severity: "info",
+        source: {
+          featureId: "native.voice_call",
+          layerId: "messaging",
+          providerId: "csm.messaging",
+          sourceName: "COP Chat"
+        },
+        title: incoming
+          ? { cs: "Příchozí hlasový hovor", en: "Incoming voice call" }
+          : missed
+            ? { cs: "Nepřijatý hovor", en: "Missed call" }
+            : { cs: "Hovor ukončen", en: "Call ended" },
+        // CSM Messaging deliberately exposes only a minimal wake-up contract.
+        // The authoritative phase and end reason are read from the COP call API.
+        type: incoming ? "chat.voice_call.incoming" : "chat.voice_call.ended"
+      }
+    );
+  }
+
   registerMessagingRoutes(app, {
     addConversationMembers: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -4272,22 +4383,31 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const result = await messagingProvider.completeE2eeResetAuth(actor, now(), input);
       return reply.code(result.completed ? 200 : 502).send(result);
     },
-    wakeVoiceCall: async (request, reply) => {
+    startVoiceCall: async (request, reply) => {
       const actor = requireActor(request, reply);
       if (!actor) {
         return reply;
       }
-      const wake = normalizeMessagingVoiceCallWakeRequest(request.body);
-      if (!wake) {
+      if (!voiceCallMediaIssuer.enabled) {
+        return sendError(
+          reply,
+          503,
+          "VOICE_CALLS_DISABLED",
+          "Native voice-call media is not configured.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const input = normalizeVoiceCallStartRequest(request.body);
+      if (!input) {
         return sendError(
           reply,
           400,
           "VALIDATION_ERROR",
-          "Voice call wake requires action, callId and a canonical Matrix roomId.",
+          "Voice call start requires a canonical roomId and accepts an optional bounded title and participantSubjectIds.",
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
-      const conversationResult = await messagingProvider.fetchConversationByRoomId(actor, now(), wake.roomId);
+      const conversationResult = await messagingProvider.fetchConversationByRoomId(actor, now(), input.roomId);
       const conversation = conversationResult.conversation;
       if (!conversation) {
         return sendError(
@@ -4298,77 +4418,209 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
-      const conversationMemberUserIds = new Set(
-        (conversation.members ?? [])
-          .map((member) => member.userId)
-          .filter((userId): userId is string => Boolean(userId))
+      const memberSubjectIds = Array.from(
+        new Set(
+          (conversation.members ?? [])
+            .map((member) => member.userId)
+            .filter((subjectId): subjectId is string => Boolean(subjectId))
+        )
       );
+      const requestedRecipients = input.participantSubjectIds?.length
+        ? input.participantSubjectIds
+        : memberSubjectIds.filter((subjectId) => subjectId !== actor.subjectId);
       if (
-        wake.participantUserIds?.some((userId) => userId === actor.subjectId || !conversationMemberUserIds.has(userId))
+        conversation.type !== "direct" ||
+        requestedRecipients.length !== 1 ||
+        requestedRecipients.some((subjectId) => subjectId === actor.subjectId || !memberSubjectIds.includes(subjectId))
       ) {
         return sendError(
           reply,
           403,
           "FORBIDDEN",
-          "Voice call recipients must be active members of the accessible conversation.",
+          "Voice calls are available only for one-to-one conversations with exactly one other active member.",
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
-      const recipientUserIds = wake.participantUserIds?.length
-        ? wake.participantUserIds
-        : Array.from(conversationMemberUserIds).filter(
-            (userId) => wake.action === "ended" || userId !== actor.subjectId
-          );
-      if (recipientUserIds.length === 0) {
+      const requestNow = now();
+      const call = await voiceCallStore.create({
+        expiresAt: new Date(requestNow.getTime() + 90_000).toISOString(),
+        initiatorSubjectId: actor.subjectId,
+        kind: "direct",
+        now: requestNow.toISOString(),
+        participantSubjectIds: requestedRecipients,
+        roomId: input.roomId,
+        title: input.title ?? conversation.title ?? "COP hovor"
+      });
+      const notification = await sendVoiceCallLifecycleNotification({
+        actor,
+        action: "incoming",
+        call,
+        recipientUserIds: call.participantSubjectIds,
+        requestNow
+      });
+      if (notification.status !== "online") {
+        await voiceCallStore.transition(call.callId, {
+          action: "media_failed",
+          actorSubjectId: actor.subjectId,
+          expectedRevision: call.revision,
+          now: now().toISOString(),
+          reason: "push_delivery_failed"
+        });
+        return sendError(
+          reply,
+          502,
+          "VOICE_CALL_WAKE_FAILED",
+          "The recipient could not be notified about the call.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const media = await voiceCallMediaIssuer.issue(call, actor, requestNow);
+      return reply.code(201).send(voiceCallAPIResponse(call, actor.subjectId, media));
+    },
+    voiceCalls: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const query = request.query as {
+        activeOnly?: string;
+        limit?: string;
+        roomId?: string;
+      };
+      const roomId = query.roomId === undefined ? undefined : normalizeMatrixRoomId(query.roomId);
+      const limit = query.limit === undefined ? 50 : optionalFiniteNumber(Number(query.limit), 1, 200);
+      const activeOnly = query.activeOnly === undefined ? false : /^(1|true|yes)$/iu.test(query.activeOnly);
+      if ((query.roomId !== undefined && !roomId) || limit === undefined) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Voice call list accepts an optional canonical roomId, activeOnly flag and limit from 1 to 200.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      await expireVoiceCalls(now());
+      const calls = await voiceCallStore.listForSubject(actor.subjectId, {
+        activeOnly,
+        limit,
+        ...(roomId ? { roomId } : {})
+      });
+      return {
+        calls: calls.map((call) => voiceCallView(call, actor.subjectId)),
+        contractVersion: "cop-voice-call-v1" as const
+      };
+    },
+    voiceCallDetail: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { callId?: string };
+      const callId = normalizeVoiceCallId(params.callId);
+      if (!callId) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Voice call detail requires a canonical callId.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      await expireVoiceCalls(now());
+      const call = await voiceCallStore.get(callId);
+      if (!call || !voiceCallIncludesSubject(call, actor.subjectId)) {
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Voice call was not found.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const media =
+        canIssueVoiceCallMedia(call, actor.subjectId) && voiceCallMediaIssuer.enabled
+          ? await voiceCallMediaIssuer.issue(call, actor, now())
+          : undefined;
+      return voiceCallAPIResponse(call, actor.subjectId, media);
+    },
+    transitionVoiceCall: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { callId?: string };
+      const callId = normalizeVoiceCallId(params.callId);
+      const input = normalizeVoiceCallActionRequest(request.body);
+      if (!callId || !input) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Voice call action requires a canonical callId, supported action and optional expectedRevision.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      await expireVoiceCalls(now());
+      const current = await voiceCallStore.get(callId);
+      if (!current || !voiceCallIncludesSubject(current, actor.subjectId)) {
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Voice call was not found.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const result = await voiceCallStore.transition(callId, {
+        action: input.action,
+        actorSubjectId: actor.subjectId,
+        ...(input.expectedRevision !== undefined ? { expectedRevision: input.expectedRevision } : {}),
+        now: now().toISOString(),
+        ...(input.reason ? { reason: input.reason } : {})
+      });
+      if (!result) {
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "Voice call was not found.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      if (!result.changed && result.conflict === "revision") {
+        return reply.code(409).send(voiceCallAPIResponse(result.record, actor.subjectId));
+      }
+      if (!result.changed && result.conflict === "transition") {
         return sendError(
           reply,
           409,
-          "NO_CALL_RECIPIENT",
-          "Voice call conversation has no other registered member.",
+          "INVALID_CALL_TRANSITION",
+          "The requested voice-call transition is not allowed for this participant or phase.",
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
-      const incoming = wake.action === "invite";
-      const requestNow = now();
-      const notification = await messagingProvider.sendNotification(
-        actor,
-        requestNow,
-        voiceCallWakeIdempotencyKey(actor.subjectId, wake),
-        {
-          audience: { userIds: recipientUserIds },
-          body: incoming
-            ? {
-                cs: `${actor.displayName || actor.username} volá`,
-                en: `${actor.displayName || actor.username} is calling`
-              }
-            : { cs: "Hovor byl ukončen.", en: "The call ended." },
-          deepLink: `csm://chat/room/${encodeURIComponent(wake.roomId)}`,
-          expiresAt: new Date(requestNow.getTime() + 90_000).toISOString(),
-          metadata: {
-            callId: wake.callId,
-            renotify: incoming,
-            requireInteraction: incoming,
-            roomId: wake.roomId,
-            sender: actor.subjectId,
-            senderDisplayName: actor.displayName || actor.username,
-            tag: `cop-call:${wake.roomId}:${wake.callId}`,
-            ttlSeconds: 90
-          },
-          priority: "high",
-          severity: "info",
-          source: {
-            featureId: "matrix.voice_call",
-            layerId: "messaging",
-            providerId: "csm.messaging",
-            sourceName: "COP Chat"
-          },
-          title: incoming
-            ? { cs: "Příchozí hlasový hovor", en: "Incoming voice call" }
-            : { cs: "Hovor ukončen", en: "Call ended" },
-          type: incoming ? "chat.voice_call.incoming" : "chat.voice_call.ended"
-        }
-      );
-      return reply.code(notification.status === "online" ? 202 : 502).send(notification);
+      if (
+        result.changed &&
+        (result.record.phase === "cancelled" ||
+          result.record.phase === "declined" ||
+          result.record.phase === "failed" ||
+          result.record.phase === "ended")
+      ) {
+        await sendVoiceCallLifecycleNotification({
+          actor,
+          action: "ended",
+          call: result.record,
+          recipientUserIds: [result.record.initiatorSubjectId, ...result.record.participantSubjectIds].filter(
+            (subjectId) => subjectId !== actor.subjectId
+          ),
+          requestNow: now()
+        });
+      }
+      const media =
+        canIssueVoiceCallMedia(result.record, actor.subjectId) && voiceCallMediaIssuer.enabled
+          ? await voiceCallMediaIssuer.issue(result.record, actor, now())
+          : undefined;
+      return voiceCallAPIResponse(result.record, actor.subjectId, media);
     },
     conversationDetail: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -9092,40 +9344,42 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const conversationClarificationResponse = conversationContinuity.needsClarification
       ? aiConversationClarificationResponse(aiRequest, requestNow, conversationContinuity)
       : undefined;
-    const weatherLocationClarificationResponse = !conversationClarificationResponse
-      && shouldClarifyAiWeatherLocation(effectiveQuestion, aiMapSearch)
-      ? aiWeatherLocationClarificationResponse(aiRequest, requestNow)
-      : undefined;
-    const needsGenerativeFollowUp = conversationContinuity.followUpKind === "explanation"
-      || conversationContinuity.followUpKind === "detail";
-    const deterministicMapSearchResponse = !conversationClarificationResponse
-      && !weatherLocationClarificationResponse
-      && !needsGenerativeFollowUp
-      && !shouldAnswerAiPlaybookDeterministically(aiRequest)
-      && shouldAnswerAiChatAgentWithMapSearchResult(effectiveQuestion, effectiveBody, aiMapSearch)
-      ? aiMapSearchFallbackResponse(
-          aiRequest,
-          requestNow,
-          "Explicit COP map search resolved by the read-only map tool."
-        )
-      : undefined;
+    const weatherLocationClarificationResponse =
+      !conversationClarificationResponse && shouldClarifyAiWeatherLocation(effectiveQuestion, aiMapSearch)
+        ? aiWeatherLocationClarificationResponse(aiRequest, requestNow)
+        : undefined;
+    const needsGenerativeFollowUp =
+      conversationContinuity.followUpKind === "explanation" || conversationContinuity.followUpKind === "detail";
+    const deterministicMapSearchResponse =
+      !conversationClarificationResponse &&
+      !weatherLocationClarificationResponse &&
+      !needsGenerativeFollowUp &&
+      !shouldAnswerAiPlaybookDeterministically(aiRequest) &&
+      shouldAnswerAiChatAgentWithMapSearchResult(effectiveQuestion, effectiveBody, aiMapSearch)
+        ? aiMapSearchFallbackResponse(
+            aiRequest,
+            requestNow,
+            "Explicit COP map search resolved by the read-only map tool."
+          )
+        : undefined;
     const deterministicEmptyMapSearchResponse =
-      !weatherLocationClarificationResponse
-      && !conversationClarificationResponse
-      && !needsGenerativeFollowUp
-      && !shouldAnswerAiPlaybookDeterministically(aiRequest)
-      && !deterministicMapSearchResponse
-      && shouldAnswerAiChatAgentWithEmptyMapSearchResult(effectiveQuestion, effectiveBody, aiMapSearch)
+      !weatherLocationClarificationResponse &&
+      !conversationClarificationResponse &&
+      !needsGenerativeFollowUp &&
+      !shouldAnswerAiPlaybookDeterministically(aiRequest) &&
+      !deterministicMapSearchResponse &&
+      shouldAnswerAiChatAgentWithEmptyMapSearchResult(effectiveQuestion, effectiveBody, aiMapSearch)
         ? aiMapSearchNoResultFallbackResponse(
             aiRequest,
             requestNow,
             "Explicit COP map search returned no matching object."
           )
         : undefined;
-    const deterministicPlaybookResponse = !conversationClarificationResponse
-      && !weatherLocationClarificationResponse
-      && !needsGenerativeFollowUp
-      && shouldAnswerAiPlaybookDeterministically(aiRequest)
+    const deterministicPlaybookResponse =
+      !conversationClarificationResponse &&
+      !weatherLocationClarificationResponse &&
+      !needsGenerativeFollowUp &&
+      shouldAnswerAiPlaybookDeterministically(aiRequest)
         ? aiGroundedPlaybookResponse(
             aiRequest,
             requestNow,
@@ -9133,11 +9387,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           )
         : undefined;
     const providerStartedAt = Date.now();
-    const providerWasInvoked = !conversationClarificationResponse
-      && !weatherLocationClarificationResponse
-      && !deterministicPlaybookResponse
-      && !deterministicMapSearchResponse
-      && !deterministicEmptyMapSearchResponse;
+    const providerWasInvoked =
+      !conversationClarificationResponse &&
+      !weatherLocationClarificationResponse &&
+      !deterministicPlaybookResponse &&
+      !deterministicMapSearchResponse &&
+      !deterministicEmptyMapSearchResponse;
     const candidateProviderResponse =
       conversationClarificationResponse ??
       weatherLocationClarificationResponse ??
@@ -9145,13 +9400,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       deterministicMapSearchResponse ??
       deterministicEmptyMapSearchResponse ??
       (await queryCopAssistantForAi(aiRequest, requestNow, "chat-agent"));
-    const providerResponse = providerWasInvoked && aiProviderResponseNeedsUserFacingFallback(candidateProviderResponse)
-      ? aiGroundedPlaybookResponse(
-          aiRequest,
-          requestNow,
-          "The AI provider did not return a safe user-facing answer; COP used the grounded playbook fallback."
-        )
-      : candidateProviderResponse;
+    const providerResponse =
+      providerWasInvoked && aiProviderResponseNeedsUserFacingFallback(candidateProviderResponse)
+        ? aiGroundedPlaybookResponse(
+            aiRequest,
+            requestNow,
+            "The AI provider did not return a safe user-facing answer; COP used the grounded playbook fallback."
+          )
+        : candidateProviderResponse;
     const providerDurationMs = providerWasInvoked ? Date.now() - providerStartedAt : 0;
     const pipelineObservability = buildAiPipelineObservability({
       compressedContext,
@@ -13598,49 +13854,121 @@ function normalizeMatrixRoomId(value: unknown): string | undefined {
   return roomId && /^![^\s:]+:.+$/u.test(roomId) ? roomId : undefined;
 }
 
-function normalizeMessagingVoiceCallWakeRequest(
+function normalizeVoiceCallId(value: unknown): string | undefined {
+  const callId = optionalTrimmedString(value, 64)?.toLowerCase();
+  return callId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(callId)
+    ? callId
+    : undefined;
+}
+
+function normalizeVoiceCallStartRequest(
   value: unknown
-): { action: "ended" | "invite"; callId: string; participantUserIds?: string[]; roomId: string } | null {
+): { participantSubjectIds?: string[]; roomId: string; title?: string } | null {
   if (!isRecord(value)) {
     return null;
   }
-  const action = value.action === "invite" || value.action === "ended" ? value.action : undefined;
-  const callId = optionalTrimmedString(value.callId, 160);
   const roomId = normalizeMatrixRoomId(value.roomId);
-  const rawParticipantUserIds = value.participantUserIds;
-  const participantUserIds = Array.isArray(rawParticipantUserIds)
-    ? rawParticipantUserIds.map((item) => optionalTrimmedString(item, 160))
+  const title = optionalTrimmedString(value.title, 160);
+  const rawParticipantSubjectIds = value.participantSubjectIds;
+  const participantSubjectIds = Array.isArray(rawParticipantSubjectIds)
+    ? rawParticipantSubjectIds.map((item) => optionalTrimmedString(item, 160))
     : undefined;
-  const validParticipantSubset =
-    rawParticipantUserIds === undefined ||
-    (action === "invite" &&
-      Array.isArray(rawParticipantUserIds) &&
-      rawParticipantUserIds.length >= 1 &&
-      rawParticipantUserIds.length <= 5 &&
-      participantUserIds?.every((item): item is string => Boolean(item)) &&
-      new Set(participantUserIds).size === participantUserIds.length);
-  if (!action || !callId || !roomId || !/^[A-Za-z0-9._:=@-]{1,160}$/u.test(callId) || !validParticipantSubset) {
+  const validParticipants =
+    rawParticipantSubjectIds === undefined ||
+    (Array.isArray(rawParticipantSubjectIds) &&
+      rawParticipantSubjectIds.length >= 1 &&
+      rawParticipantSubjectIds.length <= 6 &&
+      participantSubjectIds?.every((item): item is string => Boolean(item)) &&
+      new Set(participantSubjectIds).size === participantSubjectIds.length);
+  if (!roomId || !validParticipants) {
+    return null;
+  }
+  return {
+    ...(participantSubjectIds?.length ? { participantSubjectIds: participantSubjectIds as string[] } : {}),
+    roomId,
+    ...(title ? { title } : {})
+  };
+}
+
+function normalizeVoiceCallActionRequest(
+  value: unknown
+): { action: VoiceCallAction; expectedRevision?: number; reason?: string } | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const supportedActions = new Set<VoiceCallAction>([
+    "accept",
+    "cancel",
+    "decline",
+    "end",
+    "heartbeat",
+    "media_connected",
+    "media_failed"
+  ]);
+  const action =
+    typeof value.action === "string" && supportedActions.has(value.action as VoiceCallAction)
+      ? (value.action as VoiceCallAction)
+      : undefined;
+  const expectedRevision = optionalFiniteNumber(value.expectedRevision, 1, Number.MAX_SAFE_INTEGER);
+  const reason = optionalTrimmedString(value.reason, 120);
+  if (!action || (value.expectedRevision !== undefined && expectedRevision === undefined)) {
     return null;
   }
   return {
     action,
-    callId,
-    ...(participantUserIds?.length ? { participantUserIds: participantUserIds as string[] } : {}),
-    roomId
+    ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+    ...(reason ? { reason } : {})
   };
 }
 
-function voiceCallWakeIdempotencyKey(
-  subjectId: string,
-  wake: { action: "ended" | "invite"; callId: string; participantUserIds?: string[]; roomId: string }
+function voiceCallAPIResponse(call: VoiceCallRecord, actorSubjectId: string, media?: VoiceCallMediaCredentials) {
+  return {
+    contractVersion: "cop-voice-call-v1" as const,
+    call: voiceCallView(call, actorSubjectId),
+    ...(media ? { media } : {})
+  };
+}
+
+function voiceCallView(call: VoiceCallRecord, actorSubjectId: string) {
+  return {
+    callId: call.callId,
+    createdAt: call.createdAt,
+    direction: call.initiatorSubjectId === actorSubjectId ? ("outgoing" as const) : ("incoming" as const),
+    ...(call.connectedAt ? { connectedAt: call.connectedAt } : {}),
+    ...(call.endedAt ? { endedAt: call.endedAt } : {}),
+    ...(call.endReason ? { endReason: call.endReason } : {}),
+    expiresAt: call.expiresAt,
+    initiatorSubjectId: call.initiatorSubjectId,
+    kind: call.kind,
+    participantSubjectIds: call.participantSubjectIds,
+    phase: call.phase,
+    revision: call.revision,
+    roomId: call.roomId,
+    title: call.title,
+    updatedAt: call.updatedAt
+  };
+}
+
+function canIssueVoiceCallMedia(call: VoiceCallRecord, actorSubjectId: string): boolean {
+  if (isTerminalPhase(call.phase)) {
+    return false;
+  }
+  if (call.initiatorSubjectId === actorSubjectId) {
+    return true;
+  }
+  return call.acceptedBySubjectId === actorSubjectId;
+}
+
+function voiceCallLifecycleIdempotencyKey(
+  call: VoiceCallRecord,
+  action: "ended" | "incoming" | "missed",
+  recipientUserIds: string[]
 ): string {
   const digest = createHash("sha256")
-    .update(
-      `${subjectId}\0${wake.roomId}\0${wake.callId}\0${wake.action}\0${[...(wake.participantUserIds ?? [])].sort().join(",")}`
-    )
+    .update(`${call.callId}\0${call.revision}\0${action}\0${[...recipientUserIds].sort().join(",")}`)
     .digest("hex")
     .slice(0, 48);
-  return `voice-call:${wake.action}:${digest}`;
+  return `native-voice-call:${action}:${digest}`;
 }
 
 function normalizeMatrixIdentityResolutionRequest(value: unknown): string[] | null {

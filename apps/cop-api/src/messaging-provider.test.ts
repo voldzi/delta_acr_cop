@@ -42,10 +42,7 @@ describe("CsmMessagingProvider", () => {
                 roomId: "!slow-room:msg.zeleznalady.cz",
                 state: "bound"
               },
-              members: [
-                { userId: "subject-1" },
-                { userId: "subject-2" }
-              ],
+              members: [{ userId: "subject-1" }, { userId: "subject-2" }],
               title: "Jiřina Volková",
               type: "direct"
             },
@@ -777,7 +774,7 @@ describe("CsmMessagingProvider", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("rings only a server-validated subset of group members without call signalling content", async () => {
+  it("creates a server-owned native call for canonical COP subjects without signalling content", async () => {
     vi.stubEnv("COP_AUTH_MODE", "lab");
     vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -830,17 +827,31 @@ describe("CsmMessagingProvider", () => {
         expect(body).toMatchObject({
           audience: { userIds: ["citizen-3"] },
           metadata: {
-            callId: "call-123",
+            callId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+            renotify: true,
+            requireInteraction: true,
             roomId: "!call:docker.home.cz",
-            sender: "lab"
+            sender: "lab",
+            senderDisplayName: "Lab operator",
+            ttlSeconds: 90
           },
           type: "chat.voice_call.incoming"
         });
+        expect(Object.keys(body.metadata as Record<string, unknown>).sort()).toEqual([
+          "callId",
+          "renotify",
+          "requireInteraction",
+          "roomId",
+          "sender",
+          "senderDisplayName",
+          "tag",
+          "ttlSeconds"
+        ]);
         expect(JSON.stringify(body)).not.toContain("offer");
         expect(JSON.stringify(body)).not.toContain("candidate");
         expect(init?.headers).toMatchObject({
           Authorization: "Bearer provider-token",
-          "Idempotency-Key": expect.stringMatching(/^voice-call:invite:/u),
+          "Idempotency-Key": expect.stringMatching(/^native-voice-call:incoming:/u),
           "x-csm-user-id": "lab"
         });
         return new Response(
@@ -868,6 +879,14 @@ describe("CsmMessagingProvider", () => {
         timeoutMs: 3000,
         token: "provider-token"
       }),
+      voiceCallMediaIssuer: {
+        enabled: true,
+        issue: async (call, actor, requestNow) => ({
+          expiresAt: new Date(requestNow.getTime() + 600_000).toISOString(),
+          serverUrl: "wss://comm.example.test",
+          token: `token:${call.callId}:${actor.subjectId}`
+        })
+      },
       now: () => new Date("2026-07-10T06:00:00Z")
     });
 
@@ -875,27 +894,35 @@ describe("CsmMessagingProvider", () => {
       headers: { authorization: "Bearer lab-secret" },
       method: "POST",
       payload: {
-        action: "invite",
-        callId: "call-123",
-        participantUserIds: ["citizen-3"],
+        participantSubjectIds: ["citizen-3"],
         roomId: "!call:docker.home.cz"
       },
-      url: "/api/v1/messaging/calls/wake"
+      url: "/api/v1/messaging/calls"
     });
 
-    expect(response.statusCode).toBe(202);
-    expect(response.json()).toMatchObject({ notificationId: "notif_call", status: "online" });
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      call: {
+        direction: "outgoing",
+        participantSubjectIds: ["citizen-3"],
+        phase: "ringing",
+        roomId: "!call:docker.home.cz"
+      },
+      contractVersion: "cop-voice-call-v1",
+      media: {
+        serverUrl: "wss://comm.example.test"
+      }
+    });
+    expect(response.json().call.callId).toMatch(/^[0-9a-f-]{36}$/u);
 
     const forbidden = await app.inject({
       headers: { authorization: "Bearer lab-secret" },
       method: "POST",
       payload: {
-        action: "invite",
-        callId: "call-123",
-        participantUserIds: ["outsider"],
+        participantSubjectIds: ["outsider"],
         roomId: "!call:docker.home.cz"
       },
-      url: "/api/v1/messaging/calls/wake"
+      url: "/api/v1/messaging/calls"
     });
     expect(forbidden.statusCode).toBe(403);
     expect(forbidden.json()).toMatchObject({ error: { code: "FORBIDDEN" } });

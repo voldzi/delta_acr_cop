@@ -47,7 +47,6 @@ COP_CHAT_ALLOWED_HOSTS=docker.home.cz,cop.zeleznalady.cz
 COP_CHAT_BASE_PATH=/chat/
 COP_WEB_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
 COP_CHAT_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
-COP_CHAT_ICE_FALLBACK_URLS=stun:stun.l.google.com:19302
 COP_API_ALLOWED_ORIGINS=https://cop.zeleznalady.cz,http://docker.home.cz:4311,http://docker.home.cz:4314
 COP_API_RATE_LIMIT_MAX=2400
 COP_API_RATE_LIMIT_WINDOW=1 minute
@@ -69,12 +68,6 @@ Web Storage spolehlivě.
 aby endpoint neodrážel libovolný cizí origin.
 `COP_CHAT_PROXY_TARGET` používá pouze lokální Vite dev server mapové aplikace,
 aby iframe `/chat/` v COP při vývoji směroval na samostatný `cop-chat`.
-
-`COP_CHAT_ICE_FALLBACK_URLS` je čárkou oddělený seznam STUN/TURN URI přidaný k
-ICE konfiguraci z Matrixu. Výchozí veřejný STUN pomáhá vytvořit přímou trasu,
-ale nenahrazuje TURN. Pro produkční TURN musí být z internetu přístupný UDP i
-TCP port 3478 a celý relay rozsah nastavený v Coturnu (v pilotu
-`49160-49240`, minimálně UDP). Hodnota `none` fallback vypne.
 
 COP API registruje produkční ochranné hlavičky, kompresi odpovědí, rate-limit a
 kontrolu event-loop tlaku. `COP_API_ALLOWED_ORIGINS` je browser CORS allow-list;
@@ -105,6 +98,32 @@ COP_DATABASE_SSL=false
 access token, refresh token, Matrix token, recovery key ani room keys.
 `COP_MOBILE_DEVICE_STORE=auto` je přípustné jen pro lokální vývoj bez
 `COP_DATABASE_URL`; produkce musí používat `postgres`.
+
+## Přímé hlasové hovory
+
+Nové COP hovory nepoužívají Matrix VoIP ani skrytý webový media engine. COP API
+vlastní stav hovoru, LiveKit přenáší audio a CSM Messaging doručuje pouze
+PushKit/CallKit lifecycle notifikace.
+
+```env
+COP_VOICE_CALLS_ENABLED=true
+COP_VOICE_CALL_STORE=postgres
+COP_LIVEKIT_PUBLIC_URL=wss://voice.zeleznalady.cz
+COP_LIVEKIT_API_KEY=<livekit-api-key>
+COP_LIVEKIT_API_SECRET=<livekit-api-secret>
+COP_LIVEKIT_TOKEN_TTL_SECONDS=600
+```
+
+`COP_LIVEKIT_PUBLIC_URL` je adresa dostupná přímo z browseru i telefonu. V
+produkci musí používat `wss://`. API key a secret patří pouze do serverového
+secret store; klient dostává jen krátkodobý token omezený na jeden
+`cop-call-<callId>` room. `COP_VOICE_CALL_STORE=postgres` používá stejný
+`COP_DATABASE_URL` jako ostatní durable COP stores.
+
+Před zapnutím ověřte WSS připojení z mobilní sítě, LiveKit UDP/TCP media porty,
+PushKit registraci obou zařízení a `voice-call-media=ok` na
+`/health/dependencies`. Chybějící nebo neúplná LiveKit konfigurace je
+startovací chyba; volání se nesmí tvářit jako dostupné v degradovaném režimu.
 
 CSM Messenger APNs tokeny se ukládají pouze v CSM Messaging službě. COP do iOS
 bootstrapu ani pairing odpovědí neposílá `COP_CSM_MESSAGING_TOKEN`, APNs token,

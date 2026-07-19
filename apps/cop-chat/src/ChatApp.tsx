@@ -146,7 +146,6 @@ import {
   encodeChatVoiceCallCommandAcknowledgement,
   encodeCopReportDraftUrl,
   type ChatReportDraftPayload,
-  type ChatVoiceCallCommandAcknowledgementMessage,
   type ChatVoiceCallCommandMessage,
   type ChatVoiceCallMessage,
   type ChatSummaryMessage,
@@ -169,6 +168,7 @@ import {
 } from "./hooks/useChatRouting";
 import { deriveChatWorkflowState } from "./hooks/chatWorkflowState";
 import { useMatrixSession } from "./hooks/useMatrixSession";
+import { useVoiceCallSession } from "./hooks/useVoiceCallSession";
 import { useEventCallback, useModalFocus } from "./hooks/useModalFocus";
 import { preferredChatScrollBehavior, useVirtualTimelineRows, type TimelineRow } from "./hooks/useVirtualTimelineRows";
 import { useVisibleNow } from "./hooks/useVisibleNow";
@@ -198,7 +198,6 @@ import {
 import { aiResponseSummary, aiStatusLabel } from "./dialogs/aiResponse";
 
 const liveLocationUpdateMinIntervalMs = 15_000;
-export const nativeVoiceCallCommandReadinessTimeoutMs = 30_000;
 const liveLocationDurationOptions = [
   { label: "15 min", seconds: 15 * 60 },
   { label: "1 h", seconds: 60 * 60 },
@@ -310,11 +309,6 @@ export interface ChatListItem {
 }
 
 type ChatVoiceCallBridgeSnapshot = Omit<ChatVoiceCallMessage, "at" | "type">;
-
-interface PendingVoiceCallCommand {
-  command: ChatVoiceCallCommandMessage;
-  timeoutId: number;
-}
 
 interface DemoConversationMetadata {
   media: DemoConversationMedia[];
@@ -557,6 +551,7 @@ const MessageRowMemo = React.memo(MessageRow);
 
 export function ChatApp() {
   const authConfig = React.useMemo(() => readAuthConfig(), []);
+  const embedded = React.useMemo(() => new URLSearchParams(window.location.search).get("embedded") === "1", []);
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
   const [authRefreshRetry, setAuthRefreshRetry] = React.useState(0);
   const [status, setStatus] = React.useState<MessagingStatusResponse | null>(null);
@@ -589,7 +584,6 @@ export function ChatApp() {
   const [chatFilter, setChatFilter] = React.useState<ChatFilter>("all");
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
   const [webPushBusy, setWebPushBusy] = React.useState(false);
-  const [voiceCall, setVoiceCall] = React.useState<MatrixVoiceCallSnapshot | null>(null);
   const [composeMode, setComposeMode] = React.useState<NewChatMode>(null);
   const [directQuery, setDirectQuery] = React.useState("");
   const [directSuggestions, setDirectSuggestions] = React.useState<UserDirectoryEntry[]>([]);
@@ -687,12 +681,6 @@ export function ChatApp() {
   const notificationPrimedRoomIdsRef = React.useRef<Set<string>>(new Set());
   const notificationRoomWatermarksRef = React.useRef<Map<string, number>>(new Map());
   const lastVoiceCallBridgeSnapshotRef = React.useRef<ChatVoiceCallBridgeSnapshot | null>(null);
-  const voiceCallRef = React.useRef<MatrixVoiceCallSnapshot | null>(null);
-  const pendingVoiceCallCommandsRef = React.useRef<Map<string, PendingVoiceCallCommand>>(new Map());
-  const executingVoiceCallCommandIdsRef = React.useRef<Set<string>>(new Set());
-  const completedVoiceCallCommandAcksRef = React.useRef<Map<string, ChatVoiceCallCommandAcknowledgementMessage>>(
-    new Map()
-  );
   const authSessionRef = React.useRef(authSession);
   const selectedRoomIdRef = React.useRef<string | null>(null);
   const timelineCacheRef = React.useRef<Map<string, MatrixTimelineMessage[]>>(new Map());
@@ -773,9 +761,6 @@ export function ChatApp() {
     [setSelectedRoomId]
   );
   const handleMatrixTimelineChanged = React.useCallback(() => setTimelineRevision((value) => value + 1), []);
-  const handleMatrixVoiceCallChanged = React.useCallback((nextCall: MatrixVoiceCallSnapshot | null) => {
-    setVoiceCall(nextCall);
-  }, []);
   const {
     encryptionRecoveryStatus,
     ensureMatrixSession,
@@ -804,9 +789,15 @@ export function ChatApp() {
     onError: setError,
     onNotice: setNotice,
     onRoomsChanged: handleMatrixRoomsChanged,
-    onTimelineChanged: handleMatrixTimelineChanged,
-    onVoiceCallChanged: handleMatrixVoiceCallChanged
+    onTimelineChanged: handleMatrixTimelineChanged
   });
+  const voiceCalls = useVoiceCallSession({
+    apiBase,
+    authToken,
+    enabled: authenticated,
+    onError: setError
+  });
+  const voiceCall = voiceCalls.voiceCall;
   const ownIdentityIds = React.useMemo(
     () => ownChatIdentityIds(authSession, matrixSession?.bootstrap.userId),
     [authSession, matrixSession?.bootstrap.userId]
@@ -934,7 +925,6 @@ export function ChatApp() {
 
   const chatReady = Boolean(authToken && status?.chatAvailable);
   const encryptionRecoveryReady = Boolean(!matrixSession || encryptionRecoveryStatus?.ready);
-  const embedded = React.useMemo(() => new URLSearchParams(window.location.search).get("embedded") === "1", []);
   const aiContextLocation = hostCurrentLocation ?? standaloneAiLocation;
   const selectedConversation = selectedConversationId
     ? (conversations.find((conversation) => conversation.conversationId === selectedConversationId) ?? null)
@@ -1000,12 +990,11 @@ export function ChatApp() {
     activeVoiceCall && voiceCallRoomToFocusAfterAnswer(activeVoiceCall.roomId, selectedRoomId)
   );
   const canStartVoiceCall = Boolean(
-    (activeChat?.type === "direct" || activeChat?.type === "group") &&
+    activeChat?.type === "direct" &&
+    !isAiAgentChatItem(activeChat) &&
     activeChat.roomId &&
     selectedRoomId &&
-    matrixSession &&
-    chatReady &&
-    encryptionRecoveryReady &&
+    authenticated &&
     (!voiceCall || voiceCall.phase === "ended")
   );
   const selectedAiAgentDirectChat = activeChat ? isAiAgentChatItem(activeChat) : false;
@@ -1022,8 +1011,8 @@ export function ChatApp() {
       const snapshot: ChatVoiceCallBridgeSnapshot = {
         callId: voiceCall.callId,
         direction: voiceCall.direction,
-        eligibleParticipants: voiceCall.eligibleParticipants ?? [],
-        kind: voiceCall.kind,
+        eligibleParticipants: [],
+        kind: "direct",
         participants: voiceCall.participants,
         phase: voiceCall.phase,
         roomId: voiceCall.roomId,
@@ -1042,8 +1031,6 @@ export function ChatApp() {
   }, [
     voiceCall?.callId,
     voiceCall?.direction,
-    voiceCall?.eligibleParticipants,
-    voiceCall?.kind,
     voiceCall?.participants,
     voiceCall?.phase,
     voiceCall?.roomId,
@@ -1057,14 +1044,24 @@ export function ChatApp() {
     () => filterTimelineByRetention(timeline, activeMessageRetentionSeconds),
     [activeMessageRetentionSeconds, timeline]
   );
+  const retainedTimelineWithCalls = React.useMemo(
+    () =>
+      mergeTimelineMessages(
+        retainedTimeline,
+        selectedRoomId
+          ? voiceCalls.timeline.filter((item) => item.roomId === selectedRoomId).map((item) => item.message)
+          : []
+      ),
+    [retainedTimeline, selectedRoomId, voiceCalls.timeline]
+  );
   const demoTimeline = React.useMemo(
     () => (selectedGroup ? demoTimelineMessagesForGroup(selectedGroup, authSession) : []),
     [authSession, selectedGroup]
   );
-  const showingDemoTimeline = retainedTimeline.length === 0 && demoTimeline.length > 0;
+  const showingDemoTimeline = retainedTimelineWithCalls.length === 0 && demoTimeline.length > 0;
   const visibleTimeline = React.useMemo(
-    () => collapseLiveLocationTimeline(showingDemoTimeline ? demoTimeline : retainedTimeline),
-    [demoTimeline, retainedTimeline, showingDemoTimeline]
+    () => collapseLiveLocationTimeline(showingDemoTimeline ? demoTimeline : retainedTimelineWithCalls),
+    [demoTimeline, retainedTimelineWithCalls, showingDemoTimeline]
   );
   const timelineRows = React.useMemo(() => buildTimelineRows(visibleTimeline), [visibleTimeline]);
   const virtualTimeline = useVirtualTimelineRows(timelineRows, messageCanvasRef);
@@ -1198,22 +1195,6 @@ export function ChatApp() {
   React.useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId;
   }, [selectedRoomId]);
-
-  React.useEffect(() => {
-    voiceCallRef.current = voiceCall;
-    void drainPendingVoiceCallCommands();
-  }, [matrixSession, voiceCall?.callId, voiceCall?.phase, voiceCall?.roomId]);
-
-  React.useEffect(
-    () => () => {
-      for (const pending of pendingVoiceCallCommandsRef.current.values()) {
-        window.clearTimeout(pending.timeoutId);
-      }
-      pendingVoiceCallCommandsRef.current.clear();
-      executingVoiceCallCommandIdsRef.current.clear();
-    },
-    []
-  );
 
   React.useEffect(() => {
     conversationsRef.current = conversations;
@@ -1807,7 +1788,7 @@ export function ChatApp() {
       }
       const voiceCallCommand = decodeChatVoiceCallCommand(event.data);
       if (voiceCallCommand) {
-        queueVoiceCallCommand(voiceCallCommand);
+        void executeHostVoiceCallCommand(voiceCallCommand);
         return;
       }
       const selection = embeddedChatSelectionFromMessage(event.data);
@@ -2401,7 +2382,7 @@ export function ChatApp() {
     stickerTrayOpen = false,
     mode: MessageActionPopoverState["mode"] = "actions"
   ) {
-    if (isDemoTimelineMessage(message)) {
+    if (isDemoTimelineMessage(message) || isVoiceCallTimelineMessage(message)) {
       return;
     }
     const width = Math.min(330, window.innerWidth - 24);
@@ -2418,7 +2399,7 @@ export function ChatApp() {
   }
 
   async function reactToMessage(message: MatrixTimelineMessage, key: string) {
-    if (!matrixSession || !selectedRoomId || isDemoTimelineMessage(message)) {
+    if (!matrixSession || !selectedRoomId || isDemoTimelineMessage(message) || isVoiceCallTimelineMessage(message)) {
       return;
     }
     setError(null);
@@ -2439,6 +2420,9 @@ export function ChatApp() {
   }
 
   function replyToMessage(message: MatrixTimelineMessage) {
+    if (isVoiceCallTimelineMessage(message)) {
+      return;
+    }
     setReplyDraft(message);
     setMessageActionPopover(null);
     window.setTimeout(() => document.querySelector<HTMLTextAreaElement>(".message-input textarea")?.focus(), 0);
@@ -3654,191 +3638,80 @@ export function ChatApp() {
     }
   }
 
-  function queueVoiceCallCommand(command: ChatVoiceCallCommandMessage): void {
-    if (command.actionId) {
-      const completed = completedVoiceCallCommandAcksRef.current.get(command.actionId);
-      if (completed) {
-        postVoiceCallCommandAcknowledgement(completed);
-        return;
-      }
-    }
-
-    const commandKey = command.actionId ?? `legacy:${crypto.randomUUID()}`;
-    if (pendingVoiceCallCommandsRef.current.has(commandKey)) {
-      void drainPendingVoiceCallCommands();
-      return;
-    }
-    if (pendingVoiceCallCommandsRef.current.size >= 32) {
-      const oldestKey = pendingVoiceCallCommandsRef.current.keys().next().value as string | undefined;
-      if (oldestKey) {
-        expirePendingVoiceCallCommand(oldestKey);
-      }
-    }
-    const timeoutId = window.setTimeout(
-      () => expirePendingVoiceCallCommand(commandKey),
-      nativeVoiceCallCommandReadinessTimeoutMs
-    );
-    pendingVoiceCallCommandsRef.current.set(commandKey, { command, timeoutId });
-    void drainPendingVoiceCallCommands();
-  }
-
-  function expirePendingVoiceCallCommand(commandKey: string): void {
-    const pending = pendingVoiceCallCommandsRef.current.get(commandKey);
-    if (!pending) {
-      return;
-    }
-    window.clearTimeout(pending.timeoutId);
-    pendingVoiceCallCommandsRef.current.delete(commandKey);
-    executingVoiceCallCommandIdsRef.current.delete(commandKey);
-    if (pending.command.actionId) {
-      completeVoiceCallCommand(pending.command, "failed");
-    }
-  }
-
-  async function drainPendingVoiceCallCommands(): Promise<void> {
-    const session = matrixSessionRef.current;
-    for (const [commandKey, pending] of pendingVoiceCallCommandsRef.current) {
-      if (executingVoiceCallCommandIdsRef.current.has(commandKey)) {
-        continue;
-      }
-      const currentCall =
-        voiceCallRef.current?.callId === pending.command.callId &&
-        voiceCallRef.current.roomId === pending.command.roomId
-          ? voiceCallRef.current
-          : session?.getVoiceCall();
-      const matchingCall =
-        currentCall?.callId === pending.command.callId && currentCall.roomId === pending.command.roomId
-          ? currentCall
-          : null;
-      if (pending.command.action !== "open" && pending.command.action !== "start" && (!session || !matchingCall)) {
-        continue;
-      }
-      if (pending.command.action === "start" && !session) {
-        continue;
-      }
-
-      executingVoiceCallCommandIdsRef.current.add(commandKey);
-      void executePendingVoiceCallCommand(commandKey, pending.command, session, matchingCall);
-    }
-  }
-
-  async function executePendingVoiceCallCommand(
-    commandKey: string,
-    command: ChatVoiceCallCommandMessage,
-    session: MatrixMessagingSession | null,
-    call: MatrixVoiceCallSnapshot | null
-  ): Promise<void> {
+  async function executeHostVoiceCallCommand(command: ChatVoiceCallCommandMessage): Promise<void> {
+    let status: "failed" | "succeeded" = "failed";
     try {
       if (command.action === "open") {
         resetRouteOpenAttempt();
         await applyAndOpenRouteSelection(command.roomId);
       } else if (command.action === "start") {
-        if (!session) return;
+        const target = chatItems.find((item) => item.roomId === command.roomId);
+        if (!target || target.type !== "direct" || isAiAgentChatItem(target)) {
+          throw new Error("Hlasový hovor lze zahájit pouze v přímém chatu mezi dvěma lidmi.");
+        }
+        const participantSubjectIds =
+          command.participantUserIds?.length === 1
+            ? command.participantUserIds
+            : directVoiceCallParticipantSubjectIds(target, authSubjectId);
+        await voiceCalls.start({
+          participantSubjectIds,
+          roomId: command.roomId,
+          title: target.title
+        });
+      } else if (command.action === "answer") {
+        await voiceCalls.accept(command.callId);
         resetRouteOpenAttempt();
         await applyAndOpenRouteSelection(command.roomId);
-        await session.startVoiceCall(command.roomId, { group: command.kind === "group" });
+      } else if (command.action === "reject") {
+        await voiceCalls.reject(command.callId);
+      } else if (command.action === "hangup") {
+        await voiceCalls.end(command.callId);
+      } else if (command.action === "mute") {
+        await voiceCalls.setMuted(command.callId, command.muted === true);
       } else {
-        if (!session || !call) {
-          return;
-        }
-        switch (command.action) {
-          case "answer": {
-            await session.answerVoiceCall(call.callId);
-            const roomId = voiceCallRoomToFocusAfterAnswer(call.roomId, selectedRoomIdRef.current);
-            if (roomId) {
-              resetRouteOpenAttempt();
-              await applyAndOpenRouteSelection(roomId);
-            }
-            break;
-          }
-          case "reject":
-            await session.rejectVoiceCall(call.callId);
-            break;
-          case "hangup":
-            await session.hangupVoiceCall(call.callId);
-            break;
-          case "mute":
-            await session.setVoiceCallMuted(call.callId, command.muted === true);
-            break;
-          case "addParticipants":
-            await session.inviteVoiceCallParticipants(call.callId, command.participantUserIds ?? []);
-            break;
-        }
+        throw new Error("Přidávání účastníků do hlasového hovoru není podporováno.");
       }
-      if (pendingVoiceCallCommandsRef.current.has(commandKey)) {
-        completeVoiceCallCommand(command, "succeeded", commandKey);
-      }
+      status = "succeeded";
     } catch (caught) {
-      setError(userFacingVoiceCallError(caught, "Nativní povel hovoru se nepodařilo provést."));
-      if (pendingVoiceCallCommandsRef.current.has(commandKey)) {
-        completeVoiceCallCommand(command, "failed", commandKey);
-      }
+      setError(userFacingVoiceCallError(caught, "Povel hovoru se nepodařilo provést."));
     } finally {
-      executingVoiceCallCommandIdsRef.current.delete(commandKey);
-    }
-  }
-
-  function completeVoiceCallCommand(
-    command: ChatVoiceCallCommandMessage,
-    status: "failed" | "succeeded",
-    commandKey = command.actionId
-  ): void {
-    if (commandKey) {
-      const pending = pendingVoiceCallCommandsRef.current.get(commandKey);
-      if (pending) {
-        window.clearTimeout(pending.timeoutId);
-        pendingVoiceCallCommandsRef.current.delete(commandKey);
+      if (command.actionId && embedded && window.parent !== window) {
+        window.parent.postMessage(
+          encodeChatVoiceCallCommandAcknowledgement({
+            actionId: command.actionId,
+            callId: command.callId,
+            roomId: command.roomId,
+            status
+          }),
+          window.location.origin
+        );
       }
-    }
-    if (!command.actionId) {
-      return;
-    }
-    const acknowledgement = encodeChatVoiceCallCommandAcknowledgement({
-      actionId: command.actionId,
-      callId: command.callId,
-      roomId: command.roomId,
-      status
-    });
-    completedVoiceCallCommandAcksRef.current.set(command.actionId, acknowledgement);
-    if (completedVoiceCallCommandAcksRef.current.size > 64) {
-      const oldest = completedVoiceCallCommandAcksRef.current.keys().next().value as string | undefined;
-      if (oldest) {
-        completedVoiceCallCommandAcksRef.current.delete(oldest);
-      }
-    }
-    postVoiceCallCommandAcknowledgement(acknowledgement);
-  }
-
-  function postVoiceCallCommandAcknowledgement(acknowledgement: ChatVoiceCallCommandAcknowledgementMessage): void {
-    if (embedded && window.parent !== window) {
-      window.parent.postMessage(acknowledgement, window.location.origin);
     }
   }
 
   async function startVoiceCall(): Promise<void> {
     const roomId = activeChat?.roomId;
-    if (!canStartVoiceCall || !matrixSession || !roomId) {
+    if (!canStartVoiceCall || !roomId) {
       setNotice(chatText("calls.audioUnavailable"));
       return;
     }
     setError(null);
     setNotice(null);
     try {
-      await matrixSession.startVoiceCall(roomId, { group: activeChat?.type === "group" });
+      await voiceCalls.start({
+        participantSubjectIds: directVoiceCallParticipantSubjectIds(activeChat, authSubjectId),
+        roomId,
+        title: activeChat.title
+      });
     } catch (caught) {
       setError(userFacingVoiceCallError(caught, "Hovor se nepodařilo zahájit."));
     }
   }
 
   async function answerVoiceCall(call: MatrixVoiceCallSnapshot): Promise<void> {
-    const session = matrixSessionRef.current;
-    if (!session) {
-      setError("Chatové spojení pro přijetí hovoru není připravené.");
-      return;
-    }
     setError(null);
     try {
-      await session.answerVoiceCall(call.callId);
+      await voiceCalls.accept(call.callId);
     } catch (caught) {
       setError(userFacingVoiceCallError(caught, "Hovor se nepodařilo přijmout."));
       return;
@@ -3852,26 +3725,16 @@ export function ChatApp() {
   }
 
   async function rejectVoiceCall(call: MatrixVoiceCallSnapshot): Promise<void> {
-    const session = matrixSessionRef.current;
-    if (!session) {
-      setVoiceCall(null);
-      return;
-    }
     try {
-      await session.rejectVoiceCall(call.callId);
+      await voiceCalls.reject(call.callId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Hovor se nepodařilo odmítnout.");
     }
   }
 
   async function hangupVoiceCall(call: MatrixVoiceCallSnapshot): Promise<void> {
-    const session = matrixSessionRef.current;
-    if (!session) {
-      setVoiceCall(null);
-      return;
-    }
     try {
-      await session.hangupVoiceCall(call.callId);
+      await voiceCalls.end(call.callId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Hovor se nepodařilo ukončit.");
     }
@@ -3882,12 +3745,8 @@ export function ChatApp() {
   }
 
   async function setVoiceCallMute(call: MatrixVoiceCallSnapshot, muted: boolean): Promise<void> {
-    const session = matrixSessionRef.current;
-    if (!session) {
-      return;
-    }
     try {
-      await session.setVoiceCallMuted(call.callId, muted);
+      await voiceCalls.setMuted(call.callId, muted);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Mikrofon se nepodařilo přepnout.");
     }
@@ -4813,7 +4672,7 @@ export function ChatApp() {
                           row.message.replyToEventId ? (messageById.get(row.message.replyToEventId) ?? null) : null
                         }
                         searchQuery={messageSearchQuery}
-                        selectable={selectionMode}
+                        selectable={selectionMode && !isVoiceCallTimelineMessage(row.message)}
                         selected={selectedMessageIds.has(row.message.eventId)}
                         senderLabel={messageSenderLabel(row.message, selectedConversation, authSession)}
                         onAskAiFollowUp={handleAskAiFollowUp}
@@ -6150,7 +6009,8 @@ function MessageRow({
   const pointerStartRef = React.useRef<{ x: number; y: number } | null>(null);
   const hasReactions = Boolean(message.reactions?.length);
   const hasAiMetadata = Boolean(message.cop?.kind) || isAiAgentFallbackMessage(message);
-  const presentedAsOwn = message.own && !isAiAgentFallbackMessage(message);
+  const voiceCallEvent = isVoiceCallTimelineMessage(message);
+  const presentedAsOwn = message.own && !isAiAgentFallbackMessage(message) && !voiceCallEvent;
 
   const clearLongPressTimer = React.useCallback(() => {
     if (longPressTimerRef.current !== null) {
@@ -6183,7 +6043,8 @@ function MessageRow({
         focused && "action-focused",
         activeSearchMatch && "search-active",
         hasReactions && "has-reactions",
-        hasAiMetadata && "ai-message"
+        hasAiMetadata && "ai-message",
+        voiceCallEvent && "voice-call-event"
       )}
       data-message-id={message.eventId}
       onClick={(event) => {
@@ -6193,7 +6054,7 @@ function MessageRow({
           event.stopPropagation();
           return;
         }
-        if (selectable) {
+        if (selectable && !voiceCallEvent) {
           onToggleSelected(message.eventId);
           return;
         }
@@ -6203,13 +6064,13 @@ function MessageRow({
       }}
       onContextMenu={(event) => {
         event.preventDefault();
-        if (selectable || isInteractiveMessageTarget(event.target)) {
+        if (voiceCallEvent || selectable || isInteractiveMessageTarget(event.target)) {
           return;
         }
         openActions(false);
       }}
       onPointerDown={(event) => {
-        if (event.pointerType === "mouse" || selectable || isInteractiveMessageTarget(event.target)) {
+        if (voiceCallEvent || event.pointerType === "mouse" || selectable || isInteractiveMessageTarget(event.target)) {
           return;
         }
         clearLongPressTimer();
@@ -6233,7 +6094,7 @@ function MessageRow({
       }}
       onPointerUp={clearLongPressTimer}
     >
-      {selectable ? (
+      {selectable && !voiceCallEvent ? (
         <button
           className="message-select"
           onClick={(event) => {
@@ -6250,7 +6111,9 @@ function MessageRow({
         {!presentedAsOwn && !grouped ? <span className="sender-name">{senderLabel}</span> : null}
         {hasAiMetadata ? <MessageAiMetadata message={message} /> : null}
         {replyToMessage ? <ReplyPreview message={replyToMessage} /> : null}
-        {message.kind === "location" && message.location ? (
+        {voiceCallEvent ? (
+          <VoiceCallTimelineEvent message={message} />
+        ) : message.kind === "location" && message.location ? (
           <LocationMessage message={message} onOpenPreview={onOpenPreview} />
         ) : message.kind === "transit" && message.transit ? (
           <TransitMessage message={message} />
@@ -6273,10 +6136,12 @@ function MessageRow({
         ) : (
           <HighlightedMessageText query={searchQuery} text={messageDisplayBody(message)} />
         )}
-        <span className="message-time">
-          {formatTime(message.timestamp)}
-          {presentedAsOwn ? <CheckCheck size={15} /> : null}
-        </span>
+        {!voiceCallEvent ? (
+          <span className="message-time">
+            {formatTime(message.timestamp)}
+            {presentedAsOwn ? <CheckCheck size={15} /> : null}
+          </span>
+        ) : null}
         {message.reactions?.length ? (
           <MessageReactions
             message={message}
@@ -6285,7 +6150,7 @@ function MessageRow({
             onReact={onReact}
           />
         ) : null}
-        {!selectable ? (
+        {!selectable && !voiceCallEvent ? (
           <span className="message-hover-actions" aria-label="Akce zprávy">
             <button
               onClick={(event) => {
@@ -7018,6 +6883,23 @@ function VoiceCallRemoteAudio({ stream }: { stream: MediaStream }) {
 
 export function voiceCallRoomToFocusAfterAnswer(callRoomId: string, selectedRoomId: string | null): string | null {
   return callRoomId !== selectedRoomId ? callRoomId : null;
+}
+
+function directVoiceCallParticipantSubjectIds(chat: ChatListItem, ownSubjectId: string | undefined): string[] {
+  if (chat.type !== "direct") {
+    return [];
+  }
+  const directPeer = chat.conversation?.directPeer?.userId;
+  if (directPeer && directPeer !== ownSubjectId) {
+    return [directPeer];
+  }
+  return Array.from(
+    new Set(
+      (chat.conversation?.members ?? [])
+        .map((member) => member.userId.trim())
+        .filter((subjectId) => subjectId && subjectId !== ownSubjectId)
+    )
+  ).slice(0, 1);
 }
 
 function voiceCallStatusText(call: MatrixVoiceCallSnapshot, now: number): string {
@@ -9780,6 +9662,28 @@ function matrixReplyTarget(message: MatrixTimelineMessage, session: AuthSession)
 
 function isDemoTimelineMessage(message: MatrixTimelineMessage): boolean {
   return message.eventId.startsWith("demo:");
+}
+
+function isVoiceCallTimelineMessage(message: MatrixTimelineMessage): boolean {
+  return message.eventId.startsWith("voice-call:");
+}
+
+function VoiceCallTimelineEvent({ message }: { message: MatrixTimelineMessage }) {
+  const unsuccessful =
+    message.body.startsWith("Nepřijatý") ||
+    message.body.startsWith("Odmítnutý") ||
+    message.body.startsWith("Neúspěšný") ||
+    message.body.includes("bez odpovědi");
+  const Icon = unsuccessful ? PhoneOff : Phone;
+  return (
+    <span className={clsx("voice-call-event-content", unsuccessful && "unsuccessful")}>
+      <Icon aria-hidden="true" size={17} />
+      <span>
+        <strong>{message.body}</strong>
+        <small>{formatTime(message.timestamp)}</small>
+      </span>
+    </span>
+  );
 }
 
 function formatMessageForClipboard(message: MatrixTimelineMessage): string {

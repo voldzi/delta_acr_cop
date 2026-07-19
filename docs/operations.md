@@ -23,3 +23,8 @@ Local defaults:
 Pilot deployment runs from `/srv/cop` on `docker.home.cz`. Health and
 readiness are exposed as `/health/live`, `/health/ready` and
 `/health/dependencies`.
+
+Production voice calls additionally require durable
+`COP_VOICE_CALL_STORE=postgres`, `voice-call-media=ok` in dependency health, a
+publicly reachable LiveKit WSS/media endpoint and confirmed CSM Messaging
+PushKit delivery. Matrix readiness is unrelated to the voice media path.

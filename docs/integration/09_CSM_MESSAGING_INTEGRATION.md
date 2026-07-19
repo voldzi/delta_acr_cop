@@ -247,37 +247,22 @@ or local-device repair. The browser homeserver preflight is bounded by an
 eight-second abort timeout so a stalled network request cannot leave the
 recovery dialog permanently busy.
 
-Voice calls are client-side Matrix VoIP/WebRTC calls. Direct rooms retain the
-one-to-one path; group rooms use the Matrix SDK encrypted `GroupCall` peer mesh
-with a six-participant limit. COP Chat may offer audio call controls after
-Matrix bootstrap and E2EE
-recovery are ready, but COP API still must not proxy call media, SDP payloads or
-plaintext chat content. Browsers require microphone permission, WebRTC support
-and reachable ICE/TURN infrastructure from the Matrix deployment. COP appends
-the comma-separated `COP_CHAT_ICE_FALLBACK_URLS` STUN list to the Matrix ICE
-configuration as a direct-path fallback; it does not replace TURN for restrictive
-NAT. A call that cannot leave the connecting phase within 45 seconds is ended
-with an explicit ICE/TURN error. An awake COP map keeps the embedded chat runtime
-mounted and shows the incoming call in a
-global host alert. A suspended or closed PWA uses an urgent Web Push wake and
-the operating system notification UI. Web/PWA still cannot guarantee continuous
-lock-screen audio ringing after the browser process is terminated; that remains
-a native-client capability.
+Voice calls use a separate server-owned contract and are independent of Matrix
+sync and E2EE recovery. COP API owns one revisioned call record; COP Chat and
+COP Mobile read and transition the same state through
+`/api/v1/messaging/calls`. Only direct conversations with exactly one other
+active member can start a call.
 
-COP Chat first prepares a fresh Megolm session and verifies the live E2EE path
-with an encrypted metadata-only preflight acknowledged by the other Matrix
-user. When acknowledged, Matrix VoIP signalling events (`m.call.*` and
-`org.matrix.call.*`) stay on the Matrix SDK room-E2EE path. If the peer is
-suspended or cannot decrypt the preflight within 1.2 seconds, COP uses the
-authenticated HTTPS Matrix room-event API only for that call id. In this
-compatibility mode the self-hosted Synapse service can observe SDP/ICE signalling
-metadata, but chat content and recovery material remain E2EE. WebRTC media
-remains protected by DTLS-SRTP, and COP API does not proxy signalling or media
-payloads. The decision and accepted trade-off are recorded in ADR-0013.
-An undecrypted custom preflight immediately followed by plaintext call control
-from the same sender is treated as a VoIP control artifact and omitted from the
-chat timeline within a bounded five-second correlation window. Other
-undecryptable encrypted events remain visible as missing-history diagnostics.
+LiveKit is the only media plane. COP API issues a short-lived credential scoped
+to `cop-call-<callId>` and never proxies audio, SDP, chat plaintext, Matrix
+credentials or recovery material. COP Mobile connects with the native LiveKit
+SDK and CallKit. COP Chat connects with `livekit-client`. A client that resumes
+or reloads restores the active record from COP API and obtains fresh media
+credentials instead of reconstructing a local call state.
+
+Terminal records (`declined`, `missed`, `cancelled`, `failed`, `ended`) remain
+available from the list endpoint and appear as noninteractive call events in
+both chat timelines. The current decision is recorded in ADR-0019.
 
 CSM notification intake responds with the provider envelope
 `{contractVersion, providerId, notification}`. COP reads `notificationId` and
@@ -452,101 +437,26 @@ voice-call alerts. Push payloads for chat should include `deepLink`,
 `conversationId` or `roomId`; the COP service worker opens `/chat/<selection>`
 for chat payloads and keeps map alert/report deep links in the map shell.
 
-For Matrix voice calls, CSM Messaging maps `m.call.invite` to
-`chat.voice_call.incoming` with `roomId`, `callId`, `tag`,
-`requireInteraction=true` and `renotify=true`. `m.call.hangup` and
-`m.call.reject` map to `chat.voice_call.ended` using the same call tag so the
-COP service worker can close the visible call notification. Intermediate call
-signalling such as `m.call.answer` and `m.call.candidates` must not be sent as
-ordinary message notifications. When the payload includes a concrete Matrix
-`eventId` or message id, COP uses it in the browser notification tag so several
-quick messages in the same room do not replace each other in the PWA
-notification center.
+COP API sends only `chat.voice_call.incoming` and `chat.voice_call.ended`
+directly to CSM Messaging from authoritative call transitions. A missed call is
+stored as the terminal server phase `missed` and uses the same terminal
+`chat.voice_call.ended` wake. Push metadata is intentionally limited to the CSM
+Messaging allowlist: `callId`, `roomId`, sender presentation, TTL,
+`requireInteraction`, `renotify` and a stable notification tag. It never
+contains phase/revision state, LiveKit tokens, media packets, Matrix credentials
+or message content. A client always fetches current call detail from COP API.
 
-Encrypted room events reach the Matrix push gateway as `m.room.encrypted`, so
-the gateway cannot reliably infer that an encrypted payload contains a call.
-Immediately after creating the stable Matrix call identity, and before asking
-WebKit for microphone access or starting WebRTC negotiation, COP Chat therefore
-calls the authenticated metadata-only wake endpoint:
+COP Mobile registers its PushKit token with CSM Messaging through the existing
+one-time device ticket. Incoming and terminal call events for that device use
+the `.voip` APNs topic. The native client must report an incoming PushKit event
+to CallKit immediately, then fetch current call detail and short-lived media
+credentials from COP API. Accept, decline, cancel, end and media-connected
+actions are revision-checked server transitions. A terminal push closes the
+matching CallKit call and refreshes the chat call timeline.
 
-```http
-POST /api/v1/messaging/calls/wake
-Authorization: Bearer <COP user access token>
-Content-Type: application/json
-
-{"action":"invite","callId":"<matrixCallId>","roomId":"<matrixRoomId>"}
-```
-
-To add people to an existing group call, the same request may include
-`"participantUserIds":["<matrixUserId>"]`. The subset is allowed only for an
-invite, contains at most five unique users and is validated server-side against
-the active members of the accessible conversation. The authenticated caller
-cannot target itself or an identity outside the room.
-
-COP resolves the bound conversation and recipients server-side and forwards
-only `callId`, `roomId`, sender presentation, notification tag and TTL to CSM
-Messaging. The endpoint rejects SDP, ICE candidates and arbitrary signalling
-metadata. `action=ended` closes the matching visible call notification.
-If media preparation or encrypted Matrix signalling subsequently fails, COP
-also sends `action=ended`, so a recipient never remains on a stale incoming-call
-surface. COP Mobile can receive the metadata wake before the encrypted Matrix
-invite; its native answer path queues the action until the matching Matrix call
-appears.
-
-V COP Mobile zůstává vložený webový Matrix/WebRTC engine render-active
-off-screen od okamžiku, kdy jej nativní host namountuje, nikoli až od vzniku
-prvního call snapshotu. Jeho panel je vždy skrytý a nepřipnutý. Tím se přeruší
-kruhová závislost, ve které by suspendovaný `WKWebView` nemohl zpracovat první
-nativní `start` nebo `answer` a vytvořit stav, jenž jej měl teprve aktivovat.
-Viditelný surface vlastní SwiftUI chat a nativní call overlay. Ukončení,
-odmítnutí, timeout ani reload media enginu proto nesmí odkrýt webový chat nebo
-webový E2EE recovery flow. Samostatný webový klient dál otevírá messenger
-běžným webovým ovládáním.
-
-COP Mobile additionally registers a separate PushKit token directly with CSM
-Messaging through the existing one-time device ticket. For a device carrying
-that token, incoming and ended wake events use the bundle `.voip` APNs topic and
-CallKit; every other notification remains a normal APNs alert. CallKit answer,
-reject, end, group-start and add-participant actions cross the exact-origin Device Bridge and reuse the
-host-to-chat voice command contract. Zahájení hovoru i CallKit user action nesou
-stabilní
-`actionId`; COP Chat keeps it for up to 30 seconds until the matching Matrix call exists,
-deduplicates retries and returns a success/failure acknowledgement only after
-the Matrix command settles. iOS retries start/answer/end/reject/mute delivery
-with the same ID; start retries cover the interval before the web subscription
-and bridge handshake are ready. The web host treats every failed initial
-handshake as recoverable, clears the rejected session promise and reconnects
-with bounded backoff; it also waits and retries when the document-start facade
-is not exposed yet. The same recovery rule refreshes the APNs/PushKit
-registration after navigation or a cold WebKit start. iOS keeps
-end/reject/mute `CXAction` pending
-and fails closed on acknowledgement timeout.
-The system `CXAnswerCallAction` is fulfilled immediately after native audio
-configuration so CallKit can activate `AVAudioSession`; the independently
-reliable Matrix answer remains fail-closed and closes the call if its bounded
-35-second cold-start window expires.
-Negative or missing acknowledgement forces COP Mobile to invalidate and reload
-the web media engine, remove the native call and deactivate audio; an end/reject
-action is fulfilled only after that forced close, while the Matrix answer and
-mute operation fail.
-Matrix remains the only signalling/media
-owner, and neither VoIP push nor native code receives SDP, ICE candidates,
-Matrix credentials or decrypted content. `action=ended` includes the sender's
-own registered devices so a locally answered CallKit surface is closed when the
-web call ends.
-
-The Matrix runtime publishes the outgoing call identity before requesting
-WebKit microphone capture. This gives the native host time to register CallKit
-before `getUserMedia`; WebKit then waits for `provider(_:didActivate:)` instead
-of activating a CallKit-owned audio session itself. While SwiftUI owns the
-visible call surface, the hidden iframe remains rendered as a noninteractive
-off-screen media host from mount through call cleanup so first-command
-processing and remote WebRTC audio are not suspended.
-
-For a group call the bridge additionally carries only the bounded participant
-presentation (`userId`, display name and connected flag). Matrix room
-membership remains authoritative, and the web runtime revalidates every native
-selection before requesting a targeted wake. See ADR-0016.
+The standalone COP Mobile process owns the complete native call lifecycle. No
+hidden web view, Device Bridge acknowledgement, Matrix call event or group-call
+fallback participates in the call.
 
 When a registered browser device opens COP Chat, the Matrix client also registers
 an HTTP pusher:
@@ -1023,7 +933,12 @@ COP_WEB_MESSAGING_LAUNCHER_ENABLED=true
 COP_CHAT_PORT=4314
 COP_CHAT_BASE_PATH=/chat/
 COP_CHAT_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
-COP_CHAT_ICE_FALLBACK_URLS=stun:stun.l.google.com:19302
+COP_VOICE_CALLS_ENABLED=true
+COP_VOICE_CALL_STORE=postgres
+COP_LIVEKIT_PUBLIC_URL=wss://<livekit-public-host>
+COP_LIVEKIT_API_KEY=<livekit-api-key>
+COP_LIVEKIT_API_SECRET=<livekit-api-secret>
+COP_LIVEKIT_TOKEN_TTL_SECONDS=600
 ```
 
 If `COP_CSM_MESSAGING_ENABLED=false`, the chat launcher can still be visible,

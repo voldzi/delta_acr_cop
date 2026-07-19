@@ -15,12 +15,8 @@ import type {
   MatrixMessagingSession,
   MatrixRoomSummary,
   MatrixUserProfileSyncInput,
-  MatrixVoiceCallSnapshot,
-  MatrixVoiceCallWakeRequest,
   MatrixWebPushPusherOptions
 } from "@cop/messaging/types";
-
-const defaultMatrixAdditionalIceServerUrls = ["stun:stun.l.google.com:19302"];
 
 export type MatrixSessionLifecycle = "idle" | "starting" | "ready" | "recovery-needed" | "error";
 
@@ -144,7 +140,6 @@ interface UseMatrixSessionOptions {
   onNotice: (message: string | null) => void;
   onRoomsChanged: (rooms: MatrixRoomSummary[], preferredSelection?: string | null) => void;
   onTimelineChanged: () => void;
-  onVoiceCallChanged?: (call: MatrixVoiceCallSnapshot | null) => void;
 }
 
 export function useMatrixSession(options: UseMatrixSessionOptions): {
@@ -292,7 +287,6 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
           const matrixWebPushDeviceId =
             latestOptions.matrixWebPushDeviceId ?? latestOptions.matrixWebPushFallbackDeviceId;
           const matrixPushGatewayUrl = browserMatrixPushGatewayUrl();
-          const matrixAdditionalIceServerUrls = browserMatrixAdditionalIceServerUrls();
           let callbackSession: MatrixMessagingSession | null = null;
           const callbacksAreCurrent = () =>
             generation === startGenerationRef.current ||
@@ -334,23 +328,7 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
                 optionsRef.current.onTimelineChanged();
               }
             },
-            onVoiceCallWake: (request) => {
-              const wakeOptions = optionsRef.current;
-              const wakeAuthToken = wakeOptions.authToken ?? effectiveAuthToken;
-              if (!wakeAuthToken) {
-                throw new Error("Voice call wake failed: COP authentication is unavailable");
-              }
-              return wakeMatrixVoiceCall(wakeOptions.apiBase, wakeAuthToken, request);
-            },
-            onVoiceCallChanged: (call) => {
-              if (callbacksAreCurrent()) {
-                optionsRef.current.onVoiceCallChanged?.(call);
-              }
-            },
             profile: latestOptions.matrixProfile,
-            voip: {
-              additionalIceServerUrls: matrixAdditionalIceServerUrls
-            },
             webPush: {
               ...(matrixWebPushDeviceId ? { deviceId: matrixWebPushDeviceId } : {}),
               lang: typeof navigator !== "undefined" ? navigator.language || "cs" : "cs",
@@ -528,34 +506,6 @@ export function useMatrixSession(options: UseMatrixSessionOptions): {
   };
 }
 
-async function wakeMatrixVoiceCall(
-  apiBase: string,
-  authToken: string,
-  request: MatrixVoiceCallWakeRequest
-): Promise<void> {
-  const controller = typeof AbortController === "function" ? new AbortController() : undefined;
-  const timeout = controller ? setTimeout(() => controller.abort(), 5_000) : undefined;
-  try {
-    const response = await fetch(`${apiBase}/api/v1/messaging/calls/wake`, {
-      body: JSON.stringify(request),
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        "Content-Type": "application/json"
-      },
-      keepalive: true,
-      method: "POST",
-      ...(controller ? { signal: controller.signal } : {})
-    });
-    if (!response.ok) {
-      throw new Error(`Voice call wake failed: HTTP ${response.status}`);
-    }
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-  }
-}
-
 function browserMatrixPushGatewayUrl(): string | undefined {
   try {
     if (typeof window === "undefined" || typeof window.location?.origin !== "string" || !window.location.origin) {
@@ -565,16 +515,4 @@ function browserMatrixPushGatewayUrl(): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function browserMatrixAdditionalIceServerUrls(): string[] {
-  const configured = import.meta.env.VITE_COP_CHAT_ICE_FALLBACK_URLS?.trim();
-  if (configured?.toLowerCase() === "none") {
-    return [];
-  }
-  const rawValues: string[] = configured ? configured.split(",") : defaultMatrixAdditionalIceServerUrls;
-  const values = rawValues
-    .map((value: string) => value.trim())
-    .filter((value: string) => /^(?:stun|stuns|turn|turns):/u.test(value));
-  return [...new Set(values)];
 }

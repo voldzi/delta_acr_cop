@@ -35,7 +35,7 @@ const budgets = [
       { label: "pdf viewer", pattern: /^pdf-[\w-]+\.js$/, maxBytes: 130 * KiB },
       { label: "pdf worker", pattern: /^pdf\.worker-[\w-]+\.mjs$/, maxBytes: 500 * KiB },
       { label: "office/archive parser", pattern: /^jszip\.min-[\w-]+\.js$/, maxBytes: 30 * KiB },
-      { label: "styles", pattern: /^index-[\w-]+\.css$/, maxBytes: 15 * KiB }
+      { label: "styles", pattern: /^index-[\w-]+\.css$/, maxBytes: 16 * KiB }
     ]
   }
 ];

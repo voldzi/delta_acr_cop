@@ -32,6 +32,17 @@ Current COP error responses use the repository's compatibility envelope with
 [Error model](integration/06_ERROR_MODEL.md). Any migration to a different
 request-id field must be compatibility-safe and recorded in an ADR.
 
+Direct voice calls use the authoritative endpoints:
+
+- `GET/POST /api/v1/messaging/calls`
+- `GET /api/v1/messaging/calls/{callId}`
+- `POST /api/v1/messaging/calls/{callId}/actions`
+
+The API returns lifecycle metadata and, only to an authorized active
+participant, short-lived LiveKit credentials. Audio, SDP and chat plaintext do
+not traverse COP API. Matrix VoIP and `/messaging/calls/wake` are not part of
+the current contract.
+
 AI clients must call only COP API endpoints such as
 `/api/v1/ai/situation-summary`, `/api/v1/ai/chat-agent/query`,
 `/api/v1/ai/source-health-summary` and `/api/v1/ai/community-report/draft`.

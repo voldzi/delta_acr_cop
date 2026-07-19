@@ -31,30 +31,23 @@ sender. An active device crypto session may send new E2EE messages while key
 backup recovery is pending; the recovery warning remains visible because older
 history may still be unavailable.
 
-Voice-call rule: COP verifies the room-E2EE signaling path before a one-to-one
-call. If the peer cannot acknowledge that preflight, only that call's Matrix
-VoIP control events may use the authenticated HTTPS compatibility path described
-in ADR-0013. Chat content remains E2EE and WebRTC media remains DTLS-SRTP.
-Native CallKit commands use a bounded opaque `actionId` and an identity-bound
-chat-to-host-to-native acknowledgement. Retries with the same action ID are
-idempotent; a command is not acknowledged before its Matrix operation settles.
-The native start command uses the same stable retry/acknowledgement channel, so
-an initial event emitted before the web listener subscribes cannot be treated as
-delivered and lost.
-End/reject/mute keep their CallKit action pending. Answer is the deliberate
-audio-lifecycle exception: after native audio configuration the system answer
-action is fulfilled so CallKit can activate `AVAudioSession`, while the Matrix
-answer command remains independently bounded and fail-closed. A missing or
-negative acknowledgement closes the call instead of pretending media connected.
-The native host also invalidates and reloads the web media owner on that failure,
-so an unacknowledged command cannot leave a hidden microphone track running.
+Voice-call rule: COP API authorizes a call only for a canonical direct
+conversation containing the authenticated actor and exactly one other active
+member. The durable call record and revision are authoritative. Clients cannot
+choose an arbitrary recipient, transition another user's call or reuse a
+credential for a different call.
 
-Group-call start and add-participant commands follow the same metadata-only
-bridge rule. COP API accepts at most five unique targeted recipients, verifies
-that each is an active member of the actor's accessible Matrix conversation and
-rejects the actor or any outside identity. The encrypted Matrix peer mesh is
-limited to six participants; no SDP, ICE candidate, media stream, Matrix token
-or room key is carried in the native presentation contract. See ADR-0016.
+LiveKit credentials are issued server-side, expire quickly and grant join,
+publish and subscribe only in `cop-call-<callId>`. The LiveKit API secret,
+PushKit tokens, Matrix credentials and chat content never enter the call
+record. CSM Messaging receives only bounded lifecycle metadata for incoming,
+ended and missed notifications.
+
+CallKit actions map to revision-checked COP API transitions. After foreground
+restore, clients fetch the server record rather than trusting local UI state.
+There is no hidden web media process or Matrix VoIP compatibility path in COP
+Mobile. Group calls and arbitrary participant invitations are not supported.
+See ADR-0019.
 
 Matrix credential renewal for the same user and device updates only the active
 client access token. It does not recreate or clear the Rust crypto store. Full
@@ -67,6 +60,7 @@ does not reset account-wide recovery metadata or other devices. The sealed
 recovery key remains scoped to Matrix user and homeserver; direct database
 deletion of Matrix one-time/fallback keys is not an approved repair path.
 
-Voice-call ICE discovery may contact the operations-configured STUN fallback
-from ADR-0015. The STUN operator can observe the client's public IP and binding
-traffic, but receives no Matrix room keys, chat content or DTLS-SRTP media.
+The LiveKit deployment can observe call membership, timing, IP addressing and
+encrypted media transport metadata. It receives no Matrix room keys or chat
+content. Its public WSS and media ports, API keys and retention policy belong to
+the audited production infrastructure boundary.

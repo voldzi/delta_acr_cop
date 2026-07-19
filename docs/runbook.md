@@ -24,13 +24,21 @@ curl -fsS http://localhost:4310/health/ready
 curl -fsS http://localhost:4310/health/dependencies
 ```
 
-For voice-call incidents, Matrix and CSM readiness is not sufficient: it only
-proves that TURN configuration can be fetched and may probe it from inside the
-deployment network. Test `turn.zeleznalady.cz:3478` from outside the LAN over
-both UDP and TCP, verify the Coturn relay range is forwarded, and confirm that a
-real browser offer contains a `relay` candidate. Repeated `m.call.negotiate`
-events with only `host` candidates identify an ICE/TURN path failure after
-successful Matrix signalling.
+For voice-call incidents, check the three independent boundaries in order:
+
+1. `/health/dependencies` reports `voice-call-store=ok` and
+   `voice-call-media=ok`.
+2. `POST /api/v1/messaging/calls` creates one direct call and CSM Messaging
+   accepts the incoming PushKit notification for at least one recipient device.
+3. Both clients join the same `cop-call-<callId>` LiveKit room and publish one
+   microphone track.
+
+Matrix sync, Matrix E2EE recovery and TURN configuration from Synapse are not
+part of the current voice path. Test the configured
+`COP_LIVEKIT_PUBLIC_URL` from an external mobile network and verify the LiveKit
+WSS plus media ports instead. A terminal call remains visible through
+`GET /api/v1/messaging/calls?roomId=...` and should appear as a call event in
+both timelines.
 
 For repeated undecryptable placeholders, `Cannot ensure Olm sessions: shutting
 down`, or duplicate one-time-key uploads, first distinguish an old encrypted

@@ -13,8 +13,11 @@ export interface MessagingRouteHandlers {
   registerWebPushDevice: RouteHandlerMethod;
   resolveConversation: RouteHandlerMethod;
   resolveMatrixIdentities: RouteHandlerMethod;
+  startVoiceCall: RouteHandlerMethod;
   status: RouteHandlerMethod;
-  wakeVoiceCall: RouteHandlerMethod;
+  transitionVoiceCall: RouteHandlerMethod;
+  voiceCallDetail: RouteHandlerMethod;
+  voiceCalls: RouteHandlerMethod;
   webPushConfig: RouteHandlerMethod;
 }
 
@@ -31,9 +34,16 @@ export function registerMessagingRoutes(app: FastifyInstance, handlers: Messagin
     handlers.e2eeResetAuth
   );
   app.post(
-    "/api/v1/messaging/calls/wake",
-    { config: { rateLimit: { max: 12, timeWindow: "1 minute" } } },
-    handlers.wakeVoiceCall
+    "/api/v1/messaging/calls",
+    { config: { rateLimit: { max: 8, timeWindow: "1 minute" } } },
+    handlers.startVoiceCall
+  );
+  app.get("/api/v1/messaging/calls", handlers.voiceCalls);
+  app.get("/api/v1/messaging/calls/:callId", handlers.voiceCallDetail);
+  app.post(
+    "/api/v1/messaging/calls/:callId/actions",
+    { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    handlers.transitionVoiceCall
   );
   app.get("/api/v1/messaging/conversations", handlers.conversations);
   app.get("/api/v1/messaging/conversations/resolve", handlers.resolveConversation);

@@ -2,11 +2,7 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  MatrixMessagingSession,
-  MatrixVoiceCallWakeRequest,
-  MessagingBootstrapResponse
-} from "@cop/messaging/types";
+import type { MatrixMessagingSession, MessagingBootstrapResponse } from "@cop/messaging/types";
 
 const mocks = vi.hoisted(() => ({
   clearCryptoState: vi.fn(),
@@ -51,14 +47,12 @@ afterEach(() => {
 });
 
 describe("useMatrixSession lifecycle", () => {
-  it("renews a compatible bootstrap in place and uses the latest COP token for call wake", async () => {
+  it("renews a compatible bootstrap in place and uses the latest COP token for device signing", async () => {
     const session = sessionStub();
     const initialBootstrap = bootstrap("matrix-token-1", "2026-07-10T12:20:00.000Z");
     const renewedBootstrap = bootstrap("matrix-token-2", "2026-07-10T12:40:00.000Z");
     mocks.fetchBootstrap.mockResolvedValueOnce(initialBootstrap).mockResolvedValueOnce(renewedBootstrap);
     mocks.createSession.mockResolvedValue(session);
-    const fetchMock = vi.fn(async () => new Response(null, { status: 202 }));
-    vi.stubGlobal("fetch", fetchMock);
     const onRoomsChanged = vi.fn();
     const onTimelineChanged = vi.fn();
     const getSensitiveActionAuthToken = vi.fn().mockResolvedValue("cop-token-sensitive");
@@ -91,17 +85,6 @@ describe("useMatrixSession lifecycle", () => {
     expect(session.refreshBootstrap).toHaveBeenCalledWith(renewedBootstrap);
     expect(session.stop).not.toHaveBeenCalled();
     expect(result.current.matrixSession).toBe(session);
-
-    const callbacks = mocks.createSession.mock.calls[0]?.[1] as {
-      onVoiceCallWake?: (request: MatrixVoiceCallWakeRequest) => Promise<void>;
-    };
-    await callbacks.onVoiceCallWake?.({ action: "invite", callId: "call-1", roomId: "!room:example.test" });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://cop.example.test/api/v1/messaging/calls/wake",
-      expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer cop-token-2" })
-      })
-    );
 
     const signingCallbacks = mocks.createSession.mock.calls[0]?.[1] as {
       completeDeviceSigningAuth?: (request: {

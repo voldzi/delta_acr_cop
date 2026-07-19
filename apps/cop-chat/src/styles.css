@@ -1479,6 +1479,52 @@ button {
   background: var(--bubble-own);
 }
 
+.message-row.voice-call-event {
+  justify-content: center;
+  margin: 7px 0;
+}
+
+.message-row.voice-call-event .message-bubble {
+  width: auto;
+  min-width: 0;
+  max-width: min(420px, 90%);
+  padding: 7px 12px;
+  border: 1px solid rgba(84, 101, 111, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 1px 4px rgba(17, 27, 33, 0.08);
+  color: #54656f;
+}
+
+.voice-call-event-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-call-event-content > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.voice-call-event-content strong {
+  color: #34434b;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.voice-call-event-content small {
+  color: #667781;
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.voice-call-event-content.unsuccessful,
+.voice-call-event-content.unsuccessful strong {
+  color: #b5473c;
+}
+
 .message-row.ai-message .message-bubble {
   max-width: min(720px, 74%);
   padding: 10px 12px 22px;
