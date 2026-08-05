@@ -57,6 +57,11 @@ export async function requireBearerToken(request: FastifyRequest, reply: Fastify
   if (request.url.startsWith("/health") || request.url === "/metrics") {
     return;
   }
+  // BFF endpoints authenticate with an HttpOnly COP session cookie. The browser
+  // never receives an OAuth token when the secure web-session mode is enabled.
+  if (request.url.split("?")[0]?.startsWith("/api/v1/auth/")) {
+    return;
+  }
 
   const token = readBearerToken(request.headers.authorization);
   if (token) {

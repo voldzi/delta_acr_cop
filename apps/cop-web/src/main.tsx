@@ -2050,7 +2050,7 @@ export function App() {
       if (!isOidcEnabled(authConfig) || currentSession.status !== "authenticated") {
         return currentSession;
       }
-      if (!currentSession.refreshToken) {
+      if (!currentSession.refreshToken && !authConfig.bffSessionEnabled) {
         return currentSession;
       }
       if (!options.force && !shouldRefreshAuthSessionOnResume(currentSession)) {
@@ -2398,7 +2398,7 @@ export function App() {
     let authInFlight = false;
     let authInFlightForCallback = false;
     const authenticate = () => {
-      const hasCallback = hasOidcCallbackParams();
+      const hasCallback = hasOidcCallbackParams(authConfig);
       if (authInFlight && (!hasCallback || authInFlightForCallback)) {
         return;
       }
@@ -2428,7 +2428,7 @@ export function App() {
         });
     };
     const resumeCallbackIfNeeded = () => {
-      if (hasOidcCallbackParams()) {
+      if (hasOidcCallbackParams(authConfig)) {
         authenticate();
       }
     };

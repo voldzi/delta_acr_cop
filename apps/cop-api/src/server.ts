@@ -16,7 +16,7 @@ import { ContractValidators, formatValidationErrors } from "@cop/ingest-contract
 import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
 import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
-import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { buildCopAlerts, type AoiRule, type AoiRuleAffiliationScope, type CopAlert } from "./alerts.js";
@@ -209,7 +209,7 @@ import { registerMessagingRoutes } from "./routes/messaging-routes.js";
 import { registerMobileRoutes } from "./routes/mobile-routes.js";
 import { registerRadioRoutes } from "./routes/radio-routes.js";
 import { registerRoutingRoutes } from "./routes/routing-routes.js";
-import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
+import { actorFromRequest, decodeJwt, requireBearerToken, verifyOidcToken, type AuthenticatedActor } from "./security.js";
 import { buildSourceHealthItems, type SourceHealthItem } from "./source-health.js";
 import {
   buildSituationDataHealth,
@@ -304,6 +304,13 @@ import {
   type VoiceCallRecord,
   type VoiceCallStore
 } from "./voice-call-store.js";
+import {
+  createWebSessionStoreFromEnv,
+  type WebSessionProfile,
+  type WebSessionRecord,
+  type WebSessionStore,
+  type WebSessionTokens
+} from "./web-session-store.js";
 
 export interface BuildServerOptions {
   aiGateway?: AiGateway;
@@ -332,6 +339,7 @@ export interface BuildServerOptions {
   userProfileStore?: UserProfileStore;
   voiceCallMediaIssuer?: VoiceCallMediaIssuer;
   voiceCallStore?: VoiceCallStore;
+  webSessionStore?: WebSessionStore;
 }
 
 type DependencyStatus = "disabled" | "degraded" | "ok";
@@ -361,6 +369,21 @@ type AiMatrixBotProvisionStatus =
   | "member_sync_failed"
   | "pending_conversation"
   | "pending_room_binding";
+
+interface BffTransaction {
+  callbackUri: string;
+  expiresAt: number;
+  returnTo: string;
+  state: string;
+  verifier: string;
+}
+
+interface BffTokenResponse {
+  access_token?: string;
+  expires_in?: number;
+  id_token?: string;
+  refresh_token?: string;
+}
 const defaultRasterOverlayAllowedHosts = "docker.home.cz,sim.zeleznalady.cz";
 const rasterOverlayMaxBytes = 8 * 1024 * 1024;
 const defaultWeatherCameraAllowedHosts = defaultRasterOverlayAllowedHosts;
@@ -777,6 +800,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     updateAttachmentMetadata: updateCommunityAttachmentMetadata
   });
   const messagingProvider = options.messagingProvider ?? createMessagingProviderFromEnv();
+  const webSessionStore = options.webSessionStore ?? createWebSessionStoreFromEnv();
+  const webBffEnabled = Boolean(webSessionStore);
+  const webBffSessionTtlSeconds = readPositiveInteger(process.env.COP_WEB_SESSION_MAX_AGE_SECONDS, 30 * 24 * 60 * 60);
   const mobileDeviceStore = options.mobileDeviceStore ?? createMobileDeviceStoreFromEnv();
   const mobileDeviceFallbackStore = new InMemoryMobileDeviceStore("memory-fallback");
   const voiceCallStore = options.voiceCallStore ?? createVoiceCallStoreFromEnv();
@@ -877,8 +903,85 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       done(null, body);
     }
   );
+  app.addHook("preHandler", async (request, reply) => {
+    if (!webBffEnabled || isBffAuthRoute(request.url)) return;
+    const presentedBearer = request.headers.authorization;
+    const hasBffMarker = /^Bearer\s+cop-bff-session$/iu.test(presentedBearer ?? "");
+    if (presentedBearer && !hasBffMarker) return;
+    if (readCookie(request.headers.cookie, "cop_web_session_v1") && isUnsafeHttpMethod(request.method) && !isTrustedBffOrigin(request)) {
+      return sendError(reply, 403, "BFF_ORIGIN_FORBIDDEN", "Požadavek musí pocházet z aplikace COP.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const resolved = await resolveWebBffSession(request, reply);
+    if (resolved) request.headers.authorization = `Bearer ${resolved.accessToken}`;
+  });
   app.addHook("preHandler", requireBearerToken);
+  app.get("/api/v1/auth/login", async (request, reply) => {
+    if (!webBffEnabled || !webSessionStore) {
+      return sendError(reply, 404, "AUTH_BFF_DISABLED", "Secure web session is not enabled.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const issuer = normalizedOidcIssuer();
+    const clientId = process.env.COP_OIDC_CLIENT_ID?.trim();
+    if (!issuer || !clientId) {
+      return sendError(reply, 503, "AUTH_CONFIGURATION_INVALID", "Přihlášení COP není nyní správně nakonfigurováno.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const query = request.query as { prompt?: string; returnTo?: string };
+    const returnTo = safeReturnTo(query.returnTo);
+    const state = randomBytes(24).toString("base64url");
+    const verifier = randomBytes(48).toString("base64url");
+    const callbackUri = bffCallbackUri(request);
+    const transaction = signBffTransaction({ callbackUri, expiresAt: Date.now() + 10 * 60_000, returnTo, state, verifier });
+    appendSetCookie(reply, serializeCookie("cop_oidc_txn_v1", transaction, { httpOnly: true, maxAge: 600, path: "/api/v1/auth", sameSite: "Lax", secure: true }));
+    const redirect = new URL(`${issuer}/protocol/openid-connect/auth`);
+    redirect.searchParams.set("client_id", clientId);
+    redirect.searchParams.set("code_challenge", createHash("sha256").update(verifier).digest("base64url"));
+    redirect.searchParams.set("code_challenge_method", "S256");
+    redirect.searchParams.set("redirect_uri", callbackUri);
+    redirect.searchParams.set("response_type", "code");
+    redirect.searchParams.set("scope", process.env.COP_OIDC_SCOPE?.trim() || "openid profile email");
+    redirect.searchParams.set("state", state);
+    if (query.prompt === "login") redirect.searchParams.set("prompt", "login");
+    return reply.redirect(redirect.toString());
+  });
+  app.get("/api/v1/auth/callback", async (request, reply) => {
+    if (!webBffEnabled || !webSessionStore) {
+      return sendError(reply, 404, "AUTH_BFF_DISABLED", "Secure web session is not enabled.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const query = request.query as { code?: string; error?: string; error_description?: string; state?: string };
+    const transaction = verifyBffTransaction(readCookie(request.headers.cookie, "cop_oidc_txn_v1"));
+    appendSetCookie(reply, clearCookie("cop_oidc_txn_v1", "/api/v1/auth"));
+    if (!transaction || !query.code || !query.state || transaction.state !== query.state) {
+      return reply.redirect(`${safeReturnTo(transaction?.returnTo)}?authError=callback`);
+    }
+    if (query.error) return reply.redirect(`${transaction.returnTo}?authError=${encodeURIComponent(query.error_description ?? query.error)}`);
+    try {
+      const tokens = await exchangeBffAuthorizationCode(query.code, transaction);
+      const record = await webSessionStore.create(tokens, new Date(Date.now() + webBffSessionTtlSeconds * 1000));
+      appendSetCookie(reply, serializeCookie("cop_web_session_v1", record.sessionId, { httpOnly: true, maxAge: webBffSessionTtlSeconds, path: "/", sameSite: "Lax", secure: true }));
+      return reply.redirect(transaction.returnTo);
+    } catch (error) {
+      app.log.warn({ error }, "OIDC BFF callback failed.");
+      return reply.redirect(`${transaction.returnTo}?authError=login`);
+    }
+  });
+  app.get("/api/v1/auth/session", async (request, reply) => {
+    if (!webBffEnabled) return reply.code(401).send({ authenticated: false });
+    const session = await resolveWebBffSession(request, reply);
+    if (!session) return reply.code(401).send({ authenticated: false });
+    return { authenticated: true, expiresAt: session.accessTokenExpiresAt.toISOString(), profile: session.profile };
+  });
+  app.post("/api/v1/auth/logout", async (request, reply) => {
+    if (webBffEnabled && !isTrustedBffOrigin(request)) {
+      return sendError(reply, 403, "BFF_ORIGIN_FORBIDDEN", "Požadavek musí pocházet z aplikace COP.", correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    if (webSessionStore) {
+      const sessionId = readCookie(request.headers.cookie, "cop_web_session_v1");
+      if (sessionId) await webSessionStore.revoke(sessionId);
+    }
+    appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
+    return reply.code(204).send();
+  });
   app.addHook("onReady", async () => {
+    if (webSessionStore) await webSessionStore.init();
     await initializeStreamBus();
     await initializeFederationRuntimeStore();
     await initializeUserProfileStore();
@@ -958,6 +1061,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await mobileDeviceStore.close();
     await mobileDeviceFallbackStore.close();
     await voiceCallStore.close();
+    await webSessionStore?.close();
   });
 
   registerHealthRoutes(app, {
@@ -1059,6 +1163,101 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
     }
   });
+
+  async function resolveWebBffSession(request: FastifyRequest, reply: FastifyReply): Promise<WebSessionRecord | null> {
+    if (!webSessionStore) return null;
+    const sessionId = readCookie(request.headers.cookie, "cop_web_session_v1");
+    if (!sessionId) return null;
+    const session = await webSessionStore.get(sessionId);
+    if (!session) {
+      appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
+      return null;
+    }
+    if (session.accessTokenExpiresAt.getTime() > Date.now() + 60_000) return session;
+    if (!session.refreshToken) {
+      await webSessionStore.revoke(sessionId);
+      appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
+      return null;
+    }
+    try {
+      const refreshed = await refreshBffTokens(session.refreshToken);
+      return await webSessionStore.update(sessionId, { ...refreshed, profile: refreshed.profile ?? session.profile });
+    } catch (error) {
+      app.log.info({ error }, "COP web session refresh failed.");
+      await webSessionStore.revoke(sessionId);
+      appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
+      return null;
+    }
+  }
+
+  async function exchangeBffAuthorizationCode(code: string, transaction: BffTransaction): Promise<WebSessionTokens> {
+    const clientId = process.env.COP_OIDC_CLIENT_ID?.trim();
+    if (!clientId) throw new Error("OIDC client is not configured.");
+    const response = await fetch(`${normalizedOidcIssuer()}/protocol/openid-connect/token`, {
+      body: new URLSearchParams({ client_id: clientId, code, code_verifier: transaction.verifier, grant_type: "authorization_code", redirect_uri: transaction.callbackUri }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" }, method: "POST"
+    });
+    if (!response.ok) throw new Error(`OIDC token exchange failed (${response.status}).`);
+    return tokensFromOidcResponse(await response.json() as BffTokenResponse);
+  }
+
+  async function refreshBffTokens(refreshToken: string): Promise<WebSessionTokens> {
+    const clientId = process.env.COP_OIDC_CLIENT_ID?.trim();
+    if (!clientId) throw new Error("OIDC client is not configured.");
+    const response = await fetch(`${normalizedOidcIssuer()}/protocol/openid-connect/token`, {
+      body: new URLSearchParams({ client_id: clientId, grant_type: "refresh_token", refresh_token: refreshToken }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" }, method: "POST"
+    });
+    if (!response.ok) throw new Error(`OIDC token refresh failed (${response.status}).`);
+    return tokensFromOidcResponse(await response.json() as BffTokenResponse, refreshToken);
+  }
+
+  async function tokensFromOidcResponse(response: BffTokenResponse, fallbackRefreshToken?: string): Promise<WebSessionTokens> {
+    if (!response.access_token || !(await verifyOidcToken(response.access_token))) throw new Error("OIDC returned an invalid access token.");
+    const decoded = decodeJwt(response.access_token)?.payload;
+    const subjectId = decoded?.sub?.trim();
+    if (!decoded || !subjectId) throw new Error("OIDC access token does not contain a subject.");
+    const username = decoded.preferred_username?.trim() || decoded.email?.trim() || decoded.name?.trim() || subjectId;
+    const profile: WebSessionProfile = {
+      subjectId, username, name: decoded.name?.trim() || username,
+      ...(decoded.email?.trim() ? { email: decoded.email.trim() } : {})
+    };
+    return {
+      accessToken: response.access_token,
+      accessTokenExpiresAt: new Date(Date.now() + Math.max(30, response.expires_in ?? 300) * 1000),
+      ...(response.id_token ? { idToken: response.id_token } : {}),
+      profile,
+      ...(response.refresh_token ?? fallbackRefreshToken ? { refreshToken: response.refresh_token ?? fallbackRefreshToken } : {})
+    };
+  }
+
+  function signBffTransaction(transaction: BffTransaction): string {
+    const encoded = Buffer.from(JSON.stringify(transaction)).toString("base64url");
+    return `${encoded}.${createHmac("sha256", requiredWebSessionSecret()).update(encoded).digest("base64url")}`;
+  }
+  function verifyBffTransaction(value: string | undefined): BffTransaction | null {
+    if (!value) return null;
+    const [encoded, signature] = value.split(".");
+    if (!encoded || !signature) return null;
+    const expected = createHmac("sha256", requiredWebSessionSecret()).update(encoded).digest("base64url");
+    if (signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+    try {
+      const parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as BffTransaction;
+      return parsed.expiresAt > Date.now() && typeof parsed.state === "string" && typeof parsed.verifier === "string" && typeof parsed.callbackUri === "string" && typeof parsed.returnTo === "string" ? parsed : null;
+    } catch { return null; }
+  }
+  function requiredWebSessionSecret(): string {
+    const secret = process.env.COP_WEB_SESSION_SECRET?.trim();
+    if (!secret || secret.length < 32) throw new Error("COP_WEB_SESSION_SECRET is required for the BFF session.");
+    return secret;
+  }
+  function normalizedOidcIssuer(): string { return (process.env.COP_OIDC_ISSUER ?? "").trim().replace(/\/+$/u, ""); }
+  function bffCallbackUri(request: FastifyRequest): string {
+    const configured = process.env.COP_PUBLIC_URL?.trim().replace(/\/+$/u, "");
+    if (configured) return `${configured}/api/v1/auth/callback`;
+    const proto = headerAsString(request.headers["x-forwarded-proto"])?.split(",")[0]?.trim() || "https";
+    return `${proto}://${request.headers.host}/api/v1/auth/callback`;
+  }
 
   async function initializeStreamBus(): Promise<void> {
     try {
@@ -17428,6 +17627,64 @@ function createStreamBroadcasterFromEnv(env: Record<string, string | undefined> 
     backpressureClientThreshold: readPositiveInteger(env.COP_STREAM_BACKPRESSURE_CLIENTS, 25),
     recommendedRetryMs: readPositiveInteger(env.COP_STREAM_RETRY_MS, 5000)
   });
+}
+
+function isBffAuthRoute(url: string): boolean {
+  return (url.split("?")[0] ?? url).startsWith("/api/v1/auth/");
+}
+
+function isUnsafeHttpMethod(method: string): boolean {
+  return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+}
+
+function isTrustedBffOrigin(request: FastifyRequest): boolean {
+  const origin = headerAsString(request.headers.origin)?.replace(/\/+$/u, "");
+  if (!origin) return false;
+  const configuredPublicUrl = process.env.COP_PUBLIC_URL?.trim().replace(/\/+$/u, "");
+  if (configuredPublicUrl) return origin === configuredPublicUrl;
+  const host = headerAsString(request.headers.host);
+  if (!host) return false;
+  const scheme = headerAsString(request.headers["x-forwarded-proto"])?.split(",")[0]?.trim() || "https";
+  return origin === `${scheme}://${host}`;
+}
+
+function readCookie(header: string | undefined, name: string): string | undefined {
+  if (!header) return undefined;
+  const prefix = `${name}=`;
+  for (const item of header.split(";")) {
+    const value = item.trim();
+    if (value.startsWith(prefix)) {
+      try { return decodeURIComponent(value.slice(prefix.length)); } catch { return undefined; }
+    }
+  }
+  return undefined;
+}
+
+function safeReturnTo(value: string | undefined): string {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return "/";
+  return value;
+}
+
+function serializeCookie(
+  name: string,
+  value: string,
+  options: { httpOnly?: boolean; maxAge?: number; path: string; sameSite: "Lax" | "Strict"; secure: boolean }
+): string {
+  const fields = [`${name}=${encodeURIComponent(value)}`, `Path=${options.path}`, `SameSite=${options.sameSite}`];
+  if (options.maxAge !== undefined) fields.push(`Max-Age=${Math.max(0, Math.floor(options.maxAge))}`);
+  if (options.httpOnly) fields.push("HttpOnly");
+  if (options.secure) fields.push("Secure");
+  return fields.join("; ");
+}
+
+function clearCookie(name: string, path: string): string {
+  return serializeCookie(name, "", { httpOnly: true, maxAge: 0, path, sameSite: "Lax", secure: true });
+}
+
+function appendSetCookie(reply: FastifyReply, value: string): void {
+  const existing = reply.getHeader("set-cookie");
+  if (!existing) { reply.header("set-cookie", value); return; }
+  reply.header("set-cookie", Array.isArray(existing) ? [...existing, value] : [String(existing), value]);
 }
 
 function readPositiveInteger(value: string | undefined, fallback: number): number {

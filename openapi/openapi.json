@@ -233,6 +233,49 @@
         }
       }
     },
+    "/api/v1/auth/login": {
+      "get": {
+        "tags": ["Identity"],
+        "summary": "Start the secure COP web sign-in flow.",
+        "operationId": "startCopWebBffLogin",
+        "security": [],
+        "parameters": [
+          { "name": "returnTo", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^/" } },
+          { "name": "prompt", "in": "query", "required": false, "schema": { "type": "string", "enum": ["login"] } }
+        ],
+        "responses": { "302": { "description": "Redirect to the configured OpenID Connect provider." }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } }
+      }
+    },
+    "/api/v1/auth/callback": {
+      "get": {
+        "tags": ["Identity"],
+        "summary": "Complete the secure COP web sign-in flow.",
+        "operationId": "completeCopWebBffLogin",
+        "security": [],
+        "responses": { "302": { "description": "Browser redirect after the authorization callback." } }
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "tags": ["Identity"],
+        "summary": "Read safe metadata for the current secure web session.",
+        "operationId": "getCopWebBffSession",
+        "security": [],
+        "responses": {
+          "200": { "description": "Authenticated session metadata without OAuth tokens.", "content": { "application/json": { "schema": { "type": "object", "required": ["authenticated", "expiresAt", "profile"], "properties": { "authenticated": { "const": true }, "expiresAt": { "type": "string", "format": "date-time" }, "profile": { "type": "object", "required": ["name", "subjectId", "username"], "properties": { "email": { "type": "string", "format": "email" }, "name": { "type": "string" }, "picture": { "type": "string", "format": "uri" }, "subjectId": { "type": "string" }, "username": { "type": "string" } } } } } } } },
+          "401": { "description": "No valid secure web session." }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": ["Identity"],
+        "summary": "Invalidate the current secure COP web session.",
+        "operationId": "logoutCopWebBffSession",
+        "security": [],
+        "responses": { "204": { "description": "Session invalidated." } }
+      }
+    },
     "/api/v1/mobile/bootstrap": {
       "get": {
         "tags": [

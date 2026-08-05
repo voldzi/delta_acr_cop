@@ -19,6 +19,9 @@ services:
       COP_OIDC_CLIENT_ID: "${COP_OIDC_CLIENT_ID:-cop-web}"
       COP_OIDC_REQUIRED_ROLE: "${COP_OIDC_REQUIRED_ROLE:-}"
       COP_PUBLIC_URL: "${COP_PUBLIC_URL:-https://cop.zeleznalady.cz}"
+      COP_WEB_BFF_SESSION_ENABLED: "${COP_WEB_BFF_SESSION_ENABLED:-false}"
+      COP_WEB_SESSION_SECRET: "${COP_WEB_SESSION_SECRET:-}"
+      COP_WEB_SESSION_MAX_AGE_SECONDS: "${COP_WEB_SESSION_MAX_AGE_SECONDS:-2592000}"
       COP_EXTERNAL_AI_ENABLED: "${COP_EXTERNAL_AI_ENABLED:-false}"
       COP_AI_DEFAULT_PROVIDER: "${COP_AI_DEFAULT_PROVIDER:-mock}"
       COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS: "${COP_AI_HEALTH_DEPENDENCY_TIMEOUT_MS:-10000}"
@@ -191,6 +194,7 @@ services:
         VITE_COP_OIDC_CLIENT_ID: "${COP_OIDC_CLIENT_ID:-cop-web}"
         VITE_COP_OIDC_SCOPE: "${COP_OIDC_SCOPE:-openid profile email}"
         VITE_COP_OIDC_TOKEN_ENDPOINT: "${COP_WEB_OIDC_TOKEN_ENDPOINT:-/chat/oidc/token}"
+        VITE_COP_BFF_SESSION_ENABLED: "${COP_WEB_BFF_SESSION_ENABLED:-false}"
         VITE_COP_REFRESH_MS: "${COP_WEB_REFRESH_MS:-5000}"
         VITE_COP_MAP_STYLE_URL: "${COP_MAP_STYLE_URL:-}"
         VITE_COP_TILE_URL: "${COP_TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}"
@@ -225,6 +229,7 @@ services:
         VITE_COP_OIDC_CLIENT_ID: "${COP_OIDC_CLIENT_ID:-cop-web}"
         VITE_COP_OIDC_SCOPE: "${COP_OIDC_SCOPE:-openid profile email}"
         VITE_COP_OIDC_TOKEN_ENDPOINT: "${COP_CHAT_OIDC_TOKEN_ENDPOINT:-/chat/oidc/token}"
+        VITE_COP_BFF_SESSION_ENABLED: "${COP_WEB_BFF_SESSION_ENABLED:-false}"
         COP_CHAT_BASE_PATH: "${COP_CHAT_BASE_PATH:-/chat/}"
     image: delta-acr-cop-chat:local
     environment:
