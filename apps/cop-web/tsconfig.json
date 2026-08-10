@@ -11,6 +11,7 @@
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
   "references": [
     { "path": "../../packages/core" },
+    { "path": "../../packages/geo-client" },
     { "path": "../../packages/messaging" },
     { "path": "../../packages/nato-symbol-renderer" }
   ]

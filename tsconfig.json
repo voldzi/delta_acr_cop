@@ -6,6 +6,7 @@
     { "path": "packages/source-adapters" },
     { "path": "packages/policy-engine" },
     { "path": "packages/core" },
+    { "path": "packages/geo-client" },
     { "path": "packages/messaging" },
     { "path": "packages/nato-symbol-renderer" },
     { "path": "packages/ai-guardrails" },

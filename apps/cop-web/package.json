@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "tsc -p ../../packages/nato-symbol-renderer/tsconfig.json && tsc -p tsconfig.json && vite build",
+    "build": "tsc -p ../../packages/geo-client/tsconfig.json && tsc -p ../../packages/nato-symbol-renderer/tsconfig.json && tsc -p tsconfig.json && vite build",
     "dev": "vite --host 0.0.0.0 --port ${COP_WEB_PORT:-4311}",
     "preview": "node server.mjs"
   },
@@ -11,6 +11,7 @@
     "@cop/core": "workspace:*",
     "@cop/messaging": "workspace:*",
     "@cop/nato-symbol-renderer": "workspace:*",
+    "@zeleznalady/geo-client": "workspace:*",
     "@radix-ui/react-context-menu": "^2.3.1",
     "@radix-ui/react-dialog": "^1.1.17",
     "@radix-ui/react-popover": "^1.1.17",

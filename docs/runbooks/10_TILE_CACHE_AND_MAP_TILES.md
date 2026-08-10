@@ -14,6 +14,16 @@ PostGIS není vhodné úložiště pro PNG dlaždice. Je vhodný jako zdroj geom
 
 ## Stav v COP
 
+Stav ověřený 10. 8. 2026:
+
+- `https://tiles.zeleznalady.cz/osm/{z}/{x}/{y}.png` je společný stabilní
+  veřejný endpoint, ale stále jde o cache před veřejným rasterovým OSM;
+- nejde zatím o vlastní aktuální OSM vector dataset;
+- COP používá neutrální `@zeleznalady/geo-client` pro validaci konfigurace,
+  raster fallback a povinnou atribuci;
+- další produkty mají používat stejný host a nesmějí vytvářet vlastní tile
+  proxy pouze pro svou aplikaci.
+
 COP podporuje tyto proměnné:
 
 ```env
@@ -41,6 +51,11 @@ COP_MAP_STYLE_URL=https://tiles.zeleznalady.cz/styles/civil/style.json
 COP_TILE_URL=
 COP_TILE_GLYPHS_URL=https://tiles.zeleznalady.cz/fonts/{fontstack}/{range}.pbf
 ```
+
+Cílový style JSON, fonty, sprites a atribuce musí být vydávány jako jedna
+verzovaná sada (například `/styles/civil/v1/style.json`). Změna tile backendu
+nesmí měnit veřejný host. Klienti mají mít řízený raster fallback pro případ,
+že vector style není dostupný.
 
 Pokud je `COP_MAP_STYLE_URL` vyplněné, web použije přímo MapLibre style URL. Pokud je prázdné, vytvoří raster style z `COP_TILE_URL`.
 

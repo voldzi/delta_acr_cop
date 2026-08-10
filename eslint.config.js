@@ -22,6 +22,17 @@ export default tseslint.config(
     }
   },
   {
+    files: ["packages/geo-client/src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: ["@cop/*", "../../apps/*", "../../../apps/*"]
+        }
+      ]
+    }
+  },
+  {
     files: ["apps/cop-web/src/**/*.{ts,tsx}", "apps/cop-chat/src/**/*.{ts,tsx}"],
     plugins: {
       "react-hooks": reactHooks,

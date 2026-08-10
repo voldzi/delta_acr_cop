@@ -219,6 +219,9 @@ importers:
       '@tanstack/react-table':
         specifier: ^8.21.3
         version: 8.21.3(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@zeleznalady/geo-client':
+        specifier: workspace:*
+        version: link:../../packages/geo-client
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -286,6 +289,8 @@ importers:
   packages/canonical-model: {}
 
   packages/core: {}
+
+  packages/geo-client: {}
 
   packages/ingest-contracts:
     dependencies:

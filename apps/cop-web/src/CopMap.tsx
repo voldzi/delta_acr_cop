@@ -40,6 +40,20 @@ import maplibregl, {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
+  DEFAULT_MAPLIBRE_GLYPHS_TEMPLATE,
+  DEFAULT_OSM_TILE_TEMPLATE,
+  createClusterLayers,
+  createClusteredGeoJsonSource,
+  createMapFitPlan,
+  createRouteLineLayer,
+  normalizeGeoCoordinate,
+  normalizeLineStringGeometry,
+  normalizeMapGlyphsTemplate as normalizeSharedMapGlyphsTemplate,
+  normalizeMapTileTemplate as normalizeSharedMapTileTemplate,
+  resolveBasemapStyle
+} from "@zeleznalady/geo-client";
+import { resolveCopBasemapConfig } from "./map-basemap-config.js";
+import {
   isPublicFlightObject,
   type AoiRule,
   type CopAlert,
@@ -486,13 +500,16 @@ const mapPointRaiseLayerIds = [
   trackLabelLayerId
 ] as const;
 
-const defaultTileUrl = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-const defaultTileGlyphsUrl = "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf";
-const defaultTileAttribution = "&copy; OpenStreetMap contributors";
-const mapStyleUrl = normalizeOptionalMapUrl(import.meta.env.VITE_COP_MAP_STYLE_URL);
-const tileUrl = normalizeMapTileTemplate(import.meta.env.VITE_COP_TILE_URL, defaultTileUrl);
-const tileGlyphsUrl = normalizeMapGlyphsTemplate(import.meta.env.VITE_COP_TILE_GLYPHS_URL, defaultTileGlyphsUrl);
-const tileAttribution = normalizeOptionalMapText(import.meta.env.VITE_COP_TILE_ATTRIBUTION, defaultTileAttribution);
+const defaultTileUrl = DEFAULT_OSM_TILE_TEMPLATE;
+const defaultTileGlyphsUrl = DEFAULT_MAPLIBRE_GLYPHS_TEMPLATE;
+const basemapConfig = resolveCopBasemapConfig({
+  VITE_COP_MAP_STYLE_URL: import.meta.env.VITE_COP_MAP_STYLE_URL,
+  VITE_COP_TILE_ATTRIBUTION: import.meta.env.VITE_COP_TILE_ATTRIBUTION,
+  VITE_COP_TILE_GLYPHS_URL: import.meta.env.VITE_COP_TILE_GLYPHS_URL,
+  VITE_COP_TILE_URL: import.meta.env.VITE_COP_TILE_URL
+});
+const mapStyleUrl = basemapConfig.styleUrl;
+const tileUrl = basemapConfig.tileUrl;
 const defaultCenter = parseMapCenter(import.meta.env.VITE_COP_MAP_CENTER);
 const defaultZoom = parseFiniteNumber(import.meta.env.VITE_COP_MAP_ZOOM, 8);
 export interface TrackFeatureProperties {
@@ -1445,7 +1462,7 @@ function CopMapComponent({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: resolveMapStyle(mapStyleUrl, tileUrl, tileAttribution, tileGlyphsUrl),
+      style: resolveBasemapStyle(basemapConfig) as string | StyleSpecification,
       center: initialView?.center ?? defaultCenter,
       zoom: initialView?.zoom ?? defaultZoom,
       bearing: initialView?.bearing ?? 0,
@@ -1533,15 +1550,15 @@ function CopMapComponent({
             publicFlightSymbolMode
           }) as Parameters<GeoJSONSource["setData"]>[0]
         });
-        map.addSource(trackClusterSourceId, {
-          type: "geojson",
-          data: objectsToTrackFeatureCollection(objectsRef.current, selectedId, {
-            publicFlightSymbolMode
-          }) as Parameters<GeoJSONSource["setData"]>[0],
-          cluster: true,
-          clusterMaxZoom: 14,
-          clusterRadius: 52
-        });
+        map.addSource(
+          trackClusterSourceId,
+          createClusteredGeoJsonSource(
+            objectsToTrackFeatureCollection(objectsRef.current, selectedId, {
+              publicFlightSymbolMode
+            }),
+            { clusterMaxZoom: 14, clusterRadius: 52 }
+          ) as SourceSpecification
+        );
         map.addSource(trackHistorySourceId, {
           type: "geojson",
           data: emptyLineFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
@@ -1594,13 +1611,13 @@ function CopMapComponent({
           type: "geojson",
           data: emptySituationContextFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
         });
-        map.addSource(situationOsmClusterSourceId, {
-          type: "geojson",
-          data: emptySituationContextFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0],
-          cluster: true,
-          clusterMaxZoom: 13,
-          clusterRadius: 44
-        });
+        map.addSource(
+          situationOsmClusterSourceId,
+          createClusteredGeoJsonSource(emptySituationContextFeatureCollection(), {
+            clusterMaxZoom: 13,
+            clusterRadius: 44
+          }) as SourceSpecification
+        );
         map.addSource(selectedTransitRouteSourceId, {
           type: "geojson",
           data: emptySelectedRouteFeatureCollection() as Parameters<GeoJSONSource["setData"]>[0]
@@ -2287,22 +2304,16 @@ function CopMapComponent({
           }
         });
 
-        map.addLayer({
-          id: selectedTransitRouteLineLayerId,
-          type: "line",
-          source: selectedTransitRouteSourceId,
-          filter: ["==", ["geometry-type"], "LineString"],
-          layout: {
-            "line-cap": "round",
-            "line-join": "round"
-          },
-          paint: {
-            "line-color": "#0f7fa7",
-            "line-opacity": 0.88,
-            "line-width": ["interpolate", ["linear"], ["zoom"], 9, 4.5, 13, 7.5, 17, 10.5],
-            "line-blur": 0.2
-          }
-        });
+        map.addLayer(
+          createRouteLineLayer({
+            blur: 0.2,
+            color: "#0f7fa7",
+            layerId: selectedTransitRouteLineLayerId,
+            opacity: 0.88,
+            sourceId: selectedTransitRouteSourceId,
+            width: ["interpolate", ["linear"], ["zoom"], 9, 4.5, 13, 7.5, 17, 10.5]
+          }) as Parameters<maplibregl.Map["addLayer"]>[0]
+        );
 
         map.addLayer({
           id: selectedTransitRouteStopLayerId,
@@ -3396,39 +3407,30 @@ function CopMapComponent({
           }
         });
 
-        map.addLayer({
-          id: situationOsmClusterCircleLayerId,
-          type: "circle",
-          source: situationOsmClusterSourceId,
-          filter: ["has", "point_count"],
-          paint: {
-            "circle-color": ["step", ["get", "point_count"], "#7dd3fc", 12, "#a3e635", 36, "#facc15"],
-            "circle-opacity": 0.9,
-            "circle-radius": ["step", ["get", "point_count"], 17, 12, 22, 36, 28, 80, 34],
-            "circle-stroke-color": "#061019",
-            "circle-stroke-opacity": 0.9,
-            "circle-stroke-width": 2
-          }
+        const situationOsmClusterLayers = createClusterLayers({
+          circleColor: "#7dd3fc",
+          circleColorStops: [
+            { minimumCount: 12, value: "#a3e635" },
+            { minimumCount: 36, value: "#facc15" }
+          ],
+          circleLayerId: situationOsmClusterCircleLayerId,
+          circleOpacity: 0.9,
+          circleRadius: 17,
+          circleRadiusStops: [
+            { minimumCount: 12, value: 22 },
+            { minimumCount: 36, value: 28 },
+            { minimumCount: 80, value: 34 }
+          ],
+          countLayerId: situationOsmClusterCountLayerId,
+          countSize: 11,
+          countSizeStops: [
+            { minimumCount: 12, value: 12 },
+            { minimumCount: 36, value: 13 }
+          ],
+          sourceId: situationOsmClusterSourceId
         });
-
-        map.addLayer({
-          id: situationOsmClusterCountLayerId,
-          type: "symbol",
-          source: situationOsmClusterSourceId,
-          filter: ["has", "point_count"],
-          layout: {
-            "text-field": ["get", "point_count_abbreviated"],
-            "text-font": ["Noto Sans Bold"],
-            "text-size": ["step", ["get", "point_count"], 11, 12, 12, 36, 13],
-            "text-allow-overlap": true,
-            "text-ignore-placement": true
-          },
-          paint: {
-            "text-color": "#061019",
-            "text-halo-color": "#eef5fb",
-            "text-halo-width": 0.7
-          }
-        });
+        map.addLayer(situationOsmClusterLayers.circle as Parameters<maplibregl.Map["addLayer"]>[0]);
+        map.addLayer(situationOsmClusterLayers.count as Parameters<maplibregl.Map["addLayer"]>[0]);
 
         map.addLayer({
           id: situationOsmClusterSymbolLayerId,
@@ -3993,39 +3995,31 @@ function CopMapComponent({
           }
         });
 
-        map.addLayer({
-          id: trackClusterCircleLayerId,
-          type: "circle",
-          source: trackClusterSourceId,
-          filter: ["has", "point_count"],
-          paint: {
-            "circle-color": ["step", ["get", "point_count"], "#8cb6d8", 8, "#facc15", 22, "#ef4444"],
-            "circle-opacity": 0.88,
-            "circle-radius": ["step", ["get", "point_count"], 18, 8, 24, 22, 30, 60, 36],
-            "circle-stroke-color": "#061019",
-            "circle-stroke-opacity": 0.9,
-            "circle-stroke-width": 2
-          }
+        const trackClusterLayers = createClusterLayers({
+          circleColor: "#8cb6d8",
+          circleColorStops: [
+            { minimumCount: 8, value: "#facc15" },
+            { minimumCount: 22, value: "#ef4444" }
+          ],
+          circleLayerId: trackClusterCircleLayerId,
+          circleOpacity: 0.88,
+          circleRadius: 18,
+          circleRadiusStops: [
+            { minimumCount: 8, value: 24 },
+            { minimumCount: 22, value: 30 },
+            { minimumCount: 60, value: 36 }
+          ],
+          countHaloWidth: 0.65,
+          countLayerId: trackClusterCountLayerId,
+          countSize: 12,
+          countSizeStops: [
+            { minimumCount: 8, value: 13 },
+            { minimumCount: 22, value: 14 }
+          ],
+          sourceId: trackClusterSourceId
         });
-
-        map.addLayer({
-          id: trackClusterCountLayerId,
-          type: "symbol",
-          source: trackClusterSourceId,
-          filter: ["has", "point_count"],
-          layout: {
-            "text-field": ["get", "point_count_abbreviated"],
-            "text-font": ["Noto Sans Bold"],
-            "text-size": ["step", ["get", "point_count"], 12, 8, 13, 22, 14],
-            "text-allow-overlap": true,
-            "text-ignore-placement": true
-          },
-          paint: {
-            "text-color": "#061019",
-            "text-halo-color": "#eef5fb",
-            "text-halo-width": 0.65
-          }
-        });
+        map.addLayer(trackClusterLayers.circle as Parameters<maplibregl.Map["addLayer"]>[0]);
+        map.addLayer(trackClusterLayers.count as Parameters<maplibregl.Map["addLayer"]>[0]);
 
         map.addLayer({
           id: trackClusterSelectedHaloLayerId,
@@ -12354,31 +12348,12 @@ function emptySituationContextFeatureCollection(): SituationContextFeatureCollec
   };
 }
 
-function normalizeOptionalMapUrl(value: string | undefined): string {
-  return (value ?? "").trim();
-}
-
-function normalizeOptionalMapText(value: string | undefined, fallback: string): string {
-  const normalized = (value ?? "").trim();
-  return normalized || fallback;
-}
-
 export function normalizeMapTileTemplate(value: string | undefined, fallback = defaultTileUrl): string {
-  const normalized = normalizeOptionalMapUrl(value);
-  if (!normalized) {
-    return fallback;
-  }
-  const hasTileTokens = normalized.includes("{z}") && normalized.includes("{x}") && normalized.includes("{y}");
-  return hasTileTokens ? normalized : fallback;
+  return normalizeSharedMapTileTemplate(value, fallback);
 }
 
 export function normalizeMapGlyphsTemplate(value: string | undefined, fallback = defaultTileGlyphsUrl): string {
-  const normalized = normalizeOptionalMapUrl(value);
-  if (!normalized) {
-    return fallback;
-  }
-  const hasGlyphTokens = normalized.includes("{fontstack}") && normalized.includes("{range}");
-  return hasGlyphTokens ? normalized : fallback;
+  return normalizeSharedMapGlyphsTemplate(value, fallback);
 }
 
 export function parseMapCenter(value: string | undefined): [number, number] {
@@ -12393,43 +12368,6 @@ export function parseMapCenter(value: string | undefined): [number, number] {
     return defaultMapCenter;
   }
   return [lon, lat];
-}
-
-function resolveMapStyle(
-  styleUrl: string,
-  tiles: string,
-  attribution: string,
-  glyphs: string
-): string | StyleSpecification {
-  const normalizedStyleUrl = styleUrl.trim();
-  if (normalizedStyleUrl) {
-    return normalizedStyleUrl;
-  }
-  return createRasterStyle(tiles, attribution, glyphs);
-}
-
-function createRasterStyle(tiles: string, attribution: string, glyphs: string): StyleSpecification {
-  return {
-    version: 8,
-    glyphs,
-    sources: {
-      "osm-raster": {
-        type: "raster",
-        tiles: [tiles],
-        tileSize: 256,
-        minzoom: 0,
-        maxzoom: 19,
-        attribution
-      }
-    },
-    layers: [
-      {
-        id: "osm-raster",
-        type: "raster",
-        source: "osm-raster"
-      }
-    ]
-  };
 }
 
 function applyBasemapMode(map: maplibregl.Map, mode: MapBasemapMode, options: { webKitRuntime?: boolean } = {}): void {
@@ -13330,20 +13268,7 @@ function emergencyRouteToFeatureCollection(
 }
 
 function routeLineGeometry(value: unknown): { coordinates: Array<[number, number]>; type: "LineString" } | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  if (value.type === "LineString" && Array.isArray(value.coordinates)) {
-    const coordinates = normalizeRouteCoordinates(value.coordinates);
-    return coordinates.length >= 2 ? { coordinates, type: "LineString" } : null;
-  }
-  if (value.type === "MultiLineString" && Array.isArray(value.coordinates)) {
-    const coordinates = value.coordinates.flatMap((line) =>
-      Array.isArray(line) ? normalizeRouteCoordinates(line) : []
-    );
-    return coordinates.length >= 2 ? { coordinates, type: "LineString" } : null;
-  }
-  return null;
+  return normalizeLineStringGeometry(value);
 }
 
 function routeAreaGeometry(
@@ -13408,12 +13333,7 @@ function normalizeRouteCoordinates(value: unknown[]): Array<[number, number]> {
 }
 
 function normalizeRouteCoordinate(value: unknown): [number, number] | null {
-  if (!Array.isArray(value) || value.length < 2) {
-    return null;
-  }
-  const lon = Number(value[0]);
-  const lat = Number(value[1]);
-  return Number.isFinite(lon) && Number.isFinite(lat) ? [lon, lat] : null;
+  return normalizeGeoCoordinate(value);
 }
 
 function routeFeatureLabel(properties: Record<string, unknown> | undefined, index: number): string {
@@ -13547,19 +13467,24 @@ function fitMapToEmergencyRoute(map: maplibregl.Map, collection: EmergencyRouteF
   for (const feature of collection.features) {
     collectGeometryCoordinates(feature.geometry.coordinates, points);
   }
-  if (points.length === 0) {
+  const plan = createMapFitPlan(points, {
+    currentZoom: map.getZoom(),
+    duration: points.length === 1 ? 650 : 750,
+    maxZoom: 15,
+    padding: { bottom: 96, left: 88, right: 88, top: 96 },
+    singlePointZoom: 14
+  });
+  if (!plan) {
     return false;
   }
-  const bounds = new maplibregl.LngLatBounds();
-  points.forEach((point) => bounds.extend(point));
-  if (points.length === 1) {
-    map.easeTo({ center: points[0]!, duration: 650, zoom: Math.max(map.getZoom(), 14) });
+  if (plan.kind === "center") {
+    map.easeTo({ center: plan.center, duration: plan.duration, zoom: plan.zoom });
     return true;
   }
-  map.fitBounds(bounds, {
-    duration: 750,
-    maxZoom: 15,
-    padding: { bottom: 96, left: 88, right: 88, top: 96 }
+  map.fitBounds(plan.bounds, {
+    duration: plan.duration,
+    maxZoom: plan.maxZoom,
+    padding: plan.padding
   });
   return true;
 }
@@ -13578,26 +13503,31 @@ export function fitMapToVisibleContent(
     ...fitEligibleSituationCoordinates(situationFeatures)
   ];
 
-  if (!map || points.length === 0) {
+  if (!map) {
     return false;
   }
-
-  const bounds = new maplibregl.LngLatBounds();
-  points.forEach((point) => bounds.extend(point));
-
-  if (points.length === 1) {
+  const plan = createMapFitPlan(points, {
+    currentZoom: map.getZoom(),
+    duration: points.length === 1 ? 650 : 750,
+    maxZoom: 12,
+    padding: { bottom: 72, left: 72, right: 72, top: 86 },
+    singlePointZoom: 10
+  });
+  if (!plan) {
+    return false;
+  }
+  if (plan.kind === "center") {
     map.easeTo({
-      center: points[0]!,
-      zoom: Math.max(map.getZoom(), 10),
-      duration: 650
+      center: plan.center,
+      zoom: plan.zoom,
+      duration: plan.duration
     });
     return true;
   }
-
-  map.fitBounds(bounds, {
-    padding: { top: 86, right: 72, bottom: 72, left: 72 },
-    maxZoom: 12,
-    duration: 750
+  map.fitBounds(plan.bounds, {
+    padding: plan.padding,
+    maxZoom: plan.maxZoom,
+    duration: plan.duration
   });
   return true;
 }

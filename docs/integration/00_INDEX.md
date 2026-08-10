@@ -15,3 +15,6 @@
 - [13 Event Contract and AsyncAPI Direction](13_EVENT_CONTRACT_AND_ASYNCAPI.md)
 - [14 AI-COP/NIPS Federation Contract](14_AI_COP_NIPS_FEDERATION_CONTRACT.md)
 - [15 SIM Routing Follow-up](15_SIM_ROUTING_FOLLOWUP.md)
+- [16 Shared Geo: Exact SIM Routing Handoff](16_SHARED_GEO_SIM_ROUTING_HANDOFF.md)
+- [17 Shared Geo: Exact Městem hrou Handoff](17_MESTEM_HROU_GEO_HANDOFF.md)
+- [18 Shared Geo Client Releases](18_GEO_CLIENT_RELEASES.md)

@@ -4,7 +4,8 @@ import { fileURLToPath, URL } from "node:url";
 export default defineConfig({
   resolve: {
     alias: {
-      "@cop/messaging/webPush": fileURLToPath(new URL("./packages/messaging/src/webPush.ts", import.meta.url))
+      "@cop/messaging/webPush": fileURLToPath(new URL("./packages/messaging/src/webPush.ts", import.meta.url)),
+      "@zeleznalady/geo-client": fileURLToPath(new URL("./packages/geo-client/src/index.ts", import.meta.url))
     }
   },
   test: {

@@ -81,6 +81,9 @@ export default defineConfig({
           if (id.includes("/node_modules/maplibre-gl/")) {
             return "maplibre";
           }
+          if (id.includes("/packages/geo-client/")) {
+            return "geo-client";
+          }
           if (id.includes("/node_modules/qrcode/")) {
             return "qrcode";
           }

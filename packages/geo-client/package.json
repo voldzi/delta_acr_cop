@@ -1,0 +1,30 @@
+{
+  "name": "@zeleznalady/geo-client",
+  "version": "0.1.0",
+  "description": "Framework-neutral MapLibre and GeoJSON helpers shared by Zelezna Lady applications.",
+  "type": "module",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/voldzi/delta_acr_cop.git",
+    "directory": "packages/geo-client"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

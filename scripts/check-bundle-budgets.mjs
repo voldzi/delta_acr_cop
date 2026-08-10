@@ -14,9 +14,10 @@ const budgets = [
     entries: [
       { label: "app shell", pattern: /^index-[\w-]+\.js$/, maxBytes: 250 * KiB },
       { label: "map workspace", pattern: /^CopMap-[\w-]+\.js$/, maxBytes: 65 * KiB },
+      { label: "shared geo primitives", pattern: /^geo-client-[\w-]+\.js$/, maxBytes: 8 * KiB, maxMatches: 1 },
       { label: "XR workspace", pattern: /^XrWorkspace-[\w-]+\.js$/, maxBytes: 160 * KiB },
       { label: "track table", pattern: /^TrackTable-[\w-]+\.js$/, maxBytes: 16 * KiB },
-      { label: "maplibre", pattern: /^maplibre-[\w-]+\.js$/, maxBytes: 300 * KiB },
+      { label: "maplibre", pattern: /^maplibre-[\w-]+\.js$/, maxBytes: 300 * KiB, maxMatches: 1 },
       { label: "milsymbol", pattern: /^milsymbol-[\w-]+\.js$/, maxBytes: 210 * KiB },
       { label: "pairing QR generator", pattern: /^qrcode-[\w-]+\.js$/, maxBytes: 12 * KiB },
       { label: "styles", pattern: /^index-[\w-]+\.css$/, maxBytes: 35 * KiB },
@@ -70,6 +71,12 @@ function checkEntry(app, assets, entry) {
     hasFailure = true;
     console.error(`✗ ${app}: chybí artefakt ${entry.label} (${entry.pattern})`);
     return;
+  }
+  if (entry.maxMatches !== undefined && matches.length > entry.maxMatches) {
+    hasFailure = true;
+    console.error(
+      `✗ ${app}: ${entry.label} je rozdělen do ${matches.length} artefaktů, povoleno je nejvýše ${entry.maxMatches}`
+    );
   }
   matches.forEach((asset) => {
     const ok = asset.size <= entry.maxBytes;
