@@ -13,16 +13,17 @@ dependency; this package does not bundle another runtime copy.
 COP is the first consumer. Cross-repository consumers must use a published,
 versioned package rather than importing source files from the COP repository.
 
-## Released package
+## Prepared package release
 
-Version `0.1.0` is distributed as the immutable production release asset:
+Version `0.1.0` is prepared for distribution as an immutable release asset:
 
 ```bash
 pnpm add https://github.com/voldzi/delta_acr_cop/releases/download/geo-client-v0.1.0/zeleznalady-geo-client-0.1.0.tgz
 ```
 
-Consumers must pin this versioned URL (or a later explicit release), never a
-branch or a path inside the COP working tree. The release checksum is recorded
-in the COP integration documentation. Promotion to an authenticated
-organization package registry may later preserve the same package name and
-semantic versioning contract.
+The URL becomes valid only after the release is explicitly published. Consumers
+must pin a published versioned URL (or a later explicit release), never a branch
+or a path inside the COP working tree. The prepared artifact checksum and its
+publication status are recorded in the COP integration documentation. The
+preferred target remains an authenticated organization package registry under
+the same package name and semantic versioning contract.

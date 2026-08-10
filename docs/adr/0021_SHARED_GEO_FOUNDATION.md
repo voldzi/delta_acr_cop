@@ -49,13 +49,13 @@ public routing or geocoding gateway for unrelated products.
 ## Distribution and versioning
 
 `@zeleznalady/geo-client` starts at `0.1.0` in the COP workspace. COP uses the
-workspace version. The first cross-repository release is the immutable GitHub
-release asset tagged `geo-client-v0.1.0`, with its SHA-256 recorded in the
-package README. Consumers must pin that versioned artifact; deep imports from
-the COP repository and floating branch URLs are forbidden. When an approved
-authenticated organization package registry is available, later releases may
-be promoted there without changing the package name or semantic versioning
-contract.
+workspace version. The first cross-repository release candidate is prepared as
+an immutable versioned artifact. It must not be consumed until its publication
+status is marked as released in the release manifest. Consumers must pin the
+published versioned artifact; deep imports from the COP repository and floating
+branch URLs are forbidden. The preferred target is an approved authenticated
+organization package registry. A public release asset requires an explicit
+publication decision because it is anonymously downloadable.
 
 Breaking changes require a major version. Additive types and helpers use a
 minor version. Behavioural fixes that preserve the contract use a patch version.

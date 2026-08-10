@@ -32,9 +32,9 @@ APIs and it must not store game content in COP.
 
 ## Release prerequisites
 
-- `@zeleznalady/geo-client@0.1.0` (or newer compatible version) is available as
-  an immutable released package artifact; consumers pin the explicit release
-  until an authenticated organization package registry is introduced;
+- `@zeleznalady/geo-client@0.1.0` (or newer compatible version) is marked as
+  published in the release manifest and available as an immutable package
+  artifact; a prepared but unpublished artifact does not satisfy this gate;
 - SIM has delivered and documented the authenticated `geo-routing-v1` operation;
 - the target public style/font URLs exist or the documented raster fallback is
   intentionally accepted;
