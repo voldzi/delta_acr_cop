@@ -1,3 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+overrides:
+  matrix-events-sdk: 2.0.0
+
+allowBuilds:
+  esbuild: true

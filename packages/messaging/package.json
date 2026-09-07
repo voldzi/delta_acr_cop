@@ -34,6 +34,6 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "matrix-js-sdk": "41.8.0"
+    "matrix-js-sdk": "42.3.0"
   }
 }

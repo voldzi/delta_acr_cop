@@ -368,6 +368,7 @@ describe("map catalog route", () => {
             providerLayerIds: ["traffic"],
             providerSourceIds: ["pid_gtfs_rt"]
           }),
+          refreshSeconds: 15,
           selectable: true
         }),
         expect.objectContaining({
@@ -2099,7 +2100,7 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
         },
         {
           audience: "public",
-          cacheTtlSeconds: 20,
+          cacheTtlSeconds: 15,
           defaultVisible: false,
           geometryTypes: ["Point", "LineString"],
           kind: "vector_features",
@@ -2120,7 +2121,7 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
             streamId: "features"
           },
           recommendedCatalogLayerId: "public.traffic.transit",
-          refreshSeconds: 20,
+          refreshSeconds: 15,
           role: "reference",
           selectable: true,
           sourceIds: ["pid_gtfs_rt", "idsjmk_vehicle_positions", "spravazeleznic_trains", "public_transit_static"],
@@ -2242,7 +2243,7 @@ class FakeProviderCatalogSituationDataSource extends FakeSituationDataSource {
           selectableInMap: true,
           sourceId: "pid_gtfs_rt",
           sourceRole: "final",
-          updateCadenceSeconds: 20,
+          updateCadenceSeconds: 15,
           usedByCatalogLayerIds: ["public.traffic.transit.pid"]
         },
         {

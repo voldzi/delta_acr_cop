@@ -17,6 +17,33 @@ Current runtime observability surfaces:
 - source health through `/api/v1/sources/health`
 - COP stream health through `/api/v1/stream/cop/health`
 
+The main web client also records a bounded, in-memory set of user-experience
+metrics. The monitor is loaded after the application shell so telemetry cannot
+delay the map. It records LCP, CLS, interaction latency, navigation timing and
+long main-thread tasks, retains at most the last 100 samples in
+`window.__COP_WEB_PERFORMANCE__`, and emits a `cop:web-performance` browser
+event for diagnostics. Collection is fail-open and does not include user input,
+map coordinates, report contents, tokens or message data.
+
+Client ratings use these release thresholds:
+
+| Metric                |         Good | Needs improvement |        Poor |
+| --------------------- | -----------: | ----------------: | ----------: |
+| LCP / navigation      |  up to 2.5 s |         up to 4 s |    over 4 s |
+| INP                   | up to 200 ms |      up to 500 ms | over 500 ms |
+| CLS                   |   up to 0.10 |        up to 0.25 |   over 0.25 |
+| Long main-thread task | up to 100 ms |      up to 250 ms | over 250 ms |
+
+These runtime measurements complement, but do not replace, the compressed
+asset budgets enforced by `pnpm check:bundles`.
+
+The performance buffer is local diagnostic evidence, not a national baseline.
+An anonymized production aggregate may record only metric name, value, rating,
+coarse device class and coarse network class after privacy review. It must not
+contain coordinates, URLs with share state, account identifiers or content.
+Release reporting must state sample size and collection window before claiming
+that a threshold represents Czech users.
+
 Provider-level diagnostics from SIM are consumed server-side and exposed only
 as COP source health or operator diagnostics, not as public map layers.
 `SourceHealthItem.summary` may include sanitized provider metadata such as

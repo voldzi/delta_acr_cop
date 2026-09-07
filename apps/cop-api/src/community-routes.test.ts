@@ -1,10 +1,25 @@
 import { createSign, generateKeyPairSync, type KeyObject } from "node:crypto";
-import { createPublicSafetyAggregateSourceSystem, createPublicSituationAggregateSourceSystem } from "@cop/canonical-model";
-import { AiGateway, OllamaEmbeddingProvider, type AiCopQuery, type AiCopResponse, type AiProvider } from "@cop/ai-gateway";
+import {
+  createPublicSafetyAggregateSourceSystem,
+  createPublicSituationAggregateSourceSystem
+} from "@cop/canonical-model";
+import {
+  AiGateway,
+  OllamaEmbeddingProvider,
+  type AiCopQuery,
+  type AiCopResponse,
+  type AiProvider
+} from "@cop/ai-gateway";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryCommunityReportStore } from "./community-report-store.js";
 import { buildServer } from "./server.js";
-import type { MediaObjectReadRequest, MediaObjectWriteRequest, MediaStorage, MediaUploadRequest, MediaUploadSlot } from "./media-storage.js";
+import type {
+  MediaObjectReadRequest,
+  MediaObjectWriteRequest,
+  MediaStorage,
+  MediaUploadRequest,
+  MediaUploadSlot
+} from "./media-storage.js";
 import type { MessagingProvider } from "./messaging-provider.js";
 import type { PlaceGeocodeQuery, PlaceGeocodeResponse, PlaceGeocoder } from "./place-geocoder.js";
 import type {
@@ -68,7 +83,7 @@ describe("community report routes", () => {
     });
 
     expect(createResponse.statusCode).toBe(201);
-    const report = createResponse.json() as { reportId: string };
+    const report = createResponse.json() as { reportId: string; version: number };
     expect(report.reportId).toMatch(/^[0-9a-f-]{36}$/iu);
 
     const attachmentResponse = await app.inject({
@@ -130,6 +145,31 @@ describe("community report routes", () => {
       ],
       status: "submitted"
     });
+    const submittedReport = submitResponse.json() as {
+      properties: { groupId?: string };
+    };
+    expect(submittedReport.properties.groupId).toMatch(/^[0-9a-f-]{36}$/iu);
+
+    const groupListResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/community/groups"
+    });
+    expect(groupListResponse.statusCode).toBe(200);
+    expect(groupListResponse.json()).toMatchObject({
+      items: [
+        {
+          groupId: submittedReport.properties.groupId,
+          metadata: {
+            communityReport: {
+              reportId: report.reportId,
+              status: "submitted"
+            }
+          },
+          visibility: "private"
+        }
+      ]
+    });
 
     const listResponse = await app.inject({
       headers: { authorization: "Bearer dev-lab-token" },
@@ -165,6 +205,141 @@ describe("community report routes", () => {
       ]
     });
 
+    await app.close();
+  });
+
+  it("resumes report and attachment creation idempotently without duplicates", async () => {
+    let requestNow = new Date("2026-05-20T12:00:00Z");
+    const app = buildServer({ mediaStorage: new FakeMediaStorage(), now: () => requestNow });
+    const reportKey = "6b6d77b0-ef56-4f33-9d14-2a6fc1f6cf56";
+    const attachmentKey = "a67be611-3ef7-48ba-8482-d94c411e0953";
+    const payload = {
+      category: "hazard",
+      location: { lat: 50.075, lon: 14.438, source: "manual" },
+      title: "Spadlý strom",
+      visibility: "community"
+    };
+    const first = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token", "x-idempotency-key": reportKey },
+      method: "POST",
+      payload,
+      url: "/api/v1/community/reports"
+    });
+    requestNow = new Date("2026-05-20T12:00:05Z");
+    const retry = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token", "x-idempotency-key": reportKey },
+      method: "POST",
+      payload,
+      url: "/api/v1/community/reports"
+    });
+    expect(first.statusCode).toBe(201);
+    expect(retry.statusCode).toBe(200);
+    expect(first.json().reportId).toBe(reportKey);
+    expect(retry.json().reportId).toBe(reportKey);
+
+    const attachmentPayload = {
+      byteSize: 12,
+      contentType: "image/jpeg",
+      fileName: "strom.jpg",
+      kind: "photo",
+      metadata: { camera: "rear", orientation: 1 }
+    };
+    const attachment = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token", "x-idempotency-key": attachmentKey },
+      method: "POST",
+      payload: { ...attachmentPayload, metadata: { orientation: 1, camera: "rear" } },
+      url: `/api/v1/community/reports/${reportKey}/attachments`
+    });
+    const attachmentRetry = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token", "x-idempotency-key": attachmentKey },
+      method: "POST",
+      payload: attachmentPayload,
+      url: `/api/v1/community/reports/${reportKey}/attachments`
+    });
+    expect(attachment.statusCode).toBe(201);
+    expect(attachmentRetry.statusCode).toBe(200);
+    expect(attachment.json().attachment.attachmentId).toBe(attachmentKey);
+    expect(attachmentRetry.json().attachment.attachmentId).toBe(attachmentKey);
+
+    const conflict = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token", "x-idempotency-key": reportKey },
+      method: "POST",
+      payload: { ...payload, title: "Jiná událost" },
+      url: "/api/v1/community/reports"
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json()).toMatchObject({ error: { code: "IDEMPOTENCY_CONFLICT" } });
+
+    const submitted = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      url: `/api/v1/community/reports/${reportKey}/submit`
+    });
+    const submitRetry = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      url: `/api/v1/community/reports/${reportKey}/submit`
+    });
+    expect(submitted.statusCode).toBe(200);
+    expect(submitRetry.statusCode).toBe(200);
+    expect(submitRetry.json().version).toBe(submitted.json().version);
+    await app.close();
+  });
+
+  it("revokes public attachment access immediately and hides ACL member identifiers", async () => {
+    process.env.COP_PUBLIC_READ_ENABLED = "true";
+    process.env.COP_MEDIA_ACCESS_TOKEN_SECRET = "test-media-ticket-secret";
+    const app = buildServer({ mediaStorage: new FakeMediaStorage(), now: () => new Date("2026-05-20T12:00:00Z") });
+    const created = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        category: "hazard",
+        location: { lat: 50.075, lon: 14.438, source: "manual" },
+        title: "Nebezpečný předmět",
+        visibility: "community"
+      },
+      url: "/api/v1/community/reports"
+    });
+    const reportId = created.json().reportId as string;
+    const body = Buffer.from("public-photo");
+    const slot = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: { byteSize: body.length, contentType: "image/jpeg", fileName: "predmet.jpg", kind: "photo" },
+      url: `/api/v1/community/reports/${reportId}/attachments`
+    });
+    const attachmentId = slot.json().attachment.attachmentId as string;
+    await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: { byteSize: body.length, dataBase64: body.toString("base64") },
+      url: `/api/v1/community/reports/${reportId}/attachments/${attachmentId}/upload`
+    });
+    await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      url: `/api/v1/community/reports/${reportId}/submit`
+    });
+    const before = await app.inject({ method: "GET", url: `/api/v1/community/reports/${reportId}` });
+    const oldContentUrl = before.json().attachments[0].contentUrl as string;
+    expect(oldContentUrl).toContain(`/attachments/${attachmentId}/content`);
+
+    const restricted = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "PATCH",
+      payload: { access: { audience: "users", userSubjectIds: ["trusted-person"] } },
+      url: `/api/v1/community/reports/${reportId}/attachments/${attachmentId}/access`
+    });
+    expect(restricted.statusCode).toBe(200);
+    expect(restricted.json().access).toMatchObject({ audience: "users", userSubjectIds: ["trusted-person"] });
+
+    const anonymous = await app.inject({ method: "GET", url: `/api/v1/community/reports/${reportId}` });
+    expect(anonymous.json().attachments[0].access).toMatchObject({ audience: "users", userCount: 1 });
+    expect(anonymous.json().attachments[0].access.userSubjectIds).toBeUndefined();
+    expect(anonymous.json().attachments[0].metadata.access).toBeUndefined();
+    expect(anonymous.json().attachments[0].contentUrl).toBeUndefined();
+    expect((await app.inject({ method: "GET", url: oldContentUrl })).statusCode).toBe(404);
     await app.close();
   });
 
@@ -425,7 +600,9 @@ describe("community report routes", () => {
       accessDenied: true,
       attachmentId: attachment.attachmentId
     });
-    expect(anonymousListResponse.json().featureCollection.features[0].properties.attachments[0].contentUrl).toBeUndefined();
+    expect(
+      anonymousListResponse.json().featureCollection.features[0].properties.attachments[0].contentUrl
+    ).toBeUndefined();
 
     const authorizedListResponse = await app.inject({
       headers: { authorization: "Bearer dev-lab-token" },
@@ -590,7 +767,10 @@ describe("community report routes", () => {
     process.env.COP_OIDC_ISSUER = issuer;
     process.env.COP_OIDC_ALLOWED_CLIENTS = "cop-web";
     process.env.COP_OIDC_REQUIRED_ROLE = "cop_operator";
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ keys: [publicJwk] })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ keys: [publicJwk] }))
+    );
     const issuedAt = Math.floor(Date.now() / 1000);
     const fieldToken = signJwt(privateKey, keyId, {
       azp: "cop-web",
@@ -704,7 +884,10 @@ describe("community report routes", () => {
     process.env.COP_OIDC_ISSUER = issuer;
     process.env.COP_OIDC_ALLOWED_CLIENTS = "cop-web";
     process.env.COP_OIDC_REQUIRED_ROLE = "cop_operator";
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ keys: [publicJwk] })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ keys: [publicJwk] }))
+    );
     const issuedAt = Math.floor(Date.now() / 1000);
     const fieldToken = signJwt(privateKey, keyId, {
       azp: "cop-web",
@@ -813,27 +996,30 @@ describe("community report routes", () => {
       communityReportStore,
       now: () => new Date("2026-05-20T12:00:00Z")
     });
-    const floodReport = await communityReportStore.createReport({
-      category: "flood",
-      createdBy: {
-        displayName: "Lab",
-        subjectId: "lab",
-        username: "lab"
+    const floodReport = await communityReportStore.createReport(
+      {
+        category: "flood",
+        createdBy: {
+          displayName: "Lab",
+          subjectId: "lab",
+          username: "lab"
+        },
+        description: "Hladina řeky rychle stoupá u mostu.",
+        location: {
+          accuracyM: 8,
+          lat: 50.1,
+          lon: 17.2,
+          source: "device"
+        },
+        observedAt: "2026-05-20T11:58:00.000Z",
+        properties: {
+          hazardSeverity: "warning"
+        },
+        title: "Stoupající hladina",
+        visibility: "public"
       },
-      description: "Hladina řeky rychle stoupá u mostu.",
-      location: {
-        accuracyM: 8,
-        lat: 50.1,
-        lon: 17.2,
-        source: "device"
-      },
-      observedAt: "2026-05-20T11:58:00.000Z",
-      properties: {
-        hazardSeverity: "warning"
-      },
-      title: "Stoupající hladina",
-      visibility: "public"
-    }, new Date("2026-05-20T11:59:00.000Z"));
+      new Date("2026-05-20T11:59:00.000Z")
+    );
     await communityReportStore.submitReport(floodReport.reportId, "lab", new Date("2026-05-20T12:00:00.000Z"));
 
     const createResponse = await app.inject({
@@ -989,12 +1175,14 @@ describe("community report routes", () => {
         suppressRoutineCivilAir: true
       }
     });
-    expect(priorityContext?.citations).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        entityId: floodReport.reportId,
-        entityType: "communityReport"
-      })
-    ]));
+    expect(priorityContext?.citations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityId: floodReport.reportId,
+          entityType: "communityReport"
+        })
+      ])
+    );
     expect(priorityContext?.mapSnapshot).toMatchObject({
       contractVersion: "cop-ai-map-snapshot-candidates-v1",
       candidates: expect.arrayContaining([
@@ -1016,18 +1204,22 @@ describe("community report routes", () => {
         toolId: "cop.ai.context_index.query"
       }
     });
-    expect(indexedContext?.citations).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        citationId: "I1"
-      })
-    ]));
+    expect(indexedContext?.citations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          citationId: "I1"
+        })
+      ])
+    );
     const indexedSemanticContext = indexedContext?.semanticContext as Record<string, unknown> | undefined;
-    expect(indexedSemanticContext?.items).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        entityId: floodReport.reportId,
-        entityType: "communityReport"
-      })
-    ]));
+    expect(indexedSemanticContext?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityId: floodReport.reportId,
+          entityType: "communityReport"
+        })
+      ])
+    );
     const promptSemanticContext = capturedQueries[0]?.context?.semanticContext as Record<string, unknown> | undefined;
     const promptSemanticItems = Array.isArray(promptSemanticContext?.items) ? promptSemanticContext.items : [];
     expect(promptSemanticItems[0]).not.toHaveProperty("payload");
@@ -1196,10 +1388,7 @@ describe("community report routes", () => {
           roomId: "!room:docker.home.cz",
           state: "room_bound"
         },
-        members: [
-          { displayName: "Lab", userId: "lab" },
-          ...members
-        ],
+        members: [{ displayName: "Lab", userId: "lab" }, ...members],
         metadata: {
           externalId: "community-group-1",
           source: "cop.community"
@@ -1363,7 +1552,10 @@ describe("community report routes", () => {
     process.env.COP_OIDC_ISSUER = issuer;
     process.env.COP_OIDC_ALLOWED_CLIENTS = "cop-web";
     process.env.COP_OIDC_REQUIRED_ROLE = "cop_operator";
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ keys: [publicJwk] })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ keys: [publicJwk] }))
+    );
     const now = Math.floor(Date.now() / 1000);
     const token = signJwt(privateKey, keyId, {
       azp: "cop-web",
@@ -1379,15 +1571,18 @@ describe("community report routes", () => {
       sub: "000dfd66-c95c-4f58-8c1a-c40bf40c7ef1"
     });
     const communityReportStore = new InMemoryCommunityReportStore();
-    const legacyGroup = await communityReportStore.createGroup({
-      createdBy: {
-        displayName: "COP Operator",
-        subjectId: "cop.operator1",
-        username: "cop.operator1"
+    const legacyGroup = await communityReportStore.createGroup(
+      {
+        createdBy: {
+          displayName: "COP Operator",
+          subjectId: "cop.operator1",
+          username: "cop.operator1"
+        },
+        name: "Legacy test group",
+        visibility: "private"
       },
-      name: "Legacy test group",
-      visibility: "private"
-    }, new Date("2026-05-20T12:00:00Z"));
+      new Date("2026-05-20T12:00:00Z")
+    );
     const app = buildServer({
       communityReportStore,
       mediaStorage: new FakeMediaStorage(),
@@ -1514,7 +1709,8 @@ describe("community report routes", () => {
       }
     });
     const attachmentCount = reportBody.featureCollection.features.reduce(
-      (sum: number, feature: { properties: { attachments?: unknown[] } }) => sum + (feature.properties.attachments?.length ?? 0),
+      (sum: number, feature: { properties: { attachments?: unknown[] } }) =>
+        sum + (feature.properties.attachments?.length ?? 0),
       0
     );
     expect(attachmentCount).toBe(6);
@@ -1570,7 +1766,10 @@ describe("community report routes", () => {
     process.env.COP_OIDC_ISSUER = issuer;
     process.env.COP_OIDC_ALLOWED_CLIENTS = "cop-web";
     process.env.COP_OIDC_REQUIRED_ROLE = "cop_operator";
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ keys: [publicJwk] })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ keys: [publicJwk] }))
+    );
     const now = Math.floor(Date.now() / 1000);
     const operatorToken = signJwt(privateKey, keyId, {
       azp: "cop-web",
@@ -1669,16 +1868,20 @@ describe("community report routes", () => {
       url: "/api/v1/community/groups"
     });
     expect(groupResponse.statusCode).toBe(200);
-    const demoGroup = (groupResponse.json() as {
-      items: Array<{
-        members?: Array<{ status?: string; subjectId?: string }>;
-        metadata?: Record<string, unknown>;
-      }>;
-    }).items.find((group) => group.metadata?.demoScenarioId === "flood-central-bohemia");
-    expect(demoGroup?.members).toEqual(expect.arrayContaining([
-      expect.objectContaining({ status: "active", subjectId: "subject-cop-operator" }),
-      expect.objectContaining({ status: "active", subjectId: "subject-op-operator1" })
-    ]));
+    const demoGroup = (
+      groupResponse.json() as {
+        items: Array<{
+          members?: Array<{ status?: string; subjectId?: string }>;
+          metadata?: Record<string, unknown>;
+        }>;
+      }
+    ).items.find((group) => group.metadata?.demoScenarioId === "flood-central-bohemia");
+    expect(demoGroup?.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "active", subjectId: "subject-cop-operator" }),
+        expect.objectContaining({ status: "active", subjectId: "subject-op-operator1" })
+      ])
+    );
 
     await app.close();
   });
@@ -1892,7 +2095,9 @@ describe("community report routes", () => {
       headers: { authorization: "Bearer dev-lab-token" },
       method: "PATCH",
       payload: {
+        changeReason: "Upřesnění stavu na místě.",
         description: "Most je neprůjezdný, voda stoupá.",
+        expectedVersion: 2,
         hazardSeverity: "warning",
         title: "Most neprůjezdný"
       },
@@ -1935,14 +2140,35 @@ describe("community report routes", () => {
       method: "DELETE",
       url: `/api/v1/community/reports/${report.reportId}`
     });
-    expect(deleteResponse.statusCode).toBe(204);
+    expect(deleteResponse.statusCode).toBe(409);
 
-    const afterDeleteResponse = await app.inject({
+    const withdrawResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        expectedVersion: 3,
+        reason: "Most byl znovu ověřen a hlášení již není platné."
+      },
+      url: `/api/v1/community/reports/${report.reportId}/withdraw`
+    });
+    expect(withdrawResponse.statusCode).toBe(200);
+    expect(withdrawResponse.json()).toMatchObject({
+      status: "withdrawn",
+      version: 4
+    });
+
+    const afterWithdrawResponse = await app.inject({
       headers: { authorization: "Bearer dev-lab-token" },
       method: "GET",
       url: `/api/v1/community/reports/${report.reportId}`
     });
-    expect(afterDeleteResponse.statusCode).toBe(404);
+    expect(afterWithdrawResponse.statusCode).toBe(200);
+    expect(afterWithdrawResponse.json()).toMatchObject({
+      properties: {
+        withdrawnReason: "Most byl znovu ověřen a hlášení již není platné."
+      },
+      status: "withdrawn"
+    });
 
     await app.close();
   });
@@ -1963,26 +2189,74 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("keeps expired reports out of the active feed but available in history", async () => {
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-07-23T10:00:00Z")
+    });
+    const createResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        category: "hazard",
+        location: { lat: 50.11, lon: 17.38, source: "manual" },
+        title: "Dočasná překážka",
+        validUntil: "2026-07-23T09:00:00Z"
+      },
+      url: "/api/v1/community/reports"
+    });
+    const report = createResponse.json() as { reportId: string };
+    expect(
+      (
+        await app.inject({
+          headers: { authorization: "Bearer dev-lab-token" },
+          method: "POST",
+          url: `/api/v1/community/reports/${report.reportId}/submit`
+        })
+      ).statusCode
+    ).toBe(200);
+
+    const active = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/community/reports"
+    });
+    expect(active.json()).toMatchObject({ items: [] });
+
+    const history = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET",
+      url: "/api/v1/community/reports?includeExpired=true"
+    });
+    expect(history.json()).toMatchObject({
+      items: [{ reportId: report.reportId, status: "submitted" }]
+    });
+    await app.close();
+  });
+
   it("uploads video and document attachments through the API proxy", async () => {
     const mediaStorage = new FakeMediaStorage();
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (!url.startsWith("https://media.example.test/read/")) {
-        return new Response(null, { status: 404 });
-      }
-      const objectKey = decodeURIComponent(url.slice("https://media.example.test/read/".length));
-      const body = mediaStorage.objects.get(objectKey);
-      return body
-        ? new Response(new Uint8Array(body), {
-            headers: {
-              "accept-ranges": "bytes",
-              "content-length": String(body.length),
-              "content-type": "video/mp4"
-            },
-            status: 200
-          })
-        : new Response(null, { status: 404 });
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (!url.startsWith("https://media.example.test/read/")) {
+          return new Response(null, { status: 404 });
+        }
+        const objectKey = decodeURIComponent(url.slice("https://media.example.test/read/".length));
+        const body = mediaStorage.objects.get(objectKey);
+        return body
+          ? new Response(new Uint8Array(body), {
+              headers: {
+                "accept-ranges": "bytes",
+                "content-length": String(body.length),
+                "content-type": "video/mp4"
+              },
+              status: 200
+            })
+          : new Response(null, { status: 404 });
+      })
+    );
     const app = buildServer({
       mediaStorage,
       now: () => new Date("2026-05-20T12:00:00Z")
@@ -2053,8 +2327,14 @@ describe("community report routes", () => {
       },
       status: "uploaded"
     });
-    expect(uploadResponse.json().contentUrl).toContain(`/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content?mediaToken=`);
-    expect(mediaStorage.objects.get(`community-reports/${report.reportId}/${attachment.attachmentId}/svatba č. 2.mp4`)?.toString()).toBe("fake-video-data");
+    expect(uploadResponse.json().contentUrl).toContain(
+      `/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content?mediaToken=`
+    );
+    expect(
+      mediaStorage.objects
+        .get(`community-reports/${report.reportId}/${attachment.attachmentId}/svatba č. 2.mp4`)
+        ?.toString()
+    ).toBe("fake-video-data");
 
     const submitResponse = await app.inject({
       headers: { authorization: "Bearer dev-lab-token" },
@@ -2092,8 +2372,9 @@ describe("community report routes", () => {
       }
     });
     const listedContentUrl = listResponse.json().featureCollection.features[0].properties.attachments[0].contentUrl;
-    expect(listedContentUrl)
-      .toContain(`/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content?mediaToken=`);
+    expect(listedContentUrl).toContain(
+      `/api/v1/community/reports/${report.reportId}/attachments/${attachment.attachmentId}/content?mediaToken=`
+    );
     process.env.COP_PUBLIC_READ_ENABLED = "false";
     const contentResponse = await app.inject({
       method: "GET",
@@ -2102,7 +2383,9 @@ describe("community report routes", () => {
     expect(contentResponse.statusCode).toBe(200);
     expect(contentResponse.body).toBe("fake-video-data");
     expect(String(contentResponse.headers["content-disposition"])).toContain('filename="svatba _. 2.mp4"');
-    expect(String(contentResponse.headers["content-disposition"])).toContain("filename*=UTF-8''svatba%20%C4%8D.%202.mp4");
+    expect(String(contentResponse.headers["content-disposition"])).toContain(
+      "filename*=UTF-8''svatba%20%C4%8D.%202.mp4"
+    );
 
     await app.close();
   });
@@ -2161,7 +2444,11 @@ describe("community report routes", () => {
       kind: "video",
       status: "uploaded"
     });
-    expect(mediaStorage.objects.get(`community-reports/${report.reportId}/${attachment.attachmentId}/IMG_2741.MOV`)?.toString()).toBe("binary-video-data");
+    expect(
+      mediaStorage.objects
+        .get(`community-reports/${report.reportId}/${attachment.attachmentId}/IMG_2741.MOV`)
+        ?.toString()
+    ).toBe("binary-video-data");
 
     await app.close();
   });
@@ -2261,12 +2548,14 @@ describe("community report routes", () => {
       requiredSources: ["map-search"]
     });
     const priorityContext = evidence.priority as Record<string, unknown>;
-    expect(priorityContext.citations).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        entityId: "osm:police:vrbno",
-        entityType: "mapFeature"
-      })
-    ]));
+    expect(priorityContext.citations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityId: "osm:police:vrbno",
+          entityType: "mapFeature"
+        })
+      ])
+    );
     expect(evidence.mapSnapshot).toMatchObject({
       candidates: expect.arrayContaining([
         expect.objectContaining({
@@ -2348,12 +2637,14 @@ describe("community report routes", () => {
       limit: 8,
       query: "police"
     });
-    expect(placeGeocoder.searchRequests[0]?.bbox).toEqual(expect.objectContaining({
-      east: expect.any(Number),
-      north: expect.any(Number),
-      south: expect.any(Number),
-      west: expect.any(Number)
-    }));
+    expect(placeGeocoder.searchRequests[0]?.bbox).toEqual(
+      expect.objectContaining({
+        east: expect.any(Number),
+        north: expect.any(Number),
+        south: expect.any(Number),
+        west: expect.any(Number)
+      })
+    );
     const aiResponse = response.json() as AiCopResponse;
     expect(aiResponse).toMatchObject({
       model: "map-search-fallback",
@@ -2373,18 +2664,22 @@ describe("community report routes", () => {
       }
     });
     const mapResults = mapSearch.results as Record<string, unknown>[];
-    expect(mapResults[0]).toEqual(expect.objectContaining({
-      category: "police",
-      mapFeatureId: "place:fake-place-geocoder:place:police-vrbno",
-      sourceName: "fake-place-geocoder bounded search",
-      title: "Policie ČR Obvodní oddělení Vrbno pod Pradědem"
-    }));
+    expect(mapResults[0]).toEqual(
+      expect.objectContaining({
+        category: "police",
+        mapFeatureId: "place:fake-place-geocoder:place:police-vrbno",
+        sourceName: "fake-place-geocoder bounded search",
+        title: "Policie ČR Obvodní oddělení Vrbno pod Pradědem"
+      })
+    );
     const mapActions = structured.mapActions as Record<string, unknown>[];
-    expect(mapActions[0]).toEqual(expect.objectContaining({
-      action: "focus-map",
-      entityId: "place:fake-place-geocoder:place:police-vrbno",
-      title: "Policie ČR Obvodní oddělení Vrbno pod Pradědem"
-    }));
+    expect(mapActions[0]).toEqual(
+      expect.objectContaining({
+        action: "focus-map",
+        entityId: "place:fake-place-geocoder:place:police-vrbno",
+        title: "Policie ČR Obvodní oddělení Vrbno pod Pradědem"
+      })
+    );
 
     await app.close();
   });
@@ -2669,7 +2964,8 @@ describe("community report routes", () => {
       async execute(query) {
         capturedQueries.push(query);
         return {
-          summary: "V okolí Vrbna čekejte v nejbližších třech hodinách déšť, vítr kolem 4 m/s a mírné riziko bouřky. Zdroj: ČHMÚ/SIM.",
+          summary:
+            "V okolí Vrbna čekejte v nejbližších třech hodinách déšť, vítr kolem 4 m/s a mírné riziko bouřky. Zdroj: ČHMÚ/SIM.",
           structured: {}
         };
       },
@@ -3081,7 +3377,9 @@ describe("community report routes", () => {
       status: "COMPLETED"
     });
     expect(aiResponse.result.summary).toContain("nenašel předpověď ani měření s odpovídající časovou platností");
-    expect(aiResponse.result.summary).toContain("Nechci proto aktuální nebo zastaralý údaj vydávat za odpověď pro jiné období");
+    expect(aiResponse.result.summary).toContain(
+      "Nechci proto aktuální nebo zastaralý údaj vydávat za odpověď pro jiné období"
+    );
 
     await app.close();
   });
@@ -3456,7 +3754,12 @@ class FakeAiMapSearchSimSearchDataSource implements SimSearchDataSource {
   async query(request: SimSearchQueryRequest, requestNow: Date): Promise<SimSearchQueryResponse> {
     this.lastQuery = request;
     const entityTypes = new Set(request.entityTypes ?? []);
-    if (entityTypes.has("weather_forecast") || entityTypes.has("weather_nowcast") || entityTypes.has("weather_radar") || entityTypes.has("thunderstorm_risk")) {
+    if (
+      entityTypes.has("weather_forecast") ||
+      entityTypes.has("weather_nowcast") ||
+      entityTypes.has("weather_radar") ||
+      entityTypes.has("thunderstorm_risk")
+    ) {
       if (this.weatherForecastResult) {
         return {
           contractVersion: "sim-search-source-v1",
@@ -3836,7 +4139,10 @@ class FakeAiMapSearchPlaceGeocoder implements PlaceGeocoder {
     this.queries.push(query.query);
     this.searchRequests.push(query);
     const matched = query.query === "Vrbno pod Pradědem";
-    const policeMatched = ["police", "Policie ČR", "policie", "police station"].includes(query.query) && query.bounded === true && Boolean(query.bbox);
+    const policeMatched =
+      ["police", "Policie ČR", "policie", "police station"].includes(query.query) &&
+      query.bounded === true &&
+      Boolean(query.bbox);
     return {
       cache: {
         key: query.query,
@@ -3845,38 +4151,43 @@ class FakeAiMapSearchPlaceGeocoder implements PlaceGeocoder {
       },
       contractVersion: "cop-geocode-v1",
       items: policeMatched
-        ? [{
-            center: [16.98407, 49.96299],
-            displayName: "Městská policie Šumperk",
-            id: "place:police-sumperk",
-            kind: "police",
-            providerId: this.providerId,
-            subtitle: "amenity · police",
-            zoomHint: 16
-          }, {
-            center: [17.3832, 50.1209],
-            displayName: "Policie ČR Obvodní oddělení Vrbno pod Pradědem",
-            id: "place:police-vrbno",
-            kind: "police",
-            providerId: this.providerId,
-            subtitle: "amenity · police",
-            zoomHint: 16
-          }]
-        : matched
-        ? [{
-            bbox: {
-              east: 17.45,
-              north: 50.16,
-              south: 50.09,
-              west: 17.31
+        ? [
+            {
+              center: [16.98407, 49.96299],
+              displayName: "Městská policie Šumperk",
+              id: "place:police-sumperk",
+              kind: "police",
+              providerId: this.providerId,
+              subtitle: "amenity · police",
+              zoomHint: 16
             },
-            center: [17.38, 50.12],
-            displayName: "Vrbno pod Pradědem",
-            id: "place:vrbno",
-            kind: "town",
-            providerId: this.providerId
-          }]
-        : [],
+            {
+              center: [17.3832, 50.1209],
+              displayName: "Policie ČR Obvodní oddělení Vrbno pod Pradědem",
+              id: "place:police-vrbno",
+              kind: "police",
+              providerId: this.providerId,
+              subtitle: "amenity · police",
+              zoomHint: 16
+            }
+          ]
+        : matched
+          ? [
+              {
+                bbox: {
+                  east: 17.45,
+                  north: 50.16,
+                  south: 50.09,
+                  west: 17.31
+                },
+                center: [17.38, 50.12],
+                displayName: "Vrbno pod Pradědem",
+                id: "place:vrbno",
+                kind: "town",
+                providerId: this.providerId
+              }
+            ]
+          : [],
       providerId: this.providerId,
       query: {
         ...(query.bbox ? { bbox: query.bbox } : {}),

@@ -27,13 +27,13 @@ of useful text artefacts, not screenshots, PDFs, videos or build output.
 Recommended COP commands:
 
 ```bash
-cd "/Users/voldzi/Documents/Development/18 2026/DELTA_ACR/01 COP"
-"/Users/voldzi/Documents/Development/18 2026/chromadb/tools/chroma-dev.sh" \
+cd "/Users/voldzi/Developer/18 2026/DELTA_ACR/01 COP"
+"/Users/voldzi/Developer/18 2026/chromadb/tools/chroma-dev.sh" \
   reindex \
   --root . \
   --repo-name delta_acr_cop
 
-"/Users/voldzi/Documents/Development/18 2026/chromadb/tools/chroma-dev.sh" \
+"/Users/voldzi/Developer/18 2026/chromadb/tools/chroma-dev.sh" \
   search-all \
   --root . \
   "COP observability OpenTelemetry" \
@@ -56,7 +56,7 @@ parallel with a global rebuild can leave searches temporarily empty or fail with
 Chroma metadata segment errors. Once idle, run:
 
 ```bash
-"/Users/voldzi/Documents/Development/18 2026/chromadb/tools/chroma-dev.sh" \
+"/Users/voldzi/Developer/18 2026/chromadb/tools/chroma-dev.sh" \
   reindex \
   --root . \
   --force

@@ -155,6 +155,13 @@ Možné stavy jsou `accepted`, `duplicate`, `rejected`, `delivered`, `expired`.
 Velké soubory posílat jen jako `manifest`/deferred transfer, nikoli jako
 plaintext nebo velké binární payloady přes COP.
 
+Cílová telefonní síť bez externího rádia, transportní fallbacky, bezpečnost,
+store-carry-forward relay, stavy doručení a fyzická testovací matice jsou
+popsané v
+[Phone-Only Mesh Communication for COP Mobile](02_PHONE_ONLY_MESH_DEVELOPMENT_SPEC.md).
+Tato specifikace nemění skutečnost, že v aktuálním klientovi ještě není
+phone-to-phone transport implementovaný.
+
 ## Push notifikace a CSM Messenger
 
 Push notifikace nepatří do COP mobile API. Autoritativní služba pro zařízení,

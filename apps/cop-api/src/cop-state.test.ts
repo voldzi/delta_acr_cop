@@ -102,6 +102,29 @@ describe("COP state temporal history", () => {
     await app.close();
   });
 
+  it("deduplicates repeated conflict-evidence reads inside the bounded cache window", async () => {
+    const store = new FakeTrackHistoryStore();
+    const app = buildServer({
+      now: () => new Date("2026-05-19T08:02:10Z"),
+      trackHistoryStore: store
+    });
+
+    await ingestTrack(app, "00000000-0000-4000-8000-000000000099", "2026-05-19T08:02:00Z", 50.03, 14.03);
+
+    const request = {
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "GET" as const,
+      url: "/api/v1/cop/alerts"
+    };
+    const first = await app.inject(request);
+    const second = await app.inject(request);
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(store.queryCalls).toBe(1);
+    await app.close();
+  });
+
   it("publishes accepted ingest deltas through the configured stream bus", async () => {
     const streamBus = new FakeStreamBus();
     const app = buildServer({

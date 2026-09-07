@@ -2,13 +2,13 @@
 
 Jsi CODEX spuštěný samostatně nad projektem:
 
-`/Users/voldzi/Documents/Development/18 2026/DELTA_ACR/01 COP`
+`/Users/voldzi/Developer/18 2026/DELTA_ACR/01 COP`
 
 Toto je samostatný projekt pro hlavní COP systém. Projekt SIM je samostatný projekt a bude se vyvíjet paralelně v jiné složce. Tvým cílem v tomto kroku není implementovat produkční aplikaci, ale vytvořit profesionální dokumentační, architektonický a integrační baseline pro hlavní COP systém.
 
 Autoritativní vstupní zadání je zde:
 
-`/Users/voldzi/Documents/Development/18 2026/DELTA_ACR/01 COP/docs/zadani_codex_hlavni_cop_system_ai_delta_v1.md`
+`/Users/voldzi/Developer/18 2026/DELTA_ACR/01 COP/docs/zadani_codex_hlavni_cop_system_ai_delta_v1.md`
 
 Nejprve tento soubor načti, analyzuj a použij jako hlavní zdroj požadavků. Pokud soubor není dostupný, práci nezastavuj; vytvoř baseline podle níže uvedených požadavků a do `docs/06_OPEN_QUESTIONS.md` zapiš, že vstupní zadání nebylo nalezeno.
 

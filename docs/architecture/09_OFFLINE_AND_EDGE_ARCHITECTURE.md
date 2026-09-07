@@ -14,6 +14,14 @@ Offline a edge režim je určen pro omezenou konektivitu a lokální čtení pos
 
 Edge node nesmí vytvářet nový zdroj pravdy. Po obnovení spojení synchronizuje změny přes kontraktované endpointy a řeší konflikty podle server-side pravidel.
 
+Telefonní opportunistická komunikace mezi iPhone/Android zařízeními je
+samostatná transportní vrstva. Používá lokální šifrovaný outbox,
+store-carry-forward relay a centrální ACK hranici, ale telefon se tím nestává
+autoritativním edge uzlem. Cílový návrh a release gates jsou v
+[Phone-Only Mesh Communication for COP Mobile](../mobile/02_PHONE_ONLY_MESH_DEVELOPMENT_SPEC.md)
+a rozhodnutí v
+[ADR-0020](../adr/0020_PHONE_ONLY_OPPORTUNISTIC_MESH.md).
+
 ## Pilot PWA režim
 
 Web klient v pilotu registruje service worker `cop-service-worker.js`, který

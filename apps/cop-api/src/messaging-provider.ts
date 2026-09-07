@@ -193,11 +193,21 @@ export interface MessagingNotificationIntakeRequest {
 export interface MessagingNotificationIntakeResponse {
   contractVersion: "cop-messaging-notification-v1";
   deduplicated?: boolean;
+  deliverySummary?: MessagingNotificationDeliverySummary;
   enabled: boolean;
   notificationId?: string;
   providerId: "csm.messaging";
   status: MessagingIntegrationRuntimeStatus;
   warnings: string[];
+}
+
+export interface MessagingNotificationDeliverySummary {
+  dryRunCount: number;
+  failedCount: number;
+  sentCount: number;
+  targetDeviceCount: number;
+  voipFailedCount: number;
+  voipSentCount: number;
 }
 
 export interface MatrixPushGatewayResponse {
@@ -419,6 +429,7 @@ interface CsmMessagingRoomBindingProviderResponse {
 interface CsmMessagingNotificationProviderResponse {
   contractVersion?: string;
   deduplicated?: boolean;
+  deliverySummary?: MessagingNotificationDeliverySummary;
   notificationId?: string;
   providerId?: string;
   status?: string;
@@ -1074,6 +1085,11 @@ export class CsmMessagingProvider implements MessagingProvider {
         return degradedNotificationIntake("Messaging notification response is not valid JSON.");
       }
       const normalized = normalizeNotificationResponse(result.body);
+      const voipDeliveryFailed =
+        input.type === "chat.voice_call.incoming" &&
+        normalized.deliverySummary !== undefined &&
+        normalized.deliverySummary.voipSentCount === 0 &&
+        normalized.deliverySummary.dryRunCount === 0;
       const warnings = [
         ...(normalized.contractVersion === "csm-messaging-provider-v1"
           ? []
@@ -1085,16 +1101,20 @@ export class CsmMessagingProvider implements MessagingProvider {
           : [`Messaging notification provider id is ${normalized.providerId ?? "unknown"}.`]),
         ...(normalized.warnings ?? []).map(sanitizeProviderWarning)
       ];
+      if (voipDeliveryFailed) {
+        warnings.push("Messaging did not deliver the incoming call through APNs VoIP.");
+      }
       if (!result.ok || !normalized.notificationId) {
         warnings.push(`Messaging notification intake returned HTTP ${result.status}.`);
       }
       return {
         contractVersion: "cop-messaging-notification-v1",
         ...(typeof normalized.deduplicated === "boolean" ? { deduplicated: normalized.deduplicated } : {}),
+        ...(normalized.deliverySummary ? { deliverySummary: normalized.deliverySummary } : {}),
         enabled: true,
         ...(normalized.notificationId ? { notificationId: normalized.notificationId } : {}),
         providerId: "csm.messaging",
-        status: result.ok && normalized.notificationId ? "online" : "degraded",
+        status: result.ok && normalized.notificationId && !voipDeliveryFailed ? "online" : "degraded",
         warnings
       };
     } catch (error) {
@@ -1751,6 +1771,7 @@ function normalizeNotificationResponse(value: Record<string, unknown>): CsmMessa
         : typeof value.deduplicated === "boolean"
           ? value.deduplicated
           : undefined,
+    deliverySummary: normalizeNotificationDeliverySummary(notification.deliverySummary),
     notificationId:
       optionalString(notification.notificationId) ??
       optionalString(notification.id) ??
@@ -1761,6 +1782,34 @@ function normalizeNotificationResponse(value: Record<string, unknown>): CsmMessa
     warnings: Array.isArray(value.warnings)
       ? value.warnings.filter((warning): warning is string => typeof warning === "string")
       : undefined
+  };
+}
+
+function normalizeNotificationDeliverySummary(
+  value: unknown
+): MessagingNotificationDeliverySummary | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const count = (key: string) => {
+    const raw = value[key];
+    return typeof raw === "number" && Number.isFinite(raw) ? Math.max(0, Math.round(raw)) : 0;
+  };
+  const hasVoipSentCount =
+    typeof value.voipSentCount === "number" && Number.isFinite(value.voipSentCount);
+  const hasVoipFailedCount =
+    typeof value.voipFailedCount === "number" && Number.isFinite(value.voipFailedCount);
+  return {
+    dryRunCount: count("dryRunCount"),
+    failedCount: count("failedCount"),
+    sentCount: count("sentCount"),
+    targetDeviceCount: count("targetDeviceCount"),
+    // CSM Messaging versions deployed before the VoIP delivery counters exposed
+    // only the aggregate sent/failed counts. Treat those counters as the
+    // backwards-compatible wake result instead of turning a successful APNs
+    // delivery into VOICE_CALL_WAKE_FAILED.
+    voipFailedCount: hasVoipFailedCount ? count("voipFailedCount") : count("failedCount"),
+    voipSentCount: hasVoipSentCount ? count("voipSentCount") : count("sentCount")
   };
 }
 

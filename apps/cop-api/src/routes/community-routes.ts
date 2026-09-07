@@ -15,12 +15,15 @@ export interface CommunityRouteHandlers {
   leaveGroup: RouteHandlerMethod;
   listGroups: RouteHandlerMethod;
   removeGroupMember: RouteHandlerMethod;
+  resolveReport: RouteHandlerMethod;
   listReports: RouteHandlerMethod;
   submitReport: RouteHandlerMethod;
   updateGroupMetadata: RouteHandlerMethod;
+  updateReportAttachmentAccess: RouteHandlerMethod;
   updateReport: RouteHandlerMethod;
   uploadReportAttachment: RouteHandlerMethod;
   upsertGroupMember: RouteHandlerMethod;
+  withdrawReport: RouteHandlerMethod;
 }
 
 export type CommunityGroupRouteHandlers = Pick<
@@ -46,9 +49,12 @@ export type CommunityReportRouteHandlers = Pick<
   | "getReportAttachmentContent"
   | "getReportAttachmentDerivativeContent"
   | "listReports"
+  | "resolveReport"
   | "submitReport"
+  | "updateReportAttachmentAccess"
   | "updateReport"
   | "uploadReportAttachment"
+  | "withdrawReport"
 >;
 
 export function registerCommunityGroupRoutes(app: FastifyInstance, handlers: CommunityGroupRouteHandlers): void {
@@ -70,7 +76,13 @@ export function registerCommunityReportRoutes(app: FastifyInstance, handlers: Co
   app.get("/api/v1/community/reports/:reportId", handlers.getReport);
   app.delete("/api/v1/community/reports/:reportId", handlers.deleteReport);
   app.post("/api/v1/community/reports/:reportId/submit", handlers.submitReport);
+  app.post("/api/v1/community/reports/:reportId/resolve", handlers.resolveReport);
+  app.post("/api/v1/community/reports/:reportId/withdraw", handlers.withdrawReport);
   app.post("/api/v1/community/reports/:reportId/attachments", handlers.createReportAttachment);
+  app.patch(
+    "/api/v1/community/reports/:reportId/attachments/:attachmentId/access",
+    handlers.updateReportAttachmentAccess
+  );
   app.post("/api/v1/community/reports/:reportId/attachments/:attachmentId/complete", handlers.completeReportAttachment);
   app.post("/api/v1/community/reports/:reportId/attachments/:attachmentId/upload", handlers.uploadReportAttachment);
   app.get("/api/v1/community/reports/:reportId/attachments/:attachmentId/content", handlers.getReportAttachmentContent);

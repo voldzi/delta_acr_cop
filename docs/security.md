@@ -17,6 +17,14 @@ documentation remains in:
 Operational rule: do not commit secrets. `.env.example` contains placeholders
 only; real secrets are configured outside the repository.
 
+Community media rule: an attachment access update is owner-only, validates the
+requested users and groups, and produces an audit event. Public list and map
+responses expose only the audience and bounded counts; raw ACL subject/group
+identifiers are returned only to the owner. Media content authorization is
+evaluated on every request, so an older content URL cannot bypass a later
+revocation. Stable idempotency keys prevent retries from creating duplicate
+reports or attachments and reject conflicting reuse.
+
 Client-side chat rule: COP Chat may keep a per-device, per-room last-known
 readable Matrix timeline cache in browser storage so the PWA does not degrade
 already displayed E2EE messages to undecryptable placeholders after restart or
@@ -64,3 +72,7 @@ The LiveKit deployment can observe call membership, timing, IP addressing and
 encrypted media transport metadata. It receives no Matrix room keys or chat
 content. Its public WSS and media ports, API keys and retention policy belong to
 the audited production infrastructure boundary.
+
+## Webové přihlášení (BFF)
+
+Produkční COP může používat serverovou BFF relaci (`COP_WEB_BFF_SESSION_ENABLED=true`). OAuth kód se vymění pouze v COP API a přístupový i obnovovací token zůstávají šifrované v PostgreSQL. Prohlížeč pracuje pouze s relací v cookie `Secure`, `HttpOnly`, `SameSite=Lax`; tokeny proto nejsou dostupné skriptům stránky ani rozšířením prohlížeče. Relace nelze spustit bez databáze a tajného `COP_WEB_SESSION_SECRET` o minimálně 32 znacích.

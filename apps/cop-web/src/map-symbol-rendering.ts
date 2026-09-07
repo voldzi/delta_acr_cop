@@ -1,4 +1,4 @@
-import type maplibregl from "maplibre-gl";
+import type * as maplibregl from "maplibre-gl";
 import { createNatoSymbolSvg, getNatoIconKey } from "./symbology";
 import { transportIconColor, transportIconKinds, type TransportIconKind } from "./transport-presentation";
 

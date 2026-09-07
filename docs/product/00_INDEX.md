@@ -9,3 +9,6 @@
 - [07 AI-COP/NIPS Target Roadmap](07_AI_COP_NIPS_TARGET_ROADMAP.md)
 - [09 PoC Readiness and Completion Plan](09_POC_READINESS_AND_COMPLETION_PLAN.md)
 - [10 AI-COP Federation Gap Closure Assignment](10_AI_COP_FEDERATION_GAP_CLOSURE_ASSIGNMENT.md)
+- [11 Public Readiness Implementation](11_PUBLIC_READINESS_IMPLEMENTATION.md)
+- [12 Inclusive Public Pilot Protocol](12_INCLUSIVE_PUBLIC_PILOT_PROTOCOL.md)
+- [13 Device Coverage Decision](13_DEVICE_COVERAGE_DECISION.md)

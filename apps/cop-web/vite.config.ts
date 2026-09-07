@@ -1,6 +1,7 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig, type PluginOption } from "vite";
 import { fileURLToPath, URL } from "node:url";
+import { viteStaticCopy } from "vite-plugin-static-copy";
 
 const apiBase = process.env.COP_API_BASE_URL ?? "http://localhost:4310";
 const chatBase = process.env.COP_CHAT_PROXY_TARGET ?? `http://localhost:${process.env.COP_CHAT_PORT ?? "4314"}`;
@@ -65,7 +66,19 @@ function appleAppSiteAssociationPreviewPlugin(): PluginOption {
 }
 
 export default defineConfig({
-  plugins: [react(), appleAppSiteAssociationPreviewPlugin()],
+  define: {
+    CESIUM_BASE_URL: JSON.stringify("/cesium/")
+  },
+  plugins: [
+    react(),
+    viteStaticCopy({
+      targets: ["Assets", "ThirdParty", "Widgets", "Workers"].map((directory) => ({
+        dest: "cesium",
+        src: fileURLToPath(new URL(`./node_modules/cesium/Build/Cesium/${directory}`, import.meta.url))
+      }))
+    }),
+    appleAppSiteAssociationPreviewPlugin()
+  ],
   resolve: {
     alias: {
       "@cop/messaging/webPush": fileURLToPath(new URL("../../packages/messaging/src/webPush.ts", import.meta.url))
@@ -78,6 +91,19 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (
+            id.includes("/node_modules/react/") ||
+            id.includes("/node_modules/react-dom/") ||
+            id.includes("/node_modules/scheduler/")
+          ) {
+            return "react-runtime";
+          }
+          if (id.includes("/node_modules/lucide-react/")) {
+            return "icons";
+          }
+          if (id.includes("/node_modules/@radix-ui/")) {
+            return "radix-ui";
+          }
           if (id.includes("/node_modules/maplibre-gl/")) {
             return "maplibre";
           }
@@ -86,6 +112,9 @@ export default defineConfig({
           }
           if (id.includes("/node_modules/qrcode/")) {
             return "qrcode";
+          }
+          if (id.includes("/node_modules/cesium/") || id.includes("/node_modules/@cesium/")) {
+            return "cesium";
           }
           return undefined;
         }

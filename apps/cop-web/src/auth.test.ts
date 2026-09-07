@@ -50,6 +50,34 @@ describe("web auth helpers", () => {
     });
   });
 
+  it("uses an HttpOnly BFF session and clears historical browser tokens", async () => {
+    window.localStorage.setItem(
+      "cop.oidc.session.v1",
+      JSON.stringify({ accessToken: "old-access", expiresAt: Date.now() + 120_000, refreshToken: "old-refresh" })
+    );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          authenticated: true,
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+          profile: { name: "COP Operator", subjectId: "subject-1", username: "operator" }
+        }),
+        { status: 200 }
+      )
+    );
+    const config = { ...oidcConfig(), bffSessionEnabled: true };
+
+    expect(createInitialAuthSession(config)).toMatchObject({ status: "anonymous", transport: "bff" });
+    expect(window.localStorage.getItem("cop.oidc.session.v1")).toBeNull();
+    await expect(initializeAuth(config)).resolves.toMatchObject({
+      accessToken: "cop-bff-session",
+      profile: { subjectId: "subject-1" },
+      status: "authenticated",
+      transport: "bff"
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/auth/session", { credentials: "same-origin" });
+  });
+
   it("prefers an OIDC access token over the public lab token", () => {
     expect(
       getAuthorizationToken(

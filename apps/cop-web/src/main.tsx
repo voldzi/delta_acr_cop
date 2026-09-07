@@ -1,4 +1,19 @@
 import React from "react";
+import { localSafetyEmptyCopy, useLocalSafetyFeed } from "./local-safety-feed";
+import { featureNavigationTarget } from "./feature-navigation";
+import { appendBoundedStreamMessage, streamReconnectDelayMs } from "./stream-reconnect";
+import {
+  clearCommunityReportOutbox,
+  communityAttachmentId,
+  createCommunitySubmissionId,
+  readCommunityReportOutbox,
+  writeCommunityReportOutbox
+} from "./community-report-outbox";
+import {
+  readWatchedSafetyLocation,
+  writeWatchedSafetyLocation,
+  type WatchedSafetyLocation
+} from "./watched-safety-location";
 import { createRoot, type Root } from "react-dom/client";
 import clsx from "clsx";
 import { recoverStalePwaRelease } from "@cop/core/pwa-release";
@@ -101,12 +116,10 @@ import {
   createIncident,
   createIncidentTask,
   createCommunityAttachmentUpload,
-  createCommunityGroup,
   createCommunityReport,
   createMobilePairingSession,
   createRadioProfile,
   createSketchDrawing,
-  deleteCommunityGroup,
   deleteCommunityReport,
   deleteSketchDrawing,
   fetchCopDashboardData,
@@ -141,6 +154,7 @@ import {
   seedDemoScenario,
   submitCommunityReport,
   resetDemoScenario,
+  resolveCommunityReport,
   revokeMobileDevice,
   runRadioCoverage,
   runEmergencyRouteAlternatives,
@@ -149,12 +163,13 @@ import {
   runRadioLinkCheck,
   runRadioSiteSearch,
   searchUserDirectory,
-  updateCommunityGroupMetadata,
   updateSketchDrawing,
+  updateCommunityAttachmentAccess,
   updateCommunityReport,
   updateIncident,
   updateIncidentTask,
   uploadCommunityAttachmentFile,
+  withdrawCommunityReport,
   type CopDashboardData,
   type AoiRule,
   type AlertPreferences,
@@ -270,6 +285,8 @@ import {
   type RefreshSeconds
 } from "./refresh-config";
 import { buildMapSearchResults, buildPlaceSearchResults, type MapSearchResult } from "./map-search";
+import { buildCopMapShareUrl, decodeCopMapShareSearch } from "./map-share-state";
+import { createNavigationAuthority } from "./navigation-authority";
 import {
   applyChatSummaryPayload,
   applyChatUnreadPayload,
@@ -314,6 +331,7 @@ import {
   type TrackHistory
 } from "./track-history";
 import { ModalDialog } from "./ui/dialog";
+import { DataAvailabilityNotice, mapUnavailableMessage } from "./ui/data-availability";
 import { SelectField } from "./ui/select";
 import { Tooltip } from "./ui/tooltip";
 import { useModalFocus } from "./ui/useModalFocus";
@@ -357,10 +375,22 @@ import {
   requestCopPersistentStorage,
   requestCopPwaCacheWarmup,
   requestCopRouteTileCacheWarmup,
-  snapshotAgeSeconds,
   writeCopOfflineSnapshotAsync,
   type CopOfflineSnapshot
 } from "./pwa-offline";
+import {
+  formatOfflineSnapshotState,
+  formatSnapshotAge,
+  missionModeLabel,
+  offlineSnapshotTone,
+  operatingModeLabel,
+  operatingModeTone,
+  resolveOperatingMode,
+  streamStatusLabel,
+  streamStatusTone,
+  type OfflineSnapshotState,
+  type OperatingMode
+} from "./operating-mode";
 import {
   mapWithConcurrency,
   nextOfflineSnapshotPersistDelay,
@@ -395,6 +425,7 @@ import {
   resolveTransportPresentation,
   transportSelectionKey
 } from "./transport-presentation";
+import { resolveTrafficRefreshSeconds } from "./traffic-refresh";
 import {
   isCurrentWeatherSummaryFeature,
   normalizeSituationCategory,
@@ -443,6 +474,10 @@ const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_
 const CopMap = React.lazy(() => import("./CopMap").then((module) => ({ default: module.CopMap })));
 const TrackTable = React.lazy(() => import("./TrackTable"));
 const XrWorkspace = React.lazy(() => import("./XrWorkspace"));
+const GlobeWorkspace = React.lazy(() => {
+  (window as Window & { CESIUM_BASE_URL?: string }).CESIUM_BASE_URL = "/cesium/";
+  return import("./GlobeWorkspace");
+});
 const emptySketchDrawings: SketchDrawingFeature[] = [];
 
 async function createPairingQrDataUrl(universalLink: string): Promise<string> {
@@ -462,11 +497,6 @@ function useEventCallback<Args extends unknown[], Result>(
 
 type AffiliationScope = "all" | "friend" | "hostile" | "neutral" | "unknown";
 type DomainScope = "all" | "AIR" | "LAND" | "SEA" | "RESCUE" | "OTHER";
-type OperatingMode = "DEGRADED" | "OFFLINE" | "ONLINE";
-type OfflineSnapshotState =
-  | { kind: "active"; objectCount: number; reason: string; restoredAt: string; savedAt: string; sourceCount: number }
-  | { kind: "available"; objectCount: number; savedAt: string; sourceCount: number }
-  | { kind: "none" };
 type PreferenceSettings = ViewProfileSettings | UserPreferences;
 type SettingsTab = "map" | "data" | "workspace" | "awareness" | "account";
 type WorkspaceTemplateId = "civil" | "operations" | "field";
@@ -952,9 +982,10 @@ export function App() {
   );
   const initialAlertPreferences = React.useMemo(() => readLocalAlertPreferences(userStorageScope), [userStorageScope]);
   const initialMapFocus = React.useMemo(() => decodeCopMapFocusSearch(window.location.search), []);
+  const initialSharedMap = React.useMemo(() => decodeCopMapShareSearch(window.location.search), []);
   const initialChatReportDraft = React.useMemo(() => decodeCopReportDraftSearch(window.location.search), []);
   const [activeWorkspace, setActiveWorkspace] = React.useState<WorkspaceModule>(() =>
-    normalizeWorkspaceModule(initialPreferences.activeWorkspace)
+    normalizeWorkspaceModule(initialSharedMap?.workspace ?? initialPreferences.activeWorkspace)
   );
   const [health, setHealth] = React.useState<HealthStatus | null>(null);
   const [sources, setSources] = React.useState<SourceSystem[]>([]);
@@ -966,9 +997,14 @@ export function App() {
     readInitialLayer(initialPreferences.selectedLayer)
   );
   const [visibleTrackLayerIds, setVisibleTrackLayerIds] = React.useState<CopLayer[]>(() =>
-    normalizeTrackLayerIds(initialPreferences.trackLayerIds, readInitialLayer(initialPreferences.selectedLayer))
+    normalizeTrackLayerIds(
+      initialSharedMap?.trackLayerIds ?? initialPreferences.trackLayerIds,
+      readInitialLayer(initialPreferences.selectedLayer)
+    )
   );
-  const [selectedObjectId, setSelectedObjectId] = React.useState<string | null>(null);
+  const [selectedObjectId, setSelectedObjectId] = React.useState<string | null>(
+    initialSharedMap?.selectedObjectId ?? null
+  );
   const [includeSynthetic, setIncludeSynthetic] = React.useState(initialPreferences.includeSynthetic ?? true);
   const [minConfidence, setMinConfidence] = React.useState(() => clamp(initialPreferences.minConfidence ?? 0.2, 0, 1));
   const [affiliationScope, setAffiliationScope] = React.useState<AffiliationScope>(() =>
@@ -995,6 +1031,7 @@ export function App() {
     initialOperatorProfile(authSession, initialPreferences.operatorProfile)
   );
   const [helpSection, setHelpSection] = React.useState<HelpSection | null>(null);
+  const [publicWelcomeOpen, setPublicWelcomeOpen] = React.useState(() => shouldShowPublicWelcome());
   const [tomatoGameOpen, setTomatoGameOpen] = React.useState(false);
   const tomatoKeyboardSequenceRef = React.useRef("");
   const tomatoBrandClickCountRef = React.useRef(0);
@@ -1070,7 +1107,7 @@ export function App() {
   const [language, setLanguage] = React.useState<AppLanguage>(() => normalizeAppLanguage(initialPreferences.language));
   const [mapClusterEnabled, setMapClusterEnabled] = React.useState(initialPreferences.mapClusterEnabled ?? false);
   const [mapBasemapMode, setMapBasemapMode] = React.useState<MapBasemapMode>(() =>
-    normalizeMapBasemapMode(initialPreferences.mapBasemapMode)
+    normalizeMapBasemapMode(initialSharedMap?.basemap ?? initialPreferences.mapBasemapMode)
   );
   const [mapControlsCollapsed, setMapControlsCollapsed] = React.useState(
     initialPreferences.mapControlsCollapsed ?? false
@@ -1097,15 +1134,17 @@ export function App() {
   const [demoScenarioError, setDemoScenarioError] = React.useState<string | null>(null);
   const [activeCatalogGroupId, setActiveCatalogGroupId] = React.useState<string | null>(null);
   const [visibleCatalogLayerIds, setVisibleCatalogLayerIds] = React.useState<string[]>(() =>
-    normalizeCatalogLayerIds(initialPreferences.catalogLayerIds)
+    normalizeCatalogLayerIds(initialSharedMap?.catalogLayerIds ?? initialPreferences.catalogLayerIds)
   );
   const [zoneCreationMode, setZoneCreationMode] = React.useState(false);
   const [editingZoneId, setEditingZoneId] = React.useState<string | null>(null);
-  const [autoFit, setAutoFit] = React.useState(initialMapFocus ? false : (initialPreferences.autoFit ?? true));
+  const [autoFit, setAutoFit] = React.useState(
+    initialMapFocus || initialSharedMap ? false : (initialPreferences.autoFit ?? true)
+  );
   const [mapView, setMapView] = React.useState<MapViewState | undefined>(() =>
     initialMapFocus
       ? mapViewFromCopMapFocus(initialMapFocus, initialPreferences.mapView)
-      : (normalizeMapView(initialPreferences.mapView) ?? defaultMapViewState())
+      : (normalizeMapView(initialSharedMap?.camera ?? initialPreferences.mapView) ?? defaultMapViewState())
   );
   const stableProfileMapViewRef = React.useRef<MapViewState | undefined>(mapView);
   const [mapBounds, setMapBounds] = React.useState<MapBounds>(defaultMapBounds);
@@ -1115,7 +1154,7 @@ export function App() {
   const [situationLayers, setSituationLayers] = React.useState<SituationLayer[]>([]);
   const [situationSources, setSituationSources] = React.useState<SituationSourceDescriptor[]>([]);
   const [visibleSituationLayerIds, setVisibleSituationLayerIds] = React.useState<SituationLayerId[]>(() =>
-    normalizeSituationLayerIds(initialPreferences.situationLayerIds)
+    normalizeSituationLayerIds(initialSharedMap?.situationLayerIds ?? initialPreferences.situationLayerIds)
   );
   const [visibleSituationSourceIds, setVisibleSituationSourceIds] = React.useState<string[]>(() =>
     normalizeSourceIds(initialPreferences.situationSourceIds)
@@ -1137,7 +1176,7 @@ export function App() {
   const [weatherRadarPlaybackStatus, setWeatherRadarPlaybackStatus] = React.useState<SituationLayerStatus>("disabled");
   const [safetyLayers, setSafetyLayers] = React.useState<SafetyLayer[]>([]);
   const [visibleSafetyLayerIds, setVisibleSafetyLayerIds] = React.useState<SafetyLayerId[]>(() =>
-    normalizeSafetyLayerIds(initialPreferences.safetyLayerIds)
+    normalizeSafetyLayerIds(initialSharedMap?.safetyLayerIds ?? initialPreferences.safetyLayerIds)
   );
   const [safetyFeatures, setSafetyFeatures] = React.useState<SafetyFeatureCollectionResponse | null>(null);
   const [safetyStatus, setSafetyStatus] = React.useState<SituationLayerStatus>("loading");
@@ -1166,6 +1205,9 @@ export function App() {
     createCommunityReportDraft()
   );
   const [communityReportSubmitting, setCommunityReportSubmitting] = React.useState(false);
+  const communityReportSubmissionRef = React.useRef(false);
+  const communityReportOutboxHydratedScopeRef = React.useRef<string | null>(null);
+  const communityReportLocationRequestRef = React.useRef(0);
   const [communityReportError, setCommunityReportError] = React.useState<string | null>(null);
   const [communityReportSuccess, setCommunityReportSuccess] = React.useState<string | null>(null);
   const [communityUploadProgress, setCommunityUploadProgress] = React.useState<CommunityUploadUiState | null>(null);
@@ -1188,6 +1230,9 @@ export function App() {
   const [selectedSituationFeatureId, setSelectedSituationFeatureId] = React.useState<string | null>(null);
   const [selectedSituationFeatureStableKey, setSelectedSituationFeatureStableKey] = React.useState<string | null>(null);
   const [userLocation, setUserLocation] = React.useState<UserLocation | null>(null);
+  const [watchedSafetyLocation, setWatchedSafetyLocation] = React.useState<WatchedSafetyLocation | null>(() =>
+    readWatchedSafetyLocation(userStorageScope)
+  );
   const initialNavigationSession = React.useMemo(
     () => readStoredNavigationSession(userStorageScope),
     [userStorageScope]
@@ -1230,6 +1275,7 @@ export function App() {
     )
   );
   const routeRequestIdRef = React.useRef(0);
+  const navigationAuthorityRef = React.useRef(createNavigationAuthority());
   const userLocationWatchIdRef = React.useRef<number | null>(null);
   const userLocationWatchGenerationRef = React.useRef(0);
   const userLocationFollowEnabledRef = React.useRef(false);
@@ -1284,7 +1330,10 @@ export function App() {
   const messagingVoiceCallCommandNonceRef = React.useRef(0);
   const notifiedVoiceCallIdsRef = React.useRef(new Set<string>());
   const initialMapFeatureFocusRef = React.useRef(initialMapFocus);
-  const catalogSelectionInitializedRef = React.useRef(initialPreferences.catalogLayerIds !== undefined);
+  const catalogSelectionInitializedRef = React.useRef(
+    initialSharedMap?.catalogLayerIds !== undefined || initialPreferences.catalogLayerIds !== undefined
+  );
+  const initialSharedMapPendingRef = React.useRef(Boolean(initialSharedMap));
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
   const [pwaCacheState, setPwaCacheState] = React.useState<CopPwaCacheState>({ kind: "unknown" });
   const [pwaStorageState, setPwaStorageState] = React.useState<CopStoragePersistenceState>({ kind: "unknown" });
@@ -1300,6 +1349,42 @@ export function App() {
       setMessagingFrameMounted(true);
     }
   }, [messagingOpen]);
+
+  React.useEffect(() => {
+    setWatchedSafetyLocation(readWatchedSafetyLocation(userStorageScope));
+  }, [userStorageScope]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    communityReportOutboxHydratedScopeRef.current = null;
+    void readCommunityReportOutbox<CommunityReportDraft>(userStorageScope)
+      .then((storedDraft) => {
+        if (cancelled || !storedDraft || !isRestorableCommunityReportDraft(storedDraft)) return;
+        setCommunityReportDraft((current) =>
+          hasCommunityReportDraftContent(current) ? current : normalizeRestoredCommunityReportDraft(storedDraft)
+        );
+        setCommunityReportSuccess("Obnovili jsme nedokončené hlášení uložené v tomto zařízení.");
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) communityReportOutboxHydratedScopeRef.current = userStorageScope;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userStorageScope]);
+
+  React.useEffect(() => {
+    if (communityReportOutboxHydratedScopeRef.current !== userStorageScope) return undefined;
+    const timer = window.setTimeout(() => {
+      if (hasCommunityReportDraftContent(communityReportDraft)) {
+        void writeCommunityReportOutbox(userStorageScope, communityReportDraft);
+      } else {
+        void clearCommunityReportOutbox(userStorageScope);
+      }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [communityReportDraft, userStorageScope]);
 
   React.useEffect(() => {
     const handleTomatoShortcut = (event: KeyboardEvent) => {
@@ -2050,7 +2135,7 @@ export function App() {
       if (!isOidcEnabled(authConfig) || currentSession.status !== "authenticated") {
         return currentSession;
       }
-      if (!currentSession.refreshToken) {
+      if (!currentSession.refreshToken && !authConfig.bffSessionEnabled) {
         return currentSession;
       }
       if (!options.force && !shouldRefreshAuthSessionOnResume(currentSession)) {
@@ -2398,7 +2483,7 @@ export function App() {
     let authInFlight = false;
     let authInFlightForCallback = false;
     const authenticate = () => {
-      const hasCallback = hasOidcCallbackParams();
+      const hasCallback = hasOidcCallbackParams(authConfig);
       if (authInFlight && (!hasCallback || authInFlightForCallback)) {
         return;
       }
@@ -2428,7 +2513,7 @@ export function App() {
         });
     };
     const resumeCallbackIfNeeded = () => {
-      if (hasOidcCallbackParams()) {
+      if (hasOidcCallbackParams(authConfig)) {
         authenticate();
       }
     };
@@ -2637,11 +2722,12 @@ export function App() {
     let streamFlushTimer: number | undefined;
     const pendingStreamMessages: CopStreamMessage[] = [];
     const scheduleReconnect = () => {
+      if (reconnectTimer !== undefined) return;
       reconnectTimer = window.setTimeout(() => {
         if (active) {
           setStreamReconnectAttempt((current) => current + 1);
         }
-      }, 5000);
+      }, streamReconnectDelayMs(streamReconnectAttempt));
     };
     const clearStreamFlushTimer = () => {
       if (streamFlushTimer !== undefined) {
@@ -2707,7 +2793,14 @@ export function App() {
             if (!active) {
               return;
             }
-            pendingStreamMessages.push(message);
+            const dropped = appendBoundedStreamMessage(pendingStreamMessages, message);
+            if (dropped > 0) {
+              setStreamTelemetry((current) => ({
+                ...current,
+                lastBackpressureAt: new Date().toISOString(),
+                lastBackpressureReason: "browser_stream_queue_limit"
+              }));
+            }
             if (message.type === "reconnect_required") {
               scheduleStreamFlush("immediate");
               setStreamStatus("degraded");
@@ -2784,7 +2877,7 @@ export function App() {
       () => {
         void loadAlerts();
       },
-      Math.max(refreshSeconds, 5) * 1000
+      Math.max(refreshSeconds, 30) * 1000
     );
     return () => window.clearInterval(timer);
   }, [authToken, documentVisible, loadAlerts, refreshSeconds]);
@@ -3907,6 +4000,31 @@ export function App() {
     const withRadioResult = appendRadioLosFeatures(withTowerViewshed, radioOverlay);
     return appendRadioLosFeatures(withRadioResult, radioInputOverlay);
   }, [baseCombinedSituationFeatures, mobileTowerViewshed, radioInputOverlay, radioOverlay]);
+  const localSafetyLayerIds = React.useMemo(
+    () => (mapCatalog ? safetyAreaAlertCatalogLayerIds(mapCatalog) : []),
+    [mapCatalog]
+  );
+  const localSafetyLocation = watchedSafetyLocation ?? userLocation;
+  const localSafetyFeed = useLocalSafetyFeed({
+    apiBase,
+    token: authToken,
+    enabled: dataAccessReady,
+    online: browserOnline,
+    visible: documentVisible,
+    autoRefresh,
+    layerIds: localSafetyLayerIds,
+    location: localSafetyLocation,
+    staleAfterSeconds: safetyConfig?.config.staleAfterSeconds
+  });
+  const localSafetyFeatures = React.useMemo(
+    () =>
+      filterLocalSafetyFeatures(
+        (localSafetyFeed.collection?.features ?? []).map(safetyFeatureToSituationFeature),
+        localSafetyLocation,
+        localSafetyFeed.evaluatedAt
+      ),
+    [localSafetyFeed.collection, localSafetyLocation, localSafetyFeed.evaluatedAt]
+  );
   const mapSelectedSituationFeature = findSelectedSituationFeature(
     baseMapSituationFeatures,
     selectedSituationFeatureId,
@@ -3945,6 +4063,7 @@ export function App() {
     selectedSituationFeatureStableKey
   );
   const selectedSituationFeature =
+    localSafetyFeatures.find((feature) => feature.properties.featureId === selectedSituationFeatureId) ??
     liveSelectedSituationFeature ??
     (isTransitVehicleSelectionKey(selectedSituationFeatureStableKey) ? retainedSelectedTransitFeature : null);
   const selectedTransitRouteRequest = React.useMemo(() => {
@@ -4184,10 +4303,7 @@ export function App() {
       userLocation
     ]
   );
-  const publicSafetyAlertFeatures = React.useMemo(
-    () => filterPublicSafetyAlertFeatures(combinedSituationFeatures?.features ?? []),
-    [combinedSituationFeatures]
-  );
+  const publicSafetyAlertFeatures = localSafetyFeatures;
   const safetyAreaSourceFeatures = React.useMemo(
     () => deduplicateSituationFeatures([...publicSafetyAlertFeatures, ...watchedAreaSafetyFeatures]),
     [publicSafetyAlertFeatures, watchedAreaSafetyFeatures]
@@ -4205,13 +4321,22 @@ export function App() {
     () =>
       buildPriorityAlertSummary({
         alerts: serverAlerts,
-        features: publicSafetyAlertFeatures,
+        features: localSafetyFeatures,
+        now: localSafetyFeed.evaluatedAt,
         mapView,
         objects: visibleObjects,
         proximityAlerts,
         userLocation
       }),
-    [mapView, proximityAlerts, publicSafetyAlertFeatures, serverAlerts, userLocation, visibleObjects]
+    [
+      mapView,
+      proximityAlerts,
+      localSafetyFeatures,
+      serverAlerts,
+      userLocation,
+      visibleObjects,
+      localSafetyFeed.evaluatedAt
+    ]
   );
   const mapAlerts = React.useMemo<CopAlert[]>(() => [], []);
   const primaryAoiRule = aoiRules[0] ?? null;
@@ -4588,16 +4713,35 @@ export function App() {
     profileLoadKeyRef.current = null;
     skipNextPreferenceWriteRef.current = true;
     const scopedPreferences = readStartupUserPreferences(authSession, userStorageScope);
+    const startupPreferences: UserPreferences = initialSharedMapPendingRef.current
+      ? {
+          ...scopedPreferences,
+          ...(initialSharedMap?.workspace ? { activeWorkspace: initialSharedMap.workspace } : {}),
+          ...(initialSharedMap?.basemap ? { mapBasemapMode: initialSharedMap.basemap } : {}),
+          ...(initialSharedMap?.camera ? { mapView: initialSharedMap.camera } : {}),
+          ...(initialSharedMap?.catalogLayerIds !== undefined
+            ? { catalogLayerIds: initialSharedMap.catalogLayerIds }
+            : {}),
+          ...(initialSharedMap?.safetyLayerIds !== undefined
+            ? { safetyLayerIds: initialSharedMap.safetyLayerIds }
+            : {}),
+          ...(initialSharedMap?.situationLayerIds !== undefined
+            ? { situationLayerIds: initialSharedMap.situationLayerIds }
+            : {}),
+          ...(initialSharedMap?.trackLayerIds !== undefined ? { trackLayerIds: initialSharedMap.trackLayerIds } : {})
+        }
+      : scopedPreferences;
+    initialSharedMapPendingRef.current = false;
     const scopedAlertPreferences = readLocalAlertPreferences(userStorageScope);
-    catalogSelectionInitializedRef.current = scopedPreferences.catalogLayerIds !== undefined;
-    setVisibleCatalogLayerIds(normalizeCatalogLayerIds(scopedPreferences.catalogLayerIds));
-    setOperatorProfile(initialOperatorProfile(authSession, scopedPreferences.operatorProfile));
-    setWorkspaceLayout(normalizeWorkspaceLayout(scopedPreferences.workspaceLayout));
-    setWorkspaceSkin(normalizeWorkspaceSkin(scopedPreferences.workspaceSkin));
+    catalogSelectionInitializedRef.current = startupPreferences.catalogLayerIds !== undefined;
+    setVisibleCatalogLayerIds(normalizeCatalogLayerIds(startupPreferences.catalogLayerIds));
+    setOperatorProfile(initialOperatorProfile(authSession, startupPreferences.operatorProfile));
+    setWorkspaceLayout(normalizeWorkspaceLayout(startupPreferences.workspaceLayout));
+    setWorkspaceSkin(normalizeWorkspaceSkin(startupPreferences.workspaceSkin));
     skipNextAlertPreferenceWriteRef.current = true;
     setAlertPreferences(scopedAlertPreferences.alertPreferences);
     setLocalAlertPreferencesUpdatedAt(scopedAlertPreferences.updatedAt);
-    applyPreferenceSettings(scopedPreferences, {
+    applyPreferenceSettings(startupPreferences, {
       focusMap: !userClaimedMapCameraRef.current,
       preserveMapView: userClaimedMapCameraRef.current
     });
@@ -4607,7 +4751,7 @@ export function App() {
     setServerProfileUpdatedAt(null);
     setProfileSyncError(null);
     setProfileSyncStatus(profileAccessReady ? "loading" : "disabled");
-  }, [applyPreferenceSettings, authSession, profileAccessReady, userStorageScope]);
+  }, [applyPreferenceSettings, authSession, initialSharedMap, profileAccessReady, userStorageScope]);
 
   React.useEffect(() => {
     if (!profileAccessReady || !authToken) {
@@ -5812,6 +5956,7 @@ export function App() {
 
   const startNavigationToTarget = React.useCallback(
     async (target: EmergencyRouteTarget, profile: NavigationProfile) => {
+      const navigationTicket = navigationAuthorityRef.current.claim("selection");
       const normalizedTarget = normalizeEmergencyRouteTarget(target);
       if (!normalizedTarget) {
         setNavigationStartError("Navigaci nelze spustit, protože zvolený cíl nemá platné souřadnice.");
@@ -5822,6 +5967,7 @@ export function App() {
       let resolvedLocation = false;
       try {
         const location = userLocation ?? (await readCurrentUserLocation());
+        if (!navigationAuthorityRef.current.isCurrent(navigationTicket)) return;
         resolvedLocation = true;
         setUserLocation(location);
         setFocusUserLocationRequest((current) => current + 1);
@@ -5834,6 +5980,7 @@ export function App() {
           profileId: profileOption.routeProfileId,
           summaryLabel: navigationProfileLabel(profile)
         });
+        if (!navigationAuthorityRef.current.isCurrent(navigationTicket)) return;
         if (!response) {
           setNavigationStartError("Navigaci se nepodařilo připravit.");
           return;
@@ -5909,12 +6056,13 @@ export function App() {
           );
         }
       } catch (error) {
+        if (!navigationAuthorityRef.current.isCurrent(navigationTicket)) return;
         if (!resolvedLocation) {
           focusDefaultMapCenter();
         }
         setNavigationStartError(error instanceof Error ? error.message : "Navigaci se nepodařilo spustit.");
       } finally {
-        setNavigationStarting(false);
+        if (navigationAuthorityRef.current.isCurrent(navigationTicket)) setNavigationStarting(false);
       }
     },
     [focusDefaultMapCenter, focusMapForNavigation, mobileSheetViewport, runEmergencyRouteFromLocation, userLocation]
@@ -6081,7 +6229,8 @@ export function App() {
       openLoginPrompt("report");
       return;
     }
-    const draft = createCommunityReportDraft(resolveCommunityReportLocation(null, mapView));
+    communityReportLocationRequestRef.current += 1;
+    const draft = createCommunityReportDraft(resolveCommunityReportLocation(userLocation, mapView));
     setCommunityReportDraft({
       ...draft,
       ...(source?.groupId ? { groupId: source.groupId } : {}),
@@ -6099,33 +6248,40 @@ export function App() {
     );
   }
 
-  function setCommunityReportLocationFromUser() {
-    if (!userLocation) {
-      locateUser();
-      setCommunityReportError("Nejdřív zaměřuji vaši polohu. Po povolení polohy tlačítko použijte znovu.");
-      return;
-    }
-    setCommunityReportDraft((current) => ({
-      ...current,
-      location: {
-        ...(typeof userLocation.accuracyM === "number" ? { accuracyM: userLocation.accuracyM } : {}),
-        lat: userLocation.lat,
-        lon: userLocation.lon,
-        source: "device"
-      }
-    }));
+  async function setCommunityReportLocationFromUser() {
+    const requestId = ++communityReportLocationRequestRef.current;
     setCommunityReportError(null);
+    try {
+      const location = await readCurrentUserLocation();
+      if (requestId !== communityReportLocationRequestRef.current) return;
+      if (!isValidMapPoint(location)) throw new Error("Poloha zařízení nemá platné souřadnice.");
+      setUserLocation(location);
+      setCommunityReportDraft((current) => ({
+        ...current,
+        location: resolveCommunityReportLocation(location, undefined),
+        locationConfirmed: false
+      }));
+    } catch (error) {
+      if (requestId === communityReportLocationRequestRef.current) {
+        setCommunityReportError(
+          error instanceof Error ? error.message : "Polohu se nepodařilo určit. Vyberte místo v mapě."
+        );
+      }
+    }
   }
 
   function setCommunityReportLocationFromMapCenter() {
+    communityReportLocationRequestRef.current += 1;
     setCommunityReportDraft((current) => ({
       ...current,
+      locationConfirmed: false,
       location: resolveCommunityReportLocation(null, mapView)
     }));
     setCommunityReportError(null);
   }
 
   function startCommunityReportMapPick() {
+    communityReportLocationRequestRef.current += 1;
     setCommunityReportLocationPickMode(true);
     setCommunityReportOpen(false);
     setCommunityReportError(null);
@@ -6135,6 +6291,7 @@ export function App() {
   function handleCommunityReportLocationPicked(center: { lat: number; lon: number }) {
     setCommunityReportDraft((current) => ({
       ...current,
+      locationConfirmed: false,
       location: {
         lat: center.lat,
         lon: center.lon,
@@ -6150,28 +6307,39 @@ export function App() {
     setCommunityReportDraft((current) => ({
       ...current,
       files: mergeCommunityReportFiles(current.files, files),
-      mediaLocationHint: ""
+      mediaLocationHint: "",
+      mediaLocationSuggestion: undefined
     }));
     if (files.length === 0) {
       return;
     }
-    const located = await firstMediaLocation(files);
-    if (!located) {
+    try {
+      const located = await firstMediaLocation(files);
       setCommunityReportDraft((current) => ({
         ...current,
-        mediaLocationHint: "V přiložených médiích jsem nenašel čitelnou polohu. Polohu nastavte z GPS nebo mapy."
+        ...(current.files.some((file) => files.includes(file))
+          ? {
+              mediaLocationSuggestion: located ?? undefined,
+              mediaLocationHint: located
+                ? `Soubor ${located.fileName} obsahuje polohu. Použijte ji pouze tehdy, pokud odpovídá místu události.`
+                : "V přiložených médiích jsem nenašel čitelnou polohu. Polohu nastavte z GPS nebo mapy."
+            }
+          : {})
       }));
-      return;
+    } catch {
+      setCommunityReportDraft((current) => ({
+        ...current,
+        ...(current.files.some((file) => files.includes(file))
+          ? {
+              mediaLocationHint: "Polohu z média se nepodařilo přečíst. Místo můžete určit z GPS nebo mapy."
+            }
+          : {})
+      }));
     }
-    setCommunityReportDraft((current) => ({
-      ...current,
-      location: located.location,
-      mediaLocationHint: `Použita poloha ze souboru ${located.fileName}.`
-    }));
-    setLocationStatus(`Poloha hlášení převzata ze souboru ${located.fileName}.`);
   }
 
   async function submitCommunityReportDraft() {
+    if (communityReportSubmissionRef.current) return;
     if (!authToken) {
       setCommunityReportError("Pro uložení hlášení je potřeba přihlášení.");
       openLoginPrompt("report");
@@ -6182,15 +6350,15 @@ export function App() {
       setCommunityReportError(validationError);
       return;
     }
+    communityReportSubmissionRef.current = true;
+    communityReportLocationRequestRef.current += 1;
     setCommunityReportSubmitting(true);
     setCommunityReportError(null);
     setCommunityReportSuccess(null);
     setCommunityUploadProgress(null);
     const filesToUpload = communityReportDraft.files;
-    let linkedGroup: CommunityGroup | null = null;
-    let reportCreated = false;
-    let chatLinkMetadataWarning = false;
     try {
+      await writeCommunityReportOutbox(userStorageScope, communityReportDraft);
       if (filesToUpload.length > 0) {
         setCommunityUploadProgress({
           fileCount: filesToUpload.length,
@@ -6203,29 +6371,23 @@ export function App() {
       }
       const reportPayload = {
         category: communityReportDraft.category,
+        ...(communityReportDraft.changeReason.trim() ? { changeReason: communityReportDraft.changeReason.trim() } : {}),
         description: communityReportDraft.description.trim() || undefined,
-        ...(communityReportDraft.groupId ? { groupId: communityReportDraft.groupId } : {}),
-        ...(communityReportDraft.groupName ? { groupName: communityReportDraft.groupName } : {}),
+        ...(communityReportDraft.version ? { expectedVersion: communityReportDraft.version } : {}),
         hazardSeverity: communityReportDraft.hazardSeverity,
         location: communityReportDraft.location,
-        observedAt: new Date().toISOString(),
+        ...(!communityReportDraft.reportId ? { observedAt: communityReportDraft.observedAt } : {}),
         title: communityReportDraft.title.trim(),
         validUntil: communityReportDraft.validUntil
           ? new Date(communityReportDraft.validUntil).toISOString()
           : undefined,
         visibility: "community"
       } as const;
-      linkedGroup =
-        communityReportDraft.reportId || communityReportDraft.groupId
-          ? null
-          : await createCommunityReportChatGroup(authToken, communityReportDraft);
       const report = communityReportDraft.reportId
         ? await updateCommunityReport(apiBase, authToken, communityReportDraft.reportId, reportPayload)
-        : await createCommunityReport(apiBase, authToken, {
-            ...reportPayload,
-            ...(linkedGroup ? { groupId: linkedGroup.groupId, groupName: linkedGroup.name } : {})
-          });
-      reportCreated = true;
+        : await createCommunityReport(apiBase, authToken, reportPayload, communityReportDraft.clientRequestId);
+      // Preserve server identity before uploads so a retry resumes the same draft.
+      setCommunityReportDraft((current) => ({ ...current, reportId: report.reportId, version: report.version }));
       for (const [fileIndex, file] of filesToUpload.entries()) {
         const contentType = normalizeCommunityFileContentType(file);
         const kind = communityAttachmentKindFromContentType(contentType);
@@ -6240,23 +6402,33 @@ export function App() {
           phase: "creating",
           totalBytes: file.size || 1
         });
-        const slot = await createCommunityAttachmentUpload(apiBase, authToken, report.reportId, {
-          byteSize: file.size,
-          captureLocation: communityReportDraft.location,
-          contentType,
-          fileName: file.name || undefined,
-          kind,
-          metadata: buildCommunityAttachmentMetadata(
-            file,
+        const slot = await createCommunityAttachmentUpload(
+          apiBase,
+          authToken,
+          report.reportId,
+          {
+            byteSize: file.size,
+            captureLocation: communityReportDraft.location,
             contentType,
+            fileName: file.name || undefined,
             kind,
-            communityReportDraft.videoSpatialMode,
-            communityReportAccessPolicy(communityReportDraft)
-          )
-        });
+            metadata: buildCommunityAttachmentMetadata(
+              file,
+              contentType,
+              kind,
+              communityReportDraft.videoSpatialMode,
+              communityReportAccessPolicy(communityReportDraft)
+            )
+          },
+          communityAttachmentId(communityReportDraft.clientRequestId, file)
+        );
         await uploadCommunityAttachmentFile(apiBase, authToken, report.reportId, file, slot, (progress) => {
           setCommunityUploadProgress(uploadProgressFromAttachment(file, fileIndex, filesToUpload.length, progress));
         });
+        setCommunityReportDraft((current) => ({
+          ...current,
+          files: current.files.filter((candidate) => candidate !== file)
+        }));
         setCommunityUploadProgress({
           fileCount: filesToUpload.length,
           fileIndex: fileIndex + 1,
@@ -6277,16 +6449,11 @@ export function App() {
           totalBytes: lastFile?.size || 1
         });
       }
-      const submitted = await submitCommunityReport(apiBase, authToken, report.reportId);
-      if (linkedGroup) {
-        try {
-          await persistCommunityReportChatGroupLink(authToken, linkedGroup, submitted);
-        } catch {
-          chatLinkMetadataWarning = true;
-        }
-      }
+      const submitted =
+        report.status === "draft" ? await submitCommunityReport(apiBase, authToken, report.reportId) : report;
+      await clearCommunityReportOutbox(userStorageScope);
       setCommunityReportDraft(createCommunityReportDraft(resolveCommunityReportLocation(null, mapView)));
-      setCommunityReportSuccess(communityReportDraft.reportId ? "Hlášení bylo upraveno." : "Hlášení bylo uloženo.");
+      setCommunityReportSuccess(communityReportDraft.published ? "Hlášení bylo upraveno." : "Hlášení bylo zveřejněno.");
       setCommunityReportOpen(false);
       setCommunityReportLocationPickMode(false);
       setCommunityRefreshNonce((current) => current + 1);
@@ -6300,25 +6467,16 @@ export function App() {
         zoom: Math.max(mapView?.zoom ?? 10, 14)
       });
       setFocusViewRequest((current) => current + 1);
-      if (linkedGroup) {
-        requestEmbeddedChatSelection(linkedGroup.groupId);
+      const linkedGroupId = typeof submitted.properties.groupId === "string" ? submitted.properties.groupId : undefined;
+      if (linkedGroupId) {
+        requestEmbeddedChatSelection(linkedGroupId);
       }
       enableCommunityReportCatalogLayers();
-      setLocationStatus(
-        chatLinkMetadataWarning
-          ? "Hlášení bylo uloženo. Chatová skupina vznikla, ale metadata vazby se nepodařilo doplnit."
-          : "Hlášení bylo uloženo."
-      );
+      setLocationStatus(communityReportDraft.published ? "Hlášení bylo aktualizováno." : "Hlášení bylo zveřejněno.");
     } catch (error) {
-      if (linkedGroup && !reportCreated) {
-        try {
-          await deleteCommunityGroup(apiBase, authToken, linkedGroup.groupId);
-        } catch {
-          // Best effort cleanup only; keep the original report error visible to the user.
-        }
-      }
       setCommunityReportError(error instanceof Error ? error.message : "Hlášení se nepodařilo uložit.");
     } finally {
+      communityReportSubmissionRef.current = false;
       setCommunityReportSubmitting(false);
       setCommunityUploadProgress(null);
     }
@@ -6413,40 +6571,6 @@ export function App() {
     setMessagingOpen(true);
   }
 
-  async function createCommunityReportChatGroup(token: string, draft: CommunityReportDraft): Promise<CommunityGroup> {
-    const groupName = communityReportChatGroupName(draft.title);
-    return createCommunityGroup(apiBase, token, {
-      anchorLocation: draft.location,
-      description: communityReportChatGroupDescription(draft),
-      metadata: {
-        createdFrom: "cop-community-report",
-        hazardSeverity: draft.hazardSeverity,
-        reportCategory: draft.category,
-        source: "cop.map",
-        status: "pending-report"
-      },
-      name: groupName,
-      visibility: "public"
-    });
-  }
-
-  async function persistCommunityReportChatGroupLink(
-    token: string,
-    group: CommunityGroup,
-    report: CommunityReport
-  ): Promise<void> {
-    await updateCommunityGroupMetadata(apiBase, token, group.groupId, {
-      createdFrom: "cop-community-report",
-      featureId: `community:${report.reportId}`,
-      hazardSeverity: typeof report.properties.hazardSeverity === "string" ? report.properties.hazardSeverity : null,
-      reportCategory: report.category,
-      reportId: report.reportId,
-      reportTitle: report.title,
-      source: "cop.map",
-      status: "linked-report"
-    });
-  }
-
   function openCommunityReportChat(feature: SituationFeature) {
     const properties = feature.properties;
     const groupId = typeof properties.groupId === "string" ? properties.groupId : undefined;
@@ -6462,6 +6586,7 @@ export function App() {
   }
 
   function editCommunityReportFeature(feature: SituationFeature) {
+    communityReportLocationRequestRef.current += 1;
     const properties = feature.properties;
     if (properties.layer !== "community" || !properties.reportId) {
       return;
@@ -6479,38 +6604,85 @@ export function App() {
         source: "manual"
       }),
       category: isCommunityReportCategoryValue(properties.category) ? properties.category : "hazard",
+      changeReason: "",
       description: properties.description ?? "",
       groupId: typeof properties.groupId === "string" ? properties.groupId : undefined,
       groupName: typeof properties.groupName === "string" ? properties.groupName : undefined,
       hazardSeverity: severity,
-      mediaAccessMode: "public",
+      mediaAccessMode: "private",
+      locationConfirmed: true,
+      published: properties.status !== "draft",
+      observedAt: typeof properties.observedAt === "string" ? properties.observedAt : "",
       reportId: properties.reportId,
       title: properties.label ?? properties.headline ?? "",
       validUntil: properties.validUntil
         ? toDateTimeLocalValue(new Date(properties.validUntil))
-        : toDateTimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000))
+        : toDateTimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000)),
+      version:
+        typeof properties.version === "number" && Number.isInteger(properties.version) ? properties.version : undefined
     });
     setCommunityReportError(null);
     setCommunityReportSuccess(null);
     setCommunityReportOpen(true);
   }
 
-  async function handleDeleteCommunityReport(reportId: string) {
+  async function handleDeleteCommunityReport(feature: SituationFeature) {
     if (!authToken) {
       openLoginPrompt("report");
       return;
     }
-    if (!window.confirm("Smazat toto hlášení včetně metadat příloh?")) {
-      return;
-    }
+    const reportId = feature.properties.reportId;
+    if (!reportId) return;
+    const version =
+      typeof feature.properties.version === "number" && Number.isInteger(feature.properties.version)
+        ? feature.properties.version
+        : undefined;
     try {
-      await deleteCommunityReport(apiBase, authToken, reportId);
+      if (feature.properties.status === "draft") {
+        if (!window.confirm("Smazat tento nepublikovaný koncept?")) return;
+        await deleteCommunityReport(apiBase, authToken, reportId);
+      } else {
+        const reason = window
+          .prompt("Proč hlášení odvoláváte? Důvod se zobrazí lidem, kteří informaci mohli použít.", "")
+          ?.trim();
+        if (!reason) return;
+        await withdrawCommunityReport(apiBase, authToken, reportId, { expectedVersion: version, reason });
+      }
       setSelectedSituationFeatureId(null);
       setSelectedSituationFeatureStableKey(null);
       setCommunityRefreshNonce((current) => current + 1);
-      setLocationStatus("Hlášení bylo smazáno.");
+      setLocationStatus(
+        feature.properties.status === "draft"
+          ? "Koncept hlášení byl smazán."
+          : "Hlášení bylo odvoláno a účastníci byli upozorněni."
+      );
     } catch (error) {
-      setLocationStatus(error instanceof Error ? error.message : "Hlášení se nepodařilo smazat.");
+      setLocationStatus(error instanceof Error ? error.message : "Stav hlášení se nepodařilo změnit.");
+    }
+  }
+
+  async function handleResolveCommunityReport(feature: SituationFeature) {
+    if (!authToken) {
+      openLoginPrompt("report");
+      return;
+    }
+    const reportId = feature.properties.reportId;
+    if (!reportId || !window.confirm("Je situace skutečně vyřešená? Účastníci dostanou aktualizaci.")) return;
+    const version =
+      typeof feature.properties.version === "number" && Number.isInteger(feature.properties.version)
+        ? feature.properties.version
+        : undefined;
+    try {
+      await resolveCommunityReport(apiBase, authToken, reportId, {
+        expectedVersion: version,
+        reason: "Autor potvrdil, že situace je vyřešená."
+      });
+      setSelectedSituationFeatureId(null);
+      setSelectedSituationFeatureStableKey(null);
+      setCommunityRefreshNonce((current) => current + 1);
+      setLocationStatus("Situace byla označena jako vyřešená a účastníci byli upozorněni.");
+    } catch (error) {
+      setLocationStatus(error instanceof Error ? error.message : "Hlášení se nepodařilo uzavřít.");
     }
   }
 
@@ -7099,8 +7271,11 @@ export function App() {
   const catalogGroupViews = React.useMemo(() => buildCatalogGroupViews(mapCatalog), [mapCatalog]);
   const activeCatalogGroup = catalogGroupViews.find((view) => view.group.groupId === activeCatalogGroupId) ?? null;
   const priorityAlert = priorityAlertSummary.primary;
-  const operationTitle = priorityAlert?.title ?? "Bez prioritní výstrahy v okolí";
-  const operationBadge = priorityAlert?.badge ?? "Klid v okolí";
+  const emptySafetyCopy = localSafetyEmptyCopy(localSafetyFeed.state);
+  const operationTitle = priorityAlert
+    ? `${priorityAlert.title}${localSafetyFeed.state !== "current" ? " · aktuálnost neověřena" : ""}`
+    : emptySafetyCopy.title;
+  const operationBadge = priorityAlert?.badge ?? emptySafetyCopy.badge;
   const priorityAlertAdditionalLabel =
     priorityAlertSummary.additionalCount > 0 ? `+${priorityAlertSummary.additionalCount} dalších` : "";
   const effectiveOperatorProfile = React.useMemo(
@@ -7370,6 +7545,24 @@ export function App() {
     }
   }, [activeCatalogGroupId, catalogGroupViews, mobileSheet]);
 
+  const currentMapShareUrl = () =>
+    buildCopMapShareUrl(window.location.href, {
+      basemap: mapBasemapMode,
+      camera: mapView ?? defaultMapViewState(),
+      catalogLayerIds: visibleCatalogLayerIds,
+      safetyLayerIds: visibleSafetyLayerIds,
+      ...(explicitlySelectedObject ? { selectedObjectId: explicitlySelectedObject.objectId } : {}),
+      situationLayerIds: visibleSituationLayerIds,
+      trackLayerIds: visibleTrackLayerIds,
+      version: 1,
+      workspace: activeWorkspace === "alerts" || activeWorkspace === "data" ? activeWorkspace : "map"
+    });
+
+  const closePublicWelcome = React.useCallback(() => {
+    setPublicWelcomeOpen(false);
+    rememberPublicWelcomeDismissed();
+  }, []);
+
   return (
     <main className={shellClassName} ref={shellRef} style={shellStyle}>
       <div className="pwa-orientation-guard" role="status">
@@ -7379,6 +7572,25 @@ export function App() {
           <span>Mobilní PWA je navržena pro bezpečné ovládání v režimu na výšku.</span>
         </div>
       </div>
+      {publicWelcomeOpen && (authSession.status === "anonymous" || authSession.status === "lab") ? (
+        <PublicWelcome
+          onBrowseMap={() => {
+            closePublicWelcome();
+            setActiveWorkspace("map");
+          }}
+          onCheckArea={() => {
+            closePublicWelcome();
+            setActiveWorkspace("alerts");
+            setMobileSheet(null);
+            locateUser();
+          }}
+          onClose={closePublicWelcome}
+          onReport={() => {
+            closePublicWelcome();
+            startCommunityReportCapture();
+          }}
+        />
+      ) : null}
       <header className="topbar">
         <div className="brand">
           <button
@@ -7397,22 +7609,26 @@ export function App() {
             <p>Rizika v okolí, výstrahy a sdílené informace</p>
           </div>
         </div>
-        <div
-          className={clsx("mission-strip", "priority-alert-strip", priorityAlert?.tone ?? "ok")}
-          aria-label="Prioritní výstraha v okolí"
+        <button
+          className={clsx("mission-strip", "priority-alert-strip", priorityAlert?.tone ?? emptySafetyCopy.tone)}
+          aria-label={`Zobrazit výstrahy v okolí. ${operationBadge}. ${operationTitle}`}
+          type="button"
+          onClick={() => {
+            setActiveWorkspace("alerts");
+            setMobileSheet(null);
+          }}
+          title={`${operationBadge}: ${operationTitle}${localSafetyFeed.checkedAt ? ` Kontrola ${new Date(localSafetyFeed.checkedAt).toLocaleTimeString("cs-CZ")}.` : ""}`}
         >
           <span>{operationBadge}</span>
-          <strong>{operationTitle}</strong>
-          {priorityAlertAdditionalLabel ? <small>{priorityAlertAdditionalLabel}</small> : null}
-        </div>
+          <strong aria-live="polite">{operationTitle}</strong>
+          <small>
+            {priorityAlertAdditionalLabel ? `${priorityAlertAdditionalLabel} · Podrobnosti` : "Podrobnosti"}
+          </small>
+        </button>
         <div className="topbar-actions">
-          <button className="top-command-button record" onClick={() => startCommunityReportCapture()} type="button">
-            <span className="record-dot" />
-            Nahlásit
-          </button>
           <button
             className="top-command-button"
-            onClick={() => void navigator.clipboard?.writeText(window.location.href)}
+            onClick={() => void navigator.clipboard?.writeText(currentMapShareUrl())}
             type="button"
           >
             <Link2 size={15} />
@@ -7421,7 +7637,7 @@ export function App() {
           <button
             className="top-command-button"
             onClick={() => {
-              const url = window.location.href;
+              const url = currentMapShareUrl();
               if (navigator.share) {
                 void navigator
                   .share({ title: "Civilní situační mapa", url })
@@ -7440,6 +7656,13 @@ export function App() {
             <span>
               XR
               <strong>Quest</strong>
+            </span>
+          </a>
+          <a className="operator-button globe-entry-button" href="/globe" title="Otevřít volitelný 3D přehled">
+            <Layers size={18} />
+            <span>
+              3D
+              <strong>Přehled</strong>
             </span>
           </a>
           <button
@@ -7522,11 +7745,7 @@ export function App() {
                         <span>Poslední aktualizace</span>
                         <strong>{lastLoadedAt ?? "čekám na data"}</strong>
                       </div>
-                      {loadError ? (
-                        <div className="error-banner">
-                          API chyba: {loadError}. Poslední platná data zůstávají zobrazena.
-                        </div>
-                      ) : null}
+                      {loadError ? <DataAvailabilityNotice error={loadError} cachedDataAvailable /> : null}
                       <OfflineSnapshotNotice state={offlineSnapshotState} mode={operatingMode} />
                     </>
                   ) : null}
@@ -7616,7 +7835,7 @@ export function App() {
                         <MetricTile
                           label="Výstrahy"
                           value={alertSummary.total}
-                          tone={alertSummary.total > 0 ? "warn" : "ok"}
+                          tone={alertSummary.total > 0 ? "warn" : "neutral"}
                         />
                       </div>
 
@@ -7688,17 +7907,17 @@ export function App() {
                       <ReadinessRow
                         label="SIM safety výstrahy"
                         value={String(alertSummary.total)}
-                        tone={alertSummary.total > 0 ? "warn" : "ok"}
+                        tone={alertSummary.total > 0 ? "warn" : "neutral"}
                       />
                       <ReadinessRow
                         label="Kritické"
                         value={String(alertSummary.critical)}
-                        tone={alertSummary.critical > 0 ? "warn" : "ok"}
+                        tone={alertSummary.critical > 0 ? "warn" : "neutral"}
                       />
                       <ReadinessRow
                         label="Varování"
                         value={String(alertSummary.warning)}
-                        tone={alertSummary.warning > 0 ? "warn" : "ok"}
+                        tone={alertSummary.warning > 0 ? "warn" : "neutral"}
                       />
                       <ReadinessRow
                         label="Zapnuté vrstvy"
@@ -8139,8 +8358,25 @@ export function App() {
               </section>
             ) : showAlertControls ? (
               <section className="operations-deck alert-operations-deck">
+                <SafetyLocationPicker
+                  apiBase={apiBase}
+                  token={authToken}
+                  language={language}
+                  watchedLocation={watchedSafetyLocation}
+                  deviceLocationAvailable={Boolean(userLocation)}
+                  onSelectLocation={(location) => {
+                    setWatchedSafetyLocation(location);
+                    writeWatchedSafetyLocation(location, userStorageScope);
+                  }}
+                  onUseDeviceLocation={() => {
+                    setWatchedSafetyLocation(null);
+                    writeWatchedSafetyLocation(null, userStorageScope);
+                    if (!userLocation) locateUser();
+                  }}
+                />
                 <SafetyAlertBoard
                   features={publicSafetyAlertFeatures}
+                  evidenceState={localSafetyFeed.state}
                   onSelectFeature={(featureId) => {
                     const isSelected = selectedSituationFeatureId === featureId;
                     setSelectedSituationFeatureId(isSelected ? null : featureId);
@@ -8148,9 +8384,8 @@ export function App() {
                       isSelected
                         ? null
                         : stableSituationFeatureSelectionKey(
-                            combinedSituationFeatures?.features.find(
-                              (feature) => feature.properties.featureId === featureId
-                            ) ?? null
+                            publicSafetyAlertFeatures.find((feature) => feature.properties.featureId === featureId) ??
+                              null
                           )
                     );
                     setSelectedObjectId(null);
@@ -8326,8 +8561,9 @@ export function App() {
                       authToken={authToken}
                       feature={selectedSituationFeature}
                       mobileTowerViewshed={mobileTowerViewshed}
-                      onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
+                      onDeleteReport={(feature) => void handleDeleteCommunityReport(feature)}
                       onEditReport={(feature) => editCommunityReportFeature(feature)}
+                      onResolveReport={(feature) => void handleResolveCommunityReport(feature)}
                       onOpenChat={(feature) => openCommunityReportChat(feature)}
                       onNavigateToTarget={openNavigationProfileDialog}
                       onShareTransit={shareTransitToEmbeddedChat}
@@ -8344,7 +8580,9 @@ export function App() {
                         );
                         setCommunityGallery({
                           attachments: galleryAttachments,
+                          canManageAccess: selectedSituationFeature.properties.ownedByCurrentActor,
                           index: galleryIndex,
+                          reportId: selectedSituationFeature.properties.reportId,
                           subtitle,
                           title
                         });
@@ -8530,8 +8768,9 @@ export function App() {
               authToken={authToken}
               feature={selectedSituationFeature}
               mobileTowerViewshed={mobileTowerViewshed}
-              onDeleteReport={(reportId) => void handleDeleteCommunityReport(reportId)}
+              onDeleteReport={(feature) => void handleDeleteCommunityReport(feature)}
               onEditReport={(feature) => editCommunityReportFeature(feature)}
+              onResolveReport={(feature) => void handleResolveCommunityReport(feature)}
               onOpenChat={(feature) => openCommunityReportChat(feature)}
               onNavigateToTarget={openNavigationProfileDialog}
               onShareTransit={shareTransitToEmbeddedChat}
@@ -8548,7 +8787,9 @@ export function App() {
                 );
                 setCommunityGallery({
                   attachments: galleryAttachments,
+                  canManageAccess: selectedSituationFeature.properties.ownedByCurrentActor,
                   index: galleryIndex,
+                  reportId: selectedSituationFeature.properties.reportId,
                   subtitle,
                   title
                 });
@@ -8831,12 +9072,16 @@ export function App() {
           uploadProgress={communityUploadProgress}
           onChange={setCommunityReportDraft}
           onClose={() => {
+            communityReportLocationRequestRef.current += 1;
             setCommunityReportOpen(false);
             setCommunityReportError(null);
           }}
           onLocationFromMap={setCommunityReportLocationFromMapCenter}
           onLocationFromMapClick={startCommunityReportMapPick}
           onLocationFromUser={setCommunityReportLocationFromUser}
+          onBeforeMediaLocation={() => {
+            communityReportLocationRequestRef.current += 1;
+          }}
           onFilesSelected={(files) => void handleCommunityReportFilesSelected(files)}
           onRemoveFile={(index) =>
             setCommunityReportDraft((current) => ({
@@ -8851,6 +9096,30 @@ export function App() {
         <CommunityMediaGallery
           gallery={communityGallery}
           onClose={() => setCommunityGallery(null)}
+          onAccessChange={
+            communityGallery.canManageAccess && communityGallery.reportId && authToken
+              ? async (attachmentId, access) => {
+                  const updated = await updateCommunityAttachmentAccess(
+                    apiBase,
+                    authToken,
+                    communityGallery.reportId!,
+                    attachmentId,
+                    access
+                  );
+                  setCommunityGallery((current) =>
+                    current
+                      ? {
+                          ...current,
+                          attachments: current.attachments.map((attachment) =>
+                            attachment.attachmentId === attachmentId ? { ...attachment, ...updated } : attachment
+                          )
+                        }
+                      : current
+                  );
+                  setCommunityRefreshNonce((current) => current + 1);
+                }
+              : undefined
+          }
           onMove={(direction) =>
             setCommunityGallery((current) => {
               if (!current) {
@@ -8875,6 +9144,92 @@ export function App() {
         />
       ) : null}
     </main>
+  );
+}
+
+const publicWelcomeStorageKey = "cop.public-welcome.v1";
+
+function shouldShowPublicWelcome(): boolean {
+  if (
+    typeof window === "undefined" ||
+    window.location.pathname !== "/" ||
+    window.location.search ||
+    window.location.hash
+  ) {
+    return false;
+  }
+  try {
+    return window.localStorage.getItem(publicWelcomeStorageKey) !== "dismissed";
+  } catch {
+    return true;
+  }
+}
+
+function rememberPublicWelcomeDismissed(): void {
+  try {
+    window.localStorage.setItem(publicWelcomeStorageKey, "dismissed");
+  } catch {
+    // The public entry still works when persistent browser storage is unavailable.
+  }
+}
+
+function PublicWelcome({
+  onBrowseMap,
+  onCheckArea,
+  onClose,
+  onReport
+}: {
+  onBrowseMap: () => void;
+  onCheckArea: () => void;
+  onClose: () => void;
+  onReport: () => void;
+}) {
+  const modal = useModalFocus<HTMLElement>(onClose);
+  return (
+    <div className="public-welcome-backdrop" role="presentation">
+      <section
+        aria-describedby="public-welcome-description"
+        aria-labelledby="public-welcome-title"
+        aria-modal="true"
+        className="public-welcome"
+        onKeyDown={modal.onDialogKeyDown}
+        ref={modal.dialogRef}
+        role="dialog"
+        tabIndex={-1}
+      >
+        <button aria-label="Zavřít úvod" className="public-welcome-close" onClick={onClose} type="button">
+          <X size={20} />
+        </button>
+        <img alt="" className="public-welcome-logo" src="/icons/cop-icon.svg" />
+        <span className="public-welcome-kicker">Civilní situační mapa České republiky</span>
+        <h2 id="public-welcome-title">Co právě potřebujete?</h2>
+        <p id="public-welcome-description">
+          Zjistěte ověřené výstrahy ve svém okolí, otevřete mapu nebo po přihlášení pošlete hlášení.
+        </p>
+        <div className="public-welcome-actions">
+          <button className="public-welcome-action primary" onClick={onCheckArea} type="button">
+            <BellRing aria-hidden="true" size={24} />
+            <span>
+              <strong>Situace kolem mě</strong>
+              <small>Najít polohu a ukázat aktuální výstrahy</small>
+            </span>
+            <ArrowRight aria-hidden="true" size={19} />
+          </button>
+          <button className="public-welcome-action" onClick={onReport} type="button">
+            <Camera aria-hidden="true" size={24} />
+            <span>
+              <strong>Podat hlášení</strong>
+              <small>Přidat popis, polohu a fotografii</small>
+            </span>
+            <ArrowRight aria-hidden="true" size={19} />
+          </button>
+        </div>
+        <button className="public-welcome-map" onClick={onBrowseMap} type="button">
+          Prohlédnout celou mapu
+        </button>
+        <p className="public-welcome-emergency">Při bezprostředním ohrožení volejte 112 nebo 150, 155 či 158.</p>
+      </section>
+    </div>
   );
 }
 
@@ -8999,20 +9354,27 @@ function MobilePairLandingOverlay({ code, onClose }: { code: string; onClose: ()
   );
 }
 
-interface CommunityReportDraft {
+export interface CommunityReportDraft {
   category: CommunityReportCategory;
+  changeReason: string;
+  clientRequestId: string;
   description: string;
   files: File[];
   groupId?: string;
   groupName?: string;
   hazardSeverity: CommunityReportHazardSeverity;
   location: CommunityReportLocation;
+  locationConfirmed: boolean;
+  observedAt: string;
+  published: boolean;
   mediaLocationHint: string;
+  mediaLocationSuggestion?: { fileName: string; location: CommunityReportLocation };
   mediaAccessMode: CommunityMediaAccessMode;
   mediaAccessUserSubjectIds: string;
   reportId?: string;
   title: string;
   validUntil: string;
+  version?: number;
   videoSpatialMode: CommunityVideoSpatialMode;
 }
 
@@ -9051,7 +9413,9 @@ export function hostMessagingSurfaceForNativeCall(): {
 
 interface CommunityGalleryState {
   attachments: NonNullable<SituationFeature["properties"]["attachments"]>;
+  canManageAccess?: boolean;
   index: number;
+  reportId?: string;
   subtitle?: string;
   title: string;
 }
@@ -9081,10 +9445,11 @@ interface CommunityReportDialogProps {
   onLocationFromMap: () => void;
   onLocationFromMapClick: () => void;
   onLocationFromUser: () => void;
+  onBeforeMediaLocation?: () => void;
   onSubmit: () => void;
 }
 
-function CommunityReportDialog({
+export function CommunityReportDialog({
   apiBase,
   authSubjectId,
   authToken,
@@ -9100,6 +9465,7 @@ function CommunityReportDialog({
   onLocationFromMap,
   onLocationFromMapClick,
   onLocationFromUser,
+  onBeforeMediaLocation,
   onSubmit
 }: CommunityReportDialogProps) {
   const [chatContacts, setChatContacts] = React.useState<UserDirectoryEntry[]>([]);
@@ -9154,7 +9520,7 @@ function CommunityReportDialog({
             Zrušit
           </button>
           <button className="primary-button" disabled={isSubmitting} onClick={onSubmit} type="button">
-            {isSubmitting ? "Ukládám..." : draft.reportId ? "Uložit změny" : "Uložit hlášení"}
+            {isSubmitting ? "Odesílám..." : draft.published ? "Uložit veřejné změny" : "Zveřejnit hlášení"}
           </button>
         </>
       }
@@ -9162,14 +9528,14 @@ function CommunityReportDialog({
       closeDisabled={isSubmitting}
       description={
         draft.reportId
-          ? "Upravte text, polohu, platnost, přístup a přílohy uloženého hlášení."
-          : "Vložte ověřené hlášení s polohou, platností rizika a volitelnými přílohami."
+          ? "Upravte text, polohu a platnost hlášení. Volba přístupu platí pouze pro nově přidané přílohy."
+          : "Popište vlastní pozorování. Před zveřejněním potvrďte místo události a zkontrolujte viditelnost."
       }
       eyebrow="Komunitní hlášení"
       onClose={onClose}
       title={draft.reportId ? "Upravit hlášení" : "Nahlásit událost v okolí"}
     >
-      <div className="report-dialog-scroll">
+      <fieldset className="report-dialog-scroll" disabled={isSubmitting} aria-label="Údaje hlášení">
         <div className="report-form-grid">
           <label>
             Typ události
@@ -9177,7 +9543,19 @@ function CommunityReportDialog({
               ariaLabel="Typ události"
               options={communityReportCategoryOptions}
               value={draft.category}
-              onValueChange={(category) => onChange((current) => ({ ...current, category }))}
+              onValueChange={(category) =>
+                onChange((current) => ({
+                  ...current,
+                  category,
+                  ...(!current.reportId
+                    ? {
+                        validUntil: toDateTimeLocalValue(
+                          new Date(Date.now() + communityReportDefaultValidityHours(category) * 60 * 60 * 1000)
+                        )
+                      }
+                    : {})
+                }))
+              }
             />
           </label>
           <label>
@@ -9200,6 +9578,24 @@ function CommunityReportDialog({
             onChange={(event) => onChange((current) => ({ ...current, title: event.target.value }))}
           />
         </label>
+
+        {draft.published ? (
+          <label className="report-field">
+            Co se změnilo
+            <textarea
+              maxLength={500}
+              placeholder="Stručně popište důvod aktualizace pro ostatní uživatele."
+              value={draft.changeReason}
+              onChange={(event) => onChange((current) => ({ ...current, changeReason: event.target.value }))}
+            />
+          </label>
+        ) : null}
+
+        {draft.category === "fire" || draft.category === "medical" || draft.hazardSeverity === "critical" ? (
+          <div className="report-dialog-message warning">
+            Hlášení v COP nenahrazuje tísňové volání. Při bezprostředním ohrožení nejprve volejte 112 nebo 155.
+          </div>
+        ) : null}
 
         <label className="report-field">
           Popis
@@ -9226,7 +9622,27 @@ function CommunityReportDialog({
           </div>
         </div>
         {draft.mediaLocationHint ? (
-          <div className="report-dialog-message success">{draft.mediaLocationHint}</div>
+          <div className="report-dialog-message" role="status">
+            {draft.mediaLocationHint}
+          </div>
+        ) : null}
+        {draft.mediaLocationSuggestion ? (
+          <button
+            className="mini-button"
+            type="button"
+            onClick={() => {
+              onBeforeMediaLocation?.();
+              onChange((current) => ({
+                ...current,
+                location: current.mediaLocationSuggestion?.location ?? current.location,
+                locationConfirmed: false,
+                mediaLocationSuggestion: undefined,
+                mediaLocationHint: "Poloha převzata z média. Potvrďte, že jde o místo události."
+              }));
+            }}
+          >
+            Použít polohu z média
+          </button>
         ) : null}
 
         <div className="report-location-actions">
@@ -9243,11 +9659,12 @@ function CommunityReportDialog({
 
         <section className="report-access-panel">
           <div className="report-access-header">
-            <strong>Přístup k přílohám</strong>
+            <strong>{draft.reportId ? "Přístup k novým přílohám" : "Přístup k přílohám"}</strong>
             <span>{communityMediaAccessLabel(draft.mediaAccessMode)}</span>
           </div>
           <span className="report-field-hint">
-            Hlášení zůstane mapový objekt. Skupiny a konverzace řeší samostatná aplikace Chat.
+            Text a přesná poloha hlášení budou veřejné. Soukromá diskuse neomezuje viditelnost hlášení.
+            {draft.reportId ? " Přístup k již uloženým přílohám se touto volbou nemění." : ""}
           </span>
           <SelectField<CommunityMediaAccessMode>
             ariaLabel="Přístup k médiím"
@@ -9274,6 +9691,16 @@ function CommunityReportDialog({
             Text hlášení a stupeň výstrahy se zobrazují v mapě. Fotky, PDF a videa respektují zvolený přístup.
           </span>
         </section>
+        <label className="report-field">
+          <span>
+            <input
+              type="checkbox"
+              checked={draft.locationConfirmed}
+              onChange={(event) => onChange((current) => ({ ...current, locationConfirmed: event.target.checked }))}
+            />{" "}
+            Potvrzuji místo události a rozumím, že text a přesná poloha budou veřejné.
+          </span>
+        </label>
 
         <CommunityAttachmentPicker
           disabled={isSubmitting}
@@ -9297,9 +9724,13 @@ function CommunityReportDialog({
           </label>
         ) : null}
         {uploadProgress ? <CommunityUploadProgressPanel progress={uploadProgress} /> : null}
-        {error ? <div className="report-dialog-message error">{error}</div> : null}
+        {error ? (
+          <div className="report-dialog-message error" role="alert">
+            {error}
+          </div>
+        ) : null}
         {success ? <div className="report-dialog-message success">{success}</div> : null}
-      </div>
+      </fieldset>
     </ModalDialog>
   );
 }
@@ -9645,10 +10076,12 @@ function CommunityUploadProgressPanel({ progress }: { progress: CommunityUploadU
 function CommunityMediaGallery({
   gallery,
   onClose,
+  onAccessChange,
   onMove
 }: {
   gallery: CommunityGalleryState;
   onClose: () => void;
+  onAccessChange?: (attachmentId: string, access: CommunityMediaAccessPolicy) => Promise<void>;
   onMove: (direction: -1 | 1) => void;
 }) {
   const modal = useModalFocus<HTMLElement>(onClose);
@@ -9765,14 +10198,122 @@ function CommunityMediaGallery({
             </a>
           ) : null}
         </footer>
+        <CommunityMediaAccessEditor attachment={attachment} onSave={onAccessChange} />
       </section>
     </div>
   );
 }
 
-function ProximityAlertList({ alerts }: { alerts: ProximityAlert[] }) {
+type GalleryAttachment = NonNullable<SituationFeature["properties"]["attachments"]>[number];
+
+function CommunityMediaAccessEditor({
+  attachment,
+  onSave
+}: {
+  attachment: GalleryAttachment;
+  onSave?: (attachmentId: string, access: CommunityMediaAccessPolicy) => Promise<void>;
+}) {
+  const initial = communityMediaPolicyFromAttachment(attachment);
+  const [mode, setMode] = React.useState(initial.audience);
+  const [members, setMembers] = React.useState(
+    (initial.audience === "groups" ? initial.groupIds : initial.userSubjectIds)?.join(", ") ?? ""
+  );
+  const [status, setStatus] = React.useState<string | null>(null);
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    const next = communityMediaPolicyFromAttachment(attachment);
+    setMode(next.audience);
+    setMembers((next.audience === "groups" ? next.groupIds : next.userSubjectIds)?.join(", ") ?? "");
+    setStatus(null);
+  }, [attachment]);
+
+  const summary = attachment.access;
+  return (
+    <section className="community-media-access-editor" aria-label="Přístup k médiu">
+      <div>
+        <strong>Přístup: {communityMediaAccessLabel(initial.audience)}</strong>
+        <small>
+          {typeof summary?.userCount === "number" && summary.userCount > 0
+            ? `${summary.userCount} vybraných uživatelů`
+            : typeof summary?.groupCount === "number" && summary.groupCount > 0
+              ? `${summary.groupCount} vybraných skupin`
+              : initial.audience === "public"
+                ? "Médium vidí čtenáři hlášení."
+                : "Médium vidí pouze autor hlášení."}
+        </small>
+      </div>
+      {onSave ? (
+        <div className="community-media-access-controls">
+          <label>
+            Kdo uvidí soubor
+            <select
+              disabled={saving}
+              onChange={(event) => {
+                setMode(event.target.value as CommunityMediaAccessMode);
+                setMembers("");
+                setStatus(null);
+              }}
+              value={mode}
+            >
+              {communityMediaAccessOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {mode === "users" || mode === "groups" ? (
+            <label>
+              {mode === "users" ? "ID uživatelů" : "ID skupin"}
+              <input
+                disabled={saving}
+                onChange={(event) => setMembers(event.target.value)}
+                placeholder="Oddělte čárkou nebo mezerou"
+                value={members}
+              />
+            </label>
+          ) : null}
+          <button
+            className="mini-button"
+            disabled={saving}
+            onClick={() => {
+              const ids = parseSubjectIdList(members);
+              if ((mode === "users" || mode === "groups") && ids.length === 0) {
+                setStatus("Doplňte alespoň jedno ID.");
+                return;
+              }
+              setSaving(true);
+              setStatus(null);
+              void onSave(attachment.attachmentId, {
+                audience: mode,
+                ...(mode === "groups" ? { groupIds: ids } : {}),
+                ...(mode === "users" ? { userSubjectIds: ids } : {})
+              })
+                .then(() => setStatus("Přístup byl změněn a předchozí odkazy už nové pravidlo nepřekročí."))
+                .catch((error) => setStatus(error instanceof Error ? error.message : "Přístup se nepodařilo změnit."))
+                .finally(() => setSaving(false));
+            }}
+            type="button"
+          >
+            {saving ? "Ukládám…" : "Uložit přístup"}
+          </button>
+        </div>
+      ) : null}
+      {status ? <small role="status">{status}</small> : null}
+    </section>
+  );
+}
+
+function ProximityAlertList({ alerts, enabled }: { alerts: ProximityAlert[]; enabled: boolean }) {
   if (alerts.length === 0) {
-    return <div className="empty-mini">Bez aktivních výstrah pro mou polohu.</div>;
+    return (
+      <div className="empty-mini">
+        {enabled
+          ? "V dostupných polohách objektů nebylo nalezeno přiblížení."
+          : "Sledování přiblížení objektů je vypnuté."}
+      </div>
+    );
   }
 
   return (
@@ -10186,11 +10727,132 @@ function loginPromptContent(reason: LoginPromptReason): { benefits: string[]; de
   }
 }
 
-function SafetyAlertBoard({
+function SafetyLocationPicker({
+  apiBase,
+  token,
+  language,
+  watchedLocation,
+  deviceLocationAvailable,
+  onSelectLocation,
+  onUseDeviceLocation
+}: {
+  apiBase: string;
+  token?: string;
+  language: AppLanguage;
+  watchedLocation: WatchedSafetyLocation | null;
+  deviceLocationAvailable: boolean;
+  onSelectLocation: (location: WatchedSafetyLocation) => void;
+  onUseDeviceLocation: () => void;
+}) {
+  const [query, setQuery] = React.useState("");
+  const [items, setItems] = React.useState<PlaceGeocodeResult[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const requestRef = React.useRef(0);
+
+  async function searchPlaces(event: React.FormEvent) {
+    event.preventDefault();
+    const normalized = query.trim();
+    if (normalized.length < 2) {
+      setError("Napište alespoň dva znaky názvu obce nebo místa.");
+      return;
+    }
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetchPlaceGeocode(apiBase, token, normalized, {
+        language: appLanguageToGeocodeLanguage(language),
+        limit: 6
+      });
+      if (requestRef.current !== requestId) return;
+      setItems(response.items);
+      if (response.items.length === 0) setError("Místo nebylo nalezeno. Zkuste název obce a okres.");
+    } catch (searchError) {
+      if (requestRef.current !== requestId) return;
+      setItems([]);
+      setError(searchError instanceof Error ? searchError.message : "Vyhledávání obcí není dostupné.");
+    } finally {
+      if (requestRef.current === requestId) setLoading(false);
+    }
+  }
+
+  return (
+    <div className="safety-location-card">
+      <div className="safety-location-heading">
+        <div>
+          <span>Sledovaná oblast</span>
+          <strong>
+            {watchedLocation
+              ? `${watchedLocation.label} · vybrané místo`
+              : deviceLocationAvailable
+                ? "Okolí aktuální polohy zařízení"
+                : "Poloha zatím není určená"}
+          </strong>
+        </div>
+        <button className="mini-button" onClick={onUseDeviceLocation} type="button">
+          <Crosshair size={14} /> Moje poloha
+        </button>
+      </div>
+      <form className="safety-location-search" onSubmit={(event) => void searchPlaces(event)}>
+        <label>
+          <span className="sr-only">Obec nebo místo</span>
+          <input
+            autoComplete="address-level2"
+            maxLength={120}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Obec nebo místo, například Tábor"
+            value={query}
+          />
+        </label>
+        <button className="mini-button" disabled={loading} type="submit">
+          <Search size={14} /> {loading ? "Hledám" : "Vyhledat"}
+        </button>
+      </form>
+      {items.length > 0 ? (
+        <div className="safety-location-results" aria-label="Nalezená místa">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => {
+                onSelectLocation({
+                  label: item.displayName.split(",")[0]?.trim() || item.displayName,
+                  lat: item.center[1],
+                  lon: item.center[0],
+                  source: "place"
+                });
+                setItems([]);
+                setQuery("");
+              }}
+              type="button"
+            >
+              <MapPin size={15} />
+              <span>
+                <strong>{item.displayName.split(",")[0]}</strong>
+                <small>{item.subtitle ?? item.displayName}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {error ? (
+        <div className="safety-location-error" role="alert">
+          {error}
+        </div>
+      ) : null}
+      <small>Výběr zůstává uložený a neposouvání mapy jej nemění.</small>
+    </div>
+  );
+}
+
+export function SafetyAlertBoard({
   features,
+  evidenceState,
   onSelectFeature
 }: {
   features: SituationFeature[];
+  evidenceState: import("./local-safety-feed").LocalSafetyState;
   onSelectFeature: (featureId: string) => void;
 }) {
   const summary = summarizeSafetyAlerts(features);
@@ -10198,14 +10860,18 @@ function SafetyAlertBoard({
     <div className="alert-center-board">
       <div className="deck-header">
         <PanelTitle icon={<AlertTriangle size={17} />} title="Výstrahy" />
-        <span>{features.length} aktivních</span>
+        <span>{features.length} nalezených do 30 km</span>
       </div>
       <div className="alert-summary-grid">
-        <MetricTile label="Kritické" value={summary.critical} tone={summary.critical > 0 ? "warn" : "ok"} />
-        <MetricTile label="Varování" value={summary.warning} tone={summary.warning > 0 ? "warn" : "ok"} />
+        <MetricTile label="Kritické" value={summary.critical} tone={summary.critical > 0 ? "warn" : "neutral"} />
+        <MetricTile label="Varování" value={summary.warning} tone={summary.warning > 0 ? "warn" : "neutral"} />
       </div>
       <div className="alert-list">
-        {features.length === 0 ? <div className="empty-mini">Žádné aktivní safety výstrahy ze SIM.</div> : null}
+        {features.length === 0 || evidenceState !== "current" ? (
+          <div className="empty-mini" role="status">
+            {localSafetyEmptyCopy(evidenceState).title}
+          </div>
+        ) : null}
         {features.map((feature) => {
           const severityRank = priorityFeatureSeverityRank(feature);
           const status = situationFeatureStatusModel(feature);
@@ -10232,7 +10898,7 @@ function SafetyAlertBoard({
                 </p>
                 <div className="alert-row-meta">
                   <button type="button" onClick={() => onSelectFeature(feature.properties.featureId)}>
-                    {feature.properties.featureId}
+                    Zobrazit detail výstrahy
                   </button>
                   <span>{priorityFeatureBadge(feature)}</span>
                   <span>{sourceDisplayName(feature.properties.sourceId)}</span>
@@ -10304,7 +10970,15 @@ function IncidentWorkflowBoard({
             <MetricTile label="Incidenty" value={incidents.length} tone={incidents.length > 0 ? "warn" : "ok"} />
             <MetricTile label="Návrhy" value={suggestions.length} tone={suggestions.length > 0 ? "warn" : "ok"} />
           </div>
-          {error ? <div className="incident-warning">{humanizeApiError(error)}</div> : null}
+          {error ? (
+            <div className="incident-warning" role="status">
+              Incidenty se nepodařilo načíst. Zkuste tlačítko Obnovit.
+              <details>
+                <summary>Podrobnosti pro správce</summary>
+                <code>{humanizeApiError(error)}</code>
+              </details>
+            </div>
+          ) : null}
           {statusMessage && !error ? <div className="incident-status-message">{statusMessage}</div> : null}
 
           <section className="incident-section">
@@ -10481,7 +11155,7 @@ function PersonalAlertBoard({
         <ReadinessRow label="Vrstva" value={enabled ? "zapnuto" : "vypnuto"} tone={enabled ? "ok" : "neutral"} />
         <ReadinessRow label="Lokální alerty" value={String(alerts.length)} tone={alerts.length > 0 ? "warn" : "ok"} />
       </div>
-      <ProximityAlertList alerts={alerts} />
+      <ProximityAlertList alerts={alerts} enabled={enabled} />
       <button className="mini-button wide" onClick={onOpenSettings} type="button">
         <Settings size={14} />
         Nastavení perimetru
@@ -12021,15 +12695,11 @@ export function hostKeepsEmbeddedMediaEngineActive(input: {
   nativeBridgeAvailable: boolean;
   voiceCall: ChatVoiceCallMessage | null;
 }): boolean {
-  // WKWebView may suspend an iframe hidden with `visibility: hidden` before it
-  // can process the first native start/answer command. In COP Mobile the iframe
-  // is the persistent Matrix/WebRTC engine, so keep it rendered off-screen from
-  // the moment the native host mounts it. Browser-only surfaces retain the
-  // narrower behavior and keep it alive only for an active call.
-  return (
-    (input.nativeBridgeAvailable && input.frameMounted) ||
-    hostVisibleChatVoiceCall(input.voiceCall) !== null
-  );
+  // A native host owns CallKit, AVAudioSession and LiveKit. Letting the hidden
+  // iframe join the same room under the same identity disconnects one of the
+  // clients as DUPLICATE_IDENTITY. Browser-only surfaces still keep their media
+  // engine rendered while a call is active.
+  return !input.nativeBridgeAvailable && hostVisibleChatVoiceCall(input.voiceCall) !== null;
 }
 
 export function hostIncomingChatVoiceCall(call: ChatVoiceCallMessage | null): ChatVoiceCallMessage | null {
@@ -12378,7 +13048,8 @@ function EmbeddedCopChatPanel({
   const initialSelectedChatId = initialSelectedChatIdRef.current;
   const chatSelectionQuery = initialSelectedChatId ? `&selection=${encodeURIComponent(initialSelectedChatId)}` : "";
   const chatPath = selectedChatId ? `/chat/?selection=${encodeURIComponent(selectedChatId)}` : "/chat/";
-  const chatFrameSrc = `/chat/?embedded=1${chatSelectionQuery}`;
+  const nativeVoiceMediaOwned = nativeCompassAvailable();
+  const chatFrameSrc = `/chat/?embedded=1${nativeVoiceMediaOwned ? "&voiceMedia=native" : ""}${chatSelectionQuery}`;
 
   function postPendingChatCommands() {
     const target = iframeRef.current?.contentWindow;
@@ -12442,7 +13113,7 @@ function EmbeddedCopChatPanel({
           </header>
         ) : null}
         <iframe
-          allow="microphone"
+          allow={nativeVoiceMediaOwned ? undefined : "microphone"}
           ref={iframeRef}
           className="embedded-chat-frame"
           src={chatFrameSrc}
@@ -13395,72 +14066,6 @@ function upsertObjects(current: CopObject[], changedObjects: CopObject[]): CopOb
   return Array.from(next.values());
 }
 
-function streamStatusLabel(status: CopStreamStatus): string {
-  if (status === "live") {
-    return "LIVE";
-  }
-  if (status === "offline") {
-    return "OFFLINE";
-  }
-  return "DEGRADED";
-}
-
-function resolveOperatingMode({
-  browserOnline,
-  health,
-  loadError,
-  offlineSnapshotState,
-  streamStatus
-}: {
-  browserOnline: boolean;
-  health: HealthStatus | null;
-  loadError: string | null;
-  offlineSnapshotState: OfflineSnapshotState;
-  streamStatus: CopStreamStatus;
-}): OperatingMode {
-  if (!browserOnline || (offlineSnapshotState.kind === "active" && streamStatus === "offline")) {
-    return "OFFLINE";
-  }
-  if (offlineSnapshotState.kind === "active" || loadError || health?.status !== "ok" || streamStatus !== "live") {
-    return "DEGRADED";
-  }
-  return "ONLINE";
-}
-
-function operatingModeTone(mode: OperatingMode): "ok" | "warn" | "neutral" {
-  return mode === "ONLINE" ? "ok" : "warn";
-}
-
-function operatingModeLabel(mode: OperatingMode): string {
-  if (mode === "ONLINE") {
-    return "online";
-  }
-  if (mode === "OFFLINE") {
-    return "offline";
-  }
-  return "omezeno";
-}
-
-function missionModeLabel(mode: OperatingMode, snapshotState: OfflineSnapshotState): string {
-  if (snapshotState.kind === "active") {
-    return mode === "OFFLINE" ? "offline náhled" : "omezený náhled";
-  }
-  if (mode === "ONLINE") {
-    return "živě";
-  }
-  return operatingModeLabel(mode);
-}
-
-function streamStatusTone(status: CopStreamStatus): "ok" | "warn" | "neutral" {
-  if (status === "live") {
-    return "ok";
-  }
-  if (status === "connecting") {
-    return "neutral";
-  }
-  return "warn";
-}
-
 function streamReadinessLabel(status: CopStreamStatus, telemetry: StreamTelemetry): string {
   if (status === "live") {
     return telemetry.lastMessageAt ? `live ${formatStreamObservation(telemetry.lastMessageAt)}` : "live";
@@ -13472,21 +14077,6 @@ function streamReadinessLabel(status: CopStreamStatus, telemetry: StreamTelemetr
     return "offline";
   }
   return telemetry.lastError ? "fallback active" : "degraded";
-}
-
-function formatOfflineSnapshotState(state: OfflineSnapshotState): string {
-  if (state.kind === "none") {
-    return "není uložen";
-  }
-  const suffix = state.kind === "active" ? "aktivní" : "připraven";
-  return `${suffix} · ${formatSnapshotAge(state)} · ${state.objectCount} obj.`;
-}
-
-function offlineSnapshotTone(state: OfflineSnapshotState): "ok" | "warn" | "neutral" {
-  if (state.kind === "active") {
-    return "warn";
-  }
-  return state.kind === "available" ? "ok" : "neutral";
 }
 
 function pwaCacheStateFromServiceWorkerMessage(data: unknown): CopPwaCacheState | null {
@@ -13605,22 +14195,6 @@ function initialOfflineSnapshotState(scope: string): OfflineSnapshotState {
   };
 }
 
-function formatSnapshotAge(snapshot: Pick<CopOfflineSnapshot, "savedAt">): string {
-  const ageSeconds = snapshotAgeSeconds(snapshot);
-  if (ageSeconds === null) {
-    return "neznámé stáří";
-  }
-  if (ageSeconds < 60) {
-    return `${ageSeconds} s starý`;
-  }
-  const ageMinutes = Math.round(ageSeconds / 60);
-  if (ageMinutes < 60) {
-    return `${ageMinutes} min starý`;
-  }
-  const ageHours = Math.round(ageMinutes / 60);
-  return `${ageHours} h starý`;
-}
-
 function streamLatencyTone(telemetry: StreamTelemetry): "ok" | "warn" | "neutral" {
   if (telemetry.latencyMs === null) {
     return "neutral";
@@ -13720,7 +14294,7 @@ function MetricTile({
 }: {
   label: string;
   value: string | number;
-  tone: "friend" | "hostile" | "ok" | "warn";
+  tone: "friend" | "hostile" | "ok" | "warn" | "neutral";
 }) {
   return (
     <div className={`metric-tile ${tone}`}>
@@ -15942,7 +16516,7 @@ function CatalogLayerDrawer({
           tone={enabledCount > 0 ? "ok" : "neutral"}
         />
       </div>
-      {loadError ? <div className="catalog-warning">API chyba: {loadError}</div> : null}
+      {loadError ? <DataAvailabilityNotice className="compact" error={loadError} cachedDataAvailable /> : null}
       <div className="catalog-layer-list">
         {groupView.layers.map((layer) => {
           const enabled = isLayerEnabled(layer);
@@ -15955,8 +16529,6 @@ function CatalogLayerDrawer({
           };
           return (
             <div
-              aria-checked={enabled}
-              aria-disabled={!operable}
               className={`catalog-layer-row ${enabled ? "enabled" : ""} ${!operable ? "disabled" : ""}`}
               key={layer.layerId}
               onClick={(event) => {
@@ -15966,19 +16538,11 @@ function CatalogLayerDrawer({
                 }
                 toggleLayer();
               }}
-              onKeyDown={(event) => {
-                if (!operable || (event.key !== "Enter" && event.key !== " ")) {
-                  return;
-                }
-                event.preventDefault();
-                toggleLayer();
-              }}
-              role="switch"
-              tabIndex={operable ? 0 : -1}
             >
               <div className="catalog-layer-toggle" title={layer.description ?? layer.label}>
                 <input
                   aria-label={`Zobrazit vrstvu ${layer.label}`}
+                  aria-describedby={`catalog-layer-description-${layer.layerId}`}
                   checked={enabled}
                   disabled={!operable}
                   onChange={(event) => {
@@ -15990,7 +16554,7 @@ function CatalogLayerDrawer({
                 />
                 <span>
                   <strong>{layer.label}</strong>
-                  <small>{catalogLayerHint(layer, operable)}</small>
+                  <small id={`catalog-layer-description-${layer.layerId}`}>{catalogLayerHint(layer, operable)}</small>
                 </span>
                 <em>{getFeatureCount(layer)}</em>
               </div>
@@ -16000,6 +16564,10 @@ function CatalogLayerDrawer({
                 </span>
                 <span>{catalogLayerProviderLabel(layer)}</span>
               </div>
+              <details className="catalog-layer-technical">
+                <summary>Technické podrobnosti</summary>
+                <span>{catalogLayerTechnicalHint(layer)}</span>
+              </details>
               {enabled && layer.filters?.some((filter) => filter.filterId === "technology") ? (
                 <div className="catalog-technology-control" aria-label={`Technologie vrstvy ${layer.label}`}>
                   {coverageTechnologyOptions.map((technology) => (
@@ -17950,13 +18518,14 @@ function SituationFeatureDetail({
   onNavigateToTarget,
   onOpenChat,
   onOpenGallery,
+  onResolveReport,
   onShareTransit
 }: {
   apiBase: string;
   authToken: string | undefined;
   feature: SituationFeature;
   mobileTowerViewshed?: MobileTowerViewshedState;
-  onDeleteReport?: (reportId: string) => void;
+  onDeleteReport?: (feature: SituationFeature) => void;
   onEditReport?: (feature: SituationFeature) => void;
   onNavigateToTarget?: (target: EmergencyRouteTarget) => void;
   onOpenChat?: (feature: SituationFeature) => void;
@@ -17966,6 +18535,7 @@ function SituationFeatureDetail({
     title: string,
     subtitle?: string
   ) => void;
+  onResolveReport?: (feature: SituationFeature) => void;
   onShareTransit?: (transit: ChatTransitSharePayload) => void;
 }) {
   const properties = feature.properties;
@@ -17973,6 +18543,8 @@ function SituationFeatureDetail({
   const technicalCoverage = useMobileNetworkTechnicalCoverage(apiBase, authToken, feature);
   const status = situationFeatureStatusModel(feature);
   const isCommunityReport = properties.layer === "community" && typeof properties.reportId === "string";
+  const communityReportOwned = properties.ownedByCurrentActor === true;
+  const communityReportActive = properties.status === "submitted" || properties.status === "published";
   const trafficPresentation = properties.layer === "traffic" ? resolveTransportPresentation(feature) : null;
   const outdoorCamera = isOutdoorWebcamFeature(feature);
   const weatherCamera = isWeatherWebcamFeature(feature);
@@ -18049,16 +18621,24 @@ function SituationFeatureDetail({
               Chat
             </button>
           ) : null}
-          <button className="mini-button" onClick={() => onEditReport?.(feature)} type="button">
-            Upravit
-          </button>
-          <button
-            className="mini-button danger"
-            onClick={() => onDeleteReport?.(properties.reportId as string)}
-            type="button"
-          >
-            Smazat
-          </button>
+          {communityReportOwned && communityReportActive ? (
+            <>
+              <button className="mini-button" onClick={() => onEditReport?.(feature)} type="button">
+                Aktualizovat
+              </button>
+              <button className="mini-button primary-lite" onClick={() => onResolveReport?.(feature)} type="button">
+                Vyřešeno
+              </button>
+              <button className="mini-button danger" onClick={() => onDeleteReport?.(feature)} type="button">
+                Odvolat
+              </button>
+            </>
+          ) : null}
+          {communityReportOwned && properties.status === "draft" ? (
+            <button className="mini-button danger" onClick={() => onDeleteReport?.(feature)} type="button">
+              Smazat koncept
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -19040,41 +19620,77 @@ const communityVideoSpatialOptions: Array<{ label: string; value: CommunityVideo
   { label: "3D over-under", value: "over_under" }
 ];
 
-function createCommunityReportDraft(location = resolveCommunityReportLocation(null, undefined)): CommunityReportDraft {
+export function createCommunityReportDraft(
+  location = resolveCommunityReportLocation(null, undefined)
+): CommunityReportDraft {
   return {
     category: "hazard",
+    changeReason: "",
+    clientRequestId: createCommunitySubmissionId(),
     description: "",
     files: [],
     hazardSeverity: "warning",
     location,
+    locationConfirmed: false,
+    observedAt: new Date().toISOString(),
+    published: false,
     mediaLocationHint: "",
     mediaAccessMode: "public",
     mediaAccessUserSubjectIds: "",
     title: "",
-    validUntil: toDateTimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000)),
+    validUntil: toDateTimeLocalValue(
+      new Date(Date.now() + communityReportDefaultValidityHours("hazard") * 60 * 60 * 1000)
+    ),
     videoSpatialMode: "none"
   };
 }
 
-function communityReportChatGroupName(title: string): string {
-  const normalized = title.trim().replace(/\s+/gu, " ");
-  const base = normalized || "Událost v mapě";
-  const prefixed = base.toLocaleLowerCase("cs-CZ").startsWith("událost:") ? base : `Událost: ${base}`;
-  return truncateText(prefixed, 120);
+function hasCommunityReportDraftContent(draft: CommunityReportDraft): boolean {
+  return Boolean(
+    draft.reportId ||
+    draft.title.trim() ||
+    draft.description.trim() ||
+    draft.files.length ||
+    draft.locationConfirmed ||
+    draft.mediaAccessMode !== "public"
+  );
 }
 
-function communityReportChatGroupDescription(draft: CommunityReportDraft): string {
-  const category = communityReportCategoryLabelForValue(draft.category);
-  const severity = communitySeverityDisplay(draft.hazardSeverity);
-  const description = draft.description.trim();
-  return truncateText([category, severity, description].filter(Boolean).join(" · "), 280);
+function isRestorableCommunityReportDraft(value: unknown): value is CommunityReportDraft {
+  if (!isPlainObject(value)) return false;
+  return (
+    typeof value.clientRequestId === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value.clientRequestId) &&
+    typeof value.title === "string" &&
+    typeof value.description === "string" &&
+    Array.isArray(value.files) &&
+    isPlainObject(value.location) &&
+    typeof value.location.lat === "number" &&
+    typeof value.location.lon === "number"
+  );
 }
 
-function truncateText(value: string, maxLength: number): string {
-  if (value.length <= maxLength) {
-    return value;
-  }
-  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+function normalizeRestoredCommunityReportDraft(draft: CommunityReportDraft): CommunityReportDraft {
+  return {
+    ...draft,
+    files: draft.files.filter((file): file is File => typeof File !== "undefined" && file instanceof File),
+    locationConfirmed: false
+  };
+}
+
+function communityReportDefaultValidityHours(category: CommunityReportCategory): number {
+  const hours: Record<CommunityReportCategory, number> = {
+    bridge_damage: 24,
+    fire: 2,
+    flood: 12,
+    hazard: 6,
+    infrastructure_damage: 24,
+    medical: 1,
+    other: 6,
+    road_blockage: 6,
+    utility_outage: 12
+  };
+  return hours[category];
 }
 
 function resolveCommunityReportLocation(
@@ -19103,15 +19719,24 @@ function resolveCommunityReportLocation(
   };
 }
 
-function validateCommunityReportDraft(draft: CommunityReportDraft): string | null {
+export function validateCommunityReportDraft(draft: CommunityReportDraft): string | null {
   if (!draft.title.trim()) {
     return "Doplňte název hlášení.";
   }
-  if (!Number.isFinite(draft.location.lat) || !Number.isFinite(draft.location.lon)) {
+  if (
+    !Number.isFinite(draft.location.lat) ||
+    !Number.isFinite(draft.location.lon) ||
+    Math.abs(draft.location.lat) > 90 ||
+    Math.abs(draft.location.lon) > 180
+  ) {
     return "Hlášení musí mít polohu.";
   }
+  if (!draft.locationConfirmed) return "Potvrďte místo události a veřejnou viditelnost textu a polohy.";
   if (!draft.validUntil || Number.isNaN(Date.parse(draft.validUntil))) {
     return "Doplňte odhadovanou platnost rizika.";
+  }
+  if (draft.published && draft.changeReason.trim().length < 3) {
+    return "Doplňte stručně, co se v hlášení změnilo.";
   }
   if (Date.parse(draft.validUntil) <= Date.now() - 60_000) {
     return "Platnost rizika musí být v budoucnosti.";
@@ -19274,6 +19899,34 @@ function communityMediaAccessLabel(mode: CommunityMediaAccessMode): string {
     default:
       return "všem";
   }
+}
+
+function communityMediaPolicyFromAttachment(attachment: GalleryAttachment): CommunityMediaAccessPolicy {
+  const metadataAccess = isPlainObject(attachment.metadata?.access) ? attachment.metadata.access : {};
+  const summaryAccess = isPlainObject(attachment.access) ? attachment.access : {};
+  const audienceCandidate = metadataAccess.audience ?? summaryAccess.audience;
+  const audience: CommunityMediaAccessMode =
+    audienceCandidate === "groups" ||
+    audienceCandidate === "private" ||
+    audienceCandidate === "users" ||
+    audienceCandidate === "public"
+      ? audienceCandidate
+      : "public";
+  const groupIds = Array.isArray(metadataAccess.groupIds)
+    ? metadataAccess.groupIds.filter((value): value is string => typeof value === "string")
+    : Array.isArray(summaryAccess.groupIds)
+      ? summaryAccess.groupIds.filter((value): value is string => typeof value === "string")
+      : [];
+  const userSubjectIds = Array.isArray(metadataAccess.userSubjectIds)
+    ? metadataAccess.userSubjectIds.filter((value): value is string => typeof value === "string")
+    : Array.isArray(summaryAccess.userSubjectIds)
+      ? summaryAccess.userSubjectIds.filter((value): value is string => typeof value === "string")
+      : [];
+  return {
+    audience,
+    ...(groupIds.length ? { groupIds } : {}),
+    ...(userSubjectIds.length ? { userSubjectIds } : {})
+  };
 }
 
 function communityAttachmentSpatialMode(attachment: { metadata?: Record<string, unknown> }): CommunityVideoSpatialMode {
@@ -19694,7 +20347,21 @@ function situationFeatureDeduplicationKey(feature: SituationFeature): string {
   );
 }
 
+export function filterLocalSafetyFeatures(
+  features: SituationFeature[],
+  location: { lat: number; lon: number } | null,
+  now: number
+): SituationFeature[] {
+  if (!location) return [];
+  return filterPublicSafetyAlertFeatures(features).filter((feature) =>
+    priorityCandidateFromSituationFeature(feature, location, now).some(
+      (candidate) => candidate.distanceKm !== undefined && candidate.distanceKm <= priorityAlertUserRadiusKm
+    )
+  );
+}
+
 interface PriorityAlertInput {
+  now?: number;
   alerts: CopAlert[];
   features: SituationFeature[];
   mapView: MapViewState | undefined;
@@ -19706,6 +20373,7 @@ interface PriorityAlertInput {
 export function buildPriorityAlertSummary({
   features,
   mapView,
+  now = Date.now(),
   userLocation
 }: PriorityAlertInput): PriorityAlertSummary {
   const reference = priorityAlertReference(userLocation, mapView);
@@ -19717,7 +20385,6 @@ export function buildPriorityAlertSummary({
       total: 0
     };
   }
-  const now = Date.now();
   const candidates = filterPublicSafetyAlertFeatures(features)
     .flatMap((feature) => priorityCandidateFromSituationFeature(feature, reference, now))
     .filter((candidate) => candidate.distanceKm !== undefined && candidate.distanceKm <= priorityAlertUserRadiusKm)
@@ -20400,7 +21067,7 @@ function buildMapEmptyMessage({
   visibleObjects: CopObject[];
 }): string | null {
   if (loadError) {
-    return `API situační mapy není dostupné: ${loadError}`;
+    return mapUnavailableMessage(loadError);
   }
   if (replayActive && objects.length === 0) {
     return "Zvolený čas neobsahuje žádné objekty. Posuňte časovou osu nebo přepněte zpět na živé zobrazení.";
@@ -22251,20 +22918,7 @@ function navigationTargetFromObject(object: CopObject): EmergencyRouteTarget | n
 }
 
 function navigationTargetFromSituationFeature(feature: SituationFeature): EmergencyRouteTarget | null {
-  const label =
-    stringProperty(feature.properties.headline) ??
-    stringProperty(feature.properties.label) ??
-    stringProperty(feature.properties.featureId) ??
-    "Vybraný prvek";
-  const coordinates = situationGeometryCoordinates(feature.geometry);
-  if (coordinates.length === 0) {
-    return null;
-  }
-  const coordinate =
-    feature.geometry.type === "LineString" || feature.geometry.type === "MultiLineString"
-      ? coordinates[coordinates.length - 1]
-      : coordinates[0];
-  return navigationTargetFromCoordinate(label, coordinate);
+  return featureNavigationTarget(feature);
 }
 
 function navigationTargetFromDisplayedRoute(
@@ -23745,9 +24399,16 @@ function catalogLayerHint(layer: MapCatalogLayer, operable: boolean): string {
   if (layer.kind === "grid_field" || layer.kind === "vector_field") {
     return "Plošný model ze zdrojových měření";
   }
+  if (layer.description?.trim()) {
+    return layer.description.trim();
+  }
+  return "Datová vrstva situační mapy";
+}
+
+function catalogLayerTechnicalHint(layer: MapCatalogLayer): string {
   const geometry = layer.geometryTypes && layer.geometryTypes.length > 0 ? layer.geometryTypes.join("/") : "data";
   const cadence = typeof layer.refreshSeconds === "number" ? `${layer.refreshSeconds}s` : "dle zdroje";
-  return `${geometry} · ${cadence}`;
+  return `Geometrie ${geometry} · obnova ${cadence} · ${layer.layerId}`;
 }
 
 function catalogLayerProviderLabel(layer: MapCatalogLayer): string {
@@ -24122,8 +24783,11 @@ function selectedTrafficRefreshPlans(
   }
   return selectedTrafficLayers.flatMap((layer) => {
     const featureCadences = cadencesByLayerId.get(layer.layerId) ?? [];
-    const rawRefreshSeconds = featureCadences.length > 0 ? Math.min(...featureCadences) : layer.refreshSeconds;
-    const refreshSeconds = normalizeTrafficRefreshSeconds(layer.layerId, rawRefreshSeconds);
+    const refreshSeconds = resolveTrafficRefreshSeconds({
+      catalogRefreshSeconds: layer.refreshSeconds,
+      featureRefreshSeconds: featureCadences,
+      layerId: layer.layerId
+    });
     if (refreshSeconds === undefined) {
       return [];
     }
@@ -24135,19 +24799,6 @@ function selectedTrafficRefreshPlans(
       }
     ];
   });
-}
-
-function normalizeTrafficRefreshSeconds(layerId: string, seconds: number | undefined): number | undefined {
-  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) {
-    return undefined;
-  }
-  if (layerId === "public.traffic.transit_stops") {
-    return Math.max(300, Math.min(seconds, 21_600));
-  }
-  if (layerId === "public.traffic.transit.trains") {
-    return Math.max(60, Math.min(seconds, 3_600));
-  }
-  return Math.max(5, Math.min(seconds, 120));
 }
 
 function isTrafficCatalogLayerId(layerId: string): boolean {
@@ -25540,6 +26191,12 @@ function clearChatReportDraftSearch(): void {
 }
 
 registerCopServiceWorker();
+void import("./web-performance")
+  .then(({ startWebPerformanceMonitoring }) => startWebPerformanceMonitoring())
+  .catch((error: unknown) => {
+    // Client-side telemetry is intentionally fail-open and must never delay COP.
+    console.warn("[cop-web] Client performance monitoring is unavailable", error);
+  });
 
 interface RootErrorBoundaryState {
   error: Error | null;
@@ -25575,7 +26232,10 @@ class RootErrorBoundary extends React.Component<React.PropsWithChildren, RootErr
               ? "Odstraňuji neúplnou lokální verzi aplikace a znovu ji načítám."
               : "Obnovte stránku; pokud se stav opakuje, odešlete správci název prohlížeče a čas výskytu."}
           </span>
-          <code>{this.state.error.message || "Neznámá chyba"}</code>
+          <details>
+            <summary>Podrobnosti pro správce</summary>
+            <code>{this.state.error.message || "Neznámá chyba"}</code>
+          </details>
           <button onClick={() => window.location.reload()} type="button">
             Obnovit aplikaci
           </button>
@@ -25588,6 +26248,7 @@ class RootErrorBoundary extends React.Component<React.PropsWithChildren, RootErr
 const rootElement = document.getElementById("root");
 if (rootElement) {
   const isXrRoute = window.location.pathname === "/xr" || window.location.pathname.startsWith("/xr/");
+  const isGlobeRoute = window.location.pathname === "/globe" || window.location.pathname.startsWith("/globe/");
   const rootWindow = window as Window & { __copWebRoot?: Root };
   const root = rootWindow.__copWebRoot ?? createRoot(rootElement);
   rootWindow.__copWebRoot = root;
@@ -25603,6 +26264,16 @@ if (rootElement) {
             }
           >
             <XrWorkspace />
+          </React.Suspense>
+        ) : isGlobeRoute ? (
+          <React.Suspense
+            fallback={
+              <main className="globe-launch-shell">
+                <div className="xr-loading">Připravuji 3D pracovní prostor...</div>
+              </main>
+            }
+          >
+            <GlobeWorkspace />
           </React.Suspense>
         ) : (
           <App />

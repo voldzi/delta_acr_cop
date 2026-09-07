@@ -33,8 +33,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete (window as Window & { __COP_DEVICE_NATIVE_TRANSPORT__?: unknown })
-    .__COP_DEVICE_NATIVE_TRANSPORT__;
+  delete (window as Window & { __COP_DEVICE_NATIVE_TRANSPORT__?: unknown }).__COP_DEVICE_NATIVE_TRANSPORT__;
   window.localStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();

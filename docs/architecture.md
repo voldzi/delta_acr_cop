@@ -14,6 +14,7 @@ documentation set:
 - [Data architecture](architecture/07_DATA_ARCHITECTURE.md)
 - [Event-driven architecture](architecture/08_EVENT_DRIVEN_ARCHITECTURE.md)
 - [Offline and edge architecture](architecture/09_OFFLINE_AND_EDGE_ARCHITECTURE.md)
+- [Phone-only mesh development specification](mobile/02_PHONE_ONLY_MESH_DEVELOPMENT_SPEC.md)
 - [Backend architecture](application/03_BACKEND_ARCHITECTURE.md)
 - [Frontend architecture](application/04_FRONTEND_ARCHITECTURE.md)
 

@@ -64,45 +64,57 @@ export interface SafetyNotificationContext {
   watchedAreas?: AoiRule[];
 }
 
+export type CommunityReportNotificationEvent = "resolved" | "submitted" | "updated" | "withdrawn";
+
 export function buildCommunityReportNotificationDecision(
   report: CommunityReportRecord,
   requestNow: Date,
-  audienceOverride?: CopNotificationAudience
+  audienceOverride?: CopNotificationAudience,
+  event: CommunityReportNotificationEvent = "submitted"
 ): CopNotificationDecision {
-  const severity = normalizeNotificationSeverity(report.properties.hazardSeverity ?? report.properties.severity) ?? "advisory";
+  const severity =
+    normalizeNotificationSeverity(report.properties.hazardSeverity ?? report.properties.severity) ?? "advisory";
   const groupId = typeof report.properties.groupId === "string" ? report.properties.groupId : undefined;
   const audience = normalizeAudience({
     ...audienceOverride,
     groupIds: [...(audienceOverride?.groupIds ?? []), ...(groupId ? [groupId] : [])]
   });
+  const lifecycleNotice = event === "resolved" || event === "withdrawn";
   const activeStatus = report.status === "submitted" || report.status === "published";
   const expired = isExpired(timestampProperty(report.properties.validUntil), requestNow);
-  const shouldSend = activeStatus && !expired && isCommunityPushSeverity(severity) && hasAudience(audience);
-  const reason = !activeStatus
-    ? "Community report is not submitted or published."
-    : expired
-      ? "Community report validity has expired."
-      : !isCommunityPushSeverity(severity)
-        ? "Community report severity is informational."
-        : !hasAudience(audience)
-          ? "Community report has no group, user or area audience."
-          : "Community report is eligible for CSM Messaging notification.";
+  const shouldSend =
+    (lifecycleNotice || (activeStatus && !expired && isCommunityPushSeverity(severity))) && hasAudience(audience);
+  const reason =
+    !activeStatus && !lifecycleNotice
+      ? "Community report is not submitted or published."
+      : expired && !lifecycleNotice
+        ? "Community report validity has expired."
+        : !isCommunityPushSeverity(severity) && !lifecycleNotice
+          ? "Community report severity is informational."
+          : !hasAudience(audience)
+            ? "Community report has no group, user or area audience."
+            : "Community report is eligible for CSM Messaging notification.";
   const sourceFeatureId = `community:${report.reportId}`;
   return {
     contractVersion: "cop-notification-decision-v1",
     decisionId: createDecisionId("community", report.reportId, report.updatedAt),
-    idempotencyKey: `cop.community-report:${report.reportId}:${report.submittedAt ?? report.updatedAt}`,
+    idempotencyKey: `cop.community-report:${report.reportId}:${event}:${report.version}:${report.updatedAt}`,
     notification: {
       audience,
       body: {
-        cs: "Otevřete CSM pro detail, polohu a sdílená média.",
-        en: "Open CSM for details, location and shared media."
+        cs: communityReportNotificationBody(event),
+        en: communityReportNotificationBody(event, "en")
       },
       deepLink: `csm://map/report/${encodeURIComponent(report.reportId)}`,
-      ...(timestampProperty(report.properties.validUntil) ? { expiresAt: timestampProperty(report.properties.validUntil) } : {}),
+      ...(timestampProperty(report.properties.validUntil)
+        ? { expiresAt: timestampProperty(report.properties.validUntil) }
+        : {}),
       metadata: compactMetadata({
         category: report.category,
+        event,
         reportId: report.reportId,
+        status: report.status,
+        version: report.version,
         visibility: report.visibility
       }),
       priority: priorityForSeverity(severity),
@@ -114,8 +126,8 @@ export function buildCommunityReportNotificationDecision(
         sourceName: "Community reports"
       },
       title: {
-        cs: report.title,
-        en: report.title
+        cs: communityReportNotificationTitle(report.title, event),
+        en: communityReportNotificationTitle(report.title, event, "en")
       },
       type: "community.report"
     },
@@ -126,6 +138,36 @@ export function buildCommunityReportNotificationDecision(
     },
     shouldSend
   };
+}
+
+function communityReportNotificationTitle(
+  title: string,
+  event: CommunityReportNotificationEvent,
+  locale: "cs" | "en" = "cs"
+): string {
+  if (locale === "en") {
+    if (event === "updated") return `Updated: ${title}`;
+    if (event === "resolved") return `Resolved: ${title}`;
+    if (event === "withdrawn") return `Withdrawn: ${title}`;
+    return title;
+  }
+  if (event === "updated") return `Aktualizováno: ${title}`;
+  if (event === "resolved") return `Vyřešeno: ${title}`;
+  if (event === "withdrawn") return `Odvoláno: ${title}`;
+  return title;
+}
+
+function communityReportNotificationBody(event: CommunityReportNotificationEvent, locale: "cs" | "en" = "cs"): string {
+  if (locale === "en") {
+    if (event === "updated") return "The community report has changed. Open COP for the current details.";
+    if (event === "resolved") return "The reported situation has been marked as resolved.";
+    if (event === "withdrawn") return "The community report has been withdrawn. Verify the current situation.";
+    return "Open COP for details, location and shared media.";
+  }
+  if (event === "updated") return "Komunitní hlášení se změnilo. Otevřete COP pro aktuální podrobnosti.";
+  if (event === "resolved") return "Nahlášená situace byla označena jako vyřešená.";
+  if (event === "withdrawn") return "Komunitní hlášení bylo odvoláno. Ověřte aktuální stav.";
+  return "Otevřete COP pro detail, polohu a sdílená média.";
 }
 
 export function buildSafetyFeatureNotificationDecision(
@@ -144,7 +186,8 @@ export function buildSafetyFeatureNotificationDecision(
   const featureId = properties.featureId;
   const layerId = publicSafetyLayerId(properties.layer, properties.layerId);
   const sourceName = properties.sourceName ?? properties.source ?? properties.sourceId;
-  const validFrom = properties.validFrom ?? properties.effectiveAt ?? properties.observedAt ?? properties.updatedAt ?? "";
+  const validFrom =
+    properties.validFrom ?? properties.effectiveAt ?? properties.observedAt ?? properties.updatedAt ?? "";
   const validUntil = properties.validUntil ?? properties.expiresAt ?? "";
   const severity = safetyFeatureNotificationSeverity(properties) ?? "info";
   const titleCs = safetyTitle(properties, severity, "cs");
@@ -195,7 +238,10 @@ export function buildSafetyFeatureNotificationDecision(
   };
 }
 
-export function evaluateSafetyFeatureCandidate(feature: SafetyFeature, requestNow: Date): { ok: boolean; reason: string } {
+export function evaluateSafetyFeatureCandidate(
+  feature: SafetyFeature,
+  requestNow: Date
+): { ok: boolean; reason: string } {
   const properties = feature.properties;
   const layerId = publicSafetyLayerId(properties.layer, properties.layerId);
   const severity = safetyFeatureNotificationSeverity(properties);
@@ -220,7 +266,10 @@ export function evaluateSafetyFeatureCandidate(feature: SafetyFeature, requestNo
   return { ok: true, reason: "Safety feature is eligible for notification evaluation." };
 }
 
-function resolveSafetyAudience(feature: SafetyFeature, context: SafetyNotificationContext): {
+function resolveSafetyAudience(
+  feature: SafetyFeature,
+  context: SafetyNotificationContext
+): {
   audience: CopNotificationAudience;
   matchedAoiRuleIds: string[];
   source: CopNotificationDecision["relevance"]["source"];
@@ -248,7 +297,11 @@ function resolveSafetyAudience(feature: SafetyFeature, context: SafetyNotificati
     };
   }
 
-  if (context.actor && context.currentLocation && safetyFeatureTouchesCurrentLocation(feature.geometry, context.currentLocation)) {
+  if (
+    context.actor &&
+    context.currentLocation &&
+    safetyFeatureTouchesCurrentLocation(feature.geometry, context.currentLocation)
+  ) {
     return {
       audience: normalizeAudience({
         userIds: [context.actor.subjectId]
@@ -297,18 +350,20 @@ function geometryRepresentativePoint(geometry: SafetyGeometry): { lat: number; l
   return bbox ? { lat: (bbox.south + bbox.north) / 2, lon: (bbox.west + bbox.east) / 2 } : undefined;
 }
 
-function geometryBbox(geometry: SafetyGeometry): { east: number; north: number; south: number; west: number } | undefined {
+function geometryBbox(
+  geometry: SafetyGeometry
+): { east: number; north: number; south: number; west: number } | undefined {
   if (geometry.type === "Point") {
     const [lon, lat] = geometry.coordinates;
     return { east: lon, north: lat, south: lat, west: lon };
   }
-  const coordinates = geometry.type === "Polygon"
-    ? geometry.coordinates.flat(1)
-    : geometry.coordinates.flat(2);
+  const coordinates = geometry.type === "Polygon" ? geometry.coordinates.flat(1) : geometry.coordinates.flat(2);
   return coordinateBbox(coordinates);
 }
 
-function coordinateBbox(coordinates: Array<[number, number]>): { east: number; north: number; south: number; west: number } | undefined {
+function coordinateBbox(
+  coordinates: Array<[number, number]>
+): { east: number; north: number; south: number; west: number } | undefined {
   if (coordinates.length === 0) {
     return undefined;
   }
@@ -336,13 +391,12 @@ function distanceKm(latA: number, lonA: number, latB: number, lonB: number): num
   const radiusKm = 6371;
   const dLat = toRadians(latB - latA);
   const dLon = toRadians(lonB - lonA);
-  const a = Math.sin(dLat / 2) ** 2
-    + Math.cos(toRadians(latA)) * Math.cos(toRadians(latB)) * Math.sin(dLon / 2) ** 2;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRadians(latA)) * Math.cos(toRadians(latB)) * Math.sin(dLon / 2) ** 2;
   return 2 * radiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function toRadians(value: number): number {
-  return value * Math.PI / 180;
+  return (value * Math.PI) / 180;
 }
 
 function publicSafetyLayerId(layer: string, layerId: string | undefined): string {
@@ -381,7 +435,9 @@ function normalizeNotificationSeverity(value: unknown): CopNotificationSeverity 
   return undefined;
 }
 
-function safetyFeatureNotificationSeverity(properties: SafetyFeature["properties"]): CopNotificationSeverity | undefined {
+function safetyFeatureNotificationSeverity(
+  properties: SafetyFeature["properties"]
+): CopNotificationSeverity | undefined {
   if (properties.layer === "flood") {
     const fromStage = floodStageNotificationSeverity(properties.floodStage);
     if (fromStage) {
@@ -429,15 +485,21 @@ function safetyTitle(
   severity: CopNotificationSeverity,
   locale: "cs" | "en"
 ): string {
-  const title = localizedSafetyString(properties, locale, "headline", "title", "label", "name")
-    ?? safetyPresentationString(properties, "label", "title")
-    ?? properties.headline
-    ?? humanizeSafetyTypeCode(safetyTypeCode(properties))
-    ?? safetySourceCode(properties)
-    ?? (locale === "cs" ? "výstraha" : "alert");
-  const prefix = locale === "cs"
-    ? severity === "critical" ? "Kritická výstraha" : "Výstraha"
-    : severity === "critical" ? "Critical alert" : "Alert";
+  const title =
+    localizedSafetyString(properties, locale, "headline", "title", "label", "name") ??
+    safetyPresentationString(properties, "label", "title") ??
+    properties.headline ??
+    humanizeSafetyTypeCode(safetyTypeCode(properties)) ??
+    safetySourceCode(properties) ??
+    (locale === "cs" ? "výstraha" : "alert");
+  const prefix =
+    locale === "cs"
+      ? severity === "critical"
+        ? "Kritická výstraha"
+        : "Výstraha"
+      : severity === "critical"
+        ? "Critical alert"
+        : "Alert";
   const trimmed = title.trim();
   const normalized = trimmed.toLowerCase();
   const withPrefix = normalized.includes("výstrah") || normalized.includes("alert") ? trimmed : `${prefix}: ${trimmed}`;
@@ -445,12 +507,24 @@ function safetyTitle(
 }
 
 function safeSafetyBody(properties: SafetyFeature["properties"], locale: "cs" | "en"): string | undefined {
-  const action = localizedSafetyString(properties, locale, "recommendedAction", "instruction", "recommendation", "description", "detail")
-    ?? (locale === "cs" ? properties.recommendedAction : undefined);
+  const action =
+    localizedSafetyString(
+      properties,
+      locale,
+      "recommendedAction",
+      "instruction",
+      "recommendation",
+      "description",
+      "detail"
+    ) ?? (locale === "cs" ? properties.recommendedAction : undefined);
   if (!action) {
     return locale === "cs" ? "Otevřete CSM pro aktuální detail výstrahy." : undefined;
   }
-  return action.trim().length <= 180 ? action.trim() : locale === "cs" ? "Otevřete CSM pro aktuální detail výstrahy." : undefined;
+  return action.trim().length <= 180
+    ? action.trim()
+    : locale === "cs"
+      ? "Otevřete CSM pro aktuální detail výstrahy."
+      : undefined;
 }
 
 function safetyNotificationEligible(properties: SafetyFeature["properties"]): boolean | undefined {
@@ -462,26 +536,30 @@ function safetyNotificationEligible(properties: SafetyFeature["properties"]): bo
 function safetyTypeCode(properties: SafetyFeature["properties"]): string | undefined {
   const providerProperties = safetyProviderProperties(properties);
   const taxonomy = safetyTaxonomy(properties);
-  return properties.typeCode
-    ?? stringRecordValue(providerProperties, "typeCode")
-    ?? stringRecordValue(taxonomy, "typeCode");
+  return (
+    properties.typeCode ?? stringRecordValue(providerProperties, "typeCode") ?? stringRecordValue(taxonomy, "typeCode")
+  );
 }
 
 function safetySourceCode(properties: SafetyFeature["properties"]): string | undefined {
   const providerProperties = safetyProviderProperties(properties);
   const taxonomy = safetyTaxonomy(properties);
-  return properties.sourceCode
-    ?? stringRecordValue(providerProperties, "sourceCode")
-    ?? stringRecordValue(taxonomy, "sourceCode");
+  return (
+    properties.sourceCode ??
+    stringRecordValue(providerProperties, "sourceCode") ??
+    stringRecordValue(taxonomy, "sourceCode")
+  );
 }
 
 function safetySourceSystem(properties: SafetyFeature["properties"]): string | undefined {
   const providerProperties = safetyProviderProperties(properties);
   const taxonomy = safetyTaxonomy(properties);
-  return properties.sourceSystem
-    ?? stringRecordValue(providerProperties, "sourceSystem")
-    ?? stringRecordValue(taxonomy, "codeSystem")
-    ?? stringRecordValue(taxonomy, "sourceSystem");
+  return (
+    properties.sourceSystem ??
+    stringRecordValue(providerProperties, "sourceSystem") ??
+    stringRecordValue(taxonomy, "codeSystem") ??
+    stringRecordValue(taxonomy, "sourceSystem")
+  );
 }
 
 function localizedSafetyString(
@@ -562,8 +640,15 @@ function normalizeAudience(audience: CopNotificationAudience): CopNotificationAu
   };
 }
 
-function normalizeAudienceField(key: keyof CopNotificationAudience, value: string[] | undefined): CopNotificationAudience {
-  const values = Array.from(new Set((value ?? []).flatMap((item) => typeof item === "string" && item.trim() ? [item.trim().slice(0, 160)] : []))).slice(0, 100);
+function normalizeAudienceField(
+  key: keyof CopNotificationAudience,
+  value: string[] | undefined
+): CopNotificationAudience {
+  const values = Array.from(
+    new Set(
+      (value ?? []).flatMap((item) => (typeof item === "string" && item.trim() ? [item.trim().slice(0, 160)] : []))
+    )
+  ).slice(0, 100);
   if (values.length === 0) {
     return {};
   }
@@ -595,7 +680,12 @@ function isExpired(value: unknown, requestNow: Date): boolean {
 
 function compactMetadata(value: Record<string, unknown>): Record<string, string | number | boolean | null> | undefined {
   const entries = Object.entries(value).flatMap(([key, rawValue]) => {
-    if (rawValue === null || typeof rawValue === "string" || typeof rawValue === "number" || typeof rawValue === "boolean") {
+    if (
+      rawValue === null ||
+      typeof rawValue === "string" ||
+      typeof rawValue === "number" ||
+      typeof rawValue === "boolean"
+    ) {
       return [[key, rawValue] as const];
     }
     return [];

@@ -4026,8 +4026,7 @@ export function normalizeMatrixMessageBody(body: string): string {
   return isUndecryptableMatrixBody(body) ? undecryptableMatrixMessageBody : body;
 }
 
-const undecryptableMatrixMessageBody =
-  "Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy.";
+const undecryptableMatrixMessageBody = "Tuto zprávu zatím nelze zobrazit. Na tomto zařízení chybí její šifrovací klíč.";
 
 function isUndecryptableMatrixBody(body: string): boolean {
   return /unable to decrypt|decryptionerror|no key backup|before this device logged in/iu.test(body);

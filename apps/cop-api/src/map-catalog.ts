@@ -324,13 +324,14 @@ function buildProviderCatalogLayers(
 ): MapCatalogLayer[] {
   return catalog.layers
     .filter((layer) => shouldIncludeCatalogAudience(layer.audience, includeDiagnostics, includePartner))
-    .flatMap((layer) => providerCatalogLayerToMapLayer(catalog.providerId, layer));
+    .flatMap((layer) => providerCatalogLayerToMapLayer(catalog, layer));
 }
 
 function publicTransitLayerVariants(
   providerLayerIds: string[],
   providerSourceIds: string[],
-  fallbackRefreshSeconds: number | undefined
+  fallbackRefreshSeconds: number | undefined,
+  providerSources: ProviderMapCatalog["sources"]
 ): PublicTransitLayerVariant[] {
   const normalizedProviderLayerIds = providerLayerIdsForPublicTransitVariant(providerLayerIds);
   if (providerSourceIds.length === 0) {
@@ -360,7 +361,24 @@ function publicTransitLayerVariants(
       styleProfile: publicTransitStyleProfileForLayerId(layerId)
     });
   }
-  return Array.from(variants.values()).filter((variant) => variant.sourceIds.length > 0);
+  const refreshSecondsBySourceId = new Map(
+    providerSources.flatMap((source) =>
+      typeof source.updateCadenceSeconds === "number" &&
+      Number.isFinite(source.updateCadenceSeconds) &&
+      source.updateCadenceSeconds > 0
+        ? [[source.sourceId, source.updateCadenceSeconds] as const]
+        : []
+    )
+  );
+  return Array.from(variants.values())
+    .filter((variant) => variant.sourceIds.length > 0)
+    .map((variant) => ({
+      ...variant,
+      refreshSeconds:
+        minPositiveNumber(variant.sourceIds.map((sourceId) => refreshSecondsBySourceId.get(sourceId))) ??
+        fallbackRefreshSeconds ??
+        publicTransitRefreshSecondsForLayerId(variant.layerId)
+    }));
 }
 
 function providerLayerIdsForPublicTransitVariant(providerLayerIds: string[]): string[] {
@@ -484,7 +502,8 @@ function outdoorWebcamStyleProfileForLayerId(layerId: string): string | undefine
   return undefined;
 }
 
-function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatalogLayer): MapCatalogLayer[] {
+function providerCatalogLayerToMapLayer(catalog: ProviderMapCatalog, layer: ProviderCatalogLayer): MapCatalogLayer[] {
+  const providerId = catalog.providerId;
   const providerLayerIds = layer.query?.providerLayerIds?.filter(Boolean) ?? [];
   const rawProviderSourceIds =
     layer.query?.providerSourceIds?.filter(Boolean) ?? layer.sourceIds?.filter(Boolean) ?? [];
@@ -495,7 +514,7 @@ function providerCatalogLayerToMapLayer(providerId: string, layer: ProviderCatal
   );
   const variants =
     providerId === "sim.situation-data" && layer.recommendedCatalogLayerId === PUBLIC_TRANSIT_BASE_LAYER_ID
-      ? publicTransitLayerVariants(providerLayerIds, providerSourceIds, layer.refreshSeconds)
+      ? publicTransitLayerVariants(providerLayerIds, providerSourceIds, layer.refreshSeconds, catalog.sources)
       : [{ layerId: layer.recommendedCatalogLayerId, providerLayerIds, sourceIds: providerSourceIds }];
   return variants.map((variant) => providerCatalogLayerVariantToMapLayer(providerId, layer, variant));
 }
@@ -862,7 +881,7 @@ const curatedCatalogLayerLabels: Record<string, string> = {
 
 const curatedCatalogLayerDescriptions: Record<string, string> = {
   "public.traffic.transit": "Živá poloha vozidel veřejné dopravy ze SIM.",
-  "public.traffic.transit.pid": "Živá poloha vozidel PID s rychlou obnovou po 20 sekundách.",
+  "public.traffic.transit.pid": "Živá poloha vozidel PID obnovovaná podle intervalu publikovaného SIM.",
   "public.traffic.transit.idsjmk": "Živá poloha vozidel IDS JMK s rychlou obnovou po 20 sekundách.",
   "public.traffic.transit.trains": "Živé polohy vlaků ze Správy železnic s delší obnovou podle zdroje.",
   "public.traffic.transit_stops": "Statické zastávky veřejné dopravy ze SIM katalogu.",

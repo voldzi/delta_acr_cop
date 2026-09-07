@@ -43,17 +43,19 @@ Nové endpointy:
 - `PATCH /api/v1/community/reports/{reportId}`
 - `DELETE /api/v1/community/reports/{reportId}`
 - `POST /api/v1/community/reports/{reportId}/submit`
+- `POST /api/v1/community/reports/{reportId}/resolve`
+- `POST /api/v1/community/reports/{reportId}/withdraw`
 - `POST /api/v1/community/reports/{reportId}/attachments`
 - `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete`
 - `POST /api/v1/community/reports/{reportId}/attachments/{attachmentId}/upload`
 - `GET /api/v1/community/reports/{reportId}/attachments/{attachmentId}/content`
 
-Endpointy `/api/v1/community/groups...` jsou součástí aktuální vazby mezi
-mapovým hlášením a chatem. Aktivní COP web při vytvoření nového komunitního
-hlášení založí veřejnou komunitní skupinu ukotvenou v poloze hlášení a uloží
-její `groupId/groupName` do metadat reportu. Samotná E2EE konverzace a Matrix
-místnost se vytváří až při otevření této skupiny v samostatné aplikaci
-`cop-chat`.
+Endpointy `/api/v1/community/groups...` jsou součástí vazby mezi mapovým
+hlášením a chatem. Při prvním `submit` založí COP API k hlášení soukromou
+komunitní skupinu, pokud ji report ještě nemá, a uloží `groupId/groupName` do
+metadat reportu. Tuto orchestrace nevykonává webový klient, takže přerušený
+prohlížeč nemůže samostatně založit veřejnou osiřelou skupinu. Samotná E2EE
+konverzace a Matrix místnost se připraví při otevření skupiny v `cop-chat`.
 
 Vytvoření reportu:
 
@@ -76,7 +78,17 @@ Vytvoření reportu:
 ```
 
 `hazardSeverity` je uživatelský odhad závažnosti: `advisory`, `warning`, `critical`.
-`validUntil` je odhadovaná platnost rizika; po vypršení se mapový prvek označí jako stale, ale nezmizí bez moderace/retence.
+`validUntil` je odhadovaná platnost rizika. Pokud jej klient neuvede, API
+doplní bezpečný výchozí interval podle kategorie (např. zdravotní událost
+1 hodina, požár 2 hodiny, poškození infrastruktury 24 hodin). Po vypršení se
+report přestane zobrazovat v aktivním mapovém feedu. Historie je dostupná přes
+`includeExpired=true`; informace se tedy nemaže.
+
+Každý report má monotónní `version`. Editace a přechody životního cyklu mohou
+poslat `expectedVersion`; při souběžné změně API vrátí `409`, místo aby novější
+stav tiše přepsalo. V `properties.lifecycle` se uchovává omezená auditní řada
+událostí `created`, `submitted`, `updated`, `resolved` a `withdrawn`, včetně
+času, verze, změněných polí a uživatelského důvodu.
 Nové hlášení je mapový objekt navázaný na komunitní skupinu. Detail hlášení v
 mapě nabízí akci `Chat`, která otevře vložený `cop-chat` a předá mu `groupId`.
 Pokud daná skupina ještě nemá Matrix místnost, `cop-chat` ji připraví bezpečnou
@@ -196,7 +208,8 @@ Pravidlo pro mapu a chat:
   auditem;
 - konverzace v `cop-chat` je lidská komunikace a může si vytvářet vlastní
   soukromé nebo veřejné skupiny;
-- COP web při uložení hlášení nezakládá chat ani chatovou skupinu;
+- COP web chatovou skupinu nezakládá; soukromou skupinu vytvoří idempotentně
+  server při publikaci hlášení;
 - pokud má informace z chatu přejít do mapy, uživatel vytvoří nové hlášení a
   vědomě nahraje přílohy přes COP media flow.
 
@@ -220,15 +233,21 @@ mapového záznamu bez výslovného potvrzení.
 
 ## Notifikace
 
-Po odeslání reportu přes `POST /api/v1/community/reports/{reportId}/submit`
-COP vytvoří rozhodnutí pro `community.report` notifikaci. Dispatch do CSM
-Messaging proběhne jen tehdy, když report:
+Po odeslání, významné aktualizaci, vyřešení nebo odvolání reportu COP vytvoří
+verzované rozhodnutí pro `community.report` notifikaci. Odeslání a běžná
+aktualizace se rozesílají jen pro aktivní a neprošlý report. Vyřešení a odvolání
+se doručí i po ukončení platnosti, protože ruší nebo mění dříve použitelnou
+bezpečnostní informaci.
 
 - je `submitted` nebo `published`,
 - nemá prošlou `validUntil`,
 - má závažnost `advisory`, `warning` nebo `critical`,
 - má konkrétní cílové publikum přes veřejnou viditelnost, vybrané uživatele
   nebo oblast sledovanou uživatelem.
+
+Publikovaný report nelze fyzicky smazat. `DELETE` je vyhrazen pro koncept.
+Autor aktivní report buď označí jako `resolved`, nebo jej s povinným důvodem
+`withdrawn`. Stav, důvod a předchozí verze zůstávají dohledatelné.
 
 Push payload je záměrně minimální: obsahuje kategorii, bezpečný
 nadpis, deep link `csm://map/report/<reportId>` a zdrojová metadata. Neobsahuje
@@ -257,8 +276,8 @@ Proměnné:
 
 ```env
 COP_MEDIA_STORE=s3
-COP_MEDIA_S3_ENDPOINT=http://host.docker.internal:8334
-COP_MEDIA_S3_PUBLIC_ENDPOINT=https://media.zeleznalady.cz
+COP_MEDIA_S3_ENDPOINT=http://storage.home.cz:8333
+COP_MEDIA_S3_PUBLIC_ENDPOINT=http://docker.home.cz:8334
 COP_MEDIA_S3_REGION=us-east-1
 COP_MEDIA_S3_BUCKET=cop-community-media
 COP_MEDIA_S3_ACCESS_KEY_ID=...
@@ -272,12 +291,22 @@ COP_MEDIA_SPATIAL_CONVERSION_MAX_CONCURRENT=1
 COP_MEDIA_SPATIAL_CONVERSION_TIMEOUT_MS=600000
 ```
 
-Pro produkci doporučuji samostatný bucket `cop-community-media` a samostatné S3 credentials jen pro COP.
+Produkce používá samostatný bucket `cop-community-media` a identitu
+`cop-production`, omezenou na `Read`, `List`, `Tagging` a `Write` pouze v tomto
+bucketu. Klíče jsou pouze v `/srv/cop/.env` na `docker.home.cz`.
 API při startu ověří dostupnost bucketu a při HTTP 404 se ho pokusí založit. Stav je vidět v `/health/dependencies` jako `media-storage`.
 
-Aktuální pilot na `docker.home.cz` používá SeaweedFS S3 gateway publikovanou na hostitelském portu `8334`. Kontejner `cop-api` se k ní připojuje přes `http://host.docker.internal:8334`; adresa `http://docker.home.cz:8334` uvnitř kontejneru závisí na VPN/DNS routě a nesmí se používat jako interní endpoint. Port `8333` běží v SeaweedFS `mini` režimu s externí URL jiné aplikace a pro COP S3 podpisy nepoužívat.
+Od 4. srpna 2026 používá `cop-api` centrální interní endpoint
+`http://storage.home.cz:8333`. Bucket nemá globální prefix; objekty jsou pod
+`community-reports/...`. Migrace ověřila na zdroji i cíli 25 objektů o celkové
+velikosti 617 670 038 B.
 
-Poznámka k veřejnému provozu: `COP_MEDIA_S3_PUBLIC_ENDPOINT` musí být dosažitelný z klienta, který přílohu nahrává. Pro web na `https://cop.zeleznalady.cz` má být cílový endpoint také HTTPS, typicky samostatný reverse proxy vhost `https://media.zeleznalady.cz` na SeaweedFS S3 gateway `http://docker.home.cz:8334`. Dokud veřejný media vhost není dostupný, HTTPS PWA přímý HTTP upload přeskočí a použije zabezpečený same-origin fallback `POST /attachments/{attachmentId}/upload`; vlastní API přistupuje k SeaweedFS přes `host.docker.internal`.
+Nový veřejný media endpoint nevznikl. Historická HTTP hodnota
+`COP_MEDIA_S3_PUBLIC_ENDPOINT` zůstává záměrně zachovaná, aby HTTPS klienti
+použili zabezpečený same-origin fallback
+`POST /attachments/{attachmentId}/upload`. Staré SeaweedFS se zatím nemaže.
+Provozní stav, rollback a podmínky jeho pozdějšího vyřazení popisuje
+[COP Media S3 runbook](../runbooks/17_COP_MEDIA_S3.md).
 
 ## iOS tok
 
@@ -352,3 +381,37 @@ AI nesmí být nutná pro základní provoz. Doporučený model:
 - on-device AI v iOS pro kvalitu fotky, návrh kategorie a rozmazání citlivých detailů,
 - BYOK pro uživatele nebo organizaci,
 - centrální klíč jen pro omezené administrativní nebo pilotní scénáře.
+
+## Ochrany webového publikačního formuláře
+
+Nový formulář použije známou polohu zařízení, jinak střed mapy jako návrh.
+Před publikováním vyžaduje výslovné potvrzení místa a veřejné viditelnosti
+textu a přesné polohy. Změna místa z GPS, mapy nebo média potvrzení ruší.
+Tlačítko Moje poloha čeká na nový výsledek; pozdní výsledek nesmí přepsat
+novější ruční volbu. GPS z média je pouze nabídka, přijímá se samostatným
+tlačítkem. Selhání čtení metadat nebrání ručnímu určení místa.
+
+Přístup k médiím upravovaný ve formuláři platí pro nové přílohy. Vlastník v
+galerii zároveň vidí skutečné ACL existujících příloh a může je změnit na
+`public`, `private`, `users` nebo `groups`. Server před změnou ověří vlastnictví
+a členství ve skupinách, uloží auditní událost a každý přímý přístup k obsahu
+znovu vyhodnotí, takže revokace platí ihned. Ostatním klientům se nezobrazují
+identifikátory uživatelů ani skupin v ACL. Soukromá připojená diskuse neomezuje
+veřejnou viditelnost samotného hlášení.
+
+Publikace má ochranu proti souběžnému dvojímu odeslání a po dobu požadavku
+uzamyká formulář. Po potvrzeném vytvoření serverem si ponechá `reportId`
+a verzi ještě před nahráváním médií; úspěšně nahrané soubory z čekajícího
+seznamu odstraňuje. Další pokus pokračuje se stejným známým reportem
+a publikuje ho, pokud server stále vrací stav `draft`. Důvod změny se
+vyžaduje při úpravě publikovaného hlášení, nikoli při opakování draftu.
+Čas `observedAt` vzniká s novým formulářem a při úpravě se nepřepisuje
+časem opakovaného odeslání.
+
+Rozpracovaný formulář včetně vybraných souborů se ukládá do IndexedDB v rozsahu
+aktuálního uživatele. Report i každá příloha mají stabilní klientské UUID, které
+web posílá v `X-Idempotency-Key`. Server opakování stejného obsahu vrátí jako
+stejný zdroj a rozdílný obsah pod stejným klíčem odmítne `409`. Obnovený draft
+vždy znovu vyžádá potvrzení polohy; úspěšně publikovaný draft se z outboxu smaže.
+Tento outbox řeší restart webové aplikace. Nezastupuje dlouhodobou synchronizaci
+celého edge uzlu ani automatické řešení obsahových konfliktů.

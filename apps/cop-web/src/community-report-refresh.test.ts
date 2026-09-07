@@ -21,10 +21,12 @@ describe("COP community report refresh", () => {
   });
 
   it("focuses the map on the newly submitted report location", () => {
-    const submitIndex = mainSource.indexOf("const submitted = await submitCommunityReport");
+    const submitIndex = mainSource.indexOf('report.status === "draft"');
+    const submitCallIndex = mainSource.indexOf("await submitCommunityReport", submitIndex);
     const focusIndex = mainSource.indexOf("center: [submitted.location.lon, submitted.location.lat]", submitIndex);
 
     expect(submitIndex).toBeGreaterThan(0);
+    expect(submitCallIndex).toBeGreaterThan(submitIndex);
     expect(focusIndex).toBeGreaterThan(submitIndex);
   });
 });

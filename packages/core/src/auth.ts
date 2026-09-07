@@ -2,6 +2,7 @@ export type AuthMode = "lab" | "hybrid" | "oidc";
 export type AuthStatus = "lab" | "anonymous" | "authenticating" | "authenticated" | "error";
 
 export interface AuthConfig {
+  bffSessionEnabled?: boolean;
   clientId: string;
   issuer: string;
   mode: AuthMode;
@@ -26,6 +27,7 @@ export interface AuthSession {
   profile?: AuthProfile;
   refreshToken?: string;
   status: AuthStatus;
+  transport?: "bff" | "token";
 }
 
 export type AuthDiagnosticEventType =
@@ -101,6 +103,10 @@ const sessionKey = "cop.oidc.session.v1";
 const diagnosticsKey = "cop.oidc.diagnostics.v1";
 const diagnosticsLimit = 40;
 const offlineRetainedAuthError = "Přihlášení čeká na obnovení připojení. Offline data zůstávají dostupná.";
+const bffSessionMarker = "cop-bff-session";
+const bffSessionPath = "/api/v1/auth/session";
+const bffLoginPath = "/api/v1/auth/login";
+const bffLogoutPath = "/api/v1/auth/logout";
 
 export const authSessionStorageKey = sessionKey;
 
@@ -110,6 +116,7 @@ export interface BeginLoginOptions {
 
 export function readAuthConfig(): AuthConfig {
   return {
+    bffSessionEnabled: readBoolean(import.meta.env.VITE_COP_BFF_SESSION_ENABLED ?? "false"),
     clientId: import.meta.env.VITE_COP_OIDC_CLIENT_ID ?? "cop-web",
     issuer: normalizeIssuer(import.meta.env.VITE_COP_OIDC_ISSUER ?? ""),
     mode: readAuthMode(import.meta.env.VITE_COP_AUTH_MODE),
@@ -122,6 +129,10 @@ export function readAuthConfig(): AuthConfig {
 export function createInitialAuthSession(config: AuthConfig): AuthSession {
   if (!isOidcEnabled(config)) {
     return { status: "lab", profile: { name: "Lab operator", username: "lab" } };
+  }
+  if (config.bffSessionEnabled) {
+    clearStoredSession();
+    return { status: "anonymous", transport: "bff" };
   }
   const stored = readStoredSession();
   if (stored && stored.expiresAt > Date.now() + 30_000) {
@@ -155,6 +166,10 @@ export function isOidcEnabled(config: AuthConfig): boolean {
 export async function initializeAuth(config: AuthConfig): Promise<AuthSession> {
   if (!isOidcEnabled(config)) {
     return createInitialAuthSession(config);
+  }
+  if (config.bffSessionEnabled) {
+    clearStoredSession();
+    return readBffSession();
   }
 
   const callback = readCallbackParams();
@@ -209,6 +224,10 @@ export async function refreshAuthSession(config: AuthConfig, session?: AuthSessi
   if (!isOidcEnabled(config)) {
     return null;
   }
+  if (config.bffSessionEnabled) {
+    const refreshed = await readBffSession();
+    return refreshed.status === "authenticated" ? refreshed : null;
+  }
   const refreshToken = session?.refreshToken ?? readStoredSession()?.refreshToken;
   if (!refreshToken) {
     return null;
@@ -216,7 +235,8 @@ export async function refreshAuthSession(config: AuthConfig, session?: AuthSessi
   return refreshSession(config, refreshToken);
 }
 
-export function hasOidcCallbackParams(): boolean {
+export function hasOidcCallbackParams(config?: AuthConfig): boolean {
+  if (config?.bffSessionEnabled) return false;
   const callback = readCallbackParams();
   return Boolean(callback.code || callback.error);
 }
@@ -259,7 +279,7 @@ export function plannedAuthRefreshDelayMs(expiresAt: number, now = Date.now(), r
 export function shouldRefreshAuthSessionOnResume(session: AuthSession, now = Date.now(), leadMs = 2 * 60_000): boolean {
   return (
     session.status === "authenticated" &&
-    Boolean(session.refreshToken) &&
+    (session.transport === "bff" || Boolean(session.refreshToken)) &&
     typeof session.expiresAt === "number" &&
     session.expiresAt <= now + leadMs
   );
@@ -296,6 +316,13 @@ export async function beginLogin(config: AuthConfig, options: BeginLoginOptions 
   if (!isOidcEnabled(config)) {
     return;
   }
+  if (config.bffSessionEnabled) {
+    const url = new URL(bffLoginPath, window.location.origin);
+    url.searchParams.set("returnTo", currentReturnUrl());
+    if (options.prompt) url.searchParams.set("prompt", options.prompt);
+    window.location.assign(url.toString());
+    return;
+  }
 
   const state = randomBase64Url(24);
   const verifier = randomBase64Url(48);
@@ -321,6 +348,12 @@ export function endSession(config: AuthConfig, session: AuthSession): void {
   recordAuthDiagnosticEvent("manual_logout", snapshotFromAuthSession(session));
   clearStoredSession();
   clearCallbackState();
+  if (config.bffSessionEnabled) {
+    void fetch(bffLogoutPath, { credentials: "same-origin", method: "POST" }).finally(() => {
+      window.location.assign(currentRedirectUri());
+    });
+    return;
+  }
   if (!isOidcEnabled(config)) {
     return;
   }
@@ -537,7 +570,21 @@ function persistTokenResponse(tokenResponse: TokenResponse, fallbackRefreshToken
     refreshToken: tokenResponse.refresh_token ?? fallbackRefreshToken
   };
   writeStoredSession(stored);
-  return { ...stored, status: "authenticated" };
+  return { ...stored, status: "authenticated", transport: "token" };
+}
+
+async function readBffSession(): Promise<AuthSession> {
+  try {
+    const response = await fetch(bffSessionPath, { credentials: "same-origin" });
+    if (!response.ok) return { status: "anonymous", transport: "bff" };
+    const payload = await response.json() as { authenticated?: boolean; expiresAt?: string; profile?: AuthProfile };
+    const expiresAt = payload.expiresAt ? Date.parse(payload.expiresAt) : Number.NaN;
+    if (!payload.authenticated || !payload.profile || !Number.isFinite(expiresAt)) return { status: "anonymous", transport: "bff" };
+    recordAuthDiagnosticEvent("session_restored", { expiresAt, hasRefreshToken: false, status: "authenticated", storage: "none", subjectId: payload.profile.subjectId, username: payload.profile.username });
+    return { accessToken: bffSessionMarker, expiresAt, profile: payload.profile, status: "authenticated", transport: "bff" };
+  } catch {
+    return { status: "anonymous", transport: "bff" };
+  }
 }
 
 function profileFromPayload(payload: Record<string, unknown>): AuthProfile {

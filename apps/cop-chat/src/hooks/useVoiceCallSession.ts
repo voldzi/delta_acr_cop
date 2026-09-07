@@ -49,6 +49,15 @@ interface VoiceCallListResponse {
   contractVersion: "cop-voice-call-v1";
 }
 
+interface MediaConnectFlight {
+  callId: string;
+  promise: Promise<void>;
+}
+
+interface MediaConnectFlightRef {
+  current: MediaConnectFlight | null;
+}
+
 interface UseVoiceCallSessionOptions {
   apiBase: string;
   authToken?: string | null;
@@ -74,6 +83,7 @@ export function useVoiceCallSession(options: UseVoiceCallSessionOptions): VoiceC
   const [timeline, setTimeline] = React.useState<VoiceCallController["timeline"]>([]);
   const callRef = React.useRef<ServerVoiceCall | null>(null);
   const roomRef = React.useRef<{ callId: string; room: Room } | null>(null);
+  const mediaConnectFlightRef = React.useRef<MediaConnectFlight | null>(null);
   const mutedRef = React.useRef(false);
   const mediaConnectedReportedRef = React.useRef<string | null>(null);
   const optionsRef = React.useRef(options);
@@ -178,49 +188,53 @@ export function useVoiceCallSession(options: UseVoiceCallSessionOptions): VoiceC
 
   const connectMedia = React.useCallback(
     async (response: VoiceCallResponse) => {
-      if (!response.media) {
-        throw new Error("Mediální spojení hovoru není připravené.");
-      }
-      if (roomRef.current?.callId === response.call.callId) {
-        publishSnapshot(response.call);
-        return;
-      }
-      await disconnectMedia();
-      const { Room: LiveKitRoom, RoomEvent } = await import("livekit-client");
-      const room = new LiveKitRoom({ adaptiveStream: true, dynacast: true });
-      roomRef.current = { callId: response.call.callId, room };
-      const refresh = () => publishSnapshot(callRef.current ?? response.call);
-      const reportConnected = () => {
-        refresh();
-        if (room.remoteParticipants.size > 0) {
-          void reportMediaConnected(response.call.callId).catch((error) => {
-            optionsRef.current.onError(userFacingError(error, "Hovor se nepodařilo potvrdit."));
-          });
+      const callId = response.call.callId;
+      await runVoiceMediaConnectSingleFlight(mediaConnectFlightRef, callId, async () => {
+        if (!response.media) {
+          throw new Error("Mediální spojení hovoru není připravené.");
         }
-      };
-      room.on(RoomEvent.ParticipantConnected, reportConnected);
-      room.on(RoomEvent.ParticipantDisconnected, refresh);
-      room.on(RoomEvent.TrackSubscribed, reportConnected);
-      room.on(RoomEvent.TrackUnsubscribed, refresh);
-      room.on(RoomEvent.Reconnected, reportConnected);
-      room.on(RoomEvent.Disconnected, refresh);
-      try {
-        await room.connect(response.media.serverUrl, response.media.token);
-        await room.localParticipant.setMicrophoneEnabled(true);
-        mutedRef.current = false;
-        publishSnapshot(response.call);
-        reportConnected();
-      } catch (error) {
+        if (roomRef.current?.callId === callId) {
+          publishSnapshot(response.call);
+          return;
+        }
         await disconnectMedia();
+        const { Room: LiveKitRoom, RoomEvent } = await import("livekit-client");
+        const room = new LiveKitRoom({ adaptiveStream: true, dynacast: true });
+        roomRef.current = { callId, room };
+        const refresh = () => publishSnapshot(callRef.current ?? response.call);
+        const reportConnected = () => {
+          refresh();
+          if (room.remoteParticipants.size > 0) {
+            void reportMediaConnected(callId).catch((error) => {
+              optionsRef.current.onError(userFacingError(error, "Hovor se nepodařilo potvrdit."));
+            });
+          }
+        };
+        room.on(RoomEvent.ParticipantConnected, reportConnected);
+        room.on(RoomEvent.ParticipantDisconnected, refresh);
+        room.on(RoomEvent.TrackSubscribed, reportConnected);
+        room.on(RoomEvent.TrackUnsubscribed, refresh);
+        room.on(RoomEvent.Reconnected, reportConnected);
+        room.on(RoomEvent.Disconnected, refresh);
         try {
-          await transition(response.call.callId, "media_failed", {
-            reason: "livekit_connection_failed"
-          });
-        } catch {
-          // The original media error is the useful one for the user.
+          await room.connect(response.media.serverUrl, response.media.token);
+          await room.localParticipant.setMicrophoneEnabled(true);
+          mutedRef.current = false;
+          publishSnapshot(response.call);
+          reportConnected();
+        } catch (error) {
+          await disconnectMedia();
+          try {
+            await transition(callId, "media_failed", {
+              reason: "livekit_connection_failed"
+            });
+          } catch {
+            // The original media error is the useful one for the user.
+          }
+          throw error;
         }
-        throw error;
-      }
+      });
+      publishSnapshot(response.call);
     },
     [disconnectMedia, publishSnapshot, reportMediaConnected, transition]
   );
@@ -290,13 +304,20 @@ export function useVoiceCallSession(options: UseVoiceCallSessionOptions): VoiceC
       return;
     }
     let disposed = false;
+    let pollInFlight = false;
     const poll = async () => {
+      if (pollInFlight) {
+        return;
+      }
+      pollInFlight = true;
       try {
         await refresh();
       } catch (error) {
         if (!disposed) {
           optionsRef.current.onError(userFacingError(error, "Stav hovoru se nepodařilo načíst."));
         }
+      } finally {
+        pollInFlight = false;
       }
     };
     void poll();
@@ -388,6 +409,34 @@ export function useVoiceCallSession(options: UseVoiceCallSessionOptions): VoiceC
     timeline,
     voiceCall
   };
+}
+
+export async function runVoiceMediaConnectSingleFlight(
+  flightRef: MediaConnectFlightRef,
+  callId: string,
+  connect: () => Promise<void>
+): Promise<void> {
+  for (;;) {
+    const activeFlight = flightRef.current;
+    if (!activeFlight) {
+      break;
+    }
+    if (activeFlight.callId === callId) {
+      await activeFlight.promise;
+      return;
+    }
+    await activeFlight.promise.catch(() => undefined);
+  }
+
+  const promise = connect();
+  flightRef.current = { callId, promise };
+  try {
+    await promise;
+  } finally {
+    if (flightRef.current?.promise === promise) {
+      flightRef.current = null;
+    }
+  }
 }
 
 function requireCurrentCall(call: ServerVoiceCall | null, callId: string): ServerVoiceCall {

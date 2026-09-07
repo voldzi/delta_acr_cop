@@ -240,7 +240,7 @@ describe("Matrix client diagnostics", () => {
       normalizeMatrixMessageBody(
         "** Unable to decrypt: DecryptionError: This message was sent before this device logged in, and there is no key backup on the server. **"
       )
-    ).toBe("Zprávu zatím nelze zobrazit. V tomto prohlížeči chybí šifrovací klíč pro starší zprávy.");
+    ).toBe("Tuto zprávu zatím nelze zobrazit. Na tomto zařízení chybí její šifrovací klíč.");
   });
 
   it("syncs authenticated COP display name to the Matrix user profile", async () => {

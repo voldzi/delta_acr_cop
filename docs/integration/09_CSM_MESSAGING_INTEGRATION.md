@@ -260,6 +260,11 @@ SDK and CallKit. COP Chat connects with `livekit-client`. A client that resumes
 or reloads restores the active record from COP API and obtains fresh media
 credentials instead of reconstructing a local call state.
 
+When COP Chat is embedded below the native COP Mobile surface, it runs with
+`voiceMedia=native`, does not request microphone permission and does not join
+LiveKit. This prevents a second connection with the same OIDC identity from
+disconnecting the native participant as `DUPLICATE_IDENTITY`.
+
 Terminal records (`declined`, `missed`, `cancelled`, `failed`, `ended`) remain
 available from the list endpoint and appear as noninteractive call events in
 both chat timelines. The current decision is recorded in ADR-0019.
@@ -935,7 +940,7 @@ COP_CHAT_BASE_PATH=/chat/
 COP_CHAT_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
 COP_VOICE_CALLS_ENABLED=true
 COP_VOICE_CALL_STORE=postgres
-COP_LIVEKIT_PUBLIC_URL=wss://<livekit-public-host>
+COP_LIVEKIT_PUBLIC_URL=wss://msg.zeleznalady.cz
 COP_LIVEKIT_API_KEY=<livekit-api-key>
 COP_LIVEKIT_API_SECRET=<livekit-api-secret>
 COP_LIVEKIT_TOKEN_TTL_SECONDS=600
@@ -944,6 +949,15 @@ COP_LIVEKIT_TOKEN_TTL_SECONDS=600
 If `COP_CSM_MESSAGING_ENABLED=false`, the chat launcher can still be visible,
 but it will show an integration/disabled state instead of opening
 conversations.
+
+`msg.zeleznalady.cz` terminates TLS on DMZ. Matrix and CSM Messaging routes are
+proxied to `comm.home.cz`; LiveKit WebSocket traffic under `/rtc` is proxied to
+`comm.home.cz:7880`. LiveKit používá veřejný coturn na TCP/UDP 3478 a relay
+rozsahu UDP 49160–49240. SFU media končí přímo na `comm.home.cz` přes UDP 7882
+(a TCP 7881 jako fallback); neprocházejí DMZ ani `docker.home.cz`. Production
+must run exactly one CSM Messaging instance. A local copy on the COP
+application server may exist only as a stopped rollback artifact and must not
+process notifications.
 
 ## Security Rules
 

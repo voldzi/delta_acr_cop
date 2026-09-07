@@ -15,6 +15,7 @@ procedures remain in the established runbook set:
 - [Postgres/Patroni temporal store](runbooks/09_POSTGRES_PATRONI_TEMPORAL_STORE.md)
 - [Tile cache and map tiles](runbooks/10_TILE_CACHE_AND_MAP_TILES.md)
 - [User identity reconciliation](runbooks/11_USER_IDENTITY_RECONCILIATION.md)
+- [COP media S3](runbooks/17_COP_MEDIA_S3.md)
 
 Common checks:
 

@@ -1,6 +1,6 @@
 # 06 Alert Center
 
-Alert Center je veřejná/mapová vrstva pro reálné safety výstrahy ze SIM. V horním řádku aplikace a ve workspace `Výstrahy` se nesmí zobrazovat technické lifecycle nebo kvalita dat. Tyto informace patří do technického panelu `Stav zdrojů`.
+Alert Center zobrazuje veřejné safety výstrahy ze SIM. Horní lišta a workspace `Výstrahy` rozlišují chybějící polohu, načítání, neověřená data a výsledek hledání. Technické lifecycle události a podrobnosti providerů patří do panelu `Stav zdrojů`; jejich nedostupnost se nesmí vydávat za potvrzení bezpečí.
 
 ## Veřejné výstrahy
 
@@ -55,3 +55,36 @@ Panel `Stav zdrojů` zobrazuje:
 - lifecycle stop,
 - nízkou jistotu,
 - degradaci zdrojů.
+
+## Místní přehled a důvěryhodnost výsledku
+
+`local-safety-feed.ts` načítá katalogové veřejné výstražné vrstvy nezávisle
+na viditelnosti mapových vrstev a posouvání mapy. Dotaz vychází ze známé
+uživatelské polohy; bez ní se lokální dotaz neposílá. Dotazovací obdélník
+má rezervu pro zaokrouhlení polohy, výsledný seznam a prioritní lišta filtrují
+vzdálenost nejvýše 30 km a neexpirované výstrahy stejným pravidlem.
+
+- Bez polohy: **Poloha neurčena**. Střed mapy se za polohu uživatele nevydává.
+- Při prvním dotazu: **Ověřuji výstrahy**.
+- Při chybě, nedostupném katalogu, starých nebo neúplných datech:
+  **Situace neověřena**.
+- Prázdný aktuální výsledek: **Bez nalezené výstrahy** s výslovným
+  sdělením, že jde o dostupné zdroje a nejde o potvrzení bezpečí.
+- Nalezená výstraha při omezené aktuálnosti zůstává viditelná s dovětkem
+  **aktuálnost neověřena**, dokud nevyprší její platnost.
+
+Aktuálnost vyžaduje ONLINE source health, žádná varování, platné stáří
+agregátu, dostupné zapnuté zdroje, žádné stale features a nedosažený limit
+výsledků. Limit stáří vychází z `staleAfterSeconds`, výchozí je 300 s.
+Nejde o důkaz úplnosti všech zdrojů na území ČR.
+
+Dotaz má timeout 15 s, nejvýše jeden současný požadavek a při zapnuté
+automatické obnově interval 60 s. Neaktivní karta a offline stav nové dotazy
+pozastaví. Změna polohy, identity nebo endpointu odděluje výsledky; starý
+požadavek se zruší. Hodnocení stáří pokračuje i při vypnuté automatické obnově.
+
+Kliknutí nebo klávesové aktivování horní lišty otevře místní výstrahy. Detail
+je dostupný i při vypnuté mapové vrstvě. Pod 600 px je celý text lišty na
+samostatném řádku, pod 860 px mají panely výstrah společné svislé posouvání.
+Nulové počty nemají zelenou signalizaci bezpečí. Technické identifikátory
+nenahrazují popis akce pro otevření detailu.

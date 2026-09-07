@@ -1,0 +1,21 @@
+name: csm-voice
+
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.3
+    container_name: csm-livekit
+    network_mode: host
+    restart: unless-stopped
+    command:
+      - --config
+      - /etc/livekit/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}"
+    volumes:
+      - ./livekit.yaml:/etc/livekit/livekit.yaml:ro
+      - ./turn-secret:/run/secrets/turn-secret:ro
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: "20m"

@@ -599,6 +599,7 @@ export interface SituationFeatureProperties {
   observedAt?: string;
   operator?: string;
   operatorStatusAvailable?: boolean;
+  ownedByCurrentActor?: boolean;
   participantCount?: number;
   phase?: string;
   providerId?: string;
@@ -644,6 +645,7 @@ export interface SituationFeatureProperties {
   updatedAt?: string;
   validFrom?: string;
   validUntil?: string;
+  version?: number;
   voteCount?: number;
   waterTemperatureC?: number;
   waterLevelCm?: number;
@@ -1750,10 +1752,13 @@ export interface CommunityReport {
   description?: string;
   location: CommunityReportLocation;
   observedAt: string;
+  ownedByCurrentActor?: boolean;
   properties: Record<string, unknown>;
   reportId: string;
-  status: "draft" | "hidden" | "published" | "rejected" | "submitted";
+  status: "draft" | "hidden" | "published" | "rejected" | "resolved" | "submitted" | "withdrawn";
   title: string;
+  updatedAt?: string;
+  version: number;
   visibility: CommunityReportVisibility;
 }
 
@@ -1917,6 +1922,7 @@ export interface MapCatalogOptions {
 
 export interface MapFeatureQueryOptions {
   bbox: MapBounds;
+  signal?: AbortSignal;
   filters?: Record<string, Record<string, unknown>>;
   includeDiagnostics?: boolean;
   includePartner?: boolean;
@@ -2774,6 +2780,7 @@ export async function fetchMapFeatures(
   options: MapFeatureQueryOptions
 ): Promise<MapFeatureQueryResponse> {
   return fetchJson<MapFeatureQueryResponse>(`${apiBase}/api/v1/map/query`, {
+    signal: options.signal,
     body: JSON.stringify({
       bbox: [options.bbox.west, options.bbox.south, options.bbox.east, options.bbox.north],
       filters: options.filters ?? {},
@@ -3659,7 +3666,8 @@ export async function createCommunityReport(
     title: string;
     validUntil?: string;
     visibility?: CommunityReportVisibility;
-  }
+  },
+  idempotencyKey?: string
 ): Promise<CommunityReport> {
   return fetchJson<CommunityReport>(`${apiBase}/api/v1/community/reports`, {
     body: JSON.stringify({
@@ -3676,7 +3684,8 @@ export async function createCommunityReport(
     }),
     headers: {
       Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      ...(idempotencyKey ? { "X-Idempotency-Key": idempotencyKey } : {})
     },
     method: "POST"
   });
@@ -3746,7 +3755,9 @@ export async function updateCommunityReport(
   reportId: string,
   payload: {
     category?: CommunityReportCategory;
+    changeReason?: string;
     description?: string;
+    expectedVersion?: number;
     hazardSeverity?: CommunityReportHazardSeverity;
     groupId?: string;
     groupName?: string;
@@ -3784,6 +3795,38 @@ export async function deleteCommunityReport(apiBase: string, token: string, repo
       `${response.status} ${response.statusText || "API request failed"} for ${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}`
     );
   }
+}
+
+export async function resolveCommunityReport(
+  apiBase: string,
+  token: string,
+  reportId: string,
+  payload: { expectedVersion?: number; reason?: string } = {}
+): Promise<CommunityReport> {
+  return fetchJson<CommunityReport>(`${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}/resolve`, {
+    body: JSON.stringify(payload),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+}
+
+export async function withdrawCommunityReport(
+  apiBase: string,
+  token: string,
+  reportId: string,
+  payload: { expectedVersion?: number; reason: string }
+): Promise<CommunityReport> {
+  return fetchJson<CommunityReport>(`${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}/withdraw`, {
+    body: JSON.stringify(payload),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
 }
 
 export async function requestCommunityGroupJoin(
@@ -3852,15 +3895,17 @@ export async function createCommunityAttachmentUpload(
     fileName?: string;
     kind: CommunityAttachmentKind;
     metadata?: Record<string, unknown>;
-  }
-): Promise<{ attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot }> {
-  return fetchJson<{ attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot }>(
+  },
+  idempotencyKey?: string
+): Promise<{ attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot | null }> {
+  return fetchJson<{ attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot | null }>(
     `${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments`,
     {
       body: JSON.stringify(payload),
       headers: {
         Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        ...(idempotencyKey ? { "X-Idempotency-Key": idempotencyKey } : {})
       },
       method: "POST"
     }
@@ -3959,16 +4004,40 @@ export async function uploadCommunityAttachmentFile(
   token: string,
   reportId: string,
   file: File,
-  slot: { attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot },
+  slot: { attachment: CommunityReportAttachment; upload: CommunityAttachmentUploadSlot | null },
   onProgress?: CommunityAttachmentUploadProgressHandler
 ): Promise<CommunityReportAttachment> {
-  const directUpload = directCommunityAttachmentUploadAllowed(slot.upload.uploadUrl)
-    ? await tryDirectCommunityAttachmentUpload(apiBase, token, reportId, file, slot, onProgress)
+  if (!slot.upload || slot.attachment.status === "uploaded") {
+    return slot.attachment;
+  }
+  const uploadSlot = { attachment: slot.attachment, upload: slot.upload };
+  const directUpload = directCommunityAttachmentUploadAllowed(uploadSlot.upload.uploadUrl)
+    ? await tryDirectCommunityAttachmentUpload(apiBase, token, reportId, file, uploadSlot, onProgress)
     : null;
   if (directUpload) {
     return directUpload;
   }
   return uploadCommunityAttachmentViaApi(apiBase, token, reportId, slot.attachment.attachmentId, file, onProgress);
+}
+
+export async function updateCommunityAttachmentAccess(
+  apiBase: string,
+  token: string,
+  reportId: string,
+  attachmentId: string,
+  access: CommunityMediaAccessPolicy
+): Promise<CommunityReportAttachment> {
+  return fetchJson<CommunityReportAttachment>(
+    `${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}/attachments/${encodeURIComponent(attachmentId)}/access`,
+    {
+      body: JSON.stringify({ access }),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      method: "PATCH"
+    }
+  );
 }
 
 export function directCommunityAttachmentUploadAllowed(

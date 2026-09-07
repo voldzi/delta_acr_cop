@@ -808,6 +808,10 @@ describe("CsmMessagingProvider", () => {
             contractVersion: "csm-messaging-provider-v1",
             conversation: {
               conversationId: "conv_call",
+              directPeer: {
+                displayName: "Příjemce",
+                userId: "citizen-3"
+              },
               matrix: { roomId: "!call:docker.home.cz" },
               members: [
                 { displayName: "Lab operator", userId: "lab" },
@@ -859,6 +863,14 @@ describe("CsmMessagingProvider", () => {
             contractVersion: "csm-messaging-provider-v1",
             notification: {
               deduplicated: false,
+              deliverySummary: {
+                dryRunCount: 0,
+                failedCount: 0,
+                sentCount: 2,
+                targetDeviceCount: 2,
+                voipFailedCount: 0,
+                voipSentCount: 1
+              },
               notificationId: "notif_call",
               targetDeviceCount: 1,
               type: "chat.voice_call.incoming"
@@ -914,6 +926,22 @@ describe("CsmMessagingProvider", () => {
       }
     });
     expect(response.json().call.callId).toMatch(/^[0-9a-f-]{36}$/u);
+
+    const serverDerivedRecipient = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "POST",
+      payload: {
+        roomId: "!call:docker.home.cz"
+      },
+      url: "/api/v1/messaging/calls"
+    });
+    expect(serverDerivedRecipient.statusCode).toBe(201);
+    expect(serverDerivedRecipient.json()).toMatchObject({
+      call: {
+        participantSubjectIds: ["citizen-3"],
+        roomId: "!call:docker.home.cz"
+      }
+    });
 
     const forbidden = await app.inject({
       headers: { authorization: "Bearer lab-secret" },
@@ -1848,6 +1876,128 @@ describe("CsmMessagingProvider", () => {
       status: "online"
     });
     expect(JSON.stringify(result)).not.toContain("provider-token");
+  });
+
+  it("marks an incoming-call wake as degraded when no APNs VoIP push was delivered", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            contractVersion: "csm-messaging-provider-v1",
+            notification: {
+              deliverySummary: {
+                dryRunCount: 0,
+                failedCount: 1,
+                sentCount: 1,
+                targetDeviceCount: 2,
+                voipFailedCount: 1,
+                voipSentCount: 0
+              },
+              notificationId: "notif_failed_voip"
+            },
+            providerId: "csm.messaging"
+          }),
+          { status: 202 }
+        )
+      )
+    );
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000,
+      token: "provider-token"
+    });
+
+    const result = await provider.sendNotification(
+      undefined,
+      new Date("2026-07-26T20:00:00Z"),
+      "call-wake-1",
+      {
+        audience: { userIds: ["recipient"] },
+        body: { cs: "Volání" },
+        deepLink: "csm://chat/room/room",
+        priority: "high",
+        severity: "info",
+        source: {
+          featureId: "native.voice_call",
+          layerId: "messaging",
+          providerId: "csm.messaging"
+        },
+        title: { cs: "Příchozí hovor" },
+        type: "chat.voice_call.incoming"
+      }
+    );
+
+    expect(result.status).toBe("degraded");
+    expect(result.deliverySummary).toMatchObject({
+      voipFailedCount: 1,
+      voipSentCount: 0
+    });
+    expect(result.warnings).toContain("Messaging did not deliver the incoming call through APNs VoIP.");
+  });
+
+  it("accepts a successful legacy incoming-call delivery summary without VoIP-specific counters", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            contractVersion: "csm-messaging-provider-v1",
+            notification: {
+              deliverySummary: {
+                dryRunCount: 0,
+                failedCount: 0,
+                sentCount: 3,
+                targetDeviceCount: 3
+              },
+              notificationId: "notif_legacy_voip"
+            },
+            providerId: "csm.messaging"
+          }),
+          { status: 202 }
+        )
+      )
+    );
+    const provider = new CsmMessagingProvider({
+      baseUrl: "http://messaging.local:4050",
+      cacheTtlMs: 10000,
+      enabled: true,
+      timeoutMs: 3000,
+      token: "provider-token"
+    });
+
+    const result = await provider.sendNotification(
+      undefined,
+      new Date("2026-07-30T08:00:00Z"),
+      "legacy-call-wake-1",
+      {
+        audience: { userIds: ["recipient"] },
+        body: { cs: "Volání" },
+        deepLink: "csm://chat/room/room",
+        priority: "high",
+        severity: "info",
+        source: {
+          featureId: "native.voice_call",
+          layerId: "messaging",
+          providerId: "csm.messaging"
+        },
+        title: { cs: "Příchozí hovor" },
+        type: "chat.voice_call.incoming"
+      }
+    );
+
+    expect(result).toMatchObject({
+      deliverySummary: {
+        sentCount: 3,
+        voipFailedCount: 0,
+        voipSentCount: 3
+      },
+      notificationId: "notif_legacy_voip",
+      status: "online"
+    });
+    expect(result.warnings).not.toContain("Messaging did not deliver the incoming call through APNs VoIP.");
   });
 
   it("forwards Matrix push gateway payloads to CSM Messaging without requiring browser auth", async () => {

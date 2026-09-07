@@ -552,6 +552,10 @@ const MessageRowMemo = React.memo(MessageRow);
 export function ChatApp() {
   const authConfig = React.useMemo(() => readAuthConfig(), []);
   const embedded = React.useMemo(() => new URLSearchParams(window.location.search).get("embedded") === "1", []);
+  const nativeVoiceMediaOwned = React.useMemo(
+    () => new URLSearchParams(window.location.search).get("voiceMedia") === "native",
+    []
+  );
   const [authSession, setAuthSession] = React.useState<AuthSession>(() => createInitialAuthSession(authConfig));
   const [authRefreshRetry, setAuthRefreshRetry] = React.useState(0);
   const [status, setStatus] = React.useState<MessagingStatusResponse | null>(null);
@@ -794,7 +798,10 @@ export function ChatApp() {
   const voiceCalls = useVoiceCallSession({
     apiBase,
     authToken,
-    enabled: authenticated,
+    // COP Mobile owns CallKit, AVAudioSession and LiveKit. Its embedded web
+    // document remains useful for map/chat data, but must never join the same
+    // LiveKit room with the same OIDC identity as the native client.
+    enabled: authenticated && !nativeVoiceMediaOwned,
     onError: setError
   });
   const voiceCall = voiceCalls.voiceCall;

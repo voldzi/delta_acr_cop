@@ -1,10 +1,14 @@
 import React from "react";
 import {
+  createSortedRowModel,
   createColumnHelper,
   flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
+  rowSortingFeature,
+  sortFn_alphanumeric,
+  sortFn_basic,
+  sortFn_text,
+  tableFeatures,
+  useTable,
   type SortingState
 } from "@tanstack/react-table";
 import clsx from "clsx";
@@ -18,47 +22,60 @@ export interface TrackTableProps {
   onSelect: (objectId: string) => void;
 }
 
-const objectColumnHelper = createColumnHelper<CopObject>();
+const trackTableFeatures = tableFeatures({
+  rowSortingFeature,
+  sortedRowModel: createSortedRowModel(),
+  sortFns: {
+    alphanumeric: sortFn_alphanumeric,
+    basic: sortFn_basic,
+    text: sortFn_text
+  }
+});
+const objectColumnHelper = createColumnHelper<typeof trackTableFeatures, CopObject>();
 
 export default function TrackTable({ objects, selectedObjectId, onSelect }: TrackTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const columns = React.useMemo(
-    () => [
-      objectColumnHelper.accessor((object) => formatTrackLabel(object), {
-        id: "label",
-        header: "ID",
-        cell: (info) => info.getValue()
-      }),
-      objectColumnHelper.accessor("objectType", {
-        header: "Typ",
-        cell: (info) => info.getValue()
-      }),
-      objectColumnHelper.accessor("affiliation", {
-        header: "Vztah",
-        cell: ({ row }) => {
-          const affiliation = getAffiliationPresentation(row.original.affiliation);
-          return (
-            <>
-              <i className={`affiliation-dot ${affiliation.disposition}`} />
-              {affiliation.label}
-            </>
-          );
-        }
-      }),
-      objectColumnHelper.accessor((object) => Math.round((object.confidence ?? 0) * 100), {
-        id: "confidence",
-        header: "Jistota",
-        cell: (info) => `${info.getValue()} %`
-      })
-    ],
+    () =>
+      objectColumnHelper.columns([
+        objectColumnHelper.accessor((object) => formatTrackLabel(object), {
+          id: "label",
+          header: "ID",
+          cell: (info) => info.getValue(),
+          sortFn: "alphanumeric"
+        }),
+        objectColumnHelper.accessor("objectType", {
+          header: "Typ",
+          cell: (info) => info.getValue(),
+          sortFn: "text"
+        }),
+        objectColumnHelper.accessor("affiliation", {
+          header: "Vztah",
+          cell: ({ row }) => {
+            const affiliation = getAffiliationPresentation(row.original.affiliation);
+            return (
+              <>
+                <i className={`affiliation-dot ${affiliation.disposition}`} />
+                {affiliation.label}
+              </>
+            );
+          },
+          sortFn: "text"
+        }),
+        objectColumnHelper.accessor((object) => Math.round((object.confidence ?? 0) * 100), {
+          id: "confidence",
+          header: "Jistota",
+          cell: (info) => `${info.getValue()} %`,
+          sortFn: "basic"
+        })
+      ]),
     []
   );
-  const table = useReactTable({
+  const table = useTable({
     columns,
     data: objects,
-    getCoreRowModel: getCoreRowModel(),
+    features: trackTableFeatures,
     getRowId: (object) => object.objectId,
-    getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,
     state: { sorting }
   });
@@ -109,7 +126,7 @@ export default function TrackTable({ objects, selectedObjectId, onSelect }: Trac
               role="row"
               type="button"
             >
-              {row.getVisibleCells().map((cell) => (
+              {row.getAllCells().map((cell) => (
                 <span key={cell.id} title={cell.column.id === "label" ? object.objectId : undefined}>
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
                 </span>

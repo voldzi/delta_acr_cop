@@ -50,7 +50,7 @@ export function AiEvidencePanel({ response }: { response: AiCopResponse }) {
           <Database size={15} />
           <strong>Zdrojové citace</strong>
         </span>
-          <small>{aiEvidenceStatusLabel(evidence, stringValue(response.result.summary) ?? "")}</small>
+        <small>{aiEvidenceStatusLabel(evidence, stringValue(response.result.summary) ?? "")}</small>
       </header>
       <div className="ai-evidence-groups">
         <AiEvidenceGroup title="Důležité podklady" citations={evidence.priority.citations} />

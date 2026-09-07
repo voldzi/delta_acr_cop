@@ -13,6 +13,7 @@ documentation remains in:
 - [Keycloak COP](runbooks/08_KEYCLOAK_COP.md)
 - [Postgres/Patroni temporal store](runbooks/09_POSTGRES_PATRONI_TEMPORAL_STORE.md)
 - [Tile cache and map tiles](runbooks/10_TILE_CACHE_AND_MAP_TILES.md)
+- [COP media S3](runbooks/17_COP_MEDIA_S3.md)
 
 Local defaults:
 
@@ -23,6 +24,13 @@ Local defaults:
 Pilot deployment runs from `/srv/cop` on `docker.home.cz`. Health and
 readiness are exposed as `/health/live`, `/health/ready` and
 `/health/dependencies`.
+
+Before release, `pnpm test:load:stream -- <base-url> <clients> <duration-ms>`
+opens bounded concurrent SSE clients and fails when any connection cannot be
+established. Browser reconnects use capped exponential jitter; the client queue
+drops the oldest item above its fixed limit and records the drop. The API closes
+a slow SSE connection when the socket signals backpressure rather than growing
+an unbounded application queue.
 
 Production voice calls additionally require durable
 `COP_VOICE_CALL_STORE=postgres`, `voice-call-media=ok` in dependency health, a

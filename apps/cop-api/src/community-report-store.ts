@@ -14,7 +14,8 @@ export type CommunityReportCategory =
   | "hazard"
   | "other";
 
-export type CommunityReportStatus = "draft" | "submitted" | "published" | "hidden" | "rejected";
+export type CommunityReportStatus =
+  "draft" | "submitted" | "published" | "resolved" | "withdrawn" | "hidden" | "rejected";
 export type CommunityReportVisibility = "private" | "community" | "public";
 export type CommunityLocationSource = "device" | "manual" | "media_metadata" | "photo_exif" | "unknown";
 export type CommunityAttachmentKind = "photo" | "video" | "document";
@@ -98,6 +99,7 @@ export interface CommunityReportRecord {
   submittedAt?: string;
   title: string;
   updatedAt: string;
+  version: number;
   visibility: CommunityReportVisibility;
 }
 
@@ -108,6 +110,7 @@ export interface CreateCommunityReportInput {
   location: CommunityReportLocation;
   observedAt: string;
   properties?: Record<string, unknown>;
+  reportId?: string;
   title: string;
   visibility: CommunityReportVisibility;
 }
@@ -122,8 +125,10 @@ export interface CreateCommunityGroupInput {
 }
 
 export interface UpdateCommunityReportInput {
+  changeReason?: string;
   category?: CommunityReportCategory;
   description?: string | null;
+  expectedVersion?: number;
   location?: CommunityReportLocation;
   properties?: Record<string, unknown>;
   title?: string;
@@ -145,9 +150,7 @@ export interface UpsertCommunityGroupMemberInput {
 }
 
 export type LeaveCommunityGroupResult =
-  | { group: CommunityGroupRecord; status: "left" }
-  | { status: "last_manager" }
-  | { status: "not_found" };
+  { group: CommunityGroupRecord; status: "left" } | { status: "last_manager" } | { status: "not_found" };
 
 export type RemoveCommunityGroupMemberResult = LeaveCommunityGroupResult;
 
@@ -190,6 +193,7 @@ export interface UpdateCommunityAttachmentMetadataInput {
 }
 
 export interface CommunityReportQuery {
+  activeAt?: string;
   bbox?: {
     east: number;
     north: number;
@@ -198,9 +202,15 @@ export interface CommunityReportQuery {
   };
   categories?: CommunityReportCategory[];
   includeOwnDrafts?: boolean;
+  includeExpired?: boolean;
   limit?: number;
   statuses?: CommunityReportStatus[];
   subjectId?: string;
+}
+
+export interface CommunityReportLifecycleInput {
+  expectedVersion?: number;
+  reason?: string;
 }
 
 export interface CommunityReportStore {
@@ -221,16 +231,42 @@ export interface CommunityReportStore {
   leaveGroup(groupId: string, actor: CommunityReportActor, now: Date): Promise<LeaveCommunityGroupResult>;
   listGroups(query: CommunityGroupQuery): Promise<CommunityGroupRecord[]>;
   listReports(query: CommunityReportQuery): Promise<CommunityReportRecord[]>;
-  removeGroupMember(groupId: string, actor: CommunityReportActor, memberSubjectId: string, now: Date): Promise<RemoveCommunityGroupMemberResult>;
+  removeGroupMember(
+    groupId: string,
+    actor: CommunityReportActor,
+    memberSubjectId: string,
+    now: Date
+  ): Promise<RemoveCommunityGroupMemberResult>;
   requestGroupMembership(groupId: string, actor: CommunityReportActor, now: Date): Promise<CommunityGroupRecord | null>;
+  resolveReport(
+    reportId: string,
+    subjectId: string,
+    input: CommunityReportLifecycleInput,
+    now: Date
+  ): Promise<CommunityReportRecord | null>;
   submitReport(reportId: string, subjectId: string, now: Date): Promise<CommunityReportRecord | null>;
-  updateAttachmentMetadata(input: UpdateCommunityAttachmentMetadataInput): Promise<CommunityReportAttachmentRecord | null>;
+  updateAttachmentMetadata(
+    input: UpdateCommunityAttachmentMetadataInput
+  ): Promise<CommunityReportAttachmentRecord | null>;
   updateGroupMetadata(input: UpdateCommunityGroupMetadataInput, now: Date): Promise<CommunityGroupRecord | null>;
-  updateReport(reportId: string, subjectId: string, input: UpdateCommunityReportInput, now: Date): Promise<CommunityReportRecord | null>;
+  updateReport(
+    reportId: string,
+    subjectId: string,
+    input: UpdateCommunityReportInput,
+    now: Date
+  ): Promise<CommunityReportRecord | null>;
   upsertGroupMember(input: UpsertCommunityGroupMemberInput, now: Date): Promise<CommunityGroupRecord | null>;
+  withdrawReport(
+    reportId: string,
+    subjectId: string,
+    input: CommunityReportLifecycleInput,
+    now: Date
+  ): Promise<CommunityReportRecord | null>;
 }
 
-export function createCommunityReportStoreFromEnv(env: Record<string, string | undefined> = process.env): CommunityReportStore | undefined {
+export function createCommunityReportStoreFromEnv(
+  env: Record<string, string | undefined> = process.env
+): CommunityReportStore | undefined {
   const mode = (env.COP_COMMUNITY_REPORT_STORE ?? "auto").trim().toLowerCase();
   const connectionString = env.COP_DATABASE_URL?.trim();
 
@@ -266,7 +302,14 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
   async init(): Promise<void> {}
 
   async createReport(input: CreateCommunityReportInput, now: Date): Promise<CommunityReportRecord> {
+    if (input.reportId) {
+      const existing = this.reports.get(input.reportId);
+      if (existing) {
+        return { ...existing, attachments: this.attachmentsForReport(existing.reportId) };
+      }
+    }
     const timestamp = now.toISOString();
+    const version = 1;
     const report: CommunityReportRecord = {
       attachments: [],
       category: input.category,
@@ -275,11 +318,16 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
       ...(input.description ? { description: input.description } : {}),
       location: input.location,
       observedAt: input.observedAt,
-      properties: input.properties ?? {},
-      reportId: randomUUID(),
+      properties: appendCommunityReportLifecycle(input.properties ?? {}, {
+        at: timestamp,
+        kind: "created",
+        version
+      }),
+      reportId: input.reportId ?? randomUUID(),
       status: "draft",
       title: input.title,
       updatedAt: timestamp,
+      version,
       visibility: input.visibility
     };
     this.reports.set(report.reportId, report);
@@ -353,14 +401,16 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
     const timestamp = now.toISOString();
     const updated: CommunityGroupRecord = {
       ...group,
-      members: group.members.map((item) => item.subjectId === actor.subjectId
-        ? {
-            ...item,
-            displayName: actor.displayName,
-            status: "left",
-            username: actor.username
-          }
-        : item),
+      members: group.members.map((item) =>
+        item.subjectId === actor.subjectId
+          ? {
+              ...item,
+              displayName: actor.displayName,
+              status: "left",
+              username: actor.username
+            }
+          : item
+      ),
       updatedAt: timestamp
     };
     this.groups.set(groupId, updated);
@@ -384,33 +434,64 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
     const timestamp = now.toISOString();
     const updated: CommunityGroupRecord = {
       ...group,
-      members: group.members.map((item) => item.subjectId === memberSubjectId
-        ? {
-            ...item,
-            status: "left"
-          }
-        : item),
+      members: group.members.map((item) =>
+        item.subjectId === memberSubjectId
+          ? {
+              ...item,
+              status: "left"
+            }
+          : item
+      ),
       updatedAt: timestamp
     };
     this.groups.set(groupId, updated);
     return { group: cloneCommunityGroup(updated), status: "left" };
   }
 
-  async updateReport(reportId: string, subjectId: string, input: UpdateCommunityReportInput, now: Date): Promise<CommunityReportRecord | null> {
+  async updateReport(
+    reportId: string,
+    subjectId: string,
+    input: UpdateCommunityReportInput,
+    now: Date
+  ): Promise<CommunityReportRecord | null> {
     const report = this.reports.get(reportId);
-    if (!report || report.createdBy.subjectId !== subjectId || report.status === "hidden" || report.status === "rejected") {
+    if (
+      !report ||
+      report.createdBy.subjectId !== subjectId ||
+      report.status === "hidden" ||
+      report.status === "rejected" ||
+      report.status === "resolved" ||
+      report.status === "withdrawn" ||
+      (input.expectedVersion !== undefined && input.expectedVersion !== report.version)
+    ) {
       return null;
     }
     const timestamp = now.toISOString();
+    const version = report.version + 1;
+    const changedFields = communityReportChangedFields(report, input);
+    const nextProperties = appendCommunityReportLifecycle(
+      {
+        ...report.properties,
+        ...(input.properties ?? {})
+      },
+      {
+        at: timestamp,
+        changedFields,
+        kind: "updated",
+        ...(input.changeReason ? { reason: input.changeReason } : {}),
+        version
+      }
+    );
     const updated: CommunityReportRecord = {
       ...report,
       ...(input.category ? { category: input.category } : {}),
       ...(input.description ? { description: input.description } : {}),
       ...(input.location ? { location: input.location } : {}),
-      ...(input.properties ? { properties: { ...report.properties, ...input.properties } } : {}),
+      properties: nextProperties,
       ...(input.title ? { title: input.title } : {}),
       ...(input.visibility ? { visibility: input.visibility } : {}),
-      updatedAt: timestamp
+      updatedAt: timestamp,
+      version
     };
     if (input.description === null) {
       delete updated.description;
@@ -430,7 +511,7 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
 
   async deleteReport(reportId: string, subjectId: string, _now: Date): Promise<boolean> {
     const report = this.reports.get(reportId);
-    if (!report || report.createdBy.subjectId !== subjectId) {
+    if (!report || report.createdBy.subjectId !== subjectId || report.status !== "draft") {
       return false;
     }
     this.reports.delete(reportId);
@@ -463,7 +544,11 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
       .map(cloneCommunityGroup);
   }
 
-  async requestGroupMembership(groupId: string, actor: CommunityReportActor, now: Date): Promise<CommunityGroupRecord | null> {
+  async requestGroupMembership(
+    groupId: string,
+    actor: CommunityReportActor,
+    now: Date
+  ): Promise<CommunityGroupRecord | null> {
     const group = this.groups.get(groupId);
     if (!group) {
       return null;
@@ -472,17 +557,19 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
     const existing = group.members.find((member) => member.subjectId === actor.subjectId);
     const status: CommunityGroupMemberStatus = group.visibility === "public" ? "active" : "pending";
     const nextMembers = existing
-      ? group.members.map((member) => member.subjectId === actor.subjectId
-        ? {
-            ...member,
-            displayName: actor.displayName,
-            requestedAt: member.status === "active" ? member.requestedAt : timestamp,
-            role: member.status === "left" ? "member" : member.role,
-            status: member.status === "active" ? "active" : status,
-            username: actor.username,
-            ...(member.status !== "active" && status === "active" ? { joinedAt: member.joinedAt ?? timestamp } : {})
-          }
-        : member)
+      ? group.members.map((member) =>
+          member.subjectId === actor.subjectId
+            ? {
+                ...member,
+                displayName: actor.displayName,
+                requestedAt: member.status === "active" ? member.requestedAt : timestamp,
+                role: member.status === "left" ? "member" : member.role,
+                status: member.status === "active" ? "active" : status,
+                username: actor.username,
+                ...(member.status !== "active" && status === "active" ? { joinedAt: member.joinedAt ?? timestamp } : {})
+              }
+            : member
+        )
       : [
           ...group.members,
           {
@@ -510,16 +597,18 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
     }
     const timestamp = now.toISOString();
     const nextMembers = group.members.some((member) => member.subjectId === input.member.subjectId)
-      ? group.members.map((member) => member.subjectId === input.member.subjectId
-        ? {
-            ...member,
-            displayName: input.member.displayName,
-            role: input.role ?? member.role,
-            status: input.status,
-            username: input.member.username,
-            ...(input.status === "active" ? { joinedAt: member.joinedAt ?? timestamp } : {})
-          }
-        : member)
+      ? group.members.map((member) =>
+          member.subjectId === input.member.subjectId
+            ? {
+                ...member,
+                displayName: input.member.displayName,
+                role: input.role ?? member.role,
+                status: input.status,
+                username: input.member.username,
+                ...(input.status === "active" ? { joinedAt: member.joinedAt ?? timestamp } : {})
+              }
+            : member
+        )
       : [
           ...group.members,
           {
@@ -562,21 +651,50 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
 
   async submitReport(reportId: string, subjectId: string, now: Date): Promise<CommunityReportRecord | null> {
     const report = this.reports.get(reportId);
-    if (!report || report.createdBy.subjectId !== subjectId) {
+    if (!report || report.createdBy.subjectId !== subjectId || report.status !== "draft") {
       return null;
     }
     const timestamp = now.toISOString();
+    const version = report.version + 1;
     const updated: CommunityReportRecord = {
       ...report,
-      status: report.status === "draft" ? "submitted" : report.status,
+      properties: appendCommunityReportLifecycle(report.properties, {
+        at: timestamp,
+        kind: "submitted",
+        version
+      }),
+      status: "submitted",
       submittedAt: report.submittedAt ?? timestamp,
-      updatedAt: timestamp
+      updatedAt: timestamp,
+      version
     };
     this.reports.set(reportId, updated);
     return { ...updated, attachments: this.attachmentsForReport(reportId) };
   }
 
+  async resolveReport(
+    reportId: string,
+    subjectId: string,
+    input: CommunityReportLifecycleInput,
+    now: Date
+  ): Promise<CommunityReportRecord | null> {
+    return this.transitionReport(reportId, subjectId, input, "resolved", now);
+  }
+
+  async withdrawReport(
+    reportId: string,
+    subjectId: string,
+    input: CommunityReportLifecycleInput,
+    now: Date
+  ): Promise<CommunityReportRecord | null> {
+    return this.transitionReport(reportId, subjectId, input, "withdrawn", now);
+  }
+
   async createAttachment(input: CreateCommunityAttachmentInput): Promise<CommunityReportAttachmentRecord> {
+    const existing = this.attachments.get(input.attachmentId);
+    if (existing) {
+      return existing;
+    }
     const timestamp = new Date().toISOString();
     const attachment: CommunityReportAttachmentRecord = {
       attachmentId: input.attachmentId,
@@ -616,7 +734,9 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
     return updated;
   }
 
-  async updateAttachmentMetadata(input: UpdateCommunityAttachmentMetadataInput): Promise<CommunityReportAttachmentRecord | null> {
+  async updateAttachmentMetadata(
+    input: UpdateCommunityAttachmentMetadataInput
+  ): Promise<CommunityReportAttachmentRecord | null> {
     const attachment = this.attachments.get(input.attachmentId);
     if (!attachment || attachment.reportId !== input.reportId) {
       return null;
@@ -630,6 +750,47 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
   }
 
   async close(): Promise<void> {}
+
+  private async transitionReport(
+    reportId: string,
+    subjectId: string,
+    input: CommunityReportLifecycleInput,
+    status: "resolved" | "withdrawn",
+    now: Date
+  ): Promise<CommunityReportRecord | null> {
+    const report = this.reports.get(reportId);
+    if (
+      !report ||
+      report.createdBy.subjectId !== subjectId ||
+      (report.status !== "submitted" && report.status !== "published") ||
+      (input.expectedVersion !== undefined && input.expectedVersion !== report.version)
+    ) {
+      return null;
+    }
+    const timestamp = now.toISOString();
+    const version = report.version + 1;
+    const updated: CommunityReportRecord = {
+      ...report,
+      properties: appendCommunityReportLifecycle(
+        {
+          ...report.properties,
+          [`${status}At`]: timestamp,
+          ...(input.reason ? { [`${status}Reason`]: input.reason } : {})
+        },
+        {
+          at: timestamp,
+          kind: status,
+          ...(input.reason ? { reason: input.reason } : {}),
+          version
+        }
+      ),
+      status,
+      updatedAt: timestamp,
+      version
+    };
+    this.reports.set(reportId, updated);
+    return { ...updated, attachments: this.attachmentsForReport(reportId) };
+  }
 
   private attachmentsForReport(reportId: string): CommunityReportAttachmentRecord[] {
     return Array.from(this.attachments.values())
@@ -655,6 +816,13 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   }
 
   async createReport(input: CreateCommunityReportInput, now: Date): Promise<CommunityReportRecord> {
+    const timestamp = now.toISOString();
+    const version = 1;
+    const properties = appendCommunityReportLifecycle(input.properties ?? {}, {
+      at: timestamp,
+      kind: "created",
+      version
+    });
     const result = await this.pool.query<CommunityReportRow>(
       `INSERT INTO cop_community_reports (
         report_id,
@@ -673,17 +841,19 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
         location_geom,
         observed_at,
         properties,
+        version,
         created_at,
         updated_at
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7, 'draft', $8, $9, $10, $11, $12,
         ST_SetSRID(ST_MakePoint($10::double precision, $9::double precision), 4326),
-        $13::timestamptz, $14::jsonb, $15::timestamptz, $15::timestamptz
+        $13::timestamptz, $14::jsonb, $15, $16::timestamptz, $16::timestamptz
       )
+      ON CONFLICT (report_id) DO NOTHING
       RETURNING *`,
       [
-        randomUUID(),
+        input.reportId ?? randomUUID(),
         input.createdBy.subjectId,
         input.createdBy.username,
         input.createdBy.displayName,
@@ -696,19 +866,27 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
         input.location.accuracyM ?? null,
         input.location.source,
         input.observedAt,
-        JSON.stringify(input.properties ?? {}),
-        now.toISOString()
+        JSON.stringify(properties),
+        version,
+        timestamp
       ]
     );
     const row = result.rows[0];
-    if (!row) {
-      throw new Error("Community report insert returned no row.");
+    if (row) {
+      return reportFromRow(row, []);
     }
-    return reportFromRow(row, []);
+    if (input.reportId) {
+      const existing = await this.getReport(input.reportId);
+      if (existing) return existing;
+    }
+    throw new Error("Community report insert returned no row.");
   }
 
   async getReport(reportId: string): Promise<CommunityReportRecord | null> {
-    const result = await this.pool.query<CommunityReportRow>("SELECT * FROM cop_community_reports WHERE report_id = $1", [reportId]);
+    const result = await this.pool.query<CommunityReportRow>(
+      "SELECT * FROM cop_community_reports WHERE report_id = $1",
+      [reportId]
+    );
     const row = result.rows[0];
     if (!row) {
       return null;
@@ -774,7 +952,9 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   }
 
   async getGroup(groupId: string): Promise<CommunityGroupRecord | null> {
-    const result = await this.pool.query<CommunityGroupRow>("SELECT * FROM cop_community_groups WHERE group_id = $1", [groupId]);
+    const result = await this.pool.query<CommunityGroupRow>("SELECT * FROM cop_community_groups WHERE group_id = $1", [
+      groupId
+    ]);
     const row = result.rows[0];
     return row ? groupFromRow(row, await this.membersForGroups([groupId])) : null;
   }
@@ -876,7 +1056,11 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     return result.rows.map((row) => groupFromRow(row, members));
   }
 
-  async requestGroupMembership(groupId: string, actor: CommunityReportActor, now: Date): Promise<CommunityGroupRecord | null> {
+  async requestGroupMembership(
+    groupId: string,
+    actor: CommunityReportActor,
+    now: Date
+  ): Promise<CommunityGroupRecord | null> {
     const group = await this.getGroup(groupId);
     if (!group) {
       return null;
@@ -900,7 +1084,15 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
           WHEN EXCLUDED.status = 'active' THEN COALESCE(cop_community_group_members.joined_at, EXCLUDED.joined_at)
           ELSE cop_community_group_members.joined_at
         END`,
-      [groupId, actor.subjectId, actor.username, actor.displayName, status, timestamp, status === "active" ? timestamp : null]
+      [
+        groupId,
+        actor.subjectId,
+        actor.username,
+        actor.displayName,
+        status,
+        timestamp,
+        status === "active" ? timestamp : null
+      ]
     );
     await this.touchGroup(groupId, timestamp);
     return this.getGroup(groupId);
@@ -918,12 +1110,9 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
       SET metadata = $2::jsonb,
         updated_at = $3::timestamptz
       WHERE group_id = $1
+      ON CONFLICT (attachment_id) DO NOTHING
       RETURNING *`,
-      [
-        input.groupId,
-        JSON.stringify(metadata),
-        timestamp
-      ]
+      [input.groupId, JSON.stringify(metadata), timestamp]
     );
     const row = result.rows[0];
     return row ? groupFromRow(row, await this.membersForGroups([input.groupId])) : null;
@@ -968,15 +1157,39 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     return this.getGroup(input.groupId);
   }
 
-  async updateReport(reportId: string, subjectId: string, input: UpdateCommunityReportInput, now: Date): Promise<CommunityReportRecord | null> {
+  async updateReport(
+    reportId: string,
+    subjectId: string,
+    input: UpdateCommunityReportInput,
+    now: Date
+  ): Promise<CommunityReportRecord | null> {
     const existing = await this.getReport(reportId);
-    if (!existing || existing.createdBy.subjectId !== subjectId || existing.status === "hidden" || existing.status === "rejected") {
+    if (
+      !existing ||
+      existing.createdBy.subjectId !== subjectId ||
+      existing.status === "hidden" ||
+      existing.status === "rejected" ||
+      existing.status === "resolved" ||
+      existing.status === "withdrawn" ||
+      (input.expectedVersion !== undefined && input.expectedVersion !== existing.version)
+    ) {
       return null;
     }
-    const nextProperties = {
-      ...existing.properties,
-      ...(input.properties ?? {})
-    };
+    const timestamp = now.toISOString();
+    const version = existing.version + 1;
+    const nextProperties = appendCommunityReportLifecycle(
+      {
+        ...existing.properties,
+        ...(input.properties ?? {})
+      },
+      {
+        at: timestamp,
+        changedFields: communityReportChangedFields(existing, input),
+        kind: "updated",
+        ...(input.changeReason ? { reason: input.changeReason } : {}),
+        version
+      }
+    );
     if (input.validUntil !== undefined) {
       if (input.validUntil) {
         nextProperties.validUntil = input.validUntil;
@@ -998,22 +1211,27 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
         location_source = $10,
         location_geom = ST_SetSRID(ST_MakePoint($8::double precision, $7::double precision), 4326),
         properties = $11::jsonb,
-        updated_at = $12::timestamptz
-      WHERE report_id = $1 AND subject_id = $2
+        version = $12,
+        updated_at = $13::timestamptz
+      WHERE report_id = $1
+        AND subject_id = $2
+        AND version = $14
       RETURNING *`,
       [
         reportId,
         subjectId,
         input.category ?? existing.category,
         input.title ?? existing.title,
-        input.description === undefined ? existing.description ?? null : input.description,
+        input.description === undefined ? (existing.description ?? null) : input.description,
         input.visibility ?? existing.visibility,
         nextLocation.lat,
         nextLocation.lon,
         nextLocation.accuracyM ?? null,
         nextLocation.source,
         JSON.stringify(nextProperties),
-        now.toISOString()
+        version,
+        timestamp,
+        existing.version
       ]
     );
     const row = result.rows[0];
@@ -1023,7 +1241,9 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   async deleteReport(reportId: string, subjectId: string, _now: Date): Promise<boolean> {
     const result = await this.pool.query(
       `DELETE FROM cop_community_reports
-      WHERE report_id = $1 AND subject_id = $2`,
+      WHERE report_id = $1
+        AND subject_id = $2
+        AND status = 'draft'`,
       [reportId, subjectId]
     );
     return (result.rowCount ?? 0) > 0;
@@ -1057,21 +1277,55 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   }
 
   async submitReport(reportId: string, subjectId: string, now: Date): Promise<CommunityReportRecord | null> {
+    const existing = await this.getReport(reportId);
+    if (!existing || existing.createdBy.subjectId !== subjectId || existing.status !== "draft") {
+      return null;
+    }
+    const timestamp = now.toISOString();
+    const version = existing.version + 1;
+    const properties = appendCommunityReportLifecycle(existing.properties, {
+      at: timestamp,
+      kind: "submitted",
+      version
+    });
     const result = await this.pool.query<CommunityReportRow>(
       `UPDATE cop_community_reports
       SET
-        status = CASE WHEN status = 'draft' THEN 'submitted' ELSE status END,
+        status = 'submitted',
         submitted_at = COALESCE(submitted_at, $3::timestamptz),
+        properties = $4::jsonb,
+        version = $5,
         updated_at = $3::timestamptz
-      WHERE report_id = $1 AND subject_id = $2
+      WHERE report_id = $1
+        AND subject_id = $2
+        AND status = 'draft'
+        AND version = $6
       RETURNING *`,
-      [reportId, subjectId, now.toISOString()]
+      [reportId, subjectId, timestamp, JSON.stringify(properties), version, existing.version]
     );
     const row = result.rows[0];
     if (!row) {
       return null;
     }
     return reportFromRow(row, await this.attachmentsForReports([reportId]));
+  }
+
+  async resolveReport(
+    reportId: string,
+    subjectId: string,
+    input: CommunityReportLifecycleInput,
+    now: Date
+  ): Promise<CommunityReportRecord | null> {
+    return this.transitionReport(reportId, subjectId, input, "resolved", now);
+  }
+
+  async withdrawReport(
+    reportId: string,
+    subjectId: string,
+    input: CommunityReportLifecycleInput,
+    now: Date
+  ): Promise<CommunityReportRecord | null> {
+    return this.transitionReport(reportId, subjectId, input, "withdrawn", now);
   }
 
   async createAttachment(input: CreateCommunityAttachmentInput): Promise<CommunityReportAttachmentRecord> {
@@ -1127,10 +1381,13 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
       ]
     );
     const row = result.rows[0];
-    if (!row) {
-      throw new Error("Community attachment insert returned no row.");
+    if (row) {
+      return attachmentFromRow(row);
     }
-    return attachmentFromRow(row);
+    const report = await this.getReport(input.reportId);
+    const existing = report?.attachments.find((attachment) => attachment.attachmentId === input.attachmentId);
+    if (existing) return existing;
+    throw new Error("Community attachment insert returned no row.");
   }
 
   async completeAttachment(input: CompleteCommunityAttachmentInput): Promise<CommunityReportAttachmentRecord | null> {
@@ -1155,17 +1412,15 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     return result.rows[0] ? attachmentFromRow(result.rows[0]) : null;
   }
 
-  async updateAttachmentMetadata(input: UpdateCommunityAttachmentMetadataInput): Promise<CommunityReportAttachmentRecord | null> {
+  async updateAttachmentMetadata(
+    input: UpdateCommunityAttachmentMetadataInput
+  ): Promise<CommunityReportAttachmentRecord | null> {
     const result = await this.pool.query<CommunityAttachmentRow>(
       `UPDATE cop_community_report_attachments
       SET metadata = $3::jsonb
       WHERE attachment_id = $1 AND report_id = $2
       RETURNING *`,
-      [
-        input.attachmentId,
-        input.reportId,
-        JSON.stringify(input.metadata)
-      ]
+      [input.attachmentId, input.reportId, JSON.stringify(input.metadata)]
     );
     return result.rows[0] ? attachmentFromRow(result.rows[0]) : null;
   }
@@ -1176,6 +1431,54 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
 
   async close(): Promise<void> {
     await this.pool.end();
+  }
+
+  private async transitionReport(
+    reportId: string,
+    subjectId: string,
+    input: CommunityReportLifecycleInput,
+    status: "resolved" | "withdrawn",
+    now: Date
+  ): Promise<CommunityReportRecord | null> {
+    const existing = await this.getReport(reportId);
+    if (
+      !existing ||
+      existing.createdBy.subjectId !== subjectId ||
+      (existing.status !== "submitted" && existing.status !== "published") ||
+      (input.expectedVersion !== undefined && input.expectedVersion !== existing.version)
+    ) {
+      return null;
+    }
+    const timestamp = now.toISOString();
+    const version = existing.version + 1;
+    const properties = appendCommunityReportLifecycle(
+      {
+        ...existing.properties,
+        [`${status}At`]: timestamp,
+        ...(input.reason ? { [`${status}Reason`]: input.reason } : {})
+      },
+      {
+        at: timestamp,
+        kind: status,
+        ...(input.reason ? { reason: input.reason } : {}),
+        version
+      }
+    );
+    const result = await this.pool.query<CommunityReportRow>(
+      `UPDATE cop_community_reports
+      SET status = $3,
+        properties = $4::jsonb,
+        version = $5,
+        updated_at = $6::timestamptz
+      WHERE report_id = $1
+        AND subject_id = $2
+        AND status IN ('submitted', 'published')
+        AND version = $7
+      RETURNING *`,
+      [reportId, subjectId, status, JSON.stringify(properties), version, timestamp, existing.version]
+    );
+    const row = result.rows[0];
+    return row ? reportFromRow(row, await this.attachmentsForReports([reportId])) : null;
   }
 
   private async attachmentsForReports(reportIds: string[]): Promise<CommunityReportAttachmentRecord[]> {
@@ -1207,7 +1510,10 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   }
 
   private async touchGroup(groupId: string, timestamp: string): Promise<void> {
-    await this.pool.query("UPDATE cop_community_groups SET updated_at = $2::timestamptz WHERE group_id = $1", [groupId, timestamp]);
+    await this.pool.query("UPDATE cop_community_groups SET updated_at = $2::timestamptz WHERE group_id = $1", [
+      groupId,
+      timestamp
+    ]);
   }
 }
 
@@ -1258,6 +1564,7 @@ interface CommunityReportRow extends QueryResultRow {
   title: string;
   updated_at: Date | string;
   username: string;
+  version: number | string;
   visibility: CommunityReportVisibility;
 }
 
@@ -1305,12 +1612,14 @@ CREATE TABLE IF NOT EXISTS cop_community_reports (
   submitted_at timestamptz,
   published_at timestamptz,
   properties jsonb NOT NULL DEFAULT '{}'::jsonb,
+  version integer NOT NULL DEFAULT 1,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 ALTER TABLE cop_community_reports
-  ADD COLUMN IF NOT EXISTS location_geom geometry(Point, 4326);
+  ADD COLUMN IF NOT EXISTS location_geom geometry(Point, 4326),
+  ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
 
 UPDATE cop_community_reports
 SET location_geom = ST_SetSRID(ST_MakePoint(lon, lat), 4326)
@@ -1450,19 +1759,21 @@ function reportFromRow(row: CommunityReportRow, attachments: CommunityReportAtta
     ...(submittedAt ? { submittedAt } : {}),
     title: row.title,
     updatedAt: isoString(row.updated_at),
+    version: Number(row.version ?? 1),
     visibility: row.visibility
   };
 }
 
 function attachmentFromRow(row: CommunityAttachmentRow): CommunityReportAttachmentRecord {
-  const captureLocation = row.capture_lat === null || row.capture_lon === null
-    ? undefined
-    : {
-        ...(row.capture_accuracy_m === null ? {} : { accuracyM: Number(row.capture_accuracy_m) }),
-        lat: Number(row.capture_lat),
-        lon: Number(row.capture_lon),
-        source: row.capture_location_source ?? "unknown"
-      };
+  const captureLocation =
+    row.capture_lat === null || row.capture_lon === null
+      ? undefined
+      : {
+          ...(row.capture_accuracy_m === null ? {} : { accuracyM: Number(row.capture_accuracy_m) }),
+          lat: Number(row.capture_lat),
+          lon: Number(row.capture_lon),
+          source: row.capture_location_source ?? "unknown"
+        };
   const uploadedAt = row.uploaded_at ? isoString(row.uploaded_at) : undefined;
   const capturedAt = row.captured_at ? isoString(row.captured_at) : undefined;
   return {
@@ -1486,16 +1797,20 @@ function attachmentFromRow(row: CommunityAttachmentRow): CommunityReportAttachme
   };
 }
 
-function groupFromRow(row: CommunityGroupRow, members: Array<CommunityGroupMemberRecord | CommunityGroupMemberWithGroupId>): CommunityGroupRecord {
+function groupFromRow(
+  row: CommunityGroupRow,
+  members: Array<CommunityGroupMemberRecord | CommunityGroupMemberWithGroupId>
+): CommunityGroupRecord {
   const description = row.description ?? undefined;
-  const anchorLocation = row.anchor_lat === null || row.anchor_lon === null
-    ? undefined
-    : {
-        ...(row.anchor_accuracy_m === null ? {} : { accuracyM: Number(row.anchor_accuracy_m) }),
-        lat: Number(row.anchor_lat),
-        lon: Number(row.anchor_lon),
-        source: row.anchor_location_source ?? "unknown"
-      };
+  const anchorLocation =
+    row.anchor_lat === null || row.anchor_lon === null
+      ? undefined
+      : {
+          ...(row.anchor_accuracy_m === null ? {} : { accuracyM: Number(row.anchor_accuracy_m) }),
+          lat: Number(row.anchor_lat),
+          lon: Number(row.anchor_lon),
+          source: row.anchor_location_source ?? "unknown"
+        };
   return {
     ...(anchorLocation ? { anchorLocation } : {}),
     createdAt: isoString(row.created_at),
@@ -1548,7 +1863,10 @@ function cloneCommunityGroup(group: CommunityGroupRecord): CommunityGroupRecord 
   };
 }
 
-function mergeCommunityGroupMetadata(current: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+function mergeCommunityGroupMetadata(
+  current: Record<string, unknown>,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
   return {
     ...current,
     ...patch
@@ -1568,14 +1886,24 @@ function buildCommunityQueryClauses(query: CommunityReportQuery, params: unknown
   if (query.categories && query.categories.length > 0) {
     clauses.push(`category = ANY(${addParam(params, query.categories)}::text[])`);
   }
+  if (!query.includeExpired) {
+    const activeAtParam = addParam(params, query.activeAt ?? new Date().toISOString());
+    clauses.push(`(
+      status NOT IN ('submitted', 'published')
+      OR NULLIF(properties->>'validUntil', '') IS NULL
+      OR CASE
+        WHEN properties->>'validUntil' ~ '^\\d{4}-\\d{2}-\\d{2}T'
+          THEN (properties->>'validUntil')::timestamptz
+        ELSE NULL
+      END >= ${activeAtParam}::timestamptz
+    )`);
+  }
   if (query.bbox) {
     const westParam = addParam(params, query.bbox.west);
     const southParam = addParam(params, query.bbox.south);
     const eastParam = addParam(params, query.bbox.east);
     const northParam = addParam(params, query.bbox.north);
-    clauses.push(
-      `location_geom && ST_MakeEnvelope(${westParam}, ${southParam}, ${eastParam}, ${northParam}, 4326)`
-    );
+    clauses.push(`location_geom && ST_MakeEnvelope(${westParam}, ${southParam}, ${eastParam}, ${northParam}, 4326)`);
   }
   return clauses;
 }
@@ -1605,6 +1933,14 @@ function matchesCommunityQuery(report: CommunityReportRecord, query: CommunityRe
   if (query.categories && query.categories.length > 0 && !query.categories.includes(report.category)) {
     return false;
   }
+  if (
+    !query.includeExpired &&
+    (report.status === "submitted" || report.status === "published") &&
+    typeof report.properties.validUntil === "string" &&
+    Date.parse(report.properties.validUntil) < Date.parse(query.activeAt ?? new Date().toISOString())
+  ) {
+    return false;
+  }
   if (query.bbox) {
     const { lat, lon } = report.location;
     if (lon < query.bbox.west || lon > query.bbox.east || lat < query.bbox.south || lat > query.bbox.north) {
@@ -1618,7 +1954,12 @@ function matchesCommunityGroupQuery(group: CommunityGroupRecord, query: Communit
   if (query.includePublic && group.visibility === "public") {
     return true;
   }
-  if (query.subjectId && group.members.some((member) => member.subjectId === query.subjectId && (member.status === "active" || member.status === "pending"))) {
+  if (
+    query.subjectId &&
+    group.members.some(
+      (member) => member.subjectId === query.subjectId && (member.status === "active" || member.status === "pending")
+    )
+  ) {
     return true;
   }
   return !query.includePublic && !query.subjectId;
@@ -1632,11 +1973,57 @@ function compareGroups(left: CommunityGroupRecord, right: CommunityGroupRecord):
   return right.updatedAt.localeCompare(left.updatedAt) || left.name.localeCompare(right.name, "cs");
 }
 
+interface CommunityReportLifecycleEvent {
+  at: string;
+  changedFields?: string[];
+  kind: "created" | "resolved" | "submitted" | "updated" | "withdrawn";
+  reason?: string;
+  version: number;
+}
+
+function appendCommunityReportLifecycle(
+  properties: Record<string, unknown>,
+  event: CommunityReportLifecycleEvent
+): Record<string, unknown> {
+  const previous = Array.isArray(properties.lifecycle)
+    ? properties.lifecycle.filter(
+        (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)
+      )
+    : [];
+  return {
+    ...properties,
+    lifecycle: [...previous, event].slice(-50)
+  };
+}
+
+function communityReportChangedFields(report: CommunityReportRecord, input: UpdateCommunityReportInput): string[] {
+  const changed = new Set<string>();
+  if (input.category !== undefined && input.category !== report.category) changed.add("category");
+  if (input.title !== undefined && input.title !== report.title) changed.add("title");
+  if (input.description !== undefined && input.description !== (report.description ?? null)) changed.add("description");
+  if (input.visibility !== undefined && input.visibility !== report.visibility) changed.add("visibility");
+  if (
+    input.location !== undefined &&
+    (input.location.lat !== report.location.lat ||
+      input.location.lon !== report.location.lon ||
+      input.location.accuracyM !== report.location.accuracyM ||
+      input.location.source !== report.location.source)
+  ) {
+    changed.add("location");
+  }
+  if (input.validUntil !== undefined && input.validUntil !== (report.properties.validUntil ?? null)) {
+    changed.add("validUntil");
+  }
+  if (input.properties !== undefined && Object.keys(input.properties).length > 0) changed.add("properties");
+  return Array.from(changed);
+}
+
 function canManageCommunityGroup(group: CommunityGroupRecord, subjectId: string): boolean {
-  return group.members.some((member) =>
-    member.subjectId === subjectId
-    && member.status === "active"
-    && (member.role === "owner" || member.role === "admin")
+  return group.members.some(
+    (member) =>
+      member.subjectId === subjectId &&
+      member.status === "active" &&
+      (member.role === "owner" || member.role === "admin")
   );
 }
 
@@ -1650,22 +2037,21 @@ function wouldRemoveLastActiveManager(
   if (!current || current.status !== "active" || (current.role !== "owner" && current.role !== "admin")) {
     return false;
   }
-  const willRemainManager = nextStatus === "active" && ((nextRole ?? current.role) === "owner" || (nextRole ?? current.role) === "admin");
+  const willRemainManager =
+    nextStatus === "active" && ((nextRole ?? current.role) === "owner" || (nextRole ?? current.role) === "admin");
   if (willRemainManager) {
     return false;
   }
-  return !group.members.some((member) =>
-    member.subjectId !== subjectId
-    && member.status === "active"
-    && (member.role === "owner" || member.role === "admin")
+  return !group.members.some(
+    (member) =>
+      member.subjectId !== subjectId &&
+      member.status === "active" &&
+      (member.role === "owner" || member.role === "admin")
   );
 }
 
 function canUseCommunityGroup(group: CommunityGroupRecord, subjectId: string): boolean {
-  return group.members.some((member) =>
-    member.subjectId === subjectId
-    && member.status === "active"
-  );
+  return group.members.some((member) => member.subjectId === subjectId && member.status === "active");
 }
 
 function resolveLimit(value: number | undefined): number {

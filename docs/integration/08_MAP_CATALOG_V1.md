@@ -296,6 +296,14 @@ Recommended fields:
 - `supersedes`
 - `replacedBy`
 
+For live transport layers, COP treats `refreshSeconds` as a provider contract,
+not as a UI suggestion. When SIM publishes a cadence both on the catalog layer
+and on individual vehicle features, the feature value is the more specific
+value and the catalog value is used before the first feature response arrives.
+For example, a PID layer published with `refreshSeconds=15` is refreshed every
+15 seconds while the layer is visible, automatic refresh is enabled and the
+browser tab is active.
+
 ## Query Kinds
 
 `kind` defines how COP obtains and renders data:

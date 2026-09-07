@@ -31,12 +31,14 @@ import {
   Waves,
   X
 } from "lucide-react";
-import maplibregl, {
-  type ExpressionSpecification,
-  type GeoJSONSource,
-  type MapLayerMouseEvent,
-  type SourceSpecification,
-  type StyleSpecification
+import * as maplibregl from "maplibre-gl";
+import type {
+  ErrorEvent as MapLibreErrorEvent,
+  ExpressionSpecification,
+  GeoJSONSource,
+  MapLayerMouseEvent,
+  SourceSpecification,
+  StyleSpecification
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
@@ -4810,7 +4812,7 @@ function CopMapComponent({
         setMapError(error instanceof Error ? error.message : "NATO symboly nejsou dostupné.");
       });
     });
-    map.on("error", (event) => {
+    map.on("error", (event: MapLibreErrorEvent) => {
       const message = event.error?.message ?? "Mapový podklad není dostupný.";
       if (isRecoverableMapError(message)) {
         return;

@@ -52,7 +52,16 @@ COP_API_RATE_LIMIT_MAX=2400
 COP_API_RATE_LIMIT_WINDOW=1 minute
 COP_API_COMPRESS_THRESHOLD_BYTES=1024
 COP_API_MAX_EVENT_LOOP_DELAY_MS=1000
+COP_CONFLICT_EVIDENCE_CACHE_TTL_MS=5000
+COP_CONFLICT_EVIDENCE_CACHE_MAX_ENTRIES=32
 ```
+
+`COP_CONFLICT_EVIDENCE_CACHE_TTL_MS` sdílí v krátkém, časově omezeném okně
+stejný výpočet konfliktů mezi souběžnými požadavky na COP stav a výstrahy.
+Cache je vázaná na otisk objektů, dotaz i časové okno, takže změna situačních
+dat ji okamžitě mine. `COP_CONFLICT_EVIDENCE_CACHE_MAX_ENTRIES` omezuje její
+paměťovou stopu. Toto odlehčení chrání mimo jiné časově citlivou signalizaci
+hovorů před odmítnutím `FST_UNDER_PRESSURE` při souběžném obnovování mapy.
 
 `COP_PUBLIC_API_BASE_URL` má být při publikaci pod `cop.zeleznalady.cz`
 prázdné, aby oba browser klienti volali COP API relativně přes `/api/...`.
@@ -108,7 +117,7 @@ PushKit/CallKit lifecycle notifikace.
 ```env
 COP_VOICE_CALLS_ENABLED=true
 COP_VOICE_CALL_STORE=postgres
-COP_LIVEKIT_PUBLIC_URL=wss://voice.zeleznalady.cz
+COP_LIVEKIT_PUBLIC_URL=wss://msg.zeleznalady.cz
 COP_LIVEKIT_API_KEY=<livekit-api-key>
 COP_LIVEKIT_API_SECRET=<livekit-api-secret>
 COP_LIVEKIT_TOKEN_TTL_SECONDS=600
@@ -124,6 +133,32 @@ Před zapnutím ověřte WSS připojení z mobilní sítě, LiveKit UDP/TCP medi
 PushKit registraci obou zařízení a `voice-call-media=ok` na
 `/health/dependencies`. Chybějící nebo neúplná LiveKit konfigurace je
 startovací chyba; volání se nesmí tvářit jako dostupné v degradovaném režimu.
+
+Produkční komunikační služby jsou soustředěné na `comm.home.cz`: CSM Messaging
+na TCP 4050, Matrix Synapse na TCP 8008 a LiveKit podle
+`deploy/communications/livekit/compose.yml`. `docker.home.cz` provozuje COP API,
+ale nesmí provozovat druhou aktivní instanci CSM Messaging. Serverová integrace
+COP proto používá `COP_CSM_MESSAGING_BASE_URL=http://comm.home.cz:4050`.
+
+LiveKit signalizaci publikuje DMZ pod `wss://msg.zeleznalady.cz` cestou `/rtc`
+na interní TCP 7880. Media se nepřenášejí přes HTTP reverse proxy. LiveKit
+klientům vydává časově omezené přístupy ke stávajícímu veřejnému coturnu:
+
+- TCP/UDP 3478 je vstup coturnu,
+- UDP 49160–49240 je jeho relay rozsah,
+- UDP 7882 je ICE/UDP mux LiveKit SFU a musí být přeložen přímo na
+  `comm.home.cz`,
+- TCP 7881 je doporučený ICE/TCP fallback a musí být přeložen přímo na
+  `comm.home.cz`.
+
+Na firewallu jsou TURN porty pro veřejnou adresu `185.186.161.93` už
+přeložené. UDP 7882 a TCP 7881 se překládají na `192.168.10.133`. Samostatný
+coturn kontejner na `comm.home.cz` zůstává zastavený; LiveKit používá veřejný
+coturn přes `rtc.turn_servers` a jeho sdílený klíč čte pouze ze souboru
+`/run/secrets/turn-secret`. Klíče `LIVEKIT_API_KEY` a `LIVEKIT_API_SECRET`
+patří do `/srv/csm-messaging/.env` na komunikačním serveru a stejné hodnoty se
+nastaví jako `COP_LIVEKIT_API_KEY` a `COP_LIVEKIT_API_SECRET` pouze v COP API
+secret store.
 
 CSM Messenger APNs tokeny se ukládají pouze v CSM Messaging službě. COP do iOS
 bootstrapu ani pairing odpovědí neposílá `COP_CSM_MESSAGING_TOKEN`, APNs token,

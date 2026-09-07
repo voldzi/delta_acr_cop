@@ -32,6 +32,27 @@ Current COP error responses use the repository's compatibility envelope with
 [Error model](integration/06_ERROR_MODEL.md). Any migration to a different
 request-id field must be compatibility-safe and recorded in an ADR.
 
+Community-report clients use a server-owned lifecycle:
+
+- omitted `validUntil` receives a category-specific default;
+- the active list excludes expired reports unless `includeExpired=true`;
+- `version` and optional `expectedVersion` protect against silent concurrent
+  overwrites (`409` on mismatch);
+- `DELETE /api/v1/community/reports/{reportId}` removes drafts only;
+- active reports are closed through `/resolve` or `/withdraw`; withdrawal
+  requires a reason and neither operation destroys history;
+- submit creates the private report discussion server-side when no group is
+  linked, and submit/update/resolve/withdraw synchronize its lifecycle metadata;
+- update, resolve and withdraw decisions use versioned notification
+  idempotency keys so recipients receive a correction without duplicate pushes.
+- report and attachment creation accept a UUID `X-Idempotency-Key`; an identical
+  retry returns the same resource with `200`, while conflicting content returns
+  `409 IDEMPOTENCY_CONFLICT`;
+- `PATCH /api/v1/community/reports/{reportId}/attachments/{attachmentId}/access`
+  lets the owner change an existing attachment ACL. Responses to non-owners omit
+  the ACL subject and group identifiers, and every content request re-evaluates
+  current access.
+
 Direct voice calls use the authoritative endpoints:
 
 - `GET/POST /api/v1/messaging/calls`
@@ -41,7 +62,10 @@ Direct voice calls use the authoritative endpoints:
 The API returns lifecycle metadata and, only to an authorized active
 participant, short-lived LiveKit credentials. Audio, SDP and chat plaintext do
 not traverse COP API. Matrix VoIP and `/messaging/calls/wake` are not part of
-the current contract.
+the current contract. `POST /api/v1/messaging/calls` requires the bound
+`roomId`; `participantSubjectIds` is optional because the API normally resolves
+the canonical `directPeer` from the server-owned conversation. Transport-level
+Matrix aliases are never authoritative call recipients.
 
 AI clients must call only COP API endpoints such as
 `/api/v1/ai/situation-summary`, `/api/v1/ai/chat-agent/query`,

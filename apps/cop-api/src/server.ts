@@ -16,7 +16,7 @@ import { ContractValidators, formatValidationErrors } from "@cop/ingest-contract
 import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
 import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
-import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { buildCopAlerts, type AoiRule, type AoiRuleAffiliationScope, type CopAlert } from "./alerts.js";
@@ -197,6 +197,7 @@ import {
 import {
   buildCommunityReportNotificationDecision,
   buildSafetyFeatureNotificationDecision,
+  type CommunityReportNotificationEvent,
   type CopNotificationAudience,
   type CopNotificationDecision
 } from "./notification-decision.js";
@@ -209,7 +210,13 @@ import { registerMessagingRoutes } from "./routes/messaging-routes.js";
 import { registerMobileRoutes } from "./routes/mobile-routes.js";
 import { registerRadioRoutes } from "./routes/radio-routes.js";
 import { registerRoutingRoutes } from "./routes/routing-routes.js";
-import { actorFromRequest, requireBearerToken, type AuthenticatedActor } from "./security.js";
+import {
+  actorFromRequest,
+  decodeJwt,
+  requireBearerToken,
+  verifyOidcToken,
+  type AuthenticatedActor
+} from "./security.js";
 import { buildSourceHealthItems, type SourceHealthItem } from "./source-health.js";
 import {
   buildSituationDataHealth,
@@ -304,6 +311,13 @@ import {
   type VoiceCallRecord,
   type VoiceCallStore
 } from "./voice-call-store.js";
+import {
+  createWebSessionStoreFromEnv,
+  type WebSessionProfile,
+  type WebSessionRecord,
+  type WebSessionStore,
+  type WebSessionTokens
+} from "./web-session-store.js";
 
 export interface BuildServerOptions {
   aiGateway?: AiGateway;
@@ -332,6 +346,7 @@ export interface BuildServerOptions {
   userProfileStore?: UserProfileStore;
   voiceCallMediaIssuer?: VoiceCallMediaIssuer;
   voiceCallStore?: VoiceCallStore;
+  webSessionStore?: WebSessionStore;
 }
 
 type DependencyStatus = "disabled" | "degraded" | "ok";
@@ -361,6 +376,21 @@ type AiMatrixBotProvisionStatus =
   | "member_sync_failed"
   | "pending_conversation"
   | "pending_room_binding";
+
+interface BffTransaction {
+  callbackUri: string;
+  expiresAt: number;
+  returnTo: string;
+  state: string;
+  verifier: string;
+}
+
+interface BffTokenResponse {
+  access_token?: string;
+  expires_in?: number;
+  id_token?: string;
+  refresh_token?: string;
+}
 const defaultRasterOverlayAllowedHosts = "docker.home.cz,sim.zeleznalady.cz";
 const rasterOverlayMaxBytes = 8 * 1024 * 1024;
 const defaultWeatherCameraAllowedHosts = defaultRasterOverlayAllowedHosts;
@@ -385,6 +415,7 @@ interface WeatherRadarFramesCacheEntry {
 }
 
 type CommunityAttachmentResponse = CommunityReportAttachmentRecord & {
+  access?: Record<string, unknown>;
   contentUrl?: string;
   derivatives?: CommunityAttachmentDerivativeResponse[];
 };
@@ -403,6 +434,7 @@ interface CommunityAttachmentDerivativeResponse {
 
 type CommunityReportResponse = CommunityReportRecord & {
   attachments: CommunityAttachmentResponse[];
+  ownedByCurrentActor: boolean;
 };
 
 interface CommunityMediaTicketPayload {
@@ -780,6 +812,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const mobileDeviceStore = options.mobileDeviceStore ?? createMobileDeviceStoreFromEnv();
   const mobileDeviceFallbackStore = new InMemoryMobileDeviceStore("memory-fallback");
   const voiceCallStore = options.voiceCallStore ?? createVoiceCallStoreFromEnv();
+  const webSessionStore = options.webSessionStore ?? createWebSessionStoreFromEnv();
+  const webBffEnabled = Boolean(webSessionStore);
+  const webBffSessionTtlSeconds = readPositiveInteger(process.env.COP_WEB_SESSION_MAX_AGE_SECONDS, 30 * 24 * 60 * 60);
   const voiceCallMediaIssuer = options.voiceCallMediaIssuer ?? createVoiceCallMediaIssuerFromEnv();
   const missionArenaSource = options.missionArenaSource ?? createMissionArenaSourceFromEnv();
   const placeGeocoder = options.placeGeocoder ?? createPlaceGeocoderFromEnv();
@@ -826,6 +861,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const trackPersistenceBatchSize = readPositiveInteger(process.env.COP_INGEST_PERSISTENCE_BATCH_SIZE, 250);
   const trackPersistenceFlushMs = readPositiveInteger(process.env.COP_INGEST_PERSISTENCE_FLUSH_MS, 100);
   const maxQueuedTrackHistoryPoints = readPositiveInteger(process.env.COP_INGEST_PERSISTENCE_MAX_HISTORY_QUEUE, 20000);
+  const conflictEvidenceCacheTtlMs = readPositiveInteger(process.env.COP_CONFLICT_EVIDENCE_CACHE_TTL_MS, 5000);
+  const conflictEvidenceCacheMaxEntries = readPositiveInteger(process.env.COP_CONFLICT_EVIDENCE_CACHE_MAX_ENTRIES, 32);
+  const conflictEvidenceCache = new Map<
+    string,
+    { expiresAt: number; value: Promise<Map<string, ObjectConflictEvidence>> }
+  >();
   const pendingCurrentTrackPersistence = new Map<string, { event: CanonicalEventEnvelope; object: ObservedObject }>();
   const pendingTrackHistoryPersistence: TrackHistoryPoint[] = [];
 
@@ -877,8 +918,153 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       done(null, body);
     }
   );
+  app.addHook("preHandler", async (request, reply) => {
+    if (!webBffEnabled || isBffAuthRoute(request.url)) {
+      return;
+    }
+    const presentedBearer = request.headers.authorization;
+    const hasBffMarker = /^Bearer\s+cop-bff-session$/iu.test(presentedBearer ?? "");
+    if (presentedBearer && !hasBffMarker) {
+      return;
+    }
+    if (
+      readCookie(request.headers.cookie, "cop_web_session_v1") &&
+      isUnsafeHttpMethod(request.method) &&
+      !isTrustedBffOrigin(request)
+    ) {
+      return sendError(
+        reply,
+        403,
+        "BFF_ORIGIN_FORBIDDEN",
+        "Požadavek musí pocházet z aplikace COP.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const resolved = await resolveWebBffSession(request, reply);
+    if (resolved) {
+      request.headers.authorization = `Bearer ${resolved.accessToken}`;
+    }
+  });
   app.addHook("preHandler", requireBearerToken);
+  app.get("/api/v1/auth/login", async (request, reply) => {
+    if (!webBffEnabled || !webSessionStore) {
+      return sendError(
+        reply,
+        404,
+        "AUTH_BFF_DISABLED",
+        "Secure web session is not enabled.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const issuer = normalizedOidcIssuer();
+    const clientId = process.env.COP_OIDC_CLIENT_ID?.trim();
+    if (!issuer || !clientId) {
+      return sendError(
+        reply,
+        503,
+        "AUTH_CONFIGURATION_INVALID",
+        "Přihlášení COP není nyní správně nakonfigurováno.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const query = request.query as { prompt?: string; returnTo?: string };
+    const returnTo = safeReturnTo(query.returnTo);
+    const state = randomBytes(24).toString("base64url");
+    const verifier = randomBytes(48).toString("base64url");
+    const callbackUri = bffCallbackUri(request);
+    const transaction = signBffTransaction({
+      callbackUri,
+      expiresAt: Date.now() + 10 * 60_000,
+      returnTo,
+      state,
+      verifier
+    });
+    appendSetCookie(
+      reply,
+      serializeCookie("cop_oidc_txn_v1", transaction, {
+        httpOnly: true,
+        maxAge: 600,
+        path: "/api/v1/auth",
+        sameSite: "Lax",
+        secure: true
+      })
+    );
+    const redirect = new URL(`${issuer}/protocol/openid-connect/auth`);
+    redirect.searchParams.set("client_id", clientId);
+    redirect.searchParams.set("code_challenge", createHash("sha256").update(verifier).digest("base64url"));
+    redirect.searchParams.set("code_challenge_method", "S256");
+    redirect.searchParams.set("redirect_uri", callbackUri);
+    redirect.searchParams.set("response_type", "code");
+    redirect.searchParams.set("scope", process.env.COP_OIDC_SCOPE?.trim() || "openid profile email");
+    redirect.searchParams.set("state", state);
+    if (query.prompt === "login") redirect.searchParams.set("prompt", "login");
+    return reply.redirect(redirect.toString());
+  });
+  app.get("/api/v1/auth/callback", async (request, reply) => {
+    if (!webBffEnabled || !webSessionStore) {
+      return sendError(
+        reply,
+        404,
+        "AUTH_BFF_DISABLED",
+        "Secure web session is not enabled.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    const query = request.query as { code?: string; error?: string; error_description?: string; state?: string };
+    const transaction = verifyBffTransaction(readCookie(request.headers.cookie, "cop_oidc_txn_v1"));
+    appendSetCookie(reply, clearCookie("cop_oidc_txn_v1", "/api/v1/auth"));
+    if (!transaction || !query.code || !query.state || transaction.state !== query.state) {
+      return reply.redirect(`${safeReturnTo(transaction?.returnTo)}?authError=callback`);
+    }
+    if (query.error) {
+      return reply.redirect(
+        `${transaction.returnTo}?authError=${encodeURIComponent(query.error_description ?? query.error)}`
+      );
+    }
+    try {
+      const tokens = await exchangeBffAuthorizationCode(query.code, transaction);
+      const record = await webSessionStore.create(tokens, new Date(Date.now() + webBffSessionTtlSeconds * 1000));
+      appendSetCookie(
+        reply,
+        serializeCookie("cop_web_session_v1", record.sessionId, {
+          httpOnly: true,
+          maxAge: webBffSessionTtlSeconds,
+          path: "/",
+          sameSite: "Lax",
+          secure: true
+        })
+      );
+      return reply.redirect(transaction.returnTo);
+    } catch (error) {
+      app.log.warn({ error }, "OIDC BFF callback failed.");
+      return reply.redirect(`${transaction.returnTo}?authError=login`);
+    }
+  });
+  app.get("/api/v1/auth/session", async (request, reply) => {
+    if (!webBffEnabled) return reply.code(401).send({ authenticated: false });
+    const session = await resolveWebBffSession(request, reply);
+    if (!session) return reply.code(401).send({ authenticated: false });
+    return { authenticated: true, expiresAt: session.accessTokenExpiresAt.toISOString(), profile: session.profile };
+  });
+  app.post("/api/v1/auth/logout", async (request, reply) => {
+    if (webBffEnabled && !isTrustedBffOrigin(request)) {
+      return sendError(
+        reply,
+        403,
+        "BFF_ORIGIN_FORBIDDEN",
+        "Požadavek musí pocházet z aplikace COP.",
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+    }
+    if (webSessionStore) {
+      const sessionId = readCookie(request.headers.cookie, "cop_web_session_v1");
+      if (sessionId) await webSessionStore.revoke(sessionId);
+    }
+    appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
+    return reply.code(204).send();
+  });
   app.addHook("onReady", async () => {
+    if (webSessionStore) await webSessionStore.init();
     await initializeStreamBus();
     await initializeFederationRuntimeStore();
     await initializeUserProfileStore();
@@ -947,6 +1133,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await federationRuntimeStore?.close();
     await userProfileStore.close();
     await userProfileFallbackStore.close();
+    await webSessionStore?.close();
     await communityReportStore?.close();
     await communityReportFallbackStore.close();
     await incidentStore?.close();
@@ -1059,6 +1246,128 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
     }
   });
+
+  async function resolveWebBffSession(request: FastifyRequest, reply: FastifyReply): Promise<WebSessionRecord | null> {
+    if (!webSessionStore) return null;
+    const sessionId = readCookie(request.headers.cookie, "cop_web_session_v1");
+    if (!sessionId) return null;
+    const session = await webSessionStore.get(sessionId);
+    if (!session) {
+      appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
+      return null;
+    }
+    if (session.accessTokenExpiresAt.getTime() > Date.now() + 60_000) return session;
+    if (!session.refreshToken) {
+      await webSessionStore.revoke(sessionId);
+      appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
+      return null;
+    }
+    try {
+      const refreshed = await refreshBffTokens(session.refreshToken);
+      return await webSessionStore.update(sessionId, { ...refreshed, profile: refreshed.profile ?? session.profile });
+    } catch (error) {
+      app.log.info({ error }, "COP web session refresh failed.");
+      await webSessionStore.revoke(sessionId);
+      appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
+      return null;
+    }
+  }
+
+  async function exchangeBffAuthorizationCode(code: string, transaction: BffTransaction): Promise<WebSessionTokens> {
+    const clientId = process.env.COP_OIDC_CLIENT_ID?.trim();
+    if (!clientId) throw new Error("OIDC client is not configured.");
+    const response = await fetch(`${normalizedOidcIssuer()}/protocol/openid-connect/token`, {
+      body: new URLSearchParams({
+        client_id: clientId,
+        code,
+        code_verifier: transaction.verifier,
+        grant_type: "authorization_code",
+        redirect_uri: transaction.callbackUri
+      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST"
+    });
+    if (!response.ok) throw new Error(`OIDC token exchange failed (${response.status}).`);
+    return tokensFromOidcResponse((await response.json()) as BffTokenResponse);
+  }
+
+  async function refreshBffTokens(refreshToken: string): Promise<WebSessionTokens> {
+    const clientId = process.env.COP_OIDC_CLIENT_ID?.trim();
+    if (!clientId) throw new Error("OIDC client is not configured.");
+    const response = await fetch(`${normalizedOidcIssuer()}/protocol/openid-connect/token`, {
+      body: new URLSearchParams({ client_id: clientId, grant_type: "refresh_token", refresh_token: refreshToken }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST"
+    });
+    if (!response.ok) throw new Error(`OIDC token refresh failed (${response.status}).`);
+    return tokensFromOidcResponse((await response.json()) as BffTokenResponse, refreshToken);
+  }
+
+  async function tokensFromOidcResponse(
+    response: BffTokenResponse,
+    fallbackRefreshToken?: string
+  ): Promise<WebSessionTokens> {
+    if (!response.access_token || !(await verifyOidcToken(response.access_token)))
+      throw new Error("OIDC returned an invalid access token.");
+    const decoded = decodeJwt(response.access_token)?.payload;
+    const subjectId = decoded?.sub?.trim();
+    if (!decoded || !subjectId) throw new Error("OIDC access token does not contain a subject.");
+    const username = decoded.preferred_username?.trim() || decoded.email?.trim() || decoded.name?.trim() || subjectId;
+    const profile: WebSessionProfile = {
+      subjectId,
+      username,
+      name: decoded.name?.trim() || username,
+      ...(decoded.email?.trim() ? { email: decoded.email.trim() } : {})
+    };
+    return {
+      accessToken: response.access_token,
+      accessTokenExpiresAt: new Date(Date.now() + Math.max(30, response.expires_in ?? 300) * 1000),
+      ...(response.id_token ? { idToken: response.id_token } : {}),
+      profile,
+      ...((response.refresh_token ?? fallbackRefreshToken)
+        ? { refreshToken: response.refresh_token ?? fallbackRefreshToken }
+        : {})
+    };
+  }
+
+  function signBffTransaction(transaction: BffTransaction): string {
+    const encoded = Buffer.from(JSON.stringify(transaction)).toString("base64url");
+    return `${encoded}.${createHmac("sha256", requiredWebSessionSecret()).update(encoded).digest("base64url")}`;
+  }
+  function verifyBffTransaction(value: string | undefined): BffTransaction | null {
+    if (!value) return null;
+    const [encoded, signature] = value.split(".");
+    if (!encoded || !signature) return null;
+    const expected = createHmac("sha256", requiredWebSessionSecret()).update(encoded).digest("base64url");
+    if (signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected)))
+      return null;
+    try {
+      const parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as BffTransaction;
+      return parsed.expiresAt > Date.now() &&
+        typeof parsed.state === "string" &&
+        typeof parsed.verifier === "string" &&
+        typeof parsed.callbackUri === "string" &&
+        typeof parsed.returnTo === "string"
+        ? parsed
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  function requiredWebSessionSecret(): string {
+    const secret = process.env.COP_WEB_SESSION_SECRET?.trim();
+    if (!secret || secret.length < 32) throw new Error("COP_WEB_SESSION_SECRET is required for the BFF session.");
+    return secret;
+  }
+  function normalizedOidcIssuer(): string {
+    return (process.env.COP_OIDC_ISSUER ?? "").trim().replace(/\/+$/u, "");
+  }
+  function bffCallbackUri(request: FastifyRequest): string {
+    const configured = process.env.COP_PUBLIC_URL?.trim().replace(/\/+$/u, "");
+    if (configured) return `${configured}/api/v1/auth/callback`;
+    const proto = headerAsString(request.headers["x-forwarded-proto"])?.split(",")[0]?.trim() || "https";
+    return `${proto}://${request.headers.host}/api/v1/auth/callback`;
+  }
 
   async function initializeStreamBus(): Promise<void> {
     try {
@@ -2863,6 +3172,34 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function resolveCommunityReport(
+    reportId: string,
+    actor: AuthenticatedActor,
+    input: Parameters<CommunityReportStore["resolveReport"]>[2],
+    requestNow: Date
+  ): Promise<CommunityReportRecord | null> {
+    try {
+      return await activeCommunityReportStore().resolveReport(reportId, actor.subjectId, input, requestNow);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.resolveReport(reportId, actor.subjectId, input, requestNow);
+    }
+  }
+
+  async function withdrawCommunityReport(
+    reportId: string,
+    actor: AuthenticatedActor,
+    input: Parameters<CommunityReportStore["withdrawReport"]>[2],
+    requestNow: Date
+  ): Promise<CommunityReportRecord | null> {
+    try {
+      return await activeCommunityReportStore().withdrawReport(reportId, actor.subjectId, input, requestNow);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.withdrawReport(reportId, actor.subjectId, input, requestNow);
+    }
+  }
+
   async function updateCommunityReport(
     reportId: string,
     actor: AuthenticatedActor,
@@ -3536,6 +3873,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const reports = (
       await listCommunityReports({
         bbox: floodDemoBbox,
+        includeExpired: true,
         includeOwnDrafts: true,
         limit: 500,
         statuses: ["draft", "submitted", "published"],
@@ -3972,21 +4310,44 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return new Map();
     }
 
-    const historyItems = await readTrackHistory(
-      {
-        ...query,
-        limit: query.limit ?? 24,
-        objectIds,
-        seconds: query.seconds ?? 300
-      },
-      requestNow
-    );
-    return buildConflictEvidenceIndex({
-      evaluatedAt: requestNow.toISOString(),
-      historyItems,
-      objects,
-      sourceHealth: buildSourceHealthItems(state, requestNow, trackLifecycle)
+    const effectiveQuery = {
+      ...query,
+      limit: query.limit ?? 24,
+      objectIds,
+      seconds: query.seconds ?? 300
+    };
+    const cacheKey = conflictEvidenceCacheKey(objects, requestNow, effectiveQuery, conflictEvidenceCacheTtlMs);
+    const currentTime = Date.now();
+    const cached = conflictEvidenceCache.get(cacheKey);
+    if (cached && cached.expiresAt > currentTime) {
+      return cached.value;
+    }
+    if (cached) {
+      conflictEvidenceCache.delete(cacheKey);
+    }
+
+    const operation = (async () => {
+      const historyItems = await readTrackHistory(effectiveQuery, requestNow);
+      return buildConflictEvidenceIndex({
+        evaluatedAt: requestNow.toISOString(),
+        historyItems,
+        objects,
+        sourceHealth: buildSourceHealthItems(state, requestNow, trackLifecycle)
+      });
+    })();
+    conflictEvidenceCache.set(cacheKey, {
+      expiresAt: currentTime + conflictEvidenceCacheTtlMs,
+      value: operation
     });
+    pruneBoundedCache(conflictEvidenceCache, conflictEvidenceCacheMaxEntries);
+    try {
+      return await operation;
+    } catch (error) {
+      if (conflictEvidenceCache.get(cacheKey)?.value === operation) {
+        conflictEvidenceCache.delete(cacheKey);
+      }
+      throw error;
+    }
   }
 
   async function decorateObjectsWithConflictEvidence(
@@ -4162,10 +4523,45 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     actor: AuthenticatedActor,
     report: CommunityReportRecord,
     requestNow: Date,
-    correlationId: string
+    correlationId: string,
+    event: CommunityReportNotificationEvent = "submitted"
   ): Promise<void> {
-    const decision = buildCommunityReportNotificationDecision(report, requestNow);
+    const decision = buildCommunityReportNotificationDecision(report, requestNow, undefined, event);
     await dispatchNotificationDecision(actor, decision, requestNow, correlationId);
+  }
+
+  async function syncCommunityReportGroupLifecycle(
+    report: CommunityReportRecord,
+    actor: AuthenticatedActor,
+    requestNow: Date
+  ): Promise<void> {
+    const groupId = communityReportGroupId(report);
+    if (!groupId) {
+      return;
+    }
+    try {
+      await updateCommunityGroupMetadata(
+        {
+          actor: actorToCommunityActor(actor),
+          groupId,
+          metadata: {
+            communityReport: {
+              reportId: report.reportId,
+              status: report.status,
+              updatedAt: report.updatedAt,
+              validUntil: communityReportValidUntil(report) ?? null,
+              version: report.version
+            }
+          }
+        },
+        requestNow
+      );
+    } catch (error) {
+      app.log.warn(
+        { error, groupId, reportId: report.reportId },
+        "Community report group lifecycle synchronization failed."
+      );
+    }
   }
 
   function decorateObjectsWithInMemoryConflictEvidence(objects: ObservedObject[], requestNow: Date): ObservedObject[] {
@@ -4425,13 +4821,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             .filter((subjectId): subjectId is string => Boolean(subjectId))
         )
       );
+      const canonicalDirectPeer = conversation.directPeer?.userId;
       const requestedRecipients = input.participantSubjectIds?.length
         ? input.participantSubjectIds
-        : memberSubjectIds.filter((subjectId) => subjectId !== actor.subjectId);
+        : canonicalDirectPeer && canonicalDirectPeer !== actor.subjectId
+          ? [canonicalDirectPeer]
+          : memberSubjectIds.filter((subjectId) => subjectId !== actor.subjectId);
+      const canonicalConversationSubjectIds = new Set([
+        ...memberSubjectIds,
+        ...(canonicalDirectPeer ? [canonicalDirectPeer] : [])
+      ]);
       if (
         conversation.type !== "direct" ||
         requestedRecipients.length !== 1 ||
-        requestedRecipients.some((subjectId) => subjectId === actor.subjectId || !memberSubjectIds.includes(subjectId))
+        requestedRecipients.some(
+          (subjectId) => subjectId === actor.subjectId || !canonicalConversationSubjectIds.has(subjectId)
+        )
       ) {
         return sendError(
           reply,
@@ -5431,6 +5836,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const requestNow = now();
     const reports = await listCommunityReports({
       ...(bbox ? { bbox } : {}),
+      activeAt: requestNow.toISOString(),
       limit: 500,
       statuses: ["submitted", "published"]
     });
@@ -6196,12 +6602,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     listReports: async (request, reply) => {
       const actor = actorFromRequest(request);
       const requestNow = now();
-      const query = parseCommunityReportQuery(request.query as Record<string, unknown>, actor);
+      const query = parseCommunityReportQuery(request.query as Record<string, unknown>, actor, requestNow);
       const items = (await listCommunityReports(query)).filter((report) => canReadCommunityReport(report, actor));
       const actorGroupIds = await readCommunityActorGroupIds(actor);
       const responseItems = communityReportResponseItems(items, requestNow, actor, actorGroupIds);
       return {
-        featureCollection: communityReportsFeatureCollection(responseItems, requestNow, actor, actorGroupIds),
+        featureCollection: communityReportsFeatureCollection(items, requestNow, actor, actorGroupIds),
         items: responseItems,
         nextCursor: null,
         serverTimestamp: requestNow.toISOString()
@@ -6214,6 +6620,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return reply;
       }
       const requestNow = now();
+      const observedAtSpecified = isRecord(request.body) && request.body.observedAt !== undefined;
+      const validUntilSpecified = isRecord(request.body) && request.body.validUntil !== undefined;
       const input = normalizeCreateCommunityReport(request.body, actor, requestNow);
       if (!input) {
         return sendError(
@@ -6223,6 +6631,39 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           "Community report requires category and location {lat, lon}.",
           correlationIdFrom(request.headers["x-correlation-id"])
         );
+      }
+      const idempotencyHeader = headerAsString(request.headers["x-idempotency-key"]);
+      const idempotencyKey = idempotencyHeader ? optionalUuid(idempotencyHeader) : undefined;
+      if (idempotencyHeader && !idempotencyKey) {
+        return sendError(
+          reply,
+          400,
+          "INVALID_IDEMPOTENCY_KEY",
+          "X-Idempotency-Key must be a UUID.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      if (idempotencyKey) {
+        const existing = await readCommunityReport(idempotencyKey);
+        if (existing) {
+          if (
+            existing.createdBy.subjectId !== actor.subjectId ||
+            !communityReportMatchesCreateInput(existing, input, {
+              compareObservedAt: observedAtSpecified,
+              compareValidUntil: validUntilSpecified
+            })
+          ) {
+            return sendError(
+              reply,
+              409,
+              "IDEMPOTENCY_CONFLICT",
+              "Idempotency key was reused with different community report content.",
+              correlationIdFrom(request.headers["x-correlation-id"])
+            );
+          }
+          return communityReportResponseItem(existing, requestNow, actor, await readCommunityActorGroupIds(actor));
+        }
+        input.reportId = idempotencyKey;
       }
       const requestedGroupId = communityReportGroupId(input);
       if (requestedGroupId) {
@@ -6238,6 +6679,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         }
       }
       const report = await createCommunityReport(input, requestNow);
+      if (!communityReportMatchesCreateInput(report, input)) {
+        return sendError(
+          reply,
+          409,
+          "IDEMPOTENCY_CONFLICT",
+          "Idempotency key was reused with different community report content.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
       appendAudit(
         state,
         "COMMUNITY_REPORT_CREATED",
@@ -6258,6 +6708,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return reply;
       }
       const params = request.params as { reportId: string };
+      const existing = await readCommunityReport(params.reportId);
+      if (!existing || existing.createdBy.subjectId !== actor.subjectId) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+      }
       const update = normalizeCommunityReportUpdate(request.body);
       if (!update) {
         return sendError(
@@ -6265,6 +6719,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           400,
           "VALIDATION_ERROR",
           "Community report update requires at least one editable field.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      if (update.expectedVersion !== undefined && update.expectedVersion !== existing.version) {
+        return sendError(
+          reply,
+          409,
+          "VERSION_CONFLICT",
+          "Community report changed on another device. Reload it before saving.",
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
@@ -6284,7 +6747,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const requestNow = now();
       const report = await updateCommunityReport(params.reportId, actor, update, requestNow);
       if (!report) {
-        return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+        return sendError(
+          reply,
+          409,
+          "REPORT_NOT_EDITABLE",
+          "Community report is no longer editable.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
       appendAudit(
         state,
@@ -6292,10 +6761,25 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         {
           actorAuthMode: actor.authMode,
           actorSubjectId: actor.subjectId,
-          reportId: report.reportId
+          reportId: report.reportId,
+          version: report.version
         },
         correlationIdFrom(request.headers["x-correlation-id"])
       );
+      await syncCommunityReportGroupLifecycle(report, actor, requestNow);
+      if (report.status === "submitted" || report.status === "published") {
+        try {
+          await dispatchCommunityReportNotification(
+            actor,
+            report,
+            requestNow,
+            correlationIdFrom(request.headers["x-correlation-id"]),
+            "updated"
+          );
+        } catch (error) {
+          app.log.warn({ error, reportId: report.reportId }, "Community report update notification dispatch failed.");
+        }
+      }
       return communityReportResponseItem(report, requestNow, actor, await readCommunityActorGroupIds(actor));
     },
 
@@ -6315,6 +6799,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return reply;
       }
       const params = request.params as { reportId: string };
+      const report = await readCommunityReport(params.reportId);
+      if (!report || report.createdBy.subjectId !== actor.subjectId) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+      }
+      if (report.status !== "draft") {
+        return sendError(
+          reply,
+          409,
+          "REPORT_REQUIRES_WITHDRAWAL",
+          "Published community reports must be withdrawn instead of deleted.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
       const deleted = await deleteCommunityReport(params.reportId, actor, now());
       if (!deleted) {
         return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
@@ -6339,9 +6836,79 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const params = request.params as { reportId: string };
       const requestNow = now();
+      let draft = await readCommunityReport(params.reportId);
+      if (
+        draft &&
+        draft.createdBy.subjectId === actor.subjectId &&
+        (draft.status === "submitted" || draft.status === "published")
+      ) {
+        return communityReportResponseItem(draft, requestNow, actor, await readCommunityActorGroupIds(actor));
+      }
+      if (!draft || draft.createdBy.subjectId !== actor.subjectId || draft.status !== "draft") {
+        return sendError(
+          reply,
+          409,
+          "REPORT_NOT_SUBMITTABLE",
+          "Community report is not available for submission.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      let provisionedGroupId: string | undefined;
+      if (!communityReportGroupId(draft)) {
+        const group = await createCommunityGroup(
+          {
+            anchorLocation: draft.location,
+            createdBy: actorToCommunityActor(actor),
+            description: `Diskuse k hlášení: ${draft.title}`,
+            metadata: {
+              communityReport: {
+                reportId: draft.reportId,
+                status: "draft",
+                version: draft.version
+              }
+            },
+            name: draft.title,
+            visibility: "private"
+          },
+          requestNow
+        );
+        provisionedGroupId = group.groupId;
+        draft = await updateCommunityReport(
+          draft.reportId,
+          actor,
+          {
+            changeReason: "Vytvořena bezpečná diskuse k hlášení.",
+            expectedVersion: draft.version,
+            properties: {
+              groupId: group.groupId,
+              groupName: group.name
+            }
+          },
+          requestNow
+        );
+        if (!draft) {
+          await deleteCommunityGroup(group.groupId, actor, requestNow);
+          return sendError(
+            reply,
+            409,
+            "VERSION_CONFLICT",
+            "Community report changed during submission. Reload and try again.",
+            correlationIdFrom(request.headers["x-correlation-id"])
+          );
+        }
+      }
       const report = await submitCommunityReport(params.reportId, actor, requestNow);
       if (!report) {
-        return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
+        if (provisionedGroupId) {
+          await deleteCommunityGroup(provisionedGroupId, actor, requestNow);
+        }
+        return sendError(
+          reply,
+          409,
+          "REPORT_NOT_SUBMITTABLE",
+          "Community report is no longer available for submission.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
       }
       appendAudit(
         state,
@@ -6351,10 +6918,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           actorSubjectId: actor.subjectId,
           attachmentCount: report.attachments.length,
           category: report.category,
-          reportId: report.reportId
+          reportId: report.reportId,
+          version: report.version
         },
         correlationIdFrom(request.headers["x-correlation-id"])
       );
+      await syncCommunityReportGroupLifecycle(report, actor, requestNow);
       try {
         await dispatchCommunityReportNotification(
           actor,
@@ -6377,6 +6946,126 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         app.log.warn({ error, reportId: report.reportId }, "Community report notification dispatch failed.");
       }
       return communityReportResponseItem(report, requestNow, actor, new Set());
+    },
+
+    resolveReport: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { reportId: string };
+      const input = normalizeCommunityReportLifecycleRequest(request.body);
+      if (!input) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Community report lifecycle request is invalid.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const requestNow = now();
+      const report = await resolveCommunityReport(params.reportId, actor, input, requestNow);
+      if (!report) {
+        return sendError(
+          reply,
+          409,
+          "REPORT_NOT_RESOLVABLE",
+          "Community report cannot be resolved in its current state.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      appendAudit(
+        state,
+        "COMMUNITY_REPORT_RESOLVED",
+        { actorSubjectId: actor.subjectId, reportId: report.reportId, version: report.version },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+      await syncCommunityReportGroupLifecycle(report, actor, requestNow);
+      try {
+        await dispatchCommunityReportNotification(
+          actor,
+          report,
+          requestNow,
+          correlationIdFrom(request.headers["x-correlation-id"]),
+          "resolved"
+        );
+      } catch (error) {
+        appendAudit(
+          state,
+          "COMMUNITY_REPORT_NOTIFICATION_FAILED",
+          {
+            actorAuthMode: actor.authMode,
+            actorSubjectId: actor.subjectId,
+            error: errorMessage(error),
+            event: "resolved",
+            reportId: report.reportId
+          },
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+        app.log.warn({ error, reportId: report.reportId }, "Community report resolution notification dispatch failed.");
+      }
+      return communityReportResponseItem(report, requestNow, actor, await readCommunityActorGroupIds(actor));
+    },
+
+    withdrawReport: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) {
+        return reply;
+      }
+      const params = request.params as { reportId: string };
+      const input = normalizeCommunityReportLifecycleRequest(request.body);
+      if (!input || !input.reason) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Withdrawal requires a short reason.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const requestNow = now();
+      const report = await withdrawCommunityReport(params.reportId, actor, input, requestNow);
+      if (!report) {
+        return sendError(
+          reply,
+          409,
+          "REPORT_NOT_WITHDRAWABLE",
+          "Community report cannot be withdrawn in its current state.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      appendAudit(
+        state,
+        "COMMUNITY_REPORT_WITHDRAWN",
+        { actorSubjectId: actor.subjectId, reportId: report.reportId, version: report.version },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+      await syncCommunityReportGroupLifecycle(report, actor, requestNow);
+      try {
+        await dispatchCommunityReportNotification(
+          actor,
+          report,
+          requestNow,
+          correlationIdFrom(request.headers["x-correlation-id"]),
+          "withdrawn"
+        );
+      } catch (error) {
+        appendAudit(
+          state,
+          "COMMUNITY_REPORT_NOTIFICATION_FAILED",
+          {
+            actorAuthMode: actor.authMode,
+            actorSubjectId: actor.subjectId,
+            error: errorMessage(error),
+            event: "withdrawn",
+            reportId: report.reportId
+          },
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+        app.log.warn({ error, reportId: report.reportId }, "Community report withdrawal notification dispatch failed.");
+      }
+      return communityReportResponseItem(report, requestNow, actor, await readCommunityActorGroupIds(actor));
     },
 
     createReportAttachment: async (request, reply) => {
@@ -6409,7 +7098,54 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const requestNow = now();
-      const attachmentId = crypto.randomUUID();
+      const idempotencyHeader = headerAsString(request.headers["x-idempotency-key"]);
+      const idempotencyKey = idempotencyHeader ? optionalUuid(idempotencyHeader) : undefined;
+      if (idempotencyHeader && !idempotencyKey) {
+        return sendError(
+          reply,
+          400,
+          "INVALID_IDEMPOTENCY_KEY",
+          "X-Idempotency-Key must be a UUID.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const attachmentId = idempotencyKey ?? crypto.randomUUID();
+      const existingAttachment = report.attachments.find((item) => item.attachmentId === attachmentId);
+      if (existingAttachment) {
+        if (!communityAttachmentMatchesRequest(existingAttachment, attachmentRequest)) {
+          return sendError(
+            reply,
+            409,
+            "IDEMPOTENCY_CONFLICT",
+            "Idempotency key was reused with different attachment content.",
+            correlationIdFrom(request.headers["x-correlation-id"])
+          );
+        }
+        if (existingAttachment.status === "uploaded") {
+          return reply.code(200).send({
+            attachment: communityAttachmentResponseItem(
+              existingAttachment,
+              report.reportId,
+              true,
+              actor,
+              requestNow,
+              true
+            ),
+            upload: null
+          });
+        }
+        const retryUpload = await mediaStorage.createUploadSlot(
+          {
+            attachmentId,
+            byteSize: attachmentRequest.byteSize,
+            contentType: attachmentRequest.contentType,
+            fileName: attachmentRequest.fileName,
+            reportId: report.reportId
+          },
+          requestNow
+        );
+        return reply.code(200).send({ attachment: existingAttachment, upload: retryUpload });
+      }
       const upload = await mediaStorage.createUploadSlot(
         {
           attachmentId,
@@ -6456,6 +7192,76 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       });
     },
 
+    updateReportAttachmentAccess: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) return reply;
+      const params = request.params as { attachmentId: string; reportId: string };
+      const report = await readCommunityReport(params.reportId);
+      const attachment = report?.attachments.find((item) => item.attachmentId === params.attachmentId);
+      if (!report || !attachment || report.createdBy.subjectId !== actor.subjectId) {
+        return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
+      }
+      const access = normalizeCommunityAttachmentAccess(request.body);
+      if (!access) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Attachment access requires a valid public, private, users or groups audience.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      if (access.mode === "groups") {
+        for (const groupId of access.groupIds) {
+          const group = await readCommunityGroup(groupId);
+          if (!group || !canUseCommunityGroupForReport(group, actor)) {
+            return sendError(
+              reply,
+              403,
+              "FORBIDDEN",
+              "Current user cannot grant attachment access to the selected group.",
+              correlationIdFrom(request.headers["x-correlation-id"])
+            );
+          }
+        }
+      }
+      const updated = await updateCommunityAttachmentMetadata({
+        attachmentId: attachment.attachmentId,
+        metadata: {
+          ...attachment.metadata,
+          access: {
+            audience: access.mode,
+            ...(access.groupIds.length ? { groupIds: access.groupIds } : {}),
+            ...(access.userSubjectIds.length ? { userSubjectIds: access.userSubjectIds } : {})
+          }
+        },
+        reportId: report.reportId
+      });
+      if (!updated) {
+        return sendError(
+          reply,
+          409,
+          "ATTACHMENT_ACCESS_UPDATE_FAILED",
+          "Attachment access could not be updated.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      appendAudit(
+        state,
+        "COMMUNITY_ATTACHMENT_ACCESS_UPDATED",
+        {
+          actorSubjectId: actor.subjectId,
+          attachmentId: attachment.attachmentId,
+          audience: access.mode,
+          groupCount: access.groupIds.length,
+          reportId: report.reportId,
+          userCount: access.userSubjectIds.length
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+      return communityAttachmentResponseItem(updated, report.reportId, true, actor, now(), true);
+    },
+
     completeReportAttachment: async (request, reply) => {
       const actor = requireActor(request, reply);
       if (!actor) {
@@ -6491,7 +7297,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         correlationIdFrom(request.headers["x-correlation-id"])
       );
       const convertedAttachment = await enqueueSpatialVideoConversion(params.reportId, attachment, requestNow);
-      return communityAttachmentResponseItem(convertedAttachment, params.reportId, true, actor, requestNow);
+      return communityAttachmentResponseItem(convertedAttachment, params.reportId, true, actor, requestNow, true);
     },
 
     uploadReportAttachment: async (request, reply) => {
@@ -6563,7 +7369,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         correlationIdFrom(request.headers["x-correlation-id"])
       );
       const convertedAttachment = await enqueueSpatialVideoConversion(report.reportId, completed, requestNow);
-      return communityAttachmentResponseItem(convertedAttachment, report.reportId, true, actor, requestNow);
+      return communityAttachmentResponseItem(convertedAttachment, report.reportId, true, actor, requestNow, true);
     },
 
     getReportAttachmentContent: async (request, reply) => {
@@ -8681,9 +9487,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
 
       try {
-        reply.raw.write(`event: ${visibleMessage.type}\n`);
-        reply.raw.write(`id: ${visibleMessage.sequence}\n`);
-        reply.raw.write(`data: ${JSON.stringify(visibleMessage)}\n\n`);
+        const accepted = reply.raw.write(
+          `event: ${visibleMessage.type}\nid: ${visibleMessage.sequence}\ndata: ${JSON.stringify(visibleMessage)}\n\n`
+        );
+        if (!accepted) {
+          streamBroadcaster.recordWriteError(now());
+          streamBroadcaster.createReconnectRequired("slow_stream_client", now());
+          request.raw.destroy();
+        }
       } catch {
         streamBroadcaster.recordWriteError(now());
         streamBroadcaster.createReconnectRequired("stream_write_failed", now());
@@ -12708,6 +13519,45 @@ function canReadBySyntheticFlag(
   return decision.allowed;
 }
 
+function conflictEvidenceCacheKey(
+  objects: ObservedObject[],
+  requestNow: Date,
+  query: TrackHistoryQuery,
+  ttlMs: number
+): string {
+  const objectFingerprint = objects
+    .map((object) =>
+      [
+        object.objectId,
+        object.lastUpdatedAt ?? "",
+        object.affiliation,
+        object.status,
+        object.position?.lat ?? "",
+        object.position?.lon ?? "",
+        object.confidence ?? ""
+      ].join(":")
+    )
+    .join("|");
+  return JSON.stringify({
+    bucket: Math.floor(requestNow.getTime() / Math.max(1, ttlMs)),
+    from: query.from ?? null,
+    limit: query.limit ?? null,
+    objectFingerprint,
+    seconds: query.seconds ?? null,
+    to: query.to ?? null
+  });
+}
+
+function pruneBoundedCache<Key, Value>(cache: Map<Key, Value>, maxEntries: number): void {
+  while (cache.size > Math.max(1, maxEntries)) {
+    const oldestKey = cache.keys().next().value as Key | undefined;
+    if (oldestKey === undefined) {
+      return;
+    }
+    cache.delete(oldestKey);
+  }
+}
+
 function filterStreamMessage(
   subject: ReturnType<typeof defaultSystemSubject>,
   message: CopStreamMessage
@@ -12746,14 +13596,17 @@ function alertSeverityRank(severity: CopAlert["severity"]): number {
 
 function parseCommunityReportQuery(
   query: Record<string, unknown>,
-  actor: AuthenticatedActor | null
+  actor: AuthenticatedActor | null,
+  requestNow = new Date()
 ): CommunityReportQuery {
   return {
+    activeAt: requestNow.toISOString(),
     ...(parseBboxQuery(query.bbox) ? { bbox: parseBboxQuery(query.bbox) } : {}),
     ...(parseCommunityCategories(query.category ?? query.categories).length > 0
       ? { categories: parseCommunityCategories(query.category ?? query.categories) }
       : {}),
     includeOwnDrafts: Boolean(actor) && (query.includeOwnDrafts === "true" || query.includeOwnDrafts === true),
+    includeExpired: query.includeExpired === "true" || query.includeExpired === true,
     limit: optionalFiniteNumber(query.limit, 1, 500) ?? 100,
     ...(parseCommunityStatuses(query.status ?? query.statuses).length > 0
       ? { statuses: parseCommunityStatuses(query.status ?? query.statuses) }
@@ -12781,7 +13634,7 @@ function normalizeCreateCommunityReport(
     : isCommunityReportHazardSeverity(value.severity)
       ? value.severity
       : communitySeverity(category);
-  const validUntil = optionalIsoTimestamp(value.validUntil);
+  const validUntil = optionalIsoTimestamp(value.validUntil) ?? defaultCommunityReportValidUntil(category, requestNow);
   const properties = {
     ...normalizedJsonRecord(value.properties, 8000),
     hazardSeverity,
@@ -12823,6 +13676,8 @@ function normalizeCommunityReportUpdate(value: unknown): Parameters<CommunityRep
       ? value.severity
       : undefined;
   const validUntil = hasOwn(value, "validUntil") ? (optionalIsoTimestamp(value.validUntil) ?? null) : undefined;
+  const expectedVersion = optionalBoundedQueryInteger(value.expectedVersion, 1, Number.MAX_SAFE_INTEGER);
+  const changeReason = optionalTrimmedString(value.changeReason, 500);
   const properties = {
     ...normalizedJsonRecord(value.properties, 8000),
     ...(hazardSeverity ? { hazardSeverity } : {}),
@@ -12831,14 +13686,39 @@ function normalizeCommunityReportUpdate(value: unknown): Parameters<CommunityRep
   };
   const update = {
     ...(category ? { category } : {}),
+    ...(changeReason ? { changeReason } : {}),
     ...(description !== undefined ? { description } : {}),
     ...(location ? { location } : {}),
+    ...(expectedVersion !== undefined ? { expectedVersion } : {}),
     ...(Object.keys(properties).length > 0 ? { properties } : {}),
     ...(title ? { title } : {}),
     ...(validUntil !== undefined ? { validUntil } : {}),
     ...(isCommunityVisibility(value.visibility) ? { visibility: value.visibility } : {})
   };
   return Object.keys(update).length > 0 ? update : null;
+}
+
+function normalizeCommunityReportLifecycleRequest(
+  value: unknown
+): Parameters<CommunityReportStore["resolveReport"]>[2] | null {
+  if (value === undefined || value === null) {
+    return {};
+  }
+  if (!isRecord(value)) {
+    return null;
+  }
+  const expectedVersion = optionalBoundedQueryInteger(value.expectedVersion, 1, Number.MAX_SAFE_INTEGER);
+  const reason = optionalTrimmedString(value.reason, 500);
+  if (hasOwn(value, "expectedVersion") && expectedVersion === undefined) {
+    return null;
+  }
+  if (hasOwn(value, "reason") && !reason) {
+    return null;
+  }
+  return {
+    ...(expectedVersion !== undefined ? { expectedVersion } : {}),
+    ...(reason ? { reason } : {})
+  };
 }
 
 function actorToCommunityActor(actor: AuthenticatedActor) {
@@ -14182,6 +15062,81 @@ function normalizeCommunityAttachmentRequest(value: unknown): {
   };
 }
 
+function communityReportMatchesCreateInput(
+  report: CommunityReportRecord,
+  input: Parameters<CommunityReportStore["createReport"]>[0],
+  options: { compareObservedAt?: boolean; compareValidUntil?: boolean } = {}
+): boolean {
+  const { compareObservedAt = true, compareValidUntil = true } = options;
+  return (
+    report.category === input.category &&
+    report.createdBy.subjectId === input.createdBy.subjectId &&
+    report.title === input.title &&
+    (report.description ?? undefined) === (input.description ?? undefined) &&
+    report.visibility === input.visibility &&
+    (!compareObservedAt || report.observedAt === input.observedAt) &&
+    report.location.lat === input.location.lat &&
+    report.location.lon === input.location.lon &&
+    report.location.source === input.location.source &&
+    (report.location.accuracyM ?? undefined) === (input.location.accuracyM ?? undefined) &&
+    Object.entries(input.properties ?? {}).every(
+      ([key, value]) =>
+        (key === "validUntil" && !compareValidUntil) || communityJsonEquals(report.properties[key], value)
+    )
+  );
+}
+
+function communityAttachmentMatchesRequest(
+  attachment: CommunityReportAttachmentRecord,
+  request: NonNullable<ReturnType<typeof normalizeCommunityAttachmentRequest>>
+): boolean {
+  return (
+    attachment.byteSize === request.byteSize &&
+    attachment.contentType === request.contentType &&
+    attachment.kind === request.kind &&
+    (attachment.fileName ?? undefined) === (request.fileName ?? undefined) &&
+    (attachment.capturedAt ?? undefined) === (request.capturedAt ?? undefined) &&
+    communityJsonEquals(attachment.captureLocation ?? null, request.captureLocation ?? null) &&
+    communityJsonEquals(attachment.metadata, request.metadata)
+  );
+}
+
+function communityJsonEquals(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => communityJsonEquals(value, right[index]))
+    );
+  }
+  if (isRecord(left) || isRecord(right)) {
+    if (!isRecord(left) || !isRecord(right)) return false;
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    return (
+      leftKeys.length === rightKeys.length &&
+      leftKeys.every((key) => Object.hasOwn(right, key) && communityJsonEquals(left[key], right[key]))
+    );
+  }
+  return false;
+}
+
+function normalizeCommunityAttachmentAccess(value: unknown): CommunityAttachmentAccessPolicy | null {
+  if (!isRecord(value) || !isRecord(value.access)) return null;
+  const mode = isCommunityAttachmentAccessMode(value.access.audience) ? value.access.audience : undefined;
+  if (!mode) return null;
+  const groupIds = normalizeCsv(value.access.groupIds)
+    .flatMap((item) => (optionalUuid(item) ? [item] : []))
+    .slice(0, 50);
+  const userSubjectIds = normalizeCsv(value.access.userSubjectIds ?? value.access.subjectIds).slice(0, 50);
+  if ((mode === "groups" && groupIds.length === 0) || (mode === "users" && userSubjectIds.length === 0)) {
+    return null;
+  }
+  return { groupIds, mode, userSubjectIds };
+}
+
 function normalizeCommunityAttachmentUploadBody(
   value: unknown,
   declaredByteSize: number,
@@ -14227,7 +15182,12 @@ function canReadCommunityReport(report: CommunityReportRecord, actor: Authentica
   if (report.visibility === "private") {
     return false;
   }
-  return report.status === "submitted" || report.status === "published";
+  return (
+    report.status === "submitted" ||
+    report.status === "published" ||
+    report.status === "resolved" ||
+    report.status === "withdrawn"
+  );
 }
 
 function canReadCommunityGroup(group: CommunityGroupRecord, actor: AuthenticatedActor): boolean {
@@ -14298,13 +15258,31 @@ function communityAttachmentAccessPolicy(attachment: {
   };
 }
 
-function communityAttachmentAccessSummary(attachment: { metadata?: Record<string, unknown> }): Record<string, unknown> {
+function communityAttachmentAccessSummary(
+  attachment: { metadata?: Record<string, unknown> },
+  includeMembers = false
+): Record<string, unknown> {
   const access = communityAttachmentAccessPolicy(attachment);
   return {
     audience: access.mode,
     groupCount: access.groupIds.length,
-    userCount: access.userSubjectIds.length
+    userCount: access.userSubjectIds.length,
+    ...(includeMembers && access.groupIds.length ? { groupIds: access.groupIds } : {}),
+    ...(includeMembers && access.userSubjectIds.length ? { userSubjectIds: access.userSubjectIds } : {})
   };
+}
+
+function communityAttachmentSafeMetadata(
+  attachment: { metadata?: Record<string, unknown> },
+  includeAccessDetails: boolean
+): Record<string, unknown> {
+  const metadata = { ...(attachment.metadata ?? {}) };
+  if (includeAccessDetails) {
+    metadata.access = communityAttachmentAccessSummary(attachment, true);
+  } else {
+    delete metadata.access;
+  }
+  return metadata;
 }
 
 function communityReportResponseItem(
@@ -14315,13 +15293,15 @@ function communityReportResponseItem(
 ): CommunityReportResponse {
   return {
     ...report,
+    ownedByCurrentActor: Boolean(actor && report.createdBy.subjectId === actor.subjectId),
     attachments: report.attachments.map((attachment) =>
       communityAttachmentResponseItem(
         attachment,
         report.reportId,
         canReadCommunityAttachment(report, attachment, actor, actorGroupIds),
         actor,
-        requestNow
+        requestNow,
+        Boolean(actor && report.createdBy.subjectId === actor.subjectId)
       )
     )
   };
@@ -14341,11 +15321,15 @@ function communityAttachmentResponseItem(
   reportId: string,
   canReadMedia = true,
   actor: AuthenticatedActor | null = null,
-  requestNow = new Date()
+  requestNow = new Date(),
+  includeAccessDetails = false
 ): CommunityAttachmentResponse {
   const demoContentUrl = communityAttachmentDemoContentUrl(attachment);
+  const metadata = communityAttachmentSafeMetadata(attachment, includeAccessDetails);
   return {
     ...attachment,
+    access: communityAttachmentAccessSummary(attachment, includeAccessDetails),
+    metadata,
     ...communityAttachmentDerivativeResponse(attachment, reportId, canReadMedia, actor, requestNow),
     ...(attachment.status === "uploaded" && canReadMedia
       ? {
@@ -14574,6 +15558,7 @@ function communityReportsFeatureCollection(
         layer: "community",
         locationAccuracyM: report.location.accuracyM ?? null,
         observedAt: report.observedAt,
+        ownedByCurrentActor: Boolean(actor && report.createdBy.subjectId === actor.subjectId),
         photoCount: report.attachments.filter(
           (attachment) => attachment.kind === "photo" && attachment.status === "uploaded"
         ).length,
@@ -14583,6 +15568,7 @@ function communityReportsFeatureCollection(
         status: report.status,
         stale: isCommunityReportStale(report, requestNow),
         validUntil: communityReportValidUntil(report) ?? null,
+        version: report.version,
         videoCount: report.attachments.filter(
           (attachment) => attachment.kind === "video" && attachment.status === "uploaded"
         ).length,
@@ -14636,10 +15622,11 @@ function communityFeatureAttachments(
     .filter((attachment) => attachment.status === "uploaded")
     .map((attachment) => {
       const canReadMedia = canReadCommunityAttachment(report, attachment, actor, actorGroupIds);
+      const includeAccessDetails = Boolean(actor && report.createdBy.subjectId === actor.subjectId);
       const existingContentUrl = (attachment as CommunityAttachmentResponse).contentUrl;
       const demoContentUrl = communityAttachmentDemoContentUrl(attachment);
       return {
-        access: communityAttachmentAccessSummary(attachment),
+        access: communityAttachmentAccessSummary(attachment, includeAccessDetails),
         ...(canReadMedia ? {} : { accessDenied: true }),
         attachmentId: attachment.attachmentId,
         byteSize: attachment.byteSize,
@@ -14657,7 +15644,9 @@ function communityFeatureAttachments(
         ...communityAttachmentDerivativeResponse(attachment, report.reportId, canReadMedia, actor, requestNow),
         ...(attachment.fileName ? { fileName: attachment.fileName } : {}),
         kind: attachment.kind,
-        ...(Object.keys(attachment.metadata ?? {}).length > 0 ? { metadata: attachment.metadata } : {}),
+        ...(Object.keys(communityAttachmentSafeMetadata(attachment, includeAccessDetails)).length > 0
+          ? { metadata: communityAttachmentSafeMetadata(attachment, includeAccessDetails) }
+          : {}),
         ...(attachment.uploadedAt ? { uploadedAt: attachment.uploadedAt } : {})
       };
     });
@@ -15007,6 +15996,21 @@ function communityReportValidUntil(report: CommunityReportRecord): string | unde
   return typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : undefined;
 }
 
+function defaultCommunityReportValidUntil(category: CommunityReportCategory, requestNow: Date): string {
+  const validityHours: Record<CommunityReportCategory, number> = {
+    bridge_damage: 24,
+    fire: 2,
+    flood: 12,
+    hazard: 6,
+    infrastructure_damage: 24,
+    medical: 1,
+    other: 6,
+    road_blockage: 6,
+    utility_outage: 12
+  };
+  return new Date(requestNow.getTime() + validityHours[category] * 60 * 60 * 1000).toISOString();
+}
+
 function isCommunityReportStale(report: CommunityReportRecord, requestNow: Date): boolean {
   const validUntil = communityReportValidUntil(report);
   return validUntil ? Date.parse(validUntil) < requestNow.getTime() : false;
@@ -15111,7 +16115,13 @@ function isIncidentTaskStatus(value: unknown): value is IncidentTaskStatus {
 
 function isCommunityReportStatus(value: unknown): value is CommunityReportStatus {
   return (
-    value === "draft" || value === "submitted" || value === "published" || value === "hidden" || value === "rejected"
+    value === "draft" ||
+    value === "submitted" ||
+    value === "published" ||
+    value === "resolved" ||
+    value === "withdrawn" ||
+    value === "hidden" ||
+    value === "rejected"
   );
 }
 
@@ -17428,6 +18438,71 @@ function createStreamBroadcasterFromEnv(env: Record<string, string | undefined> 
     backpressureClientThreshold: readPositiveInteger(env.COP_STREAM_BACKPRESSURE_CLIENTS, 25),
     recommendedRetryMs: readPositiveInteger(env.COP_STREAM_RETRY_MS, 5000)
   });
+}
+
+function isBffAuthRoute(url: string): boolean {
+  return (url.split("?")[0] ?? url).startsWith("/api/v1/auth/");
+}
+
+function isUnsafeHttpMethod(method: string): boolean {
+  return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+}
+
+function isTrustedBffOrigin(request: FastifyRequest): boolean {
+  const origin = headerAsString(request.headers.origin)?.replace(/\/+$/u, "");
+  if (!origin) return false;
+  const configuredPublicUrl = process.env.COP_PUBLIC_URL?.trim().replace(/\/+$/u, "");
+  if (configuredPublicUrl) return origin === configuredPublicUrl;
+  const host = headerAsString(request.headers.host);
+  if (!host) return false;
+  const scheme = headerAsString(request.headers["x-forwarded-proto"])?.split(",")[0]?.trim() || "https";
+  return origin === `${scheme}://${host}`;
+}
+
+function readCookie(header: string | undefined, name: string): string | undefined {
+  if (!header) return undefined;
+  const prefix = `${name}=`;
+  for (const item of header.split(";")) {
+    const value = item.trim();
+    if (value.startsWith(prefix)) {
+      try {
+        return decodeURIComponent(value.slice(prefix.length));
+      } catch {
+        return undefined;
+      }
+    }
+  }
+  return undefined;
+}
+
+function safeReturnTo(value: string | undefined): string {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return "/";
+  return value;
+}
+
+function serializeCookie(
+  name: string,
+  value: string,
+  options: { httpOnly?: boolean; maxAge?: number; path: string; sameSite: "Lax" | "Strict"; secure: boolean }
+): string {
+  const fields = [`${name}=${encodeURIComponent(value)}`, `Path=${options.path}`, `SameSite=${options.sameSite}`];
+  if (options.maxAge !== undefined) fields.push(`Max-Age=${Math.max(0, Math.floor(options.maxAge))}`);
+  if (options.httpOnly) fields.push("HttpOnly");
+  if (options.secure) fields.push("Secure");
+  return fields.join("; ");
+}
+
+function clearCookie(name: string, path: string): string {
+  return serializeCookie(name, "", { httpOnly: true, maxAge: 0, path, sameSite: "Lax", secure: true });
+}
+
+function appendSetCookie(reply: FastifyReply, value: string): void {
+  const existing = reply.getHeader("set-cookie");
+  if (!existing) {
+    reply.header("set-cookie", value);
+    return;
+  }
+  reply.header("set-cookie", Array.isArray(existing) ? [...existing, value] : [String(existing), value]);
 }
 
 function readPositiveInteger(value: string | undefined, fallback: number): number {

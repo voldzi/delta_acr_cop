@@ -74,7 +74,7 @@ Repo obsahuje login theme pro realm `cop` v adresari:
 infra/keycloak/themes/cop
 ```
 
-Theme navazuje na vizualni styl aplikace Civilni situacni mapa: tmave operacni pozadi, hranate panely, lime/cyan akcenty a stejnou aplikacni ikonu jako web.
+Theme navazuje na vizualni styl aplikace Civilni situacni mapa: tmave operacni pozadi, lime/cyan akcenty a stejnou aplikacni ikonu jako web. Verze `20260805` doplnuje ergonomii pro telefon: ovladaci prvky vysoké alespoň 52 px, jasný focus stav, bezpečné okraje kolem výřezu a respektování omezení animací systému.
 CSS soubor theme je verzovany v nazvu (`cop-login-YYYYMMDD*.css`), aby se po nasazeni nevracela stara verze z browser/Keycloak cache.
 
 Pokud Keycloak bezi v kontejneru, mountni theme do `/opt/keycloak/themes/cop`:
@@ -111,6 +111,36 @@ Alternativne pri rucnim startu:
 ```
 
 V produkci nech cache zapnutou a po zmene theme restartuj Keycloak.
+
+## Volba „Zůstat přihlášen“
+
+Volbu zobrazuje standardní login formulář Keycloaku, ne COP frontend. Text je součástí COP theme, ale checkbox se objeví až po zapnutí `Remember Me` v realmu `cop`.
+
+Pro pilot doporučujeme relaci **30 dní při neaktivitě i maximálně 30 dní** pouze pro uživatele, kteří volbu sami zaškrtnou. Běžná relace se tím nemění. Na sdíleném telefonu nebo počítači se volba nemá používat.
+
+Pro řízené produkční nasazení použijte z kořene repozitáře:
+
+```bash
+bash scripts/keycloak/apply-cop-login-theme.sh --remember-me-only
+```
+
+Skript před přepsáním zálohuje předchozí šablonu, restartuje pouze Keycloak a
+pro změnu realm nastavení si interaktivně vyžádá aktuální heslo správce.
+Heslo neukládá do souboru ani do historie příkazů. Pro ruční obnovu zůstává
+ekvivalentní konfigurace:
+
+```bash
+/opt/keycloak/bin/kcadm.sh update realms/cop \
+  -s rememberMe=true \
+  -s ssoSessionIdleTimeoutRememberMe=2592000 \
+  -s ssoSessionMaxLifespanRememberMe=2592000
+```
+
+Před nasazením ověř v administraci Keycloaku stávající hodnoty běžné SSO relace a neprováděj plošné odhlašování uživatelů. Vypnutí `Remember Me` později zneplatní relace vytvořené s touto volbou.
+
+COP web podporuje bezpečný režim BFF relace. Při `COP_WEB_BFF_SESSION_ENABLED=true` prohlížeč nedostává přístupový ani obnovovací token: dostane pouze cookie `Secure`, `HttpOnly`, `SameSite=Lax`. Tokeny jsou šifrované AES-256-GCM v tabulce `cop_web_sessions` v provozní databázi a API je obnovuje serverově. Režim vyžaduje PostgreSQL a jedinečný `COP_WEB_SESSION_SECRET` dlouhý nejméně 32 znaků; bez obou hodnot API úmyslně nenastartuje.
+
+Bezpečné zapnutí v produkci: přidejte do `/srv/cop/.env` hodnoty `COP_WEB_BFF_SESSION_ENABLED=true`, `COP_WEB_SESSION_SECRET=<nový náhodný tajný řetězec>` a volitelně `COP_WEB_SESSION_MAX_AGE_SECONDS=2592000`, potom znovu sestavte `cop-api`, `cop-web` a `cop-chat`. Předchozí prohlížečové relace se při prvním načtení odstraní a uživatel se jednou znovu přihlásí; nové relace již v JavaScriptovém úložišti tokeny nemají.
 
 Nastaveni theme a ceske lokalizace pro realm:
 

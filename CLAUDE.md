@@ -20,7 +20,7 @@ available.
   - `search_all` when the location is unclear,
   - `get_file_context` only after selecting a relevant hit.
 - If MCP tools are not exposed, use the CLI fallback:
-  - `"/Users/voldzi/Documents/Development/18 2026/chromadb/tools/chroma-dev.sh" search-all "<query>" --root . --limit 5`
+  - `"/Users/voldzi/Developer/18 2026/chromadb/tools/chroma-dev.sh" search-all "<query>" --root . --limit 5`
   - then read only the selected files or ranges directly.
 - If retrieval tools are unavailable, Chroma is down, or the index returns no
   useful hits, fall back to direct repository inspection and state that retrieval
@@ -122,7 +122,7 @@ Use the smallest reliable verification set for the change:
 
 If retrieval scope changed, run:
 
-- `"/Users/voldzi/Documents/Development/18 2026/chromadb/tools/chroma-dev.sh" reindex --root .`
+- `"/Users/voldzi/Developer/18 2026/chromadb/tools/chroma-dev.sh" reindex --root .`
 
 If a check cannot be run, state that explicitly with the observed error.
 

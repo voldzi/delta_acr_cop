@@ -233,6 +233,142 @@
         }
       }
     },
+    "/api/v1/auth/login": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Start the secure COP web sign-in flow.",
+        "operationId": "startCopWebBffLogin",
+        "security": [],
+        "parameters": [
+          {
+            "name": "returnTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^/"
+            }
+          },
+          {
+            "name": "prompt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "login"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to the configured OpenID Connect provider."
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/callback": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Complete the secure COP web sign-in flow.",
+        "operationId": "completeCopWebBffLogin",
+        "security": [],
+        "responses": {
+          "302": {
+            "description": "Browser redirect after the authorization callback."
+          }
+        }
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Read safe metadata for the current secure web session.",
+        "operationId": "getCopWebBffSession",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Authenticated session metadata without OAuth tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "authenticated",
+                    "expiresAt",
+                    "profile"
+                  ],
+                  "properties": {
+                    "authenticated": {
+                      "const": true
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "profile": {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "subjectId",
+                        "username"
+                      ],
+                      "properties": {
+                        "email": {
+                          "type": "string",
+                          "format": "email"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "picture": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "subjectId": {
+                          "type": "string"
+                        },
+                        "username": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid secure web session."
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Invalidate the current secure COP web session.",
+        "operationId": "logoutCopWebBffSession",
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "Session invalidated."
+          }
+        }
+      }
+    },
     "/api/v1/mobile/bootstrap": {
       "get": {
         "tags": [
@@ -1318,16 +1454,25 @@
     },
     "/api/v1/mobile/device-registration-tickets": {
       "post": {
-        "tags": ["Mobile", "Notifications"],
+        "tags": [
+          "Mobile",
+          "Notifications"
+        ],
         "summary": "Issue a one-time APNs device-registration ticket for COP Mobile.",
         "operationId": "createMobileDeviceRegistrationTicket",
         "description": "Returns a short-lived bearer ticket bound to the authenticated subject, iOS app instance and approved bundle ID. The ticket can authorize only one direct APNs device registration at CSM Messaging and never contains an APNs token.",
-        "parameters": [{ "$ref": "#/components/parameters/CorrelationIdHeader" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/MobileDeviceRegistrationTicketRequest" }
+              "schema": {
+                "$ref": "#/components/schemas/MobileDeviceRegistrationTicketRequest"
+              }
             }
           }
         },
@@ -1336,13 +1481,21 @@
             "description": "One-time registration ticket issued.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/MobileDeviceRegistrationTicketResponse" }
+                "schema": {
+                  "$ref": "#/components/schemas/MobileDeviceRegistrationTicketResponse"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
         }
       }
     },
@@ -1464,6 +1617,16 @@
             }
           },
           {
+            "name": "includeExpired",
+            "in": "query",
+            "required": false,
+            "description": "Include reports whose validity has elapsed. Defaults to false for the active safety feed.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -1499,6 +1662,9 @@
         "operationId": "createCommunityReport",
         "parameters": [
           {
+            "$ref": "#/components/parameters/CommunityIdempotencyKeyHeader"
+          },
+          {
             "$ref": "#/components/parameters/CorrelationIdHeader"
           }
         ],
@@ -1513,6 +1679,16 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Existing resource returned for an idempotent retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityReport"
+                }
+              }
+            }
+          },
           "201": {
             "description": "Draft report created.",
             "content": {
@@ -1528,6 +1704,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }
@@ -1560,6 +1739,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       },
@@ -1616,7 +1798,7 @@
         "tags": [
           "Community Reports"
         ],
-        "summary": "Delete an owned community report and its media metadata.",
+        "summary": "Delete an owned draft community report and its media metadata.",
         "operationId": "deleteCommunityReport",
         "parameters": [
           {
@@ -1635,6 +1817,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }
@@ -1674,6 +1859,102 @@
         }
       }
     },
+    "/api/v1/community/reports/{reportId}/resolve": {
+      "post": {
+        "tags": [
+          "Community Reports"
+        ],
+        "summary": "Mark an owned active community report as resolved while preserving its history.",
+        "operationId": "resolveCommunityReport",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CommunityReportIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityReportLifecycleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resolved community report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/community/reports/{reportId}/withdraw": {
+      "post": {
+        "tags": [
+          "Community Reports"
+        ],
+        "summary": "Withdraw an owned active community report with a reason while preserving its history.",
+        "operationId": "withdrawCommunityReport",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CommunityReportIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityReportLifecycleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Withdrawn community report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
     "/api/v1/community/reports/{reportId}/attachments": {
       "post": {
         "tags": [
@@ -1684,6 +1965,9 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/CommunityReportIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/CommunityIdempotencyKeyHeader"
           },
           {
             "$ref": "#/components/parameters/CorrelationIdHeader"
@@ -1700,6 +1984,16 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Existing resource returned for an idempotent retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityAttachmentUploadResponse"
+                }
+              }
+            }
+          },
           "201": {
             "description": "Attachment metadata and presigned upload URL.",
             "content": {
@@ -1718,6 +2012,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
@@ -4339,6 +4636,9 @@
               }
             }
           },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
           "502": {
             "description": "CSM Messaging did not accept the Matrix push notification.",
             "content": {
@@ -4358,9 +4658,6 @@
                 }
               }
             }
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7374,6 +7671,69 @@
           }
         }
       }
+    },
+    "/api/v1/community/reports/{reportId}/attachments/{attachmentId}/access": {
+      "patch": {
+        "tags": [
+          "Community Reports"
+        ],
+        "summary": "Change access to an existing owned report attachment.",
+        "operationId": "updateCommunityReportAttachmentAccess",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CommunityReportIdPath"
+          },
+          {
+            "name": "attachmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityAttachmentAccessRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated attachment with owner-visible ACL details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityReportAttachment"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7542,6 +7902,16 @@
           "format": "uuid"
         },
         "description": "Incident task identifier."
+      },
+      "CommunityIdempotencyKeyHeader": {
+        "name": "X-Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "Stable UUID used to resume community report or attachment creation without duplicates.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
       }
     },
     "responses": {
@@ -8424,6 +8794,11 @@
         "type": "object",
         "minProperties": 1,
         "properties": {
+          "changeReason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "User-facing explanation of what changed."
+          },
           "category": {
             "$ref": "#/components/schemas/CommunityReportCategory"
           },
@@ -8434,6 +8809,11 @@
           "description": {
             "type": "string",
             "maxLength": 2000
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optimistic concurrency guard. A mismatch returns HTTP 409."
           },
           "location": {
             "$ref": "#/components/schemas/CommunityReportLocation"
@@ -8463,6 +8843,21 @@
           "properties": {
             "type": "object",
             "additionalProperties": true
+          }
+        }
+      },
+      "CommunityReportLifecycleRequest": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optimistic concurrency guard. A mismatch returns HTTP 409."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "User-facing reason preserved in the lifecycle history. Required for withdrawal."
           }
         }
       },
@@ -8511,6 +8906,7 @@
           "status",
           "title",
           "updatedAt",
+          "version",
           "visibility"
         ],
         "properties": {
@@ -8555,6 +8951,14 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "ownedByCurrentActor": {
+            "type": "boolean",
+            "description": "True when the authenticated actor owns the report and may see lifecycle actions."
           },
           "createdBy": {
             "type": "object",
@@ -8689,6 +9093,11 @@
             "items": {
               "$ref": "#/components/schemas/CommunityAttachmentDerivative"
             }
+          },
+          "access": {
+            "type": "object",
+            "description": "Effective ACL summary. Exact user or group identifiers are returned only to the report owner.",
+            "additionalProperties": true
           }
         }
       },
@@ -9455,7 +9864,10 @@
             "$ref": "#/components/schemas/CommunityReportAttachment"
           },
           "upload": {
-            "type": "object",
+            "type": [
+              "object",
+              "null"
+            ],
             "required": [
               "bucket",
               "expiresAt",
@@ -9573,6 +9985,8 @@
           "draft",
           "submitted",
           "published",
+          "resolved",
+          "withdrawn",
           "hidden",
           "rejected"
         ]
@@ -10682,21 +11096,50 @@
       "MobileDeviceRegistrationTicketRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["appInstanceId", "bundleId"],
+        "required": [
+          "appInstanceId",
+          "bundleId"
+        ],
         "properties": {
-          "appInstanceId": { "type": "string", "format": "uuid" },
-          "bundleId": { "type": "string", "const": "cz.zeleznalady.csm.messenger" }
+          "appInstanceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bundleId": {
+            "type": "string",
+            "const": "cz.zeleznalady.csm.messenger"
+          }
         }
       },
       "MobileDeviceRegistrationTicketResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["contractVersion", "expiresAt", "messagingBaseUrl", "ticket"],
+        "required": [
+          "contractVersion",
+          "expiresAt",
+          "messagingBaseUrl",
+          "ticket"
+        ],
         "properties": {
-          "contractVersion": { "type": "string", "const": "cop-device-registration-ticket-v1" },
-          "expiresAt": { "type": "string", "format": "date-time" },
-          "messagingBaseUrl": { "type": "string", "format": "uri", "pattern": "^https://" },
-          "ticket": { "type": "string", "pattern": "^csmrt1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$", "minLength": 64, "maxLength": 4096 }
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-device-registration-ticket-v1"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "messagingBaseUrl": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "ticket": {
+            "type": "string",
+            "pattern": "^csmrt1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+            "minLength": 64,
+            "maxLength": 4096
+          }
         }
       },
       "MobileDeviceRegistrationRequest": {
@@ -14446,7 +14889,6 @@
       "MessagingVoiceCallStartRequest": {
         "type": "object",
         "required": [
-          "participantSubjectIds",
           "roomId"
         ],
         "additionalProperties": false,
@@ -20206,6 +20648,49 @@
                 "type": "integer",
                 "minimum": 400,
                 "maximum": 599
+              }
+            }
+          }
+        }
+      },
+      "CommunityAttachmentAccessRequest": {
+        "type": "object",
+        "required": [
+          "access"
+        ],
+        "properties": {
+          "access": {
+            "type": "object",
+            "required": [
+              "audience"
+            ],
+            "properties": {
+              "audience": {
+                "type": "string",
+                "enum": [
+                  "public",
+                  "private",
+                  "users",
+                  "groups"
+                ]
+              },
+              "userSubjectIds": {
+                "type": "array",
+                "maxItems": 50,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "groupIds": {
+                "type": "array",
+                "maxItems": 50,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
               }
             }
           }

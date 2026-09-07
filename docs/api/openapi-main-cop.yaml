@@ -148,6 +148,97 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/auth/login:
+    get:
+      tags:
+        - Identity
+      summary: Start the secure COP web sign-in flow.
+      operationId: startCopWebBffLogin
+      security: []
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: ^/
+        - name: prompt
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - login
+      responses:
+        "302":
+          description: Redirect to the configured OpenID Connect provider.
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/auth/callback:
+    get:
+      tags:
+        - Identity
+      summary: Complete the secure COP web sign-in flow.
+      operationId: completeCopWebBffLogin
+      security: []
+      responses:
+        "302":
+          description: Browser redirect after the authorization callback.
+  /api/v1/auth/session:
+    get:
+      tags:
+        - Identity
+      summary: Read safe metadata for the current secure web session.
+      operationId: getCopWebBffSession
+      security: []
+      responses:
+        "200":
+          description: Authenticated session metadata without OAuth tokens.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - authenticated
+                  - expiresAt
+                  - profile
+                properties:
+                  authenticated:
+                    const: true
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  profile:
+                    type: object
+                    required:
+                      - name
+                      - subjectId
+                      - username
+                    properties:
+                      email:
+                        type: string
+                        format: email
+                      name:
+                        type: string
+                      picture:
+                        type: string
+                        format: uri
+                      subjectId:
+                        type: string
+                      username:
+                        type: string
+        "401":
+          description: No valid secure web session.
+  /api/v1/auth/logout:
+    post:
+      tags:
+        - Identity
+      summary: Invalidate the current secure COP web session.
+      operationId: logoutCopWebBffSession
+      security: []
+      responses:
+        "204":
+          description: Session invalidated.
   /api/v1/mobile/bootstrap:
     get:
       tags:
@@ -1023,6 +1114,13 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: includeExpired
+          in: query
+          required: false
+          description: Include reports whose validity has elapsed. Defaults to false for the active safety feed.
+          schema:
+            type: boolean
+            default: false
         - name: limit
           in: query
           required: false
@@ -1046,6 +1144,7 @@ paths:
       summary: Create a draft community report.
       operationId: createCommunityReport
       parameters:
+        - $ref: "#/components/parameters/CommunityIdempotencyKeyHeader"
         - $ref: "#/components/parameters/CorrelationIdHeader"
       requestBody:
         required: true
@@ -1054,6 +1153,12 @@ paths:
             schema:
               $ref: "#/components/schemas/CommunityReportCreateRequest"
       responses:
+        "200":
+          description: Existing resource returned for an idempotent retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityReport"
         "201":
           description: Draft report created.
           content:
@@ -1064,6 +1169,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /api/v1/community/reports/{reportId}:
     get:
       tags:
@@ -1083,6 +1190,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
     patch:
       tags:
         - Community Reports
@@ -1115,7 +1224,7 @@ paths:
     delete:
       tags:
         - Community Reports
-      summary: Delete an owned community report and its media metadata.
+      summary: Delete an owned draft community report and its media metadata.
       operationId: deleteCommunityReport
       parameters:
         - $ref: "#/components/parameters/CommunityReportIdPath"
@@ -1127,6 +1236,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /api/v1/community/reports/{reportId}/submit:
     post:
       tags:
@@ -1147,12 +1258,40 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
-  /api/v1/community/reports/{reportId}/attachments:
+  /api/v1/community/reports/{reportId}/resolve:
     post:
       tags:
         - Community Reports
-      summary: Create a media upload slot for an owned report.
-      operationId: createCommunityReportAttachmentUpload
+      summary: Mark an owned active community report as resolved while preserving its history.
+      operationId: resolveCommunityReport
+      parameters:
+        - $ref: "#/components/parameters/CommunityReportIdPath"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunityReportLifecycleRequest"
+      responses:
+        "200":
+          description: Resolved community report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityReport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/community/reports/{reportId}/withdraw:
+    post:
+      tags:
+        - Community Reports
+      summary: Withdraw an owned active community report with a reason while preserving its history.
+      operationId: withdrawCommunityReport
       parameters:
         - $ref: "#/components/parameters/CommunityReportIdPath"
         - $ref: "#/components/parameters/CorrelationIdHeader"
@@ -1161,8 +1300,43 @@ paths:
         content:
           application/json:
             schema:
+              $ref: "#/components/schemas/CommunityReportLifecycleRequest"
+      responses:
+        "200":
+          description: Withdrawn community report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityReport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v1/community/reports/{reportId}/attachments:
+    post:
+      tags:
+        - Community Reports
+      summary: Create a media upload slot for an owned report.
+      operationId: createCommunityReportAttachmentUpload
+      parameters:
+        - $ref: "#/components/parameters/CommunityReportIdPath"
+        - $ref: "#/components/parameters/CommunityIdempotencyKeyHeader"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
               $ref: "#/components/schemas/CommunityAttachmentUploadRequest"
       responses:
+        "200":
+          description: Existing resource returned for an idempotent retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityAttachmentUploadResponse"
         "201":
           description: Attachment metadata and presigned upload URL.
           content:
@@ -1175,6 +1349,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/community/reports/{reportId}/attachments/{attachmentId}/complete:
@@ -4781,6 +4957,44 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+  /api/v1/community/reports/{reportId}/attachments/{attachmentId}/access:
+    patch:
+      tags:
+        - Community Reports
+      summary: Change access to an existing owned report attachment.
+      operationId: updateCommunityReportAttachmentAccess
+      parameters:
+        - $ref: "#/components/parameters/CommunityReportIdPath"
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunityAttachmentAccessRequest"
+      responses:
+        "200":
+          description: Updated attachment with owner-visible ACL details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityReportAttachment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 components:
   securitySchemes:
     bearerAuth:
@@ -4912,6 +5126,14 @@ components:
         type: string
         format: uuid
       description: Incident task identifier.
+    CommunityIdempotencyKeyHeader:
+      name: X-Idempotency-Key
+      in: header
+      required: false
+      description: Stable UUID used to resume community report or attachment creation without duplicates.
+      schema:
+        type: string
+        format: uuid
   responses:
     ErrorResponse:
       description: COP error envelope.
@@ -5556,6 +5778,10 @@ components:
       type: object
       minProperties: 1
       properties:
+        changeReason:
+          type: string
+          maxLength: 500
+          description: User-facing explanation of what changed.
         category:
           $ref: "#/components/schemas/CommunityReportCategory"
         title:
@@ -5564,6 +5790,10 @@ components:
         description:
           type: string
           maxLength: 2000
+        expectedVersion:
+          type: integer
+          minimum: 1
+          description: Optimistic concurrency guard. A mismatch returns HTTP 409.
         location:
           $ref: "#/components/schemas/CommunityReportLocation"
         hazardSeverity:
@@ -5585,6 +5815,17 @@ components:
         properties:
           type: object
           additionalProperties: true
+    CommunityReportLifecycleRequest:
+      type: object
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 1
+          description: Optimistic concurrency guard. A mismatch returns HTTP 409.
+        reason:
+          type: string
+          maxLength: 500
+          description: User-facing reason preserved in the lifecycle history. Required for withdrawal.
     CommunityReportListResponse:
       type: object
       required:
@@ -5621,6 +5862,7 @@ components:
         - status
         - title
         - updatedAt
+        - version
         - visibility
       properties:
         reportId:
@@ -5653,6 +5895,12 @@ components:
         updatedAt:
           type: string
           format: date-time
+        version:
+          type: integer
+          minimum: 1
+        ownedByCurrentActor:
+          type: boolean
+          description: True when the authenticated actor owns the report and may see lifecycle actions.
         createdBy:
           type: object
           required:
@@ -5755,6 +6003,11 @@ components:
             MOV.
           items:
             $ref: "#/components/schemas/CommunityAttachmentDerivative"
+        access:
+          type: object
+          description: Effective ACL summary. Exact user or group identifiers are returned only to the report
+            owner.
+          additionalProperties: true
     CommunityAttachmentDerivative:
       type: object
       required:
@@ -6314,7 +6567,9 @@ components:
         attachment:
           $ref: "#/components/schemas/CommunityReportAttachment"
         upload:
-          type: object
+          type:
+            - object
+            - "null"
           required:
             - bucket
             - expiresAt
@@ -6403,6 +6658,8 @@ components:
         - draft
         - submitted
         - published
+        - resolved
+        - withdrawn
         - hidden
         - rejected
     CommunityReportVisibility:
@@ -9944,7 +10201,6 @@ components:
     MessagingVoiceCallStartRequest:
       type: object
       required:
-        - participantSubjectIds
         - roomId
       additionalProperties: false
       properties:
@@ -14100,3 +14356,34 @@ components:
               type: integer
               minimum: 400
               maximum: 599
+    CommunityAttachmentAccessRequest:
+      type: object
+      required:
+        - access
+      properties:
+        access:
+          type: object
+          required:
+            - audience
+          properties:
+            audience:
+              type: string
+              enum:
+                - public
+                - private
+                - users
+                - groups
+            userSubjectIds:
+              type: array
+              maxItems: 50
+              uniqueItems: true
+              items:
+                type: string
+                minLength: 1
+            groupIds:
+              type: array
+              maxItems: 50
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid

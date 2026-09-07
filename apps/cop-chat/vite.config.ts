@@ -2,7 +2,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { fileURLToPath, URL } from "node:url";
 
-import { chatChunkFileName, chatManualChunk } from "./vite-chunks";
+import { chatChunkFileName, chatManualChunk } from "./vite-chunks.js";
 
 const apiBase = process.env.COP_API_BASE_URL ?? "http://localhost:4310";
 const deployDomain = process.env.COP_DEPLOY_DOMAIN ?? "docker.home.cz";

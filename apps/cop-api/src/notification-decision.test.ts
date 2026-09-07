@@ -25,7 +25,9 @@ describe("notification decision", () => {
     });
 
     expect(decision.shouldSend).toBe(true);
-    expect(decision.idempotencyKey).toBe("sim.safety-data:public.safety.weather_alerts:chmi-warning-1:2026-05-29T11:00:00Z:2026-05-29T18:00:00Z");
+    expect(decision.idempotencyKey).toBe(
+      "sim.safety-data:public.safety.weather_alerts:chmi-warning-1:2026-05-29T11:00:00Z:2026-05-29T18:00:00Z"
+    );
     expect(decision.notification).toMatchObject({
       audience: { groupIds: ["group-prague"] },
       deepLink: "csm://map/alert/chmi-warning-1",
@@ -43,7 +45,12 @@ describe("notification decision", () => {
       ok: false,
       reason: "Safety feature is stale."
     });
-    expect(evaluateSafetyFeatureCandidate(safetyFeature({ layer: "boundary_admin", layerId: "public.boundary.admin" }), requestNow)).toMatchObject({
+    expect(
+      evaluateSafetyFeatureCandidate(
+        safetyFeature({ layer: "boundary_admin", layerId: "public.boundary.admin" }),
+        requestNow
+      )
+    ).toMatchObject({
       ok: false,
       reason: "Boundary reference layers are not citizen safety alerts."
     });
@@ -51,50 +58,58 @@ describe("notification decision", () => {
       ok: false,
       reason: "Safety feature severity is below push threshold."
     });
-    expect(evaluateSafetyFeatureCandidate(safetyFeature({
-      providerProperties: {
-        notification: {
-          eligible: false
-        }
-      }
-    }), requestNow)).toMatchObject({
+    expect(
+      evaluateSafetyFeatureCandidate(
+        safetyFeature({
+          providerProperties: {
+            notification: {
+              eligible: false
+            }
+          }
+        }),
+        requestNow
+      )
+    ).toMatchObject({
       ok: false,
       reason: "Safety feature is not eligible for notification by provider policy."
     });
   });
 
   it("uses SIM canonical safety taxonomy and localized text in push payloads", () => {
-    const decision = buildSafetyFeatureNotificationDecision(safetyFeature({
-      category: "legacy.category",
-      hazardType: "legacy_hazard_text",
-      headline: "Fallback headline",
-      localized: {
-        cs: {
-          headline: "Vysoké teploty v okolí",
-          recommendation: "Omezte fyzickou zátěž a doplňujte tekutiny."
+    const decision = buildSafetyFeatureNotificationDecision(
+      safetyFeature({
+        category: "legacy.category",
+        hazardType: "legacy_hazard_text",
+        headline: "Fallback headline",
+        localized: {
+          cs: {
+            headline: "Vysoké teploty v okolí",
+            recommendation: "Omezte fyzickou zátěž a doplňujte tekutiny."
+          },
+          en: {
+            headline: "High temperatures nearby"
+          }
         },
-        en: {
-          headline: "High temperatures nearby"
-        }
-      },
-      providerProperties: {
-        presentation: {
-          iconKey: "weather.temperature.high",
-          styleKey: "heat-warning"
+        providerProperties: {
+          presentation: {
+            iconKey: "weather.temperature.high",
+            styleKey: "heat-warning"
+          },
+          taxonomy: {
+            sourceCode: "I.2",
+            sourceSystem: "CHMI_SIVS",
+            typeCode: "weather.temperature.high"
+          }
         },
-        taxonomy: {
-          sourceCode: "I.2",
-          sourceSystem: "CHMI_SIVS",
-          typeCode: "weather.temperature.high"
-        }
-      },
-      sourceCode: undefined,
-      sourceSystem: undefined,
-      typeCode: undefined
-    }), {
-      audience: { userIds: ["user-1"] },
-      now: requestNow
-    });
+        sourceCode: undefined,
+        sourceSystem: undefined,
+        typeCode: undefined
+      }),
+      {
+        audience: { userIds: ["user-1"] },
+        now: requestNow
+      }
+    );
 
     expect(decision.shouldSend).toBe(true);
     expect(decision.notification.title).toEqual({
@@ -113,38 +128,46 @@ describe("notification decision", () => {
   });
 
   it("keeps general SIM warnings separate from weather alerts", () => {
-    const decision = buildSafetyFeatureNotificationDecision(safetyFeature({
-      featureId: "gdacs-warning-1",
-      layer: "warnings",
-      layerId: undefined,
-      sourceId: "gdacs_alerts",
-      sourceName: "GDACS",
-      typeCode: "crisis.earthquake"
-    }), {
-      audience: { userIds: ["user-1"] },
-      now: requestNow
-    });
+    const decision = buildSafetyFeatureNotificationDecision(
+      safetyFeature({
+        featureId: "gdacs-warning-1",
+        layer: "warnings",
+        layerId: undefined,
+        sourceId: "gdacs_alerts",
+        sourceName: "GDACS",
+        typeCode: "crisis.earthquake"
+      }),
+      {
+        audience: { userIds: ["user-1"] },
+        now: requestNow
+      }
+    );
 
     expect(decision.shouldSend).toBe(true);
-    expect(decision.idempotencyKey).toBe("sim.safety-data:public.safety.warnings:gdacs-warning-1:2026-05-29T11:00:00Z:2026-05-29T18:00:00Z");
+    expect(decision.idempotencyKey).toBe(
+      "sim.safety-data:public.safety.warnings:gdacs-warning-1:2026-05-29T11:00:00Z:2026-05-29T18:00:00Z"
+    );
     expect(decision.notification.source.layerId).toBe("public.safety.warnings");
   });
 
   it("keeps SRTI road safety events in the public safety warnings channel", () => {
-    const decision = buildSafetyFeatureNotificationDecision(safetyFeature({
-      featureId: "warnings:road_srti_lod:event-1",
-      headline: "Dopravní nehoda",
-      layer: "warnings",
-      layerId: "public.safety.warnings",
-      sourceCode: "SRTI_ACCIDENT",
-      sourceId: "road_srti_lod",
-      sourceName: "NDIC/ŘSD traffic safety events",
-      sourceSystem: "NDIC_SRTI_LOD",
-      typeCode: "road.accident"
-    }), {
-      audience: { userIds: ["user-1"] },
-      now: requestNow
-    });
+    const decision = buildSafetyFeatureNotificationDecision(
+      safetyFeature({
+        featureId: "warnings:road_srti_lod:event-1",
+        headline: "Dopravní nehoda",
+        layer: "warnings",
+        layerId: "public.safety.warnings",
+        sourceCode: "SRTI_ACCIDENT",
+        sourceId: "road_srti_lod",
+        sourceName: "NDIC/ŘSD traffic safety events",
+        sourceSystem: "NDIC_SRTI_LOD",
+        typeCode: "road.accident"
+      }),
+      {
+        audience: { userIds: ["user-1"] },
+        now: requestNow
+      }
+    );
 
     expect(decision.shouldSend).toBe(true);
     expect(decision.notification.source).toMatchObject({
@@ -161,44 +184,55 @@ describe("notification decision", () => {
   });
 
   it("maps CHMI hydro floodStage to notification severity without promoting trend alone", () => {
-    const warningDecision = buildSafetyFeatureNotificationDecision(safetyFeature({
-      featureId: "hydro-2spa",
-      floodStage: 2,
-      layer: "flood",
-      layerId: "public.safety.flood",
-      severity: undefined,
-      sourceId: "chmi_hydro",
-      trend: "stable"
-    }), {
-      audience: { groupIds: ["group-river"] },
-      now: requestNow
-    });
+    const warningDecision = buildSafetyFeatureNotificationDecision(
+      safetyFeature({
+        featureId: "hydro-2spa",
+        floodStage: 2,
+        layer: "flood",
+        layerId: "public.safety.flood",
+        severity: undefined,
+        sourceId: "chmi_hydro",
+        trend: "stable"
+      }),
+      {
+        audience: { groupIds: ["group-river"] },
+        now: requestNow
+      }
+    );
     expect(warningDecision.shouldSend).toBe(true);
     expect(warningDecision.notification.severity).toBe("warning");
     expect(warningDecision.notification.priority).toBe("time_sensitive");
 
-    const criticalDecision = buildSafetyFeatureNotificationDecision(safetyFeature({
-      featureId: "hydro-3spa",
-      floodStage: 3,
-      layer: "flood",
-      layerId: "public.safety.flood",
-      severity: undefined,
-      sourceId: "chmi_hydro"
-    }), {
-      audience: { groupIds: ["group-river"] },
-      now: requestNow
-    });
+    const criticalDecision = buildSafetyFeatureNotificationDecision(
+      safetyFeature({
+        featureId: "hydro-3spa",
+        floodStage: 3,
+        layer: "flood",
+        layerId: "public.safety.flood",
+        severity: undefined,
+        sourceId: "chmi_hydro"
+      }),
+      {
+        audience: { groupIds: ["group-river"] },
+        now: requestNow
+      }
+    );
     expect(criticalDecision.shouldSend).toBe(true);
     expect(criticalDecision.notification.severity).toBe("critical");
 
-    expect(evaluateSafetyFeatureCandidate(safetyFeature({
-      floodStage: 0,
-      layer: "flood",
-      layerId: "public.safety.flood",
-      severity: undefined,
-      sourceId: "chmi_hydro",
-      trend: "rising"
-    }), requestNow)).toMatchObject({
+    expect(
+      evaluateSafetyFeatureCandidate(
+        safetyFeature({
+          floodStage: 0,
+          layer: "flood",
+          layerId: "public.safety.flood",
+          severity: undefined,
+          sourceId: "chmi_hydro",
+          trend: "rising"
+        }),
+        requestNow
+      )
+    ).toMatchObject({
       ok: false,
       reason: "Safety feature severity is below push threshold."
     });
@@ -253,13 +287,41 @@ describe("notification decision", () => {
   });
 
   it("skips community reports without a concrete audience", () => {
-    const decision = buildCommunityReportNotificationDecision(communityReport({
-      groupId: undefined,
-      status: "submitted"
-    }), requestNow);
+    const decision = buildCommunityReportNotificationDecision(
+      communityReport({
+        groupId: undefined,
+        status: "submitted"
+      }),
+      requestNow
+    );
 
     expect(decision.shouldSend).toBe(false);
     expect(decision.reason).toBe("Community report has no group, user or area audience.");
+  });
+
+  it("notifies the linked discussion when an expired report is withdrawn", () => {
+    const report = communityReport({
+      groupId: "group-vrbno",
+      hazardSeverity: "warning",
+      status: "withdrawn",
+      validUntil: "2026-05-29T11:30:00Z"
+    });
+
+    const decision = buildCommunityReportNotificationDecision(report, requestNow, undefined, "withdrawn");
+
+    expect(decision.shouldSend).toBe(true);
+    expect(decision.idempotencyKey).toContain(":withdrawn:2:");
+    expect(decision.notification).toMatchObject({
+      audience: { groupIds: ["group-vrbno"] },
+      metadata: {
+        event: "withdrawn",
+        status: "withdrawn",
+        version: 2
+      },
+      title: {
+        cs: "Odvoláno: Zaplaveny most"
+      }
+    });
   });
 });
 
@@ -317,6 +379,7 @@ function communityReport(options: {
     submittedAt: options.status === "submitted" ? "2026-05-29T11:05:00Z" : undefined,
     title: "Zaplaveny most",
     updatedAt: "2026-05-29T11:05:00Z",
+    version: 2,
     visibility: "community"
   };
 }

@@ -20,3 +20,6 @@
 - [0017 Server-Owned Canonical Messaging Conversations](0017_SERVER_OWNED_MESSAGING_CONVERSATIONS.md)
 - [0018 Shared Cross-Client Chat Interaction Contract](0018_SHARED_CROSS_CLIENT_CHAT_INTERACTIONS.md)
 - [0019 Server-Owned Direct Voice Calls](0019_SERVER_OWNED_DIRECT_VOICE_CALLS.md)
+- [0020 Phone-Only Opportunistic Mesh](0020_PHONE_ONLY_OPPORTUNISTIC_MESH.md)
+- [0021 Shared Geo Foundation](0021_SHARED_GEO_FOUNDATION.md)
+- [0022 Opt-in 3D Situation Workspace](0022_OPT_IN_3D_SITUATION_WORKSPACE.md)

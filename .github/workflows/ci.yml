@@ -45,6 +45,12 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Verify bundle budgets
+        run: pnpm check:bundles
+
+      - name: Verify production static runtime
+        run: pnpm check:static-runtime
+
       - name: Dependency audit
         run: pnpm audit --audit-level critical
 

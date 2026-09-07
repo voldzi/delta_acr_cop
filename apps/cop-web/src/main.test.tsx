@@ -369,21 +369,31 @@ describe("COP web dashboard", () => {
     ).not.toBeNull();
   });
 
-  it("keeps the native Matrix/WebRTC engine render-active before the first call snapshot", () => {
+  it("keeps embedded media passive when the native host owns the call", () => {
     expect(
       hostKeepsEmbeddedMediaEngineActive({
         frameMounted: true,
         nativeBridgeAvailable: true,
         voiceCall: null
       })
-    ).toBe(true);
+    ).toBe(false);
     expect(
       hostKeepsEmbeddedMediaEngineActive({
         frameMounted: true,
         nativeBridgeAvailable: false,
-        voiceCall: null
+        voiceCall: {
+          at: Date.now(),
+          callId: "call-1",
+          direction: "outgoing",
+          eligibleParticipants: [],
+          kind: "direct",
+          participants: [],
+          phase: "connecting",
+          roomId: "!room:example.test",
+          type: "cop-chat:voice-call"
+        }
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("allows native APNs activation when WKWebView does not support browser push", () => {
