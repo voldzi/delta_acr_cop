@@ -6374,6 +6374,18 @@ h1 {
   background: rgba(15, 25, 34, 0.34);
 }
 
+.map-object-popover-section summary {
+  color: #92a6b7;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.map-object-popover-section[open] summary {
+  margin-bottom: 3px;
+}
+
 .map-object-popover-section p {
   margin: 0;
   color: #dbe6ef;

@@ -2176,6 +2176,11 @@ describe("COP web dashboard", () => {
       profileId: "car",
       to: { label: "GROUND_UNIT-1", lat: 50.15077, lon: 17.37303 }
     });
+    const browserUrls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(browserUrls.some((url) => /sim\.example|valhalla|:5020/u.test(url))).toBe(false);
+    expect(browserUrls.filter((url) => url.includes("routing")).every((url) => url.includes("/api/v1/routing/"))).toBe(
+      true
+    );
     await waitFor(() => expect(screen.getByLabelText("Navigace")).toBeTruthy());
     expect(screen.getByText("Navigace autem")).toBeTruthy();
     expect(screen.getByText("Pokračujte po silnici k cíli.")).toBeTruthy();

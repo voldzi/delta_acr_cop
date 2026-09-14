@@ -80,7 +80,13 @@ Emergency routing clients must also call only COP API endpoints:
 the returned route `features[]`, ETA, distance, rank, steps, quality, traffic
 incidents, elevation profile, weather on route, hazards on route, degradation
 state, warnings and alternatives as a temporary operational map overlay. COP
-does not calculate routing graphs in the browser or API process.
+does not calculate routing graphs in the browser or API process. The optional
+`traffic.liveSpeeds` object is forwarded unchanged from SIM and has typed
+freshness, coverage, applied-flow/edge count and routing-dataset fields. Route
+ETA is always SIM's `durationSeconds`; COP never adds `delayPenaltySeconds` or
+another client-side delay to a traffic-adjusted duration. A `degraded` live
+speed state describes limited traffic-data coverage or quality and does not
+mean that routing failed.
 
 AI responses may include optional `routing` metadata from the server-side
 `deterministic-v1` model router. It identifies the selected provider/model role

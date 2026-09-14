@@ -38,7 +38,7 @@ export interface RoutingRouteResponse {
   providerId?: string;
   quality?: Record<string, unknown>;
   routes: RoutingRoute[];
-  traffic?: Record<string, unknown>;
+  traffic?: RoutingTraffic;
   warnings: string[];
 }
 
@@ -53,9 +53,26 @@ export interface RoutingRoute extends Record<string, unknown> {
   rank?: number;
   routeId?: string;
   sourceStatus?: string;
-  traffic?: Record<string, unknown>;
+  traffic?: RoutingTraffic;
   warnings?: string[];
   weatherOnRoute?: Record<string, unknown>;
+}
+
+export interface RoutingLiveSpeeds extends Record<string, unknown> {
+  ageSeconds?: number;
+  appliedEdgeCount?: number;
+  appliedFlowCount?: number;
+  detail?: string;
+  enabled?: boolean;
+  mappingCoveragePercent?: number;
+  routingDataset?: string;
+  sourceObservedAt?: string;
+  state?: "ok" | "degraded" | "idle" | "stale" | "failed" | string;
+  updatedAt?: string;
+}
+
+export interface RoutingTraffic extends Record<string, unknown> {
+  liveSpeeds?: RoutingLiveSpeeds;
 }
 
 export interface RoutingSource {
@@ -190,8 +207,8 @@ function normalizeRoutingRouteResponse(value: unknown): RoutingRouteResponse {
     generatedAt: optionalString(value.generatedAt),
     providerId: optionalString(value.providerId),
     quality: isRecord(value.quality) ? value.quality : undefined,
-    routes: Array.isArray(value.routes) ? value.routes.filter(isRecord) : [],
-    traffic: isRecord(value.traffic) ? value.traffic : undefined,
+    routes: Array.isArray(value.routes) ? (value.routes.filter(isRecord) as RoutingRoute[]) : [],
+    traffic: isRecord(value.traffic) ? (value.traffic as RoutingTraffic) : undefined,
     warnings: normalizeWarnings(value.warnings)
   };
 }

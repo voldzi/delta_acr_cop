@@ -38,7 +38,22 @@ describe("routing routes", () => {
           warnings: ["Most/úzký průjezd neověřen."]
         }
       ],
-      traffic: { incidentCount: 1, sourceStatus: "ok" },
+      traffic: {
+        incidentCount: 1,
+        liveSpeeds: {
+          ageSeconds: 22,
+          appliedEdgeCount: 74361,
+          appliedFlowCount: 5374,
+          detail: "Limited mapping coverage.",
+          enabled: true,
+          mappingCoveragePercent: 40.88,
+          routingDataset: "sim-routing-2026-09-13-1789268424",
+          sourceObservedAt: "2026-09-14T18:23:02Z",
+          state: "degraded",
+          updatedAt: "2026-09-14T18:28:34Z"
+        },
+        sourceStatus: "ok"
+      },
       warnings: []
     }));
     const routingSource: RoutingSource = {
@@ -84,7 +99,14 @@ describe("routing routes", () => {
       providerId: "sim.situation-data.routing",
       quality: { mode: "engine_route" },
       routes: [expect.objectContaining({ distanceM: 2400, durationSeconds: 420 })],
-      traffic: { incidentCount: 1 }
+      traffic: {
+        incidentCount: 1,
+        liveSpeeds: {
+          appliedEdgeCount: 74361,
+          mappingCoveragePercent: 40.88,
+          state: "degraded"
+        }
+      }
     });
   });
 

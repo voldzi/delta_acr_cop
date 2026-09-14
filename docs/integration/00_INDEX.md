@@ -18,3 +18,4 @@
 - [16 Shared Geo: Exact SIM Routing Handoff](16_SHARED_GEO_SIM_ROUTING_HANDOFF.md)
 - [17 Shared Geo: Exact Městem hrou Handoff](17_MESTEM_HROU_GEO_HANDOFF.md)
 - [18 Shared Geo Client Releases](18_GEO_CLIENT_RELEASES.md)
+- [19 SIM Live Traffic Routing](19_SIM_LIVE_TRAFFIC_ROUTING.md)

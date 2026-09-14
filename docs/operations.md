@@ -25,6 +25,12 @@ Pilot deployment runs from `/srv/cop` on `docker.home.cz`. Health and
 readiness are exposed as `/health/live`, `/health/ready` and
 `/health/dependencies`.
 
+SIM live-traffic routing release and rollback checks are documented in
+[SIM Live Traffic Routing](integration/19_SIM_LIVE_TRAFFIC_ROUTING.md). Record
+the current `/srv/cop` Git revision before every pilot update so the same
+Compose deployment can be restored and smoke-tested without changing secrets or
+server-owned provider endpoints.
+
 Before release, `pnpm test:load:stream -- <base-url> <clients> <duration-ms>`
 opens bounded concurrent SSE clients and fails when any connection cannot be
 established. Browser reconnects use capped exponential jitter; the client queue

@@ -6,6 +6,7 @@ import {
   fitMapToObjects,
   fitMapToVisibleContent,
   formatEmergencyRouteSelectionCard,
+  formatRoutingLiveSpeeds,
   isRecoverableMapError,
   normalizeMapGlyphsTemplate,
   normalizeMapTileTemplate,
@@ -23,10 +24,36 @@ import {
   visibleLegendLimitForMapSize,
   warmRasterBasemapTileCache
 } from "./CopMap";
-import type { CopObject, SituationFeatureCollectionResponse } from "./cop-data";
+import type {
+  CopObject,
+  RoutingLiveSpeeds,
+  RoutingRouteResponse,
+  SituationFeatureCollectionResponse
+} from "./cop-data";
 import { formatTrackLabel } from "./track-label";
 import { isTransitVehicleSelectionKey } from "./transport-presentation";
 import { defaultMapCenter } from "./user-preferences";
+
+function liveSpeedRouteResponse(liveSpeeds: RoutingLiveSpeeds | undefined): RoutingRouteResponse {
+  return {
+    features: [],
+    routes: [
+      {
+        distanceM: 2500,
+        durationSeconds: 420,
+        profileId: "car",
+        rank: 1,
+        routeId: "primary",
+        traffic: { delayPenaltySeconds: 120, incidentCount: 1 }
+      }
+    ],
+    traffic: {
+      incidentCount: 1,
+      ...(liveSpeeds ? { liveSpeeds } : {})
+    },
+    warnings: []
+  };
+}
 
 describe("COP map data helpers", () => {
   it("wires mobile PWA viewport resume events to map resize recovery", () => {
@@ -170,6 +197,96 @@ describe("COP map data helpers", () => {
       { label: "Délka", value: "6.4 km" },
       { label: "ETA", value: "7 min" }
     ]);
+  });
+
+  it("presents complete live traffic as active and keeps SIM ETA unchanged", () => {
+    const response = liveSpeedRouteResponse({
+      ageSeconds: 18,
+      appliedEdgeCount: 1000,
+      appliedFlowCount: 200,
+      enabled: true,
+      mappingCoveragePercent: 94.2,
+      sourceObservedAt: "2026-09-14T18:23:02Z",
+      state: "ok",
+      updatedAt: "2026-09-14T18:28:34Z"
+    });
+    const card = formatEmergencyRouteSelectionCard({ rank: 1, routeId: "primary" }, response);
+
+    expect(card.detailRows).toEqual(
+      expect.arrayContaining([
+        { label: "ETA", value: "7 min" },
+        { label: "Živá doprava", value: "Živá doprava aktivní" },
+        { label: "Stáří dat", value: "18 s" },
+        { label: "Pokrytí", value: "94,2 %" }
+      ])
+    );
+    expect(card.analysisSections?.find((section) => section.title === "Provozní detail dopravy")?.items).toEqual(
+      expect.arrayContaining(["Použité dopravní toky: 200", "Použité hrany routingu: 1000"])
+    );
+  });
+
+  it("treats degraded live traffic as partial coverage while keeping the route usable", () => {
+    const response = liveSpeedRouteResponse({
+      ageSeconds: 22,
+      enabled: true,
+      mappingCoveragePercent: 40.88,
+      sourceObservedAt: "2026-09-14T18:23:02Z",
+      state: "degraded"
+    });
+    const card = formatEmergencyRouteSelectionCard({ rank: 1, routeId: "primary" }, response);
+
+    expect(card.detailRows).toContainEqual({ label: "Živá doprava", value: "Živá doprava aktivní" });
+    expect(card.statusTone).toBe("warn");
+    expect(card.analysisSections?.flatMap((section) => section.items).join(" ")).toContain("částečné pokrytí");
+  });
+
+  it("combines partial-coverage and map-speed warnings when degraded data is too old", () => {
+    const presentation = formatRoutingLiveSpeeds(
+      { profileId: "car" },
+      liveSpeedRouteResponse({ ageSeconds: 621, enabled: true, mappingCoveragePercent: 40.88, state: "degraded" })
+    );
+
+    expect(presentation).toMatchObject({
+      label: "Živá doprava má zastaralá data",
+      sourceObservedAt: "neuveden"
+    });
+    expect(presentation?.warning).toContain("částečné pokrytí");
+    expect(presentation?.warning).toContain("běžné mapové rychlosti");
+  });
+
+  it("explains idle adaptive traffic without turning it into a routing failure", () => {
+    const presentation = formatRoutingLiveSpeeds(
+      { profileId: "car" },
+      liveSpeedRouteResponse({ enabled: true, state: "idle" })
+    );
+
+    expect(presentation).toMatchObject({
+      label: "Živá doprava čeká na automobilový dotaz",
+      state: "idle"
+    });
+  });
+
+  it.each([
+    [{ ageSeconds: 901, enabled: true, state: "ok" }, "běžné mapové rychlosti"],
+    [{ ageSeconds: 10, enabled: true, state: "stale" }, "běžné mapové rychlosti"],
+    [{ enabled: true, state: "failed" }, "běžné mapové rychlosti"]
+  ])("warns for stale, failed or excessively old live traffic", (liveSpeeds, warning) => {
+    expect(formatRoutingLiveSpeeds({ profileId: "car" }, liveSpeedRouteResponse(liveSpeeds))?.warning).toContain(
+      warning
+    );
+  });
+
+  it("keeps a car route available when SIM omits liveSpeeds", () => {
+    const response = liveSpeedRouteResponse(undefined);
+    const card = formatEmergencyRouteSelectionCard({ rank: 1, routeId: "primary" }, response);
+
+    expect(card.detailRows).toEqual(
+      expect.arrayContaining([
+        { label: "ETA", value: "7 min" },
+        { label: "Živá doprava", value: "Živá doprava není k dispozici" }
+      ])
+    );
+    expect(card.analysisSections?.flatMap((section) => section.items).join(" ")).toContain("běžné mapové rychlosti");
   });
 
   it("builds GeoJSON track features from positioned COP objects", () => {

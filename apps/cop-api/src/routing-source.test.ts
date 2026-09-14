@@ -79,6 +79,54 @@ describe("routing source configuration", () => {
     expect(response.routes).toEqual([{ rank: 1, routeId: "primary" }]);
   });
 
+  it("passes every typed live-speed field through from SIM without loss", async () => {
+    const liveSpeeds = {
+      ageSeconds: 22,
+      appliedEdgeCount: 74361,
+      appliedFlowCount: 5374,
+      detail: "No sufficiently covered set of fresh mapped TPEG2 speeds was available.",
+      dynamicRevision: "revision-kept-for-forward-compatibility",
+      enabled: true,
+      mappingCoveragePercent: 40.88,
+      routingDataset: "sim-routing-2026-09-13-1789268424",
+      sourceObservedAt: "2026-09-14T18:23:02Z",
+      state: "degraded",
+      updatedAt: "2026-09-14T18:28:34Z"
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              features: [],
+              routes: [{ durationSeconds: 859, profileId: "car", routeId: "primary" }],
+              traffic: { incidentCount: 0, liveSpeeds },
+              warnings: []
+            }),
+            { headers: { "content-type": "application/json" }, status: 200 }
+          )
+      )
+    );
+    const adapter = new RoutingSourceAdapter({
+      baseUrl: "https://sim.example/situation-data/api/v1",
+      enabled: true,
+      timeoutMs: 5000
+    });
+
+    const response = await adapter.route(
+      {
+        from: { lat: 50.0755, lon: 14.4378 },
+        profileId: "car",
+        to: { lat: 50.087, lon: 14.4208 }
+      },
+      new Date("2026-09-14T18:28:53.425Z")
+    );
+
+    expect(response.traffic?.liveSpeeds).toStrictEqual(liveSpeeds);
+    expect(response.routes[0]?.durationSeconds).toBe(859);
+  });
+
   it("includes SIM error details in upstream routing failures", async () => {
     vi.stubGlobal(
       "fetch",

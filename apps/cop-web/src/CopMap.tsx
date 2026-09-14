@@ -6256,20 +6256,29 @@ function CopMapComponent({
               ) : null}
               {selectionCard.detailRows?.length ? (
                 <div className="map-object-popover-details">
-                  {(selectedEmergencyRouteInfo ? selectionCard.detailRows.slice(0, 4) : selectionCard.detailRows).map(
-                    (row) => (
-                      <div key={`${row.label}:${row.value}`}>
-                        <span>{row.label}</span>
-                        <strong>{row.value}</strong>
-                      </div>
-                    )
-                  )}
+                  {selectionCard.detailRows.map((row) => (
+                    <div key={`${row.label}:${row.value}`}>
+                      <span>{row.label}</span>
+                      <strong>{row.value}</strong>
+                    </div>
+                  ))}
                 </div>
               ) : null}
               {!selectedEmergencyRouteInfo && selectionCard.elevationProfile ? (
                 <RouteElevationProfileView profile={selectionCard.elevationProfile} />
               ) : null}
-              {!selectedEmergencyRouteInfo && selectionCard.analysisSections?.length ? (
+              {selectedEmergencyRouteInfo && selectionCard.analysisSections?.length ? (
+                <div className="map-object-popover-sections">
+                  {selectionCard.analysisSections.map((section) => (
+                    <details className="map-object-popover-section" key={section.title}>
+                      <summary>{section.title}</summary>
+                      {section.items.map((item) => (
+                        <p key={item}>{item}</p>
+                      ))}
+                    </details>
+                  ))}
+                </div>
+              ) : !selectedEmergencyRouteInfo && selectionCard.analysisSections?.length ? (
                 <div className="map-object-popover-sections">
                   {selectionCard.analysisSections.map((section) => (
                     <div className="map-object-popover-section" key={section.title}>
@@ -12475,6 +12484,7 @@ export function formatEmergencyRouteSelectionCard(
   const weatherSummary = formatRouteWeatherSummary(route);
   const hazardsSummary = formatRouteHazardsSummary(route);
   const trafficSummary = formatRouteTrafficSummary(route, response);
+  const liveSpeeds = formatRoutingLiveSpeeds(route, response);
   const warnings = routeWarningItems(route, response);
   const sourceStatus = routeSourceStatus(route, response);
   const label = routeDisplayLabel(route, properties, rank);
@@ -12496,6 +12506,10 @@ export function formatEmergencyRouteSelectionCard(
       : trafficSeverity
         ? { label: "Incident", value: trafficSeverity }
         : null,
+    liveSpeeds ? { label: "Živá doprava", value: liveSpeeds.label } : null,
+    liveSpeeds?.sourceObservedAt ? { label: "Zdrojová data", value: liveSpeeds.sourceObservedAt } : null,
+    liveSpeeds?.age ? { label: "Stáří dat", value: liveSpeeds.age } : null,
+    liveSpeeds?.coverage ? { label: "Pokrytí", value: liveSpeeds.coverage } : null,
     route ? { label: "Počasí", value: weatherSummary } : null,
     route ? { label: "Rizika", value: hazardsSummary } : null,
     route ? { label: "Výška", value: elevationSummary } : null,
@@ -12654,6 +12668,7 @@ function routeAnalysisSections(
 ): Array<{ items: string[]; title: string }> | undefined {
   const sections = [
     { title: "Doprava", items: routeTrafficDetailItems(route, response) },
+    { title: "Provozní detail dopravy", items: routeLiveSpeedsOperationalItems(route, response) },
     route ? { title: "Počasí", items: routeWeatherItems(route) } : null,
     route ? { title: "Rizika", items: routeHazardItems(route) } : null,
     { title: "Varování a degradace", items: routeWarningItems(route, response) },
@@ -12673,6 +12688,10 @@ function emergencyRouteStatusTone(
   const quality = isRecord(route?.quality) ? route.quality : isRecord(response?.quality) ? response.quality : undefined;
   if (stringProperty(quality?.mode) === "direct_fallback") {
     return "warn";
+  }
+  const liveSpeeds = formatRoutingLiveSpeeds(route, response);
+  if (liveSpeeds?.warning) {
+    return liveSpeeds.state === "failed" ? "bad" : "warn";
   }
   const sourceStatus = routeSourceStatus(route, response);
   if (sourceStatus && sourceStatus !== "ok") {
@@ -12740,6 +12759,128 @@ function routeTrafficRecordsForDetail(
   ].filter((traffic): traffic is Record<string, unknown> => traffic !== null);
 }
 
+const ROUTING_LIVE_SPEEDS_MAX_AGE_SECONDS = 300;
+
+export interface RoutingLiveSpeedsPresentation {
+  age?: string;
+  coverage?: string;
+  label: string;
+  sourceObservedAt?: string;
+  state?: string;
+  warning?: string;
+}
+
+export function formatRoutingLiveSpeeds(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined
+): RoutingLiveSpeedsPresentation | undefined {
+  const liveSpeeds = routeLiveSpeedsRecord(route, response);
+  if (!liveSpeeds) {
+    if (!isVehicleRoutingResult(route)) {
+      return undefined;
+    }
+    return {
+      label: "Živá doprava není k dispozici",
+      warning: "Část výpočtu může používat běžné mapové rychlosti."
+    };
+  }
+  const state = stringProperty(liveSpeeds.state) ?? stringProperty(liveSpeeds.status);
+  const enabled = typeof liveSpeeds.enabled === "boolean" ? liveSpeeds.enabled : undefined;
+  const ageSeconds = firstRecordNumber(liveSpeeds, "ageSeconds");
+  const staleByAge = ageSeconds !== undefined && ageSeconds > ROUTING_LIVE_SPEEDS_MAX_AGE_SECONDS;
+  const coveragePercent = firstRecordNumber(liveSpeeds, "mappingCoveragePercent");
+  const warning = uniqueRouteStrings([
+    state === "degraded"
+      ? "Živá data mají částečné pokrytí nebo omezenou kvalitu; trasa zůstává použitelná."
+      : undefined,
+    state === "idle" ? "Adaptivní dopravní režim čeká na automobilový dotaz." : undefined,
+    state === "stale" || state === "failed" || staleByAge || enabled === false
+      ? "Část výpočtu může používat běžné mapové rychlosti."
+      : undefined
+  ]).join(" ");
+  const label =
+    state === "idle"
+      ? "Živá doprava čeká na automobilový dotaz"
+      : state === "stale" || staleByAge
+        ? "Živá doprava má zastaralá data"
+        : state === "failed" || enabled === false
+          ? "Živá doprava není dostupná"
+          : "Živá doprava aktivní";
+  return {
+    ...(ageSeconds !== undefined ? { age: formatLiveSpeedAge(ageSeconds) } : {}),
+    ...(coveragePercent !== undefined ? { coverage: formatLiveSpeedCoverage(coveragePercent) } : {}),
+    label,
+    sourceObservedAt: optionalDateTime(liveSpeeds.sourceObservedAt)
+      ? formatLiveSpeedDateTime(String(liveSpeeds.sourceObservedAt))
+      : "neuveden",
+    ...(state ? { state } : {}),
+    ...(warning.length > 0 ? { warning } : {})
+  };
+}
+
+function routeLiveSpeedsRecord(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined
+): Record<string, unknown> | undefined {
+  return routeTrafficRecordsForDetail(route, response)
+    .map((traffic) => (isRecord(traffic.liveSpeeds) ? traffic.liveSpeeds : undefined))
+    .find((item): item is Record<string, unknown> => Boolean(item));
+}
+
+function isVehicleRoutingResult(route: Record<string, unknown> | undefined): boolean {
+  const profileId = stringProperty(route?.profileId);
+  return profileId === "car" || profileId === "emergency_vehicle" || profileId === "large_emergency_vehicle";
+}
+
+function formatLiveSpeedAge(ageSeconds: number): string {
+  const seconds = Math.max(0, Math.round(ageSeconds));
+  if (seconds < 60) {
+    return `${seconds} s`;
+  }
+  if (seconds < 3600) {
+    return `${Math.round(seconds / 60)} min`;
+  }
+  return formatRouteDurationSeconds(seconds);
+}
+
+function formatLiveSpeedCoverage(value: number): string {
+  return `${new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 1 }).format(Math.max(0, Math.min(100, value)))} %`;
+}
+
+function optionalDateTime(value: unknown): string | undefined {
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) {
+    return undefined;
+  }
+  return value;
+}
+
+function formatLiveSpeedDateTime(value: string): string {
+  return new Intl.DateTimeFormat("cs-CZ", {
+    dateStyle: "short",
+    timeStyle: "medium"
+  }).format(new Date(value));
+}
+
+function routeLiveSpeedsOperationalItems(
+  route: Record<string, unknown> | undefined,
+  response: RoutingRouteResponse | null | undefined
+): string[] {
+  const liveSpeeds = routeLiveSpeedsRecord(route, response);
+  if (!liveSpeeds) {
+    return [];
+  }
+  const appliedFlowCount = firstRecordNumber(liveSpeeds, "appliedFlowCount");
+  const appliedEdgeCount = firstRecordNumber(liveSpeeds, "appliedEdgeCount");
+  return uniqueRouteStrings([
+    appliedFlowCount !== undefined ? `Použité dopravní toky: ${Math.round(appliedFlowCount)}` : undefined,
+    appliedEdgeCount !== undefined ? `Použité hrany routingu: ${Math.round(appliedEdgeCount)}` : undefined,
+    stringProperty(liveSpeeds.routingDataset)
+      ? `Routingový dataset: ${stringProperty(liveSpeeds.routingDataset)}`
+      : undefined,
+    stringProperty(liveSpeeds.detail)
+  ]);
+}
+
 function formatRouteTrafficSummary(
   route: Record<string, unknown> | undefined,
   response: RoutingRouteResponse | null | undefined
@@ -12779,6 +12920,7 @@ function routeTrafficDetailItems(
   );
   const items = [
     formatRouteTrafficSummary(route, response),
+    formatRoutingLiveSpeeds(route, response)?.warning,
     ...incidents
       .slice(0, 3)
       .map((incident) =>
@@ -12799,7 +12941,7 @@ function routeTrafficDetailItems(
       ])
     ).slice(0, 3)
   ];
-  return items.filter((item) => item.trim().length > 0);
+  return items.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
 }
 
 function routeTrafficIncidentCount(
@@ -13028,6 +13170,10 @@ function routeWarningItems(
   const sourceStatus = routeSourceStatus(route, response);
   if (sourceStatus && sourceStatus !== "ok") {
     warnings.unshift(`Zdroj trasy je ve stavu ${sourceStatus}.`);
+  }
+  const liveSpeedsWarning = formatRoutingLiveSpeeds(route, response)?.warning;
+  if (liveSpeedsWarning) {
+    warnings.unshift(liveSpeedsWarning);
   }
   return uniqueRouteStrings(warnings).slice(0, 5);
 }

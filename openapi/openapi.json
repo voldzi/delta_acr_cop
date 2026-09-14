@@ -19762,6 +19762,67 @@
           }
         }
       },
+      "RoutingLiveSpeeds": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "SIM/Valhalla live-speed application status. The object is optional so routing remains available when live traffic data is absent.",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded",
+              "idle",
+              "stale",
+              "failed"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sourceObservedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ageSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "appliedFlowCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "appliedEdgeCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mappingCoveragePercent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "routingDataset": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "RoutingTraffic": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "SIM traffic context. Incident, closure, restriction and warning fields remain provider-shaped; liveSpeeds has a typed compatibility contract.",
+        "properties": {
+          "liveSpeeds": {
+            "$ref": "#/components/schemas/RoutingLiveSpeeds"
+          }
+        }
+      },
       "RoutingRoute": {
         "type": "object",
         "additionalProperties": true,
@@ -19856,9 +19917,7 @@
             }
           },
           "traffic": {
-            "type": "object",
-            "additionalProperties": true,
-            "description": "SIM traffic context for this route, including incidentsOnRoute, sourceStatus, incidentCount, delayPenaltySeconds and hard_exclusion_applied when available."
+            "$ref": "#/components/schemas/RoutingTraffic"
           }
         }
       },
@@ -19885,9 +19944,7 @@
             "additionalProperties": true
           },
           "traffic": {
-            "type": "object",
-            "additionalProperties": true,
-            "description": "Top-level SIM traffic context for all returned routes."
+            "$ref": "#/components/schemas/RoutingTraffic"
           },
           "features": {
             "type": "array",
