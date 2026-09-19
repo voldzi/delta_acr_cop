@@ -7,6 +7,7 @@ import {
   fitMapToVisibleContent,
   formatEmergencyRouteSelectionCard,
   formatRoutingLiveSpeeds,
+  isMapPopoverControlTarget,
   isRecoverableMapError,
   normalizeMapGlyphsTemplate,
   normalizeMapTileTemplate,
@@ -56,6 +57,15 @@ function liveSpeedRouteResponse(liveSpeeds: RoutingLiveSpeeds | undefined): Rout
 }
 
 describe("COP map data helpers", () => {
+  it("keeps popover controls interactive when the pointer lands on a nested icon", () => {
+    const nestedIcon = { closest: vi.fn(() => ({ tagName: "BUTTON" })) } as unknown as EventTarget;
+    const plainLabel = { closest: vi.fn(() => null) } as unknown as EventTarget;
+
+    expect(isMapPopoverControlTarget(nestedIcon)).toBe(true);
+    expect(isMapPopoverControlTarget(plainLabel)).toBe(false);
+    expect(isMapPopoverControlTarget(null)).toBe(false);
+  });
+
   it("wires mobile PWA viewport resume events to map resize recovery", () => {
     const fakeWindow = new EventTarget() as Window &
       typeof globalThis & {

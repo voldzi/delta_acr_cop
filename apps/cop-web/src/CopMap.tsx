@@ -9,6 +9,7 @@ import {
   Circle as CircleIcon,
   Compass,
   Droplets,
+  GripVertical,
   HelpCircle,
   MapPin,
   Maximize2,
@@ -20,7 +21,6 @@ import {
   Palette,
   Pentagon,
   PenLine,
-  Pin,
   PinOff,
   Plus,
   Ruler,
@@ -1261,7 +1261,7 @@ function CopMapComponent({
     onClearSelection?.();
   }, [onClearSelection, onSelectEmergencyRoute]);
   React.useEffect(() => {
-    setSelectionPopoverCollapsed(true);
+    setSelectionPopoverCollapsed(false);
     setSelectionPopoverPosition(null);
   }, [selectionCard?.key]);
   const selectedAnchorCoordinate = React.useMemo(
@@ -5618,8 +5618,7 @@ function CopMapComponent({
 
   const beginSelectionPopoverDrag = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      const target = event.target instanceof HTMLElement ? event.target : null;
-      if (target?.closest("button,a,input,textarea,select")) {
+      if (isMapPopoverControlTarget(event.target)) {
         return;
       }
       const containerRect = containerRef.current?.getBoundingClientRect();
@@ -5721,9 +5720,9 @@ function CopMapComponent({
       }
       const point = map.project({ lng: selectedAnchorCoordinate[0], lat: selectedAnchorCoordinate[1] });
       const popoverGap = selectionPopoverCollapsed ? 44 : 78;
-      const expandedPopupMaxWidth = window.matchMedia?.("(max-width: 720px)").matches ? 300 : 320;
+      const expandedPopupMaxWidth = window.matchMedia?.("(max-width: 720px)").matches ? 312 : 360;
       const popupWidth = selectionPopoverCollapsed
-        ? Math.min(148, Math.max(112, containerRect.width - 28))
+        ? Math.min(276, Math.max(220, containerRect.width - 28))
         : Math.min(expandedPopupMaxWidth, Math.max(236, containerRect.width - 28));
       const popupHalfWidth = popupWidth / 2;
       const horizontalPadding = 14;
@@ -6221,42 +6220,56 @@ function CopMapComponent({
           style={selectionPopoverStyle}
         >
           <div className="map-object-popover-header" onPointerDown={beginSelectionPopoverDrag}>
-            <span>{selectionCard.eyebrow}</span>
-            <div className="map-object-popover-actions">
+            <GripVertical aria-hidden="true" className="map-object-popover-grip" size={16} />
+            <div className="map-object-popover-heading">
+              <span>{selectionCard.eyebrow}</span>
+              <strong title={selectionCard.title}>{selectionCard.title}</strong>
+            </div>
+            <div className="map-object-popover-actions" onPointerDown={stopMapToolbarEvent}>
+              {selectionPopoverDetached ? (
+                <button
+                  aria-label="Připnout detail zpět k bodu"
+                  onClick={(event) => {
+                    stopMapToolbarEvent(event);
+                    setSelectionPopoverPosition(null);
+                  }}
+                  title="Připnout zpět k bodu"
+                  type="button"
+                >
+                  <PinOff size={16} />
+                </button>
+              ) : null}
               <button
-                aria-label={
-                  selectionPopoverDetached ? "Připnout mini detail zpět k bodu" : "Mini detail je připnutý k bodu"
-                }
+                aria-expanded={!selectionPopoverCollapsed}
+                aria-label={selectionPopoverCollapsed ? "Rozbalit popis" : "Minimalizovat popis"}
                 onClick={(event) => {
                   stopMapToolbarEvent(event);
-                  setSelectionPopoverPosition(null);
+                  setSelectionPopoverCollapsed((current) => !current);
                 }}
-                title={selectionPopoverDetached ? "Připnout zpět k bodu" : "Připnuto k bodu"}
-                type="button"
-              >
-                {selectionPopoverDetached ? <PinOff size={14} /> : <Pin size={14} />}
-              </button>
-              <button
-                aria-label={selectionPopoverCollapsed ? "Rozbalit popis" : "Minimalizovat popis"}
-                onClick={() => setSelectionPopoverCollapsed((current) => !current)}
                 title={selectionPopoverCollapsed ? "Rozbalit popis" : "Minimalizovat popis"}
                 type="button"
               >
-                {selectionPopoverCollapsed ? <ChevronDown size={14} /> : <Minimize2 size={14} />}
+                {selectionPopoverCollapsed ? <ChevronDown size={16} /> : <Minimize2 size={16} />}
               </button>
-              <button aria-label="Zrušit výběr" onClick={clearMapSelection} title="Zrušit výběr" type="button">
-                <X size={14} />
+              <button
+                aria-label="Zavřít detail objektu"
+                onClick={(event) => {
+                  stopMapToolbarEvent(event);
+                  clearMapSelection();
+                }}
+                title="Zavřít detail"
+                type="button"
+              >
+                <X size={16} />
               </button>
             </div>
           </div>
           {selectionPopoverCollapsed ? (
             <div className="map-object-popover-compact">
-              <strong>{selectionCard.title}</strong>
               <small>{selectionCard.compactSubtitle}</small>
             </div>
           ) : (
             <>
-              <strong>{selectionCard.title}</strong>
               <small>{selectionCard.subtitle}</small>
               {selectionCard.metaItems.length > 0 ? (
                 <div className="map-object-popover-meta">
@@ -12470,6 +12483,11 @@ function isWebKitRuntime(): boolean {
 
 export function isRecoverableMapError(message: string): boolean {
   return isRecoverableRasterStyleError(message) || isRecoverableRasterOverlayRequestError(message);
+}
+
+export function isMapPopoverControlTarget(target: EventTarget | null): boolean {
+  const candidate = target as (EventTarget & { closest?: (selectors: string) => Element | null }) | null;
+  return typeof candidate?.closest === "function" && Boolean(candidate.closest("button,a,input,textarea,select"));
 }
 
 function isRecoverableRasterStyleError(message: string): boolean {
