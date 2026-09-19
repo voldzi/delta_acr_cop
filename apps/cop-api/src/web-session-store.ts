@@ -35,12 +35,15 @@ export interface WebSessionStore {
   update(sessionId: string, input: WebSessionTokens): Promise<WebSessionRecord | null>;
 }
 
-export function createWebSessionStoreFromEnv(env: Record<string, string | undefined> = process.env): WebSessionStore | undefined {
+export function createWebSessionStoreFromEnv(
+  env: Record<string, string | undefined> = process.env
+): WebSessionStore | undefined {
   if (!readBoolean(env.COP_WEB_BFF_SESSION_ENABLED)) return undefined;
   const connectionString = env.COP_DATABASE_URL?.trim();
   const secret = env.COP_WEB_SESSION_SECRET?.trim();
   if (!connectionString) throw new Error("COP_WEB_BFF_SESSION_ENABLED requires COP_DATABASE_URL.");
-  if (!secret || secret.length < 32) throw new Error("COP_WEB_BFF_SESSION_ENABLED requires a COP_WEB_SESSION_SECRET of at least 32 characters.");
+  if (!secret || secret.length < 32)
+    throw new Error("COP_WEB_BFF_SESSION_ENABLED requires a COP_WEB_SESSION_SECRET of at least 32 characters.");
   return new PostgresWebSessionStore({
     connectionString,
     connectionTimeoutMillis: readPositiveInteger(env.COP_DATABASE_CONNECT_TIMEOUT_MS, 5000),
@@ -69,7 +72,9 @@ export class InMemoryWebSessionStore implements WebSessionStore {
     }
     return record;
   }
-  async revoke(sessionId: string): Promise<void> { this.values.delete(sessionId); }
+  async revoke(sessionId: string): Promise<void> {
+    this.values.delete(sessionId);
+  }
   async update(sessionId: string, input: WebSessionTokens): Promise<WebSessionRecord | null> {
     const previous = await this.get(sessionId);
     if (!previous) return null;
@@ -79,7 +84,9 @@ export class InMemoryWebSessionStore implements WebSessionStore {
   }
 }
 
-interface PostgresWebSessionStoreConfig extends PoolConfig { encryptionSecret: string; }
+interface PostgresWebSessionStoreConfig extends PoolConfig {
+  encryptionSecret: string;
+}
 
 export class PostgresWebSessionStore implements WebSessionStore {
   readonly name = "postgres";
@@ -90,8 +97,12 @@ export class PostgresWebSessionStore implements WebSessionStore {
     this.key = createHash("sha256").update(encryptionSecret).digest();
     this.pool = new Pool(poolConfig);
   }
-  async init(): Promise<void> { await this.pool.query(createWebSessionTableSql); }
-  async close(): Promise<void> { await this.pool.end(); }
+  async init(): Promise<void> {
+    await this.pool.query(createWebSessionTableSql);
+  }
+  async close(): Promise<void> {
+    await this.pool.end();
+  }
   async create(input: WebSessionTokens, expiresAt: Date): Promise<WebSessionRecord> {
     const sessionId = randomUUID();
     const createdAt = new Date();
@@ -104,19 +115,28 @@ export class PostgresWebSessionStore implements WebSessionStore {
   }
   async get(sessionId: string): Promise<WebSessionRecord | null> {
     const result = await this.pool.query<WebSessionRow>(
-      `SELECT session_id, token_payload, session_expires_at, created_at
-       FROM cop_web_sessions WHERE session_id = $1 AND session_expires_at > now()`, [sessionId]
+      `SELECT session_id, token_payload, access_expires_at, session_expires_at, created_at
+       FROM cop_web_sessions WHERE session_id = $1 AND session_expires_at > now()`,
+      [sessionId]
     );
     const row = result.rows[0];
     if (!row) return null;
     try {
-      return { ...this.decrypt(row.token_payload), createdAt: new Date(row.created_at), expiresAt: new Date(row.session_expires_at), sessionId: row.session_id };
+      return {
+        ...this.decrypt(row.token_payload),
+        accessTokenExpiresAt: requiredDate(row.access_expires_at, "access_expires_at"),
+        createdAt: requiredDate(row.created_at, "created_at"),
+        expiresAt: requiredDate(row.session_expires_at, "session_expires_at"),
+        sessionId: row.session_id
+      };
     } catch {
       await this.revoke(sessionId);
       return null;
     }
   }
-  async revoke(sessionId: string): Promise<void> { await this.pool.query("DELETE FROM cop_web_sessions WHERE session_id = $1", [sessionId]); }
+  async revoke(sessionId: string): Promise<void> {
+    await this.pool.query("DELETE FROM cop_web_sessions WHERE session_id = $1", [sessionId]);
+  }
   async update(sessionId: string, input: WebSessionTokens): Promise<WebSessionRecord | null> {
     const existing = await this.get(sessionId);
     if (!existing) return null;
@@ -127,7 +147,8 @@ export class PostgresWebSessionStore implements WebSessionStore {
     return { ...existing, ...input };
   }
   private encrypt(value: WebSessionTokens): string {
-    const iv = randomBytes(12); const cipher = createCipheriv("aes-256-gcm", this.key, iv);
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", this.key, iv);
     const encrypted = Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()]);
     return `${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${encrypted.toString("base64url")}`;
   }
@@ -136,11 +157,21 @@ export class PostgresWebSessionStore implements WebSessionStore {
     if (!encodedIv || !encodedTag || !encodedCiphertext) throw new Error("Invalid encrypted web session.");
     const decipher = createDecipheriv("aes-256-gcm", this.key, Buffer.from(encodedIv, "base64url"));
     decipher.setAuthTag(Buffer.from(encodedTag, "base64url"));
-    return JSON.parse(Buffer.concat([decipher.update(Buffer.from(encodedCiphertext, "base64url")), decipher.final()]).toString("utf8")) as WebSessionTokens;
+    return restoreWebSessionTokens(
+      JSON.parse(
+        Buffer.concat([decipher.update(Buffer.from(encodedCiphertext, "base64url")), decipher.final()]).toString("utf8")
+      )
+    );
   }
 }
 
-interface WebSessionRow extends QueryResultRow { session_id: string; token_payload: string; session_expires_at: Date | string; created_at: Date | string; }
+interface WebSessionRow extends QueryResultRow {
+  access_expires_at: Date | string;
+  created_at: Date | string;
+  session_expires_at: Date | string;
+  session_id: string;
+  token_payload: string;
+}
 
 const createWebSessionTableSql = `
 CREATE TABLE IF NOT EXISTS cop_web_sessions (
@@ -154,6 +185,55 @@ CREATE TABLE IF NOT EXISTS cop_web_sessions (
 CREATE INDEX IF NOT EXISTS cop_web_sessions_expiry_idx ON cop_web_sessions (session_expires_at);
 `;
 
-function readBoolean(value: string | undefined): boolean { return value === "true" || value === "1" || value === "yes" || value === "on"; }
-function readPositiveInteger(value: string | undefined, fallback: number): number { const parsed = Number.parseInt(value ?? "", 10); return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback; }
-function readSslConfig(env: Record<string, string | undefined>): PoolConfig["ssl"] { return readBoolean(env.COP_DATABASE_SSL) ? { rejectUnauthorized: !["false", "0", "no", "off"].includes(env.COP_DATABASE_SSL_REJECT_UNAUTHORIZED ?? "true") } : undefined; }
+function readBoolean(value: string | undefined): boolean {
+  return value === "true" || value === "1" || value === "yes" || value === "on";
+}
+function readPositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+function readSslConfig(env: Record<string, string | undefined>): PoolConfig["ssl"] {
+  return readBoolean(env.COP_DATABASE_SSL)
+    ? { rejectUnauthorized: !["false", "0", "no", "off"].includes(env.COP_DATABASE_SSL_REJECT_UNAUTHORIZED ?? "true") }
+    : undefined;
+}
+
+export function restoreWebSessionTokens(value: unknown): WebSessionTokens {
+  if (!isRecord(value) || typeof value.accessToken !== "string" || !isRecord(value.profile)) {
+    throw new Error("Invalid stored web session token payload.");
+  }
+  const accessTokenExpiresAt = requiredDate(value.accessTokenExpiresAt, "accessTokenExpiresAt");
+  const profile = value.profile;
+  if (
+    typeof profile.name !== "string" ||
+    typeof profile.subjectId !== "string" ||
+    typeof profile.username !== "string"
+  ) {
+    throw new Error("Invalid stored web session profile.");
+  }
+  return {
+    accessToken: value.accessToken,
+    accessTokenExpiresAt,
+    ...(typeof value.idToken === "string" ? { idToken: value.idToken } : {}),
+    profile: {
+      ...(typeof profile.email === "string" ? { email: profile.email } : {}),
+      name: profile.name,
+      ...(typeof profile.picture === "string" ? { picture: profile.picture } : {}),
+      subjectId: profile.subjectId,
+      username: profile.username
+    },
+    ...(typeof value.refreshToken === "string" ? { refreshToken: value.refreshToken } : {})
+  };
+}
+
+function requiredDate(value: unknown, field: string): Date {
+  const parsed = value instanceof Date ? new Date(value.getTime()) : new Date(String(value));
+  if (!Number.isFinite(parsed.getTime())) {
+    throw new Error(`Invalid stored web session ${field}.`);
+  }
+  return parsed;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
