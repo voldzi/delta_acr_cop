@@ -2689,7 +2689,7 @@ function CopMapComponent({
           id: situationWeatherPulseLayerId,
           type: "circle",
           source: situationSourceId,
-          minzoom: 6,
+          minzoom: 4,
           filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "weatherPulse"], true]],
           paint: {
             "circle-color": ["coalesce", ["get", "weatherPulseColor"], ["get", "weatherFillColor"], "#38bdf8"],
