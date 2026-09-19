@@ -2676,7 +2676,7 @@ h1 {
 }
 
 .shell.app-shell-v2 .map-object-popover {
-  border-radius: 12px;
+  border-radius: 14px;
 }
 
 .shell.app-shell-v2 .map-toolbar {
@@ -6060,17 +6060,19 @@ h1 {
   z-index: 8;
   display: grid;
   gap: 8px;
-  width: min(360px, calc(100% - 28px));
-  max-width: 360px;
+  width: min(344px, calc(100% - 28px));
+  max-width: 344px;
   padding: 12px 13px 13px;
   overflow: visible;
-  border: 1px solid rgba(142, 166, 188, 0.42);
-  border-radius: 12px;
-  background: linear-gradient(155deg, rgba(14, 22, 30, 0.98), rgba(7, 13, 19, 0.96));
+  border: 1px solid rgba(148, 169, 188, 0.32);
+  border-radius: 14px;
+  background: linear-gradient(155deg, rgba(17, 26, 35, 0.97), rgba(9, 16, 23, 0.96));
   pointer-events: auto;
   touch-action: manipulation;
   transform: translate(-50%, calc(-100% - var(--popover-gap, 78px)));
-  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.48), 0 1px 0 rgba(255, 255, 255, 0.05) inset;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.38), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  -webkit-backdrop-filter: blur(14px) saturate(118%);
+  backdrop-filter: blur(14px) saturate(118%);
 }
 
 .map-object-popover.tone-ok {
@@ -6120,20 +6122,20 @@ h1 {
 }
 
 .map-object-popover.collapsed {
-  width: min(276px, calc(100% - 28px));
-  min-width: 220px;
-  max-width: 276px;
-  padding: 8px 10px 9px;
-  gap: 4px;
-  border-radius: 11px;
+  width: min(320px, calc(100% - 28px));
+  min-width: 248px;
+  max-width: 320px;
+  padding: 10px 10px 10px 12px;
+  gap: 0;
+  border-radius: 14px;
 }
 
 .map-object-popover.collapsed .map-object-popover-header {
-  gap: 7px;
+  gap: 10px;
 }
 
 .map-object-popover.collapsed .map-object-popover-heading span {
-  font-size: 8px;
+  display: none;
 }
 
 .map-object-popover.collapsed .map-object-popover-header button {
@@ -6142,8 +6144,8 @@ h1 {
 }
 
 .map-object-popover.variant-aircraft.collapsed {
-  width: min(276px, calc(100% - 28px));
-  max-width: 276px;
+  width: min(320px, calc(100% - 28px));
+  max-width: 320px;
 }
 
 .map-object-popover.detached {
@@ -6161,10 +6163,10 @@ h1 {
 
 .map-object-popover::after {
   position: absolute;
-  bottom: -8px;
+  bottom: -6px;
   left: var(--popover-arrow-x, 50%);
-  width: 15px;
-  height: 15px;
+  width: 10px;
+  height: 10px;
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   background: rgba(8, 13, 18, 0.9);
@@ -6177,7 +6179,7 @@ h1 {
 }
 
 .map-object-popover.below::after {
-  top: -8px;
+  top: -6px;
   bottom: auto;
   border: 0;
   border-top: 1px solid var(--border);
@@ -6189,13 +6191,20 @@ h1 {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  cursor: grab;
+  cursor: default;
   touch-action: none;
 }
 
-.map-object-popover-grip {
+.map-object-popover-context-icon {
+  display: grid;
   flex: 0 0 auto;
-  color: #71869a;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(138, 185, 224, 0.24);
+  border-radius: 50%;
+  background: rgba(75, 140, 194, 0.14);
+  color: #a9d2f3;
 }
 
 .map-object-popover-heading {
@@ -6217,12 +6226,22 @@ h1 {
 }
 
 .map-object-popover-heading strong {
-  display: block;
+  display: -webkit-box;
   overflow: hidden;
   color: #f7fafc;
   font-size: 14px;
   font-weight: 750;
-  line-height: 1.2;
+  line-height: 1.22;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.map-object-popover-heading small {
+  display: block;
+  overflow: hidden;
+  color: #aebfcd;
+  font-size: 10px;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -6242,10 +6261,10 @@ h1 {
   place-items: center;
   width: 32px;
   height: 32px;
-  border: 1px solid rgba(142, 157, 170, 0.28);
-  border-radius: 7px;
-  background: rgba(22, 32, 43, 0.86);
-  color: #dbe7f2;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: #b8c8d5;
   cursor: pointer;
 }
 
@@ -6253,7 +6272,8 @@ h1 {
 .map-object-popover-actions button:hover,
 .map-object-popover-actions button:focus-visible {
   border-color: rgba(180, 210, 235, 0.5);
-  background: rgba(37, 51, 65, 0.94);
+  background: rgba(113, 151, 183, 0.15);
+  color: #f4f8fb;
   outline: 2px solid rgba(106, 177, 241, 0.48);
   outline-offset: 1px;
 }
@@ -6275,20 +6295,6 @@ h1 {
   line-height: 1.3;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-}
-
-.map-object-popover-compact {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  padding-left: 24px;
-}
-
-.map-object-popover-compact small {
-  max-width: 220px;
-  color: #aebfcd;
-  font-size: 10px;
-  -webkit-line-clamp: 1;
 }
 
 .map-object-popover-meta {

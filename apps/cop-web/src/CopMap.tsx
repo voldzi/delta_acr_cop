@@ -9,7 +9,6 @@ import {
   Circle as CircleIcon,
   Compass,
   Droplets,
-  GripVertical,
   HelpCircle,
   MapPin,
   Maximize2,
@@ -1261,7 +1260,7 @@ function CopMapComponent({
     onClearSelection?.();
   }, [onClearSelection, onSelectEmergencyRoute]);
   React.useEffect(() => {
-    setSelectionPopoverCollapsed(false);
+    setSelectionPopoverCollapsed(true);
     setSelectionPopoverPosition(null);
   }, [selectionCard?.key]);
   const selectedAnchorCoordinate = React.useMemo(
@@ -5719,10 +5718,10 @@ function CopMapComponent({
         return;
       }
       const point = map.project({ lng: selectedAnchorCoordinate[0], lat: selectedAnchorCoordinate[1] });
-      const popoverGap = selectionPopoverCollapsed ? 44 : 78;
-      const expandedPopupMaxWidth = window.matchMedia?.("(max-width: 720px)").matches ? 312 : 360;
+      const popoverGap = selectionPopoverCollapsed ? 34 : 64;
+      const expandedPopupMaxWidth = window.matchMedia?.("(max-width: 720px)").matches ? 312 : 344;
       const popupWidth = selectionPopoverCollapsed
-        ? Math.min(276, Math.max(220, containerRect.width - 28))
+        ? Math.min(320, Math.max(248, containerRect.width - 28))
         : Math.min(expandedPopupMaxWidth, Math.max(236, containerRect.width - 28));
       const popupHalfWidth = popupWidth / 2;
       const horizontalPadding = 14;
@@ -6211,19 +6210,24 @@ function CopMapComponent({
       </div>
       {selectionCard && selectionPopupPoint && selectionPopoverStyle ? (
         <div
+          aria-label={`Detail objektu ${selectionCard.title}`}
           className={`map-object-popover ${selectionCard.variant ? `variant-${selectionCard.variant}` : ""} ${!selectionPopoverDetached && selectionPopupPoint.placement === "below" ? "below" : ""} ${selectionPopoverCollapsed ? "collapsed" : ""} ${selectionPopoverDetached ? "detached" : ""} ${selectionPopoverDragging ? "dragging" : ""} ${selectionCard.statusTone ? `tone-${selectionCard.statusTone}` : ""}`}
           onClick={stopMapToolbarEvent}
           onDoubleClick={stopMapToolbarEvent}
           onPointerDown={stopMapToolbarEvent}
           onWheel={stopMapToolbarEvent}
           ref={selectionPopoverRef}
+          role="dialog"
           style={selectionPopoverStyle}
         >
           <div className="map-object-popover-header" onPointerDown={beginSelectionPopoverDrag}>
-            <GripVertical aria-hidden="true" className="map-object-popover-grip" size={16} />
+            <span aria-hidden="true" className="map-object-popover-context-icon">
+              <MapPin size={16} strokeWidth={2.2} />
+            </span>
             <div className="map-object-popover-heading">
               <span>{selectionCard.eyebrow}</span>
               <strong title={selectionCard.title}>{selectionCard.title}</strong>
+              {selectionPopoverCollapsed ? <small>{selectionCard.compactSubtitle}</small> : null}
             </div>
             <div className="map-object-popover-actions" onPointerDown={stopMapToolbarEvent}>
               {selectionPopoverDetached ? (
@@ -6249,7 +6253,7 @@ function CopMapComponent({
                 title={selectionPopoverCollapsed ? "Rozbalit popis" : "Minimalizovat popis"}
                 type="button"
               >
-                {selectionPopoverCollapsed ? <ChevronDown size={16} /> : <Minimize2 size={16} />}
+                {selectionPopoverCollapsed ? <ChevronDown size={17} /> : <ChevronUp size={17} />}
               </button>
               <button
                 aria-label="Zavřít detail objektu"
@@ -6264,11 +6268,7 @@ function CopMapComponent({
               </button>
             </div>
           </div>
-          {selectionPopoverCollapsed ? (
-            <div className="map-object-popover-compact">
-              <small>{selectionCard.compactSubtitle}</small>
-            </div>
-          ) : (
+          {!selectionPopoverCollapsed ? (
             <>
               <small>{selectionCard.subtitle}</small>
               {selectionCard.metaItems.length > 0 ? (
@@ -6475,7 +6475,7 @@ function CopMapComponent({
                 </div>
               ) : null}
             </>
-          )}
+          ) : null}
         </div>
       ) : null}
       {emergencyRouteStatus !== "idle" && emergencyRouteStatus !== "ready" && emergencyRouteCardMessage ? (
