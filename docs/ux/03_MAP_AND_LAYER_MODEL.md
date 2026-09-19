@@ -47,6 +47,8 @@ Pokud uživatel polohu nepovolí, prohlížeč geolokaci neposkytuje nebo ulože
 
 Situační kontext ze SIM se vykresluje jako samostatná mapová vrstva nad podkladem a pod COP tracky. Výchozí je `weather`; `ground`, `mobile` a `traffic` jsou volitelné. Výběr vrstev je uživatelská preference a neovlivňuje počet tracků, historii tras ani predikci.
 
+Referenční hydrologické stanice se zobrazují už v přehledu České republiky. MapLibre při tomto měřítku potlačí překrývající se symboly a s přiblížením doplní další stanice, trendy a popisky. Zapnutá hydrologická vrstva proto nesmí na výchozím výřezu působit jako prázdná.
+
 Po kliknutí na situační feature se v pravém panelu zobrazí detail: label, category, source, observedAt, confidence, stale/severity, licence, metriky a tagy. Tato data slouží k orientaci a provenance, ne k targeting ani akčnímu workflow.
 
 ## Historie a predikce
