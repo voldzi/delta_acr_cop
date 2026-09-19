@@ -738,6 +738,8 @@ describe("COP map data helpers", () => {
         }
       ]
     });
+    expect(collection.features[0]?.properties.metrics).toBeUndefined();
+    expect(collection.features[0]?.properties.tags).toBeUndefined();
   });
 
   it("renders CHMI weather webcams as camera points, not alerts or weather observations", () => {

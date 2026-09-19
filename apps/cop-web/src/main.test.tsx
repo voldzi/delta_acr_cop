@@ -551,6 +551,12 @@ describe("COP web dashboard", () => {
     expect(groups.find((group) => group.layerIds.includes("public.weather.observations"))?.limit).toBe(500);
   });
 
+  it("bounds trail route payloads at national and regional zoom levels", () => {
+    expect(buildSituationMapRequestGroups(["public.trails.routes"], 7.5, undefined)[0]?.limit).toBe(100);
+    expect(buildSituationMapRequestGroups(["public.trails.routes"], 10, undefined)[0]?.limit).toBe(250);
+    expect(buildSituationMapRequestGroups(["public.trails.routes"], 12, undefined)[0]?.limit).toBe(500);
+  });
+
   it("builds a local priority alert from user-location safety features by relevance", () => {
     const now = Date.now();
     const summary = buildPriorityAlertSummary({

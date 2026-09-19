@@ -7348,7 +7348,7 @@ function renderSituationFeature(
   return {
     geometry: feature.geometry,
     properties: {
-      ...feature.properties,
+      ...mapLibreSafeSituationProperties(feature.properties),
       ...buildSituationRenderProperties(feature, mapSymbolMode),
       ...(safetyAlertLayer
         ? {
@@ -7360,6 +7360,14 @@ function renderSituationFeature(
     },
     type: "Feature"
   };
+}
+
+function mapLibreSafeSituationProperties(properties: SituationFeature["properties"]): SituationFeature["properties"] {
+  return Object.fromEntries(
+    Object.entries(properties).filter(
+      ([, value]) => value === null || ["boolean", "number", "string"].includes(typeof value)
+    )
+  ) as unknown as SituationFeature["properties"];
 }
 
 function isSituationFeatureSelected(

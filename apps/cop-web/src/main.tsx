@@ -26125,6 +26125,15 @@ function uniqueStrings(values: readonly string[]): string[] {
 }
 
 function mapFeatureQueryLimit(layerIds: string[], zoom: number | undefined): number {
+  if (layerIds.includes("public.trails.routes")) {
+    if ((zoom ?? 0) < 9) {
+      return 100;
+    }
+    if ((zoom ?? 0) < 11) {
+      return 250;
+    }
+    return 500;
+  }
   if (layerIds.some(isTrafficCatalogLayerId)) {
     void zoom;
     return 5000;
