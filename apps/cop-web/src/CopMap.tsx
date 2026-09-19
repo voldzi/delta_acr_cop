@@ -32,7 +32,7 @@ import {
   X
 } from "lucide-react";
 import * as maplibregl from "maplibre-gl";
-import mapLibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
+import mapLibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import type {
   ErrorEvent as MapLibreErrorEvent,
   ExpressionSpecification,
