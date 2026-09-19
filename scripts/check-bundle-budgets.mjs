@@ -22,7 +22,18 @@ const budgets = [
       { label: "3D workspace", pattern: /^GlobeWorkspace-[\w-]+\.js$/, maxBytes: 10 * KiB },
       { label: "Cesium 3D engine", pattern: /^cesium-[\w-]+\.js$/, maxBytes: 1_150 * KiB, maxMatches: 1 },
       { label: "track table", pattern: /^TrackTable-[\w-]+\.js$/, maxBytes: 16 * KiB },
-      { label: "maplibre", pattern: /^maplibre-[\w-]+\.js$/, maxBytes: 300 * KiB, maxMatches: 1 },
+      {
+        label: "maplibre",
+        pattern: /^maplibre-(?!gl-worker-)[\w-]+\.js$/,
+        maxBytes: 300 * KiB,
+        maxMatches: 1
+      },
+      {
+        label: "maplibre worker",
+        pattern: /^maplibre-gl-worker-[\w-]+\.js$/,
+        maxBytes: 150 * KiB,
+        maxMatches: 1
+      },
       { label: "milsymbol", pattern: /^milsymbol-[\w-]+\.js$/, maxBytes: 210 * KiB },
       { label: "pairing QR generator", pattern: /^qrcode-[\w-]+\.js$/, maxBytes: 12 * KiB },
       { label: "styles", pattern: /^index-[\w-]+\.css$/, maxBytes: 35 * KiB },

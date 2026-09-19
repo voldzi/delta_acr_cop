@@ -36,7 +36,9 @@ opens bounded concurrent SSE clients and fails when any connection cannot be
 established. Browser reconnects use capped exponential jitter; the client queue
 drops the oldest item above its fixed limit and records the drop. The API closes
 a slow SSE connection when the socket signals backpressure rather than growing
-an unbounded application queue.
+an unbounded application queue. `COP_API_LISTEN_BACKLOG` defaults to `4096` so
+an expected SSE reconnect wave is not constrained by the smaller Node default;
+the host must still expose a compatible kernel listen queue.
 
 Production voice calls additionally require durable
 `COP_VOICE_CALL_STORE=postgres`, `voice-call-media=ok` in dependency health, a
