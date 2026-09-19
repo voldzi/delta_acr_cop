@@ -5718,7 +5718,7 @@ function CopMapComponent({
         return;
       }
       const point = map.project({ lng: selectedAnchorCoordinate[0], lat: selectedAnchorCoordinate[1] });
-      const popoverGap = selectionPopoverCollapsed ? 34 : 64;
+      const popoverGap = 34;
       const expandedPopupMaxWidth = window.matchMedia?.("(max-width: 720px)").matches ? 312 : 344;
       const popupWidth = selectionPopoverCollapsed
         ? Math.min(320, Math.max(248, containerRect.width - 28))
