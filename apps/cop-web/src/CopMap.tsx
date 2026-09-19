@@ -1485,12 +1485,19 @@ function CopMapComponent({
     };
     const handleMapViewportResume = () => requestMapResize(map);
     const removeMapViewportResumeHandlers = registerMapViewportResumeHandlers(handleMapViewportResume);
-    const handleInitialMapIdle = () => {
+    const mapLoadingFallbackTimer = window.setTimeout(() => {
       setMapTilesReady(true);
+    }, 8_000);
+    const handleInitialMapLoad = () => {
+      window.clearTimeout(mapLoadingFallbackTimer);
+      setMapTilesReady(true);
+    };
+    const handleInitialMapIdle = () => {
       if (!mapStyleUrl) {
         void warmRasterBasemapTileCache(map, tileUrl);
       }
     };
+    map.once("load", handleInitialMapLoad);
     map.once("idle", handleInitialMapIdle);
     mapCanvas.addEventListener("webglcontextlost", handleWebGlContextLost);
     mapCanvas.addEventListener("webglcontextrestored", handleWebGlContextRestored);
@@ -4824,6 +4831,8 @@ function CopMapComponent({
       resizeObserverRef.current?.disconnect();
       resizeObserverRef.current = null;
       removeMapViewportResumeHandlers();
+      window.clearTimeout(mapLoadingFallbackTimer);
+      map.off("load", handleInitialMapLoad);
       map.off("idle", handleInitialMapIdle);
       mapCanvas.removeEventListener("webglcontextlost", handleWebGlContextLost);
       mapCanvas.removeEventListener("webglcontextrestored", handleWebGlContextRestored);
