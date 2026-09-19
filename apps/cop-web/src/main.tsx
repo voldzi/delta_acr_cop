@@ -1331,7 +1331,7 @@ export function App() {
   const notifiedVoiceCallIdsRef = React.useRef(new Set<string>());
   const initialMapFeatureFocusRef = React.useRef(initialMapFocus);
   const catalogSelectionInitializedRef = React.useRef(
-    initialSharedMap?.catalogLayerIds !== undefined || initialPreferences.catalogLayerIds !== undefined
+    hasRestorableCatalogLayerSelection(initialSharedMap?.catalogLayerIds ?? initialPreferences.catalogLayerIds)
   );
   const initialSharedMapPendingRef = React.useRef(Boolean(initialSharedMap));
   const [webPushState, setWebPushState] = React.useState<WebPushUiState>(() => readWebPushPermissionState());
@@ -4412,8 +4412,15 @@ export function App() {
         setMapLegendCollapsed(settings.mapLegendCollapsed);
       }
       if (settings.catalogLayerIds !== undefined) {
-        catalogSelectionInitializedRef.current = true;
-        setVisibleCatalogLayerIds(normalizeCatalogLayerIds(settings.catalogLayerIds));
+        const restoredLayerIds = normalizeCatalogLayerIds(settings.catalogLayerIds);
+        if (restoredLayerIds.length > 0) {
+          catalogSelectionInitializedRef.current = true;
+          setVisibleCatalogLayerIds(restoredLayerIds);
+        } else {
+          const catalog = mapCatalogRef.current;
+          catalogSelectionInitializedRef.current = Boolean(catalog);
+          setVisibleCatalogLayerIds(catalog ? defaultVisibleCatalogLayerIds(catalog) : []);
+        }
       }
       if (settings.situationLayerIds !== undefined) {
         setVisibleSituationLayerIds(normalizeSituationLayerIds(settings.situationLayerIds));
@@ -4733,8 +4740,15 @@ export function App() {
       : scopedPreferences;
     initialSharedMapPendingRef.current = false;
     const scopedAlertPreferences = readLocalAlertPreferences(userStorageScope);
-    catalogSelectionInitializedRef.current = startupPreferences.catalogLayerIds !== undefined;
-    setVisibleCatalogLayerIds(normalizeCatalogLayerIds(startupPreferences.catalogLayerIds));
+    const restoredCatalogLayerIds = normalizeCatalogLayerIds(startupPreferences.catalogLayerIds);
+    if (restoredCatalogLayerIds.length > 0) {
+      catalogSelectionInitializedRef.current = true;
+      setVisibleCatalogLayerIds(restoredCatalogLayerIds);
+    } else {
+      const catalog = mapCatalogRef.current;
+      catalogSelectionInitializedRef.current = Boolean(catalog);
+      setVisibleCatalogLayerIds(catalog ? defaultVisibleCatalogLayerIds(catalog) : []);
+    }
     setOperatorProfile(initialOperatorProfile(authSession, startupPreferences.operatorProfile));
     setWorkspaceLayout(normalizeWorkspaceLayout(startupPreferences.workspaceLayout));
     setWorkspaceSkin(normalizeWorkspaceSkin(startupPreferences.workspaceSkin));
@@ -24501,6 +24515,10 @@ function normalizeTrackLayerIds(value: string[] | undefined, fallback: CopLayer 
 
 function normalizeCatalogLayerIds(value: string[] | undefined): string[] {
   return Array.from(new Set((value ?? []).filter((item) => typeof item === "string" && item.trim().length > 0)));
+}
+
+function hasRestorableCatalogLayerSelection(value: string[] | undefined): boolean {
+  return normalizeCatalogLayerIds(value).length > 0;
 }
 
 function isCopLayer(value: string): value is CopLayer {

@@ -853,6 +853,73 @@ describe("COP web dashboard", () => {
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe(expectedCenter);
   });
 
+  it("restores catalog defaults when a persisted profile contains an empty layer selection", async () => {
+    vi.stubEnv("VITE_COP_AUTH_MODE", "hybrid");
+    vi.stubEnv("VITE_COP_BFF_SESSION_ENABLED", "false");
+    vi.stubEnv("VITE_COP_OIDC_ISSUER", "https://auth.example.test/realms/cop");
+    vi.stubEnv("VITE_COP_OIDC_CLIENT_ID", "cop-web");
+    window.localStorage.setItem(
+      "cop.oidc.session.v1",
+      JSON.stringify({
+        accessToken: "persisted-token",
+        expiresAt: Date.now() + 120_000,
+        profile: { name: "COP Operator", subjectId: "user-1", username: "operator" },
+        refreshToken: "persisted-refresh"
+      })
+    );
+    window.localStorage.setItem("cop.user.preferences.v1.user-1", JSON.stringify({ catalogLayerIds: [] }));
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: undefined
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/health/ready")) {
+        return jsonResponse({ status: "ok", timestamp: "2026-05-19T08:00:00Z" });
+      }
+      if (url.includes("/api/v1/me/preferences")) {
+        return jsonResponse({
+          actor: {
+            authMode: "lab",
+            displayName: "Lab operator",
+            subjectId: "lab",
+            username: "lab"
+          },
+          alertPreferences: {},
+          preferences: { catalogLayerIds: [] },
+          updatedAt: "2026-05-19T08:00:00Z"
+        });
+      }
+      if (url.includes("/api/v1/map/catalog")) {
+        return jsonResponse(testMapCatalogResponse());
+      }
+      if (url.includes("/api/v1/map/query")) {
+        return jsonResponse(emptyMapQueryResponse(["public.weather.current"]));
+      }
+      return jsonResponse({ init, items: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await waitFor(
+      () =>
+        expect(
+          fetchMock.mock.calls.some(
+            ([url, options]) =>
+              String(url).includes("/api/v1/map/query") &&
+              typeof options === "object" &&
+              options !== null &&
+              "body" in options &&
+              String(options.body).includes("public.weather.current")
+          )
+        ).toBe(true),
+      { timeout: 2500 }
+    );
+    expect(screen.getByTestId("cop-map").getAttribute("data-map-layer-label")).not.toBe("žádná vrstva");
+  });
+
   it("does not restore selected layers from anonymous local storage on a fresh anonymous start", async () => {
     vi.stubEnv("VITE_COP_AUTH_MODE", "hybrid");
     vi.stubEnv("VITE_COP_OIDC_ISSUER", "https://auth.example.test/realms/cop");

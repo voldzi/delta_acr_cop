@@ -37,7 +37,7 @@ Každá vrstva musí být filtrovatelná podle oblasti, object type, confidence,
 
 ## Uživatelský stav
 
-Zobrazení mapy, zoom, vybraná vrstva, filtry, refresh cadence a volby historie/predikce jsou uživatelské preference. V pilotu jsou uložené lokálně v prohlížeči daného uživatele, ne ve sdíleném COP state.
+Zobrazení mapy, zoom, vybraná vrstva, filtry, refresh cadence a volby historie/predikce jsou uživatelské preference. Přihlášenému uživateli se synchronizují přes jeho COP profil a lokální úložiště slouží jako rychlá cache. Prázdný uložený seznam katalogových vrstev se při novém načtení nepovažuje za platný profil zobrazení; klient obnoví výchozí vrstvy z aktuálního katalogu, aby po chybě synchronizace nezůstala pouze holá podkladová mapa. Uživatel může během otevřené relace vrstvy ručně vypnout.
 
 Poloha uživatele je klientský stav. Neposílá se do COP API a používá se pouze pro centrování mapy a lokální výpočet výstrah.
 
