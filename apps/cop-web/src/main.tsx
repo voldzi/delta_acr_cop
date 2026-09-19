@@ -538,7 +538,7 @@ const predictionModeOptions: Array<[PredictionMode, string]> = [
 ];
 const defaultAoiCenter = { lat: 50.0755, lon: 14.4378 };
 const defaultMapFallbackZoom = 8;
-const userLocationFocusMinZoom = 15;
+const userLocationFocusMinZoom = 13;
 const priorityAlertUserRadiusKm = 30;
 const mapFeatureFetchDelayMs = 450;
 const defaultMapBounds: MapBounds = { east: 19.1, north: 51.2, south: 48.5, west: 12 };
@@ -4496,7 +4496,6 @@ export function App() {
       zoom: Math.max(current?.zoom ?? 0, userLocationFocusMinZoom)
     }));
     setFocusViewRequest((current) => current + 1);
-    setFocusUserLocationRequest((current) => current + 1);
   }, []);
 
   const clearUserLocationWatch = React.useCallback(() => {

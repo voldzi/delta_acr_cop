@@ -45,6 +45,7 @@ vi.mock("./CopMap", async () => {
       emergencyRouteStatus,
       focusView,
       focusViewRequest,
+      focusUserLocationRequest,
       initialView,
       mapLayerLabel,
       mapInteractionSuspended,
@@ -71,6 +72,7 @@ vi.mock("./CopMap", async () => {
       emergencyRouteStatus?: string;
       focusView?: { center: [number, number]; zoom?: number };
       focusViewRequest?: number;
+      focusUserLocationRequest?: number;
       initialView?: { center: [number, number]; zoom?: number };
       mapLayerLabel?: string;
       mapInteractionSuspended?: boolean;
@@ -116,6 +118,7 @@ vi.mock("./CopMap", async () => {
         "div",
         {
           "data-focus-center": focusView ? `${focusView.center[0].toFixed(5)},${focusView.center[1].toFixed(5)}` : "",
+          "data-focus-user-location-request": String(focusUserLocationRequest ?? 0),
           "data-focus-view-request": String(focusViewRequest ?? 0),
           "data-initial-center": initialView
             ? `${initialView.center[0].toFixed(5)},${initialView.center[1].toFixed(5)}`
@@ -1023,6 +1026,7 @@ describe("COP web dashboard", () => {
     await waitFor(() => expect(getCurrentPosition).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByTestId("cop-map").getAttribute("data-focus-view-request")).toBe("1"));
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe("14.42100,50.08700");
+    expect(screen.getByTestId("cop-map").getAttribute("data-focus-user-location-request")).toBe("0");
   });
 
   it("loads the device location on startup without enabling map follow", async () => {
