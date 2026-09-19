@@ -3188,7 +3188,7 @@ function CopMapComponent({
           id: situationHydroReferenceIconLayerId,
           type: "symbol",
           source: situationSourceId,
-          minzoom: 6,
+          minzoom: 4,
           maxzoom: 12.2,
           filter: [
             "all",
