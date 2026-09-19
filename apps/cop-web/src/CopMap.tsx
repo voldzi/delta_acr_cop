@@ -32,6 +32,7 @@ import {
   X
 } from "lucide-react";
 import * as maplibregl from "maplibre-gl";
+import mapLibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import type {
   ErrorEvent as MapLibreErrorEvent,
   ExpressionSpecification,
@@ -213,6 +214,7 @@ const sketchDraftSourceId = "cop-sketch-draft";
 const sketchEditSourceId = "cop-sketch-edit";
 const alertAreaSourceId = "cop-alert-areas";
 const situationSourceId = "cop-situation-context";
+maplibregl.setWorkerUrl(mapLibreWorkerUrl);
 const situationOsmClusterSourceId = "cop-situation-osm-clusters";
 const trackHistoryLayerId = "cop-track-history-line";
 const trackPredictionUncertaintyLayerId = "cop-track-prediction-uncertainty";
