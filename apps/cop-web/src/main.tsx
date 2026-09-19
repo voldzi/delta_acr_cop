@@ -25718,7 +25718,9 @@ export function buildSituationMapRequestGroups(
   zoom: number | undefined,
   technology: CoverageTechnology | undefined
 ): SituationMapRequestGroup[] {
-  const groups = uniqueStrings(layerIds).map((layerId) => [layerId]);
+  const groups = uniqueStrings(layerIds)
+    .filter((layerId) => layerId !== "public.trails.routes" || (zoom ?? 0) >= 9)
+    .map((layerId) => [layerId]);
   return groups.map((groupLayerIds) => ({
     filters: buildCatalogFeatureFilters(groupLayerIds, technology),
     layerIds: groupLayerIds,
@@ -26126,10 +26128,10 @@ function uniqueStrings(values: readonly string[]): string[] {
 
 function mapFeatureQueryLimit(layerIds: string[], zoom: number | undefined): number {
   if (layerIds.includes("public.trails.routes")) {
-    if ((zoom ?? 0) < 9) {
+    if ((zoom ?? 0) < 11) {
       return 100;
     }
-    if ((zoom ?? 0) < 11) {
+    if ((zoom ?? 0) < 13) {
       return 250;
     }
     return 500;

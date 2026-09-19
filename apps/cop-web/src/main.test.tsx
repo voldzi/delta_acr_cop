@@ -552,9 +552,10 @@ describe("COP web dashboard", () => {
   });
 
   it("bounds trail route payloads at national and regional zoom levels", () => {
-    expect(buildSituationMapRequestGroups(["public.trails.routes"], 7.5, undefined)[0]?.limit).toBe(100);
-    expect(buildSituationMapRequestGroups(["public.trails.routes"], 10, undefined)[0]?.limit).toBe(250);
-    expect(buildSituationMapRequestGroups(["public.trails.routes"], 12, undefined)[0]?.limit).toBe(500);
+    expect(buildSituationMapRequestGroups(["public.trails.routes"], 7.5, undefined)).toEqual([]);
+    expect(buildSituationMapRequestGroups(["public.trails.routes"], 10, undefined)[0]?.limit).toBe(100);
+    expect(buildSituationMapRequestGroups(["public.trails.routes"], 12, undefined)[0]?.limit).toBe(250);
+    expect(buildSituationMapRequestGroups(["public.trails.routes"], 14, undefined)[0]?.limit).toBe(500);
   });
 
   it("builds a local priority alert from user-location safety features by relevance", () => {
