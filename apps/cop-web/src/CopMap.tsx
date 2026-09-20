@@ -1095,6 +1095,7 @@ function CopMapComponent({
   const handledFocusViewRequestRef = React.useRef(0);
   const resizeObserverRef = React.useRef<ResizeObserver | null>(null);
   const nativeHeadingStopRef = React.useRef<(() => void) | null>(null);
+  const mapErrorClearTimerRef = React.useRef<number | null>(null);
   const [mapReady, setMapReady] = React.useState(false);
   const [mapTilesReady, setMapTilesReady] = React.useState(false);
   const [mapError, setMapError] = React.useState<string | null>(null);
@@ -4822,6 +4823,17 @@ function CopMapComponent({
     });
     map.on("error", (event: MapLibreErrorEvent) => {
       const message = event.error?.message ?? "Mapový podklad není dostupný.";
+      if (isRecoverableBasemapTileError(message)) {
+        setMapError("Část mapového podkladu se právě obnovuje. Dostupná mapa zůstává zobrazená.");
+        if (mapErrorClearTimerRef.current !== null) {
+          window.clearTimeout(mapErrorClearTimerRef.current);
+        }
+        mapErrorClearTimerRef.current = window.setTimeout(() => {
+          setMapError(null);
+          mapErrorClearTimerRef.current = null;
+        }, 8_000);
+        return;
+      }
       if (isRecoverableMapError(message)) {
         return;
       }
@@ -4833,6 +4845,10 @@ function CopMapComponent({
       resizeObserverRef.current = null;
       removeMapViewportResumeHandlers();
       window.clearTimeout(mapLoadingFallbackTimer);
+      if (mapErrorClearTimerRef.current !== null) {
+        window.clearTimeout(mapErrorClearTimerRef.current);
+        mapErrorClearTimerRef.current = null;
+      }
       map.off("load", handleInitialMapLoad);
       map.off("idle", handleInitialMapIdle);
       mapCanvas.removeEventListener("webglcontextlost", handleWebGlContextLost);
@@ -12482,7 +12498,22 @@ function isWebKitRuntime(): boolean {
 }
 
 export function isRecoverableMapError(message: string): boolean {
-  return isRecoverableRasterStyleError(message) || isRecoverableRasterOverlayRequestError(message);
+  return (
+    isRecoverableBasemapTileError(message) ||
+    isRecoverableRasterStyleError(message) ||
+    isRecoverableRasterOverlayRequestError(message)
+  );
+}
+
+export function isRecoverableBasemapTileError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  const isTileRequest =
+    normalized.includes("tiles.zeleznalady.cz/") || (normalized.includes("/osm/") && normalized.includes(".png"));
+  return (
+    normalized.includes("ajaxerror") &&
+    isTileRequest &&
+    ["(429)", "(502)", "(503)", "(504)"].some((status) => normalized.includes(status))
+  );
 }
 
 export function isMapPopoverControlTarget(target: EventTarget | null): boolean {

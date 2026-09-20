@@ -23,6 +23,10 @@ Stav ověřený 10. 8. 2026:
   raster fallback a povinnou atribuci;
 - další produkty mají používat stejný host a nesmějí vytvářet vlastní tile
   proxy pouze pro svou aplikaci.
+- PWA ukládá pouze úspěšné CORS-readable dlaždice. Odpovědi `429`, `502`,
+  `503` a `504` zopakuje nejvýše třikrát s krátkým exponenciálním odstupem;
+  chybovou odpověď nikdy neuloží do cache. Web místo syrového `AJAXError`
+  zobrazí krátké uživatelské upozornění a zachová již dostupnou mapu.
 
 COP podporuje tyto proměnné:
 

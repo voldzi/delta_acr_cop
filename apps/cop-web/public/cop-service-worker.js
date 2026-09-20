@@ -33,6 +33,8 @@ const MAX_ROUTE_TILE_WARMUP_URLS = 650;
 const APP_SHELL_NETWORK_TIMEOUT_MS = 2500;
 const APP_SHELL_FETCH_ATTEMPTS = 3;
 const APP_SHELL_FETCH_RETRY_BASE_MS = 250;
+const MAP_TILE_FETCH_ATTEMPTS = 3;
+const MAP_TILE_FETCH_RETRY_BASE_MS = 250;
 const RECENT_NOTIFICATION_TAG_TTL_MS = 120_000;
 const recentNotificationTags = new Map();
 
@@ -262,7 +264,7 @@ async function staleWhileRevalidate(request, cacheName, maxEntries) {
   return cached || (await refresh) || Response.error();
 }
 
-async function cacheFirst(request, cacheName, maxEntries) {
+async function cacheFirst(request, cacheName, maxEntries, options = {}) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
   if (cached) {
@@ -278,13 +280,47 @@ async function cacheFirst(request, cacheName, maxEntries) {
     return retainedReleaseResponse;
   }
 
-  const response = await fetch(request);
+  const response = options.retryMapTile === true ? await fetchMapTileWithRetry(request) : await fetch(request);
   // Cross-origin map resources must stay CORS-readable. Do not persist no-cors opaque responses.
   if (response && response.ok && response.type !== "opaque") {
     await cache.put(request, response.clone());
     await trimCache(cache, maxEntries);
   }
   return response;
+}
+
+async function fetchMapTileWithRetry(request, options = {}) {
+  const attempts = Math.max(1, Math.trunc(options.attempts ?? MAP_TILE_FETCH_ATTEMPTS));
+  const retryBaseMs = Math.max(0, Math.trunc(options.retryBaseMs ?? MAP_TILE_FETCH_RETRY_BASE_MS));
+  let response;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      response = await fetch(request);
+    } catch (error) {
+      if (attempt + 1 >= attempts) {
+        throw error;
+      }
+      await delay(retryBaseMs * 2 ** attempt);
+      continue;
+    }
+    if (!isRetryableMapTileResponse(response) || attempt + 1 >= attempts) {
+      return response;
+    }
+    await delay(mapTileRetryDelayMs(response, retryBaseMs * 2 ** attempt));
+  }
+  return response;
+}
+
+function isRetryableMapTileResponse(response) {
+  return response?.status === 429 || response?.status === 502 || response?.status === 503 || response?.status === 504;
+}
+
+function mapTileRetryDelayMs(response, fallbackMs) {
+  const retryAfter = Number.parseFloat(response?.headers?.get("retry-after") ?? "");
+  if (Number.isFinite(retryAfter) && retryAfter >= 0) {
+    return Math.min(2_000, Math.round(retryAfter * 1_000));
+  }
+  return fallbackMs;
 }
 
 async function routeCacheFirst(request) {
@@ -296,7 +332,7 @@ async function routeCacheFirst(request) {
     }
     await routeCache.delete(request);
   }
-  return cacheFirst(request, TILE_CACHE, MAX_TILE_ENTRIES);
+  return cacheFirst(request, TILE_CACHE, MAX_TILE_ENTRIES, { retryMapTile: true });
 }
 
 async function prepareAppShellRelease() {

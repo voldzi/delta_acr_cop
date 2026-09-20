@@ -9,6 +9,7 @@ import {
   formatRoutingLiveSpeeds,
   isMapPopoverControlTarget,
   isRecoverableMapError,
+  isRecoverableBasemapTileError,
   normalizeMapGlyphsTemplate,
   normalizeMapTileTemplate,
   objectsToHistoryFeatureCollection,
@@ -106,6 +107,16 @@ describe("COP map data helpers", () => {
       )
     ).toBe(true);
     expect(isRecoverableMapError("AJAXError: (500): /api/v1/objects")).toBe(false);
+  });
+
+  it("hides transient first-party basemap rate limits without hiding API failures", () => {
+    const tileError = "AJAXError: (429): https://tiles.zeleznalady.cz/osm/11/1120/696.png";
+    expect(isRecoverableBasemapTileError(tileError)).toBe(true);
+    expect(isRecoverableMapError(tileError)).toBe(true);
+    expect(isRecoverableBasemapTileError("AJAXError: (429): /api/v1/objects")).toBe(false);
+    expect(isRecoverableBasemapTileError("AJAXError: (500): https://tiles.zeleznalady.cz/osm/11/1120/696.png")).toBe(
+      false
+    );
   });
 
   it("formats SIM route analysis sections for route selection details", () => {

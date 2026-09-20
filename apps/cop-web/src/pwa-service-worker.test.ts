@@ -12,6 +12,7 @@ interface ServiceWorkerContext {
     url: string,
     options?: { attempts?: number; retryBaseMs?: number }
   ) => Promise<Response>;
+  fetchMapTileWithRetry: (request: Request, options?: { attempts?: number; retryBaseMs?: number }) => Promise<Response>;
   isAppAssetRequest: (request: Request, url: URL) => boolean;
   isChatRequestPath: (pathname: string) => boolean;
   isImmutableRuntimeAssetRequest: (request: Request, url: URL) => boolean;
@@ -121,6 +122,36 @@ function cacheRequestKey(request: Request | string): string {
 }
 
 describe("COP PWA service worker routing", () => {
+  it("retries a rate-limited tile and returns the successful response", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("limit", { status: 429 }))
+      .mockResolvedValueOnce(new Response("tile", { status: 200 }));
+    const serviceWorker = loadServiceWorkerContext({ fetch: fetchMock });
+
+    const response = await serviceWorker.fetchMapTileWithRetry(
+      new Request("https://tiles.zeleznalady.cz/osm/11/1120/696.png"),
+      { attempts: 3, retryBaseMs: 0 }
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("tile");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry permanent missing tile responses", async () => {
+    const fetchMock = vi.fn(async () => new Response("missing", { status: 404 }));
+    const serviceWorker = loadServiceWorkerContext({ fetch: fetchMock });
+
+    const response = await serviceWorker.fetchMapTileWithRetry(
+      new Request("https://tiles.zeleznalady.cz/osm/11/1120/696.png"),
+      { attempts: 3, retryBaseMs: 0 }
+    );
+
+    expect(response.status).toBe(404);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("uses cached shell keys for main and chat navigations", () => {
     const serviceWorker = loadServiceWorkerContext();
 
