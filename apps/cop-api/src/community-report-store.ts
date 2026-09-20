@@ -1159,7 +1159,6 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
       SET metadata = $2::jsonb,
         updated_at = $3::timestamptz
       WHERE group_id = $1
-      ON CONFLICT (attachment_id) DO NOTHING
       RETURNING *`,
       [input.groupId, JSON.stringify(metadata), timestamp]
     );
