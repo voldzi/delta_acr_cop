@@ -31,6 +31,8 @@ export type CommunityReportConfirmationValue = "not_there" | "still_there";
 
 export interface CommunityReportConfirmationSummary {
   currentActorValue?: CommunityReportConfirmationValue;
+  independentNotThereCount?: number;
+  independentStillThereCount?: number;
   lastConfirmedAt?: string;
   notThereCount: number;
   stillThereCount: number;
@@ -680,7 +682,7 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
     reportIds: string[],
     currentSubjectId?: string
   ): Promise<Record<string, CommunityReportConfirmationSummary>> {
-    return confirmationSummaries(Array.from(this.confirmations.values()), reportIds, currentSubjectId);
+    return confirmationSummaries(Array.from(this.confirmations.values()), reportIds, this.reports, currentSubjectId);
   }
 
   async upsertReportConfirmation(
@@ -1331,15 +1333,18 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     if (reportIds.length === 0) return {};
     const result = await this.pool.query<CommunityReportConfirmationSummaryRow>(
       `SELECT
-        report_id,
+        c.report_id,
+        COUNT(*) FILTER (WHERE confirmation = 'still_there' AND c.subject_id <> r.subject_id)::integer AS independent_still_there_count,
+        COUNT(*) FILTER (WHERE confirmation = 'not_there' AND c.subject_id <> r.subject_id)::integer AS independent_not_there_count,
         COUNT(*) FILTER (WHERE confirmation = 'still_there')::integer AS still_there_count,
         COUNT(*) FILTER (WHERE confirmation = 'not_there')::integer AS not_there_count,
         COUNT(*)::integer AS total_count,
-        MAX(updated_at) AS last_confirmed_at,
-        MAX(confirmation) FILTER (WHERE subject_id = $2) AS current_actor_value
-      FROM cop_community_report_confirmations
-      WHERE report_id = ANY($1::uuid[])
-      GROUP BY report_id`,
+        MAX(c.updated_at) AS last_confirmed_at,
+        MAX(confirmation) FILTER (WHERE c.subject_id = $2) AS current_actor_value
+      FROM cop_community_report_confirmations c
+      JOIN cop_community_reports r ON r.report_id = c.report_id
+      WHERE c.report_id = ANY($1::uuid[])
+      GROUP BY c.report_id`,
       [reportIds, currentSubjectId ?? null]
     );
     return Object.fromEntries(result.rows.map((row) => [row.report_id, confirmationSummaryFromRow(row)]));
@@ -1656,6 +1661,8 @@ interface CommunityReportRow extends QueryResultRow {
 
 interface CommunityReportConfirmationSummaryRow extends QueryResultRow {
   current_actor_value: CommunityReportConfirmationValue | null;
+  independent_not_there_count: number | string;
+  independent_still_there_count: number | string;
   last_confirmed_at: Date | string | null;
   not_there_count: number | string;
   report_id: string;
@@ -2002,7 +2009,7 @@ function buildCommunityQueryClauses(query: CommunityReportQuery, params: unknown
         WHEN properties->>'validUntil' ~ '^\\d{4}-\\d{2}-\\d{2}T'
           THEN (properties->>'validUntil')::timestamptz
         ELSE NULL
-      END >= ${activeAtParam}::timestamptz
+      END > ${activeAtParam}::timestamptz
     )`);
   }
   if (query.bbox) {
@@ -2028,7 +2035,13 @@ function buildCommunityGroupQueryClauses(query: CommunityGroupQuery, params: unk
 }
 
 function emptyConfirmationSummary(): CommunityReportConfirmationSummary {
-  return { notThereCount: 0, stillThereCount: 0, totalCount: 0 };
+  return {
+    independentNotThereCount: 0,
+    independentStillThereCount: 0,
+    notThereCount: 0,
+    stillThereCount: 0,
+    totalCount: 0
+  };
 }
 
 function confirmationSummaries(
@@ -2039,6 +2052,7 @@ function confirmationSummaries(
     value: CommunityReportConfirmationValue;
   }>,
   reportIds: string[],
+  reports: Map<string, CommunityReportRecord>,
   currentSubjectId?: string
 ): Record<string, CommunityReportConfirmationSummary> {
   const allowed = new Set(reportIds);
@@ -2049,6 +2063,11 @@ function confirmationSummaries(
     summary.totalCount += 1;
     if (confirmation.value === "still_there") summary.stillThereCount += 1;
     else summary.notThereCount += 1;
+    if (confirmation.subjectId !== reports.get(confirmation.reportId)?.createdBy.subjectId) {
+      if (confirmation.value === "still_there")
+        summary.independentStillThereCount = (summary.independentStillThereCount ?? 0) + 1;
+      else summary.independentNotThereCount = (summary.independentNotThereCount ?? 0) + 1;
+    }
     if (!summary.lastConfirmedAt || confirmation.updatedAt > summary.lastConfirmedAt) {
       summary.lastConfirmedAt = confirmation.updatedAt;
     }
@@ -2064,6 +2083,8 @@ function confirmationSummaryFromRow(row: CommunityReportConfirmationSummaryRow):
   return {
     ...(row.current_actor_value ? { currentActorValue: row.current_actor_value } : {}),
     ...(row.last_confirmed_at ? { lastConfirmedAt: isoString(row.last_confirmed_at) } : {}),
+    independentNotThereCount: Number(row.independent_not_there_count),
+    independentStillThereCount: Number(row.independent_still_there_count),
     notThereCount: Number(row.not_there_count),
     stillThereCount: Number(row.still_there_count),
     totalCount: Number(row.total_count)
@@ -2087,7 +2108,7 @@ function matchesCommunityQuery(report: CommunityReportRecord, query: CommunityRe
     !query.includeExpired &&
     (report.status === "submitted" || report.status === "published") &&
     typeof report.properties.validUntil === "string" &&
-    Date.parse(report.properties.validUntil) < Date.parse(query.activeAt ?? new Date().toISOString())
+    Date.parse(report.properties.validUntil) <= Date.parse(query.activeAt ?? new Date().toISOString())
   ) {
     return false;
   }

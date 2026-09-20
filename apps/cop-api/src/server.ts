@@ -13759,7 +13759,9 @@ function normalizeCreateCommunityReport(
     : isCommunityReportHazardSeverity(value.severity)
       ? value.severity
       : communitySeverity(category);
-  const validUntil = optionalIsoTimestamp(value.validUntil) ?? defaultCommunityReportValidUntil(category, requestNow);
+  const observedAt = optionalIsoTimestamp(value.observedAt, requestNow) ?? requestNow.toISOString();
+  const validUntil =
+    optionalIsoTimestamp(value.validUntil) ?? defaultCommunityReportValidUntil(category, new Date(observedAt));
   const properties = {
     ...normalizedJsonRecord(value.properties, 8000),
     ...(captureContext ? { captureContext } : {}),
@@ -13780,7 +13782,7 @@ function normalizeCreateCommunityReport(
       ? { description: optionalTrimmedString(value.description, 2000) }
       : {}),
     location,
-    observedAt: optionalIsoTimestamp(value.observedAt, requestNow) ?? requestNow.toISOString(),
+    observedAt,
     properties,
     title,
     visibility: isCommunityVisibility(value.visibility) ? value.visibility : "community"
@@ -15474,7 +15476,13 @@ function communityReportResponseItems(
 }
 
 function emptyCommunityReportConfirmationSummary(): CommunityReportConfirmationSummary {
-  return { notThereCount: 0, stillThereCount: 0, totalCount: 0 };
+  return {
+    independentNotThereCount: 0,
+    independentStillThereCount: 0,
+    notThereCount: 0,
+    stillThereCount: 0,
+    totalCount: 0
+  };
 }
 
 function communityAttachmentResponseItem(
@@ -16258,10 +16266,18 @@ function communityReportConfidenceSummary(
   const accuracy = report.location.accuracyM;
   const locationQualityPercent =
     accuracy === undefined ? 60 : Math.round(Math.max(20, Math.min(100, 100 - Math.max(0, accuracy - 10) * 1.6)));
-  const voteBalance = confirmations.stillThereCount - confirmations.notThereCount;
+  // The author can update their observation, but is not an independent witness.
+  const independentPositive = confirmations.independentStillThereCount ?? 0;
+  const voteBalance = independentPositive - (confirmations.independentNotThereCount ?? 0);
   const voteAdjustment = Math.max(-25, Math.min(25, voteBalance * 8));
   const scorePercent = Math.round(
-    Math.max(5, Math.min(95, 25 + freshnessPercent * 0.4 + locationQualityPercent * 0.2 + voteAdjustment))
+    Math.max(
+      5,
+      Math.min(
+        independentPositive >= 2 && voteBalance >= 2 ? 95 : 69,
+        25 + freshnessPercent * 0.4 + locationQualityPercent * 0.2 + voteAdjustment
+      )
+    )
   );
   return {
     freshnessPercent,
@@ -16293,7 +16309,7 @@ function defaultCommunityReportValidUntil(category: CommunityReportCategory, req
 
 function isCommunityReportStale(report: CommunityReportRecord, requestNow: Date): boolean {
   const validUntil = communityReportValidUntil(report);
-  return validUntil ? Date.parse(validUntil) < requestNow.getTime() : false;
+  return validUntil ? Date.parse(validUntil) <= requestNow.getTime() : false;
 }
 
 function communitySeverity(category: CommunityReportCategory): "advisory" | "warning" | "critical" {

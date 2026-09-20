@@ -158,7 +158,7 @@ describe("community report routes", () => {
     });
     expect(stillThereResponse.statusCode).toBe(200);
     expect(stillThereResponse.json()).toMatchObject({
-      confidenceSummary: { level: "high", voteBalance: 1 },
+      confidenceSummary: { level: "medium", voteBalance: 0 },
       confirmations: {
         currentActorValue: "still_there",
         notThereCount: 0,
@@ -175,7 +175,7 @@ describe("community report routes", () => {
     });
     expect(replaceConfirmationResponse.statusCode).toBe(200);
     expect(replaceConfirmationResponse.json()).toMatchObject({
-      confidenceSummary: { voteBalance: -1 },
+      confidenceSummary: { voteBalance: 0 },
       confirmations: {
         currentActorValue: "not_there",
         notThereCount: 1,
@@ -250,6 +250,87 @@ describe("community report routes", () => {
     expect(invalidConfirmationResponse.statusCode).toBe(400);
 
     await app.close();
+  });
+
+  it("keeps delayed offline observations expired and idempotent after reconnection", async () => {
+    let requestNow = new Date("2026-09-20T12:00:00Z");
+    const app = buildServer({ now: () => requestNow, mediaStorage: new FakeMediaStorage() });
+    const headers = {
+      authorization: "Bearer dev-lab-token",
+      "x-idempotency-key": "8cb20f65-4a6b-49ca-a43a-bcd7ca857f72"
+    };
+    const payload = {
+      category: "traffic_congestion",
+      location: { lat: 50.08, lon: 14.42, accuracyM: 8, source: "device" },
+      observedAt: "2026-09-20T10:00:00Z",
+      visibility: "private"
+    };
+    try {
+      const created = await app.inject({ method: "POST", url: "/api/v1/community/reports", headers, payload });
+      expect(created.statusCode).toBe(201);
+      const { reportId } = created.json();
+      expect(created.json()).toMatchObject({ properties: { validUntil: "2026-09-20T11:00:00.000Z" } });
+      const submitted = await app.inject({
+        method: "POST",
+        url: `/api/v1/community/reports/${reportId}/submit`,
+        headers
+      });
+      expect(submitted.statusCode).toBe(200);
+      requestNow = new Date("2026-09-20T13:00:00Z");
+      const retry = await app.inject({ method: "POST", url: "/api/v1/community/reports", headers, payload });
+      expect(retry.statusCode).toBe(200);
+      expect(retry.json()).toMatchObject({ reportId, properties: { validUntil: "2026-09-20T11:00:00.000Z" } });
+      const feed = await app.inject({ method: "GET", url: "/api/v1/community/reports", headers });
+      expect(feed.json().items).toEqual([]);
+      const history = await app.inject({
+        method: "GET",
+        url: "/api/v1/community/reports?includeExpired=true",
+        headers
+      });
+      expect(history.json().items).toHaveLength(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("requires independent corroboration for high support and excludes author votes", async () => {
+    const requestNow = new Date("2026-09-20T12:00:00Z");
+    const store = new InMemoryCommunityReportStore();
+    const report = await store.createReport(
+      {
+        category: "traffic_accident",
+        createdBy: { subjectId: "author", displayName: "Author", username: "author" },
+        location: { lat: 50.08, lon: 14.42, accuracyM: 5, source: "device" },
+        observedAt: requestNow.toISOString(),
+        properties: { validUntil: "2026-09-20T16:00:00Z" },
+        title: "Test observation",
+        visibility: "public"
+      },
+      requestNow
+    );
+    await store.submitReport(report.reportId, "author", requestNow);
+    const app = buildServer({ now: () => requestNow, communityReportStore: store });
+    const read = async () =>
+      (await app.inject({ method: "GET", headers: { authorization: "Bearer dev-lab-token" }, url: `/api/v1/community/reports/${report.reportId}` })).json();
+    try {
+      expect((await read()).confidenceSummary).toMatchObject({ level: "medium", scorePercent: 69, voteBalance: 0 });
+      await store.upsertReportConfirmation(report.reportId, "author", "still_there", requestNow);
+      expect((await read()).confirmations).toMatchObject({ stillThereCount: 1, independentStillThereCount: 0 });
+      expect((await read()).confidenceSummary).toMatchObject({ level: "medium", scorePercent: 69 });
+      await store.upsertReportConfirmation(report.reportId, "witness-1", "still_there", requestNow);
+      expect((await read()).confidenceSummary.level).toBe("medium");
+      await store.upsertReportConfirmation(report.reportId, "witness-2", "still_there", requestNow);
+      expect((await read()).confidenceSummary).toMatchObject({ level: "high", voteBalance: 2 });
+      await store.upsertReportConfirmation(report.reportId, "witness-2", "not_there", requestNow);
+      expect((await read()).confidenceSummary).toMatchObject({ level: "medium", voteBalance: 0 });
+      expect((await read()).confirmations).toMatchObject({
+        totalCount: 3,
+        independentStillThereCount: 1,
+        independentNotThereCount: 1
+      });
+    } finally {
+      await app.close();
+    }
   });
 
   it("rejects confirmations for an expired report without breaking its lifecycle", async () => {

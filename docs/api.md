@@ -268,3 +268,21 @@ Krátkodobé dopravní kategorie dostávají při vytvoření serverový `validU
 Po jeho uplynutí se hlášení nezobrazuje v aktivním feedu a nelze je dále
 potvrzovat. Web, COP Mobile a Jízda komunikují pouze s COP API; interní SIM a
 Valhalla endpointy ani tokeny klientům zpřístupněny nejsou.
+
+## Driver report freshness and support
+
+Default report expiry starts at `observedAt`, not at upload time. Delayed offline
+submissions remain in history and do not reappear as fresh incidents. Expiry is
+exclusive: an observation is inactive at `validUntil`. Explicit operator expiry
+remains supported.
+
+Confirmation summaries optionally include `independentStillThereCount` and
+`independentNotThereCount`; both exclude the original author without disclosing
+identities. `voteBalance` uses these independent counts. The support score is a
+heuristic, not a calibrated probability. Without at least two independent
+positive votes and a net balance of two, its maximum is 69/100.
+
+Native nearby feeds send `bbox`, traffic `categories`, active `statuses`,
+`includeExpired=false` and `limit=500` to COP before applying the precise radius
+filter. Hitting the limit is presented as potentially incomplete. Nearby means
+straight-line distance; it is not road-edge or direction matching.

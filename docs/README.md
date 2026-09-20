@@ -31,3 +31,5 @@ Decision record: [ADR 0009](adr/0009_STANDARD_DOCUMENTATION_MAPPING_AND_JSON_OPE
 - Historical notes and superseded analyses belong in `docs/archive/`.
 - API behavior changes must update `openapi/openapi.json`; the YAML export is
   generated from JSON.
+
+Driver integration release evidence: [integration/20_DRIVER_REPORTING_RELEASE.md](integration/20_DRIVER_REPORTING_RELEASE.md).

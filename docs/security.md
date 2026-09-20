@@ -83,3 +83,8 @@ the audited production infrastructure boundary.
 ## Webové přihlášení (BFF)
 
 Produkční COP může používat serverovou BFF relaci (`COP_WEB_BFF_SESSION_ENABLED=true`). OAuth kód se vymění pouze v COP API a přístupový i obnovovací token zůstávají šifrované v PostgreSQL. Prohlížeč pracuje pouze s relací v cookie `Secure`, `HttpOnly`, `SameSite=Lax`; tokeny proto nejsou dostupné skriptům stránky ani rozšířením prohlížeče. Relace nelze spustit bez databáze a tajného `COP_WEB_SESSION_SECRET` o minimálně 32 znacích.
+
+Driver confirmation support excludes the original reporter's own vote. Counts
+represent distinct authenticated subjects, not proof of distinct physical
+people. The heuristic is not calibrated truth or authorization for a closure.
+No road closure or automatic reroute is created from these confirmations.

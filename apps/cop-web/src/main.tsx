@@ -18728,7 +18728,10 @@ function SituationFeatureDetail({
             ["Stáří", formatAge(properties.observedAt)],
             ...(isCommunityReport
               ? ([
-                  ["Důvěryhodnost", `${recordNumber(confidenceSummary, "scorePercent") ?? 0} %`],
+                  [
+                    "Podpora hlášení",
+                    `${recordNumber(confidenceSummary, "scorePercent") ?? 0} / 100 (orientační skóre)`
+                  ],
                   [
                     "Potvrzení",
                     `${recordNumber(confirmations, "stillThereCount") ?? 0} stále je · ${recordNumber(confirmations, "notThereCount") ?? 0} už není`

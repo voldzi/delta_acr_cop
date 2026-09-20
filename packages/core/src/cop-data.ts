@@ -1732,6 +1732,8 @@ export interface CommunityReportProperties extends Record<string, unknown> {
 
 export interface CommunityReportConfirmationSummary {
   currentActorValue?: CommunityReportConfirmationValue;
+  independentNotThereCount?: number;
+  independentStillThereCount?: number;
   lastConfirmedAt?: string;
   notThereCount: number;
   stillThereCount: number;

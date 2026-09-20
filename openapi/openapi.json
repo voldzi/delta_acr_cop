@@ -8833,7 +8833,8 @@
           },
           "validUntil": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "Optional explicit expiry. If absent, category lifetime starts at observedAt, including offline submissions."
           },
           "visibility": {
             "$ref": "#/components/schemas/CommunityReportVisibility"
@@ -20945,6 +20946,16 @@
           "totalCount": {
             "type": "integer",
             "minimum": 0
+          },
+          "independentNotThereCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Current confirmations from actors other than the original reporter. No actor identity is exposed."
+          },
+          "independentStillThereCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Current confirmations from actors other than the original reporter. No actor identity is exposed."
           }
         }
       },
@@ -20983,9 +20994,11 @@
             "maximum": 100
           },
           "voteBalance": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Independent still_there minus independent not_there confirmations; excludes the original reporter."
           }
-        }
+        },
+        "description": "Heuristic support score, not a calibrated probability of truth. High requires at least two independent positive confirmations and a net independent balance of at least two. Author votes never increase support. Freshness and capture accuracy affect the score."
       }
     }
   }

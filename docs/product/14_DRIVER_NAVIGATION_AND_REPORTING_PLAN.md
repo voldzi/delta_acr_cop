@@ -125,3 +125,38 @@ remains the release acceptance gate before wider pilot use.
 - Reporter identity is not exposed on the public map.
 - SIM/Valhalla endpoints and credentials stay server-side.
 - Existing report categories, web workflow and map layers remain compatible.
+
+## Delivery status — 2026-09-21
+
+The implementation remains staged; the entire professional-navigation plan is
+not complete. This release hardens Phases 2–3 and adds maneuver speech to Phase 5:
+
+- offline expiry follows the observation time, including the exact expiry boundary;
+- author votes cannot increase support; high support requires independent votes;
+- the native nearby feed filters on COP before its limit, rejects expired records,
+  labels distance as radial and distinguishes errors and incomplete results;
+- iPhone/CarPlay capture rejects stale or inaccurate GPS; modal actions complete
+  dismissal before presenting a result;
+- Czech approach/turn speech shares one owner with priority alerts, suppresses
+  speech during CallKit calls and deduplicates stages across position updates;
+- domain replay covers speech cadence for city/motorway, suppression, GPS bounce
+  and reroute. This is not a physical GPS or battery test.
+
+Remaining implementation: Phase 4 durable enrichment, edge/carriageway contract
+and duplicate clustering; Phase 5 migration of Jizda's `MKRoute`-based navigation
+to a provider-independent route model before consuming SIM geometry/maneuvers/ETA;
+Phase 6 route alternatives and complete voice-driven reporting. Jizda still uses
+MapKit routes; COP Web already consumes SIM live traffic. Mixing a SIM ETA into
+a MapKit geometry would violate the single authoritative route invariant.
+
+SIM inspection found `sim-routing-nearest-access-v1`, but it returns only a
+nearest point, OSM way/name and distance. It has no stable directed-edge,
+carriageway or routing-dataset identifier. This cannot safely substantiate an
+automatic closure or direction-aware deduplication.
+
+External acceptance gates: Apple CarPlay/navigation/communication entitlement
+approval, signed real-device testing, wired/wireless CarPlay, and a measured
+multi-region driving pilot. No market-leadership claim is supported yet.
+
+Validation and rollback evidence is recorded in
+[the driver integration release record](../integration/20_DRIVER_REPORTING_RELEASE.md).
