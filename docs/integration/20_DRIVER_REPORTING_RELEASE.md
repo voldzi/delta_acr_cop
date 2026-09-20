@@ -82,3 +82,8 @@ The first candidate PostgreSQL run revealed a nested connection acquisition in
 client. The fix uses the member `INSERT ... RETURNING` result in the transaction.
 The failed smoke cleaned its isolated schema and production stayed on the prior
 revision until revalidation.
+
+The post-deployment diagnostic audit found that public dependency health included
+the internal routing base URL. The follow-up uses a generic server-side routing
+detail and adds a regression proving the configured host/path never appears in
+public health. Operational source configuration remains server-owned.

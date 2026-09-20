@@ -3,6 +3,31 @@ import { buildServer } from "./server.js";
 import type { RoutingRouteRequest, RoutingRouteResponse, RoutingSource } from "./routing-source.js";
 
 describe("routing routes", () => {
+  it("does not disclose the internal SIM endpoint in public dependency health", async () => {
+    const routingSource: RoutingSource = {
+      config: { baseUrl: "https://private-sim.example/internal-routing", enabled: true, timeoutMs: 5000 },
+      alternatives: vi.fn(),
+      fetchProfiles: vi.fn(),
+      isochrone: vi.fn(),
+      nearestAccess: vi.fn(),
+      route: vi.fn()
+    };
+    const app = buildServer({ routingSource });
+    try {
+      const response = await app.inject({ method: "GET", url: "/health/dependencies" });
+      expect(response.statusCode).toBe(200);
+      expect(response.body).not.toContain("private-sim.example");
+      expect(response.body).not.toContain("internal-routing");
+      expect(response.json().dependencies).toContainEqual({
+        detail: "enabled; server-side routing configured",
+        name: "sim-routing-source",
+        status: "ok"
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("proxies emergency routes through the server-side SIM routing source", async () => {
     const routeMock = vi.fn(async (request: RoutingRouteRequest): Promise<RoutingRouteResponse> => ({
       contractVersion: "sim-emergency-routing-v1",

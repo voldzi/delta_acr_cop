@@ -2989,7 +2989,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return { detail: "disabled", name: "sim-routing-source", status: "disabled" };
     }
     return {
-      detail: `enabled; ${routingSource.config.baseUrl}`,
+      detail: "enabled; server-side routing configured",
       name: "sim-routing-source",
       status: "ok"
     };
