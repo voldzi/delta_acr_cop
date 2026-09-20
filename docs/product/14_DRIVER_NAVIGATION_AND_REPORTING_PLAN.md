@@ -55,6 +55,14 @@ internal endpoint addresses.
 - keep moderation and lifecycle history; never hard-delete an active report;
 - protect the service with rate limits, abuse controls and privacy-safe audit.
 
+Status on 2026-09-20: the production slice is implemented. COP stores one
+replaceable `still_there`/`not_there` value per authenticated actor, returns
+aggregate confirmation and confidence summaries, applies category-specific
+expiry, rejects confirmation of stale or inactive reports and records the
+change in audit. COP Web exposes the same controls. The shared native module
+provides a stateless authenticated report feed and Jizda presents nearby
+reports with safe confirmation controls on iPhone and CarPlay.
+
 ### Phase 4 — Road matching and SIM enrichment
 
 - send submitted traffic reports from COP to a versioned SIM enrichment

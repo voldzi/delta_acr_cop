@@ -253,3 +253,18 @@ another active manager exists or the group is deleted. Managers can remove
 another member through
 `DELETE /api/v1/community/groups/{groupId}/members/{subjectId}`, which marks
 the target membership as `left` and keeps the historical membership record.
+
+## Potvrzení komunitních dopravních hlášení
+
+Autentizovaný klient potvrzuje aktuální pozorování přes
+`PUT /api/v1/community/reports/{reportId}/confirmation` s hodnotou
+`still_there` nebo `not_there`. COP uchovává právě jeden aktuální hlas na
+uživatele a hlášení; další volba stejného uživatele předchozí hodnotu nahradí.
+Odpověď i seznam hlášení obsahují agregované `confirmations` a transparentní
+`confidenceSummary`. Skóre kombinuje čerstvost, přesnost polohy a bilanci
+potvrzení. Nejde o automatické potvrzení incidentu ani příkaz ke změně trasy.
+
+Krátkodobé dopravní kategorie dostávají při vytvoření serverový `validUntil`.
+Po jeho uplynutí se hlášení nezobrazuje v aktivním feedu a nelze je dále
+potvrzovat. Web, COP Mobile a Jízda komunikují pouze s COP API; interní SIM a
+Valhalla endpointy ani tokeny klientům zpřístupněny nejsou.

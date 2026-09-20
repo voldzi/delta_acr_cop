@@ -7734,6 +7734,54 @@
           }
         }
       }
+    },
+    "/api/v1/community/reports/{reportId}/confirmation": {
+      "put": {
+        "tags": [
+          "Community Reports"
+        ],
+        "summary": "Create or replace the authenticated actor's current confirmation of an active report.",
+        "operationId": "confirmCommunityReport",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CommunityReportIdPath"
+          },
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityReportConfirmationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Community report with the updated aggregate confirmation summary.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8919,7 +8967,9 @@
           "title",
           "updatedAt",
           "version",
-          "visibility"
+          "visibility",
+          "confirmations",
+          "confidenceSummary"
         ],
         "properties": {
           "reportId": {
@@ -9006,6 +9056,12 @@
             "items": {
               "$ref": "#/components/schemas/CommunityReportAttachment"
             }
+          },
+          "confirmations": {
+            "$ref": "#/components/schemas/CommunityReportConfirmationSummary"
+          },
+          "confidenceSummary": {
+            "$ref": "#/components/schemas/CommunityReportConfidenceSummary"
           }
         }
       },
@@ -20840,6 +20896,94 @@
                 }
               }
             }
+          }
+        }
+      },
+      "CommunityReportConfirmationValue": {
+        "type": "string",
+        "enum": [
+          "still_there",
+          "not_there"
+        ]
+      },
+      "CommunityReportConfirmationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "$ref": "#/components/schemas/CommunityReportConfirmationValue"
+          }
+        }
+      },
+      "CommunityReportConfirmationSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "notThereCount",
+          "stillThereCount",
+          "totalCount"
+        ],
+        "properties": {
+          "currentActorValue": {
+            "$ref": "#/components/schemas/CommunityReportConfirmationValue"
+          },
+          "lastConfirmedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notThereCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stillThereCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "CommunityReportConfidenceSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "freshnessPercent",
+          "level",
+          "locationQualityPercent",
+          "scorePercent",
+          "voteBalance"
+        ],
+        "properties": {
+          "freshnessPercent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "locationQualityPercent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "scorePercent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "voteBalance": {
+            "type": "integer"
           }
         }
       }

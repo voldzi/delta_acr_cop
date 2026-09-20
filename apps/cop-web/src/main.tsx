@@ -112,6 +112,7 @@ import {
 import {
   acknowledgeCopAlert,
   connectCopStream,
+  confirmCommunityReport,
   confirmMobilePairingSession,
   createIncident,
   createIncidentTask,
@@ -6699,6 +6700,24 @@ export function App() {
     }
   }
 
+  async function handleConfirmCommunityReport(feature: SituationFeature, value: "not_there" | "still_there") {
+    if (!authToken) {
+      openLoginPrompt("report");
+      return;
+    }
+    const reportId = feature.properties.reportId;
+    if (!reportId) return;
+    try {
+      await confirmCommunityReport(apiBase, authToken, reportId, value);
+      setCommunityRefreshNonce((current) => current + 1);
+      setLocationStatus(
+        value === "still_there" ? "Potvrzeno: situace stále trvá." : "Potvrzeno: situace už není na místě."
+      );
+    } catch (error) {
+      setLocationStatus(error instanceof Error ? error.message : "Potvrzení hlášení se nepodařilo uložit.");
+    }
+  }
+
   function enableCommunityReportCatalogLayers() {
     if (!mapCatalog) {
       return;
@@ -8574,6 +8593,7 @@ export function App() {
                       authToken={authToken}
                       feature={selectedSituationFeature}
                       mobileTowerViewshed={mobileTowerViewshed}
+                      onConfirmReport={(feature, value) => void handleConfirmCommunityReport(feature, value)}
                       onDeleteReport={(feature) => void handleDeleteCommunityReport(feature)}
                       onEditReport={(feature) => editCommunityReportFeature(feature)}
                       onResolveReport={(feature) => void handleResolveCommunityReport(feature)}
@@ -8781,6 +8801,7 @@ export function App() {
               authToken={authToken}
               feature={selectedSituationFeature}
               mobileTowerViewshed={mobileTowerViewshed}
+              onConfirmReport={(feature, value) => void handleConfirmCommunityReport(feature, value)}
               onDeleteReport={(feature) => void handleDeleteCommunityReport(feature)}
               onEditReport={(feature) => editCommunityReportFeature(feature)}
               onResolveReport={(feature) => void handleResolveCommunityReport(feature)}
@@ -18526,6 +18547,7 @@ function SituationFeatureDetail({
   authToken,
   feature,
   mobileTowerViewshed,
+  onConfirmReport,
   onDeleteReport,
   onEditReport,
   onNavigateToTarget,
@@ -18538,6 +18560,7 @@ function SituationFeatureDetail({
   authToken: string | undefined;
   feature: SituationFeature;
   mobileTowerViewshed?: MobileTowerViewshedState;
+  onConfirmReport?: (feature: SituationFeature, value: "not_there" | "still_there") => void;
   onDeleteReport?: (feature: SituationFeature) => void;
   onEditReport?: (feature: SituationFeature) => void;
   onNavigateToTarget?: (target: EmergencyRouteTarget) => void;
@@ -18558,6 +18581,8 @@ function SituationFeatureDetail({
   const isCommunityReport = properties.layer === "community" && typeof properties.reportId === "string";
   const communityReportOwned = properties.ownedByCurrentActor === true;
   const communityReportActive = properties.status === "submitted" || properties.status === "published";
+  const confirmations = isRecord(properties.confirmations) ? properties.confirmations : {};
+  const confidenceSummary = isRecord(properties.confidenceSummary) ? properties.confidenceSummary : {};
   const trafficPresentation = properties.layer === "traffic" ? resolveTransportPresentation(feature) : null;
   const outdoorCamera = isOutdoorWebcamFeature(feature);
   const weatherCamera = isWeatherWebcamFeature(feature);
@@ -18629,6 +18654,20 @@ function SituationFeatureDetail({
 
       {isCommunityReport ? (
         <div className="community-report-actions">
+          {communityReportActive ? (
+            <>
+              <button
+                className="mini-button primary-lite"
+                onClick={() => onConfirmReport?.(feature, "still_there")}
+                type="button"
+              >
+                Stále je
+              </button>
+              <button className="mini-button" onClick={() => onConfirmReport?.(feature, "not_there")} type="button">
+                Už není
+              </button>
+            </>
+          ) : null}
           {linkedCommunityGroupId ? (
             <button className="mini-button" onClick={() => onOpenChat?.(feature)} type="button">
               Chat
@@ -18687,6 +18726,15 @@ function SituationFeatureDetail({
             [isCommunityReport ? "Vloženo" : "Pozorováno", formatShortDateTime(properties.observedAt)],
             [isCommunityReport ? "Platnost" : "Platí do", formatShortDateTime(properties.validUntil)],
             ["Stáří", formatAge(properties.observedAt)],
+            ...(isCommunityReport
+              ? ([
+                  ["Důvěryhodnost", `${recordNumber(confidenceSummary, "scorePercent") ?? 0} %`],
+                  [
+                    "Potvrzení",
+                    `${recordNumber(confirmations, "stillThereCount") ?? 0} stále je · ${recordNumber(confirmations, "notThereCount") ?? 0} už není`
+                  ]
+                ] as Array<[string, React.ReactNode]>)
+              : []),
             ...(!floodDetail
               ? ([
                   [

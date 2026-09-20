@@ -27,6 +27,15 @@ export type CommunityAttachmentStatus = "pending_upload" | "uploaded" | "failed"
 export type CommunityGroupVisibility = "private" | "public";
 export type CommunityGroupMemberRole = "admin" | "member" | "owner";
 export type CommunityGroupMemberStatus = "active" | "left" | "pending";
+export type CommunityReportConfirmationValue = "not_there" | "still_there";
+
+export interface CommunityReportConfirmationSummary {
+  currentActorValue?: CommunityReportConfirmationValue;
+  lastConfirmedAt?: string;
+  notThereCount: number;
+  stillThereCount: number;
+  totalCount: number;
+}
 
 export interface CommunityReportLocation {
   accuracyM?: number;
@@ -234,6 +243,10 @@ export interface CommunityReportStore {
   init(): Promise<void>;
   leaveGroup(groupId: string, actor: CommunityReportActor, now: Date): Promise<LeaveCommunityGroupResult>;
   listGroups(query: CommunityGroupQuery): Promise<CommunityGroupRecord[]>;
+  listConfirmationSummaries(
+    reportIds: string[],
+    currentSubjectId?: string
+  ): Promise<Record<string, CommunityReportConfirmationSummary>>;
   listReports(query: CommunityReportQuery): Promise<CommunityReportRecord[]>;
   removeGroupMember(
     groupId: string,
@@ -259,6 +272,12 @@ export interface CommunityReportStore {
     input: UpdateCommunityReportInput,
     now: Date
   ): Promise<CommunityReportRecord | null>;
+  upsertReportConfirmation(
+    reportId: string,
+    subjectId: string,
+    value: CommunityReportConfirmationValue,
+    now: Date
+  ): Promise<CommunityReportConfirmationSummary>;
   upsertGroupMember(input: UpsertCommunityGroupMemberInput, now: Date): Promise<CommunityGroupRecord | null>;
   withdrawReport(
     reportId: string,
@@ -296,6 +315,10 @@ export function createCommunityReportStoreFromEnv(
 export class InMemoryCommunityReportStore implements CommunityReportStore {
   readonly name: string;
   private readonly attachments = new Map<string, CommunityReportAttachmentRecord>();
+  private readonly confirmations = new Map<
+    string,
+    { reportId: string; subjectId: string; updatedAt: string; value: CommunityReportConfirmationValue }
+  >();
   private readonly groups = new Map<string, CommunityGroupRecord>();
   private readonly reports = new Map<string, CommunityReportRecord>();
 
@@ -651,6 +674,28 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
       .sort(compareReports)
       .slice(0, resolveLimit(query.limit))
       .map((report) => ({ ...report, attachments: this.attachmentsForReport(report.reportId) }));
+  }
+
+  async listConfirmationSummaries(
+    reportIds: string[],
+    currentSubjectId?: string
+  ): Promise<Record<string, CommunityReportConfirmationSummary>> {
+    return confirmationSummaries(Array.from(this.confirmations.values()), reportIds, currentSubjectId);
+  }
+
+  async upsertReportConfirmation(
+    reportId: string,
+    subjectId: string,
+    value: CommunityReportConfirmationValue,
+    now: Date
+  ): Promise<CommunityReportConfirmationSummary> {
+    this.confirmations.set(`${reportId}:${subjectId}`, {
+      reportId,
+      subjectId,
+      updatedAt: now.toISOString(),
+      value
+    });
+    return (await this.listConfirmationSummaries([reportId], subjectId))[reportId] ?? emptyConfirmationSummary();
   }
 
   async submitReport(reportId: string, subjectId: string, now: Date): Promise<CommunityReportRecord | null> {
@@ -1280,6 +1325,44 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     return result.rows.map((row) => reportFromRow(row, attachments));
   }
 
+  async listConfirmationSummaries(
+    reportIds: string[],
+    currentSubjectId?: string
+  ): Promise<Record<string, CommunityReportConfirmationSummary>> {
+    if (reportIds.length === 0) return {};
+    const result = await this.pool.query<CommunityReportConfirmationSummaryRow>(
+      `SELECT
+        report_id,
+        COUNT(*) FILTER (WHERE confirmation = 'still_there')::integer AS still_there_count,
+        COUNT(*) FILTER (WHERE confirmation = 'not_there')::integer AS not_there_count,
+        COUNT(*)::integer AS total_count,
+        MAX(updated_at) AS last_confirmed_at,
+        MAX(confirmation) FILTER (WHERE subject_id = $2) AS current_actor_value
+      FROM cop_community_report_confirmations
+      WHERE report_id = ANY($1::uuid[])
+      GROUP BY report_id`,
+      [reportIds, currentSubjectId ?? null]
+    );
+    return Object.fromEntries(result.rows.map((row) => [row.report_id, confirmationSummaryFromRow(row)]));
+  }
+
+  async upsertReportConfirmation(
+    reportId: string,
+    subjectId: string,
+    value: CommunityReportConfirmationValue,
+    now: Date
+  ): Promise<CommunityReportConfirmationSummary> {
+    await this.pool.query(
+      `INSERT INTO cop_community_report_confirmations (report_id, subject_id, confirmation, created_at, updated_at)
+      VALUES ($1, $2, $3, $4::timestamptz, $4::timestamptz)
+      ON CONFLICT (report_id, subject_id) DO UPDATE SET
+        confirmation = EXCLUDED.confirmation,
+        updated_at = EXCLUDED.updated_at`,
+      [reportId, subjectId, value, now.toISOString()]
+    );
+    return (await this.listConfirmationSummaries([reportId], subjectId))[reportId] ?? emptyConfirmationSummary();
+  }
+
   async submitReport(reportId: string, subjectId: string, now: Date): Promise<CommunityReportRecord | null> {
     const existing = await this.getReport(reportId);
     if (!existing || existing.createdBy.subjectId !== subjectId || existing.status !== "draft") {
@@ -1572,6 +1655,15 @@ interface CommunityReportRow extends QueryResultRow {
   visibility: CommunityReportVisibility;
 }
 
+interface CommunityReportConfirmationSummaryRow extends QueryResultRow {
+  current_actor_value: CommunityReportConfirmationValue | null;
+  last_confirmed_at: Date | string | null;
+  not_there_count: number | string;
+  report_id: string;
+  still_there_count: number | string;
+  total_count: number | string;
+}
+
 interface CommunityAttachmentRow extends QueryResultRow {
   attachment_id: string;
   bucket: string;
@@ -1640,6 +1732,18 @@ CREATE INDEX IF NOT EXISTS cop_community_reports_location_idx
 
 CREATE INDEX IF NOT EXISTS cop_community_reports_location_gix
   ON cop_community_reports USING gist (location_geom);
+
+CREATE TABLE IF NOT EXISTS cop_community_report_confirmations (
+  report_id uuid NOT NULL REFERENCES cop_community_reports(report_id) ON DELETE CASCADE,
+  subject_id text NOT NULL,
+  confirmation text NOT NULL CHECK (confirmation IN ('still_there', 'not_there')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (report_id, subject_id)
+);
+
+CREATE INDEX IF NOT EXISTS cop_community_report_confirmations_report_idx
+  ON cop_community_report_confirmations (report_id, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS cop_community_report_attachments (
   attachment_id uuid PRIMARY KEY,
@@ -1922,6 +2026,49 @@ function buildCommunityGroupQueryClauses(query: CommunityGroupQuery, params: unk
     clauses.push(`(m.subject_id = ${subjectParam} AND m.status IN ('active', 'pending'))`);
   }
   return clauses;
+}
+
+function emptyConfirmationSummary(): CommunityReportConfirmationSummary {
+  return { notThereCount: 0, stillThereCount: 0, totalCount: 0 };
+}
+
+function confirmationSummaries(
+  confirmations: Array<{
+    reportId: string;
+    subjectId: string;
+    updatedAt: string;
+    value: CommunityReportConfirmationValue;
+  }>,
+  reportIds: string[],
+  currentSubjectId?: string
+): Record<string, CommunityReportConfirmationSummary> {
+  const allowed = new Set(reportIds);
+  const result: Record<string, CommunityReportConfirmationSummary> = {};
+  for (const confirmation of confirmations) {
+    if (!allowed.has(confirmation.reportId)) continue;
+    const summary = result[confirmation.reportId] ?? emptyConfirmationSummary();
+    summary.totalCount += 1;
+    if (confirmation.value === "still_there") summary.stillThereCount += 1;
+    else summary.notThereCount += 1;
+    if (!summary.lastConfirmedAt || confirmation.updatedAt > summary.lastConfirmedAt) {
+      summary.lastConfirmedAt = confirmation.updatedAt;
+    }
+    if (currentSubjectId && confirmation.subjectId === currentSubjectId) {
+      summary.currentActorValue = confirmation.value;
+    }
+    result[confirmation.reportId] = summary;
+  }
+  return result;
+}
+
+function confirmationSummaryFromRow(row: CommunityReportConfirmationSummaryRow): CommunityReportConfirmationSummary {
+  return {
+    ...(row.current_actor_value ? { currentActorValue: row.current_actor_value } : {}),
+    ...(row.last_confirmed_at ? { lastConfirmedAt: isoString(row.last_confirmed_at) } : {}),
+    notThereCount: Number(row.not_there_count),
+    stillThereCount: Number(row.still_there_count),
+    totalCount: Number(row.total_count)
+  };
 }
 
 function matchesCommunityQuery(report: CommunityReportRecord, query: CommunityReportQuery): boolean {

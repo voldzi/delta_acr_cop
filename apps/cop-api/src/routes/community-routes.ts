@@ -2,6 +2,7 @@ import type { FastifyInstance, RouteHandlerMethod } from "fastify";
 
 export interface CommunityRouteHandlers {
   completeReportAttachment: RouteHandlerMethod;
+  confirmReport: RouteHandlerMethod;
   createGroup: RouteHandlerMethod;
   createReport: RouteHandlerMethod;
   createReportAttachment: RouteHandlerMethod;
@@ -42,6 +43,7 @@ export type CommunityGroupRouteHandlers = Pick<
 export type CommunityReportRouteHandlers = Pick<
   CommunityRouteHandlers,
   | "completeReportAttachment"
+  | "confirmReport"
   | "createReport"
   | "createReportAttachment"
   | "deleteReport"
@@ -76,6 +78,7 @@ export function registerCommunityReportRoutes(app: FastifyInstance, handlers: Co
   app.get("/api/v1/community/reports/:reportId", handlers.getReport);
   app.delete("/api/v1/community/reports/:reportId", handlers.deleteReport);
   app.post("/api/v1/community/reports/:reportId/submit", handlers.submitReport);
+  app.put("/api/v1/community/reports/:reportId/confirmation", handlers.confirmReport);
   app.post("/api/v1/community/reports/:reportId/resolve", handlers.resolveReport);
   app.post("/api/v1/community/reports/:reportId/withdraw", handlers.withdrawReport);
   app.post("/api/v1/community/reports/:reportId/attachments", handlers.createReportAttachment);

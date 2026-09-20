@@ -25,6 +25,13 @@ evaluated on every request, so an older content URL cannot bypass a later
 revocation. Stable idempotency keys prevent retries from creating duplicate
 reports or attachments and reject conflicting reuse.
 
+Community confirmation rule: confirmation is authenticated, scoped to an
+active readable report and stored as one replaceable value per actor and
+report. Public responses expose only aggregate counts, confidence and the
+current actor's own value; they never expose the identities of confirming
+users. Every change produces a bounded audit event. Expired, draft, resolved
+or otherwise inactive reports cannot receive new confirmations.
+
 Client-side chat rule: COP Chat may keep a per-device, per-room last-known
 readable Matrix timeline cache in browser storage so the PWA does not degrade
 already displayed E2EE messages to undecryptable placeholders after restart or

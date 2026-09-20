@@ -150,6 +150,40 @@ describe("community report routes", () => {
     };
     expect(submittedReport.properties.groupId).toMatch(/^[0-9a-f-]{36}$/iu);
 
+    const stillThereResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "PUT",
+      payload: { value: "still_there" },
+      url: `/api/v1/community/reports/${report.reportId}/confirmation`
+    });
+    expect(stillThereResponse.statusCode).toBe(200);
+    expect(stillThereResponse.json()).toMatchObject({
+      confidenceSummary: { level: "high", voteBalance: 1 },
+      confirmations: {
+        currentActorValue: "still_there",
+        notThereCount: 0,
+        stillThereCount: 1,
+        totalCount: 1
+      }
+    });
+
+    const replaceConfirmationResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "PUT",
+      payload: { value: "not_there" },
+      url: `/api/v1/community/reports/${report.reportId}/confirmation`
+    });
+    expect(replaceConfirmationResponse.statusCode).toBe(200);
+    expect(replaceConfirmationResponse.json()).toMatchObject({
+      confidenceSummary: { voteBalance: -1 },
+      confirmations: {
+        currentActorValue: "not_there",
+        notThereCount: 1,
+        stillThereCount: 0,
+        totalCount: 1
+      }
+    });
+
     const groupListResponse = await app.inject({
       headers: { authorization: "Bearer dev-lab-token" },
       method: "GET",
@@ -184,6 +218,7 @@ describe("community report routes", () => {
             properties: {
               attachmentCount: 1,
               category: "fire",
+              confirmations: { notThereCount: 1, stillThereCount: 0, totalCount: 1 },
               label: "Požár u cesty",
               hazardSeverity: "warning",
               photoCount: 1,
@@ -200,10 +235,61 @@ describe("community report routes", () => {
       items: [
         {
           reportId: report.reportId,
+          confirmations: { currentActorValue: "not_there", totalCount: 1 },
           status: "submitted"
         }
       ]
     });
+
+    const invalidConfirmationResponse = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "PUT",
+      payload: { value: "unknown" },
+      url: `/api/v1/community/reports/${report.reportId}/confirmation`
+    });
+    expect(invalidConfirmationResponse.statusCode).toBe(400);
+
+    await app.close();
+  });
+
+  it("rejects confirmations for an expired report without breaking its lifecycle", async () => {
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-09-20T12:00:00Z")
+    });
+    const created = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        category: "traffic_congestion",
+        location: { accuracyM: 10, lat: 50.08, lon: 14.42, source: "device" },
+        observedAt: "2026-09-20T10:00:00Z",
+        title: "Stará kolona",
+        validUntil: "2026-09-20T11:00:00Z",
+        visibility: "community"
+      },
+      url: "/api/v1/community/reports"
+    });
+    expect(created.statusCode).toBe(201);
+    const reportId = (created.json() as { reportId: string }).reportId;
+    expect(
+      (
+        await app.inject({
+          headers: { authorization: "Bearer dev-lab-token" },
+          method: "POST",
+          url: `/api/v1/community/reports/${reportId}/submit`
+        })
+      ).statusCode
+    ).toBe(200);
+
+    const confirmation = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "PUT",
+      payload: { value: "still_there" },
+      url: `/api/v1/community/reports/${reportId}/confirmation`
+    });
+    expect(confirmation.statusCode).toBe(409);
+    expect(confirmation.json()).toMatchObject({ error: { code: "REPORT_NOT_CONFIRMABLE" } });
 
     await app.close();
   });

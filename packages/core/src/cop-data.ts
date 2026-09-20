@@ -550,6 +550,8 @@ export interface SituationFeatureProperties {
   category: string;
   certainty?: string;
   confidence?: number;
+  confidenceSummary?: CommunityReportConfidenceSummary;
+  confirmations?: CommunityReportConfirmationSummary;
   assumptions?: Record<string, unknown>;
   btsStatus?: string;
   btsStatusSource?: string;
@@ -1687,6 +1689,7 @@ export type CommunityReportCategory =
 
 export type CommunityReportHazardSeverity = "advisory" | "critical" | "warning";
 export type CommunityReportVisibility = "community" | "private" | "public";
+export type CommunityReportConfirmationValue = "not_there" | "still_there";
 export type CommunityAttachmentKind = "document" | "photo" | "video";
 export type CommunityVideoSpatialMode = "apple_mv_hevc" | "none" | "over_under" | "side_by_side";
 export type CommunityMediaAccessMode = "groups" | "private" | "public" | "users";
@@ -1725,6 +1728,22 @@ export interface CommunityReportRoadContext {
 export interface CommunityReportProperties extends Record<string, unknown> {
   captureContext?: CommunityReportCaptureContext;
   roadContext?: CommunityReportRoadContext;
+}
+
+export interface CommunityReportConfirmationSummary {
+  currentActorValue?: CommunityReportConfirmationValue;
+  lastConfirmedAt?: string;
+  notThereCount: number;
+  stillThereCount: number;
+  totalCount: number;
+}
+
+export interface CommunityReportConfidenceSummary {
+  freshnessPercent: number;
+  level: "high" | "low" | "medium";
+  locationQualityPercent: number;
+  scorePercent: number;
+  voteBalance: number;
 }
 
 export interface CommunityReportAttachment {
@@ -1795,6 +1814,8 @@ export interface CommunityReport {
   observedAt: string;
   ownedByCurrentActor?: boolean;
   captureContext?: CommunityReportCaptureContext;
+  confidenceSummary: CommunityReportConfidenceSummary;
+  confirmations: CommunityReportConfirmationSummary;
   properties: CommunityReportProperties;
   roadContext?: CommunityReportRoadContext;
   reportId: string;
@@ -3736,6 +3757,25 @@ export async function createCommunityReport(
     },
     method: "POST"
   });
+}
+
+export async function confirmCommunityReport(
+  apiBase: string,
+  token: string,
+  reportId: string,
+  value: CommunityReportConfirmationValue
+): Promise<CommunityReport> {
+  return fetchJson<CommunityReport>(
+    `${apiBase}/api/v1/community/reports/${encodeURIComponent(reportId)}/confirmation`,
+    {
+      body: JSON.stringify({ value }),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      method: "PUT"
+    }
+  );
 }
 
 export async function fetchCommunityGroups(

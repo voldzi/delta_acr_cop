@@ -33,6 +33,8 @@ import {
   type CommunityLocationSource,
   type CommunityReportAttachmentRecord,
   type CommunityReportCategory,
+  type CommunityReportConfirmationSummary,
+  type CommunityReportConfirmationValue,
   type CommunityReportLocation,
   type CommunityReportQuery,
   type CommunityReportRecord,
@@ -448,9 +450,19 @@ interface CommunityAttachmentDerivativeResponse {
 type CommunityReportResponse = CommunityReportRecord & {
   attachments: CommunityAttachmentResponse[];
   captureContext?: CommunityReportCaptureContext;
+  confidenceSummary: CommunityReportConfidenceSummary;
+  confirmations: CommunityReportConfirmationSummary;
   ownedByCurrentActor: boolean;
   roadContext?: CommunityReportRoadContext;
 };
+
+interface CommunityReportConfidenceSummary {
+  freshnessPercent: number;
+  level: "high" | "low" | "medium";
+  locationQualityPercent: number;
+  scorePercent: number;
+  voteBalance: number;
+}
 
 interface CommunityMediaTicketPayload {
   attachmentId: string;
@@ -3175,6 +3187,32 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     } catch (error) {
       markCommunityReportStoreDegraded(error);
       return communityReportFallbackStore.listReports(query);
+    }
+  }
+
+  async function listCommunityReportConfirmationSummaries(
+    reportIds: string[],
+    currentSubjectId?: string
+  ): Promise<Record<string, CommunityReportConfirmationSummary>> {
+    try {
+      return await activeCommunityReportStore().listConfirmationSummaries(reportIds, currentSubjectId);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.listConfirmationSummaries(reportIds, currentSubjectId);
+    }
+  }
+
+  async function confirmCommunityReport(
+    reportId: string,
+    actor: AuthenticatedActor,
+    value: CommunityReportConfirmationValue,
+    requestNow: Date
+  ): Promise<CommunityReportConfirmationSummary> {
+    try {
+      return await activeCommunityReportStore().upsertReportConfirmation(reportId, actor.subjectId, value, requestNow);
+    } catch (error) {
+      markCommunityReportStoreDegraded(error);
+      return communityReportFallbackStore.upsertReportConfirmation(reportId, actor.subjectId, value, requestNow);
     }
   }
 
@@ -6624,9 +6662,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const query = parseCommunityReportQuery(request.query as Record<string, unknown>, actor, requestNow);
       const items = (await listCommunityReports(query)).filter((report) => canReadCommunityReport(report, actor));
       const actorGroupIds = await readCommunityActorGroupIds(actor);
-      const responseItems = communityReportResponseItems(items, requestNow, actor, actorGroupIds);
+      const confirmations = await listCommunityReportConfirmationSummaries(
+        items.map((report) => report.reportId),
+        actor?.subjectId
+      );
+      const responseItems = communityReportResponseItems(items, requestNow, actor, actorGroupIds, confirmations);
       return {
-        featureCollection: communityReportsFeatureCollection(items, requestNow, actor, actorGroupIds),
+        featureCollection: communityReportsFeatureCollection(items, requestNow, actor, actorGroupIds, confirmations),
         items: responseItems,
         nextCursor: null,
         serverTimestamp: requestNow.toISOString()
@@ -6809,7 +6851,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!report || !canReadCommunityReport(report, actor)) {
         return sendError(reply, 404, "NOT_FOUND", "Community report was not found.", crypto.randomUUID());
       }
-      return communityReportResponseItem(report, now(), actor, await readCommunityActorGroupIds(actor));
+      const confirmations = await listCommunityReportConfirmationSummaries([report.reportId], actor?.subjectId);
+      return communityReportResponseItem(
+        report,
+        now(),
+        actor,
+        await readCommunityActorGroupIds(actor),
+        confirmations[report.reportId]
+      );
     },
 
     deleteReport: async (request, reply) => {
@@ -6965,6 +7014,56 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         app.log.warn({ error, reportId: report.reportId }, "Community report notification dispatch failed.");
       }
       return communityReportResponseItem(report, requestNow, actor, new Set());
+    },
+
+    confirmReport: async (request, reply) => {
+      const actor = requireActor(request, reply);
+      if (!actor) return reply;
+      const params = request.params as { reportId: string };
+      const value = normalizeCommunityReportConfirmation(request.body);
+      if (!value) {
+        return sendError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          "Confirmation must be still_there or not_there.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const report = await readCommunityReport(params.reportId);
+      const requestNow = now();
+      if (
+        !report ||
+        !canReadCommunityReport(report, actor) ||
+        (report.status !== "submitted" && report.status !== "published") ||
+        isCommunityReportStale(report, requestNow)
+      ) {
+        return sendError(
+          reply,
+          409,
+          "REPORT_NOT_CONFIRMABLE",
+          "Community report is not active or is no longer available.",
+          correlationIdFrom(request.headers["x-correlation-id"])
+        );
+      }
+      const confirmations = await confirmCommunityReport(params.reportId, actor, value, requestNow);
+      appendAudit(
+        state,
+        "COMMUNITY_REPORT_CONFIRMED",
+        {
+          actorSubjectId: actor.subjectId,
+          confirmation: value,
+          reportId: report.reportId
+        },
+        correlationIdFrom(request.headers["x-correlation-id"])
+      );
+      return communityReportResponseItem(
+        report,
+        requestNow,
+        actor,
+        await readCommunityActorGroupIds(actor),
+        confirmations
+      );
     },
 
     resolveReport: async (request, reply) => {
@@ -13758,6 +13857,11 @@ function normalizeCommunityReportLifecycleRequest(
   };
 }
 
+function normalizeCommunityReportConfirmation(value: unknown): CommunityReportConfirmationValue | null {
+  if (!isRecord(value)) return null;
+  return value.value === "still_there" || value.value === "not_there" ? value.value : null;
+}
+
 function actorToCommunityActor(actor: AuthenticatedActor) {
   return {
     displayName: actor.displayName,
@@ -15326,13 +15430,16 @@ function communityReportResponseItem(
   report: CommunityReportRecord,
   requestNow: Date,
   actor: AuthenticatedActor | null,
-  actorGroupIds: Set<string>
+  actorGroupIds: Set<string>,
+  confirmations: CommunityReportConfirmationSummary = emptyCommunityReportConfirmationSummary()
 ): CommunityReportResponse {
   const captureContext = normalizeCommunityReportCaptureContext(report.properties.captureContext);
   const roadContext = normalizeCommunityReportRoadContext(report.properties.roadContext);
   return {
     ...report,
     ...(captureContext ? { captureContext } : {}),
+    confidenceSummary: communityReportConfidenceSummary(report, requestNow, confirmations),
+    confirmations,
     ownedByCurrentActor: Boolean(actor && report.createdBy.subjectId === actor.subjectId),
     ...(roadContext ? { roadContext } : {}),
     attachments: report.attachments.map((attachment) =>
@@ -15352,9 +15459,22 @@ function communityReportResponseItems(
   reports: CommunityReportRecord[],
   requestNow: Date,
   actor: AuthenticatedActor | null,
-  actorGroupIds: Set<string>
+  actorGroupIds: Set<string>,
+  confirmations: Record<string, CommunityReportConfirmationSummary> = {}
 ): CommunityReportResponse[] {
-  return reports.map((report) => communityReportResponseItem(report, requestNow, actor, actorGroupIds));
+  return reports.map((report) =>
+    communityReportResponseItem(
+      report,
+      requestNow,
+      actor,
+      actorGroupIds,
+      confirmations[report.reportId] ?? emptyCommunityReportConfirmationSummary()
+    )
+  );
+}
+
+function emptyCommunityReportConfirmationSummary(): CommunityReportConfirmationSummary {
+  return { notThereCount: 0, stillThereCount: 0, totalCount: 0 };
 }
 
 function communityAttachmentResponseItem(
@@ -15571,12 +15691,14 @@ function communityReportsFeatureCollection(
   reports: CommunityReportRecord[],
   requestNow: Date,
   actor: AuthenticatedActor | null,
-  actorGroupIds: Set<string>
+  actorGroupIds: Set<string>,
+  confirmations: Record<string, CommunityReportConfirmationSummary> = {}
 ) {
   return {
     features: reports.map((report) => {
       const captureContext = normalizeCommunityReportCaptureContext(report.properties.captureContext);
       const roadContext = normalizeCommunityReportRoadContext(report.properties.roadContext);
+      const confirmationSummary = confirmations[report.reportId] ?? emptyCommunityReportConfirmationSummary();
       return {
         geometry: {
           coordinates: [report.location.lon, report.location.lat],
@@ -15588,6 +15710,8 @@ function communityReportsFeatureCollection(
           attachments: communityFeatureAttachments(report, actor, actorGroupIds, requestNow),
           category: report.category,
           ...(captureContext ? { captureContext } : {}),
+          confidenceSummary: communityReportConfidenceSummary(report, requestNow, confirmationSummary),
+          confirmations: confirmationSummary,
           confidence: report.location.accuracyM
             ? Math.max(0.35, Math.min(0.95, 1 - report.location.accuracyM / 1000))
             : 0.7,
@@ -16119,6 +16243,33 @@ function communityReportSeverity(report: CommunityReportRecord): CommunityReport
 function communityReportValidUntil(report: CommunityReportRecord): string | undefined {
   const value = report.properties.validUntil;
   return typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : undefined;
+}
+
+function communityReportConfidenceSummary(
+  report: CommunityReportRecord,
+  requestNow: Date,
+  confirmations: CommunityReportConfirmationSummary
+): CommunityReportConfidenceSummary {
+  const observedAt = Date.parse(report.observedAt);
+  const validUntil = Date.parse(communityReportValidUntil(report) ?? report.observedAt);
+  const lifetime = Math.max(1, validUntil - observedAt);
+  const remaining = Math.max(0, validUntil - requestNow.getTime());
+  const freshnessPercent = Math.round(Math.min(100, (remaining / lifetime) * 100));
+  const accuracy = report.location.accuracyM;
+  const locationQualityPercent =
+    accuracy === undefined ? 60 : Math.round(Math.max(20, Math.min(100, 100 - Math.max(0, accuracy - 10) * 1.6)));
+  const voteBalance = confirmations.stillThereCount - confirmations.notThereCount;
+  const voteAdjustment = Math.max(-25, Math.min(25, voteBalance * 8));
+  const scorePercent = Math.round(
+    Math.max(5, Math.min(95, 25 + freshnessPercent * 0.4 + locationQualityPercent * 0.2 + voteAdjustment))
+  );
+  return {
+    freshnessPercent,
+    level: scorePercent >= 75 ? "high" : scorePercent >= 45 ? "medium" : "low",
+    locationQualityPercent,
+    scorePercent,
+    voteBalance
+  };
 }
 
 function defaultCommunityReportValidUntil(category: CommunityReportCategory, requestNow: Date): string {
