@@ -981,19 +981,23 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
           timestamp
         ]
       );
-      await client.query(
+      const memberResult = await client.query<CommunityGroupMemberRow>(
         `INSERT INTO cop_community_group_members (
           group_id, subject_id, username, display_name, role, status, requested_at, joined_at
         )
-        VALUES ($1, $2, $3, $4, 'owner', 'active', $5::timestamptz, $5::timestamptz)`,
+        VALUES ($1, $2, $3, $4, 'owner', 'active', $5::timestamptz, $5::timestamptz)
+        RETURNING *`,
         [groupId, input.createdBy.subjectId, input.createdBy.username, input.createdBy.displayName, timestamp]
       );
-      await client.query("COMMIT");
       const row = groupResult.rows[0];
       if (!row) {
         throw new Error("Community group insert returned no row.");
       }
-      return groupFromRow(row, await this.membersForGroups([groupId]));
+      // Return the inserted member without requesting another pooled connection
+      // while this transaction still owns one (including a pool of size one).
+      const group = groupFromRow(row, memberResult.rows.map(groupMemberFromRow));
+      await client.query("COMMIT");
+      return group;
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

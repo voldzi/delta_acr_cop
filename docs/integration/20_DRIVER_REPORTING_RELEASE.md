@@ -45,6 +45,7 @@ docker compose run --rm -T --no-deps --entrypoint node cop-api scripts/smoke-com
 ```
 
 This calls the real compiled store in a uniquely generated isolated schema.
+It uses a pool of one connection to detect nested acquisition deadlocks.
 It verifies author exclusion, one-vote replacement, spatial filtering, exact
 expiry, historical access and group metadata. It drops only that generated
 schema in `finally`. It does not call the public report-submission API or send
@@ -75,3 +76,9 @@ See [the delivery plan](../product/14_DRIVER_NAVIGATION_AND_REPORTING_PLAN.md).
 Road-edge enrichment, provider-neutral Jizda routing/SIM migration and full voice
 reporting remain implementation work. Apple CarPlay capabilities, real-device
 acceptance and a multi-region measured pilot remain release gates.
+
+The first candidate PostgreSQL run revealed a nested connection acquisition in
+`createGroup`: it queried members from the pool before releasing the transaction
+client. The fix uses the member `INSERT ... RETURNING` result in the transaction.
+The failed smoke cleaned its isolated schema and production stayed on the prior
+revision until revalidation.
