@@ -351,6 +351,19 @@ export interface BuildServerOptions {
 
 type DependencyStatus = "disabled" | "degraded" | "ok";
 type CommunityReportHazardSeverity = "advisory" | "warning" | "critical";
+type CommunityReportCaptureContext = {
+  appVersion?: string;
+  client: "cop_mobile" | "cop_web" | "jizda";
+  offlineQueuedAt?: string;
+  platform: "android" | "ios" | "ipados" | "web";
+};
+type CommunityReportRoadContext = {
+  capturedAt?: string;
+  roadName?: string;
+  roadRef?: string;
+  speedMps?: number;
+  travelDirectionDeg?: number;
+};
 type AiChatAgentJobStatus = "completed" | "failed" | "queued" | "running";
 
 interface AiChatAgentJobRecord {
@@ -434,7 +447,9 @@ interface CommunityAttachmentDerivativeResponse {
 
 type CommunityReportResponse = CommunityReportRecord & {
   attachments: CommunityAttachmentResponse[];
+  captureContext?: CommunityReportCaptureContext;
   ownedByCurrentActor: boolean;
+  roadContext?: CommunityReportRoadContext;
 };
 
 interface CommunityMediaTicketPayload {
@@ -570,7 +585,11 @@ const copMcpTools: CopMcpToolDefinition[] = [
               "fire",
               "flood",
               "bridge_damage",
+              "dangerous_weather",
               "road_blockage",
+              "stopped_vehicle",
+              "traffic_accident",
+              "traffic_congestion",
               "infrastructure_damage",
               "medical",
               "utility_outage",
@@ -579,7 +598,7 @@ const copMcpTools: CopMcpToolDefinition[] = [
             ],
             type: "string"
           },
-          maxItems: 9,
+          maxItems: 13,
           type: "array"
         },
         includeExpired: { type: "boolean" },
@@ -6628,7 +6647,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           reply,
           400,
           "VALIDATION_ERROR",
-          "Community report requires category and location {lat, lon}.",
+          "Community report requires a valid category, location and optional capture/road context.",
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
@@ -10580,7 +10599,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const requestNow = now();
     const bbox = parseMapQueryBbox(input.bbox) ?? floodDemoBbox;
     const categories = Array.isArray(input.categories)
-      ? Array.from(new Set(input.categories.filter(isCommunityReportCategory))).slice(0, 9)
+      ? Array.from(new Set(input.categories.filter(isCommunityReportCategory))).slice(0, 13)
       : [];
     const severities = Array.isArray(input.severities)
       ? Array.from(new Set(input.severities.filter(isCommunityReportHazardSeverity))).slice(0, 3)
@@ -13628,6 +13647,13 @@ function normalizeCreateCommunityReport(
   if (!category || !location) {
     return null;
   }
+  const captureContext = hasOwn(value, "captureContext")
+    ? normalizeCommunityReportCaptureContext(value.captureContext)
+    : undefined;
+  const roadContext = hasOwn(value, "roadContext") ? normalizeCommunityReportRoadContext(value.roadContext) : undefined;
+  if (captureContext === null || roadContext === null) {
+    return null;
+  }
   const title = optionalTrimmedString(value.title, 120) ?? communityCategoryLabel(category);
   const hazardSeverity = isCommunityReportHazardSeverity(value.hazardSeverity)
     ? value.hazardSeverity
@@ -13637,7 +13663,9 @@ function normalizeCreateCommunityReport(
   const validUntil = optionalIsoTimestamp(value.validUntil) ?? defaultCommunityReportValidUntil(category, requestNow);
   const properties = {
     ...normalizedJsonRecord(value.properties, 8000),
+    ...(captureContext ? { captureContext } : {}),
     hazardSeverity,
+    ...(roadContext ? { roadContext } : {}),
     ...(optionalUuid(value.groupId) ? { groupId: optionalUuid(value.groupId) } : {}),
     ...(optionalTrimmedString(value.groupName, 120) ? { groupName: optionalTrimmedString(value.groupName, 120) } : {}),
     ...(validUntil ? { validUntil } : {})
@@ -13670,6 +13698,13 @@ function normalizeCommunityReportUpdate(value: unknown): Parameters<CommunityRep
   const description = hasOwn(value, "description")
     ? (optionalTrimmedString(value.description, 2000) ?? null)
     : undefined;
+  const captureContext = hasOwn(value, "captureContext")
+    ? normalizeCommunityReportCaptureContext(value.captureContext)
+    : undefined;
+  const roadContext = hasOwn(value, "roadContext") ? normalizeCommunityReportRoadContext(value.roadContext) : undefined;
+  if (captureContext === null || roadContext === null) {
+    return null;
+  }
   const hazardSeverity = isCommunityReportHazardSeverity(value.hazardSeverity)
     ? value.hazardSeverity
     : isCommunityReportHazardSeverity(value.severity)
@@ -13680,7 +13715,9 @@ function normalizeCommunityReportUpdate(value: unknown): Parameters<CommunityRep
   const changeReason = optionalTrimmedString(value.changeReason, 500);
   const properties = {
     ...normalizedJsonRecord(value.properties, 8000),
+    ...(captureContext ? { captureContext } : {}),
     ...(hazardSeverity ? { hazardSeverity } : {}),
+    ...(roadContext ? { roadContext } : {}),
     ...(optionalUuid(value.groupId) ? { groupId: optionalUuid(value.groupId) } : {}),
     ...(optionalTrimmedString(value.groupName, 120) ? { groupName: optionalTrimmedString(value.groupName, 120) } : {})
   };
@@ -15291,9 +15328,13 @@ function communityReportResponseItem(
   actor: AuthenticatedActor | null,
   actorGroupIds: Set<string>
 ): CommunityReportResponse {
+  const captureContext = normalizeCommunityReportCaptureContext(report.properties.captureContext);
+  const roadContext = normalizeCommunityReportRoadContext(report.properties.roadContext);
   return {
     ...report,
+    ...(captureContext ? { captureContext } : {}),
     ownedByCurrentActor: Boolean(actor && report.createdBy.subjectId === actor.subjectId),
+    ...(roadContext ? { roadContext } : {}),
     attachments: report.attachments.map((attachment) =>
       communityAttachmentResponseItem(
         attachment,
@@ -15533,49 +15574,55 @@ function communityReportsFeatureCollection(
   actorGroupIds: Set<string>
 ) {
   return {
-    features: reports.map((report) => ({
-      geometry: {
-        coordinates: [report.location.lon, report.location.lat],
-        type: "Point" as const
-      },
-      id: report.reportId,
-      properties: {
-        attachmentCount: report.attachments.length,
-        attachments: communityFeatureAttachments(report, actor, actorGroupIds, requestNow),
-        category: report.category,
-        confidence: report.location.accuracyM
-          ? Math.max(0.35, Math.min(0.95, 1 - report.location.accuracyM / 1000))
-          : 0.7,
-        description: report.description ?? null,
-        documentCount: report.attachments.filter(
-          (attachment) => attachment.kind === "document" && attachment.status === "uploaded"
-        ).length,
-        featureId: `community:${report.reportId}`,
-        groupId: typeof report.properties.groupId === "string" ? report.properties.groupId : null,
-        groupName: typeof report.properties.groupName === "string" ? report.properties.groupName : null,
-        hazardSeverity: communityReportSeverity(report),
-        label: report.title,
-        layer: "community",
-        locationAccuracyM: report.location.accuracyM ?? null,
-        observedAt: report.observedAt,
-        ownedByCurrentActor: Boolean(actor && report.createdBy.subjectId === actor.subjectId),
-        photoCount: report.attachments.filter(
-          (attachment) => attachment.kind === "photo" && attachment.status === "uploaded"
-        ).length,
-        reportId: report.reportId,
-        severity: communityReportSeverity(report),
-        sourceId: "community_reports",
-        status: report.status,
-        stale: isCommunityReportStale(report, requestNow),
-        validUntil: communityReportValidUntil(report) ?? null,
-        version: report.version,
-        videoCount: report.attachments.filter(
-          (attachment) => attachment.kind === "video" && attachment.status === "uploaded"
-        ).length,
-        visibility: report.visibility
-      },
-      type: "Feature" as const
-    })),
+    features: reports.map((report) => {
+      const captureContext = normalizeCommunityReportCaptureContext(report.properties.captureContext);
+      const roadContext = normalizeCommunityReportRoadContext(report.properties.roadContext);
+      return {
+        geometry: {
+          coordinates: [report.location.lon, report.location.lat],
+          type: "Point" as const
+        },
+        id: report.reportId,
+        properties: {
+          attachmentCount: report.attachments.length,
+          attachments: communityFeatureAttachments(report, actor, actorGroupIds, requestNow),
+          category: report.category,
+          ...(captureContext ? { captureContext } : {}),
+          confidence: report.location.accuracyM
+            ? Math.max(0.35, Math.min(0.95, 1 - report.location.accuracyM / 1000))
+            : 0.7,
+          description: report.description ?? null,
+          documentCount: report.attachments.filter(
+            (attachment) => attachment.kind === "document" && attachment.status === "uploaded"
+          ).length,
+          featureId: `community:${report.reportId}`,
+          groupId: typeof report.properties.groupId === "string" ? report.properties.groupId : null,
+          groupName: typeof report.properties.groupName === "string" ? report.properties.groupName : null,
+          hazardSeverity: communityReportSeverity(report),
+          label: report.title,
+          layer: "community",
+          locationAccuracyM: report.location.accuracyM ?? null,
+          observedAt: report.observedAt,
+          ownedByCurrentActor: Boolean(actor && report.createdBy.subjectId === actor.subjectId),
+          photoCount: report.attachments.filter(
+            (attachment) => attachment.kind === "photo" && attachment.status === "uploaded"
+          ).length,
+          reportId: report.reportId,
+          ...(roadContext ? { roadContext } : {}),
+          severity: communityReportSeverity(report),
+          sourceId: "community_reports",
+          status: report.status,
+          stale: isCommunityReportStale(report, requestNow),
+          validUntil: communityReportValidUntil(report) ?? null,
+          version: report.version,
+          videoCount: report.attachments.filter(
+            (attachment) => attachment.kind === "video" && attachment.status === "uploaded"
+          ).length,
+          visibility: report.visibility
+        },
+        type: "Feature" as const
+      };
+    }),
     generatedAt: requestNow.toISOString(),
     source: {
       generatedAt: requestNow.toISOString(),
@@ -15986,6 +16033,84 @@ function isCommunityReportHazardSeverity(value: unknown): value is CommunityRepo
   return value === "advisory" || value === "warning" || value === "critical";
 }
 
+function normalizeCommunityReportCaptureContext(value: unknown): CommunityReportCaptureContext | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const allowedFields = new Set(["appVersion", "client", "offlineQueuedAt", "platform"]);
+  if (Object.keys(value).some((key) => !allowedFields.has(key))) {
+    return null;
+  }
+  const client =
+    value.client === "cop_mobile" || value.client === "cop_web" || value.client === "jizda" ? value.client : undefined;
+  const platform =
+    value.platform === "android" || value.platform === "ios" || value.platform === "ipados" || value.platform === "web"
+      ? value.platform
+      : undefined;
+  const appVersion = hasOwn(value, "appVersion") ? optionalTrimmedString(value.appVersion, 40) : undefined;
+  const offlineQueuedAt = hasOwn(value, "offlineQueuedAt") ? optionalIsoTimestamp(value.offlineQueuedAt) : undefined;
+  if (
+    !client ||
+    !platform ||
+    (hasOwn(value, "appVersion") && !appVersion) ||
+    (hasOwn(value, "offlineQueuedAt") && !offlineQueuedAt)
+  ) {
+    return null;
+  }
+  return {
+    ...(appVersion ? { appVersion } : {}),
+    client,
+    ...(offlineQueuedAt ? { offlineQueuedAt } : {}),
+    platform
+  };
+}
+
+function normalizeCommunityReportRoadContext(value: unknown): CommunityReportRoadContext | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const allowedFields = new Set(["capturedAt", "roadName", "roadRef", "speedMps", "travelDirectionDeg"]);
+  if (Object.keys(value).some((key) => !allowedFields.has(key))) {
+    return null;
+  }
+  const capturedAt = hasOwn(value, "capturedAt") ? optionalIsoTimestamp(value.capturedAt) : undefined;
+  const roadName = hasOwn(value, "roadName") ? optionalTrimmedString(value.roadName, 160) : undefined;
+  const roadRef = hasOwn(value, "roadRef") ? optionalTrimmedString(value.roadRef, 40) : undefined;
+  const speedMps =
+    hasOwn(value, "speedMps") &&
+    typeof value.speedMps === "number" &&
+    Number.isFinite(value.speedMps) &&
+    value.speedMps >= 0 &&
+    value.speedMps <= 100
+      ? value.speedMps
+      : undefined;
+  const travelDirectionDeg =
+    hasOwn(value, "travelDirectionDeg") &&
+    typeof value.travelDirectionDeg === "number" &&
+    Number.isFinite(value.travelDirectionDeg) &&
+    value.travelDirectionDeg >= 0 &&
+    value.travelDirectionDeg < 360
+      ? value.travelDirectionDeg
+      : undefined;
+  if (
+    (hasOwn(value, "capturedAt") && !capturedAt) ||
+    (hasOwn(value, "roadName") && !roadName) ||
+    (hasOwn(value, "roadRef") && !roadRef) ||
+    (hasOwn(value, "speedMps") && speedMps === undefined) ||
+    (hasOwn(value, "travelDirectionDeg") && travelDirectionDeg === undefined)
+  ) {
+    return null;
+  }
+  const context = {
+    ...(capturedAt ? { capturedAt } : {}),
+    ...(roadName ? { roadName } : {}),
+    ...(roadRef ? { roadRef } : {}),
+    ...(speedMps !== undefined ? { speedMps } : {}),
+    ...(travelDirectionDeg !== undefined ? { travelDirectionDeg } : {})
+  };
+  return Object.keys(context).length > 0 ? context : null;
+}
+
 function communityReportSeverity(report: CommunityReportRecord): CommunityReportHazardSeverity {
   const severity = report.properties.hazardSeverity ?? report.properties.severity;
   return isCommunityReportHazardSeverity(severity) ? severity : communitySeverity(report.category);
@@ -15999,6 +16124,7 @@ function communityReportValidUntil(report: CommunityReportRecord): string | unde
 function defaultCommunityReportValidUntil(category: CommunityReportCategory, requestNow: Date): string {
   const validityHours: Record<CommunityReportCategory, number> = {
     bridge_damage: 24,
+    dangerous_weather: 2,
     fire: 2,
     flood: 12,
     hazard: 6,
@@ -16006,6 +16132,9 @@ function defaultCommunityReportValidUntil(category: CommunityReportCategory, req
     medical: 1,
     other: 6,
     road_blockage: 6,
+    stopped_vehicle: 2,
+    traffic_accident: 4,
+    traffic_congestion: 1,
     utility_outage: 12
   };
   return new Date(requestNow.getTime() + validityHours[category] * 60 * 60 * 1000).toISOString();
@@ -16022,9 +16151,12 @@ function communitySeverity(category: CommunityReportCategory): "advisory" | "war
   }
   if (
     category === "bridge_damage" ||
+    category === "dangerous_weather" ||
     category === "road_blockage" ||
     category === "infrastructure_damage" ||
-    category === "hazard"
+    category === "hazard" ||
+    category === "stopped_vehicle" ||
+    category === "traffic_accident"
   ) {
     return "warning";
   }
@@ -16034,6 +16166,7 @@ function communitySeverity(category: CommunityReportCategory): "advisory" | "war
 function communityCategoryLabel(category: CommunityReportCategory): string {
   const labels: Record<CommunityReportCategory, string> = {
     bridge_damage: "Poškozený most",
+    dangerous_weather: "Nebezpečné počasí",
     fire: "Požár",
     flood: "Povodeň",
     hazard: "Riziko v okolí",
@@ -16041,6 +16174,9 @@ function communityCategoryLabel(category: CommunityReportCategory): string {
     medical: "Zdravotní událost",
     other: "Hlášení",
     road_blockage: "Neprůjezdná komunikace",
+    stopped_vehicle: "Stojící vozidlo",
+    traffic_accident: "Dopravní nehoda",
+    traffic_congestion: "Dopravní kolona",
     utility_outage: "Výpadek služby"
   };
   return labels[category];
@@ -16051,7 +16187,11 @@ function isCommunityReportCategory(value: unknown): value is CommunityReportCate
     value === "fire" ||
     value === "flood" ||
     value === "bridge_damage" ||
+    value === "dangerous_weather" ||
     value === "road_blockage" ||
+    value === "stopped_vehicle" ||
+    value === "traffic_accident" ||
+    value === "traffic_congestion" ||
     value === "infrastructure_damage" ||
     value === "medical" ||
     value === "utility_outage" ||

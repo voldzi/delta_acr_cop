@@ -208,6 +208,83 @@ describe("community report routes", () => {
     await app.close();
   });
 
+  it("accepts an idempotent driver traffic report with bounded capture and road context", async () => {
+    const app = buildServer({
+      mediaStorage: new FakeMediaStorage(),
+      now: () => new Date("2026-09-20T18:00:00Z")
+    });
+    const idempotencyKey = "e5ea4b90-709a-4eb0-a1ab-0a949f12a9e1";
+    const payload = {
+      captureContext: {
+        appVersion: "1.2.0",
+        client: "jizda",
+        offlineQueuedAt: "2026-09-20T17:59:40Z",
+        platform: "ios"
+      },
+      category: "traffic_accident",
+      location: { accuracyM: 6, lat: 50.087, lon: 14.421, source: "device" },
+      observedAt: "2026-09-20T17:59:35Z",
+      roadContext: {
+        capturedAt: "2026-09-20T17:59:35Z",
+        roadName: "Wilsonova",
+        roadRef: "I/8",
+        speedMps: 8.5,
+        travelDirectionDeg: 182.5
+      },
+      title: "Dopravní nehoda",
+      visibility: "community"
+    };
+
+    const first = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token", "x-idempotency-key": idempotencyKey },
+      method: "POST",
+      payload,
+      url: "/api/v1/community/reports"
+    });
+    const retry = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token", "x-idempotency-key": idempotencyKey },
+      method: "POST",
+      payload,
+      url: "/api/v1/community/reports"
+    });
+
+    expect(first.statusCode).toBe(201);
+    expect(retry.statusCode).toBe(200);
+    const expectedCaptureContext = {
+      ...payload.captureContext,
+      offlineQueuedAt: "2026-09-20T17:59:40.000Z"
+    };
+    const expectedRoadContext = {
+      ...payload.roadContext,
+      capturedAt: "2026-09-20T17:59:35.000Z"
+    };
+    expect(first.json()).toMatchObject({
+      captureContext: expectedCaptureContext,
+      category: "traffic_accident",
+      properties: {
+        captureContext: expectedCaptureContext,
+        roadContext: expectedRoadContext
+      },
+      reportId: idempotencyKey,
+      roadContext: expectedRoadContext
+    });
+    expect(retry.json()).toMatchObject({ reportId: idempotencyKey, roadContext: expectedRoadContext });
+
+    const malformed = await app.inject({
+      headers: { authorization: "Bearer dev-lab-token" },
+      method: "POST",
+      payload: {
+        ...payload,
+        roadContext: { travelDirectionDeg: 360 }
+      },
+      url: "/api/v1/community/reports"
+    });
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.json()).toMatchObject({ error: { code: "VALIDATION_ERROR" } });
+
+    await app.close();
+  });
+
   it("resumes report and attachment creation idempotently without duplicates", async () => {
     let requestNow = new Date("2026-05-20T12:00:00Z");
     const app = buildServer({ mediaStorage: new FakeMediaStorage(), now: () => requestNow });

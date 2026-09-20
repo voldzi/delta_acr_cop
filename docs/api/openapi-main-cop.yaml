@@ -5742,6 +5742,8 @@ components:
       properties:
         category:
           $ref: "#/components/schemas/CommunityReportCategory"
+        captureContext:
+          $ref: "#/components/schemas/CommunityReportCaptureContext"
         title:
           type: string
           maxLength: 120
@@ -5753,6 +5755,8 @@ components:
         observedAt:
           type: string
           format: date-time
+        roadContext:
+          $ref: "#/components/schemas/CommunityReportRoadContext"
         hazardSeverity:
           $ref: "#/components/schemas/CommunityReportHazardSeverity"
         severity:
@@ -5784,6 +5788,8 @@ components:
           description: User-facing explanation of what changed.
         category:
           $ref: "#/components/schemas/CommunityReportCategory"
+        captureContext:
+          $ref: "#/components/schemas/CommunityReportCaptureContext"
         title:
           type: string
           maxLength: 120
@@ -5796,6 +5802,8 @@ components:
           description: Optimistic concurrency guard. A mismatch returns HTTP 409.
         location:
           $ref: "#/components/schemas/CommunityReportLocation"
+        roadContext:
+          $ref: "#/components/schemas/CommunityReportRoadContext"
         hazardSeverity:
           $ref: "#/components/schemas/CommunityReportHazardSeverity"
         severity:
@@ -5870,6 +5878,8 @@ components:
           format: uuid
         category:
           $ref: "#/components/schemas/CommunityReportCategory"
+        captureContext:
+          $ref: "#/components/schemas/CommunityReportCaptureContext"
         title:
           type: string
         description:
@@ -5883,6 +5893,8 @@ components:
         observedAt:
           type: string
           format: date-time
+        roadContext:
+          $ref: "#/components/schemas/CommunityReportRoadContext"
         submittedAt:
           type: string
           format: date-time
@@ -6634,13 +6646,72 @@ components:
             - media_metadata
             - photo_exif
             - unknown
+    CommunityReportCaptureContext:
+      type: object
+      additionalProperties: false
+      required:
+        - client
+        - platform
+      properties:
+        client:
+          type: string
+          enum:
+            - jizda
+            - cop_mobile
+            - cop_web
+          description: Client-declared application that captured the report. This is provenance context, not
+            identity proof.
+        platform:
+          type: string
+          enum:
+            - ios
+            - ipados
+            - android
+            - web
+        appVersion:
+          type: string
+          maxLength: 40
+        offlineQueuedAt:
+          type: string
+          format: date-time
+          description: Time at which the client queued the report locally. observedAt remains the source
+            observation time.
+    CommunityReportRoadContext:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        travelDirectionDeg:
+          type: number
+          minimum: 0
+          exclusiveMaximum: 360
+          description: Device travel heading in degrees clockwise from true north. It may be enriched or
+            corrected server-side.
+        speedMps:
+          type: number
+          minimum: 0
+          maximum: 100
+        roadName:
+          type: string
+          maxLength: 160
+          description: Optional client-observed road name; not treated as authoritative map matching.
+        roadRef:
+          type: string
+          maxLength: 40
+        capturedAt:
+          type: string
+          format: date-time
     CommunityReportCategory:
       type: string
       enum:
         - fire
         - flood
         - bridge_damage
+        - dangerous_weather
         - road_blockage
+        - stopped_vehicle
+        - traffic_accident
+        - traffic_congestion
         - infrastructure_damage
         - medical
         - utility_outage

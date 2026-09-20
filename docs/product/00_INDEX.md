@@ -12,3 +12,4 @@
 - [11 Public Readiness Implementation](11_PUBLIC_READINESS_IMPLEMENTATION.md)
 - [12 Inclusive Public Pilot Protocol](12_INCLUSIVE_PUBLIC_PILOT_PROTOCOL.md)
 - [13 Device Coverage Decision](13_DEVICE_COVERAGE_DECISION.md)
+- [14 Driver Navigation and Reporting Plan](14_DRIVER_NAVIGATION_AND_REPORTING_PLAN.md)

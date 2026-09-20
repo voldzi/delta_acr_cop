@@ -1672,6 +1672,7 @@ export interface CommunityFeatureCollectionResponse {
 
 export type CommunityReportCategory =
   | "bridge_damage"
+  | "dangerous_weather"
   | "fire"
   | "flood"
   | "hazard"
@@ -1679,6 +1680,9 @@ export type CommunityReportCategory =
   | "medical"
   | "other"
   | "road_blockage"
+  | "stopped_vehicle"
+  | "traffic_accident"
+  | "traffic_congestion"
   | "utility_outage";
 
 export type CommunityReportHazardSeverity = "advisory" | "critical" | "warning";
@@ -1701,6 +1705,26 @@ export interface CommunityReportLocation {
   lat: number;
   lon: number;
   source: "device" | "manual" | "media_metadata" | "photo_exif" | "unknown";
+}
+
+export interface CommunityReportCaptureContext {
+  appVersion?: string;
+  client: "cop_mobile" | "cop_web" | "jizda";
+  offlineQueuedAt?: string;
+  platform: "android" | "ios" | "ipados" | "web";
+}
+
+export interface CommunityReportRoadContext {
+  capturedAt?: string;
+  roadName?: string;
+  roadRef?: string;
+  speedMps?: number;
+  travelDirectionDeg?: number;
+}
+
+export interface CommunityReportProperties extends Record<string, unknown> {
+  captureContext?: CommunityReportCaptureContext;
+  roadContext?: CommunityReportRoadContext;
 }
 
 export interface CommunityReportAttachment {
@@ -1770,7 +1794,9 @@ export interface CommunityReport {
   location: CommunityReportLocation;
   observedAt: string;
   ownedByCurrentActor?: boolean;
-  properties: Record<string, unknown>;
+  captureContext?: CommunityReportCaptureContext;
+  properties: CommunityReportProperties;
+  roadContext?: CommunityReportRoadContext;
   reportId: string;
   status: "draft" | "hidden" | "published" | "rejected" | "resolved" | "submitted" | "withdrawn";
   title: string;
@@ -3674,12 +3700,14 @@ export async function createCommunityReport(
   token: string,
   payload: {
     category: CommunityReportCategory;
+    captureContext?: CommunityReportCaptureContext;
     description?: string;
     hazardSeverity: CommunityReportHazardSeverity;
     groupId?: string;
     groupName?: string;
     location: CommunityReportLocation;
     observedAt?: string;
+    roadContext?: CommunityReportRoadContext;
     title: string;
     validUntil?: string;
     visibility?: CommunityReportVisibility;
@@ -3692,9 +3720,11 @@ export async function createCommunityReport(
       ...(payload.groupId ? { groupId: payload.groupId } : {}),
       ...(payload.groupName ? { groupName: payload.groupName } : {}),
       properties: {
+        ...(payload.captureContext ? { captureContext: payload.captureContext } : {}),
         ...(payload.groupId ? { groupId: payload.groupId } : {}),
         ...(payload.groupName ? { groupName: payload.groupName } : {}),
         hazardSeverity: payload.hazardSeverity,
+        ...(payload.roadContext ? { roadContext: payload.roadContext } : {}),
         ...(payload.validUntil ? { validUntil: payload.validUntil } : {})
       },
       visibility: payload.visibility ?? "community"
@@ -3772,6 +3802,7 @@ export async function updateCommunityReport(
   reportId: string,
   payload: {
     category?: CommunityReportCategory;
+    captureContext?: CommunityReportCaptureContext;
     changeReason?: string;
     description?: string;
     expectedVersion?: number;
@@ -3779,6 +3810,7 @@ export async function updateCommunityReport(
     groupId?: string;
     groupName?: string;
     location?: CommunityReportLocation;
+    roadContext?: CommunityReportRoadContext;
     title?: string;
     validUntil?: string;
     visibility?: CommunityReportVisibility;
@@ -3788,9 +3820,11 @@ export async function updateCommunityReport(
     body: JSON.stringify({
       ...payload,
       properties: {
+        ...(payload.captureContext ? { captureContext: payload.captureContext } : {}),
         ...(payload.groupId ? { groupId: payload.groupId } : {}),
         ...(payload.groupName ? { groupName: payload.groupName } : {}),
         ...(payload.hazardSeverity ? { hazardSeverity: payload.hazardSeverity } : {}),
+        ...(payload.roadContext ? { roadContext: payload.roadContext } : {}),
         ...(payload.validUntil ? { validUntil: payload.validUntil } : {})
       }
     }),

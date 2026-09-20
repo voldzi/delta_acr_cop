@@ -48,6 +48,12 @@ Community-report clients use a server-owned lifecycle:
 - report and attachment creation accept a UUID `X-Idempotency-Key`; an identical
   retry returns the same resource with `200`, while conflicting content returns
   `409 IDEMPOTENCY_CONFLICT`;
+- driver clients may send bounded `captureContext` and `roadContext` with a
+  report. COP preserves them as provenance for Jizda/COP Mobile, but treats
+  client-declared road names, headings and app identity as observations until
+  server-side enrichment or review confirms them;
+- traffic-specific categories include accidents, congestion, stopped vehicles,
+  dangerous weather and the existing road-blockage/general-hazard values;
 - `PATCH /api/v1/community/reports/{reportId}/attachments/{attachmentId}/access`
   lets the owner change an existing attachment ACL. Responses to non-owners omit
   the ACL subject and group identifiers, and every content request re-evaluates

@@ -143,6 +143,7 @@ function buildTitle(category: IncidentCategory, reports: CommunityReportRecord[]
 function mapReportCategory(category: CommunityReportCategory): IncidentCategory {
   const map: Record<CommunityReportCategory, IncidentCategory> = {
     bridge_damage: "infrastructure",
+    dangerous_weather: "weather",
     fire: "fire",
     flood: "flood",
     hazard: "community",
@@ -150,6 +151,9 @@ function mapReportCategory(category: CommunityReportCategory): IncidentCategory 
     medical: "medical",
     other: "community",
     road_blockage: "traffic",
+    stopped_vehicle: "traffic",
+    traffic_accident: "traffic",
+    traffic_congestion: "traffic",
     utility_outage: "infrastructure"
   };
   return map[category] ?? "community";
@@ -168,7 +172,12 @@ function readReportSeverity(report: CommunityReportRecord): IncidentSeverity {
   if (value === "critical" || value === "warning" || value === "advisory" || value === "info") {
     return value;
   }
-  if (report.category === "fire" || report.category === "flood" || report.category === "bridge_damage") {
+  if (
+    report.category === "fire" ||
+    report.category === "flood" ||
+    report.category === "bridge_damage" ||
+    report.category === "traffic_accident"
+  ) {
     return "warning";
   }
   return "advisory";

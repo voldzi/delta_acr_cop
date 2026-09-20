@@ -19553,7 +19553,11 @@ const communityReportCategoryOptions: Array<{ label: string; value: CommunityRep
   { label: "Požár", value: "fire" },
   { label: "Povodeň", value: "flood" },
   { label: "Poškozený most", value: "bridge_damage" },
+  { label: "Nebezpečné počasí", value: "dangerous_weather" },
   { label: "Neprůjezdná komunikace", value: "road_blockage" },
+  { label: "Stojící vozidlo", value: "stopped_vehicle" },
+  { label: "Dopravní nehoda", value: "traffic_accident" },
+  { label: "Dopravní kolona", value: "traffic_congestion" },
   { label: "Poškozená infrastruktura", value: "infrastructure_damage" },
   { label: "Zdravotní událost", value: "medical" },
   { label: "Výpadek služby", value: "utility_outage" },
@@ -19694,6 +19698,7 @@ function normalizeRestoredCommunityReportDraft(draft: CommunityReportDraft): Com
 function communityReportDefaultValidityHours(category: CommunityReportCategory): number {
   const hours: Record<CommunityReportCategory, number> = {
     bridge_damage: 24,
+    dangerous_weather: 2,
     fire: 2,
     flood: 12,
     hazard: 6,
@@ -19701,6 +19706,9 @@ function communityReportDefaultValidityHours(category: CommunityReportCategory):
     medical: 1,
     other: 6,
     road_blockage: 6,
+    stopped_vehicle: 2,
+    traffic_accident: 4,
+    traffic_congestion: 1,
     utility_outage: 12
   };
   return hours[category];
