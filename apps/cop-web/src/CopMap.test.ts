@@ -10,6 +10,7 @@ import {
   isMapPopoverControlTarget,
   isRecoverableMapError,
   isRecoverableBasemapTileError,
+  formatMapErrorMessage,
   normalizeMapGlyphsTemplate,
   normalizeMapTileTemplate,
   objectsToHistoryFeatureCollection,
@@ -117,6 +118,15 @@ describe("COP map data helpers", () => {
     expect(isRecoverableBasemapTileError("AJAXError: (500): https://tiles.zeleznalady.cz/osm/11/1120/696.png")).toBe(
       false
     );
+  });
+
+  it("handles exhausted tile-network retries and never exposes a raw AJAX error", () => {
+    const networkError = "AJAXError: Failed to fetch (0): https://tiles.zeleznalady.cz/osm/17/71862/44381.png";
+    expect(isRecoverableBasemapTileError(networkError)).toBe(true);
+    expect(formatMapErrorMessage(networkError)).toBe(
+      "Mapový podklad se nepodařilo načíst. Aplikace jej zkusí obnovit automaticky."
+    );
+    expect(formatMapErrorMessage("WebGL kontext není dostupný.")).toBe("WebGL kontext není dostupný.");
   });
 
   it("formats SIM route analysis sections for route selection details", () => {

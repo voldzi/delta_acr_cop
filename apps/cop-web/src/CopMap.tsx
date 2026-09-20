@@ -4837,7 +4837,7 @@ function CopMapComponent({
       if (isRecoverableMapError(message)) {
         return;
       }
-      setMapError(message);
+      setMapError(formatMapErrorMessage(message));
     });
 
     return () => {
@@ -12509,11 +12509,18 @@ export function isRecoverableBasemapTileError(message: string): boolean {
   const normalized = message.toLowerCase();
   const isTileRequest =
     normalized.includes("tiles.zeleznalady.cz/") || (normalized.includes("/osm/") && normalized.includes(".png"));
-  return (
-    normalized.includes("ajaxerror") &&
-    isTileRequest &&
-    ["(429)", "(502)", "(503)", "(504)"].some((status) => normalized.includes(status))
-  );
+  const isTransientFailure =
+    ["(0)", "(429)", "(502)", "(503)", "(504)"].some((status) => normalized.includes(status)) ||
+    normalized.includes("failed to fetch");
+  return normalized.includes("ajaxerror") && isTileRequest && isTransientFailure;
+}
+
+export function formatMapErrorMessage(message: string): string {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("ajaxerror") || normalized.includes("failed to fetch") || /https?:\/\//u.test(message)) {
+    return "Mapový podklad se nepodařilo načíst. Aplikace jej zkusí obnovit automaticky.";
+  }
+  return message;
 }
 
 export function isMapPopoverControlTarget(target: EventTarget | null): boolean {
