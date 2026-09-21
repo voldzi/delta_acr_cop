@@ -283,6 +283,7 @@ COP čte situační kontext ze SIM kontraktu `cop-situation-source-v1` přes vla
 COP_SITUATION_DATA_ENABLED=true
 COP_SITUATION_DATA_BASE_URL=http://docker.home.cz:5020/situation-data/api/v1
 COP_SITUATION_DATA_CACHE_TTL_MS=20000
+COP_SITUATION_DATA_TRAFFIC_CACHE_TTL_MS=5000
 COP_SITUATION_DATA_MAX_LIMIT=5000
 COP_SITUATION_DATA_TIMEOUT_MS=15000
 COP_SITUATION_DATA_OSM_POSTGIS_CACHE_TTL_MS=21600000
@@ -305,6 +306,11 @@ COP_WEATHER_CAMERA_TIMEOUT_MS=8000
 ```
 
 Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/map/query`). COP API při volání SIM nepřeposílá bearer token operátora a v produkci používá interní server-to-server URL `http://docker.home.cz:5020/...`, nikoli veřejné browser API. COP při čtení katalogu načítá také `GET /situation-data/api/v1/taxonomy`; taxonomy zůstává server-side a promítá se do Source Health, zatímco rozhodování o významu vrstev a jevů vychází ze stabilních polí `layerId`, `sourceId`, `typeCode`, `category`, `severity`, `metrics`, `tags` a `localized`, ne z českého nebo anglického textu. Při výpadku SIM endpointu vrací prázdný degraded `FeatureCollection`, aby mapa zůstala použitelná. Timeout je vyšší než běžná obnovovací kadence mapy, protože kombinované veřejné vrstvy mohou po studeném startu trvat několik sekund.
+
+Dopravní vrstva má samostatnou krátkou cache 5 sekund. Musí být kratší než
+nejrychlejší katalogová obnovovací kadence (PID 15 sekund), jinak první
+pravidelný refresh vrací stejný snapshot a vozidla se na mapě posouvají jen
+přibližně po 30 sekundách. Ostatní situační vrstvy si ponechávají delší TTL.
 
 Emergency routing je samostatná server-side integrace přes SIM
 `/situation-data/api/v1/routing/*`. COP API ji vystavuje klientům jen přes

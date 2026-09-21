@@ -531,7 +531,7 @@ export function createSituationDataSourceConfigFromEnv(
         1000,
         24 * 60 * 60 * 1000
       ),
-      traffic: readInteger(env.COP_SITUATION_DATA_TRAFFIC_CACHE_TTL_MS, cacheTtlMs, 1000, 5 * 60 * 1000),
+      traffic: readInteger(env.COP_SITUATION_DATA_TRAFFIC_CACHE_TTL_MS, 5000, 1000, 5 * 60 * 1000),
       warnings: readInteger(env.COP_SITUATION_DATA_WARNINGS_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather: readInteger(env.COP_SITUATION_DATA_WEATHER_CACHE_TTL_MS, 5 * 60 * 1000, 1000, 24 * 60 * 60 * 1000),
       weather_alerts: readInteger(

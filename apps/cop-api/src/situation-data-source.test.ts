@@ -1,9 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildSituationDataHealth, emptySituationFeatureCollection, SituationDataSourceAdapter } from "./situation-data-source.js";
+import {
+  buildSituationDataHealth,
+  createSituationDataSourceConfigFromEnv,
+  emptySituationFeatureCollection,
+  SituationDataSourceAdapter
+} from "./situation-data-source.js";
 
 describe("SituationDataSourceAdapter", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("keeps live traffic cache shorter than the PID refresh cadence", () => {
+    const config = createSituationDataSourceConfigFromEnv({});
+
+    expect(config.layerCacheTtlMs?.traffic).toBe(5000);
   });
 
   it("keeps model-only mobile network warnings as online dependency health", () => {
