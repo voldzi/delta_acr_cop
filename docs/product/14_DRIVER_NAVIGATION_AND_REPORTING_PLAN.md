@@ -128,35 +128,32 @@ remains the release acceptance gate before wider pilot use.
 
 ## Delivery status — 2026-09-21
 
-The implementation remains staged; the entire professional-navigation plan is
-not complete. This release hardens Phases 2–3 and adds maneuver speech to Phase 5:
+Implemented software for this release:
 
-- offline expiry follows the observation time, including the exact expiry boundary;
-- author votes cannot increase support; high support requires independent votes;
-- the native nearby feed filters on COP before its limit, rejects expired records,
-  labels distance as radial and distinguishes errors and incomplete results;
-- iPhone/CarPlay capture rejects stale or inaccurate GPS; modal actions complete
-  dismissal before presenting a result;
-- Czech approach/turn speech shares one owner with priority alerts, suppresses
-  speech during CallKit calls and deduplicates stages across position updates;
-- domain replay covers speech cadence for city/motorway, suppression, GPS bounce
-  and reroute. This is not a physical GPS or battery test.
+- Phases 1–3: authenticated reports, encrypted offline retries, observation-based
+  expiry, independent support, nearby feed and confirmations on iPhone/CarPlay.
+- Phase 4: durable PostgreSQL enrichment queue, verified dataset + directed-edge
+  SIM contract, conservative ambiguity, version/lease race protection and
+  presentation clustering without deleting original observations or adding votes.
+- Phase 5: Jizda now uses its own immutable route from COP/SIM. Geometry,
+  maneuver indices and ETA come from one response. Traffic time is counted once;
+  degraded/missing traffic permits a valid route; stale data is visibly warned.
+  Cancellation and failed refresh retain the correct session/last route.
+- Phase 6: up to three stationary-selectable iPhone alternatives and a confirmed
+  foreground Siri/Shortcuts report action using the same encrypted outbox.
+  iPhone and CarPlay share route, progress, Czech speech and priority alerts.
 
-Remaining implementation: Phase 4 durable enrichment, edge/carriageway contract
-and duplicate clustering; Phase 5 migration of Jizda's `MKRoute`-based navigation
-to a provider-independent route model before consuming SIM geometry/maneuvers/ETA;
-Phase 6 route alternatives and complete voice-driven reporting. Jizda still uses
-MapKit routes; COP Web already consumes SIM live traffic. Mixing a SIM ETA into
-a MapKit geometry would violate the single authoritative route invariant.
+Remaining software/product acceptance: CarPlay alternative previews, structured
+lane presentation when validated source data is available, and full real-route
+GPS replay/performance coverage. Existing pure-domain tests exercise ETA,
+maneuver speech, capture policy and recovery; they are not full route-matcher
+city/motorway/tunnel/parallel-road replay or battery measurements.
 
-SIM inspection found `sim-routing-nearest-access-v1`, but it returns only a
-nearest point, OSM way/name and distance. It has no stable directed-edge,
-carriageway or routing-dataset identifier. This cannot safely substantiate an
-automatic closure or direction-aware deduplication.
+External release gates: paid Apple managed capabilities and archive/TestFlight
+validation; signed-in physical iPhone/Siri testing; wired/wireless CarPlay;
+measured latency, ETA accuracy, camera behavior, battery/thermal and crash-free
+sessions in a multi-region driving pilot. These cannot be marked complete by
+compilation or server deployment. No market-leadership claim is supported.
 
-External acceptance gates: Apple CarPlay/navigation/communication entitlement
-approval, signed real-device testing, wired/wireless CarPlay, and a measured
-multi-region driving pilot. No market-leadership claim is supported yet.
-
-Validation and rollback evidence is recorded in
+Validation, deployed revisions and rollback evidence are recorded in
 [the driver integration release record](../integration/20_DRIVER_REPORTING_RELEASE.md).

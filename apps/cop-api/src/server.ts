@@ -1,3 +1,4 @@
+import { groupRoadObservations, RoadEnrichmentRunner } from "./road-enrichment.js";
 import compress from "@fastify/compress";
 import cors, { type FastifyCorsOptions } from "@fastify/cors";
 import helmet from "@fastify/helmet";
@@ -855,6 +856,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
   const situationDataBaseUrl = situationDataSource?.config.baseUrl ?? createSituationDataSourceConfigFromEnv().baseUrl;
   const routingSource = options.routingSource ?? createRoutingSourceFromEnv();
+  const roadEnrichmentRunner = process.env.COP_ROAD_ENRICHMENT_ENABLED !== "false" && communityReportStore?.roadEnrichmentQueue && routingSource?.config.enabled
+    ? new RoadEnrichmentRunner(communityReportStore.roadEnrichmentQueue, routingSource) : undefined;
   const takGatewaySource = options.takGatewaySource ?? createTakGatewaySourceFromEnv();
   const weatherRadarFramesCache = new Map<string, WeatherRadarFramesCacheEntry>();
   const edgeReplayCursors = new Map<string, EdgeReplayCursorRecord>();
@@ -1117,6 +1120,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       throw error;
     }
     await initializeCommunityReportStore();
+    if (communityReportStoreStatus === "ok") roadEnrichmentRunner?.start();
     await initializeIncidentStore();
     await initializeSketchDrawingStore();
     await initializeMediaStorage();
@@ -1165,6 +1169,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await userProfileStore.close();
     await userProfileFallbackStore.close();
     await webSessionStore?.close();
+    await roadEnrichmentRunner?.close();
     await communityReportStore?.close();
     await communityReportFallbackStore.close();
     await incidentStore?.close();
@@ -1225,6 +1230,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             status: communityReportStoreStatus,
             detail: communityReportStoreDependencyDetail()
           },
+          { name: "community-road-enrichment", status: roadEnrichmentRunner ? (roadEnrichmentRunner.failed || communityReportStoreStatus !== "ok" ? "degraded" : "ok") : "disabled", detail: "asynchronous observations; never automatic routing closures" },
           { name: "incident-store", status: incidentStoreStatus, detail: incidentStoreDependencyDetail() },
           {
             name: "sketch-drawing-store",
@@ -15703,7 +15709,7 @@ function communityReportsFeatureCollection(
   confirmations: Record<string, CommunityReportConfirmationSummary> = {}
 ) {
   return {
-    features: reports.map((report) => {
+    features: groupRoadObservations(reports, report => ["submitted", "published"].includes(report.status) && !isCommunityReportStale(report, requestNow)).map(({ report, count }) => {
       const captureContext = normalizeCommunityReportCaptureContext(report.properties.captureContext);
       const roadContext = normalizeCommunityReportRoadContext(report.properties.roadContext);
       const confirmationSummary = confirmations[report.reportId] ?? emptyCommunityReportConfirmationSummary();
@@ -15717,6 +15723,8 @@ function communityReportsFeatureCollection(
           attachmentCount: report.attachments.length,
           attachments: communityFeatureAttachments(report, actor, actorGroupIds, requestNow),
           category: report.category,
+          relatedReportCount: count,
+          ...(report.roadEnrichment ? { roadEnrichment: report.roadEnrichment } : {}),
           ...(captureContext ? { captureContext } : {}),
           confidenceSummary: communityReportConfidenceSummary(report, requestNow, confirmationSummary),
           confirmations: confirmationSummary,

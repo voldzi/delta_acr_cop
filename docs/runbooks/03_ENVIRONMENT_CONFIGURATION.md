@@ -590,3 +590,20 @@ COP_TILE_ATTRIBUTION="&copy; OpenStreetMap contributors"
 Pokud je vyplněné `COP_MAP_STYLE_URL`, web použije přímo MapLibre style URL a `COP_TILE_URL` slouží jen jako fallback pro klienty bez podpory style endpointu. Pokud je `COP_MAP_STYLE_URL` prázdné, web si vytvoří raster style z `COP_TILE_URL`.
 
 Detailní postup pro `dmz.home.cz`, nginx cache a následný vlastní tile server je v [10 Tile Cache and Map Tiles](10_TILE_CACHE_AND_MAP_TILES.md).
+
+## Asynchronous community road enrichment
+
+`COP_ROAD_ENRICHMENT_ENABLED` defaults to true; exact `false` disables the
+worker. It also needs the PostgreSQL community store and enabled routing
+adapter. The worker ticks every 15 seconds, leases two jobs for 120 seconds,
+and retries provider failures with exponential delay capped at one hour.
+Reconciliation includes active traffic observations from the last 24 hours,
+checks report version and excludes already queued versions to avoid starvation.
+Expired observations are marked expired without a SIM request. Queue state is
+durable across process restarts; map/report submission does not wait for SIM.
+
+`community-road-enrichment` health is disabled/ok/degraded. Provider errors
+never expose internal URLs in public health. Only one observation point,
+car profile and reliable heading are sent to SIM. Additive database columns
+and the jobs table need no destructive rollback migration. See ADR 0023 and
+the driver integration release record for candidate smoke and rollback.

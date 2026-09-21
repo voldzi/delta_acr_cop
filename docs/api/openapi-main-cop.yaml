@@ -5969,6 +5969,8 @@ components:
           $ref: "#/components/schemas/CommunityReportConfirmationSummary"
         confidenceSummary:
           $ref: "#/components/schemas/CommunityReportConfidenceSummary"
+        roadEnrichment:
+          $ref: "#/components/schemas/CommunityRoadEnrichment"
     CommunityReportAttachment:
       type: object
       required:
@@ -8724,6 +8726,13 @@ components:
         tags:
           type: object
           additionalProperties: true
+        relatedReportCount:
+          type: integer
+          minimum: 1
+          description: Authorized active observations represented by this feature; does not aggregate votes or
+            confidence.
+        roadEnrichment:
+          $ref: "#/components/schemas/CommunityRoadEnrichment"
     SituationSummary:
       type: object
       required:
@@ -13926,8 +13935,7 @@ components:
         steps:
           type: array
           items:
-            type: object
-            additionalProperties: true
+            $ref: "#/components/schemas/RoutingStep"
         quality:
           type: object
           additionalProperties: true
@@ -14616,3 +14624,76 @@ components:
       description: Heuristic support score, not a calibrated probability of truth. High requires at least
         two independent positive confirmations and a net independent balance of at least two. Author
         votes never increase support. Freshness and capture accuracy affect the score.
+    RoutingStep:
+      type: object
+      additionalProperties: true
+      properties:
+        maneuverType:
+          type: integer
+          minimum: 0
+          description: Valhalla maneuver type; absent for providers without structured maneuvers. Unknown
+            values must not be guessed.
+        roundaboutExitCount:
+          type: integer
+          minimum: 1
+        beginShapeIndex:
+          type: integer
+          minimum: 0
+          description: Zero-based maneuver start in complete route geometry, after joining legs and removing
+            consecutive duplicate coordinates.
+        endShapeIndex:
+          type: integer
+          minimum: 0
+          description: Inclusive end in complete route geometry; arrival may equal beginShapeIndex.
+        index:
+          type: integer
+          minimum: 0
+        instructionLocalized:
+          type: object
+          additionalProperties:
+            type: string
+        distanceM:
+          type: number
+          minimum: 0
+        durationSeconds:
+          type: number
+          minimum: 0
+        roadName:
+          type: string
+        geometry:
+          type: object
+          additionalProperties: true
+    CommunityRoadEnrichment:
+      type: object
+      description: Server-owned SIM road-match evidence for this report version. Cluster links probable
+        duplicates without deleting observations, boosting confidence or creating routing closures.
+        Never supplied by the reporting client.
+      required:
+        - contractVersion
+        - state
+        - enrichedAt
+        - reason
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-road-enrichment-v1
+        state:
+          type: string
+          enum:
+            - matched
+            - ambiguous
+            - unavailable
+            - expired
+        enrichedAt:
+          type: string
+          format: date-time
+        routingDataset:
+          type: string
+        directedEdgeId:
+          type: string
+        clusterId:
+          type: string
+          format: uuid
+        reason:
+          type: string

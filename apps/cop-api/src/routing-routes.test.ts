@@ -54,6 +54,7 @@ describe("routing routes", () => {
           quality: { confidence: 0.86, engine: "valhalla", mode: "engine_route" },
           rank: 1,
           routeId: "primary",
+          steps: [{ index: 0, maneuverType: 26, roundaboutExitCount: 3, beginShapeIndex: 0, endShapeIndex: 12 }],
           traffic: {
             delayPenaltySeconds: 120,
             incidentCount: 1,
@@ -109,6 +110,7 @@ describe("routing routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
+    expect(response.json().routes[0].steps).toEqual([{ index: 0, maneuverType: 26, roundaboutExitCount: 3, beginShapeIndex: 0, endShapeIndex: 12 }]);
     expect(routeMock).toHaveBeenCalledWith(
       expect.objectContaining({
         alternatives: 2,

@@ -82,6 +82,34 @@ try {
     now
   );
   assert(await store.updateGroupMetadata({ actor, groupId: group.groupId, metadata: { smoke: true } }, now));
+  // Lease expiry, crash recovery and clustering use real SQL with pool max=1.
+  const queue = store.roadEnrichmentQueue;
+  const firstJobs = await queue.claim(now);
+  assert.equal(firstJobs.length, 1);
+  assert.equal((await queue.claim(now)).length, 0);
+  const recovered = await queue.claim(new Date(now.getTime() + 121000));
+  assert.equal(recovered.length, 1);
+  const evidence = { contractVersion: "cop-road-enrichment-v1", state: "matched", enrichedAt: now.toISOString(),
+    routingDataset: "sim-routing-smoke", directedEdgeId: "123", reason: "isolated_test" };
+  await queue.complete(firstJobs[0], evidence);
+  assert.equal((await store.getReport(report.reportId)).roadEnrichment, undefined, "old lease cannot write");
+  await queue.complete(recovered[0], evidence);
+  const cluster = (await store.getReport(report.reportId)).roadEnrichment.clusterId;
+  assert(cluster);
+  const duplicate = await store.createReport({ category: "traffic_accident", createdBy: actor, location,
+    observedAt: now.toISOString(), title: "Isolated duplicate", visibility: "private", properties: { validUntil: "2026-09-21T14:00:00Z" } }, now);
+  await store.submitReport(duplicate.reportId, actor.subjectId, now);
+  const duplicateJob = (await queue.claim(now))[0];
+  assert(duplicateJob);
+  await queue.complete(duplicateJob, evidence);
+  assert.equal((await store.getReport(duplicate.reportId)).roadEnrichment.clusterId, cluster);
+  const previous = await store.getReport(duplicate.reportId);
+  await store.updateReport(duplicate.reportId, actor.subjectId, { expectedVersion: previous.version, location: { ...location, lon: 14.5 } }, now);
+  assert.equal((await store.getReport(duplicate.reportId)).roadEnrichment, undefined, "changed observation hides old matching");
+  const changedJob = (await queue.claim(now))[0];
+  assert(changedJob);
+  await queue.complete(changedJob, evidence);
+  assert.notEqual((await store.getReport(duplicate.reportId)).roadEnrichment.clusterId, cluster, "distant observations remain separate");
   console.log(
     JSON.stringify({
       result: "passed",
@@ -91,7 +119,12 @@ try {
         "spatial-filter",
         "expiry-boundary",
         "history",
-        "group-metadata"
+        "group-metadata",
+        "enrichment-lease-recovery",
+        "stale-lease-rejection",
+        "directional-duplicate-cluster",
+        "edited-observation-invalidates-match",
+        "distant-observations-remain-separate"
       ]
     })
   );

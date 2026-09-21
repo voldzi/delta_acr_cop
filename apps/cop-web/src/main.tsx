@@ -18728,6 +18728,7 @@ function SituationFeatureDetail({
             ["Stáří", formatAge(properties.observedAt)],
             ...(isCommunityReport
               ? ([
+                  ["Podobná hlášení v tomto místě", properties.relatedReportCount ?? 1],
                   [
                     "Podpora hlášení",
                     `${recordNumber(confidenceSummary, "scorePercent") ?? 0} / 100 (orientační skóre)`

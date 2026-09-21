@@ -529,6 +529,8 @@ export type SituationGeometry =
   | { coordinates: Array<Array<[number, number]>>; type: "Polygon" };
 
 export interface SituationFeatureProperties {
+  relatedReportCount?: number;
+  roadEnrichment?: CommunityReport["roadEnrichment"];
   adminLevel?: number | string;
   affectedArea?: string;
   affectedAreas?: string[];
@@ -1139,7 +1141,19 @@ export interface RoutingRouteFeature {
   type: "Feature";
 }
 
+export interface RoutingStep extends Record<string, unknown> {
+  index?: number;
+  maneuverType?: number;
+  roundaboutExitCount?: number;
+  beginShapeIndex?: number;
+  endShapeIndex?: number;
+  instructionLocalized?: Record<string, string>;
+  distanceM?: number;
+  durationSeconds?: number;
+}
+
 export interface RoutingRoute extends Record<string, unknown> {
+  steps?: RoutingStep[];
   distanceM?: number;
   durationSeconds?: number;
   elevation?: Record<string, unknown>;
@@ -1804,6 +1818,15 @@ export interface CommunityGroup {
 }
 
 export interface CommunityReport {
+  roadEnrichment?: {
+    contractVersion: "cop-road-enrichment-v1";
+    state: "matched" | "ambiguous" | "unavailable" | "expired";
+    enrichedAt: string;
+    routingDataset?: string;
+    directedEdgeId?: string;
+    clusterId?: string;
+    reason: string;
+  };
   attachments: CommunityReportAttachment[];
   category: CommunityReportCategory;
   createdBy?: {

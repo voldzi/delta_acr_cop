@@ -1,3 +1,4 @@
+import { PostgresRoadEnrichmentQueue, roadEnrichmentSchema, type RoadEnrichment, type RoadEnrichmentQueue } from "./road-enrichment.js";
 import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
 import { randomUUID } from "node:crypto";
 
@@ -100,6 +101,7 @@ export interface CommunityReportAttachmentRecord {
 }
 
 export interface CommunityReportRecord {
+  roadEnrichment?: RoadEnrichment;
   attachments: CommunityReportAttachmentRecord[];
   category: CommunityReportCategory;
   createdAt: string;
@@ -229,6 +231,7 @@ export interface CommunityReportLifecycleInput {
 }
 
 export interface CommunityReportStore {
+  readonly roadEnrichmentQueue?: RoadEnrichmentQueue;
   readonly name: string;
   close(): Promise<void>;
   completeAttachment(input: CompleteCommunityAttachmentInput): Promise<CommunityReportAttachmentRecord | null>;
@@ -851,12 +854,14 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
 }
 
 export class PostgresCommunityReportStore implements CommunityReportStore {
+  readonly roadEnrichmentQueue: PostgresRoadEnrichmentQueue;
   readonly name = "postgres";
   private lastIdleClientError: string | undefined;
   private readonly pool: PgPool;
 
   constructor(config: PoolConfig) {
     this.pool = new Pool(config);
+    this.roadEnrichmentQueue = new PostgresRoadEnrichmentQueue(this.pool);
     this.pool.on("error", (error) => {
       this.lastIdleClientError = errorMessage(error);
     });
@@ -864,6 +869,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
 
   async init(): Promise<void> {
     await this.pool.query(createCommunityReportTablesSql);
+    await this.pool.query(roadEnrichmentSchema);
   }
 
   async createReport(input: CreateCommunityReportInput, now: Date): Promise<CommunityReportRecord> {
@@ -1641,6 +1647,8 @@ interface CommunityGroupMemberRow extends QueryResultRow {
 }
 
 interface CommunityReportRow extends QueryResultRow {
+  road_enrichment?: RoadEnrichment;
+  road_enrichment_version?: number;
   category: CommunityReportCategory;
   created_at: Date | string;
   description: string | null;
@@ -1869,6 +1877,7 @@ function reportFromRow(row: CommunityReportRow, attachments: CommunityReportAtta
       lon: Number(row.lon),
       source: row.location_source
     },
+    ...(row.road_enrichment && Number(row.road_enrichment_version) === Number(row.version) ? { roadEnrichment: row.road_enrichment } : {}),
     observedAt: isoString(row.observed_at),
     properties: jsonRecord(row.properties),
     ...(publishedAt ? { publishedAt } : {}),

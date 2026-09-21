@@ -42,7 +42,19 @@ export interface RoutingRouteResponse {
   warnings: string[];
 }
 
+export interface RoutingStep extends Record<string, unknown> {
+  index?: number;
+  maneuverType?: number;
+  roundaboutExitCount?: number;
+  beginShapeIndex?: number;
+  endShapeIndex?: number;
+  instructionLocalized?: Record<string, string>;
+  distanceM?: number;
+  durationSeconds?: number;
+}
+
 export interface RoutingRoute extends Record<string, unknown> {
+  steps?: RoutingStep[];
   distanceM?: number;
   durationSeconds?: number;
   elevation?: Record<string, unknown>;

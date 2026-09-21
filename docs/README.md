@@ -33,3 +33,5 @@ Decision record: [ADR 0009](adr/0009_STANDARD_DOCUMENTATION_MAPPING_AND_JSON_OPE
   generated from JSON.
 
 Driver integration release evidence: [integration/20_DRIVER_REPORTING_RELEASE.md](integration/20_DRIVER_REPORTING_RELEASE.md).
+
+Driver navigation/reporting: [delivery plan](product/14_DRIVER_NAVIGATION_AND_REPORTING_PLAN.md), [release record](integration/20_DRIVER_REPORTING_RELEASE.md), [ADR 0023](adr/0023_DURABLE_ROAD_REPORT_ENRICHMENT.md).

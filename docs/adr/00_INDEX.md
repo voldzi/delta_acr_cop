@@ -23,3 +23,5 @@
 - [0020 Phone-Only Opportunistic Mesh](0020_PHONE_ONLY_OPPORTUNISTIC_MESH.md)
 - [0021 Shared Geo Foundation](0021_SHARED_GEO_FOUNDATION.md)
 - [0022 Opt-in 3D Situation Workspace](0022_OPT_IN_3D_SITUATION_WORKSPACE.md)
+
+- [0023 Durable Road Report Enrichment](0023_DURABLE_ROAD_REPORT_ENRICHMENT.md)
