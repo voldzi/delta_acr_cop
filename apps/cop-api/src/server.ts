@@ -18861,7 +18861,7 @@ function readBoolean(value: string | undefined, fallback: boolean): boolean {
 }
 
 function mapCatalogProviderTimeoutMs(): number {
-  return readPositiveInteger(process.env.COP_MAP_CATALOG_PROVIDER_TIMEOUT_MS, 3500);
+  return readPositiveInteger(process.env.COP_MAP_CATALOG_PROVIDER_TIMEOUT_MS, 8000);
 }
 
 function healthDependencyTimeoutMs(): number {
