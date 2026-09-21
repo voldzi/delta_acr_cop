@@ -1142,6 +1142,7 @@ export interface RoutingRouteFeature {
 }
 
 export interface RoutingStep extends Record<string, unknown> {
+  lanes?: Array<{ directions: number; active?: number; valid?: number }>;
   index?: number;
   maneuverType?: number;
   roundaboutExitCount?: number;

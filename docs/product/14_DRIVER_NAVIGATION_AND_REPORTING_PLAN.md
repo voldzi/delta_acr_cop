@@ -139,15 +139,23 @@ Implemented software for this release:
   maneuver indices and ETA come from one response. Traffic time is counted once;
   degraded/missing traffic permits a valid route; stale data is visibly warned.
   Cancellation and failed refresh retain the correct session/last route.
-- Phase 6: up to three stationary-selectable iPhone alternatives and a confirmed
+- Phase 6: up to three stationary-selectable iPhone/CarPlay alternatives and a confirmed
   foreground Siri/Shortcuts report action using the same encrypted outbox.
   iPhone and CarPlay share route, progress, Czech speech and priority alerts.
 
-Remaining software/product acceptance: CarPlay alternative previews, structured
-lane presentation when validated source data is available, and full real-route
-GPS replay/performance coverage. Existing pure-domain tests exercise ETA,
-maneuver speech, capture policy and recovery; they are not full route-matcher
-city/motorway/tunnel/parallel-road replay or battery measurements.
+The production route matcher now has a repeatable synthetic replay for city
+turns/noise, 1,000 motorway samples, opposite parallel carriageways, off-route
+movement, reroute identity, roundabout loops, offline/tunnel projection bounds
+and invalid GPS. This caught and fixed missing travel-course disambiguation and
+invalid-GPS rejection. ETA/speech/capture/recovery domain tests remain separate.
+
+Structured source-only lane guidance is implemented: validated direction masks,
+fresh confident GPS, next maneuver only, iPhone arrows/text fallback and CarPlay
+lane-position text. Missing or inconsistent provider data hides lane advice.
+The production smoke returned no lane records, so actual lane presentation still
+requires real-road/visual acceptance. Recorded real-world GPS traces, iPhone
+battery, thermal, end-to-end latency and real-road accuracy remain pilot gates;
+synthetic macOS matcher timings do not establish these metrics.
 
 External release gates: paid Apple managed capabilities and archive/TestFlight
 validation; signed-in physical iPhone/Siri testing; wired/wireless CarPlay;

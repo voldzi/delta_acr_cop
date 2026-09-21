@@ -14663,6 +14663,23 @@ components:
         geometry:
           type: object
           additionalProperties: true
+        lanes:
+          type: array
+          description: Provider lanes in left-to-right order; numeric Valhalla direction masks, never inferred.
+          items:
+            type: object
+            required:
+              - directions
+            properties:
+              directions:
+                type: integer
+                minimum: 0
+              active:
+                type: integer
+                minimum: 0
+              valid:
+                type: integer
+                minimum: 0
     CommunityRoadEnrichment:
       type: object
       description: Server-owned SIM road-match evidence for this report version. Cluster links probable
