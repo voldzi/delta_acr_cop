@@ -10440,40 +10440,60 @@ function NavigationProfileDialog({
   starting: boolean;
   target: EmergencyRouteTarget;
 }) {
+  const [requestedProfile, setRequestedProfile] = React.useState<NavigationProfile | null>(null);
+
+  React.useEffect(() => {
+    if (!starting && error) {
+      setRequestedProfile(null);
+    }
+  }, [error, starting]);
+
   return (
     <ModalDialog
+      className="navigation-profile-dialog"
       closeDisabled={starting}
       description="Zvolte režim výpočtu. Trasa se uloží jako offline balíček s dlaždicemi v koridoru trasy."
       eyebrow="Navigace"
       onClose={onClose}
       title={target.label ?? "Vybraný cíl"}
     >
-      {profilesStatusMessage ? (
-        <div className={`navigation-profile-status ${profilesStatus}`}>{profilesStatusMessage}</div>
-      ) : null}
-      <div className="navigation-profile-grid">
-        {navigationProfileOptions.map((option) => {
-          const unavailable =
-            profilesStatus === "ready" &&
-            availableProfileIds.size > 0 &&
-            !availableProfileIds.has(option.routeProfileId);
-          return (
-            <button
-              className="navigation-profile-option"
-              disabled={starting || unavailable}
-              key={option.id}
-              onClick={() => onStart(option.id)}
-              type="button"
-            >
-              {navigationProfileIcon(option.id, 20)}
-              <span>{option.label}</span>
-              <small>{unavailable ? "SIM profil není hlášen jako dostupný." : option.description}</small>
-            </button>
-          );
-        })}
+      <div className="navigation-profile-scroll">
+        {profilesStatusMessage ? (
+          <div className={`navigation-profile-status ${profilesStatus}`}>{profilesStatusMessage}</div>
+        ) : null}
+        {starting && requestedProfile ? (
+          <div className="navigation-profile-progress" aria-live="polite" role="status">
+            <RefreshCw aria-hidden="true" className="spin" size={17} />
+            Připravuji profil {navigationProfileLabel(requestedProfile)}…
+          </div>
+        ) : null}
+        <div className="navigation-profile-grid" aria-busy={starting}>
+          {navigationProfileOptions.map((option) => {
+            const unavailable =
+              profilesStatus === "ready" &&
+              availableProfileIds.size > 0 &&
+              !availableProfileIds.has(option.routeProfileId);
+            const selected = requestedProfile === option.id;
+            return (
+              <button
+                className={clsx("navigation-profile-option", selected && "selected")}
+                disabled={starting || unavailable}
+                key={option.id}
+                onClick={() => {
+                  setRequestedProfile(option.id);
+                  onStart(option.id);
+                }}
+                type="button"
+              >
+                <span className="navigation-profile-option-icon">{navigationProfileIcon(option.id, 20)}</span>
+                <span>{selected && starting ? `${option.label} · spouštím` : option.label}</span>
+                <small>{unavailable ? "SIM profil není hlášen jako dostupný." : option.description}</small>
+              </button>
+            );
+          })}
+        </div>
+        {error ? <div className="situation-warning">{error}</div> : null}
       </div>
-      {starting ? <div className="empty-mini">Připravuji navigaci a offline route balíček...</div> : null}
-      {error ? <div className="situation-warning">{error}</div> : null}
     </ModalDialog>
   );
 }

@@ -2239,6 +2239,9 @@ describe("COP web dashboard", () => {
 
     render(<App />);
     fireEvent.click(await screen.findByTestId("map-start-navigation"));
+    const profileDialog = await screen.findByRole("dialog");
+    expect(profileDialog.classList.contains("navigation-profile-dialog")).toBe(true);
+    expect(profileDialog.querySelector(".navigation-profile-scroll")).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: /Auto/ }));
 
     await waitFor(() =>
