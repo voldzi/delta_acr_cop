@@ -60,6 +60,19 @@ describe("COP standalone iPhone safe areas", () => {
     expect(mobileSheet).toContain("top: calc(54px + env(safe-area-inset-top, 0px))");
   });
 
+  it("keeps the map header on one compact row on phones", () => {
+    const compactAlert = cssBlocks(".shell.app-shell-v2 .priority-alert-strip").find((block) =>
+      block.includes("grid-column: 2")
+    );
+    const compactAlertTitle = cssBlocks(".shell.app-shell-v2 .priority-alert-strip strong").find((block) =>
+      block.includes("text-overflow: ellipsis")
+    );
+
+    expect(compactAlert).toContain("grid-row: 1");
+    expect(compactAlert).toContain("min-height: 40px");
+    expect(compactAlertTitle).toContain("white-space: nowrap");
+  });
+
   it("fills both compact and Max screens without relying on the shorter iOS dvh viewport", () => {
     const mobileShell = cssBlocks(".shell.app-shell-v2").find((block) =>
       block.includes("grid-template-rows: auto minmax(0, 1fr) auto")

@@ -1364,6 +1364,11 @@ describe("COP web dashboard", () => {
     expect(mobilePublicFlightToggle.checked).toBe(true);
     fireEvent.click(mobilePublicFlightToggle);
     expect(mobilePublicFlightToggle.checked).toBe(false);
+    const sheetGrip = within(mobileSheet).getByRole("button", { name: "Stáhnout panel dolů" });
+    fireEvent.pointerDown(sheetGrip, { button: 0, clientY: 100, pointerId: 7, pointerType: "touch" });
+    fireEvent.pointerMove(sheetGrip, { clientY: 190, pointerId: 7, pointerType: "touch" });
+    fireEvent.pointerUp(sheetGrip, { clientY: 190, pointerId: 7, pointerType: "touch" });
+    expect(screen.queryByTestId("mobile-sheet-surface")).toBeNull();
     const mapWorkspaceTab = screen
       .getAllByRole("button", { name: /Mapa/u })
       .find((button) => button.classList.contains("workspace-tab"));

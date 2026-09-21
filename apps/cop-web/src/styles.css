@@ -11029,8 +11029,8 @@ dd {
     display: grid;
     place-items: center;
     justify-self: center;
-    width: min(180px, 60vw);
-    min-height: 30px;
+    width: 100%;
+    min-height: 32px;
     padding: 8px 0 4px;
     border: 0;
     background: transparent;
@@ -12129,7 +12129,8 @@ dd {
   }
 }
 
-/* Keep the complete local-warning message readable on narrow screens. */
+/* Keep the map chrome compact on phones. The full warning remains available
+   through the tappable status strip instead of consuming a second header row. */
 @media (max-width: 600px) {
   .shell.app-shell-v2 .topbar > .brand {
     grid-column: 1;
@@ -12142,26 +12143,26 @@ dd {
   }
 
   .shell.app-shell-v2 .priority-alert-strip {
-    grid-column: 1 / -1;
-    grid-row: 2;
+    grid-column: 2;
+    grid-row: 1;
     grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-    padding: 7px 10px;
+    gap: 0;
+    min-height: 40px;
+    padding: 0 8px;
   }
 
-  .shell.app-shell-v2 .priority-alert-strip > span {
-    justify-self: start;
-    max-width: 100%;
-    white-space: normal;
-  }
-
-  .shell.app-shell-v2 .priority-alert-strip strong,
+  .shell.app-shell-v2 .priority-alert-strip > span,
   .shell.app-shell-v2 .priority-alert-strip small {
+    display: none;
+  }
+
+  .shell.app-shell-v2 .priority-alert-strip strong {
     display: block;
-    overflow: visible;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    line-height: 1.4;
+    overflow: hidden;
+    font-size: 11px;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 .public-welcome-backdrop {

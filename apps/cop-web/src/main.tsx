@@ -13860,47 +13860,49 @@ function MobileSheetSurface({
 }) {
   const [dragOffset, setDragOffset] = React.useState(0);
   const startYRef = React.useRef<number | null>(null);
+  const activePointerIdRef = React.useRef<number | null>(null);
 
   const stopSheetEvent = React.useCallback((event: React.SyntheticEvent<HTMLElement>) => {
     event.stopPropagation();
   }, []);
 
-  const handleGripPointerDown = React.useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      if (event.pointerType === "mouse" && event.button !== 0) {
+  const handleGripPointerDown = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    startYRef.current = event.clientY;
+    activePointerIdRef.current = event.pointerId;
+    setDragOffset(0);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, []);
+
+  const handleGripPointerMove = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (startYRef.current === null || activePointerIdRef.current !== event.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const nextOffset = Math.max(0, event.clientY - startYRef.current);
+    setDragOffset(Math.min(160, nextOffset));
+  }, []);
+
+  const finishGripDrag = React.useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>, cancelled = false) => {
+      if (startYRef.current === null || activePointerIdRef.current !== event.pointerId) {
         return;
       }
       event.preventDefault();
       event.stopPropagation();
-      startYRef.current = event.clientY;
+      const deltaY = event.clientY - startYRef.current;
+      startYRef.current = null;
+      activePointerIdRef.current = null;
       setDragOffset(0);
-      event.currentTarget.setPointerCapture?.(event.pointerId);
-
-      const handlePointerMove = (moveEvent: PointerEvent) => {
-        if (startYRef.current === null) {
-          return;
-        }
-        moveEvent.preventDefault();
-        const nextOffset = Math.max(0, moveEvent.clientY - startYRef.current);
-        setDragOffset(Math.min(140, nextOffset));
-      };
-
-      const finishDrag = (upEvent: PointerEvent) => {
-        const startY = startYRef.current;
-        const deltaY = startY === null ? 0 : upEvent.clientY - startY;
-        startYRef.current = null;
-        setDragOffset(0);
-        window.removeEventListener("pointermove", handlePointerMove);
-        window.removeEventListener("pointerup", finishDrag);
-        window.removeEventListener("pointercancel", finishDrag);
-        if (deltaY > 78) {
-          onClose();
-        }
-      };
-
-      window.addEventListener("pointermove", handlePointerMove, { passive: false });
-      window.addEventListener("pointerup", finishDrag, { once: true });
-      window.addEventListener("pointercancel", finishDrag, { once: true });
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      if (!cancelled && deltaY > 72) {
+        onClose();
+      }
     },
     [onClose]
   );
@@ -13940,6 +13942,9 @@ function MobileSheetSurface({
             }
           }}
           onPointerDown={handleGripPointerDown}
+          onPointerMove={handleGripPointerMove}
+          onPointerUp={(event) => finishGripDrag(event)}
+          onPointerCancel={(event) => finishGripDrag(event, true)}
           type="button"
         >
           <span aria-hidden="true" />
