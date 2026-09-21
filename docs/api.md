@@ -66,9 +66,11 @@ Direct voice calls use the authoritative endpoints:
 - `POST /api/v1/messaging/calls/{callId}/actions`
 
 The API returns lifecycle metadata and, only to an authorized active
-participant, short-lived LiveKit credentials. Audio, SDP and chat plaintext do
-not traverse COP API. Matrix VoIP and `/messaging/calls/wake` are not part of
-the current contract. `POST /api/v1/messaging/calls` requires the bound
+participant, short-lived LiveKit credentials together with the call-scoped
+`media.e2eeKey`. Web and native clients must enable LiveKit end-to-end media
+encryption before connecting. Audio, SDP and chat plaintext do not traverse COP
+API. Matrix VoIP and `/messaging/calls/wake` are not part of the current
+contract. `POST /api/v1/messaging/calls` requires the bound
 `roomId`; `participantSubjectIds` is optional because the API normally resolves
 the canonical `directPeer` from the server-owned conversation. Transport-level
 Matrix aliases are never authoritative call recipients.

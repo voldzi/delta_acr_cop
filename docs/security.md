@@ -53,10 +53,13 @@ choose an arbitrary recipient, transition another user's call or reuse a
 credential for a different call.
 
 LiveKit credentials are issued server-side, expire quickly and grant join,
-publish and subscribe only in `cop-call-<callId>`. The LiveKit API secret,
-PushKit tokens, Matrix credentials and chat content never enter the call
-record. CSM Messaging receives only bounded lifecycle metadata for incoming,
-ended and missed notifications.
+publish and subscribe only in `cop-call-<callId>`. COP derives a stable
+call-scoped media encryption key from the independent
+`COP_VOICE_CALL_E2EE_SECRET`; web and native clients enable LiveKit E2EE before
+joining. Neither that deployment secret nor a call key enters the durable call
+record or logs. The LiveKit API secret, PushKit tokens, Matrix credentials and
+chat content never enter the call record. CSM Messaging receives only bounded
+lifecycle metadata for incoming, ended and missed notifications.
 
 CallKit actions map to revision-checked COP API transitions. After foreground
 restore, clients fetch the server record rather than trusting local UI state.
@@ -76,9 +79,9 @@ recovery key remains scoped to Matrix user and homeserver; direct database
 deletion of Matrix one-time/fallback keys is not an approved repair path.
 
 The LiveKit deployment can observe call membership, timing, IP addressing and
-encrypted media transport metadata. It receives no Matrix room keys or chat
-content. Its public WSS and media ports, API keys and retention policy belong to
-the audited production infrastructure boundary.
+encrypted media transport metadata, but cannot decrypt call media. It receives
+no Matrix room keys or chat content. Its public WSS and media ports, API keys
+and retention policy belong to the audited production infrastructure boundary.
 
 ## Webové přihlášení (BFF)
 

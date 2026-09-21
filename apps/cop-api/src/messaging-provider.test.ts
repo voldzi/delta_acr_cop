@@ -894,6 +894,7 @@ describe("CsmMessagingProvider", () => {
       voiceCallMediaIssuer: {
         enabled: true,
         issue: async (call, actor, requestNow) => ({
+          e2eeKey: "test-call-e2ee-key-0123456789-abcdef",
           expiresAt: new Date(requestNow.getTime() + 600_000).toISOString(),
           serverUrl: "wss://comm.example.test",
           token: `token:${call.callId}:${actor.subjectId}`
@@ -922,6 +923,7 @@ describe("CsmMessagingProvider", () => {
       },
       contractVersion: "cop-voice-call-v1",
       media: {
+        e2eeKey: "test-call-e2ee-key-0123456789-abcdef",
         serverUrl: "wss://comm.example.test"
       }
     });

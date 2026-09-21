@@ -42,5 +42,8 @@ the host must still expose a compatible kernel listen queue.
 
 Production voice calls additionally require durable
 `COP_VOICE_CALL_STORE=postgres`, `voice-call-media=ok` in dependency health, a
-publicly reachable LiveKit WSS/media endpoint and confirmed CSM Messaging
-PushKit delivery. Matrix readiness is unrelated to the voice media path.
+publicly reachable LiveKit WSS/media endpoint, a separately managed
+`COP_VOICE_CALL_E2EE_SECRET` of at least 32 characters and confirmed CSM
+Messaging PushKit delivery. Rotate this secret only during a coordinated client
+cutover because it changes every derived active-call media key. Matrix readiness
+is unrelated to the voice media path.

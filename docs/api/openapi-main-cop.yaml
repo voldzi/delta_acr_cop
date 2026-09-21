@@ -10437,11 +10437,15 @@ components:
     MessagingVoiceCallMedia:
       type: object
       required:
+        - e2eeKey
         - expiresAt
         - serverUrl
         - token
       additionalProperties: false
       properties:
+        e2eeKey:
+          type: string
+          minLength: 32
         expiresAt:
           type: string
           format: date-time

@@ -120,13 +120,16 @@ COP_VOICE_CALL_STORE=postgres
 COP_LIVEKIT_PUBLIC_URL=wss://msg.zeleznalady.cz
 COP_LIVEKIT_API_KEY=<livekit-api-key>
 COP_LIVEKIT_API_SECRET=<livekit-api-secret>
+COP_VOICE_CALL_E2EE_SECRET=<random-48-byte-secret>
 COP_LIVEKIT_TOKEN_TTL_SECONDS=600
 ```
 
 `COP_LIVEKIT_PUBLIC_URL` je adresa dostupná přímo z browseru i telefonu. V
 produkci musí používat `wss://`. API key a secret patří pouze do serverového
 secret store; klient dostává jen krátkodobý token omezený na jeden
-`cop-call-<callId>` room. `COP_VOICE_CALL_STORE=postgres` používá stejný
+`cop-call-<callId>` room. `COP_VOICE_CALL_E2EE_SECRET` je oddělený serverový
+secret pro odvození jedinečného koncového šifrovacího klíče každého hovoru;
+nesmí být shodný s LiveKit API secretem. `COP_VOICE_CALL_STORE=postgres` používá stejný
 `COP_DATABASE_URL` jako ostatní durable COP stores.
 
 Před zapnutím ověřte WSS připojení z mobilní sítě, LiveKit UDP/TCP media porty,

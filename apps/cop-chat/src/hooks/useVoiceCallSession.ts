@@ -33,6 +33,7 @@ interface ServerVoiceCall {
 }
 
 interface VoiceCallMedia {
+  e2eeKey: string;
   expiresAt: string;
   serverUrl: string;
   token: string;
@@ -198,8 +199,17 @@ export function useVoiceCallSession(options: UseVoiceCallSessionOptions): VoiceC
           return;
         }
         await disconnectMedia();
-        const { Room: LiveKitRoom, RoomEvent } = await import("livekit-client");
-        const room = new LiveKitRoom({ adaptiveStream: true, dynacast: true });
+        const { ExternalE2EEKeyProvider, Room: LiveKitRoom, RoomEvent } = await import("livekit-client");
+        const keyProvider = new ExternalE2EEKeyProvider();
+        await keyProvider.setKey(response.media.e2eeKey);
+        const room = new LiveKitRoom({
+          adaptiveStream: true,
+          dynacast: true,
+          encryption: {
+            keyProvider,
+            worker: new Worker(new URL("livekit-client/e2ee-worker", import.meta.url), { type: "module" })
+          }
+        });
         roomRef.current = { callId, room };
         const refresh = () => publishSnapshot(callRef.current ?? response.call);
         const reportConnected = () => {
@@ -217,6 +227,7 @@ export function useVoiceCallSession(options: UseVoiceCallSessionOptions): VoiceC
         room.on(RoomEvent.Reconnected, reportConnected);
         room.on(RoomEvent.Disconnected, refresh);
         try {
+          await room.setE2EEEnabled(true);
           await room.connect(response.media.serverUrl, response.media.token);
           await room.localParticipant.setMicrophoneEnabled(true);
           mutedRef.current = false;

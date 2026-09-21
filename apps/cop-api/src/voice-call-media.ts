@@ -1,8 +1,10 @@
 import { AccessToken } from "livekit-server-sdk";
+import { createHmac } from "node:crypto";
 import type { AuthenticatedActor } from "./security.js";
 import type { VoiceCallRecord } from "./voice-call-store.js";
 
 export interface VoiceCallMediaCredentials {
+  e2eeKey: string;
   expiresAt: string;
   serverUrl: string;
   token: string;
@@ -25,17 +27,20 @@ export class LiveKitVoiceCallMediaIssuer implements VoiceCallMediaIssuer {
   readonly enabled = true;
   private readonly apiKey: string;
   private readonly apiSecret: string;
+  private readonly e2eeSecret: string;
   private readonly publicUrl: string;
   private readonly tokenTtlSeconds: number;
 
   constructor(options: {
     apiKey: string;
     apiSecret: string;
+    e2eeSecret: string;
     publicUrl: string;
     tokenTtlSeconds?: number;
   }) {
     this.apiKey = options.apiKey;
     this.apiSecret = options.apiSecret;
+    this.e2eeSecret = options.e2eeSecret;
     this.publicUrl = normalizeLiveKitURL(options.publicUrl);
     this.tokenTtlSeconds = Math.max(60, Math.min(3_600, options.tokenTtlSeconds ?? 600));
   }
@@ -59,6 +64,9 @@ export class LiveKitVoiceCallMediaIssuer implements VoiceCallMediaIssuer {
       roomJoin: true
     });
     return {
+      e2eeKey: createHmac("sha256", this.e2eeSecret)
+        .update(`cop-voice-call-e2ee:${record.callId}`, "utf8")
+        .digest("base64url"),
       expiresAt: new Date(now.getTime() + this.tokenTtlSeconds * 1_000).toISOString(),
       serverUrl: this.publicUrl,
       token: await token.toJwt()
@@ -72,19 +80,21 @@ export function createVoiceCallMediaIssuerFromEnv(
   const publicUrl = env.COP_LIVEKIT_PUBLIC_URL?.trim();
   const apiKey = env.COP_LIVEKIT_API_KEY?.trim();
   const apiSecret = env.COP_LIVEKIT_API_SECRET?.trim();
+  const e2eeSecret = env.COP_VOICE_CALL_E2EE_SECRET?.trim();
   const explicitlyEnabled = /^(1|true|yes|on)$/iu.test(env.COP_VOICE_CALLS_ENABLED?.trim() ?? "");
 
-  if (!explicitlyEnabled && !publicUrl && !apiKey && !apiSecret) {
+  if (!explicitlyEnabled && !publicUrl && !apiKey && !apiSecret && !e2eeSecret) {
     return new DisabledVoiceCallMediaIssuer();
   }
-  if (!publicUrl || !apiKey || !apiSecret) {
+  if (!publicUrl || !apiKey || !apiSecret || !e2eeSecret || e2eeSecret.length < 32) {
     throw new Error(
-      "COP native voice calls require COP_LIVEKIT_PUBLIC_URL, COP_LIVEKIT_API_KEY and COP_LIVEKIT_API_SECRET."
+      "COP native voice calls require COP_LIVEKIT_PUBLIC_URL, COP_LIVEKIT_API_KEY, COP_LIVEKIT_API_SECRET and a COP_VOICE_CALL_E2EE_SECRET of at least 32 characters."
     );
   }
   return new LiveKitVoiceCallMediaIssuer({
     apiKey,
     apiSecret,
+    e2eeSecret,
     publicUrl,
     tokenTtlSeconds: readPositiveInteger(env.COP_LIVEKIT_TOKEN_TTL_SECONDS, 600)
   });
