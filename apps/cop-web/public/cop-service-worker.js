@@ -96,6 +96,17 @@ self.addEventListener("push", (event) => {
 
   event.waitUntil(
     (async () => {
+      if (isVoiceCallAnsweredElsewherePayload(payload)) {
+        await closeNotificationsByTag(tag);
+        await notifyClients({
+          acceptedEndpointId: notificationPayloadAcceptedEndpointId(payload),
+          callId: notificationPayloadCallId(payload),
+          roomId: notificationPayloadRoomId(payload),
+          tag,
+          type: "cop:pwa:voice-call-answered-elsewhere"
+        });
+        return;
+      }
       if (isVoiceCallEndedPayload(payload)) {
         await closeNotificationsByTag(tag);
         await notifyClients({
@@ -913,8 +924,16 @@ function isVoiceCallIncomingPayload(payload) {
   return notificationPayloadType(payload) === "chat.voice_call.incoming";
 }
 
+function isVoiceCallAnsweredElsewherePayload(payload) {
+  return notificationPayloadType(payload) === "chat.voice_call.answered_elsewhere";
+}
+
 function isVoiceCallEndedPayload(payload) {
   return notificationPayloadType(payload) === "chat.voice_call.ended";
+}
+
+function notificationPayloadAcceptedEndpointId(payload) {
+  return firstString(payload?.acceptedEndpointId, payload?.data?.acceptedEndpointId);
 }
 
 function notificationPayloadCallId(payload) {
@@ -1023,7 +1042,13 @@ function notificationPayloadTag(payload) {
   const type = notificationPayloadType(payload);
   const callId = notificationPayloadCallId(payload);
   const callRoomId = notificationPayloadRoomId(payload);
-  if (!explicitTag && callId && (type === "chat.voice_call.incoming" || type === "chat.voice_call.ended")) {
+  if (
+    !explicitTag &&
+    callId &&
+    (type === "chat.voice_call.incoming" ||
+      type === "chat.voice_call.ended" ||
+      type === "chat.voice_call.answered_elsewhere")
+  ) {
     return `cop-call:${safeNotificationTagPart(callRoomId ?? "room")}:${safeNotificationTagPart(callId)}`;
   }
   const eventId = firstString(

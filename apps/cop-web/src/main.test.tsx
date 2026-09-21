@@ -508,6 +508,23 @@ describe("COP web dashboard", () => {
         type: "cop:pwa:voice-call-ended"
       })
     ).toEqual({ action: "ended", callId: "call-1", roomId: "!ops:msg.zeleznalady.cz" });
+    window.localStorage.setItem("cop.voice-call.endpoint-id.v1", "web:winner");
+    expect(
+      pwaVoiceCallUpdateFromServiceWorkerMessage({
+        acceptedEndpointId: "web:other",
+        callId: "call-1",
+        roomId: "!ops:msg.zeleznalady.cz",
+        type: "cop:pwa:voice-call-answered-elsewhere"
+      })
+    ).toEqual({ action: "ended", callId: "call-1", roomId: "!ops:msg.zeleznalady.cz" });
+    expect(
+      pwaVoiceCallUpdateFromServiceWorkerMessage({
+        acceptedEndpointId: "web:winner",
+        callId: "call-1",
+        roomId: "!ops:msg.zeleznalady.cz",
+        type: "cop:pwa:voice-call-answered-elsewhere"
+      })
+    ).toBeNull();
     expect(pwaVoiceCallUpdateFromServiceWorkerMessage({ type: "cop:pwa:voice-call-incoming" })).toBeNull();
   });
 

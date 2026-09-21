@@ -442,8 +442,11 @@ voice-call alerts. Push payloads for chat should include `deepLink`,
 `conversationId` or `roomId`; the COP service worker opens `/chat/<selection>`
 for chat payloads and keeps map alert/report deep links in the map shell.
 
-COP API sends only `chat.voice_call.incoming` and `chat.voice_call.ended`
-directly to CSM Messaging from authoritative call transitions. A missed call is
+COP API sends `chat.voice_call.incoming`, `chat.voice_call.answered_elsewhere`
+and `chat.voice_call.ended` directly to CSM Messaging from authoritative call
+transitions. The answered-elsewhere wake contains the opaque endpoint ID that
+won the server-side atomic claim. That endpoint ignores the wake; sibling apps
+and devices close their matching native or PWA ringing UI. A missed call is
 stored as the terminal server phase `missed` and uses the same terminal
 `chat.voice_call.ended` wake. Push metadata is intentionally limited to the CSM
 Messaging allowlist: `callId`, `roomId`, sender presentation, TTL,
@@ -456,8 +459,11 @@ one-time device ticket. Incoming and terminal call events for that device use
 the `.voip` APNs topic. The native client must report an incoming PushKit event
 to CallKit immediately, then fetch current call detail and short-lived media
 credentials from COP API. Accept, decline, cancel, end and media-connected
-actions are revision-checked server transitions. A terminal push closes the
-matching CallKit call and refreshes the chat call timeline.
+actions are revision-checked server transitions. Accept also carries the
+installation `endpointId`, so one account running COP Mobile, Jízda and the web
+client cannot accept the same call more than once. A terminal or
+answered-elsewhere push closes the matching CallKit call and refreshes the chat
+call timeline.
 
 The standalone COP Mobile process owns the complete native call lifecycle. No
 hidden web view, Device Bridge acknowledgement, Matrix call event or group-call

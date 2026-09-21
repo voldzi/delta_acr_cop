@@ -12769,6 +12769,26 @@ export function pwaVoiceCallUpdateFromServiceWorkerMessage(
   const data = value as Record<string, unknown>;
   const callId = typeof data.callId === "string" ? data.callId.trim().slice(0, 160) : "";
   const roomId = typeof data.roomId === "string" ? data.roomId.trim().slice(0, 512) : "";
+  if (data.type === "cop:pwa:voice-call-answered-elsewhere") {
+    const acceptedEndpointId =
+      typeof data.acceptedEndpointId === "string" ? data.acceptedEndpointId.trim().slice(0, 128) : "";
+    let localEndpointId = "";
+    try {
+      localEndpointId = window.localStorage.getItem("cop.voice-call.endpoint-id.v1")?.trim() ?? "";
+    } catch {
+      // Storage may be unavailable in a hardened browser context.
+    }
+    if (acceptedEndpointId && acceptedEndpointId === localEndpointId) {
+      return null;
+    }
+    return callId || roomId
+      ? {
+          action: "ended",
+          ...(callId ? { callId } : {}),
+          ...(roomId ? { roomId } : {})
+        }
+      : null;
+  }
   if (data.type === "cop:pwa:voice-call-ended") {
     return callId || roomId
       ? {

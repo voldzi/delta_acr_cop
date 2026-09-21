@@ -4711,7 +4711,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   async function sendVoiceCallLifecycleNotification(input: {
-    action: "ended" | "incoming" | "missed";
+    action: "answered_elsewhere" | "ended" | "incoming" | "missed";
     actor?: AuthenticatedActor;
     call: VoiceCallRecord;
     recipientUserIds: string[];
@@ -4719,6 +4719,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }) {
     const incoming = input.action === "incoming";
     const missed = input.action === "missed";
+    const answeredElsewhere = input.action === "answered_elsewhere";
     const actorName = input.actor?.displayName || input.actor?.username || input.call.title || "COP kontakt";
     return messagingProvider.sendNotification(
       input.actor,
@@ -4731,6 +4732,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
               cs: `${actorName} volá`,
               en: `${actorName} is calling`
             }
+          : answeredElsewhere
+            ? { cs: "Hovor byl přijat na jiném zařízení.", en: "Call answered on another device." }
           : missed
             ? { cs: "Nepřijatý hovor.", en: "Missed call." }
             : { cs: "Hovor byl ukončen.", en: "The call ended." },
@@ -4738,6 +4741,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         expiresAt: new Date(input.requestNow.getTime() + 90_000).toISOString(),
         metadata: {
           callId: input.call.callId,
+          ...(input.call.acceptedByEndpointId ? { acceptedEndpointId: input.call.acceptedByEndpointId } : {}),
           renotify: incoming,
           requireInteraction: incoming,
           roomId: input.call.roomId,
@@ -4756,12 +4760,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         },
         title: incoming
           ? { cs: "Příchozí hlasový hovor", en: "Incoming voice call" }
+          : answeredElsewhere
+            ? { cs: "Přijato jinde", en: "Answered elsewhere" }
           : missed
             ? { cs: "Nepřijatý hovor", en: "Missed call" }
             : { cs: "Hovor ukončen", en: "Call ended" },
         // CSM Messaging deliberately exposes only a minimal wake-up contract.
         // The authoritative phase and end reason are read from the COP call API.
-        type: incoming ? "chat.voice_call.incoming" : "chat.voice_call.ended"
+        type: incoming
+          ? "chat.voice_call.incoming"
+          : answeredElsewhere
+            ? "chat.voice_call.answered_elsewhere"
+            : "chat.voice_call.ended"
       }
     );
   }
@@ -5042,6 +5052,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const result = await voiceCallStore.transition(callId, {
         action: input.action,
         actorSubjectId: actor.subjectId,
+        ...(input.endpointId ? { endpointId: input.endpointId } : {}),
         ...(input.expectedRevision !== undefined ? { expectedRevision: input.expectedRevision } : {}),
         now: now().toISOString(),
         ...(input.reason ? { reason: input.reason } : {})
@@ -5055,7 +5066,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
-      if (!result.changed && result.conflict === "revision") {
+      if (!result.changed && (result.conflict === "revision" || result.conflict === "claimed")) {
         return reply.code(409).send(voiceCallAPIResponse(result.record, actor.subjectId));
       }
       if (!result.changed && result.conflict === "transition") {
@@ -5081,6 +5092,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           recipientUserIds: [result.record.initiatorSubjectId, ...result.record.participantSubjectIds].filter(
             (subjectId) => subjectId !== actor.subjectId
           ),
+          requestNow: now()
+        });
+      }
+      if (result.changed && input.action === "accept") {
+        await sendVoiceCallLifecycleNotification({
+          actor,
+          action: "answered_elsewhere",
+          call: result.record,
+          recipientUserIds: [actor.subjectId],
           requestNow: now()
         });
       }
@@ -14921,7 +14941,7 @@ function normalizeVoiceCallStartRequest(
 
 function normalizeVoiceCallActionRequest(
   value: unknown
-): { action: VoiceCallAction; expectedRevision?: number; reason?: string } | null {
+): { action: VoiceCallAction; endpointId?: string; expectedRevision?: number; reason?: string } | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -14939,12 +14959,18 @@ function normalizeVoiceCallActionRequest(
       ? (value.action as VoiceCallAction)
       : undefined;
   const expectedRevision = optionalFiniteNumber(value.expectedRevision, 1, Number.MAX_SAFE_INTEGER);
+  const endpointId = optionalTrimmedString(value.endpointId, 128);
   const reason = optionalTrimmedString(value.reason, 120);
-  if (!action || (value.expectedRevision !== undefined && expectedRevision === undefined)) {
+  if (
+    !action ||
+    (value.expectedRevision !== undefined && expectedRevision === undefined) ||
+    (value.endpointId !== undefined && (!endpointId || !/^[A-Za-z0-9._:-]+$/u.test(endpointId)))
+  ) {
     return null;
   }
   return {
     action,
+    ...(endpointId ? { endpointId } : {}),
     ...(expectedRevision !== undefined ? { expectedRevision } : {}),
     ...(reason ? { reason } : {})
   };
@@ -14960,6 +14986,7 @@ function voiceCallAPIResponse(call: VoiceCallRecord, actorSubjectId: string, med
 
 function voiceCallView(call: VoiceCallRecord, actorSubjectId: string) {
   return {
+    ...(call.acceptedByEndpointId ? { acceptedByEndpointId: call.acceptedByEndpointId } : {}),
     callId: call.callId,
     createdAt: call.createdAt,
     direction: call.initiatorSubjectId === actorSubjectId ? ("outgoing" as const) : ("incoming" as const),
@@ -14990,7 +15017,7 @@ function canIssueVoiceCallMedia(call: VoiceCallRecord, actorSubjectId: string): 
 
 function voiceCallLifecycleIdempotencyKey(
   call: VoiceCallRecord,
-  action: "ended" | "incoming" | "missed",
+  action: "answered_elsewhere" | "ended" | "incoming" | "missed",
   recipientUserIds: string[]
 ): string {
   const digest = createHash("sha256")

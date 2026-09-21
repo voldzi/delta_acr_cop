@@ -18,6 +18,7 @@ export type VoiceCallPhase =
 export type VoiceCallTerminalPhase = Extract<VoiceCallPhase, "declined" | "missed" | "cancelled" | "failed" | "ended">;
 
 export interface VoiceCallRecord {
+  acceptedByEndpointId?: string;
   acceptedBySubjectId?: string;
   callId: string;
   connectedAt?: string;
@@ -51,6 +52,7 @@ export type VoiceCallAction =
 export interface VoiceCallTransitionInput {
   action: VoiceCallAction;
   actorSubjectId: string;
+  endpointId?: string;
   expectedRevision?: number;
   now: string;
   reason?: string;
@@ -58,7 +60,7 @@ export interface VoiceCallTransitionInput {
 
 export interface VoiceCallTransitionResult {
   changed: boolean;
-  conflict?: "revision" | "terminal" | "transition";
+  conflict?: "claimed" | "revision" | "terminal" | "transition";
   record: VoiceCallRecord;
 }
 
@@ -288,10 +290,11 @@ export class PostgresVoiceCallStore implements VoiceCallStore {
           phase = $2,
           revision = $3,
           accepted_by_subject_id = $4,
-          connected_at = $5::timestamptz,
-          ended_at = $6::timestamptz,
-          end_reason = $7,
-          updated_at = $8::timestamptz
+          accepted_by_endpoint_id = $5,
+          connected_at = $6::timestamptz,
+          ended_at = $7::timestamptz,
+          end_reason = $8,
+          updated_at = $9::timestamptz
         WHERE call_id = $1
         RETURNING *`,
         [
@@ -299,6 +302,7 @@ export class PostgresVoiceCallStore implements VoiceCallStore {
           next.phase,
           next.revision,
           next.acceptedBySubjectId ?? null,
+          next.acceptedByEndpointId ?? null,
           next.connectedAt ?? null,
           next.endedAt ?? null,
           next.endReason ?? null,
@@ -347,6 +351,15 @@ export function isTerminalPhase(phase: VoiceCallPhase): phase is VoiceCallTermin
 }
 
 function applyTransition(current: VoiceCallRecord, input: VoiceCallTransitionInput): VoiceCallTransitionResult {
+  if (input.action === "accept" && current.phase === "accepted") {
+    const sameEndpoint =
+      current.acceptedBySubjectId === input.actorSubjectId &&
+      Boolean(input.endpointId) &&
+      current.acceptedByEndpointId === input.endpointId;
+    return sameEndpoint
+      ? { changed: false, record: current }
+      : { changed: false, conflict: "claimed", record: current };
+  }
   if (input.expectedRevision !== undefined && input.expectedRevision !== current.revision) {
     return { changed: false, conflict: "revision", record: current };
   }
@@ -409,7 +422,12 @@ function applyTransition(current: VoiceCallRecord, input: VoiceCallTransitionInp
     changed: true,
     record: {
       ...current,
-      ...(input.action === "accept" ? { acceptedBySubjectId: input.actorSubjectId } : {}),
+      ...(input.action === "accept"
+        ? {
+            acceptedBySubjectId: input.actorSubjectId,
+            ...(input.endpointId ? { acceptedByEndpointId: input.endpointId } : {})
+          }
+        : {}),
       ...(nextPhase === "connected" && !current.connectedAt ? { connectedAt: input.now } : {}),
       ...(terminalPhase ? { endedAt: input.now, endReason: input.reason ?? defaultEndReason(terminalPhase) } : {}),
       phase: nextPhase,
@@ -468,6 +486,7 @@ function requireRow(row: VoiceCallRow | undefined): VoiceCallRow {
 }
 
 interface VoiceCallRow extends QueryResultRow {
+  accepted_by_endpoint_id: string | null;
   accepted_by_subject_id: string | null;
   call_id: string;
   connected_at: Date | string | null;
@@ -487,6 +506,7 @@ interface VoiceCallRow extends QueryResultRow {
 
 function recordFromRow(row: VoiceCallRow): VoiceCallRecord {
   return {
+    ...(row.accepted_by_endpoint_id ? { acceptedByEndpointId: row.accepted_by_endpoint_id } : {}),
     ...(row.accepted_by_subject_id ? { acceptedBySubjectId: row.accepted_by_subject_id } : {}),
     callId: row.call_id,
     ...(row.connected_at ? { connectedAt: isoTimestamp(row.connected_at) } : {}),
@@ -562,12 +582,14 @@ CREATE TABLE IF NOT EXISTS cop_voice_calls (
   revision integer NOT NULL CHECK (revision > 0),
   expires_at timestamptz NOT NULL,
   accepted_by_subject_id text,
+  accepted_by_endpoint_id text,
   connected_at timestamptz,
   ended_at timestamptz,
   end_reason text,
   created_at timestamptz NOT NULL,
   updated_at timestamptz NOT NULL
 );
+ALTER TABLE cop_voice_calls ADD COLUMN IF NOT EXISTS accepted_by_endpoint_id text;
 CREATE INDEX IF NOT EXISTS cop_voice_calls_room_updated_idx
   ON cop_voice_calls (room_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS cop_voice_calls_expiry_idx

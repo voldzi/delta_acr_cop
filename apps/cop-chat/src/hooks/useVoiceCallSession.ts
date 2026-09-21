@@ -15,6 +15,7 @@ type ServerVoiceCallPhase =
   | "ended";
 
 interface ServerVoiceCall {
+  acceptedByEndpointId?: string;
   callId: string;
   connectedAt?: string;
   createdAt: string;
@@ -88,6 +89,7 @@ export function useVoiceCallSession(options: UseVoiceCallSessionOptions): VoiceC
   const mutedRef = React.useRef(false);
   const mediaConnectedReportedRef = React.useRef<string | null>(null);
   const optionsRef = React.useRef(options);
+  const endpointIdRef = React.useRef(voiceCallEndpointId());
   optionsRef.current = options;
 
   const disconnectMedia = React.useCallback(async () => {
@@ -164,7 +166,7 @@ export function useVoiceCallSession(options: UseVoiceCallSessionOptions): VoiceC
       options: { expectedRevision?: number; reason?: string } = {}
     ): Promise<VoiceCallResponse> =>
       request<VoiceCallResponse>(`/api/v1/messaging/calls/${encodeURIComponent(callId)}/actions`, {
-        body: JSON.stringify({ action, ...options }),
+        body: JSON.stringify({ action, endpointId: endpointIdRef.current, ...options }),
         method: "POST"
       }),
     [request]
@@ -257,6 +259,11 @@ export function useVoiceCallSession(options: UseVoiceCallSessionOptions): VoiceC
     const current = callRef.current;
     if (current && !isTerminal(current.phase)) {
       const detail = await request<VoiceCallResponse>(`/api/v1/messaging/calls/${encodeURIComponent(current.callId)}`);
+      if (answeredElsewhere(detail.call, endpointIdRef.current)) {
+        await disconnectMedia();
+        publishSnapshot(null);
+        return;
+      }
       publishSnapshot(detail.call);
       if (isTerminal(detail.call.phase)) {
         await disconnectMedia();
@@ -275,6 +282,11 @@ export function useVoiceCallSession(options: UseVoiceCallSessionOptions): VoiceC
     const incoming = response.calls.find((call) => call.direction === "incoming" && call.phase === "ringing");
     const active = incoming ?? response.calls.find((call) => !isTerminal(call.phase)) ?? null;
     if (!active) {
+      publishSnapshot(null);
+      return;
+    }
+    if (answeredElsewhere(active, endpointIdRef.current)) {
+      await disconnectMedia();
       publishSnapshot(null);
       return;
     }
@@ -370,9 +382,20 @@ export function useVoiceCallSession(options: UseVoiceCallSessionOptions): VoiceC
   return {
     accept: async (callId) => {
       const current = requireCurrentCall(callRef.current, callId);
-      const response = await transition(callId, "accept", { expectedRevision: current.revision });
-      publishSnapshot(response.call);
-      await connectMedia(response);
+      try {
+        const response = await transition(callId, "accept", { expectedRevision: current.revision });
+        publishSnapshot(response.call);
+        await connectMedia(response);
+      } catch (error) {
+        await refresh();
+        const refreshed = callRef.current;
+        if (!refreshed || answeredElsewhere(refreshed, endpointIdRef.current)) {
+          await disconnectMedia();
+          publishSnapshot(null);
+          return;
+        }
+        throw error;
+      }
     },
     end: async (callId) => {
       const current = requireCurrentCall(callRef.current, callId);
@@ -420,6 +443,31 @@ export function useVoiceCallSession(options: UseVoiceCallSessionOptions): VoiceC
     timeline,
     voiceCall
   };
+}
+
+const VOICE_CALL_ENDPOINT_STORAGE_KEY = "cop.voice-call.endpoint-id.v1";
+
+function voiceCallEndpointId(): string {
+  try {
+    const stored = window.localStorage.getItem(VOICE_CALL_ENDPOINT_STORAGE_KEY)?.trim();
+    if (stored && /^[A-Za-z0-9._:-]{1,128}$/u.test(stored)) {
+      return stored;
+    }
+    const generated = `web:${crypto.randomUUID()}`;
+    window.localStorage.setItem(VOICE_CALL_ENDPOINT_STORAGE_KEY, generated);
+    return generated;
+  } catch {
+    return `web:${crypto.randomUUID()}`;
+  }
+}
+
+function answeredElsewhere(call: ServerVoiceCall, endpointId: string): boolean {
+  return (
+    call.direction === "incoming" &&
+    Boolean(call.acceptedByEndpointId) &&
+    call.acceptedByEndpointId !== endpointId &&
+    (call.phase === "accepted" || call.phase === "connecting_media" || call.phase === "connected")
+  );
 }
 
 export async function runVoiceMediaConnectSingleFlight(

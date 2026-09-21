@@ -16,6 +16,8 @@ interface ServiceWorkerContext {
   isAppAssetRequest: (request: Request, url: URL) => boolean;
   isChatRequestPath: (pathname: string) => boolean;
   isImmutableRuntimeAssetRequest: (request: Request, url: URL) => boolean;
+  isVoiceCallAnsweredElsewherePayload: (payload: Record<string, unknown>) => boolean;
+  isVoiceCallEndedPayload: (payload: Record<string, unknown>) => boolean;
   networkFirstAppShell: (
     request: Request,
     event?: { waitUntil: (promise: Promise<unknown>) => void }
@@ -512,6 +514,19 @@ describe("COP PWA service worker notifications", () => {
       { action: "dismiss", title: "Zavřít" }
     ]);
     expect(serviceWorker.notificationRequiresInteraction(payload, "info")).toBe(true);
+  });
+
+  it("treats an answered-elsewhere signal as a terminal call update", () => {
+    const serviceWorker = loadServiceWorkerContext();
+    const payload = {
+      callId: "call-1",
+      data: { type: "chat.voice_call.answered_elsewhere" },
+      roomId: "!ops:msg.zeleznalady.cz"
+    };
+
+    expect(serviceWorker.isVoiceCallAnsweredElsewherePayload(payload)).toBe(true);
+    expect(serviceWorker.isVoiceCallEndedPayload(payload)).toBe(false);
+    expect(serviceWorker.notificationPayloadTag(payload)).toBe("cop-call:!ops:msg.zeleznalady.cz:call-1");
   });
 
   it("reads zero unread counts from Matrix push payloads", () => {

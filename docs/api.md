@@ -75,6 +75,13 @@ contract. `POST /api/v1/messaging/calls` requires the bound
 the canonical `directPeer` from the server-owned conversation. Transport-level
 Matrix aliases are never authoritative call recipients.
 
+An accepting client sends its stable, opaque `endpointId` with the `accept`
+action. COP stores the first accepted endpoint atomically and returns
+`acceptedByEndpointId` in subsequent call views. Another browser or native app
+signed in as the same user must stop ringing and present the call as answered
+elsewhere; it must not report `media_failed` for the shared call. Endpoint IDs
+identify an installation for coordination only and carry no credential.
+
 AI clients must call only COP API endpoints such as
 `/api/v1/ai/situation-summary`, `/api/v1/ai/chat-agent/query`,
 `/api/v1/ai/source-health-summary` and `/api/v1/ai/community-report/draft`.

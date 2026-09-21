@@ -40,6 +40,7 @@ describe("InMemoryVoiceCallStore", () => {
     const accepted = await store.transition(call.callId, {
       action: "accept",
       actorSubjectId: "recipient",
+      endpointId: "ios:primary",
       expectedRevision: 1,
       now: "2026-07-19T10:00:05.000Z"
     });
@@ -47,6 +48,7 @@ describe("InMemoryVoiceCallStore", () => {
       changed: true,
       record: {
         acceptedBySubjectId: "recipient",
+        acceptedByEndpointId: "ios:primary",
         phase: "accepted",
         revision: 2
       }
@@ -66,6 +68,52 @@ describe("InMemoryVoiceCallStore", () => {
         revision: 3
       }
     });
+  });
+
+  it("atomically assigns one endpoint and rejects another app of the same account", async () => {
+    const store = new InMemoryVoiceCallStore();
+    const call = await store.create({
+      expiresAt,
+      initiatorSubjectId: "caller",
+      kind: "direct",
+      now: startedAt,
+      participantSubjectIds: ["recipient"],
+      roomId: "!room:example.test",
+      title: "Recipient"
+    });
+
+    const winner = await store.transition(call.callId, {
+      action: "accept",
+      actorSubjectId: "recipient",
+      endpointId: "cop-mobile:iphone",
+      expectedRevision: 1,
+      now: "2026-07-19T10:00:05.000Z"
+    });
+    expect(winner).toMatchObject({
+      changed: true,
+      record: { acceptedByEndpointId: "cop-mobile:iphone", phase: "accepted", revision: 2 }
+    });
+
+    const sibling = await store.transition(call.callId, {
+      action: "accept",
+      actorSubjectId: "recipient",
+      endpointId: "jizda:iphone",
+      now: "2026-07-19T10:00:05.001Z"
+    });
+    expect(sibling).toMatchObject({
+      changed: false,
+      conflict: "claimed",
+      record: { acceptedByEndpointId: "cop-mobile:iphone", phase: "accepted", revision: 2 }
+    });
+
+    const retry = await store.transition(call.callId, {
+      action: "accept",
+      actorSubjectId: "recipient",
+      endpointId: "cop-mobile:iphone",
+      now: "2026-07-19T10:00:05.002Z"
+    });
+    expect(retry).toMatchObject({ changed: false, record: { phase: "accepted", revision: 2 } });
+    expect(retry?.conflict).toBeUndefined();
   });
 
   it("rejects stale revisions and unauthorized transitions", async () => {
