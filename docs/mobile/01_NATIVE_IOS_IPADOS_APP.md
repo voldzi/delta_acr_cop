@@ -135,7 +135,7 @@ Universal links:
 - `GET /.well-known/apple-app-site-association`
 - `GET /mobile/pair/{code}`
 
-AASA používá app id `LM6W548X36.cz.zeleznalady.csm.messenger`. Fallback
+AASA používá app id `MC3RPR926P.cz.voldzi.copmobile`. Fallback
 stránka `/mobile/pair/{code}` jen zobrazí kód a nabídne `csm://pair?code=...`,
 pokud universal link neotevřel aplikaci.
 

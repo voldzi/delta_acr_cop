@@ -6282,7 +6282,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (
         !appInstanceId ||
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(appInstanceId) ||
-        bundleId !== "cz.zeleznalady.csm.messenger"
+        bundleId !== "cz.voldzi.copmobile"
       ) {
         return sendError(
           reply,
@@ -16749,7 +16749,7 @@ function mobilePairingSessionResponse(
 }
 
 function appleAppSiteAssociation(env: Record<string, string | undefined> = process.env) {
-  const appId = env.COP_IOS_APP_ID ?? "LM6W548X36.cz.zeleznalady.csm.messenger";
+  const appId = env.COP_IOS_APP_ID ?? "MC3RPR926P.cz.voldzi.copmobile";
   return {
     applinks: {
       apps: [],

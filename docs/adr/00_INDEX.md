@@ -25,3 +25,4 @@
 - [0022 Opt-in 3D Situation Workspace](0022_OPT_IN_3D_SITUATION_WORKSPACE.md)
 
 - [0023 Durable Road Report Enrichment](0023_DURABLE_ROAD_REPORT_ENRICHMENT.md)
+- [0024 — VCode-owned COP Mobile identity](0024_VCODE_OWNED_COP_MOBILE_IDENTITY.md)

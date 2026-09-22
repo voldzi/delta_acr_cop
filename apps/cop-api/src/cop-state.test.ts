@@ -716,7 +716,7 @@ describe("COP state temporal history", () => {
       method: "POST",
       payload: {
         appInstanceId: "40000000-0000-4000-8000-000000000001",
-        bundleId: "cz.zeleznalady.csm.messenger"
+        bundleId: "cz.voldzi.copmobile"
       },
       url: "/api/v1/mobile/device-registration-tickets"
     });
@@ -727,7 +727,7 @@ describe("COP state temporal history", () => {
     expect(claims).toMatchObject({
       appInstanceId: "40000000-0000-4000-8000-000000000001",
       aud: "csm-messaging-device-registration",
-      bundleId: "cz.zeleznalady.csm.messenger",
+      bundleId: "cz.voldzi.copmobile",
       purpose: "apns-device-registration",
       sub: "lab"
     });
@@ -861,7 +861,7 @@ describe("COP state temporal history", () => {
       applinks: {
         details: [
           {
-            appIDs: ["LM6W548X36.cz.zeleznalady.csm.messenger"],
+            appIDs: ["MC3RPR926P.cz.voldzi.copmobile"],
             paths: ["/mobile/pair/*"]
           }
         ]

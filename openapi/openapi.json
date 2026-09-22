@@ -11257,7 +11257,7 @@
           },
           "bundleId": {
             "type": "string",
-            "const": "cz.zeleznalady.csm.messenger"
+            "const": "cz.voldzi.copmobile"
           }
         }
       },

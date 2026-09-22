@@ -16,7 +16,7 @@ const allowedHosts = [
   .map((host) => host.trim())
   .filter((host, index, hosts) => host.length > 0 && hosts.indexOf(host) === index);
 
-const iosAppId = process.env.COP_IOS_APP_ID ?? "LM6W548X36.cz.zeleznalady.csm.messenger";
+const iosAppId = process.env.COP_IOS_APP_ID ?? "MC3RPR926P.cz.voldzi.copmobile";
 const appleAppSiteAssociation = JSON.stringify(
   {
     applinks: {

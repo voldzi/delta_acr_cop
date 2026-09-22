@@ -311,7 +311,7 @@ GET /mobile/pair/{code}
 ```
 
 The AASA document contains app id
-`LM6W548X36.cz.zeleznalady.csm.messenger`. The `/mobile/pair/{code}` fallback
+`MC3RPR926P.cz.voldzi.copmobile`. The `/mobile/pair/{code}` fallback
 page must not contain any token or key; it only displays the one-time code and
 offers `csm://pair?code={code}` if iOS did not open the native app directly.
 

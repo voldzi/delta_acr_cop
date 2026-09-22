@@ -93,7 +93,7 @@ HA PostgreSQL/Patroni endpoint jako pro ostatní COP stores.
 
 ```env
 COP_PUBLIC_URL=https://cop.zeleznalady.cz
-COP_IOS_APP_ID=LM6W548X36.cz.zeleznalady.csm.messenger
+COP_IOS_APP_ID=MC3RPR926P.cz.voldzi.copmobile
 COP_MOBILE_REDIRECT_SCHEME=csm
 COP_MOBILE_DEVICE_STORE=postgres
 COP_DATABASE_URL=postgresql://cop_app:<password>@haproxy.home.cz:5000/cop

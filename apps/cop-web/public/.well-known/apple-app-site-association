@@ -4,7 +4,7 @@
     "details": [
       {
         "appIDs": [
-          "LM6W548X36.cz.zeleznalady.csm.messenger"
+          "MC3RPR926P.cz.voldzi.copmobile"
         ],
         "components": [
           {
@@ -20,7 +20,7 @@
   },
   "webcredentials": {
     "apps": [
-      "LM6W548X36.cz.zeleznalady.csm.messenger"
+      "MC3RPR926P.cz.voldzi.copmobile"
     ]
   }
 }

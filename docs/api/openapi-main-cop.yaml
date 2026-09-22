@@ -7577,7 +7577,7 @@ components:
           format: uuid
         bundleId:
           type: string
-          const: cz.zeleznalady.csm.messenger
+          const: cz.voldzi.copmobile
     MobileDeviceRegistrationTicketResponse:
       type: object
       additionalProperties: false
