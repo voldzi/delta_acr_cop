@@ -13830,6 +13830,173 @@ components:
         includeSteps:
           type: boolean
           description: Whether SIM should include maneuver/step instructions when available.
+        includeRoadAttributes:
+          type: boolean
+          description: Opt in to directed Valhalla edge attributes for each selected route. Basic routing
+            remains available if enrichment fails.
+        vehicle:
+          $ref: "#/components/schemas/RoutingVehicle"
+    RoutingVehicle:
+      type: object
+      additionalProperties: false
+      description: Optional actual vehicle dimensions. When supplied for a road profile SIM uses Valhalla
+        truck costing for mapped dimensional restrictions; an assessment is never a guarantee of
+        passability.
+      properties:
+        heightM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 8
+        widthM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 5
+        lengthM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 30
+        weightTonnes:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 100
+    RoutingCoverage:
+      type: object
+      required:
+        - state
+      properties:
+        state:
+          type: string
+          enum:
+            - covered
+            - partial
+            - outside_coverage
+            - unknown
+        reason:
+          type: string
+        sourceAgeSeconds:
+          type: integer
+          minimum: 0
+        routingDataset:
+          $ref: "#/components/schemas/RoutingDataset"
+    RoutingDataset:
+      type: object
+      required:
+        - version
+        - builtAt
+      properties:
+        version:
+          type: string
+        builtAt:
+          type: string
+          format: date-time
+    RoutingRoadAttributes:
+      type: object
+      required:
+        - state
+        - source
+        - observedAt
+        - matchedEdgeCount
+        - geometryMismatchCount
+        - knownSpeedLimitCoveragePercent
+        - vehicleRestrictionsState
+        - speedLimits
+        - restrictions
+      description: Optional attributes of the same directed graph route and alternative as route.geometry.
+        No ETA or traffic speed is used as a legal limit.
+      properties:
+        state:
+          type: string
+          enum:
+            - ok
+            - partial
+            - unavailable
+            - unsupported
+        reason:
+          type: string
+        source:
+          type: string
+          const: valhalla_trace_attributes
+        routingDataset:
+          $ref: "#/components/schemas/RoutingDataset"
+        sourceAgeSeconds:
+          type: integer
+          minimum: 0
+        observedAt:
+          type: string
+          format: date-time
+        matchedEdgeCount:
+          type: integer
+          minimum: 0
+        geometryMismatchCount:
+          type: integer
+          minimum: 0
+        knownSpeedLimitCoveragePercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        vehicleRestrictionsState:
+          type: string
+          const: not_evaluated
+        speedLimits:
+          type: array
+          items:
+            type: object
+            required:
+              - beginShapeIndex
+              - endShapeIndex
+              - direction
+              - status
+              - source
+            properties:
+              beginShapeIndex:
+                type: integer
+                minimum: 0
+              endShapeIndex:
+                type: integer
+                minimum: 1
+              direction:
+                type: string
+                const: along_route
+              valueKph:
+                type: number
+                minimum: 10
+              status:
+                type: string
+                enum:
+                  - explicit
+                  - derived
+                  - unknown
+              source:
+                type: string
+                enum:
+                  - valhalla_graph_osm_maxspeed
+                  - unknown
+        restrictions:
+          type: array
+          items:
+            type: object
+            required:
+              - kind
+              - beginShapeIndex
+              - endShapeIndex
+              - assessment
+              - source
+            properties:
+              kind:
+                type: string
+                const: closure
+              beginShapeIndex:
+                type: integer
+                minimum: 0
+              endShapeIndex:
+                type: integer
+                minimum: 1
+              assessment:
+                type: string
+                const: advisory
+              source:
+                type: string
+                const: valhalla_trace_attributes
     RoutingRouteFeature:
       type: object
       required:
@@ -13909,6 +14076,40 @@ components:
       properties:
         routeId:
           type: string
+        roadAttributes:
+          $ref: "#/components/schemas/RoutingRoadAttributes"
+        vehicleAssessment:
+          type: object
+          required:
+            - state
+            - providerCosting
+            - appliedFields
+            - limitations
+          properties:
+            state:
+              type: string
+              enum:
+                - not_evaluated
+                - partially_evaluated
+                - provider_costing_applied
+            providerCosting:
+              type: string
+              enum:
+                - auto
+                - truck
+            appliedFields:
+              type: array
+              items:
+                type: string
+                enum:
+                  - heightM
+                  - widthM
+                  - lengthM
+                  - weightTonnes
+            limitations:
+              type: array
+              items:
+                type: string
         distanceM:
           type: number
           minimum: 0
@@ -13984,6 +14185,8 @@ components:
       properties:
         contractVersion:
           type: string
+        coverage:
+          $ref: "#/components/schemas/RoutingCoverage"
         generatedAt:
           type: string
           format: date-time

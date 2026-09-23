@@ -102,6 +102,12 @@ ETA is always SIM's `durationSeconds`; COP never adds `delayPenaltySeconds` or
 another client-side delay to a traffic-adjusted duration. A `degraded` live
 speed state describes limited traffic-data coverage or quality and does not
 mean that routing failed.
+Road clients may opt in to `includeRoadAttributes` and send actual `vehicle`
+dimensions. Optional per-variant `roadAttributes` contain directed shape-index
+speed limits and honest availability; `coverage` carries the graph coverage and
+dataset build date. COP removes SIM `direct_fallback` lines from navigable
+`routes`/`features` and reports `outside_coverage` so native clients can use
+MapKit. See [Jízda directed attributes](integration/21_JIZDA_DIRECTED_ROAD_ATTRIBUTES.md).
 
 AI responses may include optional `routing` metadata from the server-side
 `deterministic-v1` model router. It identifies the selected provider/model role

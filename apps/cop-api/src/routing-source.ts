@@ -19,9 +19,11 @@ export interface RoutingRouteRequest {
   alternatives?: number;
   avoid?: string[];
   from: RoutingPoint;
+  includeRoadAttributes?: boolean;
   includeSteps?: boolean;
   profileId?: RoutingProfileId;
   to: RoutingPoint;
+  vehicle?: { heightM?: number; widthM?: number; lengthM?: number; weightTonnes?: number };
 }
 
 export interface RoutingProfilesResponse {
@@ -33,6 +35,7 @@ export interface RoutingProfilesResponse {
 
 export interface RoutingRouteResponse {
   contractVersion?: string;
+  coverage?: RoutingCoverage;
   features: Array<Record<string, unknown>>;
   generatedAt?: string;
   providerId?: string;
@@ -40,6 +43,41 @@ export interface RoutingRouteResponse {
   routes: RoutingRoute[];
   traffic?: RoutingTraffic;
   warnings: string[];
+}
+
+export interface RoutingCoverage {
+  state: "covered" | "partial" | "outside_coverage" | "unknown";
+  reason?: string;
+  routingDataset?: { version: string; builtAt: string };
+  sourceAgeSeconds?: number;
+}
+
+export interface RoutingRoadAttributes {
+  state: "ok" | "partial" | "unavailable" | "unsupported";
+  reason?: string;
+  source: "valhalla_trace_attributes";
+  routingDataset?: { version: string; builtAt: string };
+  sourceAgeSeconds?: number;
+  observedAt: string;
+  matchedEdgeCount: number;
+  geometryMismatchCount: number;
+  knownSpeedLimitCoveragePercent: number;
+  vehicleRestrictionsState: "not_evaluated";
+  speedLimits: Array<{
+    beginShapeIndex: number;
+    endShapeIndex: number;
+    direction: "along_route";
+    valueKph?: number;
+    status: "explicit" | "derived" | "unknown";
+    source: "valhalla_graph_osm_maxspeed" | "unknown";
+  }>;
+  restrictions: Array<{
+    kind: "closure";
+    beginShapeIndex: number;
+    endShapeIndex: number;
+    assessment: "advisory";
+    source: "valhalla_trace_attributes";
+  }>;
 }
 
 export interface RoutingStep extends Record<string, unknown> {
@@ -63,6 +101,13 @@ export interface RoutingRoute extends Record<string, unknown> {
   elevationProfile?: Array<Record<string, unknown>>;
   hazardsOnRoute?: Array<Record<string, unknown>> | Record<string, unknown>;
   quality?: Record<string, unknown>;
+  roadAttributes?: RoutingRoadAttributes;
+  vehicleAssessment?: {
+    state: "not_evaluated" | "partially_evaluated" | "provider_costing_applied";
+    providerCosting: "auto" | "truck";
+    appliedFields: Array<"heightM" | "widthM" | "lengthM" | "weightTonnes">;
+    limitations: string[];
+  };
   rank?: number;
   routeId?: string;
   sourceStatus?: string;
@@ -174,10 +219,29 @@ function normalizeRoutingRouteRequest(request: RoutingRouteRequest): RoutingRout
       ? { avoid: request.avoid.flatMap((item) => optionalString(item) ?? []).slice(0, 20) }
       : {}),
     from,
+    ...(typeof request.includeRoadAttributes === "boolean"
+      ? { includeRoadAttributes: request.includeRoadAttributes }
+      : {}),
     ...(typeof request.includeSteps === "boolean" ? { includeSteps: request.includeSteps } : {}),
     profileId: optionalString(request.profileId) ?? "emergency_vehicle",
-    to
+    to,
+    ...(request.vehicle ? { vehicle: normalizeRoutingVehicle(request.vehicle) } : {})
   };
+}
+
+function normalizeRoutingVehicle(value: RoutingRouteRequest["vehicle"]): NonNullable<RoutingRouteRequest["vehicle"]> {
+  if (!isRecord(value)) throw new Error("Routing vehicle must be an object.");
+  const limits = { heightM: 8, widthM: 5, lengthM: 30, weightTonnes: 100 } as const;
+  const result: NonNullable<RoutingRouteRequest["vehicle"]> = {};
+  for (const field of Object.keys(limits) as Array<keyof typeof limits>) {
+    const raw = value[field];
+    if (raw === undefined) continue;
+    if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0 || raw > limits[field]) {
+      throw new Error(`Routing vehicle ${field} must be a positive number within supported bounds.`);
+    }
+    result[field] = raw;
+  }
+  return result;
 }
 
 function normalizeRoutingPoint(point: RoutingPoint | undefined, label: string): RoutingPoint {
@@ -214,16 +278,68 @@ function normalizeRoutingRouteResponse(value: unknown): RoutingRouteResponse {
   if (!isRecord(value)) {
     throw new Error("Routing route response is not an object.");
   }
+  const receivedRoutes = Array.isArray(value.routes) ? (value.routes.filter(isRecord) as RoutingRoute[]) : [];
+  const routes = receivedRoutes.filter((route) => !isDirectFallbackRoute(route));
+  const omittedIds = new Set(
+    receivedRoutes.filter(isDirectFallbackRoute).flatMap((route) => optionalString(route.routeId) ?? [])
+  );
+  const features = (Array.isArray(value.features) ? value.features.filter(isRecord) : []).filter((feature) => {
+    if (routes.length === 0 && receivedRoutes.length > 0) return false;
+    const properties = isRecord(feature.properties) ? feature.properties : undefined;
+    return !omittedIds.has(optionalString(properties?.routeId) ?? optionalString(feature.id) ?? "");
+  });
+  const rawCoverage = isRecord(value.coverage) ? value.coverage : undefined;
+  const coverage: RoutingCoverage =
+    routes.length === 0 && receivedRoutes.length > 0
+      ? { state: "outside_coverage", reason: "SIM did not return a navigable graph route." }
+      : {
+          state:
+            routes.length < receivedRoutes.length
+              ? "partial"
+              : rawCoverage?.state === "covered" ||
+                  rawCoverage?.state === "partial" ||
+                  rawCoverage?.state === "outside_coverage"
+                ? rawCoverage.state
+                : routes.length > 0
+                  ? "covered"
+                  : "unknown",
+          ...(optionalString(rawCoverage?.reason) ? { reason: optionalString(rawCoverage?.reason) } : {}),
+          ...(isRecord(rawCoverage?.routingDataset) &&
+          optionalString(rawCoverage.routingDataset.version) &&
+          optionalString(rawCoverage.routingDataset.builtAt)
+            ? {
+                routingDataset: {
+                  version: String(rawCoverage.routingDataset.version),
+                  builtAt: String(rawCoverage.routingDataset.builtAt)
+                }
+              }
+            : {}),
+          ...(typeof rawCoverage?.sourceAgeSeconds === "number" &&
+          Number.isFinite(rawCoverage.sourceAgeSeconds) &&
+          rawCoverage.sourceAgeSeconds >= 0
+            ? { sourceAgeSeconds: rawCoverage.sourceAgeSeconds }
+            : {})
+        };
   return {
     contractVersion: optionalString(value.contractVersion),
-    features: Array.isArray(value.features) ? value.features.filter(isRecord) : [],
+    coverage,
+    features,
     generatedAt: optionalString(value.generatedAt),
     providerId: optionalString(value.providerId),
-    quality: isRecord(value.quality) ? value.quality : undefined,
-    routes: Array.isArray(value.routes) ? (value.routes.filter(isRecord) as RoutingRoute[]) : [],
+    quality:
+      receivedRoutes.length !== routes.length && isRecord(routes[0]?.quality)
+        ? routes[0].quality
+        : isRecord(value.quality)
+          ? value.quality
+          : undefined,
+    routes,
     traffic: isRecord(value.traffic) ? (value.traffic as RoutingTraffic) : undefined,
     warnings: normalizeWarnings(value.warnings)
   };
+}
+
+function isDirectFallbackRoute(route: RoutingRoute): boolean {
+  return isRecord(route.quality) && route.quality.mode === "direct_fallback";
 }
 
 function normalizeRoutingGenericResponse(value: unknown): Record<string, unknown> {

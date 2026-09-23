@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildServer } from "./server.js";
-import type { RoutingRouteRequest, RoutingRouteResponse, RoutingSource } from "./routing-source.js";
+import {
+  RoutingSourceAdapter,
+  type RoutingRouteRequest,
+  type RoutingRouteResponse,
+  type RoutingSource
+} from "./routing-source.js";
 
 describe("routing routes", () => {
   it("does not disclose the internal SIM endpoint in public dependency health", async () => {
@@ -47,6 +52,10 @@ describe("routing routes", () => {
       generatedAt: "2026-07-05T17:00:00.000Z",
       providerId: "sim.situation-data.routing",
       quality: { confidence: 0.86, engine: "valhalla", mode: "engine_route" },
+      coverage: {
+        state: "covered",
+        routingDataset: { version: "sim-routing-2026-09-13-1789268424", builtAt: "2026-09-13T00:00:00Z" }
+      },
       routes: [
         {
           distanceM: 2400,
@@ -54,6 +63,26 @@ describe("routing routes", () => {
           quality: { confidence: 0.86, engine: "valhalla", mode: "engine_route" },
           rank: 1,
           routeId: "primary",
+          roadAttributes: {
+            state: "ok",
+            source: "valhalla_trace_attributes",
+            observedAt: "2026-09-14T18:28:34Z",
+            matchedEdgeCount: 1,
+            geometryMismatchCount: 0,
+            knownSpeedLimitCoveragePercent: 100,
+            vehicleRestrictionsState: "not_evaluated",
+            restrictions: [],
+            speedLimits: [
+              {
+                beginShapeIndex: 0,
+                endShapeIndex: 1,
+                direction: "along_route",
+                valueKph: 50,
+                status: "explicit",
+                source: "valhalla_graph_osm_maxspeed"
+              }
+            ]
+          },
           steps: [{ index: 0, maneuverType: 26, roundaboutExitCount: 3, beginShapeIndex: 0, endShapeIndex: 12 }],
           traffic: {
             delayPenaltySeconds: 120,
@@ -102,6 +131,7 @@ describe("routing routes", () => {
         avoid: ["road_closure"],
         from: { label: "moje poloha", lat: 50.12, lon: 17.36 },
         includeSteps: true,
+        includeRoadAttributes: true,
         profileId: "emergency_vehicle",
         to: { label: "Mnichov - Černá Opava", lat: 50.15077, lon: 17.37303 }
       },
@@ -110,12 +140,15 @@ describe("routing routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().routes[0].steps).toEqual([{ index: 0, maneuverType: 26, roundaboutExitCount: 3, beginShapeIndex: 0, endShapeIndex: 12 }]);
+    expect(response.json().routes[0].steps).toEqual([
+      { index: 0, maneuverType: 26, roundaboutExitCount: 3, beginShapeIndex: 0, endShapeIndex: 12 }
+    ]);
     expect(routeMock).toHaveBeenCalledWith(
       expect.objectContaining({
         alternatives: 2,
         avoid: ["road_closure"],
         includeSteps: true,
+        includeRoadAttributes: true,
         profileId: "emergency_vehicle",
         from: expect.objectContaining({ lat: 50.12, lon: 17.36 }),
         to: expect.objectContaining({ lat: 50.15077, lon: 17.37303 })
@@ -126,6 +159,10 @@ describe("routing routes", () => {
       providerId: "sim.situation-data.routing",
       quality: { mode: "engine_route" },
       routes: [expect.objectContaining({ distanceM: 2400, durationSeconds: 420 })],
+      coverage: {
+        state: "covered",
+        routingDataset: { version: "sim-routing-2026-09-13-1789268424", builtAt: "2026-09-13T00:00:00Z" }
+      },
       traffic: {
         incidentCount: 1,
         liveSpeeds: {
@@ -135,6 +172,54 @@ describe("routing routes", () => {
         }
       }
     });
+    expect(response.json().routes[0].roadAttributes.speedLimits[0]).toMatchObject({ valueKph: 50, status: "explicit" });
+  });
+
+  it("never passes SIM direct fallback geometry as a navigable route", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            features: [
+              {
+                type: "Feature",
+                properties: { routeId: "direct-1" },
+                geometry: {
+                  type: "LineString",
+                  coordinates: [
+                    [14.42, 50.08],
+                    [14.45, 50.09]
+                  ]
+                }
+              }
+            ],
+            routes: [{ routeId: "direct-1", durationSeconds: 100, quality: { mode: "direct_fallback" } }],
+            warnings: []
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const routingSource = new RoutingSourceAdapter({
+      baseUrl: "https://private-sim.example/internal",
+      enabled: true,
+      timeoutMs: 5000
+    });
+    const app = buildServer({ routingSource });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/routing/route",
+        headers: { authorization: "Bearer dev-lab-token" },
+        payload: { from: { lat: 50.08, lon: 14.42 }, to: { lat: 50.09, lon: 14.45 } }
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ coverage: { state: "outside_coverage" }, routes: [], features: [] });
+      expect(response.body).not.toContain("private-sim.example");
+    } finally {
+      vi.unstubAllGlobals();
+      await app.close();
+    }
   });
 
   it("proxies SIM routing profiles, alternatives, isochrone and nearest-access endpoints", async () => {
