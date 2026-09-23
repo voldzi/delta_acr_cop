@@ -74,7 +74,7 @@ Repo obsahuje login theme pro realm `cop` v adresari:
 infra/keycloak/themes/cop
 ```
 
-Theme navazuje na vizualni styl aplikace Civilni situacni mapa: tmave operacni pozadi, lime/cyan akcenty a stejnou aplikacni ikonu jako web. Verze `20260805` doplnuje ergonomii pro telefon: ovladaci prvky vysoké alespoň 52 px, jasný focus stav, bezpečné okraje kolem výřezu a respektování omezení animací systému.
+Theme navazuje na vizualni styl aplikace Civilni situacni mapa: tmave operacni pozadi, lime/cyan akcenty a stejnou aplikacni ikonu jako web. Verze `20260923b` sjednocuje pole hesla s tlačítkem pro zobrazení, ponechává text u volby „Zůstat přihlášen“ čitelný na úzkém telefonu a přidává spodní prostor pro ovládání prohlížeče a otevřenou klávesnici. Ovládací prvky mají výšku alespoň 52 px a viditelný stav zaměření.
 CSS soubor theme je verzovany v nazvu (`cop-login-YYYYMMDD*.css`), aby se po nasazeni nevracela stara verze z browser/Keycloak cache.
 
 Pokud Keycloak bezi v kontejneru, mountni theme do `/opt/keycloak/themes/cop`:
@@ -111,6 +111,8 @@ Alternativne pri rucnim startu:
 ```
 
 V produkci nech cache zapnutou a po zmene theme restartuj Keycloak.
+
+Po změně ověř přihlášení na iPhonu při šířkách 320 a 390 px, s větším systémovým písmem a otevřenou klávesnicí. Pole hesla, tlačítko jeho zobrazení, checkbox a odesílací tlačítko musejí být dosažitelné i po posunu. S VoiceOver zkontroluj popisek tlačítka pro zobrazení hesla; chybí-li v konkrétní verzi Keycloaku, uprav šablonu, ne obcházení přihlášení.
 
 ## Volba „Zůstat přihlášen“
 

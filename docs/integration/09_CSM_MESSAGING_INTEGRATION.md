@@ -521,6 +521,13 @@ binding. Clients do not render a metadata-only half-created row.
 detail endpoint for clients that open a notification or deep link. It returns
 only the conversation metadata visible to the authenticated user. `resolve` is a
 server-side lookup helper for Matrix deep links and currently supports `roomId`.
+For a direct conversation, COP may add the canonical peer's bounded
+`operatorProfile.avatarDataUrl` to the returned `avatarDataUrl` when that peer
+has configured a profile image. The image is served only through the
+authenticated conversation list/detail response; the current user's image is
+never substituted for the peer's. Matrix membership can later supply an
+equivalent media avatar. Clients keep initials as the fallback when neither
+source has an image.
 COP intentionally does not resolve a bare `messageId`, because COP does not read
 Matrix timelines and must not become a plaintext or Matrix-message proxy. Push
 deep links for messages should therefore include at least `roomId` or

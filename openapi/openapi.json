@@ -15381,7 +15381,8 @@
             "type": "string"
           },
           "avatarDataUrl": {
-            "type": "string"
+            "type": "string",
+            "description": "For an authenticated direct conversation, may contain the COP profile avatar of the canonical peer; never the current user's avatar."
           },
           "directPeer": {
             "type": "object",

@@ -10360,6 +10360,13 @@ components:
         reason:
           type: string
           maxLength: 120
+        endpointId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]+$
+          description: Opaque installation endpoint identifier used to coordinate answering across the same
+            user’s devices and applications.
     MessagingVoiceCall:
       type: object
       required:
@@ -10434,6 +10441,10 @@ components:
         updatedAt:
           type: string
           format: date-time
+        acceptedByEndpointId:
+          type: string
+          description: Opaque endpoint identifier that atomically claimed the call. Clients with another
+            endpoint stop ringing and mark the call answered elsewhere.
     MessagingVoiceCallMedia:
       type: object
       required:
@@ -10558,6 +10569,8 @@ components:
           type: string
         avatarDataUrl:
           type: string
+          description: For an authenticated direct conversation, may contain the COP profile avatar of the
+            canonical peer; never the current user's avatar.
         directPeer:
           type: object
           required:

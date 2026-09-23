@@ -177,6 +177,7 @@ import {
   createMessagingProviderFromEnv,
   type MessagingConversationCreateRequest,
   type MessagingConversationCreateResponse,
+  type MessagingConversationSummary,
   type MessagingConversationMember,
   type MessagingE2eeResetAuthRequest,
   type MessagingMatrixBootstrap,
@@ -3112,6 +3113,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
+  async function withDirectPeerProfileAvatar(
+    conversation: MessagingConversationSummary,
+    currentSubjectId: string
+  ): Promise<MessagingConversationSummary> {
+    const peerId = conversation.type === "direct" ? conversation.directPeer?.userId : undefined;
+    if (!peerId || peerId === currentSubjectId) {
+      return conversation;
+    }
+    const profile = await readUserProfileBySubject(peerId);
+    const operatorProfile = profile && isRecord(profile.preferences.operatorProfile)
+      ? profile.preferences.operatorProfile
+      : undefined;
+    const avatarDataUrl = optionalImageDataUrl(operatorProfile?.avatarDataUrl);
+    // Only an authenticated conversation participant receives the peer's
+    // explicitly configured avatar. Never substitute the requester's avatar.
+    return avatarDataUrl ? { ...conversation, avatarDataUrl } : conversation;
+  }
+
   async function searchUserProfiles(query: string, limit = 10): Promise<UserProfileRecord[]> {
     if (!(await ensureUserProfileStoreReady())) {
       return userProfileFallbackStore.searchProfiles(query, limit);
@@ -5127,7 +5146,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const result = await messagingProvider.fetchConversation(actor, now(), conversationId);
-      return reply.code(result.conversation ? 200 : result.status === "online" ? 404 : 502).send(result);
+      return reply.code(result.conversation ? 200 : result.status === "online" ? 404 : 502).send({
+        ...result,
+        ...(result.conversation
+          ? { conversation: await withDirectPeerProfileAvatar(result.conversation, actor.subjectId) }
+          : {})
+      });
     },
     conversations: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -5135,7 +5159,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return reply;
       }
 
-      return messagingProvider.fetchConversations(actor, now());
+      const result = await messagingProvider.fetchConversations(actor, now());
+      const conversations: MessagingConversationSummary[] = [];
+      for (let index = 0; index < result.conversations.length; index += 8) {
+        conversations.push(...await Promise.all(
+          result.conversations.slice(index, index + 8).map((conversation) =>
+            withDirectPeerProfileAvatar(conversation, actor.subjectId)
+          )
+        ));
+      }
+      return { ...result, conversations };
     },
     createConversation: async (request, reply) => {
       const actor = requireActor(request, reply);

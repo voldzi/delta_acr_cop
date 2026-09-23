@@ -1,11 +1,73 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildServer } from "./server.js";
 import { CsmMessagingProvider, createMessagingProviderFromEnv } from "./messaging-provider.js";
+import { InMemoryUserProfileStore } from "./user-profile-store.js";
 
 describe("CsmMessagingProvider", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
+  });
+
+  it("passes the COP direct peer avatar to authenticated mobile conversations", async () => {
+    vi.stubEnv("COP_AUTH_MODE", "lab");
+    vi.stubEnv("COP_LAB_TOKEN", "lab-secret");
+    const profileStore = new InMemoryUserProfileStore();
+    await profileStore.upsertProfile({
+      alertPreferences: {},
+      displayName: "COP Operator",
+      preferences: { operatorProfile: { avatarDataUrl: "data:image/png;base64,YQ==" } },
+      subjectId: "cop.operator",
+      username: "cop.operator"
+    });
+    await profileStore.upsertProfile({
+      alertPreferences: {},
+      displayName: "Current User",
+      preferences: { operatorProfile: { avatarDataUrl: "data:image/png;base64,Yg==" } },
+      subjectId: "lab",
+      username: "lab"
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      contractVersion: "csm-messaging-provider-v1",
+      conversations: [{
+        conversationId: "operator-room",
+        directPeer: { userId: "cop.operator", displayName: "COP Operator" },
+        members: [{ userId: "lab" }, { userId: "cop.operator" }],
+        title: "COP Operator",
+        type: "direct"
+      }, {
+        conversationId: "bad-own-room",
+        directPeer: { userId: "lab", displayName: "Current User" },
+        members: [{ userId: "lab" }, { userId: "cop.operator" }],
+        title: "Current User",
+        type: "direct"
+      }],
+      providerId: "csm.messaging",
+      status: "online"
+    }), { status: 200 })));
+    const app = buildServer({
+      messagingProvider: new CsmMessagingProvider({
+        baseUrl: "http://messaging.local:4050",
+        cacheTtlMs: 10000,
+        enabled: true,
+        timeoutMs: 3000,
+        token: "provider-token"
+      }),
+      userProfileStore: profileStore
+    });
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer lab-secret" },
+      method: "GET",
+      url: "/api/v1/messaging/conversations"
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().conversations[0]).toMatchObject({
+      avatarDataUrl: "data:image/png;base64,YQ==",
+      directPeer: { userId: "cop.operator" }
+    });
+    expect(response.json().conversations[1].avatarDataUrl).toBeUndefined();
+    await app.close();
   });
 
   it("reports disabled status until the experimental messaging provider is enabled", async () => {
