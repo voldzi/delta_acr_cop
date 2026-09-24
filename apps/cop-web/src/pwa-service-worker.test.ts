@@ -133,6 +133,7 @@ describe("COP PWA service worker routing", () => {
     const respondWith = vi.fn();
 
     fetchListener?.({ request: new Request("https://cop.example.test/ardos-demo/"), respondWith });
+    fetchListener?.({ request: new Request("https://cop.example.test/demo/flood-central-bohemia"), respondWith });
 
     expect(respondWith).not.toHaveBeenCalled();
   });

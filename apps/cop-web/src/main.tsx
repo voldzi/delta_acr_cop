@@ -473,6 +473,9 @@ const apiBase = import.meta.env.VITE_COP_API_BASE_URL ?? "";
 const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? (import.meta.env.DEV ? "dev-lab-token" : "");
 const defaultRefreshSeconds = refreshMillisecondsToSeconds(import.meta.env.VITE_COP_REFRESH_MS ?? "5000");
 const CopMap = React.lazy(() => import("./CopMap").then((module) => ({ default: module.CopMap })));
+const PublicFloodDemo = React.lazy(() =>
+  import("./PublicFloodDemo").then((module) => ({ default: module.PublicFloodDemo }))
+);
 const TrackTable = React.lazy(() => import("./TrackTable"));
 const XrWorkspace = React.lazy(() => import("./XrWorkspace"));
 const GlobeWorkspace = React.lazy(() => {
@@ -26382,13 +26385,21 @@ const rootElement = document.getElementById("root");
 if (rootElement) {
   const isXrRoute = window.location.pathname === "/xr" || window.location.pathname.startsWith("/xr/");
   const isGlobeRoute = window.location.pathname === "/globe" || window.location.pathname.startsWith("/globe/");
+  const isPublicFloodDemoRoute =
+    window.location.pathname === "/demo/flood-central-bohemia" ||
+    window.location.pathname === "/ardos-demo" ||
+    window.location.pathname === "/ardos-demo/";
   const rootWindow = window as Window & { __copWebRoot?: Root };
   const root = rootWindow.__copWebRoot ?? createRoot(rootElement);
   rootWindow.__copWebRoot = root;
   root.render(
     <React.StrictMode>
       <RootErrorBoundary>
-        {isXrRoute ? (
+        {isPublicFloodDemoRoute ? (
+          <React.Suspense fallback={<main className="app-fatal-fallback">Načítám povodňovou ukázku COP…</main>}>
+            <PublicFloodDemo />
+          </React.Suspense>
+        ) : isXrRoute ? (
           <React.Suspense
             fallback={
               <main className="xr-shell">

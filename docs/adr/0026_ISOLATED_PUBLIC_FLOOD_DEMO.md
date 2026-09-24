@@ -1,25 +1,32 @@
-# ADR 0026: Izolovaná veřejná povodňová ukázka
+# ADR 0026: Izolovaný veřejný průchod v mapě COP
 
 Stav: přijato
 
 ## Kontext
 
-COP má řízený operátorský seed/reset `flood-central-bohemia`. Veřejný
-samoobslužný průchod nesmí získat oprávnění k těmto zápisům ani vytvářet
-běžné incidenty. Ukázka pro ARDOS má vysvětlit občanský tok bez existujícího
-partnerského nebo doručovacího vztahu.
+COP má chráněný operátorský seed/reset `flood-central-bohemia` a živý datový
+tok. Veřejný návštěvník má bez účtu projít syntetickou povodní přímo na mapě
+COP, aniž získá možnost zapisovat incidenty, spouštět seed/reset nebo vidět
+interní a partnerská data. Samostatný HTML náhled nebyl pro tento účel
+dostatečný.
 
 ## Rozhodnutí
 
-Publikujeme samostatnou statickou stránku pod `/ardos-demo/` v COP webu.
-Celý syntetický scénář je lokální stav v prohlížeči, bez síťových volání a
-bez perzistence. Mapa je schéma fiktivní obce. Modelové schválení má viditelnou
-oblast, vydavatele, platnost a poslední ověření. Simulovaný výpadek zachová
-poslední text s výrazným neaktuálním stavem. ARDOS popisujeme pouze jako
-možný přenosový kanál.
+Web má samostatnou veřejnou trasu `/demo/flood-central-bohemia` v React
+aplikaci. Ta používá stejný `CopMap` renderer a mapové zobrazení existujících
+`SituationFeature` prvků jako běžný COP. Scénář vytváří jen lokální,
+syntetické prvky; žádné COP/SIM/TAK/ARDOS API nevolá. Samostatný kořenový
+komponent neaktivuje běžné operátorské efekty, živé vrstvy ani nástroje pro
+zápis. Původní veřejný odkaz `/ardos-demo/` přesměrovává na novou trasu.
+
+Vydavatel, oblast, platnost, poslední ověření a neaktuální stav po modelovém
+výpadku jsou přímo v průvodci. ARDOS je popsán pouze jako možný kanál
+schváleného stručného textu, bez tvrzení o partnerství nebo doručení.
 
 ## Důsledky
 
-Veřejný odkaz funguje bez účtu a nemění API, OpenAPI ani autorizaci.
-Návštěvník neuvidí živé COP vrstvy a ukázka neprokazuje skutečnou integraci,
-doručení nebo provozní dostupnost při reálném výpadku.
+Veřejná ukázka je skutečný COP mapový klient s interaktivními mapovými prvky,
+ale její scénář není napojen na produkční data ani na chráněný seed. API a
+OpenAPI se nemění. Mapový podklad stále vyžaduje běžné veřejné mapové zdroje;
+simulovaný výpadek je prezentační stav, nikoli důkaz provozu při reálném
+odpojení sítě.
