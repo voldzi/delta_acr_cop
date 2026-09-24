@@ -196,7 +196,8 @@ function cacheControl(filePath, options) {
     relative === "index.html" ||
     relative === "asset-manifest.json" ||
     relative === "cop-service-worker.js" ||
-    relative === "site.webmanifest"
+    relative === "site.webmanifest" ||
+    relative === "ardos-demo/index.html"
   ) {
     return "no-cache";
   }

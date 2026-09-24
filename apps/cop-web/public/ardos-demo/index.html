@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#101d29" />
+    <title>Povodňový scénář · veřejná ukázka COP</title>
+    <style>
+      :root {
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        color: #eaf3f7;
+        background: #101d29;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      button,
+      a {
+        font: inherit;
+      }
+      a {
+        color: #9ee5ef;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:focus-visible,
+      a:focus-visible {
+        outline: 3px solid #f7ce71;
+        outline-offset: 3px;
+      }
+      .shell {
+        width: min(1160px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+      .top {
+        border-bottom: 1px solid #344956;
+        background: #142533;
+      }
+      .top .shell {
+        min-height: 74px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .brand {
+        font-weight: 780;
+        letter-spacing: 0.02em;
+      }
+      .brand span {
+        color: #89d9df;
+      }
+      .demo-tag {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid #e7bf62;
+        color: #ffe6a7;
+        background: #403523;
+        border-radius: 999px;
+        padding: 7px 12px;
+        font-size: 0.83rem;
+        font-weight: 750;
+        text-align: center;
+      }
+      main {
+        padding: 36px 0 64px;
+      }
+      .eyebrow {
+        color: #8ed9df;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.16em;
+        font-weight: 800;
+      }
+      h1 {
+        font-size: clamp(2rem, 4.5vw, 3.55rem);
+        letter-spacing: -0.045em;
+        line-height: 1.07;
+        max-width: 760px;
+        margin: 12px 0 18px;
+      }
+      .lede {
+        max-width: 770px;
+        color: #bdd0d8;
+        font-size: 1.08rem;
+        line-height: 1.62;
+        margin: 0 0 24px;
+      }
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 30px;
+      }
+      .primary,
+      .secondary {
+        border-radius: 11px;
+        min-height: 46px;
+        padding: 11px 18px;
+        font-weight: 750;
+      }
+      .primary {
+        color: #102430;
+        background: #9be4e8;
+        border: 1px solid #9be4e8;
+      }
+      .primary:hover {
+        background: #c1f3f4;
+      }
+      .secondary {
+        color: #eaf3f7;
+        background: #1d3544;
+        border: 1px solid #52717c;
+      }
+      .secondary:hover {
+        background: #2b4756;
+      }
+      .secondary:disabled {
+        cursor: not-allowed;
+        opacity: 0.46;
+      }
+      .meta-note {
+        color: #acbfca;
+        margin: -10px 0 28px;
+        font-size: 0.88rem;
+      }
+      .steps {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 20px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .steps li {
+        padding: 8px 11px;
+        border-radius: 999px;
+        border: 1px solid #3d5663;
+        color: #aec2cb;
+        font-size: 0.83rem;
+      }
+      .steps li.active {
+        background: #d0f6f0;
+        border-color: #d0f6f0;
+        color: #18313a;
+        font-weight: 760;
+      }
+      .steps li.done {
+        color: #b3e9dc;
+        border-color: #4e817f;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.28fr) minmax(320px, 0.72fr);
+        gap: 18px;
+      }
+      .panel {
+        border: 1px solid #344e5b;
+        border-radius: 17px;
+        background: #192d3a;
+        overflow: hidden;
+      }
+      .panel-inner {
+        padding: 22px;
+      }
+      .panel h2 {
+        font-size: 1.2rem;
+        margin: 0 0 9px;
+      }
+      .panel p {
+        color: #c5d4da;
+        line-height: 1.55;
+      }
+      .map-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        gap: 12px;
+      }
+      .map-head p {
+        margin: 0 0 18px;
+        font-size: 0.87rem;
+      }
+      .map-flag {
+        white-space: nowrap;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #ffe4a5;
+      }
+      .map {
+        width: 100%;
+        display: block;
+        border-radius: 12px;
+        background: #203b49;
+        border: 1px solid #4b6570;
+      }
+      .map text {
+        font-family: system-ui, sans-serif;
+        fill: #f5f9f7;
+        font-size: 16px;
+        font-weight: 650;
+        paint-order: stroke;
+        stroke: #213744;
+        stroke-width: 4px;
+        stroke-linejoin: round;
+      }
+      .map .small {
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .map .water {
+        fill: none;
+        stroke: #5abbd1;
+        stroke-width: 34;
+        stroke-linecap: round;
+      }
+      .map .road {
+        fill: none;
+        stroke: #ad9f80;
+        stroke-width: 7;
+        stroke-linecap: round;
+        stroke-dasharray: 8 5;
+      }
+      .map .flood {
+        fill: #edaa6d;
+        opacity: 0.34;
+        stroke: #ffce82;
+        stroke-width: 2;
+      }
+      .map .pin {
+        fill: #f6c76d;
+        stroke: #372b20;
+        stroke-width: 3;
+      }
+      .map .safe {
+        fill: #94dfc0;
+        stroke: #20433a;
+        stroke-width: 3;
+      }
+      .map .route {
+        fill: none;
+        stroke: #a8e9c9;
+        stroke-width: 5;
+        stroke-dasharray: 12 8;
+      }
+      .map.inactive .scenario-feature {
+        opacity: 0.18;
+      }
+      .map.early .late-feature {
+        opacity: 0.16;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 9px 18px;
+        margin-top: 12px;
+        color: #b8cbd1;
+        font-size: 0.82rem;
+      }
+      .legend i {
+        display: inline-block;
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        margin-right: 6px;
+      }
+      .status {
+        border-radius: 12px;
+        padding: 14px 15px;
+        background: #25433f;
+        border: 1px solid #5a988a;
+        margin-bottom: 18px;
+      }
+      .status.stale {
+        background: #4b332b;
+        border-color: #ce916e;
+      }
+      .status.waiting {
+        background: #293c49;
+        border-color: #547181;
+      }
+      .status strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .status span {
+        color: #d6e3e2;
+        font-size: 0.86rem;
+        line-height: 1.45;
+      }
+      .message {
+        border-left: 4px solid #9be4e8;
+        padding: 2px 0 2px 16px;
+      }
+      .message h3 {
+        margin: 4px 0 10px;
+        font-size: 1.07rem;
+      }
+      .message p {
+        margin: 0 0 15px;
+      }
+      .message.muted {
+        opacity: 0.56;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: 86px 1fr;
+        gap: 8px 12px;
+        margin: 0;
+        font-size: 0.88rem;
+      }
+      dt {
+        color: #a8bdc6;
+      }
+      dd {
+        margin: 0;
+        font-weight: 620;
+      }
+      .handoff {
+        border-top: 1px solid #344e5b;
+        margin-top: 19px;
+        padding-top: 16px;
+        font-size: 0.87rem;
+      }
+      .handoff strong {
+        color: #caeee9;
+      }
+      .handoff p {
+        margin: 5px 0 0;
+      }
+      .narrative {
+        margin: 18px 0 0;
+        border: 1px solid #3d5865;
+        border-radius: 13px;
+        background: #203746;
+        padding: 17px 20px;
+      }
+      .narrative strong {
+        color: #f7d997;
+      }
+      .narrative p {
+        margin: 5px 0 0;
+        color: #d3dfe3;
+        line-height: 1.55;
+      }
+      footer {
+        border-top: 1px solid #344956;
+        padding: 24px 0 36px;
+        color: #a9bec8;
+        font-size: 0.88rem;
+        line-height: 1.5;
+      }
+      @media (max-width: 800px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .shell {
+          width: min(100% - 28px, 650px);
+        }
+        .top .shell {
+          min-height: 82px;
+        }
+        .panel-inner {
+          padding: 18px;
+        }
+        .map-head {
+          flex-wrap: wrap;
+        }
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        button {
+          transition: background 0.15s ease;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <div class="shell">
+        <div class="brand">COP <span>· Civilní situační mapa</span></div>
+        <div class="demo-tag">DEMO · SYNTETICKÁ DATA</div>
+      </div>
+    </header>
+    <main class="shell">
+      <div class="eyebrow">Veřejná samoobslužná ukázka</div>
+      <h1>Povodňová situace. Jedno srozumitelné sdělení pro občany.</h1>
+      <p class="lede">
+        Projděte modelovou povodeň ve středních Čechách: od první situace v mapě přes modelově schválené sdělení obce až
+        po stav, kdy přenos přestane fungovat. Scénář je celý připravený v této stránce a nepotřebuje účet.
+      </p>
+      <div class="hero-actions">
+        <button class="primary" id="start" type="button">Spustit scénář</button>
+        <button class="secondary" id="next" type="button" disabled>Další krok</button>
+        <button class="secondary" id="restart" type="button" hidden>Začít znovu</button>
+        <a
+          class="secondary"
+          href="https://cop.zeleznalady.cz/?sv=1&amp;slon=14.300000&amp;slat=50.020000&amp;sz=9.00&amp;sbr=0.00&amp;spi=0.00&amp;sws=map&amp;sbase=civil"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Otevřít aktuální mapu COP ↗</a
+        >
+      </div>
+      <p class="meta-note">
+        Přibližně 2 minuty · žádná skutečná výstraha · scénář nic neodesílá. Odkaz otevírá samostatný aktuální mapový
+        klient COP. Tato ukázka se do něj nepřenáší a nepoužívá živý SIM feed.
+      </p>
+      <ol class="steps" aria-label="Kroky ukázky">
+        <li>Úvod</li>
+        <li>1 · Situace</li>
+        <li>2 · Sdělení obce</li>
+        <li>3 · Možný přenos</li>
+        <li>4 · Výpadek</li>
+      </ol>
+      <div class="grid">
+        <section class="panel" aria-labelledby="map-title">
+          <div class="panel-inner">
+            <div class="map-head">
+              <div>
+                <h2 id="map-title">Modelová situační mapa</h2>
+                <p>Schéma fiktivní obce ve Středočeském kraji; nejde o skutečné polohy.</p>
+              </div>
+              <span class="map-flag">DEMO MAPA</span>
+            </div>
+            <svg
+              id="scenario-map"
+              class="map inactive"
+              viewBox="0 0 700 390"
+              role="img"
+              aria-labelledby="svg-title svg-desc"
+            >
+              <title id="svg-title">Schéma modelové povodňové situace</title>
+              <desc id="svg-desc">Řeka, modelová záplavová oblast, uzavřený podjezd a bezpečné shromaždiště.</desc>
+              <path fill="#294b50" d="M0 0H700V390H0z" />
+              <path fill="#31565a" d="M0 290 120 195 273 233 419 157 700 221V390H0z" />
+              <path class="road" d="M60 80 250 190 480 173 660 320" />
+              <path class="water" d="M70 380C120 314 234 309 301 254S413 160 484 153 602 120 700 45" />
+              <g class="scenario-feature">
+                <path
+                  class="flood"
+                  d="M173 300 Q230 240 316 230L423 152Q480 115 544 126L491 198Q430 209 360 273L260 343Z"
+                />
+                <path class="route late-feature" d="M466 172 520 214 590 251 640 295" />
+                <circle class="pin" cx="311" cy="250" r="12" />
+                <text x="324" y="246">Podjezd uzavřen</text>
+                <circle class="safe late-feature" cx="590" cy="254" r="12" />
+                <text class="late-feature" x="499" y="285">Shromaždiště</text>
+              </g>
+              <text x="30" y="52">Vltavská Lhota</text>
+              <text class="small" x="30" y="72">fiktivní obec</text>
+              <text x="505" y="70">Řeka · model</text>
+            </svg>
+            <div class="legend">
+              <span><i style="background: #5abbd1"></i>Modelová řeka</span
+              ><span><i style="background: #edaa6d"></i>Možné zaplavení</span
+              ><span><i style="background: #f6c76d"></i>Neprůjezdné místo</span
+              ><span><i style="background: #94dfc0"></i>Bezpečné místo</span>
+            </div>
+          </div>
+        </section>
+        <section class="panel" aria-labelledby="message-title">
+          <div class="panel-inner">
+            <h2 id="message-title">Sdělení pro občana</h2>
+            <div id="status" class="status waiting" role="status" aria-live="polite">
+              <strong>Scénář čeká na spuštění</strong><span>Stiskněte „Spustit scénář“.</span>
+            </div>
+            <div id="message" class="message muted">
+              <h3>Modelové sdělení obce</h3>
+              <p id="message-text">Sdělení se zobrazí po kroku „Sdělení obce“.</p>
+              <dl>
+                <dt>Oblast</dt>
+                <dd>Vltavská Lhota, dolní nábřeží (fiktivní)</dd>
+                <dt>Vydavatel</dt>
+                <dd>Obecní úřad Vltavská Lhota (modelová role)</dd>
+                <dt>Platnost</dt>
+                <dd>Modelový den 14:20–18:00</dd>
+                <dt>Ověřeno</dt>
+                <dd id="verified">—</dd>
+              </dl>
+            </div>
+            <div class="handoff">
+              <strong>Možný přenos přes ARDOS</strong>
+              <p id="handoff-text">
+                V ukázce je ARDOS jen příklad kanálu pro předání schváleného stručného sdělení. Není připojený a tato
+                ukázka netvrdí partnerství ani skutečné doručení.
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+      <aside class="narrative" aria-live="polite">
+        <strong id="story-title">Co uvidíte</strong>
+        <p id="story-text">
+          Scénář ukazuje rozdíl mezi situační informací, schváleným veřejným sdělením a jeho dostupností po výpadku
+          přenosu.
+        </p>
+      </aside>
+    </main>
+    <footer>
+      <div class="shell">
+        DEMO · SYNTETICKÁ DATA. Fiktivní místa, časy, schválení a sdělení. Není to aktuální krizová informace ani pokyn
+        pro skutečné jednání. Ve skutečné události sledujte oficiální kanály své obce a záchranných složek.
+      </div>
+    </footer>
+    <script>
+      (() => {
+        "use strict";
+        let step = 0;
+        const $ = (id) => document.getElementById(id);
+        const steps = document.querySelectorAll(".steps li");
+        const scenes = [
+          [
+            "Co uvidíte",
+            "Scénář ukazuje rozdíl mezi situační informací, schváleným veřejným sdělením a jeho dostupností po výpadku přenosu."
+          ],
+          [
+            "1 · Zhoršení situace",
+            "Modelová voda zasáhla dolní nábřeží. Na mapě je vyznačen neprůjezdný podjezd. Situační údaj sám ještě není veřejným pokynem obce."
+          ],
+          [
+            "2 · Modelové schválení",
+            "Fiktivní obec schválila krátké sdělení pro přesně uvedenou oblast a dobu. Občan vidí vydavatele, platnost i čas posledního ověření."
+          ],
+          [
+            "3 · Předání sdělení",
+            "Schválený krátký text by mohl být předán také přes ARDOS jako jeden z možných kanálů. Ukázka neprovádí integraci ani doručení."
+          ],
+          [
+            "4 · Výpadek přenosu",
+            "Po ztrátě spojení zůstává poslední schválený text čitelný, ale je výslovně označen jako neaktuálně ověřený. Platnost sdělení nenahrazuje čerstvé potvrzení."
+          ]
+        ];
+        function render() {
+          steps.forEach((item, index) => {
+            item.classList.toggle("active", index === step);
+            item.classList.toggle("done", index < step);
+          });
+          $("scenario-map").classList.toggle("inactive", step === 0);
+          $("scenario-map").classList.toggle("early", step === 1);
+          $("message").classList.toggle("muted", step < 2);
+          $("message-text").textContent =
+            step < 2
+              ? "Sdělení se zobrazí po kroku „Sdělení obce“."
+              : "Z důvodu modelové povodně nevstupujte do podjezdu na dolním nábřeží. Přesuňte se mimo vyznačenou oblast a sledujte další sdělení obce.";
+          $("verified").textContent = step < 2 ? "—" : "Modelový den 14:32";
+          const status = $("status");
+          status.className = `status ${step === 4 ? "stale" : step < 2 ? "waiting" : ""}`;
+          status.querySelector("strong").textContent =
+            step === 4
+              ? "NEAKTUÁLNĚ OVĚŘENO · VÝPADEK"
+              : step < 2
+                ? step === 0
+                  ? "Scénář čeká na spuštění"
+                  : "Situační údaje · bez veřejného pokynu"
+                : "Modelově schválené sdělení";
+          status.querySelector("span").textContent =
+            step === 4
+              ? "Spojení je přerušeno. Poslední ověření proběhlo v modelovém čase 14:32; aktuální stav není znám."
+              : step < 2
+                ? step === 0
+                  ? "Stiskněte „Spustit scénář“."
+                  : "Čeká se na modelové schválení obcí."
+                : "Modelový čas 14:32 · oblast a platnost jsou uvedeny níže.";
+          $("handoff-text").textContent =
+            step === 4
+              ? "Přenos je v modelovém výpadku. Nelze potvrdit nové doručení přes žádný kanál. ARDOS zde zůstává jen příkladem možného kanálu, bez partnerství nebo skutečné integrace."
+              : "V ukázce je ARDOS jen příklad kanálu pro předání schváleného stručného sdělení. Není připojený a tato ukázka netvrdí partnerství ani skutečné doručení.";
+          $("story-title").textContent = scenes[step][0];
+          $("story-text").textContent = scenes[step][1];
+          $("start").hidden = step !== 0;
+          $("next").disabled = step === 0 || step === 4;
+          $("next").hidden = step === 4;
+          $("restart").hidden = step === 0;
+        }
+        $("start").addEventListener("click", () => {
+          step = 1;
+          render();
+        });
+        $("next").addEventListener("click", () => {
+          if (step > 0 && step < 4) {
+            step += 1;
+            render();
+          }
+        });
+        $("restart").addEventListener("click", () => {
+          step = 0;
+          render();
+        });
+        render();
+      })();
+    </script>
+  </body>
+</html>

@@ -58,6 +58,10 @@ self.addEventListener("fetch", (event) => {
   }
 
   const url = new URL(request.url);
+  // The standalone synthetic demo must never be substituted with the COP app shell.
+  if (url.origin === self.location.origin && url.pathname.startsWith("/ardos-demo/")) {
+    return;
+  }
   if (url.origin === self.location.origin && API_PATH_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
     return;
   }
