@@ -696,3 +696,32 @@ never expose internal URLs in public health. Only one observation point,
 car profile and reliable heading are sent to SIM. Additive database columns
 and the jobs table need no destructive rollback migration. See ADR 0023 and
 the driver integration release record for candidate smoke and rollback.
+
+#### Ověření omezeného chatového pilotu v produkci (25. 9. 2026)
+
+COP `2ef0c70`, obraz API
+`sha256:44b62b8d837bd0f3cf59507b31759e53ff646413a794e3f73cc80296e43a1a9a`;
+SIM `d2c0cd5`, obraz Routeru
+`sha256:8fc3ab9d8cdc2e85f264fbb4d31702161516fa8d1efd14f19e73700bc7e1187d`.
+Interní Docker bridge má `internal=true`, právě dva členy (`cop-api`,
+`ai-router-api`) a Router nemá publikovaný port. Oba kontejnery byly zdravé;
+veřejný COP a povodňová ukázka vracely 200.
+
+Anonymní dotaz na cvičný endpoint vrátil 401, požadavek s dodatečným
+`chatContext` a chráněným testovacím řetězcem 400 bez volání Routeru.
+Povolený dotaz vrátil 200 přes `gpt-6-luna`, třídu `synthetic`, 180 vstupních a
+82 výstupních tokenů, odhad 118 mikroUSD. Záznam se promítl do administračního
+endpointu SIM: denní spotřeba vzrostla z 739 na 857 mikroUSD a počet požadavků
+z 5 na 6. Po dalších devíti povolených dotazech desátý další vrátil 429 podle
+limitu na uživatele. Výpadek interního propojení vrátil 503 bez přímého
+náhradního volání; po obnovení bylo spojení opět dostupné.
+
+Rollback byl proveden přepínačem `COP_AI_CHAT_ROUTER_ENABLED=false` a obnovou
+jen `cop-api`: cvičný endpoint vrátil 503, dosavadní chat vrátil 200,
+`COMPLETED`, `ollama`, `gemma4:12b-mlx`. Jeden náročnější testovací dotaz předtím
+vypršel po 60 s na straně klienta; kratší následný dotaz uspěl. Pilotní
+přepínač byl znovu zapnut. Konečná evidence SIM ukázala 1 848 mikroUSD a 15
+denních požadavků. Běžný bohatý chat a veřejně agregovaný chat stále nejsou
+migrovány; Router nemá lokální model a tento pilot neposkytuje uživatelské
+ovládání v chatovém rozhraní. Denní a měsíční finanční strop nebyly v produkci
+záměrně vyčerpány; jejich 429 chování pokrývají testy Routeru v SIM.
