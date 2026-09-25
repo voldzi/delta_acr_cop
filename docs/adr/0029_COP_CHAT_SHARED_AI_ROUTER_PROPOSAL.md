@@ -1,11 +1,13 @@
 # ADR 0029 (proposal): COP chat through the SIM AI Router
 
-**Status: adapter prepared, not wired or activated.** Production COP chat still
-uses its own `ollama` provider. The staged adapter is
-`apps/cop-api/src/ai-router-chat.ts`; its contract tests are in the adjacent
-test file. No production route instantiates the adapter. SIM contract revision
-`d2c0cd5` is required before any joint acceptance. ADR 0028 remains limited
-to aggregate MCP source health.
+**Status: limited synthetic pilot prepared.** The separate
+`/api/v1/ai/chat-agent/reviewed-synthetic` route instantiates the adapter only
+when `COP_AI_CHAT_ROUTER_ENABLED=true`. COP supplies fixed fictional facts for
+the flood exercise and accepts only a scenario ID and intent from the caller.
+The existing `/api/v1/ai/chat-agent/query` route stays on its current provider
+and retains its richer context. Public aggregate chat is not active until a
+reviewed source-owned numeric producer is available. SIM contract revision
+`d2c0cd5` is required. ADR 0028 remains limited to aggregate MCP source health.
 
 ## Internal service boundary
 
@@ -17,7 +19,7 @@ host port. The bridge, Compose changes and container attachments require
 explicit approval before any production mutation. Do not join the complete COP
 and SIM stacks or alter VPN, VLAN or firewall rules.
 
-The proposed network name is `cop_sim_ai_router_internal`. After approval,
+The network name is `cop_sim_ai_router_internal`. After approval,
 create it as an internal bridge. In COP Compose, assign `cop-api` to both
 `default` and this external network. In SIM Compose, assign only
 `ai-router-api` to both `default` and this external network. Declare the same
@@ -37,8 +39,8 @@ The Router already has access to OpenAI `gpt-6-luna`: its external economy tier
 is enabled. The missing configuration concerns only its separate local tier.
 SIM commit `d2c0cd5` prepares a typed `cop_chat` contract and permits Luna only
 for positively classified synthetic or public aggregate content. This commit
-is not yet deployed; network access or an environment flag alone cannot
-activate chat. A read-only probe
+is deployed for the limited pilot; network access or an environment flag alone
+cannot activate general chat. A read-only probe
 from the Router container reached one of COP's existing Ollama endpoints and
 confirmed that the COP fast model is present. Configure that local tier for
 internal chat, or keep internal chat on the existing COP path until it is
@@ -83,10 +85,10 @@ synthetic facts or numeric aggregates. It derives an opaque stable user ID with
 a dedicated HMAC secret and rejects unexpected Router model tiers. It has no
 direct provider call or fallback. Structural checks alone cannot prove that a
 supplied fact is genuinely synthetic or that an aggregate came from a public
-source. Before wiring the adapter to an HTTP route, COP must implement trusted
-source-owned producers, prove the end-user and context-selection policy, and
-test the resulting citations and UI behavior. The current adapter is not an
-authorization to attest arbitrary client input.
+source. The limited synthetic route uses server-owned fixed facts and returns
+no citations. Any future public aggregate route needs a verified source-owned
+numeric producer; the adapter is not authorization to attest arbitrary client
+input. The regular chat UI is unchanged.
 
 ## Limits, evidence and activation
 

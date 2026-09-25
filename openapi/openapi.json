@@ -3964,6 +3964,141 @@
         }
       }
     },
+    "/api/v1/ai/chat-agent/reviewed-synthetic": {
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "Ask the reviewed synthetic flood exercise through the SIM AI Router.",
+        "operationId": "queryReviewedSyntheticChat",
+        "description": "Authenticated pilot. COP supplies fixed fictional facts; clients may choose only the exercise and intent. No chatContext, free text, private messages, or incident data are forwarded. The Router enforces Luna, budget, and per-user limits. Ordinary chat remains on its current path.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "scenarioId",
+                  "intent"
+                ],
+                "properties": {
+                  "scenarioId": {
+                    "type": "string",
+                    "enum": [
+                      "flood-central-bohemia"
+                    ]
+                  },
+                  "intent": {
+                    "type": "string",
+                    "enum": [
+                      "summarize",
+                      "explain"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reviewed synthetic answer and Router usage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "requestId",
+                    "model",
+                    "tier",
+                    "output",
+                    "usage",
+                    "requiresHumanReview",
+                    "dataClass",
+                    "scenarioId"
+                  ],
+                  "properties": {
+                    "requestId": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string",
+                      "enum": [
+                        "gpt-6-luna"
+                      ]
+                    },
+                    "tier": {
+                      "type": "string",
+                      "enum": [
+                        "external_economy"
+                      ]
+                    },
+                    "output": {
+                      "type": "string"
+                    },
+                    "usage": {
+                      "type": "object",
+                      "required": [
+                        "inputTokens",
+                        "outputTokens",
+                        "estimatedMicrousd"
+                      ],
+                      "properties": {
+                        "inputTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "outputTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "estimatedMicrousd": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      }
+                    },
+                    "requiresHumanReview": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "dataClass": {
+                      "type": "string",
+                      "enum": [
+                        "synthetic"
+                      ]
+                    },
+                    "scenarioId": {
+                      "type": "string",
+                      "enum": [
+                        "flood-central-bohemia"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
     "/api/v1/ai/chat-agent/query": {
       "post": {
         "tags": [

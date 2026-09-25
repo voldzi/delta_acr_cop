@@ -594,6 +594,24 @@ ověřit mapu a MCP gateway. PostgreSQL evidence se nemaže.
 
 ### Sdílený AI Router pouze pro agregovaný MCP souhrn
 
+Samostatný cvičný chatový pilot používá přepínač
+`COP_AI_CHAT_ROUTER_ENABLED=false` (výchozí stav) a produkční
+`COP_AI_CHAT_ROUTER_USER_ID_SECRET` s alespoň 32 znaky. Při zapnutí vyžaduje
+stejnou interní adresu a službový token Routeru. Endpoint
+`POST /api/v1/ai/chat-agent/reviewed-synthetic` přijímá pouze
+`{"scenarioId":"flood-central-bohemia","intent":"summarize"}` (nebo
+`"explain"`). COP odesílá jen pevné fiktivní body. Uživatel nesmí vložit
+otázku ani kontext. Výpadek Routeru vrací 503, limit 429; není náhradní
+volání poskytovatele. Vypnutí tohoto přepínače a obnova samotného `cop-api`
+vrátí pilot do stavu 503; běžný chat zůstává na dosavadní cestě.
+
+Produkční izolovaná síť se nastavuje přes soubory
+`/srv/cop/docker-compose.ai-router.yml` a
+`/srv/sim/docker-compose.ai-router.yml` vedle hlavních Compose souborů;
+`cop-api` a `ai-router-api` jsou její jediní členové. Router port 4050 není
+publikován na hostiteli. Tyto soubory je nutné zahrnout při obnově příslušné
+služby. Službový token je pouze v `.env` obou produkčních služeb s právy 600.
+
 `COP_AI_ROUTER_ENABLED=false` je výchozí stav. Po nasazení kompatibilního
 Routeru lze v COP API nastavit `COP_AI_ROUTER_ENABLED=true`, interní
 `COP_AI_ROUTER_URL=http://ai-router-api:4050` a dedikovaný
