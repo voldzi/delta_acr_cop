@@ -12,3 +12,11 @@ OpenAI provider je volitelný externí provider pro asistivní use-cases, pokud 
 - umožnit centrální vypnutí providera.
 
 OpenAI provider nesmí mít přístup k neomezeným interním toolům. Tool calling smí používat pouze explicitně schválené read-only nebo bezpečné nástroje.
+
+## Omezený MCP souhrn stavu zdrojů
+
+Podle [ADR 0027](../adr/0027_BOUNDED_OPENAI_MCP_SOURCE_HEALTH.md) je prvním
+produkčním use-casem samostatný, výchozím nastavením vypnutý souhrn přes
+`cop.sources.health`. Vstup modelu obsahuje jen počty zdrojů podle stavu.
+Model je pevně `gpt-6-luna`, výstup maximálně 512 tokenů; nevzniká externí
+MCP spojení. Odhad nákladů se ukládá do PostgreSQL a zobrazí v COP.

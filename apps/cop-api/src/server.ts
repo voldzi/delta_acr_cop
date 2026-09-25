@@ -44,6 +44,7 @@ import {
   type CommunityReportVisibility
 } from "./community-report-store.js";
 import { correlationIdFrom, sendError } from "./errors.js";
+import { OpenAiMcpAssistant, openAiMcpAssistantConfig } from "./openai-mcp-assistant.js";
 import { resolveAiConversationContinuity, resolveAiConversationTimeWindow } from "./ai-conversation-continuity.js";
 import { aiConversationClarificationResponse, withAiConversationGuidance } from "./ai-conversation-guidance.js";
 import {
@@ -784,6 +785,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const state = options.state ?? createInitialState();
   const validators = new ContractValidators();
   const aiGateway = options.aiGateway ?? AiGateway.fromEnv(process.env);
+  const openAiMcpConfig = openAiMcpAssistantConfig(process.env);
+  const openAiMcpAssistant = openAiMcpConfig.enabled ? new OpenAiMcpAssistant(openAiMcpConfig) : undefined;
+  let openAiMcpReady = false;
   const aiSemanticRetriever = new AiSemanticRetriever({
     embedText: (input) => aiGateway.embedText(input),
     enabled: readBoolean(process.env.COP_AI_SEMANTIC_RETRIEVAL_ENABLED, true),
@@ -1099,6 +1103,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return reply.code(204).send();
   });
   app.addHook("onReady", async () => {
+    if (openAiMcpAssistant) {
+      try {
+        await openAiMcpAssistant.init();
+        openAiMcpReady = true;
+      } catch (error) {
+        app.log.error({ error }, "OpenAI MCP budget store unavailable; assistant remains disabled.");
+      }
+    }
     if (webSessionStore) await webSessionStore.init();
     await initializeStreamBus();
     await initializeFederationRuntimeStore();
@@ -1147,6 +1159,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     aiContextIndexRefreshTimer.unref?.();
   });
   app.addHook("onClose", async () => {
+    await openAiMcpAssistant?.close();
     if (flightDataPollTimer) {
       clearInterval(flightDataPollTimer);
     }
@@ -9772,6 +9785,74 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       correlationId
     );
     return response;
+  });
+
+  async function readyOpenAiMcpAssistant(): Promise<OpenAiMcpAssistant | undefined> {
+    if (!openAiMcpAssistant) return undefined;
+    if (!openAiMcpReady) {
+      try {
+        await openAiMcpAssistant.init();
+        openAiMcpReady = true;
+      } catch {
+        return undefined;
+      }
+    }
+    return openAiMcpAssistant;
+  }
+
+  app.get("/api/v1/ai/mcp-assistant/usage", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) return reply;
+    const assistant = await readyOpenAiMcpAssistant();
+    if (!assistant) {
+      return { enabled: false, model: "gpt-6-luna" };
+    }
+    try {
+      return await assistant.usage(now());
+    } catch {
+      return sendError(reply, 503, "AI_USAGE_UNAVAILABLE", "AI usage monitoring is unavailable.",
+        correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+  });
+
+  app.post("/api/v1/ai/mcp-assistant/source-health", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) return reply;
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const assistant = await readyOpenAiMcpAssistant();
+    if (!assistant) {
+      return sendError(reply, 503, "AI_ASSISTANT_DISABLED", "OpenAI MCP assistant is unavailable.", correlationId);
+    }
+    try {
+      const tool = copMcpTools.find((item) => item.toolId === "cop.sources.health");
+      if (!tool) throw new Error("COP source-health MCP tool unavailable.");
+      const invocation = await invokeCopMcpToolInternal(tool, {}, actor, correlationId);
+      const result = await assistant.summarize(invocation.result, actor.subjectId, now());
+      appendAudit(state, "AI_MCP_SOURCE_HEALTH_COMPLETED", {
+        actorSubjectId: actor.subjectId,
+        model: result.model,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        estimatedUsd: result.estimatedUsd,
+        invocationId: invocation.invocationId
+      }, correlationId);
+      return {
+        contractVersion: "cop-ai-mcp-source-health-v1",
+        generatedAt: now().toISOString(),
+        ...result,
+        toolId: "cop.sources.health",
+        humanReviewRequired: true
+      };
+    } catch (error) {
+      const budgetExceeded = error instanceof Error && error.message === "OpenAI MCP usage limit reached.";
+      appendAudit(state, "AI_MCP_SOURCE_HEALTH_FAILED", {
+        actorSubjectId: actor.subjectId,
+        reason: budgetExceeded ? "budget" : "provider_or_storage"
+      }, correlationId);
+      return sendError(reply, budgetExceeded ? 429 : 503,
+        budgetExceeded ? "AI_BUDGET_EXCEEDED" : "AI_ASSISTANT_UNAVAILABLE",
+        budgetExceeded ? "AI usage limit has been reached." : "AI assistant is temporarily unavailable.", correlationId);
+    }
   });
 
   app.post("/api/v1/ai/situation-summary", async (request, reply) => {

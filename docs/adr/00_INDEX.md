@@ -27,3 +27,4 @@
 - [0023 Durable Road Report Enrichment](0023_DURABLE_ROAD_REPORT_ENRICHMENT.md)
 - [0024 — VCode-owned COP Mobile identity](0024_VCODE_OWNED_COP_MOBILE_IDENTITY.md)
 - [0025 Public Routing Coverage and Directed Attributes](0025_PUBLIC_ROUTING_COVERAGE_AND_DIRECTED_ATTRIBUTES.md)
+- [0027 Bounded OpenAI MCP Source Health](0027_BOUNDED_OPENAI_MCP_SOURCE_HEALTH.md)

@@ -3892,6 +3892,34 @@
         }
       }
     },
+    "/api/v1/ai/mcp-assistant/usage": {
+      "get": {
+        "tags": ["AI"],
+        "summary": "Read bounded OpenAI MCP assistant usage and budget status.",
+        "operationId": "getOpenAiMcpAssistantUsage",
+        "description": "Authenticated COP users can inspect aggregate daily and monthly committed usage. No provider credential is returned.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Current usage and limits.", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/ai/mcp-assistant/source-health": {
+      "post": {
+        "tags": ["AI"],
+        "summary": "Summarize aggregate COP source health with GPT-6 Luna.",
+        "operationId": "summarizeMcpSourceHealthWithOpenAi",
+        "description": "Authenticated, budgeted assistant. Invokes only the audited cop.sources.health MCP tool; sends only aggregate health counts to OpenAI. Never sends report text, chat, partner data or provider credentials. Output requires operator review.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "AI summary and usage.", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "description": "AI usage budget or request limit reached." },
+          "503": { "description": "AI feature, provider or budget ledger unavailable." }
+        }
+      }
+    },
     "/api/v1/ai/situation-summary": {
       "post": {
         "tags": [

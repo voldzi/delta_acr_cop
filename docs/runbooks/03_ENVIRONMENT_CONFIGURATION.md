@@ -558,6 +558,34 @@ záznam. To je záměrné, aby operátor neopakoval chybu rekurzivně.
 
 ## MCP Tool Gateway
 
+### Omezený OpenAI souhrn stavu zdrojů
+
+`COP_OPENAI_MCP_ENABLED=false` je bezpečný výchozí stav. Po ověření interního
+databázového připojení a uložení klíče mimo Git lze zapnout pouze COP API:
+
+```text
+COP_OPENAI_MCP_ENABLED=true
+OPENAI_API_KEY=<secret pouze v produkčním secret store>
+COP_OPENAI_MCP_DAILY_USD=1
+COP_OPENAI_MCP_MONTHLY_USD=10
+COP_OPENAI_MCP_DAILY_TOKENS=100000
+COP_OPENAI_MCP_MONTHLY_TOKENS=1000000
+COP_OPENAI_MCP_USER_DAILY_REQUESTS=10
+```
+
+`GET /api/v1/ai/mcp-assistant/usage` vrací přihlášenému uživateli denní a
+měsíční rezervovanou/odhadnutou spotřebu. `POST
+/api/v1/ai/mcp-assistant/source-health` provede auditované volání MCP nástroje,
+pošle modelu pouze agregované počty, odečte rozpočet a vrátí shrnutí k lidské
+kontrole. Při vyčerpání vrací `429`; při výpadku rozpočtové databáze nebo
+poskytovatele `503`. Neovlivní to mapu ani běžné AI funkce. Limit a cenu
+ověřte proti [aktuálnímu ceníku GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)
+před změnou modelu nebo tarifu. Výchozí interní limity nejsou náhradou za
+správu kreditu a upozornění v OpenAI projektu.
+
+Rollback: vypnout `COP_OPENAI_MCP_ENABLED`, obnovit jen `cop-api` kontejner,
+ověřit mapu a MCP gateway. PostgreSQL evidence se nemaže.
+
 Pilotní MCP gateway běží jako samostatná služba `cop-mcp-gateway` na portu
 `4313`. Externí agenti mají používat endpointy služby:
 

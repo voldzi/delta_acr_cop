@@ -1670,7 +1670,8 @@ export function App() {
   const [incidentWorkflowLoading, setIncidentWorkflowLoading] = React.useState(false);
   const [incidentWorkflowError, setIncidentWorkflowError] = React.useState<string | null>(null);
   const [incidentWorkflowStatus, setIncidentWorkflowStatus] = React.useState<string | null>(null);
-  const [aiResult, setAiResult] = React.useState("AI asistent je připraven zkontrolovat kvalitu zobrazených dat.");
+  const [aiResult, setAiResult] = React.useState("AI asistent může shrnout stav datových zdrojů.");
+  const [aiUsage, setAiUsage] = React.useState("");
   const loadInFlightRef = React.useRef(false);
   const alertsLoadInFlightRef = React.useRef(false);
   const offlineBootstrapScopeRef = React.useRef<string | null>(null);
@@ -5113,26 +5114,40 @@ export function App() {
       setAiResult("AI asistent je dostupný po přihlášení.");
       return;
     }
-    const response = await fetch(`${apiBase}/api/v1/ai/cop-assistant/query`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        requestId: crypto.randomUUID(),
-        purpose: "DATA_QUALITY_CHECK",
-        prompt: "Shrň kvalitu aktuálního situačního pohledu a odliš simulovaná data.",
-        context: {
-          objectIds: visibleObjects.map((object) => object.objectId)
-        },
-        providerPreference: "auto",
-        outputFormat: "MARKDOWN",
-        safetyScope: "COP_DATA_ASSISTANCE_ONLY"
-      })
-    });
-    const payload = await response.json();
-    setAiResult(payload.result?.summary ?? payload.policy?.reason ?? "AI odpověď není dostupná.");
+    setAiResult("Kontroluji stav zdrojů…");
+    try {
+      const response = await fetch(`${apiBase}/api/v1/ai/mcp-assistant/source-health`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (!response.ok) {
+        setAiResult(response.status === 429
+          ? "Limit AI byl vyčerpán. Data mapy zůstávají dostupná."
+          : "AI asistent nyní není dostupný. Data mapy zůstávají dostupná.");
+        return;
+      }
+      const payload = await response.json();
+      setAiResult(`${payload.summary ?? "AI odpověď není dostupná."} Výstup vyžaduje kontrolu operátorem.`);
+      setAiUsage(`Dnes ${Number(payload.usage?.daily?.committedUsd ?? 0).toFixed(4)} / ${Number(payload.usage?.daily?.limitUsd ?? 0).toFixed(2)} USD a ${Number(payload.usage?.daily?.committedTokens ?? 0)} / ${Number(payload.usage?.daily?.tokenLimit ?? 0)} tokenů (${Number(payload.usage?.daily?.inputTokens ?? 0)} vstupních, ${Number(payload.usage?.daily?.outputTokens ?? 0)} výstupních); měsíc ${Number(payload.usage?.monthly?.committedUsd ?? 0).toFixed(4)} / ${Number(payload.usage?.monthly?.limitUsd ?? 0).toFixed(2)} USD.`);
+    } catch {
+      setAiResult("AI asistent nyní není dostupný. Data mapy zůstávají dostupná.");
+    }
+  }
+
+  async function refreshAiUsage() {
+    if (!authToken) return;
+    try {
+      const response = await fetch(`${apiBase}/api/v1/ai/mcp-assistant/usage`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      if (!response.ok) throw new Error("usage unavailable");
+      const payload = await response.json();
+      setAiUsage(payload.enabled
+        ? `Dnes ${Number(payload.daily?.committedUsd ?? 0).toFixed(4)} / ${Number(payload.daily?.limitUsd ?? 0).toFixed(2)} USD a ${Number(payload.daily?.committedTokens ?? 0)} / ${Number(payload.daily?.tokenLimit ?? 0)} tokenů (${Number(payload.daily?.inputTokens ?? 0)} vstupních, ${Number(payload.daily?.outputTokens ?? 0)} výstupních); měsíc ${Number(payload.monthly?.committedUsd ?? 0).toFixed(4)} / ${Number(payload.monthly?.limitUsd ?? 0).toFixed(2)} USD.`
+        : "Placený AI asistent je vypnutý.");
+    } catch {
+      setAiUsage("Spotřebu AI nyní nelze načíst.");
+    }
   }
 
   async function handleProximityAlertToggle(checked: boolean) {
@@ -8691,10 +8706,14 @@ export function App() {
                           : "AI asistent je přihlášená funkce. Veřejný režim zobrazuje data bez účtu, ale neposílá osobní ani provozní dotazy."}
                       </p>
                       {profileAccessReady ? (
-                        <button className="primary-button" onClick={askAi}>
-                          <Sparkles size={16} />
-                          Zkontrolovat kvalitu dat
-                        </button>
+                        <>
+                          <button className="primary-button" onClick={askAi}>
+                            <Sparkles size={16} />
+                            Zkontrolovat kvalitu dat
+                          </button>
+                          <button onClick={refreshAiUsage}>Spotřeba AI</button>
+                          {aiUsage ? <p aria-live="polite">{aiUsage}</p> : null}
+                        </>
                       ) : (
                         <span className="auth-hint">Přihlášení najdete v horní liště.</span>
                       )}
