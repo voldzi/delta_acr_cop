@@ -30,3 +30,4 @@
 - [0026 Isolated Public Flood Demo](0026_ISOLATED_PUBLIC_FLOOD_DEMO.md)
 - [0027 Bounded OpenAI MCP Source Health](0027_BOUNDED_OPENAI_MCP_SOURCE_HEALTH.md)
 - [0028 Shared AI Router for Aggregate MCP Health](0028_SHARED_AI_ROUTER_FOR_AGGREGATE_MCP_HEALTH.md)
+- [0029 COP Chat Shared AI Router Proposal](0029_COP_CHAT_SHARED_AI_ROUTER_PROPOSAL.md)
