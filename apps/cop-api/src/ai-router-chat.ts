@@ -28,8 +28,13 @@ export interface ReviewedPublicAggregate {
   sampleSize: number;
 }
 
+export interface ReviewedInternalItem {
+  kind: "chat_message" | "alert" | "community_report" | "map_result" | "source_health";
+  text: string;
+}
+
 export type CopRouterChatRequest =
-  | { kind: "internal"; actorSubjectId: string; question: string }
+  | { kind: "internal"; actorSubjectId: string; question: string; items?: ReviewedInternalItem[] }
   | { kind: "synthetic"; actorSubjectId: string; scenario: ReviewedSyntheticScenario; intent: "summarize" | "explain" }
   | {
       kind: "public_aggregate";
@@ -117,6 +122,14 @@ function validAggregate(value: unknown): value is ReviewedPublicAggregate {
   );
 }
 
+function validInternalItem(value: unknown): value is ReviewedInternalItem {
+  if (!exactKeys(value, ["kind", "text"])) return false;
+  const item = value as ReviewedInternalItem;
+  return ["chat_message", "alert", "community_report", "map_result", "source_health"].includes(item.kind) &&
+    typeof item.text === "string" && item.text.trim().length > 0 && item.text.length <= 600 &&
+    !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(item.text);
+}
+
 function checkedConfig(config: CopRouterChatConfig): URL {
   let url: URL;
   try {
@@ -147,13 +160,17 @@ function requestBody(input: CopRouterChatRequest, userId: string): Record<string
   const common = { taskType: "cop_chat", userId, allowPaidEscalation: false, maxOutputTokens: 512 };
   if (input.kind === "internal") {
     if (!validQuestion(input.question)) fail();
+    if (input.items !== undefined && (!Array.isArray(input.items) || input.items.length < 1 ||
+      input.items.length > 16 || !input.items.every(validInternalItem))) fail();
     return {
       ...common,
       dataClass: "internal",
       preference: "local",
       prompt: input.question.trim(),
       allowExternal: false,
-      copContext: { contractVersion: CONTEXT_VERSION, dataClass: "internal" }
+      copContext: input.items
+        ? { contractVersion: CONTEXT_VERSION, dataClass: "internal", attestation: "cop-internal-reviewed-v1", items: input.items }
+        : { contractVersion: CONTEXT_VERSION, dataClass: "internal" }
     };
   }
   if (input.kind === "synthetic") {
@@ -243,7 +260,7 @@ export class CopAiRouterChatAdapter {
         method: "POST",
         headers: { authorization: `Bearer ${this.config.token}`, "content-type": "application/json" },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(30_000)
+        signal: AbortSignal.timeout(input.kind === "internal" ? 100_000 : 30_000)
       });
     } catch {
       throw new CopRouterChatError("router_unavailable");

@@ -4106,7 +4106,7 @@
         ],
         "summary": "Ask a visible COP chat AI agent using server-side policy-filtered context.",
         "operationId": "queryAiChatAgent",
-        "description": "Creates an audit-backed AI response for an explicit chat question. COP builds the context from authorized COP data and may accept an optional client-supplied chatContext containing visible/decrypted timeline excerpts; the endpoint does not independently read encrypted Matrix history. Short follow-up questions may inherit only the latest unambiguous question from that supplied excerpt. The structured response includes bounded conversation guidance, confidence and suggested follow-up questions.",
+        "description": "Creates an audit-backed AI response for an explicit chat question. When COP_AI_CHAT_ROUTER_FULL_ENABLED is true, COP sends a checked question (at most 1200 characters) and at most 16 typed internal context items to the shared Router's local model; decrypted visible messages remain internal and no external model or direct fallback is allowed. Unsupported context is excluded without claiming citations. When disabled, the legacy chat pipeline remains available for rollback.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4142,6 +4142,12 @@
           },
           "422": {
             "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       }

@@ -594,6 +594,16 @@ ověřit mapu a MCP gateway. PostgreSQL evidence se nemaže.
 
 ### Sdílený AI Router pouze pro agregovaný MCP souhrn
 
+Běžný chat používá samostatný přepínač
+`COP_AI_CHAT_ROUTER_FULL_ENABLED=false` (výchozí stav). Po zapnutí musí být v
+Routeru dostupný lokální model. COP předá jen zkontrolovanou otázku do 1200
+znaků a omezené typované interní položky, nikdy externí povolení. Úspěšná
+odpověď je označena k lidské kontrole bez citací k vynechanému kontextu.
+Při limitu nebo výpadku vrací 429/503; nedochází k automatickému fallbacku.
+Rollback vypne jen tento přepínač v `/srv/cop/.env` a obnoví `cop-api` se
+síťovým Compose override; poté se ověří původní `ollama` chat. Cvičný pilot a
+ostatní AI funkce zůstávají nezávislé.
+
 Samostatný cvičný chatový pilot používá přepínač
 `COP_AI_CHAT_ROUTER_ENABLED=false` (výchozí stav) a produkční
 `COP_AI_CHAT_ROUTER_USER_ID_SECRET` s alespoň 32 znaky. Při zapnutí vyžaduje

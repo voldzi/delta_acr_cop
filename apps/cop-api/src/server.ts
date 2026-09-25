@@ -47,6 +47,7 @@ import { correlationIdFrom, sendError } from "./errors.js";
 import { OpenAiMcpAssistant, openAiMcpAssistantConfig } from "./openai-mcp-assistant.js";
 import { AiRouterMcpAssistant, aiRouterMcpConfig } from "./ai-router-mcp-assistant.js";
 import { CopAiRouterChatAdapter, CopRouterChatError } from "./ai-router-chat.js";
+import { reviewedInternalChatItems } from "./ai-router-chat-context.js";
 import { resolveAiConversationContinuity, resolveAiConversationTimeWindow } from "./ai-conversation-continuity.js";
 import { aiConversationClarificationResponse, withAiConversationGuidance } from "./ai-conversation-guidance.js";
 import {
@@ -791,7 +792,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   // The shared Router is opt-in only for the aggregate source-health MCP path.
   const routerMcpConfig = aiRouterMcpConfig(process.env);
   const routerChatEnabled = readBoolean(process.env.COP_AI_CHAT_ROUTER_ENABLED, false);
-  const routerChat = routerChatEnabled
+  const routerChatFullEnabled = readBoolean(process.env.COP_AI_CHAT_ROUTER_FULL_ENABLED, false);
+  const routerChat = routerChatEnabled || routerChatFullEnabled
     ? new CopAiRouterChatAdapter({
         baseUrl: process.env.COP_AI_ROUTER_URL ?? "",
         token: process.env.COP_AI_ROUTER_TOKEN ?? "",
@@ -10104,6 +10106,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         correlationId
       );
     }
+    if (routerChatFullEnabled && question.length > 1200) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "AI Router chat question is too long.", correlationId);
+    }
     pruneAiChatAgentJobs();
     const requestNow = now();
     const jobId = randomUUID();
@@ -10232,6 +10237,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         "AI chat agent query requires a non-empty question.",
         correlationId
       );
+    }
+    if (routerChatFullEnabled && question.length > 1200) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "AI Router chat question is too long.", correlationId);
     }
     const rawGroupId = optionalText(body.groupId);
     const groupId = rawGroupId ? optionalUuid(rawGroupId) : undefined;
@@ -10472,6 +10480,59 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       outputFormat: "MARKDOWN",
       safetyScope: "COP_DATA_ASSISTANCE_ONLY"
     };
+    if (routerChatFullEnabled) {
+      try {
+        if (!routerChat) throw new CopRouterChatError("router_unavailable");
+        const items = reviewedInternalChatItems({
+          chatContext,
+          alerts: aiAlerts,
+          communityReports: aiCommunityReports,
+          mapResults: aiMapFeatures,
+          sourceHealth: aiSourceHealth
+        });
+        const result = await routerChat.generate({
+          kind: "internal",
+          actorSubjectId: actor.subjectId,
+          question: effectiveQuestion.length <= 1200 ? effectiveQuestion : question,
+          ...(items.length ? { items } : {})
+        });
+        const response: AiCopResponse = {
+          requestId,
+          status: "NEEDS_HUMAN_REVIEW",
+          provider: "local",
+          model: result.model,
+          auditId: randomUUID(),
+          policy: { allowed: true, reason: "Shared Router local-only internal COP chat.", redactionsApplied: true },
+          result: {
+            summary: result.output,
+            structured: {
+              routerRequestId: result.requestId,
+              routerTier: result.tier,
+              usage: result.usage,
+              contextItemCount: items.length
+            }
+          }
+        };
+        appendAudit(state, "AI_CHAT_AGENT_ROUTER_COMPLETED", {
+          ...aiAuditMetadata(response, actor),
+          routerRequestId: result.requestId,
+          dataClass: "internal",
+          contextItemCount: items.length,
+          usage: result.usage
+        }, correlationId);
+        return response;
+      } catch (error) {
+        const code = error instanceof CopRouterChatError ? error.code : "router_unavailable";
+        const status = code === "limit_reached" ? 429 : code === "invalid_input" ? 400 : 503;
+        appendAudit(state, "AI_CHAT_AGENT_ROUTER_FAILED", {
+          actorAuthMode: actor.authMode,
+          actorSubjectId: actor.subjectId,
+          dataClass: "internal",
+          reason: code
+        }, correlationId);
+        return sendError(reply, status, code.toUpperCase(), "Internal AI Router chat could not be completed.", correlationId);
+      }
+    }
     const conversationClarificationResponse = conversationContinuity.needsClarification
       ? aiConversationClarificationResponse(aiRequest, requestNow, conversationContinuity)
       : undefined;

@@ -111,6 +111,24 @@ describe("staged COP chat Router boundary", () => {
     expect(JSON.stringify(body)).not.toContain("decrypted-secret");
   });
 
+  it("sends reviewed internal items only to the local tier and rejects extra fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(routerSuccess("local_fast"));
+    vi.stubGlobal("fetch", fetchMock);
+    await new CopAiRouterChatAdapter(config).generate({
+      kind: "internal", actorSubjectId: "operator-123", question: "Shrň viditelný kontext.",
+      items: [{ kind: "chat_message", text: "Soukromá zpráva pro lokální model." }]
+    });
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body).toMatchObject({ dataClass: "internal", preference: "local", allowExternal: false,
+      copContext: { attestation: "cop-internal-reviewed-v1", items: [{ kind: "chat_message", text: "Soukromá zpráva pro lokální model." }] } });
+    expect(() => new CopAiRouterChatAdapter(config)).not.toThrow();
+    await expect(new CopAiRouterChatAdapter(config).generate({
+      kind: "internal", actorSubjectId: "operator-123", question: "Test",
+      items: [{ kind: "incident" as "chat_message", text: "Nepovolený typ." }]
+    })).rejects.toMatchObject({ code: "invalid_input" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects unreviewed or identifiable context before any request", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

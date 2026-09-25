@@ -107,3 +107,17 @@ verify its former local chat path, preserve audit rows, and leave other AI
 functions unchanged. Activate chat only after all these checks pass and the
 network change is approved. Record exact image IDs, commits and test results
 in the runbook.
+
+## Běžný chat přes interní lokální model
+
+Přepínač `COP_AI_CHAT_ROUTER_FULL_ENABLED=false` je oddělený od cvičného
+pilotu. Po zapnutí vede `/api/v1/ai/chat-agent/query` a jeho job wrapper
+výhradně přes autentizovaný Router s neprůhlednou stabilní identitou,
+`dataClass=internal`, `preference=local` a `allowExternal=false`. COP vybírá
+nejvýše 16 typovaných výňatků z viditelné konverzace a oprávněných dat,
+Router nepřijímá celý `compressedContext`. Přílohy, syrové incidenty,
+objekty bez uživatelského čtecího filtru a indexované dokumenty se vynechají.
+Odpověď neuvádí citace k vyloučeným podkladům. Limit nebo výpadek vrací
+429/503 bez náhradního volání COP AI gateway. Vypnutí tohoto jediného
+přepínače obnoví původní chat a ponechá cvičný pilot beze změny. Ostatní AI
+funkce COP tento přepínač neovlivňuje.

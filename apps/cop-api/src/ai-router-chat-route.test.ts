@@ -58,3 +58,54 @@ describe("reviewed synthetic chat route", () => {
     } finally { await app.close(); }
   });
 });
+
+describe("ordinary COP chat through local Router", () => {
+  it("uses an authenticated local-only request with bounded visible context and no invented citations", async () => {
+    enablePilot();
+    vi.stubEnv("COP_AI_CHAT_ROUTER_FULL_ENABLED", "true");
+    vi.stubEnv("COP_AI_SEMANTIC_RETRIEVAL_ENABLED", "false");
+    vi.stubEnv("COP_AI_CONTEXT_INDEX_ENABLED", "false");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      requestId: "router-local-1", model: "gemma4:12b-mlx", tier: "local_fast",
+      output: "Lokální odpověď k viditelné zprávě.", usage: { inputTokens: 80, outputTokens: 12, estimatedMicrousd: 0 },
+      requiresHumanReview: true
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer();
+    try {
+      const response = await app.inject({ method: "POST", url: "/api/v1/ai/chat-agent/query", headers: auth,
+        payload: { question: "Co říká předchozí zpráva?", chatContext: {
+          source: "browser-visible-decrypted-timeline", encrypted: true,
+          messages: [{ body: "Viditelná soukromá zpráva", senderDisplayName: "Operátor", eventId: "secret-event-id", attachment: "SECRET_ATTACHMENT" }]
+        } } });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ status: "NEEDS_HUMAN_REVIEW", provider: "local", model: "gemma4:12b-mlx" });
+      expect(JSON.stringify(response.json())).not.toContain("citations");
+      const call = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/v1/ai-router/generate"));
+      expect(call).toBeTruthy();
+      const sent = JSON.parse(String(call?.[1]?.body));
+      expect(sent).toMatchObject({ dataClass: "internal", preference: "local", allowExternal: false,
+        copContext: { attestation: "cop-internal-reviewed-v1" } });
+      expect(JSON.stringify(sent)).toContain("Viditelná soukromá zpráva");
+      expect(JSON.stringify(sent)).not.toContain("SECRET_ATTACHMENT");
+      expect(JSON.stringify(sent)).not.toContain("secret-event-id");
+    } finally { await app.close(); }
+  });
+
+  it("returns Router limit and outage errors without using another provider", async () => {
+    enablePilot();
+    vi.stubEnv("COP_AI_CHAT_ROUTER_FULL_ENABLED", "true");
+    vi.stubEnv("COP_AI_SEMANTIC_RETRIEVAL_ENABLED", "false");
+    vi.stubEnv("COP_AI_CONTEXT_INDEX_ENABLED", "false");
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response("{}", { status: 429 }))
+      .mockRejectedValueOnce(new Error("router offline"));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer();
+    const payload = { question: "Zkušební interní dotaz" };
+    try {
+      expect((await app.inject({ method: "POST", url: "/api/v1/ai/chat-agent/query", headers: auth, payload })).statusCode).toBe(429);
+      expect((await app.inject({ method: "POST", url: "/api/v1/ai/chat-agent/query", headers: auth, payload })).statusCode).toBe(503);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally { await app.close(); }
+  });
+});
