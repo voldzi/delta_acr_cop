@@ -48,6 +48,10 @@ available. Never silently send internal or protected content to Luna.
 
 ## Data classification and context release
 
+For the approved future scope of externally processed minimized internal
+content, see [ADR 0030](0030_COP_CHAT_MINIMIZED_INTERNAL_EXTERNAL_POLICY.md).
+The rules below describe the currently enforced production contract.
+
 COP is the authority for data classification, authorization and context
 selection. Treat the user's question and all automatically collected COP
 context as `internal` unless a field is positively proved synthetic or public
