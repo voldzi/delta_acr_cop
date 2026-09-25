@@ -725,3 +725,11 @@ denních požadavků. Běžný bohatý chat a veřejně agregovaný chat stále 
 migrovány; Router nemá lokální model. Cvičný dotaz je dostupný samostatným tlačítkem
 v okně AI agenta; běžná otázka a historie chatu se do něj nepřenášejí. Denní a měsíční finanční strop nebyly v produkci
 záměrně vyčerpány; jejich 429 chování pokrývají testy Routeru v SIM.
+
+Chat klient v commitu `ecc8b66` (obraz
+`sha256:c36bf2c0d0eacbf5e3c6fa7d71f94f2ce56f39ce6f92d7562eb735dd37904a37`)
+zobrazuje v dialogu AI agenta oddělené tlačítko pro cvičný dotaz. Lokální
+i veřejná `/chat/` vracely 200 a zveřejněný skript obsahoval nové ovládání.
+Cvičný účet po produkční zkoušce dosáhl svého denního limitu; další úspěšný
+dotaz ze stejné identity lze ověřit po obnovení denního okna nebo s jiným
+oprávněným uživatelem.
