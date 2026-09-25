@@ -50,6 +50,12 @@ async function handleRequest(request, response) {
     return;
   }
 
+  if (url.pathname === "/ardos-demo" || url.pathname === "/ardos-demo/" || url.pathname === "/ardos-demo/index.html") {
+    response.writeHead(302, { "Cache-Control": "no-cache", Location: "/demo/flood-central-bohemia" });
+    response.end();
+    return;
+  }
+
   await serveStatic(url.pathname, request, response);
 }
 

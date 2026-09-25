@@ -58,6 +58,15 @@ self.addEventListener("fetch", (event) => {
   }
 
   const url = new URL(request.url);
+  // The public demo route must not fall back to an unrelated cached COP shell.
+  if (
+    url.origin === self.location.origin &&
+    (url.pathname === "/ardos-demo" ||
+      url.pathname.startsWith("/ardos-demo/") ||
+      url.pathname === "/demo/flood-central-bohemia")
+  ) {
+    return;
+  }
   if (url.origin === self.location.origin && API_PATH_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
     return;
   }

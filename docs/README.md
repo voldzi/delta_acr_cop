@@ -37,3 +37,5 @@ Driver integration release evidence: [integration/20_DRIVER_REPORTING_RELEASE.md
 Driver navigation/reporting: [delivery plan](product/14_DRIVER_NAVIGATION_AND_REPORTING_PLAN.md), [release record](integration/20_DRIVER_REPORTING_RELEASE.md), [ADR 0023](adr/0023_DURABLE_ROAD_REPORT_ENRICHMENT.md).
 
 Jízda directed road attributes: [routing contract, measured pilot probes and mobile handoff](integration/21_JIZDA_DIRECTED_ROAD_ATTRIBUTES.md).
+
+Veřejná syntetická povodňová ukázka: [spuštění a provoz](runbooks/18_PUBLIC_FLOOD_DEMO.md), [ADR 0026](adr/0026_ISOLATED_PUBLIC_FLOOD_DEMO.md).

@@ -788,7 +788,7 @@ interface CopMapProps {
   focusUserLocationRequest: number;
   hasProximityAlerts: boolean;
   initialView?: MapViewState;
-  situationFeatures: SituationFeatureCollectionResponse | null;
+  situationFeatures: SituationMapFeatureInput | null;
   selectedTransitRouteDetail?: TransitVehicleDetailResponse | null;
   selectedTransitRouteShape?: unknown;
   sharedLiveLocations: ChatLiveLocationPayload[];
@@ -841,6 +841,11 @@ interface CopMapProps {
   onSketchModeChange?: (mode: SketchToolMode) => void;
   onUpdateSketchDrawing?: (drawingId: string, input: UpdateSketchDrawingRequest) => void;
 }
+
+// Map rendering only needs a projection of the API collection, so browser-only
+// demo features do not have to claim an upstream API source.
+export type SituationMapFeatureInput = Pick<SituationFeatureCollectionResponse, "features"> &
+  Partial<Omit<SituationFeatureCollectionResponse, "features">>;
 
 type DeviceCompassStatus = "active" | "denied" | "idle" | "unsupported";
 
@@ -7057,13 +7062,13 @@ function clampValue(value: number, min: number, max: number): number {
 }
 
 export function situationFeaturesToFeatureCollection(
-  collection: SituationFeatureCollectionResponse | null,
+  collection: SituationMapFeatureInput | null,
   selectedFeatureId?: string,
   mapSymbolMode: PublicFlightSymbolMode = "civil",
   selectedStableKey?: string
 ): SituationContextFeatureCollection {
   const features: SituationContextFeatureCollection["features"] = [];
-  const requestedMobileTechnology = normalizeMobileNetworkTechnology(collection?.query.technology);
+  const requestedMobileTechnology = normalizeMobileNetworkTechnology(collection?.query?.technology);
   const hasSelectedSafetyAlert = Boolean(
     (selectedFeatureId || selectedStableKey) &&
     (collection?.features ?? []).some(

@@ -38,6 +38,7 @@ interface ServiceWorkerContext {
   notificationPayloadTag: (payload: Record<string, unknown>) => string | undefined;
   notificationRequiresInteraction: (payload: Record<string, unknown>, severity: string) => boolean;
   self: {
+    addEventListener: ReturnType<typeof vi.fn>;
     registration: {
       clearAppBadge: ReturnType<typeof vi.fn>;
       getNotifications: ReturnType<typeof vi.fn>;
@@ -124,6 +125,19 @@ function cacheRequestKey(request: Request | string): string {
 }
 
 describe("COP PWA service worker routing", () => {
+  it("leaves the standalone public demo to the web server", () => {
+    const serviceWorker = loadServiceWorkerContext();
+    const fetchListener = serviceWorker.self.addEventListener.mock.calls.find(([type]) => type === "fetch")?.[1] as
+      ((event: { request: Request; respondWith: ReturnType<typeof vi.fn> }) => void) | undefined;
+    expect(fetchListener).toBeDefined();
+    const respondWith = vi.fn();
+
+    fetchListener?.({ request: new Request("https://cop.example.test/ardos-demo/"), respondWith });
+    fetchListener?.({ request: new Request("https://cop.example.test/demo/flood-central-bohemia"), respondWith });
+
+    expect(respondWith).not.toHaveBeenCalled();
+  });
+
   it("retries a rate-limited tile and returns the successful response", async () => {
     const fetchMock = vi
       .fn()
