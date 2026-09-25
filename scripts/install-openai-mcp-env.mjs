@@ -1,7 +1,7 @@
 import { chmodSync, copyFileSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-const [pendingPath, envPath] = process.argv.slice(2).map(resolve);
+const [pendingPath, envPath] = process.argv.slice(2).map((path) => resolve(path));
 if (!pendingPath || !envPath || !existsSync(pendingPath) || !existsSync(envPath)) {
   throw new Error("Expected existing pending key file and production env file.");
 }
