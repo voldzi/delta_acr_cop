@@ -3895,9 +3895,9 @@
     "/api/v1/ai/mcp-assistant/usage": {
       "get": {
         "tags": ["AI"],
-        "summary": "Read bounded OpenAI MCP assistant usage and budget status.",
+        "summary": "Read bounded MCP assistant usage and budget status.",
         "operationId": "getOpenAiMcpAssistantUsage",
-        "description": "Authenticated COP users can inspect aggregate daily and monthly committed usage. No provider credential is returned.",
+        "description": "Authenticated COP users can inspect aggregate daily and monthly committed usage. When the shared AI Router adapter is enabled, these totals are Router-wide and include SIM traffic; the legacy direct path remains separately accounted. No provider credential is returned.",
         "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": { "description": "Current usage and limits.", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
@@ -3908,9 +3908,9 @@
     "/api/v1/ai/mcp-assistant/source-health": {
       "post": {
         "tags": ["AI"],
-        "summary": "Summarize aggregate COP source health with GPT-6 Luna.",
+        "summary": "Summarize aggregate COP source health with the configured bounded assistant.",
         "operationId": "summarizeMcpSourceHealthWithOpenAi",
-        "description": "Authenticated, budgeted assistant. Invokes only the audited cop.sources.health MCP tool; sends only aggregate health counts to OpenAI. Never sends report text, chat, partner data or provider credentials. Output requires operator review.",
+        "description": "Authenticated, budgeted assistant. Invokes only the audited cop.sources.health MCP tool; sends only aggregate health counts to the configured direct model or shared AI Router. Never sends report text, chat, partner data or provider credentials. Output requires operator review. Router mode is opt-in and does not change COP chat or situation-summary routes.",
         "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": { "description": "AI summary and usage.", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },

@@ -29,3 +29,4 @@
 - [0025 Public Routing Coverage and Directed Attributes](0025_PUBLIC_ROUTING_COVERAGE_AND_DIRECTED_ATTRIBUTES.md)
 - [0026 Isolated Public Flood Demo](0026_ISOLATED_PUBLIC_FLOOD_DEMO.md)
 - [0027 Bounded OpenAI MCP Source Health](0027_BOUNDED_OPENAI_MCP_SOURCE_HEALTH.md)
+- [0028 Shared AI Router for Aggregate MCP Health](0028_SHARED_AI_ROUTER_FOR_AGGREGATE_MCP_HEALTH.md)

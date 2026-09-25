@@ -45,6 +45,7 @@ import {
 } from "./community-report-store.js";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { OpenAiMcpAssistant, openAiMcpAssistantConfig } from "./openai-mcp-assistant.js";
+import { AiRouterMcpAssistant, aiRouterMcpConfig } from "./ai-router-mcp-assistant.js";
 import { resolveAiConversationContinuity, resolveAiConversationTimeWindow } from "./ai-conversation-continuity.js";
 import { aiConversationClarificationResponse, withAiConversationGuidance } from "./ai-conversation-guidance.js";
 import {
@@ -786,6 +787,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const validators = new ContractValidators();
   const aiGateway = options.aiGateway ?? AiGateway.fromEnv(process.env);
   const openAiMcpConfig = openAiMcpAssistantConfig(process.env);
+  // The shared Router is opt-in only for the aggregate source-health MCP path.
+  const routerMcpConfig = aiRouterMcpConfig(process.env);
   const openAiMcpAssistant = openAiMcpConfig.enabled ? new OpenAiMcpAssistant(openAiMcpConfig) : undefined;
   let openAiMcpReady = false;
   const aiSemanticRetriever = new AiSemanticRetriever({
@@ -9803,7 +9806,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   app.get("/api/v1/ai/mcp-assistant/usage", async (request, reply) => {
     const actor = requireActor(request, reply);
     if (!actor) return reply;
-    const assistant = await readyOpenAiMcpAssistant();
+    const assistant = routerMcpConfig.enabled ? new AiRouterMcpAssistant(routerMcpConfig) : await readyOpenAiMcpAssistant();
     if (!assistant) {
       return { enabled: false, model: "gpt-6-luna" };
     }
@@ -9819,7 +9822,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const actor = requireActor(request, reply);
     if (!actor) return reply;
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    const assistant = await readyOpenAiMcpAssistant();
+    const assistant = routerMcpConfig.enabled ? new AiRouterMcpAssistant(routerMcpConfig) : await readyOpenAiMcpAssistant();
     if (!assistant) {
       return sendError(reply, 503, "AI_ASSISTANT_DISABLED", "OpenAI MCP assistant is unavailable.", correlationId);
     }

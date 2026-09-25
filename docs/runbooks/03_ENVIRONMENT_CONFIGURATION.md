@@ -592,6 +592,30 @@ správu kreditu a upozornění v OpenAI projektu.
 Rollback: vypnout `COP_OPENAI_MCP_ENABLED`, obnovit jen `cop-api` kontejner,
 ověřit mapu a MCP gateway. PostgreSQL evidence se nemaže.
 
+### Sdílený AI Router pouze pro agregovaný MCP souhrn
+
+`COP_AI_ROUTER_ENABLED=false` je výchozí stav. Po nasazení kompatibilního
+Routeru lze v COP API nastavit `COP_AI_ROUTER_ENABLED=true`, interní
+`COP_AI_ROUTER_URL=http://ai-router-api:4050` a dedikovaný
+`COP_AI_ROUTER_TOKEN` pouze v produkčním `.env` (nikdy v Gitu). Při této
+aktivaci musí mít pouze COP API a Router schválenou společnou interní
+Docker síť; současné `cop_default` a `sim_default` jsou oddělené. Bez
+ověřeného propojení přepínač nezapínat. Přes Router se směrují **jen** endpointy
+`/api/v1/ai/mcp-assistant/source-health` a `/usage`. První z nich stále
+redukuje výsledek auditovaného `cop.sources.health` na počty stavů před
+odesláním. Router dostává pouze třídu `public_aggregate`, identitu
+autentizovaného uživatele pro limit a zakázanou placenou eskalaci. COP chat,
+situační shrnutí, Matrix/E2EE a všechny mapové vrstvy se nemění.
+
+Pro jedinou rozpočtovou evidenci této funkce vypněte současně
+`COP_OPENAI_MCP_ENABLED=false`; jinak přímý starý asistent zůstane
+inicializovaný, i když jej tyto dva endpointy nepoužijí. Routerová spotřeba
+v `/usage` je agregát COP a SIM, nikoli jen COP, a nenahrazuje fakturu
+poskytovatele. Výpadek Routeru znamená `503` pro tyto dva endpointy bez
+tichého návratu k přímému placenému volání. Rollback: vypnout jen
+`COP_AI_ROUTER_ENABLED` a obnovit `cop-api`; případné vrácení přímé cesty
+vyžaduje zvlášť zapnout `COP_OPENAI_MCP_ENABLED` s vlastním rozpočtem.
+
 Pilotní MCP gateway běží jako samostatná služba `cop-mcp-gateway` na portu
 `4313`. Externí agenti mají používat endpointy služby:
 
