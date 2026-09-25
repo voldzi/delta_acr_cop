@@ -5124,14 +5124,18 @@ export function App() {
         headers: { Authorization: `Bearer ${authToken}` }
       });
       if (!response.ok) {
-        setAiResult(response.status === 429
-          ? "Limit AI byl vyčerpán. Data mapy zůstávají dostupná."
-          : "AI asistent nyní není dostupný. Data mapy zůstávají dostupná.");
+        setAiResult(
+          response.status === 429
+            ? "Limit AI byl vyčerpán. Data mapy zůstávají dostupná."
+            : "AI asistent nyní není dostupný. Data mapy zůstávají dostupná."
+        );
         return;
       }
       const payload = await response.json();
       setAiResult(`${payload.summary ?? "AI odpověď není dostupná."} Výstup vyžaduje kontrolu operátorem.`);
-      setAiUsage(`Dnes ${Number(payload.usage?.daily?.committedUsd ?? 0).toFixed(4)} / ${Number(payload.usage?.daily?.limitUsd ?? 0).toFixed(2)} USD a ${Number(payload.usage?.daily?.committedTokens ?? 0)} / ${Number(payload.usage?.daily?.tokenLimit ?? 0)} tokenů (${Number(payload.usage?.daily?.inputTokens ?? 0)} vstupních, ${Number(payload.usage?.daily?.outputTokens ?? 0)} výstupních); měsíc ${Number(payload.usage?.monthly?.committedUsd ?? 0).toFixed(4)} / ${Number(payload.usage?.monthly?.limitUsd ?? 0).toFixed(2)} USD.`);
+      setAiUsage(
+        `Dnes ${Number(payload.usage?.daily?.committedUsd ?? 0).toFixed(4)} / ${Number(payload.usage?.daily?.limitUsd ?? 0).toFixed(2)} USD a ${Number(payload.usage?.daily?.committedTokens ?? 0)} / ${Number(payload.usage?.daily?.tokenLimit ?? 0)} tokenů (${Number(payload.usage?.daily?.inputTokens ?? 0)} vstupních, ${Number(payload.usage?.daily?.outputTokens ?? 0)} výstupních); měsíc ${Number(payload.usage?.monthly?.committedUsd ?? 0).toFixed(4)} / ${Number(payload.usage?.monthly?.limitUsd ?? 0).toFixed(2)} USD.`
+      );
     } catch {
       setAiResult("AI asistent nyní není dostupný. Data mapy zůstávají dostupná.");
     }
@@ -5145,9 +5149,11 @@ export function App() {
       });
       if (!response.ok) throw new Error("usage unavailable");
       const payload = await response.json();
-      setAiUsage(payload.enabled
-        ? `Dnes ${Number(payload.daily?.committedUsd ?? 0).toFixed(4)} / ${Number(payload.daily?.limitUsd ?? 0).toFixed(2)} USD a ${Number(payload.daily?.committedTokens ?? 0)} / ${Number(payload.daily?.tokenLimit ?? 0)} tokenů (${Number(payload.daily?.inputTokens ?? 0)} vstupních, ${Number(payload.daily?.outputTokens ?? 0)} výstupních); měsíc ${Number(payload.monthly?.committedUsd ?? 0).toFixed(4)} / ${Number(payload.monthly?.limitUsd ?? 0).toFixed(2)} USD.`
-        : "Placený AI asistent je vypnutý.");
+      setAiUsage(
+        payload.enabled
+          ? `Dnes ${Number(payload.daily?.committedUsd ?? 0).toFixed(4)} / ${Number(payload.daily?.limitUsd ?? 0).toFixed(2)} USD a ${Number(payload.daily?.committedTokens ?? 0)} / ${Number(payload.daily?.tokenLimit ?? 0)} tokenů (${Number(payload.daily?.inputTokens ?? 0)} vstupních, ${Number(payload.daily?.outputTokens ?? 0)} výstupních); měsíc ${Number(payload.monthly?.committedUsd ?? 0).toFixed(4)} / ${Number(payload.monthly?.limitUsd ?? 0).toFixed(2)} USD.`
+          : "Placený AI asistent je vypnutý."
+      );
     } catch {
       setAiUsage("Spotřebu AI nyní nelze načíst.");
     }
