@@ -592,7 +592,7 @@ správu kreditu a upozornění v OpenAI projektu.
 Rollback: vypnout `COP_OPENAI_MCP_ENABLED`, obnovit jen `cop-api` kontejner,
 ověřit mapu a MCP gateway. PostgreSQL evidence se nemaže.
 
-### Sdílený AI Router pouze pro agregovaný MCP souhrn
+### Sdílený AI Router pro běžný chat a oddělený cvičný pilot
 
 Běžný chat používá samostatný přepínač
 `COP_AI_CHAT_ROUTER_FULL_ENABLED=false` (výchozí stav). Po zapnutí musí být v
@@ -603,6 +603,17 @@ Při limitu nebo výpadku vrací 429/503; nedochází k automatickému fallbacku
 Rollback vypne jen tento přepínač v `/srv/cop/.env` a obnoví `cop-api` se
 síťovým Compose override; poté se ověří původní `ollama` chat. Cvičný pilot a
 ostatní AI funkce zůstávají nezávislé.
+
+**Produkce 25. 9. 2026:** `COP_AI_CHAT_ROUTER_FULL_ENABLED=true`.
+Autorizovaný přímý dotaz i úloha na pozadí vrátily 200 přes lokální
+`gemma4:12b-mlx`; testovací interní syntetická soukromá zpráva zůstala
+lokální. Vyčerpaný limit vrátil 429, výpadek Routeru 503. SIM ukázal zvýšení
+počtu požadavků a tokenů. Dočasný rollback ověřil původní `ollama` chat 200;
+Router byl znovu zapnut. Denní testovací limit byl vrácen na 10.
+Finanční stropy Routeru byly v produkci jednotlivě ověřeny odpovědí 429 a
+vráceny na 1 000 000 / 10 000 000 microUSD. Obě služby jsou zdravé, interní
+síť má pouze dva členy a Router nemá hostitelský port. Migrace ostatních AI
+funkcí COP vyžaduje samostatné rozhodnutí.
 
 Samostatný cvičný chatový pilot používá přepínač
 `COP_AI_CHAT_ROUTER_ENABLED=false` (výchozí stav) a produkční
