@@ -5,6 +5,11 @@ interní otázka a upravené podklady. Toto rozhodnutí mění požadovanou poli
 pro další implementaci; samo o sobě nezapíná externí zpracování běžného chatu.
 Aktuální produkční `cop_chat` s třídou `internal` zůstává na lokálním modelu.
 
+**Stav adaptéru:** COP má připravenou interní větev `internal_minimized` pouze
+na serveru. Není napojená na veřejný endpoint ani běžný chat a současný SIM
+Router ji dosud nepřijímá. Příznak `externalApproval: true` musí nastavit
+důvěryhodný kód COP až po kontrole; uživatel jej nemůže přímo odeslat.
+
 ## Rozhodnutí o třídách
 
 | Třída | Předání Routeru | Externí OpenAI API |
@@ -22,6 +27,24 @@ syrové situační záznamy, přílohy, partnerská neveřejná data ani neomeze
 prosté přejmenování třídy, odstranění několika známých vzorů nebo potvrzení
 uživatele samo o sobě pravdivost klasifikace nezaručuje. Obsah, u kterého
 nelze bezpečně doložit úpravu, zůstane `internal` na lokálním modelu.
+
+## Připravený kontrakt COP → SIM
+
+`POST /api/v1/ai-router/generate` používá službový Bearer token a stabilní
+neprůhledné HMAC ID uživatele. Tělo má `taskType=cop_chat`,
+`dataClass=internal_minimized`, `preference=external`, `allowExternal=true`,
+`allowPaidEscalation=false`, `maxOutputTokens=512`, zkontrolovanou otázku v
+`prompt` (nejvýše 1200 znaků) a `copContext` s přesnými klíči
+`contractVersion=cop-chat-context-v1`, `dataClass=internal_minimized`,
+`attestation=cop-internal-minimized-reviewed-v1`, `items`.
+
+`items` obsahuje 0–12 strukturovaných prvků. `source_health` má přesně
+`kind`, `sourceId` (kód 1–64 znaků), `status` (`up|degraded|down`).
+`operational_metric` má přesně `kind`, `metricId` (kód 1–64 znaků),
+`regionCode` (`CZ` nebo `CZ` + tři číslice), konečné číslo `value`, `unit`
+(`count|percent|minutes|km|index`) a `sampleSize >= 10`. Volný text položek,
+zprávy, incidenty, přílohy ani další klíče nejsou přijaty. COP odmítá
+neočekávaný model nebo tier odpovědi.
 
 Router má pro tuto novou třídu vyžadovat oddělenou atestaci COP,
 `allowExternal=true`, službovou identitu COP a výslovnou volbu externího

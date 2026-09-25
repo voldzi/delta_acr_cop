@@ -33,8 +33,14 @@ export interface ReviewedInternalItem {
   text: string;
 }
 
+/** Server-reviewed, non-personal facts. Free text and message bodies are excluded. */
+export type ReviewedMinimizedItem =
+  | { kind: "source_health"; sourceId: string; status: "up" | "degraded" | "down" }
+  | { kind: "operational_metric"; metricId: string; regionCode: string; value: number; unit: "count" | "percent" | "minutes" | "km" | "index"; sampleSize: number };
+
 export type CopRouterChatRequest =
   | { kind: "internal"; actorSubjectId: string; question: string; items?: ReviewedInternalItem[] }
+  | { kind: "internal_minimized"; actorSubjectId: string; reviewedQuestion: string; externalApproval: true; items?: ReviewedMinimizedItem[] }
   | { kind: "synthetic"; actorSubjectId: string; scenario: ReviewedSyntheticScenario; intent: "summarize" | "explain" }
   | {
       kind: "public_aggregate";
@@ -130,6 +136,21 @@ function validInternalItem(value: unknown): value is ReviewedInternalItem {
     !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(item.text);
 }
 
+function validMinimizedItem(value: unknown): value is ReviewedMinimizedItem {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  if (item.kind === "source_health") return exactKeys(value, ["kind", "sourceId", "status"]) &&
+    typeof item.sourceId === "string" && CODE.test(item.sourceId) &&
+    ["up", "degraded", "down"].includes(item.status as string);
+  if (item.kind === "operational_metric") return exactKeys(value, ["kind", "metricId", "regionCode", "value", "unit", "sampleSize"]) &&
+    typeof item.metricId === "string" && CODE.test(item.metricId) &&
+    typeof item.regionCode === "string" && REGION.test(item.regionCode) &&
+    typeof item.value === "number" && Number.isFinite(item.value) &&
+    typeof item.unit === "string" && UNITS.has(item.unit) &&
+    Number.isSafeInteger(item.sampleSize) && Number(item.sampleSize) >= 10;
+  return false;
+}
+
 function checkedConfig(config: CopRouterChatConfig): URL {
   let url: URL;
   try {
@@ -171,6 +192,27 @@ function requestBody(input: CopRouterChatRequest, userId: string): Record<string
       copContext: input.items
         ? { contractVersion: CONTEXT_VERSION, dataClass: "internal", attestation: "cop-internal-reviewed-v1", items: input.items }
         : { contractVersion: CONTEXT_VERSION, dataClass: "internal" }
+    };
+  }
+  if (input.kind === "internal_minimized") {
+    const keys = input.items === undefined
+      ? ["kind", "actorSubjectId", "reviewedQuestion", "externalApproval"]
+      : ["kind", "actorSubjectId", "reviewedQuestion", "externalApproval", "items"];
+    if (!exactKeys(input, keys) || input.externalApproval !== true || !validQuestion(input.reviewedQuestion) ||
+      (input.items !== undefined && (!Array.isArray(input.items) || input.items.length < 1 ||
+        input.items.length > 12 || !input.items.every(validMinimizedItem)))) fail();
+    return {
+      ...common,
+      dataClass: "internal_minimized",
+      preference: "external",
+      prompt: input.reviewedQuestion.trim(),
+      allowExternal: true,
+      copContext: {
+        contractVersion: CONTEXT_VERSION,
+        dataClass: "internal_minimized",
+        attestation: "cop-internal-minimized-reviewed-v1",
+        items: input.items ?? []
+      }
     };
   }
   if (input.kind === "synthetic") {

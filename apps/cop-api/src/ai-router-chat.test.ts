@@ -3,6 +3,7 @@ import {
   CopAiRouterChatAdapter,
   CopRouterChatError,
   type CopRouterChatConfig,
+  type CopRouterChatRequest,
   type ReviewedPublicAggregate
 } from "./ai-router-chat.js";
 
@@ -127,6 +128,57 @@ describe("staged COP chat Router boundary", () => {
       items: [{ kind: "incident" as "chat_message", text: "Nepovolený typ." }]
     })).rejects.toMatchObject({ code: "invalid_input" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("stages approved minimized internal questions without raw chat context or personal fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(routerSuccess("external_economy"));
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new CopAiRouterChatAdapter(config);
+    await adapter.generate({
+      kind: "internal_minimized", actorSubjectId: "operator-123",
+      reviewedQuestion: "Jak se změnila dostupnost datových zdrojů?",
+      externalApproval: true,
+      items: [
+        { kind: "source_health", sourceId: "weather_feed", status: "degraded" },
+        { kind: "operational_metric", metricId: "source_count", regionCode: "CZ010", value: 42, unit: "count", sampleSize: 42 }
+      ]
+    });
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body).toMatchObject({ taskType: "cop_chat", dataClass: "internal_minimized", preference: "external",
+      allowExternal: true, allowPaidEscalation: false,
+      copContext: { contractVersion: "cop-chat-context-v1", dataClass: "internal_minimized",
+        attestation: "cop-internal-minimized-reviewed-v1" } });
+    expect(Object.keys(body.copContext)).toEqual(["contractVersion", "dataClass", "attestation", "items"]);
+    expect(JSON.stringify(body)).not.toContain("operator-123");
+    expect(body.copContext.items).toHaveLength(2);
+  });
+
+  it("rejects unapproved or expanded minimized internal requests before Router call", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new CopAiRouterChatAdapter(config);
+    const input = { kind: "internal_minimized" as const, actorSubjectId: "operator-123",
+      reviewedQuestion: "Jaký je stav?", externalApproval: true as const };
+    await expect(adapter.generate({ ...input, externalApproval: false as true })).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(adapter.generate({ ...input, chatContext: { messages: ["private"] } } as CopRouterChatRequest)).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(adapter.generate({ ...input, items: [{ kind: "source_health", sourceId: "feed", status: "up", personName: "Private" }] as never })).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(adapter.generate({ ...input, items: [{ kind: "operational_metric", metricId: "count", regionCode: "CZ010", value: 1, unit: "count", sampleSize: 1 }] })).rejects.toMatchObject({ code: "invalid_input" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not fall back for minimized internal questions when Router denies or fails", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "daily_budget_exceeded" }), { status: 429 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "model_unavailable" }), { status: 503 }))
+      .mockResolvedValueOnce(routerSuccess("local_fast"));
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new CopAiRouterChatAdapter(config);
+    const input = { kind: "internal_minimized" as const, actorSubjectId: "operator-123",
+      reviewedQuestion: "Kolik zdrojů je dostupných?", externalApproval: true as const };
+    await expect(adapter.generate(input)).rejects.toMatchObject({ code: "limit_reached" });
+    await expect(adapter.generate(input)).rejects.toMatchObject({ code: "router_unavailable" });
+    await expect(adapter.generate(input)).rejects.toMatchObject({ code: "invalid_response" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("rejects unreviewed or identifiable context before any request", async () => {
