@@ -8,6 +8,9 @@ import { aiResponseSummary, aiStatusLabel } from "./aiResponse";
 
 export default function AiAgentDialog({
   error,
+  routerPilotAnswer,
+  routerPilotError,
+  routerPilotWorking,
   jobStatus,
   modelPreference,
   question,
@@ -15,12 +18,16 @@ export default function AiAgentDialog({
   sending,
   working,
   onAsk,
+  onRunRouterPilot,
   onClose,
   onModelPreferenceChange,
   onQuestionChange,
   onSendToChat
 }: {
   error?: string | null;
+  routerPilotAnswer: string | null;
+  routerPilotError: string | null;
+  routerPilotWorking: boolean;
   jobStatus?: string | null;
   modelPreference: AiModelPreference;
   question: string;
@@ -28,6 +35,7 @@ export default function AiAgentDialog({
   sending: boolean;
   working: boolean;
   onAsk: () => void;
+  onRunRouterPilot: () => void;
   onClose: () => void;
   onModelPreferenceChange: (value: AiModelPreference) => void;
   onQuestionChange: (value: string) => void;
@@ -117,6 +125,17 @@ export default function AiAgentDialog({
               Důkladně
             </button>
           </div>
+
+          <section className="ai-situation-empty compact" aria-label="Cvičný dotaz přes AI Router">
+            <strong>Cvičení přes AI Router</strong>
+            <p>Použijí se jen pevné fiktivní údaje o povodni. Vaše otázka ani obsah chatu se neodesílají.</p>
+            <button className="secondary-dialog-action" disabled={routerPilotWorking} onClick={onRunRouterPilot} type="button">
+              {routerPilotWorking ? <Loader2 className="spin" size={17} /> : <Sparkles size={17} />}
+              {routerPilotWorking ? "Připravuji cvičnou odpověď" : "Spustit cvičný dotaz"}
+            </button>
+            {routerPilotError ? <p role="alert">{routerPilotError}</p> : null}
+            {routerPilotAnswer ? <AiMarkdownOutput text={routerPilotAnswer} variant="dialog" /> : null}
+          </section>
 
           {working ? (
             <div className="ai-situation-status compact">

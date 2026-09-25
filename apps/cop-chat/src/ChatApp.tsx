@@ -637,6 +637,9 @@ export function ChatApp() {
   const [aiAgentModelPreference, setAiAgentModelPreference] = React.useState<AiModelPreference>("auto");
   const [aiAgentResponse, setAiAgentResponse] = React.useState<AiCopResponse | null>(null);
   const [aiAgentError, setAiAgentError] = React.useState<string | null>(null);
+  const [routerPilotAnswer, setRouterPilotAnswer] = React.useState<string | null>(null);
+  const [routerPilotError, setRouterPilotError] = React.useState<string | null>(null);
+  const [routerPilotWorking, setRouterPilotWorking] = React.useState(false);
   const [aiAgentJobStatus, setAiAgentJobStatus] = React.useState<string | null>(null);
   const [aiAgentInlineStatus, setAiAgentInlineStatus] = React.useState<string | null>(null);
   const [tomatoGameOpen, setTomatoGameOpen] = React.useState(false);
@@ -3337,6 +3340,35 @@ export function ChatApp() {
     setAiAgentDialogOpen(true);
   }
 
+  async function runReviewedSyntheticPilot(): Promise<void> {
+    if (!authToken) {
+      setRouterPilotError("Pro cvičný dotaz je potřeba přihlášení do COP.");
+      return;
+    }
+    setRouterPilotWorking(true);
+    setRouterPilotError(null);
+    setRouterPilotAnswer(null);
+    try {
+      const response = await fetch(`${apiBase}/api/v1/ai/chat-agent/reviewed-synthetic`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${authToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ scenarioId: "flood-central-bohemia", intent: "summarize" }),
+        signal: AbortSignal.timeout(35_000)
+      });
+      if (response.status === 429) throw new Error("Dnešní limit cvičných dotazů byl vyčerpán.");
+      if (!response.ok) throw new Error("Cvičný AI Router nyní není dostupný.");
+      const result: unknown = await response.json();
+      if (!result || typeof result !== "object" || !("output" in result) || typeof result.output !== "string") {
+        throw new Error("Cvičná odpověď nemá očekávaný formát.");
+      }
+      setRouterPilotAnswer(result.output);
+    } catch (cause) {
+      setRouterPilotError(cause instanceof Error ? cause.message : "Cvičný dotaz se nepodařil.");
+    } finally {
+      setRouterPilotWorking(false);
+    }
+  }
+
   function buildAiChatAgentQueryOptions(
     question: string,
     modelPreference: AiModelPreference,
@@ -4819,6 +4851,9 @@ export function ChatApp() {
         <React.Suspense fallback={<DialogLoadingFallback label="AI agent" />}>
           <AiAgentDialog
             error={aiAgentError}
+            routerPilotAnswer={routerPilotAnswer}
+            routerPilotError={routerPilotError}
+            routerPilotWorking={routerPilotWorking}
             jobStatus={aiAgentJobStatus}
             modelPreference={aiAgentModelPreference}
             question={aiAgentQuestion}
@@ -4826,6 +4861,7 @@ export function ChatApp() {
             sending={sending}
             working={aiAgentWorking}
             onAsk={() => void askAiAgent()}
+            onRunRouterPilot={() => void runReviewedSyntheticPilot()}
             onClose={() => setAiAgentDialogOpen(false)}
             onModelPreferenceChange={(value) => {
               setAiAgentModelPreference(value);

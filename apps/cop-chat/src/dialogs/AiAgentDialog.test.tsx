@@ -78,9 +78,13 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof AiAgentDial
       modelPreference="fast"
       question=""
       response={null}
+      routerPilotAnswer={null}
+      routerPilotError={null}
+      routerPilotWorking={false}
       sending={false}
       working={false}
       onAsk={vi.fn()}
+      onRunRouterPilot={vi.fn()}
       onClose={vi.fn()}
       onModelPreferenceChange={vi.fn()}
       onQuestionChange={vi.fn()}
@@ -91,6 +95,14 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof AiAgentDial
 }
 
 describe("AiAgentDialog", () => {
+  it("offers a separate exercise that does not use the typed question", () => {
+    const onRunRouterPilot = vi.fn();
+    renderDialog({ onRunRouterPilot, question: "Soukromý text v poli" });
+    expect(screen.getByText(/Vaše otázka ani obsah chatu se neodesílají/u)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Spustit cvičný dotaz" }));
+    expect(onRunRouterPilot).toHaveBeenCalledOnce();
+  });
+
   it("captures a question and asks the agent", () => {
     const onAsk = vi.fn();
     const onQuestionChange = vi.fn();

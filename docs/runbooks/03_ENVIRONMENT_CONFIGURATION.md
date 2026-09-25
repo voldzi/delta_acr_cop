@@ -722,6 +722,6 @@ jen `cop-api`: cvičný endpoint vrátil 503, dosavadní chat vrátil 200,
 vypršel po 60 s na straně klienta; kratší následný dotaz uspěl. Pilotní
 přepínač byl znovu zapnut. Konečná evidence SIM ukázala 1 848 mikroUSD a 15
 denních požadavků. Běžný bohatý chat a veřejně agregovaný chat stále nejsou
-migrovány; Router nemá lokální model a tento pilot neposkytuje uživatelské
-ovládání v chatovém rozhraní. Denní a měsíční finanční strop nebyly v produkci
+migrovány; Router nemá lokální model. Cvičný dotaz je dostupný samostatným tlačítkem
+v okně AI agenta; běžná otázka a historie chatu se do něj nepřenášejí. Denní a měsíční finanční strop nebyly v produkci
 záměrně vyčerpány; jejich 429 chování pokrývají testy Routeru v SIM.

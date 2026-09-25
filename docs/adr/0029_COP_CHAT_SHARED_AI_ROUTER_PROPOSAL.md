@@ -88,7 +88,8 @@ supplied fact is genuinely synthetic or that an aggregate came from a public
 source. The limited synthetic route uses server-owned fixed facts and returns
 no citations. Any future public aggregate route needs a verified source-owned
 numeric producer; the adapter is not authorization to attest arbitrary client
-input. The regular chat UI is unchanged.
+input. The existing AI agent dialog offers a separate exercise action; its
+free-text question and timeline remain on their existing route.
 
 ## Limits, evidence and activation
 
