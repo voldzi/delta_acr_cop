@@ -573,6 +573,12 @@ COP_OPENAI_MCP_MONTHLY_TOKENS=1000000
 COP_OPENAI_MCP_USER_DAILY_REQUESTS=10
 ```
 
+Jednorázová instalace produkčního klíče používá
+`scripts/install-openai-mcp-env.mjs` s dočasným souborem obsahujícím jen
+`OPENAI_API_KEY`. Skript vytvoří zálohu `.env` s právy `0600`, nastaví výše
+uvedené limity atomickou výměnou a odstraní dočasný soubor. Nikdy neukazuje
+hodnotu klíče. Po instalaci obnovte jen služby `cop-api` a `cop-web`.
+
 `GET /api/v1/ai/mcp-assistant/usage` vrací přihlášenému uživateli denní a
 měsíční rezervovanou/odhadnutou spotřebu. `POST
 /api/v1/ai/mcp-assistant/source-health` provede auditované volání MCP nástroje,
