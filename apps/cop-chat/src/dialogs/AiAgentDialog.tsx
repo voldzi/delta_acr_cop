@@ -53,7 +53,7 @@ export default function AiAgentDialog({
   const [credentialWorking, setCredentialWorking] = React.useState(false);
   const credentialInput = React.useRef<HTMLInputElement>(null);
   React.useEffect(() => {
-    if (!apiBase || !authToken) return;
+    if (!authToken) return;
     let active = true;
     void fetchAiChatCredentialStatus(apiBase, authToken).then((result) => {
       if (active) setCredential(result);
