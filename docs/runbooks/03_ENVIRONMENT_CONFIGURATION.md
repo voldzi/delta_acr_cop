@@ -615,6 +615,14 @@ vráceny na 1 000 000 / 10 000 000 microUSD. Obě služby jsou zdravé, interní
 síť má pouze dva členy a Router nemá hostitelský port. Migrace ostatních AI
 funkcí COP vyžaduje samostatné rozhodnutí.
 
+**Provozní stav 27. 9. 2026:** Lokální model za SIM Routerem vracel
+`model_unavailable` a jeho `/api/tags` z kontejneru Routeru vypršel. COP
+vrátil `COP_AI_CHAT_ROUTER_FULL_ENABLED=false` a obnovil jen `cop-api`;
+autorizovaný dotaz běžného chatu pak vrátil 200 přes původní lokální cestu.
+Repozitář a službový token zůstaly zachovány. Před opětovným zapnutím celého
+chatu je nutné obnovit lokální model Routeru a zopakovat přímý i COP test.
+`internal_minimized` zůstává v SIM vypnutý.
+
 Samostatný cvičný chatový pilot používá přepínač
 `COP_AI_CHAT_ROUTER_ENABLED=false` (výchozí stav) a produkční
 `COP_AI_CHAT_ROUTER_USER_ID_SECRET` s alespoň 32 znaky. Při zapnutí vyžaduje
