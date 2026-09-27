@@ -47,6 +47,7 @@ import { correlationIdFrom, sendError } from "./errors.js";
 import { OpenAiMcpAssistant, openAiMcpAssistantConfig } from "./openai-mcp-assistant.js";
 import { AiRouterMcpAssistant, aiRouterMcpConfig } from "./ai-router-mcp-assistant.js";
 import { CopAiRouterChatAdapter, CopRouterChatError } from "./ai-router-chat.js";
+import { reviewedGeneralQuestion } from "./ai-router-reviewed-general.js";
 import { reviewedInternalChatItems } from "./ai-router-chat-context.js";
 import { resolveAiConversationContinuity, resolveAiConversationTimeWindow } from "./ai-conversation-continuity.js";
 import { aiConversationClarificationResponse, withAiConversationGuidance } from "./ai-conversation-guidance.js";
@@ -10168,6 +10169,45 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendError(reply, 403, "FORBIDDEN", "Current user cannot read this AI chat agent job.", correlationId);
     }
     return aiChatAgentJobPayload(job);
+  });
+
+  app.post("/api/v1/ai/chat-agent/reviewed-general", async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) return reply;
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    if (!routerChat) return sendError(reply, 503, "AI_ROUTER_UNAVAILABLE", "Reviewed general chat is disabled.", correlationId);
+    const body = request.body;
+    const topic = isRecord(body) && Object.keys(body).length === 1 ? body.topic : undefined;
+    const question = reviewedGeneralQuestion(topic);
+    if (!question) return sendError(reply, 400, "VALIDATION_ERROR", "Choose a reviewed general topic only.", correlationId);
+    try {
+      const result = await routerChat.generate({
+        kind: "internal_minimized",
+        actorSubjectId: actor.subjectId,
+        reviewedQuestion: question,
+        externalApproval: true
+      });
+      appendAudit(state, "AI_CHAT_ROUTER_GENERAL_COMPLETED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        routerRequestId: result.requestId,
+        model: result.model,
+        tier: result.tier,
+        usage: result.usage,
+        topic
+      }, correlationId);
+      return { ...result, dataClass: "internal_minimized", topic };
+    } catch (error) {
+      const code = error instanceof CopRouterChatError ? error.code : "router_unavailable";
+      const status = code === "limit_reached" ? 429 : code === "invalid_input" ? 400 : 503;
+      appendAudit(state, "AI_CHAT_ROUTER_GENERAL_FAILED", {
+        actorAuthMode: actor.authMode,
+        actorSubjectId: actor.subjectId,
+        reason: code,
+        topic
+      }, correlationId);
+      return sendError(reply, status, code.toUpperCase(), "Reviewed general chat could not be completed.", correlationId);
+    }
   });
 
   app.post("/api/v1/ai/chat-agent/reviewed-synthetic", async (request, reply) => {

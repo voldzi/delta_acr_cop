@@ -626,6 +626,13 @@ otázku ani kontext. Výpadek Routeru vrací 503, limit 429; není náhradní
 volání poskytovatele. Vypnutí tohoto přepínače a obnova samotného `cop-api`
 vrátí pilot do stavu 503; běžný chat zůstává na dosavadní cestě.
 
+`POST /api/v1/ai/chat-agent/reviewed-general` přijímá pouze téma z OpenAPI.
+COP sestaví pevnou otázku a prázdný `internal_minimized` kontext. Nepředává
+uživatelský text, historii chatu ani situační data. Bez přihlášení vrací 401,
+další pole 400, limit 429 a vypnutá třída či výpadek 503. Přímý fallback do
+OpenAI neexistuje. Před aktivací třídy v SIM je nutné ověřit projekt OpenAI a
+provést společnou produkční akceptaci dle ADR 0030. Běžný chat zůstává lokální.
+
 Produkční izolovaná síť se nastavuje přes soubory
 `/srv/cop/docker-compose.ai-router.yml` a
 `/srv/sim/docker-compose.ai-router.yml` vedle hlavních Compose souborů;

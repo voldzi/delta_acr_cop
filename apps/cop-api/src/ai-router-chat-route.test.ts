@@ -59,6 +59,51 @@ describe("reviewed synthetic chat route", () => {
   });
 });
 
+describe("reviewed general chat route", () => {
+  const generalPath = "/api/v1/ai/chat-agent/reviewed-general";
+
+  it("sends only a server-owned general question and empty context", async () => {
+    enablePilot();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      requestId: "router-general-1", model: "gpt-6-luna", tier: "external_economy",
+      output: "Obecné vysvětlení.", usage: { inputTokens: 20, outputTokens: 5, estimatedMicrousd: 8 },
+      requiresHumanReview: true
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer();
+    try {
+      expect((await app.inject({ method: "POST", url: generalPath, payload: { topic: "warning_levels" } })).statusCode).toBe(401);
+      expect((await app.inject({ method: "POST", url: generalPath, headers: auth,
+        payload: { topic: "warning_levels", question: "Soukromá zpráva" } })).statusCode).toBe(400);
+      expect(fetchMock).not.toHaveBeenCalled();
+      const good = await app.inject({ method: "POST", url: generalPath, headers: auth, payload: { topic: "warning_levels" } });
+      expect(good.statusCode).toBe(200);
+      const sent = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+      expect(sent).toMatchObject({ dataClass: "internal_minimized", preference: "external", allowExternal: true,
+        allowPaidEscalation: false, copContext: { attestation: "cop-internal-minimized-reviewed-v1", items: [] } });
+      expect(sent.prompt).toContain("Vysvětli obecně");
+      expect(JSON.stringify(sent)).not.toContain("Soukromá zpráva");
+    } finally { await app.close(); }
+  });
+
+  it("fails closed on disabled class, limits and outage", async () => {
+    enablePilot();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 503 }))
+      .mockResolvedValueOnce(new Response("{}", { status: 429 }))
+      .mockRejectedValueOnce(new Error("offline"));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer();
+    try {
+      for (const status of [503, 429, 503]) {
+        expect((await app.inject({ method: "POST", url: generalPath, headers: auth,
+          payload: { topic: "information_sources" } })).statusCode).toBe(status);
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally { await app.close(); }
+  });
+});
+
 describe("ordinary COP chat through local Router", () => {
   it("uses an authenticated local-only request with bounded visible context and no invented citations", async () => {
     enablePilot();

@@ -1,5 +1,11 @@
 # Security
 
+The reviewed general AI endpoint uses server-owned fixed questions and an
+empty `internal_minimized` context. It never derives external prompts from
+chat messages, user questions, incident records or attachments. The SIM
+Router's disabled-by-default class gate, service token, budget and audit remain
+required. Arbitrary chat content stays on the local-only path.
+
 This is the standard security entry point for COP. Detailed security
 documentation remains in:
 

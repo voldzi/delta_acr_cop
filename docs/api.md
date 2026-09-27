@@ -2,6 +2,11 @@
 
 COP provides a REST API. The binding machine-readable contract is:
 
+The opt-in `POST /api/v1/ai/chat-agent/reviewed-general` endpoint accepts
+only a listed `topic`. COP generates the question itself and sends no user
+text or chat context to the SIM AI Router. Its response includes Router usage;
+the ordinary chat endpoint remains local-only.
+
 - [openapi/openapi.json](../openapi/openapi.json)
 
 The compatibility YAML export is generated from the JSON contract:

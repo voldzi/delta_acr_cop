@@ -6,9 +6,14 @@ pro další implementaci; samo o sobě nezapíná externí zpracování běžné
 Aktuální produkční `cop_chat` s třídou `internal` zůstává na lokálním modelu.
 
 **Stav adaptéru:** COP má připravenou interní větev `internal_minimized` pouze
-na serveru. Není napojená na veřejný endpoint ani běžný chat a současný SIM
-Router ji dosud nepřijímá. Příznak `externalApproval: true` musí nastavit
+na serveru. Není napojená na běžný chat; SIM kontrakt ji přijímá, ale v
+produkci vrací 503, protože externí větev zůstává vypnutá. Příznak
+`externalApproval: true` musí nastavit
 důvěryhodný kód COP až po kontrole; uživatel jej nemůže přímo odeslat.
+
+**Doplnění 27. 9. 2026:** Připravená obecná externí cesta přijímá jen výběr
+ze tří témat. Server sestaví pevnou otázku a prázdný kontext; nepokouší se
+anonymizovat volný text chatu. Samotný endpoint nezapíná SIM ani běžný chat.
 
 ## Rozhodnutí o třídách
 

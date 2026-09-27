@@ -3964,6 +3964,39 @@
         }
       }
     },
+    "/api/v1/ai/chat-agent/reviewed-general": {
+      "post": {
+        "tags": ["AI"],
+        "summary": "Ask a fixed, server-reviewed general question through the shared AI Router.",
+        "operationId": "queryReviewedGeneralChat",
+        "description": "Authenticated opt-in request. COP maps a topic enum to a fixed question and sends an empty internal_minimized context. No user question, chat history, private message, incident, or free context is forwarded. Disabled by the Router until external processing gates are accepted.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["topic"],
+                "properties": {
+                  "topic": {
+                    "type": "string",
+                    "enum": ["flood_preparedness", "warning_levels", "information_sources"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Reviewed general answer and Router usage." },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "description": "Router limit reached." },
+          "503": { "description": "Router external class disabled or unavailable." }
+        }
+      }
+    },
     "/api/v1/ai/chat-agent/reviewed-synthetic": {
       "post": {
         "tags": [
