@@ -4850,6 +4850,8 @@ export function ChatApp() {
       {aiAgentDialogOpen ? (
         <React.Suspense fallback={<DialogLoadingFallback label="AI agent" />}>
           <AiAgentDialog
+            apiBase={apiBase}
+            authToken={authToken ?? ""}
             error={aiAgentError}
             routerPilotAnswer={routerPilotAnswer}
             routerPilotError={routerPilotError}

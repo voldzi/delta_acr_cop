@@ -32,3 +32,4 @@
 - [0028 Shared AI Router for Aggregate MCP Health](0028_SHARED_AI_ROUTER_FOR_AGGREGATE_MCP_HEALTH.md)
 - [0029 COP Chat Shared AI Router Proposal](0029_COP_CHAT_SHARED_AI_ROUTER_PROPOSAL.md)
 - [0030 COP Chat Minimized Internal External Policy](0030_COP_CHAT_MINIMIZED_INTERNAL_EXTERNAL_POLICY.md)
+- [0031 Uživatelský API klíč pro jeden COP chat (příprava)](0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md)

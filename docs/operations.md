@@ -47,3 +47,9 @@ publicly reachable LiveKit WSS/media endpoint, a separately managed
 Messaging PushKit delivery. Rotate this secret only during a coordinated client
 cutover because it changes every derived active-call media key. Matrix readiness
 is unrelated to the voice media path.
+
+The user-owned AI credential relay is staged behind
+`COP_AI_CHAT_BYOK_ENABLED=false`. Keep it disabled until SIM implements the
+credential contract in [ADR 0031](adr/0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md),
+its secret storage is verified, and the chat-routing contract is reviewed.
+The relay flag does not switch the ordinary chat to OpenAI.

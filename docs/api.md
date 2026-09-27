@@ -7,6 +7,12 @@ only a listed `topic`. COP generates the question itself and sends no user
 text or chat context to the SIM AI Router. Its response includes Router usage;
 the ordinary chat endpoint remains local-only.
 
+The staged authenticated `GET`/`PUT`/`DELETE /api/v1/ai/chat-agent/credential`
+endpoints read status, relay a user-owned OpenAI key to SIM Router, or remove it.
+They are disabled by default with `COP_AI_CHAT_BYOK_ENABLED=false`. No key is
+returned or stored in COP; saving a key does not switch chat routing. The
+proposed SIM-side contract and activation gates are in [ADR 0031](adr/0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md).
+
 - [openapi/openapi.json](../openapi/openapi.json)
 
 The compatibility YAML export is generated from the JSON contract:

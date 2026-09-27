@@ -5,8 +5,12 @@ import { AiEvidencePanel } from "../components/AiEvidencePanel";
 import { AiMarkdownOutput } from "../components/AiMarkdownOutput";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { aiResponseSummary, aiStatusLabel } from "./aiResponse";
+import { fetchAiChatCredentialStatus, removeAiChatCredential, saveAiChatCredential,
+  type AiChatCredentialStatus } from "@cop/core/cop-data";
 
 export default function AiAgentDialog({
+  apiBase = "",
+  authToken = "",
   error,
   routerPilotAnswer,
   routerPilotError,
@@ -24,6 +28,8 @@ export default function AiAgentDialog({
   onQuestionChange,
   onSendToChat
 }: {
+  apiBase?: string;
+  authToken?: string;
   error?: string | null;
   routerPilotAnswer: string | null;
   routerPilotError: string | null;
@@ -42,6 +48,20 @@ export default function AiAgentDialog({
   onSendToChat: (text: string) => void;
 }) {
   const [copyState, setCopyState] = React.useState<"idle" | "copied" | "failed">("idle");
+  const [credential, setCredential] = React.useState<AiChatCredentialStatus | null>(null);
+  const [credentialError, setCredentialError] = React.useState<string | null>(null);
+  const [credentialWorking, setCredentialWorking] = React.useState(false);
+  const credentialInput = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    if (!apiBase || !authToken) return;
+    let active = true;
+    void fetchAiChatCredentialStatus(apiBase, authToken).then((result) => {
+      if (active) setCredential(result);
+    }).catch(() => {
+      if (active) setCredentialError("Stav vlastního AI účtu není dostupný.");
+    });
+    return () => { active = false; };
+  }, [apiBase, authToken]);
   const modal = useModalFocus<HTMLElement>(onClose);
   const answer = response ? aiResponseSummary(response) : "";
   const canAsk = question.trim().length > 0 && !working;
@@ -56,6 +76,35 @@ export default function AiAgentDialog({
       setCopyState("copied");
     } catch {
       setCopyState("failed");
+    }
+  }
+
+  async function saveCredential() {
+    const apiKey = credentialInput.current?.value ?? "";
+    if (!apiKey || credentialWorking) return;
+    setCredentialWorking(true);
+    setCredentialError(null);
+    try {
+      setCredential(await saveAiChatCredential(apiBase, authToken, apiKey));
+      if (credentialInput.current) credentialInput.current.value = "";
+    } catch {
+      setCredentialError("Klíč se nepodařilo uložit. Zkontrolujte jej a zkuste to znovu.");
+    } finally {
+      setCredentialWorking(false);
+    }
+  }
+
+  async function removeCredential() {
+    if (credentialWorking) return;
+    setCredentialWorking(true);
+    setCredentialError(null);
+    try {
+      setCredential(await removeAiChatCredential(apiBase, authToken));
+      if (credentialInput.current) credentialInput.current.value = "";
+    } catch {
+      setCredentialError("Klíč se nepodařilo odebrat.");
+    } finally {
+      setCredentialWorking(false);
     }
   }
 
@@ -82,6 +131,22 @@ export default function AiAgentDialog({
         </header>
 
         <div className="ai-dialog-body">
+          {credential?.available ? (
+            <details className="ai-technical-details">
+              <summary>Vlastní OpenAI účet {credential.configured ? "· klíč uložen" : "· bez klíče"}</summary>
+              <p>Klíč se uloží pouze v SIM AI Routeru. COP jej nevrací ani neukládá do profilu.</p>
+              <p>Uložení klíče samo o sobě zatím nemění směrování chatu.</p>
+              <label>
+                <span>API klíč OpenAI</span>
+                <input ref={credentialInput} type="password" autoComplete="off" spellCheck={false}
+                  aria-label="API klíč OpenAI" disabled={credentialWorking} />
+              </label>
+              <button type="button" disabled={credentialWorking} onClick={() => void saveCredential()}>Uložit klíč</button>
+              {credential.configured ? <button type="button" disabled={credentialWorking}
+                onClick={() => void removeCredential()}>Odebrat klíč</button> : null}
+              {credentialError ? <p role="alert">{credentialError}</p> : null}
+            </details>
+          ) : null}
           <label className="ai-agent-question">
             <span>Dotaz pro COP AI agenta</span>
             <textarea

@@ -172,7 +172,7 @@ function checkedConfig(config: CopRouterChatConfig): URL {
   return url;
 }
 
-function opaqueUserId(secret: string, subjectId: string): string {
+export function opaqueUserId(secret: string, subjectId: string): string {
   if (!subjectId || subjectId.length > 512) fail();
   return `cop_${createHmac("sha256", secret).update("cop-router-chat-v1\0").update(subjectId).digest("base64url")}`;
 }

@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import React from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiCopResponse } from "@cop/core/cop-data";
 
 import AiAgentDialog from "./AiAgentDialog";
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 function response(overrides: Partial<AiCopResponse> = {}): AiCopResponse {
   return {
@@ -95,6 +95,23 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof AiAgentDial
 }
 
 describe("AiAgentDialog", () => {
+  it("lets a signed-in user save a key without displaying it again", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ available: true, configured: false, provider: "openai" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ available: true, configured: true, provider: "openai" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const key = `sk-proj-${"a".repeat(40)}`;
+    renderDialog({ apiBase: "http://localhost:4310", authToken: "session-token" });
+    const summary = await screen.findByText(/Vlastní OpenAI účet/u);
+    fireEvent.click(summary);
+    const input = screen.getByLabelText("API klíč OpenAI") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: key } });
+    fireEvent.click(screen.getByRole("button", { name: "Uložit klíč" }));
+    await waitFor(() => expect(screen.getByText(/klíč uložen/u)).toBeTruthy());
+    expect(input.value).toBe("");
+    expect(screen.queryByText(key)).toBeNull();
+    expect(String(fetchMock.mock.calls[1]?.[1]?.body)).toContain(key);
+  });
   it("offers a separate exercise that does not use the typed question", () => {
     const onRunRouterPilot = vi.fn();
     renderDialog({ onRunRouterPilot, question: "Soukromý text v poli" });

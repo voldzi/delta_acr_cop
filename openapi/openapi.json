@@ -3964,6 +3964,41 @@
         }
       }
     },
+    "/api/v1/ai/chat-agent/credential": {
+      "get": {
+        "tags": ["AI"],
+        "summary": "Read status of the authenticated user's own AI credential without revealing it.",
+        "operationId": "getMyAiChatCredentialStatus",
+        "responses": {
+          "200": { "description": "Credential availability and configured status.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiChatCredentialStatus" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      },
+      "put": {
+        "tags": ["AI"],
+        "summary": "Relay the authenticated user's OpenAI API key to SIM Router for encrypted storage.",
+        "operationId": "putMyAiChatCredential",
+        "description": "Staged and disabled by default. COP does not persist or return the key; SIM Router must validate and encrypt it. Saving a key alone does not switch chat routing.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["apiKey"], "properties": { "apiKey": { "type": "string", "minLength": 23, "maxLength": 515, "writeOnly": true } } } } } },
+        "responses": {
+          "200": { "description": "Credential stored; secret omitted.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiChatCredentialStatus" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      },
+      "delete": {
+        "tags": ["AI"],
+        "summary": "Remove the authenticated user's own AI credential from SIM Router.",
+        "operationId": "deleteMyAiChatCredential",
+        "responses": {
+          "200": { "description": "Credential removed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiChatCredentialStatus" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
     "/api/v1/ai/chat-agent/reviewed-general": {
       "post": {
         "tags": ["AI"],
@@ -14604,6 +14639,16 @@
               }
             }
           }
+        }
+      },
+      "AiChatCredentialStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["available", "configured", "provider"],
+        "properties": {
+          "available": { "type": "boolean" },
+          "configured": { "type": "boolean" },
+          "provider": { "type": "string", "enum": ["openai"] }
         }
       },
       "AiCopResponse": {

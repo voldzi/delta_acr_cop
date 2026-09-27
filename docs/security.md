@@ -97,3 +97,12 @@ Driver confirmation support excludes the original reporter's own vote. Counts
 represent distinct authenticated subjects, not proof of distinct physical
 people. The heuristic is not calibrated truth or authorization for a closure.
 No road closure or automatic reroute is created from these confirmations.
+
+## Vlastní AI klíč uživatele (připravená větev)
+
+Při zapnutí `COP_AI_CHAT_BYOK_ENABLED` je COP API pouze průchodem pro vložení
+a odebrání klíče. Nepíše jej do profilu, auditu ani odpovědi. SIM Router musí
+klíč ukládat šifrovaně a odděleně podle stabilního neprůhledného ID uživatele.
+Samotné vložení klíče nepovoluje odeslat dešifrované zprávy, nepřijatá hlášení
+ani interní incidenty externímu modelu. Pravidla a podmínky aktivace uvádí
+[ADR 0031](adr/0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md).

@@ -3548,6 +3548,33 @@ export async function queryAiChatAgent(
   });
 }
 
+export interface AiChatCredentialStatus {
+  available: boolean;
+  configured: boolean;
+  provider: "openai";
+}
+
+export async function fetchAiChatCredentialStatus(apiBase: string, token: string): Promise<AiChatCredentialStatus> {
+  return fetchJson<AiChatCredentialStatus>(`${apiBase}/api/v1/ai/chat-agent/credential`, {
+    headers: authHeaders(token)
+  });
+}
+
+export async function saveAiChatCredential(apiBase: string, token: string, apiKey: string): Promise<AiChatCredentialStatus> {
+  return fetchJson<AiChatCredentialStatus>(`${apiBase}/api/v1/ai/chat-agent/credential`, {
+    method: "PUT",
+    headers: { ...(authHeaders(token) ?? {}), "Content-Type": "application/json" },
+    body: JSON.stringify({ apiKey })
+  });
+}
+
+export async function removeAiChatCredential(apiBase: string, token: string): Promise<AiChatCredentialStatus> {
+  return fetchJson<AiChatCredentialStatus>(`${apiBase}/api/v1/ai/chat-agent/credential`, {
+    method: "DELETE",
+    headers: authHeaders(token)
+  });
+}
+
 export async function startAiChatAgentJob(
   apiBase: string,
   token: string,

@@ -47,6 +47,7 @@ import { correlationIdFrom, sendError } from "./errors.js";
 import { OpenAiMcpAssistant, openAiMcpAssistantConfig } from "./openai-mcp-assistant.js";
 import { AiRouterMcpAssistant, aiRouterMcpConfig } from "./ai-router-mcp-assistant.js";
 import { CopAiRouterChatAdapter, CopRouterChatError } from "./ai-router-chat.js";
+import { CopRouterUserCredentialClient, RouterCredentialError } from "./ai-router-user-credential.js";
 import { reviewedGeneralQuestion } from "./ai-router-reviewed-general.js";
 import { reviewedInternalChatItems } from "./ai-router-chat-context.js";
 import { resolveAiConversationContinuity, resolveAiConversationTimeWindow } from "./ai-conversation-continuity.js";
@@ -794,12 +795,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const routerMcpConfig = aiRouterMcpConfig(process.env);
   const routerChatEnabled = readBoolean(process.env.COP_AI_CHAT_ROUTER_ENABLED, false);
   const routerChatFullEnabled = readBoolean(process.env.COP_AI_CHAT_ROUTER_FULL_ENABLED, false);
-  const routerChat = routerChatEnabled || routerChatFullEnabled
+  const routerChatByokEnabled = readBoolean(process.env.COP_AI_CHAT_BYOK_ENABLED, false);
+  const routerChatConfig = {
+    baseUrl: process.env.COP_AI_ROUTER_URL ?? "",
+    token: process.env.COP_AI_ROUTER_TOKEN ?? "",
+    userIdSecret: process.env.COP_AI_CHAT_ROUTER_USER_ID_SECRET ?? ""
+  };
+  const routerChat = routerChatEnabled || routerChatFullEnabled || routerChatByokEnabled
     ? new CopAiRouterChatAdapter({
-        baseUrl: process.env.COP_AI_ROUTER_URL ?? "",
-        token: process.env.COP_AI_ROUTER_TOKEN ?? "",
-        userIdSecret: process.env.COP_AI_CHAT_ROUTER_USER_ID_SECRET ?? ""
+        ...routerChatConfig
       })
+    : undefined;
+  const routerUserCredential = routerChatByokEnabled
+    ? new CopRouterUserCredentialClient(routerChatConfig)
     : undefined;
   const openAiMcpAssistant = openAiMcpConfig.enabled ? new OpenAiMcpAssistant(openAiMcpConfig) : undefined;
   let openAiMcpReady = false;
@@ -10169,6 +10177,55 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendError(reply, 403, "FORBIDDEN", "Current user cannot read this AI chat agent job.", correlationId);
     }
     return aiChatAgentJobPayload(job);
+  });
+
+  app.get("/api/v1/ai/chat-agent/credential", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const actor = requireActor(request, reply);
+    if (!actor) return reply;
+    if (!routerUserCredential) return { available: false, configured: false, provider: "openai" };
+    try {
+      return { available: true, ...(await routerUserCredential.status(actor.subjectId)) };
+    } catch {
+      return sendError(reply, 503, "AI_ROUTER_UNAVAILABLE", "AI credential status is unavailable.",
+        correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+  });
+
+  app.put("/api/v1/ai/chat-agent/credential", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const actor = requireActor(request, reply);
+    if (!actor) return reply;
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    if (!routerUserCredential) return sendError(reply, 503, "AI_ROUTER_UNAVAILABLE", "User AI credentials are disabled.", correlationId);
+    const body = request.body;
+    if (!isRecord(body) || Object.keys(body).length !== 1 || typeof body.apiKey !== "string") {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Provide an OpenAI API key only.", correlationId);
+    }
+    try {
+      const result = await routerUserCredential.register(actor.subjectId, body.apiKey);
+      appendAudit(state, "AI_USER_CREDENTIAL_REGISTERED", { actorSubjectId: actor.subjectId, provider: "openai" }, correlationId);
+      return { available: true, ...result };
+    } catch (error) {
+      const invalid = error instanceof RouterCredentialError && error.code === "invalid_key";
+      return sendError(reply, invalid ? 400 : 503, invalid ? "VALIDATION_ERROR" : "AI_ROUTER_UNAVAILABLE",
+        invalid ? "Invalid OpenAI API key format." : "AI credential could not be saved.", correlationId);
+    }
+  });
+
+  app.delete("/api/v1/ai/chat-agent/credential", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const actor = requireActor(request, reply);
+    if (!actor) return reply;
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    if (!routerUserCredential) return sendError(reply, 503, "AI_ROUTER_UNAVAILABLE", "User AI credentials are disabled.", correlationId);
+    try {
+      const result = await routerUserCredential.remove(actor.subjectId);
+      appendAudit(state, "AI_USER_CREDENTIAL_REMOVED", { actorSubjectId: actor.subjectId, provider: "openai" }, correlationId);
+      return { available: true, ...result };
+    } catch {
+      return sendError(reply, 503, "AI_ROUTER_UNAVAILABLE", "AI credential could not be removed.", correlationId);
+    }
   });
 
   app.post("/api/v1/ai/chat-agent/reviewed-general", async (request, reply) => {

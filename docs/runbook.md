@@ -90,3 +90,11 @@ advance `account_data_key` and return that canary. Only then retry E2EE recovery
 and verify that `m.secret_storage.default_key`, cross-signing secrets, and one
 active key-backup version were created. Do not log access tokens, recovery keys,
 secret-storage content, or room keys during diagnosis.
+
+For the staged user-owned AI credential flow, verify authenticated status,
+register, rotate and removal against SIM before enabling
+`COP_AI_CHAT_BYOK_ENABLED`. Inspect only configured state and opaque user IDs;
+never print keys or request bodies. Test two users to prove isolation. Leave
+ordinary chat routing unchanged until the separate routing and data-class
+acceptance tests in [ADR 0031](adr/0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md)
+pass in production.
