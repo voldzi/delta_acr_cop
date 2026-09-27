@@ -49,7 +49,9 @@ cutover because it changes every derived active-call media key. Matrix readiness
 is unrelated to the voice media path.
 
 The user-owned AI credential relay is staged behind
-`COP_AI_CHAT_BYOK_ENABLED=false`. Keep it disabled until SIM implements the
-credential contract in [ADR 0031](adr/0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md),
-its secret storage is verified, and the chat-routing contract is reviewed.
-The relay flag does not switch the ordinary chat to OpenAI.
+`COP_AI_CHAT_BYOK_ENABLED=false`; ordinary chat routing has a separate default-off
+`COP_AI_CHAT_BYOK_ROUTING_ENABLED=false`. SIM implements the versioned contract,
+but production acceptance of its disabled BYOK path, separate actor secret,
+actual project billing and local-model recovery is still required. See
+[ADR 0031](adr/0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md). Neither flag is
+enabled by this change. The credential flag alone does not switch the chat.

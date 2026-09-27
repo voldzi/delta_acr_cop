@@ -594,6 +594,18 @@ ověřit mapu a MCP gateway. PostgreSQL evidence se nemaže.
 
 ### Sdílený AI Router pro běžný chat a oddělený cvičný pilot
 
+**Připravená BYOK větev (27. 9. 2026):** `COP_AI_CHAT_BYOK_ENABLED=false`
+umožní po samostatné aktivaci pouze správu vlastního klíče přes podepsanou
+identitu z přihlášené relace. `COP_AI_CHAT_BYOK_ROUTING_ENABLED=false` odděleně
+volí jediný chat COP přes `cop-chat-byok-v1` a uživatelský projekt OpenAI.
+Vyžaduje dosavadní interní `COP_AI_ROUTER_URL`, `COP_AI_ROUTER_TOKEN`, stabilní
+`COP_AI_CHAT_ROUTER_USER_ID_SECRET` a **oddělený** alespoň 32znakový
+`COP_AI_ROUTER_ACTOR_SECRET`, shodný s ověřovacím tajemstvím v SIM. Nové
+tajemství přenášet jen mezi produkčními secrets; nikdy je nevypisovat ani
+neukládat do Gitu. Před aktivací ověřit dva projekty, billing SIM, limity,
+429, výpadek a obnovený lokální model. Vypnutí routing přepínače vrací
+dosavadní chat. Do Routeru se při této trase neposílá automatický kontext.
+
 Běžný chat používá samostatný přepínač
 `COP_AI_CHAT_ROUTER_FULL_ENABLED=false` (výchozí stav). Po zapnutí musí být v
 Routeru dostupný lokální model. COP předá jen zkontrolovanou otázku do 1200

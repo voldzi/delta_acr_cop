@@ -95,6 +95,15 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof AiAgentDial
 }
 
 describe("AiAgentDialog", () => {
+  it("shows own-key Global processing and hides model choice when BYOK routing is active", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      available: true, configured: true, provider: "openai", routingEnabled: true
+    }), { status: 200 })));
+    renderDialog({ apiBase: "http://localhost:4310", authToken: "session-token" });
+    expect(await screen.findByText(/OpenAI Global a účtuje se vašemu projektu/u)).toBeTruthy();
+    expect(screen.getByText(/Chat používá váš klíč OpenAI/u)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Důkladně" })).toBeNull();
+  });
   it("lets a signed-in user save a key without displaying it again", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ available: true, configured: false, provider: "openai" }), { status: 200 }))

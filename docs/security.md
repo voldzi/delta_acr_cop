@@ -101,8 +101,13 @@ No road closure or automatic reroute is created from these confirmations.
 ## Vlastní AI klíč uživatele (připravená větev)
 
 Při zapnutí `COP_AI_CHAT_BYOK_ENABLED` je COP API pouze průchodem pro vložení
-a odebrání klíče. Nepíše jej do profilu, auditu ani odpovědi. SIM Router musí
-klíč ukládat šifrovaně a odděleně podle stabilního neprůhledného ID uživatele.
+a odebrání klíče. Nepíše jej do profilu, auditu ani odpovědi. Identitu uživatele
+odvozuje z přihlášené relace a Routeru ji předává jako krátkodobé HMAC podepsané
+tvrzení. SIM Router klíč ukládá šifrovaně a odděleně podle stabilního
+neprůhledného ID uživatele.
 Samotné vložení klíče nepovoluje odeslat dešifrované zprávy, nepřijatá hlášení
 ani interní incidenty externímu modelu. Pravidla a podmínky aktivace uvádí
 [ADR 0031](adr/0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md).
+Při `COP_AI_CHAT_BYOK_ROUTING_ENABLED` se externě předává výhradně přesně
+napsaná otázka; automatický kontext se zatím neposílá. Chyby nemají přímý ani
+sdíleným klíčem placený fallback.

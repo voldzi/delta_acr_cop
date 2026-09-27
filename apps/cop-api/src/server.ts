@@ -47,7 +47,7 @@ import { correlationIdFrom, sendError } from "./errors.js";
 import { OpenAiMcpAssistant, openAiMcpAssistantConfig } from "./openai-mcp-assistant.js";
 import { AiRouterMcpAssistant, aiRouterMcpConfig } from "./ai-router-mcp-assistant.js";
 import { CopAiRouterChatAdapter, CopRouterChatError } from "./ai-router-chat.js";
-import { CopRouterUserCredentialClient, RouterCredentialError } from "./ai-router-user-credential.js";
+import { CopByokRouterClient, CopByokError } from "./ai-router-byok.js";
 import { reviewedGeneralQuestion } from "./ai-router-reviewed-general.js";
 import { reviewedInternalChatItems } from "./ai-router-chat-context.js";
 import { resolveAiConversationContinuity, resolveAiConversationTimeWindow } from "./ai-conversation-continuity.js";
@@ -796,18 +796,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const routerChatEnabled = readBoolean(process.env.COP_AI_CHAT_ROUTER_ENABLED, false);
   const routerChatFullEnabled = readBoolean(process.env.COP_AI_CHAT_ROUTER_FULL_ENABLED, false);
   const routerChatByokEnabled = readBoolean(process.env.COP_AI_CHAT_BYOK_ENABLED, false);
+  const routerChatByokRoutingEnabled = readBoolean(process.env.COP_AI_CHAT_BYOK_ROUTING_ENABLED, false);
+  if (routerChatByokRoutingEnabled && !routerChatByokEnabled) {
+    throw new Error("COP AI BYOK chat routing requires credential management to be enabled.");
+  }
   const routerChatConfig = {
     baseUrl: process.env.COP_AI_ROUTER_URL ?? "",
     token: process.env.COP_AI_ROUTER_TOKEN ?? "",
     userIdSecret: process.env.COP_AI_CHAT_ROUTER_USER_ID_SECRET ?? ""
   };
-  const routerChat = routerChatEnabled || routerChatFullEnabled || routerChatByokEnabled
+  const routerChat = routerChatEnabled || routerChatFullEnabled
     ? new CopAiRouterChatAdapter({
         ...routerChatConfig
       })
     : undefined;
   const routerUserCredential = routerChatByokEnabled
-    ? new CopRouterUserCredentialClient(routerChatConfig)
+    ? new CopByokRouterClient({ ...routerChatConfig, actorSecret: process.env.COP_AI_ROUTER_ACTOR_SECRET ?? "" })
     : undefined;
   const openAiMcpAssistant = openAiMcpConfig.enabled ? new OpenAiMcpAssistant(openAiMcpConfig) : undefined;
   let openAiMcpReady = false;
@@ -10115,7 +10119,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         correlationId
       );
     }
-    if (routerChatFullEnabled && question.length > 1200) {
+    if ((routerChatFullEnabled || routerChatByokRoutingEnabled) && question.length > 1200) {
       return sendError(reply, 400, "VALIDATION_ERROR", "AI Router chat question is too long.", correlationId);
     }
     pruneAiChatAgentJobs();
@@ -10183,9 +10187,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     reply.header("Cache-Control", "no-store");
     const actor = requireActor(request, reply);
     if (!actor) return reply;
-    if (!routerUserCredential) return { available: false, configured: false, provider: "openai" };
+    if (!routerUserCredential) return { available: false, configured: false, provider: "openai", routingEnabled: false };
     try {
-      return { available: true, ...(await routerUserCredential.status(actor.subjectId)) };
+      return { available: true, provider: "openai", routingEnabled: routerChatByokRoutingEnabled,
+        ...(await routerUserCredential.status(actor.subjectId)) };
     } catch {
       return sendError(reply, 503, "AI_ROUTER_UNAVAILABLE", "AI credential status is unavailable.",
         correlationIdFrom(request.headers["x-correlation-id"]));
@@ -10203,13 +10208,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendError(reply, 400, "VALIDATION_ERROR", "Provide an OpenAI API key only.", correlationId);
     }
     try {
-      const result = await routerUserCredential.register(actor.subjectId, body.apiKey);
+      const result = await routerUserCredential.putKey(actor.subjectId, body.apiKey);
       appendAudit(state, "AI_USER_CREDENTIAL_REGISTERED", { actorSubjectId: actor.subjectId, provider: "openai" }, correlationId);
-      return { available: true, ...result };
+      return { available: true, provider: "openai", routingEnabled: routerChatByokRoutingEnabled, ...result };
     } catch (error) {
-      const invalid = error instanceof RouterCredentialError && error.code === "invalid_key";
-      return sendError(reply, invalid ? 400 : 503, invalid ? "VALIDATION_ERROR" : "AI_ROUTER_UNAVAILABLE",
-        invalid ? "Invalid OpenAI API key format." : "AI credential could not be saved.", correlationId);
+      const code = error instanceof CopByokError ? error.code : "router_unavailable";
+      const status = code === "invalid_input" ? 400 : code === "invalid_key" ? 422 : code === "limit_reached" ? 429 : 503;
+      return sendError(reply, status, code.toUpperCase(), "AI credential could not be saved.", correlationId);
     }
   });
 
@@ -10220,9 +10225,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     if (!routerUserCredential) return sendError(reply, 503, "AI_ROUTER_UNAVAILABLE", "User AI credentials are disabled.", correlationId);
     try {
-      const result = await routerUserCredential.remove(actor.subjectId);
+      const result = await routerUserCredential.deleteKey(actor.subjectId);
       appendAudit(state, "AI_USER_CREDENTIAL_REMOVED", { actorSubjectId: actor.subjectId, provider: "openai" }, correlationId);
-      return { available: true, ...result };
+      return { available: true, provider: "openai", routingEnabled: routerChatByokRoutingEnabled, ...result };
     } catch {
       return sendError(reply, 503, "AI_ROUTER_UNAVAILABLE", "AI credential could not be removed.", correlationId);
     }
@@ -10335,7 +10340,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         correlationId
       );
     }
-    if (routerChatFullEnabled && question.length > 1200) {
+    if ((routerChatFullEnabled || routerChatByokRoutingEnabled) && question.length > 1200) {
       return sendError(reply, 400, "VALIDATION_ERROR", "AI Router chat question is too long.", correlationId);
     }
     const rawGroupId = optionalText(body.groupId);
@@ -10361,6 +10366,30 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         "AI chat agent is not enabled for the selected group.",
         correlationId
       );
+    }
+    if (routerChatByokRoutingEnabled) {
+      if (!routerUserCredential) return sendError(reply, 503, "AI_ROUTER_UNAVAILABLE", "User AI chat is unavailable.", correlationId);
+      try {
+        const result = await routerUserCredential.chat(actor.subjectId, body.question, body.automaticContext);
+        const response: AiCopResponse = {
+          requestId: aiRequestId(body.requestId), status: "NEEDS_HUMAN_REVIEW", provider: "openai",
+          model: result.model, auditId: randomUUID(),
+          policy: { allowed: true, reason: "User-owned OpenAI key via SIM Router.", redactionsApplied: false },
+          result: { summary: result.output, structured: { routerRequestId: result.requestId,
+            billingSource: result.billingSource, usage: result.usage, contextItemCount: 0 } }
+        };
+        appendAudit(state, "AI_CHAT_AGENT_BYOK_COMPLETED", {
+          actorSubjectId: actor.subjectId, routerRequestId: result.requestId,
+          billingSource: result.billingSource, usage: result.usage
+        }, correlationId);
+        return response;
+      } catch (error) {
+        const code = error instanceof CopByokError ? error.code : "router_unavailable";
+        const status = code === "invalid_input" ? 400 : code === "key_unavailable" ? 422 :
+          code === "limit_reached" ? 429 : 503;
+        appendAudit(state, "AI_CHAT_AGENT_BYOK_FAILED", { actorSubjectId: actor.subjectId, reason: code }, correlationId);
+        return sendError(reply, status, code.toUpperCase(), "User-funded AI chat could not be completed.", correlationId);
+      }
     }
     const chatContext = summarizeAiChatContextForAi(body.chatContext);
     const conversationContinuity = resolveAiConversationContinuity(question, chatContext);

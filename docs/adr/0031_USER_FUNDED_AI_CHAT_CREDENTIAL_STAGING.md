@@ -1,59 +1,44 @@
-# ADR 0031: Uživatelský API klíč pro jeden COP chat (příprava)
+# ADR 0031: Vlastní OpenAI klíč v jediném chatu COP
 
 ## Stav
 
-Připravena pouze správa klíče, bez přepnutí směrování produkčního chatu.
-Příznak `COP_AI_CHAT_BYOK_ENABLED` je ve výchozím stavu vypnutý.
+Adaptér COP odpovídá kontraktu SIM `cop-chat-byok-v1` z větve
+`codex/cop-chat-full-router` (ověřený commit `f660647`). Produkční přepnutí
+chatu není součástí tohoto rozhodnutí. Správa klíče i směrování mají oddělené
+výchozí vypnuté přepínače `COP_AI_CHAT_BYOK_ENABLED` a
+`COP_AI_CHAT_BYOK_ROUTING_ENABLED`.
 
 ## Rozhodnutí
 
-COP nabídne přihlášenému uživateli vložení a odebrání vlastního OpenAI API klíče
-v existujícím rozhraní AI chatu. Klíč pošle přes COP API internímu SIM AI Routeru.
-COP jej neuloží do uživatelského profilu, historie, auditu ani odpovědi API.
-Router musí klíč ověřit, zašifrovat, uchovat odděleně podle neprůhledného
-stabilního `userId` a umožnit jeho odstranění. Stavové API smí vracet pouze
-`configured`, `available` a `provider`.
+COP API odvodí stabilní HMAC pseudonym výhradně z přihlášené identity, vydá
+na 60 sekund tvrzení `x-cop-actor` s přesně `sub`, `aud`, `iat`, `exp` a
+podepíše je odděleným tajemstvím `COP_AI_ROUTER_ACTOR_SECRET` v
+`x-cop-actor-signature`. Prohlížeč neurčuje totožnost, plátce, klíč ani model.
+Službový token a actor tajemství existují pouze v produkčních secrets.
 
-Získání klíče nezakládá oprávnění odeslat do externího modelu celý dosavadní
-COP kontext. Současný chat sestavuje i dešifrované zprávy, nepřijatá komunitní
-hlášení a detailní incidenty. Jsou interní, dokud konkrétní zdroj nemá ověřenou
-publikační klasifikaci. Uživatelův klíč také nepřevádí odpovědnost COP za
-automaticky přidaný kontext na uživatele.
+Jediný chat může při pozdějším zapnutí směrování použít výhradně
+`POST /api/v1/ai-router/cop/chat` s `contractVersion=cop-chat-byok-v1`,
+`billingSource=user_openai_key`, `allowExternal=true` a přesně uživatelem
+napsanou otázkou. Nepřipojuje historii, dešifrované zprávy, nezveřejněná
+hlášení ani volný kontext. Automatický kontext se v této verzi neposílá,
+protože COP zatím nemá důkaz publikace, původu a platnosti pro takové položky.
+Pokus předat `automaticContext` je odmítnut. SIM Router vynucuje model,
+uživatelské limity a účtování. Chyba, chybějící klíč a výpadek nesmějí
+spustit společný klíč ani přímé OpenAI volání.
 
-## Navržený kontrakt SIM
+Správa vlastního klíče používá `GET/PUT/DELETE
+/api/v1/ai-router/cop/users/me/openai-key`. COP jej pouze jednorázově
+předá Routeru a neukládá ani neloguje. GET nevrací klíč; DELETE znamená
+logické odstranění v Routeru, nikoli odvolání u OpenAI nebo výmaz starých
+záloh. UI upozorňuje na uložení v Routeru, vlastní účtování a zpracování
+OpenAI Global. Volba modelu v UI je při této trase skrytá a server ji
+ignoruje.
 
-Autentizace všech volání: existující dedikovaný službový token COP. `userId` je
-stejný HMAC pseudonym jako u `cop_chat`; Router nesmí přijmout identitu z
-prohlížeče. Tyto interní endpointy zatím SIM musí doplnit:
+## Aktivace a návrat
 
-| Endpoint | Požadavek | Odpověď |
-| --- | --- | --- |
-| `POST /api/v1/ai-router/cop-chat-credentials/status` | `{userId, provider:"openai"}` | `{configured:boolean, provider:"openai"}` |
-| `POST /api/v1/ai-router/cop-chat-credentials/register` | `{userId, provider:"openai", apiKey}` | `{configured:true, provider:"openai"}` |
-| `POST /api/v1/ai-router/cop-chat-credentials/remove` | `{userId, provider:"openai"}` | `{configured:false, provider:"openai"}` |
-
-Router nesmí vracet klíč v žádné odpovědi, logu ani auditu. Klíč validuje bez
-generování odpovědi, ukládá šifrovaně s rotovatelným šifrovacím klíčem,
-odděluje jej od služby COP a po odebrání jej přestane používat. Chyby validace
-musí být odlišitelné od výpadku Routeru bez odhalení klíče.
-
-## Podmínky pro směrování
-
-SIM musí samostatně zavést verzi kontraktu `cop_chat` s `billingSource` pevně
-určeným podle přihlášeného `userId`, nikoli z klientského pole. Pro veřejnou
-bezplatnou aplikaci je výchozí `user_credential`; chybějící nebo neplatný klíč
-znamená srozumitelnou chybu, nikdy přepnutí na účet COP. Router dál vynucuje
-model, limity, audit tokenů a nákladů, výpadky a zákaz přímého fallbacku.
-
-COP a SIM před aktivací společně určí, které uživatelovy otázky a které
-konkrétní typované COP podklady lze externě zpracovat. Veřejné výstrahy a
-publikované agregace mohou být kandidáty; dešifrované zprávy, interní incidenty
-a nepřijatá hlášení nesmějí být automaticky označena jako veřejná. Pro IZS
-vznikne role a auditovaný přístup k souhrnům podle oprávnění, nikoli plošné
-zveřejnění původních záznamů.
-
-Před produkčním přepnutím je třeba dodat závazné OpenAPI v SIM, otestovat
-izolaci více uživatelů a klíčů, odmítnutí neplatných dat, limity a výpadky,
-spotřebu účtovanou správnému projektu a rollback. Režim Global/EU se musí
-uživateli pravdivě zobrazit podle projektu poskytovatele; COP jej nemůže
-odvodit pouze ze zadaného klíče.
+Nejprve ověřit tajemství, dostupnost Routeru, dva oddělené projekty OpenAI,
+izolaci identit, účtovací přehled SIM, limity, 429, výpadek, obsah odchozího
+požadavku a obnovený lokální model. Správce pak může odděleně zapnout správu
+klíče a po společné akceptaci nový chat. Pro rollback vypnout
+`COP_AI_CHAT_BYOK_ROUTING_ENABLED`; dosavadní chatová cesta zůstává v kódu.
+Nikdy nepřepínat na sdílený externí účet jako automatický fallback.

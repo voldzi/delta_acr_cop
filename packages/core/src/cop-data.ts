@@ -3552,6 +3552,7 @@ export interface AiChatCredentialStatus {
   available: boolean;
   configured: boolean;
   provider: "openai";
+  routingEnabled?: boolean;
 }
 
 export async function fetchAiChatCredentialStatus(apiBase: string, token: string): Promise<AiChatCredentialStatus> {

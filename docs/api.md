@@ -10,8 +10,11 @@ the ordinary chat endpoint remains local-only.
 The staged authenticated `GET`/`PUT`/`DELETE /api/v1/ai/chat-agent/credential`
 endpoints read status, relay a user-owned OpenAI key to SIM Router, or remove it.
 They are disabled by default with `COP_AI_CHAT_BYOK_ENABLED=false`. No key is
-returned or stored in COP; saving a key does not switch chat routing. The
-proposed SIM-side contract and activation gates are in [ADR 0031](adr/0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md).
+returned or stored in COP; saving a key does not switch chat routing. A separate
+default-off `COP_AI_CHAT_BYOK_ROUTING_ENABLED` selects the SIM
+`cop-chat-byok-v1` path for the existing chat. COP signs the actor from the
+authenticated session and forwards only the authored question. The SIM
+contract and activation gates are in [ADR 0031](adr/0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md).
 
 - [openapi/openapi.json](../openapi/openapi.json)
 

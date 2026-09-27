@@ -134,8 +134,10 @@ export default function AiAgentDialog({
           {credential?.available ? (
             <details className="ai-technical-details">
               <summary>Vlastní OpenAI účet {credential.configured ? "· klíč uložen" : "· bez klíče"}</summary>
-              <p>Klíč se uloží pouze v SIM AI Routeru. COP jej nevrací ani neukládá do profilu.</p>
-              <p>Uložení klíče samo o sobě zatím nemění směrování chatu.</p>
+              <p>Klíč se uloží šifrovaně v SIM AI Routeru. COP jej nevrací ani neukládá do profilu.</p>
+              <p>{credential.routingEnabled
+                ? "Dotaz se zpracuje externě v OpenAI Global a účtuje se vašemu projektu. Automatický soukromý kontext COP se nepřipojuje."
+                : "Uložení klíče samo o sobě zatím nemění směrování chatu."}</p>
               <label>
                 <span>API klíč OpenAI</span>
                 <input ref={credentialInput} type="password" autoComplete="off" spellCheck={false}
@@ -146,7 +148,7 @@ export default function AiAgentDialog({
                 onClick={() => void removeCredential()}>Odebrat klíč</button> : null}
               {credentialError ? <p role="alert">{credentialError}</p> : null}
             </details>
-          ) : null}
+          ) : credentialError ? <p role="alert">{credentialError}</p> : null}
           <label className="ai-agent-question">
             <span>Dotaz pro COP AI agenta</span>
             <textarea
@@ -164,6 +166,7 @@ export default function AiAgentDialog({
             />
           </label>
 
+          {credential?.routingEnabled ? <p>Chat používá váš klíč OpenAI. Poskytovatele, model a účtování určuje AI Router.</p> :
           <div className="dialog-tabs ai-agent-model-tabs" role="group" aria-label="Způsob odpovědi">
             <button
               className={modelPreference === "auto" ? "active" : ""}
@@ -189,7 +192,7 @@ export default function AiAgentDialog({
             >
               Důkladně
             </button>
-          </div>
+          </div>}
 
           <section className="ai-situation-empty compact" aria-label="Cvičný dotaz přes AI Router">
             <strong>Cvičení přes AI Router</strong>
