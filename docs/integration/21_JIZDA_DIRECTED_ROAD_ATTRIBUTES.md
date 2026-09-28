@@ -8,6 +8,40 @@ SIM asks Valhalla `trace_attributes` with `shape_match=edge_walk` over the geome
 
 Only positive `edge.speed_limit` values accepted as posted limits become `status=explicit`, in km/h. Missing or implausible values become `unknown` with no `valueKph`. Valhalla's `edge.speed`, traffic flows and ETA are never converted into a legal limit. No derived legal limits are emitted yet. `knownSpeedLimitCoveragePercent` is route-length weighted, not a count of edges. An unknown limit is not zero or unlimited.
 
+## Route-bound tunnel intervals prepared for Jízda
+
+SIM additionally requests the directed Valhalla `edge.tunnel` flag for each already selected road variant. The optional `routes[].roadAttributes.tunnels` object repeats `routeId`, `routingDataset`, `observedAt` and `source=valhalla_trace_attributes.edge.tunnel`. Each interval has `beginShapeIndex`, `endShapeIndex` and `direction=along_route`. Indexes are inclusive vertex indexes into **that same route's** `geometry.coordinates`; they are point indexes, not metres or positions shared by alternatives. Consecutive tunnel edges are merged. `state=known` requires every directed edge to have a boolean tunnel flag, continuous shape coverage, no geometry mismatch and an unchanged routing dataset. `known` with no intervals means no tunnel-marked edge on that verified graph path. Missing or conflicting data becomes `state=unknown` with an empty interval list, which does not prove that no physical tunnel exists. The graph flag does not confirm that the vehicle has entered the tunnel.
+
+SIM's Valhalla route ID includes the resulting geometry. COP checks the nested route ID, dataset, interval bounds and directed order before forwarding `known`; a failed check is downgraded to `unknown`. Existing clients can ignore the new optional object. A route recalculated with a different shape must be treated as a new route even if the origin and destination are unchanged.
+When SIM marks a variant `status=unavailable` because its maneuver indexes do not match its shape, COP excludes that variant and its feature from navigable output.
+
+Example response fragment with illustrative coordinates:
+
+```json
+{
+  "coverage": { "state": "covered", "routingDataset": { "version": "sim-routing-example", "builtAt": "2026-09-20T03:00:00Z" } },
+  "routes": [{
+    "routeId": "routing:car:valhalla:example-shape-id",
+    "geometry": { "type": "LineString", "coordinates": [[14.42, 50.08], [14.4205, 50.08], [14.421, 50.08]] },
+    "roadAttributes": {
+      "state": "ok", "geometryMismatchCount": 0,
+      "routingDataset": { "version": "sim-routing-example", "builtAt": "2026-09-20T03:00:00Z" },
+      "tunnels": {
+        "state": "known", "routeId": "routing:car:valhalla:example-shape-id",
+        "source": "valhalla_trace_attributes.edge.tunnel",
+        "routingDataset": { "version": "sim-routing-example", "builtAt": "2026-09-20T03:00:00Z" },
+        "observedAt": "2026-09-23T12:00:00Z",
+        "intervals": [{ "beginShapeIndex": 1, "endShapeIndex": 2, "direction": "along_route" }]
+      }
+    }
+  }]
+}
+```
+
+Jízda should parse `tunnels` only after selecting its route variant and matching both `routeId` and dataset. On reroute or variant switch, discard the prior intervals. Use a recent, reliable on-route GPS fix to anchor any outage prediction and decay confidence over time. Do not infer tunnel entry from GPS loss alone; at a tunnel ramp or fork, report an uncertain position until the chosen branch is observed. Test tunnel entry/exit, a tunnel ramp, GPS outage outside a tunnel, parallel roads and switching variants on a physical iPhone. This prepared contract has not yet passed that device acceptance and is not claimed as a production result.
+
+Read-only graph probe on 2026-09-28 used public points around the Strahov tunnel and ran the prepared SIM mapper locally over the production Valhalla `route` and `trace_attributes` responses. One direction matched all 71 edges to 201 route vertices with zero geometry mismatches and yielded two intervals, `[44,71]` and `[92,133]`. The opposite direction matched all 57 edges to 175 vertices with zero mismatches and yielded `[26,55]` and `[73,98]`; its tunnel-marked edges included `turn_channel` as well as `road`. Both returned `tunnels.state=known` with valid bounds and matching route ID and dataset. This proves graph availability and mapping for these sampled routes; it is not a deployed COP response, a complete map-quality survey, or a physical iPhone navigation test.
+
 `roadAttributes.restrictions` currently contains only Valhalla trace closures and labels them `advisory`; the existing SIM `traffic.incidentsOnRoute` and `hazardsOnRoute` stay separate. Static height/width/weight limits, legal access permissions and conditional OSM tags are **not** represented as verified facts by `trace_attributes`, so `vehicleRestrictionsState=not_evaluated`. In particular, absence from `restrictions` never means that a vehicle may pass. A later source keyed by directed Valhalla edge and dataset version is needed for verified or conditional restrictions.
 
 When actual vehicle dimensions are supplied for a road profile, SIM uses Valhalla `truck` costing and passes those values as truck options. `vehicleAssessment` reports which fields were applied and marks incomplete input `partially_evaluated`. A fully supplied profile means only that the provider used the parameters in its mapped graph; it does **not** certify legal or physical passability. If Jízda keeps sending `profileId=car` without vehicle values, the result is `not_evaluated`.

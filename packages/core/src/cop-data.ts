@@ -1125,6 +1125,7 @@ export interface RoutingRouteRequest {
   alternatives?: number;
   avoid?: string[];
   from: RoutingPoint;
+  includeRoadAttributes?: boolean;
   includeSteps?: boolean;
   profileId?: RoutingProfileId;
   to: RoutingPoint;
@@ -1162,6 +1163,20 @@ export interface RoutingRoute extends Record<string, unknown> {
   elevationProfile?: Array<Record<string, unknown>>;
   hazardsOnRoute?: Array<Record<string, unknown>> | Record<string, unknown>;
   quality?: Record<string, unknown>;
+  roadAttributes?: {
+    state: "ok" | "partial" | "unavailable" | "unsupported";
+    routingDataset?: { version: string; builtAt: string };
+    tunnels?: {
+      state: "known" | "unknown";
+      reason?: string;
+      routeId: string;
+      source: "valhalla_trace_attributes.edge.tunnel";
+      routingDataset?: { version: string; builtAt: string };
+      observedAt: string;
+      intervals: Array<{ beginShapeIndex: number; endShapeIndex: number; direction: "along_route" }>;
+    };
+    [key: string]: unknown;
+  };
   rank?: number;
   routeId?: string;
   sourceStatus?: string;
