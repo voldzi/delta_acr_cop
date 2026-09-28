@@ -8,6 +8,42 @@ import {
 } from "./routing-source.js";
 
 describe("routing routes", () => {
+  it("passes only tunnel intervals verified for the corresponding variant and dataset", async () => {
+    const dataset = { version: "sim-routing-test", builtAt: "2026-09-23T00:00:00Z" };
+    const shape = [[14.42, 50.08], [14.4205, 50.08], [14.421, 50.08]];
+    const route = (routeId: string, tunnelRouteId: string, endShapeIndex: number) => ({
+      routeId,
+      quality: { mode: "engine_route" },
+      geometry: { type: "LineString", coordinates: shape },
+      roadAttributes: {
+        state: "ok", source: "valhalla_trace_attributes", observedAt: "2026-09-23T12:00:00Z",
+        routingDataset: dataset, matchedEdgeCount: 2, geometryMismatchCount: 0,
+        knownSpeedLimitCoveragePercent: 0, vehicleRestrictionsState: "not_evaluated",
+        speedLimits: [], restrictions: [],
+        tunnels: {
+          state: "known", routeId: tunnelRouteId,
+          source: "valhalla_trace_attributes.edge.tunnel", routingDataset: dataset,
+          observedAt: "2026-09-23T12:00:00Z",
+          intervals: [{ beginShapeIndex: 1, endShapeIndex, direction: "along_route" }]
+        }
+      }
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      coverage: { state: "covered", routingDataset: dataset },
+      routes: [route("primary", "primary", 2), route("alternative", "primary", 2), route("bad-index", "bad-index", 9)],
+      features: [], warnings: []
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+    try {
+      const source = new RoutingSourceAdapter({ baseUrl: "https://sim.example/internal", enabled: true, timeoutMs: 5000 });
+      const response = await source.route({ from: { lat: 50.08, lon: 14.42 }, to: { lat: 50.08, lon: 14.421 } }, new Date());
+      expect(response.routes[0]?.roadAttributes?.tunnels).toMatchObject({ state: "known", routeId: "primary", intervals: [{ beginShapeIndex: 1, endShapeIndex: 2 }] });
+      expect(response.routes[1]?.roadAttributes?.tunnels).toMatchObject({ state: "unknown", routeId: "alternative", intervals: [] });
+      expect(response.routes[2]?.roadAttributes?.tunnels).toMatchObject({ state: "unknown", routeId: "bad-index", intervals: [] });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("does not disclose the internal SIM endpoint in public dependency health", async () => {
     const routingSource: RoutingSource = {
       config: { baseUrl: "https://private-sim.example/internal-routing", enabled: true, timeoutMs: 5000 },
@@ -191,9 +227,17 @@ describe("routing routes", () => {
                     [14.45, 50.09]
                   ]
                 }
+              },
+              {
+                type: "Feature",
+                properties: { routeId: "invalid-steps" },
+                geometry: { type: "LineString", coordinates: [[14.42, 50.08], [14.45, 50.09]] }
               }
             ],
-            routes: [{ routeId: "direct-1", durationSeconds: 100, quality: { mode: "direct_fallback" } }],
+            routes: [
+              { routeId: "direct-1", durationSeconds: 100, quality: { mode: "direct_fallback" } },
+              { routeId: "invalid-steps", status: "unavailable", quality: { mode: "engine_route" } }
+            ],
             warnings: []
           }),
           { status: 200, headers: { "content-type": "application/json" } }

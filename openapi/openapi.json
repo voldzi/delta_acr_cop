@@ -20220,6 +20220,32 @@
                 "source": { "type": "string", "const": "valhalla_trace_attributes" }
               }
             }
+          },
+          "tunnels": { "$ref": "#/components/schemas/RoutingTunnelAttributes" }
+        }
+      },
+      "RoutingTunnelAttributes": {
+        "type": "object",
+        "description": "Optional directed tunnel data for this route variant. Inclusive vertex indexes refer to this route's geometry.coordinates in travel order. A known empty intervals array means no graph-marked tunnel edges on a fully verified shape; unknown does not mean no tunnel.",
+        "required": ["state", "routeId", "source", "observedAt", "intervals"],
+        "properties": {
+          "state": { "type": "string", "enum": ["known", "unknown"] },
+          "reason": { "type": "string" },
+          "routeId": { "type": "string" },
+          "source": { "type": "string", "const": "valhalla_trace_attributes.edge.tunnel" },
+          "routingDataset": { "$ref": "#/components/schemas/RoutingDataset" },
+          "observedAt": { "type": "string", "format": "date-time" },
+          "intervals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["beginShapeIndex", "endShapeIndex", "direction"],
+              "properties": {
+                "beginShapeIndex": { "type": "integer", "minimum": 0 },
+                "endShapeIndex": { "type": "integer", "minimum": 1 },
+                "direction": { "type": "string", "const": "along_route" }
+              }
+            }
           }
         }
       },

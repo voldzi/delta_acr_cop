@@ -78,6 +78,21 @@ export interface RoutingRoadAttributes {
     assessment: "advisory";
     source: "valhalla_trace_attributes";
   }>;
+  tunnels?: RoutingTunnelAttributes;
+}
+
+export interface RoutingTunnelAttributes {
+  state: "known" | "unknown";
+  reason?: string;
+  routeId: string;
+  source: "valhalla_trace_attributes.edge.tunnel";
+  routingDataset?: { version: string; builtAt: string };
+  observedAt: string;
+  intervals: Array<{
+    beginShapeIndex: number;
+    endShapeIndex: number;
+    direction: "along_route";
+  }>;
 }
 
 export interface RoutingStep extends Record<string, unknown> {
@@ -279,9 +294,9 @@ function normalizeRoutingRouteResponse(value: unknown): RoutingRouteResponse {
     throw new Error("Routing route response is not an object.");
   }
   const receivedRoutes = Array.isArray(value.routes) ? (value.routes.filter(isRecord) as RoutingRoute[]) : [];
-  const routes = receivedRoutes.filter((route) => !isDirectFallbackRoute(route));
+  const routes = receivedRoutes.filter((route) => !isNonNavigableRoute(route));
   const omittedIds = new Set(
-    receivedRoutes.filter(isDirectFallbackRoute).flatMap((route) => optionalString(route.routeId) ?? [])
+    receivedRoutes.filter(isNonNavigableRoute).flatMap((route) => optionalString(route.routeId) ?? [])
   );
   const features = (Array.isArray(value.features) ? value.features.filter(isRecord) : []).filter((feature) => {
     if (routes.length === 0 && receivedRoutes.length > 0) return false;
@@ -332,14 +347,69 @@ function normalizeRoutingRouteResponse(value: unknown): RoutingRouteResponse {
         : isRecord(value.quality)
           ? value.quality
           : undefined,
-    routes,
+    routes: routes.map((route) => verifyRouteTunnelAttributes(route, coverage.routingDataset)),
     traffic: isRecord(value.traffic) ? (value.traffic as RoutingTraffic) : undefined,
     warnings: normalizeWarnings(value.warnings)
   };
 }
 
-function isDirectFallbackRoute(route: RoutingRoute): boolean {
-  return isRecord(route.quality) && route.quality.mode === "direct_fallback";
+function verifyRouteTunnelAttributes(route: RoutingRoute, coverageDataset?: RoutingCoverage["routingDataset"]): RoutingRoute {
+  const attributes = route.roadAttributes;
+  if (!attributes || !isRecord(attributes)) return route;
+  const tunnels = isRecord(attributes.tunnels) ? attributes.tunnels : undefined;
+  if (!tunnels) return route;
+  const routeId = optionalString(route.routeId);
+  const geometry = isRecord(route.geometry) ? route.geometry : undefined;
+  const coordinates = Array.isArray(geometry?.coordinates) ? geometry.coordinates : undefined;
+  const validGeometry = geometry?.type === "LineString" && coordinates && coordinates.length >= 2 && coordinates.every(
+    (point) => Array.isArray(point) && point.length === 2 &&
+      typeof point[0] === "number" && Number.isFinite(point[0]) && Math.abs(point[0]) <= 180 &&
+      typeof point[1] === "number" && Number.isFinite(point[1]) && Math.abs(point[1]) <= 90
+  );
+  const attributeDataset = isRecord(attributes?.routingDataset) ? attributes.routingDataset : undefined;
+  const tunnelDataset = isRecord(tunnels.routingDataset) ? tunnels.routingDataset : undefined;
+  const intervals = Array.isArray(tunnels.intervals) ? tunnels.intervals : undefined;
+  let previousEnd = 0;
+  const validIntervals = intervals?.every((interval) => {
+    if (!isRecord(interval)) return false;
+    const begin = interval.beginShapeIndex;
+    const end = interval.endShapeIndex;
+    const valid = Number.isInteger(begin) && Number.isInteger(end) &&
+      typeof begin === "number" && typeof end === "number" &&
+      begin >= previousEnd && end > begin && end < (coordinates?.length ?? 0) &&
+      interval.direction === "along_route";
+    if (valid) previousEnd = end as number;
+    return valid;
+  }) ?? false;
+  const validKnown = tunnels.state === "known" && routeId && tunnels.routeId === routeId &&
+    tunnels.source === "valhalla_trace_attributes.edge.tunnel" &&
+    attributes.state === "ok" && attributes.geometryMismatchCount === 0 && attributes.matchedEdgeCount > 0 &&
+    coverageDataset && attributeDataset && tunnelDataset &&
+    attributeDataset.version === coverageDataset.version && attributeDataset.builtAt === coverageDataset.builtAt &&
+    tunnelDataset.version === coverageDataset.version && tunnelDataset.builtAt === coverageDataset.builtAt &&
+    validGeometry && validIntervals;
+  if (validKnown) return route;
+  const observedAt = optionalString(tunnels.observedAt) ?? optionalString(attributes?.observedAt);
+  if (!routeId || !observedAt) return { ...route, roadAttributes: { ...attributes, tunnels: undefined } };
+  return {
+    ...route,
+    roadAttributes: {
+      ...attributes,
+      tunnels: {
+        state: "unknown",
+        reason: "COP could not verify tunnel intervals against this route and routing dataset.",
+        routeId,
+        source: "valhalla_trace_attributes.edge.tunnel",
+        ...(coverageDataset ? { routingDataset: coverageDataset } : {}),
+        observedAt,
+        intervals: []
+      }
+    }
+  };
+}
+
+function isNonNavigableRoute(route: RoutingRoute): boolean {
+  return route.status === "unavailable" || (isRecord(route.quality) && route.quality.mode === "direct_fallback");
 }
 
 function normalizeRoutingGenericResponse(value: unknown): Record<string, unknown> {

@@ -39,5 +39,6 @@ Driver navigation/reporting: [delivery plan](product/14_DRIVER_NAVIGATION_AND_RE
 Staged user-owned AI credential and SIM handoff: [ADR 0031](adr/0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md).
 
 Jízda directed road attributes: [routing contract, measured pilot probes and mobile handoff](integration/21_JIZDA_DIRECTED_ROAD_ATTRIBUTES.md).
+Jízda route-bound tunnel contract: [ADR 0032](adr/0032_ROUTE_BOUND_TUNNEL_DATA_FOR_JIZDA.md).
 
 Veřejná syntetická povodňová ukázka: [spuštění a provoz](runbooks/18_PUBLIC_FLOOD_DEMO.md), [ADR 0026](adr/0026_ISOLATED_PUBLIC_FLOOD_DEMO.md).
