@@ -40,6 +40,28 @@ Example response fragment with illustrative coordinates:
 
 Jízda should parse `tunnels` only after selecting its route variant and matching both `routeId` and dataset. On reroute or variant switch, discard the prior intervals. Use a recent, reliable on-route GPS fix to anchor any outage prediction and decay confidence over time. Do not infer tunnel entry from GPS loss alone; at a tunnel ramp or fork, report an uncertain position until the chosen branch is observed. Test tunnel entry/exit, a tunnel ramp, GPS outage outside a tunnel, parallel roads and switching variants on a physical iPhone. This prepared contract has not yet passed that device acceptance and is not claimed as a production result.
 
+The shared mobile module already sends `includeRoadAttributes` and decodes `CSMRouteRoadAttributes` in `packages/CSMCommunicationKit/Sources/CSMCommunicationKit/CSMDriverRouting.swift` (COP Mobile repository). Add `public let tunnels: CSMRouteTunnelAttributes?` to that existing type; keep it optional for older COP responses. The exact new Swift model is:
+
+```swift
+public struct CSMRouteTunnelInterval: Codable, Sendable {
+    public let beginShapeIndex: Int
+    public let endShapeIndex: Int
+    public let direction: String // "along_route"
+}
+
+public struct CSMRouteTunnelAttributes: Codable, Sendable {
+    public let state: String // "known" or "unknown"
+    public let reason: String?
+    public let routeId: String
+    public let source: String // "valhalla_trace_attributes.edge.tunnel"
+    public let routingDataset: CSMRoutingDataset?
+    public let observedAt: Date
+    public let intervals: [CSMRouteTunnelInterval]
+}
+```
+
+In Jízda's `NavigationRoute.init(source:response:)`, accept `known` only with the selected `source.routeId`, matching `response.coverage.routingDataset`, valid forward indexes and `source.roadAttributes.state == "ok"` with zero geometry mismatches. Map interval endpoints to the existing cumulative geometry distances, not to a second polyline. In `NavigationManager`, clear the intervals on route or rank change and constrain the GPS-outage projection to a reliably entered interval; show uncertainty at a ramp or fork. `CSMDriverRouteRequest` needs no change because it already opts into road attributes.
+
 Read-only graph probe on 2026-09-28 used public points around the Strahov tunnel and ran the prepared SIM mapper locally over the production Valhalla `route` and `trace_attributes` responses. One direction matched all 71 edges to 201 route vertices with zero geometry mismatches and yielded two intervals, `[44,71]` and `[92,133]`. The opposite direction matched all 57 edges to 175 vertices with zero mismatches and yielded `[26,55]` and `[73,98]`; its tunnel-marked edges included `turn_channel` as well as `road`. Both returned `tunnels.state=known` with valid bounds and matching route ID and dataset. This proves graph availability and mapping for these sampled routes; it is not a deployed COP response, a complete map-quality survey, or a physical iPhone navigation test.
 
 `roadAttributes.restrictions` currently contains only Valhalla trace closures and labels them `advisory`; the existing SIM `traffic.incidentsOnRoute` and `hazardsOnRoute` stay separate. Static height/width/weight limits, legal access permissions and conditional OSM tags are **not** represented as verified facts by `trace_attributes`, so `vehicleRestrictionsState=not_evaluated`. In particular, absence from `restrictions` never means that a vehicle may pass. A later source keyed by directed Valhalla edge and dataset version is needed for verified or conditional restrictions.
