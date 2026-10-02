@@ -12,6 +12,12 @@ Odvolání se zapíše před voláním SIM. Pending mazání je trvalé a brán�
 stejný UTC den je regrant zakázán i po smazání kvůli SIM tombstone. Klíč HMAC
 je stabilní a jeho fingerprint zabraňuje neřízené rotaci, která by znemožnila
 zpětné odvození denních pseudonymů. Vzorky GPS se na COP neukládají.
+Produkční spoj COP API a SIM situation-data-api používá samostatnou interní
+Docker bridge síť `cop_sim_driver_measurements_internal`, bez veřejně
+publikovaného měřicího portu. K síti se připojí jen tyto dvě služby. COP
+Compose overlay udržuje připojení přes restart; službový token zůstává pouze
+v chráněných produkčních secrets obou služeb. Nasazení tohoto spojení samo
+nezapíná příjem měření.
 Samostatný cleanup příznak zůstává zapnutý při rollbacku příjmu, aby revokace
 zůstala dostupná. Pokud SIM vypnutý příjem blokuje i DELETE, stav mazání se
 nesmí vydávat za dokončený.

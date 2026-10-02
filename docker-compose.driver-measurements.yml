@@ -1,0 +1,10 @@
+services:
+  cop-api:
+    networks:
+      default: {}
+      driver-measurements: {}
+
+networks:
+  driver-measurements:
+    external: true
+    name: cop_sim_driver_measurements_internal

@@ -66,3 +66,13 @@ Compose passes the measurement settings from the protected production `.env`
 to `cop-api`; both feature flags default to `false`. Deploying the API image
 alone does not provision the SIM connection, create consent state, or begin
 collecting GPS.
+For the approved internal pilot link, create the dedicated Docker bridge
+`cop_sim_driver_measurements_internal` with `--internal` and deploy the API
+using `docker compose -f docker-compose.yml -f docker-compose.driver-measurements.yml up -d --no-deps cop-api`.
+Only COP API joins this bridge; SIM must attach only
+its situation-data-api under the DNS alias `sim-driver-measurements`. The COP
+upstream URL is then
+`http://sim-driver-measurements:4020/api/v1/internal/driver-measurements/v1`.
+The base Compose file remains usable without this bridge. A rollback of the
+network attachment uses the base Compose file while preserving the measurement
+cleanup flag and secrets if any consent has already been granted.
