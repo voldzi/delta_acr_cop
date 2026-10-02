@@ -132,7 +132,12 @@ describe("Jizda driver measurement boundary", () => {
       await vi.waitFor(() => expect(sim.deletions.length).toBeGreaterThanOrEqual(Math.min((attempt + 1) * 4, 9)));
     }
     expect(sim.deletions.length).toBe(9);
-    expect((await app.inject({ method: "GET", url: `${url}/consent`, headers: auth("a") })).json().pendingDeletion).toBe(false);
+    await vi.waitFor(async () => {
+      expect((await app.inject({ method: "GET", url: `${url}/consent`, headers: auth("a") })).json().pendingDeletion).toBe(false);
+    });
+    const completed = await app.inject({ method: "DELETE", url: `${url}/consent`, headers: auth("a") });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json().pendingDeletion).toBe(false);
     expect((await grant("a")).statusCode).toBe(409);
     expect((await app.inject({ method: "POST", url: `${url}/batches`, headers: auth("b"), payload: draft() })).statusCode).toBe(200);
     await app.close();
