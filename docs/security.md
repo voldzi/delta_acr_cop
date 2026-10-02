@@ -23,6 +23,15 @@ documentation remains in:
 Operational rule: do not commit secrets. `.env.example` contains placeholders
 only; real secrets are configured outside the repository.
 
+Jízda traffic measurements are disabled by default. The COP API derives a
+day-scoped pseudonym and stable user-scoped retry IDs only from an authenticated
+OIDC subject, and it attests consent from durable server state. The mobile
+client never receives the SIM service token. Raw GPS is forwarded only to the
+internal SIM endpoint, is not persisted by COP, and a failed SIM call has no
+direct fallback. Revocation blocks new uploads before asynchronous SIM deletion;
+pending deletion blocks regrant. See
+[ADR 0033](adr/0033_CONSENTED_JIZDA_MEASUREMENT_BOUNDARY.md).
+
 Community media rule: an attachment access update is owner-only, validates the
 requested users and groups, and produces an audit event. Public list and map
 responses expose only the audience and bounded counts; raw ACL subject/group

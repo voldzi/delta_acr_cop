@@ -215,11 +215,14 @@ import { createPlaceGeocoderFromEnv, type PlaceGeocodeResult, type PlaceGeocoder
 import { buildCopPrometheusMetrics } from "./prometheus-metrics.js";
 import { withEventProvenance } from "./provenance.js";
 import { registerCommunityGroupRoutes, registerCommunityReportRoutes } from "./routes/community-routes.js";
+import { registerDriverMeasurementRoutes } from "./routes/driver-measurement-routes.js";
 import { registerHealthRoutes } from "./routes/health-routes.js";
 import { registerMessagingRoutes } from "./routes/messaging-routes.js";
 import { registerMobileRoutes } from "./routes/mobile-routes.js";
 import { registerRadioRoutes } from "./routes/radio-routes.js";
 import { registerRoutingRoutes } from "./routes/routing-routes.js";
+import { PostgresDriverMeasurementConsentStore, type DriverMeasurementConsentStore } from "./driver-measurement-consent-store.js";
+import { HttpDriverMeasurementSource, type DriverMeasurementSource } from "./driver-measurement-source.js";
 import {
   actorFromRequest,
   decodeJwt,
@@ -330,6 +333,8 @@ import {
 } from "./web-session-store.js";
 
 export interface BuildServerOptions {
+  driverMeasurementConsentStore?: DriverMeasurementConsentStore;
+  driverMeasurementSource?: DriverMeasurementSource;
   aiGateway?: AiGateway;
   flightDataSource?: FlightDataSource;
   communityReportStore?: CommunityReportStore;
@@ -852,6 +857,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const aiChatAgentJobTtlMs = readPositiveInteger(process.env.COP_AI_CHAT_AGENT_JOB_TTL_SECONDS, 20 * 60) * 1000;
   const aiChatAgentJobs = new Map<string, AiChatAgentJobRecord>();
   const now = options.now ?? (() => new Date());
+  const driverMeasurementsEnabled = readBoolean(process.env.COP_DRIVER_MEASUREMENTS_ENABLED, false);
+  const driverMeasurementCleanupEnabled = readBoolean(process.env.COP_DRIVER_MEASUREMENTS_CLEANUP_ENABLED, false);
+  const driverMeasurementRuntimeEnabled = driverMeasurementsEnabled || driverMeasurementCleanupEnabled;
+  const driverMeasurementSecret = process.env.COP_DRIVER_MEASUREMENTS_HASH_SECRET ?? "";
+  if (driverMeasurementRuntimeEnabled && !options.driverMeasurementConsentStore && !process.env.COP_DATABASE_URL) {
+    throw new Error("Driver measurement COP adapter requires COP_DATABASE_URL.");
+  }
+  const driverMeasurementStore = driverMeasurementRuntimeEnabled
+    ? options.driverMeasurementConsentStore ?? new PostgresDriverMeasurementConsentStore(process.env.COP_DATABASE_URL!)
+    : undefined;
+  const driverMeasurementSource = driverMeasurementRuntimeEnabled
+    ? options.driverMeasurementSource ?? new HttpDriverMeasurementSource(
+      process.env.COP_DRIVER_MEASUREMENTS_SIM_URL ?? "",
+      process.env.COP_DRIVER_MEASUREMENTS_SIM_TOKEN ?? ""
+    )
+    : undefined;
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
   const trackHistoryStore = options.trackHistoryStore ?? createTrackHistoryStoreFromEnv();
   const federationRuntimeStore = options.federationRuntimeStore ?? createFederationRuntimeStoreFromEnv();
@@ -1012,6 +1033,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
   app.addHook("preHandler", requireBearerToken);
+  registerDriverMeasurementRoutes(app, {
+    enabled: driverMeasurementsEnabled,
+    cleanupEnabled: driverMeasurementCleanupEnabled,
+    oidcClientId: process.env.COP_DRIVER_MEASUREMENTS_OIDC_CLIENT_ID?.trim() || "csm-mobile",
+    secret: driverMeasurementSecret,
+    store: driverMeasurementStore,
+    source: driverMeasurementSource,
+    now
+  });
   app.get("/api/v1/auth/login", async (request, reply) => {
     if (!webBffEnabled || !webSessionStore) {
       return sendError(

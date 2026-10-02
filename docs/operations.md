@@ -55,3 +55,10 @@ but production acceptance of its disabled BYOK path, separate actor secret,
 actual project billing and local-model recovery is still required. See
 [ADR 0031](adr/0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md). Neither flag is
 enabled by this change. The credential flag alone does not switch the chat.
+
+The Jízda measurement adapter is staged behind
+`COP_DRIVER_MEASUREMENTS_ENABLED=false`. Consent and deletion use separate
+PostgreSQL state and a dedicated SIM token. After any activation, keep
+`COP_DRIVER_MEASUREMENTS_CLEANUP_ENABLED=true` during rollback, so uploads
+stop while revocation remains available. See the
+[mobile handoff](integration/22_JIZDA_DRIVER_MEASUREMENTS_COP_HANDOFF.md).

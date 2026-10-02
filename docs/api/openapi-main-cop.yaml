@@ -70,6 +70,116 @@ tags:
   - name: Incidents
     description: Candidate fusion, incidents and incident task workflow.
 paths:
+  /api/v1/driver-measurements/v1/consent:
+    get:
+      tags:
+        - Mobile
+      operationId: getDriverMeasurementConsent
+      summary: Read consent and deletion state for the authenticated native user.
+      responses:
+        "200":
+          description: Current consent state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriverMeasurementConsentState"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      tags:
+        - Mobile
+      operationId: grantDriverMeasurementConsent
+      summary: Grant explicit traffic quality contribution consent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DriverMeasurementConsentGrant"
+      responses:
+        "200":
+          description: Granted consent and timestamp.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriverMeasurementConsentGrantReceipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
+    delete:
+      tags:
+        - Mobile
+      operationId: revokeDriverMeasurementConsent
+      summary: Stop uploads immediately and delete retained SIM contributions.
+      description: 202 means local consent is revoked but SIM deletion is pending and retried. Same UTC
+        day regrant is blocked; pending deletion blocks all regrants.
+      responses:
+        "200":
+          description: Consent revoked and deletion completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriverMeasurementRevokeReceipt"
+        "202":
+          description: Consent revoked locally; durable deletion pending.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriverMeasurementRevokeReceipt"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
+  /api/v1/driver-measurements/v1/batches:
+    post:
+      tags:
+        - Mobile
+      operationId: submitDriverMeasurementBatch
+      summary: Submit a short, explicitly consented GPS measurement draft through COP.
+      description: Disabled by default. Native authenticated OIDC user only; no browser Origin. COP
+        supplies day-scoped pseudonym, consent attestation and server-side SIM token. No direct
+        mobile SIM or Valhalla access. The mobile batch version is cop-driver-measurements-v1; COP
+        transforms it to SIM's sim-driver-measurements-v1. Raw GPS is not persisted by COP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DriverMeasurementMobileBatch"
+      responses:
+        "200":
+          description: SIM shadow receipt with the original mobile batchId.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriverMeasurementMobileReceipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/ErrorResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
   /api/v1/me/preferences:
     get:
       tags:
@@ -2539,10 +2649,12 @@ paths:
     get:
       tags:
         - AI
-      summary: Read bounded OpenAI MCP assistant usage and budget status.
+      summary: Read bounded MCP assistant usage and budget status.
       operationId: getOpenAiMcpAssistantUsage
-      description: Authenticated COP users can inspect aggregate daily and monthly committed usage. No
-        provider credential is returned.
+      description: Authenticated COP users can inspect aggregate daily and monthly committed usage. When
+        the shared AI Router adapter is enabled, these totals are Router-wide and include SIM
+        traffic; the legacy direct path remains separately accounted. No provider credential is
+        returned.
       security:
         - bearerAuth: []
       responses:
@@ -2559,11 +2671,13 @@ paths:
     post:
       tags:
         - AI
-      summary: Summarize aggregate COP source health with GPT-6 Luna.
+      summary: Summarize aggregate COP source health with the configured bounded assistant.
       operationId: summarizeMcpSourceHealthWithOpenAi
       description: Authenticated, budgeted assistant. Invokes only the audited cop.sources.health MCP
-        tool; sends only aggregate health counts to OpenAI. Never sends report text, chat, partner
-        data or provider credentials. Output requires operator review.
+        tool; sends only aggregate health counts to the configured direct model or shared AI Router.
+        Never sends report text, chat, partner data or provider credentials. Output requires
+        operator review. Router mode is opt-in and does not change COP chat or situation-summary
+        routes.
       security:
         - bearerAuth: []
       responses:
@@ -2609,18 +2723,224 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+  /api/v1/ai/chat-agent/credential:
+    get:
+      tags:
+        - AI
+      summary: Read status of the authenticated user's own AI credential without revealing it.
+      operationId: getMyAiChatCredentialStatus
+      responses:
+        "200":
+          description: Credential availability and configured status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiChatCredentialStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    put:
+      tags:
+        - AI
+      summary: Relay the authenticated user's OpenAI API key to SIM Router for encrypted storage.
+      operationId: putMyAiChatCredential
+      description: Disabled by default. COP relays the key with a short-lived signed actor derived from
+        the authenticated session. SIM Router validates and encrypts it. Saving a key alone does not
+        switch chat routing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - apiKey
+              properties:
+                apiKey:
+                  type: string
+                  minLength: 20
+                  maxLength: 512
+                  writeOnly: true
+      responses:
+        "200":
+          description: Credential stored; secret omitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiChatCredentialStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      tags:
+        - AI
+      summary: Remove the authenticated user's own AI credential from SIM Router.
+      operationId: deleteMyAiChatCredential
+      responses:
+        "200":
+          description: Credential removed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiChatCredentialStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/ai/chat-agent/reviewed-general:
+    post:
+      tags:
+        - AI
+      summary: Ask a fixed, server-reviewed general question through the shared AI Router.
+      operationId: queryReviewedGeneralChat
+      description: Authenticated opt-in request. COP maps a topic enum to a fixed question and sends an
+        empty internal_minimized context. No user question, chat history, private message, incident,
+        or free context is forwarded. Disabled by the Router until external processing gates are
+        accepted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - topic
+              properties:
+                topic:
+                  type: string
+                  enum:
+                    - flood_preparedness
+                    - warning_levels
+                    - information_sources
+      responses:
+        "200":
+          description: Reviewed general answer and Router usage.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          description: Router limit reached.
+        "503":
+          description: Router external class disabled or unavailable.
+  /api/v1/ai/chat-agent/reviewed-synthetic:
+    post:
+      tags:
+        - AI
+      summary: Ask the reviewed synthetic flood exercise through the SIM AI Router.
+      operationId: queryReviewedSyntheticChat
+      description: Authenticated pilot. COP supplies fixed fictional facts; clients may choose only the
+        exercise and intent. No chatContext, free text, private messages, or incident data are
+        forwarded. The Router enforces Luna, budget, and per-user limits. Ordinary chat remains on
+        its current path.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - scenarioId
+                - intent
+              properties:
+                scenarioId:
+                  type: string
+                  enum:
+                    - flood-central-bohemia
+                intent:
+                  type: string
+                  enum:
+                    - summarize
+                    - explain
+      responses:
+        "200":
+          description: Reviewed synthetic answer and Router usage.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - requestId
+                  - model
+                  - tier
+                  - output
+                  - usage
+                  - requiresHumanReview
+                  - dataClass
+                  - scenarioId
+                properties:
+                  requestId:
+                    type: string
+                  model:
+                    type: string
+                    enum:
+                      - gpt-6-luna
+                  tier:
+                    type: string
+                    enum:
+                      - external_economy
+                  output:
+                    type: string
+                  usage:
+                    type: object
+                    required:
+                      - inputTokens
+                      - outputTokens
+                      - estimatedMicrousd
+                    properties:
+                      inputTokens:
+                        type: integer
+                        minimum: 0
+                      outputTokens:
+                        type: integer
+                        minimum: 0
+                      estimatedMicrousd:
+                        type: integer
+                        minimum: 0
+                  requiresHumanReview:
+                    type: boolean
+                    enum:
+                      - true
+                  dataClass:
+                    type: string
+                    enum:
+                      - synthetic
+                  scenarioId:
+                    type: string
+                    enum:
+                      - flood-central-bohemia
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/ai/chat-agent/query:
     post:
       tags:
         - AI
       summary: Ask a visible COP chat AI agent using server-side policy-filtered context.
       operationId: queryAiChatAgent
-      description: Creates an audit-backed AI response for an explicit chat question. COP builds the
-        context from authorized COP data and may accept an optional client-supplied chatContext
-        containing visible/decrypted timeline excerpts; the endpoint does not independently read
-        encrypted Matrix history. Short follow-up questions may inherit only the latest unambiguous
-        question from that supplied excerpt. The structured response includes bounded conversation
-        guidance, confidence and suggested follow-up questions.
+      description: Creates an audit-backed AI response. When COP_AI_CHAT_BYOK_ROUTING_ENABLED is true, COP
+        sends only the exactly authored question (at most 1200 characters), with a server-signed
+        actor, to SIM cop-chat-byok-v1; browser-selected model and private context are ignored, and
+        automaticContext is rejected. No house-key or direct OpenAI fallback occurs. The separate
+        COP_AI_CHAT_ROUTER_FULL_ENABLED path uses an internal local model. With both flags disabled,
+        the legacy chat pipeline remains available for rollback.
       requestBody:
         required: true
         content:
@@ -2644,6 +2964,10 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/ai/source-health-summary:
     post:
       tags:
@@ -5263,6 +5587,264 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
   schemas:
+    DriverMeasurementConsentState:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - granted
+        - grantedAt
+        - pendingDeletion
+        - canGrant
+      properties:
+        contractVersion:
+          type: string
+          const: cop-driver-measurements-v1
+        granted:
+          type: boolean
+        grantedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        pendingDeletion:
+          type: boolean
+        canGrant:
+          type: boolean
+    DriverMeasurementConsentGrant:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - version
+        - granted
+      properties:
+        contractVersion:
+          type: string
+          const: cop-driver-measurements-v1
+        version:
+          type: string
+          const: traffic-quality-v1
+        granted:
+          type: boolean
+          const: true
+    DriverMeasurementConsentGrantReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - version
+        - grantedAt
+      properties:
+        contractVersion:
+          type: string
+          const: cop-driver-measurements-v1
+        version:
+          type: string
+          const: traffic-quality-v1
+        grantedAt:
+          type: string
+          format: date-time
+    DriverMeasurementRevokeReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - granted
+        - pendingDeletion
+      properties:
+        contractVersion:
+          type: string
+          const: cop-driver-measurements-v1
+        granted:
+          type: boolean
+          const: false
+        pendingDeletion:
+          type: boolean
+    DriverMeasurementPoint:
+      type: object
+      additionalProperties: false
+      required:
+        - sampleId
+        - observedAt
+        - lat
+        - lon
+        - horizontalAccuracyM
+        - speedMps
+        - speedAccuracyMps
+        - headingDeg
+        - headingAccuracyDeg
+        - positionSource
+        - motion
+        - reducedAccuracy
+      properties:
+        sampleId:
+          type: string
+          format: uuid
+        observedAt:
+          type: string
+          format: date-time
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          minimum: -180
+          maximum: 180
+        horizontalAccuracyM:
+          type: number
+          minimum: 0
+          maximum: 15
+        speedMps:
+          type: number
+          minimum: 0
+          maximum: 70
+        speedAccuracyMps:
+          type: number
+          minimum: 0
+          maximum: 2
+        headingDeg:
+          type: number
+          minimum: 0
+          exclusiveMaximum: 360
+        headingAccuracyDeg:
+          type: number
+          minimum: 0
+          maximum: 20
+        positionSource:
+          type: string
+          const: gps
+        motion:
+          type: string
+          enum:
+            - driving
+            - traffic_stop
+        reducedAccuracy:
+          type: boolean
+          const: false
+    DriverMeasurementEta:
+      type: object
+      additionalProperties: false
+      required:
+        - observationId
+        - routingDataset
+        - predictedDurationSeconds
+        - actualDurationSeconds
+        - plannedDistanceM
+        - actualDistanceM
+        - personalStopSeconds
+        - estimatedSeconds
+        - offRoute
+        - completedAt
+      properties:
+        observationId:
+          type: string
+          format: uuid
+        routingDataset:
+          type: string
+          pattern: ^sim-routing-\d{4}-\d{2}-\d{2}-\d+$
+        predictedDurationSeconds:
+          type: number
+          minimum: 1
+          maximum: 86400
+        actualDurationSeconds:
+          type: number
+          minimum: 1
+          maximum: 86400
+        plannedDistanceM:
+          type: number
+          minimum: 100
+          maximum: 2000000
+        actualDistanceM:
+          type: number
+          minimum: 100
+          maximum: 2000000
+        personalStopSeconds:
+          type: number
+          minimum: 0
+          maximum: 86400
+        estimatedSeconds:
+          type: number
+          minimum: 0
+          maximum: 86400
+        offRoute:
+          type: boolean
+        completedAt:
+          type: string
+          format: date-time
+    DriverMeasurementMobileBatch:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - batchId
+        - contributorDay
+        - vehicleClass
+        - points
+      properties:
+        contractVersion:
+          type: string
+          const: cop-driver-measurements-v1
+        batchId:
+          type: string
+          format: uuid
+        contributorDay:
+          type: string
+          format: date
+        vehicleClass:
+          type: string
+          const: passenger_car
+        points:
+          type: array
+          minItems: 3
+          maxItems: 120
+          items:
+            $ref: "#/components/schemas/DriverMeasurementPoint"
+        eta:
+          $ref: "#/components/schemas/DriverMeasurementEta"
+    DriverMeasurementMobileReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - batchId
+        - receivedAt
+        - acceptedIntervalCount
+        - deduplicatedIntervalCount
+        - rejectionCounts
+        - etaAccepted
+        - applicationMode
+        - rawPositionsStored
+      properties:
+        contractVersion:
+          type: string
+          const: cop-driver-measurements-v1
+        batchId:
+          type: string
+          format: uuid
+        receivedAt:
+          type: string
+          format: date-time
+        acceptedIntervalCount:
+          type: integer
+          minimum: 0
+        deduplicatedIntervalCount:
+          type: integer
+          minimum: 0
+        rejectionCounts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        etaAccepted:
+          type: boolean
+        applicationMode:
+          type: string
+          const: shadow_only
+        rawPositionsStored:
+          type: boolean
+          const: false
     AuthenticatedActor:
       type: object
       required:
@@ -9889,6 +10471,25 @@ components:
                 type: string
               correlationId:
                 type: string
+    AiChatCredentialStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - available
+        - configured
+        - provider
+        - routingEnabled
+      properties:
+        available:
+          type: boolean
+        configured:
+          type: boolean
+        provider:
+          type: string
+          enum:
+            - openai
+        routingEnabled:
+          type: boolean
     AiCopResponse:
       type: object
       required:
@@ -14042,6 +14643,55 @@ components:
               source:
                 type: string
                 const: valhalla_trace_attributes
+        tunnels:
+          $ref: "#/components/schemas/RoutingTunnelAttributes"
+    RoutingTunnelAttributes:
+      type: object
+      description: Optional directed tunnel data for this route variant. Inclusive vertex indexes refer to
+        this route's geometry.coordinates in travel order. A known empty intervals array means no
+        graph-marked tunnel edges on a fully verified shape; unknown does not mean no tunnel.
+      required:
+        - state
+        - routeId
+        - source
+        - observedAt
+        - intervals
+      properties:
+        state:
+          type: string
+          enum:
+            - known
+            - unknown
+        reason:
+          type: string
+        routeId:
+          type: string
+        source:
+          type: string
+          const: valhalla_trace_attributes.edge.tunnel
+        routingDataset:
+          $ref: "#/components/schemas/RoutingDataset"
+        observedAt:
+          type: string
+          format: date-time
+        intervals:
+          type: array
+          items:
+            type: object
+            required:
+              - beginShapeIndex
+              - endShapeIndex
+              - direction
+            properties:
+              beginShapeIndex:
+                type: integer
+                minimum: 0
+              endShapeIndex:
+                type: integer
+                minimum: 1
+              direction:
+                type: string
+                const: along_route
     RoutingRouteFeature:
       type: object
       required:

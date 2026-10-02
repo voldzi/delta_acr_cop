@@ -124,6 +124,65 @@
     }
   ],
   "paths": {
+    "/api/v1/driver-measurements/v1/consent": {
+      "get": {
+        "tags": ["Mobile"],
+        "operationId": "getDriverMeasurementConsent",
+        "summary": "Read consent and deletion state for the authenticated native user.",
+        "responses": {
+          "200": {"description": "Current consent state.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementConsentState"}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "503": {"$ref": "#/components/responses/ErrorResponse"}
+        }
+      },
+      "post": {
+        "tags": ["Mobile"],
+        "operationId": "grantDriverMeasurementConsent",
+        "summary": "Grant explicit traffic quality contribution consent.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementConsentGrant"}}}},
+        "responses": {
+          "200": {"description": "Granted consent and timestamp.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementConsentGrantReceipt"}}}},
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "503": {"$ref": "#/components/responses/ErrorResponse"}
+        }
+      },
+      "delete": {
+        "tags": ["Mobile"],
+        "operationId": "revokeDriverMeasurementConsent",
+        "summary": "Stop uploads immediately and delete retained SIM contributions.",
+        "description": "202 means local consent is revoked but SIM deletion is pending and retried. Same UTC day regrant is blocked; pending deletion blocks all regrants.",
+        "responses": {
+          "200": {"description": "Consent revoked and deletion completed.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementRevokeReceipt"}}}},
+          "202": {"description": "Consent revoked locally; durable deletion pending.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementRevokeReceipt"}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "503": {"$ref": "#/components/responses/ErrorResponse"}
+        }
+      }
+    },
+    "/api/v1/driver-measurements/v1/batches": {
+      "post": {
+        "tags": ["Mobile"],
+        "operationId": "submitDriverMeasurementBatch",
+        "summary": "Submit a short, explicitly consented GPS measurement draft through COP.",
+        "description": "Disabled by default. Native authenticated OIDC user only; no browser Origin. COP supplies day-scoped pseudonym, consent attestation and server-side SIM token. No direct mobile SIM or Valhalla access. The mobile batch version is cop-driver-measurements-v1; COP transforms it to SIM's sim-driver-measurements-v1. Raw GPS is not persisted by COP.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementMobileBatch"}}}},
+        "responses": {
+          "200": {"description": "SIM shadow receipt with the original mobile batchId.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementMobileReceipt"}}}},
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "413": {"$ref": "#/components/responses/ErrorResponse"},
+          "429": {"$ref": "#/components/responses/TooManyRequests"},
+          "503": {"$ref": "#/components/responses/ErrorResponse"}
+        }
+      }
+    },
     "/api/v1/me/preferences": {
       "get": {
         "tags": [
@@ -8294,6 +8353,105 @@
       }
     },
     "schemas": {
+      "DriverMeasurementConsentState": {
+        "type": "object", "additionalProperties": false,
+        "required": ["contractVersion", "granted", "grantedAt", "pendingDeletion", "canGrant"],
+        "properties": {
+          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
+          "granted": {"type": "boolean"},
+          "grantedAt": {"type": ["string", "null"], "format": "date-time"},
+          "pendingDeletion": {"type": "boolean"},
+          "canGrant": {"type": "boolean"}
+        }
+      },
+      "DriverMeasurementConsentGrant": {
+        "type": "object", "additionalProperties": false,
+        "required": ["contractVersion", "version", "granted"],
+        "properties": {
+          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
+          "version": {"type": "string", "const": "traffic-quality-v1"},
+          "granted": {"type": "boolean", "const": true}
+        }
+      },
+      "DriverMeasurementConsentGrantReceipt": {
+        "type": "object", "additionalProperties": false,
+        "required": ["contractVersion", "version", "grantedAt"],
+        "properties": {
+          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
+          "version": {"type": "string", "const": "traffic-quality-v1"},
+          "grantedAt": {"type": "string", "format": "date-time"}
+        }
+      },
+      "DriverMeasurementRevokeReceipt": {
+        "type": "object", "additionalProperties": false,
+        "required": ["contractVersion", "granted", "pendingDeletion"],
+        "properties": {
+          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
+          "granted": {"type": "boolean", "const": false},
+          "pendingDeletion": {"type": "boolean"}
+        }
+      },
+      "DriverMeasurementPoint": {
+        "type": "object", "additionalProperties": false,
+        "required": ["sampleId", "observedAt", "lat", "lon", "horizontalAccuracyM", "speedMps", "speedAccuracyMps", "headingDeg", "headingAccuracyDeg", "positionSource", "motion", "reducedAccuracy"],
+        "properties": {
+          "sampleId": {"type": "string", "format": "uuid"},
+          "observedAt": {"type": "string", "format": "date-time"},
+          "lat": {"type": "number", "minimum": -90, "maximum": 90},
+          "lon": {"type": "number", "minimum": -180, "maximum": 180},
+          "horizontalAccuracyM": {"type": "number", "minimum": 0, "maximum": 15},
+          "speedMps": {"type": "number", "minimum": 0, "maximum": 70},
+          "speedAccuracyMps": {"type": "number", "minimum": 0, "maximum": 2},
+          "headingDeg": {"type": "number", "minimum": 0, "exclusiveMaximum": 360},
+          "headingAccuracyDeg": {"type": "number", "minimum": 0, "maximum": 20},
+          "positionSource": {"type": "string", "const": "gps"},
+          "motion": {"type": "string", "enum": ["driving", "traffic_stop"]},
+          "reducedAccuracy": {"type": "boolean", "const": false}
+        }
+      },
+      "DriverMeasurementEta": {
+        "type": "object", "additionalProperties": false,
+        "required": ["observationId", "routingDataset", "predictedDurationSeconds", "actualDurationSeconds", "plannedDistanceM", "actualDistanceM", "personalStopSeconds", "estimatedSeconds", "offRoute", "completedAt"],
+        "properties": {
+          "observationId": {"type": "string", "format": "uuid"},
+          "routingDataset": {"type": "string", "pattern": "^sim-routing-\\d{4}-\\d{2}-\\d{2}-\\d+$"},
+          "predictedDurationSeconds": {"type": "number", "minimum": 1, "maximum": 86400},
+          "actualDurationSeconds": {"type": "number", "minimum": 1, "maximum": 86400},
+          "plannedDistanceM": {"type": "number", "minimum": 100, "maximum": 2000000},
+          "actualDistanceM": {"type": "number", "minimum": 100, "maximum": 2000000},
+          "personalStopSeconds": {"type": "number", "minimum": 0, "maximum": 86400},
+          "estimatedSeconds": {"type": "number", "minimum": 0, "maximum": 86400},
+          "offRoute": {"type": "boolean"},
+          "completedAt": {"type": "string", "format": "date-time"}
+        }
+      },
+      "DriverMeasurementMobileBatch": {
+        "type": "object", "additionalProperties": false,
+        "required": ["contractVersion", "batchId", "contributorDay", "vehicleClass", "points"],
+        "properties": {
+          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
+          "batchId": {"type": "string", "format": "uuid"},
+          "contributorDay": {"type": "string", "format": "date"},
+          "vehicleClass": {"type": "string", "const": "passenger_car"},
+          "points": {"type": "array", "minItems": 3, "maxItems": 120, "items": {"$ref": "#/components/schemas/DriverMeasurementPoint"}},
+          "eta": {"$ref": "#/components/schemas/DriverMeasurementEta"}
+        }
+      },
+      "DriverMeasurementMobileReceipt": {
+        "type": "object", "additionalProperties": false,
+        "required": ["contractVersion", "batchId", "receivedAt", "acceptedIntervalCount", "deduplicatedIntervalCount", "rejectionCounts", "etaAccepted", "applicationMode", "rawPositionsStored"],
+        "properties": {
+          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
+          "batchId": {"type": "string", "format": "uuid"},
+          "receivedAt": {"type": "string", "format": "date-time"},
+          "acceptedIntervalCount": {"type": "integer", "minimum": 0},
+          "deduplicatedIntervalCount": {"type": "integer", "minimum": 0},
+          "rejectionCounts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+          "etaAccepted": {"type": "boolean"},
+          "applicationMode": {"type": "string", "const": "shadow_only"},
+          "rawPositionsStored": {"type": "boolean", "const": false}
+        }
+      },
       "AuthenticatedActor": {
         "type": "object",
         "required": [

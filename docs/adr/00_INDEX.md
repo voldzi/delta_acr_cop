@@ -34,3 +34,4 @@
 - [0030 COP Chat Minimized Internal External Policy](0030_COP_CHAT_MINIMIZED_INTERNAL_EXTERNAL_POLICY.md)
 - [0031 Uživatelský API klíč pro jeden COP chat (příprava)](0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md)
 - [0032 Route-bound Tunnel Data for Jízda](0032_ROUTE_BOUND_TUNNEL_DATA_FOR_JIZDA.md)
+- [0033 Consented Jízda Measurement Boundary](0033_CONSENTED_JIZDA_MEASUREMENT_BOUNDARY.md)
