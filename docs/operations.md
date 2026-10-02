@@ -62,3 +62,7 @@ PostgreSQL state and a dedicated SIM token. After any activation, keep
 `COP_DRIVER_MEASUREMENTS_CLEANUP_ENABLED=true` during rollback, so uploads
 stop while revocation remains available. See the
 [mobile handoff](integration/22_JIZDA_DRIVER_MEASUREMENTS_COP_HANDOFF.md).
+Compose passes the measurement settings from the protected production `.env`
+to `cop-api`; both feature flags default to `false`. Deploying the API image
+alone does not provision the SIM connection, create consent state, or begin
+collecting GPS.
