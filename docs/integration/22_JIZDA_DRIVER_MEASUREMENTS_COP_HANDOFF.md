@@ -100,8 +100,16 @@ pseudonymy na běh a má jediného pracovníka; po restartu se obnoví z databá
 ## Akceptace před aktivací
 
 Lokální syntetické testy pokrývají dva uživatele, transformaci UUID, odmítnutí
-kontextu, odvolání, čekající smazání a chybové odpovědi SIM. Zatím nejsou
-důkazem běhu na telefonu ani produkčního propojení. Před zapnutím společně
+kontextu, odvolání, čekající smazání a chybové odpovědi SIM. Samostatný volitelný
+test `apps/cop-api/src/driver-measurement-postgres.test.ts` prošel na izolovaném
+PostgreSQL 18 bez volume: trvalost mezi dvěma instancemi a restartem, izolace
+uživatelů, souběh odeslání a odvolání, blokace opětovného souhlasu ve stejný den,
+dokončení čekajícího mazání a ochrana před změnou HMAC tajemství. Test vytváří
+a maže pouze vlastní náhodné schéma. Spouští se s
+`COP_DRIVER_MEASUREMENT_TEST_DATABASE_URL` ukazujícím na **dočasnou místní
+databázi s názvem končícím `_test`**; bez proměnné je přeskočen. Nepoužívejte
+produkční tunel či účet. Ani tento průchod není důkazem omezených oprávnění
+produkčního účtu, běhu na telefonu nebo produkčního propojení. Před zapnutím společně
 ověřte skutečné GPS/ETA s Jízdou, přihlášení běžného uživatele `csm-mobile`,
 odříznuté konce jízd, více zařízení, změnu dne, 429/503, durable mazání po
 restartu, audit a kvalitu souhrnů v SIM. Produkční síťové propojení a předání
