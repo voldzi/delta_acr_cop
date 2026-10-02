@@ -118,3 +118,32 @@ ověřte skutečné GPS/ETA s Jízdou, přihlášení běžného uživatele `csm
 odříznuté konce jízd, více zařízení, změnu dne, 429/503, durable mazání po
 restartu, audit a kvalitu souhrnů v SIM. Produkční síťové propojení a předání
 službového tokenu podléhají samostatnému schválení.
+
+### Společný pilot `shadow_only` na iPhonu
+
+Před začátkem zaznamenejte revize Jízdy, sdíleného CSMCommunicationKit, COP a
+SIM, identitu nasazených obrazů, verzi Valhalla datasetu a stav příznaků.
+Pilot zapněte jen pro určené účty a po skončení jej vypněte. Pro každý případ
+uložte pouze stavové kódy, počty a čas; nevytvářejte diagnostický záznam
+surových souřadnic, tokenů ani identit z požadavků.
+
+1. Na reálném iPhonu udělte souhlas, projeďte známý úsek a ověřte dávku,
+   `shadow_only` receipt, správný směrový edge a dataset v SIM. Zvlášť ověřte
+   souběžné vozovky a opačný směr; nejisté přiřazení musí být odmítnuto.
+2. Přerušte internet při jízdě a obnovte jej: fronta smí zůstat jen v RAM,
+   retry musí zachovat `batchId` a respektovat 429/`Retry-After`. Restart
+   aplikace musí neodeslanou frontu zahodit.
+3. Při změně účtu musí být předchozí fronta zahozena a nový účet musí znovu
+   načíst vlastní souhlas. Soukromá zóna, prvních a posledních alespoň 60 s a
+   300 m jízdy nesmí do dávky vstoupit. Přechod přes půlnoc UTC musí vytvořit
+   oddělené denní dávky a pseudonymy.
+4. Odvolejte souhlas během uploadu. Po odpovědi 202 sledujte
+   `pendingDeletion` až do `false`; ověřte zmizení příspěvku z agregací a
+   odmítnutí pozdní dávky. Při výpadku SIM/DB musí zůstat 503 a čekající
+   mazání trvalé i po restartu služby.
+5. Na stejném telefonu a trase změřte s vypnutým a zapnutým pilotem spotřebu
+   baterie, počet a objem požadavků a dobu práce na pozadí. Zaznamenejte délku
+   trasy, verzi iOS, stav sítě a rozdíl.
+
+Přijetí dávky samo neprokazuje lepší navigaci. Souhrny zůstávají oddělené od
+živých rychlostí a ETA; jejich zapojení vyžaduje nový schválený kontrakt.
