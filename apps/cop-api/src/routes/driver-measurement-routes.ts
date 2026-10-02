@@ -98,7 +98,7 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
     if (status === 429 && sourceError?.retryAfter && /^\d{1,5}$/.test(sourceError.retryAfter)) {
       reply.header("Retry-After", sourceError.retryAfter);
     }
-    return sendError(reply, status, "DRIVER_MEASUREMENTS_UPSTREAM_ERROR",
+    return sendError(reply, status, sourceError?.code ?? "DRIVER_MEASUREMENTS_UPSTREAM_ERROR",
       "Měření dopravy nyní nelze zpracovat.", correlationIdFrom(request.headers["x-correlation-id"]));
   }
   app.get(`${prefix}/consent`, async (request, reply) => {

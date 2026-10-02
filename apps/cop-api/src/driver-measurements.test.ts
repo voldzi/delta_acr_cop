@@ -177,6 +177,10 @@ describe("Jizda driver measurement boundary", () => {
     const rate = await rateApp.inject({ method: "POST", url: `${root}/batches`, headers, payload: draft() });
     expect(rate.statusCode).toBe(429);
     expect(rate.headers["retry-after"]).toBe("7");
+    sim.send = async () => { throw new DriverMeasurementSourceError(403, undefined, "DRIVER_CONSENT_REVOKED"); };
+    const revokedBatch = await rateApp.inject({ method: "POST", url: `${root}/batches`, headers, payload: draft() });
+    expect(revokedBatch.statusCode).toBe(403);
+    expect(revokedBatch.json().error.code).toBe("DRIVER_CONSENT_REVOKED");
     await rateApp.close();
   });
 
@@ -219,6 +223,18 @@ describe("Jizda driver measurement boundary", () => {
       acceptedIntervalCount: 1, deduplicatedIntervalCount: 0, rejectionCounts: {}, etaAccepted: false,
       applicationMode: "shadow_only", rawPositionsStored: false, rawGps: [50, 14]
     }), { status: 200 }));
+    await expect(source.send(input)).rejects.toMatchObject({ statusCode: 503 });
+    fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({
+      error: { code: "DRIVER_CONSENT_REVOKED", message: "not forwarded", correlationId: "synthetic" }
+    }), { status: 403 }));
+    await expect(source.send(input)).rejects.toMatchObject({ statusCode: 403, code: "DRIVER_CONSENT_REVOKED" });
+    fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({
+      error: { code: "SERVICE_TOKEN_DENIED", message: "not forwarded", correlationId: "synthetic" }
+    }), { status: 403 }));
+    await expect(source.send(input)).rejects.toMatchObject({ statusCode: 503 });
+    fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({
+      error: { code: "DRIVER_CONSENT_REVOKED", message: "x".repeat(5000), correlationId: "synthetic" }
+    }), { status: 403 }));
     await expect(source.send(input)).rejects.toMatchObject({ statusCode: 503 });
   });
 });

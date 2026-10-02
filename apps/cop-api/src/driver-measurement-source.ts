@@ -14,7 +14,9 @@ export interface SimDriverReceipt {
 }
 
 export class DriverMeasurementSourceError extends Error {
-  constructor(readonly statusCode: number, readonly retryAfter?: string) { super("Driver measurement source rejected request."); }
+  constructor(readonly statusCode: number, readonly retryAfter?: string, readonly code?: "DRIVER_CONSENT_REVOKED") {
+    super("Driver measurement source rejected request.");
+  }
 }
 
 export interface DriverMeasurementSource {
@@ -41,10 +43,18 @@ export class HttpDriverMeasurementSource implements DriverMeasurementSource {
     } catch { throw new DriverMeasurementSourceError(503); }
     if (!response.ok) {
       // SIM service authorization is a backend outage, never a client identity failure.
-      const status = [400, 409, 413, 429].includes(response.status) ? response.status : 503;
+      let revoked = false;
+      if (response.status === 403) {
+        try {
+          const body: unknown = JSON.parse(await readBoundedBody(response, 4096));
+          revoked = isRevokedError(body);
+        } catch { /* Malformed or oversized upstream errors fail closed. */ }
+      } else {
+        await response.body?.cancel().catch(() => undefined);
+      }
+      const status = revoked ? 403 : [400, 409, 413, 429].includes(response.status) ? response.status : 503;
       const retryAfter = response.headers.get("retry-after") ?? undefined;
-      await response.body?.cancel().catch(() => undefined);
-      throw new DriverMeasurementSourceError(status, retryAfter);
+      throw new DriverMeasurementSourceError(status, retryAfter, revoked ? "DRIVER_CONSENT_REVOKED" : undefined);
     }
     return response;
   }
@@ -74,6 +84,12 @@ const receiptSchema = z.strictObject({
   applicationMode: z.literal("shadow_only"),
   rawPositionsStored: z.literal(false)
 });
+
+function isRevokedError(value: unknown): boolean {
+  if (!value || typeof value !== "object" || !("error" in value)) return false;
+  const error = value.error;
+  return !!error && typeof error === "object" && "code" in error && error.code === "DRIVER_CONSENT_REVOKED";
+}
 
 async function readBoundedBody(response: Response, maxBytes: number): Promise<string> {
   const reader = response.body?.getReader();

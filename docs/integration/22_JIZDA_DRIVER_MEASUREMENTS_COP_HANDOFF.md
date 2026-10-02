@@ -41,6 +41,10 @@ Všechny odpovědi používají `Cache-Control: no-store`. Při 400/403/409 neop
 stejný chybný požadavek; 429 respektuje `Retry-After`, 503 vyžaduje omezený
 retry se stejným `batchId`. Žádný přímý fallback do SIM. Bez zapnutého
 `COP_DRIVER_MEASUREMENTS_ENABLED` vrací adaptér 503 a Jízda zůstává vypnutá.
+Potvrzený interní SIM kód `DRIVER_CONSENT_REVOKED` se mapuje na mobilní 403,
+se stejným kódem v COP chybovém obalu, aby Jízda zablokovala další dávky daného dne. Jiné interní 403 včetně chyby
+službového oprávnění se mapují na 503; COP čte jen omezený kód chyby a nikdy
+nepředává text interní odpovědi do telefonu.
 
 ## Serverová hranice a minimalizace
 
