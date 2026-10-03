@@ -8,7 +8,7 @@ The user explicitly authorized deployment after [acceptance record 24](24_JIZDA_
 | Component | Deployed / published revision |
 | --- | --- |
 | COP API | `0311d4d6b362c70c90fa35b9c9787459db46edce` (ordinary closure validation follow-up) |
-| SIM routing API | `3506663a70a32ecdab9ab2921656385dc998ea26` |
+| SIM routing API | `91bbfa049a73cf2dd86f3430578ed9e9d571ea77` (same closure schema as `3506663`) |
 | Shared mobile SDK | Published `b1d47d09e86b475c6a4a792cf9d94d87caf6f726`; Jízda reports local adoption and simulator acceptance; physical acceptance pending |
 
 Actual running images were verified against the built release. Later documentation

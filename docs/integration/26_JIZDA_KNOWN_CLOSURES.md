@@ -2,7 +2,8 @@
 
 Status: ordinary reviewed known-closure routing is deployed and enabled. COP API
 runs `0311d4d6b362c70c90fa35b9c9787459db46edce`; SIM runs the pinned release
-`3506663a70a32ecdab9ab2921656385dc998ea26`. Strict profiles and driver measurements
+`91bbfa049a73cf2dd86f3430578ed9e9d571ea77` (same binding schema as
+`3506663a70a32ecdab9ab2921656385dc998ea26`). Strict profiles and driver measurements
 remain off. Actual authenticated-user and physical-phone acceptance are pending.
 Coverage remains incomplete; this release has one individually reviewed closure.
 
@@ -137,12 +138,15 @@ It is a contract fixture, not a live bridge or production acceptance record.
   by the locked physical phone. Neither installation nor fixture replay proves
   physical navigation or real OIDC acceptance.
 
-Forward road attributes currently report unavailable because trace geometry has
-one extra consecutive origin vertex; tunnels remain unknown there. Reverse road
-attributes passed; vehicle restrictions remain not evaluated. Known-closure
-engine exclusion is independently verified. SIM is preparing a separate exact
-consecutive-duplicate alignment fix, without merging loops or relaxing geometric
-tolerances; no repaired-attribute claim is made here before its deployment.
+The subsequent SIM patch `91bbfa049a73cf2dd86f3430578ed9e9d571ea77` fixes
+only an exact duplicated origin pair in edge-walk geometry. Interior/nearby repeated
+points remain rejected; forward index checks preserve loops. COP reviewed the narrow
+diff and verified actual post-patch image identity and healthy runtime. Running COP
+then independently verified both directions again: unchanged 3726/3682 m and nine
+indexed steps, roadAttributes `ok`, tunnels `known` with zero intervals on these
+particular routes. This establishes neither a real tunnel-driving test nor complete
+speed/legal/vehicle-limit coverage. Vehicle restrictions remain not evaluated.
+SIM reports 246 tests passed, including six isolated database tests.
 
 Previous COP image and exact configuration selection are retained for rollback;
 a live rollback roundtrip was not performed. Live outage injection was not done;
@@ -153,3 +157,14 @@ graph fails closed rather than silently reusing the old exclusion template.
 Chroma retrieval was available for the managed primary repository. Reindexing this
 release worktree was rejected because it is not a managed MCP root; no successful
 release-index update is claimed. Selected current files were verified directly.
+
+### Graph-release operational gate
+
+Activating a different graph invalidates the reviewed binding. Ordinary road
+requests then fail with 503 until the new graph passes reviewed re-binding, including
+source/geometry/engine verification. This affects routing beyond the vicinity of
+the reviewed closure. It must not silently retry without the exclusions. The current
+release does not provide an automatic nationwide publisher or automatic graph-review
+promotion. A scoped verified re-binding step in the existing graph-release workflow
+has been requested from SIM; completion is not yet claimed. Exact private scheduler
+and operator details belong in the private operational handoff, not this public file.
