@@ -29,3 +29,11 @@ Default-off rollout and physical iPhone acceptance remain required. No driver
 measurement, secret, traffic writer or China voice behavior is changed.
 
 Contract, units and host steps: integration/23_JIZDA_ROAD_TRIP_CONTRACT.md.
+
+OIDC boundary completion (2026-10-03): every routing endpoint requires a usable
+actor after the existing verified bearer/BFF guard. Missing/invalid subject is 401
+before SIM is called. Claim types and JWT structure are checked without logging
+claims or token fragments. Real HTTP JWKS tests plus signed synthetic JWTs cover
+valid mobile and BFF sessions, revocation, origin, wrong signature/client/issuer,
+expiry, malformed claims and all-variant response failures. These tests do not
+replace production end-user login or real-iPhone acceptance.

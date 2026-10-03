@@ -126,60 +126,167 @@
   "paths": {
     "/api/v1/driver-measurements/v1/consent": {
       "get": {
-        "tags": ["Mobile"],
+        "tags": [
+          "Mobile"
+        ],
         "operationId": "getDriverMeasurementConsent",
         "summary": "Read consent and deletion state for the authenticated native user.",
         "responses": {
-          "200": {"description": "Current consent state.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementConsentState"}}}},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"},
-          "503": {"$ref": "#/components/responses/ErrorResponse"}
+          "200": {
+            "description": "Current consent state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverMeasurementConsentState"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "$ref": "#/components/responses/ErrorResponse"
+          }
         }
       },
       "post": {
-        "tags": ["Mobile"],
+        "tags": [
+          "Mobile"
+        ],
         "operationId": "grantDriverMeasurementConsent",
         "summary": "Grant explicit traffic quality contribution consent.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementConsentGrant"}}}},
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DriverMeasurementConsentGrant"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {"description": "Granted consent and timestamp.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementConsentGrantReceipt"}}}},
-          "400": {"$ref": "#/components/responses/BadRequest"},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"},
-          "409": {"$ref": "#/components/responses/Conflict"},
-          "503": {"$ref": "#/components/responses/ErrorResponse"}
+          "200": {
+            "description": "Granted consent and timestamp.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverMeasurementConsentGrantReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/ErrorResponse"
+          }
         }
       },
       "delete": {
-        "tags": ["Mobile"],
+        "tags": [
+          "Mobile"
+        ],
         "operationId": "revokeDriverMeasurementConsent",
         "summary": "Stop uploads immediately and delete retained SIM contributions.",
         "description": "202 means local consent is revoked but SIM deletion is pending and retried. Same UTC day regrant is blocked; pending deletion blocks all regrants.",
         "responses": {
-          "200": {"description": "Consent revoked and deletion completed.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementRevokeReceipt"}}}},
-          "202": {"description": "Consent revoked locally; durable deletion pending.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementRevokeReceipt"}}}},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"},
-          "503": {"$ref": "#/components/responses/ErrorResponse"}
+          "200": {
+            "description": "Consent revoked and deletion completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverMeasurementRevokeReceipt"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Consent revoked locally; durable deletion pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverMeasurementRevokeReceipt"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "$ref": "#/components/responses/ErrorResponse"
+          }
         }
       }
     },
     "/api/v1/driver-measurements/v1/batches": {
       "post": {
-        "tags": ["Mobile"],
+        "tags": [
+          "Mobile"
+        ],
         "operationId": "submitDriverMeasurementBatch",
         "summary": "Submit a short, explicitly consented GPS measurement draft through COP.",
         "description": "Disabled by default. Native authenticated OIDC user only; no browser Origin. COP supplies day-scoped pseudonym, consent attestation and server-side SIM token. No direct mobile SIM or Valhalla access. The mobile batch version is cop-driver-measurements-v1; COP transforms it to SIM's sim-driver-measurements-v1. Raw GPS is not persisted by COP.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementMobileBatch"}}}},
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DriverMeasurementMobileBatch"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {"description": "SIM shadow receipt with the original mobile batchId.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementMobileReceipt"}}}},
-          "400": {"$ref": "#/components/responses/BadRequest"},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"},
-          "409": {"$ref": "#/components/responses/Conflict"},
-          "413": {"$ref": "#/components/responses/ErrorResponse"},
-          "429": {"$ref": "#/components/responses/TooManyRequests"},
-          "503": {"$ref": "#/components/responses/ErrorResponse"}
+          "200": {
+            "description": "SIM shadow receipt with the original mobile batchId.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverMeasurementMobileReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ErrorResponse"
+          }
         }
       }
     },
@@ -589,7 +696,7 @@
         ],
         "summary": "Proxy an allowlisted georeferenced raster overlay image.",
         "operationId": "getMapRasterOverlay",
-        "description": "Returns a client-safe raster image for catalog layers with kind=raster_overlay. Browser and native clients must use this COP endpoint for provider raster URLs returned by /api/v1/map/query instead of calling SIM or external weather providers directly. ČHMÚ radar layers must use the SIM clean raster URL from providerProperties.raster.url; rawUrl and sourceUrl are diagnostic only. COP accepts allowlisted absolute URLs and SIM clean relative paths under /api/v1/weather-radar/clean/.\n",
+        "description": "Returns a client-safe raster image for catalog layers with kind=raster_overlay. Browser and native clients must use this COP endpoint for provider raster URLs returned by /api/v1/map/query instead of calling SIM or external weather providers directly. \u010cHM\u00da radar layers must use the SIM clean raster URL from providerProperties.raster.url; rawUrl and sourceUrl are diagnostic only. COP accepts allowlisted absolute URLs and SIM clean relative paths under /api/v1/weather-radar/clean/.\n",
         "parameters": [
           {
             "name": "url",
@@ -663,7 +770,7 @@
         ],
         "summary": "Return server-side SIM weather radar frame catalog.",
         "operationId": "getWeatherRadarFrames",
-        "description": "Returns a short-lived, client-safe frame catalog for radar playback. COP calls SIM server-to-server and clients use the cleanUrl values only through /api/v1/map/raster-overlay. Browser and native clients must not call SIM weather-radar or ČHMÚ URLs directly.\n",
+        "description": "Returns a short-lived, client-safe frame catalog for radar playback. COP calls SIM server-to-server and clients use the cleanUrl values only through /api/v1/map/raster-overlay. Browser and native clients must not call SIM weather-radar or \u010cHM\u00da URLs directly.\n",
         "parameters": [
           {
             "name": "product",
@@ -741,7 +848,7 @@
         ],
         "summary": "Proxy an allowlisted SIM weather webcam detail or snapshot resource.",
         "operationId": "getWeatherWebcamProxy",
-        "description": "Returns client-safe ČHMÚ webcam detail JSON or snapshot image using only URLs supplied in providerProperties.camera.detailUrl or snapshotUrl. COP allows configured SIM hosts and blocks direct chmi.cz upstream hosts.\n",
+        "description": "Returns client-safe \u010cHM\u00da webcam detail JSON or snapshot image using only URLs supplied in providerProperties.camera.detailUrl or snapshotUrl. COP allows configured SIM hosts and blocks direct chmi.cz upstream hosts.\n",
         "parameters": [
           {
             "name": "url",
@@ -3953,29 +4060,69 @@
     },
     "/api/v1/ai/mcp-assistant/usage": {
       "get": {
-        "tags": ["AI"],
+        "tags": [
+          "AI"
+        ],
         "summary": "Read bounded MCP assistant usage and budget status.",
         "operationId": "getOpenAiMcpAssistantUsage",
         "description": "Authenticated COP users can inspect aggregate daily and monthly committed usage. When the shared AI Router adapter is enabled, these totals are Router-wide and include SIM traffic; the legacy direct path remains separately accounted. No provider credential is returned.",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "Current usage and limits.", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "200": {
+            "description": "Current usage and limits.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/api/v1/ai/mcp-assistant/source-health": {
       "post": {
-        "tags": ["AI"],
+        "tags": [
+          "AI"
+        ],
         "summary": "Summarize aggregate COP source health with the configured bounded assistant.",
         "operationId": "summarizeMcpSourceHealthWithOpenAi",
         "description": "Authenticated, budgeted assistant. Invokes only the audited cop.sources.health MCP tool; sends only aggregate health counts to the configured direct model or shared AI Router. Never sends report text, chat, partner data or provider credentials. Output requires operator review. Router mode is opt-in and does not change COP chat or situation-summary routes.",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "AI summary and usage.", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "429": { "description": "AI usage budget or request limit reached." },
-          "503": { "description": "AI feature, provider or budget ledger unavailable." }
+          "200": {
+            "description": "AI summary and usage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "description": "AI usage budget or request limit reached."
+          },
+          "503": {
+            "description": "AI feature, provider or budget ledger unavailable."
+          }
         }
       }
     },
@@ -4025,44 +4172,118 @@
     },
     "/api/v1/ai/chat-agent/credential": {
       "get": {
-        "tags": ["AI"],
+        "tags": [
+          "AI"
+        ],
         "summary": "Read status of the authenticated user's own AI credential without revealing it.",
         "operationId": "getMyAiChatCredentialStatus",
         "responses": {
-          "200": { "description": "Credential availability and configured status.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiChatCredentialStatus" } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+          "200": {
+            "description": "Credential availability and configured status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChatCredentialStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
         }
       },
       "put": {
-        "tags": ["AI"],
+        "tags": [
+          "AI"
+        ],
         "summary": "Relay the authenticated user's OpenAI API key to SIM Router for encrypted storage.",
         "operationId": "putMyAiChatCredential",
         "description": "Disabled by default. COP relays the key with a short-lived signed actor derived from the authenticated session. SIM Router validates and encrypts it. Saving a key alone does not switch chat routing.",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["apiKey"], "properties": { "apiKey": { "type": "string", "minLength": 20, "maxLength": 512, "writeOnly": true } } } } } },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "apiKey"
+                ],
+                "properties": {
+                  "apiKey": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 512,
+                    "writeOnly": true
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Credential stored; secret omitted.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiChatCredentialStatus" } } } },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "422": { "$ref": "#/components/responses/UnprocessableEntity" },
-          "429": { "$ref": "#/components/responses/TooManyRequests" },
-          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+          "200": {
+            "description": "Credential stored; secret omitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChatCredentialStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
         }
       },
       "delete": {
-        "tags": ["AI"],
+        "tags": [
+          "AI"
+        ],
         "summary": "Remove the authenticated user's own AI credential from SIM Router.",
         "operationId": "deleteMyAiChatCredential",
         "responses": {
-          "200": { "description": "Credential removed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiChatCredentialStatus" } } } },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+          "200": {
+            "description": "Credential removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChatCredentialStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
         }
       }
     },
     "/api/v1/ai/chat-agent/reviewed-general": {
       "post": {
-        "tags": ["AI"],
+        "tags": [
+          "AI"
+        ],
         "summary": "Ask a fixed, server-reviewed general question through the shared AI Router.",
         "operationId": "queryReviewedGeneralChat",
         "description": "Authenticated opt-in request. COP maps a topic enum to a fixed question and sends an empty internal_minimized context. No user question, chat history, private message, incident, or free context is forwarded. Disabled by the Router until external processing gates are accepted.",
@@ -4073,11 +4294,17 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["topic"],
+                "required": [
+                  "topic"
+                ],
                 "properties": {
                   "topic": {
                     "type": "string",
-                    "enum": ["flood_preparedness", "warning_levels", "information_sources"]
+                    "enum": [
+                      "flood_preparedness",
+                      "warning_levels",
+                      "information_sources"
+                    ]
                   }
                 }
               }
@@ -4085,11 +4312,21 @@
           }
         },
         "responses": {
-          "200": { "description": "Reviewed general answer and Router usage." },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "429": { "description": "Router limit reached." },
-          "503": { "description": "Router external class disabled or unavailable." }
+          "200": {
+            "description": "Reviewed general answer and Router usage."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "description": "Router limit reached."
+          },
+          "503": {
+            "description": "Router external class disabled or unavailable."
+          }
         }
       }
     },
@@ -7118,7 +7355,7 @@
         ],
         "summary": "Return SIM emergency routing profile catalog through COP.",
         "operationId": "getRoutingProfiles",
-        "description": "Server-side proxy for SIM emergency routing profiles. Browsers, Chat and native clients must call COP, not SIM, for routing data.",
+        "description": "Server-side proxy for SIM emergency routing profiles. Browsers, Chat and native clients must call COP, not SIM, for routing data. Requires an authenticated actor with a non-empty OIDC subject (or explicitly configured non-production lab identity). COP verifies the session/bearer token server-side and never forwards it to SIM. Invalid or revoked identity returns 401 before routing.",
         "responses": {
           "200": {
             "description": "Emergency routing profile catalog.",
@@ -7145,6 +7382,9 @@
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           }
         }
       }
@@ -7154,9 +7394,9 @@
         "tags": [
           "Map Catalog"
         ],
-        "summary": "Calculate a SIM emergency route through COP.",
+        "summary": "Calculate a SIM route through COP.",
         "operationId": "runEmergencyRoute",
-        "description": "Calculates a primary route between two points through the server-side SIM routing provider. COP renders returned GeoJSON features as a temporary operational overlay and displays ETA, distance, quality, traffic and warnings.",
+        "description": "Calculates a primary route between two points through the server-side SIM routing provider. COP renders returned GeoJSON features as a temporary operational overlay and displays ETA, distance, quality, traffic and warnings. Requires an authenticated actor with a non-empty OIDC subject (or explicitly configured non-production lab identity). COP verifies the session/bearer token server-side and never forwards it to SIM. Invalid or revoked identity returns 401 before routing.",
         "requestBody": {
           "required": true,
           "content": {
@@ -7220,6 +7460,12 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -7294,8 +7540,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
-        }
+        },
+        "description": " Requires an authenticated actor with a non-empty OIDC subject (or explicitly configured non-production lab identity). COP verifies the session/bearer token server-side and never forwards it to SIM. Invalid or revoked identity returns 401 before routing."
       }
     },
     "/api/v1/routing/isochrone": {
@@ -7341,8 +7594,15 @@
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
-        }
+        },
+        "description": " Requires an authenticated actor with a non-empty OIDC subject (or explicitly configured non-production lab identity). COP verifies the session/bearer token server-side and never forwards it to SIM. Invalid or revoked identity returns 401 before routing."
       }
     },
     "/api/v1/routing/nearest-access": {
@@ -7388,8 +7648,15 @@
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
-        }
+        },
+        "description": " Requires an authenticated actor with a non-empty OIDC subject (or explicitly configured non-production lab identity). COP verifies the session/bearer token server-side and never forwards it to SIM. Invalid or revoked identity returns 401 before routing."
       }
     },
     "/api/v1/mobile/pairing/sessions": {
@@ -8408,102 +8675,340 @@
     },
     "schemas": {
       "DriverMeasurementConsentState": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "granted", "grantedAt", "pendingDeletion", "canGrant"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "granted",
+          "grantedAt",
+          "pendingDeletion",
+          "canGrant"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "granted": {"type": "boolean"},
-          "grantedAt": {"type": ["string", "null"], "format": "date-time"},
-          "pendingDeletion": {"type": "boolean"},
-          "canGrant": {"type": "boolean"}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "granted": {
+            "type": "boolean"
+          },
+          "grantedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "pendingDeletion": {
+            "type": "boolean"
+          },
+          "canGrant": {
+            "type": "boolean"
+          }
         }
       },
       "DriverMeasurementConsentGrant": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "version", "granted"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "version",
+          "granted"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "version": {"type": "string", "const": "traffic-quality-v1"},
-          "granted": {"type": "boolean", "const": true}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "version": {
+            "type": "string",
+            "const": "traffic-quality-v1"
+          },
+          "granted": {
+            "type": "boolean",
+            "const": true
+          }
         }
       },
       "DriverMeasurementConsentGrantReceipt": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "version", "grantedAt"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "version",
+          "grantedAt"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "version": {"type": "string", "const": "traffic-quality-v1"},
-          "grantedAt": {"type": "string", "format": "date-time"}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "version": {
+            "type": "string",
+            "const": "traffic-quality-v1"
+          },
+          "grantedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "DriverMeasurementRevokeReceipt": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "granted", "pendingDeletion"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "granted",
+          "pendingDeletion"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "granted": {"type": "boolean", "const": false},
-          "pendingDeletion": {"type": "boolean"}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "granted": {
+            "type": "boolean",
+            "const": false
+          },
+          "pendingDeletion": {
+            "type": "boolean"
+          }
         }
       },
       "DriverMeasurementPoint": {
-        "type": "object", "additionalProperties": false,
-        "required": ["sampleId", "observedAt", "lat", "lon", "horizontalAccuracyM", "speedMps", "speedAccuracyMps", "headingDeg", "headingAccuracyDeg", "positionSource", "motion", "reducedAccuracy"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sampleId",
+          "observedAt",
+          "lat",
+          "lon",
+          "horizontalAccuracyM",
+          "speedMps",
+          "speedAccuracyMps",
+          "headingDeg",
+          "headingAccuracyDeg",
+          "positionSource",
+          "motion",
+          "reducedAccuracy"
+        ],
         "properties": {
-          "sampleId": {"type": "string", "format": "uuid"},
-          "observedAt": {"type": "string", "format": "date-time"},
-          "lat": {"type": "number", "minimum": -90, "maximum": 90},
-          "lon": {"type": "number", "minimum": -180, "maximum": 180},
-          "horizontalAccuracyM": {"type": "number", "minimum": 0, "maximum": 15},
-          "speedMps": {"type": "number", "minimum": 0, "maximum": 70},
-          "speedAccuracyMps": {"type": "number", "minimum": 0, "maximum": 2},
-          "headingDeg": {"type": "number", "minimum": 0, "exclusiveMaximum": 360},
-          "headingAccuracyDeg": {"type": "number", "minimum": 0, "maximum": 20},
-          "positionSource": {"type": "string", "const": "gps"},
-          "motion": {"type": "string", "enum": ["driving", "traffic_stop"]},
-          "reducedAccuracy": {"type": "boolean", "const": false}
+          "sampleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lon": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "horizontalAccuracyM": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 15
+          },
+          "speedMps": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 70
+          },
+          "speedAccuracyMps": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "headingDeg": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMaximum": 360
+          },
+          "headingAccuracyDeg": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 20
+          },
+          "positionSource": {
+            "type": "string",
+            "const": "gps"
+          },
+          "motion": {
+            "type": "string",
+            "enum": [
+              "driving",
+              "traffic_stop"
+            ]
+          },
+          "reducedAccuracy": {
+            "type": "boolean",
+            "const": false
+          }
         }
       },
       "DriverMeasurementEta": {
-        "type": "object", "additionalProperties": false,
-        "required": ["observationId", "routingDataset", "predictedDurationSeconds", "actualDurationSeconds", "plannedDistanceM", "actualDistanceM", "personalStopSeconds", "estimatedSeconds", "offRoute", "completedAt"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "observationId",
+          "routingDataset",
+          "predictedDurationSeconds",
+          "actualDurationSeconds",
+          "plannedDistanceM",
+          "actualDistanceM",
+          "personalStopSeconds",
+          "estimatedSeconds",
+          "offRoute",
+          "completedAt"
+        ],
         "properties": {
-          "observationId": {"type": "string", "format": "uuid"},
-          "routingDataset": {"type": "string", "pattern": "^sim-routing-\\d{4}-\\d{2}-\\d{2}-\\d+$"},
-          "predictedDurationSeconds": {"type": "number", "minimum": 1, "maximum": 86400},
-          "actualDurationSeconds": {"type": "number", "minimum": 1, "maximum": 86400},
-          "plannedDistanceM": {"type": "number", "minimum": 100, "maximum": 2000000},
-          "actualDistanceM": {"type": "number", "minimum": 100, "maximum": 2000000},
-          "personalStopSeconds": {"type": "number", "minimum": 0, "maximum": 86400},
-          "estimatedSeconds": {"type": "number", "minimum": 0, "maximum": 86400},
-          "offRoute": {"type": "boolean"},
-          "completedAt": {"type": "string", "format": "date-time"}
+          "observationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "routingDataset": {
+            "type": "string",
+            "pattern": "^sim-routing-\\d{4}-\\d{2}-\\d{2}-\\d+$"
+          },
+          "predictedDurationSeconds": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 86400
+          },
+          "actualDurationSeconds": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 86400
+          },
+          "plannedDistanceM": {
+            "type": "number",
+            "minimum": 100,
+            "maximum": 2000000
+          },
+          "actualDistanceM": {
+            "type": "number",
+            "minimum": 100,
+            "maximum": 2000000
+          },
+          "personalStopSeconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 86400
+          },
+          "estimatedSeconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 86400
+          },
+          "offRoute": {
+            "type": "boolean"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "DriverMeasurementMobileBatch": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "batchId", "contributorDay", "vehicleClass", "points"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "batchId",
+          "contributorDay",
+          "vehicleClass",
+          "points"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "batchId": {"type": "string", "format": "uuid"},
-          "contributorDay": {"type": "string", "format": "date"},
-          "vehicleClass": {"type": "string", "const": "passenger_car"},
-          "points": {"type": "array", "minItems": 3, "maxItems": 120, "items": {"$ref": "#/components/schemas/DriverMeasurementPoint"}},
-          "eta": {"$ref": "#/components/schemas/DriverMeasurementEta"}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "batchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contributorDay": {
+            "type": "string",
+            "format": "date"
+          },
+          "vehicleClass": {
+            "type": "string",
+            "const": "passenger_car"
+          },
+          "points": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 120,
+            "items": {
+              "$ref": "#/components/schemas/DriverMeasurementPoint"
+            }
+          },
+          "eta": {
+            "$ref": "#/components/schemas/DriverMeasurementEta"
+          }
         }
       },
       "DriverMeasurementMobileReceipt": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "batchId", "receivedAt", "acceptedIntervalCount", "deduplicatedIntervalCount", "rejectionCounts", "etaAccepted", "applicationMode", "rawPositionsStored"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "batchId",
+          "receivedAt",
+          "acceptedIntervalCount",
+          "deduplicatedIntervalCount",
+          "rejectionCounts",
+          "etaAccepted",
+          "applicationMode",
+          "rawPositionsStored"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "batchId": {"type": "string", "format": "uuid"},
-          "receivedAt": {"type": "string", "format": "date-time"},
-          "acceptedIntervalCount": {"type": "integer", "minimum": 0},
-          "deduplicatedIntervalCount": {"type": "integer", "minimum": 0},
-          "rejectionCounts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
-          "etaAccepted": {"type": "boolean"},
-          "applicationMode": {"type": "string", "const": "shadow_only"},
-          "rawPositionsStored": {"type": "boolean", "const": false}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "batchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "acceptedIntervalCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deduplicatedIntervalCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rejectionCounts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "etaAccepted": {
+            "type": "boolean"
+          },
+          "applicationMode": {
+            "type": "string",
+            "const": "shadow_only"
+          },
+          "rawPositionsStored": {
+            "type": "boolean",
+            "const": false
+          }
         }
       },
       "AuthenticatedActor": {
@@ -14858,12 +15363,28 @@
       "AiChatCredentialStatus": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["available", "configured", "provider", "routingEnabled"],
+        "required": [
+          "available",
+          "configured",
+          "provider",
+          "routingEnabled"
+        ],
         "properties": {
-          "available": { "type": "boolean" },
-          "configured": { "type": "boolean" },
-          "provider": { "type": "string", "enum": ["openai"] },
-          "routingEnabled": { "type": "boolean" }
+          "available": {
+            "type": "boolean"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "openai"
+            ]
+          },
+          "routingEnabled": {
+            "type": "boolean"
+          }
         }
       },
       "AiCopResponse": {
@@ -15569,7 +16090,7 @@
             "minLength": 1,
             "maxLength": 128,
             "pattern": "^[A-Za-z0-9._:-]+$",
-            "description": "Opaque installation endpoint identifier used to coordinate answering across the same user’s devices and applications."
+            "description": "Opaque installation endpoint identifier used to coordinate answering across the same user\u2019s devices and applications."
           }
         }
       },
@@ -18705,7 +19226,7 @@
           },
           "label": {
             "type": "string",
-            "example": "Povodeň - Středočeský kraj"
+            "example": "Povode\u0148 - St\u0159edo\u010desk\u00fd kraj"
           },
           "status": {
             "type": "string",
@@ -21160,19 +21681,50 @@
         "additionalProperties": false,
         "description": "Optional actual vehicle dimensions. When supplied for a road profile SIM uses Valhalla truck costing for mapped dimensional restrictions; an assessment is never a guarantee of passability.",
         "properties": {
-          "heightM": { "type": "number", "exclusiveMinimum": 0, "maximum": 8 },
-          "widthM": { "type": "number", "exclusiveMinimum": 0, "maximum": 5 },
-          "lengthM": { "type": "number", "exclusiveMinimum": 0, "maximum": 30 },
-          "weightTonnes": { "type": "number", "exclusiveMinimum": 0, "maximum": 100 }
+          "heightM": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 8
+          },
+          "widthM": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 5
+          },
+          "lengthM": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 30
+          },
+          "weightTonnes": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 100
+          }
         }
       },
       "RoutingCoverage": {
         "type": "object",
-        "required": ["state"],
+        "required": [
+          "state"
+        ],
         "properties": {
-          "state": { "type": "string", "enum": ["covered", "partial", "outside_coverage", "unknown"] },
-          "reason": { "type": "string" },
-          "sourceAgeSeconds": { "type": "integer", "minimum": 0 },
+          "state": {
+            "type": "string",
+            "enum": [
+              "covered",
+              "partial",
+              "outside_coverage",
+              "unknown"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sourceAgeSeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
           "routingDataset": {
             "$ref": "#/components/schemas/RoutingDataset"
           }
@@ -21180,39 +21732,122 @@
       },
       "RoutingDataset": {
         "type": "object",
-        "required": ["version", "builtAt"],
+        "required": [
+          "version",
+          "builtAt"
+        ],
         "properties": {
-          "version": { "type": "string" },
-          "builtAt": { "type": "string", "format": "date-time" }
+          "version": {
+            "type": "string"
+          },
+          "builtAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "RoutingRoadAttributes": {
         "type": "object",
-        "required": ["state", "source", "observedAt", "matchedEdgeCount", "geometryMismatchCount", "knownSpeedLimitCoveragePercent", "vehicleRestrictionsState", "speedLimits", "restrictions"],
+        "required": [
+          "state",
+          "source",
+          "observedAt",
+          "matchedEdgeCount",
+          "geometryMismatchCount",
+          "knownSpeedLimitCoveragePercent",
+          "vehicleRestrictionsState",
+          "speedLimits",
+          "restrictions"
+        ],
         "description": "Optional attributes of the same directed graph route and alternative as route.geometry. No ETA or traffic speed is used as a legal limit.",
         "properties": {
-          "state": { "type": "string", "enum": ["ok", "partial", "unavailable", "unsupported"] },
-          "reason": { "type": "string" },
-          "source": { "type": "string", "const": "valhalla_trace_attributes" },
-          "routingDataset": { "$ref": "#/components/schemas/RoutingDataset" },
-          "sourceAgeSeconds": { "type": "integer", "minimum": 0 },
-          "observedAt": { "type": "string", "format": "date-time" },
-          "matchedEdgeCount": { "type": "integer", "minimum": 0 },
-          "geometryMismatchCount": { "type": "integer", "minimum": 0 },
-          "knownSpeedLimitCoveragePercent": { "type": "number", "minimum": 0, "maximum": 100 },
-          "vehicleRestrictionsState": { "type": "string", "const": "not_evaluated" },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "partial",
+              "unavailable",
+              "unsupported"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "const": "valhalla_trace_attributes"
+          },
+          "routingDataset": {
+            "$ref": "#/components/schemas/RoutingDataset"
+          },
+          "sourceAgeSeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "matchedEdgeCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "geometryMismatchCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "knownSpeedLimitCoveragePercent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "vehicleRestrictionsState": {
+            "type": "string",
+            "const": "not_evaluated"
+          },
           "speedLimits": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["beginShapeIndex", "endShapeIndex", "direction", "status", "source"],
+              "required": [
+                "beginShapeIndex",
+                "endShapeIndex",
+                "direction",
+                "status",
+                "source"
+              ],
               "properties": {
-                "beginShapeIndex": { "type": "integer", "minimum": 0 },
-                "endShapeIndex": { "type": "integer", "minimum": 1 },
-                "direction": { "type": "string", "const": "along_route" },
-                "valueKph": { "type": "number", "minimum": 10 },
-                "status": { "type": "string", "enum": ["explicit", "derived", "unknown"] },
-                "source": { "type": "string", "enum": ["valhalla_graph_osm_maxspeed", "unknown"] }
+                "beginShapeIndex": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "endShapeIndex": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "direction": {
+                  "type": "string",
+                  "const": "along_route"
+                },
+                "valueKph": {
+                  "type": "number",
+                  "minimum": 10
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "explicit",
+                    "derived",
+                    "unknown"
+                  ]
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "valhalla_graph_osm_maxspeed",
+                    "unknown"
+                  ]
+                }
               }
             }
           },
@@ -21220,39 +21855,99 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["kind", "beginShapeIndex", "endShapeIndex", "assessment", "source"],
+              "required": [
+                "kind",
+                "beginShapeIndex",
+                "endShapeIndex",
+                "assessment",
+                "source"
+              ],
               "properties": {
-                "kind": { "type": "string", "const": "closure" },
-                "beginShapeIndex": { "type": "integer", "minimum": 0 },
-                "endShapeIndex": { "type": "integer", "minimum": 1 },
-                "assessment": { "type": "string", "const": "advisory" },
-                "source": { "type": "string", "const": "valhalla_trace_attributes" }
+                "kind": {
+                  "type": "string",
+                  "const": "closure"
+                },
+                "beginShapeIndex": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "endShapeIndex": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "assessment": {
+                  "type": "string",
+                  "const": "advisory"
+                },
+                "source": {
+                  "type": "string",
+                  "const": "valhalla_trace_attributes"
+                }
               }
             }
           },
-          "tunnels": { "$ref": "#/components/schemas/RoutingTunnelAttributes" }
+          "tunnels": {
+            "$ref": "#/components/schemas/RoutingTunnelAttributes"
+          }
         }
       },
       "RoutingTunnelAttributes": {
         "type": "object",
         "description": "Optional directed tunnel data for this route variant. Inclusive vertex indexes refer to this route's geometry.coordinates in travel order. A known empty intervals array means no graph-marked tunnel edges on a fully verified shape; unknown does not mean no tunnel.",
-        "required": ["state", "routeId", "source", "observedAt", "intervals"],
+        "required": [
+          "state",
+          "routeId",
+          "source",
+          "observedAt",
+          "intervals"
+        ],
         "properties": {
-          "state": { "type": "string", "enum": ["known", "unknown"] },
-          "reason": { "type": "string" },
-          "routeId": { "type": "string" },
-          "source": { "type": "string", "const": "valhalla_trace_attributes.edge.tunnel" },
-          "routingDataset": { "$ref": "#/components/schemas/RoutingDataset" },
-          "observedAt": { "type": "string", "format": "date-time" },
+          "state": {
+            "type": "string",
+            "enum": [
+              "known",
+              "unknown"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "routeId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "const": "valhalla_trace_attributes.edge.tunnel"
+          },
+          "routingDataset": {
+            "$ref": "#/components/schemas/RoutingDataset"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "intervals": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["beginShapeIndex", "endShapeIndex", "direction"],
+              "required": [
+                "beginShapeIndex",
+                "endShapeIndex",
+                "direction"
+              ],
               "properties": {
-                "beginShapeIndex": { "type": "integer", "minimum": 0 },
-                "endShapeIndex": { "type": "integer", "minimum": 1 },
-                "direction": { "type": "string", "const": "along_route" }
+                "beginShapeIndex": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "endShapeIndex": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "direction": {
+                  "type": "string",
+                  "const": "along_route"
+                }
               }
             }
           }
@@ -21525,7 +22220,9 @@
           "contractVersion": {
             "type": "string"
           },
-          "coverage": { "$ref": "#/components/schemas/RoutingCoverage" },
+          "coverage": {
+            "$ref": "#/components/schemas/RoutingCoverage"
+          },
           "generatedAt": {
             "type": "string",
             "format": "date-time"

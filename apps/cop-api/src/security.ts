@@ -91,57 +91,43 @@ export async function requireBearerToken(request: FastifyRequest, reply: Fastify
 export async function verifyOidcToken(token: string): Promise<boolean> {
   const issuer = normalizeIssuer(process.env.COP_OIDC_ISSUER ?? "");
   if (!issuer) {
-    console.warn("[oidc-debug] no issuer configured");
     return false;
   }
 
   const decoded = decodeJwt(token);
-  if (!decoded) {
-    console.warn("[oidc-debug] jwt decode failed - token prefix:", token.slice(0, 20));
+  if (!decoded || !validJwtClaims(decoded.payload)) {
     return false;
   }
   if (decoded.header.alg !== "RS256") {
-    console.warn("[oidc-debug] wrong alg:", decoded.header.alg);
     return false;
   }
   if (!decoded.header.kid) {
-    console.warn("[oidc-debug] no kid in header");
     return false;
   }
 
   const nowSeconds = Math.floor(Date.now() / 1000);
   if (decoded.payload.iss !== issuer) {
-    console.warn("[oidc-debug] iss mismatch - token:", decoded.payload.iss, "expected:", issuer);
     return false;
   }
   if (!decoded.payload.exp || decoded.payload.exp <= nowSeconds - authClockSkewSeconds) {
-    console.warn("[oidc-debug] token expired - exp:", decoded.payload.exp, "now:", nowSeconds);
     return false;
   }
   if (decoded.payload.nbf && decoded.payload.nbf > nowSeconds + authClockSkewSeconds) {
-    console.warn("[oidc-debug] token not yet valid - nbf:", decoded.payload.nbf);
     return false;
   }
   if (!matchesAllowedClient(decoded.payload)) {
-    console.warn("[oidc-debug] client not allowed - azp:", decoded.payload.azp, "aud:", decoded.payload.aud, "allowed:", process.env.COP_OIDC_ALLOWED_CLIENTS);
     return false;
   }
   if (!matchesRequiredRole(decoded.payload)) {
-    console.warn("[oidc-debug] required role missing");
     return false;
   }
 
   const key = await findJwkForToken(issuer, decoded.header.kid);
   if (!key) {
-    console.warn("[oidc-debug] no jwk found for kid:", decoded.header.kid);
     return false;
   }
 
-  const verified = verifyJwtSignature(token, key);
-  if (!verified) {
-    console.warn("[oidc-debug] signature verification failed");
-  }
-  return verified;
+  return verifyJwtSignature(token, key);
 }
 
 export function actorFromRequest(request: FastifyRequest): AuthenticatedActor | null {
@@ -164,7 +150,7 @@ export function actorFromRequest(request: FastifyRequest): AuthenticatedActor | 
   }
 
   const decoded = decodeJwt(token);
-  const subjectId = decoded?.payload.sub?.trim();
+  const subjectId = typeof decoded?.payload.sub === "string" ? decoded.payload.sub.trim() : undefined;
   if (!decoded || !subjectId) {
     return null;
   }
@@ -291,15 +277,20 @@ function unauthorized(request: FastifyRequest, reply: FastifyReply): void {
 }
 
 export function decodeJwt(token: string): { header: JwtHeader; payload: JwtPayload; signedContent: string; signature: Buffer } | null {
-  const [encodedHeader, encodedPayload, encodedSignature] = token.split(".");
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [encodedHeader, encodedPayload, encodedSignature] = parts;
   if (!encodedHeader || !encodedPayload || !encodedSignature) {
     return null;
   }
 
   try {
+    const header: unknown = JSON.parse(base64UrlToBuffer(encodedHeader).toString("utf8"));
+    const payload: unknown = JSON.parse(base64UrlToBuffer(encodedPayload).toString("utf8"));
+    if (!jwtRecord(header) || !jwtRecord(payload)) return null;
     return {
-      header: JSON.parse(base64UrlToBuffer(encodedHeader).toString("utf8")) as JwtHeader,
-      payload: JSON.parse(base64UrlToBuffer(encodedPayload).toString("utf8")) as JwtPayload,
+      header: header as JwtHeader,
+      payload: payload as JwtPayload,
       signature: base64UrlToBuffer(encodedSignature),
       signedContent: `${encodedHeader}.${encodedPayload}`
     };
@@ -348,6 +339,28 @@ function verifyJwtSignature(token: string, key: Jwk): boolean {
   } catch {
     return false;
   }
+}
+
+function jwtRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+// Claims are untrusted until signature verification; malformed types must fail
+// authentication rather than throw or get coerced by the time/role checks.
+function validJwtClaims(payload: JwtPayload): boolean {
+  const values = payload as Record<string, unknown>;
+  for (const field of ["iss", "azp", "sub", "email", "name", "preferred_username"]) {
+    if (values[field] !== undefined && typeof values[field] !== "string") return false;
+  }
+  for (const field of ["exp", "iat", "nbf"]) {
+    if (values[field] !== undefined && (typeof values[field] !== "number" || !Number.isFinite(values[field]))) return false;
+  }
+  const strings = (value: unknown) => Array.isArray(value) && value.every((item) => typeof item === "string");
+  if (values.aud !== undefined && typeof values.aud !== "string" && !strings(values.aud)) return false;
+  const access = (value: unknown) => jwtRecord(value) && (value.roles === undefined || strings(value.roles));
+  if (values.realm_access !== undefined && !access(values.realm_access)) return false;
+  if (values.resource_access !== undefined && (!jwtRecord(values.resource_access) || !Object.values(values.resource_access).every(access))) return false;
+  return true;
 }
 
 function matchesAllowedClient(payload: JwtPayload): boolean {

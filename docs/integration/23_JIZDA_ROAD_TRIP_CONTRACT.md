@@ -6,6 +6,17 @@ SIM owns engine routing, graph freshness and closure truth. COP owns the
 existing authenticated facade; CSMCommunicationKit contacts COP only.
 This does not activate profiles, real GPS collection or live measurement ETA.
 
+## Authenticated identity boundary
+
+The existing bearer/BFF guard verifies issuer, RS256 signature via configured
+JWKS, expiry, allowed client and required role. Routing additionally requires a
+non-empty actor subject; a signed token with no usable subject is 401. Malformed
+claims fail authentication instead of throwing/coercing types. Neither user identity
+from the request body nor an emergency profile substitutes for this actor. COP
+never forwards the end-user bearer token to SIM. Rejected claims/token fragments
+are not logged. A revoked BFF session is 401; an unsafe cross-origin BFF request
+is 403. Production lab authentication remains disabled.
+
 ## Compatibility and transport
 
 Use existing GET `/api/v1/routing/profiles` and POST `/api/v1/routing/route`
