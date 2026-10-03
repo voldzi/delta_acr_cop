@@ -1,3 +1,4 @@
+import { verifyKnownClosuresResponse, type KnownClosures } from "./routing-known-closures.js";
 import { validateRoadTripRequest, verifyRoadTripResponse, verifiedCapabilities, type RoadTripCapabilities, validRoundabout, type RoadTrip, type RoadTripAssessment, type RoadTripRoundabout } from "./routing-trip.js";
 import { createSituationDataSourceConfigFromEnv } from "./situation-data-source.js";
 
@@ -43,6 +44,7 @@ export interface RoutingProfilesResponse {
 }
 
 export interface RoutingRouteResponse {
+  query?: Record<string, unknown>;
   contractVersion?: string;
   coverage?: RoutingCoverage;
   features: Array<Record<string, unknown>>;
@@ -119,6 +121,7 @@ export interface RoutingStep extends Record<string, unknown> {
 
 export interface RoutingRoute extends Record<string, unknown> {
   assessment?: RoadTripAssessment;
+  knownClosures?: KnownClosures;
   steps?: RoutingStep[];
   distanceM?: number;
   durationSeconds?: number;
@@ -208,12 +211,18 @@ export class RoutingSourceAdapter implements RoutingSource {
 
   async route(request: RoutingRouteRequest, requestNow: Date): Promise<RoutingRouteResponse> {
     const normalized = normalizeRoutingRouteRequest({ ...request, alternatives: request.alternatives ?? 1 });
-    return normalizeRoutingRouteResponse(await postRoutingJson(this.config, "alternatives", normalized, requestNow), normalized, requestNow);
+    const started = performance.now();
+    const response = await postRoutingJson(this.config, "alternatives", normalized, requestNow);
+    const receivedAt = new Date(requestNow.getTime() + Math.max(0, performance.now() - started));
+    return normalizeRoutingRouteResponse(response, normalized, receivedAt);
   }
 
   async alternatives(request: RoutingRouteRequest, requestNow: Date): Promise<RoutingRouteResponse> {
     const normalized = normalizeRoutingRouteRequest(request);
-    return normalizeRoutingRouteResponse(await postRoutingJson(this.config, "alternatives", normalized, requestNow), normalized, requestNow);
+    const started = performance.now();
+    const response = await postRoutingJson(this.config, "alternatives", normalized, requestNow);
+    const receivedAt = new Date(requestNow.getTime() + Math.max(0, performance.now() - started));
+    return normalizeRoutingRouteResponse(response, normalized, receivedAt);
   }
 
   async isochrone(request: Record<string, unknown>, requestNow: Date): Promise<Record<string, unknown>> {
@@ -330,6 +339,7 @@ function normalizeRoutingRouteResponse(value: unknown, request?: RoutingRouteReq
   if (!isRecord(value)) {
     throw new Error("Routing route response is not an object.");
   }
+  const hasKnownClosures = verifyKnownClosuresResponse(value, request, now);
   const receivedRoutes = Array.isArray(value.routes) ? (value.routes.filter(isRecord) as RoutingRoute[]) : [];
   if (request?.trip) verifyRoadTripResponse({ ...value, routes: receivedRoutes } as unknown as RoutingRouteResponse, request, now);
   const routes = receivedRoutes.filter((route) => !isNonNavigableRoute(route));
@@ -375,6 +385,7 @@ function normalizeRoutingRouteResponse(value: unknown, request?: RoutingRouteReq
         };
   return {
     contractVersion: optionalString(value.contractVersion),
+    ...(hasKnownClosures ? { query: value.query as Record<string, unknown> } : {}),
     coverage,
     features,
     generatedAt: optionalString(value.generatedAt),

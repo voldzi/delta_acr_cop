@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { KnownClosureVerificationError } from "./routing-known-closures.js";
 import { buildServer } from "./server.js";
 import {
   RoutingSourceAdapter,
@@ -31,6 +32,28 @@ describe("routing routes", () => {
       }
       expect(source.route).toHaveBeenCalledTimes(4);
       expect(source.alternatives).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+  it("returns a structured known-closure verification failure for both endpoints without substitute routes", async () => {
+    const source: RoutingSource = {
+      config: { baseUrl: "https://fixture.invalid/api/v1", enabled: true, timeoutMs: 1000 },
+      route: vi.fn().mockRejectedValue(new KnownClosureVerificationError()),
+      alternatives: vi.fn().mockRejectedValue(new KnownClosureVerificationError()),
+      fetchProfiles: vi.fn(), isochrone: vi.fn(), nearestAccess: vi.fn()
+    };
+    const app = buildServer({ routingSource: source });
+    try {
+      for (const endpoint of ["route", "alternatives"]) {
+        const response = await app.inject({ method: "POST", url: `/api/v1/routing/${endpoint}`,
+          headers: { authorization: "Bearer dev-lab-token", "x-correlation-id": "known-closure-test" },
+          payload: { from: { lat: 50, lon: 14 }, to: { lat: 50.1, lon: 14.1 }, profileId: "car" } });
+        expect(response.statusCode).toBe(502);
+        expect(response.json().error.code).toBe("ROUTING_KNOWN_CLOSURES_INVALID");
+        expect(response.json().error.correlationId).toBe("known-closure-test");
+        expect(response.json()).not.toHaveProperty("routes");
+      }
+      expect(source.route).toHaveBeenCalledTimes(1);
+      expect(source.alternatives).toHaveBeenCalledTimes(1);
     } finally { await app.close(); }
   });
   it("requires authentication before forwarding a routing request", async () => {

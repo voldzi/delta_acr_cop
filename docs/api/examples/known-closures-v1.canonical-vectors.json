@@ -1,0 +1,127 @@
+{
+  "serialization": "ECMAScript JSON.stringify for primitive values; object keys recursively UTF-16 sorted; arrays retain order; UTF-8 bytes; SHA-256 lowercase hex",
+  "vectors": [
+    {
+      "input": {
+        "n": 0
+      },
+      "canonical": "{\"n\":0}",
+      "sha256": "f3013f933b9fb80ab6d995e7ad9da36f683837ba1d81e950c943d40111eac2f0"
+    },
+    {
+      "input": {
+        "n": 0
+      },
+      "canonical": "{\"n\":0}",
+      "sha256": "f3013f933b9fb80ab6d995e7ad9da36f683837ba1d81e950c943d40111eac2f0"
+    },
+    {
+      "input": {
+        "n": 1
+      },
+      "canonical": "{\"n\":1}",
+      "sha256": "2bfd14f43d17fc7cea24e0917a8879b4b2f880b8baeec1b9d90fbaad655e71bd"
+    },
+    {
+      "input": {
+        "n": 1e-7
+      },
+      "canonical": "{\"n\":1e-7}",
+      "sha256": "747d6d23b64d1b2d579adb832b44de31c91c875bbef7a8e397f5d183a746b54b"
+    },
+    {
+      "input": {
+        "n": 0.000001
+      },
+      "canonical": "{\"n\":0.000001}",
+      "sha256": "28343867a0be00aee19f81aa90cfd6c646878b9303fa15410d16bfd3f8894578"
+    },
+    {
+      "input": {
+        "n": 100000000000000000000
+      },
+      "canonical": "{\"n\":100000000000000000000}",
+      "sha256": "58d2d5b8dd4228ab5775ce84f996718fa19ed49872271e9649b70cebaca26a09"
+    },
+    {
+      "input": {
+        "n": 1e+21
+      },
+      "canonical": "{\"n\":1e+21}",
+      "sha256": "f1ee2b60ee95a3170fdc07a577e5f3514ced26867443d69da265acadead81007"
+    },
+    {
+      "input": {
+        "n": 1.2345678901234567
+      },
+      "canonical": "{\"n\":1.2345678901234567}",
+      "sha256": "f36cbdfb711d4b436f99e001eb6c2e718febccd575ec1454e86ee79d5225e9be"
+    },
+    {
+      "input": {
+        "n": 333333333.3333333
+      },
+      "canonical": "{\"n\":333333333.3333333}",
+      "sha256": "8e1aa496328ac7acbd045b34464ae11d72d8b525c355b85099382ffcb499143b"
+    },
+    {
+      "input": {
+        "n": 5e-324
+      },
+      "canonical": "{\"n\":5e-324}",
+      "sha256": "cf4df7d2834198d284947133d3ec7a66f3d94e8d447cac6a0783324211b36d43"
+    },
+    {
+      "input": {
+        "text": "Železná / most\n\"test\"",
+        "n": 14.1
+      },
+      "canonical": "{\"n\":14.1,\"text\":\"Železná / most\\n\\\"test\\\"\"}",
+      "sha256": "2af5d79fbff2cfdfa5d6328b3bf606352a46d05bb3091576f9307d4a3d42432a"
+    },
+    {
+      "input": {
+        "😀": 1,
+        "￿": 2
+      },
+      "canonical": "{\"😀\":1,\"￿\":2}",
+      "sha256": "c6b1b96b618d8be475f379fe69c6646b44d7a5d3c01630c43509562f09d1024b"
+    },
+    {
+      "input": {
+        "coordinates": [
+          [
+            17.3629376,
+            50.1257919
+          ],
+          [
+            17.3630001,
+            50.1258001
+          ]
+        ],
+        "type": "LineString"
+      },
+      "canonical": "{\"coordinates\":[[17.3629376,50.1257919],[17.3630001,50.1258001]],\"type\":\"LineString\"}",
+      "sha256": "008c6016c92cf83449d1994ce8d26de61354b11985ad3fc5ceafcc428636b857"
+    },
+    {
+      "input": {
+        "profileId": "car",
+        "from": {
+          "lat": 50,
+          "lon": 14
+        },
+        "to": {
+          "lat": 50.1,
+          "lon": 14.1
+        },
+        "alternatives": 3,
+        "includeRoadAttributes": true,
+        "via": [],
+        "avoid": []
+      },
+      "canonical": "{\"alternatives\":3,\"avoid\":[],\"from\":{\"lat\":50,\"lon\":14},\"includeRoadAttributes\":true,\"profileId\":\"car\",\"to\":{\"lat\":50.1,\"lon\":14.1},\"via\":[]}",
+      "sha256": "c4de8f8cac00860036e25f26e168c397a07ff4279cf49c8c6b55510e7c02674b"
+    }
+  ]
+}

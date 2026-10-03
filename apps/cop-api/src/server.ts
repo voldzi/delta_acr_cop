@@ -270,6 +270,7 @@ import {
   type SimSearchDataSource,
   type SimSearchEntitiesResponse
 } from "./sim-search-data-source.js";
+import { KnownClosureVerificationError } from "./routing-known-closures.js";
 import { createRoutingSourceFromEnv, RoutingHttpError, type RoutingRouteRequest, type RoutingSource } from "./routing-source.js";
 import {
   buildSketchDrawingCollection,
@@ -8347,7 +8348,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           return sendError(reply, error.status, error.code ?? "ROUTING_REQUIREMENTS_UNAVAILABLE", "SIM cannot currently satisfy the requested routing requirements.", correlationId);
         }
         app.log.warn({ upstreamStatus: error instanceof RoutingHttpError ? error.status : undefined }, "SIM routing route request failed.");
-        return sendError(reply, 502, error instanceof RoutingHttpError ? error.code ?? "ROUTING_UPSTREAM_UNAVAILABLE" : "ROUTING_UPSTREAM_UNAVAILABLE", "SIM could not provide a verified route.", correlationId);
+        return sendError(reply, 502, error instanceof KnownClosureVerificationError ? error.code : error instanceof RoutingHttpError ? error.code ?? "ROUTING_UPSTREAM_UNAVAILABLE" : "ROUTING_UPSTREAM_UNAVAILABLE", "SIM could not provide a verified route.", correlationId);
       }
     },
     alternatives: async (request, reply) => {
@@ -8377,7 +8378,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           return sendError(reply, error.status, error.code ?? "ROUTING_REQUIREMENTS_UNAVAILABLE", "SIM cannot currently satisfy the requested routing requirements.", correlationId);
         }
         app.log.warn({ upstreamStatus: error instanceof RoutingHttpError ? error.status : undefined }, "SIM routing alternatives request failed.");
-        return sendError(reply, 502, error instanceof RoutingHttpError ? error.code ?? "ROUTING_UPSTREAM_UNAVAILABLE" : "ROUTING_UPSTREAM_UNAVAILABLE", "SIM could not provide a verified route.", correlationId);
+        return sendError(reply, 502, error instanceof KnownClosureVerificationError ? error.code : error instanceof RoutingHttpError ? error.code ?? "ROUTING_UPSTREAM_UNAVAILABLE" : "ROUTING_UPSTREAM_UNAVAILABLE", "SIM could not provide a verified route.", correlationId);
       }
     },
     isochrone: async (request, reply) => {
