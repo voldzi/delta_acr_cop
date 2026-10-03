@@ -1121,14 +1121,83 @@ export interface RoutingPoint {
   lon: number;
 }
 
+export interface RoadTripCapabilities {
+  version: "sim-road-trip-capabilities-v1";
+  strictRoutesEnabled: boolean;
+  availability: "disabled" | "requires_runtime_validation";
+  intents: Array<{ intent: RoadTrip["intent"]; costing: "auto" | "truck" | "unsupported"; state: "requires_runtime_validation" | "unsupported" }>;
+  vehicleFields: string[];
+  unsupportedFields: string[];
+  closures: { mode: "reviewed_both_direction_polygons"; state: "unavailable" | "requires_runtime_validation"; oneDirection: "unsupported" };
+  graphMaxAgeSeconds: number;
+  maxWaypoints: 12;
+  maxAlternatives: 3;
+  cachePolicy: "no_cache";
+  emergencyExemption: false;
+}
+
+export interface RoadTripVehicle {
+  heightM: number;
+  widthM: number;
+  lengthM: number;
+  loadedWeightKg: number;
+  axleLoadKg?: number;
+  axleCount?: number;
+  trailer: { attached: boolean; heightM?: number; widthM?: number; lengthM?: number; loadedWeightKg?: number; axleCount?: number };
+}
+export interface RoadTrip {
+  version: "sim-road-trip-v1";
+  requestId: string;
+  intent: "car" | "commercial_truck" | "car_with_trailer";
+  vehicle: RoadTripVehicle;
+  departure: { mode: "now" | "depart_at"; at?: string };
+  preferences: { avoidTolls: boolean; preferPaved: boolean };
+  requirements: { roadClosures: "mandatory"; legalAccess: "mandatory"; vehicleLimits: "mandatory" };
+  waypoints: Array<{ type: "via" | "stop"; point: { lat: number; lon: number; label?: string } }>;
+  destination: { kind: "road_point" | "approved_entrance"; entranceId?: string };
+}
+export interface RoadTripAssessment {
+  version: "sim-road-trip-assessment-v1";
+  requestId: string;
+  requestHash: string;
+  appliedHash: string;
+  appliedTrip: RoadTrip;
+  engine: { provider: string; version: string; costing: string; fallbackUsed: boolean };
+  geometryHash: string;
+  routingDataset: { version: string; builtAt: string; sourceAgeSeconds: number; freshness: string };
+  closures: { state: string; revision: string; observedAt: string; validUntil: string; appliedClosureCount: number; coverage: string };
+  vehicleLimits: { state: string; appliedFields: string[]; coverage: string };
+  waypoints: { state: string; orderedCount: number };
+  lastMile: "not_requested" | "not_routed";
+  validUntil: string;
+  limitations: string[];
+}
+export interface RoadTripRoundabout {
+  phase: "enter" | "exit";
+  source: "valhalla_maneuver";
+  countState: "provider_supplied" | "unknown";
+  exitCount?: number;
+  exitRoadNames?: string[];
+  signNames?: string[];
+}
+
+
 export interface RoutingRouteRequest {
   alternatives?: number;
   avoid?: string[];
   from: RoutingPoint;
   includeRoadAttributes?: boolean;
   includeSteps?: boolean;
+  includeElevationProfile?: boolean;
+  includeWeatherOnRoute?: boolean;
+  includeHazardsOnRoute?: boolean;
+  includeTraffic?: boolean;
   profileId?: RoutingProfileId;
   to: RoutingPoint;
+  via?: RoutingPoint[];
+  departureTime?: string;
+  vehicle?: { heightM?: number; widthM?: number; lengthM?: number; weightTonnes?: number };
+  trip?: RoadTrip;
 }
 
 export interface RoutingRouteFeature {
@@ -1147,6 +1216,7 @@ export interface RoutingStep extends Record<string, unknown> {
   index?: number;
   maneuverType?: number;
   roundaboutExitCount?: number;
+  roundabout?: RoadTripRoundabout;
   beginShapeIndex?: number;
   endShapeIndex?: number;
   instructionLocalized?: Record<string, string>;
@@ -1155,6 +1225,7 @@ export interface RoutingStep extends Record<string, unknown> {
 }
 
 export interface RoutingRoute extends Record<string, unknown> {
+  assessment?: RoadTripAssessment;
   steps?: RoutingStep[];
   distanceM?: number;
   durationSeconds?: number;
@@ -1203,6 +1274,7 @@ export interface RoutingTraffic extends Record<string, unknown> {
 }
 
 export interface RoutingProfilesResponse {
+  capabilities?: RoadTripCapabilities;
   contractVersion?: string;
   generatedAt?: string;
   profiles: Array<Record<string, unknown>>;

@@ -1,3 +1,4 @@
+import { validateRoadTripRequest, verifyRoadTripResponse, verifiedCapabilities, type RoadTripCapabilities, validRoundabout, type RoadTrip, type RoadTripAssessment, type RoadTripRoundabout } from "./routing-trip.js";
 import { createSituationDataSourceConfigFromEnv } from "./situation-data-source.js";
 
 export type RoutingProfileId =
@@ -21,12 +22,20 @@ export interface RoutingRouteRequest {
   from: RoutingPoint;
   includeRoadAttributes?: boolean;
   includeSteps?: boolean;
+  includeElevationProfile?: boolean;
+  includeWeatherOnRoute?: boolean;
+  includeHazardsOnRoute?: boolean;
+  includeTraffic?: boolean;
   profileId?: RoutingProfileId;
   to: RoutingPoint;
+  via?: RoutingPoint[];
+  departureTime?: string;
+  trip?: RoadTrip;
   vehicle?: { heightM?: number; widthM?: number; lengthM?: number; weightTonnes?: number };
 }
 
 export interface RoutingProfilesResponse {
+  capabilities?: RoadTripCapabilities;
   contractVersion?: string;
   generatedAt?: string;
   profiles: Array<Record<string, unknown>>;
@@ -100,6 +109,7 @@ export interface RoutingStep extends Record<string, unknown> {
   index?: number;
   maneuverType?: number;
   roundaboutExitCount?: number;
+  roundabout?: RoadTripRoundabout;
   beginShapeIndex?: number;
   endShapeIndex?: number;
   instructionLocalized?: Record<string, string>;
@@ -108,6 +118,7 @@ export interface RoutingStep extends Record<string, unknown> {
 }
 
 export interface RoutingRoute extends Record<string, unknown> {
+  assessment?: RoadTripAssessment;
   steps?: RoutingStep[];
   distanceM?: number;
   durationSeconds?: number;
@@ -196,23 +207,13 @@ export class RoutingSourceAdapter implements RoutingSource {
   }
 
   async route(request: RoutingRouteRequest, requestNow: Date): Promise<RoutingRouteResponse> {
-    return normalizeRoutingRouteResponse(
-      await postRoutingJson(
-        this.config,
-        "alternatives",
-        normalizeRoutingRouteRequest({
-          ...request,
-          alternatives: request.alternatives ?? 1
-        }),
-        requestNow
-      )
-    );
+    const normalized = normalizeRoutingRouteRequest({ ...request, alternatives: request.alternatives ?? 1 });
+    return normalizeRoutingRouteResponse(await postRoutingJson(this.config, "alternatives", normalized, requestNow), normalized, requestNow);
   }
 
   async alternatives(request: RoutingRouteRequest, requestNow: Date): Promise<RoutingRouteResponse> {
-    return normalizeRoutingRouteResponse(
-      await postRoutingJson(this.config, "alternatives", normalizeRoutingRouteRequest(request), requestNow)
-    );
+    const normalized = normalizeRoutingRouteRequest(request);
+    return normalizeRoutingRouteResponse(await postRoutingJson(this.config, "alternatives", normalized, requestNow), normalized, requestNow);
   }
 
   async isochrone(request: Record<string, unknown>, requestNow: Date): Promise<Record<string, unknown>> {
@@ -225,6 +226,29 @@ export class RoutingSourceAdapter implements RoutingSource {
 }
 
 function normalizeRoutingRouteRequest(request: RoutingRouteRequest): RoutingRouteRequest {
+  if (!isRecord(request)) throw new Error("Routing request must be an object.");
+  rejectUnknownFields(request, ["alternatives", "avoid", "from", "to", "includeRoadAttributes", "includeSteps", "profileId", "vehicle", "trip", "via", "departureTime", "includeElevationProfile", "includeWeatherOnRoute", "includeHazardsOnRoute", "includeTraffic"], "request");
+  for (const field of ["includeRoadAttributes", "includeSteps", "includeElevationProfile", "includeWeatherOnRoute", "includeHazardsOnRoute", "includeTraffic"] as const) {
+    if (request[field] !== undefined && typeof request[field] !== "boolean") {
+      throw new Error(`Routing ${field} must be a boolean.`);
+    }
+  }
+  if (request.profileId !== undefined && (typeof request.profileId !== "string" ||
+    request.profileId.length > 80 || !/^[A-Za-z0-9:_./-]+$/u.test(request.profileId))) {
+    throw new Error("Routing profileId is invalid.");
+  }
+  if (request.avoid !== undefined && (!Array.isArray(request.avoid) || request.avoid.length > 20 ||
+    !request.avoid.every((item) => typeof item === "string" && item.length > 0 && item.length <= 80))) {
+    throw new Error("Routing avoid must contain at most 20 nonempty restriction names.");
+  }
+  validateRoadTripRequest(request);
+  if (request.via !== undefined && (!Array.isArray(request.via) || request.via.length > 12)) {
+    throw new Error("Routing via must be an ordered array of at most 12 points.");
+  }
+  if (request.departureTime !== undefined && (typeof request.departureTime !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/u.test(request.departureTime) || !Number.isFinite(Date.parse(request.departureTime)))) {
+    throw new Error("Routing departureTime must be an ISO timestamp with timezone.");
+  }
   const from = normalizeRoutingPoint(request.from, "from");
   const to = normalizeRoutingPoint(request.to, "to");
   const alternatives = normalizeAlternatives(request.alternatives);
@@ -234,12 +258,19 @@ function normalizeRoutingRouteRequest(request: RoutingRouteRequest): RoutingRout
       ? { avoid: request.avoid.flatMap((item) => optionalString(item) ?? []).slice(0, 20) }
       : {}),
     from,
+    ...(request.includeElevationProfile !== undefined ? { includeElevationProfile: request.includeElevationProfile } : {}),
+    ...(request.includeWeatherOnRoute !== undefined ? { includeWeatherOnRoute: request.includeWeatherOnRoute } : {}),
+    ...(request.includeHazardsOnRoute !== undefined ? { includeHazardsOnRoute: request.includeHazardsOnRoute } : {}),
+    ...(request.includeTraffic !== undefined ? { includeTraffic: request.includeTraffic } : {}),
     ...(typeof request.includeRoadAttributes === "boolean"
       ? { includeRoadAttributes: request.includeRoadAttributes }
       : {}),
     ...(typeof request.includeSteps === "boolean" ? { includeSteps: request.includeSteps } : {}),
     profileId: optionalString(request.profileId) ?? "emergency_vehicle",
     to,
+    ...(request.via !== undefined ? { via: request.via.map((point, i) => normalizeRoutingPoint(point, `via[${i}]`)) } : {}),
+    ...(request.departureTime !== undefined ? { departureTime: request.departureTime } : {}),
+    ...(request.trip !== undefined ? { trip: request.trip } : {}),
     ...(request.vehicle ? { vehicle: normalizeRoutingVehicle(request.vehicle) } : {})
   };
 }
@@ -247,6 +278,7 @@ function normalizeRoutingRouteRequest(request: RoutingRouteRequest): RoutingRout
 function normalizeRoutingVehicle(value: RoutingRouteRequest["vehicle"]): NonNullable<RoutingRouteRequest["vehicle"]> {
   if (!isRecord(value)) throw new Error("Routing vehicle must be an object.");
   const limits = { heightM: 8, widthM: 5, lengthM: 30, weightTonnes: 100 } as const;
+  rejectUnknownFields(value, Object.keys(limits), "vehicle");
   const result: NonNullable<RoutingRouteRequest["vehicle"]> = {};
   for (const field of Object.keys(limits) as Array<keyof typeof limits>) {
     const raw = value[field];
@@ -263,14 +295,18 @@ function normalizeRoutingPoint(point: RoutingPoint | undefined, label: string): 
   if (!isRecord(point)) {
     throw new Error(`Routing ${label} point is missing.`);
   }
+  rejectUnknownFields(point, ["lat", "lon", "label"], label);
+  if (point.label !== undefined && (typeof point.label !== "string" || point.label.length > 180)) {
+    throw new Error(`Routing ${label} label is invalid.`);
+  }
   const lat = finiteCoordinate(point.lat, -90, 90);
   const lon = finiteCoordinate(point.lon, -180, 180);
   if (lat === undefined || lon === undefined) {
     throw new Error(`Routing ${label} point requires finite lat/lon.`);
   }
-  const pointLabel = optionalString(point.label);
+  const pointLabel = point.label;
   return {
-    ...(pointLabel ? { label: pointLabel } : {}),
+    ...(pointLabel !== undefined ? { label: pointLabel } : {}),
     lat,
     lon
   };
@@ -285,15 +321,17 @@ function normalizeRoutingProfilesResponse(value: unknown): RoutingProfilesRespon
     contractVersion: optionalString(value.contractVersion),
     generatedAt: optionalString(value.generatedAt),
     profiles: rawProfiles.filter(isRecord),
+    ...(value.capabilities !== undefined ? { capabilities: verifiedCapabilities(value.capabilities) } : {}),
     warnings: normalizeWarnings(value.warnings)
   };
 }
 
-function normalizeRoutingRouteResponse(value: unknown): RoutingRouteResponse {
+function normalizeRoutingRouteResponse(value: unknown, request?: RoutingRouteRequest, now = new Date()): RoutingRouteResponse {
   if (!isRecord(value)) {
     throw new Error("Routing route response is not an object.");
   }
   const receivedRoutes = Array.isArray(value.routes) ? (value.routes.filter(isRecord) as RoutingRoute[]) : [];
+  if (request?.trip) verifyRoadTripResponse({ ...value, routes: receivedRoutes } as unknown as RoutingRouteResponse, request, now);
   const routes = receivedRoutes.filter((route) => !isNonNavigableRoute(route));
   const omittedIds = new Set(
     receivedRoutes.filter(isNonNavigableRoute).flatMap((route) => optionalString(route.routeId) ?? [])
@@ -347,7 +385,12 @@ function normalizeRoutingRouteResponse(value: unknown): RoutingRouteResponse {
         : isRecord(value.quality)
           ? value.quality
           : undefined,
-    routes: routes.map((route) => verifyRouteTunnelAttributes(route, coverage.routingDataset)),
+    routes: routes.map((route) => verifyRouteTunnelAttributes({ ...route,
+      ...(route.steps ? { steps: route.steps.map((step) => {
+        if (!step.roundabout || validRoundabout(step.roundabout, step.maneuverType)) return step;
+        const copy = { ...step }; delete copy.roundabout; return copy;
+      }) } : {})
+    }, coverage.routingDataset)),
     traffic: isRecord(value.traffic) ? (value.traffic as RoutingTraffic) : undefined,
     warnings: normalizeWarnings(value.warnings)
   };
@@ -433,14 +476,18 @@ async function postRoutingJson(
 
 type FetchJsonInit = RequestInit & { timeoutMs?: number };
 
-class RoutingHttpError extends Error {
+export class RoutingHttpError extends Error {
   readonly status: number;
+  readonly code?: string;
+  readonly retryAfter?: string;
 
-  constructor(status: number, statusText: string, url: URL, detail?: string) {
+  constructor(status: number, statusText: string, url: URL, detail?: string, code?: string, retryAfter?: string) {
     const suffix = detail ? `: ${detail}` : "";
     super(`SIM routing upstream returned ${status} ${statusText || "request failed"} for ${url.pathname}${suffix}`);
     this.name = "RoutingHttpError";
     this.status = status;
+    this.code = code;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -465,7 +512,13 @@ async function fetchJson(
       signal: controller.signal
     });
     if (!response.ok) {
-      throw new RoutingHttpError(response.status, response.statusText, url, await readRoutingErrorDetail(response));
+      const body = await response.clone().json().catch(() => undefined) as unknown;
+      const error = isRecord(body) && isRecord(body.error) ? body.error : body;
+      const rawCode = isRecord(error) ? optionalString(error.code) : undefined;
+      const code = rawCode && /^ROUTING_[A-Z_]{1,80}$/u.test(rawCode) ? rawCode : undefined;
+      const retryAfter = response.headers.get("retry-after") ?? undefined;
+      throw new RoutingHttpError(response.status, response.statusText, url, await readRoutingErrorDetail(response), code,
+        retryAfter && /^\d{1,6}$/u.test(retryAfter) ? retryAfter : undefined);
     }
     return response.json();
   } finally {
@@ -528,16 +581,23 @@ function optionalString(value: unknown): string | undefined {
 }
 
 function finiteCoordinate(value: unknown, min: number, max: number): number | undefined {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : undefined;
+  return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max ? value : undefined;
 }
 
 function normalizeAlternatives(value: unknown): number | undefined {
   if (value === undefined) {
     return undefined;
   }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.min(5, Math.max(0, Math.round(parsed))) : undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 5) {
+    throw new Error("Routing alternatives must be an integer from 0 to 5.");
+  }
+  return value;
+}
+
+function rejectUnknownFields(value: Record<string, unknown>, fields: readonly string[], name: string): void {
+  if (Object.keys(value).some((field) => !fields.includes(field))) {
+    throw new Error(`Routing ${name} contains unsupported fields.`);
+  }
 }
 
 function trimTrailingSlash(value: string): string {

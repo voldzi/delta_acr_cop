@@ -315,3 +315,5 @@ Native nearby feeds send `bbox`, traffic `categories`, active `statuses`,
 `includeExpired=false` and `limit=500` to COP before applying the precise radius
 filter. Hitting the limit is presented as potentially incomplete. Nearby means
 straight-line distance; it is not road-edge or direction matching.
+
+Optional `trip` and per-variant `assessment` add strict immutable routing requirements. Capabilities are exposed in existing GET profiles. Units, errors and no-fallback rules: [road-trip contract](integration/23_JIZDA_ROAD_TRIP_CONTRACT.md). Legacy via/departureTime are forwarded; conflicting or unknown fields fail validation.

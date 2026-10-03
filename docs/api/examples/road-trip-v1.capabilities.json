@@ -1,0 +1,18 @@
+{
+  "version": "sim-road-trip-capabilities-v1",
+  "strictRoutesEnabled": false,
+  "availability": "disabled",
+  "intents": [
+    { "intent": "car", "costing": "auto", "state": "requires_runtime_validation" },
+    { "intent": "commercial_truck", "costing": "truck", "state": "requires_runtime_validation" },
+    { "intent": "car_with_trailer", "costing": "unsupported", "state": "unsupported" }
+  ],
+  "vehicleFields": ["heightM", "widthM", "lengthM", "loadedWeightKg"],
+  "unsupportedFields": ["trailer", "axleLoadKg", "axleCount", "depart_at", "approved_entrance"],
+  "closures": { "mode": "reviewed_both_direction_polygons", "state": "requires_runtime_validation", "oneDirection": "unsupported" },
+  "graphMaxAgeSeconds": 864000,
+  "maxWaypoints": 12,
+  "maxAlternatives": 3,
+  "cachePolicy": "no_cache",
+  "emergencyExemption": false
+}

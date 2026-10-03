@@ -10,6 +10,26 @@ afterEach(() => {
 });
 
 describe("routing source configuration", () => {
+  it("rejects invalid or unknown trip parameters before contacting SIM instead of repairing or dropping them", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new RoutingSourceAdapter({ baseUrl: "https://sim.test/api/v1", enabled: true, timeoutMs: 5000 });
+    const request = { from: { lat: 50, lon: 14 }, to: { lat: 51, lon: 15 }, profileId: "car" };
+    const invalid = [
+      { ...request, from: { lat: 91, lon: 14 } },
+      { ...request, to: { lat: "51", lon: 15 } },
+      { ...request, alternatives: 1.5 },
+      { ...request, alternatives: 6 },
+      { ...request, includeSteps: "true" },
+      { ...request, vehicle: { heightM: 2, axleWeight: 8 } },
+      { ...request, futureSafetyRequirement: true },
+      { ...request, avoid: "road_closure" }
+    ];
+    for (const body of invalid) {
+      await expect(adapter.route(body as never, new Date())).rejects.toThrow(/^Routing /u);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("enables SIM routing by default for the built-in COP/SIM deployment URL", () => {
     const config = createRoutingSourceConfigFromEnv({});
 

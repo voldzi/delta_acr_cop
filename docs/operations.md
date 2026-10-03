@@ -76,3 +76,5 @@ upstream URL is then
 The base Compose file remains usable without this bridge. A rollback of the
 network attachment uses the base Compose file while preserving the measurement
 cleanup flag and secrets if any consent has already been granted.
+
+The optional strict road-trip integration depends on SIM runtime capability and authoritative reviewed closure data. Publishing the COP/SDK contract does not activate new profiles. Keep SIM strict routing disabled until its engine/source tests and joint Jízda acceptance pass. No measurement flags are changed. See integration/23_JIZDA_ROAD_TRIP_CONTRACT.md.

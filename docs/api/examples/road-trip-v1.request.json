@@ -1,0 +1,20 @@
+{
+  "profileId": "car",
+  "from": { "lat": 50, "lon": 14 },
+  "to": { "lat": 51, "lon": 15 },
+  "avoid": ["road_closure"],
+  "alternatives": 2,
+  "includeSteps": true,
+  "includeRoadAttributes": true,
+  "trip": {
+    "version": "sim-road-trip-v1",
+    "requestId": "2c78031f-0db9-430f-bfc8-e527df399aba",
+    "intent": "car",
+    "vehicle": { "heightM": 1.8, "widthM": 1.9, "lengthM": 4.5, "loadedWeightKg": 1900, "trailer": { "attached": false } },
+    "departure": { "mode": "now" },
+    "preferences": { "avoidTolls": false, "preferPaved": true },
+    "requirements": { "roadClosures": "mandatory", "legalAccess": "mandatory", "vehicleLimits": "mandatory" },
+    "waypoints": [{ "type": "stop", "point": { "lat": 50.5, "lon": 14.5 } }],
+    "destination": { "kind": "road_point" }
+  }
+}

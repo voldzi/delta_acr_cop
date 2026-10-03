@@ -43,3 +43,5 @@ Jízda route-bound tunnel contract: [ADR 0032](adr/0032_ROUTE_BOUND_TUNNEL_DATA_
 Jízda consented measurement adapter (default off): [mobile handoff](integration/22_JIZDA_DRIVER_MEASUREMENTS_COP_HANDOFF.md), [ADR 0033](adr/0033_CONSENTED_JIZDA_MEASUREMENT_BOUNDARY.md).
 
 Veřejná syntetická povodňová ukázka: [spuštění a provoz](runbooks/18_PUBLIC_FLOOD_DEMO.md), [ADR 0026](adr/0026_ISOLATED_PUBLIC_FLOOD_DEMO.md).
+
+Jízda immutable road-trip routing: [contract, SDK integration and activation gates](integration/23_JIZDA_ROAD_TRIP_CONTRACT.md).

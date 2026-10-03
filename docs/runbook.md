@@ -98,3 +98,5 @@ never print keys or request bodies. Test two users to prove isolation. Leave
 ordinary chat routing unchanged until the separate routing and data-class
 acceptance tests in [ADR 0031](adr/0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.md)
 pass in production.
+
+For strict trip errors 422/429/503/502, preserve the trip and show the unavailable requirement; never retry as an unrestricted car/Apple route. Check SIM capabilities, graph version/freshness, closure revision/validity, all variant assessments, then repeat only the same requirements. Rollback restores the prior COP image/SDK pin; keep new strict profiles inactive. Existing internal network overlays must survive service recreation.

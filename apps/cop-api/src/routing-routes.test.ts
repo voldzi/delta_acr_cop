@@ -2,12 +2,50 @@ import { describe, expect, it, vi } from "vitest";
 import { buildServer } from "./server.js";
 import {
   RoutingSourceAdapter,
+  RoutingHttpError,
   type RoutingRouteRequest,
   type RoutingRouteResponse,
   type RoutingSource
 } from "./routing-source.js";
 
 describe("routing routes", () => {
+  it("preserves SIM safety status, machine code and Retry-After without disclosing its endpoint or using fallback", async () => {
+    const source: RoutingSource = {
+      config: { baseUrl: "https://private-sim.test/api/v1", enabled: true, timeoutMs: 5000 },
+      route: vi.fn(), alternatives: vi.fn(), fetchProfiles: vi.fn(), isochrone: vi.fn(), nearestAccess: vi.fn()
+    };
+    const app = buildServer({ routingSource: source });
+    try {
+      for (const status of [422, 429, 503, 502]) {
+        const mock = vi.mocked(source.route);
+        mock.mockRejectedValueOnce(new RoutingHttpError(status, "Failed", new URL("https://private-sim.test/api/v1/routing/alternatives"),
+          "upstream sensitive diagnostic", "ROUTING_CLOSURES_UNAVAILABLE", "30"));
+        const response = await app.inject({ method: "POST", url: "/api/v1/routing/route", headers: { authorization: "Bearer dev-lab-token" },
+          payload: { from: { lat: 50, lon: 14 }, to: { lat: 51, lon: 15 }, profileId: "car" } });
+        expect(response.statusCode).toBe(status);
+        expect(response.json().error.code).toBe("ROUTING_CLOSURES_UNAVAILABLE");
+        expect(response.body).not.toContain("private-sim.test");
+        expect(response.body).not.toContain("sensitive diagnostic");
+        expect(response.json()).not.toHaveProperty("routes");
+        if (status === 429) expect(response.headers["retry-after"]).toBe("30");
+      }
+      expect(source.route).toHaveBeenCalledTimes(4);
+      expect(source.alternatives).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+  it("requires authentication before forwarding a routing request", async () => {
+    const source: RoutingSource = {
+      config: { baseUrl: "https://sim.test/api/v1", enabled: true, timeoutMs: 5000 },
+      route: vi.fn(), alternatives: vi.fn(), fetchProfiles: vi.fn(), isochrone: vi.fn(), nearestAccess: vi.fn()
+    };
+    const app = buildServer({ routingSource: source });
+    try {
+      const response = await app.inject({ method: "POST", url: "/api/v1/routing/route",
+        payload: { from: { lat: 50, lon: 14 }, to: { lat: 51, lon: 15 }, profileId: "car" } });
+      expect(response.statusCode).toBe(401);
+      expect(source.route).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
   it("passes only tunnel intervals verified for the corresponding variant and dataset", async () => {
     const dataset = { version: "sim-routing-test", builtAt: "2026-09-23T00:00:00Z" };
     const shape = [[14.42, 50.08], [14.4205, 50.08], [14.421, 50.08]];
