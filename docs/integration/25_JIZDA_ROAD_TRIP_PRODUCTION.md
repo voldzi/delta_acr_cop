@@ -7,9 +7,9 @@ The user explicitly authorized deployment after [acceptance record 24](24_JIZDA_
 
 | Component | Deployed / published revision |
 | --- | --- |
-| COP API | `166c270b061cfd0a24ef6883c4ee83ec64473bc9` |
+| COP API | `b6c21322bbe26bdfc9414a39bfc62987864f01fd` (OIDC boundary follow-up) |
 | SIM routing API | `ffc49d83d78167610741fbd248eb039bee47459a` |
-| Shared mobile SDK | Published `b1d47d09e86b475c6a4a792cf9d94d87caf6f726`; Jízda adoption pending |
+| Shared mobile SDK | Published `b1d47d09e86b475c6a4a792cf9d94d87caf6f726`; Jízda reports local adoption and simulator acceptance; physical acceptance pending |
 
 Actual running images were verified against the built release. Later documentation
 commits do not alter the released runtime. Operational image digests, configuration
@@ -58,3 +58,39 @@ published SDK and [handoff 23](23_JIZDA_ROAD_TRIP_CONTRACT.md), preserve immutab
 snapshots and reject expired/unverified variants. Keep new profiles inactive while
 capabilities are disabled/unsupported. Strict errors must not become Apple/legacy
 fallback. Then complete joint real-session and iPhone navigation acceptance.
+
+## OIDC boundary follow-up (2026-10-03)
+
+Implementation `6c018468cd0fd0db18d562c3eefa5b1ecd245064`, with a formatting-only
+OpenAPI follow-up `b6c21322bbe26bdfc9414a39bfc62987864f01fd`, is now running in COP.
+All routing endpoints require an actor from an already verified OIDC token or
+server-side BFF session. Missing/malformed subjects fail before SIM is contacted.
+Browser-supplied actor IDs are not accepted. Token-prefix diagnostic logging was
+removed; malformed JWT claim types fail authentication instead of causing errors.
+
+Verification:
+
+- 35 targeted tests passed, including signed RS256 tokens, actual local HTTP JWKS
+  retrieval, all route variants, expiry/hash/identity mismatch, upstream errors,
+  revoked BFF session and cross-origin BFF rejection.
+- Full suite before the final added BFF test: 1135 passed, one skipped. The final
+  targeted run includes that BFF test; a second full-suite run was not performed.
+- Final lint/type check, build, skeleton and OpenAPI validation passed. OpenAPI
+  reports 18 warnings and no errors; web build has the existing chunk-size warning.
+- Packaged production candidate passed a network-isolated signed-token fixture:
+  valid identity 200, invalid claims 401, two variants retained, credentials not
+  forwarded to SIM. This is synthetic acceptance, not a real identity-provider login.
+- After API-only deployment: actual image verified, readiness and container health
+  passed, anonymous/malformed routing identities returned 401. Runtime environment,
+  existing networks, ports and secret files were unchanged.
+- Running adapter contacted production SIM: ordinary Valhalla route 200, strict
+  request 422 `ROUTING_SAFETY_UNSUPPORTED`, capabilities still disabled.
+- Measurement intake remains off; cleanup remains on. Previous release retained
+  for rollback; a live rollback roundtrip remains untested.
+
+A real COP login currently requires user reauthentication. No password was accessed.
+Real OIDC/iPhone end-to-end acceptance remains pending, as does authoritative closure
+source/engine acceptance in SIM. This deployment does not activate strict profiles
+or establish complete closure coverage. SIM is separately preparing the smallest
+truthful ordinary-routing improvement with verified known closures; no new additive
+contract is assumed until SIM publishes its binding schema and acceptance evidence.
