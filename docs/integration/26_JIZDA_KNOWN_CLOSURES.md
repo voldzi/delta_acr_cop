@@ -44,6 +44,13 @@ endpoint or direct mobile SIM access is introduced.
 - Absence is unknown/not requested, never successful enforcement. The metadata
   cannot satisfy mandatory `sim-road-trip-v1` requirements or permit strict downgrade.
 
+When `includeSteps=true`, every variant must additionally have complete ordered
+maneuver indices covering the exact route geometry, with matching step geometry
+and finite nonnegative distance/time. Consecutive duplicate vertices and the
+duplicated arrival point are normalized only for this equality check; the original
+wire geometry is preserved. Summary-only unindexed steps cannot establish mobile
+navigation acceptance.
+
 COP validates every raw variant before discarding unavailable results. Changed
 request/hash/geometry/dataset, expired metadata, differing snapshots, invalid
 scope/reason pairs, missing variants and rendered-geometry mismatch reject the
@@ -91,8 +98,8 @@ or authenticated physical navigation acceptance. Candidate-image source/geometry
 verification and exact deployed image checks must precede joint activation. Authenticated real-session and physical iPhone checks
 remain pending; previous production and rollback evidence is in record25.
 
-Local verification on 2026-10-03: 70 targeted tests passed, including the exact
-serialized SIM draft fixture and canonical vectors; full suite before the final
+Local verification on 2026-10-03: 71 targeted tests passed, including requested-step boundary tests, the exact
+serialized SIM fixture and canonical vectors; full suite before the final
 feature-evidence binding additions
 1169 passed / one skipped. Lint/typecheck and API build passed; full workspace
 build passed before the final error-code/elapsed-time additions (web unchanged).

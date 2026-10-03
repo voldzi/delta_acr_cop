@@ -98,6 +98,27 @@ describe("ordinary known-closure boundary", () => {
     const adapter = new RoutingSourceAdapter({ baseUrl: "https://fixture.invalid/api/v1", enabled: true, timeoutMs: 1000 });
     await expect(adapter.route(request, now)).rejects.toThrow("known-closure evidence");
   });
+  it("requires complete indexed geometry-bound maneuvers when mobile asks for steps", async () => {
+    const input = { ...request, includeSteps: true };
+    const response = fixture(); response.query.includeSteps = true;
+    for (const route of response.routes) {
+      route.knownClosures.requestHash = routingHash(response.query);
+      (route as Record<string, unknown>).steps = [
+        { index: 0, beginShapeIndex: 0, endShapeIndex: 2, distanceM: 15000, durationSeconds: 1000, geometry: route.geometry },
+        { index: 1, beginShapeIndex: 2, endShapeIndex: 2, distanceM: 0, durationSeconds: 0, geometry: { type: "LineString", coordinates: [route.geometry.coordinates[2], route.geometry.coordinates[2]] } }
+      ];
+    }
+    expect(verifyKnownClosuresResponse(response, input, now)).toBe(true);
+    for (const change of [
+      (r: Record<string, unknown>) => { delete r.steps; },
+      (r: Record<string, unknown>) => { (r.steps as Array<Record<string, unknown>>)[0]!.endShapeIndex = 1; },
+      (r: Record<string, unknown>) => { (r.steps as Array<Record<string, unknown>>)[0]!.beginShapeIndex = 1; },
+      (r: Record<string, unknown>) => { (r.steps as Array<Record<string, unknown>>)[0]!.geometry = { type: "LineString", coordinates: [[14, 50], [14.1, 50.1]] }; }
+    ]) {
+      const invalid = structuredClone(response); change(invalid.routes[1]!);
+      expect(() => verifyKnownClosuresResponse(invalid, input, now)).toThrow("known-closure evidence");
+    }
+  });
   it("does not allow ordinary evidence to satisfy a strict trip", () => {
     expect(() => verifyKnownClosuresResponse(fixture(), { ...request, trip: {} as never }, now)).toThrow("known-closure evidence");
   });

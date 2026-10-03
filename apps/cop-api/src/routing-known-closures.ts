@@ -50,6 +50,22 @@ export function verifyKnownClosuresResponse(response: Record<string, unknown>, r
       !route.geometry.coordinates.every((point) => Array.isArray(point) && point.length === 2 &&
         typeof point[0] === "number" && Number.isFinite(point[0]) && Math.abs(point[0]) <= 180 &&
         typeof point[1] === "number" && Number.isFinite(point[1]) && Math.abs(point[1]) <= 90) || !validate(route.knownClosures)) reject();
+    if (request.includeSteps === true) {
+      if (!Array.isArray(route.steps) || !route.steps.length || route.steps.length > 10_000) reject();
+      let previousEnd = 0;
+      for (const [index, step] of route.steps.entries()) {
+        if (!record(step) || step.index !== index || step.beginShapeIndex !== previousEnd ||
+          !Number.isInteger(step.endShapeIndex) || typeof step.endShapeIndex !== "number" ||
+          step.endShapeIndex < previousEnd || step.endShapeIndex >= route.geometry.coordinates.length ||
+          typeof step.distanceM !== "number" || !Number.isFinite(step.distanceM) || step.distanceM < 0 ||
+          typeof step.durationSeconds !== "number" || !Number.isFinite(step.durationSeconds) || step.durationSeconds < 0 ||
+          !record(step.geometry) || step.geometry.type !== "LineString" || !Array.isArray(step.geometry.coordinates)) reject();
+        const points = step.geometry.coordinates.filter((point, i, all) => i === 0 || canonicalJson(point) !== canonicalJson(all[i - 1]));
+        if (canonicalJson(points) !== canonicalJson(route.geometry.coordinates.slice(previousEnd, step.endShapeIndex + 1))) reject();
+        previousEnd = step.endShapeIndex;
+      }
+      if (previousEnd !== route.geometry.coordinates.length - 1) reject();
+    }
     ids.add(route.routeId);
     const evidence = route.knownClosures as KnownClosures;
     const observed = Date.parse(evidence.observedAt), until = Date.parse(evidence.validUntil);
