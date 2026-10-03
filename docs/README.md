@@ -47,3 +47,5 @@ Veřejná syntetická povodňová ukázka: [spuštění a provoz](runbooks/18_PU
 Jízda immutable road-trip routing: [contract, SDK integration and activation gates](integration/23_JIZDA_ROAD_TRIP_CONTRACT.md).
 
 Jízda road-trip published revisions and test evidence: [acceptance record](integration/24_JIZDA_ROAD_TRIP_ACCEPTANCE.md).
+
+Jízda road-trip server deployment and remaining activation blockers: [production record](integration/25_JIZDA_ROAD_TRIP_PRODUCTION.md).

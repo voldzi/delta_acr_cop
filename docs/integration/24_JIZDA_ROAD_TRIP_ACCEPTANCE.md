@@ -1,6 +1,7 @@
 # 24. COP–SIM–Jízda road-trip delivery and acceptance
 
-Date: 2026-10-03. Status: published optional integration, NOT deployed or activated.
+Date: 2026-10-03. Updated status: server contract deployed; strict profiles NOT activated.
+Production identity and current checks: [deployment record 25](25_JIZDA_ROAD_TRIP_PRODUCTION.md).
 This record addresses Jízda's `docs/routing-handoff.md`. It does not authorize
 production-data changes, new vehicle-profile activation or measurement collection.
 
@@ -94,23 +95,15 @@ SDK tests were run independently.
 
 ## Production status
 
-No routing deployment, secret update, network change or profile activation was
-performed. Read-only COP production check: `/srv/cop` on `docker.home.cz`, commit
-`d70e64c`, healthy API container, image
-`sha256:ecb258c535d1b09f11626f7de23b0bb698119526caf0cdbf945fd5033707db57`.
-The unrelated untracked AI Router overlay was preserved.
+Following the user's explicit deployment instruction, COP API revision `166c270`
+and SIM revision `ffc49d8` are now deployed. See [record 25](25_JIZDA_ROAD_TRIP_PRODUCTION.md)
+for actual image digests, checks, preserved configuration and rollback.
 
-SIM read-only baseline: checkout `dba75d609f4db3f398399e1178346a10c425a9f5`,
-healthy/live+ready 200, no public SDA port; running image
-`sha256:00b842865ef8d31610a57e69fcfd34c65a9a8f31c9b9731a73c16c5ea0a7f882`
-from measurement runtime `b3e94c9b02e480268fd8b51c284069602b9fa2c1`. The new
-routing revision is not running there. SIM intake remains false and revocation
-true.
-
-SIM strict routing is default-off (`ROUTING_STRICT_TRIPS_ENABLED=false`). Exact
-accepted engine versions and a reviewed graph-bound closure snapshot must be
-configured and validated before any activation. No synthetic closure was inserted
-into production. Voluntary GPS intake and live aggregate ETA remain inactive.
+The strict feature remains default-off because the required authoritative reviewed
+closure source/publisher and accepted engine configuration are not installed.
+Capabilities report disabled; valid strict requests return 422
+`ROUTING_SAFETY_UNSUPPORTED`. Ordinary routing remains available. No synthetic
+closure, mobile profile, voluntary GPS intake or live aggregate ETA was activated.
 
 SIM detailed evidence and rollback runbook:
 
