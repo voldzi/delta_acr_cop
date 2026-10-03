@@ -7,8 +7,8 @@ The user explicitly authorized deployment after [acceptance record 24](24_JIZDA_
 
 | Component | Deployed / published revision |
 | --- | --- |
-| COP API | `b6c21322bbe26bdfc9414a39bfc62987864f01fd` (OIDC boundary follow-up) |
-| SIM routing API | `ffc49d83d78167610741fbd248eb039bee47459a` |
+| COP API | `0311d4d6b362c70c90fa35b9c9787459db46edce` (ordinary closure validation follow-up) |
+| SIM routing API | `3506663a70a32ecdab9ab2921656385dc998ea26` |
 | Shared mobile SDK | Published `b1d47d09e86b475c6a4a792cf9d94d87caf6f726`; Jízda reports local adoption and simulator acceptance; physical acceptance pending |
 
 Actual running images were verified against the built release. Later documentation
@@ -94,3 +94,8 @@ source/engine acceptance in SIM. This deployment does not activate strict profil
 or establish complete closure coverage. SIM is separately preparing the smallest
 truthful ordinary-routing improvement with verified known closures; no new additive
 contract is assumed until SIM publishes its binding schema and acceptance evidence.
+
+The subsequent ordinary reviewed-closure release is active with incomplete coverage;
+see [joint contract, SDK handoff and production acceptance26](26_JIZDA_KNOWN_CLOSURES.md).
+Strict profiles remain inactive. Earlier deployment checks above are historical
+release evidence and are superseded by the current revision table and record26.

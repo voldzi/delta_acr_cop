@@ -50,4 +50,4 @@ Jízda road-trip published revisions and test evidence: [acceptance record](inte
 
 Jízda road-trip server deployment and remaining activation blockers: [production record](integration/25_JIZDA_ROAD_TRIP_PRODUCTION.md).
 
-Ordinary reviewed closure evidence: [contract and scoped SDK handoff](integration/26_JIZDA_KNOWN_CLOSURES.md); joint activation pending.
+Ordinary reviewed closure evidence: [contract and scoped SDK handoff](integration/26_JIZDA_KNOWN_CLOSURES.md); ordinary release active with incomplete coverage; physical acceptance pending.

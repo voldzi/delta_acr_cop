@@ -1,10 +1,10 @@
 # 26. Ordinary navigation with reviewed known closures
 
-Status: COP validator prepared and tested, pinned to published SIM revision
-`3506663a70a32ecdab9ab2921656385dc998ea26`. COP implementation `d6fc3ba` is not yet
-a deployed joint release. Exact immutable schema and serialized fixture equality
-passed; fixture-through-adapter and expiry rejection passed. Joint production
-activation and physical acceptance remain pending. Strict profiles stay disabled.
+Status: ordinary reviewed known-closure routing is deployed and enabled. COP API
+runs `0311d4d6b362c70c90fa35b9c9787459db46edce`; SIM runs the pinned release
+`3506663a70a32ecdab9ab2921656385dc998ea26`. Strict profiles and driver measurements
+remain off. Actual authenticated-user and physical-phone acceptance are pending.
+Coverage remains incomplete; this release has one individually reviewed closure.
 
 ## Compatible additive response
 
@@ -94,8 +94,8 @@ and BFF boundary tests remain included in the targeted run.
 These tests do not prove actual closure truth or Valhalla enforcement. SIM published the pinned immutable binding schema/fixture revision and reports
 actual source/engine acceptance for one individually reviewed closed structure
 in both directions. COP reviewed that private evidence; it is not national coverage
-or authenticated physical navigation acceptance. Candidate-image source/geometry
-verification and exact deployed image checks must precede joint activation. Authenticated real-session and physical iPhone checks
+or authenticated physical navigation acceptance. Candidate-image source/geometry verification and exact deployed image checks passed
+before joint activation. Authenticated real-session and physical iPhone checks
 remain pending; previous production and rollback evidence is in record25.
 
 Local verification on 2026-10-03: 71 targeted tests passed, including requested-step boundary tests, the exact
@@ -110,3 +110,46 @@ No production flag or mobile package was changed during these tests.
 The [serialized SIM synthetic fixture](../api/examples/known-closures-v1.sim-fixture.json)
 contains normalized query, distinct GeoJSON variants and expected SHA-256 values.
 It is a contract fixture, not a live bridge or production acceptance record.
+
+## Joint production acceptance on 2026-10-03
+
+- Immutable SIM schema and serialized fixture exactly match COP's transferred
+  copies; packaged COP image validated distinct variants, canonical vectors,
+  expiry rejection and changed-request rejection in an isolated test.
+- Actual source-bound candidate with mobile flags `alternatives=3`,
+  `includeSteps=true`, `includeRoadAttributes=true` passed through COP in both
+  directions, including complete indexed maneuvers and map-feature binding.
+- COP API image identity and health/readiness were verified after deployment.
+  Existing runtime environment, networks, ports and secret-file checksums were
+  preserved. Anonymous and malformed identities returned 401.
+- After SIM activated ordinary reviewed closures, the running configured COP
+  adapter contacted actual production SIM in both directions: 3726 m / 3682 m,
+  one actual native variant and nine complete indexed steps each, one enforced
+  reviewed closure, incomplete coverage and current expiry. No variant was
+  fabricated to reach the requested alternative count.
+- Ordinary routing away from the reviewed closure returned an `ok` Valhalla
+  route with ten indexed steps and verified known-closure evidence.
+- Strict capabilities remain disabled; a fresh strict request returned 422
+  `ROUTING_SAFETY_UNSUPPORTED`, without an unassessed substitute route.
+- Jízda reports 20 SDK tests passed, including temporary private replay of these
+  exact actual COP-transformed responses on iOS27.1. App Debug/Release/domain and
+  simulator acceptance passed; installation was reported, but launch was blocked
+  by the locked physical phone. Neither installation nor fixture replay proves
+  physical navigation or real OIDC acceptance.
+
+Forward road attributes currently report unavailable because trace geometry has
+one extra consecutive origin vertex; tunnels remain unknown there. Reverse road
+attributes passed; vehicle restrictions remain not evaluated. Known-closure
+engine exclusion is independently verified. SIM is preparing a separate exact
+consecutive-duplicate alignment fix, without merging loops or relaxing geometric
+tolerances; no repaired-attribute claim is made here before its deployment.
+
+Previous COP image and exact configuration selection are retained for rollback;
+a live rollback roundtrip was not performed. Live outage injection was not done;
+source/engine/revocation/graph-race and no-fallback failures were tested in isolated
+SIM/COP suites. A future graph update needs reviewed re-binding; an unreviewed new
+graph fails closed rather than silently reusing the old exclusion template.
+
+Chroma retrieval was available for the managed primary repository. Reindexing this
+release worktree was rejected because it is not a managed MCP root; no successful
+release-index update is claimed. Selected current files were verified directly.
