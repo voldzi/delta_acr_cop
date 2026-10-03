@@ -169,5 +169,26 @@ source/geometry/engine verification. This affects routing beyond the vicinity of
 the reviewed closure. It must not silently retry without the exclusions. The current
 release does not provide an automatic nationwide publisher or automatic graph-review
 promotion. A scoped verified re-binding step in the existing graph-release workflow
-has been requested from SIM; completion is not yet claimed. Exact private scheduler
+is deployed in SIM, with the current-graph mechanical canary passed. Every future
+graph must pass the same checks before use; its activation is not yet verified. Exact private scheduler
 and operator details belong in the private operational handoff, not this public file.
+
+COP compatibility release `b505289` and SIM `51613f4` were independently checked
+against the actual running images. The current configured COP-to-SIM mobile query
+still passed in both directions: 3726/3682 m, nine indexed steps, one reviewed
+closure, incomplete coverage, road attributes `ok` and zero known tunnel intervals.
+SIM's new mechanical re-binding is bounded to the same individually reviewed
+structure and source semantics, checks each constrained native variant's actual
+edge trace, and keeps the original approval file unchanged. Its 263 tests include
+rejection of the closed way outside the old polygon, source/graph/file races and
+in-flight deduplication. The initial separate-process live probe failed before
+geometric verification because the cold process had no source snapshot and the
+shared provider quota delayed a permitted refresh. Ordinary API routing remained
+healthy. After the permitted refresh, the independent live mechanical probe passed on
+`sim-routing-2026-09-29-1790679143`: exact bridge anchor matching, baseline bridge
+presence and constrained bridge absence in both directions, indexed maneuvers,
+unchanged final source and graph identity. COP reviewed the complete sanitized
+probe output. No future graph activation or automatic national coverage acceptance
+is claimed. The in-service re-binding uses the same existing warm source instance;
+its cache stores only the derived graph binding, and source evidence is validated
+again for each published route.

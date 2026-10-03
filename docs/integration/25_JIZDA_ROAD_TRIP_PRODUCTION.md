@@ -7,8 +7,8 @@ The user explicitly authorized deployment after [acceptance record 24](24_JIZDA_
 
 | Component | Deployed / published revision |
 | --- | --- |
-| COP API | `0311d4d6b362c70c90fa35b9c9787459db46edce` (ordinary closure validation follow-up) |
-| SIM routing API | `91bbfa049a73cf2dd86f3430578ed9e9d571ea77` (same closure schema as `3506663`) |
+| COP API | `b5052892cd83b989abd78d4e630dfcb28dedbe68` (legacy alternatives compatibility follow-up) |
+| SIM routing API | `51613f4e0e9efb5c56e3b951baf34a6b4a5d95cd` (same closure schema as `3506663`; current graph canary passed) |
 | Shared mobile SDK | Published `b1d47d09e86b475c6a4a792cf9d94d87caf6f726`; Jízda reports local adoption and simulator acceptance; physical acceptance pending |
 
 Actual running images were verified against the built release. Later documentation
@@ -99,3 +99,16 @@ The subsequent ordinary reviewed-closure release is active with incomplete cover
 see [joint contract, SDK handoff and production acceptance26](26_JIZDA_KNOWN_CLOSURES.md).
 Strict profiles remain inactive. Earlier deployment checks above are historical
 release evidence and are superseded by the current revision table and record26.
+
+## Legacy alternatives production follow-up
+
+COP `b505289` was deployed after isolated packaged-image acceptance. Ordinary
+legacy values 0 and 5 were checked through the running configured COP adapter
+to actual SIM: effective alternatives 1 and 3 respectively, one genuine returned
+variant and ten complete indexed steps each. Synthetic packaged tests also cover
+4, expiry rejection and changed-query rejection. Existing mobile alternatives=3
+is unchanged. Health/readiness passed; anonymous and malformed routing identities
+returned 401. Environment, networks, ports and secret-file checksums were preserved.
+The previous image is retained for rollback; no live rollback roundtrip was performed.
+Strict capabilities and driver collection remain disabled. This source-adapter
+production proof does not replace actual end-user OIDC or physical iPhone acceptance.
