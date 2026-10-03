@@ -73,7 +73,9 @@ from screenshots. Shape indexes always refer to the variant's complete geometry.
 stale/changed safety source, 502 engine failure or unverified assessment. COP
 preserves SIM's ROUTING_* machine code and numeric Retry-After in its existing
 correlationId envelope, without returning upstream endpoint/diagnostics. No
-automatic retry into a different engine or unconstrained request.
+automatic retry into a different engine or unconstrained request. Strict fire/flood
+avoidance is 422 without an approved source; engine warnings/clamping are 502.
+Legacy fallback cannot claim an engine exclusion that it discarded.
 
 Use `navigationRoutes(for:trip,at:)` for strict routes. Never use legacy
 `requiresMapKitFallback` to authorize fallback for a strict trip. The new runtime
@@ -82,7 +84,8 @@ available only through the old unrestricted integration under host policy.
 
 ## SDK handoff to Jízda
 
-Published revision and verification results are recorded in the acceptance report.
+Published revisions and verification results are recorded in the
+[acceptance report](24_JIZDA_ROAD_TRIP_ACCEPTANCE.md).
 SDK contract marker: `CSMCommunicationRuntime.roadTripContractVersion`.
 
 1. Pin the published COP Mobile revision; Jízda's local path dependency otherwise

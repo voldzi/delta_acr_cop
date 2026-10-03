@@ -21,3 +21,4 @@
 - [19 SIM Live Traffic Routing](19_SIM_LIVE_TRAFFIC_ROUTING.md)
 - [22 Jízda Driver Measurements COP Handoff](22_JIZDA_DRIVER_MEASUREMENTS_COP_HANDOFF.md)
 - [23 Jízda Immutable Road Trip Contract](23_JIZDA_ROAD_TRIP_CONTRACT.md)
+- [24 Jízda Road Trip Acceptance](24_JIZDA_ROAD_TRIP_ACCEPTANCE.md)

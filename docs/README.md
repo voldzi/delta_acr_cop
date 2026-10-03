@@ -45,3 +45,5 @@ Jízda consented measurement adapter (default off): [mobile handoff](integration
 Veřejná syntetická povodňová ukázka: [spuštění a provoz](runbooks/18_PUBLIC_FLOOD_DEMO.md), [ADR 0026](adr/0026_ISOLATED_PUBLIC_FLOOD_DEMO.md).
 
 Jízda immutable road-trip routing: [contract, SDK integration and activation gates](integration/23_JIZDA_ROAD_TRIP_CONTRACT.md).
+
+Jízda road-trip published revisions and test evidence: [acceptance record](integration/24_JIZDA_ROAD_TRIP_ACCEPTANCE.md).
