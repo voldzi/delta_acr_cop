@@ -24,6 +24,9 @@ endpoint or direct mobile SIM access is introduced.
 - COP returns the verified normalized `query` when this evidence exists. SIM adds
   absent `via=[]`, `avoid=[]`, and alternatives defaults (route=1, alternatives=2).
   COP sends its primary route to SIM alternatives with explicit alternatives=1.
+  Legacy ordinary 0..5 values remain accepted; SIM clamps their effective maximum
+  returned route count to 1..3, which COP independently verifies. Strict trips
+  retain their separate 1..3 bounds; no safety field is dropped or normalized.
   COP checks the requested identity separately from the hash; a self-consistent
   hash of a different request is rejected. Other options/vehicle fields must match.
 - Exact `routingDataset.version` and `builtAt` must match response coverage.
@@ -99,14 +102,14 @@ or authenticated physical navigation acceptance. Candidate-image source/geometry
 before joint activation. Authenticated real-session and physical iPhone checks
 remain pending; previous production and rollback evidence is in record25.
 
-Local verification on 2026-10-03: 71 targeted tests passed, including requested-step boundary tests, the exact
-serialized SIM fixture and canonical vectors; full suite before the final
-feature-evidence binding additions
-1169 passed / one skipped. Lint/typecheck and API build passed; full workspace
-build passed before the final error-code/elapsed-time additions (web unchanged).
-Skeleton and ten JSON schemas passed. OpenAPI valid with 19 warnings, including
-one additional composition warning in the exact transferred SIM schema.
-No production flag or mobile package was changed during these tests.
+Local verification on 2026-10-03: 74 targeted tests passed, including mobile-step
+boundaries, exact serialized SIM fixture, canonical vectors and legacy ordinary
+alternatives normalization. Current full suite: 1176 passed / one skipped.
+Final lint/typecheck, API build and OpenAPI validation passed. Full workspace build
+passed before the final API-only additions (web unchanged). Skeleton and ten JSON
+schemas passed. OpenAPI valid with 19 warnings, including one additional composition
+warning in the exact transferred SIM schema. These local tests do not activate
+production flags or change the mobile package.
 
 The [serialized SIM synthetic fixture](../api/examples/known-closures-v1.sim-fixture.json)
 contains normalized query, distinct GeoJSON variants and expected SHA-256 values.

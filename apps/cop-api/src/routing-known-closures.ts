@@ -32,9 +32,10 @@ function reject(): never { throw new KnownClosureVerificationError(); }
 export function verifyKnownClosuresResponse(response: Record<string, unknown>, request: RoutingRouteRequest | undefined, now: Date): boolean {
   if (!Array.isArray(response.routes) || !response.routes.some((route) => record(route) && "knownClosures" in route)) return false;
   if (!request || request.trip || !response.routes.length || !record(response.query) || !record(response.coverage)) reject();
-  if (response.routes.length > Math.min(3, request.alternatives ?? 2)) reject();
+  const alternatives = Math.max(1, Math.min(3, request.alternatives ?? 2));
+  if (response.routes.length > alternatives) reject();
   // SIM alternatives defaults: preserve options exactly, add only the documented defaults.
-  const expected = { ...request, via: request.via ?? [], avoid: request.avoid ?? [], alternatives: request.alternatives ?? 2 };
+  const expected = { ...request, via: request.via ?? [], avoid: request.avoid ?? [], alternatives };
   if (canonicalJson(response.query) !== canonicalJson(expected)) reject();
   const dataset = response.coverage.routingDataset;
   if (!record(dataset) || typeof dataset.version !== "string" || typeof dataset.builtAt !== "string") reject();

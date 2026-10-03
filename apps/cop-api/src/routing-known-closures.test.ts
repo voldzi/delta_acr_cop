@@ -49,6 +49,17 @@ describe("ordinary known-closure boundary", () => {
     expect(result.routes.map(r => r.knownClosures)).toEqual(sample.response.routes.map((r: { knownClosures: unknown }) => r.knownClosures));
     await expect(adapter.route(sample.request, new Date("2026-10-03T12:10:00Z"))).rejects.toThrow("known-closure evidence");
   });
+  it.each([0, 4, 5])("preserves legacy alternatives=%s with the documented SIM capacity normalization", async (requested) => {
+    const input = { ...request, alternatives: requested };
+    const response = fixture(); response.query.alternatives = Math.max(1, Math.min(3, requested));
+    if (requested === 0) { response.routes.pop(); response.features.pop(); }
+    for (const route of response.routes) route.knownClosures.requestHash = routingHash(response.query);
+    const fetch = vi.fn(async (_url: unknown, _init?: RequestInit) => new Response(JSON.stringify(response))); vi.stubGlobal("fetch", fetch);
+    const adapter = new RoutingSourceAdapter({ baseUrl: "https://fixture.invalid/api/v1", enabled: true, timeoutMs: 1000 });
+    const result = await adapter.route(input, now);
+    expect(result.query).toEqual(response.query);
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).alternatives).toBe(requested);
+  });
   it("allows a truthful absent field on legacy responses without inventing enforcement", () => {
     expect(verifyKnownClosuresResponse({ routes: [{ status: "ok" }] }, request, now)).toBe(false);
   });
