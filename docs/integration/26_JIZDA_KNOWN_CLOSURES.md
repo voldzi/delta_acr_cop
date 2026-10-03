@@ -1,8 +1,10 @@
 # 26. Ordinary navigation with reviewed known closures
 
-Status: COP validator prepared locally against the SIM draft. Not yet a deployed
-joint release. The binding SIM revision, fixture and engine/source acceptance are
-pending. Strict road-trip profiles remain disabled.
+Status: COP validator prepared and tested, pinned to published SIM revision
+`3506663a70a32ecdab9ab2921656385dc998ea26`. COP implementation `d6fc3ba` is not yet
+a deployed joint release. Exact immutable schema and serialized fixture equality
+passed; fixture-through-adapter and expiry rejection passed. Joint production
+activation and physical acceptance remain pending. Strict profiles stay disabled.
 
 ## Compatible additive response
 
@@ -82,9 +84,11 @@ geometry/render binding, source revision, expiry, engine fallback, graph changes
 direction/reason mismatch, count/ID mismatch and strict separation. Signed OIDC
 and BFF boundary tests remain included in the targeted run.
 
-These tests do not prove actual closure truth or Valhalla enforcement. SIM must
-publish its immutable binding schema/fixture revision and actual source/engine
-results before COP release. Authenticated real-session and physical iPhone checks
+These tests do not prove actual closure truth or Valhalla enforcement. SIM published the pinned immutable binding schema/fixture revision and reports
+actual source/engine acceptance for one individually reviewed closed structure
+in both directions. COP reviewed that private evidence; it is not national coverage
+or authenticated physical navigation acceptance. Candidate-image source/geometry
+verification and exact deployed image checks must precede joint activation. Authenticated real-session and physical iPhone checks
 remain pending; previous production and rollback evidence is in record25.
 
 Local verification on 2026-10-03: 70 targeted tests passed, including the exact
@@ -93,7 +97,7 @@ feature-evidence binding additions
 1169 passed / one skipped. Lint/typecheck and API build passed; full workspace
 build passed before the final error-code/elapsed-time additions (web unchanged).
 Skeleton and ten JSON schemas passed. OpenAPI valid with 19 warnings, including
-one additional composition warning in the exact transferred SIM draft schema.
+one additional composition warning in the exact transferred SIM schema.
 No production flag or mobile package was changed during these tests.
 
 The [serialized SIM synthetic fixture](../api/examples/known-closures-v1.sim-fixture.json)
