@@ -74,3 +74,40 @@ unique author/external votes, suppression, correction, authoritative geometry
 clustering, durable failure503, SDK exhaustive categories and projection.
 Physical iPhone and real user OIDC/web confirmation remain joint acceptance.
 No live user report, consent, vehicle location or new routing closure is created.
+
+## Production evidence2026-10-04
+
+- API source: `6583cb5ab659044cc681294ee291f9b08135a4bc`, branch `codex/driver-report-community`.
+- Web source: `1514e4ee9ea1bb5e5d37ee0338b143d80e39f3ce`.
+- Published SDK: `d5a97212e97f225f958ffa6a4686ec1895256595`, COP-Mobile branch `codex/shared-mobility-sdk`.
+- APIimage: `sha256:d4f9b1f6ee9121f85640e6445a0926928a0c07271a77b617256ec1b9e200e5b8`.
+- Webimage: `sha256:fe4c6e9a80f6918f3c7f767120d4462ca384c512ab13c36dd7fff50e28fb8870`.
+- APIreadiness200, webHTTP200, anonymous categoryfeed200, protected mobility401,
+  PostgreSQL Dispatchlease1. Speed measurement intakefalse. SIM container ID,
+  API/web runtime environments, networks and ports unchanged.
+- Full COP suite1264passed/2skipped; focused community suite52passed; lint/types,
+  APIbuild, OpenAPIvalid26warnings and skeleton passed. Web built on the server
+  with existing production public configuration and analytics v1 preserved.
+- Final map API fix:3targeted tests passed after the map/query path was corrected
+  to load the same vote summaries and request time; the earlier combined run had
+ 82other community/map tests passing and this regression exposed a missing clock.
+- Final packaged API signed synthetic OIDC acceptance passed with networknone:
+  exact policecreate/submit/default30min expiry and three independent negative
+  accounts yielding empty active items/GeoJSON in both the report feed and COP
+  map/query. Real production storage/readiness checks were read-only. Existing shared vehicle isolation,
+  idempotency, DispatchcancelStart and private participant regression passed.
+  This used test-only memory and a synthetic messaging provider, not real IdP/Matrix.
+- Public synthetic demo loaded in the in-app browser after release, including map,
+  scenario text and existing analytics notice. Authenticated web police creation
+  and confirmation were not exercised with a real account.
+- SDK exact final isolated package71tests passed on the approved Xcode27.1 pin.
+  No live production writes, reports or consent were manufactured. Physical phone
+  and actual user OIDC/notification/offline acceptance remain open.
+
+Private release journal `/home/voldzi/cop-deployments/community-reports-20261004`
+contains baseline hashes, packaged acceptance, deployment and image identities.
+Prior images retained as `delta-acr-cop-api:rollback-community-20261004` and
+`delta-acr-cop-web:rollback-community-20261004`; prior API source888f08c.
+Only recreate API/web after restoring these images; leave production records and
+configuration intact. Live rollback roundtrip remains untested. No schema or
+network configuration migration was introduced by this release.
