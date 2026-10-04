@@ -1,24 +1,34 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPublicAnalyticsBridge, publicAnalyticsPaths, permitsPublicAnalytics } from "./public-analytics";
+import {
+  createPublicAnalyticsBridge,
+  publicAnalyticsPaths,
+  permitsPublicAnalytics,
+  permitsAnonymousPublicAnalytics
+} from "./public-analytics";
 
 const websiteId = "12345678-1234-1234-1234-123456789abc";
 function harness(enabled = true) {
   let path = publicAnalyticsPaths[0] as string;
   let permitted = true;
+  let anonymous = true;
   let host = "cop.zeleznalady.cz";
   const pageview = vi.fn();
   const create = vi.fn(() => ({ pageview }));
-  const load = vi.fn(async () => ({ contractVersion: "vcode-public-v1" as const, create }));
+  const load = vi.fn(async () => ({ contractVersion: "vcode-public-v2" as const, create }));
   const observe = createPublicAnalyticsBridge(
     { enabled, websiteId },
     {
       pathname: () => path,
       hostname: () => host,
       permitted: () => permitted,
+      anonymous: async () => anonymous,
       load
     }
   );
   return {
+    anonymous: (value: boolean) => {
+      anonymous = value;
+    },
     observe,
     pageview,
     create,
@@ -62,13 +72,14 @@ describe("public demo analytics boundary", () => {
     expect(h.pageview.mock.calls).toEqual([["/demo/flood-central-bohemia"]]);
     expect(h.create).toHaveBeenCalledWith({
       websiteId,
-      collectorPath: "/analytics/v1/events",
+      collectorPath: "/analytics/v2/events",
       allowedPaths: publicAnalyticsPaths,
       allowedEvents: [],
       autoPageview: false,
       autoClick: false,
       captureTitle: false,
       captureReferrer: false,
+      captureSources: true,
       credentials: "omit",
       offline: "discard"
     });
@@ -128,5 +139,73 @@ describe("browser privacy signals", () => {
   });
   it("allows an online browser without suppression", () => {
     expect(permitsPublicAnalytics({ online: true, dnt: "0", gpc: false })).toBe(true);
+  });
+});
+
+describe("anonymous session boundary", () => {
+  it("does not load for an authenticated visitor even on the public demo", async () => {
+    const h = harness();
+    h.anonymous(false);
+    await h.observe();
+    expect(h.load).not.toHaveBeenCalled();
+  });
+  it("cancels a pending pageview if login occurs during initialization", async () => {
+    const h = harness();
+    const pending = h.observe();
+    h.anonymous(false);
+    await pending;
+    expect(h.pageview).not.toHaveBeenCalled();
+  });
+  it.each([{ status: 200, authenticated: true }, { status: 200 }, { status: 503 }, { status: 403 }])(
+    "rejects authenticated or uncertain BFF state %j",
+    async (result) => {
+      expect(
+        await permitsAnonymousPublicAnalytics({ storedSession: false, bffEnabled: true }, async () => result)
+      ).toBe(false);
+    }
+  );
+  it("permits only a verified anonymous BFF and never consults it for a stored session", async () => {
+    const check = vi.fn(async () => ({ status: 401 }));
+    expect(await permitsAnonymousPublicAnalytics({ storedSession: true, bffEnabled: true }, check)).toBe(false);
+    expect(check).not.toHaveBeenCalled();
+    expect(await permitsAnonymousPublicAnalytics({ storedSession: false, bffEnabled: true }, check)).toBe(true);
+    expect(
+      await permitsAnonymousPublicAnalytics({ storedSession: false, bffEnabled: true }, async () => {
+        throw Error("offline");
+      })
+    ).toBe(false);
+  });
+});
+
+describe("post-load asynchronous session guard", () => {
+  it("rejects private navigation while the final BFF status is pending", async () => {
+    let path: string = publicAnalyticsPaths[0];
+    let resolve!: (value: boolean) => void;
+    const anonymous = vi
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockImplementationOnce(
+        () =>
+          new Promise<boolean>((done) => {
+            resolve = done;
+          })
+      );
+    const pageview = vi.fn();
+    const observe = createPublicAnalyticsBridge(
+      { enabled: true, websiteId },
+      {
+        hostname: () => "cop.zeleznalady.cz",
+        pathname: () => path,
+        permitted: () => true,
+        anonymous,
+        load: async () => ({ contractVersion: "vcode-public-v2", create: () => ({ pageview }) })
+      }
+    );
+    const pending = observe();
+    await vi.waitFor(() => expect(anonymous).toHaveBeenCalledTimes(2));
+    path = "/chat/";
+    resolve(true);
+    await pending;
+    expect(pageview).not.toHaveBeenCalled();
   });
 });

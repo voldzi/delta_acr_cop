@@ -31,11 +31,38 @@ assert.equal(readFileSync("AGENTS.md", "utf8"), readFileSync("CLAUDE.md", "utf8"
 
 const runtime = readFileSync("apps/cop-web/public/analytics/v1/tracker.js");
 const sri = "sha384-" + createHash("sha384").update(runtime).digest("base64");
-assert.ok(bridge.includes(sri), "Pinned runtime SRI must match the deployed artifact");
+assert.equal(
+  sri,
+  "sha384-lhej7Cxih2xEDtoPqh2B7mI4JilbkjF9HtVj+agiDEv8P6XAO98U6FJUCNpIVsMN",
+  "Preserve the previous v1 compatibility artifact"
+);
+const v2Integrity = "sha384-4mn0sN5UeFuzSjaXlbulwbJz7N38PPOovouC9Xp3OHD0r94YKgx8B2RAk/nK6mg0";
+assert.ok(bridge.includes(v2Integrity), "Pin the reviewed shared v2 runtime");
+assert.match(bridge, /vcode-public-v2/u);
+assert.match(bridge, /captureSources: true/u);
+assert.match(bridge, /analytics\/v2\/tracker\.js/u);
+assert.match(bridge, /analytics\/v2\/events/u);
+assert.match(bridge, /environment\.anonymous\(\)/u);
 
 if (process.env.VITE_COP_PUBLIC_ANALYTICS_ENABLED === "true" || process.env.COP_PUBLIC_ANALYTICS_ENABLED === "true") {
+  const verificationPath = process.env.COP_ANALYTICS_RUNTIME_VERIFICATION_PATH;
+  const v2Runtime = verificationPath
+    ? readFileSync(verificationPath)
+    : await (async () => {
+        const response = await fetch("https://cop.zeleznalady.cz/analytics/v2/tracker.js", {
+          signal: AbortSignal.timeout(10000),
+          redirect: "error"
+        });
+        assert.equal(response.status, 200, "Shared v2 runtime must be reachable before activation");
+        return Buffer.from(await response.arrayBuffer());
+      })();
+  assert.equal(
+    "sha384-" + createHash("sha384").update(v2Runtime).digest("base64"),
+    v2Integrity,
+    "Actual shared v2 bytes must match SRI"
+  );
   assert.match(
-    runtime.toString(),
+    v2Runtime.toString(),
     /referrerPolicy\s*:\s*["']no-referrer["']/u,
     "Activation blocked: shared runtime must suppress browser Referer"
   );
