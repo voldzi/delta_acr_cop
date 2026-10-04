@@ -1,0 +1,27 @@
+# Only public product information and the synthetic demo are intended for discovery.
+User-agent: *
+Disallow: /api/
+Disallow: /_matrix/
+Disallow: /mobile/
+Disallow: /chat/
+Disallow: /xr
+Disallow: /globe
+Disallow: /health/
+
+User-agent: OAI-SearchBot
+Allow: /o-aplikaci/
+Allow: /demo/flood-central-bohemia
+Disallow: /
+
+User-agent: Claude-SearchBot
+Allow: /o-aplikaci/
+Allow: /demo/flood-central-bohemia
+Disallow: /
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+Sitemap: https://cop.zeleznalady.cz/sitemap.xml

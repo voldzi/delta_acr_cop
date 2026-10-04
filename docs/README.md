@@ -60,3 +60,5 @@ Public demo analytics: [integration and release gate](analytics/integration.md),
 - [Jízda shared vehicles/Dispatch handoff](integration/29_JIZDA_SHARED_VEHICLES_DISPATCH_HANDOFF.md) — release status and client integration.
 
 - [31. Jízda community reports and police patrols](integration/31_JIZDA_COMMUNITY_REPORTS.md): server feed decisions, police category, shared SDK and production evidence.
+
+- [Public search discovery](analytics/search-discovery.md): public landing page, crawler rules and search-engine acceptance.
