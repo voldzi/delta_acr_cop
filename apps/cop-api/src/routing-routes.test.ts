@@ -1,3 +1,4 @@
+import { VehicleProfileVerificationError } from "./routing-vehicle-profile.js";
 import { describe, expect, it, vi } from "vitest";
 import { KnownClosureVerificationError } from "./routing-known-closures.js";
 import { buildServer } from "./server.js";
@@ -54,6 +55,20 @@ describe("routing routes", () => {
       }
       expect(source.route).toHaveBeenCalledTimes(1);
       expect(source.alternatives).toHaveBeenCalledTimes(1);
+    } finally { await app.close(); }
+  });
+  it("returns structured profile verification errors for both endpoints without downgrade", async () => {
+    const source: RoutingSource = { config: { baseUrl: "https://fixture.invalid/api/v1", enabled: true, timeoutMs: 1000 },
+      route: vi.fn().mockRejectedValue(new VehicleProfileVerificationError()), alternatives: vi.fn().mockRejectedValue(new VehicleProfileVerificationError()),
+      fetchProfiles: vi.fn(), isochrone: vi.fn(), nearestAccess: vi.fn() };
+    const app = buildServer({ routingSource: source });
+    try {
+      for (const endpoint of ["route", "alternatives"]) {
+        const response = await app.inject({ method: "POST", url: `/api/v1/routing/${endpoint}`, headers: { authorization: "Bearer dev-lab-token" },
+          payload: { from: { lat: 50, lon: 14 }, to: { lat: 51, lon: 15 }, profileId: "car" } });
+        expect(response.statusCode).toBe(502); expect(response.json().error.code).toBe("ROUTING_VEHICLE_PROFILE_INVALID"); expect(response.json()).not.toHaveProperty("routes");
+      }
+      expect(source.route).toHaveBeenCalledTimes(1); expect(source.alternatives).toHaveBeenCalledTimes(1);
     } finally { await app.close(); }
   });
   it("requires authentication before forwarding a routing request", async () => {

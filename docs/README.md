@@ -51,3 +51,5 @@ Jízda road-trip published revisions and test evidence: [acceptance record](inte
 Jízda road-trip server deployment and remaining activation blockers: [production record](integration/25_JIZDA_ROAD_TRIP_PRODUCTION.md).
 
 Ordinary reviewed closure evidence: [contract and scoped SDK handoff](integration/26_JIZDA_KNOWN_CLOSURES.md); ordinary release active with incomplete coverage; physical acceptance pending.
+
+- [27. Jízda mapped vehicle profiles](integration/27_JIZDA_MAPPED_VEHICLE_PROFILES.md): typed ordinary intents, incomplete mapped restrictions, route-bound assessment and actual target guidance (joint implementation in progress).

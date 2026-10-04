@@ -1,3 +1,4 @@
+import { validateVehicleProfileRequest, verifiedMappedCapabilities, verifyMappedProfileResponse, type MappedVehicleProfile, type MappedProfileAssessment, type MappedProfileCapabilities } from "./routing-vehicle-profile.js";
 import { verifyKnownClosuresResponse, type KnownClosures } from "./routing-known-closures.js";
 import { validateRoadTripRequest, verifyRoadTripResponse, verifiedCapabilities, type RoadTripCapabilities, validRoundabout, type RoadTrip, type RoadTripAssessment, type RoadTripRoundabout } from "./routing-trip.js";
 import { createSituationDataSourceConfigFromEnv } from "./situation-data-source.js";
@@ -32,11 +33,13 @@ export interface RoutingRouteRequest {
   via?: RoutingPoint[];
   departureTime?: string;
   trip?: RoadTrip;
+  vehicleProfile?: MappedVehicleProfile;
   vehicle?: { heightM?: number; widthM?: number; lengthM?: number; weightTonnes?: number };
 }
 
 export interface RoutingProfilesResponse {
   capabilities?: RoadTripCapabilities;
+  mappedProfiles?: MappedProfileCapabilities;
   contractVersion?: string;
   generatedAt?: string;
   profiles: Array<Record<string, unknown>>;
@@ -121,6 +124,7 @@ export interface RoutingStep extends Record<string, unknown> {
 
 export interface RoutingRoute extends Record<string, unknown> {
   assessment?: RoadTripAssessment;
+  mappedProfileAssessment?: MappedProfileAssessment;
   knownClosures?: KnownClosures;
   steps?: RoutingStep[];
   distanceM?: number;
@@ -236,7 +240,7 @@ export class RoutingSourceAdapter implements RoutingSource {
 
 function normalizeRoutingRouteRequest(request: RoutingRouteRequest): RoutingRouteRequest {
   if (!isRecord(request)) throw new Error("Routing request must be an object.");
-  rejectUnknownFields(request, ["alternatives", "avoid", "from", "to", "includeRoadAttributes", "includeSteps", "profileId", "vehicle", "trip", "via", "departureTime", "includeElevationProfile", "includeWeatherOnRoute", "includeHazardsOnRoute", "includeTraffic"], "request");
+  rejectUnknownFields(request, ["alternatives", "avoid", "from", "to", "includeRoadAttributes", "includeSteps", "profileId", "vehicle", "trip", "vehicleProfile", "via", "departureTime", "includeElevationProfile", "includeWeatherOnRoute", "includeHazardsOnRoute", "includeTraffic"], "request");
   for (const field of ["includeRoadAttributes", "includeSteps", "includeElevationProfile", "includeWeatherOnRoute", "includeHazardsOnRoute", "includeTraffic"] as const) {
     if (request[field] !== undefined && typeof request[field] !== "boolean") {
       throw new Error(`Routing ${field} must be a boolean.`);
@@ -250,6 +254,7 @@ function normalizeRoutingRouteRequest(request: RoutingRouteRequest): RoutingRout
     !request.avoid.every((item) => typeof item === "string" && item.length > 0 && item.length <= 80))) {
     throw new Error("Routing avoid must contain at most 20 nonempty restriction names.");
   }
+  validateVehicleProfileRequest(request);
   validateRoadTripRequest(request);
   if (request.via !== undefined && (!Array.isArray(request.via) || request.via.length > 12)) {
     throw new Error("Routing via must be an ordered array of at most 12 points.");
@@ -280,6 +285,7 @@ function normalizeRoutingRouteRequest(request: RoutingRouteRequest): RoutingRout
     ...(request.via !== undefined ? { via: request.via.map((point, i) => normalizeRoutingPoint(point, `via[${i}]`)) } : {}),
     ...(request.departureTime !== undefined ? { departureTime: request.departureTime } : {}),
     ...(request.trip !== undefined ? { trip: request.trip } : {}),
+    ...(request.vehicleProfile !== undefined ? { vehicleProfile: structuredClone(request.vehicleProfile) } : {}),
     ...(request.vehicle ? { vehicle: normalizeRoutingVehicle(request.vehicle) } : {})
   };
 }
@@ -331,6 +337,7 @@ function normalizeRoutingProfilesResponse(value: unknown): RoutingProfilesRespon
     generatedAt: optionalString(value.generatedAt),
     profiles: rawProfiles.filter(isRecord),
     ...(value.capabilities !== undefined ? { capabilities: verifiedCapabilities(value.capabilities) } : {}),
+    ...(value.mappedProfiles !== undefined ? { mappedProfiles: verifiedMappedCapabilities(value.mappedProfiles) } : {}),
     warnings: normalizeWarnings(value.warnings)
   };
 }
@@ -340,6 +347,7 @@ function normalizeRoutingRouteResponse(value: unknown, request?: RoutingRouteReq
     throw new Error("Routing route response is not an object.");
   }
   const hasKnownClosures = verifyKnownClosuresResponse(value, request, now);
+  verifyMappedProfileResponse(value, request, now, hasKnownClosures);
   const receivedRoutes = Array.isArray(value.routes) ? (value.routes.filter(isRecord) as RoutingRoute[]) : [];
   if (request?.trip) verifyRoadTripResponse({ ...value, routes: receivedRoutes } as unknown as RoutingRouteResponse, request, now);
   const routes = receivedRoutes.filter((route) => !isNonNavigableRoute(route));
