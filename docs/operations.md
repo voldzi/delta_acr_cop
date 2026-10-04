@@ -78,3 +78,16 @@ network attachment uses the base Compose file while preserving the measurement
 cleanup flag and secrets if any consent has already been granted.
 
 The optional strict road-trip integration depends on SIM runtime capability and authoritative reviewed closure data. Publishing the COP/SDK contract does not activate new profiles. Keep SIM strict routing disabled until its engine/source tests and joint Jízda acceptance pass. No measurement flags are changed. See integration/23_JIZDA_ROAD_TRIP_CONTRACT.md.
+
+## Shared mobility deployment
+
+`COP_SHARED_MOBILITY_ENABLED=false` and `COP_PRIVATE_DISPATCH_ENABLED=false` are
+explicit opt-in defaults. Reuse existing COP_DATABASE_URL/TLS settings; no new
+secret. Startup creates additive cop_mobility_v1 and runs30day domain cleanup.
+Private Dispatch requires one API instance with a dedicated PostgreSQL session
+advisory lease; a second instance fails startup. Lost lease disables Dispatch503.
+Restart invalidates existing share metadata and drops all RAM ciphertext. No
+client consent or GPS collection is enabled by either infrastructure flag.
+Backup existing database before enabling. Rollback restores previous API image and
+bothflagsfalse; leave the additive table intact. No migration drops existing COP
+state. Existing routing/web analytics and driver collection remain independent.

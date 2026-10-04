@@ -369,7 +369,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SharedVehicle"
+                  "$ref": "#/components/schemas/SharedVehicleCreationReceipt"
                 }
               }
             }
@@ -1168,7 +1168,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SharedVehicle"
+                  "$ref": "#/components/schemas/SharedVehicleCreationReceipt"
                 }
               }
             }
@@ -1689,7 +1689,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DispatchGroup"
+                  "$ref": "#/components/schemas/DispatchGroupCreationReceipt"
                 }
               }
             }
@@ -2216,7 +2216,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DispatchGroup"
+                  "$ref": "#/components/schemas/DispatchGroupCreationReceipt"
                 }
               }
             }
@@ -3797,6 +3797,364 @@
           }
         }
       }
+    },
+    "/api/v1/mobility/v1/invitations": {
+      "get": {
+        "operationId": "mobilityInvitations",
+        "summary": "List invitations addressed to the verified account email",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityPendingInvitations"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/private-dispatch/v1/shares": {
+      "get": {
+        "operationId": "dispatchOwnedShares",
+        "summary": "Recover own active share metadata for explicit stopping; never resumes consent",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchOwnedShares"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/private-dispatch/v1/shares/cancel-start": {
+      "post": {
+        "operationId": "dispatchCancelStart",
+        "summary": "Cancel an account-bound start operation before or after commit; never restores consent",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchStartCancelReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchStartCancel"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3860,7 +4218,14 @@
           },
           "serverTimestamp": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+          },
+          "invitationDelivery": {
+            "type": "string",
+            "enum": [
+              "verified_account_inbox"
+            ]
           }
         },
         "required": [
@@ -3872,7 +4237,8 @@
           "registration",
           "dispatchTransport",
           "currencies",
-          "serverTimestamp"
+          "serverTimestamp",
+          "invitationDelivery"
         ]
       },
       "MobilityAccount": {
@@ -3904,7 +4270,8 @@
           },
           "serverTimestamp": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           }
         },
         "required": [
@@ -3950,11 +4317,13 @@
                 "manageMembers"
               ]
             },
-            "maxItems": 8
+            "maxItems": 8,
+            "uniqueItems": true
           },
           "joinedAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           }
         },
         "required": [
@@ -4025,11 +4394,13 @@
           },
           "createdAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           },
           "updatedAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           },
           "deleted": {
             "type": "boolean"
@@ -4066,7 +4437,8 @@
           },
           "serverTimestamp": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           }
         },
         "required": [
@@ -4162,7 +4534,8 @@
                 "manageMembers"
               ]
             },
-            "maxItems": 8
+            "maxItems": 8,
+            "uniqueItems": true
           }
         },
         "required": [
@@ -4205,7 +4578,8 @@
                 "manageMembers"
               ]
             },
-            "maxItems": 8
+            "maxItems": 8,
+            "uniqueItems": true
           }
         },
         "required": [
@@ -4240,7 +4614,8 @@
           },
           "expiresAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           }
         },
         "required": [
@@ -4259,15 +4634,14 @@
             "type": "string",
             "format": "uuid"
           },
-          "token": {
+          "invitationId": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            "format": "uuid"
           }
         },
         "required": [
           "operationId",
-          "token"
+          "invitationId"
         ]
       },
       "MobilityInvitationRevoke": {
@@ -4480,7 +4854,8 @@
               },
               "dueAt": {
                 "type": "string",
-                "format": "date-time"
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
               },
               "dueOdometerKm": {
                 "type": "string",
@@ -4516,11 +4891,13 @@
           },
           "createdAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           },
           "occurredAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           },
           "timeZone": {
             "type": "string",
@@ -4580,7 +4957,8 @@
           },
           "occurredAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           },
           "timeZone": {
             "type": "string",
@@ -4688,7 +5066,8 @@
           },
           "createdAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           }
         },
         "required": [
@@ -4738,7 +5117,8 @@
           },
           "serverTimestamp": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           }
         },
         "required": [
@@ -4823,7 +5203,11 @@
           },
           "createdAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+          },
+          "deleted": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -4833,7 +5217,8 @@
           "membershipRevision",
           "sequence",
           "members",
-          "createdAt"
+          "createdAt",
+          "deleted"
         ]
       },
       "DispatchGroupList": {
@@ -4855,7 +5240,8 @@
           },
           "serverTimestamp": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           }
         },
         "required": [
@@ -4970,7 +5356,8 @@
           },
           "createdAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           }
         },
         "required": [
@@ -5021,7 +5408,8 @@
           },
           "serverTimestamp": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           }
         },
         "required": [
@@ -5116,11 +5504,13 @@
           },
           "startedAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           },
           "expiresAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           },
           "endPolicy": {
             "type": "string",
@@ -5180,7 +5570,8 @@
           },
           "serverTimestamp": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           }
         },
         "required": [
@@ -5231,7 +5622,8 @@
           },
           "observedAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           },
           "source": {
             "type": "string",
@@ -5289,11 +5681,13 @@
           },
           "observedAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           },
           "expiresAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           },
           "source": {
             "type": "string",
@@ -5348,7 +5742,8 @@
           },
           "serverTimestamp": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
           }
         },
         "required": [
@@ -5611,6 +6006,208 @@
           "expectedMembershipRevision",
           "email"
         ]
+      },
+      "MobilityPendingInvitation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "invitationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entityType": {
+            "type": "string",
+            "enum": [
+              "vehicle",
+              "group"
+            ]
+          },
+          "entityId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entityName": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "inviterName": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "readVehicle",
+                "readCosts",
+                "recordRide",
+                "recordExpense",
+                "recordService",
+                "editVehicle",
+                "manageReminders",
+                "manageMembers"
+              ]
+            },
+            "maxItems": 8,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "invitationId",
+          "entityType",
+          "entityId",
+          "entityName",
+          "inviterName",
+          "expiresAt",
+          "capabilities"
+        ]
+      },
+      "MobilityPendingInvitations": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-mobility-invitation-v1"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/MobilityPendingInvitation"
+            }
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "items",
+          "serverTimestamp"
+        ]
+      },
+      "SharedVehicleCreationReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationId",
+          "confirmed",
+          "vehicle"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true
+          },
+          "vehicle": {
+            "$ref": "#/components/schemas/SharedVehicle"
+          }
+        }
+      },
+      "DispatchGroupCreationReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationId",
+          "confirmed",
+          "group"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true
+          },
+          "group": {
+            "$ref": "#/components/schemas/DispatchGroup"
+          }
+        }
+      },
+      "DispatchOwnedShares": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "serverTimestamp"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/DispatchShare"
+            }
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+          }
+        }
+      },
+      "DispatchStartCancel": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationId",
+          "startOperationId"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startOperationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "DispatchStartCancelReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationId",
+          "startOperationId",
+          "confirmed",
+          "serverTimestamp"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startOperationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       }
     }
   }

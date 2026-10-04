@@ -100,3 +100,8 @@ acceptance tests in [ADR 0031](adr/0031_USER_FUNDED_AI_CHAT_CREDENTIAL_STAGING.m
 pass in production.
 
 For strict trip errors 422/429/503/502, preserve the trip and show the unavailable requirement; never retry as an unrestricted car/Apple route. Check SIM capabilities, graph version/freshness, closure revision/validity, all variant assessments, then repeat only the same requirements. Rollback restores the prior COP image/SDK pin; keep new strict profiles inactive. Existing internal network overlays must survive service recreation.
+
+Shared vehicle/Dispatch release and remaining authenticated/device acceptance:
+[integration handoff29](integration/29_JIZDA_SHARED_VEHICLES_DISPATCH_HANDOFF.md).
+To disable on incident restore prior image/feature flags; never forward GPS to SIM,
+replay location history or restore consent from previous share metadata.

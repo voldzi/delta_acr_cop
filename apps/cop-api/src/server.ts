@@ -1,3 +1,5 @@
+import { registerMobilityRoutes } from "./routes/mobility-routes.js";
+import { mobilityStoreFromEnv, type MobilityStore } from "./mobility-store.js";
 import { groupRoadObservations, RoadEnrichmentRunner } from "./road-enrichment.js";
 import compress from "@fastify/compress";
 import cors, { type FastifyCorsOptions } from "@fastify/cors";
@@ -335,6 +337,9 @@ import {
 } from "./web-session-store.js";
 
 export interface BuildServerOptions {
+  mobilityStore?: MobilityStore;
+  sharedMobilityEnabled?: boolean;
+  privateDispatchEnabled?: boolean;
   driverMeasurementConsentStore?: DriverMeasurementConsentStore;
   driverMeasurementSource?: DriverMeasurementSource;
   aiGateway?: AiGateway;
@@ -1035,6 +1040,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
   app.addHook("preHandler", requireBearerToken);
+  registerMobilityRoutes(app, {
+    enabled: options.sharedMobilityEnabled ?? readBoolean(process.env.COP_SHARED_MOBILITY_ENABLED, false),
+    dispatchEnabled: options.privateDispatchEnabled ?? readBoolean(process.env.COP_PRIVATE_DISPATCH_ENABLED, false),
+    store: options.mobilityStore ?? mobilityStoreFromEnv(), now
+  });
   registerDriverMeasurementRoutes(app, {
     enabled: driverMeasurementsEnabled,
     cleanupEnabled: driverMeasurementCleanupEnabled,

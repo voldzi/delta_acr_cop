@@ -14,6 +14,7 @@ export interface JwtPayload {
   aud?: string | string[];
   azp?: string;
   email?: string;
+  email_verified?: boolean;
   exp?: number;
   iat?: number;
   iss?: string;
@@ -28,6 +29,8 @@ export interface JwtPayload {
 }
 
 export interface AuthenticatedActor {
+  issuer?: string;
+  emailVerified?: boolean;
   authMode: "lab" | "oidc";
   displayName: string;
   email?: string;
@@ -161,6 +164,8 @@ export function actorFromRequest(request: FastifyRequest): AuthenticatedActor | 
     || subjectId;
   return {
     authMode: "oidc",
+    issuer: decoded.payload.iss,
+    emailVerified: decoded.payload.email_verified === true,
     displayName: decoded.payload.name?.trim() || username,
     ...(decoded.payload.email?.trim() ? { email: decoded.payload.email.trim() } : {}),
     roles: tokenRoles(decoded.payload),
@@ -355,6 +360,7 @@ function validJwtClaims(payload: JwtPayload): boolean {
   for (const field of ["exp", "iat", "nbf"]) {
     if (values[field] !== undefined && (typeof values[field] !== "number" || !Number.isFinite(values[field]))) return false;
   }
+  if (values.email_verified !== undefined && typeof values.email_verified !== "boolean") return false;
   const strings = (value: unknown) => Array.isArray(value) && value.every((item) => typeof item === "string");
   if (values.aud !== undefined && typeof values.aud !== "string" && !strings(values.aud)) return false;
   const access = (value: unknown) => jwtRecord(value) && (value.roles === undefined || strings(value.roles));

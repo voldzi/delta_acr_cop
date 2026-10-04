@@ -124,3 +124,11 @@ sdíleným klíčem placený fallback.
 The immutable routing boundary forwards only typed trip fields and authenticates through the existing COP session. Request/applied/geometry hashes bind every variant; no emergency-access downgrade or fallback may discard mandatory requirements. Public errors do not expose private upstream endpoint or content; trip/GPS bodies are not logged or persisted by this boundary. Activation of real driver measurements is separate.
 
 Routing verifies the signed OIDC/BFF actor before forwarding and never logs or forwards bearer tokens: [routing identity boundary](integration/23_JIZDA_ROAD_TRIP_CONTRACT.md#authenticated-identity-boundary).
+
+Shared mobility owns a separate PostgreSQL domain and active-only private roster.
+No public/pending community member receives private data. Receipt replay is scoped
+to account plus operation fingerprint; old operation tombstones reject reexecution.
+See [ADR0031](adr/0031_SHARED_VEHICLES_AND_PRIVATE_DISPATCH.md) for authenticated
+recipient encryption, key-directory trust, consent invalidation and real retention.
+No request body/GPS/key value is serialized into diagnostics. Coordinates are never
+persisted in server SQL or sent to SIM; only latest ciphertext exists in RAM.
