@@ -11982,18 +11982,21 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const reports = (
         await listCommunityReports({
           bbox: query.bbox,
+          activeAt: requestNow.toISOString(),
           includeOwnDrafts: Boolean(actor),
           limit: query.limit,
           ...(actor ? { subjectId: actor.subjectId } : {})
         })
       ).filter((report) => canReadCommunityReport(report, actor));
       const actorGroupIds = await readCommunityActorGroupIds(actor);
+      const confirmations = await listCommunityReportConfirmationSummaries(reports.map(report => report.reportId), actor?.subjectId);
       return {
         ...communityReportsFeatureCollection(
-          communityReportResponseItems(reports, requestNow, actor, actorGroupIds),
+          communityReportResponseItems(reports, requestNow, actor, actorGroupIds, confirmations),
           requestNow,
           actor,
-          actorGroupIds
+          actorGroupIds,
+          confirmations
         ),
         query
       };

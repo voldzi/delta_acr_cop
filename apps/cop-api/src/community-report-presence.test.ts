@@ -35,6 +35,8 @@ describe("server-owned community presence", () => {
       const feed = async (extra = "") =>
         (await app.inject({ url: "/api/v1/community/reports?categories=police_patrol" + extra, headers })).json();
       expect((await feed()).featureCollection.features[0].properties.category).toBe("police_patrol");
+      const map = async () => (await app.inject({method:"POST",url:"/api/v1/map/query",headers,payload:{bbox:[13.9,49.9,14.1,50.1],layerIds:["user.community.reports"]}})).json();
+      expect(JSON.stringify(await map())).toContain(id);
       now = new Date("2026-10-04T10:01:00Z");
       for (let n = 0; n < 10; n++) await store.upsertReportConfirmation(id, "lab", "not_there", now);
       await store.upsertReportConfirmation(id, "one", "not_there", now);
@@ -43,6 +45,7 @@ describe("server-owned community presence", () => {
       await store.upsertReportConfirmation(id, "three", "not_there", now);
       expect((await feed()).items).toHaveLength(0);
       expect((await feed()).featureCollection.features).toHaveLength(0);
+      expect(JSON.stringify(await map())).not.toContain(id);
       expect((await feed("&includeExpired=true")).items[0].presence).toMatchObject({
         active: false,
         reason: "independent_absence"
