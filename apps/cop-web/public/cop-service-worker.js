@@ -58,6 +58,10 @@ self.addEventListener("fetch", (event) => {
   }
 
   const url = new URL(request.url);
+  // Analytics is network-only: never cache, retry or replay tracker/collector.
+  if (url.origin === self.location.origin && url.pathname.startsWith("/analytics/")) {
+    return;
+  }
   // The public demo route must not fall back to an unrelated cached COP shell.
   if (
     url.origin === self.location.origin &&

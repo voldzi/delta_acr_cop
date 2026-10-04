@@ -1,4 +1,6 @@
 import * as React from "react";
+import { PublicAnalyticsNotice } from "./PublicAnalyticsNotice";
+import { observePublicDemoPageview } from "./public-analytics";
 import { ArrowRight, RotateCcw, ShieldCheck, Waves } from "lucide-react";
 import { CopMap } from "./CopMap";
 import type { SituationFeature } from "./cop-data";
@@ -16,6 +18,11 @@ const story = [
 ] as const;
 
 export function PublicFloodDemo() {
+  React.useEffect(() => {
+    observePublicDemoPageview();
+    window.addEventListener("popstate", observePublicDemoPageview);
+    return () => window.removeEventListener("popstate", observePublicDemoPageview);
+  }, []);
   const [step, setStep] = React.useState<PublicFloodDemoStep>(0);
   const [selectedFeature, setSelectedFeature] = React.useState<SituationFeature | null>(null);
   const [mapView, setMapView] = React.useState<MapViewState>(publicFloodDemoView);
@@ -54,6 +61,7 @@ export function PublicFloodDemo() {
         </div>
       </header>
 
+      <PublicAnalyticsNotice />
       <div className="public-flood-demo-layout">
         <section className="public-flood-demo-map" aria-label="Skutečná mapa COP se syntetickými prvky">
           <div className="public-flood-demo-map-label">MAPA COP · POUZE SYNTETICKÁ VRSTVA</div>
