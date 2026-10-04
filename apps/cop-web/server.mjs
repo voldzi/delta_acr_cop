@@ -56,6 +56,23 @@ async function handleRequest(request, response) {
     return;
   }
 
+  if (url.pathname === "/o-aplikaci") {
+    response.writeHead(308, { Location: "/o-aplikaci/", "Cache-Control": "no-cache" });
+    response.end();
+    return;
+  }
+  if (url.pathname === "/demo/flood-central-bohemia") {
+    const html = (await fs.readFile(path.join(distDir, "index.html"), "utf8"))
+      .replace(/<title>[^<]*<\/title>/u, "<title>Povodňová ukázka COP – syntetický scénář</title>")
+      .replace('content="noindex,follow"', 'content="index,follow"')
+      .replace(
+        "</head>",
+        '<meta name="description" content="Veřejná povodňová ukázka civilní situační mapy COP. Modelový rozliv a sdělení fiktivní obce, výhradně syntetická data."><link rel="canonical" href="https://cop.zeleznalady.cz/demo/flood-central-bohemia"><meta property="og:title" content="Povodňová ukázka COP – syntetický scénář"><meta property="og:description" content="Výhradně syntetická data, nikoli aktuální povodeň."><meta property="og:type" content="website"><meta property="og:url" content="https://cop.zeleznalady.cz/demo/flood-central-bohemia"></head>'
+      );
+    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
+    response.end(request.method === "HEAD" ? undefined : html);
+    return;
+  }
   await serveStatic(url.pathname, request, response);
 }
 
@@ -186,13 +203,17 @@ function sendJson(response, status, payload) {
 }
 
 function shouldFallbackToIndex(pathname) {
-  if (pathname.startsWith("/assets/") || pathname.startsWith("/icons/") || pathname.startsWith("/symbols/")) {
-    return false;
-  }
-  if (pathname === "/cop-service-worker.js" || pathname === "/site.webmanifest") {
-    return false;
-  }
-  return path.extname(pathname) === "";
+  // Preserve actual app entry routes; unknown paths must not produce soft 404s.
+  return (
+    pathname === "/" ||
+    pathname === "/chat" ||
+    pathname.startsWith("/chat/") ||
+    pathname === "/xr" ||
+    pathname.startsWith("/xr/") ||
+    pathname === "/globe" ||
+    pathname.startsWith("/globe/") ||
+    pathname.startsWith("/mobile/pair/")
+  );
 }
 
 function cacheControl(filePath, options) {
@@ -257,6 +278,8 @@ function isLocalhost(host) {
 
 function contentType(filePath) {
   const extension = path.extname(filePath).toLowerCase();
+  if (extension === ".xml") return "application/xml; charset=utf-8";
+  if (extension === ".txt") return "text/plain; charset=utf-8";
   if (extension === ".css") {
     return "text/css; charset=utf-8";
   }
