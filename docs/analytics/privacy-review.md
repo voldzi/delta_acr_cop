@@ -1,48 +1,32 @@
 # COP public analytics privacy notice — owner review
 
-Status: proposed, NOT approved or published. Applies only to the synthetic public
-demo. Activation requires approval of this text and the shared runtime/collector.
-Do not describe collection as active before deployment acceptance.
+Status: proposed, NOT approved or published. Exact COP opening and shared text
+from VCode docs/analytics-public-webs-privacy-review.md, 2026-10-04.
 
 ## Czech proposal
 
-### Měření návštěvnosti veřejné ukázky
+Na veřejné syntetické povodňové ukázce COP měříme zobrazení této stránky, abychom poznali její využití. Hlavní situační mapu, přihlášené pracovní části a chat tímto měřením nesledujeme.
 
-Na veřejné syntetické povodňové ukázce COP měříme zobrazení této stránky, abychom
-poznali její využití. Hlavní situační mapu, přihlášené pracovní části a chat tímto
-měřením nesledujeme. Nesbíráme obsah zpráv, hlášení a formulářů, údaje o účtech,
-polohu, pohyb po mapě ani kliknutí. Neodesíláme parametry adresy, fragment,
-název stránky ani odkazující stránku.
+Měření používá společnou službu VCode/Umami v naší infrastruktuře bez analytických cookies a bez záznamu obrazovky. Zaznamenává pouze otevření předem vybraných veřejných stránek. Nesledujeme kliknutí, neodesíláme obsah formulářů, údaje o účtu, rezervace, polohu, zprávy, zdravotní údaje, odpovědi ani herní postup. Nepředáváme parametry adres, fragmenty, názvy stránek ani odkazující stránku a nespojujeme statistiky s vaším účtem.
 
-Používáme společnou analytiku VCode/Umami bez analytických cookies a bez záznamu
-obrazovky. Server pro souhrnný odhad návštěvnosti zpracovává technické údaje
-požadavku a používá pravidelně obměňované anonymní identifikátory; nepřipojujeme
-je k účtu v COP. Respektujeme Do Not Track a Global Privacy Control. Při výpadku
-internetu se měření neukládá k pozdějšímu odeslání. Analytické záznamy mažeme
-po 180 dnech. Statistiky nejsou veřejné a slouží pouze oprávněným správcům.
+Při přijetí požadavku služba dočasně zpracuje síťovou adresu zařízení a údaje prohlížeče pro denně obměňované technické označení návštěv. IP adresu neukládá v čitelné podobě do analytické databáze. Odhad návštěvníků není přesným počtem konkrétních lidí. Statistiky nejsou veřejné a přístup k nim mají jen oprávnění správci. Analytické záznamy včetně jejich záloh uchováváme nejvýše 180 dní.
+
+Respektujeme Do Not Track a Global Privacy Control: při jejich zapnutí návštěvu neodešleme. Události bez připojení zahazujeme a neukládáme k pozdějšímu odeslání. Toto měření je oddělené od případných dosavadních produktových či herních statistik a nepředává do společné služby jejich údaje.
 
 ## English proposal
 
-### Public demo visitor measurement
+We measure pageviews of COP's public synthetic flood demonstration to understand its use. This measurement excludes the main situation map, authenticated workspaces and chat.
 
-We measure pageviews of COP's public synthetic flood demonstration to understand
-its use. This measurement does not cover the main situation map, authenticated
-workspaces or chat. We do not collect messages, reports, form contents, account
-information, location, map movement or clicks. URL parameters, fragments, page
-titles and referrers are not sent.
+Measurement uses the shared VCode/Umami service within our infrastructure without analytics cookies or screen recording. It records only views of selected public pages. We do not track clicks or send form contents, account information, bookings, location, messages, health data, answers or game progress. URL parameters, fragments, page titles and referring pages are not sent, and statistics are not linked to your account.
 
-We use shared VCode/Umami analytics without analytics cookies or session replay.
-The server processes technical request information and uses regularly rotating
-anonymous identifiers to estimate aggregate visits; we do not connect these to
-COP accounts. We respect Do Not Track and Global Privacy Control. Offline
-measurements are discarded rather than stored for later transmission. Analytics
-records are deleted after 180 days. Statistics are private and available only to
-authorized administrators.
+When a request arrives, the service temporarily processes the device's network address and browser information to derive a daily changing technical visit identifier. IP addresses are not stored in readable form in the analytics database. Estimated visitors are not an exact count of individuals. Statistics are private and available only to authorized administrators. Analytics records, including their backups, are retained for no more than 180 days.
+
+We respect Do Not Track and Global Privacy Control: when enabled, no visit is sent. Offline events are discarded rather than stored for later transmission. This measurement is separate from any existing product or game statistics and does not forward their data to the shared service.
 
 ## Publication gate
 
-Owner must approve CZ/EN text in the coordinating VCode chat. Before publishing,
-confirm shared collector request handling, technical-data scope, daily rotation,
-logs, retention and backup behavior actually match this notice. Publish the
-approved notice visibly on the demo before enabling measurement. This proposal
-adds no legal conclusion about consent exemption or complete anonymization.
+One concrete owner approval in the VCode chat covers this proposal. It is prepared
+in the demo UI, hidden while collection is false. This does not replace other COP
+privacy terms or invent a controller contact. No publication or activation before
+approval. Central maximum retention includes backups, with active purge at 170
+days and daily backup rotation to stay within 180 days.

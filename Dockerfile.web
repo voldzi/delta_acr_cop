@@ -12,6 +12,8 @@ COPY packages/nato-symbol-renderer/package.json packages/nato-symbol-renderer/pa
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
+COPY scripts/check-public-analytics.mjs scripts/check-public-analytics.mjs
+COPY AGENTS.md CLAUDE.md docker-compose.yml Dockerfile.web ./
 COPY apps/cop-web apps/cop-web
 COPY packages/core packages/core
 COPY packages/geo-client packages/geo-client

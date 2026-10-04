@@ -42,14 +42,13 @@ disable access/payload logs and avoid storing raw addresses. Central Umami uses
 rotating anonymous identifiers; this is not proof of zero personal-data handling.
 
 The exact versioned runtime artifact is pinned in public/analytics/v1/tracker.js
-with SRI; no local analytics logic is forked. The collector adapter and website
-registration are not yet installed. VCode exclusively coordinates DMZ routing.
+with SRI; no local analytics logic is forked. VCode reports the registered website and COP edge collector deployed. VCode exclusively coordinates DMZ routing.
 Do not edit DMZ virtualhosts concurrently. No new
 REST API or network route is implemented by this preparation. Provision the collector through the owner-approved shared deployment configuration;
 do not proxy arbitrary destinations or connect new networks without review.
 CSP must allow only own-origin runtime/collector. The PWA must not cache or replay
-collector requests. Central retention: daily cleanup after 180 days including
-anonymous sessions; VCode owns backups, retention and restore acceptance.
+collector requests. Central retention: maximum 180 days including anonymous sessions and backups,
+with active purge at 170 days plus daily rotating backups; VCode owns backups, retention and restore acceptance.
 
 ## SPA and release acceptance
 
@@ -83,3 +82,9 @@ collector deployed, but COP domain proxy/trusted-edge/browser/dashboard acceptan
 is still pending. Central VCode exclusively owns that deployment and the single
 CZ/EN owner review. No production analytics rollout or privacy publication is
 claimed. Existing unrelated API/voice/AI edits are preserved.
+
+## Edge integration ownership
+
+VCode reports include `/etc/nginx/vcode-analytics/cop.zeleznalady.cz.conf`
+in the active HTTPS virtualhost. It owns that private include and edge secret;
+neither contents nor token are copied into Git. COP does not change the DMZ.
