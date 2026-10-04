@@ -4155,6 +4155,152 @@
           }
         }
       }
+    },
+    "/api/v1/private-dispatch/v1/groups/{groupId}/participants/{accountId}/conversation": {
+      "post": {
+        "operationId": "dispatchParticipantConversation",
+        "summary": "Resolve a current private group participant to existing encrypted direct communication",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchParticipantReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchParticipantOpen"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6206,6 +6352,59 @@
           "serverTimestamp": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "DispatchParticipantOpen": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationId"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "DispatchParticipantReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationId",
+          "confirmed",
+          "groupId",
+          "accountId",
+          "conversationId",
+          "roomId"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "roomId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
           }
         }
       }

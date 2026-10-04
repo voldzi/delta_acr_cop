@@ -1041,6 +1041,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   });
   app.addHook("preHandler", requireBearerToken);
   registerMobilityRoutes(app, {
+    messagingProvider,
     enabled: options.sharedMobilityEnabled ?? readBoolean(process.env.COP_SHARED_MOBILITY_ENABLED, false),
     dispatchEnabled: options.privateDispatchEnabled ?? readBoolean(process.env.COP_PRIVATE_DISPATCH_ENABLED, false),
     store: options.mobilityStore ?? mobilityStoreFromEnv(), now

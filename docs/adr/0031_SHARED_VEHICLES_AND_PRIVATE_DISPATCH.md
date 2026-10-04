@@ -95,3 +95,13 @@ persist only operation/share/device identifiers for cancellation recovery, no GP
 or renewed consent, and block a new start until the exact cancellation receipt is
 confirmed. Minimal cancellation tombstones are durable across restart and retained
 to prevent later replay. Another account cannot cancel a user's operation.
+
+## Existing participant communication
+
+A purpose-scoped participant endpoint checks the current private roster and same
+verified issuer, resolves the peer only on the server, and requires an encrypted
+E2EE-required direct conversation with exactly the two actual subjects. A wrong
+or unbound room fails503. Replay after participant removal fails404. No new group
+conversation, group voice or PTT is created. SDK-owned navigation selects the
+existing conversation. Explicit direct calls reuse the existing server-authorized
+LiveKit/native path; map E2EE does not establish server-blind voice media.

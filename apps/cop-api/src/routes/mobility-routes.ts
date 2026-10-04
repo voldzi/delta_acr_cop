@@ -7,7 +7,9 @@ import { SharedMobilityService } from "../mobility-invitations.js";
 import type { MobilityStore } from "../mobility-store.js";
 import type * as Wire from "../mobility-types.js";
 
-type Options = { enabled: boolean; dispatchEnabled: boolean; store?: MobilityStore; now: () => Date };
+import type { MessagingProvider } from "../messaging-provider.js";
+import { openDispatchParticipant } from "../mobility-participant.js";
+type Options = { messagingProvider?: MessagingProvider; enabled: boolean; dispatchEnabled: boolean; store?: MobilityStore; now: () => Date };
 export function registerMobilityRoutes(app: FastifyInstance, options: Options): void {
   const service = options.store ? new SharedMobilityService(options.store, options.now) : undefined;
   if (options.enabled && !service) throw new Error("Shared mobility requires durable storage.");
@@ -62,6 +64,7 @@ export function registerMobilityRoutes(app: FastifyInstance, options: Options): 
               if (Object.keys(query).some(k => !["cursor", "limit"].includes(k)) || (query.cursor?.length ?? 0) > 120 || (query.limit && !/^(?:[1-9][0-9]?|100)$/u.test(query.limit))) throw new MobilityFailure(400, "INVALID_CURSOR", "Neplatné stránkování.");
               return await service.syncVehicle(account, id, query.cursor, query.limit ? Number(query.limit) : 100);
             }
+            case "dispatchParticipantConversation": return await openDispatchParticipant(service, options.messagingProvider, account, actor, id, params.accountId!.toLowerCase(), body as Wire.DispatchParticipantOpen);
             case "dispatchCancelStart": return await service.cancelStart(account, body as Wire.DispatchStartCancel);
             case "dispatchOwnedShares": return await service.ownedShares(account);
             case "dispatchGroups": return await service.listGroups(account);

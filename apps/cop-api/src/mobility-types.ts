@@ -49,3 +49,5 @@ export type DispatchGroupCreationReceipt = { "operationId": string; "confirmed":
 export type DispatchOwnedShares = { "items": (DispatchShare)[]; "serverTimestamp": string };
 export type DispatchStartCancel = { "operationId": string; "startOperationId": string };
 export type DispatchStartCancelReceipt = { "operationId": string; "startOperationId": string; "confirmed": true; "serverTimestamp": string };
+export type DispatchParticipantOpen = { "operationId": string };
+export type DispatchParticipantReceipt = { "operationId": string; "confirmed": true; "groupId": string; "accountId": string; "conversationId": string; "roomId": string };
