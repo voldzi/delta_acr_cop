@@ -1,7 +1,7 @@
 # COP public analytics — vcode-public-v1
 
-Date: 2026-10-04. Preparation only; collection disabled, notice not approved or
-published. No second analytics service/database is created.
+Date: 2026-10-04. Web integration deployed with collection disabled; notice not
+approved or published. No second analytics service/database is created.
 
 ## Scope
 
@@ -65,26 +65,61 @@ network payload/headers, correct trusted edge address handling, 180-day cleanup
 and authenticated dashboard visibility. Then rebuild with enabled config and
 record exact image/revision. Do not count test traffic as production visits.
 Rollback: rebuild/redeploy with enabled=false, then verify no runtime load/send.
-No live collection, browser acceptance or rollback roundtrip is claimed here.
+No live collection or live rollback roundtrip is claimed here. Disabled browser
+acceptance is recorded below.
 
 ## Preparation evidence and blockers
 
 COP web image currently running: independently verified running on 2026-10-04;
 private digest retained outside this public document. COP server checkout d514f4f.
-This local analytics preparation has not changed production. Forty-three focused tests passed (21 privacy-boundary and 22 service-worker
+The production web release is recorded below. Forty-three focused tests passed (21 privacy-boundary and 22 service-worker
 routing tests). Web typecheck/production build, scoped lint, release guard and
 skeleton passed. The web build retains its existing large-chunk warning. Chroma retrieval failed to connect; selected files were inspected directly.
 
 VCode supplied the corrected pinned runtime: its fetch and the COP script loader
 both use no-referrer. Runtime SRI matches the supplied final artifact. Registered
 website ID is prepared; collection remains false. VCode reports the isolated
-collector deployed, but COP domain proxy/trusted-edge/browser/dashboard acceptance
-is still pending. Central VCode exclusively owns that deployment and the single
-CZ/EN owner review. No production analytics rollout or privacy publication is
-claimed. Existing unrelated API/voice/AI edits are preserved.
+collector deployed, and it reports isolated domain proxy/trusted-edge/storage tests passed without
+increasing actual counts. COP independently verified public tracker identity and
+the disabled browser behavior; activated dashboard acceptance remains pending. Central VCode exclusively owns that deployment and the single
+CZ/EN owner review. No production analytics activation or privacy publication is claimed. Existing unrelated API/voice/AI edits are preserved.
 
 ## Edge integration ownership
 
 VCode reports include `/etc/nginx/vcode-analytics/cop.zeleznalady.cz.conf`
 in the active HTTPS virtualhost. It owns that private include and edge secret;
 neither contents nor token are copied into Git. COP does not change the DMZ.
+
+## Disabled production deployment — 2026-10-04
+
+COP web artifact source: `3b82d4fcd99fd7d2a27a323a3527c5839da2669d`, published
+on `codex/cop-public-analytics`. This release changes only cop-web. API container
+and image remain unchanged (`d514f4f` server release). The environment, ports,
+networks and secret/overlay file fingerprints were independently preserved.
+Private image digests, artifact/config fingerprints and rollback image selection
+are held in the owner's private deployment journal.
+
+The initial full server-side Docker build was cancelled before switching any
+service: the shared host had load over 120 and fully used swap. Only this agent's
+build child was interrupted. No other service/process was stopped. The final web
+was instead built locally from the exact existing production build configuration
+with analytics=false and the registered website ID. Its public output was packaged
+over the unchanged existing runtime/dependencies, without another Node build on
+production. Source files bundled in the base image are not the runtime source of
+this frontend artifact; deployed compiled assets and release label carry the new
+revision. The previous web image is retained. No live rollback roundtrip performed.
+
+Actual public readiness returned 200, web liveness returned 200 and the container
+was running with the expected image and analytics=false release label.
+`GET /analytics/v1/tracker.js` returned 200 with the exact final shared SRI.
+Browser acceptance in the public demo: map and scenario rendered, opening the
+scenario worked, analytics script elements=0, analytics network requests=0 during
+load and interaction, proposed privacy notice absent. The captured network event
+window was neither truncated nor incomplete (no more pages). No collector request
+was manufactured and actual visit counts were not used for this test.
+
+Remaining: the single concrete owner approval of the shared CZ/EN notice, followed
+by publication/enabled rebuild and active isolated browser/dashboard acceptance.
+DNT/GPC, private-route and offline boundaries have 43 automated tests; their active
+production-browser verification follows approval. DMZ changes remain owned solely
+by VCode. This document does not claim collection is already active.
