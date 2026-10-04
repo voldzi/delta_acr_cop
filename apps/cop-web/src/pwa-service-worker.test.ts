@@ -125,6 +125,19 @@ function cacheRequestKey(request: Request | string): string {
 }
 
 describe("COP PWA service worker routing", () => {
+  it("never handles analytics runtime or collector requests", () => {
+    const serviceWorker = loadServiceWorkerContext();
+    const fetchListener = serviceWorker.self.addEventListener.mock.calls.find(([type]) => type === "fetch")?.[1];
+    const respondWith = vi.fn();
+    for (const [path, method] of [
+      ["/analytics/v1/tracker.js", "GET"],
+      ["/analytics/v1/events", "POST"],
+      ["/analytics/v1/events", "GET"]
+    ]) {
+      fetchListener({ request: new Request(`https://cop.example.test${path}`, { method }), respondWith });
+    }
+    expect(respondWith).not.toHaveBeenCalled();
+  });
   it("leaves the standalone public demo to the web server", () => {
     const serviceWorker = loadServiceWorkerContext();
     const fetchListener = serviceWorker.self.addEventListener.mock.calls.find(([type]) => type === "fetch")?.[1] as

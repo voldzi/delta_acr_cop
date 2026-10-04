@@ -39,3 +39,5 @@ Driver navigation/reporting: [delivery plan](product/14_DRIVER_NAVIGATION_AND_RE
 Jízda directed road attributes: [routing contract, measured pilot probes and mobile handoff](integration/21_JIZDA_DIRECTED_ROAD_ATTRIBUTES.md).
 
 Veřejná syntetická povodňová ukázka: [spuštění a provoz](runbooks/18_PUBLIC_FLOOD_DEMO.md), [ADR 0026](adr/0026_ISOLATED_PUBLIC_FLOOD_DEMO.md).
+
+Public demo analytics: [integration and release gate](analytics/integration.md), [CZ/EN notice proposal](analytics/privacy-review.md); disabled pending acceptance.

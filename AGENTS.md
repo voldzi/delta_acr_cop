@@ -140,3 +140,16 @@ If a check cannot be run, state that explicitly with the observed error.
 - Preserve the current task goal, touched files, commands already run,
   verification status, retrieval availability, deployment status and open
   blockers.
+
+## Public analytics integration
+
+COP uses the versioned shared VCode public analytics standard. Preserve its bridge
+in the synthetic public demo, fixed domain/path allowlist and release check.
+Collection is disabled until the COP privacy notice and shared runtime/collector
+are accepted. Measure only approved public pageviews; no clicks in phase one.
+Never collect accounts, forms, messages, reports, identifiers, coordinates, map
+state or health data. Respect DNT/GPC; no cookies, replay, offline queues, query,
+fragment, title or referrer. Keep credentials/internal collector addresses on the
+server. Scope changes require privacy review. Changes to navigation, CSP or
+deployment require analytics acceptance, including rejection of private paths.
+See docs/analytics/integration.md and docs/analytics/privacy-review.md.

@@ -10,3 +10,6 @@ openapi/openapi.json
 docs/api/openapi-main-cop.yaml
 apps/*/dist
 packages/*/dist
+
+# Shared versioned runtime is byte-pinned by SRI; never reformat locally.
+apps/cop-web/public/analytics/v1/tracker.js

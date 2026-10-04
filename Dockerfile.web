@@ -12,6 +12,8 @@ COPY packages/nato-symbol-renderer/package.json packages/nato-symbol-renderer/pa
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
+COPY scripts/check-public-analytics.mjs scripts/check-public-analytics.mjs
+COPY AGENTS.md CLAUDE.md docker-compose.yml Dockerfile.web ./
 COPY apps/cop-web apps/cop-web
 COPY packages/core packages/core
 COPY packages/geo-client packages/geo-client
@@ -33,6 +35,8 @@ ARG VITE_COP_TILE_GLYPHS_URL=https://demotiles.maplibre.org/font/{fontstack}/{ra
 ARG VITE_COP_TILE_ATTRIBUTION="&copy; OpenStreetMap contributors"
 ARG VITE_COP_MAP_CENTER=14.42,50.08
 ARG VITE_COP_MAP_ZOOM=8
+ARG VITE_COP_PUBLIC_ANALYTICS_ENABLED=false
+ARG VITE_COP_PUBLIC_ANALYTICS_WEBSITE_ID=
 ARG VITE_COP_MESSAGING_LAUNCHER_ENABLED=true
 ENV VITE_COP_API_BASE_URL=${VITE_COP_API_BASE_URL}
 ENV VITE_COP_PUBLIC_LAB_VALUE=${VITE_COP_PUBLIC_LAB_VALUE}
@@ -51,8 +55,10 @@ ENV VITE_COP_TILE_ATTRIBUTION="${VITE_COP_TILE_ATTRIBUTION}"
 ENV VITE_COP_MAP_CENTER=${VITE_COP_MAP_CENTER}
 ENV VITE_COP_MAP_ZOOM=${VITE_COP_MAP_ZOOM}
 ENV VITE_COP_MESSAGING_LAUNCHER_ENABLED=${VITE_COP_MESSAGING_LAUNCHER_ENABLED}
+ENV VITE_COP_PUBLIC_ANALYTICS_ENABLED=${VITE_COP_PUBLIC_ANALYTICS_ENABLED}
+ENV VITE_COP_PUBLIC_ANALYTICS_WEBSITE_ID=${VITE_COP_PUBLIC_ANALYTICS_WEBSITE_ID}
 ENV NODE_OPTIONS=--max-old-space-size=768
-RUN pnpm --filter @cop/cop-web... build
+RUN pnpm check:analytics && pnpm --filter @cop/cop-web... build
 
 FROM node:24-alpine AS runtime
 WORKDIR /app

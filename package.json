@@ -22,11 +22,12 @@
     "format:check": "prettier --check package.json pnpm-workspace.yaml tsconfig.json tsconfig.base.json vitest.config.ts eslint.config.js apps/cop-web apps/cop-chat packages/geo-client packages/messaging scripts/check-bundle-budgets.mjs scripts/check-static-runtime.mjs --ignore-unknown",
     "check:bundles": "node scripts/check-bundle-budgets.mjs",
     "check:static-runtime": "node scripts/check-static-runtime.mjs",
-    "check:release": "pnpm build && pnpm check:bundles && pnpm check:static-runtime",
+    "check:release": "pnpm build && pnpm check:bundles && pnpm check:static-runtime && pnpm check:analytics",
     "openapi:sync-yaml": "node scripts/sync-openapi-yaml.mjs",
     "validate:openapi": "redocly lint openapi/openapi.json",
     "validate:schemas": "tsx scripts/validate-schemas.ts",
-    "check": "pnpm validate:schemas && pnpm validate:openapi && pnpm format:check && pnpm lint && pnpm test"
+    "check": "pnpm validate:schemas && pnpm validate:openapi && pnpm format:check && pnpm lint && pnpm test && pnpm check:analytics",
+    "check:analytics": "node scripts/check-public-analytics.mjs"
   },
   "devDependencies": {
     "@redocly/cli": "^2.51.2",
