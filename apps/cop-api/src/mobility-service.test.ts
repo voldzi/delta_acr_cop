@@ -67,3 +67,12 @@ describe("timeout start cancellation barrier",()=>{
   expect((await f.service.startShare(f.a,x.groupId,another)).share.state).toBe("active");
  });
 });
+
+describe("bounded private roster list",()=>{
+ it("cannot create a 101st membership beyond the complete list bound",async()=>{
+  const f=await fixture();const example=await f.service.createGroup(f.b,{operationId:randomUUID(),name:"Synthetic quota fixture"});
+  await f.store.transact([],async tx=>{for(let i=0;i<100;i++){const groupId=randomUUID();await tx.set(`group:${groupId}`,{group:{...example,groupId,members:[...example.members,{accountId:f.a.accountId,displayName:"Synthetic A",role:"member"}]},shares:{}})}});
+  expect((await f.service.listGroups(f.a)).items).toHaveLength(100);
+  await expect(f.service.createGroup(f.a,{operationId:randomUUID(),name:"Beyond list bound"})).rejects.toMatchObject({status:429,code:"MEMBERSHIP_LIMIT"});
+ });
+});

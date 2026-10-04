@@ -41,6 +41,8 @@ export class DispatchService extends MobilityService {
   async createGroup(account: Wire.MobilityAccount, input: Wire.DispatchGroupCreate): Promise<Wire.DispatchGroup> {
     return this.operation(account, input.operationId, "group:create", input, ["dispatch-directory", `owner:${account.accountId}`], async tx => {
       const owned = (await tx.scan<GroupState>("group:")).filter(x => !x.value.deletedAt && x.value.group.members.some(m => m.accountId === account.accountId && m.role === "owner"));
+      const memberships = (await tx.scan<GroupState>("group:")).filter(x => !x.value.deletedAt && x.value.group.members.some(m => m.accountId === account.accountId));
+      requireMobility(memberships.length < 100, 429, "MEMBERSHIP_LIMIT", "Byl dosažen limit členství.");
       requireMobility(owned.length < 50, 429, "GROUP_LIMIT", "Byl dosažen limit soukromých skupin.");
       const group: Wire.DispatchGroup = { contractVersion: "cop-private-dispatch-v1", groupId: randomUUID(), name: input.name, membershipRevision: 1, sequence: 1,
         members: [{ accountId: account.accountId, displayName: account.displayName, role: "owner" }], createdAt: this.now().toISOString(), deleted: false };
