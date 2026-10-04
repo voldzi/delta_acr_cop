@@ -154,6 +154,7 @@ function mapReportCategory(category: CommunityReportCategory): IncidentCategory 
     stopped_vehicle: "traffic",
     traffic_accident: "traffic",
     traffic_congestion: "traffic",
+    police_patrol: "community",
     utility_outage: "infrastructure"
   };
   return map[category] ?? "community";

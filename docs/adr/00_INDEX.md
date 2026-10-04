@@ -41,3 +41,5 @@
 - [0036. Mapped vehicle profiles](0036_MAPPED_VEHICLE_PROFILES.md): explicit ordinary vehicle intents separated from strict guarantees.
 
 - [0031: Shared vehicles and private Dispatch](0031_SHARED_VEHICLES_AND_PRIVATE_DISPATCH.md).
+
+- [0037: Server-owned community report presence](0037_SERVER_OWNED_COMMUNITY_REPORT_PRESENCE.md).

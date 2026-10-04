@@ -19683,6 +19683,7 @@ const communityReportCategoryOptions: Array<{ label: string; value: CommunityRep
   { label: "Stojící vozidlo", value: "stopped_vehicle" },
   { label: "Dopravní nehoda", value: "traffic_accident" },
   { label: "Dopravní kolona", value: "traffic_congestion" },
+  { label: "🚓 Policejní hlídka", value: "police_patrol" },
   { label: "Poškozená infrastruktura", value: "infrastructure_damage" },
   { label: "Zdravotní událost", value: "medical" },
   { label: "Výpadek služby", value: "utility_outage" },
@@ -19834,6 +19835,7 @@ function communityReportDefaultValidityHours(category: CommunityReportCategory):
     stopped_vehicle: 2,
     traffic_accident: 4,
     traffic_congestion: 1,
+    police_patrol: 0.5,
     utility_outage: 12
   };
   return hours[category];

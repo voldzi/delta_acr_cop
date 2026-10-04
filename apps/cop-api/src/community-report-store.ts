@@ -13,6 +13,7 @@ export type CommunityReportCategory =
   | "stopped_vehicle"
   | "traffic_accident"
   | "traffic_congestion"
+  | "police_patrol"
   | "infrastructure_damage"
   | "medical"
   | "utility_outage"
@@ -1353,7 +1354,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
         MAX(confirmation) FILTER (WHERE c.subject_id = $2) AS current_actor_value
       FROM cop_community_report_confirmations c
       JOIN cop_community_reports r ON r.report_id = c.report_id
-      WHERE c.report_id = ANY($1::uuid[])
+      WHERE c.report_id = ANY($1::uuid[]) AND c.updated_at >= r.updated_at
       GROUP BY c.report_id`,
       [reportIds, currentSubjectId ?? null]
     );
@@ -2072,6 +2073,7 @@ function confirmationSummaries(
   const result: Record<string, CommunityReportConfirmationSummary> = {};
   for (const confirmation of confirmations) {
     if (!allowed.has(confirmation.reportId)) continue;
+    if (confirmation.updatedAt < (reports.get(confirmation.reportId)?.updatedAt ?? "")) continue;
     const summary = result[confirmation.reportId] ?? emptyConfirmationSummary();
     summary.totalCount += 1;
     if (confirmation.value === "still_there") summary.stillThereCount += 1;

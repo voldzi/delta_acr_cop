@@ -13751,6 +13751,7 @@
           "confidenceSummary"
         ],
         "properties": {
+          "presence": { "$ref": "#/components/schemas/CommunityReportPresence" },
           "reportId": {
             "type": "string",
             "format": "uuid"
@@ -14881,6 +14882,34 @@
           }
         }
       },
+      "CommunityReportPresence": {
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "policyVersion",
+    "active",
+    "reason"
+  ],
+  "properties": {
+    "policyVersion": {
+      "type": "string",
+      "const": "cop-report-presence-v1"
+    },
+    "active": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "active",
+        "expired",
+        "lifecycle",
+        "independent_absence"
+      ]
+    }
+  },
+  "description": "Server-owned feed decision; transient reports are suppressed by at least three independent negative votes with a negative balance of at least two. Votes before the report revision are ignored. No routing instruction."
+},
       "CommunityReportCategory": {
         "type": "string",
         "enum": [
@@ -14892,6 +14921,7 @@
           "stopped_vehicle",
           "traffic_accident",
           "traffic_congestion",
+          "police_patrol",
           "infrastructure_damage",
           "medical",
           "utility_outage",

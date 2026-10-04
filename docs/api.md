@@ -329,3 +329,9 @@ the exact operation UUID to the server-assigned vehicle/group. Costs use exact
 minor-unit/decimal strings; sync cursors bind account/vehicle/membership revision.
 Private Dispatch accepts only encrypted per-device boxes and fresh GPS metadata;
 plaintext coordinates and free context are rejected. No private data is sent to SIM.
+
+Community police patrol category and server active-map heuristic: see
+[integration/31_JIZDA_COMMUNITY_REPORTS.md](integration/31_JIZDA_COMMUNITY_REPORTS.md).
+The additive `presence` object is authoritative for active presentation, never for
+routing. The configured durable report store fails503 rather than acknowledging
+an ephemeral fallback; preserve original observation UUID/time during retry.

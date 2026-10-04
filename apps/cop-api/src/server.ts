@@ -1,5 +1,6 @@
 import { registerMobilityRoutes } from "./routes/mobility-routes.js";
 import { mobilityStoreFromEnv, type MobilityStore } from "./mobility-store.js";
+import { communityReportPresence } from "./community-report-presence.js";
 import { groupRoadObservations, RoadEnrichmentRunner } from "./road-enrichment.js";
 import compress from "@fastify/compress";
 import cors, { type FastifyCorsOptions } from "@fastify/cors";
@@ -470,6 +471,7 @@ interface CommunityAttachmentDerivativeResponse {
 type CommunityReportResponse = CommunityReportRecord & {
   attachments: CommunityAttachmentResponse[];
   captureContext?: CommunityReportCaptureContext;
+  presence: ReturnType<typeof communityReportPresence>;
   confidenceSummary: CommunityReportConfidenceSummary;
   confirmations: CommunityReportConfirmationSummary;
   ownedByCurrentActor: boolean;
@@ -1844,6 +1846,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   function activeCommunityReportStore(): CommunityReportStore {
+    if (communityReportStore && communityReportStoreStatus !== "ok") throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
     return communityReportStore && communityReportStoreStatus === "ok"
       ? communityReportStore
       : communityReportFallbackStore;
@@ -3276,6 +3279,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().createReport(input, requestNow);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.createReport(input, requestNow);
     }
   }
@@ -3285,6 +3289,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().getReport(reportId);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.getReport(reportId);
     }
   }
@@ -3294,6 +3299,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().listReports(query);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.listReports(query);
     }
   }
@@ -3306,6 +3312,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().listConfirmationSummaries(reportIds, currentSubjectId);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.listConfirmationSummaries(reportIds, currentSubjectId);
     }
   }
@@ -3320,6 +3327,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().upsertReportConfirmation(reportId, actor.subjectId, value, requestNow);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.upsertReportConfirmation(reportId, actor.subjectId, value, requestNow);
     }
   }
@@ -3333,6 +3341,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().submitReport(reportId, actor.subjectId, requestNow);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.submitReport(reportId, actor.subjectId, requestNow);
     }
   }
@@ -3347,6 +3356,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().resolveReport(reportId, actor.subjectId, input, requestNow);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.resolveReport(reportId, actor.subjectId, input, requestNow);
     }
   }
@@ -3361,6 +3371,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().withdrawReport(reportId, actor.subjectId, input, requestNow);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.withdrawReport(reportId, actor.subjectId, input, requestNow);
     }
   }
@@ -3375,6 +3386,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().updateReport(reportId, actor.subjectId, input, requestNow);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.updateReport(reportId, actor.subjectId, input, requestNow);
     }
   }
@@ -3388,6 +3400,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().deleteReport(reportId, actor.subjectId, requestNow);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.deleteReport(reportId, actor.subjectId, requestNow);
     }
   }
@@ -3401,6 +3414,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().deleteReportForDemoScenario(reportId, demoScenarioId, requestNow);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.deleteReportForDemoScenario(reportId, demoScenarioId, requestNow);
     }
   }
@@ -3410,6 +3424,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().createAttachment(input);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.createAttachment(input);
     }
   }
@@ -3419,6 +3434,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().completeAttachment(input);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.completeAttachment(input);
     }
   }
@@ -3430,6 +3446,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().updateAttachmentMetadata(input);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.updateAttachmentMetadata(input);
     }
   }
@@ -3615,6 +3632,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().createGroup(input, requestNow);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.createGroup(input, requestNow);
     }
   }
@@ -3624,6 +3642,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().getGroup(groupId);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.getGroup(groupId);
     }
   }
@@ -3633,6 +3652,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().listGroups(query);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.listGroups(query);
     }
   }
@@ -3645,6 +3665,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         }
       } catch (error) {
         markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
         if (await communityReportFallbackStore.deleteGroup(groupId, subjectId, requestNow)) {
           return true;
         }
@@ -3662,6 +3683,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().deleteGroupForDemoScenario(groupId, demoScenarioId, requestNow);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.deleteGroupForDemoScenario(groupId, demoScenarioId, requestNow);
     }
   }
@@ -3675,6 +3697,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.requestGroupMembership(groupId, actorToCommunityActor(actor), requestNow);
     }
   }
@@ -3700,6 +3723,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         }
       } catch (error) {
         markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
         const result = await communityReportFallbackStore.leaveGroup(groupId, communityActor, requestNow);
         if (result.status === "left") {
           return result;
@@ -3739,6 +3763,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         }
       } catch (error) {
         markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
         const result = await communityReportFallbackStore.removeGroupMember(
           groupId,
           communityActor,
@@ -3764,6 +3789,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().updateGroupMetadata(input, requestNow);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.updateGroupMetadata(input, requestNow);
     }
   }
@@ -3889,6 +3915,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await activeCommunityReportStore().upsertGroupMember(input, requestNow);
     } catch (error) {
       markCommunityReportStoreDegraded(error);
+      if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.upsertGroupMember(input, requestNow);
     }
   }
@@ -6808,9 +6835,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         items.map((report) => report.reportId),
         actor?.subjectId
       );
-      const responseItems = communityReportResponseItems(items, requestNow, actor, actorGroupIds, confirmations);
+      const visibleItems = query.includeExpired ? items : items.filter(report =>
+        communityReportPresence(report, requestNow, confirmations[report.reportId]).reason !== "independent_absence");
+      const responseItems = communityReportResponseItems(visibleItems, requestNow, actor, actorGroupIds, confirmations);
       return {
-        featureCollection: communityReportsFeatureCollection(items, requestNow, actor, actorGroupIds, confirmations),
+        featureCollection: communityReportsFeatureCollection(visibleItems, requestNow, actor, actorGroupIds, confirmations),
         items: responseItems,
         nextCursor: null,
         serverTimestamp: requestNow.toISOString()
@@ -11138,7 +11167,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const requestNow = now();
     const bbox = parseMapQueryBbox(input.bbox) ?? floodDemoBbox;
     const categories = Array.isArray(input.categories)
-      ? Array.from(new Set(input.categories.filter(isCommunityReportCategory))).slice(0, 13)
+      ? Array.from(new Set(input.categories.filter(isCommunityReportCategory))).slice(0, 14)
       : [];
     const severities = Array.isArray(input.severities)
       ? Array.from(new Set(input.severities.filter(isCommunityReportHazardSeverity))).slice(0, 3)
@@ -15887,6 +15916,7 @@ function communityReportResponseItem(
   return {
     ...report,
     ...(captureContext ? { captureContext } : {}),
+    presence: communityReportPresence(report, requestNow, confirmations),
     confidenceSummary: communityReportConfidenceSummary(report, requestNow, confirmations),
     confirmations,
     ownedByCurrentActor: Boolean(actor && report.createdBy.subjectId === actor.subjectId),
@@ -16150,7 +16180,7 @@ function communityReportsFeatureCollection(
   confirmations: Record<string, CommunityReportConfirmationSummary> = {}
 ) {
   return {
-    features: groupRoadObservations(reports, report => ["submitted", "published"].includes(report.status) && !isCommunityReportStale(report, requestNow)).map(({ report, count }) => {
+    features: groupRoadObservations(reports.filter(report => communityReportPresence(report, requestNow, confirmations[report.reportId]).active), () => true).map(({ report, count }) => {
       const captureContext = normalizeCommunityReportCaptureContext(report.properties.captureContext);
       const roadContext = normalizeCommunityReportRoadContext(report.properties.roadContext);
       const confirmationSummary = confirmations[report.reportId] ?? emptyCommunityReportConfirmationSummary();
@@ -16167,6 +16197,7 @@ function communityReportsFeatureCollection(
           relatedReportCount: count,
           ...(report.roadEnrichment ? { roadEnrichment: report.roadEnrichment } : {}),
           ...(captureContext ? { captureContext } : {}),
+          presence: communityReportPresence(report, requestNow, confirmationSummary),
           confidenceSummary: communityReportConfidenceSummary(report, requestNow, confirmationSummary),
           confirmations: confirmationSummary,
           confidence: report.location.accuracyM
@@ -16751,6 +16782,7 @@ function defaultCommunityReportValidUntil(category: CommunityReportCategory, req
     stopped_vehicle: 2,
     traffic_accident: 4,
     traffic_congestion: 1,
+    police_patrol: 0.5,
     utility_outage: 12
   };
   return new Date(requestNow.getTime() + validityHours[category] * 60 * 60 * 1000).toISOString();
@@ -16793,6 +16825,7 @@ function communityCategoryLabel(category: CommunityReportCategory): string {
     stopped_vehicle: "Stojící vozidlo",
     traffic_accident: "Dopravní nehoda",
     traffic_congestion: "Dopravní kolona",
+    police_patrol: "Policejní hlídka",
     utility_outage: "Výpadek služby"
   };
   return labels[category];
@@ -16808,6 +16841,7 @@ function isCommunityReportCategory(value: unknown): value is CommunityReportCate
     value === "stopped_vehicle" ||
     value === "traffic_accident" ||
     value === "traffic_congestion" ||
+    value === "police_patrol" ||
     value === "infrastructure_damage" ||
     value === "medical" ||
     value === "utility_outage" ||

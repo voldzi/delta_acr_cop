@@ -1787,6 +1787,7 @@ export type CommunityReportCategory =
   | "stopped_vehicle"
   | "traffic_accident"
   | "traffic_congestion"
+  | "police_patrol"
   | "utility_outage";
 
 export type CommunityReportHazardSeverity = "advisory" | "critical" | "warning";
@@ -1906,6 +1907,7 @@ export interface CommunityGroup {
 }
 
 export interface CommunityReport {
+  presence?: { policyVersion: "cop-report-presence-v1"; active: boolean; reason: "active" | "expired" | "lifecycle" | "independent_absence" };
   roadEnrichment?: {
     contractVersion: "cop-road-enrichment-v1";
     state: "matched" | "ambiguous" | "unavailable" | "expired";

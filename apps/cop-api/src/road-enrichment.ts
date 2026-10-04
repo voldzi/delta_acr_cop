@@ -77,7 +77,7 @@ export class PostgresRoadEnrichmentQueue implements RoadEnrichmentQueue {
     await this.pool.query(`INSERT INTO cop_community_report_enrichment_jobs (report_id, report_version, next_attempt_at)
       SELECT report_id, version, $1::timestamptz FROM cop_community_reports r
       WHERE status IN ('submitted', 'published') AND observed_at > $1::timestamptz - interval '24 hours'
-        AND category IN ('traffic_accident','traffic_congestion','stopped_vehicle','road_blockage','dangerous_weather','hazard')
+        AND category IN ('traffic_accident','traffic_congestion','stopped_vehicle','road_blockage','dangerous_weather','hazard','police_patrol')
         AND road_enrichment_version IS DISTINCT FROM version
         AND NOT EXISTS (SELECT 1 FROM cop_community_report_enrichment_jobs j
           WHERE j.report_id=r.report_id AND j.report_version=r.version)

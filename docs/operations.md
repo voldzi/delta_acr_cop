@@ -91,3 +91,9 @@ client consent or GPS collection is enabled by either infrastructure flag.
 Backup existing database before enabling. Rollback restores previous API image and
 bothflagsfalse; leave the additive table intact. No migration drops existing COP
 state. Existing routing/web analytics and driver collection remain independent.
+
+Community reporting release/rollback and acceptance are recorded in
+[integration/31_JIZDA_COMMUNITY_REPORTS.md](integration/31_JIZDA_COMMUNITY_REPORTS.md).
+No new configuration or port is required. During durable store outage return503;
+restore its connectivity rather than accepting reports into RAM. Police expiry
+and absence suppression do not modify SIM closure data.
