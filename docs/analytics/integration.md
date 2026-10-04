@@ -146,3 +146,67 @@ passed. The unrelated working files were verified byte-for-byte before staging.
 This adoption does not authorize a full production rebuild of other services
 from the development checkout; the deployed web remains the scoped 3b82d4f
 artifact and production API remains d514f4f.
+
+## Pending notice synchronization — 2026-10-04
+
+The unpublished CZ/EN proposal and hidden demo notice match the shared VCode
+privacy-review source at `ef5cbf7`, including retained general browser, operating
+system and device categories, and exclusion of full network headers and inferred
+geographic location. Future publication must use that current shared wording.
+The single central owner review remains pending; no deployment, notice publication
+or collection activation was performed for this synchronization.
+
+## Authorized activation release — 2026-10-04
+
+Owner approval verified directly in VCode user turn `01a10681-2286-7912-a3a3-2ee371fcbfd8`
+(“Souhlasím”), recorded by VCode `0527093`; exact text source `ef5cbf7`.
+Public supplements: `/analytics/privacy-cs.html` and `/analytics/privacy-en.html`.
+Only `/demo/flood-central-bohemia` is measured. Persist production
+`COP_PUBLIC_ANALYTICS_ENABLED=true` and the existing registered website ID in
+the production build configuration for subsequent releases. Default development
+configuration remains off. Central registry activation and ingest acceptance are
+separate owner-coordinated steps, after the public text is checked.
+
+### Activation acceptance and central handoff
+
+Deployed web artifact source `52d0175`, image
+`sha256:fe45d9709d6ed8162a0fa11a8b60f1ea04b7bd6df9de4bb78b9ad5de31ea2c66`.
+Production build configuration persists `COP_PUBLIC_ANALYTICS_ENABLED=true`,
+website ID `59b949ec-6052-41c7-82fe-955258ddb7e1`; corresponding compiled VITE
+flags are true and that ID. Only the web was recreated. API container ID/image
+and environment fingerprint, web networks and ports were unchanged. Actual image
+and release labels were checked. Public readiness returned 200. Prior image
+`sha256:ca1d7187d6a823bfa75ee9439c000b938c8592d19ed75d182be6ff6cacf5ef66`
+is retained as `delta-acr-cop-web:rollback-analytics-on-52d0175`.
+Private deployment journal: `/home/voldzi/cop-deployments/analytics-on-52d0175`.
+No live rollback roundtrip was performed.
+
+- Both public supplement URLs returned 200, contain four exact approved
+  paragraphs each, and no scripts; both were visibly verified in the browser.
+- The actual production demo rendered the map/scenario and expandable exact
+  CS/EN notice with links to both supplements. One pinned runtime loaded and one
+  POST was attempted; test delivery was blocked in the browser before reaching
+  the collector to avoid manufacturing actual production visits. Captured body:
+  `{"website":"59b949ec-6052-41c7-82fe-955258ddb7e1","name":"pageview","path":"/demo/flood-central-bohemia"}`.
+- `/`, `/chat/`, `/mobile/pair/testfixture`: zero analytics scripts and zero
+  analytics requests in actual browser checks. These were anonymous boundary
+  screens, not authenticated private-session acceptance.
+- In the mounted production SPA, temporary developer overrides for navigator
+  DNT=1, GPC=true and online=false followed by leave/return popstate observations
+  each produced zero analytics requests. Network windows were complete and not
+  truncated. These are simulated browser signals after mount, not genuine browser
+  preference changes or a real network disconnect. Cold-start and queued-load
+  signal boundaries are covered by the automated suite. Overrides and request
+  blocking were removed; the temporary tab ended on the static notice.
+- 50 targeted automated tests passed; local enabled production build, release
+  guard, skeleton and diff checks passed. Existing large-chunk warning remains.
+- Central VCode separately reports actual edge DNT/GPC 204 with no stored record
+  and runtime offline tests. COP has not independently performed that collector
+  acceptance. Registry activation and final isolated ingest check await VCode's
+  announcement. Frontend activation alone is not confirmed analytics ingestion.
+
+Rollback restores the retained web image and the prior analytics flags recorded
+in the private journal, recreates only cop-web with no build/dependency restart,
+and verifies no tracker/collector request. API and other integrations stay intact.
+The approval/activation section supersedes earlier pending/default-off statuses
+in this historical deployment chronology.
