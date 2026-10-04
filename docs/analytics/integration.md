@@ -210,3 +210,8 @@ in the private journal, recreates only cop-web with no build/dependency restart,
 and verifies no tracker/collector request. API and other integrations stay intact.
 The approval/activation section supersedes earlier pending/default-off statuses
 in this historical deployment chronology.
+
+Central activation update: VCode owner reports COP registry enabled on 2026-10-04
+for the exact demo path after independently checking both public notices. Final
+isolated ingest/dashboard acceptance remains owned by VCode; it is not yet
+independently confirmed by COP. No additional DMZ or scope change was made.
