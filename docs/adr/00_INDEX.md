@@ -39,3 +39,5 @@
 - [0034 Immutable road-trip boundary](0034_IMMUTABLE_ROAD_TRIP_BOUNDARY.md)
 
 - [0036. Mapped vehicle profiles](0036_MAPPED_VEHICLE_PROFILES.md): explicit ordinary vehicle intents separated from strict guarantees.
+
+- [0031: Shared vehicles and private Dispatch](0031_SHARED_VEHICLES_AND_PRIVATE_DISPATCH.md).

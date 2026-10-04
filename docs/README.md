@@ -55,3 +55,6 @@ Ordinary reviewed closure evidence: [contract and scoped SDK handoff](integratio
 - [27. Jízda mapped vehicle profiles](integration/27_JIZDA_MAPPED_VEHICLE_PROFILES.md): typed ordinary intents, incomplete mapped restrictions, route-bound assessment and actual target guidance (server release deployed; mobile acceptance pending).
 
 Public demo analytics: [integration and release gate](analytics/integration.md), [CZ/EN notice proposal](analytics/privacy-review.md); disabled pending acceptance.
+
+- [Shared mobility v1 JSON contract](api/shared-mobility-v1.openapi.json) — accounts, shared vehicles and private Dispatch; implementation in progress.
+- [Jízda shared vehicles/Dispatch handoff](integration/29_JIZDA_SHARED_VEHICLES_DISPATCH_HANDOFF.md) — release status and client integration.

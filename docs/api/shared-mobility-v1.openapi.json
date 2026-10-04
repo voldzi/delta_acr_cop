@@ -1,0 +1,5617 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "COP shared mobility v1",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/mobility/v1/capabilities": {
+      "get": {
+        "operationId": "mobilityCapabilities",
+        "summary": "Mobility Capabilities",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityCapabilities"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mobility/v1/account": {
+      "get": {
+        "operationId": "mobilityAccount",
+        "summary": "Mobility Account",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityAccount"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shared-vehicles/v1/vehicles": {
+      "get": {
+        "operationId": "sharedVehicles",
+        "summary": "Shared vehicle s",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicleList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "sharedVehicleCreate",
+        "summary": "Shared vehicle Create",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicle"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedVehicleCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shared-vehicles/v1/vehicles/{vehicleId}": {
+      "get": {
+        "operationId": "sharedVehicleGet",
+        "summary": "Shared vehicle Get",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicle"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "sharedVehicleUpdate",
+        "summary": "Shared vehicle Update",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicleReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedVehicleUpdate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shared-vehicles/v1/vehicles/{vehicleId}/members": {
+      "post": {
+        "operationId": "sharedVehicleMembershipChange",
+        "summary": "Shared vehicle MembershipChange",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicleReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedVehicleMembershipChange"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shared-vehicles/v1/vehicles/{vehicleId}/invitations": {
+      "post": {
+        "operationId": "sharedVehicleInvite",
+        "summary": "Shared vehicle Invite",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityInvitationReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityInvitationCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shared-vehicles/v1/vehicles/{vehicleId}/invitations/revoke": {
+      "post": {
+        "operationId": "sharedVehicleInviteRevoke",
+        "summary": "Shared vehicle InviteRevoke",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicleReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityInvitationRevoke"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shared-vehicles/v1/invitations/accept": {
+      "post": {
+        "operationId": "sharedVehicleInviteAccept",
+        "summary": "Shared vehicle InviteAccept",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicle"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityInvitationAccept"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shared-vehicles/v1/vehicles/{vehicleId}/records": {
+      "post": {
+        "operationId": "sharedVehicleRecordWrite",
+        "summary": "Shared vehicle RecordWrite",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicleReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedVehicleRecordWrite"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shared-vehicles/v1/vehicles/{vehicleId}/sync": {
+      "get": {
+        "operationId": "sharedVehicleSync",
+        "summary": "Shared vehicle Sync",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicleSync"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/private-dispatch/v1/groups": {
+      "get": {
+        "operationId": "dispatchGroups",
+        "summary": "Private dispatch Groups",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchGroupList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "dispatchGroupCreate",
+        "summary": "Private dispatch GroupCreate",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchGroup"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchGroupCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/private-dispatch/v1/groups/{groupId}": {
+      "get": {
+        "operationId": "dispatchGroupGet",
+        "summary": "Private dispatch GroupGet",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchGroup"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/private-dispatch/v1/groups/{groupId}/members": {
+      "post": {
+        "operationId": "dispatchMembershipChange",
+        "summary": "Private dispatch MembershipChange",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchGroup"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchMembershipChange"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/private-dispatch/v1/groups/{groupId}/invitations": {
+      "post": {
+        "operationId": "dispatchInvite",
+        "summary": "Private dispatch Invite",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityInvitationReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchInvitationCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/private-dispatch/v1/invitations/accept": {
+      "post": {
+        "operationId": "dispatchInviteAccept",
+        "summary": "Private dispatch InviteAccept",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchGroup"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityInvitationAccept"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/private-dispatch/v1/devices": {
+      "post": {
+        "operationId": "dispatchDeviceRegister",
+        "summary": "Private dispatch DeviceRegister",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchDevice"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchDeviceRegister"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/private-dispatch/v1/groups/{groupId}/readiness": {
+      "get": {
+        "operationId": "dispatchReadiness",
+        "summary": "Private dispatch Readiness",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchReadiness"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/private-dispatch/v1/groups/{groupId}/snapshot": {
+      "get": {
+        "operationId": "dispatchSnapshot",
+        "summary": "Private dispatch Snapshot",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deviceId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/private-dispatch/v1/groups/{groupId}/shares": {
+      "post": {
+        "operationId": "dispatchStart",
+        "summary": "Private dispatch Start",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchShareReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchShareStart"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/private-dispatch/v1/shares/{shareId}/points": {
+      "put": {
+        "operationId": "dispatchPublish",
+        "summary": "Private dispatch Publish",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchShareReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "shareId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchPointPublish"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/private-dispatch/v1/shares/{shareId}/stop": {
+      "post": {
+        "operationId": "dispatchStop",
+        "summary": "Private dispatch Stop",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchShareReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "shareId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchStop"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shared-vehicles/v1/vehicles/{vehicleId}/delete": {
+      "post": {
+        "operationId": "sharedVehicleDelete",
+        "summary": "Shared vehicle Delete",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicleReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedVehicleDelete"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shared-vehicles/v1/vehicles/{vehicleId}/records/delete": {
+      "post": {
+        "operationId": "sharedVehicleRecordDelete",
+        "summary": "Shared vehicle RecordDelete",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedVehicleReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedVehicleRecordDelete"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/private-dispatch/v1/groups/{groupId}/invitations/revoke": {
+      "post": {
+        "operationId": "dispatchInviteRevoke",
+        "summary": "Private dispatch InviteRevoke",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchGroup"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityInvitationRevoke"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/private-dispatch/v1/groups/{groupId}/delete": {
+      "post": {
+        "operationId": "dispatchGroupDelete",
+        "summary": "Private dispatch GroupDelete",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchGroup"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchGroupDelete"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/private-dispatch/v1/devices/revoke": {
+      "post": {
+        "operationId": "dispatchDeviceRevoke",
+        "summary": "Private dispatch DeviceRevoke",
+        "tags": [
+          "Shared mobility"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative response; no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchDevice"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, operation, audience or pending-stop conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or capability disabled; never a user denial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchDeviceRevoke"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "MobilityCapabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-mobility-capabilities-v1"
+            ]
+          },
+          "sharedVehiclesEnabled": {
+            "type": "boolean"
+          },
+          "dispatchEnabled": {
+            "type": "boolean"
+          },
+          "maxVehicleMembers": {
+            "type": "integer",
+            "const": 5
+          },
+          "maxGroupMembers": {
+            "type": "integer",
+            "const": 200
+          },
+          "registration": {
+            "type": "string",
+            "enum": [
+              "idp_login_page",
+              "unavailable",
+              "unverified"
+            ]
+          },
+          "dispatchTransport": {
+            "type": "string",
+            "enum": [
+              "recipient_encrypted_latest_only"
+            ]
+          },
+          "currencies": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CZK",
+                "EUR",
+                "USD"
+              ]
+            },
+            "maxItems": 3
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "sharedVehiclesEnabled",
+          "dispatchEnabled",
+          "maxVehicleMembers",
+          "maxGroupMembers",
+          "registration",
+          "dispatchTransport",
+          "currencies",
+          "serverTimestamp"
+        ]
+      },
+      "MobilityAccount": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-mobility-account-v1"
+            ]
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          },
+          "emailVerified": {
+            "type": "boolean"
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "accountId",
+          "displayName",
+          "emailVerified",
+          "serverTimestamp"
+        ]
+      },
+      "SharedVehicleMember": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "driver"
+            ]
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "readVehicle",
+                "readCosts",
+                "recordRide",
+                "recordExpense",
+                "recordService",
+                "editVehicle",
+                "manageReminders",
+                "manageMembers"
+              ]
+            },
+            "maxItems": 8
+          },
+          "joinedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "accountId",
+          "displayName",
+          "role",
+          "capabilities",
+          "joinedAt"
+        ]
+      },
+      "SharedVehicleDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "plate": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20
+          },
+          "vin": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "SharedVehicle": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-shared-vehicles-v1"
+            ]
+          },
+          "vehicleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "details": {
+            "$ref": "#/components/schemas/SharedVehicleDetails"
+          },
+          "dataRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "membershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedVehicleMember"
+            },
+            "maxItems": 5
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "vehicleId",
+          "details",
+          "dataRevision",
+          "membershipRevision",
+          "members",
+          "createdAt",
+          "updatedAt",
+          "deleted"
+        ]
+      },
+      "SharedVehicleList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-shared-vehicles-v1"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedVehicle"
+            },
+            "maxItems": 100
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "items",
+          "serverTimestamp"
+        ]
+      },
+      "SharedVehicleCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "details": {
+            "$ref": "#/components/schemas/SharedVehicleDetails"
+          }
+        },
+        "required": [
+          "operationId",
+          "details"
+        ]
+      },
+      "SharedVehicleUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedDataRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "expectedMembershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "details": {
+            "$ref": "#/components/schemas/SharedVehicleDetails"
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedDataRevision",
+          "expectedMembershipRevision",
+          "details"
+        ]
+      },
+      "SharedVehicleMembershipChange": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedMembershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "set_capabilities",
+              "remove",
+              "transfer_ownership",
+              "leave"
+            ]
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "readVehicle",
+                "readCosts",
+                "recordRide",
+                "recordExpense",
+                "recordService",
+                "editVehicle",
+                "manageReminders",
+                "manageMembers"
+              ]
+            },
+            "maxItems": 8
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedMembershipRevision",
+          "accountId",
+          "action"
+        ]
+      },
+      "MobilityInvitationCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedMembershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "readVehicle",
+                "readCosts",
+                "recordRide",
+                "recordExpense",
+                "recordService",
+                "editVehicle",
+                "manageReminders",
+                "manageMembers"
+              ]
+            },
+            "maxItems": 8
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedMembershipRevision",
+          "email"
+        ]
+      },
+      "MobilityInvitationReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-mobility-invitation-v1"
+            ]
+          },
+          "invitationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "invitationId",
+          "operationId",
+          "status",
+          "expiresAt"
+        ]
+      },
+      "MobilityInvitationAccept": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "operationId",
+          "token"
+        ]
+      },
+      "MobilityInvitationRevoke": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "invitationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "operationId",
+          "invitationId"
+        ]
+      },
+      "SharedVehicleMoney": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "type": "string",
+            "enum": [
+              "CZK",
+              "EUR",
+              "USD"
+            ]
+          },
+          "minorUnits": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,11})$"
+          }
+        },
+        "required": [
+          "currency",
+          "minorUnits"
+        ]
+      },
+      "SharedVehicleRecordData": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "odometer"
+                ]
+              },
+              "odometerKm": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+              },
+              "correctionOfRecordId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "correctionReason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "kind",
+              "odometerKm"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ride_summary"
+                ]
+              },
+              "distanceKm": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+              },
+              "durationSeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 604800
+              },
+              "purpose": {
+                "type": "string",
+                "enum": [
+                  "work"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "distanceKm",
+              "durationSeconds",
+              "purpose"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "expense"
+                ]
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "fuel",
+                  "charging",
+                  "parking",
+                  "toll",
+                  "other"
+                ]
+              },
+              "amount": {
+                "$ref": "#/components/schemas/SharedVehicleMoney"
+              }
+            },
+            "required": [
+              "kind",
+              "category",
+              "amount"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "energy"
+                ]
+              },
+              "unit": {
+                "type": "string",
+                "enum": [
+                  "liters",
+                  "kWh"
+                ]
+              },
+              "quantity": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+              },
+              "amount": {
+                "$ref": "#/components/schemas/SharedVehicleMoney"
+              }
+            },
+            "required": [
+              "kind",
+              "unit",
+              "quantity"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "service"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "odometerKm": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+              },
+              "amount": {
+                "$ref": "#/components/schemas/SharedVehicleMoney"
+              }
+            },
+            "required": [
+              "kind",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "reminder"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "dueAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "dueOdometerKm": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+              },
+              "completed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "title",
+              "completed"
+            ]
+          }
+        ]
+      },
+      "SharedVehicleRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vehicleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "authorAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timeZone": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "data": {
+            "$ref": "#/components/schemas/SharedVehicleRecordData"
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "recordId",
+          "vehicleId",
+          "authorAccountId",
+          "createdAt",
+          "occurredAt",
+          "timeZone",
+          "revision",
+          "data",
+          "deleted"
+        ]
+      },
+      "SharedVehicleRecordWrite": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedDataRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "expectedMembershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedRecordRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timeZone": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "data": {
+            "$ref": "#/components/schemas/SharedVehicleRecordData"
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedDataRevision",
+          "expectedMembershipRevision",
+          "recordId",
+          "expectedRecordRevision",
+          "occurredAt",
+          "timeZone",
+          "data"
+        ]
+      },
+      "SharedVehicleReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-shared-vehicles-v1"
+            ]
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vehicleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dataRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "membershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "eventSequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "contractVersion",
+          "operationId",
+          "vehicleId",
+          "dataRevision",
+          "membershipRevision",
+          "eventSequence",
+          "confirmed"
+        ]
+      },
+      "SharedVehicleSyncItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "vehicle",
+              "record",
+              "membership",
+              "deleted"
+            ]
+          },
+          "vehicle": {
+            "$ref": "#/components/schemas/SharedVehicle"
+          },
+          "record": {
+            "$ref": "#/components/schemas/SharedVehicleRecord"
+          },
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "authorAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "sequence",
+          "type",
+          "authorAccountId",
+          "createdAt"
+        ]
+      },
+      "SharedVehicleSync": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-shared-vehicles-v1"
+            ]
+          },
+          "vehicleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedVehicleSyncItem"
+            },
+            "maxItems": 100
+          },
+          "nextCursor": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "dataRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "membershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "vehicleId",
+          "items",
+          "nextCursor",
+          "hasMore",
+          "dataRevision",
+          "membershipRevision",
+          "serverTimestamp"
+        ]
+      },
+      "DispatchMember": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "member"
+            ]
+          }
+        },
+        "required": [
+          "accountId",
+          "displayName",
+          "role"
+        ]
+      },
+      "DispatchGroup": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-private-dispatch-v1"
+            ]
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "membershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DispatchMember"
+            },
+            "maxItems": 200
+          },
+          "conversationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "groupId",
+          "name",
+          "membershipRevision",
+          "sequence",
+          "members",
+          "createdAt"
+        ]
+      },
+      "DispatchGroupList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-private-dispatch-v1"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DispatchGroup"
+            },
+            "maxItems": 100
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "items",
+          "serverTimestamp"
+        ]
+      },
+      "DispatchGroupCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "operationId",
+          "name"
+        ]
+      },
+      "DispatchMembershipChange": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedMembershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "remove",
+              "set_role",
+              "leave"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedMembershipRevision",
+          "accountId",
+          "action"
+        ]
+      },
+      "DispatchDeviceRegister": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "publicKeyX25519": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9+/]{43}=$"
+          },
+          "deviceName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "operationId",
+          "publicKeyX25519",
+          "deviceName"
+        ]
+      },
+      "DispatchDevice": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "publicKeyX25519": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9+/]{43}=$"
+          },
+          "keyRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "deviceId",
+          "accountId",
+          "publicKeyX25519",
+          "keyRevision",
+          "createdAt"
+        ]
+      },
+      "DispatchReadiness": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-private-dispatch-v1"
+            ]
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "membershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "missing_device_keys",
+              "unavailable"
+            ]
+          },
+          "audienceHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DispatchDevice"
+            },
+            "maxItems": 1600
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "groupId",
+          "membershipRevision",
+          "state",
+          "audienceHash",
+          "devices",
+          "serverTimestamp"
+        ]
+      },
+      "DispatchShareStart": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedMembershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "audienceHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "enum": [
+              900,
+              3600,
+              28800
+            ]
+          },
+          "endPolicy": {
+            "type": "string",
+            "enum": [
+              "duration",
+              "ride_end"
+            ]
+          },
+          "consent": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "operationId",
+          "deviceId",
+          "expectedMembershipRevision",
+          "audienceHash",
+          "durationSeconds",
+          "endPolicy",
+          "consent"
+        ]
+      },
+      "DispatchShare": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "shareId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "membershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "audienceHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endPolicy": {
+            "type": "string",
+            "enum": [
+              "duration",
+              "ride_end"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "stopped",
+              "expired"
+            ]
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        },
+        "required": [
+          "shareId",
+          "groupId",
+          "accountId",
+          "deviceId",
+          "membershipRevision",
+          "audienceHash",
+          "startedAt",
+          "expiresAt",
+          "endPolicy",
+          "state",
+          "sequence"
+        ]
+      },
+      "DispatchShareReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-private-dispatch-v1"
+            ]
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "share": {
+            "$ref": "#/components/schemas/DispatchShare"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "operationId",
+          "share",
+          "confirmed",
+          "serverTimestamp"
+        ]
+      },
+      "DispatchEncryptedBox": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "recipientDeviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ephemeralPublicKeyX25519": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9+/]{43}=$"
+          },
+          "combinedCiphertext": {
+            "type": "string",
+            "minLength": 40,
+            "maxLength": 2048,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+          }
+        },
+        "required": [
+          "recipientDeviceId",
+          "ephemeralPublicKeyX25519",
+          "combinedCiphertext"
+        ]
+      },
+      "DispatchPointPublish": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "gps"
+            ]
+          },
+          "membershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "audienceHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "boxes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DispatchEncryptedBox"
+            },
+            "maxItems": 1600
+          }
+        },
+        "required": [
+          "deviceId",
+          "sequence",
+          "observedAt",
+          "source",
+          "membershipRevision",
+          "audienceHash",
+          "boxes"
+        ]
+      },
+      "DispatchPoint": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "shareId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "gps"
+            ]
+          },
+          "box": {
+            "$ref": "#/components/schemas/DispatchEncryptedBox"
+          }
+        },
+        "required": [
+          "shareId",
+          "accountId",
+          "deviceId",
+          "sequence",
+          "observedAt",
+          "expiresAt",
+          "source",
+          "box"
+        ]
+      },
+      "DispatchSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-private-dispatch-v1"
+            ]
+          },
+          "group": {
+            "$ref": "#/components/schemas/DispatchGroup"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/DispatchReadiness"
+          },
+          "activeShares": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DispatchShare"
+            },
+            "maxItems": 200
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DispatchPoint"
+            },
+            "maxItems": 200
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "group",
+          "readiness",
+          "activeShares",
+          "points",
+          "serverTimestamp"
+        ]
+      },
+      "DispatchStop": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "user",
+              "privacy_zone",
+              "ride_end",
+              "logout",
+              "account_change",
+              "membership_change",
+              "keys_unavailable",
+              "background_unavailable"
+            ]
+          }
+        },
+        "required": [
+          "operationId",
+          "deviceId",
+          "reason"
+        ]
+      },
+      "DispatchPointPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lon": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "horizontalAccuracyM": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "lat",
+          "lon",
+          "horizontalAccuracyM"
+        ]
+      },
+      "MobilityError": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "correlationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "details": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "issue": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "issue"
+                  ]
+                },
+                "maxItems": 50
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "correlationId"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "SharedVehicleDelete": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedDataRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "expectedMembershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedDataRevision",
+          "expectedMembershipRevision",
+          "reason"
+        ]
+      },
+      "SharedVehicleRecordDelete": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedDataRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "expectedMembershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedRecordRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedDataRevision",
+          "expectedMembershipRevision",
+          "recordId",
+          "expectedRecordRevision",
+          "reason"
+        ]
+      },
+      "DispatchGroupDelete": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedMembershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedMembershipRevision"
+        ]
+      },
+      "DispatchDeviceRevoke": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "operationId",
+          "deviceId"
+        ]
+      },
+      "DispatchInvitationCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedMembershipRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedMembershipRevision",
+          "email"
+        ]
+      }
+    }
+  }
+}
