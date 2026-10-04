@@ -3,18 +3,22 @@
 Date: 2026-10-03. Server contract deployed; strict vehicle profiles NOT activated.
 The user explicitly authorized deployment after [acceptance record 24](24_JIZDA_ROAD_TRIP_ACCEPTANCE.md).
 
+Current runtime table updated on 2026-10-04; earlier sections retain their original
+acceptance scope. The new ordinary mapped profile release is in [record 27](27_JIZDA_MAPPED_VEHICLE_PROFILES.md).
+
 ## Released revisions
 
 | Component | Deployed / published revision |
 | --- | --- |
-| COP API | `b5052892cd83b989abd78d4e630dfcb28dedbe68` (legacy alternatives compatibility follow-up) |
-| SIM routing API | `51613f4e0e9efb5c56e3b951baf34a6b4a5d95cd` (same closure schema as `3506663`; current graph canary passed) |
+| COP API | `d514f4ff10fa57cabbb5502a774f3868eee9e9fc` (mapped vehicle profile follow-up) |
+| SIM routing API | `9592372a3cdccce835435a653cc1a44304cbf8a9` (mapped vehicle profiles; closure schema unchanged) |
 | Shared mobile SDK | Published `b1d47d09e86b475c6a4a792cf9d94d87caf6f726`; Jízda reports local adoption and simulator acceptance; physical acceptance pending |
 
 Actual running images were verified against the built release. Later documentation
 commits do not alter the released runtime. Operational image digests, configuration
 fingerprints and rollback records are retained privately by the deployment owners.
-Only server components were released; no mobile application binary was installed.
+This COP release deploys only server components; Jízda owns mobile package updates
+and physical-device acceptance.
 
 ## Checks performed
 
@@ -40,7 +44,11 @@ The production adapter test is not an authenticated end-user OIDC/iPhone session
 Earlier 26 COP / 22 SDK / 361 SIM test results remain in record 24. Physical-device
 acceptance and the two COP Mobile chat UI failures remain unresolved.
 
-## Why new profiles remain inactive
+## Why strict mandatory profiles remain inactive
+
+This section concerns `sim-road-trip-v1` mandatory strict requirements. Ordinary
+mapped vehicle profiles are now separately available with incomplete assessment
+under [record 27](27_JIZDA_MAPPED_VEHICLE_PROFILES.md).
 
 Existing traffic sources provide events and reference lines. They do not provide
 an approved complete closure snapshot with direction, geographic coverage,

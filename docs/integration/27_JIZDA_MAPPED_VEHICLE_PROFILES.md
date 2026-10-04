@@ -1,7 +1,7 @@
 # 27. Explicit ordinary vehicle profiles for Jízda
 
-Date: 2026-10-04. Joint implementation in progress; production activation and
-physical-device acceptance are not yet claimed.
+Date: 2026-10-04. Server release deployed after joint acceptance; authenticated end-user
+and physical-device acceptance remain pending.
 
 ## Wire contract
 
@@ -115,10 +115,10 @@ source expiry, graph and geometry mismatch, applied fields, whole-combination an
 axle consistency, unsolicited/missing assessments, feature binding, endpoint state
 and distance, conflicting strict/legacy requests and no downgrade errors.
 
-Actual engine restrictions, published SIM fixture identity, production release
-and physical iPhone checks will be recorded after joint verification. Existing
-strict routes and driver collection remain disabled. Existing ordinary closure
-routing is preserved; this draft does not claim a new deployed profile release.
+The released server revisions and actual joint evidence are recorded below.
+Strict routes and driver collection remain disabled; existing ordinary closure
+routing is preserved. This server acceptance does not establish physical iPhone
+navigation or authenticated end-user acceptance.
 
 ### COP local candidate verification
 
@@ -129,5 +129,66 @@ evidence, not live restrictions or navigation evidence. Final targeted suite:
 API/dependency build passed. Skeleton and eleven schema JSON files passed; runtime
 AJV compilation and semantic OpenAPI identity are covered by the contract tests.
 OpenAPI validation passed with 25 warnings (six additional conditional-schema warnings
-in the shared fragment and typed request conditions). Live engine and production profile acceptance are
-not yet claimed.
+in the shared fragment and typed request conditions). The final SIM fixture
+changed only explanatory limitations for missing optional vehicle parameters; the
+updated exact fixture passed the 38-test profile suite without code changes.
+
+## Joint server production acceptance on 2026-10-04
+
+| Component | Actual deployed revision |
+| --- | --- |
+| COP API | `d514f4ff10fa57cabbb5502a774f3868eee9e9fc` |
+| SIM situation/routing API | `9592372a3cdccce835435a653cc1a44304cbf8a9` |
+
+Later fixture/documentation commits do not change the released code. The exact
+shared schema and final synthetic fixture were independently compared against
+immutable SIM `9592372`; copies in COP match. Operational image digests, private
+source proof, environment fingerprints and rollback records are retained privately.
+
+- SIM reports 294 tests passed using an isolated real database, plus 52 native
+  Valhalla 3.8.3 cases on an independently generated synthetic graph. COP reviewed
+  the reproducible harness: small/large car and truck dimensions/weight, accepted
+  bounds, truck axle load/count, whole-combination trailer length/weight, mapped
+  gravel access and rejection of motor-vehicle access restrictions in both directions.
+  This proves engine behavior on test data, not complete real-road restriction coverage.
+- The packaged COP candidate passed isolated tests without networking: all four
+  intents and two distinct synthetic variants, exact profile/hash bindings, rejection
+  of wrong costing/target and typed options before contacting the upstream service.
+- A temporary COP candidate then contacted actual deployed SIM using only the same
+  existing internal networks. It passed all eight mobile queries (four intents in
+  both directions), had no public port and was removed. No secrets were copied.
+- After API-only COP deployment, the actual running configured adapter independently
+  passed the same eight queries: `alternatives=3`, steps/road attributes enabled,
+  one native returned variant, 3726 m forward / 3682 m reverse, nine complete indexed
+  maneuvers, verified known-closure evidence and current profile/geometry/query/feature/
+  engine/dataset/expiry bindings. Truck uses truck costing; other intents use auto.
+  The requested count does not cause fabricated alternatives. All these actual
+  endpoints were displaced within the accepted tolerance and correctly labelled
+  `target_guidance_only`; none was presented as exact arrival.
+- Actual scoped-permission and non-truck axle requests returned 422
+  `ROUTING_PROFILE_UNSUPPORTED`, with no substitute car route. Unknown options,
+  future departure, hazards, invalid/expired assessments and upstream error/no-fallback
+  behavior remain covered by isolated server tests; no live outage was injected.
+- Existing ordinary car requests remain available. Legacy alternatives 0 and 5
+  normalized to 1 and 3 respectively, with one genuine route and ten indexed
+  maneuvers each. A fresh strict request returned 422 `ROUTING_SAFETY_UNSUPPORTED`.
+- Actual image identity, readiness and health passed. Public readiness returned 200;
+  anonymous and malformed routing identities returned 401. A brief API restart
+  occurred. Existing environment, networks, ports and secret-file checksums were
+  preserved. Driver intake remains false; cleanup/revocation remain enabled.
+- Previous images/configuration selection are retained for rollback; a live rollback
+  roundtrip was not performed. The active graph remains the accepted map built on
+  2026-09-29; no newer graph activation is claimed.
+
+### Remaining acceptance and limitations
+
+Jízda owns the local SDK/UI/persistence/draft/backup integration. COP did not
+overwrite its voice, measurement or routing files. End-user OIDC and physical
+iPhone navigation, profile changes while driving and displayed target guidance
+remain unverified. Neither the synthetic engine cases nor the server pilot replaces
+those checks. Wider unmapped last-mile routing, scoped private/forestry permission
+exemptions and trailer articulation/specific bans remain explicitly unsupported.
+
+Chroma retrieval was available for the primary managed repository. Reindexing the
+release worktree was rejected because this MCP root is not managed; no successful
+release index update is claimed. Selected current files were inspected directly.

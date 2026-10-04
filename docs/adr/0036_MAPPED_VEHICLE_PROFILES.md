@@ -1,6 +1,6 @@
 # 0036. Explicit vehicle profiles using incomplete mapped restrictions
 
-Date: 2026-10-04. Status: accepted; production profile release pending.
+Date: 2026-10-04. Status: accepted and server release deployed; mobile acceptance pending.
 
 ## Decision
 
