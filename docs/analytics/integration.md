@@ -123,3 +123,46 @@ by publication/enabled rebuild and active isolated browser/dashboard acceptance.
 DNT/GPC, private-route and offline boundaries have 43 automated tests; their active
 production-browser verification follows approval. DMZ changes remain owned solely
 by VCode. This document does not claim collection is already active.
+
+## Canonical development adoption
+
+The isolated web integration is also narrowly adopted in the primary COP checkout
+and its current development branch `codex/shared-ai-router-cop`. Existing dirty
+AI/voice/API changes and the Dispatch review are preserved separately. There is
+no production service change in this adoption and no merge of unfinished work.
+
+`pnpm check`, `pnpm check:release`, GitHub CI and `Dockerfile.web` all invoke
+`check:analytics`. The guard checks the actual public-demo mount, privacy notice,
+exact public allowlist, mandatory safe configuration, PWA bypass, default-off
+configuration and pinned artifact integrity. Isolated destructive test fixtures
+verify that removing the bridge/mount, changing the artifact, dropping the PWA
+bypass or bypassing the Docker build guard makes release validation fail.
+Future COP releases must carry this integration and keep central owner-approved
+enablement configuration; no automatic activation or widening of paths is added.
+
+Canonical adoption acceptance: 50 targeted tests passed (43 boundary/PWA +7
+release guard cases), scoped lint, web typecheck/production build and skeleton
+passed. The unrelated working files were verified byte-for-byte before staging.
+This adoption does not authorize a full production rebuild of other services
+from the development checkout; the deployed web remains the scoped 3b82d4f
+artifact and production API remains d514f4f.
+
+## Pending notice synchronization — 2026-10-04
+
+The unpublished CZ/EN proposal and hidden demo notice match the shared VCode
+privacy-review source at `ef5cbf7`, including retained general browser, operating
+system and device categories, and exclusion of full network headers and inferred
+geographic location. Future publication must use that current shared wording.
+The single central owner review remains pending; no deployment, notice publication
+or collection activation was performed for this synchronization.
+
+## Authorized activation release — 2026-10-04
+
+Owner approval verified directly in VCode user turn `01a10681-2286-7912-a3a3-2ee371fcbfd8`
+(“Souhlasím”), recorded by VCode `0527093`; exact text source `ef5cbf7`.
+Public supplements: `/analytics/privacy-cs.html` and `/analytics/privacy-en.html`.
+Only `/demo/flood-central-bohemia` is measured. Persist production
+`COP_PUBLIC_ANALYTICS_ENABLED=true` and the existing registered website ID in
+the production build configuration for subsequent releases. Default development
+configuration remains off. Central registry activation and ingest acceptance are
+separate owner-coordinated steps, after the public text is checked.

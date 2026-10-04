@@ -26,7 +26,7 @@
     "openapi:sync-yaml": "node scripts/sync-openapi-yaml.mjs",
     "validate:openapi": "redocly lint openapi/openapi.json",
     "validate:schemas": "tsx scripts/validate-schemas.ts",
-    "check": "pnpm validate:schemas && pnpm validate:openapi && pnpm format:check && pnpm lint && pnpm test",
+    "check": "pnpm validate:schemas && pnpm validate:openapi && pnpm format:check && pnpm lint && pnpm test && pnpm check:analytics",
     "check:analytics": "node scripts/check-public-analytics.mjs"
   },
   "devDependencies": {

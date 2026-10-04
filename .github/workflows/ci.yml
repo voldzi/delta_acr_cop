@@ -42,6 +42,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Verify public analytics integration
+        run: pnpm check:analytics
+
       - name: Build
         run: pnpm build
 
