@@ -210,3 +210,51 @@ in the private journal, recreates only cop-web with no build/dependency restart,
 and verifies no tracker/collector request. API and other integrations stay intact.
 The approval/activation section supersedes earlier pending/default-off statuses
 in this historical deployment chronology.
+
+## Prepared v2 migration —2026-10-04 (not deployed)
+
+Owner approval of the exact common CS/EN replacement and activation was verified
+in VCode user turn01a10806-5f92-7102-9cb5-38d11958de66; recorda56b160, text6dc4dd3.
+This section describes an isolated prepared branch, not the current production
+bridge. Production remains on v1 pending the coordinator's release slot.
+
+- Domain `cop.zeleznalady.cz`, exact allowed path `/demo/flood-central-bohemia`.
+- Same-origin tracker `/analytics/v2/tracker.js`, collector `/analytics/v2/events`.
+- `vcode-public-v2`, `captureSources=true`, `captureReferrer=false`,
+  `allowedEvents=[]`, both automatic flagsfalse, omit analytics credentials,
+  no-referrer network policy, discard offline. Original path/notice/session
+  exclusions remain; no URL/query/fragment/title/content/identity accompanies a
+  metric. Only shared runtime fixed service classification determines source.
+- Actual app-owned public links are `/` and the two local privacy supplements;
+  there is no AppStore/contact/external link in this one approved demo. Therefore
+  no click handler or fabricated outbound event was introduced. Generated map
+  attribution and private application links are excluded.
+- Shared runtime is not copied. Exact source bytes independently verified to
+  `sha384-4mn0sN5UeFuzSjaXlbulwbJz7N38PPOovouC9Xp3OHD0r94YKgx8B2RAk/nK6mg0`.
+  The build guard verifies actual bytes through
+  `COP_ANALYTICS_RUNTIME_VERIFICATION_PATH` for local prebuilt releases, or a
+  bounded GET of the existing same-origin production proxy before enabled builds.
+  This verification never posts a visitor event. Previous v1 artifact retained.
+- Session exclusion additionally checks only stored session presence and the
+  existing BFF `/api/v1/auth/session` authenticated flag. No token/profile is sent
+  to analytics. Unknown status/outage blocks collection. Authenticated state is
+  checked before runtime loading and after it, with a final navigation/signal
+  check after asynchronous session resolution.
+- Exact approved common paragraph replaced in notice component, both static
+  CS/EN supplements and privacy-review source; site-specific intro and remaining
+  retention/DNT/GPC paragraphs preserved. AGENTS and CLAUDE aligned.
+
+Prepared bridge/release guards passed35tests before the final asynchronous race
+regression; final result follows in the handoff. Local web typecheck/build passed,
+with the existing large Cesium chunk warning. No v2 production image, central
+registry or edge changes and no synthetic visitor/event posts were performed.
+Release must use the current production public build arguments with analytics
+true and the existing websiteID; stage a prebuilt web-only artifact and preserve
+API/SIM and all runtime environment/network/ports. The coordinator owns the central
+registry capability update and isolated test-website ingest acceptance.
+
+Final prepared v2 acceptance:36bridge/release-guard tests passed, scoped ESLint,
+skeleton and local web typecheck/build passed. The actual shared runtime source
+verification guard passed with collection enabled only as a build check; no
+visitor requests were sent. The local default-off build is validation output,
+not the production-enabled artifact. No v2 deployment has been performed.
