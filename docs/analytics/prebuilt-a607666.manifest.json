@@ -1,0 +1,62 @@
+{
+  "allowedEvents": [],
+  "allowedPaths": [
+    "/demo/flood-central-bohemia"
+  ],
+  "analyticsEnabled": true,
+  "archiveBytes": 68829184,
+  "archivePath": "/private/tmp/cop-analytics-v2-a607666/cop-web-analytics-v2-a607666.tar",
+  "archiveSha256": "b27f43992ccc5082131089efd9771d594d6610e68916fa0d166d1dc4fdce0ca8",
+  "artifactSha256": "57d6037fd6147b13604a2649926566ff74ed9c45f35330a77388faa5760f8935",
+  "baseNodeIndexDigest": "sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1",
+  "baselineProductionApiImage": "sha256:d4f9b1f6ee9121f85640e6445a0926928a0c07271a77b617256ec1b9e200e5b8",
+  "baselineProductionWebImage": "sha256:fe4c6e9a80f6918f3c7f767120d4462ca384c512ab13c36dd7fff50e28fb8870",
+  "bridgeReleaseTests": {
+    "passed": 36,
+    "scope": "anonymous paths, DNT/GPC/offline, asynchronous session/navigation, runtime configuration and release guards"
+  },
+  "browserOrIsolatedCollectorAcceptance": "pending after coordinator activation; no synthetic production statistics",
+  "captureSources": true,
+  "centralRegistryChanged": false,
+  "collectorPath": "/analytics/v2/events",
+  "deployed": false,
+  "fileCount": 451,
+  "imageConfigDigest": "sha256:6c86f8a2d88513b871dde5c28f944af7faf164b66e3d27ae9a3b8e12e3d66d00",
+  "imageTag": "delta-acr-cop-web:analytics-v2-a607666",
+  "localAcceptance": {
+    "actualImage": "sha256:b62dc7f0462465239c3828d5f92f796b5f7957546c7b12d87340575e1b6c97f5",
+    "analyticsCollectorPosts": 0,
+    "architecture": "x64",
+    "entryAssetHttp": 200,
+    "health": 200,
+    "localImageAcceptance": "passed",
+    "network": "none",
+    "node": "v24.21.0",
+    "platform": "linux/amd64",
+    "privacySupplements": 200,
+    "publicDemoHttp": 200,
+    "publishedPorts": 0,
+    "source": "a607666880e6e7f07069db538573391f4d80a404",
+    "verifiedArtifactFiles": 451,
+    "wrongHostRejected": 403
+  },
+  "localImageIndexDigest": "sha256:b62dc7f0462465239c3828d5f92f796b5f7957546c7b12d87340575e1b6c97f5",
+  "nodeRuntime": "24.21.0",
+  "packaging": "Locally compiled production public config; minimal official Node24.21.0 runtime with identical server.mjs, direct node command replacing pnpm wrapper; no server build",
+  "platform": "linux/amd64",
+  "platformManifestDigest": "sha256:be089e9ce338212617c6994271f2d2f46fe932e84dc5b79e5f7e9153e57808f2",
+  "publicBuildArgsSha256": "249d4190524877c0c7f1687caf704ff6c4e6d198e3c6ad944440bfc5a72ef665",
+  "rollback": "retain current web image and runtime config, recreate only cop-web; preserve API/SIM/registry; no live rollback exercised",
+  "runtimeIntegrity": "sha384-4mn0sN5UeFuzSjaXlbulwbJz7N38PPOovouC9Xp3OHD0r94YKgx8B2RAk/nK6mg0",
+  "sharedRuntimeProxyVerification": {
+    "byteSize": 2002,
+    "sha384": "sha384-4mn0sN5UeFuzSjaXlbulwbJz7N38PPOovouC9Xp3OHD0r94YKgx8B2RAk/nK6mg0",
+    "status": 200
+  },
+  "sharedServicesMutated": false,
+  "source": "a607666880e6e7f07069db538573391f4d80a404",
+  "status": "ready_for_coordinator_deploy_slot",
+  "trackerPath": "/analytics/v2/tracker.js",
+  "unchangedServerSha256": "5c20eb7538df5d60117126917a57745e89353c1509ea5f2c2df7232513f56e04",
+  "websiteId": "59b949ec-6052-41c7-82fe-955258ddb7e1"
+}
