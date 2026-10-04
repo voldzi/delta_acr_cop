@@ -21487,7 +21487,7 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 5,
-            "description": "Legacy ordinary requests accept 0..5; SIM normalizes the effective maximum returned route count to 1..3. The validated response.query records this normalization when knownClosures is present. Strict trips accept 1..3 without ordinary normalization."
+            "description": "Legacy ordinary requests accept 0..5; SIM normalizes the effective maximum returned route count to 1..3. The validated response.query records this normalization when knownClosures is present. Strict trips accept 1..3 without ordinary normalization. Typed mapped vehicle profiles require 1..3; this does not change legacy requests."
           },
           "includeSteps": {
             "type": "boolean",
@@ -21503,7 +21503,10 @@
           "trip": {
             "$ref": "#/components/schemas/RoadTripTrip"
           },
-          "vehicleProfile": { "$ref": "#/components/schemas/RoutingMappedProfile", "description": "Explicit ordinary mapped profile; requires profileId=car, conflicts with strict trip and legacy vehicle. Mapped restrictions are incomplete; unsupported fields never downgrade to car." },
+          "vehicleProfile": {
+            "$ref": "#/components/schemas/RoutingMappedProfile",
+            "description": "Explicit ordinary mapped profile; requires profileId=car, conflicts with strict trip and legacy vehicle. Mapped restrictions are incomplete; unsupported fields never downgrade to car."
+          },
           "via": {
             "type": "array",
             "maxItems": 12,
@@ -21594,6 +21597,61 @@
                   }
                 ]
               }
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "vehicleProfile"
+              ],
+              "type": "object"
+            },
+            "then": {
+              "required": [
+                "profileId"
+              ],
+              "properties": {
+                "profileId": {
+                  "const": "car",
+                  "type": "string"
+                },
+                "alternatives": {
+                  "minimum": 1,
+                  "maximum": 3,
+                  "type": "integer"
+                },
+                "avoid": {
+                  "items": {
+                    "enum": [
+                      "flood",
+                      "fire",
+                      "road_closure",
+                      "unpaved",
+                      "tunnel",
+                      "bridge"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "trip"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "required": [
+                      "vehicle"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "object"
             }
           }
         ]

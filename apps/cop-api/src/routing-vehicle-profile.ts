@@ -73,6 +73,10 @@ export function validateVehicleProfileRequest(request: RoutingRouteRequest): voi
   validateVehicleProfileConflicts(request);
   const p = request.vehicleProfile;
   if (p === undefined) return;
+  if ((request.alternatives !== undefined && (request.alternatives < 1 || request.alternatives > 3)) ||
+    request.avoid?.some(a => !["flood", "fire", "road_closure", "unpaved", "tunnel", "bridge"].includes(a))) {
+    throw new Error("Routing vehicleProfile alternatives or avoid options are unsupported by the contract.");
+  }
   if (!validProfile(p)) throw new Error("Routing vehicleProfile violates sim-mapped-road-profile-v1.");
   const v = p.vehicle;
   if ((v?.trailer && dimensions.some(k => v[k] < v.trailer![k])) || (v?.axleLoadKg !== undefined && v.axleLoadKg > v.loadedWeightKg)) {

@@ -66,6 +66,10 @@ describe("ordinary immutable mapped vehicle profiles", () => {
     const f = fixture("commercial_truck"); (edit as (p: unknown) => void)(f.request.vehicleProfile); const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
     await expect(adapter().route(f.request, now)).rejects.toThrow(/^Routing /); expect(fetch).not.toHaveBeenCalled();
   });
+  it.each([{ alternatives: 0 }, { alternatives: 5 }, { avoid: ["unrecognised"] }])("rejects typed profile options outside the accepted contract", async extra => {
+    const f = fixture(); Object.assign(f.request, extra); const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    await expect(adapter().route(f.request, now)).rejects.toThrow(/^Routing /); expect(fetch).not.toHaveBeenCalled();
+  });
   it("rejects conflicting strict/legacy fields and inconsistent trailer combination", () => {
     const f = fixture("car_with_trailer"); f.request.vehicleProfile!.vehicle!.lengthM = 3;
     expect(() => validateVehicleProfileRequest(f.request)).toThrow("whole combination");

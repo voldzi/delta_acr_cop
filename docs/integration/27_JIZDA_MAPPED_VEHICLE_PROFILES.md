@@ -8,6 +8,7 @@ physical-device acceptance are not yet claimed.
 Use the existing authenticated `POST /api/v1/routing/route` or `/alternatives`.
 Jízda does not call SIM directly. Set `profileId: "car"` explicitly and add
 `vehicleProfile`. Do not combine it with legacy `vehicle` or strict `trip`.
+Typed profile requests accept alternatives 1..3 (legacy requests retain 0..5).
 The exact shared [SIM schema](../api/schemas/mapped-road-profile-v1.schemas.json)
 is transferred into binding COP OpenAPI under `RoutingMapped*` names.
 
@@ -124,9 +125,9 @@ routing is preserved; this draft does not claim a new deployed profile release.
 The exact shared synthetic SIM fixture for all four intents and two distinct
 variants per intent passed through the COP adapter. It remains synthetic contract
 evidence, not live restrictions or navigation evidence. Final targeted suite:
-110 passed. Full COP suite: 1212 passed / one skipped. Final lint/typecheck and
+113 passed. Full COP suite: 1215 passed / one skipped. Final lint/typecheck and
 API/dependency build passed. Skeleton and eleven schema JSON files passed; runtime
 AJV compilation and semantic OpenAPI identity are covered by the contract tests.
-OpenAPI validation passed with 22 warnings (three additional composition warnings
-in the exact shared fragment). Live engine and production profile acceptance are
+OpenAPI validation passed with 25 warnings (six additional conditional-schema warnings
+in the shared fragment and typed request conditions). Live engine and production profile acceptance are
 not yet claimed.
