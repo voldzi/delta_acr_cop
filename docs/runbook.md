@@ -129,3 +129,5 @@ registration/permissions without exposing email or tokens. Never create real
 user invitations or publish GPS for diagnosis. Preserve queued records through
 rollback; recipients can use the verified inbox. Device delivery remains best
 effort. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.
+
+For identity lookup failures, preserve403/404versus503 and never retry through provisioning resolve. Do not clamp DM count to2. Missing verified incoming caller names are generic COP kontakt. Deployment and acceptance: [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md).

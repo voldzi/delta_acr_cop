@@ -144,3 +144,5 @@ A rollback from odometer projection to the receipt-only image preserves records 
 Completed ride mileage v2 requires coordinated capability/version/scope/revision handling. Any rollback must retain detailed-ride omission and trip ID reservation guards; older unguarded images could erase intervals and release dedup identities. See [handoff40](integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md).
 
 Shared profile/audit/recovery keeps existing retention and no migrations; use guard-only rollback preserving sealed metadata. Delivery and physical acceptance limits: [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).
+
+Read-only Matrix lookup rollout: Messaging then COP API, preserving exact existing images/configuration. Old images remain a schema-safe rollback; see [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md).

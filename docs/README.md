@@ -91,3 +91,5 @@ or phone receipt.
 - [Completed shared ride mileage](integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md): explicit calculated v2 mileage, covered ride deduplication and initial reading.
 
 - [Shared vehicle profile/audit/recovery](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md): current mapped profile, exact owner UUID and retained correction history.
+
+- [Verified read-only Matrix identities and caller presentation](integration/42_VERIFIED_MATRIX_IDENTITIES.md).

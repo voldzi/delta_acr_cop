@@ -192,3 +192,5 @@ Shared odometer snapshot exposes only kilometer value/date/source-record referen
 Completed shared rides expose coarse distance/time/author to existing readVehicle members, without GPS traces/destination/passengers. Current membership and role remain strict for commutative insert; owner-only initial seeding and readCosts boundaries remain enforced. See [handoff40](integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md).
 
 Shared owner binding is authenticated owner-only, independent of name/plate; profile changes require owner and cost audit remains readCosts gated. See [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).
+
+Conversation identity lookup requires verified COP actor, Messaging service auth and current membership; it reads existing pairs only. No guessed names or arbitrary IDs; no credentials/messages in responses, cache or logs. See [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md).

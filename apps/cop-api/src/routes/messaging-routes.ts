@@ -12,6 +12,7 @@ export interface MessagingRouteHandlers {
   matrixPushGateway: RouteHandlerMethod;
   registerWebPushDevice: RouteHandlerMethod;
   resolveConversation: RouteHandlerMethod;
+  lookupMatrixIdentities: RouteHandlerMethod;
   resolveMatrixIdentities: RouteHandlerMethod;
   startVoiceCall: RouteHandlerMethod;
   status: RouteHandlerMethod;
@@ -49,6 +50,7 @@ export function registerMessagingRoutes(app: FastifyInstance, handlers: Messagin
   app.get("/api/v1/messaging/conversations/resolve", handlers.resolveConversation);
   app.get("/api/v1/messaging/conversations/:conversationId", handlers.conversationDetail);
   app.post("/api/v1/messaging/conversations", handlers.createConversation);
+  app.post("/api/v1/messaging/matrix/identities/lookup", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, handlers.lookupMatrixIdentities);
   app.post("/api/v1/messaging/matrix/identities/resolve", handlers.resolveMatrixIdentities);
   app.post("/api/v1/messaging/conversations/:conversationId/members", handlers.addConversationMembers);
   app.post("/api/v1/messaging/conversations/:conversationId/matrix-room", handlers.bindMatrixRoom);

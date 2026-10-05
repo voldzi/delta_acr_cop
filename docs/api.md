@@ -395,3 +395,5 @@ Versioned shared odometer snapshot is separate from receipt details; see [handof
 Completed ride details, explicit initial seed and calculated mileage v2 extend the shared contract compatibly; [handoff40](integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md) defines append policy and exact DTOs.
 
 Shared vehicle compatible routing profile, owner binding, audited edits and care snapshot: [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).
+
+Read-only messaging identity lookup and additive viewer-specific call.peer are defined in binding JSON OpenAPI; see [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md). Provisioning resolve is not a fallback.
