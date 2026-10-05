@@ -51,3 +51,5 @@
 - [0039: Durable mobility invitation alerts](0039_DURABLE_MOBILITY_INVITATION_ALERTS.md).
 
 - [0040: COP canonical self profile](0040_COP_CANONICAL_SELF_PROFILE.md).
+
+- [0041: Shared vehicle receipt details](0041_SHARED_VEHICLE_RECEIPT_DETAILS.md).

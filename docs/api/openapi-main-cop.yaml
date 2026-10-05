@@ -8625,6 +8625,143 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
   schemas:
+    SharedVehicleStationSnapshot:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        provider:
+          type: string
+          maxLength: 160
+        address:
+          type: string
+          maxLength: 500
+      required: []
+    SharedVehicleRefuelingDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        fuelType:
+          type: string
+          enum:
+            - natural95
+            - natural98
+            - natural100
+            - diesel
+            - diesel plus
+            - lpg
+            - bioEthanol
+            - cng
+            - hydrogen
+        fullTank:
+          type: boolean
+        quantityBeforeRefueling:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+        station:
+          $ref: "#/components/schemas/SharedVehicleStationSnapshot"
+      required: []
+    SharedVehicleChargingDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        source:
+          type: string
+          enum:
+            - home
+            - publicAC
+            - publicDC
+            - workplace
+            - other
+        provider:
+          type: string
+          maxLength: 160
+        locationName:
+          type: string
+          maxLength: 160
+        location:
+          $ref: "#/components/schemas/SharedVehicleStationSnapshot"
+        batteryPercentBefore:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+        batteryPercentAfter:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+      required: []
+    SharedVehicleEnergyDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          const: 1
+        kind:
+          type: string
+          enum:
+            - refueling
+            - charging
+        odometerKm:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+        note:
+          type: string
+          maxLength: 1000
+        refueling:
+          $ref: "#/components/schemas/SharedVehicleRefuelingDetails"
+        charging:
+          $ref: "#/components/schemas/SharedVehicleChargingDetails"
+      required:
+        - version
+        - kind
+    SharedVehicleServiceItem:
+      type: object
+      additionalProperties: false
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 160
+          minLength: 1
+        categoryId:
+          type: string
+          maxLength: 80
+        subcategoryId:
+          type: string
+          maxLength: 80
+        amount:
+          $ref: "#/components/schemas/SharedVehicleMoney"
+      required:
+        - itemId
+        - title
+        - amount
+    SharedVehicleServiceDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          const: 1
+        note:
+          type: string
+          maxLength: 1000
+        categoryId:
+          type: string
+          maxLength: 80
+        subcategoryId:
+          type: string
+          maxLength: 80
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/SharedVehicleServiceItem"
+      required:
+        - version
     COPAccountProfile:
       type: object
       additionalProperties: false
@@ -20201,6 +20338,34 @@ components:
           $ref: "#/components/schemas/MobilityServiceAvailability"
           description: Optional independent current service availability. Enabled flags indicate
             configuration, not readiness. Missing field does not prove readiness.
+        recordDetailsVersions:
+          type: array
+          uniqueItems: true
+          items:
+            type: integer
+            enum:
+              - 1
+        recordEnergyUnits:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - liters
+              - kWh
+        supportedRefuelingFuelTypes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - natural95
+              - natural98
+              - natural100
+              - diesel
+              - diesel plus
+              - lpg
+              - bioEthanol
       required:
         - contractVersion
         - sharedVehiclesEnabled
@@ -20631,6 +20796,8 @@ components:
               pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
             amount:
               $ref: "#/components/schemas/SharedVehicleMoney"
+            details:
+              $ref: "#/components/schemas/SharedVehicleEnergyDetails"
           required:
             - kind
             - unit
@@ -20651,6 +20818,8 @@ components:
               pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
             amount:
               $ref: "#/components/schemas/SharedVehicleMoney"
+            details:
+              $ref: "#/components/schemas/SharedVehicleServiceDetails"
           required:
             - kind
             - title

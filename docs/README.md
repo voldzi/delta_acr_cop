@@ -83,3 +83,5 @@ or phone receipt.
 - [35: Mobility invitation notifications](integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md).
 
 - [36: COP self profile / Jízda Já](integration/36_COP_SELF_PROFILE.md).
+
+- [38: Shared vehicle record details v1](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md): same forms, lossless receipts; release and device acceptance status.
