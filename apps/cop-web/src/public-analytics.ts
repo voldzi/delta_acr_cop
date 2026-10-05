@@ -1,7 +1,7 @@
 /** Exact public synthetic-demo pageviews and normalized entry source; no application/context data. */
 import { authSessionStorageKey } from "./auth";
 export const publicAnalyticsPaths = ["/demo/flood-central-bohemia"] as const;
-export const analyticsRuntimePath = "/analytics/v2/tracker.js";
+export const analyticsRuntimePath = "/vcode-analytics-tiktok.js";
 export const analyticsCollectorPath = "/analytics/v2/events";
 
 type Client = { pageview(path: string): void };
@@ -148,7 +148,7 @@ export function observePublicDemoPageview(): void {
           const script = document.createElement("script");
           script.src = analyticsRuntimePath;
           script.async = true;
-          script.integrity = "sha384-4mn0sN5UeFuzSjaXlbulwbJz7N38PPOovouC9Xp3OHD0r94YKgx8B2RAk/nK6mg0";
+          script.integrity = "sha384-JpAOJexapVVtAZAFpz3dwp4AHY8PLbao7cLk7Mg7VFIDy2g0/bOUl0zb/HO1qbX5";
           script.crossOrigin = "anonymous";
           script.referrerPolicy = "no-referrer";
           script.onload = () => resolve((window as Window & { vcodePublicAnalytics?: Runtime }).vcodePublicAnalytics);

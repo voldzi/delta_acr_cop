@@ -258,3 +258,63 @@ skeleton and local web typecheck/build passed. The actual shared runtime source
 verification guard passed with collection enabled only as a build check; no
 visitor requests were sent. The local default-off build is validation output,
 not the production-enabled artifact. No v2 deployment has been performed.
+
+## Local deploy-ready image —2026-10-04
+
+Exact frontend revision `a607666880e6e7f07069db538573391f4d80a404` was compiled
+locally with current production public build args (hybrid auth/BFF enabled,
+analytics true, existing website ID). Shared runtime proxy GET returned200 and
+its2002bytes matched the approved SRI. No runtime code was copied and no collector
+POST was made. API, SIM, community deployment and registry remain unchanged.
+
+Image: `delta-acr-cop-web:analytics-v2-a607666`, linux/amd64, Node24.21.0.
+[Verified manifest](prebuilt-a607666.manifest.json) records archive SHA256,
+platform/config/index digests, source, artifact file digests, public configuration
+hash, privacy scope and actual acceptance. Docker's local index ID and the
+platform/config digest can differ after loading a single-platform archive;
+verify the archived config/labels and platform rather than assuming an index ID.
+
+Local transport archive:
+`/private/tmp/cop-analytics-v2-a607666/cop-web-analytics-v2-a607666.tar`
+(68829184bytes). Sidecars manifest.json/manifest.sha256/archive.sha256 and detailed
+logs are in the same protected folder. Store this until the allocated release slot.
+The packaging uses official pinned Node of the same production version and the
+byte-identical server.mjs; it runs node directly instead of the pnpm launcher.
+No runtime dependencies are required by this server beyond Node built-ins.
+
+Isolated local image acceptance passed with networknone and no published ports:
+451artifact files verified, Node version/AMD64 checked, health/demo/entry asset
+and both privacy supplements HTTP200, invalid Host403. Initial failures were in
+the helper's regular expression and the fetch client's Host behavior; corrected
+HTTP helper tests passed without application changes. The test container was
+removed. No production/browser/isolated collector activation acceptance is claimed.
+
+Readiness: ready for coordinator deploy slot; not deployed. Next import the exact
+archive, verify its digest/platform/labels, retain the current web rollback image
+and only recreate cop-web with unchanged existing runtime env/network/ports.
+Central source capability/registry and isolated test-website acceptance remain
+coordinator-owned; do not manufacture visits in actual statistics.
+
+## TikTok runtime maintenance — 2026-10-05
+
+The owner approved adding TikTok to the already reviewed general source categories.
+Only a service label `tiktok` is sent; full referrer, video/profile, query and
+fragment are never submitted. Exact tiktok.com and its subdomains are recognized;
+suffix lookalikes are excluded. Existing anonymous-session, DNT/GPC/offline,
+exact public demo path and empty event allowlist stay in place. CS/EN notices
+already describe normalized general sources and are unchanged.
+
+The bridge now loads the byte-exact reviewed VCode artifact as the public static
+`/vcode-analytics-tiktok.js` with SRI
+`sha384-JpAOJexapVVtAZAFpz3dwp4AHY8PLbao7cLk7Mg7VFIDy2g0/bOUl0zb/HO1qbX5`.
+Contract remains `vcode-public-v2`, collector remains `/analytics/v2/events`.
+The compatibility runtime/central endpoint is unchanged. The new static runtime
+bypasses service-worker caching, retries and replay; the release guard verifies
+its bytes and the bypass unconditionally.
+
+Prepared from actual production frontend revision 168471d in isolated branch
+`codex/cop-analytics-tiktok`; no unfinished API/route work is included. Adoption
+into subsequent development should cherry-pick this narrow maintenance commit
+and retain the existing enabled production configuration. Chroma was unreachable;
+selected source/runbooks were inspected directly. Acceptance uses isolated
+fixtures only and does not add synthetic pageviews to the production website.
