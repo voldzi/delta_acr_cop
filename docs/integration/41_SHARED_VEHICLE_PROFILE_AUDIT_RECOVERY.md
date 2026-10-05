@@ -1,6 +1,6 @@
 # Shared vehicle profile, audit and owner recovery
 
-Status2026-10-05: compatible implementation and targeted tests completed; public pin and production delivery pending. No actual user vehicles, records, identity, membership or calls changed for acceptance. JSON OpenAPI remains binding; no new endpoints.
+Status2026-10-05: compatible public SDK and API contract published; scoped COP API production deployment completed2026-10-05T19:34:00UTC. No actual user vehicles, records, identity, membership or calls changed for acceptance. JSON OpenAPI remains binding; no new endpoints.
 
 ## Owner-declared routing profile
 
@@ -33,3 +33,20 @@ CSMSharedVehicleAuditProfile.swift has independent typed mapped profile/dimensio
 ## Acceptance
 
 Targeted tests validate four mapped intents/dimensions, omission/owner/CAS, exact private owner binding and concurrent duplicates/transfer, original revision/author/payload after corrections/void/idempotence, corrected instrument reading, current reminders/completion/limit without cost leakage. Real isolated PostgreSQL validates unique binding under two concurrent connections and original audit/receipt/recovery through a fresh third connection. Actual new-phone/cloud restore and recipient notifications/navigation physical checks remain separate. Caller/title/member-count was only inspected separately; not changed by this vehicle contract.
+
+
+## Published delivery evidence
+
+SDK661027cfd4a5fb85c428718d7e2f51df64975100 (codex/shared-mobility-sdk), five own files only; pure clean public archive12targeted tests PASS. Mandatory full Xcode27.1 gate30appunit/5UI/129packageXCTest(1skip)/2SwiftTesting/2a11y PASS on explicit COPDuo with separate owned build artifacts. Earlier app launch failed with missing executable in prior build cache; final isolated mandatory gate passed. A new synthetic test needed its existing required kind argument; corrected before publication. No unpublished routing/China/caller files were included.
+
+COPimplementation9ea4f3f84fabf5472babc16997d358c0cd4131cf (codex/shared-vehicle-audit-profile). Server1319PASS/7skip,18targeted PASS and separate guarded isolated PostgreSQL7PASS. Lint/typecheck,11schemas,skeleton,binding OpenAPI valid with26existingwarnings. Default tests skip isolated PG case; separately executed against loopback temporaryPG16 then removed. No production users/records/membership used.
+
+MainJSON SHA2567372cc0b4e835f8e82bd39c22c3a3b79d1399ea87dfc519928aa2eacf0b3a02b; fragment84efec77b10d79458d247d63b0ea29f548ac122a856bed021f64db33f705a540. Image sha256:a5d442589f67e1495a41787cf104af71b5930f9ba0d33ca4cc3d2e66fa509cec tagdelta-acr-cop-api:vehicle-audit-9ea4f3f, start2026-10-05T19:34:00.112795506Z, extends prior ride-mileage image without dependency/config changes.470compiled-runtime/contract hashes verify source identity.
+
+Exact release/rollback HTTP acceptance used synthetic signed OIDC accounts, in-memory state and networknone. Release verifies ownerprofile+privatebinding/currentcare and actor isolation, legacy profile omission409, duplicate ownerbinding409, exact correctionbase/reason/recordrevision and unchanged retryreceipt, original payload history, readCosts isolation, logical void and recomputed odo. Only derived source profiles were validated, no paid/external routing requests or real GPS. Runtime health/lease checks are read-only.
+
+Guard-only rollback sha256:242abededd82107b53895cd592f1aaebefc4a629aa9f8d2203f5d3ae95803aa2 tagdelta-acr-cop-api:vehicle-audit-safe-rollback-20261005. Keeps profile/binding/audit data; rejects any old detail update when profile exists and any edit/void/indirect meter correction targeting newly audited records. New capability arrays absent; prior ride/v2 capabilities remain. Unrelated existing functionality retained. Never downgrade to unguarded old image after accepting new sealed fields. Rollback verified before delivery; not exercised against real users' data.
+
+Evidence on docker.home.cz:/home/voldzi/cop-deployments/shared-vehicle-audit-profile-20261005/ includes manifests, isolated release/rollback acceptance, deploy before/after and runtime proof. Config/secrets/compose hashes and134other container identities preserved. Actual phone navigation, restored owner local backup and system care notifications remain a separate Jízda acceptance.
+
+Read-only caller/member diagnosis: VoiceCallService.swift:190 uses push.senderDisplayName; Messaging matrix_push_payload.ex:66-86 selects sender naming metadata and passes it via APNs. No concrete callee-substitution cause confirmed without a reproducible call/correlated push. DomainModels.swift:464 only strips Matrix prefix/server/cop_, whereas MatrixIdentityStore.ex:161 and MatrixClient.ex:332 generate hashed localparts. A normalized hashed alias and raw OIDC UUID will remain distinct without trusted identity resolution; directPeer/count can therefore be wrong. Proper correction requires explicit verified Matrix-to-COP mapping, not names. Dirty caller/identity modules and production identities/calls/memberships untouched by this release.
