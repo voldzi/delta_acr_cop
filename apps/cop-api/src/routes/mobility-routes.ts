@@ -1,3 +1,4 @@
+import { MobilityInvitationOutbox } from "../mobility-invitation-outbox.js";
 import type { FastifyInstance } from "fastify";
 import { actorFromRequest } from "../security.js";
 import { correlationIdFrom, sendError } from "../errors.js";
@@ -14,9 +15,10 @@ export function registerMobilityRoutes(app: FastifyInstance, options: Options): 
   const service = options.store ? new SharedMobilityService(options.store, options.now) : undefined;
   if (options.enabled && !service) throw new Error("Shared mobility requires durable storage.");
   if (options.dispatchEnabled && !options.enabled) throw new Error("Private Dispatch requires shared mobility.");
+  const invitationOutbox = options.enabled && options.store && options.messagingProvider ? new MobilityInvitationOutbox(options.store, options.messagingProvider, options.now) : undefined;
   let retentionTimer: NodeJS.Timeout | undefined;
-  app.addHook("onReady", async () => { if (options.enabled) { await options.store!.init(); await service!.pruneRetainedData(); retentionTimer = setInterval(() => { void service!.pruneRetainedData().catch(() => undefined); }, 3600000); retentionTimer.unref(); if (options.dispatchEnabled) await service!.initializeDispatch((state, generation) => { app.log.info({ component: "private-dispatch", state, generation }, "Dispatch lease state changed."); }); } });
-  app.addHook("onClose", async () => { if (retentionTimer) clearInterval(retentionTimer); service?.closeDispatch(); if (options.enabled) await options.store?.close(); });
+  app.addHook("onReady", async () => { if (options.enabled) { await options.store!.init(); await service!.pruneRetainedData(); invitationOutbox?.start(); retentionTimer = setInterval(() => { void service!.pruneRetainedData().catch(() => undefined); }, 3600000); retentionTimer.unref(); if (options.dispatchEnabled) await service!.initializeDispatch((state, generation) => { app.log.info({ component: "private-dispatch", state, generation }, "Dispatch lease state changed."); }); } });
+  app.addHook("onClose", async () => { if (retentionTimer) clearInterval(retentionTimer); service?.closeDispatch(); await invitationOutbox?.close(); if (options.enabled) await options.store?.close(); });
   for (const [path, methods] of Object.entries(mobilityContract.paths)) for (const [method, operation] of Object.entries(methods)) {
     const routePath = path.replace(/\{([^}]+)\}/gu, ":$1");
     app.route({ method: method.toUpperCase() as "GET" | "POST" | "PUT" | "PATCH", url: routePath,

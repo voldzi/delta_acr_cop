@@ -121,3 +121,11 @@ Every acquisition stops previous share metadata and drops RAM points before
 readiness. Restored health never authorizes GPS: users must start sharing again.
 Rollback uses the captured previous API image with unchanged environment and
 network attachments. See integration/34_COP_DISPATCH_RECOVERY_RELEASE.md.
+
+## Invitation notification incident
+
+Check durable outbox state/attempt counts, Messaging APNs configuration and device
+registration/permissions without exposing email or tokens. Never create real
+user invitations or publish GPS for diagnosis. Preserve queued records through
+rollback; recipients can use the verified inbox. Device delivery remains best
+effort. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.

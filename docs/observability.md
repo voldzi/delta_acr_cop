@@ -123,3 +123,7 @@ returns200 with degraded status and a private-dispatch item. Capability states
 report shared vehicles and Dispatch separately. Record deployment source SHA,
 image ID, container start and repeated primary-lock observations separately
 from authenticated client and physical two-device acceptance.
+
+Invitation alert diagnostics use aggregate delivery/queue state only. Do not log
+notification payloads, account identity, emails, APNs tokens or provider errors.
+Record separate intake acceptance, APNs result and physical phone acceptance.

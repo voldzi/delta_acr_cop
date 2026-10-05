@@ -11189,7 +11189,9 @@ components:
           format: uuid
         bundleId:
           type: string
-          const: cz.voldzi.copmobile
+          enum:
+            - cz.voldzi.copmobile
+            - cz.voldzi.jizda
     MobileDeviceRegistrationTicketResponse:
       type: object
       additionalProperties: false
@@ -21593,3 +21595,15 @@ components:
           type: string
           minLength: 1
           maxLength: 512
+x-cop-mobility-invitation-notifications:
+  contractVersion: cop-mobility-invitation-notification-v1
+  transport: APNs alert via CSM Messaging
+  type: system.account
+  deepLink:
+    type: string
+    pattern: ^csm://mobility/invitations/v1/[0-9a-fA-F-]{36}/(vehicle|group)/[0-9a-fA-F-]{36}$
+  interaction: open_and_verify_only
+  recipientBinding: registered_verified_account_at_creation
+  delivery: durable_intake_best_effort_apns
+  lateRegistration: inbox_only_no_automatic_push
+  privacy: fixed generic text; no names, email, GPS, tokens or ciphertext

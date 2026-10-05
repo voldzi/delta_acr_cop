@@ -127,3 +127,10 @@ gates. A Messaging intake acceptance is not APNs/Web Push delivery proof;
 downstream retry/idempotency must be checked with Messaging. Production and
 physical acceptance are pending until recorded in
 [runbook 21](runbooks/21_COP_CRISIS_NOTIFICATIONS.md).
+
+## Invitation push delivery
+
+No new flags/secrets/networks. The existing Messaging/APNs integration delivers
+registered verified recipients from the durable COP outbox. Both API ticket
+allowlists must admit Jízda, and client signing/OS permission must enable ordinary
+APNs. Intake acceptance is not phone delivery. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.

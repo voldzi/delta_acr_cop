@@ -378,3 +378,10 @@ Dispatch still returns503 DISPATCH_UNAVAILABLE. No endpoint or error envelope
 changes. `/health/ready` returns503 HealthStatus(status=unavailable) while enabled
 Dispatch lacks a verified lease; `/health/dependencies` retains200 but reports
 degraded plus a private-dispatch unavailable item. Inspect body status.
+
+## Mobility invitation notifications
+
+The additive OpenAPI extension defines metadata-only ordinary APNs invitation
+links and verified session navigation. Existing queued invitation receipts and
+verified inbox remain unchanged. Device-registration tickets admit exactly
+cz.voldzi.copmobile and cz.voldzi.jizda. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.

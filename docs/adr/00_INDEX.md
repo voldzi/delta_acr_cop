@@ -47,3 +47,5 @@
 - [0040: Verified crisis notifications and separate media context](0040_VERIFIED_CRISIS_NOTIFICATIONS_AND_MEDIA_CONTEXT.md).
 
 - [0038: Dispatch lease recovery](0038_DISPATCH_LEASE_RECOVERY.md).
+
+- [0039: Durable mobility invitation alerts](0039_DURABLE_MOBILITY_INVITATION_ALERTS.md).
