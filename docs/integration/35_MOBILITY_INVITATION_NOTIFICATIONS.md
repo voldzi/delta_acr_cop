@@ -156,13 +156,16 @@ Measurements remain false, shared mobility and private dispatch true. Runtime
 Messaging validator now includes Jizda; APNs status remains live/configured,
 default production, both allowed topics. Device apnsEnvironment chooses the
 appropriate endpoint; this status does not prove Apple delivery in either one.
+Repeated read-only checks at 2026-10-05T13:44:43.635Z (over six minutes after
+COP restart) confirmed the same primary/one dedicated lease, all three health
+endpoints200 and all four anonymous endpoints401.
 
 Operational evidence lives under
 `/home/voldzi/cop-deployments/mobility-invitations-20261005/` on docker.home.cz:
 deployment-before-first-attempt.json, deployment-first-attempt.log,
 deployment-before.json, deployment-after.json, deployment.log,
 original-vs-final-config.json, runtime-check-first.json, COP artifact manifest and
-isolated-image logs. These contain no printed token or invitation/GPS payload.
+isolated-image logs and runtime-check-after-five-minutes.json. These contain no printed token or invitation/GPS payload.
 
 ### Remaining joint acceptance
 
