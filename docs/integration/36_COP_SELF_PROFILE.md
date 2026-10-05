@@ -44,3 +44,5 @@ Deployed COP API-only2026-10-05T14:41:20.186864193Z.
 Authenticated real account/avatar roundtrip and Jízda physical-phone/UI acceptance remain unverified; this release does not claim them.
 
 Binding full OpenAPI SHA256 at release: `609a285243e2d56a3075dba1561d7765ffda83f81ae0c0c68405601094212efd`.
+
+Post-restart stability recheck2026-10-05T14:47:03.100Z (5m43s after start): all three health endpoints200, profileGET/avatarPATCH401 without auth, fourmobilityroutes401, primaryDB andone dedicatedDispatchlease unchanged, existing featureflags unchanged. SDK documentation-only delivery23940b9; implementationpin remainsc0ae543. COP Chroma reindex697files/15indexed/682skipped/1191chunks/1158deleted completed.
