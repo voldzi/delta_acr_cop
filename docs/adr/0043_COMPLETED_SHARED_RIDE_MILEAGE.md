@@ -9,3 +9,5 @@ Calculate under the existing transaction lock from all current records, last act
 Only new independent typed-v1 ride insertion may use historical dataRevision1..current; current membership/recordRide, absent record ID and unique trip ID remain mandatory. All old payloads and edits use exact CAS. Do not mutate durable requests on retry. Capability rideInsertPolicy advertises this explicitly. ReadVehicle exposes the same nonfinancial mileage state/all ride authors; existing readCosts protects detailed costs. Do not change authentication, calls, Matrix, private history or actual user records for acceptance.
 
 See [handoff40](../integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md).
+
+Delivery: COP runtime0c27532 and SDK7257af3 published and API production deployed2026-10-05T18:10:43UTC. Detailed test/runtime/guard-only rollback evidence is in integration40; real-phone joint acceptance remains separate.

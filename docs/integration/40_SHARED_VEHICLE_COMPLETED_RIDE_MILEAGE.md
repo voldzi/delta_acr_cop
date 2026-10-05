@@ -1,6 +1,6 @@
 # Completed shared rides and mileage v2
 
-Status2026-10-05: compatible contract implemented/tested locally; public pins/image verification/deployment pending. No changes to identity, calls, Matrix or real user records.
+Status2026-10-05: compatible contract and public SDK published; COP API production deployment completed at18:10:43UTC, initial read-only runtime verified18:11:31UTC. No changes to identity, calls, Matrix or real user records.
 
 ## Additive contract and host
 
@@ -36,3 +36,19 @@ New public file CSMSharedVehicleRideMileage.swift:
 - SharedVehicle/Sync/Receipt.odometerSnapshotV2 optional and default-nil final init argument. Capabilities optional rideDetailsVersions,initialOdometerSupported,rideInsertPolicy/default-nil init arguments.
 - Public supportsOdometerSnapshotV2,supportsRideDetailsV1,supportsInitialOdometer,supportsCommutativeRideInsert. These signal contract support, not permission/readiness.
 - knownValueKm(for:expectedRevision)->String? only known; estimatedValueKm(for:expectedRevision)->String? only estimated, validates exact basis+delta and metadata. Both reject unsupported/stale/unknown/review. No zero/private fallback. Use current account/vehicle scope and matching current dataRevision; render a visible calculated label for estimated. Original receipt retries must not overwrite newer cached state.
+
+
+## Published delivery and verification
+
+- SDK `7257af34e944a1a45ac8a2e0b49f4e79a197f558`, branch `codex/shared-mobility-sdk`. Six intended files only; unrelated local mobile work was not published. Clean public archive:11 targeted ride/odometer/receipt tests PASS.
+- COP implementation `0c27532617c04ad3e668df2f9e42b474d2c0618b`, branch `codex/shared-vehicle-ride-mileage`. Documentation-only delivery evidence follows this runtime revision.
+- Binding main JSON SHA256 `dd30bc1d54775a2e30e7f825c4d96004a393520790c6c07dcbbca8dd371f77ec`; mobility fragment `568906c92f48ae33685fd88c9e68630b80d33f3a9c915d615226762f28eb9db5`.
+- Production image `sha256:145e11d774298df048939481eee56a553f6e1db2d33cdec7281a45818bf281d9`, tag `delta-acr-cop-api:ride-mileage-0c27532`, start2026-10-05T18:10:43.004666509Z. Extends prior odometer image with API runtime and contracts, no dependency/config changes.
+- Guard-only rollback `sha256:3bfaefbc98dc24a64811d9757529e6526ee74a3e65a6e81bdfca61854b050464`, tag `delta-acr-cop-api:ride-mileage-safe-rollback-20261005`. Extends old v1 image; refuses every legacy update of detailed rides with409 and keeps their payload. Any active detailed ride causes conservative v1reviewRequired; no v2/ride capability advertised. Never use unguarded old image after accepting detailed rides. Rollback disables host new features through absent capabilities; it does not delete history or transform calculated values into readings.
+- Full server1313PASS/6skip across164files; targeted17PASS including7new mileage cases; lint/typecheck,11schemas, skeleton, binding OpenAPI (26existingwarnings) and public analytics disabled guards PASS. Guarded PostgreSQL test separately executed with8PASS against loopback temporary PostgreSQL16, independent concurrent connections; temporary database removed. Default full suite skips that guarded external-database case.
+- SDK mandatory full gate PASS:30appunit,5UI,125packageXCTest(1skip),2SwiftTesting,2accessibility audits on explicit COP simulator. New4 tests plus clean-pin11 verify legacy decode, metadata/revision safety, known versus estimated, exact decimal consistency and capabilities.
+- Exact release and rollback images tested with isolated synthetic signed OIDC accounts, in-memory state and network none. Release hashes461 files; rollback hashes2patched files. Release verifies actual route responses, same old dataRevision concurrent independent appends, preserved original retry receipt, two authors/identities and same whole-state snapshot without prices, pagination, duplicate/omission/member/future fences and400unexpected GPS. Baseline100 plus10.125+20.25 becomes estimated130.375; later actual129 is known and covers those rides without addition. ISO UTC milliseconds and floor duration accepted. Rollback verifies details remain intact after rejected legacy edit and current mileage is not falsely declared known. These are isolated acceptance tests, not real-user production writes.
+- Runtime initial proof18:11:31UTC:461 file hashes match, threehealth200, sixanonymous401, PostgreSQL primary with exactly one dedicated Dispatch lease ready/generation1. Measurementsfalse/sharedMobilitytrue/Dispatchtrue preserved. Env/compose/config hashes and134other container identities unchanged. Production read-only checks did not use real users' records or alter membership.
+- Evidence directory on docker.home.cz `/home/voldzi/cop-deployments/shared-ride-mileage-20261005/`: image manifest, release/rollback acceptance logs, deployment before/after, runtime checks and guarded deploy script.
+
+Actual two-phone authenticated ride, account switch, offline/restart replay and UI-label acceptance must be supplied by Jízda. Simulator gates and isolated server evidence do not prove those. No actual GPS/trip/receipt/account membership was modified to manufacture acceptance.
