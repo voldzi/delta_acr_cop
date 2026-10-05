@@ -72,9 +72,10 @@ production Compose files. It does not restore sharing consent or RAM points.
   all401. Docker health healthy; logs show recovering→ready generation1.
 - Environment values (sorted hash), `.env` hash, network names, Compose files
   and every other running container ID match pre-deploy evidence. No mounts;
-  existing port4310 preserved. Initial combined configuration hash differed
-  because it included unsorted environment entries; post-validation separately
-  checked environment equality and inherited command/entrypoint configuration.
+  existing port4310 preserved. Initial combined configuration hash differed and included unsorted environment
+  entries. The identical sorted environment hash is consistent with an ordering
+  difference, but old raw field values/order were not retained: the exact cause
+  cannot be retrospectively proven. See the explicit configuration check below.
 - `COP_DRIVER_MEASUREMENTS_ENABLED=false` remains unchanged. No client GPS gate
   or actual sharing consent enabled. Production lease was never killed for testing.
 
@@ -100,3 +101,40 @@ dependencies remain200/ok and Dispatch ready generation1. The4 unauthenticated
 endpoints remain401 and measurementsfalse. No production fault or position
 publication was induced. This short observation does not prove future failover
 or authenticated device acceptance.
+
+## Configuration assertion clarification
+
+The deployment completed API recreation, then its combined-hash assertion failed.
+The old hash was `1ce1c94bfad93ad6cd3e46daddb43c394c174f66c937197fb3b65edf73ec91d1`;
+the new hash was `1d72fc748d096ca92176b5d80c1aead7a8148cf07dff61151f55002bece1065e`.
+That hash combined Env (unsorted), command, entrypoint, mounts, port bindings
+and sorted network names. The sorted Env hash is identical before/after:
+`86fc337d8dd154efeeae926ad8b5f0c03bd48aff296e4dcb1d557a7a4d816d9c`.
+The original old Env order and individual raw configuration fields were not
+retained, so an exact old-vs-new field/order diff is unavailable. Earlier wording
+that attributed the mismatch conclusively to Env ordering was too strong.
+
+At12:12:09Z, a fresh read-only validation performed10 explicit comparisons of
+current runtime against unchanged production Compose plus captured original
+image defaults. All passed: full environment map, port bindings, no mounts,
+entrypoint, command, working directory, user, networks, restart policy and
+healthcheck command. Environment and `.env` hashes also match the pre-deploy
+record. No secrets were emitted or saved by the comparison. Exact current values:
+
+- Port:4310/tcp→host4310, HostIp empty (unchanged Compose default).
+- Mounts: none.
+- Entrypoint: `docker-entrypoint.sh`.
+- Command: `pnpm --filter @cop/cop-api start`.
+- Networks: `cop_default`, `cop_sim_driver_measurements_internal`.
+
+This proves current critical configuration matches its unchanged declaration and
+original image defaults, with independently identical environment values. It does
+not recover the missing old per-field snapshot or prove the exact hash permutation.
+Protected server artifact: configuration-acceptance.json alongside before.json
+and after.json. A future release preflight must record canonical per-field hashes
+and sanitized non-secret settings before recreation. No further recreation or
+configuration change was performed for this clarification.
+
+Additional read-only runtime check12:10:52.792Z (>8minutes after start):
+primary, lease1/dedicated1, generation1 ready, live/ready/dependencies200/ok;
+anonymous account/capabilities/vehicles/groups401; measurementsfalse.
