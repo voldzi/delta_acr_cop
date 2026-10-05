@@ -1,3 +1,5 @@
+import { activeCareReminders, validSharedRoutingProfile, writeAudit } from "./mobility-vehicle-audit.js";
+import { canonicalJson } from "./routing-trip.js";
 import { sharedMileageViews, validateSharedRideRecord } from "./mobility-mileage.js";
 import { acceptsMobilitySchema } from "./mobility-contract.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -20,6 +22,7 @@ export type VehicleState = {
   records: Record<string, Wire.SharedVehicleRecord>;
   events: Wire.SharedVehicleSyncItem[];
   sequence: number;
+  ownerBinding?: Wire.SharedVehicleOwnerBinding;
   deletedAt?: string;
 };
 export type GroupState = {
@@ -154,8 +157,21 @@ export class MobilityService {
     requireMobility(member?.capabilities.includes(capability), 404, "NOT_FOUND", "Vozidlo není dostupné.");
     return state;
   }
-  vehicleView(state: VehicleState): Wire.SharedVehicle {
-    return { ...structuredClone(state.vehicle), ...sharedMileageViews(state, this.now()) };
+  vehicleView(state: VehicleState, account?: Wire.MobilityAccount): Wire.SharedVehicle {
+    const view = structuredClone(state.vehicle);
+    delete view.ownerBinding;
+    const owner = account && state.vehicle.members.some(m => m.accountId === account.accountId && m.role === "owner");
+    return { ...view, ...sharedMileageViews(state, this.now()), activeCareReminders: activeCareReminders(state),
+      ...(owner && state.ownerBinding?.ownerAccountId === account.accountId ? { ownerBinding: structuredClone(state.ownerBinding) } : {}) };
+  }
+  async bindOwnerVehicle(tx: MobilityTransaction, state: VehicleState, account: Wire.MobilityAccount, input: Wire.SharedVehicleOwnerBindingInput): Promise<void> {
+    requireMobility(state.vehicle.members.some(m => m.accountId === account.accountId && m.role === "owner"), 403, "OWNER_REQUIRED", "Vazbu vlastního vozidla potvrzuje pouze vlastník.");
+    requireMobility(acceptsMobilitySchema("SharedVehicleOwnerBindingInput", input), 422, "INVALID_OWNER_BINDING", "Neplatná vazba vozidla.");
+    const current = state.ownerBinding;
+    requireMobility(!current || current.ownerAccountId !== account.accountId || (current.version === 1 && current.localVehicleId === input.localVehicleId), 409, "OWNER_BINDING_CONFLICT", "Existující vazbu nelze nahradit jiným vozidlem.");
+    const duplicate = (await tx.scan<VehicleState>("vehicle:")).some(entry => entry.value.vehicle.vehicleId !== state.vehicle.vehicleId && !entry.value.vehicle.deleted && entry.value.ownerBinding?.ownerAccountId === account.accountId && entry.value.ownerBinding.localVehicleId === input.localVehicleId && entry.value.vehicle.members.some(m => m.accountId === account.accountId && m.role === "owner"));
+    requireMobility(!duplicate, 409, "OWNER_BINDING_EXISTS", "Vozidlo již má potvrzené propojení. Obnovte seznam vlastních vozidel.");
+    state.ownerBinding = { version: 1, localVehicleId: input.localVehicleId, ownerAccountId: account.accountId };
   }
   revisions(state: VehicleState, body: { expectedDataRevision?: number; expectedMembershipRevision: number }): void {
     requireMobility(
@@ -171,7 +187,8 @@ export class MobilityService {
     state: VehicleState,
     actor: Wire.MobilityAccount,
     type: Wire.SharedVehicleSyncItem["type"],
-    record?: Wire.SharedVehicleRecord
+    record?: Wire.SharedVehicleRecord,
+    audit?: Wire.SharedVehicleRecordAudit
   ): Promise<void> {
     state.sequence++;
     state.vehicle.updatedAt = this.now().toISOString();
@@ -180,6 +197,7 @@ export class MobilityService {
       type,
       authorAccountId: actor.accountId,
       createdAt: this.now().toISOString(),
+      ...(audit ? { audit: structuredClone(audit) } : {}),
       ...(record
         ? { record: structuredClone(record), recordId: record.recordId }
         : { vehicle: this.vehicleView(state) })
@@ -203,7 +221,7 @@ export class MobilityService {
       eventSequence: state.sequence,
       ...sharedMileageViews(state, this.now()),
       confirmed: true,
-      ...(recordId ? { recordId } : {})
+      ...(recordId ? { recordId, recordRevision: state.records[recordId]!.revision } : {})
     };
   }
   async createVehicle(account: Wire.MobilityAccount, input: Wire.SharedVehicleCreate): Promise<Wire.SharedVehicle> {
@@ -222,6 +240,7 @@ export class MobilityService {
         const memberships = (await tx.scan<VehicleState>("vehicle:")).filter(x => !x.value.vehicle.deleted && x.value.vehicle.members.some(m => m.accountId === account.accountId));
         requireMobility(memberships.length < 100, 429, "MEMBERSHIP_LIMIT", "Byl dosažen limit členství.");
         requireMobility(owned.length < 50, 429, "VEHICLE_LIMIT", "Byl dosažen limit vozidel.");
+        if (input.details.routingProfile) requireMobility(validSharedRoutingProfile(input.details.routingProfile), 422, "INVALID_SHARED_ROUTING_PROFILE", "Navigační profil vozidla není úplný nebo podporovaný.");
         const timestamp = this.now().toISOString();
         const vehicle: Wire.SharedVehicle = {
           contractVersion: "cop-shared-vehicles-v1",
@@ -243,8 +262,9 @@ export class MobilityService {
           deleted: false
         };
         const state: VehicleState = { vehicle, records: {}, events: [], sequence: 0 };
+        if (input.ownerBinding) await this.bindOwnerVehicle(tx, state, account, input.ownerBinding);
         await this.vehicleEvent(tx, state, account, "vehicle");
-        return this.vehicleView(state);
+        return this.vehicleView(state, account);
       }
     );
   }
@@ -259,22 +279,29 @@ export class MobilityService {
               (m) => m.accountId === account.accountId && m.capabilities.includes("readVehicle")
             )
         )
-        .map((x) => this.vehicleView(x.value))
+        .map((x) => this.vehicleView(x.value, account))
         .slice(0, 100),
       serverTimestamp: this.now().toISOString()
     }));
   }
   async getVehicle(account: Wire.MobilityAccount, id: string): Promise<Wire.SharedVehicle> {
-    return this.store.transact([`vehicle:${id}`], async (tx) => this.vehicleView(await this.vehicle(tx, id, account)));
+    return this.store.transact([`vehicle:${id}`], async (tx) => this.vehicleView(await this.vehicle(tx, id, account), account));
   }
   async updateVehicle(
     account: Wire.MobilityAccount,
     id: string,
     input: Wire.SharedVehicleUpdate
   ): Promise<Wire.SharedVehicleReceipt> {
-    return this.operation(account, input.operationId, `vehicle:${id}:update`, input, [`vehicle:${id}`], async (tx) => {
+    return this.operation(account, input.operationId, `vehicle:${id}:update`, input, [`vehicle:${id}`, `owner:${account.accountId}`], async (tx) => {
       const state = await this.vehicle(tx, id, account, "editVehicle");
       this.revisions(state, input);
+      const previousProfile = state.vehicle.details.routingProfile;
+      requireMobility(!previousProfile || (previousProfile.version === 1 && input.details.routingProfile), 409, "SHARED_ROUTING_PROFILE_REQUIRED", "Zachovejte celý podporovaný navigační profil vozidla.");
+      if (input.details.routingProfile) {
+        requireMobility(validSharedRoutingProfile(input.details.routingProfile), 422, "INVALID_SHARED_ROUTING_PROFILE", "Neplatný navigační profil vozidla.");
+        if (canonicalJson(previousProfile ?? null) !== canonicalJson(input.details.routingProfile)) requireMobility(state.vehicle.members.some(m => m.accountId === account.accountId && m.role === "owner"), 403, "OWNER_REQUIRED", "Navigační profil vozidla nastavuje vlastník.");
+      }
+      if (input.ownerBinding) await this.bindOwnerVehicle(tx, state, account, input.ownerBinding);
       state.vehicle.details = input.details;
       state.vehicle.dataRevision++;
       await this.vehicleEvent(tx, state, account, "vehicle");
@@ -369,6 +396,8 @@ export class MobilityService {
           "AUTHOR_REQUIRED",
           "Cizí záznam může opravit pouze vlastník."
         );
+      const auditResult = writeAudit(state, input);
+      if (auditResult.issue) throw new MobilityFailure(auditResult.issue.status, auditResult.issue.code, "Oprava vyžaduje ověřený původní záznam a revizi.");
       const previousDetails = current && (current.data.kind === "energy" || current.data.kind === "service" || current.data.kind === "ride_summary") ? current.data.details : undefined;
       requireMobility(!previousDetails || previousDetails.version === 1, 409, "DETAILS_VERSION_REQUIRED", "Tuto verzi detailů nelze touto aplikací upravit.");
       const incomingDetails = input.data.kind === "energy" || input.data.kind === "service" || input.data.kind === "ride_summary" ? input.data.details : undefined;
@@ -418,7 +447,7 @@ export class MobilityService {
       };
       state.records[record.recordId] = record;
       state.vehicle.dataRevision++;
-      await this.vehicleEvent(tx, state, account, "record", record);
+      await this.vehicleEvent(tx, state, account, "record", record, auditResult.audit);
       return this.vehicleReceipt(state, input.operationId, record.recordId);
     });
   }
@@ -450,10 +479,12 @@ export class MobilityService {
           "AUTHOR_REQUIRED",
           "Cizí záznam může odstranit pouze vlastník."
         );
+        requireMobility(Boolean(input.reason.trim()), 422, "INVALID_RECORD_CORRECTION", "Storno vyžaduje důvod.");
+        const audit: Wire.SharedVehicleRecordAudit = { version: 1, action: "void", operationId: input.operationId, previousRecordId: record.recordId, previousRecordRevision: record.revision, reason: input.reason.trim() };
         record.deleted = true;
         record.revision++;
         state.vehicle.dataRevision++;
-        await this.vehicleEvent(tx, state, account, "deleted", record);
+        await this.vehicleEvent(tx, state, account, "deleted", record, audit);
         return this.vehicleReceipt(state, input.operationId, record.recordId);
       }
     );
