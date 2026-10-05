@@ -62,3 +62,5 @@ Public demo analytics: [integration and release gate](analytics/integration.md),
 - [31. Jízda community reports and police patrols](integration/31_JIZDA_COMMUNITY_REPORTS.md): server feed decisions, police category, shared SDK and production evidence.
 
 - [Public search discovery](analytics/search-discovery.md): public landing page, crawler rules and search-engine acceptance.
+
+- [32. COP Dispatch lease recovery](integration/32_COP_DISPATCH_LEASE_RECOVERY.md): approved API-only runtime recovery, observed health gap and separate proposal for lease recovery/readiness.
