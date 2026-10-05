@@ -77,18 +77,104 @@ aps-environment; Debug uses sandbox, distribution production.
 
 ## Verification / rollout status
 
-Prepared, production rollout pending. Server targeted tests passed29, ticket/
-COP state regressions30; new outbox cases cover both types, concurrent workers,
-retry/restart, privacy payload, atomic rollback, unknown/unverified email,
-revocation, expiry, acceptance and email/verification change. SDK110 XCTest
-(109 passed,1 private replay skipped) plus2 SwiftTesting passed. Three new SDK
-cases cover strict parsing and account/expiry/revocation/session-race resolution.
-Full Mobile check, full server checks, exact published pins and isolated packaged
-runtime/deployment evidence follow below when complete. No real account, invite,
-GPS or user device push is used as synthetic acceptance. Physical delivery to
-both phones, background/cold-start and actual sandbox/production delivery remain
-joint acceptance gates. Jízda separately owns ride-start local reminders;
-COP has no ride-start signal and does not infer one. SIM measurements remainfalse.
+Server rollout completed 2026-10-05. SDK public code pin:
+`b587438827fcd3db159a47df616745a4f26e2ef1` (`COP-Mobile`,
+`codex/shared-mobility-sdk`). COP code source:
+`5137c6bd8e77c7581b6ecb828d41c4b6b350865f`
+(`codex/cop-mobility-invitation-push`). Messaging validator source:
+`d311b2c85c15e8f00cd62c5d3fdf83198d665e3d`
+(`codex/jizda-apns-ticket`). Documentation commits do not change these runtime
+code revisions. Production checkouts remain COP6583cb5 and Messaging2246290;
+the exact narrow immutable runtime overlays below are deployed.
+
+Binding full OpenAPI SHA256:
+`caac490de1dce7ff92194ddf7fe9b16faddf5d43740678baecf33ea2af6559d1`.
+Mobility fragment SHA256:
+`9207fb22d3c2c9eace5d9a76dc07185015dacd499c123f6290bf970714955e6e`.
+
+### Tests actually performed
+
+- COP full suite:1289 passed,3 skipped; final outbox suite12 passed, including
+  actual HTTP provider serialization with synthetic authorization and exact
+  invitation/recipient idempotency. Other targeted suites29 and30 passed;
+  these counts overlap and must not be added as distinct coverage.
+- Outbox tests cover both types, concurrent workers, retry/restart, privacy
+  payload, atomic rollback, unknown/unverified email, revocation, expiry,
+  acceptance and changed email/verification. Server lint/API build/schema11/
+  skeleton passed; binding OpenAPI validation passed with26 existing warnings.
+- Isolated prepared COP image29 checks passed; isolated prepared Messaging
+  module9 signed-ticket/allowlist/expiry/replay/signature checks passed. These
+  containers used only synthetic credentials and network none. Messaging full
+  Mix suite was not run; the exact isolated compiled-module checks are the
+  evidence for this one-module change.
+- Mobile mandatory `scripts/check.sh` passed with approved Xcode27.1/27A9269:
+  30 app unit tests,5 app UI tests,111 package XCTest cases (110 passed,
+  1 private replay skipped),2 SwiftTesting cases and2 accessibility audits.
+- Four new SDK tests passed independently in a clean archive of the public pin,
+  excluding all other unpublished Mobile changes. They test strict URLs,
+  current-account/inbox/expiry/revocation/session races and host-category merge.
+- Initial signed-in UI audits failed because the test searched exact
+  chat.workspace only as element type Other. The active Duo display proved
+  the signed-in synthetic chat was visible. The corrected locator keeps the
+  exact ID and all audit categories; complete Debug workflow then passed.
+  Release preview authentication remains disabled. Separate Release simulator
+  build passed. No physical-device delivery is inferred from these results.
+- Category helper tests use real UNNotificationCategory values without
+  instantiating UNUserNotificationCenter.current in a headless runner. Actual
+  OS center registration/coexistence with RIDE_START_CATEGORY remains a device
+  acceptance case; SDK preserves the host delegate and non-owned categories.
+
+### Deployed runtime and preservation
+
+| API | Immutable image | UTC start |
+| --- | --- | --- |
+| COP | sha256:3e860fb34dc68426f3dbc33bf24149f0c6ed8346fe1ff08116b0f4fec9467b19 | 2026-10-05T13:38:29.32702159Z |
+| Messaging | sha256:556c7784a918150f553997c8197d91e4e2b2f08baf0fe3d4fe38e7e35f33eed0 | 2026-10-05T13:38:11.690436024Z |
+
+Both are healthy with readiness200. Actual running hashes match all17 COP
+compiled/contract artifacts and the single Messaging validator BEAM artifact.
+Inherited base-image layers and settings were verified before replacement.
+Only the two APIs were recreated; all132 other container IDs are unchanged.
+Environment (sorted), commands, entrypoint, healthcheck, resource/security
+HostConfig, mounts, ports, static network aliases, Compose labels and the existing
+.env/Compose files were compared. No secret, network, consent or SIM measurement
+configuration was changed.
+
+The first Messaging attempt was automatically rolled back because its raw
+HostConfig digest differed. Exact reconstruction proved that *only* Dns,
+DnsOptions and DnsSearch changed representation from [] to null. Changing these
+three empty values back reproduced the original raw digest exactly; no other
+field was ignored. The second attempt normalizes precisely those three fields.
+Final COP raw HostConfig equals the original without any changes; final Messaging
+matches after that proven empty-value normalization. The original attempt,
+rollback and comparison artifacts are retained, rather than overwritten.
+
+At 2026-10-05T13:39:30.976Z, read-only production checks confirmed primary DB,
+one exclusive dispatch lease and one dedicated lease connection, live/ready/
+dependencies200, and four anonymous mobility/vehicle/dispatch requests401.
+Measurements remain false, shared mobility and private dispatch true. Runtime
+Messaging validator now includes Jizda; APNs status remains live/configured,
+default production, both allowed topics. Device apnsEnvironment chooses the
+appropriate endpoint; this status does not prove Apple delivery in either one.
+
+Operational evidence lives under
+`/home/voldzi/cop-deployments/mobility-invitations-20261005/` on docker.home.cz:
+deployment-before-first-attempt.json, deployment-first-attempt.log,
+deployment-before.json, deployment-after.json, deployment.log,
+original-vs-final-config.json, runtime-check-first.json, COP artifact manifest and
+isolated-image logs. These contain no printed token or invitation/GPS payload.
+
+### Remaining joint acceptance
+
+No real account, invitation, GPS or user-device push was created for tests.
+No old invitations were backfilled. Actual Apple sandbox/production delivery,
+permission denied, foreground/background/locked/cold-start handling, account
+switch, revoked/expired link, host-category coexistence and return to a running
+ride remain physical-device tests. Only iPhone16v is authorized for Jizda; do not
+use Jirina's phone. Inbox remains available when delivery fails. Invitations
+never automatically accept membership or authorize GPS. Jizda separately owns
+ride-start local reminders; COP has no ride-start signal and does not infer one.
+SIM measurements remain false.
 
 ## Rollback
 
