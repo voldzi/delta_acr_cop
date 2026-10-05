@@ -1,6 +1,6 @@
 # Shared vehicle record details v1: contract and handoff
 
-Status2026-10-05: implemented and tested locally; public SDK/code pins and governed API-only production delivery pending. Binding JSON: `openapi/openapi.json` and `docs/api/shared-mobility-v1.openapi.json`. Do not present local implementation as an active production capability.
+Status2026-10-05: published SDK and COP code; API-only production delivery completed at15:59:16UTC. Binding JSON: `openapi/openapi.json` and `docs/api/shared-mobility-v1.openapi.json`. Authenticated detail capability was verified with synthetic OIDC in the exact release image; production runtime artifacts and availability verified read-only. Real phone receipt acceptance remains separate.
 
 ## User requirement and existing source
 
@@ -74,10 +74,10 @@ No live GPS, latitude/longitude, location accuracy/source, inferred ride locatio
 
 ## Integration / acceptance handoff
 
-1. COP JSON contract and fragment, generated TypeScript/Swift DTOs, explicit capabilities and semantic validation, bounded payloads. No capability claim in current production.
+1. COP JSON contract and fragment, generated TypeScript/Swift DTOs, explicit capabilities and semantic validation, bounded payloads. Exact release image advertises version1; production runtime artifact hash matches it.
 2. Persistence readback/restart, receipt-level atomicity, operation retry/idempotency, two-account/role isolation, readCosts filtering, stale revisions, omission/unknown-version guards, all fields and explicit removals preserved. Tests use synthetic text/stations/items, never real accounts or GPS.
 3. Jízda reuses existing forms with storage target and read-only/disabled role UX. Same validation across local/shared amounts, visible length/unit limits, no local record duplication or partial receipt saving. Ordinary vehicle list combines local models and remote identities without manufacturing duplicate storage.
-4. Joint acceptance on authorized phones; only then necessary scoped backend/SDK publication and production delivery under the applicable human authorization. Successful receipt acceptance does not prove navigation or traffic benefit.
+4. Joint acceptance on authorized phones remains separate from the scoped backend/SDK publication and production delivery authorized for these shared forms. Successful receipt acceptance does not prove navigation or traffic benefit.
 
 Unrelated caller/membership fixes remain separately awaiting human approval. No real user data, GPS, account or vehicle was created/changed for tests.
 
@@ -91,4 +91,17 @@ Unrelated caller/membership fixes remain separately awaiting human approval. No 
 
 ## Delivery
 
-Pending exact versioned SDK/API image. Rollback must preserve records with new details: older clients/server images are not allowed to silently erase them. Pause shared-record writes before an older-image rollback, or use a tested older-image overlay that retains the DETAILS_VERSION_REQUIRED protection. Existing phone clients can read known summaries, but must be disabled for editing detailed records until the supporting SDK is integrated. Keep production data unchanged during acceptance.
+- SDK implementation/public pin: `98d1c383ec024f98ba501dfebd954354bd2b1b64`, branch `codex/shared-mobility-sdk` (COP-Mobile). Clean commit archive: four new tests PASS.
+- COP implementation/public pin: `1dfe394ca12849ca5f4df4fb61336d99ccf27a4f`, branch `codex/shared-vehicle-record-details`.
+- Binding JSON SHA256: `ebb7f3d299149d67679e816511577ee0146f951cb18e0ebccef10fc74616be42`.
+- Mobility fragment SHA256: `44c79634dee5ebea21e2f941c53165c79359166050946c235f471f2fa80441c9`.
+- Production API image: `sha256:1539f6813a70650dc0d2e520d7c68c7ca75322c50f7675d829747ad852c4c05e`, tag `delta-acr-cop-api:record-details-1dfe394`, started2026-10-05T15:59:16.630196293Z. Configuration/secrets/compose unchanged;134other container identities unchanged. SIM/Messaging/web unaffected.
+- Tested compatibility rollback: `sha256:cea34e9fa9fbbeb4c6e707110ec9a3a791542573c6538f360201bf89bb6b07ff`, tag `delta-acr-cop-api:record-details-safe-rollback-20261005`. Previous self-profile image plus only a guard rejecting edits of existing detailed records409. Does not advertise new details capability. Do not substitute an unguarded older image, which could erase details.
+- Both exact images passed isolated network-none synthetic signed OIDC HTTP checks: two-account isolation, capability, complete single receipt readback, persisted retry, omission409/no mutation. Release also rejects bad total422 and unknown/GPS fields400.446release artifact hashes match running production; rollback guard hash verified separately.
+- Production read-only at16:00:30UTC: three health200, six anonymous boundary requests401, primary PostgreSQL, one dedicated Dispatch lease ready/generation1. Measurementsfalse/sharedMobilitytrue/Dispatchtrue unchanged. No signed-in real receipt, account, member or GPS was changed for proof.
+- Evidence host: `/home/voldzi/cop-deployments/shared-record-details-20261005/`. Existing phone clients can read known summaries, but must be disabled for editing detailed records until the supporting SDK is integrated. Keep production data unchanged during acceptance.
+
+
+## Explicit remaining odometer boundary
+
+This receipt release retains Energy.details.odometerKm and Service.odometerKm as part of the single atomic receipt. It does not yet provide an authoritative current shared odometer snapshot independent of sync pagination and readCosts. Energy/service records remain entirely hidden from members without readCosts. Clients must not derive or claim shared current kilometers from a partial event page or overwrite personal CloudKit history. A separately documented compatible odometer projection, accounting for dates, revisions, correction and tombstones, is required to meet that further requirement.
