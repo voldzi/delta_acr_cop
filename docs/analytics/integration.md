@@ -318,3 +318,27 @@ into subsequent development should cherry-pick this narrow maintenance commit
 and retain the existing enabled production configuration. Chroma was unreachable;
 selected source/runbooks were inspected directly. Acceptance uses isolated
 fixtures only and does not add synthetic pageviews to the production website.
+
+### Production acceptance
+
+Frontend runtime source `c7beee2` deployed as
+`sha256:227eb3f22c55de97cebe466dbcefc48677fc57a424b3ef838d6ce3d208c99d89`.
+Only cop-web was recreated; API container ID/image/environment and web environment,
+command, working directory, ports and Compose configuration fingerprint stayed
+unchanged. Previous image retained as `delta-acr-cop-web:before-tiktok-c7beee2`.
+Static dist was compiled from actual prior production revision plus this narrow
+patch using existing production public build configuration, then packaged over
+the unchanged runtime base. No other checkout/source release was deployed.
+
+67 focused bridge, PWA, guard and TikTok fixture tests passed. Skeleton, scoped
+ESLint, web typecheck and production build passed; existing large Cesium chunk
+warning remains. Public `/health/ready`, demo and both privacy supplements returned
+200. Actual served bridge includes new runtime path/SRI and original v2 collector;
+served runtime bytes match the exact reviewed SRI. HTTP reads used DNT/GPC and no
+collector POST or genuine visitor data. Parent coordinator separately owns registry
+and isolated collector acceptance. Private before/after snapshots and packaging
+journal are retained server-side in `tiktok-c7beee2` deployment directory.
+
+To adopt in active development, cherry-pick the maintenance commit c7beee2,
+then this evidence-only documentation commit; do not merge unfinished work or
+change production enablement. Release guard prevents stale runtime pin/bypass.
