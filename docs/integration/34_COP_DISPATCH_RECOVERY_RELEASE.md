@@ -2,7 +2,7 @@
 
 ## Scope and current status
 
-Prepared narrow API/SDK correction, production rollout pending. Authorized
+Narrow API/SDK correction published; API deployed2026-10-05 at14:02:48CEST. Authorized
 by the user in the Jízda thread: repair and deploy COP; brief API interruption
 accepted; no automatic restoration of position. No SIM measurement changes,
 new accounts/vehicles/invites or activation of real shares.
@@ -21,7 +21,7 @@ wire-v1 contracts remain unchanged. Swift nil means unknown, not ready.
 - Typecheck/lint,11 schema checks, OpenAPI validation and API build passed.
   OpenAPI has26 existing warnings.
 - SDK:107 tests,106 passed,1 private replay skipped.
-- COP Mobile mandatory check passed including app and package tests plus2
+- COP Mobile mandatory check passed including30 app tests,107 package tests plus2
   accessibility tests, on approved Xcode27.1/27A9269/SDK27.1 simulator.
 - Old-generation delayed snapshot fails503; late events cannot replace the
   current owner. Readiness503/capabilities200 independent states verified.
@@ -40,4 +40,55 @@ recreate only cop-api. Capture previous image/tag and other container IDs.
 Rollback retags the captured image and recreates only cop-api using unchanged
 production Compose files. It does not restore sharing consent or RAM points.
 
-Exact published revisions and post-deployment observations follow after rollout.
+## Published revisions and production evidence
+
+- COP implementation/source: `2f4bc4dfc15bb10182e340b0ef43fde679cab8f6`,
+  branch `codex/cop-dispatch-recovery-release`.
+- Mobile SDK: `e8cb4d53c128f797521f1db0cf312304bfa550bc`,
+  branch `codex/shared-mobility-sdk`. Clean archived published pin builds and
+  passes all3 new availability tests. The full107-test SDK and mandatory Mobile
+  check also ran in the existing working tree, including unrelated unpublished
+  routing/China work; those changes were preserved and excluded from this pin.
+- Binding fragment SHA256:
+  `335ed77bbf1826d7c552ee9dd0d4b1f2dffb9684e73f60d1193d6a10cb17c547`.
+- Full OpenAPI JSON SHA256:
+  `fc596d4baef30a400585678adbd696922575cc04c6ff10c05348bb7906368889`.
+- Image: `sha256:d4b41a0ff330bc9325bee79b599eb1efc2995a7e5cba3c108fff7c3f7285f02b`.
+- Container: `e29be47e67bac1d966f149040dfa24f36d8974a63a8064311ab44b7d5a673053`.
+- Start: `2026-10-05T12:02:48.998460716Z` (14:02:48CEST).
+- Production source checkout remains `6583cb5ab659044cc681294ee291f9b08135a4bc`;
+  the runtime image label identifies the published overlay source above.
+- Inherited base: `sha256:d4f9b1f6ee9121f85640e6445a0926928a0c07271a77b617256ec1b9e200e5b8`.
+  Its layer prefix and runtime configuration were verified. Runtime overlay
+  has20 selected compiled/contract files, whose hashes match production.
+- Package transfer SHA256:
+  `10ffe211a30fe4983efe1706c9fc57c5d235afee4e2ec87b25958b6ed51f8dd3`.
+- Isolated packaged image:16 checks passed with2 signed synthetic accounts,
+  network disabled and no production credentials. Account isolation, unauthorized
+  rejection, capability separation, private503 and ready503/recovery200 verified.
+- At12:03:32.813Z and12:05:14.858Z: DB primary, exactly one granted lease and
+  one owner with application_name `cop-private-dispatch-lease`; live/ready/dependencies
+  all200/ok, Dispatch ready generation1. Anonymous account/capabilities/vehicles/groups
+  all401. Docker health healthy; logs show recovering→ready generation1.
+- Environment values (sorted hash), `.env` hash, network names, Compose files
+  and every other running container ID match pre-deploy evidence. No mounts;
+  existing port4310 preserved. Initial combined configuration hash differed
+  because it included unsorted environment entries; post-validation separately
+  checked environment equality and inherited command/entrypoint configuration.
+- `COP_DRIVER_MEASUREMENTS_ENABLED=false` remains unchanged. No client GPS gate
+  or actual sharing consent enabled. Production lease was never killed for testing.
+
+Rollback image tag: `delta-acr-cop-api:rollback-before-dispatch-recovery-20261005`.
+Production uses `/srv/cop/docker-compose.yml` plus
+`/srv/cop/docker-compose.driver-measurements.yml`. To roll back, retag the
+captured prior image as `delta-acr-cop-api:local` and recreate only cop-api
+with `--no-build --no-deps --force-recreate` using those unchanged files.
+Rollback procedure is prepared; no production rollback was exercised.
+The isolated RAM PostgreSQL container was removed after testing.
+
+Remaining gates: authenticated real-account loading and explicit-consent
+two-phone sharing/start/stop/account-change/outage acceptance with Jízda.
+No physical tests or battery/network claims. Do not enable its GPS gate from
+health status alone. Chroma Mobile reindex previously timed out; fresh index
+completion is not confirmed.
+
