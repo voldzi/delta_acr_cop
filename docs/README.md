@@ -76,3 +76,5 @@ Public demo analytics: [integration and release gate](analytics/integration.md),
 - [38: Shared vehicle record details v1](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md): same forms, lossless receipts; release and device acceptance status.
 
 - [Shared vehicle odometer snapshot](integration/39_SHARED_VEHICLE_ODOMETER_SNAPSHOT.md): explicit versioned whole-state projection, separately gated from receipt details.
+
+- [Completed shared ride mileage](integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md): explicit calculated v2 mileage, covered ride deduplication and initial reading.

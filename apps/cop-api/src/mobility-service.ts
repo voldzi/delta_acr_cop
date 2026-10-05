@@ -1,4 +1,4 @@
-import { sharedOdometerSnapshot } from "./mobility-odometer.js";
+import { sharedMileageViews, validateSharedRideRecord } from "./mobility-mileage.js";
 import { acceptsMobilitySchema } from "./mobility-contract.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { MobilityStore, MobilityTransaction } from "./mobility-store.js";
@@ -155,7 +155,7 @@ export class MobilityService {
     return state;
   }
   vehicleView(state: VehicleState): Wire.SharedVehicle {
-    return { ...structuredClone(state.vehicle), odometerSnapshot: sharedOdometerSnapshot(state, this.now()) };
+    return { ...structuredClone(state.vehicle), ...sharedMileageViews(state, this.now()) };
   }
   revisions(state: VehicleState, body: { expectedDataRevision?: number; expectedMembershipRevision: number }): void {
     requireMobility(
@@ -201,7 +201,7 @@ export class MobilityService {
       dataRevision: state.vehicle.dataRevision,
       membershipRevision: state.vehicle.membershipRevision,
       eventSequence: state.sequence,
-      odometerSnapshot: sharedOdometerSnapshot(state, this.now()),
+      ...sharedMileageViews(state, this.now()),
       confirmed: true,
       ...(recordId ? { recordId } : {})
     };
@@ -352,8 +352,9 @@ export class MobilityService {
   ): Promise<Wire.SharedVehicleReceipt> {
     return this.operation(account, input.operationId, `vehicle:${id}:record`, input, [`vehicle:${id}`], async (tx) => {
       const state = await this.vehicle(tx, id, account, this.recordCapability(input.data));
-      this.revisions(state, input);
       const current = state.records[input.recordId];
+      const independentRideInsert = !current && input.expectedRecordRevision === 0 && input.data.kind === "ride_summary" && input.data.details?.version === 1 && Number.isSafeInteger(input.expectedDataRevision) && input.expectedDataRevision >= 1 && input.expectedDataRevision <= state.vehicle.dataRevision;
+      this.revisions(state, independentRideInsert ? { expectedMembershipRevision: input.expectedMembershipRevision } : input);
       requireMobility(
         (current?.revision ?? 0) === input.expectedRecordRevision && !current?.deleted,
         409,
@@ -368,11 +369,14 @@ export class MobilityService {
           "AUTHOR_REQUIRED",
           "Cizí záznam může opravit pouze vlastník."
         );
-      const previousDetails = current && (current.data.kind === "energy" || current.data.kind === "service") ? current.data.details : undefined;
+      const previousDetails = current && (current.data.kind === "energy" || current.data.kind === "service" || current.data.kind === "ride_summary") ? current.data.details : undefined;
       requireMobility(!previousDetails || previousDetails.version === 1, 409, "DETAILS_VERSION_REQUIRED", "Tuto verzi detailů nelze touto aplikací upravit.");
-      const incomingDetails = input.data.kind === "energy" || input.data.kind === "service" ? input.data.details : undefined;
+      const incomingDetails = input.data.kind === "energy" || input.data.kind === "service" || input.data.kind === "ride_summary" ? input.data.details : undefined;
       requireMobility(!previousDetails || (incomingDetails && current!.data.kind === input.data.kind), 409, "DETAILS_VERSION_REQUIRED", "Podrobný záznam vyžaduje úplné detaily podporované verze. Aktualizujte aplikaci.");
+      if (input.data.kind === "odometer" && input.data.initial) requireMobility(state.vehicle.members.find(m => m.accountId === account.accountId)?.role === "owner", 403, "OWNER_REQUIRED", "Počáteční společný odečet zakládá vlastník.");
       validateSharedRecordDetails(input.data);
+      const rideIssue = validateSharedRideRecord(state, input.recordId, input.data, this.now());
+      if (rideIssue) throw new MobilityFailure(rideIssue.code === "INVALID_RIDE_INTERVAL" ? 422 : 409, rideIssue.code, rideIssue.message);
       try {
         new Intl.DateTimeFormat("cs", { timeZone: input.timeZone }).format();
       } catch {
@@ -531,7 +535,7 @@ export class MobilityService {
         hasMore: pending.length > limit,
         dataRevision: state.vehicle.dataRevision,
         membershipRevision: state.vehicle.membershipRevision,
-        odometerSnapshot: sharedOdometerSnapshot(state, this.now()),
+        ...sharedMileageViews(state, this.now()),
         serverTimestamp: this.now().toISOString()
       };
     });

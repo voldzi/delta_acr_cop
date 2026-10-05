@@ -158,3 +158,5 @@ Own avatar writes decode/re-encode bounded images without metadata and use verif
 Shared receipt details retain existing vehicle/cost ACL and prohibit structured GPS; older incomplete edits are rejected. [Boundary](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md).
 
 Shared odometer snapshot exposes only kilometer value/date/source-record reference to readVehicle members. Original cost payloads, notes and authors remain separately protected; no GPS or automatic private history transfer is added. See [handoff39](integration/39_SHARED_VEHICLE_ODOMETER_SNAPSHOT.md).
+
+Completed shared rides expose coarse distance/time/author to existing readVehicle members, without GPS traces/destination/passengers. Current membership and role remain strict for commutative insert; owner-only initial seeding and readCosts boundaries remain enforced. See [handoff40](integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md).
