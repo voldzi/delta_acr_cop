@@ -1,3 +1,4 @@
+import { readVoiceCallPeer, type VoiceCallPeer } from "./voice-call-peer.js";
 import { registerCOPAccountProfile } from "./cop-account-profile.js";
 import { registerMobilityRoutes } from "./routes/mobility-routes.js";
 import { mobilityStoreFromEnv, type MobilityStore } from "./mobility-store.js";
@@ -5086,7 +5087,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const media = await voiceCallMediaIssuer.issue(call, actor, requestNow);
-      return reply.code(201).send(voiceCallAPIResponse(call, actor.subjectId, media));
+      return reply.code(201).send(voiceCallAPIResponse(call, actor.subjectId, media, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id))));
     },
     voiceCalls: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -5117,7 +5118,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         ...(roomId ? { roomId } : {})
       });
       return {
-        calls: calls.map((call) => voiceCallView(call, actor.subjectId)),
+        calls: await Promise.all(calls.map(async (call) => voiceCallView(call, actor.subjectId, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id))))),
         contractVersion: "cop-voice-call-v1" as const
       };
     },
@@ -5152,7 +5153,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         canIssueVoiceCallMedia(call, actor.subjectId) && voiceCallMediaIssuer.enabled
           ? await voiceCallMediaIssuer.issue(call, actor, now())
           : undefined;
-      return voiceCallAPIResponse(call, actor.subjectId, media);
+      return voiceCallAPIResponse(call, actor.subjectId, media, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id)));
     },
     transitionVoiceCall: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -5200,7 +5201,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       if (!result.changed && (result.conflict === "revision" || result.conflict === "claimed")) {
-        return reply.code(409).send(voiceCallAPIResponse(result.record, actor.subjectId));
+        return reply.code(409).send(voiceCallAPIResponse(result.record, actor.subjectId, undefined, await readVoiceCallPeer(result.record, actor.subjectId, id => userProfileStore.getProfile(id))));
       }
       if (!result.changed && result.conflict === "transition") {
         return sendError(
@@ -5241,7 +5242,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         canIssueVoiceCallMedia(result.record, actor.subjectId) && voiceCallMediaIssuer.enabled
           ? await voiceCallMediaIssuer.issue(result.record, actor, now())
           : undefined;
-      return voiceCallAPIResponse(result.record, actor.subjectId, media);
+      return voiceCallAPIResponse(result.record, actor.subjectId, media, await readVoiceCallPeer(result.record, actor.subjectId, id => userProfileStore.getProfile(id)));
     },
     conversationDetail: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -5399,6 +5400,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         ? await messagingProvider.fetchConversation(actor, now(), conversationId)
         : await messagingProvider.fetchConversationByRoomId(actor, now(), roomId as string);
       return reply.code(result.conversation ? 200 : result.status === "online" ? 404 : 502).send(result);
+    },
+    lookupMatrixIdentities: async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      const actor = requireActor(request, reply);
+      if (!actor) return reply;
+      const body = request.body;
+      const conversationId = isRecord(body) && Object.keys(body).length === 1 && typeof body.conversationId === "string" && body.conversationId === body.conversationId.trim()
+        ? normalizeMessagingConversationId(body.conversationId) : undefined;
+      if (!conversationId) return sendError(reply, 400, "VALIDATION_ERROR", "Identity lookup requires only conversationId.", correlationIdFrom(request.headers["x-correlation-id"]));
+      const result = await messagingProvider.lookupMatrixIdentities?.(actor, now(), conversationId);
+      if (result?.statusCode === 200 && result.body) return reply.send(result.body);
+      const code = result?.statusCode === 403 || result?.statusCode === 404 ? result.statusCode : 503;
+      return sendError(reply, code, code === 403 ? "FORBIDDEN" : code === 404 ? "NOT_FOUND" : "SERVICE_UNAVAILABLE", "Existing identity mapping is unavailable.", correlationIdFrom(request.headers["x-correlation-id"]));
     },
     resolveMatrixIdentities: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -15426,16 +15440,17 @@ function normalizeVoiceCallActionRequest(
   };
 }
 
-function voiceCallAPIResponse(call: VoiceCallRecord, actorSubjectId: string, media?: VoiceCallMediaCredentials) {
+function voiceCallAPIResponse(call: VoiceCallRecord, actorSubjectId: string, media?: VoiceCallMediaCredentials, peer?: VoiceCallPeer) {
   return {
     contractVersion: "cop-voice-call-v1" as const,
-    call: voiceCallView(call, actorSubjectId),
+    call: voiceCallView(call, actorSubjectId, peer),
     ...(media ? { media } : {})
   };
 }
 
-function voiceCallView(call: VoiceCallRecord, actorSubjectId: string) {
+function voiceCallView(call: VoiceCallRecord, actorSubjectId: string, peer?: VoiceCallPeer) {
   return {
+    ...(peer ? {peer} : {}),
     ...(call.acceptedByEndpointId ? { acceptedByEndpointId: call.acceptedByEndpointId } : {}),
     callId: call.callId,
     createdAt: call.createdAt,

@@ -1,3 +1,4 @@
+import { validateIdentityLookup, type MessagingMatrixIdentityLookupResult } from "./messaging-identity-lookup.js";
 import type { AuthenticatedActor } from "./security.js";
 
 export type MessagingIntegrationRuntimeStatus = "degraded" | "disabled" | "online";
@@ -338,6 +339,9 @@ export interface MessagingProvider {
     conversationId: string,
     input: MessagingMatrixRoomBindingRequest
   ): Promise<MessagingMatrixRoomBindingResponse>;
+  lookupMatrixIdentities?(
+    actor: AuthenticatedActor, requestNow: Date, conversationId: string
+  ): Promise<MessagingMatrixIdentityLookupResult>;
   resolveMatrixIdentities(
     actor: AuthenticatedActor,
     requestNow: Date,
@@ -909,6 +913,19 @@ export class CsmMessagingProvider implements MessagingProvider {
     } catch (error) {
       return degradedConversationCreate(errorMessage(error));
     }
+  }
+
+  async lookupMatrixIdentities(actor: AuthenticatedActor, requestNow: Date, conversationId: string): Promise<MessagingMatrixIdentityLookupResult> {
+    if (!this.config.enabled) return {statusCode: 503};
+    try {
+      const result = await fetchJsonWithStatus(new URL(`${this.config.baseUrl}/api/v1/matrix/identities/lookup`), this.config, requestNow, {
+        method: "POST", body: JSON.stringify({conversationId}),
+        headers: {...actorHeaders(actor), "Content-Type": "application/json"}
+      });
+      if (!result.ok) return {statusCode: result.status === 403 || result.status === 404 ? result.status : 503};
+      const body = validateIdentityLookup(result.body, actor.subjectId, conversationId, requestNow);
+      return body ? {statusCode: 200, body} : {statusCode: 503};
+    } catch { return {statusCode: 503}; }
   }
 
   async resolveMatrixIdentities(
