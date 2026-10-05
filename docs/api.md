@@ -335,3 +335,16 @@ Community police patrol category and server active-map heuristic: see
 The additive `presence` object is authoritative for active presentation, never for
 routing. The configured durable report store fails503 rather than acknowledging
 an ephemeral fallback; preserve original observation UUID/time during retry.
+
+## Independent mobility availability
+
+The optional wire-v1 `MobilityCapabilities.serviceAvailability` contains
+`sharedVehicles` (ready/unavailable/disabled), `dispatch`
+(ready/recovering/unavailable/disabled), and `checkedAt` (UTC ISO8601).
+Existing enabled fields continue to describe configuration. Missing availability
+is unknown for older servers. Capabilities returns200 metadata during a lease
+outage; authenticated account/vehicle operations remain independent. Private
+Dispatch still returns503 DISPATCH_UNAVAILABLE. No endpoint or error envelope
+changes. `/health/ready` returns503 HealthStatus(status=unavailable) while enabled
+Dispatch lacks a verified lease; `/health/dependencies` retains200 but reports
+degraded plus a private-dispatch unavailable item. Inspect body status.

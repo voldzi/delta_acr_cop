@@ -5191,7 +5191,21 @@
             "$ref": "#/components/responses/TooManyRequests"
           },
           "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
+            "description": "Enabled private Dispatch lacks a verified primary lease or is still invalidating old shares; generic pressure failures may use the COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HealthStatus"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -5218,7 +5232,8 @@
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
           }
-        }
+        },
+        "description": "Includes private-dispatch dependency with verified exclusive primary lease state. HTTP 200 does not imply that every dependency is ready; inspect status and dependencies."
       }
     },
     "/metrics": {
@@ -27569,81 +27584,117 @@
           }
         }
       },
-      "MobilityCapabilities": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "contractVersion": {
-            "type": "string",
-            "enum": [
-              "cop-mobility-capabilities-v1"
-            ]
-          },
-          "sharedVehiclesEnabled": {
-            "type": "boolean"
-          },
-          "dispatchEnabled": {
-            "type": "boolean"
-          },
-          "maxVehicleMembers": {
-            "type": "integer",
-            "const": 5
-          },
-          "maxGroupMembers": {
-            "type": "integer",
-            "const": 200
-          },
-          "registration": {
-            "type": "string",
-            "enum": [
-              "idp_login_page",
-              "unavailable",
-              "unverified"
-            ]
-          },
-          "dispatchTransport": {
-            "type": "string",
-            "enum": [
-              "recipient_encrypted_latest_only"
-            ]
-          },
-          "currencies": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "CZK",
-                "EUR",
-                "USD"
-              ]
-            },
-            "maxItems": 3
-          },
-          "serverTimestamp": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
-          },
-          "invitationDelivery": {
-            "type": "string",
-            "enum": [
-              "verified_account_inbox"
-            ]
-          }
+      "MobilityServiceAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sharedVehicles",
+        "dispatch",
+        "checkedAt"
+      ],
+      "properties": {
+        "sharedVehicles": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "unavailable",
+            "disabled"
+          ]
         },
-        "required": [
-          "contractVersion",
-          "sharedVehiclesEnabled",
-          "dispatchEnabled",
-          "maxVehicleMembers",
-          "maxGroupMembers",
-          "registration",
-          "dispatchTransport",
-          "currencies",
-          "serverTimestamp",
-          "invitationDelivery"
-        ]
+        "dispatch": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "recovering",
+            "unavailable",
+            "disabled"
+          ]
+        },
+        "checkedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "MobilityCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "type": "string",
+          "enum": [
+            "cop-mobility-capabilities-v1"
+          ]
+        },
+        "sharedVehiclesEnabled": {
+          "type": "boolean"
+        },
+        "dispatchEnabled": {
+          "type": "boolean"
+        },
+        "maxVehicleMembers": {
+          "type": "integer",
+          "const": 5
+        },
+        "maxGroupMembers": {
+          "type": "integer",
+          "const": 200
+        },
+        "registration": {
+          "type": "string",
+          "enum": [
+            "idp_login_page",
+            "unavailable",
+            "unverified"
+          ]
+        },
+        "dispatchTransport": {
+          "type": "string",
+          "enum": [
+            "recipient_encrypted_latest_only"
+          ]
+        },
+        "currencies": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "CZK",
+              "EUR",
+              "USD"
+            ]
+          },
+          "maxItems": 3
+        },
+        "serverTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+        },
+        "invitationDelivery": {
+          "type": "string",
+          "enum": [
+            "verified_account_inbox"
+          ]
+        },
+        "serviceAvailability": {
+          "$ref": "#/components/schemas/MobilityServiceAvailability",
+          "description": "Optional independent current service availability. Enabled flags indicate configuration, not readiness. Missing field does not prove readiness."
+        }
       },
+      "required": [
+        "contractVersion",
+        "sharedVehiclesEnabled",
+        "dispatchEnabled",
+        "maxVehicleMembers",
+        "maxGroupMembers",
+        "registration",
+        "dispatchTransport",
+        "currencies",
+        "serverTimestamp",
+        "invitationDelivery"
+      ]
+    },
       "MobilityAccount": {
         "type": "object",
         "additionalProperties": false,

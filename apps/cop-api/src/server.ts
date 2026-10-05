@@ -1042,7 +1042,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
   app.addHook("preHandler", requireBearerToken);
-  registerMobilityRoutes(app, {
+  const mobilityDependency = registerMobilityRoutes(app, {
     messagingProvider,
     enabled: options.sharedMobilityEnabled ?? readBoolean(process.env.COP_SHARED_MOBILITY_ENABLED, false),
     dispatchEnabled: options.privateDispatchEnabled ?? readBoolean(process.env.COP_PRIVATE_DISPATCH_ENABLED, false),
@@ -1274,10 +1274,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       status: "ok",
       timestamp: new Date().toISOString()
     }),
-    ready: async () => ({
-      status: "ok",
-      timestamp: new Date().toISOString()
-    }),
+    ready: async (_request, reply) => {
+      const ready = mobilityDependency().status !== "unavailable";
+      return reply.code(ready ? 200 : 503).send({ status: ready ? "ok" : "unavailable", timestamp: new Date().toISOString() });
+    },
     dependencies: async () => {
       const messaging = await withDependencyTimeout("csm-messaging-provider", messagingDependency(), {
         detail: `Messaging provider dependency check timed out after ${healthDependencyTimeoutMs()} ms.`,
@@ -1299,8 +1299,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         aiHealthDependencyTimeoutMs()
       );
       return {
-        status: "ok",
+        status: mobilityDependency().status === "unavailable" ? "degraded" : "ok",
         dependencies: [
+          mobilityDependency(),
           { name: "source-registry", status: "ok" },
           { name: "in-memory-cop-state", status: "ok" },
           { name: "cop-stream-bus", status: streamBusDependencyStatus(), detail: streamBusDependencyDetail() },

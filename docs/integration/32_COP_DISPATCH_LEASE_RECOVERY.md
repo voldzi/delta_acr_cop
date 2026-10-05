@@ -47,3 +47,6 @@ Startup deliberately invalidates active shares and clears old in-memory position
 ## Mobile delivery
 
 The independent SDK correction is published in COP-Mobile branch `codex/shared-mobility-sdk`, commit `1f2e9f7`. It shares OIDC refresh and exposes same-account restoration without Matrix logout. Final simulator package regression: 103 passed, one private road replay skipped; 13 new authentication/restoration tests passed. Physical iPhone acceptance remains pending and is not replaced by server health or simulator success.
+
+Implementation and rollout evidence: [release34](34_COP_DISPATCH_RECOVERY_RELEASE.md).
+The incident observations above remain historical.

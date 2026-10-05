@@ -1,11 +1,39 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createPublicKey, diffieHellman, generateKeyPairSync, randomUUID } from "node:crypto";
 import { MobilityService, MobilityFailure, mobilityDigest, requireMobility, type GroupState } from "./mobility-service.js";
+import type { DispatchLeaseState } from "./dispatch-lease.js";
 import type { MobilityTransaction } from "./mobility-store.js";
 import type * as Wire from "./mobility-types.js";
 
 export class DispatchService extends MobilityService {
   /** Only this map contains point ciphertext. Never serialized into the durable store. */
   private readonly invalidatedShares = new Map<string, number>();
+  private readonly leaseContext = new AsyncLocalStorage<number>();
+  private assertLease(generation: number): void {
+    requireMobility(this.store.dispatchIsAvailable() && this.store.dispatchGeneration() === generation,
+      503, "DISPATCH_UNAVAILABLE", "Šifrovaný kanál není dostupný.");
+  }
+  async withDispatchLease<T>(generation: number, work: () => Promise<T>): Promise<T> {
+    return this.leaseContext.run(generation, async () => {
+      this.assertLease(generation); const result = await work(); this.assertLease(generation); return result;
+    });
+  }
+  override async operation<T>(account: Wire.MobilityAccount, operationId: string, scope: string,
+    body: unknown, keys: string[], work: (tx: MobilityTransaction) => Promise<T>): Promise<T> {
+    const generation = this.leaseContext.getStore();
+    return super.operation(account, operationId, scope, body, keys, async tx => {
+      if (generation !== undefined) this.assertLease(generation);
+      const result = await work(tx);
+      if (generation !== undefined) this.assertLease(generation);
+      return result;
+    });
+  }
+  private async dispatchTransact<T>(keys: string[], work: (tx: MobilityTransaction) => Promise<T>): Promise<T> {
+    const generation = this.leaseContext.getStore() ?? this.store.dispatchGeneration();
+    return this.store.transact(keys, async tx => {
+      this.assertLease(generation); const result = await work(tx); this.assertLease(generation); return result;
+    });
+  }
   private cleanupTimer?: NodeJS.Timeout;
   private readonly latestPoints = new Map<string, Wire.DispatchPointPublish>();
   async group(tx: MobilityTransaction, id: string, account: Wire.MobilityAccount, manage = false): Promise<GroupState> {
@@ -25,16 +53,22 @@ export class DispatchService extends MobilityService {
     state.group.sequence++;
   }
   /** Explicit restart invalidation; never restore old consent or RAM points. */
-  async initializeDispatch(): Promise<void> {
-    await this.store.claimDispatchInstance();
+  async initializeDispatch(changed?: (state: DispatchLeaseState, generation: number) => void): Promise<void> {
     this.cleanupTimer = setInterval(() => {
       const time = this.now().getTime();
       for (const [id, point] of this.latestPoints) if (time - Date.parse(point.observedAt) >= 180000) this.latestPoints.delete(id);
       for (const [id, expires] of this.invalidatedShares) if (expires <= time) this.invalidatedShares.delete(id);
     }, 5000);
     this.cleanupTimer.unref();
-    await this.store.transact(["dispatch-directory"], async tx => {
-      for (const entry of await tx.scan<GroupState>("group:")) { this.invalidateShares(entry.value); await tx.set(entry.key, entry.value); }
+    await this.store.startDispatchRecovery({
+      changed,
+      lost: () => { this.latestPoints.clear(); this.invalidatedShares.clear(); },
+      acquired: async () => {
+        this.latestPoints.clear(); this.invalidatedShares.clear();
+        await this.store.transact(["dispatch-directory"], async tx => {
+          for (const entry of await tx.scan<GroupState>("group:")) { this.invalidateShares(entry.value); await tx.set(entry.key, entry.value); }
+        });
+      }
     });
   }
   closeDispatch(): void { if (this.cleanupTimer) clearInterval(this.cleanupTimer); this.latestPoints.clear(); this.invalidatedShares.clear(); }
@@ -50,7 +84,7 @@ export class DispatchService extends MobilityService {
     });
   }
   async ownedShares(account: Wire.MobilityAccount): Promise<Wire.DispatchOwnedShares> {
-    return this.store.transact(["dispatch-directory"], async tx => {
+    return this.dispatchTransact(["dispatch-directory"], async tx => {
       const items: Wire.DispatchShare[] = [];
       for (const entry of await tx.scan<GroupState>("group:")) {
         this.expire(entry.value); await tx.set(entry.key, entry.value);
@@ -60,9 +94,9 @@ export class DispatchService extends MobilityService {
     });
   }
   async listGroups(account: Wire.MobilityAccount): Promise<Wire.DispatchGroupList> {
-    return this.store.transact([], async tx => ({ contractVersion: "cop-private-dispatch-v1", items: (await tx.scan<GroupState>("group:")).filter(x => !x.value.deletedAt && x.value.group.members.some(m => m.accountId === account.accountId)).map(x => x.value.group).slice(0, 100), serverTimestamp: this.now().toISOString() }));
+    return this.dispatchTransact([], async tx => ({ contractVersion: "cop-private-dispatch-v1", items: (await tx.scan<GroupState>("group:")).filter(x => !x.value.deletedAt && x.value.group.members.some(m => m.accountId === account.accountId)).map(x => x.value.group).slice(0, 100), serverTimestamp: this.now().toISOString() }));
   }
-  async getGroup(account: Wire.MobilityAccount, id: string): Promise<Wire.DispatchGroup> { return this.store.transact([`group:${id}`], async tx => (await this.group(tx, id, account)).group); }
+  async getGroup(account: Wire.MobilityAccount, id: string): Promise<Wire.DispatchGroup> { return this.dispatchTransact([`group:${id}`], async tx => (await this.group(tx, id, account)).group); }
   async membershipGroup(account: Wire.MobilityAccount, id: string, input: Wire.DispatchMembershipChange): Promise<Wire.DispatchGroup> {
     return this.operation(account, input.operationId, `group:${id}:members`, input, ["dispatch-directory", `group:${id}`], async tx => {
       const state = await this.group(tx, id, account, input.action !== "leave");
@@ -111,7 +145,7 @@ export class DispatchService extends MobilityService {
     return { contractVersion: "cop-private-dispatch-v1", groupId: state.group.groupId, membershipRevision: state.group.membershipRevision,
       state: ready ? "ready" : "missing_device_keys", audienceHash: mobilityDigest({ groupId: state.group.groupId, membershipRevision: state.group.membershipRevision, devices }), devices, serverTimestamp: this.now().toISOString() };
   }
-  async readiness(account: Wire.MobilityAccount, id: string): Promise<Wire.DispatchReadiness> { return this.store.transact(["dispatch-directory", `group:${id}`], async tx => this.readinessWithin(tx, await this.group(tx, id, account))); }
+  async readiness(account: Wire.MobilityAccount, id: string): Promise<Wire.DispatchReadiness> { return this.dispatchTransact(["dispatch-directory", `group:${id}`], async tx => this.readinessWithin(tx, await this.group(tx, id, account))); }
   private expire(state: GroupState): void {
     for (const share of Object.values(state.shares)) if (share.state === "active" && Date.parse(share.expiresAt) <= this.now().getTime()) { share.state = "expired"; this.latestPoints.delete(share.shareId); state.group.sequence++; }
     for (const [id, point] of this.latestPoints) if (this.now().getTime() - Date.parse(point.observedAt) > 180000) this.latestPoints.delete(id);
@@ -131,11 +165,12 @@ export class DispatchService extends MobilityService {
       state.shares[share.shareId] = {...share, startOperationId:input.operationId}; state.group.sequence++; await tx.set(`group:${id}`, state); await tx.set(`share:${share.shareId}`, { groupId: id }); return this.receipt(input.operationId, share);
     });
     // A start retry after stop/restart must return current inactive state, not revive an old active receipt.
-    return this.store.transact(["dispatch-directory", `group:${id}`], async tx => { const state = await this.group(tx, id, account); this.expire(state); await tx.set(`group:${id}`, state); const share = state.shares[initial.share.shareId]; requireMobility(share, 410, "SHARE_EXPIRED", "Sdílení skončilo."); return this.receipt(input.operationId, share); });
+    return this.dispatchTransact(["dispatch-directory", `group:${id}`], async tx => { const state = await this.group(tx, id, account); this.expire(state); await tx.set(`group:${id}`, state); const share = state.shares[initial.share.shareId]; requireMobility(share, 410, "SHARE_EXPIRED", "Sdílení skončilo."); return this.receipt(input.operationId, share); });
   }
   async publishPoint(account: Wire.MobilityAccount, shareId: string, input: Wire.DispatchPointPublish): Promise<Wire.DispatchShareReceipt> {
-    const binding = await this.store.transact([], tx => tx.get<{ groupId: string }>(`share:${shareId}`)); requireMobility(binding, 404, "NOT_FOUND", "Sdílení není dostupné.");
-    const receipt = await this.store.transact(["dispatch-directory", `group:${binding.groupId}`], async tx => {
+    const generation = this.leaseContext.getStore() ?? this.store.dispatchGeneration();
+    const binding = await this.dispatchTransact([], tx => tx.get<{ groupId: string }>(`share:${shareId}`)); requireMobility(binding, 404, "NOT_FOUND", "Sdílení není dostupné.");
+    const receipt = await this.dispatchTransact(["dispatch-directory", `group:${binding.groupId}`], async tx => {
       const state = await this.group(tx, binding.groupId, account); this.expire(state); const share = state.shares[shareId];
       requireMobility(share && share.accountId === account.accountId && share.deviceId === input.deviceId, 404, "NOT_FOUND", "Sdílení není dostupné.");
       requireMobility(share.state === "active", 410, "SHARE_STOPPED", "Sdílení skončilo.");
@@ -155,6 +190,7 @@ export class DispatchService extends MobilityService {
       share.sequence = input.sequence; share.lastObservedAt = input.observedAt; share.lastHash = hash; state.group.sequence++; await tx.set(`group:${binding.groupId}`, state); return this.receipt(pointReceiptId(shareId, input.sequence), share);
     });
     // Even a late RAM write cannot resurrect a revoked share: snapshot authorizes against durable state.
+    this.assertLease(generation);
     requireMobility(!this.invalidatedShares.has(shareId), 410, "SHARE_STOPPED", "Sdílení skončilo.");
     const bytes = Buffer.byteLength(JSON.stringify(input));
     const retainedBytes = [...this.latestPoints.entries()].filter(([id]) => id !== shareId).reduce((total, [, value]) => total + Buffer.byteLength(JSON.stringify(value)), 0);
@@ -176,7 +212,7 @@ export class DispatchService extends MobilityService {
     });
   }
   async stopShare(account: Wire.MobilityAccount, shareId: string, input: Wire.DispatchStop): Promise<Wire.DispatchShareReceipt> {
-    const binding = await this.store.transact([], tx => tx.get<{ groupId: string }>(`share:${shareId}`)); requireMobility(binding, 404, "NOT_FOUND", "Sdílení není dostupné.");
+    const binding = await this.dispatchTransact([], tx => tx.get<{ groupId: string }>(`share:${shareId}`)); requireMobility(binding, 404, "NOT_FOUND", "Sdílení není dostupné.");
     const result = await this.operation(account, input.operationId, `share:${shareId}:stop`, input, ["dispatch-directory", `group:${binding.groupId}`], async tx => {
       // Own stop remains possible after removal/group deletion; it exposes no audience/coordinates.
       const state = await tx.get<GroupState>(`group:${binding.groupId}`); const share = state?.shares[shareId];
@@ -186,7 +222,7 @@ export class DispatchService extends MobilityService {
     this.latestPoints.delete(shareId); return result;
   }
   async snapshot(account: Wire.MobilityAccount, id: string, deviceId: string): Promise<Wire.DispatchSnapshot> {
-    return this.store.transact(["dispatch-directory", `group:${id}`], async tx => {
+    return this.dispatchTransact(["dispatch-directory", `group:${id}`], async tx => {
       const state = await this.group(tx, id, account); this.expire(state); const ready = await this.readinessWithin(tx, state);
       requireMobility(ready.devices.some(d => d.deviceId === deviceId && d.accountId === account.accountId), 403, "DEVICE_REQUIRED", "Zařízení nepatří účtu.");
       const shares = Object.values(state.shares).filter(s => s.state === "active" && s.audienceHash === ready.audienceHash && s.membershipRevision === ready.membershipRevision);

@@ -104,3 +104,14 @@ Recommended implementation phases:
 
 Detailed rollout guidance is in
 [runbooks/12_CHROMADB_AND_OPENTELEMETRY.md](runbooks/12_CHROMADB_AND_OPENTELEMETRY.md).
+
+## Private Dispatch ownership
+
+Structured lease transitions carry component/state/generation with existing
+request context where applicable. Raw PostgreSQL errors/DSNs and point data
+are not logged. `/health/live` remains process liveness. Enabled Dispatch with
+unavailable/recovering/stale ownership makes `/health/ready`503; dependencies
+returns200 with degraded status and a private-dispatch item. Capability states
+report shared vehicles and Dispatch separately. Record deployment source SHA,
+image ID, container start and repeated primary-lock observations separately
+from authenticated client and physical two-device acceptance.

@@ -43,3 +43,5 @@
 - [0031: Shared vehicles and private Dispatch](0031_SHARED_VEHICLES_AND_PRIVATE_DISPATCH.md).
 
 - [0037: Server-owned community report presence](0037_SERVER_OWNED_COMMUNITY_REPORT_PRESENCE.md).
+
+- [0038: Dispatch lease recovery](0038_DISPATCH_LEASE_RECOVERY.md).

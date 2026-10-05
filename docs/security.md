@@ -132,3 +132,15 @@ See [ADR0031](adr/0031_SHARED_VEHICLES_AND_PRIVATE_DISPATCH.md) for authenticate
 recipient encryption, key-directory trust, consent invalidation and real retention.
 No request body/GPS/key value is serialized into diagnostics. Coordinates are never
 persisted in server SQL or sent to SIM; only latest ciphertext exists in RAM.
+
+## Dispatch ownership recovery boundary
+
+Dispatch verifies an exclusive session advisory lock on the database primary.
+Private requests are fenced by a local lease generation before/after work and
+transaction callbacks; obsolete responses and late point writes fail503.
+Lease loss clears all in-memory point ciphertext; acquisition invalidates
+previous share metadata before ready. Recovery grants no new consent and never
+restores positions. Shared vehicle/account authorization remains independent.
+Lease diagnostics contain only state and generation, never DSNs, tokens,
+account identifiers or location payloads. Availability metadata is not an ACL
+or permission to resume collection.
