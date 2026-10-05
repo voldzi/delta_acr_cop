@@ -34,6 +34,7 @@ export function registerMobilityRoutes(app: FastifyInstance, options: Options): 
             return { contractVersion: "cop-mobility-capabilities-v1", sharedVehiclesEnabled: options.enabled, dispatchEnabled: options.dispatchEnabled,
               maxVehicleMembers: 5, maxGroupMembers: 200, registration: "unverified", invitationDelivery: "verified_account_inbox",
               dispatchTransport: "recipient_encrypted_latest_only", currencies: ["CZK", "EUR", "USD"], serverTimestamp: options.now().toISOString(),
+              recordDetailsVersions: [1], recordEnergyUnits: ["liters", "kWh"], supportedRefuelingFuelTypes: ["natural95", "natural98", "natural100", "diesel", "diesel plus", "lpg", "bioEthanol"],
               serviceAvailability: { sharedVehicles: !options.enabled ? "disabled" : databaseAvailable ? "ready" : "unavailable",
                 dispatch: !options.dispatchEnabled ? "disabled" : !databaseAvailable ? "unavailable" : options.store!.dispatchState(),
                 checkedAt: options.now().toISOString() } } satisfies Wire.MobilityCapabilities;

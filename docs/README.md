@@ -73,4 +73,4 @@ Public demo analytics: [integration and release gate](analytics/integration.md),
 
 - [36: COP self profile / Jízda Já](integration/36_COP_SELF_PROFILE.md).
 
-- [37: Shared vehicle record details proposal](integration/37_SHARED_VEHICLE_RECORD_DETAILS_PROPOSAL.md): same forms, lossless receipt fields; not implemented or enabled.
+- [38: Shared vehicle record details v1](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md): same forms, lossless receipts; release and device acceptance status.

@@ -357,3 +357,5 @@ verified inbox remain unchanged. Device-registration tickets admit exactly
 cz.voldzi.copmobile and cz.voldzi.jizda. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.
 
 Shared own-account profile and avatar-only optimistic concurrency: [contract and SDK handoff](integration/36_COP_SELF_PROFILE.md).
+
+Shared energy/service receipt detail v1: [binding fields and integration](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md).

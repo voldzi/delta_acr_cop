@@ -1,3 +1,4 @@
+import { acceptsMobilitySchema } from "./mobility-contract.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { MobilityStore, MobilityTransaction } from "./mobility-store.js";
 import type { AuthenticatedActor } from "./security.js";
@@ -362,6 +363,11 @@ export class MobilityService {
           "AUTHOR_REQUIRED",
           "Cizí záznam může opravit pouze vlastník."
         );
+      const previousDetails = current && (current.data.kind === "energy" || current.data.kind === "service") ? current.data.details : undefined;
+      requireMobility(!previousDetails || previousDetails.version === 1, 409, "DETAILS_VERSION_REQUIRED", "Tuto verzi detailů nelze touto aplikací upravit.");
+      const incomingDetails = input.data.kind === "energy" || input.data.kind === "service" ? input.data.details : undefined;
+      requireMobility(!previousDetails || (incomingDetails && current!.data.kind === input.data.kind), 409, "DETAILS_VERSION_REQUIRED", "Podrobný záznam vyžaduje úplné detaily podporované verze. Aktualizujte aplikaci.");
+      validateSharedRecordDetails(input.data);
       try {
         new Intl.DateTimeFormat("cs", { timeZone: input.timeZone }).format();
       } catch {
@@ -538,4 +544,26 @@ function vehicleCursor(accountId: string, vehicleId: string, membershipRevision:
 function decimalThousandths(value: string): bigint {
   const [whole, fraction = ""] = value.split(".");
   return BigInt(whole!) * 1000n + BigInt(fraction.padEnd(3, "0"));
+}
+
+/** Semantic validation runs inside the receipt transaction, before any event or revision write. */
+export function validateSharedRecordDetails(data: Wire.SharedVehicleRecordData): void {
+  if ((data.kind !== "energy" && data.kind !== "service") || data.details === undefined) return;
+  requireMobility(acceptsMobilitySchema("SharedVehicleRecordData", data), 422, "INVALID_RECORD_DETAILS", "Neplatné nebo nepodporované detaily záznamu.");
+  if (data.kind === "energy") {
+    const value = data.details!;
+    const refueling = value.kind === "refueling";
+    requireMobility(refueling ? (data.unit === "liters" && value.refueling && !value.charging) : (data.unit === "kWh" && value.charging && !value.refueling), 422, "ENERGY_DETAILS_MISMATCH", "Druh energie, jednotka a detaily si musí odpovídat.");
+    requireMobility(!value.refueling?.fuelType || !["cng", "hydrogen"].includes(value.refueling.fuelType), 422, "UNSUPPORTED_ENERGY_UNIT", "CNG a vodík nelze uložit v litrovém formuláři. Hmotnost nepřevádějte na litry.");
+    const before = value.charging?.batteryPercentBefore;
+    const after = value.charging?.batteryPercentAfter;
+    for (const percent of [before, after]) requireMobility(percent === undefined || decimalThousandths(percent) <= 100000n, 422, "BATTERY_PERCENT_INVALID", "Stav baterie musí být od 0 do 100 procent.");
+    requireMobility(before === undefined || after === undefined || decimalThousandths(after) >= decimalThousandths(before), 422, "BATTERY_PERCENT_INVALID", "Stav po nabití nemůže být nižší než před nabitím.");
+  } else {
+    const items = data.details!.items;
+    if (!items) return;
+    requireMobility(new Set(items.map(item => item.itemId.toLowerCase())).size === items.length, 422, "DUPLICATE_SERVICE_ITEM", "Servisní položky musí mít jedinečné identifikátory.");
+    requireMobility(data.amount && items.every(item => item.amount.currency === data.amount!.currency), 422, "RECEIPT_CURRENCY_MISMATCH", "Všechny položky a celková cena musí mít stejnou měnu.");
+    requireMobility(items.reduce((sum, item) => sum + BigInt(item.amount.minorUnits), 0n) === BigInt(data.amount!.minorUnits), 422, "RECEIPT_TOTAL_MISMATCH", "Celková cena musí přesně odpovídat součtu položek.");
+  }
 }

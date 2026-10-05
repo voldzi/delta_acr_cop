@@ -70,6 +70,95 @@ tags:
   - name: Incidents
     description: Candidate fusion, incidents and incident task workflow.
 paths:
+  /api/v1/me/profile:
+    get:
+      tags:
+        - Identity
+      operationId: getMyCopAccountProfile
+      summary: Read the current verified COP account and canonical avatar.
+      security:
+        - bearerAuth: []
+      description: "OIDC bearer only. Owner and issuer are derived from verified session. Independent of
+        mobility capability and dispatch availability. Read does not create a profile. Avatar
+        source: cop_user_profiles.preferences.operatorProfile.avatarDataUrl; Matrix is not the
+        source of identity or avatar."
+      responses:
+        "200":
+          description: Verified current identity and canonical avatar; Cache-Control no-store, strong ETag
+            matching revision.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/COPAccountProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Authoritative profile unavailable; no in-memory fallback.
+  /api/v1/me/profile/avatar:
+    patch:
+      tags:
+        - Identity
+      operationId: updateMyCopAccountAvatar
+      summary: Explicitly replace or remove the authenticated account avatar.
+      security:
+        - bearerAuth: []
+      description: "Atomic revision comparison; update preserves other preferences and alert settings.
+        If-Match must be the quoted revision returned by GET. Body may contain only avatarDataUrl:
+        null removes, otherwise PNG/JPEG data URL. Maximum180000 decoded bytes,1024px per side,one
+        frame; server fully decodes and re-encodes maximum512px PNG without original metadata.
+        SVG,remote URLs,MIME mismatch and malformed images rejected. No change of account identity.
+        Existing preferences endpoint remains compatible; its older full-profile writes are not
+        protected by this new If-Match contract."
+      parameters:
+        - in: header
+          name: If-Match
+          required: true
+          schema:
+            type: string
+            pattern: ^"[a-f0-9]{64}"$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - avatarDataUrl
+              properties:
+                avatarDataUrl:
+                  type:
+                    - string
+                    - "null"
+                  maxLength: 240030
+      responses:
+        "200":
+          description: Verified current identity and canonical avatar; Cache-Control no-store, strong ETag
+            matching revision.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/COPAccountProfile"
+        "400":
+          description: Invalid body, image or revision.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "412":
+          description: "Profile changed: reload and explicitly confirm; never retry blindly."
+        "413":
+          description: Request exceeds245000bytes.
+        "428":
+          description: Missing If-Match precondition.
+        "503":
+          description: Authoritative profile unavailable; no in-memory fallback.
   /api/v1/driver-measurements/v1/consent:
     get:
       tags:
@@ -8035,95 +8124,6 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/DispatchParticipantOpen"
-  /api/v1/me/profile:
-    get:
-      tags:
-        - Identity
-      operationId: getMyCopAccountProfile
-      summary: Read the current verified COP account and canonical avatar.
-      security:
-        - bearerAuth: []
-      description: "OIDC bearer only. Owner and issuer are derived from verified session. Independent of
-        mobility capability and dispatch availability. Read does not create a profile. Avatar
-        source: cop_user_profiles.preferences.operatorProfile.avatarDataUrl; Matrix is not the
-        source of identity or avatar."
-      responses:
-        "200":
-          description: Verified current identity and canonical avatar; Cache-Control no-store, strong ETag
-            matching revision.
-          headers:
-            ETag:
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/COPAccountProfile"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "503":
-          description: Authoritative profile unavailable; no in-memory fallback.
-  /api/v1/me/profile/avatar:
-    patch:
-      tags:
-        - Identity
-      operationId: updateMyCopAccountAvatar
-      summary: Explicitly replace or remove the authenticated account avatar.
-      security:
-        - bearerAuth: []
-      description: "Atomic revision comparison; update preserves other preferences and alert settings.
-        If-Match must be the quoted revision returned by GET. Body may contain only avatarDataUrl:
-        null removes, otherwise PNG/JPEG data URL. Maximum180000 decoded bytes,1024px per side,one
-        frame; server fully decodes and re-encodes maximum512px PNG without original metadata.
-        SVG,remote URLs,MIME mismatch and malformed images rejected. No change of account identity.
-        Existing preferences endpoint remains compatible; its older full-profile writes are not
-        protected by this new If-Match contract."
-      parameters:
-        - in: header
-          name: If-Match
-          required: true
-          schema:
-            type: string
-            pattern: ^"[a-f0-9]{64}"$
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required:
-                - avatarDataUrl
-              properties:
-                avatarDataUrl:
-                  type:
-                    - string
-                    - "null"
-                  maxLength: 240030
-      responses:
-        "200":
-          description: Verified current identity and canonical avatar; Cache-Control no-store, strong ETag
-            matching revision.
-          headers:
-            ETag:
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/COPAccountProfile"
-        "400":
-          description: Invalid body, image or revision.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "412":
-          description: "Profile changed: reload and explicitly confirm; never retry blindly."
-        "413":
-          description: Request exceeds245000bytes.
-        "428":
-          description: Missing If-Match precondition.
-        "503":
-          description: Authoritative profile unavailable; no in-memory fallback.
 components:
   securitySchemes:
     bearerAuth:
@@ -8319,6 +8319,193 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
   schemas:
+    SharedVehicleStationSnapshot:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        provider:
+          type: string
+          maxLength: 160
+        address:
+          type: string
+          maxLength: 500
+      required: []
+    SharedVehicleRefuelingDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        fuelType:
+          type: string
+          enum:
+            - natural95
+            - natural98
+            - natural100
+            - diesel
+            - diesel plus
+            - lpg
+            - bioEthanol
+            - cng
+            - hydrogen
+        fullTank:
+          type: boolean
+        quantityBeforeRefueling:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+        station:
+          $ref: "#/components/schemas/SharedVehicleStationSnapshot"
+      required: []
+    SharedVehicleChargingDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        source:
+          type: string
+          enum:
+            - home
+            - publicAC
+            - publicDC
+            - workplace
+            - other
+        provider:
+          type: string
+          maxLength: 160
+        locationName:
+          type: string
+          maxLength: 160
+        location:
+          $ref: "#/components/schemas/SharedVehicleStationSnapshot"
+        batteryPercentBefore:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+        batteryPercentAfter:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+      required: []
+    SharedVehicleEnergyDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          const: 1
+        kind:
+          type: string
+          enum:
+            - refueling
+            - charging
+        odometerKm:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+        note:
+          type: string
+          maxLength: 1000
+        refueling:
+          $ref: "#/components/schemas/SharedVehicleRefuelingDetails"
+        charging:
+          $ref: "#/components/schemas/SharedVehicleChargingDetails"
+      required:
+        - version
+        - kind
+    SharedVehicleServiceItem:
+      type: object
+      additionalProperties: false
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 160
+          minLength: 1
+        categoryId:
+          type: string
+          maxLength: 80
+        subcategoryId:
+          type: string
+          maxLength: 80
+        amount:
+          $ref: "#/components/schemas/SharedVehicleMoney"
+      required:
+        - itemId
+        - title
+        - amount
+    SharedVehicleServiceDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          const: 1
+        note:
+          type: string
+          maxLength: 1000
+        categoryId:
+          type: string
+          maxLength: 80
+        subcategoryId:
+          type: string
+          maxLength: 80
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/SharedVehicleServiceItem"
+      required:
+        - version
+    COPAccountProfile:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - subjectId
+        - issuer
+        - displayName
+        - email
+        - emailVerified
+        - avatarDataUrl
+        - revision
+        - updatedAt
+        - serverTimestamp
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-account-profile-v1
+        subjectId:
+          type: string
+        issuer:
+          type: string
+          format: uri
+        displayName:
+          type: string
+        email:
+          type:
+            - string
+            - "null"
+        emailVerified:
+          type: boolean
+        avatarDataUrl:
+          type:
+            - string
+            - "null"
+          maxLength: 250000
+          description: Canonical COP avatar. New writes are metadata-free PNG; existing JPEG/PNG/WebP may be
+            read. No remote URLs.
+        revision:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        updatedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        serverTimestamp:
+          type: string
+          format: date-time
     DriverMeasurementConsentState:
       type: object
       additionalProperties: false
@@ -19519,6 +19706,34 @@ components:
           $ref: "#/components/schemas/MobilityServiceAvailability"
           description: Optional independent current service availability. Enabled flags indicate
             configuration, not readiness. Missing field does not prove readiness.
+        recordDetailsVersions:
+          type: array
+          uniqueItems: true
+          items:
+            type: integer
+            enum:
+              - 1
+        recordEnergyUnits:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - liters
+              - kWh
+        supportedRefuelingFuelTypes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - natural95
+              - natural98
+              - natural100
+              - diesel
+              - diesel plus
+              - lpg
+              - bioEthanol
       required:
         - contractVersion
         - sharedVehiclesEnabled
@@ -19949,6 +20164,8 @@ components:
               pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
             amount:
               $ref: "#/components/schemas/SharedVehicleMoney"
+            details:
+              $ref: "#/components/schemas/SharedVehicleEnergyDetails"
           required:
             - kind
             - unit
@@ -19969,6 +20186,8 @@ components:
               pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
             amount:
               $ref: "#/components/schemas/SharedVehicleMoney"
+            details:
+              $ref: "#/components/schemas/SharedVehicleServiceDetails"
           required:
             - kind
             - title
@@ -21052,56 +21271,6 @@ components:
           type: string
           minLength: 1
           maxLength: 512
-    COPAccountProfile:
-      type: object
-      additionalProperties: false
-      required:
-        - contractVersion
-        - subjectId
-        - issuer
-        - displayName
-        - email
-        - emailVerified
-        - avatarDataUrl
-        - revision
-        - updatedAt
-        - serverTimestamp
-      properties:
-        contractVersion:
-          type: string
-          enum:
-            - cop-account-profile-v1
-        subjectId:
-          type: string
-        issuer:
-          type: string
-          format: uri
-        displayName:
-          type: string
-        email:
-          type:
-            - string
-            - "null"
-        emailVerified:
-          type: boolean
-        avatarDataUrl:
-          type:
-            - string
-            - "null"
-          maxLength: 250000
-          description: Canonical COP avatar. New writes are metadata-free PNG; existing JPEG/PNG/WebP may be
-            read. No remote URLs.
-        revision:
-          type: string
-          pattern: ^[a-f0-9]{64}$
-        updatedAt:
-          type:
-            - string
-            - "null"
-          format: date-time
-        serverTimestamp:
-          type: string
-          format: date-time
 x-cop-mobility-invitation-notifications:
   contractVersion: cop-mobility-invitation-notification-v1
   transport: APNs alert via CSM Messaging
