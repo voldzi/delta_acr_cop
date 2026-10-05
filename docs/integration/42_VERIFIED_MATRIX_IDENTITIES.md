@@ -1,6 +1,6 @@
 # Verified COP and Matrix identities; read-only lookup
 
-Status: implemented; publication and production acceptance pending. No real-account, conversation-membership or voice-call mutations are acceptance steps.
+Status2026-10-05: implementation and public branches published; production identity activation NOT completed. Messaging deployment automatically rolled back after the configuration guard rejected a difference; original image/config/file hashes and health were restored, and COP was not restarted. A subsequent deployment request was rejected by automatic approval review because explicit human approval of the identity-specific two-service restart was missing. Do not retry or work around this gate; awaiting direct human approval and configuration diagnosis. No real-account, conversation-membership or voice-call mutations are acceptance steps.
 
 ## Contract and authorization
 
@@ -23,3 +23,17 @@ SDK `CSMVoiceCall.presentationTitle` validates `peer.subjectId` against the expe
 Roll out Messaging lookup first, then COP API, then SDK pin. Images extend the exact running images, replacing only tested runtime files. Preserve existing APNs ticket and vehicle audit/profile fixes, env/secrets/compose/networks and other services. Rollback to the immediate prior images is schema-safe: no writes or migrations are introduced; SDK handles404/503 by using existing metadata without speculative aliases. Public pins and actual image/runtime proof are appended after deployment.
 
 Tests: isolated two-user lookups, missing/conflicting mappings, authorization and scope, no store mutations/secrets, exact outbound lookup path/body (never resolve), server outage, metadata/Matrix identity dedup, self-peer ambiguity, account mismatch, expiry, changed membership, no mapping persistence, viewer-specific caller/callee distinction and APNs field precedence. Full regression and approved Xcode27.1 gate are required. Actual two-phone incoming calls/member presentation remain separate physical acceptance; synthetic tests do not prove it.
+
+
+## Actual publication and verification
+
+- COP runtime source `d87a51c305ab78b4b6419e59408f0e33753c1f4b`, branch codex/shared-vehicle-audit-profile. Generated YAML export follows in documentation commit548c149.
+- Messaging read-only source `c655daf25b7ee1030d9b35f2c7b6552092c9c57a`, branch codex/matrix-identity-lookup.
+- Identity SDK `3f7812df7cdc313e4ebb239fd7ea1c46a1708e51`, branch codex/verified-matrix-identity, parent661027c. This clean public baseline alone is NOT a complete Jízda integration: the client had additionally used unpublished local routing/measurement/China interfaces. A separately published complete SDK union retains those functions and adds these identity fixes; see its JIZDA_COMPLETE_SDK.md. Never solve missing interfaces by stubs or disabling integrations.
+- Server full1325PASS/7skip across168files, lint/typecheck,11schemas, skeleton and bindingOpenAPI PASS(26existingwarnings). Messaging full79PASS. No actual accounts/rooms/membership/calls were changed for tests.
+- Clean identity SDK full approved Xcode27.1/SDK27.1 gate:30appunit/5UI/116packageXCTest/2SwiftTesting/2accessibility PASS. Sevennew deterministic identity/DM/self-peer/push/caller cases PASS.
+- Prepared COP image `sha256:71c67b2da529450f6c3581799805e352e96167e6c1e79a83743f191fd4699161`, extends exactly prior vehicle-audit imagea5d4425.478manifest file hashes verified in a network-none container, with signed synthetic two-user OIDC lookup/caller tests,403/404/503/no provisioning fallback, no call mutation and vehicle audit capabilities preserved.
+- Prepared Messaging image `sha256:ff80ec9a89155aae5081b118c6e9900dfccfce6187b90f4a90432c45b04d2079`, extends exact APNs/ticket image556c778. Four compiled modules (one new), application module manifest updated; no other runtime overlays. Network-none synthetic HTTP acceptance verifies both members,401/400/403/404, no secrets or store mutations.
+- Safe immediate rollback images are COPa5d4425 and Messaging556c778. Both were tested network-none; lookup is absent and new peer absent in the old COP response, which the SDK treats conservatively. No migration or record schema changes.
+- Production preflight had133other container identities, both APIs healthy and zeroactive voice calls. Messaging failed the post-deploy configuration guard and rolled back healthy. After rollback all captured runtime configuration sections, env/compose hashes and prior image matched exactly. The difference in the attempted new container remains to be diagnosed; no guard was relaxed.
+- Evidence on docker.home.cz: `/home/voldzi/cop-deployments/matrix-identity-lookup-20261005/` prepared image manifests, synthetic release/rollback logs and guarded deploy/preflight evidence. SDK gate logs on Mac are private temporary verification artifacts. This is preparation evidence, not completed production acceptance or physical-phone proof.
