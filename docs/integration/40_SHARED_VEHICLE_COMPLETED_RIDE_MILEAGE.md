@@ -1,5 +1,7 @@
 # Completed shared rides and mileage v2
 
+Prior ride-mileage release evidence; current additive profile/audit/recovery delivery is [handoff41](41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md). After those fields are accepted, use its guard-only rollback; prior rollback does not protect them.
+
 Status2026-10-05: compatible contract and public SDK published; COP API production deployment completed at18:10:43UTC, initial read-only runtime verified18:11:31UTC. No changes to identity, calls, Matrix or real user records.
 
 ## Additive contract and host

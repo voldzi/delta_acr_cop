@@ -1,6 +1,6 @@
 # Authoritative shared vehicle odometer snapshot v1
 
-Prior v1 release evidence; current compatible production ride calculation is documented in [handoff40](40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md). Its guard-only rollback supersedes the unguarded prior rollback after detailed rides exist.
+Prior v1 release evidence; compatible ride calculation is documented in [handoff40](40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md), current production profile/audit delivery in [handoff41](41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md). Use its latest guard-only rollback after sealed profile/audit fields exist.
 
 Status2026-10-05: compatible contract published; COP API-only production delivery completed at16:24:40UTC and verified read-only at16:26:25UTC. Receipt release38 remains independently published/deployed.
 
