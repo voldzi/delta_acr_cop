@@ -85,3 +85,5 @@ or phone receipt.
 - [36: COP self profile / Jízda Já](integration/36_COP_SELF_PROFILE.md).
 
 - [38: Shared vehicle record details v1](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md): same forms, lossless receipts; release and device acceptance status.
+
+- [Shared vehicle odometer snapshot](integration/39_SHARED_VEHICLE_ODOMETER_SNAPSHOT.md): explicit versioned whole-state projection, separately gated from receipt details.

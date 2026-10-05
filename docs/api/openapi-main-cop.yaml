@@ -8625,6 +8625,63 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
   schemas:
+    SharedVehicleOdometerSource:
+      type: object
+      additionalProperties: false
+      properties:
+        recordId:
+          type: string
+          format: uuid
+        recordRevision:
+          type: integer
+          minimum: 1
+        recordKind:
+          type: string
+          enum:
+            - odometer
+            - energy
+            - service
+      required:
+        - recordId
+        - recordRevision
+        - recordKind
+    SharedVehicleOdometerSnapshot:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          const: 1
+        status:
+          type: string
+          enum:
+            - unknown
+            - known
+            - reviewRequired
+        dataRevision:
+          type: integer
+          minimum: 1
+        valueKm:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+        observedAt:
+          type: string
+          format: date-time
+        source:
+          $ref: "#/components/schemas/SharedVehicleOdometerSource"
+        reason:
+          type: string
+          enum:
+            - no_observations
+            - conflicting_observations
+            - decreasing_observation
+            - invalid_observation
+            - invalid_correction
+            - future_observation
+      required:
+        - version
+        - status
+        - dataRevision
     SharedVehicleStationSnapshot:
       type: object
       additionalProperties: false
@@ -20366,6 +20423,13 @@ components:
               - diesel plus
               - lpg
               - bioEthanol
+        odometerSnapshotVersions:
+          type: array
+          uniqueItems: true
+          items:
+            type: integer
+            enum:
+              - 1
       required:
         - contractVersion
         - sharedVehiclesEnabled
@@ -20503,6 +20567,8 @@ components:
           pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
         deleted:
           type: boolean
+        odometerSnapshot:
+          $ref: "#/components/schemas/SharedVehicleOdometerSnapshot"
       required:
         - contractVersion
         - vehicleId
@@ -20963,6 +21029,8 @@ components:
         confirmed:
           type: boolean
           const: true
+        odometerSnapshot:
+          $ref: "#/components/schemas/SharedVehicleOdometerSnapshot"
       required:
         - contractVersion
         - operationId
@@ -21038,6 +21106,8 @@ components:
           type: string
           format: date-time
           pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        odometerSnapshot:
+          $ref: "#/components/schemas/SharedVehicleOdometerSnapshot"
       required:
         - contractVersion
         - vehicleId

@@ -389,3 +389,5 @@ cz.voldzi.copmobile and cz.voldzi.jizda. See integration/35_MOBILITY_INVITATION_
 Shared own-account profile and avatar-only optimistic concurrency: [contract and SDK handoff](integration/36_COP_SELF_PROFILE.md).
 
 Shared energy/service receipt detail v1: [binding fields and integration](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md).
+
+Versioned shared odometer snapshot is separate from receipt details; see [handoff39](integration/39_SHARED_VEHICLE_ODOMETER_SNAPSHOT.md).

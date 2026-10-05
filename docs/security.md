@@ -186,3 +186,5 @@ in alerts. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.
 Own avatar writes decode/re-encode bounded images without metadata and use verified OIDC ownership; [self-profile boundary](integration/36_COP_SELF_PROFILE.md).
 
 Shared receipt details retain existing vehicle/cost ACL and prohibit structured GPS; older incomplete edits are rejected. [Boundary](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md).
+
+Shared odometer snapshot exposes only kilometer value/date/source-record reference to readVehicle members. Original cost payloads, notes and authors remain separately protected; no GPS or automatic private history transfer is added. See [handoff39](integration/39_SHARED_VEHICLE_ODOMETER_SNAPSHOT.md).
