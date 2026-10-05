@@ -55,3 +55,5 @@
 - [0042: Shared vehicle odometer projection](0042_SHARED_VEHICLE_ODOMETER_PROJECTION.md).
 
 - [0043: Completed shared ride mileage](0043_COMPLETED_SHARED_RIDE_MILEAGE.md).
+
+- [0044 shared profile/audit/recovery](0044_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md)

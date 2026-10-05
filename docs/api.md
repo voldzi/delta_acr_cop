@@ -363,3 +363,5 @@ Shared energy/service receipt detail v1: [binding fields and integration](integr
 Versioned shared odometer snapshot is separate from receipt details; see [handoff39](integration/39_SHARED_VEHICLE_ODOMETER_SNAPSHOT.md).
 
 Completed ride details, explicit initial seed and calculated mileage v2 extend the shared contract compatibly; [handoff40](integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md) defines append policy and exact DTOs.
+
+Shared vehicle compatible routing profile, owner binding, audited edits and care snapshot: [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).

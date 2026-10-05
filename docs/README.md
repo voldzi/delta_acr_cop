@@ -78,3 +78,5 @@ Public demo analytics: [integration and release gate](analytics/integration.md),
 - [Shared vehicle odometer snapshot](integration/39_SHARED_VEHICLE_ODOMETER_SNAPSHOT.md): explicit versioned whole-state projection, separately gated from receipt details.
 
 - [Completed shared ride mileage](integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md): explicit calculated v2 mileage, covered ride deduplication and initial reading.
+
+- [Shared vehicle profile/audit/recovery](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md): current mapped profile, exact owner UUID and retained correction history.
