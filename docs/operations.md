@@ -140,3 +140,5 @@ Jízda self-profile API release and remaining device acceptance: [handoff](integ
 Shared receipt details capability and rollback/downgrade guard: [release handoff](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md).
 
 A rollback from odometer projection to the receipt-only image preserves records but removes snapshot capability; clients must show unknown and never replace it with zero/local/paged-event mileage. Retain receipt-details downgrade protection. See [handoff39](integration/39_SHARED_VEHICLE_ODOMETER_SNAPSHOT.md).
+
+Completed ride mileage v2 requires coordinated capability/version/scope/revision handling. Any rollback must retain detailed-ride omission and trip ID reservation guards; older unguarded images could erase intervals and release dedup identities. See [handoff40](integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md).

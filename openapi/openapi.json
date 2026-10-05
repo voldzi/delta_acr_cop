@@ -13242,6 +13242,142 @@
       }
     },
     "schemas": {
+      "SharedVehicleRideDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "tripId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endOdometerKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          }
+        },
+        "required": [
+          "version",
+          "tripId",
+          "startedAt",
+          "endedAt"
+        ]
+      },
+      "SharedVehicleMileageSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "recordKind": {
+            "type": "string",
+            "enum": [
+              "odometer",
+              "energy",
+              "service",
+              "ride_summary"
+            ]
+          }
+        },
+        "required": [
+          "recordId",
+          "recordRevision",
+          "recordKind"
+        ]
+      },
+      "SharedVehicleOdometerSnapshotV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 2
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "known",
+              "estimated",
+              "reviewRequired"
+            ]
+          },
+          "dataRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "valueKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SharedVehicleMileageSource"
+          },
+          "basisKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "basisObservedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "basisSource": {
+            "$ref": "#/components/schemas/SharedVehicleMileageSource"
+          },
+          "includedRideCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "unconfirmedDistanceKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "no_observations",
+              "conflicting_observations",
+              "decreasing_observation",
+              "invalid_observation",
+              "invalid_correction",
+              "future_observation",
+              "overlapping_rides",
+              "anchor_overlap",
+              "legacy_ride_interval_unknown",
+              "duplicate_trip",
+              "distance_overflow",
+              "invalid_ride_interval"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "status",
+          "dataRevision"
+        ]
+      },
       "SharedVehicleOdometerSource": {
         "type": "object",
         "additionalProperties": false,
@@ -28937,9 +29073,29 @@
           "items": {
             "type": "integer",
             "enum": [
+              1,
+              2
+            ]
+          }
+        },
+        "rideDetailsVersions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "enum": [
               1
             ]
           }
+        },
+        "initialOdometerSupported": {
+          "type": "boolean"
+        },
+        "rideInsertPolicy": {
+          "type": "string",
+          "enum": [
+            "append_only_membership_cas"
+          ]
         }
       },
       "required": [
@@ -29121,6 +29277,9 @@
           },
           "odometerSnapshot": {
             "$ref": "#/components/schemas/SharedVehicleOdometerSnapshot"
+          },
+          "odometerSnapshotV2": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshotV2"
           }
         },
         "required": [
@@ -29425,6 +29584,10 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 500
+              },
+              "initial": {
+                "type": "boolean",
+                "const": true
               }
             },
             "required": [
@@ -29456,6 +29619,9 @@
                 "enum": [
                   "work"
                 ]
+              },
+              "details": {
+                "$ref": "#/components/schemas/SharedVehicleRideDetails"
               }
             },
             "required": [
@@ -29746,6 +29912,9 @@
           },
           "odometerSnapshot": {
             "$ref": "#/components/schemas/SharedVehicleOdometerSnapshot"
+          },
+          "odometerSnapshotV2": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshotV2"
           }
         },
         "required": [
@@ -29848,6 +30017,9 @@
           },
           "odometerSnapshot": {
             "$ref": "#/components/schemas/SharedVehicleOdometerSnapshot"
+          },
+          "odometerSnapshotV2": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshotV2"
           }
         },
         "required": [

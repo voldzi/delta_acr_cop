@@ -391,3 +391,5 @@ Shared own-account profile and avatar-only optimistic concurrency: [contract and
 Shared energy/service receipt detail v1: [binding fields and integration](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md).
 
 Versioned shared odometer snapshot is separate from receipt details; see [handoff39](integration/39_SHARED_VEHICLE_ODOMETER_SNAPSHOT.md).
+
+Completed ride details, explicit initial seed and calculated mileage v2 extend the shared contract compatibly; [handoff40](integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md) defines append policy and exact DTOs.
