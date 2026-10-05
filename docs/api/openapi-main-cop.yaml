@@ -3411,6 +3411,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MessagingConversationMemberSyncResponse"
+  /api/v1/messaging/matrix/identities/lookup:
+    post:
+      operationId: lookupExistingMessagingMatrixIdentities
+      tags:
+        - Messaging
+      summary: Read existing conversation-scoped Matrix identity mappings without provisioning
+      description: Authenticated COP actor only. Messaging service verifies current conversation
+        membership. No-store response; existing resolve endpoint retains its provisioning semantics.
+        Unknown/unavailable mapping never implies a peer or member count. Rate limit 120
+        requests/minute.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessagingMatrixIdentityLookupRequest"
+      responses:
+        "200":
+          description: Existing mappings with explicit unknowns
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingMatrixIdentityLookup"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ErrorResponse"
   /api/v1/messaging/matrix/identities/resolve:
     post:
       tags:
@@ -14378,6 +14414,8 @@ components:
         - updatedAt
       additionalProperties: false
       properties:
+        peer:
+          $ref: "#/components/schemas/MessagingVoiceCallPeer"
         callId:
           type: string
           format: uuid
@@ -14606,6 +14644,95 @@ components:
           maxItems: 4
           items:
             type: number
+    MessagingMatrixIdentityLookupRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - conversationId
+      properties:
+        conversationId:
+          type: string
+          minLength: 1
+          maxLength: 160
+      description: Read-only lookup of existing Matrix mappings for an authorized conversation. No
+        arbitrary user IDs, provisioning or account updates.
+    MessagingMatrixIdentityLookup:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - providerId
+        - actorUserId
+        - conversationId
+        - identities
+        - unresolvedUserIds
+        - validUntil
+        - status
+        - warnings
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-messaging-identity-lookup-v1
+        providerId:
+          type: string
+          enum:
+            - csm.messaging
+        actorUserId:
+          type: string
+        conversationId:
+          type: string
+        matrixRoomId:
+          type: string
+        identities:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - userId
+              - matrixUserId
+            properties:
+              userId:
+                type: string
+              matrixUserId:
+                type: string
+        unresolvedUserIds:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+        validUntil:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - online
+        warnings:
+          type: array
+          maxItems: 0
+          items:
+            type: string
+      description: Existing stored bindings, not proof that a Synapse account is currently active. All
+        members partition into identities/unresolvedUserIds. Pairing is scoped to actor,
+        conversation, Matrix room and membership snapshot; expires 30 seconds after the COP lookup.
+        Missing, expired, ambiguous or changed membership data must not be guessed. No names,
+        credentials or messages.
+    MessagingVoiceCallPeer:
+      type: object
+      additionalProperties: false
+      required:
+        - subjectId
+      properties:
+        subjectId:
+          type: string
+        displayName:
+          type: string
+          maxLength: 160
+      description: Read-only verified other call participant for this viewer. A missing name is unknown;
+        the legacy shared call title is not an incoming caller identity.
     MessagingMatrixIdentityResolveRequest:
       type: object
       required:
