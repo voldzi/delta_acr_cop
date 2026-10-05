@@ -134,3 +134,5 @@ No new flags/secrets/networks. The existing Messaging/APNs integration delivers
 registered verified recipients from the durable COP outbox. Both API ticket
 allowlists must admit Jízda, and client signing/OS permission must enable ordinary
 APNs. Intake acceptance is not phone delivery. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.
+
+Jízda self-profile API release and remaining device acceptance: [handoff](integration/36_COP_SELF_PROFILE.md).

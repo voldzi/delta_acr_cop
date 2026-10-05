@@ -49,3 +49,5 @@
 - [0038: Dispatch lease recovery](0038_DISPATCH_LEASE_RECOVERY.md).
 
 - [0039: Durable mobility invitation alerts](0039_DURABLE_MOBILITY_INVITATION_ALERTS.md).
+
+- [0040: COP canonical self profile](0040_COP_CANONICAL_SELF_PROFILE.md).

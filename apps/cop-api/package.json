@@ -16,6 +16,7 @@
     "@cop/nato-symbol-renderer": "workspace:*",
     "@cop/policy-engine": "workspace:*",
     "livekit-server-sdk": "2.18.0",
-    "pg": "^8.23.0"
+    "pg": "^8.23.0",
+    "sharp": "0.35.5"
   }
 }

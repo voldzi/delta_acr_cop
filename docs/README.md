@@ -81,3 +81,5 @@ or phone receipt.
 - [34: Dispatch recovery release](integration/34_COP_DISPATCH_RECOVERY_RELEASE.md).
 
 - [35: Mobility invitation notifications](integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md).
+
+- [36: COP self profile / Jízda Já](integration/36_COP_SELF_PROFILE.md).
