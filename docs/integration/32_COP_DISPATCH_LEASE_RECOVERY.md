@@ -20,7 +20,7 @@ The human user expressly approved restarting only COP API after disclosure that 
 - Production checkout: `6583cb5ab659044cc681294ee291f9b08135a4bc`.
 - Configuration, mounts, image, other containers and checkout verified unchanged.
 - All three health endpoints returned 200 after restart.
-- Read-only check confirmed exactly one granted Dispatch lease.
+- Read-only check confirmed exactly one granted Dispatch lease. A second check at 08:11:28 CEST (2 minutes 38 seconds after startup) still found one lease and all three health endpoints returned 200. This is a short observation, not proof of long-term recovery.
 
 Startup deliberately invalidates active shares and clears old in-memory position ciphertext. Users must explicitly restart sharing; there is no automatic reactivation. No test accounts/data, direct SQL user changes, measurement activation or other service restart occurred.
 
