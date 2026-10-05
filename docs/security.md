@@ -144,3 +144,11 @@ restores positions. Shared vehicle/account authorization remains independent.
 Lease diagnostics contain only state and generation, never DSNs, tokens,
 account identifiers or location payloads. Availability metadata is not an ACL
 or permission to resume collection.
+
+## Invitation alert boundary
+
+Atomic durable recipient-bound jobs, current verified email/ACL checks, fixed
+generic APNs text and fresh account/inbox validation prevent push links from
+granting access or GPS consent. Unknown emails are not disclosed and later
+registration receives inbox-only delivery. No location or private names appear
+in alerts. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.

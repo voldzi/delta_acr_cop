@@ -68,3 +68,5 @@ Public demo analytics: [integration and release gate](analytics/integration.md),
 - [33. Jízda mobility runtime and contract recheck](integration/33_JIZDA_MOBILITY_RUNTIME_CONTRACT_RECHECK.md): recurring Dispatch lease loss, current SDK/runtime, exact invitations/stop/cancel/encrypted snapshot boundaries and remaining device acceptance.
 
 - [34: Dispatch recovery release](integration/34_COP_DISPATCH_RECOVERY_RELEASE.md).
+
+- [35: Mobility invitation notifications](integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md).

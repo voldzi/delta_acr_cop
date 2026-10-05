@@ -1,3 +1,4 @@
+import { enqueueInvitationNotifications } from "./mobility-invitation-outbox.js";
 import { randomUUID } from "node:crypto";
 import { DispatchService } from "./dispatch-service.js";
 import { requireMobility, normalizeEmail, type Invite, type VehicleState, type GroupState } from "./mobility-service.js";
@@ -21,7 +22,8 @@ export class SharedMobilityService extends DispatchService {
       const invite: Invite = { invitationId, entityType: type, entityId: id, inviterAccountId: account.accountId,
         email: normalizeEmail(input.email), capabilities: [...new Set(capabilities)], expiresAt, state: "pending" };
       await tx.set(`invite:${invitationId}`, invite);
-      // Same shape/status for registered and unknown addresses; no directory lookup.
+      await enqueueInvitationNotifications(tx, invite, this.now());
+      // Same shape/status for registered and unknown addresses; no delivery/account details returned.
       return { contractVersion: "cop-mobility-invitation-v1", invitationId, operationId: input.operationId, status: "queued", expiresAt };
     });
   }

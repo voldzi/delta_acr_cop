@@ -737,6 +737,23 @@ describe("COP state temporal history", () => {
     else process.env.COP_DEVICE_REGISTRATION_TICKET_SECRET = previous;
   });
 
+  it("binds Jizda registration tickets to the actor and rejects unknown bundles", async () => {
+    const previous = process.env.COP_DEVICE_REGISTRATION_TICKET_SECRET;
+    process.env.COP_DEVICE_REGISTRATION_TICKET_SECRET = "t".repeat(32);
+    const app = buildServer();
+    try {
+      for (const bundleId of ["cz.voldzi.jizda", "unknown.application"]) {
+        const response = await app.inject({method:"POST",url:"/api/v1/mobile/device-registration-tickets",
+          headers:{authorization:"Bearer dev-lab-token"},payload:{appInstanceId:"40000000-0000-4000-8000-000000000001",bundleId}});
+        expect(response.statusCode).toBe(bundleId === "cz.voldzi.jizda" ? 201 : 400);
+        if (response.statusCode === 201) {
+          const claims = JSON.parse(Buffer.from(response.json().ticket.split(".")[1], "base64url").toString());
+          expect(claims).toMatchObject({bundleId:"cz.voldzi.jizda",sub:"lab",appInstanceId:"40000000-0000-4000-8000-000000000001",purpose:"apns-device-registration"});
+        }
+      }
+    } finally { await app.close(); if(previous===undefined)delete process.env.COP_DEVICE_REGISTRATION_TICKET_SECRET;else process.env.COP_DEVICE_REGISTRATION_TICKET_SECRET=previous; }
+  });
+
   it("pairs iOS devices through short-lived web-confirmed sessions", async () => {
     const app = buildServer({ now: () => new Date("2026-05-19T08:02:10Z") });
 

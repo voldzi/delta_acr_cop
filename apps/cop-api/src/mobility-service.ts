@@ -77,6 +77,7 @@ export class MobilityService {
       for (const entry of await tx.scan<Receipt>("operation:")) {
         if (!entry.value.expired && Date.parse(entry.value.createdAt) <= cutoff) await tx.set(entry.key, {hash:entry.value.hash,createdAt:entry.value.createdAt,expired:true});
       }
+      for (const entry of await tx.scan<{expiresAt:string}>("invite-notification:")) if (Date.parse(entry.value.expiresAt) <= cutoff) await tx.remove(entry.key);
       for (const entry of await tx.scan<Invite>("invite:")) if (Date.parse(entry.value.expiresAt) <= cutoff) await tx.remove(entry.key);
       for (const entry of await tx.scan<VehicleState>("vehicle:")) if (entry.value.deletedAt && Date.parse(entry.value.deletedAt) <= cutoff) await tx.remove(entry.key);
       for (const entry of await tx.scan<GroupState>("group:")) {

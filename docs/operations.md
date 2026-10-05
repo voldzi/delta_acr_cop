@@ -102,3 +102,10 @@ Community reporting release/rollback and acceptance are recorded in
 No new configuration or port is required. During durable store outage return503;
 restore its connectivity rather than accepting reports into RAM. Police expiry
 and absence suppression do not modify SIM closure data.
+
+## Invitation push delivery
+
+No new flags/secrets/networks. The existing Messaging/APNs integration delivers
+registered verified recipients from the durable COP outbox. Both API ticket
+allowlists must admit Jízda, and client signing/OS permission must enable ordinary
+APNs. Intake acceptance is not phone delivery. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.
