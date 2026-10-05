@@ -294,3 +294,27 @@ archive, verify its digest/platform/labels, retain the current web rollback imag
 and only recreate cop-web with unchanged existing runtime env/network/ports.
 Central source capability/registry and isolated test-website acceptance remain
 coordinator-owned; do not manufacture visits in actual statistics.
+
+## TikTok runtime maintenance — 2026-10-05
+
+The owner approved adding TikTok to the already reviewed general source categories.
+Only a service label `tiktok` is sent; full referrer, video/profile, query and
+fragment are never submitted. Exact tiktok.com and its subdomains are recognized;
+suffix lookalikes are excluded. Existing anonymous-session, DNT/GPC/offline,
+exact public demo path and empty event allowlist stay in place. CS/EN notices
+already describe normalized general sources and are unchanged.
+
+The bridge now loads the byte-exact reviewed VCode artifact as the public static
+`/vcode-analytics-tiktok.js` with SRI
+`sha384-JpAOJexapVVtAZAFpz3dwp4AHY8PLbao7cLk7Mg7VFIDy2g0/bOUl0zb/HO1qbX5`.
+Contract remains `vcode-public-v2`, collector remains `/analytics/v2/events`.
+The compatibility runtime/central endpoint is unchanged. The new static runtime
+bypasses service-worker caching, retries and replay; the release guard verifies
+its bytes and the bypass unconditionally.
+
+Prepared from actual production frontend revision 168471d in isolated branch
+`codex/cop-analytics-tiktok`; no unfinished API/route work is included. Adoption
+into subsequent development should cherry-pick this narrow maintenance commit
+and retain the existing enabled production configuration. Chroma was unreachable;
+selected source/runbooks were inspected directly. Acceptance uses isolated
+fixtures only and does not add synthetic pageviews to the production website.
