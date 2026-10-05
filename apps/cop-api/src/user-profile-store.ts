@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
 import type { AoiRule, AoiRuleAffiliationScope, CopAlertSeverity, CopAlertType } from "./alerts.js";
 import type { AlertAcknowledgement } from "./types.js";
@@ -21,8 +22,28 @@ export interface UserProfileRecord {
   username: string;
 }
 
+/** Revision binds the canonical avatar and row version to the authenticated owner. */
+export function userAvatarRevision(subjectId: string, profile: UserProfileRecord | null): string {
+  return createHash("sha256").update(JSON.stringify([subjectId, profile?.updatedAt ?? null, userAvatar(profile)])).digest("hex");
+}
+export function userAvatar(profile: UserProfileRecord | null): string | null {
+  const operator = profile?.preferences.operatorProfile;
+  if (!operator || typeof operator !== "object" || Array.isArray(operator)) return null;
+  const value = (operator as Record<string, unknown>).avatarDataUrl;
+  return typeof value === "string" && value.length <= 250000 && /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/iu.test(value) ? value : null;
+}
+function avatarPreferences(profile: UserProfileRecord | null, avatarDataUrl: string | null): Record<string, unknown> {
+  const preferences = { ...(profile?.preferences ?? {}) };
+  const original = preferences.operatorProfile;
+  const operatorProfile = original && typeof original === "object" && !Array.isArray(original) ? { ...original } : {};
+  if (avatarDataUrl === null) delete (operatorProfile as Record<string, unknown>).avatarDataUrl;
+  else (operatorProfile as Record<string, unknown>).avatarDataUrl = avatarDataUrl;
+  return { ...preferences, operatorProfile };
+}
+
 export interface UserProfileStore {
   readonly name: string;
+  updateAvatar?(actor: Omit<UserProfileRecord, "createdAt" | "updatedAt" | "preferences" | "alertPreferences">, avatarDataUrl: string | null, expectedRevision: string): Promise<UserProfileRecord | null>;
   acknowledgeAlert(subjectId: string, acknowledgement: AlertAcknowledgement): Promise<void>;
   close(): Promise<void>;
   diagnostics?(): string | undefined;
@@ -69,6 +90,16 @@ export class InMemoryUserProfileStore implements UserProfileStore {
 
   async getProfile(subjectId: string): Promise<UserProfileRecord | null> {
     return this.profiles.get(subjectId) ?? null;
+  }
+
+  async updateAvatar(actor: Omit<UserProfileRecord, "createdAt" | "updatedAt" | "preferences" | "alertPreferences">, avatarDataUrl: string | null, expectedRevision: string): Promise<UserProfileRecord | null> {
+    const current = this.profiles.get(actor.subjectId) ?? null;
+    if (userAvatarRevision(actor.subjectId, current) !== expectedRevision) return null;
+    // No await between the comparison and map mutation: atomic in this implementation.
+    const timestamp = new Date(Math.max(Date.now(), Date.parse(current?.updatedAt ?? "") + 1 || 0)).toISOString();
+    const next = { ...actor, preferences: avatarPreferences(current, avatarDataUrl), alertPreferences: current?.alertPreferences ?? {}, createdAt: current?.createdAt ?? timestamp, updatedAt: timestamp };
+    this.profiles.set(actor.subjectId, next);
+    return next;
   }
 
   async searchProfiles(query: string, limit = 10): Promise<UserProfileRecord[]> {
@@ -137,6 +168,29 @@ export class PostgresUserProfileStore implements UserProfileStore {
     );
     const row = result.rows[0];
     return row ? profileFromRow(row) : null;
+  }
+
+  async updateAvatar(actor: Omit<UserProfileRecord, "createdAt" | "updatedAt" | "preferences" | "alertPreferences">, avatarDataUrl: string | null, expectedRevision: string): Promise<UserProfileRecord | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const inserted = await client.query(`INSERT INTO cop_user_profiles(subject_id,username,display_name,email)
+        VALUES($1,$2,$3,$4) ON CONFLICT(subject_id) DO NOTHING`, [actor.subjectId, actor.username, actor.displayName, actor.email ?? null]);
+      const selected = await client.query<UserProfileRow>(`SELECT subject_id,username,display_name,email,preferences,alert_preferences,created_at,updated_at
+        FROM cop_user_profiles WHERE subject_id=$1 FOR UPDATE`, [actor.subjectId]);
+      const current = inserted.rowCount === 1 ? null : profileFromRow(selected.rows[0]!);
+      if (userAvatarRevision(actor.subjectId, current) !== expectedRevision) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      const result = await client.query<UserProfileRow>(`UPDATE cop_user_profiles SET preferences=$2::jsonb,
+        updated_at=greatest(clock_timestamp(), updated_at + interval '1 millisecond') WHERE subject_id=$1
+        RETURNING subject_id,username,display_name,email,preferences,alert_preferences,created_at,updated_at`,
+        [actor.subjectId, JSON.stringify(avatarPreferences(current, avatarDataUrl))]);
+      await client.query("COMMIT");
+      return profileFromRow(result.rows[0]!);
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
   }
 
   async searchProfiles(query: string, limit = 10): Promise<UserProfileRecord[]> {

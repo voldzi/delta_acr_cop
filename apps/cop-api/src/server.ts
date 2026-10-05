@@ -1,3 +1,4 @@
+import { registerCOPAccountProfile } from "./cop-account-profile.js";
 import { registerMobilityRoutes } from "./routes/mobility-routes.js";
 import { mobilityStoreFromEnv, type MobilityStore } from "./mobility-store.js";
 import { communityReportPresence } from "./community-report-presence.js";
@@ -4770,6 +4771,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
     return objects.map((object) => withConflictEvidence(object, evidenceIndex.get(object.objectId)));
   }
+
+  registerCOPAccountProfile(app, { store: userProfileStore, requireActor, ready: ensureUserProfileStoreReady, degraded: markUserProfileStoreDegraded, now });
 
   app.get("/api/v1/me/preferences", async (request, reply) => {
     const actor = requireActor(request, reply);

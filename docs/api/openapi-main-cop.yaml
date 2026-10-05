@@ -8035,6 +8035,95 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/DispatchParticipantOpen"
+  /api/v1/me/profile:
+    get:
+      tags:
+        - Identity
+      operationId: getMyCopAccountProfile
+      summary: Read the current verified COP account and canonical avatar.
+      security:
+        - bearerAuth: []
+      description: "OIDC bearer only. Owner and issuer are derived from verified session. Independent of
+        mobility capability and dispatch availability. Read does not create a profile. Avatar
+        source: cop_user_profiles.preferences.operatorProfile.avatarDataUrl; Matrix is not the
+        source of identity or avatar."
+      responses:
+        "200":
+          description: Verified current identity and canonical avatar; Cache-Control no-store, strong ETag
+            matching revision.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/COPAccountProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Authoritative profile unavailable; no in-memory fallback.
+  /api/v1/me/profile/avatar:
+    patch:
+      tags:
+        - Identity
+      operationId: updateMyCopAccountAvatar
+      summary: Explicitly replace or remove the authenticated account avatar.
+      security:
+        - bearerAuth: []
+      description: "Atomic revision comparison; update preserves other preferences and alert settings.
+        If-Match must be the quoted revision returned by GET. Body may contain only avatarDataUrl:
+        null removes, otherwise PNG/JPEG data URL. Maximum180000 decoded bytes,1024px per side,one
+        frame; server fully decodes and re-encodes maximum512px PNG without original metadata.
+        SVG,remote URLs,MIME mismatch and malformed images rejected. No change of account identity.
+        Existing preferences endpoint remains compatible; its older full-profile writes are not
+        protected by this new If-Match contract."
+      parameters:
+        - in: header
+          name: If-Match
+          required: true
+          schema:
+            type: string
+            pattern: ^"[a-f0-9]{64}"$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - avatarDataUrl
+              properties:
+                avatarDataUrl:
+                  type:
+                    - string
+                    - "null"
+                  maxLength: 240030
+      responses:
+        "200":
+          description: Verified current identity and canonical avatar; Cache-Control no-store, strong ETag
+            matching revision.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/COPAccountProfile"
+        "400":
+          description: Invalid body, image or revision.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "412":
+          description: "Profile changed: reload and explicitly confirm; never retry blindly."
+        "413":
+          description: Request exceeds245000bytes.
+        "428":
+          description: Missing If-Match precondition.
+        "503":
+          description: Authoritative profile unavailable; no in-memory fallback.
 components:
   securitySchemes:
     bearerAuth:
@@ -20963,6 +21052,56 @@ components:
           type: string
           minLength: 1
           maxLength: 512
+    COPAccountProfile:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - subjectId
+        - issuer
+        - displayName
+        - email
+        - emailVerified
+        - avatarDataUrl
+        - revision
+        - updatedAt
+        - serverTimestamp
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-account-profile-v1
+        subjectId:
+          type: string
+        issuer:
+          type: string
+          format: uri
+        displayName:
+          type: string
+        email:
+          type:
+            - string
+            - "null"
+        emailVerified:
+          type: boolean
+        avatarDataUrl:
+          type:
+            - string
+            - "null"
+          maxLength: 250000
+          description: Canonical COP avatar. New writes are metadata-free PNG; existing JPEG/PNG/WebP may be
+            read. No remote URLs.
+        revision:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        updatedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        serverTimestamp:
+          type: string
+          format: date-time
 x-cop-mobility-invitation-notifications:
   contractVersion: cop-mobility-invitation-notification-v1
   transport: APNs alert via CSM Messaging

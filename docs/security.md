@@ -152,3 +152,5 @@ generic APNs text and fresh account/inbox validation prevent push links from
 granting access or GPS consent. Unknown emails are not disclosed and later
 registration receives inbox-only delivery. No location or private names appear
 in alerts. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.
+
+Own avatar writes decode/re-encode bounded images without metadata and use verified OIDC ownership; [self-profile boundary](integration/36_COP_SELF_PROFILE.md).

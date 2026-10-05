@@ -355,3 +355,5 @@ The additive OpenAPI extension defines metadata-only ordinary APNs invitation
 links and verified session navigation. Existing queued invitation receipts and
 verified inbox remain unchanged. Device-registration tickets admit exactly
 cz.voldzi.copmobile and cz.voldzi.jizda. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.
+
+Shared own-account profile and avatar-only optimistic concurrency: [contract and SDK handoff](integration/36_COP_SELF_PROFILE.md).
