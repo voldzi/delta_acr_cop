@@ -52,3 +52,5 @@ New public file CSMSharedVehicleRideMileage.swift:
 - Evidence directory on docker.home.cz `/home/voldzi/cop-deployments/shared-ride-mileage-20261005/`: image manifest, release/rollback acceptance logs, deployment before/after, runtime checks and guarded deploy script.
 
 Actual two-phone authenticated ride, account switch, offline/restart replay and UI-label acceptance must be supplied by Jízda. Simulator gates and isolated server evidence do not prove those. No actual GPS/trip/receipt/account membership was modified to manufacture acceptance.
+
+Stability proof2026-10-05T18:16:10.150Z,5min27s after restart: threehealth200/sixanonymous401, primary PostgreSQL/exactlyone dedicated Dispatch lease ready generation1,461runtime hashes unchanged. Independent final config/file/container comparison PASS for all134other containers. No unresolved runtime gate; actual authenticated physical-device acceptance remains unverified here. Final Chroma SDK reindex6files/49chunks and COP source15files/661chunks completed; delivery-doc incremental index follows.
