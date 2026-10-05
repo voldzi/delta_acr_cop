@@ -51,3 +51,5 @@
 - [0040: COP canonical self profile](0040_COP_CANONICAL_SELF_PROFILE.md).
 
 - [0041: Shared vehicle receipt details](0041_SHARED_VEHICLE_RECEIPT_DETAILS.md).
+
+- [0042: Shared vehicle odometer projection](0042_SHARED_VEHICLE_ODOMETER_PROJECTION.md).

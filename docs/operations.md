@@ -113,3 +113,5 @@ APNs. Intake acceptance is not phone delivery. See integration/35_MOBILITY_INVIT
 Jízda self-profile API release and remaining device acceptance: [handoff](integration/36_COP_SELF_PROFILE.md).
 
 Shared receipt details capability and rollback/downgrade guard: [release handoff](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md).
+
+A rollback from odometer projection to the receipt-only image preserves records but removes snapshot capability; clients must show unknown and never replace it with zero/local/paged-event mileage. Retain receipt-details downgrade protection. See [handoff39](integration/39_SHARED_VEHICLE_ODOMETER_SNAPSHOT.md).

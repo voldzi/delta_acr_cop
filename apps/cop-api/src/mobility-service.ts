@@ -1,3 +1,4 @@
+import { sharedOdometerSnapshot } from "./mobility-odometer.js";
 import { acceptsMobilitySchema } from "./mobility-contract.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { MobilityStore, MobilityTransaction } from "./mobility-store.js";
@@ -153,6 +154,9 @@ export class MobilityService {
     requireMobility(member?.capabilities.includes(capability), 404, "NOT_FOUND", "Vozidlo není dostupné.");
     return state;
   }
+  vehicleView(state: VehicleState): Wire.SharedVehicle {
+    return { ...structuredClone(state.vehicle), odometerSnapshot: sharedOdometerSnapshot(state, this.now()) };
+  }
   revisions(state: VehicleState, body: { expectedDataRevision?: number; expectedMembershipRevision: number }): void {
     requireMobility(
       body.expectedMembershipRevision === state.vehicle.membershipRevision &&
@@ -178,7 +182,7 @@ export class MobilityService {
       createdAt: this.now().toISOString(),
       ...(record
         ? { record: structuredClone(record), recordId: record.recordId }
-        : { vehicle: structuredClone(state.vehicle) })
+        : { vehicle: this.vehicleView(state) })
     };
     state.events.push(event);
     requireMobility(
@@ -197,6 +201,7 @@ export class MobilityService {
       dataRevision: state.vehicle.dataRevision,
       membershipRevision: state.vehicle.membershipRevision,
       eventSequence: state.sequence,
+      odometerSnapshot: sharedOdometerSnapshot(state, this.now()),
       confirmed: true,
       ...(recordId ? { recordId } : {})
     };
@@ -239,7 +244,7 @@ export class MobilityService {
         };
         const state: VehicleState = { vehicle, records: {}, events: [], sequence: 0 };
         await this.vehicleEvent(tx, state, account, "vehicle");
-        return vehicle;
+        return this.vehicleView(state);
       }
     );
   }
@@ -254,13 +259,13 @@ export class MobilityService {
               (m) => m.accountId === account.accountId && m.capabilities.includes("readVehicle")
             )
         )
-        .map((x) => x.value.vehicle)
+        .map((x) => this.vehicleView(x.value))
         .slice(0, 100),
       serverTimestamp: this.now().toISOString()
     }));
   }
   async getVehicle(account: Wire.MobilityAccount, id: string): Promise<Wire.SharedVehicle> {
-    return this.store.transact([`vehicle:${id}`], async (tx) => (await this.vehicle(tx, id, account)).vehicle);
+    return this.store.transact([`vehicle:${id}`], async (tx) => this.vehicleView(await this.vehicle(tx, id, account)));
   }
   async updateVehicle(
     account: Wire.MobilityAccount,
@@ -526,6 +531,7 @@ export class MobilityService {
         hasMore: pending.length > limit,
         dataRevision: state.vehicle.dataRevision,
         membershipRevision: state.vehicle.membershipRevision,
+        odometerSnapshot: sharedOdometerSnapshot(state, this.now()),
         serverTimestamp: this.now().toISOString()
       };
     });

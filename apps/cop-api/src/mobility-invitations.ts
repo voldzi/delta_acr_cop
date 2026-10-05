@@ -66,7 +66,7 @@ export class SharedMobilityService extends DispatchService {
           state.vehicle.members.push({ accountId: account.accountId, displayName: account.displayName, role: "driver", capabilities: invite.capabilities, joinedAt: this.now().toISOString() });
           state.vehicle.membershipRevision++; await this.vehicleEvent(tx, state, account, "membership");
         }
-        result = state.vehicle;
+        result = this.vehicleView(state);
       } else {
         const state = await tx.get<GroupState>(`group:${invite.entityId}`);
         requireMobility(state && !state.deletedAt && state.group.members.some(m => m.accountId === invite.inviterAccountId && ["owner", "admin"].includes(m.role)), 410, "INVITATION_REVOKED", "Oprávnění pozvánky již neplatí.");
