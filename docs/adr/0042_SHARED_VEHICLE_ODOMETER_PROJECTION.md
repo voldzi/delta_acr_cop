@@ -1,6 +1,6 @@
 # ADR0042: Authoritative shared odometer projection
 
-Date2026-10-05. Status: accepted compatible implementation, production delivery pending.
+Date2026-10-05. Status: accepted compatible implementation, published and production-delivered; see handoff39 for exact evidence and pending phone acceptance.
 
 The shared vehicle's kilometer state must match across employees and owners, while costs remain separately restricted. Never reconstruct it from incomplete sync pages or rewrite a person's private CloudKit vehicle.
 

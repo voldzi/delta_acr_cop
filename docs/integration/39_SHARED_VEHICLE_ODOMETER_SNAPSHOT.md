@@ -1,6 +1,6 @@
 # Authoritative shared vehicle odometer snapshot v1
 
-Status2026-10-05: explicit compatible contract implemented and tested locally; public pins and production verification pending. Receipt release38 remains independently published/deployed.
+Status2026-10-05: compatible contract published; COP API-only production delivery completed at16:24:40UTC and verified read-only at16:26:25UTC. Receipt release38 remains independently published/deployed.
 
 ## Contract
 
@@ -24,3 +24,16 @@ Owner versus driver without readCosts; energy/service/odometer in one receipt; h
 ## Local verification
 
 Server1306PASS/5skip; lint/typecheck pass, binding OpenAPI valid (26existingwarnings),11schemas and skeleton pass. Five new whole-state checks cover all receipt kinds, dates/equality/contradictions, correction chain/cycle/tombstone, no invented mileage, owner/driver without prices and incomplete sync page. Real isolated PostgreSQL test validates snapshot across independent connections/restart and receipt CAS/idempotence; temporary database removed. SDK mandatory full gate PASS:30appunit,5UI,121packageXCTest(1skip),2SwiftTesting,2accessibility audits on explicit COP iPhoneDuo. Three new snapshot tests cover typed roundtrip/fractional timestamp/stale revision, unknown/review/unsupported versions and legacy vehicle decode. Real phone authenticated shared snapshot acceptance remains separate.
+
+
+## Published delivery and production evidence
+
+- SDK: `6388f7e365b8f02c24c48f6835b5b4312d823744`, branch `codex/shared-mobility-sdk`. Clean public commit archive:7snapshot/receipt tests PASS, no unrelated local modifications included.
+- COP code: `85af0438bc3d95cdc8013b8fee94470f1c05182b`, branch `codex/shared-vehicle-odometer-snapshot`.
+- Main binding JSON SHA256: `eaa9a2620ae217a39313f975f955a0848dcab40be0497129614ab53526c594cd`.
+- Mobility fragment SHA256: `37684f51710459096fbace2151bc36fb953f8151bb9abfee1b81d04eb38a5be8`.
+- Production image: `sha256:9a6641a24a292a116b7174406db6344465382868e98ba3ff11e5a2bb24d0b5f6`, tag `delta-acr-cop-api:odometer-85af043`, start2026-10-05T16:24:40.883346296Z.
+- Safe rollback: receipt-only `sha256:1539f6813a70650dc0d2e520d7c68c7ca75322c50f7675d829747ad852c4c05e`, retained tag `delta-acr-cop-api:odometer-rollback-20261005`. Tested absent odometer capability, retained typed receipts/omission guard. No database rollback or user-record rewrite.
+- Exact release image network-none acceptance:452artifact hashes, signed synthetic OIDC, whole-state snapshot in one receipt, owner/driver without readCosts equality, paged sync independently correct, cost/note exclusion, two-account isolation, idempotence and omission409. Rollback446artifact hashes and legacy receipt boundaries PASS. Both isolated images use memory-only synthetic accounts/vehicles, no production users/GPS.
+- Read-only production16:26:25UTC:452runtime artifact hashes match; health/live,ready,dependencies200; six anonymous boundaries401; primary PostgreSQL and exactly one dedicated Dispatch lease ready/generation1. Measurementsfalse/sharedMobilitytrue/Dispatchtrue unchanged. Configuration/secrets/compose and134other containers unchanged; SIM/Messaging/identity and web unaffected.
+- Evidence host: `/home/voldzi/cop-deployments/shared-odometer-20261005/`. Physical authenticated shared receipt/snapshot/role/offline acceptance remains to be completed by Jízda and the users. Builds and synthetic HTTP/database checks do not establish phone acceptance.
