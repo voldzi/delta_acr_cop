@@ -92,3 +92,11 @@ No physical tests or battery/network claims. Do not enable its GPS gate from
 health status alone. Chroma Mobile reindex previously timed out; fresh index
 completion is not confirmed.
 
+## Final stability observation
+
+At `2026-10-05T12:08:55.069Z` (14:08:55CEST), over6minutes after start, the
+primary still grants exactly one lease to the dedicated session. Live/ready/
+dependencies remain200/ok and Dispatch ready generation1. The4 unauthenticated
+endpoints remain401 and measurementsfalse. No production fault or position
+publication was induced. This short observation does not prove future failover
+or authenticated device acceptance.
