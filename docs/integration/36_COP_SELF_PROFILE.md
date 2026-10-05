@@ -26,9 +26,21 @@ No avatar upload for other passengers; no automatic upload of their photos. Acce
 - Six isolated route/image tests pass: auth/no-store/read-only, two owners, metadata removal, preserve preferences/alerts, concurrent update/remove, invalid identity/body/image/revision, authoritative-store outage.
 - Real isolated PostgreSQL test passes: separate connections create/update serialization, stale cross-owner revision, rollback of rejected first write, preserved preferences/alerts and restart persistence.
 - COP regression1296pass/4skip (optional isolated DB tests skipped unless their dedicated env is set); lint/typecheck/API build pass.
-- SDK required scripts/check.sh pass:30appunit,5appUI,114packageXCTest(1skip),2SwiftTesting,2accessibilityaudits. Three added tests verify issuer/subject/revision binding, PKCE login hint and real image GPS metadata removal. Source is still being packaged for a clean public pin.
+- SDK required scripts/check.sh pass:30appunit,5appUI,114packageXCTest(1skip),2SwiftTesting,2accessibilityaudits. Three added tests verify issuer/subject/revision binding, PKCE login hint and real image GPS metadata removal. Clean public SDK snapshot c0ae543 also passes5targetedprofile/OIDCtests; the package compiles without unrelated unpublished sources.
 - Physical signed-in login/registration, avatar roundtrip and account switching require joint device acceptance; synthetic tests and builds do not establish it. Actual public IdP login page (login.zeleznalady.cz/realms/cop, existing csm-mobile client and csm redirect) returned200 and offered its registration link on2026-10-05. No registration/login was performed; the SDK exposes that existing page only.
 
 ## Deployment
 
-Pending governed API-only release; no changes to web analytics, service secrets, ports, network segmentation, measurement flags or chat provider are part of this release. Runtime evidence and public SDK/source pins will be appended after delivery.
+Deployed COP API-only2026-10-05T14:41:20.186864193Z.
+
+- Source1186074e8804c0729bc436cd64553cfa36ccf2af (codex/cop-self-profile), image sha256:7e28ae4186b1a7d303229eb4c81e49ab5b6e9b66f13c827394aa2a9aeab5e35e, healthy/ready200. Server checkout is unchanged; versioned image overlay holds these exact compiled sources.
+- Public SDK c0ae543ff45723ef4fbfb3f72010e58c9afa9c47 (codex/shared-mobility-sdk), source/SDK handoff sent to Jízda. Local unrelated China/routing/measurement work is not part of this pin.
+- Isolated image with networknone:415artifact hashes, real native Linux codec/sanitization and synthetic owner/revision boundary pass.415hashes rechecked in the running container.
+- Runtime2026-10-05T14:42:56.616Z: health live/ready/dependencies200, anonymous GETprofile and PATCHavatar401, four existing mobilityroutes401, primaryDB and exactly one dedicated Dispatch lease. Measurementsfalse/sharedMobilitytrue/Dispatchtrue preserved.
+- Preflight/postdeploy environment, command/healthcheck/resources/mounts/networks/security/compose/secrets hashes unchanged; other134container identities unchanged. No public port, network, web, analytics, AI/provider or user data change.
+- Rollback retains previous invitation image sha256:3e860fb34dc68426f3dbc33bf24149f0c6ed8346fe1ff08116b0f4fec9467b19 as delta-acr-cop-api:self-profile-rollback-20261005. Retag oldimage to delta-acr-cop-api:local and recreate onlycop-api with the same existing composefiles; verify health/Dispatch. Existing profile data/schema remain compatible. This rollback command was prepared, not exercised in production for the profile release.
+- Host evidence directory /home/voldzi/cop-deployments/cop-self-profile-20261005: manifest, image-build, before/after deployment, runtime-check, versioned deploy script. No credentials or photographs in evidence.
+
+Authenticated real account/avatar roundtrip and Jízda physical-phone/UI acceptance remain unverified; this release does not claim them.
+
+Binding full OpenAPI SHA256 at release: `609a285243e2d56a3075dba1561d7765ffda83f81ae0c0c68405601094212efd`.
