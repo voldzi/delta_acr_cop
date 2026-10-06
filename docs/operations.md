@@ -121,3 +121,5 @@ Completed ride mileage v2 requires coordinated capability/version/scope/revision
 Shared profile/audit/recovery keeps existing retention and no migrations; use guard-only rollback preserving sealed metadata. Delivery and physical acceptance limits: [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).
 
 Read-only Matrix lookup rollout: Messaging then COP API, preserving exact existing images/configuration. Old images remain a schema-safe rollback; see [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md).
+
+2026-10-06 identity release is partial: COP and local Messaging on docker.home.cz are deployed, but COP actually calls comm.home.cz:4050 where lookup returns404. Preserve the configured provider/dataset; its separate approved deployment and end-to-end acceptance remain pending. Exact images, read-only target inventory and rollback plan: [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md).
