@@ -4532,9 +4532,5 @@ function base64Url(value: string): string {
 }
 
 function jsonResponse(body: unknown): Response {
-  return {
-    json: async () => body,
-    ok: true,
-    status: 200
-  } as Response;
+  return Response.json(body);
 }

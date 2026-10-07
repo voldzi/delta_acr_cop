@@ -112,6 +112,48 @@ budgets.forEach((budget) => {
   budget.entries.forEach((entry) => checkEntry(budget.app, assets, entry));
 });
 
+// A chunk can stay within its size budget while a shared dependency silently
+// makes an optional engine part of the initial shell's static import graph.
+checkOptionalWebEngines();
+
+function checkOptionalWebEngines() {
+  const manifestPath = join(repoRoot, "apps/cop-web/dist/asset-manifest.json");
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch {
+    hasFailure = true;
+    console.error("Bundle budget: cop-web asset manifest není dostupný nebo platný.");
+    return;
+  }
+  const visited = new Set();
+  const pending = Object.keys(manifest).filter((key) => manifest[key].isEntry);
+  if (pending.length === 0) {
+    hasFailure = true;
+    console.error("Bundle budget: cop-web asset manifest nemá vstupní modul.");
+    return;
+  }
+  while (pending.length > 0) {
+    const key = pending.pop();
+    if (visited.has(key)) continue;
+    visited.add(key);
+    const chunk = manifest[key];
+    if (!chunk) {
+      hasFailure = true;
+      console.error(`Bundle budget: cop-web odkazuje na chybějící chunk ${key}.`);
+      continue;
+    }
+    if (/(?:^|\/)(?:cesium|GlobeWorkspace|XrWorkspace)-[^/]+\.js$/u.test(chunk.file)) {
+      hasFailure = true;
+      console.error(`✗ cop-web: volitelný 3D/XR engine ${chunk.file} patří do počátečního statického grafu.`);
+    }
+    pending.push(...(chunk.imports ?? []));
+  }
+  if (!hasFailure) {
+    console.log("✓ cop-web: Cesium, 3D a XR zůstávají mimo počáteční statický graf.");
+  }
+}
+
 if (hasFailure) {
   process.exitCode = 1;
 }

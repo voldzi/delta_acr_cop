@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSign, generateKeyPairSync, type KeyObject } from "node:crypto";
 import { buildServer } from "./server.js";
 import { clearJwksCacheForTests } from "./security.js";
+import { InMemoryWebSessionStore } from "./web-session-store.js";
 
 const originalEnv = { ...process.env };
 
@@ -18,6 +19,83 @@ afterEach(() => {
 });
 
 describe("COP API authentication", () => {
+  it.each([undefined, "Bearer not-authorized"])("rejects a protected malformed upload before parsing it (%s)", async (authorization) => {
+    const app = buildServer();
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/community/reports",
+        headers: { "content-type": "application/json", ...(authorization ? { authorization } : {}) },
+        payload: '{"not-valid-json":'
+      });
+      expect(response.statusCode).toBe(401);
+      expect(response.json().error.code).toBe("UNAUTHORIZED");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("preserves body parsing and limits after successful authentication", async () => {
+    const app = buildServer();
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/community/reports",
+        headers: { "content-type": "application/json", authorization: "Bearer dev-lab-token" },
+        payload: '{"not-valid-json":'
+      });
+      expect(response.statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("preserves credential-free CORS preflight on protected routes", async () => {
+    process.env.COP_API_ALLOWED_ORIGINS = "https://cop.example.test";
+    const app = buildServer();
+    try {
+      const response = await app.inject({
+        method: "OPTIONS",
+        url: "/api/v1/community/reports",
+        headers: { origin: "https://cop.example.test", "access-control-request-method": "POST" }
+      });
+      expect(response.statusCode).toBe(204);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("resolves a BFF cookie before body parsing and rejects an untrusted origin first", async () => {
+    process.env.COP_WEB_BFF_SESSION_ENABLED = "true";
+    process.env.COP_AUTH_MODE = "lab";
+    process.env.COP_PUBLIC_URL = "https://cop.example.test";
+    const sessions = new InMemoryWebSessionStore();
+    const record = await sessions.create({
+      accessToken: "dev-lab-token",
+      accessTokenExpiresAt: new Date(Date.now() + 300_000),
+      profile: { name: "Synthetic", subjectId: "lab", username: "lab" }
+    }, new Date(Date.now() + 86_400_000));
+    const app = buildServer({ webSessionStore: sessions });
+    try {
+      const request = {
+        method: "POST" as const,
+        url: "/api/v1/community/reports",
+        headers: { cookie: `cop_web_session_v1=${record.sessionId}`, "content-type": "application/json", origin: "https://evil.example.test" },
+        payload: '{"not-valid-json":'
+      };
+      const rejected = await app.inject(request);
+      expect(rejected.statusCode).toBe(403);
+      expect(rejected.json().error.code).toBe("BFF_ORIGIN_FORBIDDEN");
+      const allowed = await app.inject({ ...request, headers: { ...request.headers, origin: "https://cop.example.test" } });
+      expect(allowed.statusCode).toBe(400);
+      const profile = await app.inject({ url: "/api/v1/me/preferences", headers: { cookie: request.headers.cookie } });
+      expect(profile.statusCode).toBe(200);
+      expect(profile.json().actor.subjectId).toBe("lab");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("accepts the exact lab token in lab mode", async () => {
     const app = buildServer();
 
@@ -321,9 +399,5 @@ function bufferToBase64Url(value: Buffer): string {
 }
 
 function jsonResponse(body: unknown): Response {
-  return {
-    json: async () => body,
-    ok: true,
-    status: 200
-  } as Response;
+  return Response.json(body);
 }

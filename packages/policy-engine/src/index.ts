@@ -47,6 +47,17 @@ export function evaluateReadPolicy(subject: PolicySubject, resource: PolicyResou
     };
   }
 
+  const classificationLevels = ["UNCLASSIFIED", "RESTRICTED", "CONFIDENTIAL", "SECRET"];
+  const requiredClearance = classificationLevels.indexOf(resource.classification ?? "UNCLASSIFIED");
+  const actualClearance = classificationLevels.indexOf(subject.clearance ?? "UNCLASSIFIED");
+  if (requiredClearance < 0 || actualClearance < requiredClearance) {
+    return {
+      allowed: false,
+      reason: "Subject clearance does not permit this classification.",
+      auditTags: ["ABAC_CLASSIFICATION_DENY"]
+    };
+  }
+
   return {
     allowed: true,
     reason: "Read policy allowed.",

@@ -55,7 +55,7 @@ jobs:
         run: pnpm check:static-runtime
 
       - name: Dependency audit
-        run: pnpm audit --audit-level critical
+        run: pnpm audit --audit-level low
 
       - name: Docker build API
         run: docker build -f Dockerfile.api -t delta-acr-cop-api:ci .

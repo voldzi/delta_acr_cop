@@ -424,8 +424,13 @@
         "responses": {
           "204": {
             "description": "Session invalidated."
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
           }
-        }
+        },
+        "x-cop-body-limit-bytes": 1024,
+        "description": "The request body is limited to 1024 bytes before parsing; oversized requests return 413 in the COP error envelope."
       }
     },
     "/api/v1/mobile/bootstrap": {
@@ -1291,7 +1296,7 @@
         ],
         "summary": "Query source-neutral map features.",
         "operationId": "queryMapFeatures",
-        "description": "Single public COP feature query endpoint. Clients select catalog layer IDs from /api/v1/map/catalog; COP translates those layer IDs to internal provider queries server-side. Provider-specific SIM endpoints are not part of the COP public API.\n",
+        "description": "Single public COP feature query endpoint. Clients select catalog layer IDs from /api/v1/map/catalog; COP translates those layer IDs to internal provider queries server-side. Provider-specific SIM endpoints are not part of the COP public API.\n\nThe request body is limited to 65536 bytes before parsing; oversized requests return 413 in the COP error envelope.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1321,8 +1326,12 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
           }
-        }
+        },
+        "x-cop-body-limit-bytes": 65536
       }
     },
     "/api/v1/safety/hydro/stations/{stationId}/observations": {
@@ -3046,7 +3055,8 @@
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
           }
-        }
+        },
+        "description": "The current COP canonical feed accepts only UNCLASSIFIED events within the registered source contract. Other classifications return 422 CLASSIFICATION_NOT_ALLOWED. Batch validation applies the same source, event type, object type and synthetic-data rules to every item before accepting any item."
       }
     },
     "/api/v1/ingest/batches": {
@@ -3112,7 +3122,8 @@
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
           }
-        }
+        },
+        "description": "The current COP canonical feed accepts only UNCLASSIFIED events within the registered source contract. Other classifications return 422 CLASSIFICATION_NOT_ALLOWED. Batch validation applies the same source, event type, object type and synthetic-data rules to every item before accepting any item."
       }
     },
     "/api/v1/cop/tracks": {
@@ -4910,7 +4921,7 @@
           "Notifications"
         ],
         "summary": "Accept Matrix push gateway notifications",
-        "description": "Public Matrix Push Gateway endpoint used by Synapse HTTP pushers. COP accepts the canonical Matrix path and forwards the payload server-side to CSM Messaging without exposing provider credentials to browsers or Matrix clients.",
+        "description": "Public Matrix Push Gateway endpoint used by Synapse HTTP pushers. COP accepts the canonical Matrix path and forwards the payload server-side to CSM Messaging without exposing provider credentials to browsers or Matrix clients.\nThe request body is limited to 262144 bytes before parsing; oversized requests return 413 in the COP error envelope.",
         "operationId": "matrixPushGatewayNotify",
         "security": [],
         "requestBody": {
@@ -4956,8 +4967,12 @@
                 }
               }
             }
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
           }
-        }
+        },
+        "x-cop-body-limit-bytes": 262144
       }
     },
     "/api/v1/push/web/config": {
@@ -12724,6 +12739,16 @@
       },
       "ServiceUnavailable": {
         "description": "Service unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "PayloadTooLarge": {
+        "description": "Request body exceeds the documented route limit. COP returns PAYLOAD_TOO_LARGE with correlationId.",
         "content": {
           "application/json": {
             "schema": {

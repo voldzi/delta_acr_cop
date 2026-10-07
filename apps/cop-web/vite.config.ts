@@ -1,7 +1,7 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig, type PluginOption } from "vite";
 import { fileURLToPath, URL } from "node:url";
-import { viteStaticCopy } from "vite-plugin-static-copy";
+import { cesiumAssetsPlugin } from "./cesium-assets-plugin";
 
 const apiBase = process.env.COP_API_BASE_URL ?? "http://localhost:4310";
 const chatBase = process.env.COP_CHAT_PROXY_TARGET ?? `http://localhost:${process.env.COP_CHAT_PORT ?? "4314"}`;
@@ -71,12 +71,7 @@ export default defineConfig({
   },
   plugins: [
     react(),
-    viteStaticCopy({
-      targets: ["Assets", "ThirdParty", "Widgets", "Workers"].map((directory) => ({
-        dest: "cesium",
-        src: fileURLToPath(new URL(`./node_modules/cesium/Build/Cesium/${directory}`, import.meta.url))
-      }))
-    }),
+    cesiumAssetsPlugin(),
     appleAppSiteAssociationPreviewPlugin()
   ],
   resolve: {
@@ -90,33 +85,41 @@ export default defineConfig({
     target: ["es2020", "safari16"],
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (
-            id.includes("/node_modules/react/") ||
-            id.includes("/node_modules/react-dom/") ||
-            id.includes("/node_modules/scheduler/")
-          ) {
-            return "react-runtime";
-          }
-          if (id.includes("/node_modules/lucide-react/")) {
-            return "icons";
-          }
-          if (id.includes("/node_modules/@radix-ui/")) {
-            return "radix-ui";
-          }
-          if (id.includes("/node_modules/maplibre-gl/")) {
-            return "maplibre";
-          }
-          if (id.includes("/packages/geo-client/")) {
-            return "geo-client";
-          }
-          if (id.includes("/node_modules/qrcode/")) {
-            return "qrcode";
-          }
-          if (id.includes("/node_modules/cesium/") || id.includes("/node_modules/@cesium/")) {
-            return "cesium";
-          }
-          return undefined;
+        strictExecutionOrder: true,
+        codeSplitting: {
+          // Keep shared helpers outside the optional 3D engine. Recursively
+          // capturing dependencies can make the initial 2D shell import Cesium.
+          includeDependenciesRecursively: false,
+          groups: [{
+            name(id) {
+              if (
+                id.includes("/node_modules/react/") ||
+                id.includes("/node_modules/react-dom/") ||
+                id.includes("/node_modules/scheduler/")
+              ) {
+                return "react-runtime";
+              }
+              if (id.includes("/node_modules/lucide-react/")) {
+                return "icons";
+              }
+              if (id.includes("/node_modules/@radix-ui/")) {
+                return "radix-ui";
+              }
+              if (id.includes("/node_modules/maplibre-gl/")) {
+                return "maplibre";
+              }
+              if (id.includes("/packages/geo-client/")) {
+                return "geo-client";
+              }
+              if (id.includes("/node_modules/qrcode/")) {
+                return "qrcode";
+              }
+              if (id.includes("/node_modules/cesium/") || id.includes("/node_modules/@cesium/")) {
+                return "cesium";
+              }
+              return undefined;
+            }
+          }]
         }
       }
     }

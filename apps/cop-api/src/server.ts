@@ -46,7 +46,9 @@ import {
   type CommunityReportStore,
   type CommunityReportVisibility
 } from "./community-report-store.js";
-import { correlationIdFrom, sendError } from "./errors.js";
+import { correlationIdFrom, requestBodyLimitOptions, sendError } from "./errors.js";
+import { fetchBoundedProxyResource, isHttpUrlWithoutCredentials, readBoundedBody, UpstreamBodyTooLargeError } from "./bounded-upstream.js";
+import { safeRequestLog } from "./request-log.js";
 import { OpenAiMcpAssistant, openAiMcpAssistantConfig } from "./openai-mcp-assistant.js";
 import { AiRouterMcpAssistant, aiRouterMcpConfig } from "./ai-router-mcp-assistant.js";
 import { CopAiRouterChatAdapter, CopRouterChatError } from "./ai-router-chat.js";
@@ -799,7 +801,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       process.env.COP_API_BODY_LIMIT_BYTES,
       Math.max(1024 * 1024, maxCommunityAttachmentBytes * 2)
     ),
-    logger: options.logger ?? false
+    logger: options.logger ? { serializers: { req: safeRequestLog } } : false
   });
   const state = options.state ?? createInitialState();
   const validators = new ContractValidators();
@@ -1014,8 +1016,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       done(null, body);
     }
   );
-  app.addHook("preHandler", async (request, reply) => {
-    if (!webBffEnabled || isBffAuthRoute(request.url)) {
+  // Authenticate headers/cookies before parsing a potentially large upload.
+  app.addHook("onRequest", async (request, reply) => {
+    if (request.method === "OPTIONS" || !webBffEnabled || isBffAuthRoute(request.url)) {
       return;
     }
     const presentedBearer = request.headers.authorization;
@@ -1041,7 +1044,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       request.headers.authorization = `Bearer ${resolved.accessToken}`;
     }
   });
-  app.addHook("preHandler", requireBearerToken);
+  app.addHook("onRequest", requireBearerToken);
   registerMobilityRoutes(app, {
     messagingProvider,
     enabled: options.sharedMobilityEnabled ?? readBoolean(process.env.COP_SHARED_MOBILITY_ENABLED, false),
@@ -1157,7 +1160,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!session) return reply.code(401).send({ authenticated: false });
     return { authenticated: true, expiresAt: session.accessTokenExpiresAt.toISOString(), profile: session.profile };
   });
-  app.post("/api/v1/auth/logout", async (request, reply) => {
+  app.post("/api/v1/auth/logout", requestBodyLimitOptions(1024), async (request, reply) => {
     if (webBffEnabled && !isTrustedBffOrigin(request)) {
       return sendError(
         reply,
@@ -1408,10 +1411,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         redirect_uri: transaction.callbackUri
       }),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      method: "POST"
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(8000)
     });
     if (!response.ok) throw new Error(`OIDC token exchange failed (${response.status}).`);
-    return tokensFromOidcResponse((await response.json()) as BffTokenResponse);
+    return tokensFromOidcResponse(JSON.parse((await readBoundedBody(response, 1024 * 1024)).toString("utf8")) as BffTokenResponse);
   }
 
   async function refreshBffTokens(refreshToken: string): Promise<WebSessionTokens> {
@@ -1420,10 +1425,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const response = await fetch(`${normalizedOidcIssuer()}/protocol/openid-connect/token`, {
       body: new URLSearchParams({ client_id: clientId, grant_type: "refresh_token", refresh_token: refreshToken }),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      method: "POST"
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(8000)
     });
     if (!response.ok) throw new Error(`OIDC token refresh failed (${response.status}).`);
-    return tokensFromOidcResponse((await response.json()) as BffTokenResponse, refreshToken);
+    return tokensFromOidcResponse(JSON.parse((await readBoundedBody(response, 1024 * 1024)).toString("utf8")) as BffTokenResponse, refreshToken);
   }
 
   async function tokensFromOidcResponse(
@@ -7951,6 +7958,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         .header("Content-Type", contentType)
         .send(body);
     } catch (error) {
+      if (error instanceof UpstreamBodyTooLargeError) {
+        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Raster overlay image is too large.", correlationId);
+      }
       app.log.warn({ error, rasterHost: rasterUrl.hostname }, "Raster overlay request failed.");
       return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
     }
@@ -8069,6 +8079,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         .header("Content-Type", contentType)
         .send(body);
     } catch (error) {
+      if (error instanceof UpstreamBodyTooLargeError) {
+        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Weather camera response is too large.", correlationId);
+      }
       app.log.warn({ error, upstreamUrl: upstreamUrl.toString() }, "Weather camera proxy request failed.");
       return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
     }
@@ -8263,7 +8276,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
-  app.post("/api/v1/map/query", async (request, reply) => {
+  app.post("/api/v1/map/query", requestBodyLimitOptions(64 * 1024), async (request, reply) => {
     const requestNow = now();
     const actor = actorFromRequest(request);
     const query = parseMapQueryRequest(request.body);
@@ -9577,12 +9590,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendError(reply, 400, "VALIDATION_ERROR", "Batch payload does not match contract.", correlationId);
     }
 
-    const sourceCheck = validateSourceForRequest(state, body.sourceSystemId, body.sourceSystemId, correlationId);
+    const sourceCheck = validateSourceForRequest(state, headerAsString(request.headers["x-source-system-id"]), body.sourceSystemId, correlationId);
     if (!sourceCheck.valid) {
       return sendError(reply, sourceCheck.statusCode, sourceCheck.code, sourceCheck.message, correlationId);
     }
 
     const items: Array<{ eventId: string; status: "QUEUED" | "REJECTED"; errorCode?: string }> = [];
+    const validatedEvents: CanonicalEventEnvelope[] = [];
     const acceptedObjects: ObservedObject[] = [];
     for (const item of body.events) {
       const validation = validators.validateCanonicalEvent(item);
@@ -9591,10 +9605,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         continue;
       }
 
-      const result = acceptEvent(state, validation.data);
+      const itemSource = validateSourceForRequest(state, body.sourceSystemId, validation.data.source.sourceSystemId, correlationId);
+      if (!itemSource.valid) {
+        return sendError(reply, itemSource.statusCode, itemSource.code, itemSource.message, correlationId);
+      }
+      const policyFailure = ingestEventPolicyFailure(itemSource.source, validation.data);
+      if (policyFailure) {
+        return sendError(reply, 422, policyFailure.code, policyFailure.message, correlationId);
+      }
+      validatedEvents.push(validation.data);
+      items.push({ eventId: validation.data.eventId, status: "QUEUED" });
+    }
+    // Validate every item's source/security boundary before mutating any state.
+    for (const event of validatedEvents) {
+      const result = acceptEvent(state, event);
       queueTrackPersistence(result.object, result.accepted, result.historyPoint);
       acceptedObjects.push(result.object);
-      items.push({ eventId: result.accepted.eventId, status: "QUEUED" });
     }
     await publishCurrentTracks(acceptedObjects);
 
@@ -9618,13 +9644,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       requestNow,
       trackLifecycle,
       includeExpired
-    ).filter((object) => {
-      const decision = evaluateReadPolicy(subject, {
-        classification: "UNCLASSIFIED",
-        synthetic: object.synthetic
-      });
-      return decision.allowed;
-    });
+    ).filter((object) => canReadObject(subject, object));
     const items = await decorateObjectsWithConflictEvidence(readableItems, requestNow);
     return { items, nextCursor: null };
   });
@@ -12163,34 +12183,9 @@ async function handleIngestEvent(
     return sendError(reply, sourceCheck.statusCode, sourceCheck.code, sourceCheck.message, correlationId);
   }
 
-  if (!sourceCheck.source.allowedEventTypes.includes(event.eventType)) {
-    return sendError(
-      reply,
-      422,
-      "EVENT_TYPE_NOT_ALLOWED",
-      "Source is not allowed to publish this event type.",
-      correlationId
-    );
-  }
-
-  if (!sourceCheck.source.allowedObjectTypes.includes(event.payload.objectType)) {
-    return sendError(
-      reply,
-      422,
-      "OBJECT_TYPE_NOT_ALLOWED",
-      "Source is not allowed to publish this object type.",
-      correlationId
-    );
-  }
-
-  if (sourceCheck.source.synthetic && event.simulation?.synthetic !== true) {
-    return sendError(
-      reply,
-      422,
-      "SYNTHETIC_FLAG_REQUIRED",
-      "Synthetic source must mark events as synthetic.",
-      correlationId
-    );
+  const policyFailure = ingestEventPolicyFailure(sourceCheck.source, event);
+  if (policyFailure) {
+    return sendError(reply, 422, policyFailure.code, policyFailure.message, correlationId);
   }
 
   const key = headerAsString(headers["x-idempotency-key"]);
@@ -14095,7 +14090,14 @@ function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, p
 }
 
 function canReadObject(subject: ReturnType<typeof defaultSystemSubject>, object: ObservedObject): boolean {
-  return canReadBySyntheticFlag(subject, object.synthetic);
+  const classification = readObjectProvenance(object)?.classification;
+  // Legacy current-track records predate classification provenance and belong
+  // to the unclassified feed. An explicit malformed/protected label fails closed.
+  if (classification !== undefined && (!isRecord(classification) || typeof classification.level !== "string")) return false;
+  return evaluateReadPolicy(subject, {
+    classification: classification?.level ?? "UNCLASSIFIED",
+    synthetic: object.synthetic
+  }).allowed;
 }
 
 function canReadBySyntheticFlag(
@@ -17782,6 +17784,7 @@ function isWeatherCameraPath(pathname: string): boolean {
 }
 
 function isAllowedWeatherCameraUrl(url: URL, env: Record<string, string | undefined> = process.env): boolean {
+  if (!isHttpUrlWithoutCredentials(url) || !isWeatherCameraPath(url.pathname)) return false;
   const hostname = url.hostname.toLowerCase();
   if (hostname === "chmi.cz" || hostname.endsWith(".chmi.cz")) {
     return false;
@@ -17796,6 +17799,7 @@ function isAllowedWeatherCameraUrl(url: URL, env: Record<string, string | undefi
 }
 
 function isAllowedRasterOverlayUrl(url: URL, env: Record<string, string | undefined> = process.env): boolean {
+  if (!isHttpUrlWithoutCredentials(url)) return false;
   const allowedHosts = new Set(
     (env.COP_RASTER_OVERLAY_ALLOWED_HOSTS ?? defaultRasterOverlayAllowedHosts)
       .split(",")
@@ -17832,36 +17836,28 @@ function readableResponseBody(response: Response): Readable {
 
 async function fetchWeatherCameraResource(url: URL): Promise<Response> {
   const timeoutMs = readPositiveInteger(process.env.COP_WEATHER_CAMERA_TIMEOUT_MS, 8000);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url.toString(), {
-      headers: {
-        accept: "application/json,image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
-        "user-agent": "CSM-COP weather camera proxy"
-      },
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
+  return fetchBoundedProxyResource(url, {
+    headers: {
+      accept: "application/json,image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
+      "user-agent": "CSM-COP weather camera proxy"
+    },
+    isAllowedUrl: isAllowedWeatherCameraUrl,
+    maxBytes: weatherCameraMaxBytes,
+    timeoutMs
+  });
 }
 
 async function fetchRasterOverlay(url: URL): Promise<Response> {
   const timeoutMs = readPositiveInteger(process.env.COP_RASTER_OVERLAY_TIMEOUT_MS, 8000);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url.toString(), {
-      headers: {
-        accept: "image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
-        "user-agent": "CSM-COP raster overlay proxy"
-      },
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
+  return fetchBoundedProxyResource(url, {
+    headers: {
+      accept: "image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
+      "user-agent": "CSM-COP raster overlay proxy"
+    },
+    isAllowedUrl: isAllowedRasterOverlayUrl,
+    maxBytes: rasterOverlayMaxBytes,
+    timeoutMs
+  });
 }
 
 async function fetchWeatherRadarFrames(url: URL, timeoutMsOverride?: number): Promise<unknown> {
@@ -19186,6 +19182,25 @@ function validateSourceForRequest(
     };
   }
   return { valid: true, source };
+}
+
+function ingestEventPolicyFailure(source: SourceSystem, event: CanonicalEventEnvelope): { code: string; message: string } | null {
+  const classificationLevels = ["UNCLASSIFIED", "RESTRICTED", "CONFIDENTIAL", "SECRET"];
+  const sourceClearance = classificationLevels.indexOf(source.classificationLimit);
+  const eventClassification = classificationLevels.indexOf(event.classification.level);
+  if (event.classification.level !== "UNCLASSIFIED" || eventClassification < 0 || sourceClearance < eventClassification) {
+    return { code: "CLASSIFICATION_NOT_ALLOWED", message: "The canonical COP feed currently accepts only unclassified events within the source's classification limit." };
+  }
+  if (!source.allowedEventTypes.includes(event.eventType)) {
+    return { code: "EVENT_TYPE_NOT_ALLOWED", message: "Source is not allowed to publish this event type." };
+  }
+  if (!source.allowedObjectTypes.includes(event.payload.objectType)) {
+    return { code: "OBJECT_TYPE_NOT_ALLOWED", message: "Source is not allowed to publish this object type." };
+  }
+  if (source.synthetic && event.simulation?.synthetic !== true) {
+    return { code: "SYNTHETIC_FLAG_REQUIRED", message: "Synthetic source must mark events as synthetic." };
+  }
+  return null;
 }
 
 function hashPayload(data: unknown): string {

@@ -8,7 +8,7 @@
     "allowImportingTsExtensions": false,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "cesium-assets-plugin.ts"],
   "references": [
     { "path": "../../packages/core" },
     { "path": "../../packages/geo-client" },

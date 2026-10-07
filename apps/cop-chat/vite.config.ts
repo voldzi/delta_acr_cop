@@ -36,7 +36,11 @@ export default defineConfig({
     rollupOptions: {
       output: {
         chunkFileNames: chatChunkFileName,
-        manualChunks: chatManualChunk
+        strictExecutionOrder: true,
+        codeSplitting: {
+          includeDependenciesRecursively: false,
+          groups: [{ name: chatManualChunk }]
+        }
       }
     }
   },
