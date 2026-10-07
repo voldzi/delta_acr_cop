@@ -223,6 +223,9 @@ async function proxyOidcTokenRequest(request, response) {
         "Content-Type": request.headers["content-type"] ?? "application/x-www-form-urlencoded"
       },
       method: "POST",
+      // Token POST bodies contain authorization codes or refresh tokens.
+      // Keep them on the configured issuer instead of following a redirect.
+      redirect: "error",
       signal: controller.signal
     });
     const payload = await readUpstreamBody(upstream.body, 256 * 1024);
@@ -247,7 +250,6 @@ async function proxyOidcTokenRequest(request, response) {
     clearTimeout(timeout);
     response.off("close", abort);
   }
-
 }
 
 async function serveStatic(requestPath, request, response) {

@@ -104,6 +104,7 @@ export async function verifyOidcToken(token: string): Promise<boolean> {
   if (!decoded || !validJwtClaims(decoded.payload)) {
     return false;
   }
+  if (typeof decoded.payload.sub !== "string" || !decoded.payload.sub.trim()) return false;
   if (decoded.header.alg !== "RS256") {
     return false;
   }

@@ -116,6 +116,11 @@ beforeAll(async () => {
           response.end("x".repeat(300_000));
           return;
         }
+        if (body === "redirect") {
+          response.writeHead(307, { Location: `${alternateUrl}/capture-token` });
+          response.end();
+          return;
+        }
         response.setHeader("Content-Type", "application/json");
         response.end(JSON.stringify({ access_token: "SYNTHETIC_TOKEN" }));
       });
@@ -251,6 +256,14 @@ describe("COP chat OIDC proxy", () => {
     });
     expect(response.status).toBe(502);
     expect(response.body).toBe('{"error":"oidc_upstream_unavailable"}');
+  });
+  it("does not forward token POST data when the issuer redirects to another origin", async () => {
+    const result = await rawRequest(clients.get("cop-chat")!, "/chat/oidc/token", {
+      method: "POST", body: "redirect"
+    });
+    expect(result.status).toBe(502);
+    expect(result.body).toBe('{"error":"oidc_upstream_unavailable"}');
+    expect(alternateRequests).toBe(0);
   });
   it("cancels a stalled issuer and still relays a valid synthetic response", async () => {
     const before = upstreamClosed;

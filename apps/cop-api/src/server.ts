@@ -18,7 +18,7 @@ import {
 } from "@cop/canonical-model";
 import { ContractValidators, formatValidationErrors } from "@cop/ingest-contracts";
 import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
-import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
+import { defaultSystemSubject } from "@cop/policy-engine";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
@@ -49,6 +49,7 @@ import {
 import { correlationIdFrom, requestBodyLimitOptions, sendError } from "./errors.js";
 import { fetchBoundedProxyResource, isHttpUrlWithoutCredentials, readBoundedBody, UpstreamBodyTooLargeError } from "./bounded-upstream.js";
 import { safeRequestLog } from "./request-log.js";
+import { canReadCanonicalObject, canReadCanonicalHistoryPoint, isPublicCanonicalReleasePolicy } from "./canonical-read-policy.js";
 import { OpenAiMcpAssistant, openAiMcpAssistantConfig } from "./openai-mcp-assistant.js";
 import { AiRouterMcpAssistant, aiRouterMcpConfig } from "./ai-router-mcp-assistant.js";
 import { CopAiRouterChatAdapter, CopRouterChatError } from "./ai-router-chat.js";
@@ -2499,7 +2500,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         source: "geocoder"
       };
     } catch (error) {
-      app.log.warn({ error, placeQuery }, "AI context geocode lookup failed.");
+      app.log.warn({ error }, "AI context geocode lookup failed.");
       return undefined;
     }
   }
@@ -2885,7 +2886,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           });
         } catch (error) {
           app.log.warn(
-            { error, query: fallbackQuery, requestId: input.requestId },
+            { error, requestId: input.requestId },
             "AI geocoder map-search fallback failed."
           );
           warnings.push(`Geocoder fallback selhal: ${errorMessage(error)}`);
@@ -4491,12 +4492,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await flushQueuedTrackPersistence();
     if (trackHistoryStore && trackHistoryStoreStatus === "ok") {
       try {
-        return await trackHistoryStore.query(query, requestNow);
+        const items = await trackHistoryStore.query(query, requestNow);
+        return readableHistoryItems(items, requestNow);
       } catch (error) {
         markTrackHistoryStoreDegraded(error);
       }
     }
-    return queryTrackHistory(state, query, requestNow);
+    return readableHistoryItems(queryTrackHistory(state, query, requestNow), requestNow);
+  }
+
+  function readableHistoryItems(items: Array<{ objectId: string; points: TrackHistoryPoint[] }>, requestNow: Date) {
+    return items.map((item) => ({
+      ...item,
+      points: item.points.filter((point) => canReadCanonicalHistoryPoint(defaultSystemSubject(), point, state.events, requestNow))
+    })).filter((item) => item.points.length > 0);
+  }
+
+  function canReadObject(subject: ReturnType<typeof defaultSystemSubject>, object: ObservedObject): boolean {
+    return canReadCanonicalObject(subject, object, state.events, now());
+  }
+
+  function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {
+    return canReadCanonicalHistoryPoint(subject, point, state.events, now());
   }
 
   async function buildConflictEvidenceForObjects(
@@ -4764,10 +4781,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   function decorateObjectsWithInMemoryConflictEvidence(objects: ObservedObject[], requestNow: Date): ObservedObject[] {
-    const historyItems = objects.map((object) => ({
+    const historyItems = readableHistoryItems(objects.map((object) => ({
       objectId: object.objectId,
       points: state.trackHistory.get(object.objectId) ?? []
-    }));
+    })), requestNow);
     const evidenceIndex = buildConflictEvidenceIndex({
       evaluatedAt: requestNow.toISOString(),
       historyItems,
@@ -8265,7 +8282,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         now()
       );
     } catch (error) {
-      app.log.warn({ error, q }, "Place geocode search failed.");
+      app.log.warn({ error }, "Place geocode search failed.");
       return sendError(
         reply,
         502,
@@ -9547,7 +9564,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   });
 
-  app.post("/api/v1/ingest/events", async (request, reply) => {
+  app.post("/api/v1/ingest/events", { onRequest: requireCanonicalIngestActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const validation = validators.validateCanonicalEvent(request.body);
     if (!validation.valid || !validation.data) {
@@ -9569,11 +9586,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       reply,
       correlationId,
       queueTrackPersistence,
-      publishCurrentTracks
+      publishCurrentTracks,
+      now()
     );
   });
 
-  app.post("/api/v1/ingest/batches", async (request, reply) => {
+  app.post("/api/v1/ingest/batches", { onRequest: requireCanonicalIngestActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const body = request.body as {
       batchId?: string;
@@ -9609,7 +9627,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!itemSource.valid) {
         return sendError(reply, itemSource.statusCode, itemSource.code, itemSource.message, correlationId);
       }
-      const policyFailure = ingestEventPolicyFailure(itemSource.source, validation.data);
+      const policyFailure = ingestEventPolicyFailure(itemSource.source, validation.data, now());
       if (policyFailure) {
         return sendError(reply, 422, policyFailure.code, policyFailure.message, correlationId);
       }
@@ -9798,7 +9816,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return;
       }
 
-      const visibleMessage = filterStreamMessage(subject, message);
+      const visibleMessage = filterStreamMessage(message, (object) => canReadObject(subject, object));
       if (!visibleMessage) {
         return;
       }
@@ -12169,7 +12187,8 @@ async function handleIngestEvent(
     event: CanonicalEventEnvelope,
     historyPoint: TrackHistoryPoint | undefined
   ) => void,
-  publishCurrentTracks: (objects: ObservedObject[]) => Promise<void>
+  publishCurrentTracks: (objects: ObservedObject[]) => Promise<void>,
+  requestNow: Date
 ) {
   const headerSource = headerAsString(headers["x-source-system-id"]);
   const sourceCheck = validateSourceForRequest(state, headerSource, event.source.sourceSystemId, correlationId);
@@ -12183,7 +12202,7 @@ async function handleIngestEvent(
     return sendError(reply, sourceCheck.statusCode, sourceCheck.code, sourceCheck.message, correlationId);
   }
 
-  const policyFailure = ingestEventPolicyFailure(sourceCheck.source, event);
+  const policyFailure = ingestEventPolicyFailure(sourceCheck.source, event, requestNow);
   if (policyFailure) {
     return sendError(reply, 422, policyFailure.code, policyFailure.message, correlationId);
   }
@@ -14085,32 +14104,6 @@ function canReadSituationSource(sourceId: string, actor: AuthenticatedActor | nu
   return requiredRole ? Boolean(actor.roles?.includes(requiredRole)) : true;
 }
 
-function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {
-  return canReadBySyntheticFlag(subject, point.synthetic);
-}
-
-function canReadObject(subject: ReturnType<typeof defaultSystemSubject>, object: ObservedObject): boolean {
-  const classification = readObjectProvenance(object)?.classification;
-  // Legacy current-track records predate classification provenance and belong
-  // to the unclassified feed. An explicit malformed/protected label fails closed.
-  if (classification !== undefined && (!isRecord(classification) || typeof classification.level !== "string")) return false;
-  return evaluateReadPolicy(subject, {
-    classification: classification?.level ?? "UNCLASSIFIED",
-    synthetic: object.synthetic
-  }).allowed;
-}
-
-function canReadBySyntheticFlag(
-  subject: ReturnType<typeof defaultSystemSubject>,
-  synthetic: boolean | undefined
-): boolean {
-  const decision = evaluateReadPolicy(subject, {
-    classification: "UNCLASSIFIED",
-    synthetic
-  });
-  return decision.allowed;
-}
-
 function conflictEvidenceCacheKey(
   objects: ObservedObject[],
   requestNow: Date,
@@ -14151,14 +14144,14 @@ function pruneBoundedCache<Key, Value>(cache: Map<Key, Value>, maxEntries: numbe
 }
 
 function filterStreamMessage(
-  subject: ReturnType<typeof defaultSystemSubject>,
-  message: CopStreamMessage
+  message: CopStreamMessage,
+  canRead: (object: ObservedObject) => boolean
 ): CopStreamMessage | null {
   if (message.type === "heartbeat" || message.type === "backpressure" || message.type === "reconnect_required") {
     return message;
   }
 
-  const changes = message.changes.filter((change) => canReadObject(subject, change.object));
+  const changes = message.changes.filter((change) => canRead(change.object));
   if (message.type === "snapshot") {
     return { ...message, changes };
   }
@@ -19184,12 +19177,15 @@ function validateSourceForRequest(
   return { valid: true, source };
 }
 
-function ingestEventPolicyFailure(source: SourceSystem, event: CanonicalEventEnvelope): { code: string; message: string } | null {
+function ingestEventPolicyFailure(source: SourceSystem, event: CanonicalEventEnvelope, requestNow: Date): { code: string; message: string } | null {
   const classificationLevels = ["UNCLASSIFIED", "RESTRICTED", "CONFIDENTIAL", "SECRET"];
   const sourceClearance = classificationLevels.indexOf(source.classificationLimit);
   const eventClassification = classificationLevels.indexOf(event.classification.level);
   if (event.classification.level !== "UNCLASSIFIED" || eventClassification < 0 || sourceClearance < eventClassification) {
     return { code: "CLASSIFICATION_NOT_ALLOWED", message: "The canonical COP feed currently accepts only unclassified events within the source's classification limit." };
+  }
+  if (!isPublicCanonicalReleasePolicy(event.payload.releasePolicy, requestNow)) {
+    return { code: "RELEASE_POLICY_NOT_ALLOWED", message: "The canonical COP feed accepts only public, unexpired release policies without targeted access restrictions." };
   }
   if (!source.allowedEventTypes.includes(event.eventType)) {
     return { code: "EVENT_TYPE_NOT_ALLOWED", message: "Source is not allowed to publish this event type." };
@@ -19201,6 +19197,14 @@ function ingestEventPolicyFailure(source: SourceSystem, event: CanonicalEventEnv
     return { code: "SYNTHETIC_FLAG_REQUIRED", message: "Synthetic source must mark events as synthetic." };
   }
   return null;
+}
+
+async function requireCanonicalIngestActor(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const actor = actorFromRequest(request);
+  const allowedRoles = new Set(["COP_OPERATOR", "INTEGRATION_ADMIN", "SYSTEM_CLIENT"]);
+  if (actor && (actor.authMode === "lab" || actor.roles?.some((role) => allowedRoles.has(role.trim().toUpperCase())))) return;
+  sendError(reply, 403, "INGEST_FORBIDDEN", "Canonical ingest requires an authorized operator or integration actor.",
+    correlationIdFrom(request.headers["x-correlation-id"]));
 }
 
 function hashPayload(data: unknown): string {

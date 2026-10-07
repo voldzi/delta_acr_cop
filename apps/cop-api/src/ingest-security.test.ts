@@ -80,6 +80,30 @@ describe("canonical ingest security boundary", () => {
     } finally { await app.close(); }
   });
 
+  it.each([
+    { visibility: "private", allowedScopes: ["operator"] },
+    { visibility: "public", allowedScopes: ["authenticated"] },
+    { visibility: "public", allowedScopes: ["public"], userIds: ["private-user"] },
+    { visibility: "public", allowedScopes: ["public"], expiresAt: "2026-10-07T11:00:00Z" }
+  ])("rejects an explicit protected release policy atomically for single and batch intake: %j", async (policy) => {
+    const state = createInitialState();
+    const app = buildServer({ state, now: () => fixedNow });
+    try {
+      const restricted = event();
+      restricted.payload.releasePolicy = policy as NonNullable<CanonicalEventEnvelope["payload"]["releasePolicy"]>;
+      for (const url of ["/api/v1/ingest/events", "/api/v1/ingest/batches"]) {
+        const payload = url.endsWith("/events") ? restricted : {
+          batchId: randomUUID(), contractVersion: "cop-ingest-v1", sourceSystemId: sourceId, events: [event(), restricted]
+        };
+        const response = await app.inject({ method: "POST", url, headers, payload });
+        expect(response.statusCode).toBe(422);
+        expect(response.json().error.code).toBe("RELEASE_POLICY_NOT_ALLOWED");
+        expect(state.events.size).toBe(0);
+        expect(state.objects.size).toBe(0);
+      }
+    } finally { await app.close(); }
+  });
+
   it("retains trusted envelope classification and excludes protected stored current tracks from public output", async () => {
     vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
     const state = createInitialState();

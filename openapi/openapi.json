@@ -3056,7 +3056,7 @@
             "$ref": "#/components/responses/ServiceUnavailable"
           }
         },
-        "description": "The current COP canonical feed accepts only UNCLASSIFIED events within the registered source contract. Other classifications return 422 CLASSIFICATION_NOT_ALLOWED. Batch validation applies the same source, event type, object type and synthetic-data rules to every item before accepting any item."
+        "description": "Canonical ingest requires a configured service lab token or an OIDC actor with COP_OPERATOR, INTEGRATION_ADMIN or SYSTEM_CLIENT role; other actors receive 403 INGEST_FORBIDDEN. The current feed accepts only UNCLASSIFIED events within the registered source contract; other classifications receive 422 CLASSIFICATION_NOT_ALLOWED. An explicit releasePolicy must allow public access, have no targeted restrictions and be unexpired; otherwise 422 RELEASE_POLICY_NOT_ALLOWED. Batch validation applies the same source, event type, object type, classification, release and synthetic-data rules to every item before accepting any item."
       }
     },
     "/api/v1/ingest/batches": {
@@ -3123,7 +3123,7 @@
             "$ref": "#/components/responses/ServiceUnavailable"
           }
         },
-        "description": "The current COP canonical feed accepts only UNCLASSIFIED events within the registered source contract. Other classifications return 422 CLASSIFICATION_NOT_ALLOWED. Batch validation applies the same source, event type, object type and synthetic-data rules to every item before accepting any item."
+        "description": "Canonical ingest requires a configured service lab token or an OIDC actor with COP_OPERATOR, INTEGRATION_ADMIN or SYSTEM_CLIENT role; other actors receive 403 INGEST_FORBIDDEN. The current feed accepts only UNCLASSIFIED events within the registered source contract; other classifications receive 422 CLASSIFICATION_NOT_ALLOWED. An explicit releasePolicy must allow public access, have no targeted restrictions and be unexpired; otherwise 422 RELEASE_POLICY_NOT_ALLOWED. Batch validation applies the same source, event type, object type, classification, release and synthetic-data rules to every item before accepting any item."
       }
     },
     "/api/v1/cop/tracks": {

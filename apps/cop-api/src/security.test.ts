@@ -214,6 +214,7 @@ describe("COP API authentication", () => {
         exp: now + 300,
         iat: now,
         iss: issuer,
+        sub: "synthetic-operator",
         realm_access: {
           roles: ["cop_operator"]
         }
@@ -255,6 +256,7 @@ describe("COP API authentication", () => {
       exp: now + 300,
       iat: now,
       iss: issuer,
+      sub: "synthetic-operator",
       realm_access: {
         roles: ["cop_operator"]
       }
@@ -360,7 +362,8 @@ describe("COP API authentication", () => {
         azp: "cop-web",
         exp: now + 300,
         iat: now,
-        iss: issuer
+        iss: issuer,
+        sub: "synthetic-operator"
       }
     );
     const app = buildServer();

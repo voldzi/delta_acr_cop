@@ -349,6 +349,11 @@ paths:
       responses:
         "204":
           description: Session invalidated.
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+      x-cop-body-limit-bytes: 1024
+      description: The request body is limited to 1024 bytes before parsing; oversized requests return 413
+        in the COP error envelope.
   /api/v1/mobile/bootstrap:
     get:
       tags:
@@ -959,10 +964,14 @@ paths:
         - Map Catalog
       summary: Query source-neutral map features.
       operationId: queryMapFeatures
-      description: >
+      description: >-
         Single public COP feature query endpoint. Clients select catalog layer IDs from
         /api/v1/map/catalog; COP translates those layer IDs to internal provider queries
         server-side. Provider-specific SIM endpoints are not part of the COP public API.
+
+
+        The request body is limited to 65536 bytes before parsing; oversized requests return 413 in
+        the COP error envelope.
       requestBody:
         required: true
         content:
@@ -982,6 +991,9 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+      x-cop-body-limit-bytes: 65536
   /api/v1/safety/hydro/stations/{stationId}/observations:
     get:
       tags:
@@ -2054,6 +2066,14 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+      description: Canonical ingest requires a configured service lab token or an OIDC actor with
+        COP_OPERATOR, INTEGRATION_ADMIN or SYSTEM_CLIENT role; other actors receive 403
+        INGEST_FORBIDDEN. The current feed accepts only UNCLASSIFIED events within the registered
+        source contract; other classifications receive 422 CLASSIFICATION_NOT_ALLOWED. An explicit
+        releasePolicy must allow public access, have no targeted restrictions and be unexpired;
+        otherwise 422 RELEASE_POLICY_NOT_ALLOWED. Batch validation applies the same source, event
+        type, object type, classification, release and synthetic-data rules to every item before
+        accepting any item.
   /api/v1/ingest/batches:
     post:
       tags:
@@ -2092,6 +2112,14 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+      description: Canonical ingest requires a configured service lab token or an OIDC actor with
+        COP_OPERATOR, INTEGRATION_ADMIN or SYSTEM_CLIENT role; other actors receive 403
+        INGEST_FORBIDDEN. The current feed accepts only UNCLASSIFIED events within the registered
+        source contract; other classifications receive 422 CLASSIFICATION_NOT_ALLOWED. An explicit
+        releasePolicy must allow public access, have no targeted restrictions and be unexpired;
+        otherwise 422 RELEASE_POLICY_NOT_ALLOWED. Batch validation applies the same source, event
+        type, object type, classification, release and synthetic-data rules to every item before
+        accepting any item.
   /api/v1/cop/tracks:
     get:
       tags:
@@ -3393,9 +3421,13 @@ paths:
       tags:
         - Notifications
       summary: Accept Matrix push gateway notifications
-      description: Public Matrix Push Gateway endpoint used by Synapse HTTP pushers. COP accepts the
-        canonical Matrix path and forwards the payload server-side to CSM Messaging without exposing
-        provider credentials to browsers or Matrix clients.
+      description: >-
+        Public Matrix Push Gateway endpoint used by Synapse HTTP pushers. COP accepts the canonical
+        Matrix path and forwards the payload server-side to CSM Messaging without exposing provider
+        credentials to browsers or Matrix clients.
+
+        The request body is limited to 262144 bytes before parsing; oversized requests return 413 in
+        the COP error envelope.
       operationId: matrixPushGatewayNotify
       security: []
       requestBody:
@@ -3411,6 +3443,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MatrixPushGatewayResponse"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "502":
@@ -3425,6 +3459,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MatrixPushGatewayResponse"
+      x-cop-body-limit-bytes: 262144
   /api/v1/push/web/config:
     get:
       tags:
@@ -4797,7 +4832,10 @@ paths:
       summary: Return SIM emergency routing profile catalog through COP.
       operationId: getRoutingProfiles
       description: Server-side proxy for SIM emergency routing profiles. Browsers, Chat and native clients
-        must call COP, not SIM, for routing data.
+        must call COP, not SIM, for routing data. Requires an authenticated actor with a non-empty
+        OIDC subject (or explicitly configured non-production lab identity). COP verifies the
+        session/bearer token server-side and never forwards it to SIM. Invalid or revoked identity
+        returns 401 before routing.
       responses:
         "200":
           description: Emergency routing profile catalog.
@@ -4807,6 +4845,8 @@ paths:
                 $ref: "#/components/schemas/RoutingProfilesResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "502":
           description: SIM emergency routing service is unavailable.
           content:
@@ -4819,11 +4859,14 @@ paths:
     post:
       tags:
         - Map Catalog
-      summary: Calculate a SIM emergency route through COP.
+      summary: Calculate a SIM route through COP.
       operationId: runEmergencyRoute
       description: Calculates a primary route between two points through the server-side SIM routing
         provider. COP renders returned GeoJSON features as a temporary operational overlay and
-        displays ETA, distance, quality, traffic and warnings.
+        displays ETA, distance, quality, traffic and warnings. Requires an authenticated actor with
+        a non-empty OIDC subject (or explicitly configured non-production lab identity). COP
+        verifies the session/bearer token server-side and never forwards it to SIM. Invalid or
+        revoked identity returns 401 before routing.
       requestBody:
         required: true
         content:
@@ -4839,6 +4882,22 @@ paths:
                 $ref: "#/components/schemas/RoutingRouteResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: Mandatory routing requirement is unsupported; no fallback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: SIM routing limit reached; no fallback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "502":
           description: SIM emergency routing service is unavailable.
           content:
@@ -4846,7 +4905,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
-          $ref: "#/components/responses/ServiceUnavailable"
+          description: Closures or graph unavailable, stale or changed during calculation; no fallback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/routing/alternatives:
     post:
       tags:
@@ -4868,6 +4931,22 @@ paths:
                 $ref: "#/components/schemas/RoutingRouteResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: Mandatory routing requirement is unsupported; no fallback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: SIM routing limit reached; no fallback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "502":
           description: SIM emergency routing service is unavailable.
           content:
@@ -4875,7 +4954,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
-          $ref: "#/components/responses/ServiceUnavailable"
+          description: Closures or graph unavailable, stale or changed during calculation; no fallback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+      description: " Requires an authenticated actor with a non-empty OIDC subject (or explicitly
+        configured non-production lab identity). COP verifies the session/bearer token server-side
+        and never forwards it to SIM. Invalid or revoked identity returns 401 before routing."
   /api/v1/routing/isochrone:
     post:
       tags:
@@ -4897,6 +4983,10 @@ paths:
                 $ref: "#/components/schemas/RoutingGenericResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "502":
           description: SIM emergency routing service is unavailable.
           content:
@@ -4905,6 +4995,9 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+      description: " Requires an authenticated actor with a non-empty OIDC subject (or explicitly
+        configured non-production lab identity). COP verifies the session/bearer token server-side
+        and never forwards it to SIM. Invalid or revoked identity returns 401 before routing."
   /api/v1/routing/nearest-access:
     post:
       tags:
@@ -4926,6 +5019,10 @@ paths:
                 $ref: "#/components/schemas/RoutingGenericResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "502":
           description: SIM emergency routing service is unavailable.
           content:
@@ -4934,6 +5031,9 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+      description: " Requires an authenticated actor with a non-empty OIDC subject (or explicitly
+        configured non-production lab identity). COP verifies the session/bearer token server-side
+        and never forwards it to SIM. Invalid or revoked identity returns 401 before routing."
   /api/v1/mobile/pairing/sessions:
     post:
       tags:
@@ -5392,6 +5492,2575 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "409":
           $ref: "#/components/responses/Conflict"
+  /api/v1/mobility/v1/capabilities:
+    get:
+      operationId: mobilityCapabilities
+      summary: Mobility Capabilities
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityCapabilities"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+  /api/v1/mobility/v1/account:
+    get:
+      operationId: mobilityAccount
+      summary: Mobility Account
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityAccount"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+  /api/v1/shared-vehicles/v1/vehicles:
+    get:
+      operationId: sharedVehicles
+      summary: Shared vehicle s
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedVehicleList"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+    post:
+      operationId: sharedVehicleCreate
+      summary: Shared vehicle Create
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedVehicleCreationReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SharedVehicleCreate"
+  /api/v1/shared-vehicles/v1/vehicles/{vehicleId}:
+    get:
+      operationId: sharedVehicleGet
+      summary: Shared vehicle Get
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedVehicle"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+    patch:
+      operationId: sharedVehicleUpdate
+      summary: Shared vehicle Update
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedVehicleReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SharedVehicleUpdate"
+  /api/v1/shared-vehicles/v1/vehicles/{vehicleId}/members:
+    post:
+      operationId: sharedVehicleMembershipChange
+      summary: Shared vehicle MembershipChange
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedVehicleReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SharedVehicleMembershipChange"
+  /api/v1/shared-vehicles/v1/vehicles/{vehicleId}/invitations:
+    post:
+      operationId: sharedVehicleInvite
+      summary: Shared vehicle Invite
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityInvitationReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobilityInvitationCreate"
+  /api/v1/shared-vehicles/v1/vehicles/{vehicleId}/invitations/revoke:
+    post:
+      operationId: sharedVehicleInviteRevoke
+      summary: Shared vehicle InviteRevoke
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedVehicleReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobilityInvitationRevoke"
+  /api/v1/shared-vehicles/v1/invitations/accept:
+    post:
+      operationId: sharedVehicleInviteAccept
+      summary: Shared vehicle InviteAccept
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedVehicleCreationReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobilityInvitationAccept"
+  /api/v1/shared-vehicles/v1/vehicles/{vehicleId}/records:
+    post:
+      operationId: sharedVehicleRecordWrite
+      summary: Shared vehicle RecordWrite
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedVehicleReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SharedVehicleRecordWrite"
+  /api/v1/shared-vehicles/v1/vehicles/{vehicleId}/sync:
+    get:
+      operationId: sharedVehicleSync
+      summary: Shared vehicle Sync
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedVehicleSync"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+  /api/v1/private-dispatch/v1/groups:
+    get:
+      operationId: dispatchGroups
+      summary: Private dispatch Groups
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchGroupList"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+    post:
+      operationId: dispatchGroupCreate
+      summary: Private dispatch GroupCreate
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchGroupCreationReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchGroupCreate"
+  /api/v1/private-dispatch/v1/groups/{groupId}:
+    get:
+      operationId: dispatchGroupGet
+      summary: Private dispatch GroupGet
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchGroup"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /api/v1/private-dispatch/v1/groups/{groupId}/members:
+    post:
+      operationId: dispatchMembershipChange
+      summary: Private dispatch MembershipChange
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchGroup"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchMembershipChange"
+  /api/v1/private-dispatch/v1/groups/{groupId}/invitations:
+    post:
+      operationId: dispatchInvite
+      summary: Private dispatch Invite
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityInvitationReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchInvitationCreate"
+  /api/v1/private-dispatch/v1/invitations/accept:
+    post:
+      operationId: dispatchInviteAccept
+      summary: Private dispatch InviteAccept
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchGroupCreationReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobilityInvitationAccept"
+  /api/v1/private-dispatch/v1/devices:
+    post:
+      operationId: dispatchDeviceRegister
+      summary: Private dispatch DeviceRegister
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchDevice"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchDeviceRegister"
+  /api/v1/private-dispatch/v1/groups/{groupId}/readiness:
+    get:
+      operationId: dispatchReadiness
+      summary: Private dispatch Readiness
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchReadiness"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /api/v1/private-dispatch/v1/groups/{groupId}/snapshot:
+    get:
+      operationId: dispatchSnapshot
+      summary: Private dispatch Snapshot
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchSnapshot"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: deviceId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /api/v1/private-dispatch/v1/groups/{groupId}/shares:
+    post:
+      operationId: dispatchStart
+      summary: Private dispatch Start
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchShareReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchShareStart"
+  /api/v1/private-dispatch/v1/shares/{shareId}/points:
+    put:
+      operationId: dispatchPublish
+      summary: Private dispatch Publish
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchShareReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: shareId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchPointPublish"
+  /api/v1/private-dispatch/v1/shares/{shareId}/stop:
+    post:
+      operationId: dispatchStop
+      summary: Private dispatch Stop
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchShareReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: shareId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchStop"
+  /api/v1/shared-vehicles/v1/vehicles/{vehicleId}/delete:
+    post:
+      operationId: sharedVehicleDelete
+      summary: Shared vehicle Delete
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedVehicleReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SharedVehicleDelete"
+  /api/v1/shared-vehicles/v1/vehicles/{vehicleId}/records/delete:
+    post:
+      operationId: sharedVehicleRecordDelete
+      summary: Shared vehicle RecordDelete
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedVehicleReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SharedVehicleRecordDelete"
+  /api/v1/private-dispatch/v1/groups/{groupId}/invitations/revoke:
+    post:
+      operationId: dispatchInviteRevoke
+      summary: Private dispatch InviteRevoke
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchGroup"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobilityInvitationRevoke"
+  /api/v1/private-dispatch/v1/groups/{groupId}/delete:
+    post:
+      operationId: dispatchGroupDelete
+      summary: Private dispatch GroupDelete
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchGroup"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchGroupDelete"
+  /api/v1/private-dispatch/v1/devices/revoke:
+    post:
+      operationId: dispatchDeviceRevoke
+      summary: Private dispatch DeviceRevoke
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchDevice"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchDeviceRevoke"
+  /api/v1/mobility/v1/invitations:
+    get:
+      operationId: mobilityInvitations
+      summary: List invitations addressed to the verified account email
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityPendingInvitations"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+  /api/v1/private-dispatch/v1/shares:
+    get:
+      operationId: dispatchOwnedShares
+      summary: Recover own active share metadata for explicit stopping; never resumes consent
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchOwnedShares"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+  /api/v1/private-dispatch/v1/shares/cancel-start:
+    post:
+      operationId: dispatchCancelStart
+      summary: Cancel an account-bound start operation before or after commit; never restores consent
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchStartCancelReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchStartCancel"
+  /api/v1/private-dispatch/v1/groups/{groupId}/participants/{accountId}/conversation:
+    post:
+      operationId: dispatchParticipantConversation
+      summary: Resolve a current private group participant to existing encrypted direct communication
+      tags:
+        - Shared mobility
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authoritative response; no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchParticipantReceipt"
+        "400":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "401":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "403":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "404":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "409":
+          description: Revision, operation, audience or pending-stop conflict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "410":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "422":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "429":
+          description: COP error envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+        "503":
+          description: Dependency unavailable or capability disabled; never a user denial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobilityError"
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispatchParticipantOpen"
 components:
   securitySchemes:
     bearerAuth:
@@ -5582,6 +8251,13 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     ServiceUnavailable:
       description: Service unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PayloadTooLarge:
+      description: Request body exceeds the documented route limit. COP returns PAYLOAD_TOO_LARGE with
+        correlationId.
       content:
         application/json:
           schema:
@@ -6532,6 +9208,8 @@ components:
         - confirmations
         - confidenceSummary
       properties:
+        presence:
+          $ref: "#/components/schemas/CommunityReportPresence"
         reportId:
           type: string
           format: uuid
@@ -7366,6 +10044,29 @@ components:
         capturedAt:
           type: string
           format: date-time
+    CommunityReportPresence:
+      type: object
+      additionalProperties: false
+      required:
+        - policyVersion
+        - active
+        - reason
+      properties:
+        policyVersion:
+          type: string
+          const: cop-report-presence-v1
+        active:
+          type: boolean
+        reason:
+          type: string
+          enum:
+            - active
+            - expired
+            - lifecycle
+            - independent_absence
+      description: Server-owned feed decision; transient reports are suppressed by at least three
+        independent negative votes with a negative balance of at least two. Votes before the report
+        revision are ignored. No routing instruction.
     CommunityReportCategory:
       type: string
       enum:
@@ -7377,6 +10078,7 @@ components:
         - stopped_vehicle
         - traffic_accident
         - traffic_congestion
+        - police_patrol
         - infrastructure_damage
         - medical
         - utility_outage
@@ -14388,6 +17090,507 @@ components:
           type: array
           items:
             type: string
+    RoadTripCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - strictRoutesEnabled
+        - availability
+        - intents
+        - vehicleFields
+        - unsupportedFields
+        - closures
+        - graphMaxAgeSeconds
+        - maxWaypoints
+        - maxAlternatives
+        - cachePolicy
+        - emergencyExemption
+      properties:
+        version:
+          const: sim-road-trip-capabilities-v1
+        strictRoutesEnabled:
+          type: boolean
+        availability:
+          enum:
+            - disabled
+            - requires_runtime_validation
+        intents:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - intent
+              - costing
+              - state
+            properties:
+              intent:
+                enum:
+                  - car
+                  - commercial_truck
+                  - car_with_trailer
+              costing:
+                enum:
+                  - auto
+                  - truck
+                  - unsupported
+              state:
+                enum:
+                  - requires_runtime_validation
+                  - unsupported
+        vehicleFields:
+          type: array
+          uniqueItems: true
+          items:
+            enum:
+              - heightM
+              - widthM
+              - lengthM
+              - loadedWeightKg
+        unsupportedFields:
+          type: array
+          uniqueItems: true
+          items:
+            enum:
+              - trailer
+              - axleLoadKg
+              - axleCount
+              - depart_at
+              - approved_entrance
+        closures:
+          type: object
+          additionalProperties: false
+          required:
+            - mode
+            - state
+            - oneDirection
+          properties:
+            mode:
+              const: reviewed_both_direction_polygons
+            state:
+              enum:
+                - unavailable
+                - requires_runtime_validation
+            oneDirection:
+              const: unsupported
+        graphMaxAgeSeconds:
+          type: integer
+          minimum: 1
+        maxWaypoints:
+          const: 12
+        maxAlternatives:
+          const: 3
+        cachePolicy:
+          const: no_cache
+        emergencyExemption:
+          const: false
+    RoadTripTrip:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - requestId
+        - intent
+        - vehicle
+        - departure
+        - preferences
+        - requirements
+        - waypoints
+        - destination
+      properties:
+        version:
+          const: sim-road-trip-v1
+        requestId:
+          type: string
+          format: uuid
+        intent:
+          enum:
+            - car
+            - commercial_truck
+            - car_with_trailer
+        vehicle:
+          $ref: "#/components/schemas/RoadTripVehicle"
+        departure:
+          $ref: "#/components/schemas/RoadTripDeparture"
+        preferences:
+          type: object
+          additionalProperties: false
+          required:
+            - avoidTolls
+            - preferPaved
+          properties:
+            avoidTolls:
+              type: boolean
+            preferPaved:
+              type: boolean
+        requirements:
+          type: object
+          additionalProperties: false
+          required:
+            - roadClosures
+            - legalAccess
+            - vehicleLimits
+          properties:
+            roadClosures:
+              const: mandatory
+            legalAccess:
+              const: mandatory
+            vehicleLimits:
+              const: mandatory
+        waypoints:
+          type: array
+          maxItems: 12
+          items:
+            $ref: "#/components/schemas/RoadTripWaypoint"
+        destination:
+          type: object
+          additionalProperties: false
+          required:
+            - kind
+          properties:
+            kind:
+              enum:
+                - road_point
+                - approved_entrance
+            entranceId:
+              type: string
+              minLength: 1
+              maxLength: 128
+          allOf:
+            - if:
+                properties:
+                  kind:
+                    const: approved_entrance
+              then:
+                required:
+                  - entranceId
+              else:
+                not:
+                  required:
+                    - entranceId
+    RoadTripVehicle:
+      type: object
+      additionalProperties: false
+      required:
+        - heightM
+        - widthM
+        - lengthM
+        - loadedWeightKg
+        - trailer
+      properties:
+        heightM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 8
+        widthM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 5
+        lengthM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 30
+        loadedWeightKg:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 100000
+        axleLoadKg:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 40000
+        axleCount:
+          type: integer
+          minimum: 2
+          maximum: 10
+        trailer:
+          $ref: "#/components/schemas/RoadTripTrailer"
+    RoadTripTrailer:
+      type: object
+      additionalProperties: false
+      required:
+        - attached
+      properties:
+        attached:
+          type: boolean
+        heightM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 8
+        widthM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 5
+        lengthM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 30
+        loadedWeightKg:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 100000
+        axleCount:
+          type: integer
+          minimum: 1
+          maximum: 5
+      allOf:
+        - if:
+            properties:
+              attached:
+                const: true
+          then:
+            required:
+              - heightM
+              - widthM
+              - lengthM
+              - loadedWeightKg
+              - axleCount
+          else:
+            maxProperties: 1
+    RoadTripDeparture:
+      type: object
+      additionalProperties: false
+      required:
+        - mode
+      properties:
+        mode:
+          enum:
+            - now
+            - depart_at
+        at:
+          type: string
+          format: date-time
+          pattern: Z$
+      allOf:
+        - if:
+            properties:
+              mode:
+                const: depart_at
+          then:
+            required:
+              - at
+          else:
+            maxProperties: 1
+    RoadTripCoordinate:
+      type: object
+      additionalProperties: false
+      required:
+        - lat
+        - lon
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          minimum: -180
+          maximum: 180
+        label:
+          type: string
+          maxLength: 80
+    RoadTripWaypoint:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - point
+      properties:
+        type:
+          enum:
+            - via
+            - stop
+        point:
+          $ref: "#/components/schemas/RoadTripCoordinate"
+    RoadTripAssessment:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - requestId
+        - requestHash
+        - appliedHash
+        - appliedTrip
+        - engine
+        - geometryHash
+        - routingDataset
+        - closures
+        - vehicleLimits
+        - waypoints
+        - lastMile
+        - validUntil
+        - limitations
+      properties:
+        version:
+          const: sim-road-trip-assessment-v1
+        requestId:
+          type: string
+          format: uuid
+        requestHash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        appliedHash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        appliedTrip:
+          $ref: "#/components/schemas/RoadTripTrip"
+        engine:
+          type: object
+          additionalProperties: false
+          required:
+            - provider
+            - version
+            - costing
+            - fallbackUsed
+          properties:
+            provider:
+              enum:
+                - valhalla
+                - osm-postgis-graph
+                - direct_fallback
+            version:
+              type: string
+            costing:
+              enum:
+                - auto
+                - truck
+                - unsupported
+            fallbackUsed:
+              type: boolean
+        geometryHash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        routingDataset:
+          type: object
+          additionalProperties: false
+          required:
+            - version
+            - builtAt
+            - sourceAgeSeconds
+            - freshness
+          properties:
+            version:
+              type: string
+            builtAt:
+              type: string
+              format: date-time
+            sourceAgeSeconds:
+              type: number
+              minimum: 0
+            freshness:
+              enum:
+                - current
+                - stale
+                - unknown
+        closures:
+          type: object
+          additionalProperties: false
+          required:
+            - state
+            - revision
+            - observedAt
+            - validUntil
+            - appliedClosureCount
+            - coverage
+          properties:
+            state:
+              enum:
+                - applied
+                - unsupported
+                - unavailable
+            revision:
+              type: string
+            observedAt:
+              type: string
+              format: date-time
+            validUntil:
+              type: string
+              format: date-time
+            appliedClosureCount:
+              type: integer
+              minimum: 0
+            coverage:
+              enum:
+                - authoritative_reviewed_snapshot
+                - incomplete
+                - unknown
+        vehicleLimits:
+          type: object
+          additionalProperties: false
+          required:
+            - state
+            - appliedFields
+            - coverage
+          properties:
+            state:
+              enum:
+                - provider_costing_applied
+                - partial
+                - unsupported
+            appliedFields:
+              type: array
+              uniqueItems: true
+              items:
+                type: string
+            coverage:
+              const: mapped_restrictions_incomplete
+        waypoints:
+          type: object
+          additionalProperties: false
+          required:
+            - state
+            - orderedCount
+          properties:
+            state:
+              enum:
+                - applied
+                - unsupported
+            orderedCount:
+              type: integer
+              minimum: 0
+              maximum: 12
+        lastMile:
+          enum:
+            - not_requested
+            - not_routed
+        validUntil:
+          type: string
+          format: date-time
+        limitations:
+          type: array
+          items:
+            type: string
+    RoadTripRoundabout:
+      type: object
+      additionalProperties: false
+      required:
+        - phase
+        - source
+        - countState
+      properties:
+        phase:
+          enum:
+            - enter
+            - exit
+        source:
+          const: valhalla_maneuver
+        countState:
+          enum:
+            - provider_supplied
+            - unknown
+        exitCount:
+          type: integer
+          minimum: 1
+        exitRoadNames:
+          type: array
+          items:
+            type: string
+        signNames:
+          type: array
+          items:
+            type: string
     RoutingProfile:
       type: object
       additionalProperties: true
@@ -14407,6 +17610,304 @@ components:
           maxLength: 500
       description: SIM routing profile such as emergency_vehicle, large_emergency_vehicle, offroad_4x4,
         walking, evacuation_walking or car.
+    RoutingMappedCoordinate:
+      type: object
+      additionalProperties: false
+      required:
+        - lon
+        - lat
+      properties:
+        lon:
+          type: number
+          minimum: -180
+          maximum: 180
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+    RoutingMappedTrailer:
+      type: object
+      additionalProperties: false
+      required:
+        - attached
+        - heightM
+        - widthM
+        - lengthM
+        - loadedWeightKg
+      properties:
+        attached:
+          const: true
+        heightM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 5
+        widthM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 3
+        lengthM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 25
+        loadedWeightKg:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 60000
+    RoutingMappedVehicle:
+      type: object
+      additionalProperties: false
+      required:
+        - heightM
+        - widthM
+        - lengthM
+        - loadedWeightKg
+      properties:
+        heightM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 5
+        widthM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 3
+        lengthM:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 25
+        loadedWeightKg:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 60000
+        axleLoadKg:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 40000
+        axleCount:
+          type: integer
+          minimum: 2
+          maximum: 20
+        trailer:
+          $ref: "#/components/schemas/RoutingMappedTrailer"
+    RoutingMappedProfile:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - intent
+        - coverageAcknowledged
+      properties:
+        version:
+          const: sim-mapped-road-profile-v1
+        intent:
+          enum:
+            - car
+            - commercial_truck
+            - car_with_trailer
+            - road_legal_4x4
+        coverageAcknowledged:
+          const: mapped_restrictions_incomplete
+        vehicle:
+          $ref: "#/components/schemas/RoutingMappedVehicle"
+        driverDeclaredAuthorization:
+          type: boolean
+          description: False is ordinary mapped access. True requests a scoped private-access exemption,
+            currently unsupported (422), never blanket ignore_access.
+      allOf:
+        - if:
+            properties:
+              intent:
+                enum:
+                  - commercial_truck
+                  - car_with_trailer
+          then:
+            required:
+              - vehicle
+        - if:
+            properties:
+              intent:
+                const: car_with_trailer
+          then:
+            properties:
+              vehicle:
+                required:
+                  - trailer
+          else:
+            properties:
+              vehicle:
+                not:
+                  required:
+                    - trailer
+    RoutingMappedLastMile:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+        - target
+        - mappedEndpoint
+        - distanceM
+      properties:
+        state:
+          enum:
+            - mapped_target
+            - target_guidance_only
+        target:
+          $ref: "#/components/schemas/RoutingMappedCoordinate"
+        mappedEndpoint:
+          $ref: "#/components/schemas/RoutingMappedCoordinate"
+        distanceM:
+          type: number
+          minimum: 0
+          maximum: 25
+      description: Geometry/steps stop at mappedEndpoint. Any displaced target is guidance only, never an
+        appended traversable segment. More than 25m is rejected, not silently snapped.
+    RoutingMappedAssessment:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - state
+        - coverage
+        - appliedProfile
+        - profileHash
+        - requestHash
+        - geometryHash
+        - engine
+        - routingDataset
+        - appliedFields
+        - validUntil
+        - lastMile
+        - limitations
+      properties:
+        version:
+          const: sim-mapped-road-profile-assessment-v1
+        state:
+          const: applied
+        coverage:
+          const: mapped_restrictions_incomplete
+        appliedProfile:
+          $ref: "#/components/schemas/RoutingMappedProfile"
+        profileHash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        requestHash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        geometryHash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        engine:
+          type: object
+          additionalProperties: false
+          required:
+            - provider
+            - version
+            - costing
+            - fallbackUsed
+          properties:
+            provider:
+              const: valhalla
+            version:
+              const: 3.8.3
+            costing:
+              enum:
+                - auto
+                - truck
+            fallbackUsed:
+              const: false
+        routingDataset:
+          type: object
+          additionalProperties: false
+          required:
+            - version
+            - builtAt
+          properties:
+            version:
+              type: string
+              minLength: 1
+              maxLength: 128
+            builtAt:
+              type: string
+              format: date-time
+        appliedFields:
+          type: array
+          uniqueItems: true
+          items:
+            enum:
+              - heightM
+              - widthM
+              - lengthM
+              - loadedWeightKg
+              - axleLoadKg
+              - axleCount
+              - road_first_preference
+        validUntil:
+          type: string
+          format: date-time
+        lastMile:
+          $ref: "#/components/schemas/RoutingMappedLastMile"
+        limitations:
+          type: array
+          minItems: 1
+          items:
+            type: string
+    RoutingMappedCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - availability
+        - intents
+        - maxSnapDistanceM
+        - driverDeclaredAuthorization
+        - unmappedLastMile
+        - strictGuarantees
+      properties:
+        version:
+          const: sim-mapped-road-profile-capabilities-v1
+        availability:
+          enum:
+            - requires_runtime_validation
+            - disabled
+        intents:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - intent
+              - costing
+              - supportedFields
+              - limitations
+            properties:
+              intent:
+                enum:
+                  - car
+                  - commercial_truck
+                  - car_with_trailer
+                  - road_legal_4x4
+              costing:
+                enum:
+                  - auto
+                  - truck
+              supportedFields:
+                type: array
+                items:
+                  type: string
+              limitations:
+                type: array
+                minItems: 1
+                items:
+                  type: string
+        maxSnapDistanceM:
+          const: 25
+        driverDeclaredAuthorization:
+          const: unsupported
+        unmappedLastMile:
+          const: unsupported
+        strictGuarantees:
+          const: false
     RoutingProfilesResponse:
       type: object
       required:
@@ -14426,6 +17927,10 @@ components:
           type: array
           items:
             type: string
+        capabilities:
+          $ref: "#/components/schemas/RoadTripCapabilities"
+        mappedProfiles:
+          $ref: "#/components/schemas/RoutingMappedCapabilities"
     RoutingPoint:
       type: object
       required:
@@ -14472,7 +17977,10 @@ components:
           type: integer
           minimum: 0
           maximum: 5
-          description: Requested number of alternative routes for SIM alternatives calls.
+          description: Legacy ordinary requests accept 0..5; SIM normalizes the effective maximum returned
+            route count to 1..3. The validated response.query records this normalization when
+            knownClosures is present. Strict trips accept 1..3 without ordinary normalization. Typed
+            mapped vehicle profiles require 1..3; this does not change legacy requests.
         includeSteps:
           type: boolean
           description: Whether SIM should include maneuver/step instructions when available.
@@ -14482,6 +17990,108 @@ components:
             remains available if enrichment fails.
         vehicle:
           $ref: "#/components/schemas/RoutingVehicle"
+        trip:
+          $ref: "#/components/schemas/RoadTripTrip"
+        vehicleProfile:
+          $ref: "#/components/schemas/RoutingMappedProfile"
+          description: Explicit ordinary mapped profile; requires profileId=car, conflicts with strict trip
+            and legacy vehicle. Mapped restrictions are incomplete; unsupported fields never
+            downgrade to car.
+        via:
+          type: array
+          maxItems: 12
+          items:
+            $ref: "#/components/schemas/RoutingPoint"
+        departureTime:
+          type: string
+          format: date-time
+        includeElevationProfile:
+          type: boolean
+          description: Optional SIM enrichment flag, preserved without altering mandatory trip requirements.
+        includeWeatherOnRoute:
+          type: boolean
+          description: Optional SIM enrichment flag, preserved without altering mandatory trip requirements.
+        includeHazardsOnRoute:
+          type: boolean
+          description: Optional SIM enrichment flag, preserved without altering mandatory trip requirements.
+        includeTraffic:
+          type: boolean
+          description: Optional SIM enrichment flag, preserved without altering mandatory trip requirements.
+      description: Optional trip opts into strict sim-road-trip-v1. Every mandatory requirement must be
+        applied to all variants; no unconstrained fallback. Legacy via/vehicle/departureTime cannot
+        be combined with trip.
+      allOf:
+        - if:
+            required:
+              - trip
+          then:
+            required:
+              - profileId
+              - avoid
+            properties:
+              profileId:
+                const: car
+              avoid:
+                contains:
+                  const: road_closure
+                items:
+                  enum:
+                    - flood
+                    - fire
+                    - road_closure
+                    - unpaved
+                    - tunnel
+                    - bridge
+              alternatives:
+                minimum: 1
+                maximum: 3
+              from:
+                $ref: "#/components/schemas/RoadTripCoordinate"
+              to:
+                $ref: "#/components/schemas/RoadTripCoordinate"
+            not:
+              anyOf:
+                - required:
+                    - via
+                - required:
+                    - vehicle
+                - required:
+                    - departureTime
+        - if:
+            required:
+              - vehicleProfile
+            type: object
+          then:
+            required:
+              - profileId
+            properties:
+              profileId:
+                const: car
+                type: string
+              alternatives:
+                minimum: 1
+                maximum: 3
+                type: integer
+              avoid:
+                items:
+                  enum:
+                    - flood
+                    - fire
+                    - road_closure
+                    - unpaved
+                    - tunnel
+                    - bridge
+                  type: string
+                type: array
+            not:
+              anyOf:
+                - required:
+                    - trip
+                  type: object
+                - required:
+                    - vehicle
+                  type: object
+            type: object
     RoutingVehicle:
       type: object
       additionalProperties: false
@@ -14717,7 +18327,12 @@ components:
           type: object
           additionalProperties: true
           description: SIM route feature properties such as routeId, role, label, warningLevel or segment
-            metadata.
+            metadata. Known-closure evidence must match the corresponding route variant.
+          properties:
+            knownClosures:
+              $ref: "#/components/schemas/RoutingKnownClosures"
+            mappedProfileAssessment:
+              $ref: "#/components/schemas/RoutingMappedAssessment"
     RoutingLiveSpeeds:
       type: object
       additionalProperties: true
@@ -14765,10 +18380,145 @@ components:
       properties:
         liveSpeeds:
           $ref: "#/components/schemas/RoutingLiveSpeeds"
+    RoutingKnownClosures:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - state
+        - coverage
+        - revision
+        - observedAt
+        - validUntil
+        - appliedClosureCount
+        - geometryHash
+        - requestHash
+        - exclusions
+        - routingDataset
+        - engine
+        - limitations
+      properties:
+        version:
+          const: sim-known-road-closures-v1
+        state:
+          const: applied
+        coverage:
+          const: incomplete
+        revision:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        observedAt:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+        appliedClosureCount:
+          type: integer
+          minimum: 0
+          maximum: 128
+        geometryHash:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        requestHash:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          description: SHA-256 of response.query serialized as JSON recursively sorting object keys,
+            preserving array order and numeric values. COP additionally validates normalized query
+            identity against the requested trip; a matching hash alone does not prove identity.
+        exclusions:
+          type: array
+          maxItems: 128
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - closureId
+              - sourceDirection
+              - enforcedDirection
+              - enforcementReason
+              - reviewedGeometryHash
+            properties:
+              closureId:
+                type: string
+                minLength: 1
+                maxLength: 256
+              sourceDirection:
+                enum:
+                  - both
+                  - unknown
+              enforcedDirection:
+                const: both
+              enforcementReason:
+                enum:
+                  - source_both_direction
+                  - conservative_whole_structure_avoidance
+              reviewedGeometryHash:
+                type: string
+                pattern: ^[0-9a-f]{64}$
+            oneOf:
+              - properties:
+                  sourceDirection:
+                    const: both
+                  enforcementReason:
+                    const: source_both_direction
+              - properties:
+                  sourceDirection:
+                    const: unknown
+                  enforcementReason:
+                    const: conservative_whole_structure_avoidance
+        routingDataset:
+          type: object
+          additionalProperties: false
+          required:
+            - version
+            - builtAt
+          properties:
+            version:
+              type: string
+              minLength: 1
+            builtAt:
+              type: string
+              format: date-time
+        engine:
+          type: object
+          additionalProperties: false
+          required:
+            - provider
+            - version
+            - fallbackUsed
+          properties:
+            provider:
+              const: valhalla
+            version:
+              type: string
+              minLength: 1
+            fallbackUsed:
+              const: false
+        limitations:
+          type: array
+          minItems: 1
+          maxItems: 16
+          items:
+            type: string
+            minLength: 1
+            maxLength: 1024
+      description: Additive ordinary-routing evidence only; absence means unknown/not requested, never
+        strict acceptance. observedAt is latest successful full snapshot confirmation, not event
+        onset or physical observation. exclusions length equals appliedClosureCount and closureId
+        values are unique. With unknown source direction, both-direction avoidance is explicitly
+        conservative and requires individual review of an official whole-structure closure statement
+        plus exact graph geometry. Every applied closure uses separately reviewed graph geometry and
+        fresh full TEC membership. Coverage is always incomplete. Configured
+        source/graph/engine/expiry failures return an error without a discarded-exclusion fallback.
     RoutingRoute:
       type: object
       additionalProperties: true
       properties:
+        knownClosures:
+          $ref: "#/components/schemas/RoutingKnownClosures"
+        mappedProfileAssessment:
+          $ref: "#/components/schemas/RoutingMappedAssessment"
         routeId:
           type: string
         roadAttributes:
@@ -14871,6 +18621,8 @@ components:
             type: string
         traffic:
           $ref: "#/components/schemas/RoutingTraffic"
+        assessment:
+          $ref: "#/components/schemas/RoadTripAssessment"
     RoutingRouteResponse:
       type: object
       required:
@@ -14878,6 +18630,11 @@ components:
         - routes
         - warnings
       properties:
+        query:
+          type: object
+          additionalProperties: true
+          description: Validated normalized SIM query returned when knownClosures evidence is present; hash
+            identity uses canonical JSON. Absence is not evidence of closure enforcement.
         contractVersion:
           type: string
         coverage:
@@ -15595,6 +19352,8 @@ components:
               valid:
                 type: integer
                 minimum: 0
+        roundabout:
+          $ref: "#/components/schemas/RoadTripRoundabout"
     CommunityRoadEnrichment:
       type: object
       description: Server-owned SIM road-match evidence for this report version. Cluster links probable
@@ -15629,3 +19388,1581 @@ components:
           format: uuid
         reason:
           type: string
+    MobilityCapabilities:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-mobility-capabilities-v1
+        sharedVehiclesEnabled:
+          type: boolean
+        dispatchEnabled:
+          type: boolean
+        maxVehicleMembers:
+          type: integer
+          const: 5
+        maxGroupMembers:
+          type: integer
+          const: 200
+        registration:
+          type: string
+          enum:
+            - idp_login_page
+            - unavailable
+            - unverified
+        dispatchTransport:
+          type: string
+          enum:
+            - recipient_encrypted_latest_only
+        currencies:
+          type: array
+          items:
+            type: string
+            enum:
+              - CZK
+              - EUR
+              - USD
+          maxItems: 3
+        serverTimestamp:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        invitationDelivery:
+          type: string
+          enum:
+            - verified_account_inbox
+      required:
+        - contractVersion
+        - sharedVehiclesEnabled
+        - dispatchEnabled
+        - maxVehicleMembers
+        - maxGroupMembers
+        - registration
+        - dispatchTransport
+        - currencies
+        - serverTimestamp
+        - invitationDelivery
+    MobilityAccount:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-mobility-account-v1
+        accountId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        emailVerified:
+          type: boolean
+        serverTimestamp:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+      required:
+        - contractVersion
+        - accountId
+        - displayName
+        - emailVerified
+        - serverTimestamp
+    SharedVehicleMember:
+      type: object
+      additionalProperties: false
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        role:
+          type: string
+          enum:
+            - owner
+            - driver
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum:
+              - readVehicle
+              - readCosts
+              - recordRide
+              - recordExpense
+              - recordService
+              - editVehicle
+              - manageReminders
+              - manageMembers
+          maxItems: 8
+          uniqueItems: true
+        joinedAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+      required:
+        - accountId
+        - displayName
+        - role
+        - capabilities
+        - joinedAt
+    SharedVehicleDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        plate:
+          type: string
+          minLength: 1
+          maxLength: 20
+        vin:
+          type: string
+          minLength: 1
+          maxLength: 32
+      required:
+        - name
+    SharedVehicle:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-shared-vehicles-v1
+        vehicleId:
+          type: string
+          format: uuid
+        details:
+          $ref: "#/components/schemas/SharedVehicleDetails"
+        dataRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        membershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/SharedVehicleMember"
+          maxItems: 5
+        createdAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        deleted:
+          type: boolean
+      required:
+        - contractVersion
+        - vehicleId
+        - details
+        - dataRevision
+        - membershipRevision
+        - members
+        - createdAt
+        - updatedAt
+        - deleted
+    SharedVehicleList:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-shared-vehicles-v1
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SharedVehicle"
+          maxItems: 100
+        serverTimestamp:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+      required:
+        - contractVersion
+        - items
+        - serverTimestamp
+    SharedVehicleCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        details:
+          $ref: "#/components/schemas/SharedVehicleDetails"
+      required:
+        - operationId
+        - details
+    SharedVehicleUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        expectedDataRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        expectedMembershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        details:
+          $ref: "#/components/schemas/SharedVehicleDetails"
+      required:
+        - operationId
+        - expectedDataRevision
+        - expectedMembershipRevision
+        - details
+    SharedVehicleMembershipChange:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        expectedMembershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        accountId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum:
+            - set_capabilities
+            - remove
+            - transfer_ownership
+            - leave
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum:
+              - readVehicle
+              - readCosts
+              - recordRide
+              - recordExpense
+              - recordService
+              - editVehicle
+              - manageReminders
+              - manageMembers
+          maxItems: 8
+          uniqueItems: true
+      required:
+        - operationId
+        - expectedMembershipRevision
+        - accountId
+        - action
+    MobilityInvitationCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        expectedMembershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum:
+              - readVehicle
+              - readCosts
+              - recordRide
+              - recordExpense
+              - recordService
+              - editVehicle
+              - manageReminders
+              - manageMembers
+          maxItems: 8
+          uniqueItems: true
+      required:
+        - operationId
+        - expectedMembershipRevision
+        - email
+    MobilityInvitationReceipt:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-mobility-invitation-v1
+        invitationId:
+          type: string
+          format: uuid
+        operationId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - queued
+        expiresAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+      required:
+        - contractVersion
+        - invitationId
+        - operationId
+        - status
+        - expiresAt
+    MobilityInvitationAccept:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        invitationId:
+          type: string
+          format: uuid
+      required:
+        - operationId
+        - invitationId
+    MobilityInvitationRevoke:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        invitationId:
+          type: string
+          format: uuid
+      required:
+        - operationId
+        - invitationId
+    SharedVehicleMoney:
+      type: object
+      additionalProperties: false
+      properties:
+        currency:
+          type: string
+          enum:
+            - CZK
+            - EUR
+            - USD
+        minorUnits:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,11})$
+      required:
+        - currency
+        - minorUnits
+    SharedVehicleRecordData:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - odometer
+            odometerKm:
+              type: string
+              pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+            correctionOfRecordId:
+              type: string
+              format: uuid
+            correctionReason:
+              type: string
+              minLength: 1
+              maxLength: 500
+          required:
+            - kind
+            - odometerKm
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - ride_summary
+            distanceKm:
+              type: string
+              pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+            durationSeconds:
+              type: integer
+              minimum: 0
+              maximum: 604800
+            purpose:
+              type: string
+              enum:
+                - work
+          required:
+            - kind
+            - distanceKm
+            - durationSeconds
+            - purpose
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - expense
+            category:
+              type: string
+              enum:
+                - fuel
+                - charging
+                - parking
+                - toll
+                - other
+            amount:
+              $ref: "#/components/schemas/SharedVehicleMoney"
+          required:
+            - kind
+            - category
+            - amount
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - energy
+            unit:
+              type: string
+              enum:
+                - liters
+                - kWh
+            quantity:
+              type: string
+              pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+            amount:
+              $ref: "#/components/schemas/SharedVehicleMoney"
+          required:
+            - kind
+            - unit
+            - quantity
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - service
+            title:
+              type: string
+              minLength: 1
+              maxLength: 120
+            odometerKm:
+              type: string
+              pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+            amount:
+              $ref: "#/components/schemas/SharedVehicleMoney"
+          required:
+            - kind
+            - title
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum:
+                - reminder
+            title:
+              type: string
+              minLength: 1
+              maxLength: 120
+            dueAt:
+              type: string
+              format: date-time
+              pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+            dueOdometerKm:
+              type: string
+              pattern: ^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$
+            completed:
+              type: boolean
+          required:
+            - kind
+            - title
+            - completed
+    SharedVehicleRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        recordId:
+          type: string
+          format: uuid
+        vehicleId:
+          type: string
+          format: uuid
+        authorAccountId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        occurredAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        timeZone:
+          type: string
+          minLength: 1
+          maxLength: 80
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        data:
+          $ref: "#/components/schemas/SharedVehicleRecordData"
+        deleted:
+          type: boolean
+      required:
+        - recordId
+        - vehicleId
+        - authorAccountId
+        - createdAt
+        - occurredAt
+        - timeZone
+        - revision
+        - data
+        - deleted
+    SharedVehicleRecordWrite:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        expectedDataRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        expectedMembershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        recordId:
+          type: string
+          format: uuid
+        expectedRecordRevision:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+        occurredAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        timeZone:
+          type: string
+          minLength: 1
+          maxLength: 80
+        data:
+          $ref: "#/components/schemas/SharedVehicleRecordData"
+      required:
+        - operationId
+        - expectedDataRevision
+        - expectedMembershipRevision
+        - recordId
+        - expectedRecordRevision
+        - occurredAt
+        - timeZone
+        - data
+    SharedVehicleReceipt:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-shared-vehicles-v1
+        operationId:
+          type: string
+          format: uuid
+        vehicleId:
+          type: string
+          format: uuid
+        dataRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        membershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        eventSequence:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        recordId:
+          type: string
+          format: uuid
+        confirmed:
+          type: boolean
+          const: true
+      required:
+        - contractVersion
+        - operationId
+        - vehicleId
+        - dataRevision
+        - membershipRevision
+        - eventSequence
+        - confirmed
+    SharedVehicleSyncItem:
+      type: object
+      additionalProperties: false
+      properties:
+        sequence:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        type:
+          type: string
+          enum:
+            - vehicle
+            - record
+            - membership
+            - deleted
+        vehicle:
+          $ref: "#/components/schemas/SharedVehicle"
+        record:
+          $ref: "#/components/schemas/SharedVehicleRecord"
+        recordId:
+          type: string
+          format: uuid
+        authorAccountId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+      required:
+        - sequence
+        - type
+        - authorAccountId
+        - createdAt
+    SharedVehicleSync:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-shared-vehicles-v1
+        vehicleId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SharedVehicleSyncItem"
+          maxItems: 100
+        nextCursor:
+          type: string
+          maxLength: 120
+        hasMore:
+          type: boolean
+        dataRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        membershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        serverTimestamp:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+      required:
+        - contractVersion
+        - vehicleId
+        - items
+        - nextCursor
+        - hasMore
+        - dataRevision
+        - membershipRevision
+        - serverTimestamp
+    DispatchMember:
+      type: object
+      additionalProperties: false
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        role:
+          type: string
+          enum:
+            - owner
+            - admin
+            - member
+      required:
+        - accountId
+        - displayName
+        - role
+    DispatchGroup:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-private-dispatch-v1
+        groupId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        membershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        sequence:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/DispatchMember"
+          maxItems: 200
+        conversationId:
+          type: string
+          minLength: 1
+          maxLength: 180
+        createdAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        deleted:
+          type: boolean
+      required:
+        - contractVersion
+        - groupId
+        - name
+        - membershipRevision
+        - sequence
+        - members
+        - createdAt
+        - deleted
+    DispatchGroupList:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-private-dispatch-v1
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DispatchGroup"
+          maxItems: 100
+        serverTimestamp:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+      required:
+        - contractVersion
+        - items
+        - serverTimestamp
+    DispatchGroupCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+      required:
+        - operationId
+        - name
+    DispatchMembershipChange:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        expectedMembershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        accountId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum:
+            - remove
+            - set_role
+            - leave
+        role:
+          type: string
+          enum:
+            - admin
+            - member
+      required:
+        - operationId
+        - expectedMembershipRevision
+        - accountId
+        - action
+    DispatchDeviceRegister:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        publicKeyX25519:
+          type: string
+          pattern: ^[A-Za-z0-9+/]{43}=$
+        deviceName:
+          type: string
+          minLength: 1
+          maxLength: 80
+      required:
+        - operationId
+        - publicKeyX25519
+        - deviceName
+    DispatchDevice:
+      type: object
+      additionalProperties: false
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        publicKeyX25519:
+          type: string
+          pattern: ^[A-Za-z0-9+/]{43}=$
+        keyRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        createdAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+      required:
+        - deviceId
+        - accountId
+        - publicKeyX25519
+        - keyRevision
+        - createdAt
+    DispatchReadiness:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-private-dispatch-v1
+        groupId:
+          type: string
+          format: uuid
+        membershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        state:
+          type: string
+          enum:
+            - ready
+            - missing_device_keys
+            - unavailable
+        audienceHash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/DispatchDevice"
+          maxItems: 1600
+        serverTimestamp:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+      required:
+        - contractVersion
+        - groupId
+        - membershipRevision
+        - state
+        - audienceHash
+        - devices
+        - serverTimestamp
+    DispatchShareStart:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        expectedMembershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        audienceHash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        durationSeconds:
+          type: integer
+          enum:
+            - 900
+            - 3600
+            - 28800
+        endPolicy:
+          type: string
+          enum:
+            - duration
+            - ride_end
+        consent:
+          type: boolean
+          const: true
+      required:
+        - operationId
+        - deviceId
+        - expectedMembershipRevision
+        - audienceHash
+        - durationSeconds
+        - endPolicy
+        - consent
+    DispatchShare:
+      type: object
+      additionalProperties: false
+      properties:
+        shareId:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        membershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        audienceHash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        startedAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        expiresAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        endPolicy:
+          type: string
+          enum:
+            - duration
+            - ride_end
+        state:
+          type: string
+          enum:
+            - active
+            - stopped
+            - expired
+        sequence:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+      required:
+        - shareId
+        - groupId
+        - accountId
+        - deviceId
+        - membershipRevision
+        - audienceHash
+        - startedAt
+        - expiresAt
+        - endPolicy
+        - state
+        - sequence
+    DispatchShareReceipt:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-private-dispatch-v1
+        operationId:
+          type: string
+          format: uuid
+        share:
+          $ref: "#/components/schemas/DispatchShare"
+        confirmed:
+          type: boolean
+          const: true
+        serverTimestamp:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+      required:
+        - contractVersion
+        - operationId
+        - share
+        - confirmed
+        - serverTimestamp
+    DispatchEncryptedBox:
+      type: object
+      additionalProperties: false
+      properties:
+        recipientDeviceId:
+          type: string
+          format: uuid
+        ephemeralPublicKeyX25519:
+          type: string
+          pattern: ^[A-Za-z0-9+/]{43}=$
+        combinedCiphertext:
+          type: string
+          minLength: 40
+          maxLength: 2048
+          pattern: ^[A-Za-z0-9+/]+={0,2}$
+      required:
+        - recipientDeviceId
+        - ephemeralPublicKeyX25519
+        - combinedCiphertext
+    DispatchPointPublish:
+      type: object
+      additionalProperties: false
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        observedAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        source:
+          type: string
+          enum:
+            - gps
+        membershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        audienceHash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        boxes:
+          type: array
+          items:
+            $ref: "#/components/schemas/DispatchEncryptedBox"
+          maxItems: 1600
+      required:
+        - deviceId
+        - sequence
+        - observedAt
+        - source
+        - membershipRevision
+        - audienceHash
+        - boxes
+    DispatchPoint:
+      type: object
+      additionalProperties: false
+      properties:
+        shareId:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        observedAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        expiresAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        source:
+          type: string
+          enum:
+            - gps
+        box:
+          $ref: "#/components/schemas/DispatchEncryptedBox"
+      required:
+        - shareId
+        - accountId
+        - deviceId
+        - sequence
+        - observedAt
+        - expiresAt
+        - source
+        - box
+    DispatchSnapshot:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-private-dispatch-v1
+        group:
+          $ref: "#/components/schemas/DispatchGroup"
+        readiness:
+          $ref: "#/components/schemas/DispatchReadiness"
+        activeShares:
+          type: array
+          items:
+            $ref: "#/components/schemas/DispatchShare"
+          maxItems: 200
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/DispatchPoint"
+          maxItems: 200
+        serverTimestamp:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+      required:
+        - contractVersion
+        - group
+        - readiness
+        - activeShares
+        - points
+        - serverTimestamp
+    DispatchStop:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          enum:
+            - user
+            - privacy_zone
+            - ride_end
+            - logout
+            - account_change
+            - membership_change
+            - keys_unavailable
+            - background_unavailable
+      required:
+        - operationId
+        - deviceId
+        - reason
+    DispatchPointPayload:
+      type: object
+      additionalProperties: false
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          minimum: -180
+          maximum: 180
+        horizontalAccuracyM:
+          type: number
+          minimum: 0
+          maximum: 100
+      required:
+        - lat
+        - lon
+        - horizontalAccuracyM
+    MobilityError:
+      type: object
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+              minLength: 1
+              maxLength: 80
+            message:
+              type: string
+              minLength: 1
+              maxLength: 500
+            correlationId:
+              type: string
+              minLength: 1
+              maxLength: 120
+            details:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                properties:
+                  path:
+                    type: string
+                    minLength: 1
+                    maxLength: 200
+                  issue:
+                    type: string
+                    minLength: 1
+                    maxLength: 500
+                required:
+                  - path
+                  - issue
+              maxItems: 50
+          required:
+            - code
+            - message
+            - correlationId
+      required:
+        - error
+    SharedVehicleDelete:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        expectedDataRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        expectedMembershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+        - operationId
+        - expectedDataRevision
+        - expectedMembershipRevision
+        - reason
+    SharedVehicleRecordDelete:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        expectedDataRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        expectedMembershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        recordId:
+          type: string
+          format: uuid
+        expectedRecordRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+        - operationId
+        - expectedDataRevision
+        - expectedMembershipRevision
+        - recordId
+        - expectedRecordRevision
+        - reason
+    DispatchGroupDelete:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        expectedMembershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+      required:
+        - operationId
+        - expectedMembershipRevision
+    DispatchDeviceRevoke:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+      required:
+        - operationId
+        - deviceId
+    DispatchInvitationCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        expectedMembershipRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        email:
+          type: string
+          format: email
+          maxLength: 254
+      required:
+        - operationId
+        - expectedMembershipRevision
+        - email
+    MobilityPendingInvitation:
+      type: object
+      additionalProperties: false
+      properties:
+        invitationId:
+          type: string
+          format: uuid
+        entityType:
+          type: string
+          enum:
+            - vehicle
+            - group
+        entityId:
+          type: string
+          format: uuid
+        entityName:
+          type: string
+          maxLength: 80
+        inviterName:
+          type: string
+          maxLength: 120
+        expiresAt:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum:
+              - readVehicle
+              - readCosts
+              - recordRide
+              - recordExpense
+              - recordService
+              - editVehicle
+              - manageReminders
+              - manageMembers
+          maxItems: 8
+          uniqueItems: true
+      required:
+        - invitationId
+        - entityType
+        - entityId
+        - entityName
+        - inviterName
+        - expiresAt
+        - capabilities
+    MobilityPendingInvitations:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion:
+          type: string
+          enum:
+            - cop-mobility-invitation-v1
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/MobilityPendingInvitation"
+        serverTimestamp:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+      required:
+        - contractVersion
+        - items
+        - serverTimestamp
+    SharedVehicleCreationReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - operationId
+        - confirmed
+        - vehicle
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        confirmed:
+          type: boolean
+          const: true
+        vehicle:
+          $ref: "#/components/schemas/SharedVehicle"
+    DispatchGroupCreationReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - operationId
+        - confirmed
+        - group
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        confirmed:
+          type: boolean
+          const: true
+        group:
+          $ref: "#/components/schemas/DispatchGroup"
+    DispatchOwnedShares:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - serverTimestamp
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/DispatchShare"
+        serverTimestamp:
+          type: string
+          format: date-time
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$
+    DispatchStartCancel:
+      type: object
+      additionalProperties: false
+      required:
+        - operationId
+        - startOperationId
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        startOperationId:
+          type: string
+          format: uuid
+    DispatchStartCancelReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - operationId
+        - startOperationId
+        - confirmed
+        - serverTimestamp
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        startOperationId:
+          type: string
+          format: uuid
+        confirmed:
+          type: boolean
+          const: true
+        serverTimestamp:
+          type: string
+          format: date-time
+    DispatchParticipantOpen:
+      type: object
+      additionalProperties: false
+      required:
+        - operationId
+      properties:
+        operationId:
+          type: string
+          format: uuid
+    DispatchParticipantReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - operationId
+        - confirmed
+        - groupId
+        - accountId
+        - conversationId
+        - roomId
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        confirmed:
+          type: boolean
+          const: true
+        groupId:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        conversationId:
+          type: string
+          minLength: 1
+          maxLength: 256
+        roomId:
+          type: string
+          minLength: 1
+          maxLength: 512

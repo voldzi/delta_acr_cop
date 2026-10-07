@@ -1,5 +1,12 @@
 # Security
 
+The 2026-10-07 code audit hardens canonical publication rights, bounded upstream
+reads, credential redirects, request logging and public body limits. See
+[ADR 0039](adr/0039_CANONICAL_PUBLICATION_BOUNDARY.md) and the
+[code health evidence](runbooks/20_COP_CODE_HEALTH.md). Unknown legacy
+classification is withheld, never implicitly made public or deleted. An empty
+dependency vulnerability report is one check, not a certification of safety.
+
 The reviewed general AI endpoint uses server-owned fixed questions and an
 empty `internal_minimized` context. It never derives external prompts from
 chat messages, user questions, incident records or attachments. The SIM
