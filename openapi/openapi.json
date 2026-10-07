@@ -23176,9 +23176,6 @@
         "additionalProperties": {
           "oneOf": [
             {
-              "type": "integer"
-            },
-            {
               "type": "string"
             },
             {

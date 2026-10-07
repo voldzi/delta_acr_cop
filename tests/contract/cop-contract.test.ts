@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { buildServer } from "../../apps/cop-api/src/server.js";
+import { createAjv } from "../../packages/ingest-contracts/src/index.js";
 import simEvent from "./fixtures/sim-event.json" assert { type: "json" };
 
 const authHeaders = {
@@ -17,6 +19,36 @@ function cloneEvent(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Shared Integration Contract v1", () => {
+  it("validates integer demo operation counts returned by seed and reset against OpenAPI", async () => {
+    const openapi = JSON.parse(readFileSync(new URL("../../openapi/openapi.json", import.meta.url), "utf8"));
+    const validateOperation = createAjv().compile(openapi.components.schemas.DemoScenarioOperation);
+    const app = buildServer({ now: () => new Date("2026-05-20T12:00:00Z") });
+
+    try {
+      for (const action of ["seed", "reset"]) {
+        const response = await app.inject({
+          method: "POST",
+          url: `/api/v1/demo/scenarios/flood-central-bohemia/${action}`,
+          headers: { authorization: "Bearer dev-lab-token" }
+        });
+        expect(response.statusCode).toBe(200);
+        const operation = response.json().operation;
+        expect(Object.values(operation).length).toBeGreaterThan(0);
+        expect(Object.values(operation).every(Number.isInteger)).toBe(true);
+        expect(validateOperation(operation), JSON.stringify(validateOperation.errors)).toBe(true);
+      }
+
+      for (const value of [0, 1, 1.5, "ready", true, false]) {
+        expect(validateOperation({ value })).toBe(true);
+      }
+      for (const value of [null, [], {}]) {
+        expect(validateOperation({ value })).toBe(false);
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
   it("accepts a valid single SIM event", async () => {
     const app = buildServer();
     const response = await app.inject({
