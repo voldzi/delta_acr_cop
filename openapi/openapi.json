@@ -13625,13 +13625,12 @@
               ],
               "properties": {
                 "eventId": {
-                  "oneOf": [
+                  "type": "string",
+                  "anyOf": [
                     {
-                      "type": "string",
                       "format": "uuid"
                     },
                     {
-                      "type": "string",
                       "const": "unknown"
                     }
                   ],

@@ -9180,11 +9180,10 @@ components:
               - status
             properties:
               eventId:
-                oneOf:
-                  - type: string
-                    format: uuid
-                  - type: string
-                    const: unknown
+                type: string
+                anyOf:
+                  - format: uuid
+                  - const: unknown
                 description: Canonical event UUID, or the legacy unknown sentinel for a schema-invalid rejected
                   item.
               status:
