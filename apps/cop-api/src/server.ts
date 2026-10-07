@@ -22,6 +22,7 @@ import { defaultSystemSubject } from "@cop/policy-engine";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
+import { isDeepStrictEqual } from "node:util";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { buildCopAlerts, type AoiRule, type AoiRuleAffiliationScope, type CopAlert } from "./alerts.js";
 import {
@@ -9604,6 +9605,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   app.post("/api/v1/ingest/batches", { onRequest: requireCanonicalIngestActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const requestNow = now();
     const body = request.body as {
       batchId?: string;
       contractVersion?: string;
@@ -9626,6 +9628,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
     const items: Array<{ eventId: string; status: "QUEUED" | "REJECTED"; errorCode?: string }> = [];
     const validatedEvents: CanonicalEventEnvelope[] = [];
+    const eventClaims = new Map<string, CanonicalEventEnvelope>();
     const acceptedObjects: ObservedObject[] = [];
     for (const item of body.events) {
       const validation = validators.validateCanonicalEvent(item);
@@ -9638,20 +9641,26 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!itemSource.valid) {
         return sendError(reply, itemSource.statusCode, itemSource.code, itemSource.message, correlationId);
       }
-      const policyFailure = ingestEventPolicyFailure(itemSource.source, validation.data, now());
+      const policyFailure = ingestEventPolicyFailure(itemSource.source, validation.data, requestNow);
       if (policyFailure) {
         return sendError(reply, 422, policyFailure.code, policyFailure.message, correlationId);
       }
+      const existing = state.events.get(validation.data.eventId) ?? eventClaims.get(validation.data.eventId);
+      if (existing && !sameCanonicalEventIdentity(existing, validation.data)) {
+        return sendError(reply, 409, "EVENT_ID_CONFLICT", "Event ID was reused with different canonical content.", correlationId);
+      }
+      eventClaims.set(validation.data.eventId, validation.data);
       validatedEvents.push(validation.data);
       items.push({ eventId: validation.data.eventId, status: "QUEUED" });
     }
     // Validate every item's source/security boundary before mutating any state.
     for (const event of validatedEvents) {
-      const result = acceptEvent(state, event);
+      if (state.events.has(event.eventId)) continue;
+      const result = acceptEvent(state, event, requestNow.toISOString());
       queueTrackPersistence(result.object, result.accepted, result.historyPoint);
       acceptedObjects.push(result.object);
     }
-    await publishCurrentTracks(acceptedObjects);
+    if (acceptedObjects.length > 0) await publishCurrentTracks(acceptedObjects);
 
     const response = {
       batchId: body.batchId,
@@ -12229,7 +12238,11 @@ async function handleIngestEvent(
     return sendError(reply, 400, "IDEMPOTENCY_KEY_REQUIRED", "X-Idempotency-Key header is required.", correlationId);
   }
 
-  const hash = hashPayload(event);
+  const existingEvent = state.events.get(event.eventId);
+  if (existingEvent && !sameCanonicalEventIdentity(existingEvent, event)) {
+    return sendError(reply, 409, "EVENT_ID_CONFLICT", "Event ID was reused with different canonical content.", correlationId);
+  }
+  const hash = hashPayload(canonicalEventIdentity(event));
   const previous = state.idempotency.get(key);
   if (previous && previous.hash !== hash) {
     appendAudit(state, "IDEMPOTENCY_CONFLICT", { eventId: event.eventId }, correlationId);
@@ -12245,10 +12258,13 @@ async function handleIngestEvent(
     return reply.code(202).send(previous.response);
   }
 
-  const result = acceptEvent(state, event);
-  queueTrackPersistence(result.object, result.accepted, result.historyPoint);
-  await publishCurrentTracks([result.object]);
-  const accepted = result.accepted;
+  let accepted = existingEvent;
+  if (!accepted) {
+    const result = acceptEvent(state, event, requestNow.toISOString());
+    queueTrackPersistence(result.object, result.accepted, result.historyPoint);
+    await publishCurrentTracks([result.object]);
+    accepted = result.accepted;
+  }
   const response = {
     accepted: true,
     eventId: accepted.eventId,
@@ -12269,11 +12285,12 @@ async function handleIngestEvent(
 
 function acceptEvent(
   state: CopState,
-  event: CanonicalEventEnvelope
+  event: CanonicalEventEnvelope,
+  serverIngestTimestamp?: string
 ): { accepted: CanonicalEventEnvelope; historyPoint: TrackHistoryPoint | undefined; object: ObservedObject } {
   const accepted: CanonicalEventEnvelope = {
     ...event,
-    ingestTimestamp: event.ingestTimestamp ?? new Date().toISOString()
+    ingestTimestamp: serverIngestTimestamp ?? event.ingestTimestamp ?? new Date().toISOString()
   };
   state.events.set(accepted.eventId, accepted);
   const object = withEventProvenance(createCopObjectFromEvent(accepted), accepted);
@@ -19258,6 +19275,15 @@ async function requireMcpIntegrationActor(request: FastifyRequest, reply: Fastif
 
 function hashPayload(data: unknown): string {
   return createHash("sha256").update(JSON.stringify(data)).digest("hex");
+}
+
+function canonicalEventIdentity(event: CanonicalEventEnvelope): Omit<CanonicalEventEnvelope, "ingestTimestamp"> {
+  const { ingestTimestamp: _clientIngestTimestamp, ...identity } = event;
+  return identity;
+}
+
+function sameCanonicalEventIdentity(left: CanonicalEventEnvelope, right: CanonicalEventEnvelope): boolean {
+  return isDeepStrictEqual(canonicalEventIdentity(left), canonicalEventIdentity(right));
 }
 
 function headerAsString(value: unknown): string | undefined {
