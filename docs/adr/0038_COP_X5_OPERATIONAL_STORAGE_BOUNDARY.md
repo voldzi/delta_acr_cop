@@ -1,6 +1,6 @@
 # ADR 0038: COP operational storage boundary on X5
 
-Status: accepted scope; production API activation pending.
+Status: accepted; production API guard, dedicated builder and daily maintenance deployed.
 Date: 2026-10-07.
 
 ## Context
@@ -39,8 +39,11 @@ private and verify an isolated configuration restore plus a standalone Git
 bundle. Do not interpret this as a database or whole-host recovery test.
 
 Prepare 7 daily, 4 weekly and 3 monthly snapshot retention and current plus
-two verified rollback releases. Backup/image deletion remains preview pending
-independent recovery evidence. Cleanup applies only to tool-owned, completed,
+two verified rollback releases. Backup deletion remains preview; legacy and
+historical backups stay protected. Images are never deleted automatically: a
+targeted removal must first verify its archived copy and repeat the check of
+all current containers, protected rollback images and concurrent releases.
+Cleanup applies only to tool-owned, completed,
 rebuildable, unlocked jobs: 14 days and 10 GiB across such completed jobs.
 Unknown, active, held, audit and historical user data remain protected.
 
@@ -60,12 +63,30 @@ allocation freed. Legacy copies remain at their original sources pending
 further acceptance. PostgreSQL, active queues, external S3 and edge volume
 are unchanged.
 
+An immutable, tagless archive of 51 COP images was verified and loaded back
+without changing current tags before targeted removal of 41 obsolete images
+(58 tags). Ten protected COP images remain. Physical Docker space savings
+cannot be independently attributed because layers are shared and other
+applications were being maintained concurrently. COP X5 directories use
+approximately 7.1 GiB; the file-archive saving above is independently measured.
+
 X5 itself is not an independent backup. The user confirmed Proxmox backups of
-the whole host including X5; a specific recoverable point and its restore test
-remain undocumented. Dedicated builder, daily scheduler and production API
-activation must have their own acceptance evidence. The dedicated builder has
-verified X5 backing and restart disabled; its time-based GC policy remains
-pending. Local tests/build do not
-establish production runtime or full-data recovery.
+the whole host including X5 and delegated recovery-point management to Proxmox.
+A specific Proxmox recovery point is not an acceptance prerequisite for this
+COP change. Full-host restoration was not tested here. The dedicated builder has verified X5 backing and
+restart disabled. Its isolated build and COP-only GC with 336 hours and 10 GB
+passed; the first GC released 0 B. Daily maintenance is installed at 03:17
+Europe/Prague and a complete manual run passed. The deployed API-only overlay
+preserves the exact prior image layers and changes the three compiled media
+conversion files. Runtime code/hash, device and read-only marker were checked
+in production. Two isolated jobs in the same image used real ffmpeg on X5;
+wrong-device and missing-marker cases failed without internal fallback.
+
+Post-deployment snapshots have verified isolated configuration/Git restoration;
+database restoration is explicitly outside that evidence. Current and two
+previous API/web versions passed isolated starts and bounded endpoint/assets
+checks. This does not establish recovery of all user data. Container json-file
+logs have no documented per-container size/retention options; classify audit
+requirements before proposing a separate retention or migration change.
 
 See [current operations, retention and rollback runbook](../runbooks/19_COP_X5_STORAGE.md).

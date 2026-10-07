@@ -33,7 +33,32 @@ nevytvářejí náhradní backup/cache/staging na interním disku.
 Uvolněná alokace interního disku po přesunu deployment archivu:
 **2 799 202 304 B** (přibližně 2,80 GB / 2,61 GiB).
 Tato hodnota neobsahuje dosud ponechané legacy zdroje.
-Celkové obsazení a volná kapacita X5 po dokončení: **pending final inventory**.
+
+Závěrečná inventura 7. 10. 2026 po přesunu a cíleném úklidu obrazů:
+
+| Úložiště | Obsazeno | Volno |
+| --- | ---: | ---: |
+| Interní filesystem `/` | 198 014 734 336 B | 63 274 295 296 B (58,9 GiB) |
+| X5, celý filesystem | 87 341 367 296 B (81,3 GiB) | 72 016 814 080 B (67,1 GiB) |
+
+COP adresáře na X5 při samostatné inventuře zabíraly přibližně **7,1 GiB**:
+backups 718 946 304 B, archives 6 884 737 024 B, cache 544 768 B a staging
+483 328 B, celkem 7 604 711 424 B alokace. Inventury probíhaly vedle práce
+jiných aplikací; celkový rozdíl volného místa hostu nelze připsat COP.
+
+Cíleně bylo odstraněno **41 starých COP obrazů / 58 tagů**, až po archivaci
+a ověřeném načtení 51 obrazů podle immutable ID a jejich vrstev. Archiv
+`/srv/x5-production/archives/cop/images-2026-10-07T124438Z-5eb81f82c23a488db263e9de57c92264/images.tar.gz`
+má 4 081 497 507 B. Aktuální tagy se při obnově nezměnily. Zůstalo 10
+chráněných COP obrazů; používané obrazy včetně zastavených kontejnerů se
+nemažou. Kvůli sdíleným vrstvám a souběžným změnám jiných aplikací není
+samostatná fyzicky uvolněná alokace Docker obrazů vyčíslena. Prokazatelně
+připsaná úspora COP tak zůstává 2,61 GiB přesunutého souborového archivu.
+
+Privátní evidence kopie, metadat a izolované obnovy je na hostu v
+`/srv/x5-production/archives/cop/storage-migration-20261007T115738Z/migration-proof.json`.
+Manifesty obsahují pouze provozní evidenci v chráněném COP adresáři;
+nepublikujte jejich privátní obsah nebo hash souborů se secrets.
 
 Aktivní PostgreSQL/Patroni databáze, fronty, externí S3 média a
 `cop-edge-data` volume nebyly přesunuty. Edge obsahuje stav, cursor a outbox;
@@ -81,10 +106,10 @@ obnovené soubory v `/srv/cop`. `databaseRestoreVerified=false` je záměrné;
 není to důkaz obnovitelnosti databáze nebo celé aplikace.
 
 Uživatel potvrdil off-server Proxmox zálohování celého hostu včetně X5.
-Konkrétní restore point a úspěšná izolovaná obnova tohoto bodu zde nejsou
-doloženy. Před odstraněním další původní kopie doložte identitu/čas restore
-pointu, skutečné zahrnutí X5 a ověřenou obnovu potřebných dat. X5 sama není
-nezávislá záloha.
+Správu jeho bodů obnovy řeší Proxmox; konkrétní bod obnovy není podmínkou
+dokončení této COP změny. COP samostatně ověřil integritu přesunutých dat,
+izolovanou obnovu archivů, konfigurace a Git. Test úplné obnovy hostu se
+v této změně neprováděl. X5 sama není nezávislá záloha.
 
 ### Chráněná změna produkční konfigurace
 
@@ -182,21 +207,26 @@ builder container jej musí používat pro `/var/lib/buildkit`.
 
 Builder má `restart=no` a musí být spouštěn až po ověření X5, bez autonomního
 startu proti neověřenému mountu. Jeho vlastní kapacitní GC argumenty jsou
-`1000 / 10000 / 10000 MB`; ověření 14denní časové politiky je **pending**.
+`1000 / 10000 / 10000 MB`. Denní údržba používá pouze tento builder s
+`--filter until=336h --max-used-space 10gb`; první skutečný běh prošel a
+uvolnil 0 B. Syntetický build `FROM scratch` ověřil zápis přes X5 builder.
 GC se týká pouze tohoto COP builderu. BuildKit data nejsou
 obyčejný dokončený job a `cop-storage.py cleanup` je nemaže. Docker image
 layers zůstávají v dosavadním daemon storage; tento krok nemění `data-root`.
 
 `scripts/cop-storage-daily.sh` provádí snapshot, bezpečný cleanup dokončených
-jobs a retenční preview. Zapojení do pravidelného host scheduleru:
-**pending activation evidence**. Při chybě X5 musí běh selhat bez fallbacku.
+jobs, GC dedikovaného builderu a retenční preview. Je zapojen do vlastního
+spravovaného COP bloku uživatelského cronu v **03:17 Europe/Prague**; ostatní
+záznamy nebyly změněny. Celý skript byl spuštěn také ručně a prošel. Jde o
+ověření aktuální konfigurace a jednoho běhu, nikoli o dlouhodobou historii
+automatického provozu. Při chybě X5 běh selže bez fallbacku.
 
 ## Retence a ochrana proti souběhu
 
 | Kategorie | Politika a skutečné vynucení |
 | --- | --- |
 | Deployment snapshoty | Preview sjednocení 7 různých dnů, 4 ISO týdnů a 3 měsíců; poslední ověřený snapshot vždy chráněn. Automatické mazání vypnuto. |
-| Releasy a Docker obrazy | Aktuální a dvě předchozí ověřené obnovitelné verze; chránit všechny používané obrazy i probíhající release. Výběr konkrétních image IDs a automatické mazání zatím vypnuty. |
+| Releasy a Docker obrazy | Pro API a web jsou vybrány a izolovaně ověřeny aktuální a dvě předchozí verze uvedené níže. Chráněny zůstávají také všechny používané obrazy a probíhající release. Automatické mazání vypnuto; případný jednotlivý úklid vyžaduje ověřený archiv a opakovanou kontrolu použití. |
 | Dokončené tool-owned cache/staging jobs | Úklid nad 14 dní nebo nad společný limit 10 GiB dokončených spravovaných jobs, od nejstarších. Každý kandidát musí mít platný vlastní manifest, `completed`, `rebuildable` a volný zámek. |
 | Aktivní, neznámé nebo `hold` jobs | Vždy chráněné. Pád produceru sám o sobě neznamená dokončení. |
 | Audit, původní uživatelská data, legacy archivy | Žádné automatické mazání; samostatně schválená politika. |
@@ -216,24 +246,65 @@ aplikaci ani manipulovat s `/var/lib/docker`.
 | Media runtime guard | 20/20 cílených testů; skutečné default-converter I/O s executable syntetickým nástrojem, včetně negativních vstupů bez zápisů/spuštění, symlinků, env wiring, opakovaných jobs a dev regrese. |
 | API a jeho dependency build | Exit 0; čerstvý forced TypeScript build, cílený ESLint a diff check exit 0. |
 | Storage tools: Linux metadata, souběh a retention | 19/19 testů PASS v Linux prostředí; izolované/syntetické přípravky. |
-| Nový produkční snapshot a jeho `verify` | **Pending production acceptance record.** |
-| Dedicated COP builder | Provisionován/spuštěn, přesné bind volume options a X5 device uvnitř ověřeny; restart `no`, vlastní kapacitní GC. Časová GC politika pending. |
-| Denní scheduler | **Pending activation evidence.** |
-| Nový API image a produkční konverze | **Pending: API-only overlay nebyl při napsání této evidence nasazen.** |
-| Off-server úplná obnova | Uživatelem potvrzené Proxmox zálohování; konkrétní restore point a restore test nedoloženy. |
+| Produkční snapshoty a jejich `verify` | Po nasazení ověřeny snapshoty `2026-10-07T122739.950196Z`, `2026-10-07T122936.575359Z` a `2026-10-07T123157.760725Z`: izolovaná obnova konfigurace/metadat a Git bundlu; nikoli DB. |
+| Dedicated COP builder | Přesné bind volume options a device `2065` ověřeny také uvnitř builderu; restart `no`; syntetický build prošel; denní GC s 336 hodinami a 10 GB prošlo, uvolnilo 0 B. |
+| Denní scheduler | Aktivní COP blok 03:17 Europe/Prague; ručně ověřen celý denní běh. |
+| Nasazený API guard | Skutečný image, jeho JS hash, env a X5 bindy včetně read-only markeru ověřeny v produkčním kontejneru. Zdraví ověřeno bez změny ostatních služeb. |
+| Skutečný `ffmpeg` ve stejném API image | Dva izolované syntetické jobs dosáhly `ready`; ověřen SBS výstup 128 × 48, X5 device `2065`, read-only marker a žádné pracovní soubory v interním `/tmp`. Bez sítě a produkčních secrets. |
+| Nesprávné zařízení / chybějící marker | Izolované runtime jobs ve skutečném image skončily `failed` před vytvořením pracovních souborů; žádný interní fallback. X5 nebyla odpojována z produkce. |
+| Ověřené rollback API a web verze | Aktuální API a dvě předchozí API verze prošly izolovaným skutečným startem a HTTP health 200. Tři chráněné web verze prošly HTTP 200 a kontrolou osmi HTML/assets očekávání každé varianty. |
+| Cílený úklid starých obrazů | Archiv 51 obrazů ověřen a znovu načten podle immutable ID a vrstev bez změny aktuálních tagů; následně odstraněno 41 obrazů / 58 tagů. 10 chráněných obrazů ponecháno. |
+| Off-server zálohování | Uživatelem potvrzené Proxmox zálohování včetně X5; správa bodů obnovy náleží Proxmoxu. Úplná obnova hostu nebyla součástí této změny. |
 
-Plánovaný API overlay vychází z přesně ověřeného produkčního image
+Nasazený API overlay vychází z přesně ověřeného původního produkčního image
 `sha256:71c67b2da529450f6c3581799805e352e96167e6c1e79a83743f191fd4699161`
-a mění pouze kompilované `media-conversion.js`, `.js.map` a `.d.ts`.
-Výchozí server checkout byl `6583cb5ab659044cc681294ee291f9b08135a4bc`;
-checkout SHA není důkazem totožnosti běžícího image. Před aktivací doložte
-image/layer identitu, syntetický normální start a guard ve skutečném image.
+a mění pouze kompilované `media-conversion.js`, `.js.map` a `.d.ts`. Jeho
+skutečný image ID je
+`sha256:e76a3323f761662d48fe4126a2fbc477adf6c872307888283db37aafed86c144`.
+Ověřený SHA-256 nasazeného JS je
+`f7d768583e164f750a707d929fa9d0c085cf4a9663e4de6680cd9e6bd174c145`;
+původní image layers jsou přesným prefixem nového image. Publikovaná a
+nasazená zdrojová revize této změny je
+`9a05cbfe19605f6391b925a70d8ad2644c31ac4c`; závěrečná dokumentace a denní
+skript následují v samostatné revizi téže větve `codex/cop-x5-storage`, bez
+další změny API image. Výchozí server checkout byl
+`6583cb5ab659044cc681294ee291f9b08135a4bc`; checkout SHA sám o sobě
+nenahrazuje ověření běžícího image.
 
-Po aktivaci doplňte: publikovanou revizi, skutečný image ID, zachované mounts
-a ostatní služby, HTTP health před/po, ověřenou syntetickou konverzi na X5 a
-negativní runtime zkoušku bez očekávaného úložiště. Samotný build tyto body
-nepotvrzuje. Výsledek nesmí zlepšovat nebo skrývat již existující upstream
-degradaci v `/health/dependencies`.
+API změna zachovala nesouvisející env, sítě a runtime konfiguraci. Ostatní COP
+kontejnery ani jejich image nebyly touto aktivací nahrazeny. Produkční health
+bylo ověřeno před i po změně; již existující upstream degradace nebyla
+přeznačena na úspěch.
+
+Chrání se také tyto dvě skutečně nastartované předchozí API verze:
+`sha256:71c67b2da529450f6c3581799805e352e96167e6c1e79a83743f191fd4699161`
+a `sha256:a5d442589f67e1495a41787cf104af71b5930f9ba0d33ca4cc3d2e66fa509cec`.
+Pro web byly ověřeny a chráněny image
+`sha256:227eb3f22c55de97cebe466dbcefc48677fc57a424b3ef838d6ce3d208c99d89`,
+`sha256:3cbb3e704c9407d9b23d69353c87ec2221fe6c03da187f6f7742f6e414fd6f10`
+a `sha256:27ac815207d0130a2b434aa8142d789bfa39e66c6c847e69e9a93d9d2ead9908`.
+Starší API předcházejí runtime guardu: rollback vyžaduje vypnuté konverze
+podle postupu níže. Izolovaný start potvrzuje spuštění a dostupnost
+testovaných endpointů, nikoli plnou obnovu účtů či dat. Dva první izolované
+web pokusy chybně použily UID 1000 a skončily `EACCES`; opravený přípravek
+použil skutečného uživatele image a správný pracovní adresář. Produkční web
+se kvůli těmto pokusům neměnil.
+
+U chatu jsou zachovány obě dostupné verze; u edge a MCP jediná dostupná
+aktuální verze. Dvě starší ověřené verze tam nejsou doloženy. Celý ověřený
+archiv obrazů je chráněný, automaticky se neexpiruje. Budoucí cílený úklid
+vyžaduje opětovnou inventuru, ověření obnovy a kontrolu všech kontejnerů.
+
+### Další zdroje zápisů
+
+U pěti COP služeb byl zjištěn log driver `json-file` a prázdné kontejnerové
+log options (`Config={}`); není zde doložen vlastní kontejnerový limit
+velikosti nebo retence. Logy nebyly plošně mazány ani označeny za cache.
+Před jejich omezením či přesunem je nutné klasifikovat auditní evidenci,
+potvrdit požadovanou retenci a připravit samostatný provozní postup. Tento
+krok nemění globální Docker `data-root` ani manipulaci s jeho interními
+soubory. Stejně samostatný plán vyžaduje případný přesun databází, front a
+ostatního trvalého provozního stavu.
 
 ## Rollback
 
@@ -254,3 +325,11 @@ degradaci v `/health/dependencies`.
 Rollback nepoužívá plošný prune, mazání volumes ani ruční operace uvnitř
 Docker data-root. Úplná obnova DB/S3/hostu má vlastní provozní postup a není
 nahrazena ověřením konfiguračního snapshotu.
+
+Privátní původní konfigurace a připravený API rollback jsou v
+`/srv/x5-production/archives/cop/api-storage-20261007`; jeho
+`deployment-proof.json` dokládá skutečný image a zachované nastavení.
+Při obnově staršího obrazu z uvedeného `images.tar.gz` načtěte archiv přes
+Docker, porovnejte ID a vrstvy s privátní `verification.json` a teprve pak
+explicitně vyberte požadované ID pro danou službu. Archiv je bez mutable
+tagů; nezaměňuje běžící tagy a nepředstavuje pokyn ke spuštění celého stacku.
