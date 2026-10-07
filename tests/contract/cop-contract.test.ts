@@ -93,6 +93,44 @@ describe("Shared Integration Contract v1", () => {
     });
   });
 
+  it("keeps the mixed batch acknowledgement compatible with the binding OpenAPI schema", async () => {
+    const openapi = JSON.parse(readFileSync(new URL("../../openapi/openapi.json", import.meta.url), "utf8"));
+    const validateBatch = createAjv().compile(openapi.components.schemas.IngestBatchAccepted);
+    const invalid = cloneEvent({ eventId: "77777777-7777-4777-8777-777777777777" });
+    delete (invalid as { geo?: unknown }).geo;
+    const app = buildServer();
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/ingest/batches",
+        headers: authHeaders,
+        payload: {
+          batchId: "66666666-6666-4666-8666-666666666666",
+          contractVersion: "cop-ingest-v1",
+          sourceSystemId: "sim-air-situation-001",
+          events: [simEvent, invalid]
+        }
+      });
+      expect(response.statusCode).toBe(202);
+      const acknowledgement = response.json();
+      expect(acknowledgement).toMatchObject({
+        acceptedCount: 1,
+        rejectedCount: 1,
+        items: [
+          { eventId: simEvent.eventId, status: "QUEUED" },
+          { eventId: "unknown", status: "REJECTED", errorCode: "VALIDATION_ERROR" }
+        ]
+      });
+      expect(validateBatch(acknowledgement), JSON.stringify(validateBatch.errors)).toBe(true);
+      const malformedAcknowledgement = structuredClone(acknowledgement);
+      malformedAcknowledgement.items[1].eventId = "arbitrary text";
+      expect(validateBatch(malformedAcknowledgement)).toBe(false);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("returns standard error envelope for schema errors", async () => {
     const app = buildServer();
     const invalid = cloneEvent();

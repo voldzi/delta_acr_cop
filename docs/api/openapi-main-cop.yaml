@@ -2073,7 +2073,20 @@ paths:
         releasePolicy must allow public access, have no targeted restrictions and be unexpired;
         otherwise 422 RELEASE_POLICY_NOT_ALLOWED. Batch validation applies the same source, event
         type, object type, classification, release and synthetic-data rules to every item before
-        accepting any item.
+        accepting any item. External single and batch ingest always assign ingestTimestamp from the
+        COP server clock on first acceptance; any producer-supplied ingestTimestamp is ignored for
+        ingestion time and event identity. producerTimestamp and the remaining canonical fields are
+        preserved. After schema, source and publication-policy checks, reuse of an eventId with
+        different canonical content other than ingestTimestamp returns HTTP 409 EVENT_ID_CONFLICT in
+        the correlation-aware COP error envelope. Identity includes classification, source,
+        correlationId, producerTimestamp and payload. Identical eventId retries return 202 without
+        writing the event or track again, adding another history point or publishing the track
+        again, and retain the original server ingestTimestamp. Event-ID uniqueness and request-key
+        evidence are scoped to the current process RAM; this is not a durable global deduplication
+        guarantee across restarts. The single-event endpoint requires X-Idempotency-Key. The same
+        request key and unchanged normalized body return the original acknowledgement; key reuse
+        with different content returns HTTP 409 IDEMPOTENCY_CONFLICT unless a prior validation gate
+        rejects it first.
   /api/v1/ingest/batches:
     post:
       tags:
@@ -2082,7 +2095,14 @@ paths:
       operationId: ingestBatch
       parameters:
         - $ref: "#/components/parameters/SourceSystemIdHeader"
-        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+        - name: X-Idempotency-Key
+          in: header
+          required: false
+          description: Optional compatibility header; batches use eventId deduplication without a request-key
+            response cache.
+          schema:
+            type: string
+            format: uuid
         - $ref: "#/components/parameters/ContractVersionHeader"
         - $ref: "#/components/parameters/CorrelationIdHeader"
       requestBody:
@@ -2119,7 +2139,23 @@ paths:
         releasePolicy must allow public access, have no targeted restrictions and be unexpired;
         otherwise 422 RELEASE_POLICY_NOT_ALLOWED. Batch validation applies the same source, event
         type, object type, classification, release and synthetic-data rules to every item before
-        accepting any item.
+        accepting any item. External single and batch ingest always assign ingestTimestamp from the
+        COP server clock on first acceptance; any producer-supplied ingestTimestamp is ignored for
+        ingestion time and event identity. producerTimestamp and the remaining canonical fields are
+        preserved. After schema, source and publication-policy checks, reuse of an eventId with
+        different canonical content other than ingestTimestamp returns HTTP 409 EVENT_ID_CONFLICT in
+        the correlation-aware COP error envelope. Identity includes classification, source,
+        correlationId, producerTimestamp and payload. Identical eventId retries return 202 without
+        writing the event or track again, adding another history point or publishing the track
+        again, and retain the original server ingestTimestamp. Event-ID uniqueness and request-key
+        evidence are scoped to the current process RAM; this is not a durable global deduplication
+        guarantee across restarts. Batch source, publication-policy and event-ID checks cover every
+        schema-valid item, including duplicate IDs within the batch, before any state mutation; any
+        such failure rejects the whole request. Legacy schema-invalid items remain REJECTED in the
+        202 acknowledgement while valid items may be accepted. acceptedCount includes identical
+        duplicate eventIds reported as QUEUED, although those entries create no new history or
+        publication. X-Idempotency-Key is an optional compatibility header for this endpoint and
+        does not provide a batch request-key response cache.
   /api/v1/cop/tracks:
     get:
       tags:
@@ -9088,6 +9124,8 @@ components:
         receivedAt:
           type: string
           format: date-time
+          description: Original COP server acceptance time, equal to the stored server-owned ingestTimestamp.
+            Identical event retries retain this time.
         status:
           type: string
           enum:
@@ -9142,8 +9180,13 @@ components:
               - status
             properties:
               eventId:
-                type: string
-                format: uuid
+                oneOf:
+                  - type: string
+                    format: uuid
+                  - type: string
+                    const: unknown
+                description: Canonical event UUID, or the legacy unknown sentinel for a schema-invalid rejected
+                  item.
               status:
                 type: string
                 enum:
