@@ -1210,6 +1210,10 @@ describe("community report routes", () => {
   });
 
   it("answers AI chat agent questions with group-scoped COP context", async () => {
+    const externalFetch = vi.fn(async () => {
+      throw new Error("Unexpected external fetch in an isolated AI chat fixture");
+    });
+    vi.stubGlobal("fetch", externalFetch);
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {
       available: true,
@@ -1238,6 +1242,7 @@ describe("community report routes", () => {
         embeddingProvider: new FakeEmbeddingProvider()
       }),
       communityReportStore,
+      placeGeocoder: new FakeAiMapSearchPlaceGeocoder(),
       now: () => new Date("2026-05-20T12:00:00Z")
     });
     const floodReport = await communityReportStore.createReport(
@@ -1524,6 +1529,7 @@ describe("community report routes", () => {
     expect(forbiddenResponse.statusCode).toBe(403);
 
     await app.close();
+    expect(externalFetch).not.toHaveBeenCalled();
   });
 
   it("returns a controlled AI response when the provider times out", async () => {
@@ -3467,6 +3473,10 @@ describe("community report routes", () => {
   });
 
   it("resolves a short weather follow-up from the last client-visible AI exchange", async () => {
+    const externalFetch = vi.fn(async () => {
+      throw new Error("Unexpected external fetch in an isolated AI chat fixture");
+    });
+    vi.stubGlobal("fetch", externalFetch);
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {
       available: true,
@@ -3487,6 +3497,7 @@ describe("community report routes", () => {
         defaultProvider: "mock",
         embeddingProvider: new FakeEmbeddingProvider()
       }),
+      placeGeocoder: new FakeAiMapSearchPlaceGeocoder(),
       now: () => new Date("2026-07-15T19:30:00Z"),
       simSearchDataSource
     });
@@ -3532,6 +3543,7 @@ describe("community report routes", () => {
     expect(aiResponse.result.summary).not.toContain("MAX_Z");
 
     await app.close();
+    expect(externalFetch).not.toHaveBeenCalled();
   });
 
   it("asks a human clarification for an elliptical question without visible context", async () => {
@@ -3562,6 +3574,10 @@ describe("community report routes", () => {
   });
 
   it("returns an explicit no-data weather response when SIM has no current meteo entity", async () => {
+    const externalFetch = vi.fn(async () => {
+      throw new Error("Unexpected external fetch in an isolated AI chat fixture");
+    });
+    vi.stubGlobal("fetch", externalFetch);
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {
       available: true,
@@ -3587,6 +3603,7 @@ describe("community report routes", () => {
         defaultProvider: "mock",
         embeddingProvider: new FakeEmbeddingProvider()
       }),
+      placeGeocoder: new FakeAiMapSearchPlaceGeocoder(),
       now: () => new Date("2026-05-20T12:00:00Z"),
       simSearchDataSource
     });
@@ -3626,6 +3643,7 @@ describe("community report routes", () => {
     );
 
     await app.close();
+    expect(externalFetch).not.toHaveBeenCalled();
   });
 
   it("geocodes place phrases into bbox for generic AI map searches without explicit geo context", async () => {
@@ -3884,6 +3902,10 @@ describe("community report routes", () => {
   });
 
   it("runs AI chat agent questions as pollable async jobs", async () => {
+    const externalFetch = vi.fn(async () => {
+      throw new Error("Unexpected external fetch in an isolated AI chat fixture");
+    });
+    vi.stubGlobal("fetch", externalFetch);
     const capturedQueries: AiCopQuery[] = [];
     const aiProvider: AiProvider = {
       available: true,
@@ -3910,6 +3932,7 @@ describe("community report routes", () => {
         defaultProvider: "mock",
         embeddingProvider: new FakeEmbeddingProvider()
       }),
+      placeGeocoder: new FakeAiMapSearchPlaceGeocoder(),
       now: () => new Date("2026-05-20T12:00:00Z")
     });
 
@@ -3963,6 +3986,7 @@ describe("community report routes", () => {
     expect(capturedQueries[0]?.requestId).toBe(started.requestId);
 
     await app.close();
+    expect(externalFetch).not.toHaveBeenCalled();
   });
 });
 
