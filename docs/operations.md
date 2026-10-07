@@ -14,6 +14,7 @@ documentation remains in:
 - [Postgres/Patroni temporal store](runbooks/09_POSTGRES_PATRONI_TEMPORAL_STORE.md)
 - [Tile cache and map tiles](runbooks/10_TILE_CACHE_AND_MAP_TILES.md)
 - [COP media S3](runbooks/17_COP_MEDIA_S3.md)
+- [COP storage on X5: paths, retention and deployment gates](runbooks/19_COP_X5_STORAGE.md)
 
 Local defaults:
 

@@ -16,6 +16,7 @@ procedures remain in the established runbook set:
 - [Tile cache and map tiles](runbooks/10_TILE_CACHE_AND_MAP_TILES.md)
 - [User identity reconciliation](runbooks/11_USER_IDENTITY_RECONCILIATION.md)
 - [COP media S3](runbooks/17_COP_MEDIA_S3.md)
+- [COP storage on X5: verification and scoped rollback](runbooks/19_COP_X5_STORAGE.md)
 
 Common checks:
 

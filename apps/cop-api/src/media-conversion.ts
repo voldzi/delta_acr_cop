@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import type { CommunityReportAttachmentRecord } from "./community-report-store.js";
 import type { MediaStorage } from "./media-storage.js";
 
@@ -43,6 +44,8 @@ export interface MediaConversionConfig {
   maxConcurrent: number;
   timeoutMs: number;
   workDir: string;
+  expectedStorageUuid?: string;
+  expectedDeviceId?: string;
 }
 
 export interface MediaConversionManagerOptions {
@@ -72,6 +75,9 @@ export function createMediaConversionManagerFromEnv(
   if (!enabled || !options.mediaStorage) {
     return undefined;
   }
+  const expectedStorageUuid = env.COP_MEDIA_SPATIAL_CONVERSION_EXPECTED_STORAGE_UUID?.trim();
+  const expectedDeviceId = env.COP_MEDIA_SPATIAL_CONVERSION_EXPECTED_DEVICE_ID?.trim();
+  const storageGuardRequired = Boolean(expectedStorageUuid || expectedDeviceId);
   return new AsyncMediaConversionManager({
     ...options,
     config: {
@@ -79,7 +85,8 @@ export function createMediaConversionManagerFromEnv(
       ffmpegPath: env.COP_MEDIA_SPATIAL_FFMPEG_PATH?.trim() || "ffmpeg",
       maxConcurrent: readInteger(env.COP_MEDIA_SPATIAL_CONVERSION_MAX_CONCURRENT, 1, 1, 4),
       timeoutMs: readInteger(env.COP_MEDIA_SPATIAL_CONVERSION_TIMEOUT_MS, 600_000, 30_000, 3_600_000),
-      workDir: env.COP_MEDIA_SPATIAL_CONVERSION_WORKDIR?.trim() || join(tmpdir(), "cop-media-conversions")
+      workDir: env.COP_MEDIA_SPATIAL_CONVERSION_WORKDIR?.trim() || (storageGuardRequired ? "" : join(tmpdir(), "cop-media-conversions")),
+      ...(storageGuardRequired ? { expectedStorageUuid: expectedStorageUuid ?? "", expectedDeviceId: expectedDeviceId ?? "" } : {})
     }
   });
 }
@@ -258,12 +265,16 @@ async function convertAppleSpatialMovWithFfmpeg(
   attachment: CommunityReportAttachmentRecord,
   config: MediaConversionConfig
 ): Promise<Buffer> {
-  await mkdir(config.workDir, { recursive: true });
+  if (config.expectedStorageUuid !== undefined || config.expectedDeviceId !== undefined) {
+    await verifyConversionStorage(config);
+  } else {
+    await mkdir(config.workDir, { recursive: true });
+  }
   const jobId = randomUUID();
   const inputPath = join(config.workDir, `${jobId}-${safeFileName(attachment.fileName ?? "input.mov")}`);
   const outputPath = join(config.workDir, `${jobId}-xr-sbs.mp4`);
   try {
-    await writeFile(inputPath, source);
+    await writeFile(inputPath, source, { flag: "wx", mode: 0o600 });
     await runFfmpeg(config.ffmpegPath, [
       "-y",
       "-i",
@@ -292,6 +303,40 @@ async function convertAppleSpatialMovWithFfmpeg(
       rm(inputPath, { force: true }),
       rm(outputPath, { force: true })
     ]);
+  }
+}
+
+async function verifyConversionStorage(config: MediaConversionConfig): Promise<void> {
+  const deviceId = config.expectedDeviceId;
+  if (!config.expectedStorageUuid || !deviceId || !/^\d+$/u.test(deviceId)
+    || !Number.isSafeInteger(Number(deviceId)) || Number(deviceId) <= 0
+    || !config.workDir || !isAbsolute(config.workDir)) {
+    throw new Error("Spatial conversion storage guard configuration is incomplete or invalid.");
+  }
+  try {
+    const workDir = resolve(config.workDir);
+    const directory = await lstat(workDir);
+    if (!directory.isDirectory() || directory.isSymbolicLink()
+      || directory.dev !== Number(deviceId) || await realpath(workDir) !== workDir) {
+      throw new Error("storage directory identity mismatch");
+    }
+    const markerPath = join(workDir, ".cop-storage.json");
+    const marker = await open(markerPath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const info = await marker.stat();
+      if (!info.isFile() || info.dev !== directory.dev || (info.mode & 0o022) !== 0
+        || info.size > 4096) {
+        throw new Error("storage marker is not protected on the expected filesystem");
+      }
+      const data = readRecord(JSON.parse(await marker.readFile("utf8")));
+      if (data?.uuid !== config.expectedStorageUuid) {
+        throw new Error("storage marker UUID mismatch");
+      }
+    } finally {
+      await marker.close();
+    }
+  } catch {
+    throw new Error("Spatial conversion storage guard rejected unavailable or unverified storage.");
   }
 }
 

@@ -18,3 +18,4 @@
 - [16 PoC Functional Walkthrough Requirements](16_POC_FUNCTIONAL_WALKTHROUGH_REQUIREMENTS.md)
 - [17 COP Media S3](17_COP_MEDIA_S3.md)
 - [18 Public Flood Demo](18_PUBLIC_FLOOD_DEMO.md)
+- [19 COP storage on X5](19_COP_X5_STORAGE.md)

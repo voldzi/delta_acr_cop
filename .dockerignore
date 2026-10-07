@@ -12,3 +12,8 @@ coverage
 apps/cop-web/dist
 apps/cop-api/dist
 apps/cop-edge-node/dist
+artifacts
+output
+.codex-backups
+.chroma-state*
+**/__pycache__

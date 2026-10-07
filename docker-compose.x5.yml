@@ -1,0 +1,20 @@
+# Production-only work storage. Include with the existing approved overrides.
+# scripts/deploy-production.sh validates X5 before Compose can create anything.
+services:
+  cop-api:
+    environment:
+      COP_MEDIA_SPATIAL_CONVERSION_WORKDIR: /data/cop-media-conversions
+      COP_MEDIA_SPATIAL_CONVERSION_EXPECTED_STORAGE_UUID: "${COP_MEDIA_SPATIAL_CONVERSION_EXPECTED_STORAGE_UUID:?Verify X5 UUID first}"
+      COP_MEDIA_SPATIAL_CONVERSION_EXPECTED_DEVICE_ID: "${COP_MEDIA_SPATIAL_CONVERSION_EXPECTED_DEVICE_ID:?Verify X5 device first}"
+    volumes:
+      - type: bind
+        source: /srv/x5-production/staging/cop/media-conversions
+        target: /data/cop-media-conversions
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/x5-production/staging/cop/media-conversions/.cop-storage.json
+        target: /data/cop-media-conversions/.cop-storage.json
+        read_only: true
+        bind:
+          create_host_path: false
