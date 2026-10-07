@@ -14,7 +14,7 @@ function event(): CanonicalEventEnvelope {
     eventType: "track.updated", contractVersion: "cop-ingest-v1", producerTimestamp: now.toISOString(),
     source: { sourceSystemId: "synthetic-public-source", adapterId: "synthetic", adapterVersion: "1.0.0" },
     classification: { level: "UNCLASSIFIED", handlingCaveats: [], releasability: ["CZ"] },
-    geo: { lat: 50, lon: 14 }, quality: { confidence: 1 },
+    geo: { lat: 50, lon: 14 }, quality: { confidence: 1, sourceReliability: "UNKNOWN", informationCredibility: "UNKNOWN" },
     payload: { objectId: "synthetic-object", objectType: "AIRCRAFT", affiliation: "FRIEND", domain: "AIR", status: "ACTIVE" }
   };
 }

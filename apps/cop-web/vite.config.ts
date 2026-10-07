@@ -1,7 +1,8 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig, type PluginOption } from "vite";
 import { fileURLToPath, URL } from "node:url";
-import { cesiumAssetsPlugin } from "./cesium-assets-plugin";
+import { cesiumAssetsPlugin } from "./cesium-assets-plugin.ts";
+import { webChunkName } from "./vite-chunks.ts";
 
 const apiBase = process.env.COP_API_BASE_URL ?? "http://localhost:4310";
 const chatBase = process.env.COP_CHAT_PROXY_TARGET ?? `http://localhost:${process.env.COP_CHAT_PORT ?? "4314"}`;
@@ -87,38 +88,11 @@ export default defineConfig({
       output: {
         strictExecutionOrder: true,
         codeSplitting: {
-          // Keep shared helpers outside the optional 3D engine. Recursively
-          // capturing dependencies can make the initial 2D shell import Cesium.
+          // Group exclusive 3D dependencies without absorbing shared helpers.
           includeDependenciesRecursively: false,
           groups: [{
-            name(id) {
-              if (
-                id.includes("/node_modules/react/") ||
-                id.includes("/node_modules/react-dom/") ||
-                id.includes("/node_modules/scheduler/")
-              ) {
-                return "react-runtime";
-              }
-              if (id.includes("/node_modules/lucide-react/")) {
-                return "icons";
-              }
-              if (id.includes("/node_modules/@radix-ui/")) {
-                return "radix-ui";
-              }
-              if (id.includes("/node_modules/maplibre-gl/")) {
-                return "maplibre";
-              }
-              if (id.includes("/packages/geo-client/")) {
-                return "geo-client";
-              }
-              if (id.includes("/node_modules/qrcode/")) {
-                return "qrcode";
-              }
-              if (id.includes("/node_modules/cesium/") || id.includes("/node_modules/@cesium/")) {
-                return "cesium";
-              }
-              return undefined;
-            }
+            debugName: "cop-web-vendors-and-exclusive-3d",
+            name: webChunkName
           }]
         }
       }

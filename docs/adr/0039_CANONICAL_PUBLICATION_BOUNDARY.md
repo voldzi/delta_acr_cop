@@ -37,6 +37,33 @@ updated by a validated event. A legacy history point without a matching verified
 event remains stored but is withheld from readers. Never relabel or delete old
 data merely to make it visible.
 
+### Source registry and federation roles
+
+Source registration, metadata/permission updates and revocation require an
+authenticated actor with `INTEGRATION_ADMIN` or `SECURITY_ADMIN`, or the existing
+configured service lab token. `COP_OPERATOR` and `SYSTEM_CLIENT` alone cannot
+change the source registry. Reject unauthorized mutations before parsing their
+bodies with HTTP 403 `SOURCE_MANAGEMENT_FORBIDDEN`. Validate a partial source
+update after merging it with the current source; reject unknown/invalid fields
+and changes to `sourceSystemId` with HTTP 400 `VALIDATION_ERROR` before mutating
+state.
+
+Federation heartbeat, domain-event publication and replay, edge outbox flush,
+edge replay and replay-cursor acknowledgement, and dead-letter listing, detail,
+redrive and resolution require `INTEGRATION_ADMIN`, `SECURITY_ADMIN` or
+`SYSTEM_CLIENT`, or the configured service lab token. An authenticated citizen
+session or `COP_OPERATOR` alone does not grant these integration rights. Apply
+the same boundary to the MCP tools `cop.events.replay` and
+`cop.events.dead_letters.list` so an alternate transport cannot expose raw
+domain or rejected-event payloads. Other allowlisted MCP tools retain their
+existing access rules. REST denial uses HTTP 403 `INTEGRATION_FORBIDDEN` in the
+correlation-aware COP error envelope; the MCP JSON-RPC transport preserves its
+error format and returns `-32003` Forbidden with `INTEGRATION_FORBIDDEN` detail.
+
+These guards establish explicit integration roles, not a new binding between an
+actor and a particular `nodeId` or source. The canonical-ingest role set above
+remains separate and unchanged.
+
 ## Consequences
 
 Public canonical data remains usable after a fresh valid event. An old row

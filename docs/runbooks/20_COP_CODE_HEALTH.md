@@ -27,6 +27,8 @@ and authenticated/device acceptance are separate forms of evidence.
 | Remote bodies | Bound streamed weather/camera reads; validate each allowed redirect, reject URL credentials and cover the response body with the deadline. |
 | SIM Router | Reject redirects and bound response bytes; no new direct external fallback or activation. |
 | Logs | Request path only; remove query, pairing tokens and raw geocoding search terms. |
+| Source registry | Explicit integration/security administrator mutations; validate merged PATCH and immutable identity before changing state. |
+| Integration data | Protect domain/outbox/replay/DLQ reads and writes with service/admin roles, including MCP bypasses; ordinary citizen sessions receive 403. |
 | Canonical data | Explicit ingest roles, per-item batch policy, verified classification and public release policy on ingest and all read/evidence paths. See ADR 0039. |
 | Static files | Validate decoded paths and resolved file root; reject malformed/NUL paths and symlink escape. |
 | Compression | Brotli quality 4, correct `q=0` handling; avoid expensive quality 11 on first asset request. |
@@ -100,6 +102,14 @@ for baseline and candidate to isolate chunk/compression behavior.
   workflows from anonymous rendering. Current production Matrix recovery and
   nonblocking history backfill are preserved; cross-device decryption still
   requires real-device acceptance.
+- Federation has a privileged service role boundary; per-node actor delegation
+  is not yet provisioned. Source/node identifiers alone are not an actor
+  credential. Complete node-specific identity scope before granting independently
+  operated nodes this global integration role.
+- Target CDS/ABAC semantics for classification `releasability` and
+  `handlingCaveats` remain unresolved in `docs/06_OPEN_QUESTIONS.md`. This audit
+  does not invent tag semantics or certify that target policy; it enforces the
+  current UNCLASSIFIED/public-release boundary.
 - In-memory event/idempotency/audit growth and durable stream-bus retention need
   an approved retention/index plan. Do not delete protected history or audit as
   a performance shortcut. Validate realistic long-duration ingest before a

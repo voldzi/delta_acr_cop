@@ -22,7 +22,7 @@ function event(): CanonicalEventEnvelope {
     classification: { level: "UNCLASSIFIED", releasability: ["CZ"], handlingCaveats: [] },
     geo: { lat: 50, lon: 14 },
     payload: { objectId: randomUUID(), objectType: "AIRCRAFT", domain: "AIR", affiliation: "FRIEND", status: "ACTIVE" },
-    quality: { confidence: 1 }, simulation: { synthetic: true }
+    quality: { confidence: 1, sourceReliability: "UNKNOWN", informationCredibility: "UNKNOWN" }, simulation: { synthetic: true }
   };
 }
 

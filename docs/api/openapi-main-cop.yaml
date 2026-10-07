@@ -2515,6 +2515,10 @@ paths:
         - Sources
       summary: Register a source system.
       operationId: createSource
+      description: Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN
+        or SECURITY_ADMIN. COP_OPERATOR and SYSTEM_CLIENT alone do not grant source-management
+        rights. Denied actors receive HTTP 403 SOURCE_MANAGEMENT_FORBIDDEN in the correlation-aware
+        COP error envelope.
       requestBody:
         required: true
         content:
@@ -2573,6 +2577,12 @@ paths:
         - Sources
       summary: Update source system metadata and permissions.
       operationId: updateSource
+      description: Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN
+        or SECURITY_ADMIN. COP_OPERATOR and SYSTEM_CLIENT alone do not grant source-management
+        rights. Denied actors receive HTTP 403 SOURCE_MANAGEMENT_FORBIDDEN in the correlation-aware
+        COP error envelope. The partial object is merged with the current source and validated
+        against SourceSystem before any update. Unknown or invalid fields and changes to
+        sourceSystemId return HTTP 400 VALIDATION_ERROR.
       parameters:
         - $ref: "#/components/parameters/SourceSystemIdPath"
       requestBody:
@@ -2589,6 +2599,10 @@ paths:
             application/json:
               schema:
                 $ref: ./schemas/source-system.schema.json
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
   /api/v1/sources/{sourceSystemId}/revoke:
@@ -2597,6 +2611,10 @@ paths:
         - Sources
       summary: Revoke a source system.
       operationId: revokeSource
+      description: Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN
+        or SECURITY_ADMIN. COP_OPERATOR and SYSTEM_CLIENT alone do not grant source-management
+        rights. Denied actors receive HTTP 403 SOURCE_MANAGEMENT_FORBIDDEN in the correlation-aware
+        COP error envelope.
       parameters:
         - $ref: "#/components/parameters/SourceSystemIdPath"
       responses:
@@ -2606,6 +2624,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SourceLifecycleResult"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
   /api/v1/audit/events:
@@ -3699,6 +3719,10 @@ paths:
         - Federation
       summary: Register or update a federated node heartbeat.
       operationId: upsertFederatedNodeHeartbeat
+      description: Requires configured lab authentication or an authenticated actor with
+        INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR
+        does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the
+        correlation-aware COP error envelope.
       security:
         - bearerAuth: []
       parameters:
@@ -3730,6 +3754,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/events/domain:
     post:
       tags:
@@ -3738,7 +3764,10 @@ paths:
       operationId: publishDomainEvent
       description: Accepts CloudEvents-compatible domain event commands into the local COP event log. This
         pilot runtime is an append-only broker facade; external broker transport is added in a later
-        ADR.
+        ADR. Requires configured lab authentication or an authenticated actor with
+        INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR
+        does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the
+        correlation-aware COP error envelope.
       security:
         - bearerAuth: []
       requestBody:
@@ -3758,6 +3787,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
     get:
@@ -3765,6 +3796,10 @@ paths:
         - Domain Events
       summary: Replay COP domain events.
       operationId: replayDomainEvents
+      description: Requires configured lab authentication or an authenticated actor with
+        INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR
+        does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the
+        correlation-aware COP error envelope.
       security:
         - bearerAuth: []
       parameters:
@@ -3818,12 +3853,18 @@ paths:
                 $ref: "#/components/schemas/DomainEventReplayResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/events/dead-letter:
     get:
       tags:
         - Domain Events
       summary: List rejected domain events.
       operationId: listDomainEventDeadLetters
+      description: Requires configured lab authentication or an authenticated actor with
+        INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR
+        does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the
+        correlation-aware COP error envelope.
       security:
         - bearerAuth: []
       parameters:
@@ -3844,6 +3885,8 @@ paths:
                 $ref: "#/components/schemas/DomainDeadLetterList"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/edge/outbox/flush:
     post:
       tags:
@@ -3851,7 +3894,10 @@ paths:
       summary: Flush offline edge outbox events
       description: Accepts a bounded batch of CloudEvents-compatible domain events produced by a
         registered edge-node. The server enforces producer identity from nodeId and returns per-item
-        accepted, duplicate, or rejected status.
+        accepted, duplicate, or rejected status. Requires configured lab authentication or an
+        authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication
+        alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403
+        INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.
       operationId: flushEdgeOutbox
       security:
         - bearerAuth: []
@@ -3876,6 +3922,8 @@ paths:
                 $ref: "#/components/schemas/EdgeOutboxFlushResponse"
         "400":
           $ref: "#/components/responses/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "413":
           $ref: "#/components/responses/ErrorResponse"
         "422":
@@ -3913,7 +3961,10 @@ paths:
         - Domain Events
       summary: Acknowledge edge replay cursor
       description: Stores the highest replay offset durably processed by an edge-node. The stored cursor
-        is monotonic and will not move backwards.
+        is monotonic and will not move backwards. Requires configured lab authentication or an
+        authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication
+        alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403
+        INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.
       operationId: ackEdgeReplayCursor
       security:
         - bearerAuth: []
@@ -3940,6 +3991,8 @@ paths:
           $ref: "#/components/responses/ErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ErrorResponse"
   /api/v1/events/dead-letter/{deadLetterId}:
@@ -3948,6 +4001,10 @@ paths:
         - Domain Events
       summary: Read dead-letter domain event
       operationId: getDomainEventDeadLetter
+      description: Requires configured lab authentication or an authenticated actor with
+        INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR
+        does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the
+        correlation-aware COP error envelope.
       security:
         - bearerAuth: []
       parameters:
@@ -3965,6 +4022,8 @@ paths:
                 $ref: "#/components/schemas/DomainDeadLetterDetail"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
   /api/v1/events/dead-letter/{deadLetterId}/redrive:
@@ -3974,7 +4033,10 @@ paths:
       summary: Re-drive a dead-letter domain event
       description: Publishes a corrected dead-letter event back into the domain event log and marks the
         dead-letter as redriven. COP does not create another dead-letter for invalid re-drive
-        payloads; the operator receives a validation error instead.
+        payloads; the operator receives a validation error instead. Requires configured lab
+        authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or
+        SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access. Denied actors
+        receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.
       operationId: redriveDomainEventDeadLetter
       security:
         - bearerAuth: []
@@ -4001,6 +4063,8 @@ paths:
           $ref: "#/components/responses/ErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "422":
@@ -4011,7 +4075,10 @@ paths:
         - Domain Events
       summary: Resolve a dead-letter domain event
       description: Marks a dead-letter as resolved without publishing a replacement event. Use when the
-        rejected payload is intentionally discarded or superseded externally.
+        rejected payload is intentionally discarded or superseded externally. Requires configured
+        lab authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or
+        SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access. Denied actors
+        receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.
       operationId: resolveDomainEventDeadLetter
       security:
         - bearerAuth: []
@@ -4030,6 +4097,8 @@ paths:
                 $ref: "#/components/schemas/DomainDeadLetterResolveResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
   /api/v1/edge/replay/{nodeId}:
@@ -4040,6 +4109,10 @@ paths:
       description: Returns CloudEvents-compatible domain events visible to a registered edge-node. The
         default offset comes from the durable edge replay cursor; explicit fromOffset may be
         supplied for recovery. Events blocked by classification or release policy are not returned.
+        Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN,
+        SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access.
+        Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error
+        envelope.
       operationId: replayEdgeDomainEvents
       security:
         - bearerAuth: []
@@ -4098,6 +4171,8 @@ paths:
                 $ref: "#/components/schemas/EdgeDomainEventReplayResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ErrorResponse"
   /api/v1/mcp:
@@ -4126,7 +4201,12 @@ paths:
       operationId: callCopMcpJsonRpc
       description: Implements the MCP JSON-RPC methods `initialize`, `notifications/initialized`, `ping`,
         `tools/list` and `tools/call` over a stateless HTTP endpoint. Tool calls reuse the audited
-        COP allowlist and publish `MCP_TOOL_INVOKED` audit events.
+        COP allowlist and publish `MCP_TOOL_INVOKED` audit events. For tools/call, cop.events.replay
+        and cop.events.dead_letters.list require configured lab authentication or an authenticated
+        actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Other allowlisted tools
+        retain their existing access rules. A denied privileged-tool call returns JSON-RPC error
+        -32003 Forbidden with INTEGRATION_FORBIDDEN in its detail, preserving the JSON-RPC transport
+        response.
       security:
         - bearerAuth: []
       requestBody:
@@ -4184,7 +4264,11 @@ paths:
       operationId: invokeCopMcpTool
       description: Invokes a server-side allowlisted read-only COP tool and publishes an ai.tool.invoked
         audit domain event. The endpoint never proxies plaintext messages, Matrix provider tokens or
-        arbitrary commands.
+        arbitrary commands. The tools cop.events.replay and cop.events.dead_letters.list
+        additionally require configured lab authentication or an authenticated actor with
+        INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Other allowlisted tools retain their
+        existing access rules. Denied privileged-tool calls return HTTP 403 INTEGRATION_FORBIDDEN in
+        the correlation-aware COP error envelope.
       security:
         - bearerAuth: []
       parameters:
@@ -4208,6 +4292,8 @@ paths:
                 $ref: "#/components/schemas/CopMcpToolInvocationResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
   /edge/health/live:

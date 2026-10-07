@@ -10,6 +10,8 @@ import type { CopStreamBus, CopStreamBusMetrics } from "./cop-stream-bus.js";
 import type { CopStreamMessage } from "./cop-stream.js";
 import type { FlightDataSource } from "./flight-data-source.js";
 import { buildServer } from "./server.js";
+import { withEventProvenance, withStoredCurrentProvenance } from "./provenance.js";
+import { createInitialState } from "./state.js";
 import type { TrackHistoryStore } from "./track-history-store.js";
 import type { TrackHistoryQuery } from "./temporal-history.js";
 import type { TrackHistoryPoint } from "./types.js";
@@ -155,21 +157,27 @@ describe("COP state temporal history", () => {
   });
 
   it("restores current tracks from the configured persistent store on startup", async () => {
-    const store = new FakeTrackHistoryStore([
-      {
-        affiliation: "HOSTILE",
-        confidence: 0.9,
-        domain: "AIR",
-        lastUpdatedAt: "2026-05-19T08:02:00Z",
-        objectId: "AIR_SIM_UAV-RESTORED",
-        objectType: "UAV",
-        position: { lat: 50.05, lon: 14.05 },
-        status: "ACTIVE",
-        synthetic: true
-      }
-    ]);
+    const object: ObservedObject = {
+      affiliation: "HOSTILE", confidence: 0.9, domain: "AIR", lastUpdatedAt: "2026-05-19T08:02:00Z",
+      objectId: "AIR_SIM_UAV-RESTORED", objectType: "UAV", position: { lat: 50.05, lon: 14.05 }, status: "ACTIVE", synthetic: true
+    };
+    const event: CanonicalEventEnvelope = {
+      classification: { level: "UNCLASSIFIED", handlingCaveats: [], releasability: ["CZ"] },
+      contractVersion: "cop-ingest-v1", correlationId: "10000000-0000-4000-8000-000000000001",
+      eventId: "00000000-0000-4000-8000-000000000008", eventType: "track.updated", geo: { lat: 50.05, lon: 14.05 },
+      ingestTimestamp: object.lastUpdatedAt, producerTimestamp: "2026-05-19T08:02:00Z", payload: object,
+      quality: { confidence: 0.9, informationCredibility: "2", sourceReliability: "B" }, simulation: { synthetic: true },
+      source: { sourceSystemId: "sim-air-situation-001", adapterId: "sim-adapter", adapterVersion: "0.1.0" }
+    };
+    const legacy = withStoredCurrentProvenance({ ...object, objectId: "AIR_SIM_UAV-UNKNOWN-LEGACY" }, {
+      eventId: "00000000-0000-4000-8000-000000000009", lastUpdatedAt: "2026-05-19T08:02:00Z",
+      sourceSystemId: "sim-air-situation-001", synthetic: true
+    });
+    const store = new FakeTrackHistoryStore([withEventProvenance(object, event), legacy]);
+    const state = createInitialState();
     const app = buildServer({
       now: () => new Date("2026-05-19T08:02:10Z"),
+      state,
       trackHistoryStore: store
     });
 
@@ -183,6 +191,7 @@ describe("COP state temporal history", () => {
 
     expect(response.statusCode).toBe(200);
     expect(store.loadCurrentCalls).toBe(1);
+    expect(response.json().items).toHaveLength(1);
     expect(response.json()).toMatchObject({
       items: [
         {
@@ -194,6 +203,9 @@ describe("COP state temporal history", () => {
         }
       ]
     });
+    expect(state.objects.get(legacy.objectId)).toEqual(legacy);
+    expect(store.current.has(legacy.objectId)).toBe(true);
+    expect(legacy.attributes?.provenance).toMatchObject({ classificationStatus: "unknown" });
 
     await app.close();
   });

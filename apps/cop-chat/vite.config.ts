@@ -39,7 +39,7 @@ export default defineConfig({
         strictExecutionOrder: true,
         codeSplitting: {
           includeDependenciesRecursively: false,
-          groups: [{ name: chatManualChunk }]
+          groups: [{ debugName: "cop-chat-react-runtime", name: chatManualChunk }]
         }
       }
     }

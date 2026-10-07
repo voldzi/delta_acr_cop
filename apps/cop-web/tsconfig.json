@@ -5,10 +5,10 @@
     "jsx": "react-jsx",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "allowImportingTsExtensions": false,
+    "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "cesium-assets-plugin.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "cesium-assets-plugin.ts", "vite-chunks.ts"],
   "references": [
     { "path": "../../packages/core" },
     { "path": "../../packages/geo-client" },

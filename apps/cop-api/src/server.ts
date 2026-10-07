@@ -8951,7 +8951,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return node;
   });
 
-  app.post("/api/v1/federation/nodes/:nodeId/heartbeat", async (request, reply) => {
+  app.post("/api/v1/federation/nodes/:nodeId/heartbeat", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { nodeId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const previous = await getFederatedNode(params.nodeId);
@@ -9002,7 +9002,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return reply.code(previous ? 200 : 201).send(result.node);
   });
 
-  app.post("/api/v1/events/domain", async (request, reply) => {
+  app.post("/api/v1/events/domain", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const parsed = parseDomainEventPublishRequest(request.body, correlationId);
     if (!parsed.ok || !parsed.input) {
@@ -9077,7 +9077,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   });
 
-  app.post("/api/v1/edge/outbox/flush", async (request, reply) => {
+  app.post("/api/v1/edge/outbox/flush", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const body = isRecord(request.body) ? request.body : undefined;
     const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : "";
@@ -9219,7 +9219,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.post("/api/v1/edge/replay-cursors/:nodeId/ack", async (request, reply) => {
+  app.post("/api/v1/edge/replay-cursors/:nodeId/ack", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { nodeId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const node = await getFederatedNode(params.nodeId);
@@ -9267,7 +9267,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/edge/replay/:nodeId", async (request, reply) => {
+  app.get("/api/v1/edge/replay/:nodeId", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { nodeId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const node = await getFederatedNode(params.nodeId);
@@ -9344,7 +9344,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/events/domain", async (request) => {
+  app.get("/api/v1/events/domain", { onRequest: requirePrivilegedIntegrationActor }, async (request) => {
     const query = parseDomainEventReplayQuery(request.query);
     const result = await queryRuntimeDomainEvents(query);
     const items = result.items;
@@ -9361,7 +9361,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/events/dead-letter/:deadLetterId", async (request, reply) => {
+  app.get("/api/v1/events/dead-letter/:deadLetterId", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { deadLetterId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const deadLetter = await getRuntimeDomainDeadLetter(params.deadLetterId);
@@ -9375,7 +9375,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.post("/api/v1/events/dead-letter/:deadLetterId/redrive", async (request, reply) => {
+  app.post("/api/v1/events/dead-letter/:deadLetterId/redrive", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { deadLetterId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const deadLetter = await getRuntimeDomainDeadLetter(params.deadLetterId);
@@ -9451,7 +9451,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   });
 
-  app.post("/api/v1/events/dead-letter/:deadLetterId/resolve", async (request, reply) => {
+  app.post("/api/v1/events/dead-letter/:deadLetterId/resolve", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { deadLetterId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const actor = actorFromRequest(request);
@@ -9479,7 +9479,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/events/dead-letter", async (request) => {
+  app.get("/api/v1/events/dead-letter", { onRequest: requirePrivilegedIntegrationActor }, async (request) => {
     const query = request.query as { limit?: string };
     const parsedLimit = Number.parseInt(query.limit ?? "", 10);
     const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 500) : 100;
@@ -9495,7 +9495,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.post("/api/v1/sources", async (request, reply) => {
+  app.post("/api/v1/sources", { onRequest: requireSourceRegistryAdmin }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const validation = validators.validateSourceSystem(request.body);
     if (!validation.valid || !validation.data) {
@@ -9530,17 +9530,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return source;
   });
 
-  app.patch("/api/v1/sources/:sourceSystemId", async (request, reply) => {
+  app.patch("/api/v1/sources/:sourceSystemId", { onRequest: requireSourceRegistryAdmin }, async (request, reply) => {
     const params = request.params as { sourceSystemId: string };
     const source = state.sources.get(params.sourceSystemId);
     if (!source) {
       return sendError(reply, 404, "NOT_FOUND", "Source system was not found.", crypto.randomUUID());
     }
-    const patch = request.body as Partial<SourceSystem>;
-    const updated = {
+    const patch = request.body;
+    if (!isRecord(patch) || (hasOwn(patch, "sourceSystemId") && patch.sourceSystemId !== source.sourceSystemId)) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Source system patch must be an object and cannot change sourceSystemId.",
+        correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const validation = validators.validateSourceSystem({
       ...source,
       ...patch,
-      sourceSystemId: source.sourceSystemId,
+      sourceSystemId: source.sourceSystemId
+    });
+    if (!validation.valid || !validation.data) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Updated source system does not match schema.",
+        correlationIdFrom(request.headers["x-correlation-id"]), formatValidationErrors(validation.errors));
+    }
+    const updated: SourceSystem = {
+      ...validation.data,
       updatedAt: new Date().toISOString()
     };
     state.sources.set(source.sourceSystemId, updated);
@@ -9548,7 +9559,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return updated;
   });
 
-  app.post("/api/v1/sources/:sourceSystemId/revoke", async (request, reply) => {
+  app.post("/api/v1/sources/:sourceSystemId/revoke", { onRequest: requireSourceRegistryAdmin }, async (request, reply) => {
     const params = request.params as { sourceSystemId: string };
     const source = state.sources.get(params.sourceSystemId);
     if (!source) {
@@ -10976,6 +10987,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     actor: AuthenticatedActor | null | undefined,
     correlationId: string
   ): Promise<CopMcpToolInvocationEnvelope> {
+    if (privilegedIntegrationMcpTools.has(tool.toolId) && !canUsePrivilegedIntegration(actor)) {
+      throw new IntegrationAccessError();
+    }
     const startedAt = Date.now();
     const invocationId = crypto.randomUUID();
     let result: Record<string, unknown>;
@@ -11405,6 +11419,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           return mcpJsonRpcError(id, -32602, "Invalid params", "Requested COP MCP tool is not allowlisted.");
         }
         const input = isRecord(params.arguments) ? params.arguments : {};
+        if (privilegedIntegrationMcpTools.has(tool.toolId) && !canUsePrivilegedIntegration(actor)) {
+          return mcpJsonRpcError(id, -32003, "Forbidden", "INTEGRATION_FORBIDDEN: This tool requires a privileged integration actor.");
+        }
         const invocation = await invokeCopMcpToolInternal(tool, input, actor, correlationId);
         return mcpJsonRpcResult(id, {
           content: [
@@ -11431,7 +11448,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }));
 
-  app.post("/api/v1/mcp/tools/:toolId/invoke", async (request, reply) => {
+  app.post("/api/v1/mcp/tools/:toolId/invoke", { onRequest: requireMcpIntegrationActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const params = request.params as { toolId: string };
     const tool = copMcpTools.find((item) => item.toolId === params.toolId);
@@ -19205,6 +19222,38 @@ async function requireCanonicalIngestActor(request: FastifyRequest, reply: Fasti
   if (actor && (actor.authMode === "lab" || actor.roles?.some((role) => allowedRoles.has(role.trim().toUpperCase())))) return;
   sendError(reply, 403, "INGEST_FORBIDDEN", "Canonical ingest requires an authorized operator or integration actor.",
     correlationIdFrom(request.headers["x-correlation-id"]));
+}
+
+async function requireSourceRegistryAdmin(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const actor = actorFromRequest(request);
+  const allowedRoles = new Set(["INTEGRATION_ADMIN", "SECURITY_ADMIN"]);
+  if (actor && (actor.authMode === "lab" || actor.roles?.some((role) => allowedRoles.has(role.trim().toUpperCase())))) return;
+  sendError(reply, 403, "SOURCE_MANAGEMENT_FORBIDDEN", "Source registry changes require an authorized integration or security administrator.",
+    correlationIdFrom(request.headers["x-correlation-id"]));
+}
+
+const privilegedIntegrationMcpTools = new Set(["cop.events.replay", "cop.events.dead_letters.list"]);
+
+class IntegrationAccessError extends Error {
+  constructor() {
+    super("This tool requires a privileged integration actor.");
+  }
+}
+
+function canUsePrivilegedIntegration(actor: AuthenticatedActor | null | undefined): boolean {
+  const allowedRoles = new Set(["INTEGRATION_ADMIN", "SECURITY_ADMIN", "SYSTEM_CLIENT"]);
+  return Boolean(actor && (actor.authMode === "lab" || actor.roles?.some((role) => allowedRoles.has(role.trim().toUpperCase()))));
+}
+
+async function requirePrivilegedIntegrationActor(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (canUsePrivilegedIntegration(actorFromRequest(request))) return;
+  sendError(reply, 403, "INTEGRATION_FORBIDDEN", "This operation requires an authorized integration or security administrator or system client.",
+    correlationIdFrom(request.headers["x-correlation-id"]));
+}
+
+async function requireMcpIntegrationActor(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const params = request.params as { toolId: string };
+  if (privilegedIntegrationMcpTools.has(params.toolId)) await requirePrivilegedIntegrationActor(request, reply);
 }
 
 function hashPayload(data: unknown): string {
