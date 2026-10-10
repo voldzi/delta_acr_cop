@@ -17,6 +17,8 @@ procedures remain in the established runbook set:
 - [User identity reconciliation](runbooks/11_USER_IDENTITY_RECONCILIATION.md)
 - [COP media S3](runbooks/17_COP_MEDIA_S3.md)
 - [COP storage on X5: verification and scoped rollback](runbooks/19_COP_X5_STORAGE.md)
+- [Automatic crisis notifications: consent, source readiness, release and rollback](runbooks/21_COP_CRISIS_NOTIFICATIONS.md)
+- [Standalone chat release and SIM acceptance](runbooks/22_COP_CHAT_RELEASE_20261010.md)
 
 Common checks:
 
@@ -106,3 +108,27 @@ Shared vehicle/Dispatch release and remaining authenticated/device acceptance:
 [integration handoff29](integration/29_JIZDA_SHARED_VEHICLES_DISPATCH_HANDOFF.md).
 To disable on incident restore prior image/feature flags; never forward GPS to SIM,
 replay location history or restore consent from previous share metadata.
+
+## Dispatch lease recovery
+
+Check `/health/ready` and the private-dispatch entry in `/health/dependencies`,
+then verify the exclusive primary PostgreSQL advisory lock(731031,1) using a
+read-only connection. One ready instance owns one session lock; a contender
+remains unready. Dedicated connection application_name is
+`cop-private-dispatch-lease`. Recovery retries automatically after DB connectivity
+returns; investigate primary access, timeouts and sanitized lease-state logs if
+unavailable persists. Do not restart repeatedly or manually reactivate shares.
+Every acquisition stops previous share metadata and drops RAM points before
+readiness. Restored health never authorizes GPS: users must start sharing again.
+Rollback uses the captured previous API image with unchanged environment and
+network attachments. See integration/34_COP_DISPATCH_RECOVERY_RELEASE.md.
+
+## Invitation notification incident
+
+Check durable outbox state/attempt counts, Messaging APNs configuration and device
+registration/permissions without exposing email or tokens. Never create real
+user invitations or publish GPS for diagnosis. Preserve queued records through
+rollback; recipients can use the verified inbox. Device delivery remains best
+effort. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.
+
+For identity lookup failures, preserve403/404versus503 and never retry through provisioning resolve. Do not clamp DM count to2. Missing verified incoming caller names are generic COP kontakt. Deployment and acceptance: [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md).

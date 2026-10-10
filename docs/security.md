@@ -1,5 +1,12 @@
 # Security
 
+The 2026-10-07 code audit hardens canonical publication rights, bounded upstream
+reads, credential redirects, request logging and public body limits. See
+[ADR 0039](adr/0039_CANONICAL_PUBLICATION_BOUNDARY.md) and the
+[code health evidence](runbooks/20_COP_CODE_HEALTH.md). Unknown legacy
+classification is withheld, never implicitly made public or deleted. An empty
+dependency vulnerability report is one check, not a certification of safety.
+
 The reviewed general AI endpoint uses server-owned fixed questions and an
 empty `internal_minimized` context. It never derives external prompts from
 chat messages, user questions, incident records or attachments. The SIM
@@ -22,6 +29,22 @@ documentation remains in:
 
 Operational rule: do not commit secrets. `.env.example` contains placeholders
 only; real secrets are configured outside the repository.
+
+## Secret scanning in CI
+
+The `Secret Scan` job runs Gitleaks against Git history with its default rules
+and fails when it finds a non-exempt credential. The root `.gitleaksignore`
+contains five individually reviewed historical test fingerprints: four UUIDs
+used only as request idempotency keys and one deterministic actor-signing
+fixture used by isolated redirect-test servers on `127.0.0.1`. No production
+credential value is recorded in the exception file or this documentation.
+
+Each exception binds the exact commit, path, rule and line. Whole files, test
+directories and scanner rules are not excluded. Adding a new occurrence does
+not grant it an exception. Local verification uses the CI version Gitleaks
+8.24.3 with `--redact=100` and the same PR commit range; diagnostics and reports
+must not disclose credential values. An actual credential leak requires
+revocation/rotation and investigation, rather than a scanner exception.
 
 Jízda traffic measurements are disabled by default. The COP API derives a
 day-scoped pseudonym and stable user-scoped retry IDs only from an authenticated
@@ -132,3 +155,65 @@ See [ADR0031](adr/0031_SHARED_VEHICLES_AND_PRIVATE_DISPATCH.md) for authenticate
 recipient encryption, key-directory trust, consent invalidation and real retention.
 No request body/GPS/key value is serialized into diagnostics. Coordinates are never
 persisted in server SQL or sent to SIM; only latest ciphertext exists in RAM.
+
+## Automatic safety notifications and media provenance
+
+Explicit authenticated account consent is separate from OS notification
+permission, registered push devices and generic profile preferences. Missing
+consent is false; the client cannot choose the worker's actor or target another
+user/group. Dispatch rereads current primary-store consent, severity, areas and
+device capability under the same subject lock as revocation/profile changes.
+A completed revocation blocks later dispatch; a notification already accepted
+by Messaging cannot be retracted.
+
+Only typed SIM `/notifications/candidates` with the exact eligibility policy
+and fresh `inputReadiness=ready` can enter the worker. Never use map warnings,
+stale cache fallback, news headlines or technical source failures as crisis
+alerts. Unknown/approximate locations do not imply proximity. Relevance uses
+actual Circle/Polygon/MultiPolygon intersection including holes. Candidate
+timestamps, state, source and severity are checked independently in COP.
+
+Per-user incident keys and hydro cooldowns use durable PostgreSQL. Primary
+store or registry outages fail closed; no in-memory consent/dedup fallback.
+The ledger contains opaque keys, status/time and Messaging references, not
+candidate text/geometry, raw GPS, private messages or push secrets. Existing
+profile AOIs and minimum device capability references remain access-controlled
+account data. Do not describe the hashes as proof of anonymity or automatically
+delete audit/delivery evidence without a separate approved retention policy.
+
+ČT24 context is informational only, with fixed provenance/links and null,
+unresolved event location. `regionCode` belongs to the feed. No automatic
+map pin, nearby-distance promise, official IZS label or crisis push may be
+derived from it. See [ADR 0040](adr/0040_VERIFIED_CRISIS_NOTIFICATIONS_AND_MEDIA_CONTEXT.md)
+and [notification boundary](integration/12_COP_NOTIFICATION_DECISION_AND_PUSH.md).
+## Dispatch ownership recovery boundary
+
+Dispatch verifies an exclusive session advisory lock on the database primary.
+Private requests are fenced by a local lease generation before/after work and
+transaction callbacks; obsolete responses and late point writes fail503.
+Lease loss clears all in-memory point ciphertext; acquisition invalidates
+previous share metadata before ready. Recovery grants no new consent and never
+restores positions. Shared vehicle/account authorization remains independent.
+Lease diagnostics contain only state and generation, never DSNs, tokens,
+account identifiers or location payloads. Availability metadata is not an ACL
+or permission to resume collection.
+
+## Invitation alert boundary
+
+Atomic durable recipient-bound jobs, current verified email/ACL checks, fixed
+generic APNs text and fresh account/inbox validation prevent push links from
+granting access or GPS consent. Unknown emails are not disclosed and later
+registration receives inbox-only delivery. No location or private names appear
+in alerts. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.
+
+Own avatar writes decode/re-encode bounded images without metadata and use verified OIDC ownership; [self-profile boundary](integration/36_COP_SELF_PROFILE.md).
+
+Shared receipt details retain existing vehicle/cost ACL and prohibit structured GPS; older incomplete edits are rejected. [Boundary](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md).
+
+Shared odometer snapshot exposes only kilometer value/date/source-record reference to readVehicle members. Original cost payloads, notes and authors remain separately protected; no GPS or automatic private history transfer is added. See [handoff39](integration/39_SHARED_VEHICLE_ODOMETER_SNAPSHOT.md).
+
+Completed shared rides expose coarse distance/time/author to existing readVehicle members, without GPS traces/destination/passengers. Current membership and role remain strict for commutative insert; owner-only initial seeding and readCosts boundaries remain enforced. See [handoff40](integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md).
+
+Shared owner binding is authenticated owner-only, independent of name/plate; profile changes require owner and cost audit remains readCosts gated. See [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).
+
+Conversation identity lookup requires verified COP actor, Messaging service auth and current membership; it reads existing pairs only. No guessed names or arbitrary IDs; no credentials/messages in responses, cache or logs. See [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md).

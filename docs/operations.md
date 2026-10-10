@@ -1,5 +1,10 @@
 # Operations
 
+The isolated COP code health audit, release gates and deployment boundaries
+are recorded in [runbook 20](runbooks/20_COP_CODE_HEALTH.md). Its candidate tests
+do not activate AI, public analytics or a production service. Existing X5
+preflight, dedicated builder and rollback requirements remain mandatory.
+
 This is the standard operations entry point for COP. Detailed operational
 documentation remains in:
 
@@ -15,6 +20,8 @@ documentation remains in:
 - [Tile cache and map tiles](runbooks/10_TILE_CACHE_AND_MAP_TILES.md)
 - [COP media S3](runbooks/17_COP_MEDIA_S3.md)
 - [COP storage on X5: paths, retention and deployment gates](runbooks/19_COP_X5_STORAGE.md)
+- [Automatic crisis notifications and ČT24 context](runbooks/21_COP_CRISIS_NOTIFICATIONS.md)
+- [Standalone chat runtime release](runbooks/22_COP_CHAT_RELEASE_20261010.md)
 
 Local defaults:
 
@@ -86,8 +93,13 @@ The optional strict road-trip integration depends on SIM runtime capability and 
 explicit opt-in defaults. Reuse existing COP_DATABASE_URL/TLS settings; no new
 secret. Startup creates additive cop_mobility_v1 and runs30day domain cleanup.
 Private Dispatch requires one API instance with a dedicated PostgreSQL session
-advisory lease; a second instance fails startup. Lost lease disables Dispatch503.
-Restart invalidates existing share metadata and drops all RAM ciphertext. No
+advisory lease on a dedicated connection. A contender stays unready and retries;
+lease loss returns Dispatch503 while shared vehicles remain independent.
+The owner verifies its primary-session lock every5seconds (10% jitter), retries
+with bounded500ms–10s backoff, and treats verification older than15s as unavailable.
+Connection/query timeouts are5s/3s. Recovery invalidates previous share metadata
+before ready, clears RAM ciphertext and fences requests from prior generations.
+Restart also invalidates existing share metadata and drops all RAM ciphertext. No
 client consent or GPS collection is enabled by either infrastructure flag.
 Backup existing database before enabling. Rollback restores previous API image and
 bothflagsfalse; leave the additive table intact. No migration drops existing COP
@@ -98,3 +110,45 @@ Community reporting release/rollback and acceptance are recorded in
 No new configuration or port is required. During durable store outage return503;
 restore its connectivity rather than accepting reports into RAM. Police expiry
 and absence suppression do not modify SIM closure data.
+
+## Automatic crisis notifications
+
+`COP_SAFETY_NOTIFICATION_WORKER_ENABLED=false` is the opt-in default. The
+worker uses the configured primary PostgreSQL profile/notification stores,
+current device capability and verified SIM candidates, without a fabricated
+user credential. Account consent is independent and remains disabled until
+explicitly enabled. Ready per-area cache is short-lived; incomplete/unavailable
+inputs and technical failures produce degraded status/backoff, not a public
+alert. Health exposes `safety-notification-worker` with aggregate run counts.
+
+New additive delivery/cooldown/device-capability tables retain opaque hashes
+and operational timestamps, not notification payloads or raw GPS. No automatic
+audit/ledger deletion is introduced. On rollback disable the worker, preserve
+consent and deduplication, and restore only affected API/web images through the
+standard X5-aware deployment wrapper. Do not change networks, tokens or other
+applications. ČT24 stays in its separate informational path.
+
+Candidate implementation, actual deployment and phone delivery are separate
+gates. A Messaging intake acceptance is not APNs/Web Push delivery proof;
+downstream retry/idempotency must be checked with Messaging. Production and
+physical acceptance are pending until recorded in
+[runbook 21](runbooks/21_COP_CRISIS_NOTIFICATIONS.md).
+
+## Invitation push delivery
+
+No new flags/secrets/networks. The existing Messaging/APNs integration delivers
+registered verified recipients from the durable COP outbox. Both API ticket
+allowlists must admit Jízda, and client signing/OS permission must enable ordinary
+APNs. Intake acceptance is not phone delivery. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.
+
+Jízda self-profile API release and remaining device acceptance: [handoff](integration/36_COP_SELF_PROFILE.md).
+
+Shared receipt details capability and rollback/downgrade guard: [release handoff](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md).
+
+A rollback from odometer projection to the receipt-only image preserves records but removes snapshot capability; clients must show unknown and never replace it with zero/local/paged-event mileage. Retain receipt-details downgrade protection. See [handoff39](integration/39_SHARED_VEHICLE_ODOMETER_SNAPSHOT.md).
+
+Completed ride mileage v2 requires coordinated capability/version/scope/revision handling. Any rollback must retain detailed-ride omission and trip ID reservation guards; older unguarded images could erase intervals and release dedup identities. See [handoff40](integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md).
+
+Shared profile/audit/recovery keeps existing retention and no migrations; use guard-only rollback preserving sealed metadata. Delivery and physical acceptance limits: [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).
+
+Read-only Matrix lookup rollout: Messaging then COP API, preserving exact existing images/configuration. Old images remain a schema-safe rollback; see [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md).

@@ -124,6 +124,132 @@
     }
   ],
   "paths": {
+    "/api/v1/me/profile": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "operationId": "getMyCopAccountProfile",
+        "summary": "Read the current verified COP account and canonical avatar.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "OIDC bearer only. Owner and issuer are derived from verified session. Independent of mobility capability and dispatch availability. Read does not create a profile. Avatar source: cop_user_profiles.preferences.operatorProfile.avatarDataUrl; Matrix is not the source of identity or avatar.",
+        "responses": {
+          "200": {
+            "description": "Verified current identity and canonical avatar; Cache-Control no-store, strong ETag matching revision.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/COPAccountProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "description": "Authoritative profile unavailable; no in-memory fallback."
+          }
+        }
+      }
+    },
+    "/api/v1/me/profile/avatar": {
+      "patch": {
+        "tags": [
+          "Identity"
+        ],
+        "operationId": "updateMyCopAccountAvatar",
+        "summary": "Explicitly replace or remove the authenticated account avatar.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Atomic revision comparison; update preserves other preferences and alert settings. If-Match must be the quoted revision returned by GET. Body may contain only avatarDataUrl: null removes, otherwise PNG/JPEG data URL. Maximum180000 decoded bytes,1024px per side,one frame; server fully decodes and re-encodes maximum512px PNG without original metadata. SVG,remote URLs,MIME mismatch and malformed images rejected. No change of account identity. Existing preferences endpoint remains compatible; its older full-profile writes are not protected by this new If-Match contract.",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[a-f0-9]{64}\"$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "avatarDataUrl"
+                ],
+                "properties": {
+                  "avatarDataUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 240030
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Verified current identity and canonical avatar; Cache-Control no-store, strong ETag matching revision.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/COPAccountProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "description": "Authoritative profile unavailable; no in-memory fallback."
+          },
+          "400": {
+            "description": "Invalid body, image or revision."
+          },
+          "412": {
+            "description": "Profile changed: reload and explicitly confirm; never retry blindly."
+          },
+          "413": {
+            "description": "Request exceeds245000bytes."
+          },
+          "428": {
+            "description": "Missing If-Match precondition."
+          }
+        }
+      }
+    },
     "/api/v1/driver-measurements/v1/consent": {
       "get": {
         "tags": ["Mobile"],
@@ -183,6 +309,133 @@
         }
       }
     },
+    "/api/v1/me/notifications/safety": {
+      "put": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Set explicit safety notification consent for the authenticated user.",
+        "operationId": "setMySafetyNotificationConsent",
+        "description": "Atomic self-service consent change. The server derives the recipient exclusively from the authenticated actor; requests cannot select another user, group or device. The body contains exactly one boolean enabled field (maximum 1024 bytes). Missing consent defaults to disabled. Enabling requires an active saved watched area, a confirmed eligible notification device and an available enabled durable worker/store; missing user/device preconditions return 409, technical outages or disabled delivery return 503. Revocation is allowed without a watched area, eligible device or enabled worker and is effective only after the server confirms the write. The current consent is rechecked at dispatch; generic preference saves preserve this server-owned flag and cannot grant, revoke or resurrect it. Success confirms the saved preference, not physical delivery or guaranteed locked-screen notification. Ordinary APNs/web notifications remain dependent on platform permission and delivery availability.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SafetyNotificationConsentRequest"
+              },
+              "examples": {
+                "enable": {
+                  "value": {
+                    "enabled": true
+                  }
+                },
+                "revoke": {
+                  "value": {
+                    "enabled": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored consent for the authenticated user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SafetyNotificationConsentResponse"
+                },
+                "examples": {
+                  "revoked": {
+                    "value": {
+                      "contractVersion": "cop-safety-notification-consent-v1",
+                      "enabled": false,
+                      "updatedAt": "2026-10-10T12:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "Enable a watched area and register a notification device before enabling automatic alerts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "SAFETY_NOTIFICATION_PRECONDITION": {
+                    "summary": "SAFETY_NOTIFICATION_PRECONDITION",
+                    "value": {
+                      "error": {
+                        "code": "SAFETY_NOTIFICATION_PRECONDITION",
+                        "message": "Enable a watched area and register a notification device before enabling automatic alerts.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Safety notification consent or delivery services are unavailable; retry without treating this as a user refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "NOTIFICATION_STORE_UNAVAILABLE": {
+                    "summary": "NOTIFICATION_STORE_UNAVAILABLE",
+                    "value": {
+                      "error": {
+                        "code": "NOTIFICATION_STORE_UNAVAILABLE",
+                        "message": "Safety notification consent or delivery services are unavailable; retry without treating this as a user refusal.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  },
+                  "SAFETY_NOTIFICATIONS_UNAVAILABLE": {
+                    "summary": "SAFETY_NOTIFICATIONS_UNAVAILABLE",
+                    "value": {
+                      "error": {
+                        "code": "SAFETY_NOTIFICATIONS_UNAVAILABLE",
+                        "message": "Safety notification consent or delivery services are unavailable; retry without treating this as a user refusal.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me/preferences": {
       "get": {
         "tags": [
@@ -190,7 +443,7 @@
         ],
         "summary": "Read authenticated operator preferences.",
         "operationId": "getMyCopPreferences",
-        "description": "Returns the Keycloak/lab actor identity plus server-side COP workspace, map, replay and alert preferences for the authenticated operator.\n",
+        "description": "Returns the Keycloak/lab actor identity plus server-side COP workspace, map, replay and alert preferences for the authenticated operator.\nSafety notification consent is returned as alertPreferences.safetyNotificationsEnabled. Missing or false means no consent; it is authoritative on COP and must not be replaced by a newer offline preference.\n",
         "responses": {
           "200": {
             "description": "Operator preference profile.",
@@ -213,7 +466,7 @@
         ],
         "summary": "Upsert authenticated operator preferences.",
         "operationId": "putMyCopPreferences",
-        "description": "Persists only display, workspace, replay and informational alert preferences. This endpoint does not create tasking, targeting or weapon workflow state.\n",
+        "description": "Persists only display, workspace, replay and informational alert preferences. This endpoint does not create tasking, targeting or weapon workflow state.\nThe server-owned alertPreferences.safetyNotificationsEnabled flag is read-only here: supplied values are ignored and the latest stored consent is atomically preserved, including during concurrent saves. Change consent only through PUT /api/v1/me/notifications/safety. Saving a workspace profile cannot implicitly enable notifications.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -424,8 +677,13 @@
         "responses": {
           "204": {
             "description": "Session invalidated."
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
           }
-        }
+        },
+        "x-cop-body-limit-bytes": 1024,
+        "description": "The request body is limited to 1024 bytes before parsing; oversized requests return 413 in the COP error envelope."
       }
     },
     "/api/v1/mobile/bootstrap": {
@@ -1291,7 +1549,7 @@
         ],
         "summary": "Query source-neutral map features.",
         "operationId": "queryMapFeatures",
-        "description": "Single public COP feature query endpoint. Clients select catalog layer IDs from /api/v1/map/catalog; COP translates those layer IDs to internal provider queries server-side. Provider-specific SIM endpoints are not part of the COP public API.\n",
+        "description": "Single public COP feature query endpoint. Clients select catalog layer IDs from /api/v1/map/catalog; COP translates those layer IDs to internal provider queries server-side. Provider-specific SIM endpoints are not part of the COP public API.\n\nThe request body is limited to 65536 bytes before parsing; oversized requests return 413 in the COP error envelope.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1321,6 +1579,132 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          }
+        },
+        "x-cop-body-limit-bytes": 65536
+      }
+    },
+    "/api/v1/safety/context/news": {
+      "get": {
+        "tags": [
+          "Safety Data"
+        ],
+        "summary": "Read informational ČT24 headline context through COP.",
+        "operationId": "getSafetyMediaNewsContext",
+        "description": "Server-only proxy to the fixed SIM /safety-data/api/v1/context/news endpoint. Returns only bounded headline metadata (titles, outgoing links, publication/fetch times and attribution), never article bodies or video. This informational stream is separate from official warnings and never eligible for automatic crisis notification. regionCode identifies an editorial RSS feed area, not an incident location; eventAt and location are null and locationStatus is unresolved. No distance, local incident or safety conclusion may be inferred from this metadata. COP forwards no user credential to SIM. Fixed limit 20, maximum 24-hour publication age, memory cache 300 seconds, retry backoff 60 seconds, bounded timeout/body and no redirects. Public reading is permitted only when the deployment enables COP public read; otherwise authentication is required. No caller-controlled upstream URL or feed selector is supported.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Informational headline metadata; disabled or degraded status is explicit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SafetyMediaNewsContext"
+                },
+                "examples": {
+                  "headlines": {
+                    "summary": "Synthetic documentation example; editorial context only.",
+                    "value": {
+                      "contractVersion": "sim-crisis-media-context-v1",
+                      "status": "ok",
+                      "generatedAt": "2026-10-10T12:00:00Z",
+                      "informationalOnly": true,
+                      "notificationEligible": false,
+                      "items": [
+                        {
+                          "id": "ct24-example-headline",
+                          "title": "Ukázkový zpravodajský titulek",
+                          "link": "https://ct24.ceskatelevize.cz/clanek/ukazka",
+                          "publishedAt": "2026-10-10T11:30:00Z",
+                          "fetchedAt": "2026-10-10T12:00:00Z",
+                          "eventAt": null,
+                          "regionCode": "CZ",
+                          "regionScope": "feed",
+                          "location": null,
+                          "locationStatus": "unresolved",
+                          "informationalOnly": true,
+                          "notificationEligible": false,
+                          "stale": false,
+                          "source": {
+                            "id": "ct24",
+                            "name": "ČT24",
+                            "feedId": "ct24-main",
+                            "attribution": "Česká televize / ČT24"
+                          }
+                        }
+                      ],
+                      "sources": [
+                        {
+                          "id": "ct24-main",
+                          "label": "ČT24 – zpravodajství",
+                          "feedUrl": "https://ct24.ceskatelevize.cz/rss",
+                          "regionCode": "CZ",
+                          "regionScope": "feed",
+                          "attribution": "Česká televize / ČT24",
+                          "status": "ok",
+                          "fetchedAt": "2026-10-10T12:00:00Z",
+                          "stale": false,
+                          "errorCode": null,
+                          "retryAfterSeconds": null
+                        }
+                      ]
+                    }
+                  },
+                  "disabled": {
+                    "value": {
+                      "contractVersion": "sim-crisis-media-context-v1",
+                      "status": "disabled",
+                      "generatedAt": "2026-10-10T12:00:00Z",
+                      "informationalOnly": true,
+                      "notificationEligible": false,
+                      "items": [],
+                      "sources": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Zpravodajský kontext nyní není dostupný.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "MEDIA_NEWS_UNAVAILABLE": {
+                    "summary": "MEDIA_NEWS_UNAVAILABLE",
+                    "value": {
+                      "error": {
+                        "code": "MEDIA_NEWS_UNAVAILABLE",
+                        "message": "Zpravodajský kontext nyní není dostupný.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -3046,7 +3430,8 @@
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
           }
-        }
+        },
+        "description": "Canonical ingest requires a configured service lab token or an OIDC actor with COP_OPERATOR, INTEGRATION_ADMIN or SYSTEM_CLIENT role; other actors receive 403 INGEST_FORBIDDEN. The current feed accepts only UNCLASSIFIED events within the registered source contract; other classifications receive 422 CLASSIFICATION_NOT_ALLOWED. An explicit releasePolicy must allow public access, have no targeted restrictions and be unexpired; otherwise 422 RELEASE_POLICY_NOT_ALLOWED. Batch validation applies the same source, event type, object type, classification, release and synthetic-data rules to every item before accepting any item. External single and batch ingest always assign ingestTimestamp from the COP server clock on first acceptance; any producer-supplied ingestTimestamp is ignored for ingestion time and event identity. producerTimestamp and the remaining canonical fields are preserved. After schema, source and publication-policy checks, reuse of an eventId with different canonical content other than ingestTimestamp returns HTTP 409 EVENT_ID_CONFLICT in the correlation-aware COP error envelope. Identity includes classification, source, correlationId, producerTimestamp and payload. Identical eventId retries return 202 without writing the event or track again, adding another history point or publishing the track again, and retain the original server ingestTimestamp. Event-ID uniqueness and request-key evidence are scoped to the current process RAM; this is not a durable global deduplication guarantee across restarts. The single-event endpoint requires X-Idempotency-Key. The same request key and unchanged normalized body return the original acknowledgement; key reuse with different content returns HTTP 409 IDEMPOTENCY_CONFLICT unless a prior validation gate rejects it first."
       }
     },
     "/api/v1/ingest/batches": {
@@ -3061,7 +3446,14 @@
             "$ref": "#/components/parameters/SourceSystemIdHeader"
           },
           {
-            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Optional compatibility header; batches use eventId deduplication without a request-key response cache.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           },
           {
             "$ref": "#/components/parameters/ContractVersionHeader"
@@ -3112,7 +3504,8 @@
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
           }
-        }
+        },
+        "description": "Canonical ingest requires a configured service lab token or an OIDC actor with COP_OPERATOR, INTEGRATION_ADMIN or SYSTEM_CLIENT role; other actors receive 403 INGEST_FORBIDDEN. The current feed accepts only UNCLASSIFIED events within the registered source contract; other classifications receive 422 CLASSIFICATION_NOT_ALLOWED. An explicit releasePolicy must allow public access, have no targeted restrictions and be unexpired; otherwise 422 RELEASE_POLICY_NOT_ALLOWED. Batch validation applies the same source, event type, object type, classification, release and synthetic-data rules to every item before accepting any item. External single and batch ingest always assign ingestTimestamp from the COP server clock on first acceptance; any producer-supplied ingestTimestamp is ignored for ingestion time and event identity. producerTimestamp and the remaining canonical fields are preserved. After schema, source and publication-policy checks, reuse of an eventId with different canonical content other than ingestTimestamp returns HTTP 409 EVENT_ID_CONFLICT in the correlation-aware COP error envelope. Identity includes classification, source, correlationId, producerTimestamp and payload. Identical eventId retries return 202 without writing the event or track again, adding another history point or publishing the track again, and retain the original server ingestTimestamp. Event-ID uniqueness and request-key evidence are scoped to the current process RAM; this is not a durable global deduplication guarantee across restarts. Batch source, publication-policy and event-ID checks cover every schema-valid item, including duplicate IDs within the batch, before any state mutation; any such failure rejects the whole request. Legacy schema-invalid items remain REJECTED in the 202 acknowledgement while valid items may be accepted. acceptedCount includes identical duplicate eventIds reported as QUEUED, although those entries create no new history or publication. X-Idempotency-Key is an optional compatibility header for this endpoint and does not provide a batch request-key response cache."
       }
     },
     "/api/v1/cop/tracks": {
@@ -3694,6 +4087,7 @@
         ],
         "summary": "Register a source system.",
         "operationId": "createSource",
+        "description": "Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN or SECURITY_ADMIN. COP_OPERATOR and SYSTEM_CLIENT alone do not grant source-management rights. Denied actors receive HTTP 403 SOURCE_MANAGEMENT_FORBIDDEN in the correlation-aware COP error envelope.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3788,6 +4182,7 @@
         ],
         "summary": "Update source system metadata and permissions.",
         "operationId": "updateSource",
+        "description": "Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN or SECURITY_ADMIN. COP_OPERATOR and SYSTEM_CLIENT alone do not grant source-management rights. Denied actors receive HTTP 403 SOURCE_MANAGEMENT_FORBIDDEN in the correlation-aware COP error envelope. The partial object is merged with the current source and validated against SourceSystem before any update. Unknown or invalid fields and changes to sourceSystemId return HTTP 400 VALIDATION_ERROR.",
         "parameters": [
           {
             "$ref": "#/components/parameters/SourceSystemIdPath"
@@ -3815,6 +4210,12 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
           }
@@ -3828,6 +4229,7 @@
         ],
         "summary": "Revoke a source system.",
         "operationId": "revokeSource",
+        "description": "Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN or SECURITY_ADMIN. COP_OPERATOR and SYSTEM_CLIENT alone do not grant source-management rights. Denied actors receive HTTP 403 SOURCE_MANAGEMENT_FORBIDDEN in the correlation-aware COP error envelope.",
         "parameters": [
           {
             "$ref": "#/components/parameters/SourceSystemIdPath"
@@ -3843,6 +4245,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -4807,6 +5212,57 @@
         }
       }
     },
+    "/api/v1/messaging/matrix/identities/lookup": {
+      "post": {
+        "operationId": "lookupExistingMessagingMatrixIdentities",
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "Read existing conversation-scoped Matrix identity mappings without provisioning",
+        "description": "Authenticated COP actor only. Messaging service verifies current conversation membership. No-store response; existing resolve endpoint retains its provisioning semantics. Unknown/unavailable mapping never implies a peer or member count. Rate limit 120 requests/minute.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessagingMatrixIdentityLookupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing mappings with explicit unknowns",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagingMatrixIdentityLookup"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "429": {
+            "$ref": "#/components/responses/ErrorResponse"
+          }
+        }
+      }
+    },
     "/api/v1/messaging/matrix/identities/resolve": {
       "post": {
         "tags": [
@@ -4910,7 +5366,7 @@
           "Notifications"
         ],
         "summary": "Accept Matrix push gateway notifications",
-        "description": "Public Matrix Push Gateway endpoint used by Synapse HTTP pushers. COP accepts the canonical Matrix path and forwards the payload server-side to CSM Messaging without exposing provider credentials to browsers or Matrix clients.",
+        "description": "Public Matrix Push Gateway endpoint used by Synapse HTTP pushers. COP accepts the canonical Matrix path and forwards the payload server-side to CSM Messaging without exposing provider credentials to browsers or Matrix clients.\nThe request body is limited to 262144 bytes before parsing; oversized requests return 413 in the COP error envelope.",
         "operationId": "matrixPushGatewayNotify",
         "security": [],
         "requestBody": {
@@ -4956,8 +5412,12 @@
                 }
               }
             }
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
           }
-        }
+        },
+        "x-cop-body-limit-bytes": 262144
       }
     },
     "/api/v1/push/web/config": {
@@ -5095,8 +5555,8 @@
         "tags": [
           "Notifications"
         ],
-        "summary": "Evaluate SIM safety features for citizen push notification dispatch.",
-        "description": "Authenticated server/operator endpoint used by COP to decide whether safety features from SIM are relevant to the current user, explicit audience or watched areas. By default this endpoint is a dry run. When dryRun=false, COP submits only minimized notification metadata to CSM Messaging through server-to-server notification intake. COP never stores APNs tokens and never sends push directly.\n",
+        "summary": "Evaluate verified SIM notification candidates for the authenticated user.",
+        "description": "Self-service server endpoint. Recipient identity comes only from the authenticated actor; another user, a group or an area audience is forbidden (403 NOTIFICATION_AUDIENCE_FORBIDDEN). COP fetches typed candidates only from SIM /safety-data/api/v1/notifications/candidates, never arbitrary rendered map warnings. Candidates must have ready fresh source input and a complete collection; unavailable, incomplete or possibly truncated input returns 503 and is not evidence that the watched area is safe. Relevance uses the user’s saved enabled watched areas and severity settings; Polygon/MultiPolygon intersection is evaluated, while unresolved or administrative fallback points, stale/expired items, technical source errors and editorial bulletins cannot become local alerts. currentLocation is retained as an ignored compatibility field; it does not grant consent, create a watched area or establish an audience. Default dryRun=true does not dispatch. dryRun=false additionally requires explicit current-user consent and an enabled durable worker/store. Send identity includes recipient and canonical incident/validity, so one recipient does not suppress another and repeated rendering layers are deduplicated. Legacy dispatch is always an empty array; use the additive dispatchSummary for intake acceptance/skips/failures. acceptedCount/dispatchedCount means CSM Messaging intake acknowledgement, not physical APNs/web delivery. Messaging failures are represented by failedCount without a direct-push fallback. COP stores no APNs token and performs no direct push.",
         "operationId": "evaluateSafetyNotifications",
         "parameters": [
           {
@@ -5115,11 +5575,52 @@
         },
         "responses": {
           "200": {
-            "description": "Notification decisions and optional dispatch results.",
+            "description": "Self-user candidate decisions and additive aggregate dispatch counters; legacy dispatch remains empty.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SafetyNotificationEvaluationResponse"
+                },
+                "examples": {
+                  "dryRun": {
+                    "summary": "Ready input with no candidate; this is not confirmation of safety.",
+                    "value": {
+                      "contractVersion": "cop-notification-evaluation-v1",
+                      "decisions": [],
+                      "dispatch": [],
+                      "dispatchSummary": {
+                        "acceptedCount": 0,
+                        "skippedCount": 0,
+                        "failedCount": 0
+                      },
+                      "dryRun": true,
+                      "query": {
+                        "bbox": {
+                          "west": 14,
+                          "south": 49,
+                          "east": 15,
+                          "north": 50
+                        },
+                        "layers": [
+                          "warnings"
+                        ],
+                        "limit": 100
+                      },
+                      "serverTimestamp": "2026-10-10T12:00:00Z",
+                      "inputReadiness": {
+                        "status": "ready",
+                        "snapshotGeneratedAt": "2026-10-10T12:00:00Z",
+                        "snapshotAgeSeconds": 0,
+                        "reasons": []
+                      },
+                      "summary": {
+                        "dispatchedCount": 0,
+                        "eligibleCount": 0,
+                        "featureCount": 0,
+                        "skippedCount": 0
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -5131,7 +5632,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "502": {
-            "description": "CSM Messaging notification intake was degraded for one or more dispatches.",
+            "description": "Legacy response retained for client compatibility. The current implementation reports input/store outages with the COP 503 error envelope and per-recipient Messaging failures through dispatchSummary.failedCount in a 200 response.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5139,6 +5640,83 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Safety evaluation may address only the authenticated user and dispatch requires explicit current-user consent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "NOTIFICATION_AUDIENCE_FORBIDDEN": {
+                    "summary": "NOTIFICATION_AUDIENCE_FORBIDDEN",
+                    "value": {
+                      "error": {
+                        "code": "NOTIFICATION_AUDIENCE_FORBIDDEN",
+                        "message": "Safety evaluation may address only the authenticated user and dispatch requires explicit current-user consent.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  },
+                  "SAFETY_NOTIFICATION_CONSENT_REQUIRED": {
+                    "summary": "SAFETY_NOTIFICATION_CONSENT_REQUIRED",
+                    "value": {
+                      "error": {
+                        "code": "SAFETY_NOTIFICATION_CONSENT_REQUIRED",
+                        "message": "Safety evaluation may address only the authenticated user and dispatch requires explicit current-user consent.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verified safety input or delivery services are unavailable or incomplete; retryable technical failure, not user refusal or confirmation of safety.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "SAFETY_EVALUATION_UNAVAILABLE": {
+                    "summary": "SAFETY_EVALUATION_UNAVAILABLE",
+                    "value": {
+                      "error": {
+                        "code": "SAFETY_EVALUATION_UNAVAILABLE",
+                        "message": "Verified safety input or delivery services are unavailable or incomplete; retryable technical failure, not user refusal or confirmation of safety.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  },
+                  "SAFETY_CANDIDATES_NOT_READY": {
+                    "summary": "SAFETY_CANDIDATES_NOT_READY",
+                    "value": {
+                      "error": {
+                        "code": "SAFETY_CANDIDATES_NOT_READY",
+                        "message": "Verified safety input or delivery services are unavailable or incomplete; retryable technical failure, not user refusal or confirmation of safety.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  },
+                  "SAFETY_NOTIFICATIONS_UNAVAILABLE": {
+                    "summary": "SAFETY_NOTIFICATIONS_UNAVAILABLE",
+                    "value": {
+                      "error": {
+                        "code": "SAFETY_NOTIFICATIONS_UNAVAILABLE",
+                        "message": "Verified safety input or delivery services are unavailable or incomplete; retryable technical failure, not user refusal or confirmation of safety.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -5191,7 +5769,21 @@
             "$ref": "#/components/responses/TooManyRequests"
           },
           "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
+            "description": "Enabled private Dispatch lacks a verified primary lease or is still invalidating old shares; generic pressure failures may use the COP error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HealthStatus"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -5218,7 +5810,8 @@
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
           }
-        }
+        },
+        "description": "Includes private-dispatch dependency with verified exclusive primary lease state. HTTP 200 does not imply that every dependency is ready; inspect status and dependencies."
       }
     },
     "/metrics": {
@@ -5327,6 +5920,7 @@
         ],
         "summary": "Register or update a federated node heartbeat.",
         "operationId": "upsertFederatedNodeHeartbeat",
+        "description": "Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.",
         "security": [
           {
             "bearerAuth": []
@@ -5378,6 +5972,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -5389,7 +5986,7 @@
         ],
         "summary": "Publish a COP domain event.",
         "operationId": "publishDomainEvent",
-        "description": "Accepts CloudEvents-compatible domain event commands into the local COP event log. This pilot runtime is an append-only broker facade; external broker transport is added in a later ADR.",
+        "description": "Accepts CloudEvents-compatible domain event commands into the local COP event log. This pilot runtime is an append-only broker facade; external broker transport is added in a later ADR. Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.",
         "security": [
           {
             "bearerAuth": []
@@ -5422,6 +6019,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "422": {
             "$ref": "#/components/responses/UnprocessableEntity"
           }
@@ -5433,6 +6033,7 @@
         ],
         "summary": "Replay COP domain events.",
         "operationId": "replayDomainEvents",
+        "description": "Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.",
         "security": [
           {
             "bearerAuth": []
@@ -5515,6 +6116,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -5526,6 +6130,7 @@
         ],
         "summary": "List rejected domain events.",
         "operationId": "listDomainEventDeadLetters",
+        "description": "Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.",
         "security": [
           {
             "bearerAuth": []
@@ -5557,6 +6162,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -5567,7 +6175,7 @@
           "Domain Events"
         ],
         "summary": "Flush offline edge outbox events",
-        "description": "Accepts a bounded batch of CloudEvents-compatible domain events produced by a registered edge-node. The server enforces producer identity from nodeId and returns per-item accepted, duplicate, or rejected status.",
+        "description": "Accepts a bounded batch of CloudEvents-compatible domain events produced by a registered edge-node. The server enforces producer identity from nodeId and returns per-item accepted, duplicate, or rejected status. Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.",
         "operationId": "flushEdgeOutbox",
         "security": [
           {
@@ -5607,6 +6215,9 @@
           },
           "400": {
             "$ref": "#/components/responses/ErrorResponse"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           },
           "413": {
             "$ref": "#/components/responses/ErrorResponse"
@@ -5666,7 +6277,7 @@
           "Domain Events"
         ],
         "summary": "Acknowledge edge replay cursor",
-        "description": "Stores the highest replay offset durably processed by an edge-node. The stored cursor is monotonic and will not move backwards.",
+        "description": "Stores the highest replay offset durably processed by an edge-node. The stored cursor is monotonic and will not move backwards. Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.",
         "operationId": "ackEdgeReplayCursor",
         "security": [
           {
@@ -5710,6 +6321,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "422": {
             "$ref": "#/components/responses/ErrorResponse"
           }
@@ -5723,6 +6337,7 @@
         ],
         "summary": "Read dead-letter domain event",
         "operationId": "getDomainEventDeadLetter",
+        "description": "Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.",
         "security": [
           {
             "bearerAuth": []
@@ -5752,6 +6367,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
           }
@@ -5764,7 +6382,7 @@
           "Domain Events"
         ],
         "summary": "Re-drive a dead-letter domain event",
-        "description": "Publishes a corrected dead-letter event back into the domain event log and marks the dead-letter as redriven. COP does not create another dead-letter for invalid re-drive payloads; the operator receives a validation error instead.",
+        "description": "Publishes a corrected dead-letter event back into the domain event log and marks the dead-letter as redriven. COP does not create another dead-letter for invalid re-drive payloads; the operator receives a validation error instead. Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.",
         "operationId": "redriveDomainEventDeadLetter",
         "security": [
           {
@@ -5808,6 +6426,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
@@ -5823,7 +6444,7 @@
           "Domain Events"
         ],
         "summary": "Resolve a dead-letter domain event",
-        "description": "Marks a dead-letter as resolved without publishing a replacement event. Use when the rejected payload is intentionally discarded or superseded externally.",
+        "description": "Marks a dead-letter as resolved without publishing a replacement event. Use when the rejected payload is intentionally discarded or superseded externally. Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.",
         "operationId": "resolveDomainEventDeadLetter",
         "security": [
           {
@@ -5854,6 +6475,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
           }
@@ -5866,7 +6490,7 @@
           "Domain Events"
         ],
         "summary": "Replay policy-filtered domain events for an edge node",
-        "description": "Returns CloudEvents-compatible domain events visible to a registered edge-node. The default offset comes from the durable edge replay cursor; explicit fromOffset may be supplied for recovery. Events blocked by classification or release policy are not returned.",
+        "description": "Returns CloudEvents-compatible domain events visible to a registered edge-node. The default offset comes from the durable edge replay cursor; explicit fromOffset may be supplied for recovery. Events blocked by classification or release policy are not returned. Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.",
         "operationId": "replayEdgeDomainEvents",
         "security": [
           {
@@ -5958,6 +6582,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "422": {
             "$ref": "#/components/responses/ErrorResponse"
           }
@@ -5999,7 +6626,7 @@
         ],
         "summary": "Call the COP MCP JSON-RPC endpoint.",
         "operationId": "callCopMcpJsonRpc",
-        "description": "Implements the MCP JSON-RPC methods `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call` over a stateless HTTP endpoint. Tool calls reuse the audited COP allowlist and publish `MCP_TOOL_INVOKED` audit events.",
+        "description": "Implements the MCP JSON-RPC methods `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call` over a stateless HTTP endpoint. Tool calls reuse the audited COP allowlist and publish `MCP_TOOL_INVOKED` audit events. For tools/call, cop.events.replay and cop.events.dead_letters.list require configured lab authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Other allowlisted tools retain their existing access rules. A denied privileged-tool call returns JSON-RPC error -32003 Forbidden with INTEGRATION_FORBIDDEN in its detail, preserving the JSON-RPC transport response.",
         "security": [
           {
             "bearerAuth": []
@@ -6096,7 +6723,7 @@
         ],
         "summary": "Invoke an audited read-only COP MCP tool.",
         "operationId": "invokeCopMcpTool",
-        "description": "Invokes a server-side allowlisted read-only COP tool and publishes an ai.tool.invoked audit domain event. The endpoint never proxies plaintext messages, Matrix provider tokens or arbitrary commands.",
+        "description": "Invokes a server-side allowlisted read-only COP tool and publishes an ai.tool.invoked audit domain event. The endpoint never proxies plaintext messages, Matrix provider tokens or arbitrary commands. The tools cop.events.replay and cop.events.dead_letters.list additionally require configured lab authentication or an authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Other allowlisted tools retain their existing access rules. Denied privileged-tool calls return HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.",
         "security": [
           {
             "bearerAuth": []
@@ -6135,6 +6762,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -12731,9 +13361,801 @@
             }
           }
         }
+      },
+      "PayloadTooLarge": {
+        "description": "Request body exceeds the documented route limit. COP returns PAYLOAD_TOO_LARGE with correlationId.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
       }
     },
     "schemas": {
+      "SharedVehicleMappedTrailer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "attached",
+          "heightM",
+          "widthM",
+          "lengthM",
+          "loadedWeightKg"
+        ],
+        "properties": {
+          "attached": {
+            "const": true,
+            "type": "boolean"
+          },
+          "heightM": {
+            "type": "number",
+            "maximum": 5,
+            "minimum": 0
+          },
+          "widthM": {
+            "type": "number",
+            "maximum": 3,
+            "minimum": 0
+          },
+          "lengthM": {
+            "type": "number",
+            "maximum": 25,
+            "minimum": 0
+          },
+          "loadedWeightKg": {
+            "type": "number",
+            "maximum": 60000,
+            "minimum": 0
+          }
+        }
+      },
+      "SharedVehicleMappedDimensions": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "heightM",
+          "widthM",
+          "lengthM",
+          "loadedWeightKg"
+        ],
+        "properties": {
+          "heightM": {
+            "type": "number",
+            "maximum": 5,
+            "minimum": 0
+          },
+          "widthM": {
+            "type": "number",
+            "maximum": 3,
+            "minimum": 0
+          },
+          "lengthM": {
+            "type": "number",
+            "maximum": 25,
+            "minimum": 0
+          },
+          "loadedWeightKg": {
+            "type": "number",
+            "maximum": 60000,
+            "minimum": 0
+          },
+          "axleLoadKg": {
+            "type": "number",
+            "maximum": 40000,
+            "minimum": 0
+          },
+          "axleCount": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 20
+          },
+          "trailer": {
+            "$ref": "#/components/schemas/SharedVehicleMappedTrailer"
+          }
+        }
+      },
+      "SharedVehicleMappedProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "intent",
+          "coverageAcknowledged"
+        ],
+        "properties": {
+          "version": {
+            "const": "sim-mapped-road-profile-v1",
+            "type": "string"
+          },
+          "intent": {
+            "enum": [
+              "car",
+              "commercial_truck",
+              "car_with_trailer",
+              "road_legal_4x4"
+            ],
+            "type": "string"
+          },
+          "coverageAcknowledged": {
+            "const": "mapped_restrictions_incomplete",
+            "type": "string"
+          },
+          "vehicle": {
+            "$ref": "#/components/schemas/SharedVehicleMappedDimensions"
+          },
+          "driverDeclaredAuthorization": {
+            "type": "boolean",
+            "const": false
+          }
+        }
+      },
+      "SharedVehicleRoutingProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "mappedProfile": {
+            "$ref": "#/components/schemas/SharedVehicleMappedProfile"
+          },
+          "powertrain": {
+            "type": "string",
+            "enum": [
+              "combustion",
+              "electric",
+              "plugInHybrid"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "mappedProfile",
+          "powertrain"
+        ]
+      },
+      "SharedVehicleOwnerBindingInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "localVehicleId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "version",
+          "localVehicleId"
+        ]
+      },
+      "SharedVehicleOwnerBinding": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "localVehicleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ownerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "version",
+          "localVehicleId",
+          "ownerAccountId"
+        ]
+      },
+      "SharedVehicleRecordCorrection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "version",
+          "recordId",
+          "recordRevision",
+          "reason"
+        ]
+      },
+      "SharedVehicleRecordAudit": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "correct",
+              "void"
+            ]
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "previousRecordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "previousRecordRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "version",
+          "action",
+          "operationId"
+        ]
+      },
+      "SharedVehicleActiveCareItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dueOdometerKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          }
+        },
+        "required": [
+          "recordId",
+          "recordRevision",
+          "title"
+        ]
+      },
+      "SharedVehicleActiveCareReminders": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "dataRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "unavailable"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "$ref": "#/components/schemas/SharedVehicleActiveCareItem"
+            }
+          }
+        },
+        "required": [
+          "version",
+          "dataRevision",
+          "state",
+          "items"
+        ]
+      },
+      "SharedVehicleRideDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "tripId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endOdometerKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          }
+        },
+        "required": [
+          "version",
+          "tripId",
+          "startedAt",
+          "endedAt"
+        ]
+      },
+      "SharedVehicleMileageSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "recordKind": {
+            "type": "string",
+            "enum": [
+              "odometer",
+              "energy",
+              "service",
+              "ride_summary"
+            ]
+          }
+        },
+        "required": [
+          "recordId",
+          "recordRevision",
+          "recordKind"
+        ]
+      },
+      "SharedVehicleOdometerSnapshotV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 2
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "known",
+              "estimated",
+              "reviewRequired"
+            ]
+          },
+          "dataRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "valueKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SharedVehicleMileageSource"
+          },
+          "basisKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "basisObservedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "basisSource": {
+            "$ref": "#/components/schemas/SharedVehicleMileageSource"
+          },
+          "includedRideCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "unconfirmedDistanceKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "no_observations",
+              "conflicting_observations",
+              "decreasing_observation",
+              "invalid_observation",
+              "invalid_correction",
+              "future_observation",
+              "overlapping_rides",
+              "anchor_overlap",
+              "legacy_ride_interval_unknown",
+              "duplicate_trip",
+              "distance_overflow",
+              "invalid_ride_interval"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "status",
+          "dataRevision"
+        ]
+      },
+      "SharedVehicleOdometerSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "recordKind": {
+            "type": "string",
+            "enum": [
+              "odometer",
+              "energy",
+              "service"
+            ]
+          }
+        },
+        "required": [
+          "recordId",
+          "recordRevision",
+          "recordKind"
+        ]
+      },
+      "SharedVehicleOdometerSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "known",
+              "reviewRequired"
+            ]
+          },
+          "dataRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "valueKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSource"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "no_observations",
+              "conflicting_observations",
+              "decreasing_observation",
+              "invalid_observation",
+              "invalid_correction",
+              "future_observation"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "status",
+          "dataRevision"
+        ]
+      },
+      "SharedVehicleStationSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "provider": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "address": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": []
+      },
+      "SharedVehicleRefuelingDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fuelType": {
+            "type": "string",
+            "enum": [
+              "natural95",
+              "natural98",
+              "natural100",
+              "diesel",
+              "diesel plus",
+              "lpg",
+              "bioEthanol",
+              "cng",
+              "hydrogen"
+            ]
+          },
+          "fullTank": {
+            "type": "boolean"
+          },
+          "quantityBeforeRefueling": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "station": {
+            "$ref": "#/components/schemas/SharedVehicleStationSnapshot"
+          }
+        },
+        "required": []
+      },
+      "SharedVehicleChargingDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "home",
+              "publicAC",
+              "publicDC",
+              "workplace",
+              "other"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "locationName": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "location": {
+            "$ref": "#/components/schemas/SharedVehicleStationSnapshot"
+          },
+          "batteryPercentBefore": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "batteryPercentAfter": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          }
+        },
+        "required": []
+      },
+      "SharedVehicleEnergyDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "refueling",
+              "charging"
+            ]
+          },
+          "odometerKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "refueling": {
+            "$ref": "#/components/schemas/SharedVehicleRefuelingDetails"
+          },
+          "charging": {
+            "$ref": "#/components/schemas/SharedVehicleChargingDetails"
+          }
+        },
+        "required": [
+          "version",
+          "kind"
+        ]
+      },
+      "SharedVehicleServiceItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1
+          },
+          "categoryId": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "subcategoryId": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "amount": {
+            "$ref": "#/components/schemas/SharedVehicleMoney"
+          }
+        },
+        "required": [
+          "itemId",
+          "title",
+          "amount"
+        ]
+      },
+      "SharedVehicleServiceDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "categoryId": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "subcategoryId": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/SharedVehicleServiceItem"
+            }
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "COPAccountProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "subjectId",
+          "issuer",
+          "displayName",
+          "email",
+          "emailVerified",
+          "avatarDataUrl",
+          "revision",
+          "updatedAt",
+          "serverTimestamp"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-account-profile-v1"
+            ]
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string",
+            "format": "uri"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emailVerified": {
+            "type": "boolean"
+          },
+          "avatarDataUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 250000,
+            "description": "Canonical COP avatar. New writes are metadata-free PNG; existing JPEG/PNG/WebP may be read. No remote URLs."
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "serverTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "DriverMeasurementConsentState": {
         "type": "object", "additionalProperties": false,
         "required": ["contractVersion", "granted", "grantedAt", "pendingDeletion", "canGrant"],
@@ -12869,7 +14291,8 @@
         "type": "object",
         "properties": {
           "alertPreferences": {
-            "$ref": "#/components/schemas/UserAlertPreferences"
+            "$ref": "#/components/schemas/UserAlertPreferences",
+            "description": "Updates informational alert settings and saved zones. safetyNotificationsEnabled is server-owned and preserved; this update cannot grant or revoke notification consent."
           },
           "preferences": {
             "$ref": "#/components/schemas/UserDisplayPreferences"
@@ -12981,6 +14404,12 @@
               "warning",
               "critical"
             ]
+          },
+          "safetyNotificationsEnabled": {
+            "type": "boolean",
+            "readOnly": true,
+            "default": false,
+            "description": "Explicit server-owned automatic safety notification consent. Missing or false means disabled. Read from the authenticated profile; change only through PUT /api/v1/me/notifications/safety. Values sent with generic preference updates are ignored, and concurrent generic saves preserve the latest consent."
           }
         },
         "additionalProperties": false
@@ -13469,7 +14898,8 @@
           },
           "receivedAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "Original COP server acceptance time, equal to the stored server-owned ingestTimestamp. Identical event retries retain this time."
           },
           "status": {
             "type": "string",
@@ -13544,7 +14974,15 @@
               "properties": {
                 "eventId": {
                   "type": "string",
-                  "format": "uuid"
+                  "anyOf": [
+                    {
+                      "format": "uuid"
+                    },
+                    {
+                      "const": "unknown"
+                    }
+                  ],
+                  "description": "Canonical event UUID, or the legacy unknown sentinel for a schema-invalid rejected item."
                 },
                 "status": {
                   "type": "string",
@@ -16065,7 +17503,7 @@
           },
           "bundleId": {
             "type": "string",
-            "const": "cz.voldzi.copmobile"
+            "enum": ["cz.voldzi.copmobile", "cz.voldzi.jizda"]
           }
         }
       },
@@ -19948,6 +21386,7 @@
         ],
         "additionalProperties": false,
         "properties": {
+          "peer": {"$ref": "#/components/schemas/MessagingVoiceCallPeer"},
           "callId": {
             "type": "string",
             "format": "uuid"
@@ -20267,6 +21706,121 @@
           }
         }
       },
+      "MessagingMatrixIdentityLookupRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "conversationId"
+        ],
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
+        },
+        "description": "Read-only lookup of existing Matrix mappings for an authorized conversation. No arbitrary user IDs, provisioning or account updates."
+      },
+      "MessagingMatrixIdentityLookup": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "providerId",
+          "actorUserId",
+          "conversationId",
+          "identities",
+          "unresolvedUserIds",
+          "validUntil",
+          "status",
+          "warnings"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "cop-messaging-identity-lookup-v1"
+            ]
+          },
+          "providerId": {
+            "type": "string",
+            "enum": [
+              "csm.messaging"
+            ]
+          },
+          "actorUserId": {
+            "type": "string"
+          },
+          "conversationId": {
+            "type": "string"
+          },
+          "matrixRoomId": {
+            "type": "string"
+          },
+          "identities": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "userId",
+                "matrixUserId"
+              ],
+              "properties": {
+                "userId": {
+                  "type": "string"
+                },
+                "matrixUserId": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "unresolvedUserIds": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            }
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "online"
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "maxItems": 0,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "description": "Existing stored bindings, not proof that a Synapse account is currently active. All members partition into identities/unresolvedUserIds. Pairing is scoped to actor, conversation, Matrix room and membership snapshot; expires 30 seconds after the COP lookup. Missing, expired, ambiguous or changed membership data must not be guessed. No names, credentials or messages."
+      },
+      "MessagingVoiceCallPeer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "subjectId"
+        ],
+        "properties": {
+          "subjectId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 160
+          }
+        },
+        "description": "Read-only verified other call participant for this viewer. A missing name is unknown; the legacy shared call title is not an incoming caller identity."
+      },
       "MessagingMatrixIdentityResolveRequest": {
         "type": "object",
         "required": [
@@ -20414,6 +21968,377 @@
           }
         }
       },
+      "SafetyNotificationConsentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Explicit enable or revoke; no string coercion and no client-selected identity."
+          }
+        }
+      },
+      "SafetyNotificationConsentResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "enabled",
+          "updatedAt"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-safety-notification-consent-v1"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SafetyNotificationDispatchSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "acceptedCount",
+          "skippedCount",
+          "failedCount"
+        ],
+        "properties": {
+          "acceptedCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Acknowledged by CSM Messaging intake, not proven physical delivery."
+          },
+          "skippedCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Ineligible, irrelevant, revoked, duplicate, expired or unavailable-recipient candidates."
+          },
+          "failedCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Technical dispatch failures; never redirected to direct APNs or another recipient."
+          }
+        }
+      },
+      "SafetyNotificationInputReadiness": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "snapshotGeneratedAt",
+          "snapshotAgeSeconds",
+          "reasons"
+        ],
+        "description": "Typed source readiness from SIM. The evaluation endpoint returns 200 only for ready, complete, fresh input. Non-ready/possibly-truncated input returns 503, never an empty-area safety assurance.",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "unavailable",
+              "incomplete"
+            ]
+          },
+          "snapshotGeneratedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "snapshotAgeSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SafetyMediaNewsItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "link",
+          "publishedAt",
+          "fetchedAt",
+          "eventAt",
+          "regionCode",
+          "regionScope",
+          "location",
+          "locationStatus",
+          "informationalOnly",
+          "notificationEligible",
+          "stale",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "Plain headline text; no HTML, article body or media."
+          },
+          "link": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048,
+            "pattern": "^https://ct24\\.ceskatelevize\\.cz/",
+            "description": "Validated HTTPS ČT24 outgoing link, without userinfo, explicit port or a lookalike host. COP never fetches article bodies from this link."
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RSS publication time, not verified incident time. COP excludes publications older than 24 hours."
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "eventAt": {
+            "type": "null",
+            "description": "Unknown incident time; publication time is not substituted."
+          },
+          "regionCode": {
+            "type": "string",
+            "enum": [
+              "CZ",
+              "CZ080",
+              "CZ064"
+            ],
+            "description": "Editorial feed scope only: ct24-main=CZ, ct24-ostrava=CZ080, ct24-brno=CZ064. This is never the location of an event."
+          },
+          "regionScope": {
+            "type": "string",
+            "const": "feed"
+          },
+          "location": {
+            "type": "null",
+            "description": "No verified event location is provided or invented."
+          },
+          "locationStatus": {
+            "type": "string",
+            "const": "unresolved"
+          },
+          "informationalOnly": {
+            "type": "boolean",
+            "const": true
+          },
+          "notificationEligible": {
+            "type": "boolean",
+            "const": false
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "Source freshness is degraded; never promotes an item to an official alert."
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "name",
+              "feedId",
+              "attribution"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "const": "ct24"
+              },
+              "name": {
+                "type": "string",
+                "const": "ČT24"
+              },
+              "feedId": {
+                "type": "string",
+                "enum": [
+                  "ct24-main",
+                  "ct24-ostrava",
+                  "ct24-brno"
+                ]
+              },
+              "attribution": {
+                "type": "string",
+                "const": "Česká televize / ČT24"
+              }
+            }
+          }
+        }
+      },
+      "SafetyMediaNewsSourceState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "label",
+          "feedUrl",
+          "regionCode",
+          "regionScope",
+          "attribution",
+          "status",
+          "fetchedAt",
+          "stale",
+          "errorCode",
+          "retryAfterSeconds"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "ct24-main",
+              "ct24-ostrava",
+              "ct24-brno"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "feedUrl": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048,
+            "pattern": "^https://ct24\\.ceskatelevize\\.cz/",
+            "description": "Validated fixed source RSS URL. Metadata only; not a caller-selected upstream."
+          },
+          "regionCode": {
+            "type": "string",
+            "enum": [
+              "CZ",
+              "CZ080",
+              "CZ064"
+            ],
+            "description": "Editorial feed scope only: ct24-main=CZ, ct24-ostrava=CZ080, ct24-brno=CZ064. This is never the location of an event."
+          },
+          "regionScope": {
+            "type": "string",
+            "const": "feed"
+          },
+          "attribution": {
+            "type": "string",
+            "const": "Česká televize / ČT24"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "stale",
+              "unavailable",
+              "disabled"
+            ]
+          },
+          "fetchedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "errorCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "UPSTREAM_HTTP_ERROR",
+              "UPSTREAM_TIMEOUT",
+              "UPSTREAM_TOO_LARGE",
+              "UPSTREAM_INVALID_XML",
+              "UPSTREAM_UNAVAILABLE",
+              null
+            ]
+          },
+          "retryAfterSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 3600
+          }
+        }
+      },
+      "SafetyMediaNewsContext": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "status",
+          "generatedAt",
+          "informationalOnly",
+          "notificationEligible",
+          "items",
+          "sources"
+        ],
+        "description": "Informational editorial RSS metadata, entirely separate from official safety warnings and candidate dispatch. No raw article text, video or invented geometry.",
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "sim-crisis-media-context-v1"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded",
+              "disabled"
+            ]
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "informationalOnly": {
+            "type": "boolean",
+            "const": true
+          },
+          "notificationEligible": {
+            "type": "boolean",
+            "const": false
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/SafetyMediaNewsItem"
+            }
+          },
+          "sources": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/SafetyMediaNewsSourceState"
+            }
+          }
+        }
+      },
       "SafetyNotificationEvaluationRequest": {
         "type": "object",
         "required": [
@@ -20422,7 +22347,8 @@
         "additionalProperties": false,
         "properties": {
           "audience": {
-            "$ref": "#/components/schemas/NotificationAudience"
+            "$ref": "#/components/schemas/NotificationAudience",
+            "description": "Compatibility field, restricted to the authenticated actor only. A non-empty groupIds or areaIds, or any different userId, returns 403. Omitting audience does not create a broadcast; actual relevance comes from stored watched areas."
           },
           "bbox": {
             "oneOf": [
@@ -20445,12 +22371,14 @@
             ]
           },
           "currentLocation": {
-            "$ref": "#/components/schemas/NotificationLocation"
+            "$ref": "#/components/schemas/NotificationLocation",
+            "deprecated": true,
+            "description": "Accepted for legacy client compatibility but ignored by this self-service candidate route. It is not persisted and does not create consent, a watched area or notification audience."
           },
           "dryRun": {
             "type": "boolean",
             "default": true,
-            "description": "Defaults to true. Set false only when COP should call CSM Messaging notification intake."
+            "description": "Defaults to true: evaluate without dispatch. False requires explicit stored consent, eligible devices and an enabled durable worker; errors never fall back to direct push."
           },
           "layerIds": {
             "type": "array",
@@ -20476,7 +22404,7 @@
                 "weather_alerts"
               ]
             },
-            "description": "Safety layers eligible for citizen notification evaluation."
+            "description": "Layer filter for verified SIM notification candidates only. Reference layer boundary_admin is excluded; generic map warning features are not push candidates."
           },
           "limit": {
             "type": "integer",
@@ -20512,7 +22440,10 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/NotificationDispatchResult"
-            }
+            },
+            "deprecated": true,
+            "maxItems": 0,
+            "description": "Preserved legacy field, always [] for the durable candidate worker. Read dispatchSummary instead."
           },
           "dryRun": {
             "type": "boolean"
@@ -20535,7 +22466,8 @@
             "properties": {
               "dispatchedCount": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "description": "CSM Messaging intake acknowledgements; not physical delivery to the user."
               },
               "eligibleCount": {
                 "type": "integer",
@@ -20543,15 +22475,23 @@
               },
               "featureCount": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "description": "Number of typed SIM candidates considered, not arbitrary map features."
               },
               "skippedCount": {
                 "type": "integer",
                 "minimum": 0
               }
             }
+          },
+          "dispatchSummary": {
+            "$ref": "#/components/schemas/SafetyNotificationDispatchSummary"
+          },
+          "inputReadiness": {
+            "$ref": "#/components/schemas/SafetyNotificationInputReadiness"
           }
-        }
+        },
+        "description": "Existing v1 shape is preserved; dispatchSummary and inputReadiness are additive. Legacy dispatch is empty. All counters concern decisions/intake acknowledgement, not proof of physical device delivery."
       },
       "NotificationDecision": {
         "type": "object",
@@ -20574,7 +22514,7 @@
           },
           "idempotencyKey": {
             "type": "string",
-            "description": "Stable key passed to CSM Messaging Idempotency-Key when dispatching."
+            "description": "Stable CSM Messaging Idempotency-Key. Safety candidate dispatch keys include the derived recipient identity and canonical incident/validity; one user cannot suppress another, and the same relevant incident across rendering layers is deduplicated."
           },
           "notification": {
             "$ref": "#/components/schemas/NotificationRequest"
@@ -23101,9 +25041,6 @@
         "type": "object",
         "additionalProperties": {
           "oneOf": [
-            {
-              "type": "integer"
-            },
             {
               "type": "string"
             },
@@ -27569,81 +29506,224 @@
           }
         }
       },
-      "MobilityCapabilities": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "contractVersion": {
+      "MobilityServiceAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sharedVehicles",
+        "dispatch",
+        "checkedAt"
+      ],
+      "properties": {
+        "sharedVehicles": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "unavailable",
+            "disabled"
+          ]
+        },
+        "dispatch": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "recovering",
+            "unavailable",
+            "disabled"
+          ]
+        },
+        "checkedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "MobilityCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "type": "string",
+          "enum": [
+            "cop-mobility-capabilities-v1"
+          ]
+        },
+        "sharedVehiclesEnabled": {
+          "type": "boolean"
+        },
+        "dispatchEnabled": {
+          "type": "boolean"
+        },
+        "maxVehicleMembers": {
+          "type": "integer",
+          "const": 5
+        },
+        "maxGroupMembers": {
+          "type": "integer",
+          "const": 200
+        },
+        "registration": {
+          "type": "string",
+          "enum": [
+            "idp_login_page",
+            "unavailable",
+            "unverified"
+          ]
+        },
+        "dispatchTransport": {
+          "type": "string",
+          "enum": [
+            "recipient_encrypted_latest_only"
+          ]
+        },
+        "currencies": {
+          "type": "array",
+          "items": {
             "type": "string",
             "enum": [
-              "cop-mobility-capabilities-v1"
+              "CZK",
+              "EUR",
+              "USD"
             ]
           },
-          "sharedVehiclesEnabled": {
-            "type": "boolean"
-          },
-          "dispatchEnabled": {
-            "type": "boolean"
-          },
-          "maxVehicleMembers": {
+          "maxItems": 3
+        },
+        "serverTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+        },
+        "invitationDelivery": {
+          "type": "string",
+          "enum": [
+            "verified_account_inbox"
+          ]
+        },
+        "serviceAvailability": {
+          "$ref": "#/components/schemas/MobilityServiceAvailability",
+          "description": "Optional independent current service availability. Enabled flags indicate configuration, not readiness. Missing field does not prove readiness."
+        },
+        "recordDetailsVersions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
             "type": "integer",
-            "const": 5
-          },
-          "maxGroupMembers": {
-            "type": "integer",
-            "const": 200
-          },
-          "registration": {
-            "type": "string",
             "enum": [
-              "idp_login_page",
-              "unavailable",
-              "unverified"
-            ]
-          },
-          "dispatchTransport": {
-            "type": "string",
-            "enum": [
-              "recipient_encrypted_latest_only"
-            ]
-          },
-          "currencies": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "CZK",
-                "EUR",
-                "USD"
-              ]
-            },
-            "maxItems": 3
-          },
-          "serverTimestamp": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
-          },
-          "invitationDelivery": {
-            "type": "string",
-            "enum": [
-              "verified_account_inbox"
+              1
             ]
           }
         },
-        "required": [
-          "contractVersion",
-          "sharedVehiclesEnabled",
-          "dispatchEnabled",
-          "maxVehicleMembers",
-          "maxGroupMembers",
-          "registration",
-          "dispatchTransport",
-          "currencies",
-          "serverTimestamp",
-          "invitationDelivery"
-        ]
+        "recordEnergyUnits": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "liters",
+              "kWh"
+            ]
+          }
+        },
+        "supportedRefuelingFuelTypes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "natural95",
+              "natural98",
+              "natural100",
+              "diesel",
+              "diesel plus",
+              "lpg",
+              "bioEthanol"
+            ]
+          }
+        },
+        "odometerSnapshotVersions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ]
+          }
+        },
+        "rideDetailsVersions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          }
+        },
+        "initialOdometerSupported": {
+          "type": "boolean"
+        },
+        "rideInsertPolicy": {
+          "type": "string",
+          "enum": [
+            "append_only_membership_cas"
+          ]
+        },
+        "sharedRoutingProfileVersions": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "uniqueItems": true
+        },
+        "ownerBindingVersions": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "uniqueItems": true
+        },
+        "recordAuditVersions": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "uniqueItems": true
+        },
+        "activeCareReminderVersions": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "uniqueItems": true
+        }
       },
+      "required": [
+        "contractVersion",
+        "sharedVehiclesEnabled",
+        "dispatchEnabled",
+        "maxVehicleMembers",
+        "maxGroupMembers",
+        "registration",
+        "dispatchTransport",
+        "currencies",
+        "serverTimestamp",
+        "invitationDelivery"
+      ]
+    },
       "MobilityAccount": {
         "type": "object",
         "additionalProperties": false,
@@ -27755,6 +29835,9 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 32
+          },
+          "routingProfile": {
+            "$ref": "#/components/schemas/SharedVehicleRoutingProfile"
           }
         },
         "required": [
@@ -27807,6 +29890,18 @@
           },
           "deleted": {
             "type": "boolean"
+          },
+          "odometerSnapshot": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshot"
+          },
+          "odometerSnapshotV2": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshotV2"
+          },
+          "ownerBinding": {
+            "$ref": "#/components/schemas/SharedVehicleOwnerBinding"
+          },
+          "activeCareReminders": {
+            "$ref": "#/components/schemas/SharedVehicleActiveCareReminders"
           }
         },
         "required": [
@@ -27860,6 +29955,9 @@
           },
           "details": {
             "$ref": "#/components/schemas/SharedVehicleDetails"
+          },
+          "ownerBinding": {
+            "$ref": "#/components/schemas/SharedVehicleOwnerBindingInput"
           }
         },
         "required": [
@@ -27887,6 +29985,9 @@
           },
           "details": {
             "$ref": "#/components/schemas/SharedVehicleDetails"
+          },
+          "ownerBinding": {
+            "$ref": "#/components/schemas/SharedVehicleOwnerBindingInput"
           }
         },
         "required": [
@@ -28111,6 +30212,10 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 500
+              },
+              "initial": {
+                "type": "boolean",
+                "const": true
               }
             },
             "required": [
@@ -28142,6 +30247,9 @@
                 "enum": [
                   "work"
                 ]
+              },
+              "details": {
+                "$ref": "#/components/schemas/SharedVehicleRideDetails"
               }
             },
             "required": [
@@ -28204,6 +30312,9 @@
               },
               "amount": {
                 "$ref": "#/components/schemas/SharedVehicleMoney"
+              },
+              "details": {
+                "$ref": "#/components/schemas/SharedVehicleEnergyDetails"
               }
             },
             "required": [
@@ -28233,6 +30344,9 @@
               },
               "amount": {
                 "$ref": "#/components/schemas/SharedVehicleMoney"
+              },
+              "details": {
+                "$ref": "#/components/schemas/SharedVehicleServiceDetails"
               }
             },
             "required": [
@@ -28370,6 +30484,9 @@
           },
           "data": {
             "$ref": "#/components/schemas/SharedVehicleRecordData"
+          },
+          "correction": {
+            "$ref": "#/components/schemas/SharedVehicleRecordCorrection"
           }
         },
         "required": [
@@ -28423,6 +30540,16 @@
           "confirmed": {
             "type": "boolean",
             "const": true
+          },
+          "odometerSnapshot": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshot"
+          },
+          "odometerSnapshotV2": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshotV2"
+          },
+          "recordRevision": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "required": [
@@ -28471,6 +30598,9 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+          },
+          "audit": {
+            "$ref": "#/components/schemas/SharedVehicleRecordAudit"
           }
         },
         "required": [
@@ -28522,6 +30652,12 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+          },
+          "odometerSnapshot": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshot"
+          },
+          "odometerSnapshotV2": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshotV2"
           }
         },
         "required": [
@@ -29666,5 +31802,19 @@
         }
       }
     }
+  },
+  "x-cop-mobility-invitation-notifications": {
+    "contractVersion": "cop-mobility-invitation-notification-v1",
+    "transport": "APNs alert via CSM Messaging",
+    "type": "system.account",
+    "deepLink": {
+      "type": "string",
+      "pattern": "^csm://mobility/invitations/v1/[0-9a-fA-F-]{36}/(vehicle|group)/[0-9a-fA-F-]{36}$"
+    },
+    "interaction": "open_and_verify_only",
+    "recipientBinding": "registered_verified_account_at_creation",
+    "delivery": "durable_intake_best_effort_apns",
+    "lateRegistration": "inbox_only_no_automatic_push",
+    "privacy": "fixed generic text; no names, email, GPS, tokens or ciphertext"
   }
 }

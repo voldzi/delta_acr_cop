@@ -23,4 +23,20 @@ describe("actual signed OIDC shared mobility HTTP",()=>{
  const gps=await call("PUT",`/api/v1/private-dispatch/v1/shares/${randomUUID()}/points`,a,{lat:50,lon:14,deviceId:randomUUID(),sequence:1});expect(gps.statusCode).toBe(400);expect(gps.json().error.correlationId).toBeTruthy();expect(gps.body).not.toContain('"lat"');
  }finally{await app.close()}});
  it("returns 503 on unavailable storage, never creates a transient fallback",async()=>{const store=new MemoryMobilityStore();const app=buildServer({mobilityStore:store,sharedMobilityEnabled:true,privateDispatchEnabled:false});await app.ready();store.transact=async()=>{throw Error("synthetic dependency unavailable")};try{const r=await app.inject({url:"/api/v1/mobility/v1/account",headers:{authorization:"Bearer "+token("a")}});expect(r.statusCode).toBe(503);expect(r.body).not.toContain("synthetic dependency")}finally{await app.close()}});
+ it("separates vehicle capability availability from lease outage, and readiness fails closed",async()=>{
+  class FlakyStore extends MemoryMobilityStore { available=true; override dispatchIsAvailable(){return this.available;} }
+  const store=new FlakyStore();const app=buildServer({mobilityStore:store,sharedMobilityEnabled:true,privateDispatchEnabled:true});await app.ready();store.available=false;
+  const headers={authorization:"Bearer "+token("a")};try{
+   const caps=await app.inject({url:"/api/v1/mobility/v1/capabilities",headers});expect(caps.statusCode).toBe(200);expect(caps.json().serviceAvailability).toMatchObject({sharedVehicles:"ready",dispatch:"unavailable"});
+   expect((await app.inject({url:"/api/v1/mobility/v1/account",headers})).statusCode).toBe(200);
+   expect((await app.inject({url:"/api/v1/shared-vehicles/v1/vehicles",headers})).statusCode).toBe(200);
+   const privateResult=await app.inject({url:"/api/v1/private-dispatch/v1/groups",headers});expect(privateResult.statusCode).toBe(503);expect(privateResult.json().error.code).toBe("DISPATCH_UNAVAILABLE");
+   expect((await app.inject({url:"/health/live"})).statusCode).toBe(200);expect((await app.inject({url:"/health/ready"})).statusCode).toBe(503);
+   const deps=(await app.inject({url:"/health/dependencies"})).json();expect(deps.status).toBe("degraded");expect(deps.dependencies).toContainEqual(expect.objectContaining({name:"private-dispatch",status:"unavailable"}));
+   store.available=true;expect((await app.inject({url:"/health/ready"})).statusCode).toBe(200);
+   const unverified=await app.inject({url:"/api/v1/mobility/v1/invitations",headers:{authorization:"Bearer "+token("a",{email_verified:false})}});expect(unverified.statusCode).toBe(403);expect(unverified.json().error.code).toBe("EMAIL_VERIFICATION_REQUIRED");
+   store.transact=async()=>{throw Error("synthetic outage")};const down=await app.inject({url:"/api/v1/mobility/v1/capabilities",headers});expect(down.statusCode).toBe(200);expect(down.json().serviceAvailability).toMatchObject({sharedVehicles:"unavailable",dispatch:"unavailable"});expect(down.body).not.toContain("synthetic outage");
+  }finally{await app.close()}
+ });
+
 });

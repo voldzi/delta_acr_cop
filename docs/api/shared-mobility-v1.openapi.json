@@ -4372,6 +4372,117 @@
             "enum": [
               "verified_account_inbox"
             ]
+          },
+          "serviceAvailability": {
+            "$ref": "#/components/schemas/MobilityServiceAvailability",
+            "description": "Optional independent current service availability. Enabled flags indicate configuration, not readiness. Missing field does not prove readiness."
+          },
+          "recordDetailsVersions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            }
+          },
+          "recordEnergyUnits": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "liters",
+                "kWh"
+              ]
+            }
+          },
+          "supportedRefuelingFuelTypes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "natural95",
+                "natural98",
+                "natural100",
+                "diesel",
+                "diesel plus",
+                "lpg",
+                "bioEthanol"
+              ]
+            }
+          },
+          "odometerSnapshotVersions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "enum": [
+                1,
+                2
+              ]
+            }
+          },
+          "rideDetailsVersions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            }
+          },
+          "initialOdometerSupported": {
+            "type": "boolean"
+          },
+          "rideInsertPolicy": {
+            "type": "string",
+            "enum": [
+              "append_only_membership_cas"
+            ]
+          },
+          "sharedRoutingProfileVersions": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            },
+            "uniqueItems": true
+          },
+          "ownerBindingVersions": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            },
+            "uniqueItems": true
+          },
+          "recordAuditVersions": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            },
+            "uniqueItems": true
+          },
+          "activeCareReminderVersions": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            },
+            "uniqueItems": true
           }
         },
         "required": [
@@ -4498,6 +4609,9 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 32
+          },
+          "routingProfile": {
+            "$ref": "#/components/schemas/SharedVehicleRoutingProfile"
           }
         },
         "required": [
@@ -4550,6 +4664,18 @@
           },
           "deleted": {
             "type": "boolean"
+          },
+          "odometerSnapshot": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshot"
+          },
+          "odometerSnapshotV2": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshotV2"
+          },
+          "ownerBinding": {
+            "$ref": "#/components/schemas/SharedVehicleOwnerBinding"
+          },
+          "activeCareReminders": {
+            "$ref": "#/components/schemas/SharedVehicleActiveCareReminders"
           }
         },
         "required": [
@@ -4603,6 +4729,9 @@
           },
           "details": {
             "$ref": "#/components/schemas/SharedVehicleDetails"
+          },
+          "ownerBinding": {
+            "$ref": "#/components/schemas/SharedVehicleOwnerBindingInput"
           }
         },
         "required": [
@@ -4630,6 +4759,9 @@
           },
           "details": {
             "$ref": "#/components/schemas/SharedVehicleDetails"
+          },
+          "ownerBinding": {
+            "$ref": "#/components/schemas/SharedVehicleOwnerBindingInput"
           }
         },
         "required": [
@@ -4854,6 +4986,10 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 500
+              },
+              "initial": {
+                "type": "boolean",
+                "const": true
               }
             },
             "required": [
@@ -4885,6 +5021,9 @@
                 "enum": [
                   "work"
                 ]
+              },
+              "details": {
+                "$ref": "#/components/schemas/SharedVehicleRideDetails"
               }
             },
             "required": [
@@ -4947,6 +5086,9 @@
               },
               "amount": {
                 "$ref": "#/components/schemas/SharedVehicleMoney"
+              },
+              "details": {
+                "$ref": "#/components/schemas/SharedVehicleEnergyDetails"
               }
             },
             "required": [
@@ -4976,6 +5118,9 @@
               },
               "amount": {
                 "$ref": "#/components/schemas/SharedVehicleMoney"
+              },
+              "details": {
+                "$ref": "#/components/schemas/SharedVehicleServiceDetails"
               }
             },
             "required": [
@@ -5113,6 +5258,9 @@
           },
           "data": {
             "$ref": "#/components/schemas/SharedVehicleRecordData"
+          },
+          "correction": {
+            "$ref": "#/components/schemas/SharedVehicleRecordCorrection"
           }
         },
         "required": [
@@ -5166,6 +5314,16 @@
           "confirmed": {
             "type": "boolean",
             "const": true
+          },
+          "odometerSnapshot": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshot"
+          },
+          "odometerSnapshotV2": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshotV2"
+          },
+          "recordRevision": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "required": [
@@ -5214,6 +5372,9 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+          },
+          "audit": {
+            "$ref": "#/components/schemas/SharedVehicleRecordAudit"
           }
         },
         "required": [
@@ -5265,6 +5426,12 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+          },
+          "odometerSnapshot": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshot"
+          },
+          "odometerSnapshotV2": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSnapshotV2"
           }
         },
         "required": [
@@ -6407,7 +6574,769 @@
             "maxLength": 512
           }
         }
+      },
+      "MobilityServiceAvailability": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sharedVehicles",
+          "dispatch",
+          "checkedAt"
+        ],
+        "properties": {
+          "sharedVehicles": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "unavailable",
+              "disabled"
+            ]
+          },
+          "dispatch": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "recovering",
+              "unavailable",
+              "disabled"
+            ]
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SharedVehicleStationSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "provider": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "address": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": []
+      },
+      "SharedVehicleRefuelingDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fuelType": {
+            "type": "string",
+            "enum": [
+              "natural95",
+              "natural98",
+              "natural100",
+              "diesel",
+              "diesel plus",
+              "lpg",
+              "bioEthanol",
+              "cng",
+              "hydrogen"
+            ]
+          },
+          "fullTank": {
+            "type": "boolean"
+          },
+          "quantityBeforeRefueling": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "station": {
+            "$ref": "#/components/schemas/SharedVehicleStationSnapshot"
+          }
+        },
+        "required": []
+      },
+      "SharedVehicleChargingDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "home",
+              "publicAC",
+              "publicDC",
+              "workplace",
+              "other"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "locationName": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "location": {
+            "$ref": "#/components/schemas/SharedVehicleStationSnapshot"
+          },
+          "batteryPercentBefore": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "batteryPercentAfter": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          }
+        },
+        "required": []
+      },
+      "SharedVehicleEnergyDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "refueling",
+              "charging"
+            ]
+          },
+          "odometerKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "refueling": {
+            "$ref": "#/components/schemas/SharedVehicleRefuelingDetails"
+          },
+          "charging": {
+            "$ref": "#/components/schemas/SharedVehicleChargingDetails"
+          }
+        },
+        "required": [
+          "version",
+          "kind"
+        ]
+      },
+      "SharedVehicleServiceItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1
+          },
+          "categoryId": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "subcategoryId": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "amount": {
+            "$ref": "#/components/schemas/SharedVehicleMoney"
+          }
+        },
+        "required": [
+          "itemId",
+          "title",
+          "amount"
+        ]
+      },
+      "SharedVehicleServiceDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "categoryId": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "subcategoryId": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/SharedVehicleServiceItem"
+            }
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "SharedVehicleOdometerSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "recordKind": {
+            "type": "string",
+            "enum": [
+              "odometer",
+              "energy",
+              "service"
+            ]
+          }
+        },
+        "required": [
+          "recordId",
+          "recordRevision",
+          "recordKind"
+        ]
+      },
+      "SharedVehicleOdometerSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "known",
+              "reviewRequired"
+            ]
+          },
+          "dataRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "valueKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SharedVehicleOdometerSource"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "no_observations",
+              "conflicting_observations",
+              "decreasing_observation",
+              "invalid_observation",
+              "invalid_correction",
+              "future_observation"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "status",
+          "dataRevision"
+        ]
+      },
+      "SharedVehicleRideDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "tripId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endOdometerKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          }
+        },
+        "required": [
+          "version",
+          "tripId",
+          "startedAt",
+          "endedAt"
+        ]
+      },
+      "SharedVehicleMileageSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "recordKind": {
+            "type": "string",
+            "enum": [
+              "odometer",
+              "energy",
+              "service",
+              "ride_summary"
+            ]
+          }
+        },
+        "required": [
+          "recordId",
+          "recordRevision",
+          "recordKind"
+        ]
+      },
+      "SharedVehicleOdometerSnapshotV2": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 2
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "known",
+              "estimated",
+              "reviewRequired"
+            ]
+          },
+          "dataRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "valueKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SharedVehicleMileageSource"
+          },
+          "basisKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "basisObservedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "basisSource": {
+            "$ref": "#/components/schemas/SharedVehicleMileageSource"
+          },
+          "includedRideCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "unconfirmedDistanceKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "no_observations",
+              "conflicting_observations",
+              "decreasing_observation",
+              "invalid_observation",
+              "invalid_correction",
+              "future_observation",
+              "overlapping_rides",
+              "anchor_overlap",
+              "legacy_ride_interval_unknown",
+              "duplicate_trip",
+              "distance_overflow",
+              "invalid_ride_interval"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "status",
+          "dataRevision"
+        ]
+      },
+      "SharedVehicleMappedTrailer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "attached",
+          "heightM",
+          "widthM",
+          "lengthM",
+          "loadedWeightKg"
+        ],
+        "properties": {
+          "attached": {
+            "const": true,
+            "type": "boolean"
+          },
+          "heightM": {
+            "type": "number",
+            "maximum": 5,
+            "minimum": 0
+          },
+          "widthM": {
+            "type": "number",
+            "maximum": 3,
+            "minimum": 0
+          },
+          "lengthM": {
+            "type": "number",
+            "maximum": 25,
+            "minimum": 0
+          },
+          "loadedWeightKg": {
+            "type": "number",
+            "maximum": 60000,
+            "minimum": 0
+          }
+        }
+      },
+      "SharedVehicleMappedDimensions": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "heightM",
+          "widthM",
+          "lengthM",
+          "loadedWeightKg"
+        ],
+        "properties": {
+          "heightM": {
+            "type": "number",
+            "maximum": 5,
+            "minimum": 0
+          },
+          "widthM": {
+            "type": "number",
+            "maximum": 3,
+            "minimum": 0
+          },
+          "lengthM": {
+            "type": "number",
+            "maximum": 25,
+            "minimum": 0
+          },
+          "loadedWeightKg": {
+            "type": "number",
+            "maximum": 60000,
+            "minimum": 0
+          },
+          "axleLoadKg": {
+            "type": "number",
+            "maximum": 40000,
+            "minimum": 0
+          },
+          "axleCount": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 20
+          },
+          "trailer": {
+            "$ref": "#/components/schemas/SharedVehicleMappedTrailer"
+          }
+        }
+      },
+      "SharedVehicleMappedProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "intent",
+          "coverageAcknowledged"
+        ],
+        "properties": {
+          "version": {
+            "const": "sim-mapped-road-profile-v1",
+            "type": "string"
+          },
+          "intent": {
+            "enum": [
+              "car",
+              "commercial_truck",
+              "car_with_trailer",
+              "road_legal_4x4"
+            ],
+            "type": "string"
+          },
+          "coverageAcknowledged": {
+            "const": "mapped_restrictions_incomplete",
+            "type": "string"
+          },
+          "vehicle": {
+            "$ref": "#/components/schemas/SharedVehicleMappedDimensions"
+          },
+          "driverDeclaredAuthorization": {
+            "type": "boolean",
+            "const": false
+          }
+        }
+      },
+      "SharedVehicleRoutingProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "mappedProfile": {
+            "$ref": "#/components/schemas/SharedVehicleMappedProfile"
+          },
+          "powertrain": {
+            "type": "string",
+            "enum": [
+              "combustion",
+              "electric",
+              "plugInHybrid"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "mappedProfile",
+          "powertrain"
+        ]
+      },
+      "SharedVehicleOwnerBindingInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "localVehicleId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "version",
+          "localVehicleId"
+        ]
+      },
+      "SharedVehicleOwnerBinding": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "localVehicleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ownerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "version",
+          "localVehicleId",
+          "ownerAccountId"
+        ]
+      },
+      "SharedVehicleRecordCorrection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "version",
+          "recordId",
+          "recordRevision",
+          "reason"
+        ]
+      },
+      "SharedVehicleRecordAudit": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "correct",
+              "void"
+            ]
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "previousRecordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "previousRecordRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "version",
+          "action",
+          "operationId"
+        ]
+      },
+      "SharedVehicleActiveCareItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dueOdometerKm": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$"
+          }
+        },
+        "required": [
+          "recordId",
+          "recordRevision",
+          "title"
+        ]
+      },
+      "SharedVehicleActiveCareReminders": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "dataRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "unavailable"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "$ref": "#/components/schemas/SharedVehicleActiveCareItem"
+            }
+          }
+        },
+        "required": [
+          "version",
+          "dataRevision",
+          "state",
+          "items"
+        ]
       }
     }
+  },
+  "x-cop-mobility-invitation-notifications": {
+    "contractVersion": "cop-mobility-invitation-notification-v1",
+    "transport": "APNs alert via CSM Messaging",
+    "type": "system.account",
+    "deepLink": {
+      "type": "string",
+      "pattern": "^csm://mobility/invitations/v1/[0-9a-fA-F-]{36}/(vehicle|group)/[0-9a-fA-F-]{36}$"
+    },
+    "interaction": "open_and_verify_only",
+    "recipientBinding": "registered_verified_account_at_creation",
+    "delivery": "durable_intake_best_effort_apns",
+    "lateRegistration": "inbox_only_no_automatic_push",
+    "privacy": "fixed generic text; no names, email, GPS, tokens or ciphertext"
   }
 }

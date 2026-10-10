@@ -13,7 +13,8 @@ const inputs = [
   "docker-compose.yml",
   "Dockerfile.web",
   "AGENTS.md",
-  "CLAUDE.md"
+  "CLAUDE.md",
+  "apps/cop-web/public/vcode-analytics-tiktok.js"
 ];
 function check(change?: (root: string) => void) {
   const root = mkdtempSync(join(tmpdir(), "cop-analytics-release-"));

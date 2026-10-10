@@ -5,8 +5,12 @@ import { AiEvidencePanel } from "../components/AiEvidencePanel";
 import { AiMarkdownOutput } from "../components/AiMarkdownOutput";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { aiResponseSummary, aiStatusLabel } from "./aiResponse";
-import { fetchAiChatCredentialStatus, removeAiChatCredential, saveAiChatCredential,
-  type AiChatCredentialStatus } from "@cop/core/cop-data";
+import {
+  fetchAiChatCredentialStatus,
+  removeAiChatCredential,
+  saveAiChatCredential,
+  type AiChatCredentialStatus
+} from "@cop/core/cop-data";
 
 export default function AiAgentDialog({
   apiBase = "",
@@ -55,12 +59,16 @@ export default function AiAgentDialog({
   React.useEffect(() => {
     if (!authToken) return;
     let active = true;
-    void fetchAiChatCredentialStatus(apiBase, authToken).then((result) => {
-      if (active) setCredential(result);
-    }).catch(() => {
-      if (active) setCredentialError("Stav vlastního AI účtu není dostupný.");
-    });
-    return () => { active = false; };
+    void fetchAiChatCredentialStatus(apiBase, authToken)
+      .then((result) => {
+        if (active) setCredential(result);
+      })
+      .catch(() => {
+        if (active) setCredentialError("Stav vlastního AI účtu není dostupný.");
+      });
+    return () => {
+      active = false;
+    };
   }, [apiBase, authToken]);
   const modal = useModalFocus<HTMLElement>(onClose);
   const answer = response ? aiResponseSummary(response) : "";
@@ -135,20 +143,35 @@ export default function AiAgentDialog({
             <details className="ai-technical-details">
               <summary>Vlastní OpenAI účet {credential.configured ? "· klíč uložen" : "· bez klíče"}</summary>
               <p>Klíč se uloží šifrovaně v SIM AI Routeru. COP jej nevrací ani neukládá do profilu.</p>
-              <p>{credential.routingEnabled
-                ? "Dotaz se zpracuje externě v OpenAI Global a účtuje se vašemu projektu. Automatický soukromý kontext COP se nepřipojuje."
-                : "Uložení klíče samo o sobě zatím nemění směrování chatu."}</p>
+              <p>
+                {credential.routingEnabled
+                  ? "Dotaz se zpracuje externě v OpenAI Global a účtuje se vašemu projektu. Automatický soukromý kontext COP se nepřipojuje."
+                  : "Uložení klíče samo o sobě zatím nemění směrování chatu."}
+              </p>
               <label>
                 <span>API klíč OpenAI</span>
-                <input ref={credentialInput} type="password" autoComplete="off" spellCheck={false}
-                  aria-label="API klíč OpenAI" disabled={credentialWorking} />
+                <input
+                  ref={credentialInput}
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-label="API klíč OpenAI"
+                  disabled={credentialWorking}
+                />
               </label>
-              <button type="button" disabled={credentialWorking} onClick={() => void saveCredential()}>Uložit klíč</button>
-              {credential.configured ? <button type="button" disabled={credentialWorking}
-                onClick={() => void removeCredential()}>Odebrat klíč</button> : null}
+              <button type="button" disabled={credentialWorking} onClick={() => void saveCredential()}>
+                Uložit klíč
+              </button>
+              {credential.configured ? (
+                <button type="button" disabled={credentialWorking} onClick={() => void removeCredential()}>
+                  Odebrat klíč
+                </button>
+              ) : null}
               {credentialError ? <p role="alert">{credentialError}</p> : null}
             </details>
-          ) : credentialError ? <p role="alert">{credentialError}</p> : null}
+          ) : credentialError ? (
+            <p role="alert">{credentialError}</p>
+          ) : null}
           <label className="ai-agent-question">
             <span>Dotaz pro COP AI agenta</span>
             <textarea
@@ -166,38 +189,46 @@ export default function AiAgentDialog({
             />
           </label>
 
-          {credential?.routingEnabled ? <p>Chat používá váš klíč OpenAI. Poskytovatele, model a účtování určuje AI Router.</p> :
-          <div className="dialog-tabs ai-agent-model-tabs" role="group" aria-label="Způsob odpovědi">
-            <button
-              className={modelPreference === "auto" ? "active" : ""}
-              disabled={working}
-              onClick={() => onModelPreferenceChange("auto")}
-              type="button"
-            >
-              Automaticky
-            </button>
-            <button
-              className={modelPreference === "fast" ? "active" : ""}
-              disabled={working}
-              onClick={() => onModelPreferenceChange("fast")}
-              type="button"
-            >
-              Stručně
-            </button>
-            <button
-              className={modelPreference === "reasoning" ? "active" : ""}
-              disabled={working}
-              onClick={() => onModelPreferenceChange("reasoning")}
-              type="button"
-            >
-              Důkladně
-            </button>
-          </div>}
+          {credential?.routingEnabled ? (
+            <p>Chat používá váš klíč OpenAI. Poskytovatele, model a účtování určuje AI Router.</p>
+          ) : (
+            <div className="dialog-tabs ai-agent-model-tabs" role="group" aria-label="Způsob odpovědi">
+              <button
+                className={modelPreference === "auto" ? "active" : ""}
+                disabled={working}
+                onClick={() => onModelPreferenceChange("auto")}
+                type="button"
+              >
+                Automaticky
+              </button>
+              <button
+                className={modelPreference === "fast" ? "active" : ""}
+                disabled={working}
+                onClick={() => onModelPreferenceChange("fast")}
+                type="button"
+              >
+                Stručně
+              </button>
+              <button
+                className={modelPreference === "reasoning" ? "active" : ""}
+                disabled={working}
+                onClick={() => onModelPreferenceChange("reasoning")}
+                type="button"
+              >
+                Důkladně
+              </button>
+            </div>
+          )}
 
           <section className="ai-situation-empty compact" aria-label="Cvičný dotaz přes AI Router">
             <strong>Cvičení přes AI Router</strong>
             <p>Použijí se jen pevné fiktivní údaje o povodni. Vaše otázka ani obsah chatu se neodesílají.</p>
-            <button className="secondary-dialog-action" disabled={routerPilotWorking} onClick={onRunRouterPilot} type="button">
+            <button
+              className="secondary-dialog-action"
+              disabled={routerPilotWorking}
+              onClick={onRunRouterPilot}
+              type="button"
+            >
               {routerPilotWorking ? <Loader2 className="spin" size={17} /> : <Sparkles size={17} />}
               {routerPilotWorking ? "Připravuji cvičnou odpověď" : "Spustit cvičný dotaz"}
             </button>

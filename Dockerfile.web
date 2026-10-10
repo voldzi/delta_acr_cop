@@ -61,10 +61,12 @@ ENV NODE_OPTIONS=--max-old-space-size=768
 RUN pnpm check:analytics && pnpm --filter @cop/cop-web... build
 
 FROM node:24-alpine AS runtime
-WORKDIR /app
-RUN corepack enable
-COPY --from=build /app ./
+WORKDIR /app/apps/cop-web
+COPY --from=build --chown=node:node /app/apps/cop-web/dist ./dist
+COPY --from=build --chown=node:node /app/apps/cop-web/server.mjs ./server.mjs
+ENV NODE_ENV=production
 ENV COP_API_BASE_URL=http://cop-api:4310
 ENV COP_WEB_PORT=4311
 EXPOSE 4311
-CMD ["pnpm", "--filter", "@cop/cop-web", "preview"]
+USER node
+CMD ["node", "server.mjs"]

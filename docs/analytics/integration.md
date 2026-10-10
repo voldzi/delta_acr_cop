@@ -210,3 +210,111 @@ in the private journal, recreates only cop-web with no build/dependency restart,
 and verifies no tracker/collector request. API and other integrations stay intact.
 The approval/activation section supersedes earlier pending/default-off statuses
 in this historical deployment chronology.
+
+## Prepared v2 migration —2026-10-04 (not deployed)
+
+Owner approval of the exact common CS/EN replacement and activation was verified
+in VCode user turn01a10806-5f92-7102-9cb5-38d11958de66; recorda56b160, text6dc4dd3.
+This section describes an isolated prepared branch, not the current production
+bridge. Production remains on v1 pending the coordinator's release slot.
+
+- Domain `cop.zeleznalady.cz`, exact allowed path `/demo/flood-central-bohemia`.
+- Same-origin tracker `/analytics/v2/tracker.js`, collector `/analytics/v2/events`.
+- `vcode-public-v2`, `captureSources=true`, `captureReferrer=false`,
+  `allowedEvents=[]`, both automatic flagsfalse, omit analytics credentials,
+  no-referrer network policy, discard offline. Original path/notice/session
+  exclusions remain; no URL/query/fragment/title/content/identity accompanies a
+  metric. Only shared runtime fixed service classification determines source.
+- Actual app-owned public links are `/` and the two local privacy supplements;
+  there is no AppStore/contact/external link in this one approved demo. Therefore
+  no click handler or fabricated outbound event was introduced. Generated map
+  attribution and private application links are excluded.
+- Shared runtime is not copied. Exact source bytes independently verified to
+  `sha384-4mn0sN5UeFuzSjaXlbulwbJz7N38PPOovouC9Xp3OHD0r94YKgx8B2RAk/nK6mg0`.
+  The build guard verifies actual bytes through
+  `COP_ANALYTICS_RUNTIME_VERIFICATION_PATH` for local prebuilt releases, or a
+  bounded GET of the existing same-origin production proxy before enabled builds.
+  This verification never posts a visitor event. Previous v1 artifact retained.
+- Session exclusion additionally checks only stored session presence and the
+  existing BFF `/api/v1/auth/session` authenticated flag. No token/profile is sent
+  to analytics. Unknown status/outage blocks collection. Authenticated state is
+  checked before runtime loading and after it, with a final navigation/signal
+  check after asynchronous session resolution.
+- Exact approved common paragraph replaced in notice component, both static
+  CS/EN supplements and privacy-review source; site-specific intro and remaining
+  retention/DNT/GPC paragraphs preserved. AGENTS and CLAUDE aligned.
+
+Prepared bridge/release guards passed35tests before the final asynchronous race
+regression; final result follows in the handoff. Local web typecheck/build passed,
+with the existing large Cesium chunk warning. No v2 production image, central
+registry or edge changes and no synthetic visitor/event posts were performed.
+Release must use the current production public build arguments with analytics
+true and the existing websiteID; stage a prebuilt web-only artifact and preserve
+API/SIM and all runtime environment/network/ports. The coordinator owns the central
+registry capability update and isolated test-website ingest acceptance.
+
+Final prepared v2 acceptance:36bridge/release-guard tests passed, scoped ESLint,
+skeleton and local web typecheck/build passed. The actual shared runtime source
+verification guard passed with collection enabled only as a build check; no
+visitor requests were sent. The local default-off build is validation output,
+not the production-enabled artifact. No v2 deployment has been performed.
+
+## Local deploy-ready image —2026-10-04
+
+Exact frontend revision `a607666880e6e7f07069db538573391f4d80a404` was compiled
+locally with current production public build args (hybrid auth/BFF enabled,
+analytics true, existing website ID). Shared runtime proxy GET returned200 and
+its2002bytes matched the approved SRI. No runtime code was copied and no collector
+POST was made. API, SIM, community deployment and registry remain unchanged.
+
+Image: `delta-acr-cop-web:analytics-v2-a607666`, linux/amd64, Node24.21.0.
+[Verified manifest](prebuilt-a607666.manifest.json) records archive SHA256,
+platform/config/index digests, source, artifact file digests, public configuration
+hash, privacy scope and actual acceptance. Docker's local index ID and the
+platform/config digest can differ after loading a single-platform archive;
+verify the archived config/labels and platform rather than assuming an index ID.
+
+Local transport archive:
+`/private/tmp/cop-analytics-v2-a607666/cop-web-analytics-v2-a607666.tar`
+(68829184bytes). Sidecars manifest.json/manifest.sha256/archive.sha256 and detailed
+logs are in the same protected folder. Store this until the allocated release slot.
+The packaging uses official pinned Node of the same production version and the
+byte-identical server.mjs; it runs node directly instead of the pnpm launcher.
+No runtime dependencies are required by this server beyond Node built-ins.
+
+Isolated local image acceptance passed with networknone and no published ports:
+451artifact files verified, Node version/AMD64 checked, health/demo/entry asset
+and both privacy supplements HTTP200, invalid Host403. Initial failures were in
+the helper's regular expression and the fetch client's Host behavior; corrected
+HTTP helper tests passed without application changes. The test container was
+removed. No production/browser/isolated collector activation acceptance is claimed.
+
+Readiness: ready for coordinator deploy slot; not deployed. Next import the exact
+archive, verify its digest/platform/labels, retain the current web rollback image
+and only recreate cop-web with unchanged existing runtime env/network/ports.
+Central source capability/registry and isolated test-website acceptance remain
+coordinator-owned; do not manufacture visits in actual statistics.
+
+## TikTok runtime maintenance — 2026-10-05
+
+The owner approved adding TikTok to the already reviewed general source categories.
+Only a service label `tiktok` is sent; full referrer, video/profile, query and
+fragment are never submitted. Exact tiktok.com and its subdomains are recognized;
+suffix lookalikes are excluded. Existing anonymous-session, DNT/GPC/offline,
+exact public demo path and empty event allowlist stay in place. CS/EN notices
+already describe normalized general sources and are unchanged.
+
+The bridge now loads the byte-exact reviewed VCode artifact as the public static
+`/vcode-analytics-tiktok.js` with SRI
+`sha384-JpAOJexapVVtAZAFpz3dwp4AHY8PLbao7cLk7Mg7VFIDy2g0/bOUl0zb/HO1qbX5`.
+Contract remains `vcode-public-v2`, collector remains `/analytics/v2/events`.
+The compatibility runtime/central endpoint is unchanged. The new static runtime
+bypasses service-worker caching, retries and replay; the release guard verifies
+its bytes and the bypass unconditionally.
+
+Prepared from actual production frontend revision 168471d in isolated branch
+`codex/cop-analytics-tiktok`; no unfinished API/route work is included. Adoption
+into subsequent development should cherry-pick this narrow maintenance commit
+and retain the existing enabled production configuration. Chroma was unreachable;
+selected source/runbooks were inspected directly. Acceptance uses isolated
+fixtures only and does not add synthetic pageviews to the production website.

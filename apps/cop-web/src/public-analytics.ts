@@ -1,11 +1,12 @@
-/** Public synthetic-demo pageviews only; no application/context data. */
+/** Exact public synthetic-demo pageviews and normalized entry source; no application/context data. */
+import { authSessionStorageKey } from "./auth";
 export const publicAnalyticsPaths = ["/demo/flood-central-bohemia"] as const;
-export const analyticsRuntimePath = "/analytics/v1/tracker.js";
-export const analyticsCollectorPath = "/analytics/v1/events";
+export const analyticsRuntimePath = "/vcode-analytics-tiktok.js";
+export const analyticsCollectorPath = "/analytics/v2/events";
 
 type Client = { pageview(path: string): void };
 type Runtime = {
-  contractVersion: "vcode-public-v1";
+  contractVersion: "vcode-public-v2";
   create(config: {
     websiteId: string;
     collectorPath: string;
@@ -15,6 +16,7 @@ type Runtime = {
     autoClick: false;
     captureTitle: false;
     captureReferrer: false;
+    captureSources: true;
     credentials: "omit";
     offline: "discard";
   }): Client;
@@ -32,6 +34,7 @@ export type PublicAnalyticsEnvironment = {
   hostname(): string;
   pathname(): string;
   permitted(): boolean;
+  anonymous(): Promise<boolean>;
   load(): Promise<Runtime | undefined>;
 };
 
@@ -57,17 +60,29 @@ export function createPublicAnalyticsBridge(
       return;
     }
     if (previous === path) return;
-    previous = path;
     const requestGeneration = ++generation;
     try {
+      if (
+        !(await environment.anonymous()) ||
+        generation !== requestGeneration ||
+        environment.pathname() !== path ||
+        !environment.permitted()
+      )
+        return;
+      previous = path;
       loading ??= environment.load();
       const runtime = await loading;
       if (
         generation !== requestGeneration ||
         environment.pathname() !== path ||
         !environment.permitted() ||
-        runtime?.contractVersion !== "vcode-public-v1" ||
-        typeof runtime?.create !== "function"
+        runtime?.contractVersion !== "vcode-public-v2" ||
+        typeof runtime?.create !== "function" ||
+        !(await environment.anonymous()) ||
+        generation !== requestGeneration ||
+        environment.pathname() !== path ||
+        environment.hostname() !== "cop.zeleznalady.cz" ||
+        !environment.permitted()
       )
         return;
       client ??= runtime.create({
@@ -79,6 +94,7 @@ export function createPublicAnalyticsBridge(
         autoClick: false,
         captureTitle: false,
         captureReferrer: false,
+        captureSources: true,
         credentials: "omit",
         offline: "discard"
       });
@@ -106,12 +122,33 @@ export function observePublicDemoPageview(): void {
           windowDnt: (window as Window & { doNotTrack?: string }).doNotTrack,
           gpc: (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl
         }),
+      anonymous: async () =>
+        permitsAnonymousPublicAnalytics(
+          {
+            storedSession: hasStoredAnalyticsSession(),
+            bffEnabled: import.meta.env.VITE_COP_BFF_SESSION_ENABLED === "true"
+          },
+          async () => {
+            const response = await fetch("/api/v1/auth/session", {
+              credentials: "same-origin",
+              redirect: "error",
+              cache: "no-store"
+            });
+            if (response.status === 401) return { status: 401 };
+            const body: unknown = await response.json();
+            return {
+              status: response.status,
+              authenticated:
+                typeof body === "object" && body !== null && "authenticated" in body ? body.authenticated : undefined
+            };
+          }
+        ),
       load: () =>
         new Promise((resolve) => {
           const script = document.createElement("script");
           script.src = analyticsRuntimePath;
           script.async = true;
-          script.integrity = "sha384-lhej7Cxih2xEDtoPqh2B7mI4JilbkjF9HtVj+agiDEv8P6XAO98U6FJUCNpIVsMN";
+          script.integrity = "sha384-JpAOJexapVVtAZAFpz3dwp4AHY8PLbao7cLk7Mg7VFIDy2g0/bOUl0zb/HO1qbX5";
           script.crossOrigin = "anonymous";
           script.referrerPolicy = "no-referrer";
           script.onload = () => resolve((window as Window & { vcodePublicAnalytics?: Runtime }).vcodePublicAnalytics);
@@ -121,4 +158,29 @@ export function observePublicDemoPageview(): void {
     }
   );
   void observe();
+}
+
+/** Read only session presence, never tokens or identity; unknown storage blocks collection. */
+function hasStoredAnalyticsSession(): boolean {
+  try {
+    return Boolean(
+      window.localStorage.getItem(authSessionStorageKey) || window.sessionStorage.getItem(authSessionStorageKey)
+    );
+  } catch {
+    return true;
+  }
+}
+
+export async function permitsAnonymousPublicAnalytics(
+  settings: { storedSession: boolean; bffEnabled: boolean },
+  checkSession: () => Promise<{ status: number; authenticated?: unknown }>
+): Promise<boolean> {
+  if (settings.storedSession) return false;
+  if (!settings.bffEnabled) return true;
+  try {
+    const session = await checkSession();
+    return session.status === 401 || (session.status === 200 && session.authenticated === false);
+  } catch {
+    return false;
+  }
 }

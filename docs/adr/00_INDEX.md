@@ -44,3 +44,25 @@
 
 - [0037: Server-owned community report presence](0037_SERVER_OWNED_COMMUNITY_REPORT_PRESENCE.md).
 - [0038: COP operational storage boundary on X5](0038_COP_X5_OPERATIONAL_STORAGE_BOUNDARY.md).
+- [0040: Verified crisis notifications and separate media context](0040_VERIFIED_CRISIS_NOTIFICATIONS_AND_MEDIA_CONTEXT.md).
+
+- [0038: Dispatch lease recovery](0038_DISPATCH_LEASE_RECOVERY.md).
+
+- [0039: Durable mobility invitation alerts](0039_DURABLE_MOBILITY_INVITATION_ALERTS.md).
+
+- [0040: COP canonical self profile](0040_COP_CANONICAL_SELF_PROFILE.md).
+
+- [0041: Shared vehicle receipt details](0041_SHARED_VEHICLE_RECEIPT_DETAILS.md).
+
+- [0042: Shared vehicle odometer projection](0042_SHARED_VEHICLE_ODOMETER_PROJECTION.md).
+
+- [0043: Completed shared ride mileage](0043_COMPLETED_SHARED_RIDE_MILEAGE.md).
+
+- [0044 shared profile/audit/recovery](0044_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md)
+
+- [0045: Read-only Matrix identity lookup](0045_READ_ONLY_MATRIX_IDENTITY_LOOKUP.md).
+- [0039: Canonical publication boundary](0039_CANONICAL_PUBLICATION_BOUNDARY.md).
+
+Some ADR numbers originate from independently shipped maintenance branches.
+Use the full linked filename when referring to these decisions; existing
+published paths are preserved for integration references.

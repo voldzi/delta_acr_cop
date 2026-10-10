@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
 import type { AoiRule, AoiRuleAffiliationScope, CopAlertSeverity, CopAlertType } from "./alerts.js";
 import type { AlertAcknowledgement } from "./types.js";
@@ -5,6 +6,8 @@ import type { AlertAcknowledgement } from "./types.js";
 const { Pool } = pg;
 
 export interface UserAlertPreferences {
+  /** Explicit consent for automated safety push. Missing always means disabled. */
+  safetyNotificationsEnabled?: boolean;
   aoiRules?: AoiRule[];
   enabledTypes?: CopAlertType[];
   minimumSeverity?: CopAlertSeverity;
@@ -21,14 +24,37 @@ export interface UserProfileRecord {
   username: string;
 }
 
+/** Revision binds the canonical avatar and row version to the authenticated owner. */
+export function userAvatarRevision(subjectId: string, profile: UserProfileRecord | null): string {
+  return createHash("sha256").update(JSON.stringify([subjectId, profile?.updatedAt ?? null, userAvatar(profile)])).digest("hex");
+}
+export function userAvatar(profile: UserProfileRecord | null): string | null {
+  const operator = profile?.preferences.operatorProfile;
+  if (!operator || typeof operator !== "object" || Array.isArray(operator)) return null;
+  const value = (operator as Record<string, unknown>).avatarDataUrl;
+  return typeof value === "string" && value.length <= 250000 && /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/iu.test(value) ? value : null;
+}
+function avatarPreferences(profile: UserProfileRecord | null, avatarDataUrl: string | null): Record<string, unknown> {
+  const preferences = { ...(profile?.preferences ?? {}) };
+  const original = preferences.operatorProfile;
+  const operatorProfile = original && typeof original === "object" && !Array.isArray(original) ? { ...original } : {};
+  if (avatarDataUrl === null) delete (operatorProfile as Record<string, unknown>).avatarDataUrl;
+  else (operatorProfile as Record<string, unknown>).avatarDataUrl = avatarDataUrl;
+  return { ...preferences, operatorProfile };
+}
+
 export interface UserProfileStore {
   readonly name: string;
+  updateAvatar?(actor: Omit<UserProfileRecord, "createdAt" | "updatedAt" | "preferences" | "alertPreferences">, avatarDataUrl: string | null, expectedRevision: string): Promise<UserProfileRecord | null>;
   acknowledgeAlert(subjectId: string, acknowledgement: AlertAcknowledgement): Promise<void>;
   close(): Promise<void>;
   diagnostics?(): string | undefined;
   getAlertAcknowledgements(subjectId: string): Promise<Map<string, AlertAcknowledgement>>;
   getProfile(subjectId: string): Promise<UserProfileRecord | null>;
   init(): Promise<void>;
+  setSafetyNotificationsEnabled(subjectId: string, enabled: boolean): Promise<UserProfileRecord | null>;
+  listSafetyNotificationProfiles(afterSubjectId: string | undefined, limit: number): Promise<UserProfileRecord[]>;
+  withSafetyNotificationProfile<T>(subjectId: string, operation: (profile: UserProfileRecord | null, profileLeaseValid: () => boolean) => Promise<T>): Promise<T>;
   searchProfiles(query: string, limit?: number): Promise<UserProfileRecord[]>;
   upsertProfile(profile: Omit<UserProfileRecord, "createdAt" | "updatedAt">): Promise<UserProfileRecord>;
 }
@@ -60,6 +86,7 @@ export class InMemoryUserProfileStore implements UserProfileStore {
   readonly name: string;
   private readonly acknowledgements = new Map<string, Map<string, AlertAcknowledgement>>();
   private readonly profiles = new Map<string, UserProfileRecord>();
+  private readonly profileLocks = new Map<string, Promise<void>>();
 
   constructor(name = "memory") {
     this.name = name;
@@ -68,7 +95,56 @@ export class InMemoryUserProfileStore implements UserProfileStore {
   async init(): Promise<void> {}
 
   async getProfile(subjectId: string): Promise<UserProfileRecord | null> {
-    return this.profiles.get(subjectId) ?? null;
+    return structuredClone(this.profiles.get(subjectId) ?? null);
+  }
+
+  async setSafetyNotificationsEnabled(subjectId: string, enabled: boolean): Promise<UserProfileRecord | null> {
+    return this.withSafetyNotificationProfile(subjectId, async (profile) => {
+      if (!profile) return null;
+      const updated = {
+        ...profile,
+        alertPreferences: { ...profile.alertPreferences, safetyNotificationsEnabled: enabled },
+        updatedAt: new Date().toISOString()
+      };
+      this.profiles.set(subjectId, updated);
+      return structuredClone(updated);
+    });
+  }
+
+  async listSafetyNotificationProfiles(afterSubjectId: string | undefined, limit: number): Promise<UserProfileRecord[]> {
+    return [...this.profiles.values()]
+      .filter((profile) => profile.alertPreferences.safetyNotificationsEnabled === true
+        && (!afterSubjectId || profile.subjectId > afterSubjectId))
+      .sort((left, right) => left.subjectId < right.subjectId ? -1 : left.subjectId > right.subjectId ? 1 : 0)
+      .slice(0, boundedSafetyProfilePageSize(limit))
+      .map((profile) => structuredClone(profile));
+  }
+
+  async withSafetyNotificationProfile<T>(subjectId: string, operation: (profile: UserProfileRecord | null, profileLeaseValid: () => boolean) => Promise<T>): Promise<T> {
+    const previous = this.profileLocks.get(subjectId) ?? Promise.resolve();
+    let unlock!: () => void;
+    const released = new Promise<void>((resolve) => { unlock = resolve; });
+    const queued = previous.then(() => released);
+    this.profileLocks.set(subjectId, queued);
+    await previous;
+    let active = true;
+    try {
+      return await operation(await this.getProfile(subjectId), () => active);
+    } finally {
+      active = false;
+      unlock();
+      if (this.profileLocks.get(subjectId) === queued) this.profileLocks.delete(subjectId);
+    }
+  }
+
+  async updateAvatar(actor: Omit<UserProfileRecord, "createdAt" | "updatedAt" | "preferences" | "alertPreferences">, avatarDataUrl: string | null, expectedRevision: string): Promise<UserProfileRecord | null> {
+    const current = this.profiles.get(actor.subjectId) ?? null;
+    if (userAvatarRevision(actor.subjectId, current) !== expectedRevision) return null;
+    // No await between the comparison and map mutation: atomic in this implementation.
+    const timestamp = new Date(Math.max(Date.now(), Date.parse(current?.updatedAt ?? "") + 1 || 0)).toISOString();
+    const next = { ...actor, preferences: avatarPreferences(current, avatarDataUrl), alertPreferences: current?.alertPreferences ?? {}, createdAt: current?.createdAt ?? timestamp, updatedAt: timestamp };
+    this.profiles.set(actor.subjectId, next);
+    return next;
   }
 
   async searchProfiles(query: string, limit = 10): Promise<UserProfileRecord[]> {
@@ -88,15 +164,21 @@ export class InMemoryUserProfileStore implements UserProfileStore {
   }
 
   async upsertProfile(profile: Omit<UserProfileRecord, "createdAt" | "updatedAt">): Promise<UserProfileRecord> {
-    const existing = this.profiles.get(profile.subjectId);
-    const timestamp = new Date().toISOString();
-    const next: UserProfileRecord = {
-      ...profile,
-      createdAt: existing?.createdAt ?? timestamp,
-      updatedAt: timestamp
-    };
-    this.profiles.set(profile.subjectId, next);
-    return next;
+    return this.withSafetyNotificationProfile(profile.subjectId, async (existing) => {
+      const timestamp = new Date().toISOString();
+      const next: UserProfileRecord = {
+        ...structuredClone(profile),
+        alertPreferences: {
+          ...withoutSafetyNotificationConsent(profile.alertPreferences),
+          ...(typeof existing?.alertPreferences.safetyNotificationsEnabled === "boolean"
+            ? { safetyNotificationsEnabled: existing.alertPreferences.safetyNotificationsEnabled } : {})
+        },
+        createdAt: existing?.createdAt ?? timestamp,
+        updatedAt: timestamp
+      };
+      this.profiles.set(profile.subjectId, next);
+      return structuredClone(next);
+    });
   }
 
   async getAlertAcknowledgements(subjectId: string): Promise<Map<string, AlertAcknowledgement>> {
@@ -139,6 +221,95 @@ export class PostgresUserProfileStore implements UserProfileStore {
     return row ? profileFromRow(row) : null;
   }
 
+  async setSafetyNotificationsEnabled(subjectId: string, enabled: boolean): Promise<UserProfileRecord | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(18101201, hashtext($1))", [subjectId]);
+      const result = await client.query<UserProfileRow>(
+        `UPDATE cop_user_profiles SET
+         alert_preferences = jsonb_set(alert_preferences, '{safetyNotificationsEnabled}', $2::jsonb, true), updated_at = now()
+         WHERE subject_id = $1
+         RETURNING subject_id, username, display_name, email, preferences, alert_preferences, created_at, updated_at`,
+        [subjectId, JSON.stringify(enabled)]
+      );
+      await client.query("COMMIT");
+      const row = result.rows[0];
+      return row ? profileFromRow(row) : null;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listSafetyNotificationProfiles(afterSubjectId: string | undefined, limit: number): Promise<UserProfileRecord[]> {
+    const result = await this.pool.query<UserProfileRow>(
+      `SELECT subject_id, username, display_name, email, preferences, alert_preferences, created_at, updated_at
+       FROM cop_user_profiles
+       WHERE alert_preferences->>'safetyNotificationsEnabled' = 'true'
+         AND ($1::text IS NULL OR subject_id > $1 COLLATE "C")
+       ORDER BY subject_id COLLATE "C" LIMIT $2`,
+      [afterSubjectId ?? null, boundedSafetyProfilePageSize(limit)]
+    );
+    return result.rows.map(profileFromRow);
+  }
+
+  async withSafetyNotificationProfile<T>(subjectId: string, operation: (profile: UserProfileRecord | null, profileLeaseValid: () => boolean) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    let leaseLost = false;
+    let active = true;
+    const onError = (): void => { leaseLost = true; };
+    client.on("error", onError);
+    try {
+      await client.query("BEGIN");
+      // Shared with profile updates: a completed revocation precedes any later dispatch.
+      await client.query("SELECT pg_advisory_xact_lock(18101201, hashtext($1))", [subjectId]);
+      const result = await client.query<UserProfileRow>(
+        `SELECT subject_id, username, display_name, email, preferences, alert_preferences, created_at, updated_at
+         FROM cop_user_profiles WHERE subject_id = $1`, [subjectId]
+      );
+      const row = result.rows[0];
+      const value = await operation(row ? profileFromRow(row) : null, () => active && !leaseLost);
+      if (leaseLost) throw new Error("Safety notification profile lease connection was lost.");
+      await client.query("COMMIT");
+      return value;
+    } catch (error) {
+      if (!leaseLost) {
+        try { await client.query("ROLLBACK"); } catch { leaseLost = true; }
+      }
+      throw error;
+    } finally {
+      active = false;
+      client.off("error", onError);
+      client.release(leaseLost);
+    }
+  }
+
+  async updateAvatar(actor: Omit<UserProfileRecord, "createdAt" | "updatedAt" | "preferences" | "alertPreferences">, avatarDataUrl: string | null, expectedRevision: string): Promise<UserProfileRecord | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const inserted = await client.query(`INSERT INTO cop_user_profiles(subject_id,username,display_name,email)
+        VALUES($1,$2,$3,$4) ON CONFLICT(subject_id) DO NOTHING`, [actor.subjectId, actor.username, actor.displayName, actor.email ?? null]);
+      const selected = await client.query<UserProfileRow>(`SELECT subject_id,username,display_name,email,preferences,alert_preferences,created_at,updated_at
+        FROM cop_user_profiles WHERE subject_id=$1 FOR UPDATE`, [actor.subjectId]);
+      const current = inserted.rowCount === 1 ? null : profileFromRow(selected.rows[0]!);
+      if (userAvatarRevision(actor.subjectId, current) !== expectedRevision) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      const result = await client.query<UserProfileRow>(`UPDATE cop_user_profiles SET preferences=$2::jsonb,
+        updated_at=greatest(clock_timestamp(), updated_at + interval '1 millisecond') WHERE subject_id=$1
+        RETURNING subject_id,username,display_name,email,preferences,alert_preferences,created_at,updated_at`,
+        [actor.subjectId, JSON.stringify(avatarPreferences(current, avatarDataUrl))]);
+      await client.query("COMMIT");
+      return profileFromRow(result.rows[0]!);
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }
+
   async searchProfiles(query: string, limit = 10): Promise<UserProfileRecord[]> {
     const normalized = normalizeProfileSearchText(query);
     if (normalized.length < 2) {
@@ -168,38 +339,52 @@ export class PostgresUserProfileStore implements UserProfileStore {
   }
 
   async upsertProfile(profile: Omit<UserProfileRecord, "createdAt" | "updatedAt">): Promise<UserProfileRecord> {
-    const result = await this.pool.query<UserProfileRow>(
-      `INSERT INTO cop_user_profiles (
-        subject_id,
-        username,
-        display_name,
-        email,
-        preferences,
-        alert_preferences
-      )
-      VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
-      ON CONFLICT (subject_id) DO UPDATE SET
-        username = EXCLUDED.username,
-        display_name = EXCLUDED.display_name,
-        email = EXCLUDED.email,
-        preferences = EXCLUDED.preferences,
-        alert_preferences = EXCLUDED.alert_preferences,
-        updated_at = now()
-      RETURNING subject_id, username, display_name, email, preferences, alert_preferences, created_at, updated_at`,
-      [
-        profile.subjectId,
-        profile.username,
-        profile.displayName,
-        profile.email ?? null,
-        JSON.stringify(profile.preferences),
-        JSON.stringify(profile.alertPreferences)
-      ]
-    );
-    const row = result.rows[0];
-    if (!row) {
-      throw new Error("User profile upsert returned no row.");
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(18101201, hashtext($1))", [profile.subjectId]);
+      const result = await client.query<UserProfileRow>(
+        `INSERT INTO cop_user_profiles (
+          subject_id,
+          username,
+          display_name,
+          email,
+          preferences,
+          alert_preferences
+        )
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+        ON CONFLICT (subject_id) DO UPDATE SET
+          username = EXCLUDED.username,
+          display_name = EXCLUDED.display_name,
+          email = EXCLUDED.email,
+          preferences = EXCLUDED.preferences,
+          alert_preferences = EXCLUDED.alert_preferences || CASE
+            WHEN cop_user_profiles.alert_preferences ? 'safetyNotificationsEnabled'
+            THEN jsonb_build_object('safetyNotificationsEnabled', cop_user_profiles.alert_preferences->'safetyNotificationsEnabled')
+            ELSE '{}'::jsonb END,
+          updated_at = now()
+        RETURNING subject_id, username, display_name, email, preferences, alert_preferences, created_at, updated_at`,
+        [
+          profile.subjectId,
+          profile.username,
+          profile.displayName,
+          profile.email ?? null,
+          JSON.stringify(profile.preferences),
+          JSON.stringify(withoutSafetyNotificationConsent(profile.alertPreferences))
+        ]
+      );
+      const row = result.rows[0];
+      if (!row) {
+        throw new Error("User profile upsert returned no row.");
+      }
+      await client.query("COMMIT");
+      return profileFromRow(row);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
     }
-    return profileFromRow(row);
   }
 
   async getAlertAcknowledgements(subjectId: string): Promise<Map<string, AlertAcknowledgement>> {
@@ -326,6 +511,7 @@ function normalizeAlertPreferences(value: Record<string, unknown>): UserAlertPre
   const minimumSeverity = isCopAlertSeverity(value.minimumSeverity) ? value.minimumSeverity : undefined;
   const aoiRules = Array.isArray(value.aoiRules) ? value.aoiRules.flatMap(normalizeAoiRule) : undefined;
   return {
+    ...(typeof value.safetyNotificationsEnabled === "boolean" ? { safetyNotificationsEnabled: value.safetyNotificationsEnabled } : {}),
     ...(aoiRules && aoiRules.length > 0 ? { aoiRules } : {}),
     ...(enabledTypes && enabledTypes.length > 0 ? { enabledTypes } : {}),
     ...(minimumSeverity ? { minimumSeverity } : {})
@@ -419,6 +605,16 @@ function jsonRecord(value: Record<string, unknown> | string | null): Record<stri
     }
   }
   return isRecord(value) ? value : {};
+}
+
+function withoutSafetyNotificationConsent(preferences: UserAlertPreferences): UserAlertPreferences {
+  const sanitized = { ...preferences };
+  delete sanitized.safetyNotificationsEnabled;
+  return sanitized;
+}
+
+function boundedSafetyProfilePageSize(limit: number): number {
+  return Number.isFinite(limit) ? Math.max(1, Math.min(Math.floor(limit), 100)) : 50;
 }
 
 function boundedProfileSearchLimit(limit: number): number {
