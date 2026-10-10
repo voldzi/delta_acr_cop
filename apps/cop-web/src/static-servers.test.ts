@@ -261,10 +261,15 @@ for (const app of ["cop-web", "cop-chat"]) {
         headers: { "Accept-Encoding": "br, gzip" }
       });
       expect(br.headers["content-encoding"]).toBe("br");
-      const fallback = await rawRequest(base, staticPath("conversation"));
+      const fallback = await rawRequest(base, staticPath(app === "cop-web" ? "globe" : "conversation"));
       expect(fallback.status).toBe(200);
       expect(fallback.headers["cache-control"]).toBe("no-cache");
       expect(fallback.body).toContain("COP fixture");
+      if (app === "cop-web") {
+        const unknown = await rawRequest(base, staticPath("conversation"));
+        expect(unknown.status).toBe(404);
+        expect(unknown.body).not.toContain("COP fixture");
+      }
     });
   });
 }

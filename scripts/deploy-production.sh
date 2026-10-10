@@ -43,6 +43,10 @@ for service in "$@"; do
     # happens to contain X5 variables. Do not enable an internal tmp fallback.
     docker run --rm --network none --read-only --entrypoint node delta-acr-cop-api:local \
       -e 'const fs=require("fs");const s=fs.readFileSync("/app/apps/cop-api/dist/media-conversion.js","utf8");if(!s.includes("verifyConversionStorage")||!s.includes("expectedStorageUuid")||!s.includes("expectedDeviceId"))process.exit(1)'
+    # Avatar sanitation depends on the Linux-native Sharp binary. Verify an
+    # actual conversion in the exact image before replacing the running API.
+    docker run --rm --network none --read-only --cap-drop ALL --entrypoint node delta-acr-cop-api:local \
+      -e 'const sharp=require("/app/apps/cop-api/node_modules/sharp");sharp({create:{width:1,height:1,channels:3,background:{r:0,g:0,b:0}}}).png().toBuffer().then(b=>{if(!b.length)process.exitCode=1}).catch(()=>{process.exitCode=1})'
   fi
 done
 python3 scripts/cop-storage.py preflight >/dev/null

@@ -12347,8 +12347,26 @@ dd {
   background: var(--panel-2);
   min-width: 0;
 }
-.media-news-panel h2, .safety-notification-settings h3 { margin: 0 0 10px; font-size: 15px; }
-.media-news-list { margin: 12px 0 0; padding: 0; list-style: none; }
-.media-news-list li { padding: 10px 0; border-top: 1px solid var(--border); }
-.media-news-list a { color: var(--cyan); overflow-wrap: anywhere; }
-.media-news-list small { display: block; color: var(--muted); margin-top: 6px; }
+.media-news-panel h2,
+.safety-notification-settings h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.media-news-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.media-news-list li {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.media-news-list a {
+  color: var(--cyan);
+  overflow-wrap: anywhere;
+}
+.media-news-list small {
+  display: block;
+  color: var(--muted);
+  margin-top: 6px;
+}

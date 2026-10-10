@@ -217,3 +217,52 @@ Dedicated builder `cop-x5` had lost its container while retaining its own X5
 bind cache. It was bootstrapped only after verifying the filesystem UUID, volume
 path and builder identity; no shared builder or global Docker storage changed.
 Remaining X5 capacity must be rechecked before another build.
+
+## Final integrated local gates (2026-10-10)
+
+Local verification started from `54aa40e2b3a58202595bde65e3e989eb6ff8d047`
+with Node 24.20.0 / pnpm 10.34.6. Commands ran sequentially with low process
+priority; test runs used at most two workers. Evidence logs use the prefix
+`/private/tmp/cop-crisis-integrated-`.
+
+- Frozen offline install, 11 schemas, TypeScript/ESLint and binding OpenAPI
+  passed. OpenAPI retains 24 warnings and has zero errors.
+- The single full test run recorded **1,580 passed / 8 skipped / 1 failed**.
+  The seven skipped files need dedicated PostgreSQL test connections. The sole
+  failure was an obsolete static-web fixture expecting generic `/conversation`
+  fallback. The restored public-site contract deliberately returns 404 there.
+  The fixture now tests supported `/globe` fallback and explicit unknown-path
+  404; chat `/chat/conversation` is preserved. A targeted recheck of the whole
+  static-server file passed **15/15**. The full suite was not repeated after
+  this fixture repair; do not relabel its first recorded result as a full pass.
+- All 16 workspace build scripts passed. The web was then rebuilt with
+  `VITE_COP_PUBLIC_ANALYTICS_ENABLED=true` and synthetic website ID
+  `00000000-0000-4000-8000-000000000001`; that ID is present in the compiled
+  public-demo artifact. No browser page or actual collector POST was used.
+- Bundle budgets and actual static-runtime smoke passed. Web/chat initial
+  static graphs measured **188.0 / 104.9 KiB gzip**, within 250 / 135 KiB;
+  initial CSS measured 34.3 / 15.1 KiB, within 35 / 16 KiB. Optional engines
+  remain outside the initial graphs. Vite's generic large-chunk warning was
+  not hidden and no budget threshold was raised.
+- The analytics source/SRI release guard passed under both flag values, and
+  again after formatting. This is the **same static guard**: it does not read
+  those environment flags and does not prove runtime collection or delivery.
+- Full formatting initially identified six restored files. Four owned files
+  were reformatted. `.prettierignore` adds only the exact shared-vendor runtime
+  and provider-issued Google verification paths; their original bytes remain
+  unchanged. This preserves the independently checked SRI and verification
+  response rather than reformatting external artifacts. The final full format
+  and whitespace checks pass. The existing PWA/public-analytics release tests
+  passed **67/67** after formatting; no dedicated discovery test file exists.
+- The process fetch guard recorded **zero unexpected external fetch attempts**.
+  Local static servers were stopped by their smoke check. Dedicated-database,
+  production runtime and physical-phone acceptance remain separate gates.
+
+The four formatted public/style files must be included in the final web build;
+the candidate's production images and exact runtime flags are recorded only
+after the standard deployment and preservation health gate.
+
+Before replacing COP API, the standard deployment also performs an actual
+1-pixel PNG conversion using the native Sharp binary inside the exact Linux
+image, with no network, writable root, capabilities or production data. A
+failed native conversion stops the release before container replacement.
