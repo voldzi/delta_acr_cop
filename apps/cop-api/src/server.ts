@@ -1,3 +1,4 @@
+import { CommunicationSafetyService, CommunicationSafetyError, MessagingCommunicationPolicy, registerCommunicationSafetyRoutes } from "./communication-safety.js";
 import { MediaNewsSourceAdapter } from "./media-news-source.js";
 import { createSafetyNotificationStoreFromEnv, type SafetyNotificationStore } from "./safety-notification-store.js";
 import { SafetyNotificationWorker, safetyNotificationWorkerConfigFromEnv, type SafetyNotificationWorkerConfig } from "./safety-notification-worker.js";
@@ -347,6 +348,7 @@ import {
 } from "./web-session-store.js";
 
 export interface BuildServerOptions {
+  communicationSafety?: CommunicationSafetyService;
   mediaNewsSource?: Pick<MediaNewsSourceAdapter, "fetchContext">;
   safetyNotificationStore?: SafetyNotificationStore;
   safetyNotificationWorkerConfig?: SafetyNotificationWorkerConfig;
@@ -1111,11 +1113,53 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
   app.addHook("onRequest", requireBearerToken);
+  const mobilityRuntimeStore = options.mobilityStore ?? mobilityStoreFromEnv();
+  const communicationSafetyEnabled = process.env.COP_COMMUNICATION_SAFETY_ENABLED === "true";
+  const communicationPolicy = new MessagingCommunicationPolicy(messagingProvider.config);
+  const communicationSafety = options.communicationSafety ?? (communicationSafetyEnabled && mobilityRuntimeStore &&
+    process.env.COP_COMMUNICATION_EVIDENCE_SECRET && process.env.COP_COMMUNICATION_MODERATOR_ROLE &&
+    process.env.COP_COMMUNICATION_CONTACT_EMAIL && process.env.COP_COMMUNICATION_RETENTION_POLICY_ID
+    ? new CommunicationSafetyService({ store: mobilityRuntimeStore, policy: communicationPolicy,
+      encryptionSecret: process.env.COP_COMMUNICATION_EVIDENCE_SECRET, moderatorRole: process.env.COP_COMMUNICATION_MODERATOR_ROLE,
+      contactEmail: process.env.COP_COMMUNICATION_CONTACT_EMAIL, retentionPolicyId: process.env.COP_COMMUNICATION_RETENTION_POLICY_ID, now,
+      validateTarget: async (actor, target) => {
+        if (target.peerSubjectId === actor.subjectId) throw new CommunicationSafetyError(400, "VALIDATION_ERROR");
+        if (target.kind === "call") {
+          const call = await voiceCallStore.get(target.callId!);
+          if (!call || !voiceCallIncludesSubject(call, actor.subjectId) || !voiceCallIncludesSubject(call, target.peerSubjectId))
+            throw new CommunicationSafetyError(404, "NOT_FOUND");
+          return;
+        }
+        const result = await messagingProvider.fetchConversation(actor, now(), target.conversationId!);
+        if (result.status !== "online") throw new CommunicationSafetyError(503, "COMMUNICATION_POLICY_UNAVAILABLE");
+        const conversation = result.conversation;
+        if (!conversation || !(conversation.members ?? []).some(member => member.userId === target.peerSubjectId)) throw new CommunicationSafetyError(404, "NOT_FOUND");
+        if (target.kind === "message") {
+          const room = conversation.matrix?.roomId;
+          if (!room) throw new CommunicationSafetyError(503, "COMMUNICATION_POLICY_UNAVAILABLE");
+          if (!await communicationPolicy.eventMatchesPeer(actor.subjectId, target.peerSubjectId, room, target.eventId!)) throw new CommunicationSafetyError(404, "NOT_FOUND");
+        }
+      } }) : undefined);
+  registerCommunicationSafetyRoutes(app, communicationSafety);
+  async function enforceDirectCommunication(request: FastifyRequest, reply: FastifyReply, actor: AuthenticatedActor, peer: string): Promise<boolean> {
+    if (!communicationSafetyEnabled && !options.communicationSafety) return true;
+    try {
+      if (!communicationSafety) throw new CommunicationSafetyError(503, "COMMUNICATION_POLICY_UNAVAILABLE");
+      if (!await communicationSafety.options.policy.directAllowed(actor.subjectId, peer)) throw new CommunicationSafetyError(403, "COMMUNICATION_BLOCKED");
+      return true;
+    } catch (error) {
+      const known = error instanceof CommunicationSafetyError ? error : new CommunicationSafetyError(503, "COMMUNICATION_POLICY_UNAVAILABLE");
+      sendError(reply, known.status, known.code, "Hovor nyní nelze navázat.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return false;
+    }
+  }
+  const directPeerForCall = (call: VoiceCallRecord, subject: string) => [call.initiatorSubjectId, ...call.participantSubjectIds].find(id => id !== subject)!;
+
   const mobilityDependency = registerMobilityRoutes(app, {
     messagingProvider,
     enabled: options.sharedMobilityEnabled ?? readBoolean(process.env.COP_SHARED_MOBILITY_ENABLED, false),
     dispatchEnabled: options.privateDispatchEnabled ?? readBoolean(process.env.COP_PRIVATE_DISPATCH_ENABLED, false),
-    store: options.mobilityStore ?? mobilityStoreFromEnv(), now
+    store: mobilityRuntimeStore, now
   });
   registerDriverMeasurementRoutes(app, {
     enabled: driverMeasurementsEnabled,
@@ -5145,6 +5189,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
+      if (!await enforceDirectCommunication(request, reply, actor, requestedRecipients[0]!)) return reply;
       const requestNow = now();
       const call = await voiceCallStore.create({
         expiresAt: new Date(requestNow.getTime() + 90_000).toISOString(),
@@ -5177,6 +5222,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           "The recipient could not be notified about the call.",
           correlationIdFrom(request.headers["x-correlation-id"])
         );
+      }
+      if (!await enforceDirectCommunication(request, reply, actor, requestedRecipients[0]!)) {
+        await voiceCallStore.transition(call.callId, {action: "media_failed", actorSubjectId: actor.subjectId, now: now().toISOString(), reason: "communication_policy_changed"});
+        return reply;
       }
       const media = await voiceCallMediaIssuer.issue(call, actor, requestNow);
       return reply.code(201).send(voiceCallAPIResponse(call, actor.subjectId, media, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id))));
@@ -5241,6 +5290,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
+      if (canIssueVoiceCallMedia(call, actor.subjectId) && !await enforceDirectCommunication(request, reply, actor, directPeerForCall(call, actor.subjectId))) return reply;
       const media =
         canIssueVoiceCallMedia(call, actor.subjectId) && voiceCallMediaIssuer.enabled
           ? await voiceCallMediaIssuer.issue(call, actor, now())
@@ -5275,6 +5325,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
+      if (input.action === "accept" && !await enforceDirectCommunication(request, reply, actor, directPeerForCall(current, actor.subjectId))) return reply;
       const result = await voiceCallStore.transition(callId, {
         action: input.action,
         actorSubjectId: actor.subjectId,
@@ -5330,6 +5381,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           requestNow: now()
         });
       }
+      if (canIssueVoiceCallMedia(result.record, actor.subjectId) && !await enforceDirectCommunication(request, reply, actor, directPeerForCall(result.record, actor.subjectId))) return reply;
       const media =
         canIssueVoiceCallMedia(result.record, actor.subjectId) && voiceCallMediaIssuer.enabled
           ? await voiceCallMediaIssuer.issue(result.record, actor, now())

@@ -66,3 +66,5 @@
 Some ADR numbers originate from independently shipped maintenance branches.
 Use the full linked filename when referring to these decisions; existing
 published paths are preserved for integration references.
+
+- [0046_ACCOUNT_SAFETY_AND_ERASURE_BOUNDARY.md](0046_ACCOUNT_SAFETY_AND_ERASURE_BOUNDARY.md): proposed account safety and erasure acceptance boundary.

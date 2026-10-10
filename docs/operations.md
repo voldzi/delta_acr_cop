@@ -152,3 +152,8 @@ Completed ride mileage v2 requires coordinated capability/version/scope/revision
 Shared profile/audit/recovery keeps existing retention and no migrations; use guard-only rollback preserving sealed metadata. Delivery and physical acceptance limits: [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).
 
 Read-only Matrix lookup rollout: Messaging then COP API, preserving exact existing images/configuration. Old images remain a schema-safe rollback; see [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md).
+
+Account safety has an unexecuted coordinated deployment plan in
+[integration/40_ACCOUNT_SAFETY_APP_REVIEW.md](integration/40_ACCOUNT_SAFETY_APP_REVIEW.md).
+Keep its flags false until the required process, data policy and real-device
+acceptance are approved. Do not roll back a real user's block or deletion state.

@@ -8623,6 +8623,370 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/DispatchParticipantOpen"
+  /api/v1/me/account-safety/capabilities:
+    get:
+      tags:
+        - Identity
+      operationId: getAccountSafetyCapabilities
+      summary: Read truthful account safety capabilities
+      description: Prepared compatible extension; disabled in production. Verified OIDC session required.
+        No-store. Actor is derived only from the verified session; caller identity fields are
+        forbidden.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Accepted result or current state. A submitted report is awaiting moderation, not
+            resolved.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountSafetyCapabilities"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+      x-cop-ai-exposure: forbidden
+  /api/v1/me/communication/reports:
+    post:
+      tags:
+        - Identity
+      operationId: submitCommunicationReport
+      summary: Submit explicit communication report
+      description: Prepared compatible extension; disabled in production. Verified OIDC session required.
+        No-store. Actor is derived only from the verified session; caller identity fields are
+        forbidden.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Accepted result or current state. A submitted report is awaiting moderation, not
+            resolved.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunicationReportReceipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunicationReportRequest"
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{16,128}$
+          description: Stable operation UUID for all retries; scoped to the authenticated actor.
+      x-cop-ai-exposure: forbidden
+  /api/v1/me/communication/reports/{reportId}:
+    get:
+      tags:
+        - Identity
+      operationId: getOwnCommunicationReport
+      summary: Read own communication report status
+      description: Prepared compatible extension; disabled in production. Verified OIDC session required.
+        No-store. Actor is derived only from the verified session; caller identity fields are
+        forbidden.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Accepted result or current state. A submitted report is awaiting moderation, not
+            resolved.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunicationReportReceipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      x-cop-ai-exposure: forbidden
+  /api/v1/me/communication/blocks/query:
+    post:
+      tags:
+        - Identity
+      operationId: getCommunicationBlockState
+      summary: Read canonical peer block state
+      description: Prepared compatible extension; disabled in production. Verified OIDC session required.
+        No-store. Actor is derived only from the verified session; caller identity fields are
+        forbidden.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Accepted result or current state. A submitted report is awaiting moderation, not
+            resolved.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunicationBlockState"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunicationBlockQuery"
+      x-cop-ai-exposure: forbidden
+  /api/v1/me/communication/blocks:
+    put:
+      tags:
+        - Identity
+      operationId: setCommunicationBlockState
+      summary: Block or unblock a peer
+      description: Prepared compatible extension; disabled in production. Verified OIDC session required.
+        No-store. Actor is derived only from the verified session; caller identity fields are
+        forbidden.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Accepted result or current state. A submitted report is awaiting moderation, not
+            resolved.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunicationBlockState"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunicationBlockState"
+      x-cop-ai-exposure: forbidden
+  /api/v1/moderation/communication/reports:
+    get:
+      tags:
+        - Messaging
+      operationId: listCommunicationReports
+      summary: List up to 100 oldest unresolved reports
+      description: Prepared compatible extension; disabled in production. Verified OIDC session required.
+        No-store. Requires the configured moderator role. Selected report evidence is disclosed only
+        to authorized moderation.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Accepted result or current state. A submitted report is awaiting moderation, not
+            resolved.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunicationReportQueue"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+      x-cop-ai-exposure: forbidden
+  /api/v1/moderation/communication/reports/{reportId}:
+    get:
+      tags:
+        - Messaging
+      operationId: getModerationCommunicationReport
+      summary: Read report including explicitly selected evidence
+      description: Prepared compatible extension; disabled in production. Verified OIDC session required.
+        No-store. Requires the configured moderator role. Selected report evidence is disclosed only
+        to authorized moderation.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Accepted result or current state. A submitted report is awaiting moderation, not
+            resolved.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunicationReportOperatorRecord"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      x-cop-ai-exposure: forbidden
+    patch:
+      tags:
+        - Messaging
+      operationId: reviewCommunicationReport
+      summary: Record operator review with revision and resolution
+      description: Prepared compatible extension; disabled in production. Verified OIDC session required.
+        No-store. Requires the configured moderator role. Selected report evidence is disclosed only
+        to authorized moderation.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Accepted result or current state. A submitted report is awaiting moderation, not
+            resolved.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunicationReportReceipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunicationReportReview"
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      x-cop-ai-exposure: forbidden
 components:
   securitySchemes:
     bearerAuth:
@@ -22683,6 +23047,325 @@ components:
           type: string
           minLength: 1
           maxLength: 512
+    AccountSafetyCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - reporting
+        - blocking
+        - accountDeletion
+        - evidence
+        - blockDelivery
+      properties:
+        contractVersion:
+          type: string
+          const: cop-account-safety-v1
+        reporting:
+          type: boolean
+        blocking:
+          type: boolean
+        accountDeletion:
+          type: boolean
+          const: false
+          description: Account erasure is not yet accepted or available. Never expose a delete action based on
+            this candidate.
+        accountDeletionUnavailableReason:
+          type: string
+        reportContactEmail:
+          type: string
+          format: email
+        retentionPolicyId:
+          type: string
+          minLength: 1
+          maxLength: 256
+        evidence:
+          type: string
+          const: explicitly_selected_text_only
+        blockDelivery:
+          type: string
+          const: matrix_ignore_policy
+    CommunicationReportTarget:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required:
+            - kind
+            - peerSubjectId
+            - conversationId
+          properties:
+            kind:
+              type: string
+              const: user
+            peerSubjectId:
+              type: string
+              minLength: 1
+              maxLength: 256
+            conversationId:
+              type: string
+              minLength: 1
+              maxLength: 256
+        - type: object
+          additionalProperties: false
+          required:
+            - kind
+            - peerSubjectId
+            - conversationId
+            - eventId
+          properties:
+            kind:
+              type: string
+              const: message
+            peerSubjectId:
+              type: string
+              minLength: 1
+              maxLength: 256
+            conversationId:
+              type: string
+              minLength: 1
+              maxLength: 256
+            eventId:
+              type: string
+              pattern: ^\$
+              maxLength: 255
+        - type: object
+          additionalProperties: false
+          required:
+            - kind
+            - peerSubjectId
+            - callId
+          properties:
+            kind:
+              type: string
+              const: call
+            peerSubjectId:
+              type: string
+              minLength: 1
+              maxLength: 256
+            callId:
+              type: string
+              format: uuid
+    CommunicationReportEvidence:
+      type: object
+      additionalProperties: false
+      required:
+        - selectedText
+        - explicitlyConfirmed
+      properties:
+        selectedText:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: Only an excerpt the user explicitly selected and confirmed; maximum 4096 UTF-8 bytes.
+            Never attach automatic decrypted timeline/context.
+        explicitlyConfirmed:
+          type: boolean
+          const: true
+    CommunicationReportRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - target
+        - reason
+      properties:
+        target:
+          $ref: "#/components/schemas/CommunicationReportTarget"
+        reason:
+          type: string
+          enum:
+            - harassment
+            - threats
+            - spam
+            - sexual_content
+            - other
+        evidence:
+          $ref: "#/components/schemas/CommunicationReportEvidence"
+    CommunicationReportReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - reportId
+        - createdAt
+        - status
+        - revision
+      properties:
+        reportId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - submitted
+            - reviewing
+            - resolved
+        revision:
+          type: integer
+          minimum: 1
+        resolution:
+          type: string
+          enum:
+            - no_action
+            - action_taken
+    CommunicationBlockQuery:
+      type: object
+      additionalProperties: false
+      required:
+        - peerSubjectId
+      properties:
+        peerSubjectId:
+          type: string
+          minLength: 1
+          maxLength: 256
+    CommunicationBlockState:
+      type: object
+      additionalProperties: false
+      required:
+        - peerSubjectId
+        - blocked
+      properties:
+        peerSubjectId:
+          type: string
+          minLength: 1
+          maxLength: 256
+        blocked:
+          type: boolean
+    CommunicationReportReview:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedRevision
+        - status
+      properties:
+        expectedRevision:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum:
+            - reviewing
+            - resolved
+        resolution:
+          type: string
+          enum:
+            - no_action
+            - action_taken
+    CommunicationReportOperatorRecord:
+      type: object
+      additionalProperties: false
+      required:
+        - target
+        - reason
+        - reportId
+        - reporter
+        - createdAt
+        - status
+        - revision
+        - audit
+        - reporterIssuer
+      properties:
+        target:
+          $ref: "#/components/schemas/CommunicationReportTarget"
+        reason:
+          type: string
+          enum:
+            - harassment
+            - threats
+            - spam
+            - sexual_content
+            - other
+        evidence:
+          $ref: "#/components/schemas/CommunicationReportEvidence"
+        reportId:
+          type: string
+          format: uuid
+        reporter:
+          type: string
+          minLength: 1
+          maxLength: 256
+        createdAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - submitted
+            - reviewing
+            - resolved
+        revision:
+          type: integer
+          minimum: 1
+        resolution:
+          type: string
+          enum:
+            - no_action
+            - action_taken
+        audit:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - actor
+              - at
+              - action
+            properties:
+              actor:
+                type: string
+                minLength: 1
+                maxLength: 256
+              at:
+                type: string
+                format: date-time
+              action:
+                type: string
+        reporterIssuer:
+          type: string
+          format: uri
+    CommunicationReportQueue:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - reportId
+              - createdAt
+              - reason
+              - status
+              - revision
+            properties:
+              reportId:
+                type: string
+                format: uuid
+              createdAt:
+                type: string
+                format: date-time
+              reason:
+                type: string
+                enum:
+                  - harassment
+                  - threats
+                  - spam
+                  - sexual_content
+                  - other
+              status:
+                type: string
+                enum:
+                  - submitted
+                  - reviewing
+                  - resolved
+              revision:
+                type: integer
+                minimum: 1
 x-cop-mobility-invitation-notifications:
   contractVersion: cop-mobility-invitation-notification-v1
   transport: APNs alert via CSM Messaging

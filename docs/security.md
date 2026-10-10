@@ -217,3 +217,11 @@ Completed shared rides expose coarse distance/time/author to existing readVehicl
 Shared owner binding is authenticated owner-only, independent of name/plate; profile changes require owner and cost audit remains readCosts gated. See [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).
 
 Conversation identity lookup requires verified COP actor, Messaging service auth and current membership; it reads existing pairs only. No guessed names or arbitrary IDs; no credentials/messages in responses, cache or logs. See [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md).
+
+## Prepared reports and canonical blocking
+
+[ADR 0046](adr/0046_ACCOUNT_SAFETY_AND_ERASURE_BOUNDARY.md) defines the new
+actor/explicit-evidence boundary. [The handoff](integration/40_ACCOUNT_SAFETY_APP_REVIEW.md)
+lists encryption, role, retention and activation gates. Account deletion remains
+unavailable; deactivation is not described as erasure completion. No report
+excerpt enters automatic AI/MCP context. This candidate is not deployed.
