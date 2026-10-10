@@ -466,3 +466,9 @@ diagnostic procedure. A remediation plan and request for a separately
 approved credential rotation are pending; no credential has been rotated by
 this release. Do not blindly rotate identity/encryption/HMAC secrets or enable
 measurement intake/AI routing as incident handling.
+
+SIM published the sanitized final acceptance, exercised rollback and normal
+cold-start behavior in documentation commit `efa9573`:
+[SIM acceptance record](https://github.com/voldzi/delta_acr_sim/blob/efa9573/docs/archive/audits/2026-10-11_SEARCH_CACHE_AND_COP_DEPENDENCY_ACCEPTANCE.md).
+The production SDA code/image remain `20a0d961` / `60d66a80`; this documentation
+publication does not activate measurement intake, AI routing or rotate keys.
