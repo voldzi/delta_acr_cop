@@ -311,6 +311,13 @@ Zálohy konfigurace mají chráněný přístup; nevypisovat jejich obsah.
   **520 sekund**, nad COP limitem 300 sekund. Nový čas odpovědi ani cached
   `ready` tento limit neobcházejí. Worker health `ok` potvrzuje proces a
   úložiště, nikoli aktuální čerstvost všech SIM zdrojů.
+- Následná obnova prošla v **16:35:40.679 UTC** přes přesný produkční COP
+  dotaz včetně `source` a `X-COP-Request-At`, se stejným časem předaným do
+  nasazeného normalizátoru. Odpověď `generatedAt=16:35:40.736Z` měla snapshot
+  `16:34:18.552Z`, hlášené stáří **82,184 s**, COP vypočtené **82,127 s**,
+  `ready`, tři kandidáty a úspěšnou normalizaci. Sanitizovaný důkaz neobsahuje
+  obsah kandidátů. Toto potvrzuje návrat čerstvého zdroje; neodstraňuje
+  zjištěnou potřebu vyjasnit platnost readiness v cache.
 - Agregované čtení produkční DB po aktivaci: **0 opt-in profilů / 0 delivery
   ledger řádků**. Žádný syntetický ani běžný testovací push nebyl odeslán.
   Neukládaly se exporty profilů, geometrie či obsahu kandidátů.
@@ -323,7 +330,8 @@ Zálohy konfigurace mají chráněný přístup; nevypisovat jejich obsah.
 1. SIM musí potvrdit cache/expiry pravidlo candidate odpovědi: nesmí zůstávat
    zmrazené `snapshotAgeSeconds` a `ready` po zestárnutí podkladového snapshotu.
    COP zůstává na max. 300 s a zdroj při nesouladu odmítá; nezvyšovat limit jen
-   kvůli přijetí staré cache. Obnova a pozdější čerstvý pozitivní průchod čekají.
+   kvůli přijetí staré cache. Obnova a následný čerstvý průchod produkčním COP
+   validátorem prošly; sjednocení časového kontraktu se SIM zůstává otevřené.
 2. Interní přímé čtení SIM `/notifications/candidates` i `/context/news` bez
    Authorization vrátilo **200**, zatímco lokální závazné OpenAPI dědí globální
    `bearerAuth`. U těchto veřejných zdrojových metadat nejde o důkaz přístupu
