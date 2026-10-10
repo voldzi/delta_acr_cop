@@ -13,6 +13,7 @@ const baseQuery = {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("AiGateway", () => {
@@ -432,5 +433,71 @@ describe("AiGateway", () => {
         method: "POST"
       })
     );
+  });
+});
+
+describe("embedding cancellation budgets", () => {
+  const options = { baseUrls: ["http://embedding-a", "http://embedding-b", "http://embedding-c", "http://embedding-d"], model: "bge-m3:latest", timeoutMs: 20, totalTimeoutMs: 50, retryAttempts: 2 };
+
+  it("bounds all host attempts and retries by one deadline and aborts active I/O", async () => {
+    vi.useFakeTimers();
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (_input, init) => new Promise<Response>((_resolve, reject) => {
+      const signal = init!.signal!;
+      signals.push(signal);
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    })));
+    const outcome = new OllamaEmbeddingProvider(options).embed("synthetic query").then(() => "unexpected success", (error: Error) => error.message);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await outcome).toContain("total deadline");
+    expect(signals).toHaveLength(3);
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(signals).toHaveLength(3);
+  });
+
+  it("propagates caller cancellation and never starts a fallback afterwards", async () => {
+    const caller = new AbortController();
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => new Promise<Response>((_resolve, reject) => {
+      init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const outcome = new OllamaEmbeddingProvider(options).embed("synthetic query", caller.signal);
+    caller.abort(new Error("request cancelled"));
+    await expect(outcome).rejects.toThrow("request cancelled");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(new OllamaEmbeddingProvider(options).embed("synthetic query", caller.signal)).rejects.toThrow("request cancelled");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the deadline active while a response body stalls after headers", async () => {
+    vi.useFakeTimers();
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (_input, init) => {
+      const signal = init!.signal!;
+      signals.push(signal);
+      return new Response(new ReadableStream({ start(controller) {
+        signal.addEventListener("abort", () => controller.error(signal.reason), { once: true });
+      } }), { status: 200 });
+    }));
+    const outcome = new OllamaEmbeddingProvider({ ...options, timeoutMs: 100 }).embed("synthetic query").then(() => "unexpected success", (error: Error) => error.message);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await outcome).toContain("total deadline");
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
+  it("bounds isolated health checks and requires the configured embedding model", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => new Promise<Response>((_resolve, reject) => {
+      init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const outcome = new OllamaEmbeddingProvider(options).health();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(20);
+    expect((await outcome).status).toBe("degraded");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response('{"models":[]}')));
+    expect((await new OllamaEmbeddingProvider(options).health()).status).toBe("degraded");
   });
 });

@@ -152,3 +152,11 @@ Completed ride mileage v2 requires coordinated capability/version/scope/revision
 Shared profile/audit/recovery keeps existing retention and no migrations; use guard-only rollback preserving sealed metadata. Delivery and physical acceptance limits: [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).
 
 Read-only Matrix lookup rollout: Messaging then COP API, preserving exact existing images/configuration. Old images remain a schema-safe rollback; see [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md).
+
+
+Embedding outages are bounded by the total budget in
+[configuration runbook 03](runbooks/03_ENVIRONMENT_CONFIGURATION.md).
+The chat update and joint cache/authentication evidence are in
+[release runbook 22](runbooks/22_COP_CHAT_RELEASE_20261010.md). A healthy
+generative gateway does not prove that the configured embedding server or
+default Ollama inference is available; verify each separately.

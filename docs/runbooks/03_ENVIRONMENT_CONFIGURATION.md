@@ -197,6 +197,7 @@ COP_AI_OLLAMA_REASONING_RETRY_ATTEMPTS=1
 COP_AI_OLLAMA_REASONING_THINK=false
 COP_AI_OLLAMA_EMBEDDING_MODEL=bge-m3:latest
 COP_AI_OLLAMA_EMBEDDING_TIMEOUT_MS=10000
+COP_AI_OLLAMA_EMBEDDING_TOTAL_TIMEOUT_MS=10000
 COP_AI_SEMANTIC_RETRIEVAL_ENABLED=true
 COP_AI_SEMANTIC_RETRIEVAL_MAX_DOCUMENTS=12
 COP_AI_SEMANTIC_RETRIEVAL_CACHE_ENTRIES=500
@@ -792,3 +793,19 @@ i veřejná `/chat/` vracely 200 a zveřejněný skript obsahoval nové ovládá
 Cvičný účet po produkční zkoušce dosáhl svého denního limitu; další úspěšný
 dotaz ze stejné identity lze ověřit po obnovení denního okna nebo s jiným
 oprávněným uživatelem.
+
+### Bounded semantic retrieval (October 2026)
+
+`COP_AI_OLLAMA_EMBEDDING_TIMEOUT_MS` remains the per-attempt limit.
+`COP_AI_OLLAMA_EMBEDDING_TOTAL_TIMEOUT_MS` is a separate total limit over all
+embedding hosts, attempts and response-body reads (default 10,000 ms). It
+never enables another provider. `COP_AI_SEMANTIC_RETRIEVAL_TIMEOUT_MS`
+(default 20,000 ms) bounds the entire semantic ranking, including background
+index queries. Expiry cancels current embedding I/O, stops further document
+work and prevents late results entering the cache. Retrieval returns the
+existing degraded/empty context; model selection and data policy remain in
+force. Embedding health checks run independently with at most 1,500 ms per
+probe, including response bodies, and require the configured model to be
+present. An unavailable embedding service must be restored at its real
+endpoint; increasing timeouts or using a generative/OpenAI endpoint does not
+restore embeddings.

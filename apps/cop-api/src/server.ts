@@ -842,7 +842,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const openAiMcpAssistant = openAiMcpConfig.enabled ? new OpenAiMcpAssistant(openAiMcpConfig) : undefined;
   let openAiMcpReady = false;
   const aiSemanticRetriever = new AiSemanticRetriever({
-    embedText: (input) => aiGateway.embedText(input),
+    embedText: (input, signal) => aiGateway.embedText(input, signal),
+    timeoutMs: readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_TIMEOUT_MS, 20000),
     enabled: readBoolean(process.env.COP_AI_SEMANTIC_RETRIEVAL_ENABLED, true),
     maxCacheEntries: readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_CACHE_ENTRIES, 500),
     maxDocuments: readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_MAX_DOCUMENTS, 12)
@@ -2219,10 +2220,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     query: string;
     retrievalIntent?: AiRetrievalIntent;
   }): Promise<AiSemanticContext> {
+    const controller = new AbortController();
     return withTimeoutFallback(
-      aiSemanticRetriever.retrieve(input),
+      aiSemanticRetriever.retrieve({ ...input, signal: controller.signal }),
       aiSemanticRetrievalTimeoutMs,
-      () => emptyAiSemanticContext(input, `Semantic retrieval timed out after ${aiSemanticRetrievalTimeoutMs} ms.`),
+      () => {
+        controller.abort(new Error("COP semantic retrieval deadline exceeded."));
+        return emptyAiSemanticContext(input, `Semantic retrieval timed out after ${aiSemanticRetrievalTimeoutMs} ms.`);
+      },
       "AI semantic retrieval completed after the request timeout."
     );
   }

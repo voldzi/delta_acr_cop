@@ -296,3 +296,73 @@ image, health, gateway/config invariants and COP rejection of old snapshots.
 The successful final deployment did not force rollback. Ordinary authenticated
 device/opt-in delivery and existing AI gateway availability remain separately
 unverified/unresolved as described above; BYOK/full routing remain disabled.
+
+
+## Independent production recheck, 11 October 2026 (Europe/Prague)
+
+The renewed release instruction was checked against the actual runtime at
+22:39 UTC on 10 October (00:39 CEST on 11 October). The reviewed standalone
+chat and API fixes above were already live. No second release or unrelated
+account-safety candidate was installed by this recheck.
+
+- `/srv/cop` remains `d4eec834a0de92514a9574fea1898d817610b00f`.
+  Actual chat image remains `c725555613d38d5183c85a309cf5f163ac93baa2461af555ee935e93dd329827`;
+  API remains `14b4d19d34a107ab933cd1068b41e07007ba3f90a37acd2ab09118a148c48556`,
+  running and healthy. SIM Safety remains
+  `10615c34f3452e18a8b0da43e1becde7b5e368d292bcbf3f038b6e994064c46d`, healthy.
+- Six chat route/method checks passed again. The public entry asset exactly
+  matches the running image, with SHA-256
+  `f6512dc597e69cff43d707faddd40d18e7680ca8a54aaf9cb8469318b403d03c`.
+  Brotli, immutable asset caching, UID 1000, Node 24.21.0 and absence of
+  workspace build dependencies were independently verified.
+- The live chat OIDC proxy rejected an unapproved origin with 403. A synthetic
+  unsupported grant reached the configured real issuer and returned 400
+  `unsupported_grant_type`, `Cache-Control: no-store`, and no access or refresh
+  token. This verifies the proxy boundary and issuer reachability; it does
+  not establish a real user's login, refresh or two-device identity isolation.
+- Invalid bearer requests to COP AI query and job creation returned 401 before
+  model execution. Anonymous COP safety consent/evaluate returned 401.
+  Public SIM candidates/news returned 403; private scenarios returned 401.
+- Repeated identical HZS candidate URLs returned ready/complete in 6 and 4 ms,
+  with source snapshot `2026-10-10T22:39:49.613Z` unchanged and age increasing
+  from 1.846 to 3.852 seconds. Both were `no-store`. Zero current candidates
+  is an allowed result, not a claim that no hazards exist.
+- Deployed COP rejected synthetic source clones aged 301 seconds and a
+  cached 299-second snapshot reused two seconds later. These checks were
+  RAM-only; no source timestamps, persisted rows or deliveries changed.
+- The combined four-layer country query returned 200 after 1,904 ms with
+  `unavailable`, reasons `snapshot_expired`,
+  `requested_source_cache_success_stale`, `input_limit_reached`, and zero
+  candidates. COP correctly gives it no usable dispatch deadline. This
+  shows bounded failure and truthful freshness, not complete source coverage.
+- AI gateway health now reports the local LLM Gateway ready for
+  `gemma4:12b-mlx`. Embedding remains degraded because the configured Ollama
+  endpoints do not respond. SIM search reports degraded with 1,000 indexed
+  results; its current source/cache cause is being checked with SIM.
+- `COP_AI_DEFAULT_PROVIDER=ollama`, `COP_AI_ROUTER_ENABLED=false`,
+  `COP_AI_CHAT_BYOK_ENABLED=false` and
+  `COP_AI_CHAT_BYOK_ROUTING_ENABLED=false` were read back. This chat release
+  does not activate OpenAI or BYOK. No external AI request, user message or
+  notification was sent by the acceptance checks.
+
+The existing immutable rollback tags and storage-lock procedures above remain
+valid. Real authenticated messaging/E2EE/voice, locked-screen push and physical
+device acceptance have not been claimed by this recheck.
+
+### Additional COP embedding cancellation fix
+
+SIM identified a separate performance defect: four configured embedding hosts
+with three attempts and a 10-second per-attempt timeout could continue for
+120 seconds after the caller had stopped waiting. `fetchWithTimeout` also
+ended its timer after response headers, leaving response-body reads unbounded.
+The candidate adds a distinct total embedding budget, carries cancellation
+through headers and body reads, and cancels semantic ranking including direct
+background-index queries. Parallel document work stops on failure/expiry and
+late embeddings cannot enter the cache. Embedding health probes are bounded
+independently and require the configured model. No provider or billing source
+is changed. This limits failed work; it does not start a missing model service.
+
+Targeted checks: **22 passed**, including total retry/host deadline, caller
+cancellation, a stalled response body, independent health probes, concurrent
+ranking cancellation and late-cache rejection. Full gates and production
+readback must pass before this candidate is declared deployed.
