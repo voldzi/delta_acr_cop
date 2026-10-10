@@ -87,8 +87,13 @@ The optional strict road-trip integration depends on SIM runtime capability and 
 explicit opt-in defaults. Reuse existing COP_DATABASE_URL/TLS settings; no new
 secret. Startup creates additive cop_mobility_v1 and runs30day domain cleanup.
 Private Dispatch requires one API instance with a dedicated PostgreSQL session
-advisory lease; a second instance fails startup. Lost lease disables Dispatch503.
-Restart invalidates existing share metadata and drops all RAM ciphertext. No
+advisory lease on a dedicated connection. A contender stays unready and retries;
+lease loss returns Dispatch503 while shared vehicles remain independent.
+The owner verifies its primary-session lock every5seconds (10% jitter), retries
+with bounded500ms–10s backoff, and treats verification older than15s as unavailable.
+Connection/query timeouts are5s/3s. Recovery invalidates previous share metadata
+before ready, clears RAM ciphertext and fences requests from prior generations.
+Restart also invalidates existing share metadata and drops all RAM ciphertext. No
 client consent or GPS collection is enabled by either infrastructure flag.
 Backup existing database before enabling. Rollback restores previous API image and
 bothflagsfalse; leave the additive table intact. No migration drops existing COP

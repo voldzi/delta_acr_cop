@@ -76,3 +76,24 @@ describe("bounded private roster list",()=>{
   await expect(f.service.createGroup(f.a,{operationId:randomUUID(),name:"Beyond list bound"})).rejects.toMatchObject({status:429,code:"MEMBERSHIP_LIMIT"});
  });
 });
+
+
+describe("lease generation fences private results",()=>{
+ it("rejects a retained old snapshot after recovery and clears all prior shares and ciphertext",async()=>{
+  const f=await fixture();let generation=0,available=true;let hooks:import("./dispatch-lease.js").DispatchLeaseHooks|undefined;
+  f.store.dispatchGeneration=()=>generation;f.store.dispatchIsAvailable=()=>available;
+  f.store.startDispatchRecovery=async value=>{hooks=value;await value.acquired()};
+  await f.service.initializeDispatch();
+  try{
+   const x=await sharing(f);await f.service.publishPoint(f.a,x.started.share.shareId,x.point);
+   let release!:()=>void;const barrier=new Promise<void>(resolve=>{release=resolve});let captured!:()=>void;const seen=new Promise<void>(resolve=>{captured=resolve});
+   const late=f.service.withDispatchLease(generation,async()=>{const snapshot=await f.service.snapshot(f.b,x.groupId,x.deviceB.deviceId);expect(snapshot.points).toHaveLength(1);captured();await barrier;return snapshot});
+   await seen;available=false;generation++;hooks!.lost();
+   await expect(f.service.withDispatchLease(generation-1,()=>f.service.readiness(f.a,x.groupId))).rejects.toMatchObject({status:503,code:"DISPATCH_UNAVAILABLE"});
+   await hooks!.acquired();available=true;release();
+   await expect(late).rejects.toMatchObject({status:503,code:"DISPATCH_UNAVAILABLE"});
+   const now=await f.service.snapshot(f.b,x.groupId,x.deviceB.deviceId);expect(now.points).toHaveLength(0);expect(now.activeShares).toHaveLength(0);
+   expect((await f.service.startShare(f.a,x.groupId,x.input)).share.state).toBe("stopped");
+  }finally{f.service.closeDispatch()}
+ });
+});

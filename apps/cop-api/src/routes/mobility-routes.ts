@@ -10,12 +10,12 @@ import type * as Wire from "../mobility-types.js";
 import type { MessagingProvider } from "../messaging-provider.js";
 import { openDispatchParticipant } from "../mobility-participant.js";
 type Options = { messagingProvider?: MessagingProvider; enabled: boolean; dispatchEnabled: boolean; store?: MobilityStore; now: () => Date };
-export function registerMobilityRoutes(app: FastifyInstance, options: Options): void {
+export function registerMobilityRoutes(app: FastifyInstance, options: Options): () => { name: string; status: "ok" | "unavailable" | "disabled"; detail: string } {
   const service = options.store ? new SharedMobilityService(options.store, options.now) : undefined;
   if (options.enabled && !service) throw new Error("Shared mobility requires durable storage.");
   if (options.dispatchEnabled && !options.enabled) throw new Error("Private Dispatch requires shared mobility.");
   let retentionTimer: NodeJS.Timeout | undefined;
-  app.addHook("onReady", async () => { if (options.enabled) { await options.store!.init(); await service!.pruneRetainedData(); retentionTimer = setInterval(() => { void service!.pruneRetainedData().catch(() => undefined); }, 3600000); retentionTimer.unref(); if (options.dispatchEnabled) await service!.initializeDispatch(); } });
+  app.addHook("onReady", async () => { if (options.enabled) { await options.store!.init(); await service!.pruneRetainedData(); retentionTimer = setInterval(() => { void service!.pruneRetainedData().catch(() => undefined); }, 3600000); retentionTimer.unref(); if (options.dispatchEnabled) await service!.initializeDispatch((state, generation) => { app.log.info({ component: "private-dispatch", state, generation }, "Dispatch lease state changed."); }); } });
   app.addHook("onClose", async () => { if (retentionTimer) clearInterval(retentionTimer); service?.closeDispatch(); if (options.enabled) await options.store?.close(); });
   for (const [path, methods] of Object.entries(mobilityContract.paths)) for (const [method, operation] of Object.entries(methods)) {
     const routePath = path.replace(/\{([^}]+)\}/gu, ":$1");
@@ -27,11 +27,14 @@ export function registerMobilityRoutes(app: FastifyInstance, options: Options): 
         if (!actor || actor.authMode !== "oidc" || !actor.issuer) return sendError(reply, 401, "UNAUTHORIZED", "Je nutná ověřená identita COP.", correlationId);
         try {
           if (operation.operationId === "mobilityCapabilities") {
-            if (options.enabled) await options.store!.transact([], async () => true);
-            if (options.dispatchEnabled && !options.store!.dispatchIsAvailable()) throw new MobilityFailure(503, "DISPATCH_UNAVAILABLE", "Šifrovaný kanál není dostupný.");
+            let databaseAvailable = true;
+            if (options.enabled) { try { await options.store!.transact([], async () => true); } catch { databaseAvailable = false; } }
             return { contractVersion: "cop-mobility-capabilities-v1", sharedVehiclesEnabled: options.enabled, dispatchEnabled: options.dispatchEnabled,
               maxVehicleMembers: 5, maxGroupMembers: 200, registration: "unverified", invitationDelivery: "verified_account_inbox",
-              dispatchTransport: "recipient_encrypted_latest_only", currencies: ["CZK", "EUR", "USD"], serverTimestamp: options.now().toISOString() } satisfies Wire.MobilityCapabilities;
+              dispatchTransport: "recipient_encrypted_latest_only", currencies: ["CZK", "EUR", "USD"], serverTimestamp: options.now().toISOString(),
+              serviceAvailability: { sharedVehicles: !options.enabled ? "disabled" : databaseAvailable ? "ready" : "unavailable",
+                dispatch: !options.dispatchEnabled ? "disabled" : !databaseAvailable ? "unavailable" : options.store!.dispatchState(),
+                checkedAt: options.now().toISOString() } } satisfies Wire.MobilityCapabilities;
           }
           if (!options.enabled || !service || (path.includes("private-dispatch") && !options.dispatchEnabled)) return sendError(reply, 503, "MOBILITY_DISABLED", "Sdílení není zapnuto.", correlationId);
           if (path.includes("private-dispatch") && !options.store!.dispatchIsAvailable()) throw new MobilityFailure(503, "DISPATCH_UNAVAILABLE", "Šifrovaný kanál není dostupný.");
@@ -45,6 +48,7 @@ export function registerMobilityRoutes(app: FastifyInstance, options: Options): 
           if (!bodySchema && request.body !== undefined) throw new MobilityFailure(400, "VALIDATION_ERROR", "Tato operace nepřijímá obsah.");
           if (!bodySchema && request.body !== undefined) throw new MobilityFailure(400, "VALIDATION_ERROR", "Tato operace nepřijímá obsah.");
           const body: unknown = bodySchema ? normalizeMobilityInput(bodySchema, request.body) : undefined;
+          const execute = async () => {
           const account = await service.account(actor); const id = (params.vehicleId ?? params.groupId ?? params.shareId ?? "").toLowerCase();
           switch (operation.operationId) {
             case "mobilityAccount": return account;
@@ -87,6 +91,8 @@ export function registerMobilityRoutes(app: FastifyInstance, options: Options): 
             case "dispatchStop": return await service.stopShare(account, id, body as Wire.DispatchStop);
             default: throw new MobilityFailure(503, "MOBILITY_UNAVAILABLE", "Operace není dostupná.");
           }
+          };
+          return path.includes("private-dispatch") ? await service.withDispatchLease(options.store!.dispatchGeneration(), execute) : await execute();
         } catch (error) {
           if (error instanceof MobilityFailure) { if (error.retryAfter) reply.header("Retry-After", String(error.retryAfter)); return sendError(reply, error.status, error.code, error.message, correlationId); }
           // Never serialize dependency exceptions, request bodies, keys, identifiers or GPS.
@@ -95,4 +101,6 @@ export function registerMobilityRoutes(app: FastifyInstance, options: Options): 
       }
     });
   }
+  return () => ({ name: "private-dispatch", status: !options.dispatchEnabled ? "disabled" : options.store!.dispatchIsAvailable() ? "ok" : "unavailable",
+    detail: !options.dispatchEnabled ? "disabled" : `exclusive primary lease: ${options.store!.dispatchState()}; generation ${options.store!.dispatchGeneration()}` });
 }

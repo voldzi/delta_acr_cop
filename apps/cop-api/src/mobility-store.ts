@@ -1,10 +1,14 @@
-import { Pool, type PoolClient, type PoolConfig } from "pg";
+import { Pool, type PoolConfig } from "pg";
+import { DispatchLease, type DispatchLeaseHooks, type DispatchLeaseState } from "./dispatch-lease.js";
 
 export interface MobilityStore {
   init(): Promise<void>;
   close(): Promise<void>;
   claimDispatchInstance(): Promise<void>;
   dispatchIsAvailable(): boolean;
+  dispatchGeneration(): number;
+  dispatchState(): DispatchLeaseState;
+  startDispatchRecovery(hooks: DispatchLeaseHooks): Promise<void>;
   transact<T>(keys: string[], run: (transaction: MobilityTransaction) => Promise<T>): Promise<T>;
 }
 export interface MobilityTransaction {
@@ -22,6 +26,9 @@ export class MemoryMobilityStore implements MobilityStore {
   async close(): Promise<void> {}
   async claimDispatchInstance(): Promise<void> {}
   dispatchIsAvailable(): boolean { return true; }
+  dispatchGeneration(): number { return 0; }
+  dispatchState(): DispatchLeaseState { return this.dispatchIsAvailable() ? "ready" : "unavailable"; }
+  async startDispatchRecovery(hooks: DispatchLeaseHooks): Promise<void> { await hooks.acquired(); }
   async transact<T>(_keys: string[], run: (transaction: MobilityTransaction) => Promise<T>): Promise<T> {
     const task = this.queue.then(async () => {
       const draft = new Map([...this.values].map(([key, value]) => [key, structuredClone(value)]));
@@ -51,32 +58,27 @@ export class MemoryMobilityStore implements MobilityStore {
  */
 export class PostgresMobilityStore implements MobilityStore {
   private readonly pool: Pool;
-  private dispatchLease?: PoolClient;
-  private dispatchOwner = false;
-  constructor(config: PoolConfig) {
+  private readonly lease: DispatchLease;
+  constructor(config: PoolConfig, timing: ConstructorParameters<typeof DispatchLease>[1] = {}) {
     this.pool = new Pool(config);
-    this.pool.on("error", () => { this.dispatchOwner = false; });
+    // Pool errors are availability failures, never raw credential-bearing logs.
+    this.pool.on("error", () => undefined);
+    const leasePool = new Pool({ ...config, max: 1, application_name: "cop-private-dispatch-lease",
+      keepAlive: true, keepAliveInitialDelayMillis: 10000, query_timeout: 3000, connectionTimeoutMillis: 5000 });
+    leasePool.on("error", () => undefined);
+    this.lease = new DispatchLease(leasePool, timing);
   }
   async init(): Promise<void> {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS cop_mobility_v1 (
       key text PRIMARY KEY, value jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now()
     )`);
   }
-  async claimDispatchInstance(): Promise<void> {
-    const lease = await this.pool.connect();
-    try {
-      const result = await lease.query<{ acquired: boolean }>("SELECT pg_try_advisory_lock(731031,1) AS acquired");
-      if (!result.rows[0]?.acquired) throw new Error("Private Dispatch supports one active API instance.");
-      this.dispatchLease = lease; this.dispatchOwner = true;
-      lease.on("error", () => { this.dispatchOwner = false; });
-    } catch (error) { lease.release(); throw error; }
-  }
-  dispatchIsAvailable(): boolean { return this.dispatchOwner; }
-  async close(): Promise<void> {
-    this.dispatchOwner = false;
-    if (this.dispatchLease) { await this.dispatchLease.query("SELECT pg_advisory_unlock(731031,1)").catch(() => undefined); this.dispatchLease.release(); this.dispatchLease = undefined; }
-    await this.pool.end();
-  }
+  async claimDispatchInstance(): Promise<void> { await this.lease.claim(); }
+  dispatchIsAvailable(): boolean { return this.lease.available(); }
+  dispatchGeneration(): number { return this.lease.generation(); }
+  dispatchState(): DispatchLeaseState { return this.lease.state(); }
+  async startDispatchRecovery(hooks: DispatchLeaseHooks): Promise<void> { await this.lease.start(hooks); }
+  async close(): Promise<void> { await this.lease.close(); await this.pool.end(); }
   async transact<T>(keys: string[], run: (transaction: MobilityTransaction) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
     try {

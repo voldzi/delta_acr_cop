@@ -163,3 +163,14 @@ unresolved event location. `regionCode` belongs to the feed. No automatic
 map pin, nearby-distance promise, official IZS label or crisis push may be
 derived from it. See [ADR 0040](adr/0040_VERIFIED_CRISIS_NOTIFICATIONS_AND_MEDIA_CONTEXT.md)
 and [notification boundary](integration/12_COP_NOTIFICATION_DECISION_AND_PUSH.md).
+## Dispatch ownership recovery boundary
+
+Dispatch verifies an exclusive session advisory lock on the database primary.
+Private requests are fenced by a local lease generation before/after work and
+transaction callbacks; obsolete responses and late point writes fail503.
+Lease loss clears all in-memory point ciphertext; acquisition invalidates
+previous share metadata before ready. Recovery grants no new consent and never
+restores positions. Shared vehicle/account authorization remains independent.
+Lease diagnostics contain only state and generation, never DSNs, tokens,
+account identifiers or location payloads. Availability metadata is not an ACL
+or permission to resume collection.

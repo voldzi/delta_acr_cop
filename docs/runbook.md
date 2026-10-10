@@ -107,3 +107,17 @@ Shared vehicle/Dispatch release and remaining authenticated/device acceptance:
 [integration handoff29](integration/29_JIZDA_SHARED_VEHICLES_DISPATCH_HANDOFF.md).
 To disable on incident restore prior image/feature flags; never forward GPS to SIM,
 replay location history or restore consent from previous share metadata.
+
+## Dispatch lease recovery
+
+Check `/health/ready` and the private-dispatch entry in `/health/dependencies`,
+then verify the exclusive primary PostgreSQL advisory lock(731031,1) using a
+read-only connection. One ready instance owns one session lock; a contender
+remains unready. Dedicated connection application_name is
+`cop-private-dispatch-lease`. Recovery retries automatically after DB connectivity
+returns; investigate primary access, timeouts and sanitized lease-state logs if
+unavailable persists. Do not restart repeatedly or manually reactivate shares.
+Every acquisition stops previous share metadata and drops RAM points before
+readiness. Restored health never authorizes GPS: users must start sharing again.
+Rollback uses the captured previous API image with unchanged environment and
+network attachments. See integration/34_COP_DISPATCH_RECOVERY_RELEASE.md.

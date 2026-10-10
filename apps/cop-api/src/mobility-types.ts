@@ -1,5 +1,5 @@
 // Generated from the binding shared mobility v1 JSON contract.
-export type MobilityCapabilities = { "contractVersion": "cop-mobility-capabilities-v1"; "sharedVehiclesEnabled": boolean; "dispatchEnabled": boolean; "maxVehicleMembers": 5; "maxGroupMembers": 200; "registration": "idp_login_page" | "unavailable" | "unverified"; "dispatchTransport": "recipient_encrypted_latest_only"; "currencies": ("CZK" | "EUR" | "USD")[]; "serverTimestamp": string; "invitationDelivery": "verified_account_inbox" };
+export type MobilityCapabilities = { "contractVersion": "cop-mobility-capabilities-v1"; "sharedVehiclesEnabled": boolean; "dispatchEnabled": boolean; "maxVehicleMembers": 5; "maxGroupMembers": 200; "registration": "idp_login_page" | "unavailable" | "unverified"; "dispatchTransport": "recipient_encrypted_latest_only"; "currencies": ("CZK" | "EUR" | "USD")[]; "serverTimestamp": string; "invitationDelivery": "verified_account_inbox"; "serviceAvailability"?: MobilityServiceAvailability };
 export type MobilityAccount = { "contractVersion": "cop-mobility-account-v1"; "accountId": string; "displayName": string; "email"?: string; "emailVerified": boolean; "serverTimestamp": string };
 export type SharedVehicleMember = { "accountId": string; "displayName": string; "role": "owner" | "driver"; "capabilities": ("readVehicle" | "readCosts" | "recordRide" | "recordExpense" | "recordService" | "editVehicle" | "manageReminders" | "manageMembers")[]; "joinedAt": string };
 export type SharedVehicleDetails = { "name": string; "plate"?: string; "vin"?: string };
@@ -51,3 +51,5 @@ export type DispatchStartCancel = { "operationId": string; "startOperationId": s
 export type DispatchStartCancelReceipt = { "operationId": string; "startOperationId": string; "confirmed": true; "serverTimestamp": string };
 export type DispatchParticipantOpen = { "operationId": string };
 export type DispatchParticipantReceipt = { "operationId": string; "confirmed": true; "groupId": string; "accountId": string; "conversationId": string; "roomId": string };
+
+export type MobilityServiceAvailability = { sharedVehicles: "ready" | "unavailable" | "disabled"; dispatch: "ready" | "recovering" | "unavailable" | "disabled"; checkedAt: string };

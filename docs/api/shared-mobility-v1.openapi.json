@@ -4372,6 +4372,10 @@
             "enum": [
               "verified_account_inbox"
             ]
+          },
+          "serviceAvailability": {
+            "$ref": "#/components/schemas/MobilityServiceAvailability",
+            "description": "Optional independent current service availability. Enabled flags indicate configuration, not readiness. Missing field does not prove readiness."
           }
         },
         "required": [
@@ -6405,6 +6409,38 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 512
+          }
+        }
+      },
+      "MobilityServiceAvailability": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sharedVehicles",
+          "dispatch",
+          "checkedAt"
+        ],
+        "properties": {
+          "sharedVehicles": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "unavailable",
+              "disabled"
+            ]
+          },
+          "dispatch": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "recovering",
+              "unavailable",
+              "disabled"
+            ]
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

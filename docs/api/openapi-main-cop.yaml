@@ -3887,7 +3887,14 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "503":
-          $ref: "#/components/responses/ServiceUnavailable"
+          description: Enabled private Dispatch lacks a verified primary lease or is still invalidating old
+            shares; generic pressure failures may use the COP error envelope.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/HealthStatus"
+                  - $ref: "#/components/schemas/ErrorResponse"
   /health/dependencies:
     get:
       tags:
@@ -3904,6 +3911,8 @@ paths:
                 $ref: "#/components/schemas/DependencyHealth"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+      description: Includes private-dispatch dependency with verified exclusive primary lease state. HTTP
+        200 does not imply that every dependency is ready; inspect status and dependencies.
   /metrics:
     get:
       tags:
@@ -19978,6 +19987,30 @@ components:
           format: uuid
         reason:
           type: string
+    MobilityServiceAvailability:
+      type: object
+      additionalProperties: false
+      required:
+        - sharedVehicles
+        - dispatch
+        - checkedAt
+      properties:
+        sharedVehicles:
+          type: string
+          enum:
+            - ready
+            - unavailable
+            - disabled
+        dispatch:
+          type: string
+          enum:
+            - ready
+            - recovering
+            - unavailable
+            - disabled
+        checkedAt:
+          type: string
+          format: date-time
     MobilityCapabilities:
       type: object
       additionalProperties: false
@@ -20023,6 +20056,10 @@ components:
           type: string
           enum:
             - verified_account_inbox
+        serviceAvailability:
+          $ref: "#/components/schemas/MobilityServiceAvailability"
+          description: Optional independent current service availability. Enabled flags indicate
+            configuration, not readiness. Missing field does not prove readiness.
       required:
         - contractVersion
         - sharedVehiclesEnabled
