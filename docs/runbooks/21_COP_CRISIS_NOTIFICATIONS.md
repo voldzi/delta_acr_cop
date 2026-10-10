@@ -4,6 +4,8 @@ Stav k 10. říjnu 2026: API a web jsou nasazené z `a58b73f`, worker je
 aktivovaný. Produkční důkazy a zbývající akceptace jsou v závěrečné sekci.
 Doručení při zavřené/zamčené aplikaci není ověřené. Rozhodnutí:
 [ADR 0040](../adr/0040_VERIFIED_CRISIS_NOTIFICATIONS_AND_MEDIA_CONTEXT.md).
+Následný samostatný chat release a společné vyřešení SIM jsou evidovány v
+[runbooku 22](22_COP_CHAT_RELEASE_20261010.md); níže je původní API/web evidence.
 Kontrakt: [integrace 12](../integration/12_COP_NOTIFICATION_DECISION_AND_PUSH.md).
 
 ## Rozsah a předpoklady
@@ -325,26 +327,31 @@ Zálohy konfigurace mají chráněný přístup; nevypisovat jejich obsah.
   volných na X5 (94 % obsazeno)** a **39,2 GiB na root**. Pro další sestavení
   znovu ověřit kapacitu; nepoužívat globální prune nebo mazání cizích dat.
 
-### Předání SIM a zbývající společná akceptace
+### Uzavření zjištění SIM a zbývající společná akceptace
 
-1. SIM musí potvrdit cache/expiry pravidlo candidate odpovědi: nesmí zůstávat
-   zmrazené `snapshotAgeSeconds` a `ready` po zestárnutí podkladového snapshotu.
+1. SIM potvrdil příčinu v gateway cache a nasadil dvě přesné uncached/no-store
+   cesty v revizi `1c9c313`. Nesmí zůstávat zmrazené `snapshotAgeSeconds` a
+   `ready` po zestárnutí podkladového snapshotu.
    COP zůstává na max. 300 s a zdroj při nesouladu odmítá; nezvyšovat limit jen
    kvůli přijetí staré cache. Obnova a následný čerstvý průchod produkčním COP
-   validátorem prošly; sjednocení časového kontraktu se SIM zůstává otevřené.
+   validátorem prošly. Společná kontrola po opravě bez cache-bust/timestamp
+   hlavičky doložila stejné snapshot stáří `0 → 2,033 s`; zjištění je uzavřené.
 2. Interní přímé čtení SIM `/notifications/candidates` i `/context/news` bez
    Authorization vrátilo **200**, zatímco lokální závazné OpenAPI dědí globální
    `bearerAuth`. U těchto veřejných zdrojových metadat nejde o důkaz přístupu
-   k soukromým údajům. SIM má vyjasnit záměr interní transportní hranice versus
-   deklarovaný kontrakt a sjednotit je. COP nepřidával nový token, port ani síť;
+   k soukromým údajům. SIM nyní výslovně deklaruje `security: []` pouze pro
+   tyto dva interní read-only GET a zachovává síťový allowlist. Nezávislý
+   veřejný HTTPS readback vrací pro obě cesty `403`, soukromé scenarios `401`.
+   Přístupový kontrakt je sjednocený. COP nepřidával nový token, port ani síť;
    jeho vlastní soukromé operace zůstávají autentizované. Upstream test nelze
    vykázat jako očekávané 401.
 3. S vyhrazeným opt-in testerem ověřit skutečné přihlášení, AOI, zařízení,
    Messaging intake/redelivery a fyzické doručení při otevřené, zavřené a
    zamčené aplikaci, deep link, odvolání a více zařízení. Nezapínat souhlas za
    běžné uživatele a nepoužít oficiální produkční zdroj pro syntetickou zkoušku.
-4. E2EE/hlasové hovory, dlouhodobá zátěž a samostatný chat release nejsou
-   touto automatickou a anonymní produkční zkouškou akceptovány.
+4. E2EE/hlasové hovory a dlouhodobá zátěž nejsou touto automatickou a anonymní
+   produkční zkouškou akceptovány. Samostatný chat je následně aktualizovaný
+   a nasazený; přesná evidence a uzavření obou SIM zjištění jsou v runbooku 22.
 
 Chráněné původní obrazy pro návrat: API
 `e76a3323f761662d48fe4126a2fbc477adf6c872307888283db37aafed86c144`, web
@@ -353,9 +360,9 @@ Návrat prvního nevyhovujícího kandidáta na tyto obrazy byl skutečně ově�
 image/health readbackem. Pozdější nové failure traps nejsou označeny jako
 provedený rollback test; finální release i aktivace uspěly.
 
-The four formatted public/style files must be included in the final web build;
-the candidate's production images and exact runtime flags are recorded only
-after the standard deployment and preservation health gate.
+The four formatted public/style files were included in the final web build.
+Production images and runtime flags were recorded after the standard deployment
+and preservation health gate; later chat/SIM acceptance is in runbook 22.
 
 Before replacing COP API, the standard deployment also performs an actual
 1-pixel PNG conversion using the native Sharp binary inside the exact Linux

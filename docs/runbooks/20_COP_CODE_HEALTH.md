@@ -2,8 +2,8 @@
 
 Evidence date: 2026-10-07. Scope: COP API, web, chat and shared packages.
 Status: repaired and verified; API/web integration was deployed on 2026-10-10
-through the separately verified crisis-notification release. The standalone chat
-runtime remains on its previous image. See the final deployment note below.
+through separately verified releases. The standalone chat runtime was then
+updated from `4427d04`; see the final deployment note and runbook 22.
 
 ## Scope and evidence limits
 
@@ -293,8 +293,10 @@ earlier candidate's release gate, not its historical measurements.
 
 API and web are now deployed. Actual image IDs, runtime health, rollback
 protection, preserved production features and remaining SIM/device acceptance
-are recorded in [runbook 21](21_COP_CRISIS_NOTIFICATIONS.md). The standalone
-chat image, edge, MCP, networks and AI routing flags remain unchanged.
-Dependencies and source repairs prepared for the standalone chat still need a
-separate coordinated rollout. No perfect-security, full physical acceptance or
-long-duration performance claim follows from the successful audit and release.
+are recorded in [runbook 21](21_COP_CRISIS_NOTIFICATIONS.md). The subsequent
+standalone chat release is deployed and verified in
+[runbook 22](22_COP_CHAT_RELEASE_20261010.md): `4427d04`, CI 38069061371,
+actual lean/unprivileged image startup, exact public asset readback and
+configuration/network preservation. Edge, MCP and AI routing flags remain
+unchanged. No perfect-security, full physical acceptance or long-duration
+performance claim follows from the successful audit and releases.
