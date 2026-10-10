@@ -5575,7 +5575,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         if (!safetyNotificationConfig.enabled || !safetyNotificationWorker || !(await ensureSafetyNotificationStoreReady())) {
           return sendError(reply, 503, "SAFETY_NOTIFICATIONS_UNAVAILABLE", "Automatic safety notifications are unavailable.", correlationId);
         }
-        dispatchSummary = await safetyNotificationWorker.runForRecipient(actor.subjectId, collection.candidates);
+        dispatchSummary = await safetyNotificationWorker.runForRecipient(actor.subjectId, collection);
         if (dispatchSummary.failedCount > 0) {
           return sendError(reply, 503, "NOTIFICATION_DISPATCH_UNAVAILABLE", "Safety notification dispatch is currently unavailable.", correlationId);
         }

@@ -96,6 +96,19 @@ const approximatePrecisions = new Set([
 const futureToleranceMs = 60_000;
 const maximumCollectionAgeMs = 5 * 60_000;
 
+/** Recheck absolute source times after cache reuse or asynchronous eligibility checks. */
+export function safetyNotificationCollectionFreshUntil(collection: SafetyNotificationCandidateCollection, now: Date): number | undefined {
+  const generatedAt = timestamp(collection.generatedAt);
+  const snapshotAt = timestamp(collection.inputReadiness.snapshotGeneratedAt);
+  if (collection.inputReadiness.status !== "ready" || collection.completeness !== "complete"
+    || collection.inputReadiness.reasons.length > 0 || !generatedAt || !snapshotAt || !Number.isFinite(now.getTime())
+    || collection.inputReadiness.snapshotAgeSeconds === null || !Number.isFinite(collection.inputReadiness.snapshotAgeSeconds)
+    || collection.inputReadiness.snapshotAgeSeconds < 0 || collection.inputReadiness.snapshotAgeSeconds > maximumCollectionAgeMs / 1000
+    || Date.parse(generatedAt) > now.getTime() + futureToleranceMs || Date.parse(snapshotAt) > now.getTime() + futureToleranceMs) return undefined;
+  const freshUntil = Math.min(Date.parse(generatedAt), Date.parse(snapshotAt)) + maximumCollectionAgeMs;
+  return freshUntil > now.getTime() ? freshUntil : undefined;
+}
+
 export function normalizeSafetyNotificationCandidateCollection(
   value: unknown,
   query: SafetyNotificationCandidateQuery,

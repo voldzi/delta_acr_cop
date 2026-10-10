@@ -3,10 +3,11 @@ import type { AoiRule } from "./alerts.js";
 import type { MessagingNotificationIntakeResponse } from "./messaging-provider.js";
 import { buildSafetyCandidateNotificationDecision, type CopNotificationDecision } from "./notification-decision.js";
 import type { SafetyBbox } from "./safety-data-source.js";
-import type {
-  SafetyNotificationCandidate,
-  SafetyNotificationCandidateCollection,
-  SafetyNotificationCandidateQuery
+import {
+  safetyNotificationCollectionFreshUntil,
+  type SafetyNotificationCandidate,
+  type SafetyNotificationCandidateCollection,
+  type SafetyNotificationCandidateQuery
 } from "./safety-notification-candidates.js";
 import type { SafetyNotificationStore } from "./safety-notification-store.js";
 import type { UserProfileRecord, UserProfileStore } from "./user-profile-store.js";
@@ -75,6 +76,11 @@ interface CandidateCacheEntry {
   collection: SafetyNotificationCandidateCollection;
 }
 
+interface FreshCandidate {
+  candidate: SafetyNotificationCandidate;
+  freshUntil: number;
+}
+
 /** A bounded poller. No raw source responses, user IDs, coordinates or notification text are logged. */
 export class SafetyNotificationWorker {
   private readonly now: () => Date;
@@ -124,12 +130,14 @@ export class SafetyNotificationWorker {
   }
 
   /** The HTTP caller must independently authorize this exact persisted subjectId. */
-  async runForRecipient(subjectId: string, candidates: SafetyNotificationCandidate[]): Promise<SafetyNotificationRecipientResult> {
+  async runForRecipient(subjectId: string, collection: SafetyNotificationCandidateCollection): Promise<SafetyNotificationRecipientResult> {
+    const candidates = collection.candidates;
+    const freshUntil = safetyNotificationCollectionFreshUntil(collection, this.now());
     const result: SafetyNotificationRecipientResult = { acceptedCount: 0, skippedCount: 0, failedCount: 0 };
-    if (!this.config.enabled || this.stopping) return { ...result, skippedCount: candidates.length };
+    if (!this.config.enabled || this.stopping || freshUntil === undefined) return { ...result, skippedCount: candidates.length };
     let dispatches = 0;
     for (const candidate of candidates.slice(0, 500)) {
-      const outcome = await this.dispatchCandidate(subjectId, candidate, () => true, () => {
+      const outcome = await this.dispatchCandidate(subjectId, candidate, freshUntil, () => true, () => {
         if (dispatches >= this.config.maxDispatchesPerTick) return false;
         dispatches += 1;
         return true;
@@ -181,16 +189,16 @@ export class SafetyNotificationWorker {
               if (!profile) continue;
               this.state.profilesExamined += 1;
               if (!hasConsentAndAreas(profile)) { this.state.skippedCount += 1; continue; }
-              let candidates: SafetyNotificationCandidate[];
+              let candidates: FreshCandidate[];
               try { candidates = await this.candidatesForProfile(profile, startedAt + this.config.maxRunMs); } catch {
                 this.failure("candidate_source_unavailable");
                 continue;
               }
-              for (const candidate of candidates) {
+              for (const { candidate, freshUntil } of candidates) {
                 if (this.stopping || !leaseValid() || dispatches >= this.config.maxDispatchesPerTick
                   || Date.now() - startedAt >= this.config.maxRunMs) { pageIncomplete = true; break; }
                 this.state.candidatesExamined += 1;
-                const outcome = await this.dispatchCandidate(profile.subjectId, candidate, leaseValid, () => {
+                const outcome = await this.dispatchCandidate(profile.subjectId, candidate, freshUntil, leaseValid, () => {
                   if (dispatches >= this.config.maxDispatchesPerTick) return false;
                   dispatches += 1;
                   return true;
@@ -224,13 +232,14 @@ export class SafetyNotificationWorker {
   private async dispatchCandidate(
     subjectId: string,
     candidate: SafetyNotificationCandidate,
+    freshUntil: number,
     leaseValid: () => boolean,
     reserveDispatch: () => boolean
   ): Promise<"accepted" | "skipped" | "failed"> {
     try {
       return await this.dependencies.profileStore.withSafetyNotificationProfile(subjectId, async (current, profileLeaseValid) => {
         if (!current || current.subjectId !== subjectId || !hasConsentAndAreas(current)
-          || this.stopping || (!leaseValid() || !profileLeaseValid())) return "skipped";
+          || this.stopping || (!leaseValid() || !profileLeaseValid()) || freshUntil <= this.now().getTime()) return "skipped";
         const requestNow = this.now();
         const decision = buildSafetyCandidateNotificationDecision(candidate, {
           actor: { subjectId: current.subjectId }, now: requestNow,
@@ -242,7 +251,7 @@ export class SafetyNotificationWorker {
           || expiresAt.getTime() <= requestNow.getTime() || decision.notification.audience.userIds?.length !== 1
           || decision.notification.audience.userIds[0] !== subjectId) return "skipped";
         if (!await this.dependencies.hasEligibleDevice(subjectId, requestNow)
-          || this.stopping || (!leaseValid() || !profileLeaseValid())) return "skipped";
+          || this.stopping || (!leaseValid() || !profileLeaseValid()) || freshUntil <= this.now().getTime()) return "skipped";
         if (candidate.feature.sourceId === "chmi_hydro") {
           // Hydro severity escalation is a distinct alert; changing polls at the same severity use the cooldown.
           decision.idempotencyKey = `cop.safety:${createHash("sha256").update(JSON.stringify([
@@ -258,7 +267,8 @@ export class SafetyNotificationWorker {
         const claim = await this.dependencies.notificationStore.claim(decision.idempotencyKey, expiresAt, this.now(), 180000, cooldown);
         if (!claim) return "skipped";
         try {
-          if (this.stopping || (!leaseValid() || !profileLeaseValid()) || expiresAt.getTime() <= this.now().getTime() || !reserveDispatch()) {
+          if (this.stopping || (!leaseValid() || !profileLeaseValid()) || expiresAt.getTime() <= this.now().getTime()
+            || freshUntil <= this.now().getTime() || !reserveDispatch()) {
             await this.dependencies.notificationStore.markRetry(claim, this.now(), false);
             return "skipped";
           }
@@ -280,9 +290,9 @@ export class SafetyNotificationWorker {
     } catch { return "failed"; }
   }
 
-  private async candidatesForProfile(profile: UserProfileRecord, deadline: number): Promise<SafetyNotificationCandidate[]> {
+  private async candidatesForProfile(profile: UserProfileRecord, deadline: number): Promise<FreshCandidate[]> {
     const areas = profile.alertPreferences.aoiRules?.filter((area) => area.enabled).slice(0, 10) ?? [];
-    const candidates: SafetyNotificationCandidate[] = [];
+    const candidates: FreshCandidate[] = [];
     for (const area of areas) {
       if (this.stopping || Date.now() >= deadline) break;
       const query: SafetyNotificationCandidateQuery = {
@@ -293,14 +303,16 @@ export class SafetyNotificationWorker {
       const now = this.now();
       let collection = this.cache.get(key)?.expiresAt && this.cache.get(key)!.expiresAt > now.getTime()
         ? this.cache.get(key)!.collection : undefined;
-      if (!collection) {
+      if (!collection || safetyNotificationCollectionFreshUntil(collection, now) === undefined) {
         this.cache.delete(key);
         collection = await this.dependencies.fetchCandidates(query, now);
-        if (collection.inputReadiness.status !== "ready" || collection.completeness !== "complete") { this.failure("candidate_source_unavailable"); continue; }
+        const freshUntil = safetyNotificationCollectionFreshUntil(collection, this.now());
+        if (freshUntil === undefined) { this.failure("candidate_source_unavailable"); continue; }
         if (this.cache.size >= 100) this.cache.delete(this.cache.keys().next().value ?? "");
-        if (this.config.cacheTtlMs > 0) this.cache.set(key, { collection, expiresAt: now.getTime() + this.config.cacheTtlMs });
+        if (this.config.cacheTtlMs > 0) this.cache.set(key, { collection, expiresAt: Math.min(freshUntil, now.getTime() + this.config.cacheTtlMs) });
       }
-      if (collection.completeness === "complete") candidates.push(...collection.candidates);
+      const freshUntil = safetyNotificationCollectionFreshUntil(collection, this.now());
+      if (freshUntil !== undefined) candidates.push(...collection.candidates.map((candidate) => ({ candidate, freshUntil })));
     }
     return candidates.slice(0, 5000);
   }

@@ -29,12 +29,16 @@ function candidate(overrides: Partial<SafetyNotificationCandidate["feature"]> = 
   };
 }
 
-function collection(query: SafetyNotificationCandidateQuery, candidates: SafetyNotificationCandidate[]): SafetyNotificationCandidateCollection {
+function collection(query: SafetyNotificationCandidateQuery, candidates: SafetyNotificationCandidate[], now = initialNow): SafetyNotificationCandidateCollection {
   return {
-    contractVersion: "sim-safety-notification-candidates-v1", generatedAt: initialNow.toISOString(), providerId: "sim.safety-data",
+    contractVersion: "sim-safety-notification-candidates-v1", generatedAt: now.toISOString(), providerId: "sim.safety-data",
     query: { ...query, includeStale: false, minSeverity: query.minSeverity ?? "warning" }, candidates, completeness: "complete", warnings: [],
-    inputReadiness: { status: "ready", snapshotGeneratedAt: initialNow.toISOString(), snapshotAgeSeconds: 0, reasons: [] }
+    inputReadiness: { status: "ready", snapshotGeneratedAt: now.toISOString(), snapshotAgeSeconds: 0, reasons: [] }
   };
+}
+
+function recipientCollection(candidates: SafetyNotificationCandidate[], now = initialNow): SafetyNotificationCandidateCollection {
+  return collection({ bbox: { west: 13, east: 15, south: 49, north: 51 }, layers: ["warnings"], limit: 500 }, candidates, now);
 }
 
 function accepted(): MessagingNotificationIntakeResponse {
@@ -53,7 +57,7 @@ function fixture(candidates = [candidate()]) {
   const profileStore = new InMemoryUserProfileStore();
   const notificationStore = new InMemorySafetyNotificationStore();
   let now = initialNow;
-  const fetchCandidates = vi.fn(async (query: SafetyNotificationCandidateQuery) => collection(query, candidates));
+  const fetchCandidates = vi.fn(async (query: SafetyNotificationCandidateQuery) => collection(query, candidates, now));
   const hasEligibleDevice = vi.fn(async () => true);
   const dispatch = vi.fn(async (_decision: CopNotificationDecision, _now: Date) => accepted());
   const deps = { profileStore, notificationStore, fetchCandidates, hasEligibleDevice, dispatch, now: () => now };
@@ -124,7 +128,7 @@ describe("automatic opt-in safety notifications", () => {
     const revoke = f.profileStore.setSafetyNotificationsEnabled("alice", false).then(() => { revokeCompleted = true; });
     await Promise.resolve(); expect(revokeCompleted).toBe(false);
     release.resolve(accepted()); await tick; await revoke;
-    await f.worker.runForRecipient("alice", [candidate({ featureId: "official:2" })]);
+    await f.worker.runForRecipient("alice", recipientCollection([candidate({ featureId: "official:2" })]));
     expect(f.dispatch).toHaveBeenCalledTimes(1);
   });
 
@@ -135,20 +139,20 @@ describe("automatic opt-in safety notifications", () => {
       operation(await f.profileStore.getProfile(subjectId), () => valid)
     );
     f.hasEligibleDevice.mockImplementationOnce(async () => { valid = false; return true; });
-    await f.worker.runForRecipient("alice", [candidate()]);
+    await f.worker.runForRecipient("alice", recipientCollection([candidate()]));
     expect(f.dispatch).not.toHaveBeenCalled();
     valid = true;
     const claim = f.notificationStore.claim.bind(f.notificationStore);
     vi.spyOn(f.notificationStore, "claim").mockImplementationOnce(async (...args) => {
       const result = await claim(...args); valid = false; return result;
     });
-    await f.worker.runForRecipient("alice", [candidate()]);
+    await f.worker.runForRecipient("alice", recipientCollection([candidate()]));
     expect(f.dispatch).not.toHaveBeenCalled();
   });
 
   it("shares durable deduplication between authenticated manual evaluation and worker", async () => {
     const f = fixture(); await profile(f.profileStore, "alice");
-    expect((await f.worker.runForRecipient("alice", [candidate()])).acceptedCount).toBe(1);
+    expect((await f.worker.runForRecipient("alice", recipientCollection([candidate()]))).acceptedCount).toBe(1);
     await f.worker.runOnce(); expect(f.dispatch).toHaveBeenCalledTimes(1);
   });
 
@@ -162,6 +166,52 @@ describe("automatic opt-in safety notifications", () => {
     expect((await f.worker.runOnce()).status).toBe("degraded");
     f.fetchCandidates.mockImplementationOnce(async (query) => ({ ...collection(query, [candidate()]), completeness: "possibly_truncated" }));
     expect((await f.worker.runOnce()).status).toBe("degraded");
+    expect(f.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("expires cached readiness at the source deadline and resumes only after a fresh fetch", async () => {
+    const f = fixture(); await profile(f.profileStore, "alice");
+    const nearExpiry = (query: SafetyNotificationCandidateQuery) => ({
+      ...collection(query, [candidate()]),
+      inputReadiness: { status: "ready" as const, reasons: [], snapshotGeneratedAt: new Date(initialNow.getTime() - 299000).toISOString(), snapshotAgeSeconds: 299 }
+    });
+    f.fetchCandidates.mockImplementation(async (query) => nearExpiry(query));
+    const worker = new SafetyNotificationWorker(f.deps, { ...config, cacheTtlMs: 30000 });
+    expect((await worker.runOnce()).acceptedCount).toBe(1);
+    f.setNow(new Date(initialNow.getTime() + 2000)); await profile(f.profileStore, "bob");
+    expect((await worker.runOnce()).lastFailure).toBe("candidate_source_unavailable");
+    expect(f.dispatch).toHaveBeenCalledTimes(1);
+    expect(f.fetchCandidates.mock.calls.length).toBeGreaterThan(1);
+    f.fetchCandidates.mockImplementation(async (query) => collection(query, [candidate()], f.deps.now()));
+    expect((await worker.runOnce()).acceptedCount).toBe(1);
+    expect(f.dispatch.mock.calls.map(([decision]) => decision.notification.audience.userIds)).toEqual([["alice"], ["bob"]]);
+  });
+
+  it("rejects source input that ages beyond the deadline while its fetch is pending", async () => {
+    const f = fixture(); await profile(f.profileStore, "alice");
+    f.fetchCandidates.mockImplementation(async (query) => {
+      f.setNow(new Date(initialNow.getTime() + 301000));
+      return collection(query, [candidate()]);
+    });
+    expect((await f.worker.runOnce()).lastFailure).toBe("candidate_source_unavailable");
+    expect(f.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each(["device", "claim"] as const)("rechecks the source deadline after asynchronous %s checks", async (stage) => {
+    const f = fixture(); await profile(f.profileStore, "alice");
+    const value = recipientCollection([candidate()]);
+    value.inputReadiness.snapshotGeneratedAt = new Date(initialNow.getTime() - 299000).toISOString();
+    value.inputReadiness.snapshotAgeSeconds = 299;
+    if (stage === "device") f.hasEligibleDevice.mockImplementationOnce(async () => {
+      f.setNow(new Date(initialNow.getTime() + 2000)); return true;
+    });
+    else {
+      const claim = f.notificationStore.claim.bind(f.notificationStore);
+      vi.spyOn(f.notificationStore, "claim").mockImplementationOnce(async (...args) => {
+        const result = await claim(...args); f.setNow(new Date(initialNow.getTime() + 2000)); return result;
+      });
+    }
+    expect((await f.worker.runForRecipient("alice", value)).skippedCount).toBe(1);
     expect(f.dispatch).not.toHaveBeenCalled();
   });
 
@@ -197,14 +247,14 @@ describe("automatic opt-in safety notifications", () => {
   it("retains a per-user hydro station severity cooldown across restart and allows escalation", async () => {
     const f = fixture(); await profile(f.profileStore, "alice"); await profile(f.profileStore, "bob");
     const warning = candidate({ sourceId: "chmi_hydro", featureId: "station:1" });
-    expect((await f.worker.runForRecipient("alice", [warning])).acceptedCount).toBe(1);
+    expect((await f.worker.runForRecipient("alice", recipientCollection([warning]))).acceptedCount).toBe(1);
     const newer = candidate({ ...warning.feature, observedAt: "2026-10-10T11:55:00Z", validFrom: "2026-10-10T11:55:00Z" });
     const restarted = new SafetyNotificationWorker(f.deps, config);
-    expect((await restarted.runForRecipient("alice", [newer])).acceptedCount).toBe(0);
-    expect((await restarted.runForRecipient("bob", [newer])).acceptedCount).toBe(1);
-    expect((await restarted.runForRecipient("alice", [{ ...newer, feature: { ...newer.feature, severity: "critical" } }])).acceptedCount).toBe(1);
+    expect((await restarted.runForRecipient("alice", recipientCollection([newer]))).acceptedCount).toBe(0);
+    expect((await restarted.runForRecipient("bob", recipientCollection([newer]))).acceptedCount).toBe(1);
+    expect((await restarted.runForRecipient("alice", recipientCollection([{ ...newer, feature: { ...newer.feature, severity: "critical" } }]))).acceptedCount).toBe(1);
     f.setNow(new Date(initialNow.getTime() + config.hydroCooldownMs));
-    expect((await restarted.runForRecipient("alice", [newer])).acceptedCount).toBe(1);
+    expect((await restarted.runForRecipient("alice", recipientCollection([newer], f.deps.now()))).acceptedCount).toBe(1);
   });
 
   it("guards concurrent worker instances with a lease and stops before pending source result dispatch", async () => {

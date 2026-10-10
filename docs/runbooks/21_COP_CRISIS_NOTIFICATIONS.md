@@ -329,6 +329,15 @@ Zálohy konfigurace mají chráněný přístup; nevypisovat jejich obsah.
 
 ### Uzavření zjištění SIM a zbývající společná akceptace
 
+Čerstvost musí platit i po čekání uvnitř COP. Krátká worker cache končí nejpozději
+na minimu `generatedAt + 300 s` a `snapshotGeneratedAt + 300 s`; její použití
+znovu ověřuje absolutní časy. Stejný deadline se nese ke konkrétnímu kandidátovi
+a znovu se kontroluje po ověření zařízení a po získání durable claim, těsně před
+Messaging intake. Autentizované evaluate předává celý normalizovaný snapshot.
+Samotný dosud platný incident ani 30sekundová cache neprodlužují platnost
+zdrojového snapshotu. Při překročení deadline se nic neodesílá; odesílání může
+obnovit pouze čerstvý, úplný a připravený snapshot. Nezapínat tím uživatelům souhlas.
+
 1. SIM potvrdil příčinu v gateway cache a nasadil dvě přesné uncached/no-store
    cesty v revizi `1c9c313`. Nesmí zůstávat zmrazené `snapshotAgeSeconds` a
    `ready` po zestárnutí podkladového snapshotu.
