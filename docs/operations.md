@@ -164,3 +164,7 @@ The chat update and joint cache/authentication evidence are in
 [release runbook 22](runbooks/22_COP_CHAT_RELEASE_20261010.md). A healthy
 generative gateway does not prove that the configured embedding server or
 default Ollama inference is available; verify each separately.
+Account safety has an unexecuted coordinated deployment plan in
+[integration/40_ACCOUNT_SAFETY_APP_REVIEW.md](integration/40_ACCOUNT_SAFETY_APP_REVIEW.md).
+Keep its flags false until the required process, data policy and real-device
+acceptance are approved. Do not roll back a real user's block or deletion state.

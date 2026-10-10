@@ -99,3 +99,8 @@ or phone receipt.
 - [Shared vehicle profile/audit/recovery](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md): current mapped profile, exact owner UUID and retained correction history.
 
 - [Verified read-only Matrix identities and caller presentation](integration/42_VERIFIED_MATRIX_IDENTITIES.md).
+
+Account safety candidate: [COP/Jízda handoff](integration/40_ACCOUNT_SAFETY_APP_REVIEW.md),
+[data inventory](privacy/01_SERVER_DATA_INVENTORY.md),
+[public text candidate](privacy/02_PUBLIC_PRIVACY_TEXT_CANDIDATE.md),
+[ADR 0046](adr/0046_ACCOUNT_SAFETY_AND_ERASURE_BOUNDARY.md).

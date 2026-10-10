@@ -404,3 +404,7 @@ Completed ride details, explicit initial seed and calculated mileage v2 extend t
 Shared vehicle compatible routing profile, owner binding, audited edits and care snapshot: [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).
 
 Read-only messaging identity lookup and additive viewer-specific call.peer are defined in binding JSON OpenAPI; see [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md). Provisioning resolve is not a fallback.
+
+Prepared account safety extension is documented in the binding JSON contract and
+[the Jízda handoff](integration/40_ACCOUNT_SAFETY_APP_REVIEW.md). Production
+activation and actual account erasure are not claimed by this candidate.
