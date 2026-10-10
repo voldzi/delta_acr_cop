@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { readBoundedBody } from "./bounded-upstream.js";
 
 const CONTEXT_VERSION = "cop-chat-context-v1";
 const ATTESTATION = "cop-policy-reviewed-v1";
@@ -302,16 +303,18 @@ export class CopAiRouterChatAdapter {
         method: "POST",
         headers: { authorization: `Bearer ${this.config.token}`, "content-type": "application/json" },
         body: JSON.stringify(body),
+        redirect: "error",
         signal: AbortSignal.timeout(input.kind === "internal" ? 100_000 : 30_000)
       });
     } catch {
       throw new CopRouterChatError("router_unavailable");
     }
+    if (!response.ok) await response.body?.cancel();
     if (response.status === 429) throw new CopRouterChatError("limit_reached");
     if (!response.ok) throw new CopRouterChatError("router_unavailable");
     let data: unknown;
     try {
-      data = await response.json();
+      data = JSON.parse((await readBoundedBody(response, 1024 * 1024)).toString("utf8"));
     } catch {
       throw new CopRouterChatError("invalid_response");
     }

@@ -18,10 +18,11 @@ import {
 } from "@cop/canonical-model";
 import { ContractValidators, formatValidationErrors } from "@cop/ingest-contracts";
 import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
-import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
+import { defaultSystemSubject } from "@cop/policy-engine";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
+import { isDeepStrictEqual } from "node:util";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { buildCopAlerts, type AoiRule, type AoiRuleAffiliationScope, type CopAlert } from "./alerts.js";
 import {
@@ -46,7 +47,10 @@ import {
   type CommunityReportStore,
   type CommunityReportVisibility
 } from "./community-report-store.js";
-import { correlationIdFrom, sendError } from "./errors.js";
+import { correlationIdFrom, requestBodyLimitOptions, sendError } from "./errors.js";
+import { fetchBoundedProxyResource, isHttpUrlWithoutCredentials, readBoundedBody, UpstreamBodyTooLargeError } from "./bounded-upstream.js";
+import { safeRequestLog } from "./request-log.js";
+import { canReadCanonicalObject, canReadCanonicalHistoryPoint, isPublicCanonicalReleasePolicy } from "./canonical-read-policy.js";
 import { OpenAiMcpAssistant, openAiMcpAssistantConfig } from "./openai-mcp-assistant.js";
 import { AiRouterMcpAssistant, aiRouterMcpConfig } from "./ai-router-mcp-assistant.js";
 import { CopAiRouterChatAdapter, CopRouterChatError } from "./ai-router-chat.js";
@@ -799,7 +803,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       process.env.COP_API_BODY_LIMIT_BYTES,
       Math.max(1024 * 1024, maxCommunityAttachmentBytes * 2)
     ),
-    logger: options.logger ?? false
+    logger: options.logger ? { serializers: { req: safeRequestLog } } : false
   });
   const state = options.state ?? createInitialState();
   const validators = new ContractValidators();
@@ -1014,8 +1018,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       done(null, body);
     }
   );
-  app.addHook("preHandler", async (request, reply) => {
-    if (!webBffEnabled || isBffAuthRoute(request.url)) {
+  // Authenticate headers/cookies before parsing a potentially large upload.
+  app.addHook("onRequest", async (request, reply) => {
+    if (request.method === "OPTIONS" || !webBffEnabled || isBffAuthRoute(request.url)) {
       return;
     }
     const presentedBearer = request.headers.authorization;
@@ -1041,7 +1046,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       request.headers.authorization = `Bearer ${resolved.accessToken}`;
     }
   });
-  app.addHook("preHandler", requireBearerToken);
+  app.addHook("onRequest", requireBearerToken);
   registerMobilityRoutes(app, {
     messagingProvider,
     enabled: options.sharedMobilityEnabled ?? readBoolean(process.env.COP_SHARED_MOBILITY_ENABLED, false),
@@ -1157,7 +1162,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!session) return reply.code(401).send({ authenticated: false });
     return { authenticated: true, expiresAt: session.accessTokenExpiresAt.toISOString(), profile: session.profile };
   });
-  app.post("/api/v1/auth/logout", async (request, reply) => {
+  app.post("/api/v1/auth/logout", requestBodyLimitOptions(1024), async (request, reply) => {
     if (webBffEnabled && !isTrustedBffOrigin(request)) {
       return sendError(
         reply,
@@ -1408,10 +1413,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         redirect_uri: transaction.callbackUri
       }),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      method: "POST"
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(8000)
     });
     if (!response.ok) throw new Error(`OIDC token exchange failed (${response.status}).`);
-    return tokensFromOidcResponse((await response.json()) as BffTokenResponse);
+    return tokensFromOidcResponse(JSON.parse((await readBoundedBody(response, 1024 * 1024)).toString("utf8")) as BffTokenResponse);
   }
 
   async function refreshBffTokens(refreshToken: string): Promise<WebSessionTokens> {
@@ -1420,10 +1427,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const response = await fetch(`${normalizedOidcIssuer()}/protocol/openid-connect/token`, {
       body: new URLSearchParams({ client_id: clientId, grant_type: "refresh_token", refresh_token: refreshToken }),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      method: "POST"
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(8000)
     });
     if (!response.ok) throw new Error(`OIDC token refresh failed (${response.status}).`);
-    return tokensFromOidcResponse((await response.json()) as BffTokenResponse, refreshToken);
+    return tokensFromOidcResponse(JSON.parse((await readBoundedBody(response, 1024 * 1024)).toString("utf8")) as BffTokenResponse, refreshToken);
   }
 
   async function tokensFromOidcResponse(
@@ -2492,7 +2501,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         source: "geocoder"
       };
     } catch (error) {
-      app.log.warn({ error, placeQuery }, "AI context geocode lookup failed.");
+      app.log.warn({ error }, "AI context geocode lookup failed.");
       return undefined;
     }
   }
@@ -2878,7 +2887,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           });
         } catch (error) {
           app.log.warn(
-            { error, query: fallbackQuery, requestId: input.requestId },
+            { error, requestId: input.requestId },
             "AI geocoder map-search fallback failed."
           );
           warnings.push(`Geocoder fallback selhal: ${errorMessage(error)}`);
@@ -4484,12 +4493,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await flushQueuedTrackPersistence();
     if (trackHistoryStore && trackHistoryStoreStatus === "ok") {
       try {
-        return await trackHistoryStore.query(query, requestNow);
+        const items = await trackHistoryStore.query(query, requestNow);
+        return readableHistoryItems(items, requestNow);
       } catch (error) {
         markTrackHistoryStoreDegraded(error);
       }
     }
-    return queryTrackHistory(state, query, requestNow);
+    return readableHistoryItems(queryTrackHistory(state, query, requestNow), requestNow);
+  }
+
+  function readableHistoryItems(items: Array<{ objectId: string; points: TrackHistoryPoint[] }>, requestNow: Date) {
+    return items.map((item) => ({
+      ...item,
+      points: item.points.filter((point) => canReadCanonicalHistoryPoint(defaultSystemSubject(), point, state.events, requestNow))
+    })).filter((item) => item.points.length > 0);
+  }
+
+  function canReadObject(subject: ReturnType<typeof defaultSystemSubject>, object: ObservedObject): boolean {
+    return canReadCanonicalObject(subject, object, state.events, now());
+  }
+
+  function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {
+    return canReadCanonicalHistoryPoint(subject, point, state.events, now());
   }
 
   async function buildConflictEvidenceForObjects(
@@ -4757,10 +4782,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   function decorateObjectsWithInMemoryConflictEvidence(objects: ObservedObject[], requestNow: Date): ObservedObject[] {
-    const historyItems = objects.map((object) => ({
+    const historyItems = readableHistoryItems(objects.map((object) => ({
       objectId: object.objectId,
       points: state.trackHistory.get(object.objectId) ?? []
-    }));
+    })), requestNow);
     const evidenceIndex = buildConflictEvidenceIndex({
       evaluatedAt: requestNow.toISOString(),
       historyItems,
@@ -7951,6 +7976,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         .header("Content-Type", contentType)
         .send(body);
     } catch (error) {
+      if (error instanceof UpstreamBodyTooLargeError) {
+        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Raster overlay image is too large.", correlationId);
+      }
       app.log.warn({ error, rasterHost: rasterUrl.hostname }, "Raster overlay request failed.");
       return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
     }
@@ -8069,6 +8097,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         .header("Content-Type", contentType)
         .send(body);
     } catch (error) {
+      if (error instanceof UpstreamBodyTooLargeError) {
+        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Weather camera response is too large.", correlationId);
+      }
       app.log.warn({ error, upstreamUrl: upstreamUrl.toString() }, "Weather camera proxy request failed.");
       return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
     }
@@ -8252,7 +8283,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         now()
       );
     } catch (error) {
-      app.log.warn({ error, q }, "Place geocode search failed.");
+      app.log.warn({ error }, "Place geocode search failed.");
       return sendError(
         reply,
         502,
@@ -8263,7 +8294,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
-  app.post("/api/v1/map/query", async (request, reply) => {
+  app.post("/api/v1/map/query", requestBodyLimitOptions(64 * 1024), async (request, reply) => {
     const requestNow = now();
     const actor = actorFromRequest(request);
     const query = parseMapQueryRequest(request.body);
@@ -8921,7 +8952,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return node;
   });
 
-  app.post("/api/v1/federation/nodes/:nodeId/heartbeat", async (request, reply) => {
+  app.post("/api/v1/federation/nodes/:nodeId/heartbeat", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { nodeId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const previous = await getFederatedNode(params.nodeId);
@@ -8972,7 +9003,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return reply.code(previous ? 200 : 201).send(result.node);
   });
 
-  app.post("/api/v1/events/domain", async (request, reply) => {
+  app.post("/api/v1/events/domain", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const parsed = parseDomainEventPublishRequest(request.body, correlationId);
     if (!parsed.ok || !parsed.input) {
@@ -9047,7 +9078,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   });
 
-  app.post("/api/v1/edge/outbox/flush", async (request, reply) => {
+  app.post("/api/v1/edge/outbox/flush", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const body = isRecord(request.body) ? request.body : undefined;
     const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : "";
@@ -9189,7 +9220,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.post("/api/v1/edge/replay-cursors/:nodeId/ack", async (request, reply) => {
+  app.post("/api/v1/edge/replay-cursors/:nodeId/ack", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { nodeId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const node = await getFederatedNode(params.nodeId);
@@ -9237,7 +9268,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/edge/replay/:nodeId", async (request, reply) => {
+  app.get("/api/v1/edge/replay/:nodeId", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { nodeId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const node = await getFederatedNode(params.nodeId);
@@ -9314,7 +9345,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/events/domain", async (request) => {
+  app.get("/api/v1/events/domain", { onRequest: requirePrivilegedIntegrationActor }, async (request) => {
     const query = parseDomainEventReplayQuery(request.query);
     const result = await queryRuntimeDomainEvents(query);
     const items = result.items;
@@ -9331,7 +9362,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/events/dead-letter/:deadLetterId", async (request, reply) => {
+  app.get("/api/v1/events/dead-letter/:deadLetterId", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { deadLetterId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const deadLetter = await getRuntimeDomainDeadLetter(params.deadLetterId);
@@ -9345,7 +9376,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.post("/api/v1/events/dead-letter/:deadLetterId/redrive", async (request, reply) => {
+  app.post("/api/v1/events/dead-letter/:deadLetterId/redrive", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { deadLetterId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const deadLetter = await getRuntimeDomainDeadLetter(params.deadLetterId);
@@ -9421,7 +9452,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   });
 
-  app.post("/api/v1/events/dead-letter/:deadLetterId/resolve", async (request, reply) => {
+  app.post("/api/v1/events/dead-letter/:deadLetterId/resolve", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { deadLetterId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const actor = actorFromRequest(request);
@@ -9449,7 +9480,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/events/dead-letter", async (request) => {
+  app.get("/api/v1/events/dead-letter", { onRequest: requirePrivilegedIntegrationActor }, async (request) => {
     const query = request.query as { limit?: string };
     const parsedLimit = Number.parseInt(query.limit ?? "", 10);
     const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 500) : 100;
@@ -9465,7 +9496,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.post("/api/v1/sources", async (request, reply) => {
+  app.post("/api/v1/sources", { onRequest: requireSourceRegistryAdmin }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const validation = validators.validateSourceSystem(request.body);
     if (!validation.valid || !validation.data) {
@@ -9500,17 +9531,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return source;
   });
 
-  app.patch("/api/v1/sources/:sourceSystemId", async (request, reply) => {
+  app.patch("/api/v1/sources/:sourceSystemId", { onRequest: requireSourceRegistryAdmin }, async (request, reply) => {
     const params = request.params as { sourceSystemId: string };
     const source = state.sources.get(params.sourceSystemId);
     if (!source) {
       return sendError(reply, 404, "NOT_FOUND", "Source system was not found.", crypto.randomUUID());
     }
-    const patch = request.body as Partial<SourceSystem>;
-    const updated = {
+    const patch = request.body;
+    if (!isRecord(patch) || (hasOwn(patch, "sourceSystemId") && patch.sourceSystemId !== source.sourceSystemId)) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Source system patch must be an object and cannot change sourceSystemId.",
+        correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const validation = validators.validateSourceSystem({
       ...source,
       ...patch,
-      sourceSystemId: source.sourceSystemId,
+      sourceSystemId: source.sourceSystemId
+    });
+    if (!validation.valid || !validation.data) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Updated source system does not match schema.",
+        correlationIdFrom(request.headers["x-correlation-id"]), formatValidationErrors(validation.errors));
+    }
+    const updated: SourceSystem = {
+      ...validation.data,
       updatedAt: new Date().toISOString()
     };
     state.sources.set(source.sourceSystemId, updated);
@@ -9518,7 +9560,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return updated;
   });
 
-  app.post("/api/v1/sources/:sourceSystemId/revoke", async (request, reply) => {
+  app.post("/api/v1/sources/:sourceSystemId/revoke", { onRequest: requireSourceRegistryAdmin }, async (request, reply) => {
     const params = request.params as { sourceSystemId: string };
     const source = state.sources.get(params.sourceSystemId);
     if (!source) {
@@ -9534,7 +9576,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   });
 
-  app.post("/api/v1/ingest/events", async (request, reply) => {
+  app.post("/api/v1/ingest/events", { onRequest: requireCanonicalIngestActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const validation = validators.validateCanonicalEvent(request.body);
     if (!validation.valid || !validation.data) {
@@ -9556,12 +9598,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       reply,
       correlationId,
       queueTrackPersistence,
-      publishCurrentTracks
+      publishCurrentTracks,
+      now()
     );
   });
 
-  app.post("/api/v1/ingest/batches", async (request, reply) => {
+  app.post("/api/v1/ingest/batches", { onRequest: requireCanonicalIngestActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const requestNow = now();
     const body = request.body as {
       batchId?: string;
       contractVersion?: string;
@@ -9577,12 +9621,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendError(reply, 400, "VALIDATION_ERROR", "Batch payload does not match contract.", correlationId);
     }
 
-    const sourceCheck = validateSourceForRequest(state, body.sourceSystemId, body.sourceSystemId, correlationId);
+    const sourceCheck = validateSourceForRequest(state, headerAsString(request.headers["x-source-system-id"]), body.sourceSystemId, correlationId);
     if (!sourceCheck.valid) {
       return sendError(reply, sourceCheck.statusCode, sourceCheck.code, sourceCheck.message, correlationId);
     }
 
     const items: Array<{ eventId: string; status: "QUEUED" | "REJECTED"; errorCode?: string }> = [];
+    const validatedEvents: CanonicalEventEnvelope[] = [];
+    const eventClaims = new Map<string, CanonicalEventEnvelope>();
     const acceptedObjects: ObservedObject[] = [];
     for (const item of body.events) {
       const validation = validators.validateCanonicalEvent(item);
@@ -9591,12 +9637,30 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         continue;
       }
 
-      const result = acceptEvent(state, validation.data);
+      const itemSource = validateSourceForRequest(state, body.sourceSystemId, validation.data.source.sourceSystemId, correlationId);
+      if (!itemSource.valid) {
+        return sendError(reply, itemSource.statusCode, itemSource.code, itemSource.message, correlationId);
+      }
+      const policyFailure = ingestEventPolicyFailure(itemSource.source, validation.data, requestNow);
+      if (policyFailure) {
+        return sendError(reply, 422, policyFailure.code, policyFailure.message, correlationId);
+      }
+      const existing = state.events.get(validation.data.eventId) ?? eventClaims.get(validation.data.eventId);
+      if (existing && !sameCanonicalEventIdentity(existing, validation.data)) {
+        return sendError(reply, 409, "EVENT_ID_CONFLICT", "Event ID was reused with different canonical content.", correlationId);
+      }
+      eventClaims.set(validation.data.eventId, validation.data);
+      validatedEvents.push(validation.data);
+      items.push({ eventId: validation.data.eventId, status: "QUEUED" });
+    }
+    // Validate every item's source/security boundary before mutating any state.
+    for (const event of validatedEvents) {
+      if (state.events.has(event.eventId)) continue;
+      const result = acceptEvent(state, event, requestNow.toISOString());
       queueTrackPersistence(result.object, result.accepted, result.historyPoint);
       acceptedObjects.push(result.object);
-      items.push({ eventId: result.accepted.eventId, status: "QUEUED" });
     }
-    await publishCurrentTracks(acceptedObjects);
+    if (acceptedObjects.length > 0) await publishCurrentTracks(acceptedObjects);
 
     const response = {
       batchId: body.batchId,
@@ -9618,13 +9682,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       requestNow,
       trackLifecycle,
       includeExpired
-    ).filter((object) => {
-      const decision = evaluateReadPolicy(subject, {
-        classification: "UNCLASSIFIED",
-        synthetic: object.synthetic
-      });
-      return decision.allowed;
-    });
+    ).filter((object) => canReadObject(subject, object));
     const items = await decorateObjectsWithConflictEvidence(readableItems, requestNow);
     return { items, nextCursor: null };
   });
@@ -9778,7 +9836,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return;
       }
 
-      const visibleMessage = filterStreamMessage(subject, message);
+      const visibleMessage = filterStreamMessage(message, (object) => canReadObject(subject, object));
       if (!visibleMessage) {
         return;
       }
@@ -10938,6 +10996,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     actor: AuthenticatedActor | null | undefined,
     correlationId: string
   ): Promise<CopMcpToolInvocationEnvelope> {
+    if (privilegedIntegrationMcpTools.has(tool.toolId) && !canUsePrivilegedIntegration(actor)) {
+      throw new IntegrationAccessError();
+    }
     const startedAt = Date.now();
     const invocationId = crypto.randomUUID();
     let result: Record<string, unknown>;
@@ -11367,6 +11428,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           return mcpJsonRpcError(id, -32602, "Invalid params", "Requested COP MCP tool is not allowlisted.");
         }
         const input = isRecord(params.arguments) ? params.arguments : {};
+        if (privilegedIntegrationMcpTools.has(tool.toolId) && !canUsePrivilegedIntegration(actor)) {
+          return mcpJsonRpcError(id, -32003, "Forbidden", "INTEGRATION_FORBIDDEN: This tool requires a privileged integration actor.");
+        }
         const invocation = await invokeCopMcpToolInternal(tool, input, actor, correlationId);
         return mcpJsonRpcResult(id, {
           content: [
@@ -11393,7 +11457,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }));
 
-  app.post("/api/v1/mcp/tools/:toolId/invoke", async (request, reply) => {
+  app.post("/api/v1/mcp/tools/:toolId/invoke", { onRequest: requireMcpIntegrationActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const params = request.params as { toolId: string };
     const tool = copMcpTools.find((item) => item.toolId === params.toolId);
@@ -12149,7 +12213,8 @@ async function handleIngestEvent(
     event: CanonicalEventEnvelope,
     historyPoint: TrackHistoryPoint | undefined
   ) => void,
-  publishCurrentTracks: (objects: ObservedObject[]) => Promise<void>
+  publishCurrentTracks: (objects: ObservedObject[]) => Promise<void>,
+  requestNow: Date
 ) {
   const headerSource = headerAsString(headers["x-source-system-id"]);
   const sourceCheck = validateSourceForRequest(state, headerSource, event.source.sourceSystemId, correlationId);
@@ -12163,34 +12228,9 @@ async function handleIngestEvent(
     return sendError(reply, sourceCheck.statusCode, sourceCheck.code, sourceCheck.message, correlationId);
   }
 
-  if (!sourceCheck.source.allowedEventTypes.includes(event.eventType)) {
-    return sendError(
-      reply,
-      422,
-      "EVENT_TYPE_NOT_ALLOWED",
-      "Source is not allowed to publish this event type.",
-      correlationId
-    );
-  }
-
-  if (!sourceCheck.source.allowedObjectTypes.includes(event.payload.objectType)) {
-    return sendError(
-      reply,
-      422,
-      "OBJECT_TYPE_NOT_ALLOWED",
-      "Source is not allowed to publish this object type.",
-      correlationId
-    );
-  }
-
-  if (sourceCheck.source.synthetic && event.simulation?.synthetic !== true) {
-    return sendError(
-      reply,
-      422,
-      "SYNTHETIC_FLAG_REQUIRED",
-      "Synthetic source must mark events as synthetic.",
-      correlationId
-    );
+  const policyFailure = ingestEventPolicyFailure(sourceCheck.source, event, requestNow);
+  if (policyFailure) {
+    return sendError(reply, 422, policyFailure.code, policyFailure.message, correlationId);
   }
 
   const key = headerAsString(headers["x-idempotency-key"]);
@@ -12198,7 +12238,11 @@ async function handleIngestEvent(
     return sendError(reply, 400, "IDEMPOTENCY_KEY_REQUIRED", "X-Idempotency-Key header is required.", correlationId);
   }
 
-  const hash = hashPayload(event);
+  const existingEvent = state.events.get(event.eventId);
+  if (existingEvent && !sameCanonicalEventIdentity(existingEvent, event)) {
+    return sendError(reply, 409, "EVENT_ID_CONFLICT", "Event ID was reused with different canonical content.", correlationId);
+  }
+  const hash = hashPayload(canonicalEventIdentity(event));
   const previous = state.idempotency.get(key);
   if (previous && previous.hash !== hash) {
     appendAudit(state, "IDEMPOTENCY_CONFLICT", { eventId: event.eventId }, correlationId);
@@ -12214,10 +12258,13 @@ async function handleIngestEvent(
     return reply.code(202).send(previous.response);
   }
 
-  const result = acceptEvent(state, event);
-  queueTrackPersistence(result.object, result.accepted, result.historyPoint);
-  await publishCurrentTracks([result.object]);
-  const accepted = result.accepted;
+  let accepted = existingEvent;
+  if (!accepted) {
+    const result = acceptEvent(state, event, requestNow.toISOString());
+    queueTrackPersistence(result.object, result.accepted, result.historyPoint);
+    await publishCurrentTracks([result.object]);
+    accepted = result.accepted;
+  }
   const response = {
     accepted: true,
     eventId: accepted.eventId,
@@ -12238,11 +12285,12 @@ async function handleIngestEvent(
 
 function acceptEvent(
   state: CopState,
-  event: CanonicalEventEnvelope
+  event: CanonicalEventEnvelope,
+  serverIngestTimestamp?: string
 ): { accepted: CanonicalEventEnvelope; historyPoint: TrackHistoryPoint | undefined; object: ObservedObject } {
   const accepted: CanonicalEventEnvelope = {
     ...event,
-    ingestTimestamp: event.ingestTimestamp ?? new Date().toISOString()
+    ingestTimestamp: serverIngestTimestamp ?? event.ingestTimestamp ?? new Date().toISOString()
   };
   state.events.set(accepted.eventId, accepted);
   const object = withEventProvenance(createCopObjectFromEvent(accepted), accepted);
@@ -14090,25 +14138,6 @@ function canReadSituationSource(sourceId: string, actor: AuthenticatedActor | nu
   return requiredRole ? Boolean(actor.roles?.includes(requiredRole)) : true;
 }
 
-function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {
-  return canReadBySyntheticFlag(subject, point.synthetic);
-}
-
-function canReadObject(subject: ReturnType<typeof defaultSystemSubject>, object: ObservedObject): boolean {
-  return canReadBySyntheticFlag(subject, object.synthetic);
-}
-
-function canReadBySyntheticFlag(
-  subject: ReturnType<typeof defaultSystemSubject>,
-  synthetic: boolean | undefined
-): boolean {
-  const decision = evaluateReadPolicy(subject, {
-    classification: "UNCLASSIFIED",
-    synthetic
-  });
-  return decision.allowed;
-}
-
 function conflictEvidenceCacheKey(
   objects: ObservedObject[],
   requestNow: Date,
@@ -14149,14 +14178,14 @@ function pruneBoundedCache<Key, Value>(cache: Map<Key, Value>, maxEntries: numbe
 }
 
 function filterStreamMessage(
-  subject: ReturnType<typeof defaultSystemSubject>,
-  message: CopStreamMessage
+  message: CopStreamMessage,
+  canRead: (object: ObservedObject) => boolean
 ): CopStreamMessage | null {
   if (message.type === "heartbeat" || message.type === "backpressure" || message.type === "reconnect_required") {
     return message;
   }
 
-  const changes = message.changes.filter((change) => canReadObject(subject, change.object));
+  const changes = message.changes.filter((change) => canRead(change.object));
   if (message.type === "snapshot") {
     return { ...message, changes };
   }
@@ -17782,6 +17811,7 @@ function isWeatherCameraPath(pathname: string): boolean {
 }
 
 function isAllowedWeatherCameraUrl(url: URL, env: Record<string, string | undefined> = process.env): boolean {
+  if (!isHttpUrlWithoutCredentials(url) || !isWeatherCameraPath(url.pathname)) return false;
   const hostname = url.hostname.toLowerCase();
   if (hostname === "chmi.cz" || hostname.endsWith(".chmi.cz")) {
     return false;
@@ -17796,6 +17826,7 @@ function isAllowedWeatherCameraUrl(url: URL, env: Record<string, string | undefi
 }
 
 function isAllowedRasterOverlayUrl(url: URL, env: Record<string, string | undefined> = process.env): boolean {
+  if (!isHttpUrlWithoutCredentials(url)) return false;
   const allowedHosts = new Set(
     (env.COP_RASTER_OVERLAY_ALLOWED_HOSTS ?? defaultRasterOverlayAllowedHosts)
       .split(",")
@@ -17832,36 +17863,28 @@ function readableResponseBody(response: Response): Readable {
 
 async function fetchWeatherCameraResource(url: URL): Promise<Response> {
   const timeoutMs = readPositiveInteger(process.env.COP_WEATHER_CAMERA_TIMEOUT_MS, 8000);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url.toString(), {
-      headers: {
-        accept: "application/json,image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
-        "user-agent": "CSM-COP weather camera proxy"
-      },
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
+  return fetchBoundedProxyResource(url, {
+    headers: {
+      accept: "application/json,image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
+      "user-agent": "CSM-COP weather camera proxy"
+    },
+    isAllowedUrl: isAllowedWeatherCameraUrl,
+    maxBytes: weatherCameraMaxBytes,
+    timeoutMs
+  });
 }
 
 async function fetchRasterOverlay(url: URL): Promise<Response> {
   const timeoutMs = readPositiveInteger(process.env.COP_RASTER_OVERLAY_TIMEOUT_MS, 8000);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url.toString(), {
-      headers: {
-        accept: "image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
-        "user-agent": "CSM-COP raster overlay proxy"
-      },
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
+  return fetchBoundedProxyResource(url, {
+    headers: {
+      accept: "image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
+      "user-agent": "CSM-COP raster overlay proxy"
+    },
+    isAllowedUrl: isAllowedRasterOverlayUrl,
+    maxBytes: rasterOverlayMaxBytes,
+    timeoutMs
+  });
 }
 
 async function fetchWeatherRadarFrames(url: URL, timeoutMsOverride?: number): Promise<unknown> {
@@ -19188,8 +19211,79 @@ function validateSourceForRequest(
   return { valid: true, source };
 }
 
+function ingestEventPolicyFailure(source: SourceSystem, event: CanonicalEventEnvelope, requestNow: Date): { code: string; message: string } | null {
+  const classificationLevels = ["UNCLASSIFIED", "RESTRICTED", "CONFIDENTIAL", "SECRET"];
+  const sourceClearance = classificationLevels.indexOf(source.classificationLimit);
+  const eventClassification = classificationLevels.indexOf(event.classification.level);
+  if (event.classification.level !== "UNCLASSIFIED" || eventClassification < 0 || sourceClearance < eventClassification) {
+    return { code: "CLASSIFICATION_NOT_ALLOWED", message: "The canonical COP feed currently accepts only unclassified events within the source's classification limit." };
+  }
+  if (!isPublicCanonicalReleasePolicy(event.payload.releasePolicy, requestNow)) {
+    return { code: "RELEASE_POLICY_NOT_ALLOWED", message: "The canonical COP feed accepts only public, unexpired release policies without targeted access restrictions." };
+  }
+  if (!source.allowedEventTypes.includes(event.eventType)) {
+    return { code: "EVENT_TYPE_NOT_ALLOWED", message: "Source is not allowed to publish this event type." };
+  }
+  if (!source.allowedObjectTypes.includes(event.payload.objectType)) {
+    return { code: "OBJECT_TYPE_NOT_ALLOWED", message: "Source is not allowed to publish this object type." };
+  }
+  if (source.synthetic && event.simulation?.synthetic !== true) {
+    return { code: "SYNTHETIC_FLAG_REQUIRED", message: "Synthetic source must mark events as synthetic." };
+  }
+  return null;
+}
+
+async function requireCanonicalIngestActor(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const actor = actorFromRequest(request);
+  const allowedRoles = new Set(["COP_OPERATOR", "INTEGRATION_ADMIN", "SYSTEM_CLIENT"]);
+  if (actor && (actor.authMode === "lab" || actor.roles?.some((role) => allowedRoles.has(role.trim().toUpperCase())))) return;
+  sendError(reply, 403, "INGEST_FORBIDDEN", "Canonical ingest requires an authorized operator or integration actor.",
+    correlationIdFrom(request.headers["x-correlation-id"]));
+}
+
+async function requireSourceRegistryAdmin(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const actor = actorFromRequest(request);
+  const allowedRoles = new Set(["INTEGRATION_ADMIN", "SECURITY_ADMIN"]);
+  if (actor && (actor.authMode === "lab" || actor.roles?.some((role) => allowedRoles.has(role.trim().toUpperCase())))) return;
+  sendError(reply, 403, "SOURCE_MANAGEMENT_FORBIDDEN", "Source registry changes require an authorized integration or security administrator.",
+    correlationIdFrom(request.headers["x-correlation-id"]));
+}
+
+const privilegedIntegrationMcpTools = new Set(["cop.events.replay", "cop.events.dead_letters.list"]);
+
+class IntegrationAccessError extends Error {
+  constructor() {
+    super("This tool requires a privileged integration actor.");
+  }
+}
+
+function canUsePrivilegedIntegration(actor: AuthenticatedActor | null | undefined): boolean {
+  const allowedRoles = new Set(["INTEGRATION_ADMIN", "SECURITY_ADMIN", "SYSTEM_CLIENT"]);
+  return Boolean(actor && (actor.authMode === "lab" || actor.roles?.some((role) => allowedRoles.has(role.trim().toUpperCase()))));
+}
+
+async function requirePrivilegedIntegrationActor(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (canUsePrivilegedIntegration(actorFromRequest(request))) return;
+  sendError(reply, 403, "INTEGRATION_FORBIDDEN", "This operation requires an authorized integration or security administrator or system client.",
+    correlationIdFrom(request.headers["x-correlation-id"]));
+}
+
+async function requireMcpIntegrationActor(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const params = request.params as { toolId: string };
+  if (privilegedIntegrationMcpTools.has(params.toolId)) await requirePrivilegedIntegrationActor(request, reply);
+}
+
 function hashPayload(data: unknown): string {
   return createHash("sha256").update(JSON.stringify(data)).digest("hex");
+}
+
+function canonicalEventIdentity(event: CanonicalEventEnvelope): Omit<CanonicalEventEnvelope, "ingestTimestamp"> {
+  const { ingestTimestamp: _clientIngestTimestamp, ...identity } = event;
+  return identity;
+}
+
+function sameCanonicalEventIdentity(left: CanonicalEventEnvelope, right: CanonicalEventEnvelope): boolean {
+  return isDeepStrictEqual(canonicalEventIdentity(left), canonicalEventIdentity(right));
 }
 
 function headerAsString(value: unknown): string | undefined {

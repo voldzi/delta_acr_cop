@@ -1,6 +1,8 @@
-import type { CanonicalEventEnvelope, ObservedObject } from "@cop/canonical-model";
+import type { CanonicalEventEnvelope, Classification, ObservedObject } from "@cop/canonical-model";
 
 export interface ObjectProvenance {
+  classification?: Classification;
+  classificationStatus?: "verified" | "unknown";
   adapterId?: string;
   adapterVersion?: string;
   eventId?: string;
@@ -21,6 +23,8 @@ export function withEventProvenance(object: ObservedObject, event: CanonicalEven
   const latencyMs = Number.isFinite(producerMs) && Number.isFinite(ingestMs) ? Math.max(0, ingestMs - producerMs) : undefined;
 
   return withObjectProvenance(object, {
+    classification: structuredClone(event.classification),
+    classificationStatus: "verified",
     adapterId: event.source.adapterId,
     adapterVersion: event.source.adapterVersion,
     eventId: event.eventId,
@@ -47,6 +51,7 @@ export function withStoredCurrentProvenance(
   const existing = readObjectProvenance(object);
   return withObjectProvenance(object, {
     ...existing,
+    classificationStatus: existing?.classification ? "verified" : "unknown",
     eventId: existing?.eventId ?? stored.eventId,
     ingestTimestamp: existing?.ingestTimestamp ?? object.lastUpdatedAt ?? stored.lastUpdatedAt,
     sourceSystemId: existing?.sourceSystemId ?? stored.sourceSystemId,

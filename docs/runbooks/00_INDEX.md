@@ -19,3 +19,4 @@
 - [17 COP Media S3](17_COP_MEDIA_S3.md)
 - [18 Public Flood Demo](18_PUBLIC_FLOOD_DEMO.md)
 - [19 COP storage on X5](19_COP_X5_STORAGE.md)
+- [20 COP code health: security, performance and dependencies](20_COP_CODE_HEALTH.md)
