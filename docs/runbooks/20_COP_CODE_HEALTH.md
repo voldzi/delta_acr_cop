@@ -1,7 +1,9 @@
 # 20 COP code health: security, performance and dependencies
 
 Evidence date: 2026-10-07. Scope: COP API, web, chat and shared packages.
-Status: repaired and verified candidate; production images have not been switched by this audit.
+Status: repaired and verified; API/web integration was deployed on 2026-10-10
+through the separately verified crisis-notification release. The standalone chat
+runtime remains on its previous image. See the final deployment note below.
 
 ## Scope and evidence limits
 
@@ -17,23 +19,23 @@ and authenticated/device acceptance are separate forms of evidence.
 
 ## Concrete repairs
 
-| Boundary | Repair |
-| --- | --- |
-| Protected input | Authenticate before JSON body parsing; preserve CORS preflight. |
-| Public input | Explicit 64 KiB map-query, 256 KiB Matrix-push and 1 KiB logout limits; existing correlation-aware 413 envelope. Media attachment limit is separate. |
-| OIDC/JWKS | Reject malformed claims and missing subject; bound JWKS to 5 seconds/256 KiB, use single-flight refresh and failure cooldown; reject credential redirects. |
-| Server proxies | Fixed API origin/path; reject absolute request targets, strip hop-by-hop headers, cancel disconnected/expired requests. |
-| OIDC token proxy | 64 KiB input/256 KiB response and 30-second deadline; never follow a token POST redirect. |
-| Remote bodies | Bound streamed weather/camera reads; validate each allowed redirect, reject URL credentials and cover the response body with the deadline. |
-| SIM Router | Reject redirects and bound response bytes; no new direct external fallback or activation. |
-| Logs | Request path only; remove query, pairing tokens and raw geocoding search terms. |
-| Source registry | Explicit integration/security administrator mutations; validate merged PATCH and immutable identity before changing state. |
-| Integration data | Protect domain/outbox/replay/DLQ reads and writes with service/admin roles, including MCP bypasses; ordinary citizen sessions receive 403. |
-| Canonical data | Explicit ingest roles, per-item batch policy, verified classification and public release policy on ingest and all read/evidence paths. Bind historical/current labels to the actual source, server-owned ingest clock and payload; reject differing event-ID reuse and deduplicate identical retries. See ADR 0039. |
-| Static files | Validate decoded paths and resolved file root; reject malformed/NUL paths and symlink escape. |
-| Compression | Brotli quality 4, correct `q=0` handling; avoid expensive quality 11 on first asset request. |
-| Initial map bundle | Explicit nonrecursive chunks; optional Cesium/3D/XR must remain outside the initial static import graph, enforced by release check. |
-| Cesium assets | Replace static-copy dependency with a tested fixed-directory plugin; retain only required Assets/ThirdParty/Widgets/Workers roots. |
+| Boundary           | Repair                                                                                                                                                                                                                                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Protected input    | Authenticate before JSON body parsing; preserve CORS preflight.                                                                                                                                                                                                                                                     |
+| Public input       | Explicit 64 KiB map-query, 256 KiB Matrix-push and 1 KiB logout limits; existing correlation-aware 413 envelope. Media attachment limit is separate.                                                                                                                                                                |
+| OIDC/JWKS          | Reject malformed claims and missing subject; bound JWKS to 5 seconds/256 KiB, use single-flight refresh and failure cooldown; reject credential redirects.                                                                                                                                                          |
+| Server proxies     | Fixed API origin/path; reject absolute request targets, strip hop-by-hop headers, cancel disconnected/expired requests.                                                                                                                                                                                             |
+| OIDC token proxy   | 64 KiB input/256 KiB response and 30-second deadline; never follow a token POST redirect.                                                                                                                                                                                                                           |
+| Remote bodies      | Bound streamed weather/camera reads; validate each allowed redirect, reject URL credentials and cover the response body with the deadline.                                                                                                                                                                          |
+| SIM Router         | Reject redirects and bound response bytes; no new direct external fallback or activation.                                                                                                                                                                                                                           |
+| Logs               | Request path only; remove query, pairing tokens and raw geocoding search terms.                                                                                                                                                                                                                                     |
+| Source registry    | Explicit integration/security administrator mutations; validate merged PATCH and immutable identity before changing state.                                                                                                                                                                                          |
+| Integration data   | Protect domain/outbox/replay/DLQ reads and writes with service/admin roles, including MCP bypasses; ordinary citizen sessions receive 403.                                                                                                                                                                          |
+| Canonical data     | Explicit ingest roles, per-item batch policy, verified classification and public release policy on ingest and all read/evidence paths. Bind historical/current labels to the actual source, server-owned ingest clock and payload; reject differing event-ID reuse and deduplicate identical retries. See ADR 0039. |
+| Static files       | Validate decoded paths and resolved file root; reject malformed/NUL paths and symlink escape.                                                                                                                                                                                                                       |
+| Compression        | Brotli quality 4, correct `q=0` handling; avoid expensive quality 11 on first asset request.                                                                                                                                                                                                                        |
+| Initial map bundle | Explicit nonrecursive chunks; optional Cesium/3D/XR must remain outside the initial static import graph, enforced by release check.                                                                                                                                                                                 |
+| Cesium assets      | Replace static-copy dependency with a tested fixed-directory plugin; retain only required Assets/ThirdParty/Widgets/Workers roots.                                                                                                                                                                                  |
 
 No CSP relaxation, global CallKit change, analytics activation, AI routing switch
 or deletion of audit/history is included.
@@ -75,20 +77,20 @@ token is read-only, checkout does not persist credentials and implicit package
 cache is disabled. [GitHub removed Node 20 action runtime on 2026-09-23](https://github.blog/changelog/2026-09-23-node-20-is-no-longer-available-in-github-actions/).
 The actual hosted workflow remains a separate verification after publishing.
 
-| Selected dependency | Candidate version |
-| --- | --- |
-| Fastify | 5.12.5 |
-| React / React DOM | 19.3.0 |
-| MapLibre | 6.13.0 |
-| Cesium | 1.146.0 |
-| LiveKit client / server | 2.22.4 / 2.19.1 |
-| Matrix SDK | 42.4.0 |
-| PDF.js / JSZip | 6.4.299 / 3.10.2 |
-| Vite / Vitest | 8.3.4 / 5.0.3 |
-| Redocly | 2.62.1 |
-| ESLint / typescript-eslint | 10.12.0 / 8.71.1 |
-| Node types | 24.19.2 (Node 24 runtime line) |
-| Lucide / TanStack table | 1.55.0 / 9.2.8 |
+| Selected dependency        | Candidate version              |
+| -------------------------- | ------------------------------ |
+| Fastify                    | 5.12.5                         |
+| React / React DOM          | 19.3.0                         |
+| MapLibre                   | 6.13.0                         |
+| Cesium                     | 1.146.0                        |
+| LiveKit client / server    | 2.22.4 / 2.19.1                |
+| Matrix SDK                 | 42.4.0                         |
+| PDF.js / JSZip             | 6.4.299 / 3.10.2               |
+| Vite / Vitest              | 8.3.4 / 5.0.3                  |
+| Redocly                    | 2.62.1                         |
+| ESLint / typescript-eslint | 10.12.0 / 8.71.1               |
+| Node types                 | 24.19.2 (Node 24 runtime line) |
+| Lucide / TanStack table    | 1.55.0 / 9.2.8                 |
 
 Not every published major is adopted automatically:
 
@@ -194,12 +196,12 @@ new code, clean anonymous desktop (1440×900) and mobile (390×844) contexts,
 DNT/GPC and blocked service workers, and only the public synthetic flood demo.
 Both rendered the map without JavaScript errors or horizontal overflow.
 
-| Initial public-demo measurement | Previous code | Candidate |
-| --- | ---: | ---: |
-| Resources transferred from the local COP origin | 1,701,935 B | 1,034,017 B |
-| Eager Cesium/3D requests | Cesium JS and CSS | None |
-| Desktop FCP / LCP | 4,700 / 5,820 ms | 68 / 380 ms |
-| Mobile FCP / LCP | 4,668 / 5,784 ms | 64 / 360 ms |
+| Initial public-demo measurement                 |     Previous code |   Candidate |
+| ----------------------------------------------- | ----------------: | ----------: |
+| Resources transferred from the local COP origin |       1,701,935 B | 1,034,017 B |
+| Eager Cesium/3D requests                        | Cesium JS and CSS |        None |
+| Desktop FCP / LCP                               |  4,700 / 5,820 ms | 68 / 380 ms |
+| Mobile FCP / LCP                                |  4,668 / 5,784 ms | 64 / 360 ms |
 
 The transfer reduction is **39.2%** for this specific initial page. Paint times
 are local diagnostic evidence, not a production latency promise: compression,
@@ -276,3 +278,23 @@ and job locks. The managed X5 job is completed; retained logs and source archive
 remain subject to the existing 14-day / 10 GiB staging policy. No broad Docker
 prune, production restart, secret change, global builder/data-root change or
 protected-data deletion is part of this audit.
+
+## Final integrated deployment (2026-10-10)
+
+The dependency-only branch `3f9c6aa` passed hosted CI
+[38065818418](https://github.com/voldzi/delta_acr_cop/actions/runs/38065818418).
+The combined API/web release `a58b73f` then passed its own hosted CI
+[38066956522](https://github.com/voldzi/delta_acr_cop/actions/runs/38066956522):
+**1,581 tests passed / 8 skipped**, both workflow jobs successful, including
+Docker builds and secret scan. Its production dependency audit reports
+**zero advisories / 346 dependencies**. These figures include restored existing
+production features and the new notification/news modules; they supersede the
+earlier candidate's release gate, not its historical measurements.
+
+API and web are now deployed. Actual image IDs, runtime health, rollback
+protection, preserved production features and remaining SIM/device acceptance
+are recorded in [runbook 21](21_COP_CRISIS_NOTIFICATIONS.md). The standalone
+chat image, edge, MCP, networks and AI routing flags remain unchanged.
+Dependencies and source repairs prepared for the standalone chat still need a
+separate coordinated rollout. No perfect-security, full physical acceptance or
+long-duration performance claim follows from the successful audit and release.

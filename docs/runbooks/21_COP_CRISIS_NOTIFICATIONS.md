@@ -1,8 +1,9 @@
 # 21 COP crisis notifications and ČT24 context
 
-Stav k 10. říjnu 2026: implementovaný kandidát vydání. Nasazené revize,
-aktivace workeru a doručení při zavřené aplikaci zatím nejsou doložené v tomto
-runbooku. Rozhodnutí: [ADR 0040](../adr/0040_VERIFIED_CRISIS_NOTIFICATIONS_AND_MEDIA_CONTEXT.md).
+Stav k 10. říjnu 2026: API a web jsou nasazené z `a58b73f`, worker je
+aktivovaný. Produkční důkazy a zbývající akceptace jsou v závěrečné sekci.
+Doručení při zavřené/zamčené aplikaci není ověřené. Rozhodnutí:
+[ADR 0040](../adr/0040_VERIFIED_CRISIS_NOTIFICATIONS_AND_MEDIA_CONTEXT.md).
 Kontrakt: [integrace 12](../integration/12_COP_NOTIFICATION_DECISION_AND_PUSH.md).
 
 ## Rozsah a předpoklady
@@ -24,19 +25,19 @@ Kontrakt: [integrace 12](../integration/12_COP_NOTIFICATION_DECISION_AND_PUSH.md
 Všechny hodnoty se předávají přes dosavadní chráněnou konfiguraci a Compose;
 nepotřebují nový port či secret. Výchozí worker je vypnutý.
 
-| Proměnná | Výchozí | Povolený rozsah / význam |
-| --- | ---: | --- |
-| `COP_SAFETY_NOTIFICATION_WORKER_ENABLED` | `false` | `true` zapne automatický poller; nepovolí souhlas za uživatele. |
-| `COP_SAFETY_NOTIFICATION_STORE` | `postgres` | Produkce musí používat trvalou evidenci. `memory` je pouze izolovaný test. |
-| `COP_SAFETY_NOTIFICATION_INTERVAL_MS` | 60000 | 15000–300000 ms, další běh po dokončení předchozího. |
-| `COP_SAFETY_NOTIFICATION_PAGE_SIZE` | 50 | 1–100 profilů na stránku. |
-| `COP_SAFETY_NOTIFICATION_MAX_PROFILES` | 200 | 1–1000 profilů na běh. |
-| `COP_SAFETY_NOTIFICATION_MAX_DISPATCHES` | 50 | 1–200 pokusů o odeslání na běh. |
-| `COP_SAFETY_NOTIFICATION_CONCURRENCY` | 2 | 1–4 souběžně zpracovávané profily. |
-| `COP_SAFETY_NOTIFICATION_CACHE_MS` | 30000 | 0–60000 ms, pouze připravené úplné kandidáty stejné oblasti. |
-| `COP_SAFETY_NOTIFICATION_MAX_RUN_MS` | 30000 | 1000–120000 ms, rozpočet běhu. |
-| `COP_SAFETY_NOTIFICATION_RETRY_MS` | 60000 | 15000–300000 ms mezi neúspěšnými intake pokusy. |
-| `COP_SAFETY_NOTIFICATION_HYDRO_COOLDOWN_MS` | 3600000 | 60000–86400000 ms pro stejný hydro jev a závažnost. |
+| Proměnná                                    |    Výchozí | Povolený rozsah / význam                                                   |
+| ------------------------------------------- | ---------: | -------------------------------------------------------------------------- |
+| `COP_SAFETY_NOTIFICATION_WORKER_ENABLED`    |    `false` | `true` zapne automatický poller; nepovolí souhlas za uživatele.            |
+| `COP_SAFETY_NOTIFICATION_STORE`             | `postgres` | Produkce musí používat trvalou evidenci. `memory` je pouze izolovaný test. |
+| `COP_SAFETY_NOTIFICATION_INTERVAL_MS`       |      60000 | 15000–300000 ms, další běh po dokončení předchozího.                       |
+| `COP_SAFETY_NOTIFICATION_PAGE_SIZE`         |         50 | 1–100 profilů na stránku.                                                  |
+| `COP_SAFETY_NOTIFICATION_MAX_PROFILES`      |        200 | 1–1000 profilů na běh.                                                     |
+| `COP_SAFETY_NOTIFICATION_MAX_DISPATCHES`    |         50 | 1–200 pokusů o odeslání na běh.                                            |
+| `COP_SAFETY_NOTIFICATION_CONCURRENCY`       |          2 | 1–4 souběžně zpracovávané profily.                                         |
+| `COP_SAFETY_NOTIFICATION_CACHE_MS`          |      30000 | 0–60000 ms, pouze připravené úplné kandidáty stejné oblasti.               |
+| `COP_SAFETY_NOTIFICATION_MAX_RUN_MS`        |      30000 | 1000–120000 ms, rozpočet běhu.                                             |
+| `COP_SAFETY_NOTIFICATION_RETRY_MS`          |      60000 | 15000–300000 ms mezi neúspěšnými intake pokusy.                            |
+| `COP_SAFETY_NOTIFICATION_HYDRO_COOLDOWN_MS` |    3600000 | 60000–86400000 ms pro stejný hydro jev a závažnost.                        |
 
 Worker drží PostgreSQL advisory lease, používá stránkování podle uloženého
 subjektu a při chybách prodlužuje interval nejvýše na pět minut. U každého
@@ -146,20 +147,24 @@ Rollback: nejdříve nastavte `COP_SAFETY_NOTIFICATION_WORKER_ENABLED=false`
 a nasaďte dotčené API přes standardní wrapper. Ověřte worker dependency
 `disabled`, zachovejte souhlasy a ledger. Poté případně vraťte přesné předchozí
 API/web obrazy. Aditivní tabulky ponechte; nedropovat audit, souhlasy ani keys.
+Po celou změnu držte COP storage lock, předem ověřte X5 a po návratu porovnejte
+skutečné image ID, runtime flag a health s uloženým baseline. Úspěšný příkaz
+Compose sám není důkaz obnovy. Pokud je lock obsazený, návrat nesmí běžet
+souběžně s dalším release.
 Pro opětovné zapnutí proveďte znovu ready/device/consent checks a využijte
 stávající deduplikaci. Žádný návrat na mapový fallback, RAM nebo veřejný port.
 
 ## Akceptační matice
 
-| Gate | Požadovaný důkaz | Stav tohoto runbooku |
-| --- | --- | --- |
-| Kontrakt, čas, policy, geometrie | Media/informational/centroid/invalid-time/stale/expiry se neposílají; Polygon holes a MultiPolygon nesmějí použít centroid/bbox jako důkaz. | Lokální automatické ověření; konečný release přehled doplní integrátor. |
-| Dva účty, oblasti a zařízení | Nezávislé keys, odlišná relevance, žádný souhlas navíc, více zařízení jen aktuálního příjemce. | Finální integrované a produkční ověření čeká. |
-| Odvolání versus odeslání | Dokončené odvolání blokuje další dispatch; již přijatý push je nezvratný. | Test zámků a skutečné DB doplnit; fyzická zkouška čeká. |
-| Restart a hydro | Přijaté klíče přežijí restart; stejný hydro stav má cooldown, eskalace nový klíč. | Produkční ověření čeká. |
-| SIM/Messaging/primary store outage | `503`/degraded, žádný poplach z chyby nebo tichý RAM fallback; obnova a retry před expirací. | Produkční ověření čeká. |
-| ČT24 | Atribuce/odkaz a oddělený panel, nulová lokalizace a push eligibility. | Integrované zobrazení a produkce čeká. |
-| Zavřená/zamčená aplikace | Tester doloží banner, čas doručení a otevření správného deep linku na reálném telefonu. | Neověřeno; samotný Messaging intake ani build nestačí. |
+| Gate                               | Požadovaný důkaz                                                                                                                            | Stav tohoto runbooku                                                                            |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Kontrakt, čas, policy, geometrie   | Media/informational/centroid/invalid-time/stale/expiry se neposílají; Polygon holes a MultiPolygon nesmějí použít centroid/bbox jako důkaz. | Automatické testy prošly; živé čtení prošlo a pozdější zastaralý snapshot byl správně odmítnut. |
+| Dva účty, oblasti a zařízení       | Nezávislé keys, odlišná relevance, žádný souhlas navíc, více zařízení jen aktuálního příjemce.                                              | Automatické testy prošly; skutečné přihlášené účty/zařízení čekají.                             |
+| Odvolání versus odeslání           | Dokončené odvolání blokuje další dispatch; již přijatý push je nezvratný.                                                                   | Izolovaný PostgreSQL test zámků prošel; fyzická zkouška čeká.                                   |
+| Restart a hydro                    | Přijaté klíče přežijí restart; stejný hydro stav má cooldown, eskalace nový klíč.                                                           | Izolovaný PostgreSQL test prošel; skutečný přijatý push přes produkční restart neověřen.        |
+| SIM/Messaging/primary store outage | `503`/degraded, žádný poplach z chyby nebo tichý RAM fallback; obnova a retry před expirací.                                                | Automatické negativní testy prošly; produkční výpadek nebyl uměle vyvolán.                      |
+| ČT24                               | Atribuce/odkaz a oddělený panel, nulová lokalizace a push eligibility.                                                                      | UI testy a živé API čtení prošly; fyzický klient čeká.                                          |
+| Zavřená/zamčená aplikace           | Tester doloží banner, čas doručení a otevření správného deep linku na reálném telefonu.                                                     | Neověřeno; samotný Messaging intake ani build nestačí.                                          |
 
 Živou zkoušku dohodněte s vyhrazeným testerem a Messaging. Běžné uživatele
 nepoužívejte jako testovací publikum a nepodvrhujte oficiální SIM zdroj
@@ -257,6 +262,88 @@ priority; test runs used at most two workers. Evidence logs use the prefix
 - The process fetch guard recorded **zero unexpected external fetch attempts**.
   Local static servers were stopped by their smoke check. Dedicated-database,
   production runtime and physical-phone acceptance remain separate gates.
+
+## Nasazené API/web a živé ověření 10. října 2026
+
+Nasazený kód je `a58b73f83fb441791817474cbc66468d36dfe996`, větev
+`codex/cop-crisis-notifications`, [PR #4](https://github.com/voldzi/delta_acr_cop/pull/4).
+Následné změny této evidence jsou dokumentační a nemění běžící obrazy.
+[CI 38066956522](https://github.com/voldzi/delta_acr_cop/actions/runs/38066956522)
+pro tuto přesnou revizi uspělo: **1 581 testů prošlo / 8 přeskočeno**, lint,
+schémata, OpenAPI, build, release guards, Docker API/web a kontrola tajemství.
+Přeskočené testy potřebují vyhrazené databáze; samostatný reálný PostgreSQL 17
+test výše pokrývá nové consent/lease/dedup/cooldown hranice. Produkční audit
+integrovaných závislostí: **0 advisories / 346 dependencies**.
+
+| Služba    | Běžící image SHA-256                                               |
+| --------- | ------------------------------------------------------------------ |
+| `cop-api` | `770e4a650d97bfd8ec9cbf037f4ff4a62040c66ab511b69707d73d94fe8ebefb` |
+| `cop-web` | `c39bf694928b436ca974215575e02c4aa4fa510d5317e101f97400e30200a229` |
+
+Dokončený release job:
+`/srv/x5-production/staging/cop/job-85297a6dfff54f69a61fa78500644481`.
+Dokončený activation job:
+`/srv/x5-production/staging/cop/job-d202bdae6d1841a8a40cba9ff48eda4f`.
+Zálohy konfigurace mají chráněný přístup; nevypisovat jejich obsah.
+
+- Standardní deployment ověřil před výměnou služeb skutečnou Linux konverzi
+  PNG přes native Sharp. Běžící web má Node **24.21.0**, UID **1000**, neobsahuje
+  vývojové `node_modules`. Kontrola skutečného web image prošla pro 13 veřejných
+  cest, přesné assety tohoto image, Brotli, immutable cache a zachovaný SRI.
+- Health live/ready vrátily 200/ok, soukromý dispatch zůstal `ok`. Přidání
+  worker dependency bylo jediná povolená změna baseline; aktivace ověřila
+  `disabled` → `ok` a runtime `COP_SAFETY_NOTIFICATION_WORKER_ENABLED=true`.
+  Dřívější `sim-search-data-source=degraded` a `ai-gateway=degraded` nejsou
+  odstraněny ani prezentovány jako zdravé.
+- Chat, edge a MCP image ID, všechna dosavadní síťová připojení a kontrolované
+  AI/mobility/dispatch flags zůstaly stejné. Samostatný chat image nebyl
+  aktualizován; jeho připravené knihovní/source změny vyžadují vlastní release.
+  Zejména již existující `COP_AI_CHAT_ROUTER_ENABLED=true` nebyl tímto releasem
+  změněn; BYOK/full router flags zůstávají `false`.
+- Přímé živé serverové čtení kandidátů před aktivací prošlo: kontrakt v1,
+  `ready/complete`, dvě položky. ČT24 čtení prošlo také po aktivaci: HTTP 200,
+  všechny tři feedy `ok`, jedna metadata položka s nulovou lokalizací a bez
+  push eligibility. Anonymní **COP** consent a evaluate vracejí **401**.
+- Po aktivaci COP správně odmítl pozdější zestárlý candidate snapshot. V
+  **16:31:22 UTC** SIM ještě vracel cache s `generatedAt=16:27:38.156Z`,
+  `snapshotGeneratedAt=16:22:42.102Z`, `snapshotAgeSeconds=296.055` a
+  `status=ready`. Skutečný věk podkladového snapshotu už byl přibližně
+  **520 sekund**, nad COP limitem 300 sekund. Nový čas odpovědi ani cached
+  `ready` tento limit neobcházejí. Worker health `ok` potvrzuje proces a
+  úložiště, nikoli aktuální čerstvost všech SIM zdrojů.
+- Agregované čtení produkční DB po aktivaci: **0 opt-in profilů / 0 delivery
+  ledger řádků**. Žádný syntetický ani běžný testovací push nebyl odeslán.
+  Neukládaly se exporty profilů, geometrie či obsahu kandidátů.
+- X5 UUID byl ověřen; poslední kapacitní čtení ukázalo přibližně **9,6 GiB
+  volných na X5 (94 % obsazeno)** a **39,2 GiB na root**. Pro další sestavení
+  znovu ověřit kapacitu; nepoužívat globální prune nebo mazání cizích dat.
+
+### Předání SIM a zbývající společná akceptace
+
+1. SIM musí potvrdit cache/expiry pravidlo candidate odpovědi: nesmí zůstávat
+   zmrazené `snapshotAgeSeconds` a `ready` po zestárnutí podkladového snapshotu.
+   COP zůstává na max. 300 s a zdroj při nesouladu odmítá; nezvyšovat limit jen
+   kvůli přijetí staré cache. Obnova a pozdější čerstvý pozitivní průchod čekají.
+2. Interní přímé čtení SIM `/notifications/candidates` i `/context/news` bez
+   Authorization vrátilo **200**, zatímco lokální závazné OpenAPI dědí globální
+   `bearerAuth`. U těchto veřejných zdrojových metadat nejde o důkaz přístupu
+   k soukromým údajům. SIM má vyjasnit záměr interní transportní hranice versus
+   deklarovaný kontrakt a sjednotit je. COP nepřidával nový token, port ani síť;
+   jeho vlastní soukromé operace zůstávají autentizované. Upstream test nelze
+   vykázat jako očekávané 401.
+3. S vyhrazeným opt-in testerem ověřit skutečné přihlášení, AOI, zařízení,
+   Messaging intake/redelivery a fyzické doručení při otevřené, zavřené a
+   zamčené aplikaci, deep link, odvolání a více zařízení. Nezapínat souhlas za
+   běžné uživatele a nepoužít oficiální produkční zdroj pro syntetickou zkoušku.
+4. E2EE/hlasové hovory, dlouhodobá zátěž a samostatný chat release nejsou
+   touto automatickou a anonymní produkční zkouškou akceptovány.
+
+Chráněné původní obrazy pro návrat: API
+`e76a3323f761662d48fe4126a2fbc477adf6c872307888283db37aafed86c144`, web
+`227eb3f22c55de97cebe466dbcefc48677fc57a424b3ef838d6ce3d208c99d89`.
+Návrat prvního nevyhovujícího kandidáta na tyto obrazy byl skutečně ověřen
+image/health readbackem. Pozdější nové failure traps nejsou označeny jako
+provedený rollback test; finální release i aktivace uspěly.
 
 The four formatted public/style files must be included in the final web build;
 the candidate's production images and exact runtime flags are recorded only
