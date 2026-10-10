@@ -1,5 +1,5 @@
 import { createReadStream, promises as fs } from "node:fs";
-import { createBrotliCompress, createGzip } from "node:zlib";
+import { constants as zlibConstants, createBrotliCompress, createGzip } from "node:zlib";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
@@ -14,15 +14,22 @@ const basePath = normalizeBasePath(process.env.COP_CHAT_BASE_PATH ?? "/chat/");
 const tokenProxyPath = `${basePath}oidc/token`;
 const allowedHosts = parseAllowedHosts(process.env.COP_CHAT_ALLOWED_HOSTS);
 
+const upstreamTimeoutMs = 30_000;
+
 const server = http.createServer((request, response) => {
   void handleRequest(request, response).catch((error) => {
     console.error("cop-chat request failed", error instanceof Error ? error.message : String(error));
-    if (!response.headersSent) {
+    if (response.headersSent) {
+      response.destroy();
+    } else {
       response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      response.end("Internal Server Error");
     }
-    response.end("Internal Server Error");
   });
 });
+
+server.requestTimeout = 30_000;
+server.headersTimeout = 15_000;
 
 server.listen(port, "0.0.0.0", () => {
   console.log(`COP Chat serving ${basePath} on http://0.0.0.0:${port}`);
@@ -35,7 +42,22 @@ async function handleRequest(request, response) {
     return;
   }
 
-  const url = new URL(request.url ?? "/", "http://localhost");
+  const requestTarget = request.url ?? "/";
+  // This is an origin server, not an HTTP forward proxy. Never accept a
+  // client-selected authority when relaying the Matrix push endpoint.
+  if (!requestTarget.startsWith("/") || requestTarget.startsWith("//")) {
+    response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("Bad Request");
+    return;
+  }
+  let url;
+  try {
+    url = new URL(requestTarget, "http://localhost");
+  } catch {
+    response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("Bad Request");
+    return;
+  }
   if (url.pathname === "/health/live") {
     response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
     response.end(JSON.stringify({ status: "ok" }));
@@ -66,42 +88,82 @@ async function handleRequest(request, response) {
 }
 
 function proxyApiRequest(request, response) {
-  const target = new URL(request.url ?? "/", apiBase);
+  const target = new URL(apiBase);
+  const incoming = new URL(request.url ?? "/", "http://localhost");
+  target.pathname = "/_matrix/push/v1/notify";
+  target.search = incoming.search;
+  target.hash = "";
   const transport = target.protocol === "https:" ? https : http;
-  const proxyRequest = transport.request(
-    target,
-    {
-      headers: {
-        ...request.headers,
-        host: target.host
-      },
-      method: request.method
-    },
-    (upstream) => {
-      response.writeHead(upstream.statusCode ?? 502, sanitizeProxyResponseHeaders(upstream.headers));
-      upstream.pipe(response);
+  let upstream;
+  let timedOut = false;
+  const sendFailure = () => {
+    if (response.destroyed || response.writableEnded) {
+      return;
     }
-  );
-  proxyRequest.on("error", () => {
-    response.writeHead(502, {
+    if (response.headersSent) {
+      response.destroy();
+      return;
+    }
+    response.writeHead(timedOut ? 504 : 502, {
       "Cache-Control": "no-store",
       "Content-Type": "application/json; charset=utf-8"
     });
     response.end(JSON.stringify({ rejected: [] }));
-  });
+  };
+  const proxyRequest = transport.request(
+    target,
+    {
+      headers: {
+        ...sanitizeProxyHeaders(request.headers),
+        host: target.host
+      },
+      method: request.method
+    },
+    (result) => {
+      upstream = result;
+      upstream.on("error", sendFailure);
+      response.writeHead(upstream.statusCode ?? 502, sanitizeProxyHeaders(upstream.headers));
+      upstream.pipe(response);
+    }
+  );
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    proxyRequest.destroy(new Error("COP API proxy timed out."));
+    upstream?.destroy();
+    sendFailure();
+  }, upstreamTimeoutMs);
+  timeout.unref();
+  const cleanup = () => {
+    clearTimeout(timeout);
+    request.unpipe(proxyRequest);
+    proxyRequest.destroy();
+    upstream?.destroy();
+  };
+  response.once("close", cleanup);
+  request.once("aborted", cleanup);
+  proxyRequest.on("error", sendFailure);
   request.pipe(proxyRequest);
 }
 
-function sanitizeProxyResponseHeaders(headers) {
+function sanitizeProxyHeaders(headers) {
   const nextHeaders = { ...headers };
-  delete nextHeaders.connection;
-  delete nextHeaders["keep-alive"];
-  delete nextHeaders["proxy-authenticate"];
-  delete nextHeaders["proxy-authorization"];
-  delete nextHeaders.te;
-  delete nextHeaders.trailer;
-  delete nextHeaders["transfer-encoding"];
-  delete nextHeaders.upgrade;
+  const connectionTokens = String(headers.connection ?? "")
+    .split(",")
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean);
+  for (const name of [
+    ...connectionTokens,
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade"
+  ]) {
+    delete nextHeaders[name];
+  }
   return nextHeaders;
 }
 
@@ -135,29 +197,82 @@ async function proxyOidcTokenRequest(request, response) {
     return;
   }
 
-  const body = await readRequestBody(request, 64 * 1024);
-  const upstream = await fetch(`${issuer}/protocol/openid-connect/token`, {
-    body,
-    headers: {
-      Accept: "application/json",
-      "Content-Type": request.headers["content-type"] ?? "application/x-www-form-urlencoded"
-    },
-    method: "POST"
-  });
-  const payload = Buffer.from(await upstream.arrayBuffer());
-  response.writeHead(upstream.status, {
-    "Cache-Control": "no-store",
-    "Content-Length": String(payload.length),
-    "Content-Type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8",
-    Pragma: "no-cache",
-    ...corsHeaders
-  });
-  response.end(payload);
+  let body;
+  try {
+    body = await readRequestBody(request, 64 * 1024);
+  } catch (error) {
+    if (error?.code !== "BODY_TOO_LARGE") {
+      throw error;
+    }
+    response.writeHead(413, {
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json; charset=utf-8",
+      ...corsHeaders
+    });
+    response.end(JSON.stringify({ error: "oidc_request_too_large" }));
+    return;
+  }
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, upstreamTimeoutMs);
+  timeout.unref();
+  const abort = () => controller.abort();
+  response.once("close", abort);
+  try {
+    const upstream = await fetch(`${issuer}/protocol/openid-connect/token`, {
+      body,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": request.headers["content-type"] ?? "application/x-www-form-urlencoded"
+      },
+      method: "POST",
+      // Token POST bodies contain authorization codes or refresh tokens.
+      // Keep them on the configured issuer instead of following a redirect.
+      redirect: "error",
+      signal: controller.signal
+    });
+    const payload = await readUpstreamBody(upstream.body, 256 * 1024);
+    response.writeHead(upstream.status, {
+      "Cache-Control": "no-store",
+      "Content-Length": String(payload.length),
+      "Content-Type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8",
+      Pragma: "no-cache",
+      ...corsHeaders
+    });
+    response.end(payload);
+  } catch {
+    if (!response.destroyed && !response.writableEnded) {
+      response.writeHead(timedOut ? 504 : 502, {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json; charset=utf-8",
+        ...corsHeaders
+      });
+      response.end(JSON.stringify({ error: timedOut ? "oidc_upstream_timeout" : "oidc_upstream_unavailable" }));
+    }
+  } finally {
+    clearTimeout(timeout);
+    response.off("close", abort);
+  }
 }
 
 async function serveStatic(requestPath, request, response) {
   const method = request.method ?? "GET";
-  const relativePath = decodeURIComponent(requestPath || "index.html");
+  let relativePath;
+  try {
+    relativePath = decodeURIComponent(requestPath || "index.html");
+  } catch {
+    response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("Bad Request");
+    return;
+  }
+  if (relativePath.includes("\0")) {
+    response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("Bad Request");
+    return;
+  }
   const candidate = path.resolve(distDir, relativePath);
   const distRoot = `${path.resolve(distDir)}${path.sep}`;
   if (!candidate.startsWith(distRoot) && candidate !== path.resolve(distDir)) {
@@ -173,7 +288,7 @@ async function serveStatic(requestPath, request, response) {
       response.end(method === "HEAD" ? undefined : "Not Found");
       return;
     }
-    await sendIndex(method, response);
+    await sendIndex(method, request, response);
     return;
   }
 
@@ -206,16 +321,22 @@ async function sendFile(filePath, method, request, response) {
   await pipeline(createReadStream(filePath), compression.stream(), response);
 }
 
+async function safeStaticPath(candidate) {
+  const realPath = await fs.realpath(candidate);
+  const root = path.resolve(distDir);
+  return realPath === root || realPath.startsWith(`${root}${path.sep}`) ? realPath : null;
+}
+
 async function resolveFilePath(candidate) {
   try {
     const stat = await fs.stat(candidate);
     if (stat.isFile()) {
-      return candidate;
+      return await safeStaticPath(candidate);
     }
     if (stat.isDirectory()) {
       const indexPath = path.join(candidate, "index.html");
       const indexStat = await fs.stat(indexPath);
-      return indexStat.isFile() ? indexPath : null;
+      return indexStat.isFile() ? await safeStaticPath(indexPath) : null;
     }
   } catch {
     return null;
@@ -223,17 +344,12 @@ async function resolveFilePath(candidate) {
   return null;
 }
 
-async function sendIndex(method, response) {
-  response.writeHead(200, {
-    "Cache-Control": "no-cache",
-    "Content-Type": "text/html; charset=utf-8"
-  });
-  if (method === "HEAD") {
-    response.end();
-    return;
+async function sendIndex(method, request, response) {
+  const filePath = await resolveFilePath(path.join(distDir, "index.html"));
+  if (!filePath) {
+    throw new Error("COP chat index is unavailable.");
   }
-  const filePath = path.join(distDir, "index.html");
-  await pipeline(createReadStream(filePath), response);
+  await sendFile(filePath, method, request, response);
 }
 
 function isStaticAssetRequest(relativePath) {
@@ -292,7 +408,11 @@ function isAllowedOrigin(value, requestHost) {
 }
 
 function hostnameFromAuthority(value) {
-  return (value ?? "").replace(/^\[/u, "").split("]")[0].split(":")[0]?.toLowerCase() ?? "";
+  try {
+    return new URL(`http://${value ?? ""}`).hostname.replace(/^\[|\]$/gu, "").toLowerCase();
+  } catch {
+    return "";
+  }
 }
 
 function isLocalhost(host) {
@@ -304,13 +424,33 @@ function compressionForRequest(request, type) {
     return null;
   }
   const accepted = String(request.headers["accept-encoding"] ?? "");
-  if (/\bbr\b/u.test(accepted)) {
-    return { name: "br", stream: createBrotliCompress };
+  const brQuality = encodingQuality(accepted, "br");
+  const gzipQuality = encodingQuality(accepted, "gzip");
+  if (brQuality > 0 && brQuality >= gzipQuality) {
+    return {
+      name: "br",
+      // Static responses are compressed on demand: the default quality 11
+      // spends seconds recompressing large map/chat bundles on every request.
+      stream: () => createBrotliCompress({ params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 4 } })
+    };
   }
-  if (/\bgzip\b/u.test(accepted)) {
+  if (gzipQuality > 0) {
     return { name: "gzip", stream: createGzip };
   }
   return null;
+}
+
+function encodingQuality(accepted, encoding) {
+  for (const token of accepted.toLowerCase().split(",")) {
+    const [name, ...parameters] = token.trim().split(";");
+    if (name !== encoding) {
+      continue;
+    }
+    const quality = parameters.map((value) => value.trim()).find((value) => value.startsWith("q="));
+    const value = quality === undefined ? 1 : Number(quality.slice(2));
+    return Number.isFinite(value) && value >= 0 && value <= 1 ? value : 0;
+  }
+  return 0;
 }
 
 function isCompressible(type) {
@@ -320,14 +460,33 @@ function isCompressible(type) {
 async function readRequestBody(request, maxBytes) {
   const chunks = [];
   let size = 0;
-  for await (const chunk of request) {
+  for await (const chunk of request.iterator({ destroyOnReturn: false })) {
     size += chunk.length;
     if (size > maxBytes) {
-      throw new Error("OIDC token request body is too large.");
+      request.resume();
+      const error = new Error("OIDC token request body is too large.");
+      error.code = "BODY_TOO_LARGE";
+      throw error;
     }
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
+}
+
+async function readUpstreamBody(body, maxBytes) {
+  if (!body) {
+    return Buffer.alloc(0);
+  }
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of body) {
+    size += chunk.length;
+    if (size > maxBytes) {
+      throw new Error("OIDC token response body is too large.");
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks, size);
 }
 
 function contentType(filePath) {

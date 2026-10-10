@@ -27,6 +27,10 @@ Decision record: [ADR 0009](adr/0009_STANDARD_DOCUMENTATION_MAPPING_AND_JSON_OPE
 
 ## Maintenance
 
+COP security, performance and compatible dependency audit:
+[code health evidence](runbooks/20_COP_CODE_HEALTH.md),
+[canonical publication ADR](adr/0039_CANONICAL_PUBLICATION_BOUNDARY.md).
+
 COP host storage separation, retention, deployment and recovery evidence:
 [X5 runbook](runbooks/19_COP_X5_STORAGE.md),
 [ADR 0038](adr/0038_COP_X5_OPERATIONAL_STORAGE_BOUNDARY.md).

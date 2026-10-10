@@ -1,5 +1,10 @@
 # Operations
 
+The isolated COP code health audit, release gates and deployment boundaries
+are recorded in [runbook 20](runbooks/20_COP_CODE_HEALTH.md). Its candidate tests
+do not activate AI, public analytics or a production service. Existing X5
+preflight, dedicated builder and rollback requirements remain mandatory.
+
 This is the standard operations entry point for COP. Detailed operational
 documentation remains in:
 

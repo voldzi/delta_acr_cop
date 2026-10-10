@@ -61,3 +61,8 @@
 - [0044 shared profile/audit/recovery](0044_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md)
 
 - [0045: Read-only Matrix identity lookup](0045_READ_ONLY_MATRIX_IDENTITY_LOOKUP.md).
+- [0039: Canonical publication boundary](0039_CANONICAL_PUBLICATION_BOUNDARY.md).
+
+Some ADR numbers originate from independently shipped maintenance branches.
+Use the full linked filename when referring to these decisions; existing
+published paths are preserved for integration references.

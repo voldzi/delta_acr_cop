@@ -191,3 +191,29 @@ Bez tohoto posledního kroku nelze slíbit doručení při zavřené aplikaci.
 Toto je automatická evidence kandidáta, nikoli fyzická akceptace telefonu.
 Produkční COP revision/image, aktivace a živé readback doplní samostatná
 sekce po nasazení. Žádný syntetický krizový push nebyl poslán běžným uživatelům.
+
+## Production preservation gate (2026-10-10)
+
+The first candidate was not accepted: the exact health comparison detected the
+missing `private-dispatch` dependency. API and web were returned to protected
+immutable previous images. No consent was granted and the safety worker remained
+disabled. The successful candidate endpoint probe before that rollback is
+contract evidence only, not evidence of a completed release.
+
+The integrated release restores the already deployed Dispatch lease, invitation
+outbox, self-profile/avatar, vehicle record/odometer/mileage/audit and verified
+Matrix identity commits through `d87a51c`. The public web restores approved
+analytics v2, public discovery and TikTok source classification through `c7beee2`.
+These are preservation changes, not new permissions or expanded collection.
+
+The security/performance candidate is integrated separately from the previous
+measurements in runbook 20; the combined release needs its own tests. Its web
+runtime contains only the built `dist` and built-in Node static server, runs as
+`node`, and directly starts `server.mjs`, preserving the existing production
+packaging without shipping build tools or development dependencies. The binding
+JSON contract is retained and its YAML compatibility export is regenerated.
+
+Dedicated builder `cop-x5` had lost its container while retaining its own X5
+bind cache. It was bootstrapped only after verifying the filesystem UUID, volume
+path and builder identity; no shared builder or global Docker storage changed.
+Remaining X5 capacity must be rechecked before another build.

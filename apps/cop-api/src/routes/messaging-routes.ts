@@ -1,4 +1,5 @@
 import type { FastifyInstance, RouteHandlerMethod } from "fastify";
+import { requestBodyLimitOptions } from "../errors.js";
 
 export interface MessagingRouteHandlers {
   addConversationMembers: RouteHandlerMethod;
@@ -23,7 +24,7 @@ export interface MessagingRouteHandlers {
 }
 
 export function registerMessagingRoutes(app: FastifyInstance, handlers: MessagingRouteHandlers): void {
-  app.post("/_matrix/push/v1/notify", handlers.matrixPushGateway);
+  app.post("/_matrix/push/v1/notify", requestBodyLimitOptions(256 * 1024), handlers.matrixPushGateway);
   app.get("/api/v1/messaging/status", handlers.status);
   app.get("/api/v1/push/web/config", handlers.webPushConfig);
   app.post("/api/v1/push/web/devices", handlers.registerWebPushDevice);

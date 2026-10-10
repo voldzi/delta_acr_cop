@@ -6,7 +6,10 @@ import type { AiCopResponse } from "@cop/core/cop-data";
 
 import AiAgentDialog from "./AiAgentDialog";
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 function response(overrides: Partial<AiCopResponse> = {}): AiCopResponse {
   return {
@@ -96,9 +99,17 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof AiAgentDial
 
 describe("AiAgentDialog", () => {
   it("shows own-key Global processing and hides model choice when BYOK routing is active", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      available: true, configured: true, provider: "openai", routingEnabled: true
-    }), { status: 200 }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          available: true,
+          configured: true,
+          provider: "openai",
+          routingEnabled: true
+        }),
+        { status: 200 }
+      )
+    );
     vi.stubGlobal("fetch", fetchMock);
     renderDialog({ apiBase: "", authToken: "session-token" });
     expect(await screen.findByText(/OpenAI Global a účtuje se vašemu projektu/u)).toBeTruthy();
@@ -107,9 +118,14 @@ describe("AiAgentDialog", () => {
     expect(screen.queryByRole("button", { name: "Důkladně" })).toBeNull();
   });
   it("lets a signed-in user save a key without displaying it again", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ available: true, configured: false, provider: "openai" }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ available: true, configured: true, provider: "openai" }), { status: 200 }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ available: true, configured: false, provider: "openai" }), { status: 200 })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ available: true, configured: true, provider: "openai" }), { status: 200 })
+      );
     vi.stubGlobal("fetch", fetchMock);
     const key = `sk-proj-${"a".repeat(40)}`;
     renderDialog({ apiBase: "http://localhost:4310", authToken: "session-token" });

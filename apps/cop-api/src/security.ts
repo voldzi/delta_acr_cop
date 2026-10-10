@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { createPublicKey, createVerify, type JsonWebKey as NodeJsonWebKey } from "node:crypto";
 import { correlationIdFrom, sendError } from "./errors.js";
+import { readBoundedBody } from "./bounded-upstream.js";
 
 type AuthMode = "lab" | "hybrid" | "oidc";
 
@@ -39,10 +40,6 @@ export interface AuthenticatedActor {
   username: string;
 }
 
-interface JsonWebKeySet {
-  keys?: Jwk[];
-}
-
 interface CachedJwks {
   expiresAt: number;
   keys: Jwk[];
@@ -53,10 +50,16 @@ type Jwk = NodeJsonWebKey & {
 };
 
 const jwksCache = new Map<string, CachedJwks>();
+const jwksInFlight = new Map<string, Promise<Jwk[]>>();
 const authClockSkewSeconds = 30;
 const jwksCacheMs = 5 * 60 * 1000;
+const jwksFailureCacheMs = 1000;
+const jwksTimeoutMs = 5000;
+const jwksMaxBytes = 256 * 1024;
 
 export async function requireBearerToken(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  // CORS handles preflight without credentials before the application handler.
+  if (request.method === "OPTIONS") return;
   if (request.url.startsWith("/health") || request.url === "/metrics") {
     return;
   }
@@ -101,6 +104,7 @@ export async function verifyOidcToken(token: string): Promise<boolean> {
   if (!decoded || !validJwtClaims(decoded.payload)) {
     return false;
   }
+  if (typeof decoded.payload.sub !== "string" || !decoded.payload.sub.trim()) return false;
   if (decoded.header.alg !== "RS256") {
     return false;
   }
@@ -176,6 +180,7 @@ export function actorFromRequest(request: FastifyRequest): AuthenticatedActor | 
 
 export function clearJwksCacheForTests(): void {
   jwksCache.clear();
+  jwksInFlight.clear();
 }
 
 function isLabTokenAllowed(token: string): boolean {
@@ -317,17 +322,43 @@ async function fetchJwks(jwksUri: string): Promise<Jwk[]> {
     return cached.keys;
   }
 
+  const inFlight = jwksInFlight.get(jwksUri);
+  if (inFlight) return inFlight;
+  const pending = loadJwks(jwksUri);
+  jwksInFlight.set(jwksUri, pending);
   try {
-    const response = await fetch(jwksUri);
+    return await pending;
+  } finally {
+    if (jwksInFlight.get(jwksUri) === pending) jwksInFlight.delete(jwksUri);
+  }
+}
+
+async function loadJwks(jwksUri: string): Promise<Jwk[]> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), jwksTimeoutMs);
+  try {
+    // The configured identity provider is fixed server-side; never follow a
+    // redirect to a different issuer or keep authentication waiting forever.
+    const response = await fetch(jwksUri, { redirect: "error", signal: controller.signal });
     if (!response.ok) {
-      return [];
+      await response.body?.cancel();
+      throw new Error("OIDC signing keys are unavailable.");
     }
-    const jwks = await response.json() as JsonWebKeySet;
-    const keys = Array.isArray(jwks.keys) ? jwks.keys : [];
+    const jwks: unknown = JSON.parse((await readBoundedBody(response, jwksMaxBytes)).toString("utf8"));
+    if (!jwtRecord(jwks) || !Array.isArray(jwks.keys)) throw new Error("Invalid OIDC signing keys.");
+    const keys = jwks.keys.filter((key): key is Jwk => jwtRecord(key)
+      && key.kty === "RSA"
+      && typeof key.kid === "string"
+      && (key.alg === undefined || key.alg === "RS256")
+      && (key.use === undefined || key.use === "sig"));
     jwksCache.set(jwksUri, { expiresAt: Date.now() + jwksCacheMs, keys });
     return keys;
   } catch {
+    // Fail closed and coalesce outage traffic without extending an expired key.
+    jwksCache.set(jwksUri, { expiresAt: Date.now() + jwksFailureCacheMs, keys: [] });
     return [];
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

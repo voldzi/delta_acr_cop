@@ -1,5 +1,12 @@
 # API
 
+Canonical ingest actor/classification/release-policy restrictions and the
+unchanged error envelope are documented in the
+[ingest contract](integration/03_INGEST_API_CONTRACT.md). Public map query,
+Matrix push notification and logout bodies have explicit route limits and
+`413 PAYLOAD_TOO_LARGE` responses in the binding OpenAPI contract. Authentication
+of protected routes happens before JSON parsing.
+
 COP provides a REST API. The binding machine-readable contract is:
 
 The opt-in `POST /api/v1/ai/chat-agent/reviewed-general` endpoint accepts
