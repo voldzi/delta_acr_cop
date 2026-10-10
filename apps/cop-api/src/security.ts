@@ -229,6 +229,7 @@ function isPublicReadRequest(request: FastifyRequest): boolean {
     || path === "/api/v1/geocode/search"
     || path === "/api/v1/map/catalog"
     || path === "/api/v1/map/raster-overlay"
+    || path === "/api/v1/safety/context/news"
     || path.startsWith("/api/v1/safety/hydro/stations/")
     || path.startsWith("/api/v1/transit/stops/")
     || path.startsWith("/api/v1/transit/vehicles/")

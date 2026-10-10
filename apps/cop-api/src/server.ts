@@ -1,3 +1,7 @@
+import { MediaNewsSourceAdapter } from "./media-news-source.js";
+import { createSafetyNotificationStoreFromEnv, type SafetyNotificationStore } from "./safety-notification-store.js";
+import { SafetyNotificationWorker, safetyNotificationWorkerConfigFromEnv, type SafetyNotificationWorkerConfig } from "./safety-notification-worker.js";
+import { buildSafetyCandidateNotificationDecision } from "./notification-decision.js";
 import { registerMobilityRoutes } from "./routes/mobility-routes.js";
 import { mobilityStoreFromEnv, type MobilityStore } from "./mobility-store.js";
 import { communityReportPresence } from "./community-report-presence.js";
@@ -209,7 +213,6 @@ import {
 } from "./mobile-device-store.js";
 import {
   buildCommunityReportNotificationDecision,
-  buildSafetyFeatureNotificationDecision,
   type CommunityReportNotificationEvent,
   type CopNotificationAudience,
   type CopNotificationDecision
@@ -338,6 +341,9 @@ import {
 } from "./web-session-store.js";
 
 export interface BuildServerOptions {
+  mediaNewsSource?: Pick<MediaNewsSourceAdapter, "fetchContext">;
+  safetyNotificationStore?: SafetyNotificationStore;
+  safetyNotificationWorkerConfig?: SafetyNotificationWorkerConfig;
   mobilityStore?: MobilityStore;
   sharedMobilityEnabled?: boolean;
   privateDispatchEnabled?: boolean;
@@ -914,6 +920,62 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const placeGeocoder = options.placeGeocoder ?? createPlaceGeocoderFromEnv();
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
   const safetyDataSource = options.safetyDataSource ?? createSafetyDataSourceFromEnv();
+  const safetyNotificationConfig = options.safetyNotificationWorkerConfig ?? safetyNotificationWorkerConfigFromEnv();
+  const safetyNotificationStore = options.safetyNotificationStore ??
+    (process.env.COP_DATABASE_URL || safetyNotificationConfig.enabled ? createSafetyNotificationStoreFromEnv() : undefined);
+  if (safetyNotificationConfig.enabled && process.env.NODE_ENV === "production"
+      && (userProfileStore.name !== "postgres" || safetyNotificationStore?.name !== "postgres")) {
+    throw new Error("Production safety notifications require persistent PostgreSQL consent and delivery stores.");
+  }
+  const mediaNewsSource = options.mediaNewsSource ?? (safetyDataSource ? new MediaNewsSourceAdapter(safetyDataSource.config) : undefined);
+  let safetyNotificationStoreReady = false;
+  let safetyNotificationStoreInitializing: Promise<boolean> | undefined;
+  const safetyNotificationWorker = safetyNotificationStore && safetyDataSource?.fetchNotificationCandidates
+    ? new SafetyNotificationWorker({
+        profileStore: userProfileStore,
+        notificationStore: safetyNotificationStore,
+        fetchCandidates: (query, requestNow) => safetyDataSource.fetchNotificationCandidates!(query, requestNow),
+        hasEligibleDevice: hasEligibleSafetyDevice,
+        dispatch: (decision, requestNow) => messagingProvider.sendNotification(undefined, requestNow, decision.idempotencyKey, decision.notification),
+        now
+      }, safetyNotificationConfig)
+    : undefined;
+
+  async function ensureSafetyNotificationStoreReady(): Promise<boolean> {
+    if (!safetyNotificationStore) return false;
+    if (safetyNotificationStoreReady) return true;
+    if (safetyNotificationStoreInitializing) return safetyNotificationStoreInitializing;
+    const initializing = safetyNotificationStore.init().then(() => {
+      safetyNotificationStoreReady = true;
+      return true;
+    }).catch(() => {
+      app.log.warn("Safety notification store unavailable; automatic dispatch remains closed.");
+      return false;
+    });
+    safetyNotificationStoreInitializing = initializing;
+    try { return await initializing; } finally { safetyNotificationStoreInitializing = undefined; }
+  }
+
+  async function hasEligibleSafetyDevice(subjectId: string, _requestNow: Date): Promise<boolean> {
+    if (!(await ensureSafetyNotificationStoreReady())) {
+      throw new Error("Safety notification device registry unavailable.");
+    }
+    if (await safetyNotificationStore!.hasEligibleWebDevice(subjectId)) return true;
+    if (mobileDeviceStoreStatus !== "ok") throw new Error("Safety notification device registry unavailable.");
+    const devices = await mobileDeviceStore.listDevices(subjectId);
+    return devices.some((device) => device.subjectId === subjectId && device.status === "paired" && device.pushTokenRegistered === true);
+  }
+
+  function safetyNotificationDependency(): { name: string; status: DependencyStatus; detail: string } {
+    const snapshot = safetyNotificationWorker?.snapshot();
+    const enabled = safetyNotificationConfig.enabled;
+    return {
+      name: "safety-notification-worker",
+      status: !enabled ? "disabled" : !snapshot || !safetyNotificationStoreReady || snapshot.status === "degraded" ? "degraded" : "ok",
+      detail: !enabled ? "disabled" : !snapshot ? "required dependencies unavailable" : JSON.stringify(snapshot)
+    };
+  }
+
   const simSearchDataSource = options.simSearchDataSource ?? createSimSearchDataSourceFromEnv();
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
   const situationDataBaseUrl = situationDataSource?.config.baseUrl ?? createSituationDataSourceConfigFromEnv().baseUrl;
@@ -1188,6 +1250,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await initializeFederationRuntimeStore();
     await initializeUserProfileStore();
     await initializeMobileDeviceStore();
+    await ensureSafetyNotificationStoreReady();
     try {
       await voiceCallStore.init();
       voiceCallStoreStatus = "ok";
@@ -1229,8 +1292,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       });
     }, aiContextIndexRefreshSeconds * 1000);
     aiContextIndexRefreshTimer.unref?.();
+    safetyNotificationWorker?.start();
   });
   app.addHook("onClose", async () => {
+    await safetyNotificationWorker?.stop();
+    await safetyNotificationStore?.close();
     await openAiMcpAssistant?.close();
     if (flightDataPollTimer) {
       clearInterval(flightDataPollTimer);
@@ -1311,6 +1377,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           },
           { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
           { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
+          safetyNotificationDependency(),
           {
             name: "community-report-store",
             status: communityReportStoreStatus,
@@ -5336,6 +5403,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const result = await messagingProvider.deleteWebPushDevice(actor, now(), deviceId);
+      if (result.deleted && safetyNotificationStore) {
+        if (!(await ensureSafetyNotificationStoreReady())) return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Device notification capability update is unavailable.", correlationIdFrom(request.headers["x-correlation-id"]));
+        try { await safetyNotificationStore!.setWebDeviceEligibility(actor.subjectId, deviceId, false); }
+        catch { return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Device notification capability update is unavailable.", correlationIdFrom(request.headers["x-correlation-id"])); }
+      }
       return reply.code(result.status === "disabled" ? 503 : 202).send(result);
     },
     matrixPushGateway: async (request, reply) => {
@@ -5369,6 +5441,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const result = await messagingProvider.registerWebPushDevice(actor, now(), registration);
+      if (result.registered && safetyNotificationStore) {
+        if (!(await ensureSafetyNotificationStoreReady())) return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Device notification capability update is unavailable.", correlationIdFrom(request.headers["x-correlation-id"]));
+        try {
+          const preferences = registration.notificationPreferences;
+          const hasCategoryFlags = ["chatMessages", "communityReports", "safetyAlerts", "system", "voiceCalls", "watchedAreaAlerts"]
+            .some((flag) => typeof preferences?.[flag] === "boolean");
+          await safetyNotificationStore!.setWebDeviceEligibility(actor.subjectId, result.deviceId ?? registration.deviceId,
+            result.enabled && (!registration.capabilities || registration.capabilities.includes("notifications"))
+            && preferences?.enabled !== false && (!hasCategoryFlags || preferences?.safetyAlerts === true));
+        } catch { return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Device notification capability update is unavailable.", correlationIdFrom(request.headers["x-correlation-id"])); }
+      }
       return reply.code(result.status === "disabled" ? 503 : 202).send(result);
     },
     resolveConversation: async (request, reply) => {
@@ -5417,55 +5500,53 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     webPushConfig: async () => messagingProvider.fetchWebPushConfig(now())
   });
 
-  app.post("/api/v1/notifications/safety/evaluate", async (request, reply) => {
+  app.post("/api/v1/notifications/safety/evaluate", { bodyLimit: 64 * 1024 }, async (request, reply) => {
     const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
+    if (!actor) return reply;
     const requestNow = now();
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const body = isRecord(request.body) ? request.body : {};
     const query = normalizeSafetyNotificationEvaluationRequest(body);
-    if (!query) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Safety notification evaluation requires bbox=[west,south,east,north].",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
+    if (!query) return sendError(reply, 400, "VALIDATION_ERROR", "Safety notification evaluation requires bbox=[west,south,east,north].", correlationId);
+    if (query.audience && ((query.audience.groupIds?.length ?? 0) > 0 || (query.audience.areaIds?.length ?? 0) > 0 || query.audience.userIds?.some((id) => id !== actor.subjectId))) {
+      return sendError(reply, 403, "NOTIFICATION_AUDIENCE_FORBIDDEN", "This endpoint evaluates only the authenticated user's own watched areas.", correlationId);
     }
-    const profile = await readUserProfile(actor);
-    const collection = await readSafetyMapQuery(query.safetyQuery, requestNow);
-    const features = (collection?.features ?? []) as SafetyFeature[];
-    const decisions = features.map((feature) =>
-      buildSafetyFeatureNotificationDecision(feature, {
-        actor,
-        audience: query.audience,
-        currentLocation: query.currentLocation,
-        now: requestNow,
-        watchedAreas: profile?.alertPreferences.aoiRules ?? []
-      })
-    );
-    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    const dispatch = query.dryRun
-      ? []
-      : await Promise.all(
-          decisions.map((decision) => dispatchNotificationDecision(actor, decision, requestNow, correlationId))
-        );
-    return {
-      contractVersion: "cop-notification-evaluation-v1",
-      decisions,
-      dispatch,
-      dryRun: query.dryRun,
-      query: query.safetyQuery,
-      serverTimestamp: requestNow.toISOString(),
-      summary: {
-        dispatchedCount: dispatch.filter((item) => item.status === "online").length,
-        eligibleCount: decisions.filter((decision) => decision.shouldSend).length,
-        featureCount: features.length,
-        skippedCount: decisions.filter((decision) => !decision.shouldSend).length
+    if (!safetyDataSource?.fetchNotificationCandidates || !(await ensureUserProfileStoreReady())) {
+      return sendError(reply, 503, "SAFETY_EVALUATION_UNAVAILABLE", "Verified safety notification evaluation is unavailable.", correlationId);
+    }
+    try {
+      const profile = await userProfileStore.getProfile(actor.subjectId);
+      const collection = await safetyDataSource.fetchNotificationCandidates({ ...query.safetyQuery, minSeverity: "warning" }, requestNow);
+      if (collection.inputReadiness.status !== "ready" || collection.completeness !== "complete") {
+        return sendError(reply, 503, "SAFETY_CANDIDATES_NOT_READY", "Safety source data is unavailable or incomplete; this is not evidence of a safe area.", correlationId);
       }
-    };
+      const decisions = collection.candidates.map((candidate) => buildSafetyCandidateNotificationDecision(candidate, {
+        actor, now: requestNow, watchedAreas: profile?.alertPreferences.aoiRules ?? [],
+        minimumSeverity: profile?.alertPreferences.minimumSeverity
+      }));
+      let dispatchSummary = { acceptedCount: 0, skippedCount: decisions.filter((decision) => !decision.shouldSend).length, failedCount: 0 };
+      if (!query.dryRun) {
+        if (profile?.alertPreferences.safetyNotificationsEnabled !== true) {
+          return sendError(reply, 403, "SAFETY_NOTIFICATION_CONSENT_REQUIRED", "Automatic safety notifications require explicit current-user consent.", correlationId);
+        }
+        if (!safetyNotificationConfig.enabled || !safetyNotificationWorker || !(await ensureSafetyNotificationStoreReady())) {
+          return sendError(reply, 503, "SAFETY_NOTIFICATIONS_UNAVAILABLE", "Automatic safety notifications are unavailable.", correlationId);
+        }
+        dispatchSummary = await safetyNotificationWorker.runForRecipient(actor.subjectId, collection.candidates);
+        if (dispatchSummary.failedCount > 0) {
+          return sendError(reply, 503, "NOTIFICATION_DISPATCH_UNAVAILABLE", "Safety notification dispatch is currently unavailable.", correlationId);
+        }
+      }
+      return {
+        contractVersion: "cop-notification-evaluation-v1", decisions, dispatch: [], dispatchSummary,
+        dryRun: query.dryRun, query: query.safetyQuery, serverTimestamp: requestNow.toISOString(),
+        inputReadiness: collection.inputReadiness,
+        summary: { dispatchedCount: dispatchSummary.acceptedCount, eligibleCount: decisions.filter((decision) => decision.shouldSend).length,
+          featureCount: collection.candidates.length, skippedCount: dispatchSummary.skippedCount }
+      };
+    } catch {
+      return sendError(reply, 503, "SAFETY_EVALUATION_UNAVAILABLE", "Verified safety notification evaluation is currently unavailable.", correlationId);
+    }
   });
 
   app.get("/api/v1/demo/scenarios", async (request, reply) => {
@@ -6320,6 +6401,36 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return task;
   });
 
+  app.put("/api/v1/me/notifications/safety", { bodyLimit: 1024 }, async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) return reply;
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    if (!isRecord(request.body) || typeof request.body.enabled !== "boolean" || Object.keys(request.body).some((key) => key !== "enabled")) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Safety notification consent requires only enabled=true or false.", correlationId);
+    }
+    if (!(await ensureUserProfileStoreReady())) {
+      return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Safety notification consent storage is unavailable.", correlationId);
+    }
+    try {
+      let profile = await userProfileStore.getProfile(actor.subjectId);
+      if (request.body.enabled && (!safetyNotificationWorker || !safetyNotificationConfig.enabled || !(await ensureSafetyNotificationStoreReady()))) {
+        return sendError(reply, 503, "SAFETY_NOTIFICATIONS_UNAVAILABLE", "Automatic safety notifications are currently unavailable.", correlationId);
+      }
+      if (request.body.enabled && (!(profile?.alertPreferences.aoiRules?.some((rule) => rule.enabled)) || !(await hasEligibleSafetyDevice(actor.subjectId, now())))) {
+        return sendError(reply, 409, "SAFETY_NOTIFICATION_PRECONDITION", "Enable a watched area and register a notification device before enabling automatic alerts.", correlationId);
+      }
+      if (!profile) {
+        profile = await userProfileStore.upsertProfile({ subjectId: actor.subjectId, username: actor.username, displayName: actor.displayName,
+          ...(actor.email ? { email: actor.email } : {}), alertPreferences: {}, preferences: {} });
+      }
+      const saved = await userProfileStore.setSafetyNotificationsEnabled(actor.subjectId, request.body.enabled);
+      if (!saved) throw new Error("Safety notification profile missing.");
+      return { contractVersion: "cop-safety-notification-consent-v1", enabled: saved.alertPreferences.safetyNotificationsEnabled === true, updatedAt: saved.updatedAt };
+    } catch {
+      return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Safety notification consent could not be stored. Retry the request.", correlationId);
+    }
+  });
+
   app.put("/api/v1/me/preferences", async (request, reply) => {
     const actor = requireActor(request, reply);
     if (!actor) {
@@ -6334,6 +6445,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const alertPreferences = hasOwn(body, "alertPreferences")
       ? normalizeAlertPreferences(body.alertPreferences)
       : (existing?.alertPreferences ?? {});
+    delete alertPreferences.safetyNotificationsEnabled;
+    if (typeof existing?.alertPreferences.safetyNotificationsEnabled === "boolean") {
+      alertPreferences.safetyNotificationsEnabled = existing.alertPreferences.safetyNotificationsEnabled;
+    }
 
     const profile = await upsertUserProfile({
       alertPreferences,
@@ -8466,6 +8581,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return sendError(reply, 502, "ROUTING_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
       }
     }
+  });
+
+  app.get("/api/v1/safety/context/news", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    if (!mediaNewsSource) return sendError(reply, 503, "MEDIA_NEWS_UNAVAILABLE", "Zpravodajský kontext nyní není dostupný.", correlationId);
+    try { return await mediaNewsSource.fetchContext(now()); }
+    catch { return sendError(reply, 503, "MEDIA_NEWS_UNAVAILABLE", "Zpravodajský kontext nyní není dostupný.", correlationId); }
   });
 
   app.get("/api/v1/safety/hydro/stations/:stationId/observations", async (request, reply) => {

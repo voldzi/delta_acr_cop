@@ -60,7 +60,7 @@ def capture(deadline=None):
     return result
 
 
-def no_regression(before, after):
+def no_regression(before, after, allowed_additions=()):
     if set(before) != set(URLS) or set(after) != set(URLS):
         return False
     for url in URLS:
@@ -72,7 +72,9 @@ def no_regression(before, after):
             continue
         old_states = {'self': old.get('status'), **old.get('dependencies', {})}
         new_states = {'self': new.get('status'), **new.get('dependencies', {})}
-        if old_states.keys() != new_states.keys():
+        added = new_states.keys() - old_states.keys()
+        if (old_states.keys() - new_states.keys() or not added <= set(allowed_additions)
+                or any(new_states[name] not in {'ok', 'online', 'disabled'} for name in added)):
             return False
         for name, previous in old_states.items():
             current = new_states[name]
@@ -90,6 +92,8 @@ def main():
     commands.add_parser('capture')
     verify = commands.add_parser('verify')
     verify.add_argument('baseline')
+    verify.add_argument('--allow-added-dependency', action='append', default=[],
+                        choices=['safety-notification-worker'])
     args = parser.parse_args()
     if args.action == 'capture':
         value = capture(time.monotonic() + 45)
@@ -106,7 +110,7 @@ def main():
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
         after = capture(deadline)
-        if no_regression(before, after):
+        if no_regression(before, after, args.allow_added_dependency):
             print(json.dumps({'healthAndPublicDemoPreserved': True, 'statuses': after}, sort_keys=True))
             return
         time.sleep(min(1, max(0, deadline - time.monotonic())))

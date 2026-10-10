@@ -183,6 +183,133 @@
         }
       }
     },
+    "/api/v1/me/notifications/safety": {
+      "put": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Set explicit safety notification consent for the authenticated user.",
+        "operationId": "setMySafetyNotificationConsent",
+        "description": "Atomic self-service consent change. The server derives the recipient exclusively from the authenticated actor; requests cannot select another user, group or device. The body contains exactly one boolean enabled field (maximum 1024 bytes). Missing consent defaults to disabled. Enabling requires an active saved watched area, a confirmed eligible notification device and an available enabled durable worker/store; missing user/device preconditions return 409, technical outages or disabled delivery return 503. Revocation is allowed without a watched area, eligible device or enabled worker and is effective only after the server confirms the write. The current consent is rechecked at dispatch; generic preference saves preserve this server-owned flag and cannot grant, revoke or resurrect it. Success confirms the saved preference, not physical delivery or guaranteed locked-screen notification. Ordinary APNs/web notifications remain dependent on platform permission and delivery availability.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SafetyNotificationConsentRequest"
+              },
+              "examples": {
+                "enable": {
+                  "value": {
+                    "enabled": true
+                  }
+                },
+                "revoke": {
+                  "value": {
+                    "enabled": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored consent for the authenticated user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SafetyNotificationConsentResponse"
+                },
+                "examples": {
+                  "revoked": {
+                    "value": {
+                      "contractVersion": "cop-safety-notification-consent-v1",
+                      "enabled": false,
+                      "updatedAt": "2026-10-10T12:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "Enable a watched area and register a notification device before enabling automatic alerts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "SAFETY_NOTIFICATION_PRECONDITION": {
+                    "summary": "SAFETY_NOTIFICATION_PRECONDITION",
+                    "value": {
+                      "error": {
+                        "code": "SAFETY_NOTIFICATION_PRECONDITION",
+                        "message": "Enable a watched area and register a notification device before enabling automatic alerts.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Safety notification consent or delivery services are unavailable; retry without treating this as a user refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "NOTIFICATION_STORE_UNAVAILABLE": {
+                    "summary": "NOTIFICATION_STORE_UNAVAILABLE",
+                    "value": {
+                      "error": {
+                        "code": "NOTIFICATION_STORE_UNAVAILABLE",
+                        "message": "Safety notification consent or delivery services are unavailable; retry without treating this as a user refusal.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  },
+                  "SAFETY_NOTIFICATIONS_UNAVAILABLE": {
+                    "summary": "SAFETY_NOTIFICATIONS_UNAVAILABLE",
+                    "value": {
+                      "error": {
+                        "code": "SAFETY_NOTIFICATIONS_UNAVAILABLE",
+                        "message": "Safety notification consent or delivery services are unavailable; retry without treating this as a user refusal.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me/preferences": {
       "get": {
         "tags": [
@@ -190,7 +317,7 @@
         ],
         "summary": "Read authenticated operator preferences.",
         "operationId": "getMyCopPreferences",
-        "description": "Returns the Keycloak/lab actor identity plus server-side COP workspace, map, replay and alert preferences for the authenticated operator.\n",
+        "description": "Returns the Keycloak/lab actor identity plus server-side COP workspace, map, replay and alert preferences for the authenticated operator.\nSafety notification consent is returned as alertPreferences.safetyNotificationsEnabled. Missing or false means no consent; it is authoritative on COP and must not be replaced by a newer offline preference.\n",
         "responses": {
           "200": {
             "description": "Operator preference profile.",
@@ -213,7 +340,7 @@
         ],
         "summary": "Upsert authenticated operator preferences.",
         "operationId": "putMyCopPreferences",
-        "description": "Persists only display, workspace, replay and informational alert preferences. This endpoint does not create tasking, targeting or weapon workflow state.\n",
+        "description": "Persists only display, workspace, replay and informational alert preferences. This endpoint does not create tasking, targeting or weapon workflow state.\nThe server-owned alertPreferences.safetyNotificationsEnabled flag is read-only here: supplied values are ignored and the latest stored consent is atomically preserved, including during concurrent saves. Change consent only through PUT /api/v1/me/notifications/safety. Saving a workspace profile cannot implicitly enable notifications.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -1321,6 +1448,128 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/safety/context/news": {
+      "get": {
+        "tags": [
+          "Safety Data"
+        ],
+        "summary": "Read informational ČT24 headline context through COP.",
+        "operationId": "getSafetyMediaNewsContext",
+        "description": "Server-only proxy to the fixed SIM /safety-data/api/v1/context/news endpoint. Returns only bounded headline metadata (titles, outgoing links, publication/fetch times and attribution), never article bodies or video. This informational stream is separate from official warnings and never eligible for automatic crisis notification. regionCode identifies an editorial RSS feed area, not an incident location; eventAt and location are null and locationStatus is unresolved. No distance, local incident or safety conclusion may be inferred from this metadata. COP forwards no user credential to SIM. Fixed limit 20, maximum 24-hour publication age, memory cache 300 seconds, retry backoff 60 seconds, bounded timeout/body and no redirects. Public reading is permitted only when the deployment enables COP public read; otherwise authentication is required. No caller-controlled upstream URL or feed selector is supported.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationIdHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Informational headline metadata; disabled or degraded status is explicit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SafetyMediaNewsContext"
+                },
+                "examples": {
+                  "headlines": {
+                    "summary": "Synthetic documentation example; editorial context only.",
+                    "value": {
+                      "contractVersion": "sim-crisis-media-context-v1",
+                      "status": "ok",
+                      "generatedAt": "2026-10-10T12:00:00Z",
+                      "informationalOnly": true,
+                      "notificationEligible": false,
+                      "items": [
+                        {
+                          "id": "ct24-example-headline",
+                          "title": "Ukázkový zpravodajský titulek",
+                          "link": "https://ct24.ceskatelevize.cz/clanek/ukazka",
+                          "publishedAt": "2026-10-10T11:30:00Z",
+                          "fetchedAt": "2026-10-10T12:00:00Z",
+                          "eventAt": null,
+                          "regionCode": "CZ",
+                          "regionScope": "feed",
+                          "location": null,
+                          "locationStatus": "unresolved",
+                          "informationalOnly": true,
+                          "notificationEligible": false,
+                          "stale": false,
+                          "source": {
+                            "id": "ct24",
+                            "name": "ČT24",
+                            "feedId": "ct24-main",
+                            "attribution": "Česká televize / ČT24"
+                          }
+                        }
+                      ],
+                      "sources": [
+                        {
+                          "id": "ct24-main",
+                          "label": "ČT24 – zpravodajství",
+                          "feedUrl": "https://ct24.ceskatelevize.cz/rss",
+                          "regionCode": "CZ",
+                          "regionScope": "feed",
+                          "attribution": "Česká televize / ČT24",
+                          "status": "ok",
+                          "fetchedAt": "2026-10-10T12:00:00Z",
+                          "stale": false,
+                          "errorCode": null,
+                          "retryAfterSeconds": null
+                        }
+                      ]
+                    }
+                  },
+                  "disabled": {
+                    "value": {
+                      "contractVersion": "sim-crisis-media-context-v1",
+                      "status": "disabled",
+                      "generatedAt": "2026-10-10T12:00:00Z",
+                      "informationalOnly": true,
+                      "notificationEligible": false,
+                      "items": [],
+                      "sources": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Zpravodajský kontext nyní není dostupný.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "MEDIA_NEWS_UNAVAILABLE": {
+                    "summary": "MEDIA_NEWS_UNAVAILABLE",
+                    "value": {
+                      "error": {
+                        "code": "MEDIA_NEWS_UNAVAILABLE",
+                        "message": "Zpravodajský kontext nyní není dostupný.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -5095,8 +5344,8 @@
         "tags": [
           "Notifications"
         ],
-        "summary": "Evaluate SIM safety features for citizen push notification dispatch.",
-        "description": "Authenticated server/operator endpoint used by COP to decide whether safety features from SIM are relevant to the current user, explicit audience or watched areas. By default this endpoint is a dry run. When dryRun=false, COP submits only minimized notification metadata to CSM Messaging through server-to-server notification intake. COP never stores APNs tokens and never sends push directly.\n",
+        "summary": "Evaluate verified SIM notification candidates for the authenticated user.",
+        "description": "Self-service server endpoint. Recipient identity comes only from the authenticated actor; another user, a group or an area audience is forbidden (403 NOTIFICATION_AUDIENCE_FORBIDDEN). COP fetches typed candidates only from SIM /safety-data/api/v1/notifications/candidates, never arbitrary rendered map warnings. Candidates must have ready fresh source input and a complete collection; unavailable, incomplete or possibly truncated input returns 503 and is not evidence that the watched area is safe. Relevance uses the user’s saved enabled watched areas and severity settings; Polygon/MultiPolygon intersection is evaluated, while unresolved or administrative fallback points, stale/expired items, technical source errors and editorial bulletins cannot become local alerts. currentLocation is retained as an ignored compatibility field; it does not grant consent, create a watched area or establish an audience. Default dryRun=true does not dispatch. dryRun=false additionally requires explicit current-user consent and an enabled durable worker/store. Send identity includes recipient and canonical incident/validity, so one recipient does not suppress another and repeated rendering layers are deduplicated. Legacy dispatch is always an empty array; use the additive dispatchSummary for intake acceptance/skips/failures. acceptedCount/dispatchedCount means CSM Messaging intake acknowledgement, not physical APNs/web delivery. Messaging failures are represented by failedCount without a direct-push fallback. COP stores no APNs token and performs no direct push.",
         "operationId": "evaluateSafetyNotifications",
         "parameters": [
           {
@@ -5115,11 +5364,52 @@
         },
         "responses": {
           "200": {
-            "description": "Notification decisions and optional dispatch results.",
+            "description": "Self-user candidate decisions and additive aggregate dispatch counters; legacy dispatch remains empty.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SafetyNotificationEvaluationResponse"
+                },
+                "examples": {
+                  "dryRun": {
+                    "summary": "Ready input with no candidate; this is not confirmation of safety.",
+                    "value": {
+                      "contractVersion": "cop-notification-evaluation-v1",
+                      "decisions": [],
+                      "dispatch": [],
+                      "dispatchSummary": {
+                        "acceptedCount": 0,
+                        "skippedCount": 0,
+                        "failedCount": 0
+                      },
+                      "dryRun": true,
+                      "query": {
+                        "bbox": {
+                          "west": 14,
+                          "south": 49,
+                          "east": 15,
+                          "north": 50
+                        },
+                        "layers": [
+                          "warnings"
+                        ],
+                        "limit": 100
+                      },
+                      "serverTimestamp": "2026-10-10T12:00:00Z",
+                      "inputReadiness": {
+                        "status": "ready",
+                        "snapshotGeneratedAt": "2026-10-10T12:00:00Z",
+                        "snapshotAgeSeconds": 0,
+                        "reasons": []
+                      },
+                      "summary": {
+                        "dispatchedCount": 0,
+                        "eligibleCount": 0,
+                        "featureCount": 0,
+                        "skippedCount": 0
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -5131,7 +5421,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "502": {
-            "description": "CSM Messaging notification intake was degraded for one or more dispatches.",
+            "description": "Legacy response retained for client compatibility. The current implementation reports input/store outages with the COP 503 error envelope and per-recipient Messaging failures through dispatchSummary.failedCount in a 200 response.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5139,6 +5429,83 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Safety evaluation may address only the authenticated user and dispatch requires explicit current-user consent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "NOTIFICATION_AUDIENCE_FORBIDDEN": {
+                    "summary": "NOTIFICATION_AUDIENCE_FORBIDDEN",
+                    "value": {
+                      "error": {
+                        "code": "NOTIFICATION_AUDIENCE_FORBIDDEN",
+                        "message": "Safety evaluation may address only the authenticated user and dispatch requires explicit current-user consent.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  },
+                  "SAFETY_NOTIFICATION_CONSENT_REQUIRED": {
+                    "summary": "SAFETY_NOTIFICATION_CONSENT_REQUIRED",
+                    "value": {
+                      "error": {
+                        "code": "SAFETY_NOTIFICATION_CONSENT_REQUIRED",
+                        "message": "Safety evaluation may address only the authenticated user and dispatch requires explicit current-user consent.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verified safety input or delivery services are unavailable or incomplete; retryable technical failure, not user refusal or confirmation of safety.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "SAFETY_EVALUATION_UNAVAILABLE": {
+                    "summary": "SAFETY_EVALUATION_UNAVAILABLE",
+                    "value": {
+                      "error": {
+                        "code": "SAFETY_EVALUATION_UNAVAILABLE",
+                        "message": "Verified safety input or delivery services are unavailable or incomplete; retryable technical failure, not user refusal or confirmation of safety.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  },
+                  "SAFETY_CANDIDATES_NOT_READY": {
+                    "summary": "SAFETY_CANDIDATES_NOT_READY",
+                    "value": {
+                      "error": {
+                        "code": "SAFETY_CANDIDATES_NOT_READY",
+                        "message": "Verified safety input or delivery services are unavailable or incomplete; retryable technical failure, not user refusal or confirmation of safety.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  },
+                  "SAFETY_NOTIFICATIONS_UNAVAILABLE": {
+                    "summary": "SAFETY_NOTIFICATIONS_UNAVAILABLE",
+                    "value": {
+                      "error": {
+                        "code": "SAFETY_NOTIFICATIONS_UNAVAILABLE",
+                        "message": "Verified safety input or delivery services are unavailable or incomplete; retryable technical failure, not user refusal or confirmation of safety.",
+                        "correlationId": "00000000-0000-4000-8000-000000000001"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12869,7 +13236,8 @@
         "type": "object",
         "properties": {
           "alertPreferences": {
-            "$ref": "#/components/schemas/UserAlertPreferences"
+            "$ref": "#/components/schemas/UserAlertPreferences",
+            "description": "Updates informational alert settings and saved zones. safetyNotificationsEnabled is server-owned and preserved; this update cannot grant or revoke notification consent."
           },
           "preferences": {
             "$ref": "#/components/schemas/UserDisplayPreferences"
@@ -12981,6 +13349,12 @@
               "warning",
               "critical"
             ]
+          },
+          "safetyNotificationsEnabled": {
+            "type": "boolean",
+            "readOnly": true,
+            "default": false,
+            "description": "Explicit server-owned automatic safety notification consent. Missing or false means disabled. Read from the authenticated profile; change only through PUT /api/v1/me/notifications/safety. Values sent with generic preference updates are ignored, and concurrent generic saves preserve the latest consent."
           }
         },
         "additionalProperties": false
@@ -20414,6 +20788,377 @@
           }
         }
       },
+      "SafetyNotificationConsentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Explicit enable or revoke; no string coercion and no client-selected identity."
+          }
+        }
+      },
+      "SafetyNotificationConsentResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "enabled",
+          "updatedAt"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-safety-notification-consent-v1"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SafetyNotificationDispatchSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "acceptedCount",
+          "skippedCount",
+          "failedCount"
+        ],
+        "properties": {
+          "acceptedCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Acknowledged by CSM Messaging intake, not proven physical delivery."
+          },
+          "skippedCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Ineligible, irrelevant, revoked, duplicate, expired or unavailable-recipient candidates."
+          },
+          "failedCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Technical dispatch failures; never redirected to direct APNs or another recipient."
+          }
+        }
+      },
+      "SafetyNotificationInputReadiness": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "snapshotGeneratedAt",
+          "snapshotAgeSeconds",
+          "reasons"
+        ],
+        "description": "Typed source readiness from SIM. The evaluation endpoint returns 200 only for ready, complete, fresh input. Non-ready/possibly-truncated input returns 503, never an empty-area safety assurance.",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "unavailable",
+              "incomplete"
+            ]
+          },
+          "snapshotGeneratedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "snapshotAgeSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SafetyMediaNewsItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "link",
+          "publishedAt",
+          "fetchedAt",
+          "eventAt",
+          "regionCode",
+          "regionScope",
+          "location",
+          "locationStatus",
+          "informationalOnly",
+          "notificationEligible",
+          "stale",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "Plain headline text; no HTML, article body or media."
+          },
+          "link": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048,
+            "pattern": "^https://ct24\\.ceskatelevize\\.cz/",
+            "description": "Validated HTTPS ČT24 outgoing link, without userinfo, explicit port or a lookalike host. COP never fetches article bodies from this link."
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RSS publication time, not verified incident time. COP excludes publications older than 24 hours."
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "eventAt": {
+            "type": "null",
+            "description": "Unknown incident time; publication time is not substituted."
+          },
+          "regionCode": {
+            "type": "string",
+            "enum": [
+              "CZ",
+              "CZ080",
+              "CZ064"
+            ],
+            "description": "Editorial feed scope only: ct24-main=CZ, ct24-ostrava=CZ080, ct24-brno=CZ064. This is never the location of an event."
+          },
+          "regionScope": {
+            "type": "string",
+            "const": "feed"
+          },
+          "location": {
+            "type": "null",
+            "description": "No verified event location is provided or invented."
+          },
+          "locationStatus": {
+            "type": "string",
+            "const": "unresolved"
+          },
+          "informationalOnly": {
+            "type": "boolean",
+            "const": true
+          },
+          "notificationEligible": {
+            "type": "boolean",
+            "const": false
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "Source freshness is degraded; never promotes an item to an official alert."
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "name",
+              "feedId",
+              "attribution"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "const": "ct24"
+              },
+              "name": {
+                "type": "string",
+                "const": "ČT24"
+              },
+              "feedId": {
+                "type": "string",
+                "enum": [
+                  "ct24-main",
+                  "ct24-ostrava",
+                  "ct24-brno"
+                ]
+              },
+              "attribution": {
+                "type": "string",
+                "const": "Česká televize / ČT24"
+              }
+            }
+          }
+        }
+      },
+      "SafetyMediaNewsSourceState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "label",
+          "feedUrl",
+          "regionCode",
+          "regionScope",
+          "attribution",
+          "status",
+          "fetchedAt",
+          "stale",
+          "errorCode",
+          "retryAfterSeconds"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "ct24-main",
+              "ct24-ostrava",
+              "ct24-brno"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "feedUrl": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048,
+            "pattern": "^https://ct24\\.ceskatelevize\\.cz/",
+            "description": "Validated fixed source RSS URL. Metadata only; not a caller-selected upstream."
+          },
+          "regionCode": {
+            "type": "string",
+            "enum": [
+              "CZ",
+              "CZ080",
+              "CZ064"
+            ],
+            "description": "Editorial feed scope only: ct24-main=CZ, ct24-ostrava=CZ080, ct24-brno=CZ064. This is never the location of an event."
+          },
+          "regionScope": {
+            "type": "string",
+            "const": "feed"
+          },
+          "attribution": {
+            "type": "string",
+            "const": "Česká televize / ČT24"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "stale",
+              "unavailable",
+              "disabled"
+            ]
+          },
+          "fetchedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "errorCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "UPSTREAM_HTTP_ERROR",
+              "UPSTREAM_TIMEOUT",
+              "UPSTREAM_TOO_LARGE",
+              "UPSTREAM_INVALID_XML",
+              "UPSTREAM_UNAVAILABLE",
+              null
+            ]
+          },
+          "retryAfterSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 3600
+          }
+        }
+      },
+      "SafetyMediaNewsContext": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "status",
+          "generatedAt",
+          "informationalOnly",
+          "notificationEligible",
+          "items",
+          "sources"
+        ],
+        "description": "Informational editorial RSS metadata, entirely separate from official safety warnings and candidate dispatch. No raw article text, video or invented geometry.",
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "sim-crisis-media-context-v1"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded",
+              "disabled"
+            ]
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "informationalOnly": {
+            "type": "boolean",
+            "const": true
+          },
+          "notificationEligible": {
+            "type": "boolean",
+            "const": false
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/SafetyMediaNewsItem"
+            }
+          },
+          "sources": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/SafetyMediaNewsSourceState"
+            }
+          }
+        }
+      },
       "SafetyNotificationEvaluationRequest": {
         "type": "object",
         "required": [
@@ -20422,7 +21167,8 @@
         "additionalProperties": false,
         "properties": {
           "audience": {
-            "$ref": "#/components/schemas/NotificationAudience"
+            "$ref": "#/components/schemas/NotificationAudience",
+            "description": "Compatibility field, restricted to the authenticated actor only. A non-empty groupIds or areaIds, or any different userId, returns 403. Omitting audience does not create a broadcast; actual relevance comes from stored watched areas."
           },
           "bbox": {
             "oneOf": [
@@ -20445,12 +21191,14 @@
             ]
           },
           "currentLocation": {
-            "$ref": "#/components/schemas/NotificationLocation"
+            "$ref": "#/components/schemas/NotificationLocation",
+            "deprecated": true,
+            "description": "Accepted for legacy client compatibility but ignored by this self-service candidate route. It is not persisted and does not create consent, a watched area or notification audience."
           },
           "dryRun": {
             "type": "boolean",
             "default": true,
-            "description": "Defaults to true. Set false only when COP should call CSM Messaging notification intake."
+            "description": "Defaults to true: evaluate without dispatch. False requires explicit stored consent, eligible devices and an enabled durable worker; errors never fall back to direct push."
           },
           "layerIds": {
             "type": "array",
@@ -20476,7 +21224,7 @@
                 "weather_alerts"
               ]
             },
-            "description": "Safety layers eligible for citizen notification evaluation."
+            "description": "Layer filter for verified SIM notification candidates only. Reference layer boundary_admin is excluded; generic map warning features are not push candidates."
           },
           "limit": {
             "type": "integer",
@@ -20512,7 +21260,10 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/NotificationDispatchResult"
-            }
+            },
+            "deprecated": true,
+            "maxItems": 0,
+            "description": "Preserved legacy field, always [] for the durable candidate worker. Read dispatchSummary instead."
           },
           "dryRun": {
             "type": "boolean"
@@ -20535,7 +21286,8 @@
             "properties": {
               "dispatchedCount": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "description": "CSM Messaging intake acknowledgements; not physical delivery to the user."
               },
               "eligibleCount": {
                 "type": "integer",
@@ -20543,15 +21295,23 @@
               },
               "featureCount": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "description": "Number of typed SIM candidates considered, not arbitrary map features."
               },
               "skippedCount": {
                 "type": "integer",
                 "minimum": 0
               }
             }
+          },
+          "dispatchSummary": {
+            "$ref": "#/components/schemas/SafetyNotificationDispatchSummary"
+          },
+          "inputReadiness": {
+            "$ref": "#/components/schemas/SafetyNotificationInputReadiness"
           }
-        }
+        },
+        "description": "Existing v1 shape is preserved; dispatchSummary and inputReadiness are additive. Legacy dispatch is empty. All counters concern decisions/intake acknowledgement, not proof of physical device delivery."
       },
       "NotificationDecision": {
         "type": "object",
@@ -20574,7 +21334,7 @@
           },
           "idempotencyKey": {
             "type": "string",
-            "description": "Stable key passed to CSM Messaging Idempotency-Key when dispatching."
+            "description": "Stable CSM Messaging Idempotency-Key. Safety candidate dispatch keys include the derived recipient identity and canonical incident/validity; one user cannot suppress another, and the same relevant incident across rendering layers is deduplicated."
           },
           "notification": {
             "$ref": "#/components/schemas/NotificationRequest"

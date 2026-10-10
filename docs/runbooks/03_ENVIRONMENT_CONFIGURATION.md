@@ -373,6 +373,17 @@ Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/m
 
 COP také server-side čte `GET /safety-data/api/v1/observability`. Tento endpoint se nepoužívá jako mapová vrstva; promítá se jen do Source Health jako provozní kvalita safety provideru, cache hit-rate, stale feature count a varování zdrojových cache. `status=degraded` znamená sníženou kvalitu externích dat, ne výpadek SIM.
 
+For automatic safety delivery, map cache and the `cop-safety-source-v1`
+projection above are not sufficient. COP reads only SIM
+`sim-safety-notification-candidates-v1` from `/notifications/candidates`, requires
+fresh `inputReadiness=ready` and refuses incomplete results or stale fallback.
+`COP_SAFETY_NOTIFICATION_WORKER_ENABLED` defaults to `false`; enabling it does
+not grant account consent. Production uses durable profile/notification stores.
+All bounded poll/retry/cooldown settings and the separate ČT24 informational
+cache are documented in
+[runbook 21](21_COP_CRISIS_NOTIFICATIONS.md). No new port or service secret is
+needed for this additive release.
+
 ## SIM Search Data Source
 
 COP může pro AI chat a mapové dotazy typu „najdi“, „vyhledej“ nebo

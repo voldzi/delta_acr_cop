@@ -46,6 +46,36 @@ Current COP error responses use the repository's compatibility envelope with
 [Error model](integration/06_ERROR_MODEL.md). Any migration to a different
 request-id field must be compatibility-safe and recorded in an ADR.
 
+## Automatic crisis notifications and informational news
+
+The authenticated `PUT /api/v1/me/notifications/safety` accepts only an
+`enabled` boolean and persists consent for the session's subject.
+Missing consent is disabled. Generic preferences updates cannot set this field.
+Enabling requires an enabled watched area, registered eligible device and ready
+worker/stores (`409` for missing account preconditions, `503` for unavailable
+infrastructure). Revocation remains available without SIM/Messaging, provided
+the primary profile store is reachable.
+
+`POST /api/v1/notifications/safety/evaluate` retains its endpoint,
+`cop-notification-evaluation-v1` and default `dryRun=true`. It now reads only
+SIM verified candidates with `inputReadiness.status=ready`, not map features.
+It evaluates the current user's saved AOIs; foreign user, group and explicit
+area audiences are forbidden. A real dispatch requires current consent and
+the durable per-user claim path. Additive `inputReadiness` and `dispatchSummary`
+separate source readiness and Messaging intake. The compatibility `dispatch`
+array is empty. Incomplete/unavailable input returns `503`; an empty complete
+snapshot is not a nationwide completeness or safety guarantee.
+
+`GET /api/v1/safety/context/news` provides a separate
+`sim-crisis-media-context-v1` informational summary of ČT24 headlines, links,
+publication time and attribution. Its `informationalOnly=true`,
+`notificationEligible=false`, null location/event time and unresolved location
+are binding. Editorial `regionCode` is not incident geography. These items
+cannot enter automated notifications.
+
+See [notification contract](integration/12_COP_NOTIFICATION_DECISION_AND_PUSH.md)
+and [release/rollback and pending acceptance](runbooks/21_COP_CRISIS_NOTIFICATIONS.md).
+
 Community-report clients use a server-owned lifecycle:
 
 - omitted `validUntil` receives a category-specific default;

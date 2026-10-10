@@ -1,5 +1,13 @@
 # Observability
 
+Automatic safety notifications expose `safety-notification-worker` through
+`/health/dependencies`. Its state distinguishes disabled/idle/running/degraded
+and includes aggregate examined/accepted/skipped/failed counts and bounded
+failure codes. It contains no user IDs, area coordinates or notification text.
+An accepted count means Messaging intake with targeted devices, not physical
+phone delivery. Do not interpret empty or degraded SIM input as a safe area.
+See [acceptance and rollback](runbooks/21_COP_CRISIS_NOTIFICATIONS.md).
+
 This is the standard observability entry point for COP. Detailed observability
 and audit documentation remains in:
 

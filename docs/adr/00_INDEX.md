@@ -44,3 +44,4 @@
 
 - [0037: Server-owned community report presence](0037_SERVER_OWNED_COMMUNITY_REPORT_PRESENCE.md).
 - [0038: COP operational storage boundary on X5](0038_COP_X5_OPERATIONAL_STORAGE_BOUNDARY.md).
+- [0040: Verified crisis notifications and separate media context](0040_VERIFIED_CRISIS_NOTIFICATIONS_AND_MEDIA_CONTEXT.md).

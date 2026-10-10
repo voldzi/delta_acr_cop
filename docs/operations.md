@@ -15,6 +15,7 @@ documentation remains in:
 - [Tile cache and map tiles](runbooks/10_TILE_CACHE_AND_MAP_TILES.md)
 - [COP media S3](runbooks/17_COP_MEDIA_S3.md)
 - [COP storage on X5: paths, retention and deployment gates](runbooks/19_COP_X5_STORAGE.md)
+- [Automatic crisis notifications and ČT24 context](runbooks/21_COP_CRISIS_NOTIFICATIONS.md)
 
 Local defaults:
 
@@ -98,3 +99,26 @@ Community reporting release/rollback and acceptance are recorded in
 No new configuration or port is required. During durable store outage return503;
 restore its connectivity rather than accepting reports into RAM. Police expiry
 and absence suppression do not modify SIM closure data.
+
+## Automatic crisis notifications
+
+`COP_SAFETY_NOTIFICATION_WORKER_ENABLED=false` is the opt-in default. The
+worker uses the configured primary PostgreSQL profile/notification stores,
+current device capability and verified SIM candidates, without a fabricated
+user credential. Account consent is independent and remains disabled until
+explicitly enabled. Ready per-area cache is short-lived; incomplete/unavailable
+inputs and technical failures produce degraded status/backoff, not a public
+alert. Health exposes `safety-notification-worker` with aggregate run counts.
+
+New additive delivery/cooldown/device-capability tables retain opaque hashes
+and operational timestamps, not notification payloads or raw GPS. No automatic
+audit/ledger deletion is introduced. On rollback disable the worker, preserve
+consent and deduplication, and restore only affected API/web images through the
+standard X5-aware deployment wrapper. Do not change networks, tokens or other
+applications. ČT24 stays in its separate informational path.
+
+Candidate implementation, actual deployment and phone delivery are separate
+gates. A Messaging intake acceptance is not APNs/Web Push delivery proof;
+downstream retry/idempotency must be checked with Messaging. Production and
+physical acceptance are pending until recorded in
+[runbook 21](runbooks/21_COP_CRISIS_NOTIFICATIONS.md).

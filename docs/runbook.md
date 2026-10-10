@@ -17,6 +17,7 @@ procedures remain in the established runbook set:
 - [User identity reconciliation](runbooks/11_USER_IDENTITY_RECONCILIATION.md)
 - [COP media S3](runbooks/17_COP_MEDIA_S3.md)
 - [COP storage on X5: verification and scoped rollback](runbooks/19_COP_X5_STORAGE.md)
+- [Automatic crisis notifications: consent, source readiness, release and rollback](runbooks/21_COP_CRISIS_NOTIFICATIONS.md)
 
 Common checks:
 

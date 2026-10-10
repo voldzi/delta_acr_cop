@@ -64,3 +64,11 @@ Public demo analytics: [integration and release gate](analytics/integration.md),
 - [Jízda shared vehicles/Dispatch handoff](integration/29_JIZDA_SHARED_VEHICLES_DISPATCH_HANDOFF.md) — release status and client integration.
 
 - [31. Jízda community reports and police patrols](integration/31_JIZDA_COMMUNITY_REPORTS.md): server feed decisions, police category, shared SDK and production evidence.
+
+Automatic crisis notifications and separate ČT24 context:
+[current notification contract](integration/12_COP_NOTIFICATION_DECISION_AND_PUSH.md),
+[configuration, release and pending acceptance](runbooks/21_COP_CRISIS_NOTIFICATIONS.md),
+[ADR 0040](adr/0040_VERIFIED_CRISIS_NOTIFICATIONS_AND_MEDIA_CONTEXT.md).
+Production activation and physical closed-app delivery must be recorded
+separately; neither ready SIM data nor Messaging intake establishes full coverage
+or phone receipt.

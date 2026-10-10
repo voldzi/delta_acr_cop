@@ -132,3 +132,34 @@ See [ADR0031](adr/0031_SHARED_VEHICLES_AND_PRIVATE_DISPATCH.md) for authenticate
 recipient encryption, key-directory trust, consent invalidation and real retention.
 No request body/GPS/key value is serialized into diagnostics. Coordinates are never
 persisted in server SQL or sent to SIM; only latest ciphertext exists in RAM.
+
+## Automatic safety notifications and media provenance
+
+Explicit authenticated account consent is separate from OS notification
+permission, registered push devices and generic profile preferences. Missing
+consent is false; the client cannot choose the worker's actor or target another
+user/group. Dispatch rereads current primary-store consent, severity, areas and
+device capability under the same subject lock as revocation/profile changes.
+A completed revocation blocks later dispatch; a notification already accepted
+by Messaging cannot be retracted.
+
+Only typed SIM `/notifications/candidates` with the exact eligibility policy
+and fresh `inputReadiness=ready` can enter the worker. Never use map warnings,
+stale cache fallback, news headlines or technical source failures as crisis
+alerts. Unknown/approximate locations do not imply proximity. Relevance uses
+actual Circle/Polygon/MultiPolygon intersection including holes. Candidate
+timestamps, state, source and severity are checked independently in COP.
+
+Per-user incident keys and hydro cooldowns use durable PostgreSQL. Primary
+store or registry outages fail closed; no in-memory consent/dedup fallback.
+The ledger contains opaque keys, status/time and Messaging references, not
+candidate text/geometry, raw GPS, private messages or push secrets. Existing
+profile AOIs and minimum device capability references remain access-controlled
+account data. Do not describe the hashes as proof of anonymity or automatically
+delete audit/delivery evidence without a separate approved retention policy.
+
+ČT24 context is informational only, with fixed provenance/links and null,
+unresolved event location. `regionCode` belongs to the feed. No automatic
+map pin, nearby-distance promise, official IZS label or crisis push may be
+derived from it. See [ADR 0040](adr/0040_VERIFIED_CRISIS_NOTIFICATIONS_AND_MEDIA_CONTEXT.md)
+and [notification boundary](integration/12_COP_NOTIFICATION_DECISION_AND_PUSH.md).

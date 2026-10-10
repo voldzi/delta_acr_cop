@@ -47,7 +47,7 @@ for service in "$@"; do
 done
 python3 scripts/cop-storage.py preflight >/dev/null
 docker compose "${compose[@]}" up -d --no-deps "$@"
-python3 scripts/cop-health-gate.py verify "$job/baseline-health.json"
+python3 scripts/cop-health-gate.py verify "$job/baseline-health.json" --allow-added-dependency safety-notification-worker
 flock -u 8
 exec 8>&-
 python3 scripts/cop-storage.py complete-job "$job"
