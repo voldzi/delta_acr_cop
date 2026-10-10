@@ -366,3 +366,103 @@ Targeted checks: **22 passed**, including total retry/host deadline, caller
 cancellation, a stalled response body, independent health probes, concurrent
 ranking cancellation and late-cache rejection. Full gates and production
 readback must pass before this candidate is declared deployed.
+
+
+### Embedding fix installed and independently verified
+
+Deployed code: `041f013e6c85178610f948c1e370ee947262f311`.
+[CI 38092914384](https://github.com/voldzi/delta_acr_cop/actions/runs/38092914384)
+passed all Linux gates, Docker builds/startup and secret scan. Local complete
+regression: **1,591 passed / 8 dedicated-database skips**, 22 targeted tests,
+11 schemas, lint/type check/build, skeleton and OpenAPI (24 existing warnings).
+No libraries were changed in this additional fix.
+
+The standard API-only deployment completed successfully. Actual API image:
+`ed17360324c431e169c489cee888f49037582792214b45e0a94d9360144d29a5`.
+Evidence job: `/srv/x5-production/staging/cop/job-5a09115395734758a210f59d369f6821`.
+Before/after comparison proved only the API container/image changed: COP
+chat/web/edge/MCP identities, configuration hashes, ports, networks, mounts
+and environment values are identical. Live/ready/dependencies and public demo
+passed the existing health gate. Invalid-bearer AI query still returns 401.
+
+A synthetic call using the actual configured embedding endpoints terminated
+with bounded unavailability after **10,002 ms**. A pre-cancelled caller was
+rejected without starting I/O; a semantic ranking with a 250-ms test budget
+returned bounded degraded context. No external AI endpoint or user content
+was used. The configured embedding service remains unavailable; this release
+limits and cancels failed work without claiming restored embedding or real
+user chat inference. AI Router/BYOK flags remain disabled.
+
+Protected rollback image/tag:
+`14b4d19d34a107ab933cd1068b41e07007ba3f90a37acd2ab09118a148c48556` /
+`delta-acr-cop-api:rollback-embedding-deadline-20261011`.
+Use the existing storage preflight/lock and all approved Compose overrides,
+then an API-only immutable image override with `--no-build --no-deps`.
+Verify exact image, health and the saved configuration/network invariants.
+This successful rollout did not force a rollback or alter persistent stores.
+
+
+### Additional SIM search-cache fix and COP acceptance
+
+SIM deployed `20a0d961ba4cdb1f100998d7f8e07787dad03327`, actual Situation
+Data image `60d66a8083e4df55ea5eb8d8713c1846556a96162cd4fce1b70600ffecf89fc4`,
+independently confirmed healthy. Safety image `10615c34...` stays unchanged.
+SIM reported 318 passing SDA tests / 6 dedicated-database skips, plus
+104 passing Safety cache/freshness tests and 4 OpenAPI authentication tests.
+
+A partial search feed had retained a source-timeout warning for the full
+300-second cache period after the source recovered. Partial feeds now expire
+after 30 seconds and cannot be prolonged with stale-if-error; complete feeds
+retain the 300-second policy. The Safety bridge has a 4,500-ms budget through
+JSON body reads, attributes bounded generic warnings to the source, and
+preserves warnings returned with HTTP 200. It does not manufacture fresh
+observations, discard real staleness or change provider refresh cadence.
+
+Two guarded release attempts restored the old healthy image because complete
+HostConfig mount entries appeared in a different order. Independent review
+confirmed the final comparison sorts complete entries by a validated unique
+absolute Target, keeps all mount options, and still compares actual Mounts
+exactly. SIM's successful final guard preserves environment, ports, mount
+paths/rights, NetworkIDs/aliases and all other container IDs. Six routing,
+closure, rebind and road-match source files match the old image byte-for-byte.
+Rollback metadata: `/srv/sim/.deploy-search-backups/2026-10-10T23-11-44.068Z-20a0d961ba4c`.
+
+Independent acceptance from the actual COP adapter, without cache busting,
+forced refresh or raw output:
+
+| Operation | Results | Stale / warnings | Time |
+| --- | ---: | ---: | ---: |
+| Normal index page, limit 1000 | 1000, next page present, ONLINE | 0 / 0 | 379 ms |
+| Safety/fire query, limit 100, exclude stale | 100 | 0 / 0 | 3183 ms |
+| Public internal candidates/news | HTTP 403 | access denied | — |
+| Private scenarios without session | HTTP 401 | access denied | — |
+
+These are page/query results, not proof of complete country-wide coverage.
+The earlier absolute timestamp/301-second rejection and the new bounded
+embedding checks remain valid. A real authenticated user/device chat and
+OpenAI/BYOK activation are still outside this server acceptance.
+
+
+SIM subsequently confirmed full source/dist comparison covering 82 modules:
+only search-data/response-cache source and compiled files differ. Its actual
+routing acceptance, after the ordinary TEC quota gate and failed-probe pause,
+passed at `2026-10-10T23:17:38.882Z`: HTTP 200 in 1,340 ms, one valid Valhalla
+route with positive distance/time, dataset
+`sim-routing-2026-10-10-1791668067`, one applied approved closure, and matching
+traffic dataset in warming state. Neither reviews, source limits nor guards
+were changed. This is a server route test, not a physical iPhone road trip.
+
+SIM retains immutable old SDA image `a170158e385ebba35d14097f2bb59f681160c09e4954422c51e0a050bff00bad`,
+tag `sim-situation-data-api:known-closures-9592372a3cdccce835435a653cc1a44304cbf8a9`.
+The guarded early rollback attempts were actually exercised and restored the
+old healthy image before the final successful release. COP's new rollback
+override is retained as `rollback-embedding.yml` in its release evidence job.
+Sanitized `embedding-runtime-proof.json` and `sim-search-proof.jsonl` are
+retained in that same protected COP job. No user content or keys are in them.
+
+A separate SIM diagnostic error exposed part of private configuration in a
+private tool/session output. Raw captures are suppressed by the corrected
+diagnostic procedure. A remediation plan and request for a separately
+approved credential rotation are pending; no credential has been rotated by
+this release. Do not blindly rotate identity/encryption/HMAC secrets or enable
+measurement intake/AI routing as incident handling.
