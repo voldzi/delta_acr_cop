@@ -71,10 +71,12 @@ function formatBytes(bytes) {
 function readAssets(dir) {
   const absoluteDir = join(repoRoot, dir);
   try {
-    return readdirSync(absoluteDir, { withFileTypes: true }).filter((item) => item.isFile()).map(({ name }) => ({
-      name,
-      size: gzipSync(readFileSync(join(absoluteDir, name))).length
-    }));
+    return readdirSync(absoluteDir, { withFileTypes: true })
+      .filter((item) => item.isFile())
+      .map(({ name }) => ({
+        name,
+        size: gzipSync(readFileSync(join(absoluteDir, name))).length
+      }));
   } catch {
     hasFailure = true;
     console.error(`Bundle budget: ${dir} není dostupný. Spusťte nejdřív pnpm build.`);
@@ -135,30 +137,48 @@ function checkManifestBudgets(budget, assets) {
   const initial = staticGraph(manifest, entryKeys, budget.app);
   // An HTML entry may be just a re-export stub. Count the entire static
   // application graph, excluding only vendors with their own explicit caps.
-  const applicationFiles = new Set([...initial].map((key) => manifest[key].file).filter((file) =>
-    /\.[cm]?js$/u.test(file) && !budget.entries.some((entry) => entry.pattern.test(file.split("/").pop()))
-  ));
+  const applicationFiles = new Set(
+    [...initial]
+      .map((key) => manifest[key].file)
+      .filter(
+        (file) => /\.[cm]?js$/u.test(file) && !budget.entries.some((entry) => entry.pattern.test(file.split("/").pop()))
+      )
+  );
   checkGraphSize(budget.app, "app shell static graph", applicationFiles, assets, budget.appShellMaxBytes);
-  const styles = new Set([...initial].flatMap((key) => manifest[key].css ?? []).filter((file) =>
-    !budget.entries.some((entry) => entry.pattern.test(file.split("/").pop()))
-  ));
+  const styles = new Set(
+    [...initial]
+      .flatMap((key) => manifest[key].css ?? [])
+      .filter((file) => !budget.entries.some((entry) => entry.pattern.test(file.split("/").pop())))
+  );
   checkGraphSize(budget.app, "initial styles", styles, assets, budget.stylesMaxBytes);
 
   // Shared dependencies can make an optional engine eager even when its own
   // chunk is small enough. Check both the shell and the lazily loaded 2D map.
   if (budget.app === "cop-web") {
-    const mapKeys = Object.keys(manifest).filter((key) => /^assets\/(?:CopMap|PublicFloodDemo)-[^/]+\.js$/u.test(manifest[key]?.file));
+    const mapKeys = Object.keys(manifest).filter((key) =>
+      /^assets\/(?:CopMap|PublicFloodDemo)-[^/]+\.js$/u.test(manifest[key]?.file)
+    );
     const publicDemo = manifest["src/PublicFloodDemo.tsx"];
     if (!publicDemo) {
       hasFailure = true;
       console.error("Bundle budget: cop-web manifest nemá veřejné 2D demo.");
     }
     const roots = [...entryKeys, ...mapKeys, ...(publicDemo ? ["src/PublicFloodDemo.tsx"] : [])];
-    checkOptionalEngines(manifest, staticGraph(manifest, roots, budget.app), budget.app,
-      /(?:^|\/)(?:cesium|GlobeWorkspace|XrWorkspace)-[^/]+\.js$/u, "2D statický graf");
+    checkOptionalEngines(
+      manifest,
+      staticGraph(manifest, roots, budget.app),
+      budget.app,
+      /(?:^|\/)(?:cesium|GlobeWorkspace|XrWorkspace)-[^/]+\.js$/u,
+      "2D statický graf"
+    );
   } else {
-    checkOptionalEngines(manifest, initial, budget.app,
-      /(?:^|\/)(?:matrix-|matrix_sdk_crypto_|pdf-|pdf\.worker-|jszip\.min-)/u, "počáteční statický graf");
+    checkOptionalEngines(
+      manifest,
+      initial,
+      budget.app,
+      /(?:^|\/)(?:matrix-|matrix_sdk_crypto_|pdf-|pdf\.worker-|jszip\.min-)/u,
+      "počáteční statický graf"
+    );
   }
 }
 
@@ -169,10 +189,15 @@ function staticGraph(manifest, roots, app) {
     const key = pending.pop();
     if (visited.has(key)) continue;
     const chunk = manifest[key];
-    if (!chunk || typeof chunk.file !== "string" ||
-      !/^assets\/[^/]+$/u.test(chunk.file) || chunk.file.includes("\\") ||
-      (chunk.imports !== undefined && (!Array.isArray(chunk.imports) || chunk.imports.some((item) => typeof item !== "string"))) ||
-      (chunk.css !== undefined && (!Array.isArray(chunk.css) || chunk.css.some((item) => typeof item !== "string")))) {
+    if (
+      !chunk ||
+      typeof chunk.file !== "string" ||
+      !/^assets\/[^/]+$/u.test(chunk.file) ||
+      chunk.file.includes("\\") ||
+      (chunk.imports !== undefined &&
+        (!Array.isArray(chunk.imports) || chunk.imports.some((item) => typeof item !== "string"))) ||
+      (chunk.css !== undefined && (!Array.isArray(chunk.css) || chunk.css.some((item) => typeof item !== "string")))
+    ) {
       hasFailure = true;
       console.error(`Bundle budget: ${app} odkazuje na chybějící nebo neplatný chunk ${key}.`);
       continue;

@@ -40,16 +40,34 @@ or deletion of audit/history is included.
 
 ## Dependencies
 
-Against the npm registry, 37 unique direct libraries (49 manifest references)
-were updated within the selected compatible release lines. pnpm moved from
-10.33.0 to 10.34.6. Frozen offline installation passed for all 17 workspace
-projects. Lockfile SHA-256:
-`1cd6a605815feeb3d094e6cd2016c3665a4231406bbca2315d3821f325d4b905`.
+The original 2026-10-07 audit updated 37 unique direct libraries (49 manifest
+references) within the selected compatible release lines and moved pnpm from
+10.33.0 to 10.34.6. Its full dependency audit decreased from 13 advisories
+(4 high, 7 moderate, 2 low) to zero across 630 reported dependencies. Those
+figures describe that original snapshot, not a permanent assurance.
 
-The full dependency audit decreased from 13 advisories (4 high, 7 moderate,
-2 low) to **zero at every severity**, across 630 reported dependencies. No
-ignore rule or vulnerability suppression was added. CI now fails from `low`
-severity. The unpatched `braces` chain was removed with `vite-plugin-static-copy`.
+Registry revalidation on **2026-10-10** used an isolated clone of the published
+PR head `6893fb60ce0601b25d0d87468402df8c61198438`. Its unchanged lock already
+passed the current production audit: **zero advisories / 321 dependencies**.
+The refresh additionally updates **15 unique direct libraries / 22 manifest
+references**, using the latest stable releases in the supported release lines.
+No production checkout or runtime was changed by this refresh. New lockfile
+SHA-256:
+`d140cd501ed234ad1e6be527966c58b2c8200a09f4bc0e60884be3a86cd14810`.
+
+The refreshed lock passes both the production audit (**314 dependencies**) and
+the full audit (**623 dependencies**) with **zero advisories at every severity**.
+No audit ignore, vulnerability suppression or new package override was needed.
+CI fails from `low` severity. The original removal of the unpatched `braces`
+chain with `vite-plugin-static-copy` is preserved.
+
+The lock retains patched [Fastify 5.12.5](https://github.com/fastify/fastify/security/advisories/GHSA-4mh8-r7rc-xpvc),
+[fast-uri 3.1.8 / 4.2.1](https://github.com/fastify/fast-uri/security/advisories/GHSA-hrr3-gc8f-f4qj),
+[ip-address 10.7.3](https://github.com/beaugunderson/ip-address/security/advisories/GHSA-j6r3-76f7-8jcv)
+and [DOMPurify 3.4.16](https://github.com/cure53/DOMPurify/security/advisories/GHSA-6688-9rhm-gjv2).
+The advisory inventory is separate from exploit reachability: COP has no direct
+HTTP/2 trailer, subnet helper or DOMPurify `IN_PLACE` usage in the inspected
+source. A clean dependency audit does not certify the whole application.
 
 CI actions are upgraded to Node 24 runtime releases and pinned to verified full
 commit SHA: checkout 7.0.1, setup-node 7.0.0 and Gitleaks 3.0.0. The workflow
@@ -63,20 +81,57 @@ The actual hosted workflow remains a separate verification after publishing.
 | React / React DOM | 19.3.0 |
 | MapLibre | 6.13.0 |
 | Cesium | 1.146.0 |
-| LiveKit client / server | 2.22.3 / 2.19.1 |
+| LiveKit client / server | 2.22.4 / 2.19.1 |
+| Matrix SDK | 42.4.0 |
 | PDF.js / JSZip | 6.4.299 / 3.10.2 |
-| Vite / Vitest | 8.3.3 / 5.0.3 |
-| Redocly | 2.60.0 |
+| Vite / Vitest | 8.3.4 / 5.0.3 |
+| Redocly | 2.62.1 |
 | ESLint / typescript-eslint | 10.12.0 / 8.71.1 |
-| Node types | 24.19.1 (Node 24 runtime line) |
+| Node types | 24.19.2 (Node 24 runtime line) |
+| Lucide / TanStack table | 1.55.0 / 9.2.8 |
 
 Not every published major is adopted automatically:
 
-- Matrix 42.3.0 remains: [43.0.0 changes OAuth refresh ownership and RTC events](https://github.com/matrix-org/matrix-js-sdk/releases/tag/v43.0.0), requiring coordinated login/call/device regression. Keep the `matrix-events-sdk` 2.0.0 override.
+- Matrix stays on the supported 42.x release line, refreshed to [42.4.0](https://github.com/matrix-org/matrix-js-sdk/releases/tag/v42.4.0). Its OAuth request logger excludes request/response bodies and redacts query values; the installed source was checked. [43.0.0 changes OAuth refresh ownership and RTC events](https://github.com/matrix-org/matrix-js-sdk/releases/tag/v43.0.0), requiring coordinated login/call/device regression. Keep the `matrix-events-sdk` 2.0.0 override.
 - TypeScript 6.0.3 remains: [TypeScript 7 removes the JavaScript compiler API](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/); the installed ESLint parser supports `<6.1.0`.
 - Three 0.185.1/types 0.185.4 remain: [r186 changes geometry/disposal APIs](https://github.com/mrdoob/three.js/wiki/Migration-Guide#185--186); XR regression is a separate migration.
-- Node types stay on 24 rather than 26, matching the supported runtime. Production inventory showed Node 24.21.0.
+- Node types stay on 24 rather than 26, matching the supported runtime. This refresh uses local Node 24.20.0; the original production inventory showed Node 24.21.0 and was not repeated by this dependency-only refresh.
 - pnpm stays on the project's 10.x release line rather than introducing a package-manager major migration.
+
+After installation, `pnpm outdated -r --format json` lists only the five
+deliberately deferred packages above (`@types/node`, `matrix-js-sdk`,
+`typescript`, `three`, `@types/three`). Their `current` equals `wanted`; no
+compatible direct-library update remains in the selected ranges. This registry
+result is time-bound to 2026-10-10.
+
+Refresh verification on local Node 24.20.0:
+
+- Frozen offline installation: all **17 workspace projects**, unchanged lock.
+- Type-check and ESLint: pass, zero warnings. The first complete
+  `pnpm format:check` reported 17 existing source/test/static files. Running the
+  installed Prettier 3.9.10 on precisely those files produced formatting-only
+  changes; the repeated **full format check passes**, as does `git diff --check`.
+- Schemas: **11 pass**. Binding OpenAPI: zero errors, 24 existing warnings.
+  The first schema command was blocked by the sandbox's `tsx` IPC pipe
+  permission; the repeat with that local IPC permission passed.
+- Full suite: **1,426 pass / 2 skipped / 0 failures**, 166 passing files and two
+  skipped PostgreSQL integration files without dedicated test databases.
+  Run used two workers and took 28.58 seconds. A process fetch guard admitted
+  only loopback requests and recorded **zero unexpected external fetch attempts**.
+  This full test run preceded the subsequent formatting-only repair.
+- Serial workspace build: all **16 workspace build scripts pass**. Vite retains
+  its generic large-chunk warning; the actual gzip budget gate passes without
+  changing thresholds.
+- Bundle budgets, actual static-server smoke, public analytics default-off guard,
+  repository skeleton and whitespace checks: pass. Web/chat initial static graphs
+  remain **184.9 / 104.9 KiB gzip**, within 250 / 135 KiB budgets; optional
+  engines remain outside their initial static graphs. The temporary static-server
+  processes were stopped by the smoke check.
+
+No production rollout, hosted CI rerun, authenticated Matrix/E2EE/voice test or
+physical-device acceptance was performed by this dependency refresh. The
+verification record below belongs to the original audit candidate and is
+preserved with its original dates and limitations.
 
 ## Verification record
 

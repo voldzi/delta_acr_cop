@@ -39,7 +39,8 @@ export function webChunkName(id: string, graph: ModuleGraph): string | undefined
     id.includes("/node_modules/react/") ||
     id.includes("/node_modules/react-dom/") ||
     id.includes("/node_modules/scheduler/")
-  ) return "react-runtime";
+  )
+    return "react-runtime";
   if (id.includes("/node_modules/lucide-react/")) return "icons";
   if (id.includes("/node_modules/@radix-ui/")) return "radix-ui";
   if (id.includes("/node_modules/maplibre-gl/")) return "maplibre";

@@ -30,6 +30,22 @@ documentation remains in:
 Operational rule: do not commit secrets. `.env.example` contains placeholders
 only; real secrets are configured outside the repository.
 
+## Secret scanning in CI
+
+The `Secret Scan` job runs Gitleaks against Git history with its default rules
+and fails when it finds a non-exempt credential. The root `.gitleaksignore`
+contains five individually reviewed historical test fingerprints: four UUIDs
+used only as request idempotency keys and one deterministic actor-signing
+fixture used by isolated redirect-test servers on `127.0.0.1`. No production
+credential value is recorded in the exception file or this documentation.
+
+Each exception binds the exact commit, path, rule and line. Whole files, test
+directories and scanner rules are not excluded. Adding a new occurrence does
+not grant it an exception. Local verification uses the CI version Gitleaks
+8.24.3 with `--redact=100` and the same PR commit range; diagnostics and reports
+must not disclose credential values. An actual credential leak requires
+revocation/rotation and investigation, rather than a scanner exception.
+
 Jízda traffic measurements are disabled by default. The COP API derives a
 day-scoped pseudonym and stable user-scoped retry IDs only from an authenticated
 OIDC subject, and it attests consent from durable server state. The mobile

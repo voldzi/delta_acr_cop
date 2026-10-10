@@ -496,8 +496,8 @@ describe("Matrix client diagnostics", () => {
       "@alice:cop.local": { avatar_url: "mxc://cop.local/alice-avatar", displayname: "Alice Example" },
       "@bob:cop.local": { avatar_url: "mxc://cop.local/bob-avatar", displayname: "Bob Example" }
     };
-    const getProfileInfo = vi.fn<NonNullable<MockMatrixClient["getProfileInfo"]>>(async (userId) =>
-      profiles[userId] ?? {}
+    const getProfileInfo = vi.fn<NonNullable<MockMatrixClient["getProfileInfo"]>>(
+      async (userId) => profiles[userId] ?? {}
     );
     stubVoiceCallBrowserSupport();
     const room = createRoom({
@@ -562,8 +562,8 @@ describe("Matrix client diagnostics", () => {
       "@alice:cop.local": { avatar_url: "mxc://cop.local/alice-avatar", displayname: "Alice Example" },
       "@bob:cop.local": { avatar_url: "mxc://cop.local/bob-avatar", displayname: "Bob Example" }
     };
-    const getProfileInfo = vi.fn<NonNullable<MockMatrixClient["getProfileInfo"]>>(async (userId) =>
-      profiles[userId] ?? {}
+    const getProfileInfo = vi.fn<NonNullable<MockMatrixClient["getProfileInfo"]>>(
+      async (userId) => profiles[userId] ?? {}
     );
     stubVoiceCallBrowserSupport();
     const operator = { displayName: "Operátor", userId: "@operator:cop.local" };

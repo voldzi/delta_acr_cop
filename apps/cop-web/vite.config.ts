@@ -70,11 +70,7 @@ export default defineConfig({
   define: {
     CESIUM_BASE_URL: JSON.stringify("/cesium/")
   },
-  plugins: [
-    react(),
-    cesiumAssetsPlugin(),
-    appleAppSiteAssociationPreviewPlugin()
-  ],
+  plugins: [react(), cesiumAssetsPlugin(), appleAppSiteAssociationPreviewPlugin()],
   resolve: {
     alias: {
       "@cop/messaging/webPush": fileURLToPath(new URL("../../packages/messaging/src/webPush.ts", import.meta.url))
@@ -90,10 +86,12 @@ export default defineConfig({
         codeSplitting: {
           // Group exclusive 3D dependencies without absorbing shared helpers.
           includeDependenciesRecursively: false,
-          groups: [{
-            debugName: "cop-web-vendors-and-exclusive-3d",
-            name: webChunkName
-          }]
+          groups: [
+            {
+              debugName: "cop-web-vendors-and-exclusive-3d",
+              name: webChunkName
+            }
+          ]
         }
       }
     }

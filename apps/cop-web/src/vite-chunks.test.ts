@@ -31,8 +31,9 @@ describe("optional Cesium chunk boundary", () => {
 
   it("also checks dynamic importers and leaves unverified dependencies separate", () => {
     expect(webChunkName(dependency, graph({ [dependency]: [] }, { [dependency]: [engine] }))).toBe("cesium");
-    expect(webChunkName(dependency, graph({ [dependency]: [engine] }, { [dependency]: ["/src/App.tsx"] })))
-      .toBeUndefined();
+    expect(
+      webChunkName(dependency, graph({ [dependency]: [engine] }, { [dependency]: ["/src/App.tsx"] }))
+    ).toBeUndefined();
     expect(webChunkName(dependency, graph({}))).toBeUndefined();
   });
 });

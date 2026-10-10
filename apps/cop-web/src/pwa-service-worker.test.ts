@@ -129,7 +129,11 @@ describe("COP PWA service worker routing", () => {
     const serviceWorker = loadServiceWorkerContext();
     const fetchListener = serviceWorker.self.addEventListener.mock.calls.find(([type]) => type === "fetch")?.[1];
     const respondWith = vi.fn();
-    for (const [path, method] of [["/analytics/v1/tracker.js", "GET"], ["/analytics/v1/events", "POST"], ["/analytics/v1/events", "GET"]]) {
+    for (const [path, method] of [
+      ["/analytics/v1/tracker.js", "GET"],
+      ["/analytics/v1/events", "POST"],
+      ["/analytics/v1/events", "GET"]
+    ]) {
       fetchListener({ request: new Request(`https://cop.example.test${path}`, { method }), respondWith });
     }
     expect(respondWith).not.toHaveBeenCalled();

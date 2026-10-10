@@ -11,13 +11,28 @@ const checker = fileURLToPath(new URL("../../../scripts/check-bundle-budgets.mjs
 const fixtures: string[] = [];
 const required = {
   "cop-web": [
-    "react-runtime-test.js", "icons-test.js", "radix-ui-test.js", "CopMap-test.js", "geo-client-test.js",
-    "XrWorkspace-test.js", "GlobeWorkspace-test.js", "cesium-test.js", "TrackTable-test.js", "maplibre-test.js",
-    "maplibre-gl-worker-test.js", "milsymbol-test.js", "qrcode-test.js", "maplibre-test.css"
+    "react-runtime-test.js",
+    "icons-test.js",
+    "radix-ui-test.js",
+    "CopMap-test.js",
+    "geo-client-test.js",
+    "XrWorkspace-test.js",
+    "GlobeWorkspace-test.js",
+    "cesium-test.js",
+    "TrackTable-test.js",
+    "maplibre-test.js",
+    "maplibre-gl-worker-test.js",
+    "milsymbol-test.js",
+    "qrcode-test.js",
+    "maplibre-test.css"
   ],
   "cop-chat": [
-    "react-runtime-test.js", "matrix-test.js", "matrix_sdk_crypto_wasm_bg-test.wasm", "pdf-test.js",
-    "pdf.worker-test.mjs", "jszip.min-test.js"
+    "react-runtime-test.js",
+    "matrix-test.js",
+    "matrix_sdk_crypto_wasm_bg-test.wasm",
+    "pdf-test.js",
+    "pdf.worker-test.mjs",
+    "jszip.min-test.js"
   ]
 };
 
@@ -33,7 +48,9 @@ async function fixture() {
     const manifest: Record<string, Chunk> = {
       "index.html": { file: "assets/index-test.js", isEntry: true, imports: [`_${app}`] },
       [`_${app}`]: {
-        file: `assets/${app}-test.js`, imports: ["_react", "index.html"], css: [`assets/${app}-test.css`]
+        file: `assets/${app}-test.js`,
+        imports: ["_react", "index.html"],
+        css: [`assets/${app}-test.css`]
       },
       _react: { file: "assets/react-runtime-test.js" }
     };

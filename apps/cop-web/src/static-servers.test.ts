@@ -39,11 +39,13 @@ async function startApp(app: string): Promise<string> {
   await writeFile(path.join(fixture, "private.txt"), "PRIVATE_FIXTURE_DO_NOT_SERVE");
   await symlink(path.join(fixture, "private.txt"), path.join(fixture, "dist/assets/leak.js"));
   // Accelerate the unchanged watchdog logic; production retains a 30 s limit.
-  const source = (await readFile(path.join(appRoot, app, "server.mjs"), "utf8"))
-    .replace("const upstreamTimeoutMs = 30_000;", "const upstreamTimeoutMs = 3_000;");
+  const source = (await readFile(path.join(appRoot, app, "server.mjs"), "utf8")).replace(
+    "const upstreamTimeoutMs = 30_000;",
+    "const upstreamTimeoutMs = 3_000;"
+  );
   await writeFile(path.join(fixture, "server.mjs"), source);
   // Discover the listener's ephemeral port without reserving/racing a port.
-  const portSource = source.replace('console.log(`COP ', 'console.log(`PORT:${server.address().port} COP ');
+  const portSource = source.replace("console.log(`COP ", "console.log(`PORT:${server.address().port} COP ");
   await writeFile(path.join(fixture, "server.mjs"), portSource);
   const running = spawn(process.execPath, [path.join(fixture, "server.mjs")], {
     env: {
@@ -75,76 +77,94 @@ async function startApp(app: string): Promise<string> {
   return address;
 }
 
-function rawRequest(base: string, target: string, options: {
-  method?: string;
-  headers?: http.OutgoingHttpHeaders;
-  body?: string;
-} = {}): Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }> {
+function rawRequest(
+  base: string,
+  target: string,
+  options: {
+    method?: string;
+    headers?: http.OutgoingHttpHeaders;
+    body?: string;
+  } = {}
+): Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }> {
   return new Promise((resolve, reject) => {
-    const request = http.request(base, {
-      method: options.method ?? "GET",
-      path: target,
-      headers: options.headers
-    }, (response) => {
-      const chunks: Buffer[] = [];
-      response.on("data", (chunk: Buffer) => chunks.push(chunk));
-      response.once("error", reject);
-      response.once("end", () => resolve({
-        status: response.statusCode ?? 0,
-        body: Buffer.concat(chunks).toString(),
-        headers: response.headers
-      }));
-    });
+    const request = http.request(
+      base,
+      {
+        method: options.method ?? "GET",
+        path: target,
+        headers: options.headers
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.once("error", reject);
+        response.once("end", () =>
+          resolve({
+            status: response.statusCode ?? 0,
+            body: Buffer.concat(chunks).toString(),
+            headers: response.headers
+          })
+        );
+      }
+    );
     request.once("error", reject);
     request.end(options.body);
   });
 }
 
 beforeAll(async () => {
-  upstreamUrl = await listen(http.createServer((request, response) => {
-    if (request.url === "/protocol/openid-connect/token") {
-      oidcRequests += 1;
-      const chunks: Buffer[] = [];
-      request.on("data", (chunk: Buffer) => chunks.push(chunk));
-      request.on("end", () => {
-        const body = Buffer.concat(chunks).toString();
-        if (body === "hang") {
-          response.once("close", () => { upstreamClosed += 1; });
-          return;
-        }
-        if (body === "oversized") {
-          response.end("x".repeat(300_000));
-          return;
-        }
-        if (body === "redirect") {
-          response.writeHead(307, { Location: `${alternateUrl}/capture-token` });
-          response.end();
-          return;
-        }
-        response.setHeader("Content-Type", "application/json");
-        response.end(JSON.stringify({ access_token: "SYNTHETIC_TOKEN" }));
-      });
-      return;
-    }
-    if (request.url?.endsWith("?hang")) {
-      stalledRequests += 1;
-      response.once("close", () => { upstreamClosed += 1; });
-      request.resume();
-      return;
-    }
-    if (request.url?.endsWith("?reset")) {
-      request.socket.destroy();
-      return;
-    }
-    response.setHeader("Connection", "x-internal-response");
-    response.setHeader("X-Internal-Response", "must-not-be-forwarded");
-    response.setHeader("Content-Type", "application/json");
-    response.end(JSON.stringify({ path: request.url, headers: request.headers }));
-  }));
-  alternateUrl = await listen(http.createServer((_request, response) => {
-    alternateRequests += 1;
-    response.end("unexpected SSRF");
-  }));
+  upstreamUrl = await listen(
+    http.createServer((request, response) => {
+      if (request.url === "/protocol/openid-connect/token") {
+        oidcRequests += 1;
+        const chunks: Buffer[] = [];
+        request.on("data", (chunk: Buffer) => chunks.push(chunk));
+        request.on("end", () => {
+          const body = Buffer.concat(chunks).toString();
+          if (body === "hang") {
+            response.once("close", () => {
+              upstreamClosed += 1;
+            });
+            return;
+          }
+          if (body === "oversized") {
+            response.end("x".repeat(300_000));
+            return;
+          }
+          if (body === "redirect") {
+            response.writeHead(307, { Location: `${alternateUrl}/capture-token` });
+            response.end();
+            return;
+          }
+          response.setHeader("Content-Type", "application/json");
+          response.end(JSON.stringify({ access_token: "SYNTHETIC_TOKEN" }));
+        });
+        return;
+      }
+      if (request.url?.endsWith("?hang")) {
+        stalledRequests += 1;
+        response.once("close", () => {
+          upstreamClosed += 1;
+        });
+        request.resume();
+        return;
+      }
+      if (request.url?.endsWith("?reset")) {
+        request.socket.destroy();
+        return;
+      }
+      response.setHeader("Connection", "x-internal-response");
+      response.setHeader("X-Internal-Response", "must-not-be-forwarded");
+      response.setHeader("Content-Type", "application/json");
+      response.end(JSON.stringify({ path: request.url, headers: request.headers }));
+    })
+  );
+  alternateUrl = await listen(
+    http.createServer((_request, response) => {
+      alternateRequests += 1;
+      response.end("unexpected SSRF");
+    })
+  );
   for (const app of ["cop-web", "cop-chat"]) {
     clients.set(app, await startApp(app));
   }
@@ -157,10 +177,15 @@ afterAll(async () => {
       await once(child, "exit");
     }
   }
-  await Promise.all(servers.map((server) => new Promise<void>((resolve) => {
-    server.closeAllConnections();
-    server.close(() => resolve());
-  })));
+  await Promise.all(
+    servers.map(
+      (server) =>
+        new Promise<void>((resolve) => {
+          server.closeAllConnections();
+          server.close(() => resolve());
+        })
+    )
+  );
   await Promise.all(fixtures.map((fixture) => rm(fixture, { recursive: true, force: true })));
 });
 
@@ -227,11 +252,13 @@ for (const app of ["cop-web", "cop-chat"]) {
       expect(asset.headers["content-encoding"]).toBeUndefined();
       expect(asset.headers["cache-control"]).toContain("immutable");
       const gzip = await rawRequest(base, staticPath("assets/test.js"), {
-        method: "HEAD", headers: { "Accept-Encoding": "br;q=0.1, gzip;q=0.9" }
+        method: "HEAD",
+        headers: { "Accept-Encoding": "br;q=0.1, gzip;q=0.9" }
       });
       expect(gzip.headers["content-encoding"]).toBe("gzip");
       const br = await rawRequest(base, staticPath("assets/test.js"), {
-        method: "HEAD", headers: { "Accept-Encoding": "br, gzip" }
+        method: "HEAD",
+        headers: { "Accept-Encoding": "br, gzip" }
       });
       expect(br.headers["content-encoding"]).toBe("br");
       const fallback = await rawRequest(base, staticPath("conversation"));
@@ -246,20 +273,23 @@ describe("COP chat OIDC proxy", () => {
   it("bounds token request and response sizes without exposing tokens in an error", async () => {
     const before = oidcRequests;
     const request = await rawRequest(clients.get("cop-chat")!, "/chat/oidc/token", {
-      method: "POST", body: "x".repeat(65_537)
+      method: "POST",
+      body: "x".repeat(65_537)
     });
     expect(request.status).toBe(413);
     expect(request.headers["cache-control"]).toBe("no-store");
     expect(oidcRequests).toBe(before);
     const response = await rawRequest(clients.get("cop-chat")!, "/chat/oidc/token", {
-      method: "POST", body: "oversized"
+      method: "POST",
+      body: "oversized"
     });
     expect(response.status).toBe(502);
     expect(response.body).toBe('{"error":"oidc_upstream_unavailable"}');
   });
   it("does not forward token POST data when the issuer redirects to another origin", async () => {
     const result = await rawRequest(clients.get("cop-chat")!, "/chat/oidc/token", {
-      method: "POST", body: "redirect"
+      method: "POST",
+      body: "redirect"
     });
     expect(result.status).toBe(502);
     expect(result.body).toBe('{"error":"oidc_upstream_unavailable"}');
@@ -268,13 +298,16 @@ describe("COP chat OIDC proxy", () => {
   it("cancels a stalled issuer and still relays a valid synthetic response", async () => {
     const before = upstreamClosed;
     const timeout = await rawRequest(clients.get("cop-chat")!, "/chat/oidc/token", {
-      method: "POST", body: "hang"
+      method: "POST",
+      body: "hang"
     });
     expect(timeout.status).toBe(504);
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(upstreamClosed).toBeGreaterThan(before);
     const valid = await rawRequest(clients.get("cop-chat")!, "/chat/oidc/token", {
-      method: "POST", body: "valid", headers: { Origin: clients.get("cop-chat")! }
+      method: "POST",
+      body: "valid",
+      headers: { Origin: clients.get("cop-chat")! }
     });
     expect(valid.status).toBe(200);
     expect(valid.headers["cache-control"]).toBe("no-store");

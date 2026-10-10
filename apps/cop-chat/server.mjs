@@ -153,8 +153,14 @@ function sanitizeProxyHeaders(headers) {
     .filter(Boolean);
   for (const name of [
     ...connectionTokens,
-    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-    "te", "trailer", "transfer-encoding", "upgrade"
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade"
   ]) {
     delete nextHeaders[name];
   }

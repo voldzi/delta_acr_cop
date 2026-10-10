@@ -21,11 +21,11 @@ export function cesiumAssetsPlugin(sourceRoot = cesiumRoot): Plugin {
     async closeBundle() {
       if (config.command !== "build") return;
       const outputRoot = path.resolve(config.root, config.build.outDir, "cesium");
-      await Promise.all(cesiumDirectories.map((directory) => cp(
-        path.join(sourceRoot, directory),
-        path.join(outputRoot, directory),
-        { recursive: true, force: true }
-      )));
+      await Promise.all(
+        cesiumDirectories.map((directory) =>
+          cp(path.join(sourceRoot, directory), path.join(outputRoot, directory), { recursive: true, force: true })
+        )
+      );
     },
     configureServer(server) {
       const prefix = `${config.base.replace(/\/$/u, "")}/cesium/`;
@@ -70,7 +70,8 @@ async function serveCesiumAsset(
   }
   const segments = relativePath.split("/");
   if (
-    relativePath.includes("\0") || relativePath.includes("\\") ||
+    relativePath.includes("\0") ||
+    relativePath.includes("\\") ||
     segments.some((segment) => segment === "." || segment === "..") ||
     !cesiumDirectories.some((directory) => directory === segments[0])
   ) {
