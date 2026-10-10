@@ -69,6 +69,12 @@ jobs:
       - name: Docker build web
         run: docker build -f Dockerfile.web -t delta-acr-cop-web:ci .
 
+      - name: Docker build chat
+        run: docker build -f Dockerfile.chat -t delta-acr-cop-chat:ci .
+
+      - name: Verify chat image startup
+        run: docker run --rm -i --network none --read-only --cap-drop ALL --entrypoint node delta-acr-cop-chat:ci --input-type=module < scripts/check-chat-image.mjs
+
   secret-scan:
     name: Secret Scan
     runs-on: ubuntu-latest

@@ -38,6 +38,10 @@ docker buildx inspect cop-x5 --bootstrap >/dev/null
 python3 scripts/verify-cop-builder.py
 docker compose "${compose[@]}" build --builder cop-x5 "$@"
 for service in "$@"; do
+  if [[ "$service" == cop-chat ]]; then
+    docker run --rm -i --network none --read-only --cap-drop ALL --entrypoint node delta-acr-cop-chat:local \
+      --input-type=module < scripts/check-chat-image.mjs
+  fi
   if [[ "$service" == cop-api ]]; then
     # Reject a rollback/release without the runtime guard, even when Compose
     # happens to contain X5 variables. Do not enable an internal tmp fallback.
