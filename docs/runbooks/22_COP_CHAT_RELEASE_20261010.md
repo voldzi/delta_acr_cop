@@ -183,3 +183,116 @@ The final chat release succeeded, so its failure rollback was not forced.
 The old immutable image was running and independently read back before the
 release; the lock-protected rollback procedure is prepared. Physical
 authenticated E2EE/voice and two-device acceptance remain unverified.
+
+## Follow-up: cold source loading and COP dispatch freshness
+
+A later independent production check timed out after 15 seconds on
+`/notifications/candidates` with all four alert layers and a Czech Republic
+bbox. The same COP container reached the gateway in 78 ms and metadata-only
+news in 878 ms. This is a separate backend cold-loading finding; the earlier
+gateway-cache and access-contract evidence above remains dated evidence.
+SIM subsequently measured a candidate response without flood in 1,960 ms,
+while isolated hydro for a small bbox also exceeded 15 seconds. The running
+candidate path waited for a country-wide hydro refresh without an overall
+deadline. SIM owns the bounded-loading fix and separate source-cache freshness
+repair; final production acceptance of that follow-up is recorded below.
+
+COP also found that its 30-second worker cache could outlive a source snapshot
+that was already close to the 300-second maximum. The deadline now follows
+the earliest of collection `generatedAt + 300 s` and source
+`snapshotGeneratedAt + 300 s`. It bounds cache expiry, is checked on reuse,
+and remains attached to each candidate across device eligibility and durable
+claim checks until immediately before Messaging intake. Authenticated manual
+evaluation passes the complete normalized collection into the same worker.
+No API shape, consent, maximum age, model routing or billing flag changed.
+
+COP code: `73021ce90e397322e07da9c10a47d9fcf260f0fb`.
+[Linux CI 38083433847](https://github.com/voldzi/delta_acr_cop/actions/runs/38083433847)
+passed all gates, including dependency audit and actual Docker builds/startup.
+Local verification passed skeleton, 11 JSON schemas, OpenAPI (24 existing
+warnings), type check, lint, build and **1,585 tests / 8 dedicated-database
+skips**. The targeted notification tests passed **56/56**, including cache
+expiry/fresh recovery, source-fetch delay and snapshot expiry during device
+and claim checks. Initial schema execution was blocked by sandbox IPC
+`listen EPERM`; the permitted repeat passed.
+
+The standard scoped API deployment succeeded. Actual API image:
+`14b4d19d34a107ab933cd1068b41e07007ba3f90a37acd2ab09118a148c48556`.
+Evidence job:
+`/srv/x5-production/staging/cop/job-cb44677dc0564a369b9f844a365263be`.
+Before/after invariants proved only the API image changed; chat/web/edge/MCP
+images, all network names, port bindings, COP runtime configuration hashes
+and AI/mobility/dispatch/worker flags stayed identical. BYOK and full-chat
+Router activation remain disabled. The actual new compiled helper rejected
+an expired snapshot in RAM without any network call or notification.
+
+Protected API rollback tag:
+`delta-acr-cop-api:rollback-snapshot-deadline-20261010`, immutable old image
+`770e4a650d97bfd8ec9cbf037f4ff4a62040c66ab511b69707d73d94fe8ebefb`.
+The release job retains `rollback.yml`, baseline health and before/after
+invariants. Use the standard storage lock/preflight and existing Compose
+overrides to recreate only API with that override, then verify its immutable
+image and baseline health. This successful release did not force rollback.
+
+Post-release live/ready/dependencies and the public demo returned HTTP 200.
+Messaging, Dispatch, voice stores/media, the worker and SIM search were `ok`.
+The existing AI gateway dependency still timed out after 10 seconds and was
+`degraded`; this rollout does not claim repaired AI-provider availability.
+
+Retrieval did not locate the current scoped cache/dispatch implementation;
+the exact source, contract and runbooks were inspected directly.
+
+### Follow-up SIM deployment and independent acceptance
+
+SIM deployed `219d8b01a7bf882f7c2157055ae8797cae84e4a3` on
+`codex/crisis-sources-notifications`. Independent Docker readback confirmed
+Safety image
+`10615c34f3452e18a8b0da43e1becde7b5e368d292bcbf3f038b6e994064c46d`
+healthy and the COP API image above healthy. SIM reported **193/193 Safety
+tests**, **21 contract/deploy/gateway tests**, type check/build/skeleton and
+OpenAPI passing with five existing lint warnings. Its invariants proved only
+Safety image changed, preserving other container identities, gateway/Compose
+and X5 hashes, mount/port/network settings and environment values. An initial
+environment-array hash difference was ordering only; values were compared.
+
+The candidate path now has an overall budget and coalesces source warming in
+the background. Snapshot provenance retains the oldest genuinely used current
+source-cache timestamp, including nested hot/coalesced/stale evidence.
+Hydro observation expiry is `observedAt + 2 h` and does not advance on reread.
+The notification snapshot maximum remains 300 seconds. Provider refresh
+cadence, gateway no-store and all existing access controls are preserved.
+
+SIM's live COP-to-SIM cold query returned **503**
+`SAFETY_NOTIFICATION_INPUT_UNAVAILABLE` after **8,255 ms**, instead of the
+old 15-second timeout. A later single read of the same URL after natural
+background warming returned **200/incomplete** in **89 ms**, with zero
+candidates because the limit was reached. This does not mean a safe area or
+complete alert coverage. No force refresh, cache-buster or retry loop was used.
+
+Independent COP production acceptance in the new image:
+
+| Check | Result |
+| --- | --- |
+| All four layers, bbox `12,48,19,51`, limit 100 | HTTP 200 in 97 ms; `incomplete`, `input_limit_reached`, zero candidates, no-store; normalized as possibly truncated and unusable for dispatch |
+| HZS, fire, same URL twice without auth/cache-buster | HTTP 200, ready/complete in 141 ms and 5 ms; zero currently eligible candidates is valid |
+| HZS source snapshot | Unchanged `2026-10-10T20:35:13.020Z`; absolute age correctly advanced `213.451 → 215.458 s`, with new response times `20:38:46.471Z` and `20:38:48.477Z` |
+| 301-second source clone | Rejected by the deployed normalizer and deadline helper, in RAM only |
+| Cached source at 299 seconds, reused two seconds later | Deadline remained source-based and reuse was rejected, in RAM only |
+| COP consent and evaluation without a session | Both HTTP 401 |
+| Public SIM HTTPS boundary | `https://sim.zeleznalady.cz` candidates/news both 403; private scenarios 401 |
+
+The smoke initially asserted ready for the bounded full-country query; its
+expectation was corrected to the documented incomplete/zero-candidate
+contract. No server rule or payload was relaxed to pass a test.
+The sanitized server proof is `production-freshness-proof.jsonl` in the COP
+release evidence job. No user content, raw source payload, private messages,
+AI query or notification was sent or persisted by these checks.
+
+SIM retains old immutable Safety image `6bbe0c651a4e4729761c050a12ab434a2bbbbd3cfdd397c0dc82f252f15afec4`
+and private rollback configuration backup
+`/srv/sim/.deploy-crisis-backups/2026-10-10T20-35-02-457Z-219d8b01a7bf`.
+Restore only Safety through SIM's standard release procedure and recheck the
+image, health, gateway/config invariants and COP rejection of old snapshots.
+The successful final deployment did not force rollback. Ordinary authenticated
+device/opt-in delivery and existing AI gateway availability remain separately
+unverified/unresolved as described above; BYOK/full routing remain disabled.
