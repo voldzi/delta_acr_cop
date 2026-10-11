@@ -1,8 +1,8 @@
 # ADR 0046: account safety and coordinated account erasure
 
 Status: proposed for coordinated acceptance; implementation candidate for reports
-and canonical peer blocking only. Production activation is not approved.
-Date: 2026-10-10.
+canonical peer blocking and scoped Jízda unlink/fence. Production activation is not approved.
+Date: 2026-10-11.
 
 ## Decision
 
@@ -23,12 +23,23 @@ moderation keyword filter is introduced into crisis messages.
 
 ## Release boundary
 
-The candidate has `accountDeletion=false`. It does not represent sign-out,
-deactivation or HTTP 202 as account erasure. The human must determine whether
-Jízda removes a shared COP identity or only Jízda data/access, and name a real
-moderation owner/contact. Actual owner adapters, bounded revocation, own UGC
-redaction/media removal, ownership choices and restore replay must then be
-implemented and accepted. Account erasure is not currently a public API.
+The human selected Jízda-only unlink and the COP administrator as moderation
+owner on 11 October. A separately confirmed whole-account management/removal
+function does not expand unlink. `accountDeletion=false`, deletion URL null;
+there is no real completed erasure flow yet. See integration plans 41 and 42.
+
+Unlink trusts a separate verified OIDC authorized party, not the shared
+csm-mobile client, an audience or a caller's bundle/header. It fences that
+actor's Jízda API use before cleanup. Only attested Jízda registrations may be
+scrubbed; other apps/accounts/shared history/vehicles/SwiftData remain. Unknown
+legacy/Matrix/live permission cleanup stays pending; 202 is not completion.
+The actual adapter cannot yet prove full unlink. No global logout/delete occurs.
+
+Reporting uses the proposed dedicated cop_communication_moderator realm role
+assigned to the actual COP administrator team after approval. Public contact,
+retention/filter operating process and evidence-key lifecycle still need
+acceptance. The SDK rejects invalid evidence on decode and again before HTTP;
+target one-of/length/UUID checks are also performed before transport.
 
 App Review 1.2 still requires an accepted filtering/moderation process and
 published contact; a report queue or a passing build alone is insufficient.

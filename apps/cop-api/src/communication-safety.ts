@@ -36,7 +36,7 @@ export class CommunicationSafetyService {
   }
   now() { return this.options.now?.() ?? new Date(); }
   capabilities() { return { contractVersion: "cop-account-safety-v1", reporting: true, blocking: true,
-    accountDeletion: false, accountDeletionUnavailableReason: "scope_and_erasure_adapters_not_accepted",
+    accountDeletion: false, accountDeletionUrl: null, accountDeletionUnavailableReason: "erasure_adapters_not_accepted",
     reportContactEmail: this.options.contactEmail, retentionPolicyId: this.options.retentionPolicyId,
     evidence: "explicitly_selected_text_only", blockDelivery: "matrix_ignore_policy" }; }
   async submit(actor: AuthenticatedActor, input: CommunicationReportInput, operationId: string) {
@@ -160,9 +160,9 @@ export function normalizeCommunicationReport(value: unknown): CommunicationRepor
   if (!isRecord(value) || !exactKeys(value,["target","reason"],["evidence"]) || !isRecord(value.target) ||
     typeof value.reason !== "string" || !["harassment","threats","spam","sexual_content","other"].includes(value.reason)) return null;
   const target = value.target;
-  if (typeof target.peerSubjectId !== "string" || !target.peerSubjectId.trim() || target.peerSubjectId.length > 256) return null;
+  if (typeof target.peerSubjectId !== "string" || !target.peerSubjectId.trim() || Buffer.byteLength(target.peerSubjectId, "utf8") > 256) return null;
   const refs = target.kind === "call" ? ["callId"] : target.kind === "message" ? ["conversationId","eventId"] : target.kind === "user" ? ["conversationId"] : [];
-  if (!refs.length || !exactKeys(target,["kind","peerSubjectId",...refs]) || refs.some(key => typeof target[key] !== "string" || !(target[key] as string).trim() || (target[key] as string).length > 255)) return null;
+  if (!refs.length || !exactKeys(target,["kind","peerSubjectId",...refs]) || refs.some(key => typeof target[key] !== "string" || !(target[key] as string).trim() || Buffer.byteLength(target[key] as string, "utf8") > 255)) return null;
   if (target.kind === "message" && !(target.eventId as string).startsWith("$")) return null;
   if (target.kind === "call" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(target.callId as string)) return null;
   if (value.evidence !== undefined && (!isRecord(value.evidence) || !exactKeys(value.evidence,["selectedText","explicitlyConfirmed"]) ||
@@ -195,7 +195,7 @@ export function registerCommunicationSafetyRoutes(app: FastifyInstance, service?
   app.get("/api/v1/me/account-safety/capabilities", async (request,reply) => {
     reply.header("Cache-Control","no-store");
     try { actor(request); return service?.capabilities() ?? { contractVersion:"cop-account-safety-v1", reporting:false,blocking:false,accountDeletion:false,
-      accountDeletionUnavailableReason:"scope_and_erasure_adapters_not_accepted", evidence:"explicitly_selected_text_only",blockDelivery:"matrix_ignore_policy" }; }
+      accountDeletionUrl:null,accountDeletionUnavailableReason:"erasure_adapters_not_accepted", evidence:"explicitly_selected_text_only",blockDelivery:"matrix_ignore_policy" }; }
     catch { return sendError(reply,401,"UNAUTHORIZED","Je nutná ověřená relace COP.",correlationIdFrom(request.headers["x-correlation-id"])); }
   });
   route("POST","/api/v1/me/communication/reports", async(r,a,s) => {
@@ -207,12 +207,12 @@ export function registerCommunicationSafetyRoutes(app: FastifyInstance, service?
   route("POST","/api/v1/me/communication/blocks/query", async(r,a,s) => {
     if (!isRecord(r.body) || !exactKeys(r.body,["peerSubjectId"])) throw new CommunicationSafetyError(400,"VALIDATION_ERROR");
     const peer = r.body.peerSubjectId;
-    if (typeof peer !== "string" || !peer || peer.length > 256 || peer === a.subjectId) throw new CommunicationSafetyError(400,"VALIDATION_ERROR");
+    if (typeof peer !== "string" || !peer || Buffer.byteLength(peer, "utf8") > 256 || peer === a.subjectId) throw new CommunicationSafetyError(400,"VALIDATION_ERROR");
     return { peerSubjectId:peer,blocked:await s.options.policy.block(a.subjectId,peer) };
   });
   route("PUT","/api/v1/me/communication/blocks", async(r,a,s) => {
     const peer = isRecord(r.body) ? r.body.peerSubjectId : undefined;
-    if (typeof peer !== "string" || !peer || peer.length > 256 || peer === a.subjectId || !isRecord(r.body) || !exactKeys(r.body,["peerSubjectId","blocked"]) || typeof r.body.blocked !== "boolean") throw new CommunicationSafetyError(400,"VALIDATION_ERROR");
+    if (typeof peer !== "string" || !peer || Buffer.byteLength(peer, "utf8") > 256 || peer === a.subjectId || !isRecord(r.body) || !exactKeys(r.body,["peerSubjectId","blocked"]) || typeof r.body.blocked !== "boolean") throw new CommunicationSafetyError(400,"VALIDATION_ERROR");
     return { peerSubjectId:peer,blocked:await s.options.policy.block(a.subjectId,peer,r.body.blocked) };
   });
   route("GET","/api/v1/moderation/communication/reports", async(_r,_a,s) => ({items:await s.queue()}),true);

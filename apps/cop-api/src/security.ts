@@ -31,6 +31,7 @@ export interface JwtPayload {
 
 export interface AuthenticatedActor {
   issuer?: string;
+  authorizedParty?: string;
   emailVerified?: boolean;
   authMode: "lab" | "oidc";
   displayName: string;
@@ -169,6 +170,7 @@ export function actorFromRequest(request: FastifyRequest): AuthenticatedActor | 
   return {
     authMode: "oidc",
     issuer: decoded.payload.iss,
+    ...(decoded.payload.azp ? { authorizedParty: decoded.payload.azp } : {}),
     emailVerified: decoded.payload.email_verified === true,
     displayName: decoded.payload.name?.trim() || username,
     ...(decoded.payload.email?.trim() ? { email: decoded.payload.email.trim() } : {}),

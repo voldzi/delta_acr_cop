@@ -1,4 +1,5 @@
 import { CommunicationSafetyService, CommunicationSafetyError, MessagingCommunicationPolicy, registerCommunicationSafetyRoutes } from "./communication-safety.js";
+import { JizdaAppLinkService, disconnectJizdaMessaging, registerJizdaAppLinkRoutes } from "./jizda-app-link.js";
 import { MediaNewsSourceAdapter } from "./media-news-source.js";
 import { createSafetyNotificationStoreFromEnv, type SafetyNotificationStore } from "./safety-notification-store.js";
 import { SafetyNotificationWorker, safetyNotificationWorkerConfigFromEnv, type SafetyNotificationWorkerConfig } from "./safety-notification-worker.js";
@@ -349,6 +350,7 @@ import {
 
 export interface BuildServerOptions {
   communicationSafety?: CommunicationSafetyService;
+  jizdaAppLink?: JizdaAppLinkService;
   mediaNewsSource?: Pick<MediaNewsSourceAdapter, "fetchContext">;
   safetyNotificationStore?: SafetyNotificationStore;
   safetyNotificationWorkerConfig?: SafetyNotificationWorkerConfig;
@@ -1114,6 +1116,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   });
   app.addHook("onRequest", requireBearerToken);
   const mobilityRuntimeStore = options.mobilityStore ?? mobilityStoreFromEnv();
+  const jizdaClientId = process.env.COP_JIZDA_OIDC_CLIENT_ID?.trim();
+  const jizdaAppLink = options.jizdaAppLink ?? (process.env.COP_JIZDA_DISCONNECT_ENABLED === "true" && mobilityRuntimeStore &&
+    jizdaClientId && jizdaClientId !== process.env.COP_OIDC_CLIENT_ID && process.env.COP_OIDC_ISSUER
+    ? new JizdaAppLinkService({store:mobilityRuntimeStore,clientId:jizdaClientId,issuer:process.env.COP_OIDC_ISSUER,
+      now,cleanup:actor=>disconnectJizdaMessaging(actor,messagingProvider.config)}) : undefined);
+  registerJizdaAppLinkRoutes(app,jizdaAppLink);
   const communicationSafetyEnabled = process.env.COP_COMMUNICATION_SAFETY_ENABLED === "true";
   const communicationPolicy = new MessagingCommunicationPolicy(messagingProvider.config);
   const communicationSafety = options.communicationSafety ?? (communicationSafetyEnabled && mobilityRuntimeStore &&
@@ -6657,7 +6665,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const issuedAt = Math.floor(now().getTime() / 1000);
       const expiresAt = issuedAt + 120;
+      const verifiedJizdaScope = !!jizdaClientId && !["csm-mobile", "cop-web"].includes(jizdaClientId) &&
+        actor.authorizedParty === jizdaClientId && bundleId === "cz.voldzi.jizda";
       const claims = {
+        ...(verifiedJizdaScope ? {verifiedAppScope:"jizda",appClientId:jizdaClientId} : {}),
         appInstanceId,
         aud: "csm-messaging-device-registration",
         bundleId,

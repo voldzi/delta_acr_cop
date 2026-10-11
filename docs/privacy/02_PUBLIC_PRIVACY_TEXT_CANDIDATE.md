@@ -46,10 +46,14 @@ Stavové události skupiny a komunikace ostatních členů zůstávají dostupn�
 Přesný rozsah právě probíhajícího hovoru a starší uložené historie musí odpovídat
 skutečně dodanému klientovi a ověřenému serveru.
 
-Account removal paragraph intentionally not drafted as a working feature:
-first decide shared-account scope, implement the real operation, define and
-test ownership/UGC/retention exceptions and restored-backup replay, then state
-the actual profile action, confirmation, pending/completed meanings and notice.
-Do not present sign-out, deactivation, a support email or202 as completed
-account deletion. Approved moderation owner/contact and actual retention remain
-mandatory publication fields.
+The human selected unlink only Jízda and separately approved whole COP removal.
+The actual full unlink and global erasure flows are not yet accepted/deployed.
+Only after scoped acceptance may the public notice say that **Odpojit Jízdu**
+stops that app's verified registrations/live permissions while preserving COP
+Mobile, shared identity/history/vehicles and local SwiftData. Pending cleanup
+must be stated as pending. The separate **Správa / odstranění účtu COP** must
+link to a real canonical deletion form after acceptance, with actual impact,
+retained exceptions and pending/completed status; its URL is currently null.
+Do not substitute a support email, generic account console, sign-out or202.
+The COP administrator is the selected moderation owner; accepted public contact
+and report/erasure/backup retention remain required publication fields.
