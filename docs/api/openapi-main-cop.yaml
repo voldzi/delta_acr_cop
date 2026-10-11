@@ -165,6 +165,9 @@ paths:
         - Mobile
       operationId: getDriverMeasurementConsent
       summary: Read consent and deletion state for the authenticated native user.
+      description: Available with intake or cleanup enabled, including outside a restricted pilot.
+        canGrant also requires enabled intake and membership in a configured pilot cohort; false
+        does not revoke an existing consent.
       responses:
         "200":
           description: Current consent state.
@@ -183,6 +186,10 @@ paths:
         - Mobile
       operationId: grantDriverMeasurementConsent
       summary: Grant explicit traffic quality contribution consent.
+      description: An optional server-owned pilot allowlist is checked against the verified OIDC subject.
+        Non-members receive 403 DRIVER_MEASUREMENTS_PILOT_NOT_ELIGIBLE; empty or malformed enabled
+        pilot configuration receives 503 DRIVER_MEASUREMENTS_PILOT_NOT_CONFIGURED. Client input
+        cannot select cohort membership.
       requestBody:
         required: true
         content:
@@ -212,7 +219,8 @@ paths:
       operationId: revokeDriverMeasurementConsent
       summary: Stop uploads immediately and delete retained SIM contributions.
       description: 202 means local consent is revoked but SIM deletion is pending and retried. Same UTC
-        day regrant is blocked; pending deletion blocks all regrants.
+        day regrant is blocked; pending deletion blocks all regrants. Revocation remains available
+        outside the pilot and with intake disabled when cleanup is enabled.
       responses:
         "200":
           description: Consent revoked and deletion completed.
@@ -238,10 +246,13 @@ paths:
         - Mobile
       operationId: submitDriverMeasurementBatch
       summary: Submit a short, explicitly consented GPS measurement draft through COP.
-      description: Disabled by default. Native authenticated OIDC user only; no browser Origin. COP
-        supplies day-scoped pseudonym, consent attestation and server-side SIM token. No direct
-        mobile SIM or Valhalla access. The mobile batch version is cop-driver-measurements-v1; COP
-        transforms it to SIM's sim-driver-measurements-v1. Raw GPS is not persisted by COP.
+      description: Disabled by default. Native authenticated OIDC user only; no browser Origin. An enabled
+        restricted pilot additionally requires membership of the verified OIDC subject in a
+        server-owned allowlist; non-members receive 403, empty or invalid pilot configuration
+        receives 503. COP supplies day-scoped pseudonym, consent attestation and server-side SIM
+        token. No direct mobile SIM or Valhalla access. The mobile batch version is
+        cop-driver-measurements-v1; COP transforms it to SIM's sim-driver-measurements-v1. Raw GPS
+        is not persisted by COP.
       requestBody:
         required: true
         content:

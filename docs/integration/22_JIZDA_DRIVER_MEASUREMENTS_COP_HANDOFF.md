@@ -20,6 +20,7 @@ OIDC role nesmí vyloučit běžného přihlášeného uživatele.
 
 1. `GET /api/v1/driver-measurements/v1/consent` vrací
    `{contractVersion,granted,grantedAt,pendingDeletion,canGrant}`.
+   `canGrant=false` také při vypnutém příjmu nebo mimo povolené pilotní účty.
 2. Po samostatném výslovném souhlasu odešlete
    `POST /api/v1/driver-measurements/v1/consent` s přesným JSON
    `{ "contractVersion":"cop-driver-measurements-v1", "version":"traffic-quality-v1", "granted":true }`.
@@ -41,6 +42,10 @@ Všechny odpovědi používají `Cache-Control: no-store`. Při 400/403/409 neop
 stejný chybný požadavek; 429 respektuje `Retry-After`, 503 vyžaduje omezený
 retry se stejným `batchId`. Žádný přímý fallback do SIM. Bez zapnutého
 `COP_DRIVER_MEASUREMENTS_ENABLED` vrací adaptér 503 a Jízda zůstává vypnutá.
+GET/DELETE zůstávají dostupné při zapnutém cleanup, i mimo pilot. V omezeném
+pilotu nový souhlas a dávky mimo povolené účty vracejí 403
+`DRIVER_MEASUREMENTS_PILOT_NOT_ELIGIBLE`; prázdná nebo chybná konfigurace
+pilotních subjektů vrací 503 `DRIVER_MEASUREMENTS_PILOT_NOT_CONFIGURED`.
 Potvrzený interní SIM kód `DRIVER_CONSENT_REVOKED` se mapuje na mobilní 403,
 se stejným kódem v COP chybovém obalu, aby Jízda zablokovala další dávky daného dne. Jiné interní 403 včetně chyby
 službového oprávnění se mapují na 503; COP čte jen omezený kód chyby a nikdy
@@ -91,6 +96,26 @@ vyžaduje `CREATE` oprávnění při prvním startu; pro nejmenší dlouhodobá 
 lze vytvořit obě tabulky předem řízenou migrací a runtime uživateli ponechat
 jen SELECT/INSERT/UPDATE a sekvenční práva dle konkrétního schématu.
 
+Omezený pilot používá `COP_DRIVER_MEASUREMENTS_PILOT_ENABLED=true` a
+`COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS`: čárkami oddělené ověřené OIDC
+`sub` z konkrétního COP realmu, nikoli e-mail nebo ID dodané klientem.
+Výchozí hodnota příznaku je `false`; zapnutí bez platného neprázdného seznamu
+uzavře příjem pro všechny, ale neblokuje cleanup. Nejvýše 100 položek a
+8192 znaků, každá položka 1–255 znaků bez mezer a řídicích znaků; chybný
+seznam se nepřijímá ani částečně. Členství samo nenahrazuje platný mobilní
+OIDC token ani výslovný souhlas. Změna seznamu vyžaduje restart COP API.
+Odstranění účtu ze seznamu neodvolává souhlas automaticky a nesmí znemožnit
+pozdější GET/DELETE nebo dokončení čekajícího mazání.
+Pilot ukončujte vypnutím příjmu, nikoli vypnutím pilotního filtru: samotné
+`PILOT_ENABLED=false` s `ENABLED=true` zpřístupní příjem všem oprávněným
+mobilním účtům. Před návratem k obrazu bez pilotního filtru nejprve nastavte
+`COP_DRIVER_MEASUREMENTS_ENABLED=false` a zachovejte cleanup a stabilní HMAC.
+
+Službový token lze párově vyměnit bez změny HMAC identit. Po rotaci ověřte
+oba runtime, odmítnutí starého tokenu a smazání syntetického příspěvku
+vytvořeného před rotací. Token i allowlist zapisujte pouze do chráněného
+produkčního prostředí, pod sdíleným deployment zámkem a se zálohou na X5.
+
 Při rollbacku vypněte pouze `COP_DRIVER_MEASUREMENTS_ENABLED`. Ponechte
 `COP_DRIVER_MEASUREMENTS_CLEANUP_ENABLED=true`, databázi, HMAC tajemství a
 SIM přístup, aby již udělené souhlasy bylo možné odvolat a čekající smazání
@@ -120,6 +145,15 @@ restartu, audit a kvalitu souhrnů v SIM. Produkční síťové propojení a př
 službového tokenu podléhají samostatnému schválení.
 
 ### Společný pilot `shadow_only` na iPhonu
+
+Pilotní sestavení Jízdy musí mít výslovně zapnutý
+`DriverMeasurementClient.productionPilotEnabled` a zachovat autentizovaný
+SDK transport i lokální soukromé zóny. Serverové povolení samo nepřepíná
+tuto kompilační konstantu ani již nainstalovanou aplikaci. Přihlaste se
+povoleným účtem, načtěte GET a nabídněte samostatný souhlas pouze při
+`canGrant=true`; nic se nesbírá pouze na základě členství v pilotu.
+Ukončení serverového pilotu nesmí skrýt odvolání dřívějšího souhlasu.
+Nevydávejte tento krok za telefonní akceptaci nebo zlepšení ETA.
 
 Před začátkem zaznamenejte revize Jízdy, sdíleného CSMCommunicationKit, COP a
 SIM, identitu nasazených obrazů, verzi Valhalla datasetu a stav příznaků.

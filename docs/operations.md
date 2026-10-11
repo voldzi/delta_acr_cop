@@ -68,10 +68,14 @@ The Jízda measurement adapter is staged behind
 `COP_DRIVER_MEASUREMENTS_ENABLED=false`. Consent and deletion use separate
 PostgreSQL state and a dedicated SIM token. After any activation, keep
 `COP_DRIVER_MEASUREMENTS_CLEANUP_ENABLED=true` during rollback, so uploads
-stop while revocation remains available. See the
+stop while revocation remains available. Restrict a voluntary pilot with
+`COP_DRIVER_MEASUREMENTS_PILOT_ENABLED=true` and a protected comma-separated
+`COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS` list of verified OIDC subjects.
+Empty or invalid pilot configuration blocks intake, while GET/DELETE and
+pending cleanup remain available to every authenticated native account. See the
 [mobile handoff](integration/22_JIZDA_DRIVER_MEASUREMENTS_COP_HANDOFF.md).
 Compose passes the measurement settings from the protected production `.env`
-to `cop-api`; both feature flags default to `false`. Deploying the API image
+to `cop-api`; the intake, cleanup and pilot flags default to `false`. Deploying the API image
 alone does not provision the SIM connection, create consent state, or begin
 collecting GPS.
 For the approved internal pilot link, create the dedicated Docker bridge

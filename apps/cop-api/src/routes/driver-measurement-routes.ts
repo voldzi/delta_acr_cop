@@ -19,6 +19,8 @@ const grantSchema = z.strictObject({
 export interface DriverMeasurementRoutesConfig {
   enabled: boolean;
   cleanupEnabled: boolean;
+  pilotEnabled?: boolean;
+  pilotSubjectIds?: string;
   oidcClientId: string;
   secret: string;
   store?: DriverMeasurementConsentStore;
@@ -29,6 +31,9 @@ export interface DriverMeasurementRoutesConfig {
 export function registerDriverMeasurementRoutes(app: FastifyInstance, config: DriverMeasurementRoutesConfig): void {
   const { enabled, cleanupEnabled, oidcClientId, secret, store, source, now } = config;
   const runtimeEnabled = enabled || cleanupEnabled;
+  const pilotSubjects = parsePilotSubjects(config.pilotSubjectIds);
+  const intakeAllowed = (subjectId: string): boolean => enabled
+    && (!config.pilotEnabled || (pilotSubjects !== null && pilotSubjects.has(subjectId)));
   if (runtimeEnabled && (!store || !source || secret.length < 32)) {
     throw new Error("Driver measurement COP adapter requires a durable store, SIM connection and 32-character HMAC secret.");
   }
@@ -90,6 +95,20 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
       sendError(reply, 403, "DRIVER_MEASUREMENTS_IDENTITY_REQUIRED", "Je nutné přihlášení uživatele.", correlationId);
       return null;
     }
+    // Cohort membership comes only from the verified OIDC actor. Cleanup is
+    // independent of intake and must remain available to former pilot users.
+    if (!cleanupOnly && config.pilotEnabled) {
+      if (!pilotSubjects?.size) {
+        sendError(reply, 503, "DRIVER_MEASUREMENTS_PILOT_NOT_CONFIGURED",
+          "Pilot měření dopravy není připraven.", correlationId);
+        return null;
+      }
+      if (!pilotSubjects.has(principal.subjectId)) {
+        sendError(reply, 403, "DRIVER_MEASUREMENTS_PILOT_NOT_ELIGIBLE",
+          "Účet není zařazen do pilotu měření dopravy.", correlationId);
+        return null;
+      }
+    }
     return principal.subjectId;
   }
   function failure(request: FastifyRequest, reply: FastifyReply, error: unknown): FastifyReply {
@@ -110,7 +129,8 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
         granted: !!consent.grantedAt && !consent.revokedAt,
         grantedAt: consent.revokedAt ? null : consent.grantedAt,
         pendingDeletion: consent.pendingDays.length > 0,
-        canGrant: consent.pendingDays.length === 0 && consent.lastRevokedDay !== now().toISOString().slice(0, 10) });
+        canGrant: intakeAllowed(subjectId) && consent.pendingDays.length === 0
+          && consent.lastRevokedDay !== now().toISOString().slice(0, 10) });
     } catch (error) { return failure(request, reply, error); }
   });
   app.post(`${prefix}/consent`, async (request, reply) => {
@@ -176,4 +196,13 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
       return reply.send(result.receipt);
     } catch (error) { return failure(request, reply, error); }
   });
+}
+
+function parsePilotSubjects(value: string | undefined): Set<string> | null {
+  if (!value?.trim()) return new Set();
+  if (value.length > 8192) return null;
+  const subjects = value.split(",").map((subject) => subject.trim());
+  // Malformed configuration disables all intake; never partially accept it.
+  if (subjects.length > 100 || subjects.some((subject) => !/^[A-Za-z0-9._~:@/\-]{1,255}$/.test(subject))) return null;
+  return new Set(subjects);
 }

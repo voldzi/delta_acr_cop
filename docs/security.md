@@ -52,7 +52,10 @@ OIDC subject, and it attests consent from durable server state. The mobile
 client never receives the SIM service token. Raw GPS is forwarded only to the
 internal SIM endpoint, is not persisted by COP, and a failed SIM call has no
 direct fallback. Revocation blocks new uploads before asynchronous SIM deletion;
-pending deletion blocks regrant. See
+pending deletion blocks regrant. The optional restricted pilot checks only the
+verified OIDC subject against a server-owned allowlist, after the native client
+authentication gate. Empty or malformed pilot configuration closes intake;
+leaving the cohort never prevents revocation of historical contributions. See
 [ADR 0033](adr/0033_CONSENTED_JIZDA_MEASUREMENT_BOUNDARY.md).
 
 Community media rule: an attachment access update is owner-only, validates the

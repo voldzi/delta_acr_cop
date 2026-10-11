@@ -1121,6 +1121,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   registerDriverMeasurementRoutes(app, {
     enabled: driverMeasurementsEnabled,
     cleanupEnabled: driverMeasurementCleanupEnabled,
+    pilotEnabled: readBoolean(process.env.COP_DRIVER_MEASUREMENTS_PILOT_ENABLED, false),
+    pilotSubjectIds: process.env.COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS,
     oidcClientId: process.env.COP_DRIVER_MEASUREMENTS_OIDC_CLIENT_ID?.trim() || "csm-mobile",
     secret: driverMeasurementSecret,
     store: driverMeasurementStore,
