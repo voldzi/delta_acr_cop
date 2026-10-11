@@ -242,3 +242,21 @@ recovery is the narrow exception to COP API blocking. Legacy ownership is never
 guessed. Health/metrics bypassing authentication must not decode unverified JWTs
 to probe private fences. Production safety/delete flags remain disabled.
 See [integration43](integration/43_ACCOUNT_SAFETY_COMPLETION.md).
+
+
+## Scoped voice grant enforcement candidate
+
+New dedicated Jízda grants bind verified issuer/authorized party/subject to an
+online-attested installation and canonical call. The existing LiveKit secret
+is reused only through separate HMAC domains; the ledger does not persist raw
+identity, UUID, OAuth/JWT or E2EE key. Reserved opaque participant identity
+survives provider JWT refresh and is checked at signaling join/rejoin.
+
+The separate gateway requires primary-PG ownership and persists every scoped
+dispatch before forwarding. Unknown dispatch remains pending after restart;
+HTTP101, timer expiry, disconnection and empty inventory are not cleanup proof.
+Exact successful participant removal plus readback, single provider attempt
+and accepted sole ingress are independent gates. Shared legacy identities
+remain unchanged and cannot be retrospectively assigned to Jízda. See
+[ADR0047](adr/0047_APP_SCOPED_VOICE_GRANTS_AND_ADMISSION.md) and
+[integration45](integration/45_JIZDA_VOICE_GRANTS_AND_LEGACY_MIGRATION.md).

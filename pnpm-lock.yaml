@@ -129,6 +129,9 @@ importers:
       '@cop/policy-engine':
         specifier: workspace:*
         version: link:../../packages/policy-engine
+      '@livekit/protocol':
+        specifier: 1.51.0
+        version: 1.51.0
       livekit-server-sdk:
         specifier: 2.19.1
         version: 2.19.1

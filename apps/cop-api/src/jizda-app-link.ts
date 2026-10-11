@@ -33,7 +33,7 @@ const path = "/api/v1/me/app-links/jizda";
 export class JizdaAppLinkService {
   private initialized?: Promise<void>;
   constructor(readonly options: { store: MobilityStore; clientId: string; issuer: string;
-    cleanup: (actor: AuthenticatedActor) => Promise<JizdaCleanupProof>; intakeEnabled?: boolean; now?: () => Date }) {
+    cleanup: (actor: AuthenticatedActor, operationId: string) => Promise<JizdaCleanupProof>; intakeEnabled?: boolean; now?: () => Date }) {
     if (!options.issuer || !options.clientId || ["csm-mobile", "cop-web"].includes(options.clientId)) {
       throw new Error("Jizda requires a separate verified OIDC client.");
     }
@@ -87,7 +87,7 @@ export class JizdaAppLinkService {
     });
     if (receipt.status === "disconnected") return receipt;
     let proof: JizdaCleanupProof;
-    try { proof = await this.options.cleanup(actor); }
+    try { proof = await this.options.cleanup(actor, receipt.operationId); }
     catch { throw new JizdaLinkError(503, "JIZDA_DISCONNECT_UNAVAILABLE"); }
     const remaining = [
       ...(!proof.pushRegistrationsRemoved ? ["push_registrations"] : []),

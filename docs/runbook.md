@@ -132,3 +132,21 @@ rollback; recipients can use the verified inbox. Device delivery remains best
 effort. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.
 
 For identity lookup failures, preserve403/404versus503 and never retry through provisioning resolve. Do not clamp DM count to2. Missing verified incoming caller names are generic COP kontakt. Deployment and acceptance: [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md).
+
+
+## Scoped voice admission candidate checks
+
+Follow [integration45](integration/45_JIZDA_VOICE_GRANTS_AND_LEGACY_MIGRATION.md)
+and [deployment candidate](../deploy/communications/livekit/SCOPED_ADMISSION_CANDIDATE.md).
+No production activation is implied by the source tests. Verify exact revision,
+one primary-PG owner, all four public signaling paths, absence of alternative
+SFU ingress, effective provider single-attempt configuration and no proxy retry.
+Test an old signed/refreshed scoped JWT after app/installation revoke while
+another account, installation and legacy COP Mobile call remain available.
+
+A202 receipt is pending provider proof. A503 is service unavailability and does
+not undo a fence. Unresolved dispatch rows survive crash/restart; never remove
+them or use an empty participant list as evidence that a delayed join cannot
+appear. On rollback disable new intake while preserving admission/maintenance.
+Do not perform real-account deletion, global logout or production network
+changes under this source-only handoff.

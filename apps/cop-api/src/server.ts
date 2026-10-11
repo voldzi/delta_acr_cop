@@ -1,3 +1,7 @@
+import { VOICE_GRANT_CONFIG_KEY, VoiceGrantError, type VoiceGrantLedger } from "./voice-grant-ledger.js";
+import { createVoiceGrantLedgerFromEnv, createVoiceGrantRevokerFromEnv } from "./voice-grant-runtime.js";
+import type { VoiceGrantRevoker } from "./voice-grant-revocation.js";
+import { registerVoiceGrantRevocationRoutes } from "./voice-grant-routes.js";
 import { COMMUNICATION_SAFETY_CONFIG_KEY, CommunicationSafetyService, CommunicationSafetyError, MessagingCommunicationPolicy, registerCommunicationSafetyRoutes } from "./communication-safety.js";
 import { JizdaAppLinkService, disconnectJizdaMessaging, registerJizdaAppLinkRoutes } from "./jizda-app-link.js";
 import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureService, type AccountErasureAdapter } from "./account-erasure.js";
@@ -388,6 +392,8 @@ export interface BuildServerOptions {
   streamBroadcaster?: CopStreamBroadcaster;
   mobileDeviceStore?: MobileDeviceStore;
   userProfileStore?: UserProfileStore;
+  voiceGrantLedger?: VoiceGrantLedger;
+  voiceGrantRevoker?: VoiceGrantRevoker;
   voiceCallMediaIssuer?: VoiceCallMediaIssuer;
   voiceCallStore?: VoiceCallStore;
   webSessionStore?: WebSessionStore;
@@ -932,7 +938,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const webSessionStore = options.webSessionStore ?? createWebSessionStoreFromEnv();
   const webBffEnabled = Boolean(webSessionStore);
   const webBffSessionTtlSeconds = readPositiveInteger(process.env.COP_WEB_SESSION_MAX_AGE_SECONDS, 30 * 24 * 60 * 60);
-  const voiceCallMediaIssuer = options.voiceCallMediaIssuer ?? createVoiceCallMediaIssuerFromEnv();
+
   const missionArenaSource = options.missionArenaSource ?? createMissionArenaSourceFromEnv();
   const placeGeocoder = options.placeGeocoder ?? createPlaceGeocoderFromEnv();
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
@@ -1145,11 +1151,73 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
   registerAccountErasureRoutes(app, accountErasure);
   const jizdaClientId = process.env.COP_JIZDA_OIDC_CLIENT_ID?.trim();
+  const voiceGrantLedger = options.voiceGrantLedger ?? createVoiceGrantLedgerFromEnv(mobilityRuntimeStore);
+  const voiceGrantRevoker = options.voiceGrantRevoker ?? createVoiceGrantRevokerFromEnv();
+  const voiceCallMediaIssuer = options.voiceCallMediaIssuer ?? createVoiceCallMediaIssuerFromEnv(process.env, voiceGrantLedger);
+  registerVoiceGrantRevocationRoutes(app, voiceGrantLedger, voiceGrantRevoker, now);
+  async function scopedVoiceInstallation(request: FastifyRequest, reply: FastifyReply, actor: AuthenticatedActor,
+    onDenied?: () => Promise<void>): Promise<string | undefined | null> {
+    const dedicatedClientId = voiceGrantLedger?.options.clientId ?? jizdaClientId;
+    const dedicated = voiceGrantLedger?.owns(actor) || (!!dedicatedClientId && actor.authorizedParty === dedicatedClientId);
+    if (!dedicated) return undefined;
+    try {
+      if (!voiceGrantLedger || voiceGrantLedger.options.intakeEnabled === false) throw new VoiceGrantError(503, "VOICE_GRANTS_UNAVAILABLE");
+      const installationId = request.headers["x-cop-installation-id"];
+      if (typeof installationId !== "string") throw new VoiceGrantError(400, "VOICE_INSTALLATION_REQUIRED");
+      await voiceGrantLedger.assertInstallation(actor, installationId, now());
+      return installationId.toLowerCase();
+    } catch (error) {
+      const known = error instanceof VoiceGrantError ? error : new VoiceGrantError(503, "VOICE_GRANTS_UNAVAILABLE");
+      await onDenied?.();
+      sendError(reply, known.status, known.code, "Ověřený hlasový přístup nyní není dostupný.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return null;
+    }
+  }
+  async function issueVoiceMedia(request: FastifyRequest, reply: FastifyReply, call: VoiceCallRecord,
+    actor: AuthenticatedActor, onDenied?: () => Promise<void>): Promise<VoiceCallMediaCredentials | null> {
+    const installationId = await scopedVoiceInstallation(request, reply, actor, onDenied);
+    if (installationId === null) return null;
+    try { return await voiceCallMediaIssuer.issue(call, actor, now(), installationId); }
+    catch (error) {
+      const known = error instanceof VoiceGrantError ? error : new VoiceGrantError(503, "VOICE_GRANTS_UNAVAILABLE");
+      await onDenied?.();
+      sendError(reply, known.status, known.code, "Ověřený hlasový přístup nyní není dostupný.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return null;
+    }
+  }
+  async function abortVoiceMediaClaim(call: VoiceCallRecord, actor: AuthenticatedActor): Promise<void> {
+    // A newly created/accepted call cannot remain ringing/accepted after its
+    // media admission fails (including a revoke during notification handoff).
+    const failed = await voiceCallStore.transition(call.callId, { action: "media_failed",
+      actorSubjectId: actor.subjectId, now: now().toISOString(), reason: "voice_admission_failed" });
+    if (failed?.changed) {
+      try {
+        await sendVoiceCallLifecycleNotification({ actor, action: "ended", call: failed.record,
+          recipientUserIds: [failed.record.initiatorSubjectId, ...failed.record.participantSubjectIds]
+            .filter(subjectId => subjectId !== actor.subjectId), requestNow: now() });
+      } catch {
+        app.log.warn({ component: "voice-admission", code: "VOICE_END_NOTIFICATION_UNAVAILABLE" },
+          "Call failure persisted; end notification unavailable.");
+      }
+    }
+  }
   const jizdaAppLink = options.jizdaAppLink ?? (mobilityRuntimeStore &&
     jizdaClientId && jizdaClientId !== process.env.COP_OIDC_CLIENT_ID && process.env.COP_OIDC_ISSUER
     ? new JizdaAppLinkService({store:mobilityRuntimeStore,clientId:jizdaClientId,issuer:process.env.COP_OIDC_ISSUER,
       intakeEnabled: process.env.COP_JIZDA_DISCONNECT_ENABLED === "true", now,
-      cleanup:actor=>disconnectJizdaMessaging(actor,messagingProvider.config)}) : undefined);
+      cleanup: async (actor, operationId) => {
+        const revocation = voiceGrantLedger ? await voiceGrantLedger.revokeApp(actor, operationId, now()) : undefined;
+        // Once fenced, an unavailable voice provider must not postpone an
+        // independently available Matrix/push cleanup (or the reverse).
+        const [voice, messaging] = await Promise.allSettled([
+          revocation ? voiceGrantRevoker.revoke(revocation.grants, revocation.operationId) : Promise.resolve(false),
+          disconnectJizdaMessaging(actor, messagingProvider.config)
+        ]);
+        if (voice.status === "rejected" || messaging.status === "rejected") {
+          throw new VoiceGrantError(503, "VOICE_GRANT_PROVIDER_UNAVAILABLE");
+        }
+        return { ...messaging.value, livePermissionsRevoked: voice.value };
+      }}) : undefined);
   registerJizdaAppLinkRoutes(app,jizdaAppLink);
   const communicationSafetyEnabled = process.env.COP_COMMUNICATION_SAFETY_ENABLED === "true";
   const communicationPolicy = new MessagingCommunicationPolicy(messagingProvider.config);
@@ -1348,15 +1416,20 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const guards = await mobilityRuntimeStore.transact([], async tx => ({
         erasure: !!await tx.get("account-erasure:configuration-v1"),
         jizda: (await tx.scan("jizda-app-link:")).length > 0,
-        communication: !!await tx.get(COMMUNICATION_SAFETY_CONFIG_KEY) || (await tx.scan("communication-safety:report:")).length > 0
+        communication: !!await tx.get(COMMUNICATION_SAFETY_CONFIG_KEY) || (await tx.scan("communication-safety:report:")).length > 0,
+        voice: !!await tx.get(VOICE_GRANT_CONFIG_KEY) || (await tx.scan("voice-grant-ledger:v1:")).length > 0
       }));
       if ((guards.erasure && !accountErasure) || (guards.jizda && !jizdaAppLink)) {
         throw new Error("Accepted account fences require their configured guard during rollout and rollback.");
+      }
+      if (guards.voice && !voiceGrantLedger) {
+        throw new Error("Accepted scoped voice grants require their persistent admission guard during rollback.");
       }
       if (guards.communication && !communicationSafety) {
         throw new Error("Accepted communication state requires its retention and policy guard during rollout and rollback.");
       }
     }
+    if (voiceGrantLedger) await voiceGrantLedger.init();
     if (jizdaAppLink) await jizdaAppLink.init();
     if (accountErasure) await accountErasure.init();
     if (communicationSafety) await communicationSafety.init();
@@ -5240,6 +5313,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return sendError(reply, 503, "MESSAGING_INSTALLATION_UNAVAILABLE", "Ověřený komunikační přístup nyní není dostupný.",
           correlationIdFrom(request.headers["x-correlation-id"]));
       }
+      if (installationId && voiceGrantLedger?.owns(actor) && voiceGrantLedger.options.intakeEnabled !== false) {
+        try { await voiceGrantLedger.attestInstallation(actor, installationId, now()); }
+        catch (error) {
+          const known = error instanceof VoiceGrantError ? error : new VoiceGrantError(503, "VOICE_GRANTS_UNAVAILABLE");
+          return sendError(reply, known.status, known.code, "Ověřená instalace nyní není dostupná.", correlationIdFrom(request.headers["x-correlation-id"]));
+        }
+      }
       return bootstrap;
     },
     e2eeResetAuth: async (request, reply) => {
@@ -5274,6 +5354,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
+      const startInstallation = await scopedVoiceInstallation(request, reply, actor);
+      if (startInstallation === null) return reply;
       const input = normalizeVoiceCallStartRequest(request.body);
       if (!input) {
         return sendError(
@@ -5365,7 +5447,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         await voiceCallStore.transition(call.callId, {action: "media_failed", actorSubjectId: actor.subjectId, now: now().toISOString(), reason: "communication_policy_changed"});
         return reply;
       }
-      const media = await voiceCallMediaIssuer.issue(call, actor, requestNow);
+      const media = await issueVoiceMedia(request, reply, call, actor, () => abortVoiceMediaClaim(call, actor));
+      if (!media) return reply;
       return reply.code(201).send(voiceCallAPIResponse(call, actor.subjectId, media, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id))));
     },
     voiceCalls: async (request, reply) => {
@@ -5431,8 +5514,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (canIssueVoiceCallMedia(call, actor.subjectId) && !await enforceDirectCommunication(request, reply, actor, directPeerForCall(call, actor.subjectId))) return reply;
       const media =
         canIssueVoiceCallMedia(call, actor.subjectId) && voiceCallMediaIssuer.enabled
-          ? await voiceCallMediaIssuer.issue(call, actor, now())
+          ? await issueVoiceMedia(request, reply, call, actor)
           : undefined;
+      if (media === null) return reply;
       return voiceCallAPIResponse(call, actor.subjectId, media, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id)));
     },
     transitionVoiceCall: async (request, reply) => {
@@ -5451,6 +5535,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           "Voice call action requires a canonical callId, supported action and optional expectedRevision.",
           correlationIdFrom(request.headers["x-correlation-id"])
         );
+      }
+      if (["accept", "heartbeat", "media_connected"].includes(input.action)) {
+        const transitionInstallation = await scopedVoiceInstallation(request, reply, actor);
+        if (transitionInstallation === null) return reply;
       }
       await expireVoiceCalls(now());
       const current = await voiceCallStore.get(callId);
@@ -5510,20 +5598,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           requestNow: now()
         });
       }
-      if (result.changed && input.action === "accept") {
-        await sendVoiceCallLifecycleNotification({
-          actor,
-          action: "answered_elsewhere",
-          call: result.record,
-          recipientUserIds: [actor.subjectId],
-          requestNow: now()
-        });
-      }
       if (canIssueVoiceCallMedia(result.record, actor.subjectId) && !await enforceDirectCommunication(request, reply, actor, directPeerForCall(result.record, actor.subjectId))) return reply;
       const media =
         canIssueVoiceCallMedia(result.record, actor.subjectId) && voiceCallMediaIssuer.enabled
-          ? await voiceCallMediaIssuer.issue(result.record, actor, now())
+          ? await issueVoiceMedia(request, reply, result.record, actor,
+              result.changed && input.action === "accept" ? () => abortVoiceMediaClaim(result.record, actor) : undefined)
           : undefined;
+      if (media === null) return reply;
+      if (result.changed && input.action === "accept") {
+        await sendVoiceCallLifecycleNotification({ actor, action: "answered_elsewhere", call: result.record,
+          recipientUserIds: [actor.subjectId], requestNow: now() });
+      }
       return voiceCallAPIResponse(result.record, actor.subjectId, media, await readVoiceCallPeer(result.record, actor.subjectId, id => userProfileStore.getProfile(id)));
     },
     conversationDetail: async (request, reply) => {

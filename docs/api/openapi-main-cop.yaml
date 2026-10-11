@@ -69,6 +69,9 @@ tags:
     description: Local pilot edge node runtime published under /edge when enabled.
   - name: Incidents
     description: Candidate fusion, incidents and incident task workflow.
+  - name: Voice admission gateway
+    description: Separately started source candidate; these paths are NOT served by the ordinary COP API
+      and do not imply an activated production ingress.
 paths:
   /api/v1/me/profile:
     get:
@@ -3563,7 +3566,10 @@ paths:
         - Messaging
       summary: Start a server-owned COP voice call.
       description: Creates one canonical call identity, validates the direct-conversation recipient, sends
-        the incoming-call notification and issues short-lived LiveKit credentials.
+        the incoming-call notification and issues short-lived LiveKit credentials. Dedicated
+        verified Jízda uses the attested installation header and server-owned scoped media grant;
+        missing admission proof fails closed. No client-chosen LiveKit identity or alternative
+        legacy token is issued.
       operationId: startMessagingVoiceCall
       requestBody:
         required: true
@@ -3582,6 +3588,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -3590,6 +3598,10 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "502":
           $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+      parameters:
+        - $ref: "#/components/parameters/VoiceInstallationHeader"
   /api/v1/messaging/calls/{callId}:
     get:
       tags:
@@ -3598,6 +3610,7 @@ paths:
       operationId: getMessagingVoiceCall
       parameters:
         - $ref: "#/components/parameters/VoiceCallId"
+        - $ref: "#/components/parameters/VoiceInstallationHeader"
       responses:
         "200":
           description: Current call state and, when allowed, short-lived media credentials.
@@ -3609,8 +3622,15 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+      description: " Dedicated verified Jízda uses the attested installation header and server-owned
+        scoped media grant; missing admission proof fails closed. No client-chosen LiveKit identity
+        or alternative legacy token is issued."
   /api/v1/messaging/calls/{callId}/actions:
     post:
       tags:
@@ -3619,6 +3639,7 @@ paths:
       operationId: transitionMessagingVoiceCall
       parameters:
         - $ref: "#/components/parameters/VoiceCallId"
+        - $ref: "#/components/parameters/VoiceInstallationHeader"
       requestBody:
         required: true
         content:
@@ -3636,12 +3657,19 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+      description: " Dedicated verified Jízda uses the attested installation header and server-owned
+        scoped media grant; missing admission proof fails closed. No client-chosen LiveKit identity
+        or alternative legacy token is issued."
   /api/v1/messaging/conversations:
     get:
       tags:
@@ -9325,12 +9353,432 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/me/voice-installations/revoke:
+    post:
+      tags:
+        - Messaging
+      operationId: revokeOwnVoiceInstallation
+      summary: Fence and selectively revoke one authenticated Jízda installation.
+      description: Source candidate, default off. Ownership derives from verified OIDC issuer/authorized
+        party/subject and server-attested installation. Fence is durable before provider cleanup.
+        202 is pending provider verification, never completion; 503 denotes unavailable service and
+        does not undo an accepted fence. Retry the same idempotency-key to obtain updated proof. No
+        other installation/app/account is removed; shared account deletion is false.
+      security:
+        - bearerAuth: []
+      x-cop-ai-exposure: forbidden
+      parameters:
+        - in: header
+          name: idempotency-key
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoiceInstallationRevokeRequest"
+      responses:
+        "200":
+          description: Durable join/rejoin denial and verified provider cleanup under accepted sole-ingress
+            topology.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/VoiceInstallationRevocationReceipt"
+                  - properties:
+                      status:
+                        const: revoked
+                      providerVerified:
+                        const: true
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+        "202":
+          description: Durable COP admission fence exists; provider cleanup/topology/dispatch verification
+            remains pending. joinDenied does not claim tested production SFU revocation while
+            providerVerified=false.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/VoiceInstallationRevocationReceipt"
+                  - properties:
+                      status:
+                        const: revoking
+                      providerVerified:
+                        const: false
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /rtc:
+    get:
+      tags:
+        - Voice admission gateway
+      summary: Legacy signaling through scoped admission.
+      operationId: voiceGatewayLegacysignaling
+      servers:
+        - url: http://127.0.0.1:7884
+          description: Separate gateway listener; localhost source default. Production sole-ingress topology
+            needs separately accepted deployment.
+      x-cop-service: voice-admission-gateway
+      x-cop-ai-exposure: forbidden
+      description: "Source-only gateway preserves signed legacy calls. Reserved scoped identities require
+        durable COP admission. All four signaling paths must be routed here; direct/alternative SFU
+        signaling must be closed before acceptance. publish query is forbidden for scoped
+        identities. HTTP101 alone is not provider proof: an exact positive Join/typed Reconnect and
+        one verified provider connect attempt are required. Unresolved dispatched attempts persist
+        across timeout/restart and keep revocation pending. No retry to another ingress."
+      security:
+        - livekitBearer: []
+        - livekitQueryToken: []
+      parameters:
+        - in: query
+          name: room
+          schema:
+            type: string
+          description: If provided for scoped grants, must exactly match signed room.
+        - in: query
+          name: reconnect
+          schema:
+            type: string
+            enum:
+              - "0"
+              - "1"
+          description: Legacy reconnect indication; v1 join_request supplies its typed reconnect flag.
+        - in: query
+          name: join_request
+          schema:
+            type: string
+          description: Optional base64url WrappedJoinRequest protobuf. NONE/GZIP only, decompressed payload
+            <=1 MiB; duplicate values rejected for scoped grants.
+      responses:
+        "101":
+          description: WebSocket upgraded; binary or JSON LiveKit protocol frames, max1MiB. This is not a
+            completion receipt.
+        "400":
+          description: Malformed or unsupported signaling request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "401":
+          description: Invalid or ambiguous signed credential.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "403":
+          description: Grant revoked, expired or not admitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "503":
+          description: Gateway/provider/owner unavailable; no admission fallback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+  /rtc/validate:
+    get:
+      tags:
+        - Voice admission gateway
+      summary: Legacy validation through scoped admission.
+      operationId: voiceGatewayLegacyvalidation
+      servers:
+        - url: http://127.0.0.1:7884
+          description: Separate gateway listener; localhost source default. Production sole-ingress topology
+            needs separately accepted deployment.
+      x-cop-service: voice-admission-gateway
+      x-cop-ai-exposure: forbidden
+      description: "Source-only gateway preserves signed legacy calls. Reserved scoped identities require
+        durable COP admission. All four signaling paths must be routed here; direct/alternative SFU
+        signaling must be closed before acceptance. publish query is forbidden for scoped
+        identities. HTTP101 alone is not provider proof: an exact positive Join/typed Reconnect and
+        one verified provider connect attempt are required. Unresolved dispatched attempts persist
+        across timeout/restart and keep revocation pending. No retry to another ingress."
+      security:
+        - livekitBearer: []
+        - livekitQueryToken: []
+      parameters:
+        - in: query
+          name: room
+          schema:
+            type: string
+          description: If provided for scoped grants, must exactly match signed room.
+        - in: query
+          name: reconnect
+          schema:
+            type: string
+            enum:
+              - "0"
+              - "1"
+          description: Legacy reconnect indication; v1 join_request supplies its typed reconnect flag.
+        - in: query
+          name: join_request
+          schema:
+            type: string
+          description: Optional base64url WrappedJoinRequest protobuf. NONE/GZIP only, decompressed payload
+            <=1 MiB; duplicate values rejected for scoped grants.
+      responses:
+        "200":
+          description: Provider validation; no participant dispatched.
+        "400":
+          description: Malformed or unsupported signaling request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "401":
+          description: Invalid or ambiguous signed credential.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "403":
+          description: Grant revoked, expired or not admitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "503":
+          description: Gateway/provider/owner unavailable; no admission fallback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+  /rtc/v1:
+    get:
+      tags:
+        - Voice admission gateway
+      summary: Protocol v1 signaling through scoped admission.
+      operationId: voiceGatewayProtocolV1signaling
+      servers:
+        - url: http://127.0.0.1:7884
+          description: Separate gateway listener; localhost source default. Production sole-ingress topology
+            needs separately accepted deployment.
+      x-cop-service: voice-admission-gateway
+      x-cop-ai-exposure: forbidden
+      description: "Source-only gateway preserves signed legacy calls. Reserved scoped identities require
+        durable COP admission. All four signaling paths must be routed here; direct/alternative SFU
+        signaling must be closed before acceptance. publish query is forbidden for scoped
+        identities. HTTP101 alone is not provider proof: an exact positive Join/typed Reconnect and
+        one verified provider connect attempt are required. Unresolved dispatched attempts persist
+        across timeout/restart and keep revocation pending. No retry to another ingress."
+      security:
+        - livekitBearer: []
+        - livekitQueryToken: []
+      parameters:
+        - in: query
+          name: room
+          schema:
+            type: string
+          description: If provided for scoped grants, must exactly match signed room.
+        - in: query
+          name: reconnect
+          schema:
+            type: string
+            enum:
+              - "0"
+              - "1"
+          description: Legacy reconnect indication; v1 join_request supplies its typed reconnect flag.
+        - in: query
+          name: join_request
+          schema:
+            type: string
+          description: Optional base64url WrappedJoinRequest protobuf. NONE/GZIP only, decompressed payload
+            <=1 MiB; duplicate values rejected for scoped grants.
+      responses:
+        "101":
+          description: WebSocket upgraded; binary or JSON LiveKit protocol frames, max1MiB. This is not a
+            completion receipt.
+        "400":
+          description: Malformed or unsupported signaling request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "401":
+          description: Invalid or ambiguous signed credential.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "403":
+          description: Grant revoked, expired or not admitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "503":
+          description: Gateway/provider/owner unavailable; no admission fallback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+  /rtc/v1/validate:
+    get:
+      tags:
+        - Voice admission gateway
+      summary: Protocol v1 validation through scoped admission.
+      operationId: voiceGatewayProtocolV1validation
+      servers:
+        - url: http://127.0.0.1:7884
+          description: Separate gateway listener; localhost source default. Production sole-ingress topology
+            needs separately accepted deployment.
+      x-cop-service: voice-admission-gateway
+      x-cop-ai-exposure: forbidden
+      description: "Source-only gateway preserves signed legacy calls. Reserved scoped identities require
+        durable COP admission. All four signaling paths must be routed here; direct/alternative SFU
+        signaling must be closed before acceptance. publish query is forbidden for scoped
+        identities. HTTP101 alone is not provider proof: an exact positive Join/typed Reconnect and
+        one verified provider connect attempt are required. Unresolved dispatched attempts persist
+        across timeout/restart and keep revocation pending. No retry to another ingress."
+      security:
+        - livekitBearer: []
+        - livekitQueryToken: []
+      parameters:
+        - in: query
+          name: room
+          schema:
+            type: string
+          description: If provided for scoped grants, must exactly match signed room.
+        - in: query
+          name: reconnect
+          schema:
+            type: string
+            enum:
+              - "0"
+              - "1"
+          description: Legacy reconnect indication; v1 join_request supplies its typed reconnect flag.
+        - in: query
+          name: join_request
+          schema:
+            type: string
+          description: Optional base64url WrappedJoinRequest protobuf. NONE/GZIP only, decompressed payload
+            <=1 MiB; duplicate values rejected for scoped grants.
+      responses:
+        "200":
+          description: Provider validation; no participant dispatched.
+        "400":
+          description: Malformed or unsupported signaling request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "401":
+          description: Invalid or ambiguous signed credential.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "403":
+          description: Grant revoked, expired or not admitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "503":
+          description: Gateway/provider/owner unavailable; no admission fallback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+  /internal/voice-grants/revoke:
+    post:
+      tags:
+        - Voice admission gateway
+      summary: Verify cleanup of durably fenced scoped grants.
+      operationId: voiceGatewayRevokeGrants
+      servers:
+        - url: http://127.0.0.1:7884
+          description: Separate gateway listener; localhost source default. Production sole-ingress topology
+            needs separately accepted deployment.
+      x-cop-service: voice-admission-gateway
+      x-cop-ai-exposure: forbidden
+      security:
+        - livekitBearer: []
+      description: Private server control only. Existing LiveKit credential signs short-lived roomAdmin
+        JWT bound to the exact body hash. COP durable fence must precede cleanup.
+        providerVerified=true requires accepted sole ingress, single connect attempt, no unresolved
+        dispatch, successful exact RemoveParticipant RPC and subsequent absence, or a durable prior
+        proof. 200 with false is pending; provider errors are503, not user403. No production
+        activation is implied. Canonical immutable active admission epoch is required for every
+        fresh proof and saved checkpoint. A never-dispatched grant of that epoch can complete with
+        authoritative absence; missing rows alone for older/no-epoch grants cannot complete.
+        Inactive acceptance rotates the next active epoch without backfilling old grants. Historical
+        acknowledged grants with unavailable removal remain pending/unavailable until separate
+        provider reconciliation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoiceGrantProviderRevokeRequest"
+      responses:
+        "200":
+          description: Strict provider receipt; false is pending.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGrantProviderRevokeReceipt"
+        "401":
+          description: Invalid or ambiguous signed credential.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "409":
+          description: Durable matching COP fence is required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
+        "503":
+          description: Gateway/provider/owner unavailable; no admission fallback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceGatewayError"
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    livekitBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Existing LiveKit HS256 key. Scoped sub and signed video.room must match the durable COP
+        grant. Internal control additionally requires <=35 seconds remaining lifetime, roomAdmin for
+        cop-voice-grants-control-v1, no roomJoin, and SHA256 of exact canonical JSON body in
+        metadata.
+    livekitQueryToken:
+      type: apiKey
+      in: query
+      name: access_token
+      description: LiveKit client compatibility. Use exactly one query token OR bearer header; duplicate
+        or combined credentials are rejected. Never log query strings. Not accepted on internal
+        control.
   parameters:
     SourceSystemIdHeader:
       name: X-Source-System-Id
@@ -9464,6 +9912,18 @@ components:
       schema:
         type: string
         format: uuid
+    VoiceInstallationHeader:
+      in: header
+      name: x-cop-installation-id
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Required for dedicated verified Jízda media admission and
+        accept/heartbeat/media_connected. This is the per-account installation UUID previously
+        attested by successful authenticated online Matrix bootstrap. The UUID itself never proves
+        app or account ownership. Legacy csm-mobile remains compatible; terminal decline/cancel/end
+        do not require it.
   responses:
     ErrorResponse:
       description: COP error envelope.
@@ -15696,6 +16156,12 @@ components:
         token:
           type: string
           minLength: 1
+        participantIdentity:
+          type: string
+          pattern: ^cop-jizda-voice-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+          description: Optional for legacy media; present for scoped Jízda grants. Opaque server-owned
+            identity bound to one verified app/account/installation/call. Provider-refreshed JWTs
+            retain this identity; original JWT hashes or jti are not revocation authority.
     MessagingVoiceCallResponse:
       type: object
       required:
@@ -24145,6 +24611,113 @@ components:
                 const: false
               remaining:
                 minItems: 1
+    VoiceInstallationRevokeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - installationId
+      properties:
+        installationId:
+          type: string
+          format: uuid
+    VoiceInstallationRevocationReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - operationId
+        - scope
+        - status
+        - joinDenied
+        - providerVerified
+        - accountDeleted
+      properties:
+        contractVersion:
+          const: cop-voice-installation-revocation-v1
+        operationId:
+          type: string
+          format: uuid
+        scope:
+          const: installation
+        status:
+          enum:
+            - revoking
+            - revoked
+        joinDenied:
+          const: true
+          description: Durable COP admission fence is accepted. With providerVerified=false this does not
+            independently prove that an unaccepted/alternative production SFU ingress blocks the old
+            JWT; real sole-ingress/provider acceptance is separate.
+        providerVerified:
+          type: boolean
+        accountDeleted:
+          const: false
+      oneOf:
+        - properties:
+            status:
+              const: revoking
+            providerVerified:
+              const: false
+          required:
+            - status
+            - providerVerified
+        - properties:
+            status:
+              const: revoked
+            providerVerified:
+              const: true
+          required:
+            - status
+            - providerVerified
+    VoiceGatewayError:
+      type: object
+      required:
+        - error
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+    VoiceGrantProviderRevokeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - operationId
+        - grants
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        grants:
+          type: array
+          maxItems: 256
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - identity
+              - room
+            properties:
+              identity:
+                type: string
+                pattern: ^cop-jizda-voice-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+              room:
+                type: string
+                pattern: ^cop-call-[0-9a-f-]{36}$
+    VoiceGrantProviderRevokeReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - operationId
+        - providerVerified
+      properties:
+        contractVersion:
+          const: cop-voice-grant-revocation-v1
+        operationId:
+          type: string
+          format: uuid
+        providerVerified:
+          type: boolean
 x-cop-mobility-invitation-notifications:
   contractVersion: cop-mobility-invitation-notification-v1
   transport: APNs alert via CSM Messaging

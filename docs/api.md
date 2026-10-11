@@ -425,3 +425,20 @@ Driver measurement GET/DELETE consent uses explicit signed-azp cleanup clients;
 grant/batch/pilot authority is unchanged. See the binding JSON descriptions.
 Report intakeoff preserves existing receipt/unblock/moderation and retention;
 new report/block=true returns503 COMMUNICATION_SAFETY_INTAKE_DISABLED.
+
+
+## Scoped voice admission source candidate
+
+[ADR0047](adr/0047_APP_SCOPED_VOICE_GRANTS_AND_ADMISSION.md) and
+[integration45](integration/45_JIZDA_VOICE_GRANTS_AND_LEGACY_MIGRATION.md)
+document the dedicated Jízda installation header, optional opaque
+`media.participantIdentity` and POST `/api/v1/me/voice-installations/revoke`.
+Verified OIDC and successful online Matrix bootstrap determine ownership; a
+client UUID never selects an account or app. 200 means accepted provider proof,
+202 means pending, and provider outages are503 with the fence retained.
+
+The JSON OpenAPI also marks all four `/rtc` signaling/validation paths and
+`/internal/voice-grants/revoke` with `x-cop-service=voice-admission-gateway` and
+operation-level servers. They belong to a separately started gateway, not the
+ordinary COP API. All new intake/acceptance flags default off. Legacy
+`csm-mobile` keeps its existing media contract. No production activation occurs.

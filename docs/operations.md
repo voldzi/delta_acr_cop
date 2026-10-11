@@ -196,3 +196,21 @@ Intakeoff still enforces canonical blocks, retention, own receipts and unblock.
 The durable communication-safety:configuration-v1 fingerprint rejects silent
 key/policy change; missing config with old reports/marker fails startup. Never
 clear these markers to bypass a failed rollout.
+
+
+## Scoped voice gateway: source preparation only
+
+New settings are documented in `.env.example` and
+[the deployment candidate](../deploy/communications/livekit/SCOPED_ADMISSION_CANDIDATE.md).
+`COP_VOICE_SCOPED_GRANTS_ENABLED` requires both topology and single-attempt
+acceptance flags; maintenance can run with intake off. Gateway startup is a
+separate compiled entry, defaults to127.0.0.1:7884, and reuses existing LiveKit
+server credentials. Configuration max grant age must match on API and gateway
+(default86400seconds, allowed60..86400). No default Compose/network/SFU config
+or production secret is changed.
+
+After scoped state exists preserve exact ledger/fences/configuration and
+revocation maintenance on rollback. Never restore a direct signaling bypass
+or rotate the identity key without migration. Provider proof remains pending
+until real sole-ingress/provider/lease/physical acceptance. Moderator operation,
+legacy ownership migration and all11 account-erasure proofs remain separate.
