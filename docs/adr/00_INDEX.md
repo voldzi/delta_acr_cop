@@ -68,3 +68,5 @@ Use the full linked filename when referring to these decisions; existing
 published paths are preserved for integration references.
 
 - [0046_ACCOUNT_SAFETY_AND_ERASURE_BOUNDARY.md](0046_ACCOUNT_SAFETY_AND_ERASURE_BOUNDARY.md): proposed account safety and erasure acceptance boundary.
+- [0047_APP_SCOPED_VOICE_GRANTS_AND_ADMISSION.md](0047_APP_SCOPED_VOICE_GRANTS_AND_ADMISSION.md): app/installation-scoped voice source candidate.
+- [0048_TERMINAL_VOICE_CALL_ADMISSION.md](0048_TERMINAL_VOICE_CALL_ADMISSION.md): current authoritative call-state admission; compaction remains a separate proposal.

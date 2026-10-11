@@ -214,3 +214,18 @@ revocation maintenance on rollback. Never restore a direct signaling bypass
 or rotate the identity key without migration. Provider proof remains pending
 until real sole-ingress/provider/lease/physical acceptance. Moderator operation,
 legacy ownership migration and all11 account-erasure proofs remain separate.
+
+The terminal-admission source candidate additionally requires gateway
+`COP_VOICE_CALL_STORE=postgres` (or the explicit postgresql alias) and the
+existing COP PostgreSQL connection. Auto/memory/disabled are rejected before
+listening; the gateway owns and closes its call-store pool. Canonical terminal
+state closes only matching scoped connections. Idle checks are bounded and
+single flight; they never clear durable uncertain dispatch or authorize ledger
+pruning. No production migration/activation occurs. See
+[integration47](integration/47_VOICE_TERMINAL_ADMISSION_AND_COMPACTION_PLAN.md).
+
+Scoped admission reads and denial compensation each have a5-second request
+deadline. The API voice-call PostgreSQL pool also bounds SQL queries/server
+statements to5seconds; the gateway retains its5second query limit. No other
+database factory or global timeout setting is changed. A compensation timeout
+is503 with no media, not evidence that the call transition finished.

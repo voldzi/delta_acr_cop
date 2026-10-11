@@ -114,3 +114,5 @@ Scoped Jízda unlink and the separate whole-account removal gate: [integration 4
 - [45 — Hlasové granty účtu/instalace a doložená migrace legacy](integration/45_JIZDA_VOICE_GRANTS_AND_LEGACY_MIGRATION.md), [ADR 0047](adr/0047_APP_SCOPED_VOICE_GRANTS_AND_ADMISSION.md). Zdrojový kandidát; bez produkční aktivace. [Plán samostatné signaling brány](../deploy/communications/livekit/SCOPED_ADMISSION_CANDIDATE.md).
 
 - [46 — Neměnné hlasové předání Jízdě v3](integration/46_JIZDA_VOICE_V3_HANDOFF.md), [manifest](integration/46_JIZDA_VOICE_V3_MANIFEST.json): publikovaná source revize, SDK kroky pro candidate34, výsledky a samostatné zbývající brány.
+
+- [47 — Autoritativní stav hovoru a návrh compaction/quiescence](integration/47_VOICE_TERMINAL_ADMISSION_AND_COMPACTION_PLAN.md), [ADR 0048](adr/0048_TERMINAL_VOICE_CALL_ADMISSION.md): navazující source kandidát, samostatný mobilní návrh a dosud neschválená retenční politika. Produkce ani zmrazené předání v2/v3 se nemění.

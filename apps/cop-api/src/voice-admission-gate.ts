@@ -7,6 +7,7 @@ import { gunzipSync } from "node:zlib";
 import { VoiceGrantError, VOICE_GRANT_IDENTITY_PREFIX, VOICE_GRANT_GATEWAY_CONFIG_KEY, type VoiceGrantLedger } from "./voice-grant-ledger.js";
 import { readBoundedBody } from "./bounded-upstream.js";
 import { VOICE_REVOCATION_CONTROL_ROOM } from "./voice-grant-revocation.js";
+import type { VoiceCallAdmission, VoiceCallAdmissionTarget } from "./voice-call-admission.js";
 
 export interface VoiceGatewayOwner { assertOwned(): Promise<void> }
 export interface VoiceGatewayProvider {
@@ -21,11 +22,15 @@ export interface VoiceAdmissionGateOptions {
   provider: VoiceGatewayProvider;
   /** Must represent a separately held, continuously monitored, primary PG session lock. */
   owner: VoiceGatewayOwner;
+  /** Mandatory current persistent call-state authority for scoped identities. */
+  assertCall: VoiceCallAdmission;
   /** False until the actual only-signaling-path topology/provider tests are accepted. */
   acceptedTopology?: boolean;
   /** Explicit live evidence of signal_relay.connect_attempts=1 AND no proxy admission retry. */
   singleConnectAttemptVerified?: boolean;
   handshakeTimeoutMs?: number;
+  /** Test seam; runtime uses the bounded one-second single-flight sweep. */
+  callStatePollMs?: number;
 }
 export const VOICE_REVOCATION_CONTRACT = "cop-voice-grant-revocation-v1";
 export const VOICE_GATEWAY_PENDING_PREFIX = "voice-signaling-gateway:v1:handshake:";
@@ -45,6 +50,7 @@ interface Admission {
   managed: boolean;
   reconnect: boolean;
   url: URL;
+  call?: VoiceCallAdmissionTarget;
 }
 interface HandshakeRow {
   identity: string;
@@ -67,6 +73,8 @@ interface Connection {
   messageFlight: Promise<void>;
   queuedFrames: number;
   queuedBytes: number;
+  callBlocked: boolean;
+  cleanupFlight?: Promise<void>;
 }
 interface RevokeBody { operationId: string; grants: Array<{ identity: string; room: string }> }
 
@@ -84,11 +92,15 @@ export async function buildVoiceAdmissionGate(options: VoiceAdmissionGateOptions
   }
   const timeoutMs = options.handshakeTimeoutMs ?? 15_000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 10 || timeoutMs > 60_000) throw new Error("Invalid gateway timeout.");
+  if (typeof options.assertCall !== "function") throw new Error("Persistent voice call admission is required.");
+  const pollMs = options.callStatePollMs ?? 1000;
+  if (!Number.isSafeInteger(pollMs) || pollMs < 10 || pollMs > 1000) throw new Error("Invalid call-state polling interval.");
   const verifier = new TokenVerifier(options.apiKey, options.apiSecret);
   const store = options.ledger.options.store;
   const app = Fastify({ logger: false, bodyLimit: 128 * 1024, routerOptions: { maxParamLength: 32 } });
   const admissions = new WeakMap<FastifyRequest, Admission>();
   const connections = new Set<Connection>();
+  const cleanupFlights = new Map<string, Promise<void>>();
   let queue: Promise<unknown> = Promise.resolve();
   let closed = false;
   function serialize<T>(work: () => Promise<T>): Promise<T> {
@@ -130,6 +142,65 @@ export async function buildVoiceAdmissionGate(options: VoiceAdmissionGateOptions
     if (marker?.fingerprint !== fingerprint || marker.active !== true || marker.acceptedEpoch !== acceptedEpoch) throw new VoiceGrantError(503, "VOICE_GATEWAY_CONFIGURATION_CHANGED");
   }
 
+  async function assertScopedCall(admission: Admission): Promise<void> {
+    if (!admission.managed) return;
+    await assertAcceptedEpoch();
+    const grant = await options.ledger.assertAdmission(admission.identity, admission.room, new Date());
+    if (grant.admissionEpoch !== acceptedEpoch) throw new VoiceGrantError(403, "VOICE_GATEWAY_DENIED");
+    await options.assertCall(grant, new Date());
+  }
+  function blockCallConnection(connection: Connection): void {
+    connection.callBlocked = true;
+    try { connection.downstream.terminate(); } catch { /* sanitized */ }
+    // Do not abort an uncertain dispatch before its positive response/timeout.
+    // A disconnected client or ended call cannot prove that no RTC join occurred.
+    if (!connection.acknowledged) return;
+    closeConnection(connection, true);
+    const cleanupKey = connection.admission.identity + ":" + connection.admission.room;
+    if (connection.cleanupFlight) return;
+    const existing = cleanupFlights.get(cleanupKey);
+    if (existing) { connection.cleanupFlight = existing; return; }
+    if (cleanupFlights.size >= maxConnections) return;
+    const cleanup = serialize(async () => {
+      await owned();
+      await boundedCleanup(() => options.provider.removeParticipant(connection.admission.room, connection.admission.identity));
+      const participants = await boundedCleanup(() => options.provider.listParticipants(connection.admission.room));
+      if (!Array.isArray(participants) || participants.some(participant => typeof participant.identity !== "string" || participant.identity === connection.admission.identity)) throw new Error();
+      await owned();
+      // Operational cleanup only. No app/install receipt, completion checkpoint
+      // or handshake-row deletion follows from current call state or inventory.
+    }).catch(() => undefined).finally(() => { cleanupFlights.delete(cleanupKey); });
+    connection.cleanupFlight = cleanup; cleanupFlights.set(cleanupKey, cleanup);
+  }
+  async function boundedCleanup<T>(operation: () => Promise<T>): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    try { return await Promise.race([operation(), new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error()), timeoutMs); timer.unref(); })]); }
+    finally { clearTimeout(timer); }
+  }
+
+  let pollFlight: Promise<void> | undefined;
+  const callPoll = setInterval(() => {
+    if (closed || pollFlight) return;
+    pollFlight = (async () => {
+      await owned();
+      const groups = new Map<string, Connection[]>();
+      for (const connection of connections) if (connection.admission.managed && !connection.revoked && !connection.callBlocked) {
+        const key = connection.admission.call!.callId + ":" + connection.admission.room;
+        const group = groups.get(key) ?? []; group.push(connection); groups.set(key, group);
+      }
+      const pending = [...groups.values()]; let next = 0;
+      // Both the session count and concurrent authority reads are bounded.
+      await Promise.all(Array.from({ length: Math.min(8, pending.length) }, async () => {
+        while (next < pending.length && !closed) {
+          const group = pending[next++]!;
+          try { await options.assertCall(group[0]!.admission.call!, new Date()); }
+          catch { if (!closed) for (const connection of group) blockCallConnection(connection); }
+        }
+      }));
+    })().catch(() => undefined).finally(() => { pollFlight = undefined; });
+  }, pollMs);
+  callPoll.unref();
+
   async function authenticate(request: FastifyRequest): Promise<Admission> {
     await owned();
     const rawUrl = request.raw.url ?? "";
@@ -153,6 +224,7 @@ export async function buildVoiceAdmissionGate(options: VoiceAdmissionGateOptions
     // Reserve all prefixes, including malformed identities, so a legacy grant can
     // never masquerade as a managed identity through a malformed suffix.
     const managed = identity.startsWith(VOICE_GRANT_IDENTITY_PREFIX);
+    let call: VoiceCallAdmissionTarget | undefined;
     let reconnect = url.searchParams.get("reconnect") === "1";
     if (managed) {
       await assertAcceptedEpoch();
@@ -176,10 +248,12 @@ export async function buildVoiceAdmissionGate(options: VoiceAdmissionGateOptions
       }
       const grant = await options.ledger.assertAdmission(identity, room, new Date());
       if (grant.admissionEpoch !== acceptedEpoch) throw new VoiceGrantError(403, "VOICE_GATEWAY_DENIED");
+      await options.assertCall(grant, new Date());
+      call = { callId: grant.callId, room: grant.room };
       url.searchParams.set("room", room);
     }
     url.searchParams.delete("access_token");
-    return { token, claims, identity, room, managed, reconnect, url };
+    return { token, claims, identity, room, managed, reconnect, url, call };
   }
   const preValidation = async (request: FastifyRequest, reply: import("fastify").FastifyReply) => {
     try { admissions.set(request, await authenticate(request)); }
@@ -195,6 +269,7 @@ export async function buildVoiceAdmissionGate(options: VoiceAdmissionGateOptions
         await assertAcceptedEpoch();
         const grant = await options.ledger.assertAdmission(admission.identity, admission.room, new Date());
         if (grant.admissionEpoch !== acceptedEpoch) throw new VoiceGrantError(403, "VOICE_GATEWAY_DENIED");
+        await options.assertCall(grant, new Date());
         await owned();
         if (connection.revoked || connection.downstream.readyState !== 1) throw new VoiceGrantError(503, "VOICE_GATEWAY_UNAVAILABLE");
         connection.key = VOICE_GATEWAY_PENDING_PREFIX + admission.identity + ":" + randomUUID();
@@ -206,6 +281,9 @@ export async function buildVoiceAdmissionGate(options: VoiceAdmissionGateOptions
       // loss or shutdown. No dispatch may resume after that boundary.
       await owned();
       if (connection.revoked || connection.downstream.readyState !== 1) throw new VoiceGrantError(503, "VOICE_GATEWAY_UNAVAILABLE");
+      await assertScopedCall(admission);
+      await owned();
+      if (closed || connection.revoked || connection.callBlocked || connection.downstream.readyState !== 1) throw new VoiceGrantError(503, "VOICE_GATEWAY_UNAVAILABLE");
       const url = new URL(admission.url); url.protocol = backend.protocol === "https:" || backend.protocol === "wss:" ? "wss:" : "ws:";
       // Node 24's built-in Undici WebSocket supports its WebSocketInit extension.
       // Canonical bearer goes in a header, never the upstream URL or diagnostics.
@@ -233,7 +311,12 @@ export async function buildVoiceAdmissionGate(options: VoiceAdmissionGateOptions
             connection.acknowledged = true; clearTimeout(connection.timer); connection.settle(true);
           }
           await owned();
-          if (admission.managed && !connection.revoked) await options.ledger.assertAdmission(admission.identity, admission.room, new Date());
+          if (admission.managed && !connection.revoked) {
+            try { await assertScopedCall(admission); }
+            catch (error) { if (error instanceof VoiceGrantError && error.code.startsWith("VOICE_CALL_")) blockCallConnection(connection); else closeConnection(connection, true); return; }
+          }
+          if (connection.callBlocked) { blockCallConnection(connection); return; }
+          await owned();
           if (connection.revoked || connection.downstream.readyState !== 1) { closeConnection(connection, true); return; }
           const bytes = frame(event.data);
           if (bytes.byteLength > maxFrameBytes || connection.downstream.bufferedAmount > maxFrameBytes) throw new Error();
@@ -255,16 +338,21 @@ export async function buildVoiceAdmissionGate(options: VoiceAdmissionGateOptions
         if (!path.endsWith("/validate")) return reply.code(400).send({ error: "VOICE_GATEWAY_WEBSOCKET_REQUIRED" });
         try {
           // Validation does not dispatch a participant and therefore has no pending row.
+          await owned(); await assertScopedCall(admission); await owned();
+          if (closed) throw new VoiceGrantError(503, "VOICE_GATEWAY_UNAVAILABLE");
           const url = new URL(admission.url); url.protocol = backend.protocol === "https:" || backend.protocol === "wss:" ? "https:" : "http:";
           const response = await fetch(url, { headers: { Authorization: "Bearer " + admission.token }, redirect: "error", signal: AbortSignal.timeout(timeoutMs) });
           if (!response.ok) { await response.body?.cancel(); return reply.code(response.status >= 500 ? 503 : response.status).send({ error: "VOICE_GATEWAY_UPSTREAM_REJECTED" }); }
-          return reply.code(response.status).send((await readBoundedBody(response, maxFrameBytes)).toString("utf8"));
-        } catch { return reply.code(503).send({ error: "VOICE_GATEWAY_UNAVAILABLE" }); }
+          const body = (await readBoundedBody(response, maxFrameBytes)).toString("utf8");
+          await owned(); await assertScopedCall(admission); await owned();
+          if (closed) throw new VoiceGrantError(503, "VOICE_GATEWAY_UNAVAILABLE");
+          return reply.code(response.status).send(body);
+        } catch (error) { return reply.code(error instanceof VoiceGrantError ? error.status : 503).send({ error: error instanceof VoiceGrantError ? error.code : "VOICE_GATEWAY_UNAVAILABLE" }); }
       },
       wsHandler: (downstream, request) => {
         if (path.endsWith("/validate")) { downstream.close(1008, "Invalid signaling path"); return; }
         let settled = false, resolve!: (value: boolean) => void;
-        const connection: Connection = { admission: admissions.get(request)!, downstream, acknowledged: false, revoked: false,
+        const connection: Connection = { admission: admissions.get(request)!, downstream, acknowledged: false, revoked: false, callBlocked: false,
           done: new Promise<boolean>(done => { resolve = done; }), settle: value => { if (!settled) { settled = true; resolve(value); } }, messageFlight: Promise.resolve(), queuedFrames: 0, queuedBytes: 0 };
         // Reserve and track pending sockets BEFORE queueing/awaiting PG. This cap
         // includes admissions waiting behind a stalled ledger, and preClose sees all.
@@ -278,7 +366,12 @@ export async function buildVoiceAdmissionGate(options: VoiceAdmissionGateOptions
           if (++connection.queuedFrames > 64 || (connection.queuedBytes += length) > maxFrameBytes) { connection.settle(false); closeConnection(connection, true); return; }
           connection.messageFlight = connection.messageFlight.then(async () => {
             await owned();
-            if (connection.admission.managed) await options.ledger.assertAdmission(connection.admission.identity, connection.admission.room, new Date());
+            if (connection.admission.managed) {
+              try { await assertScopedCall(connection.admission); }
+              catch (error) { if (error instanceof VoiceGrantError && error.code.startsWith("VOICE_CALL_")) blockCallConnection(connection); else closeConnection(connection, true); return; }
+            }
+            if (connection.callBlocked) { blockCallConnection(connection); return; }
+            await owned();
             if (!connection.acknowledged || connection.revoked || connection.upstream?.readyState !== WebSocket.OPEN) throw new Error();
             if (connection.upstream.bufferedAmount > maxFrameBytes) throw new Error();
             connection.upstream.send(binary ? Uint8Array.from(frame(data)) : frame(data).toString("utf8"));
@@ -378,6 +471,7 @@ export async function buildVoiceAdmissionGate(options: VoiceAdmissionGateOptions
   });
   app.addHook("preClose", async () => {
     closed = true;
+    clearInterval(callPoll);
     for (const connection of connections) { connection.settle(false); clearTimeout(connection.timer); closeConnection(connection, true); }
   });
   return app;

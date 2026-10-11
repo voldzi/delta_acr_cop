@@ -3569,7 +3569,13 @@ paths:
         the incoming-call notification and issues short-lived LiveKit credentials. Dedicated
         verified Jízda uses the attested installation header and server-owned scoped media grant;
         missing admission proof fails closed. No client-chosen LiveKit identity or alternative
-        legacy token is issued.
+        legacy token is issued. Scoped media admission re-reads the canonical call before and after
+        mint and after the final response await. Missing/terminal/mismatched or timed-out
+        non-connected calls are denied with 403 VOICE_CALL_ADMISSION_DENIED; call-state dependency
+        failure is 503 VOICE_CALL_STATE_UNAVAILABLE. Connected calls are not ended by invitation
+        expiresAt. No credentials are returned on failure; legacy media remains unchanged. Scoped
+        state lookup and denial compensation each have a 5-second request deadline; an unresolved
+        compensation is 503, not successful terminal cleanup.
       operationId: startMessagingVoiceCall
       requestBody:
         required: true
@@ -3630,7 +3636,13 @@ paths:
           $ref: "#/components/responses/ServiceUnavailable"
       description: " Dedicated verified Jízda uses the attested installation header and server-owned
         scoped media grant; missing admission proof fails closed. No client-chosen LiveKit identity
-        or alternative legacy token is issued."
+        or alternative legacy token is issued. Scoped media admission re-reads the canonical call
+        before and after mint and after the final response await. Missing/terminal/mismatched or
+        timed-out non-connected calls are denied with 403 VOICE_CALL_ADMISSION_DENIED; call-state
+        dependency failure is 503 VOICE_CALL_STATE_UNAVAILABLE. Connected calls are not ended by
+        invitation expiresAt. No credentials are returned on failure; legacy media remains
+        unchanged. Scoped state lookup and denial compensation each have a 5-second request
+        deadline; an unresolved compensation is 503, not successful terminal cleanup."
   /api/v1/messaging/calls/{callId}/actions:
     post:
       tags:
@@ -3669,7 +3681,13 @@ paths:
           $ref: "#/components/responses/ServiceUnavailable"
       description: " Dedicated verified Jízda uses the attested installation header and server-owned
         scoped media grant; missing admission proof fails closed. No client-chosen LiveKit identity
-        or alternative legacy token is issued."
+        or alternative legacy token is issued. Scoped media admission re-reads the canonical call
+        before and after mint and after the final response await. Missing/terminal/mismatched or
+        timed-out non-connected calls are denied with 403 VOICE_CALL_ADMISSION_DENIED; call-state
+        dependency failure is 503 VOICE_CALL_STATE_UNAVAILABLE. Connected calls are not ended by
+        invitation expiresAt. No credentials are returned on failure; legacy media remains
+        unchanged. Scoped state lookup and denial compensation each have a 5-second request
+        deadline; an unresolved compensation is 503, not successful terminal cleanup."
   /api/v1/messaging/conversations:
     get:
       tags:
@@ -9445,7 +9463,13 @@ paths:
         signaling must be closed before acceptance. publish query is forbidden for scoped
         identities. HTTP101 alone is not provider proof: an exact positive Join/typed Reconnect and
         one verified provider connect attempt are required. Unresolved dispatched attempts persist
-        across timeout/restart and keep revocation pending. No retry to another ingress."
+        across timeout/restart and keep revocation pending. No retry to another ingress. Scoped
+        grants also require canonical grant.callId/room and current persistent COP call-state
+        admission before dispatch, after positive ACK and on signaling events/idle checks.
+        Terminal/missing/mismatched or timed-out non-connected calls are denied with 403; state
+        lookup outages use 503. End-state transport closure/removal is not app/installation
+        revocation proof and never clears uncertain dispatch. This guard does not make call end and
+        SFU dispatch one atomic transaction."
       security:
         - livekitBearer: []
         - livekitQueryToken: []
@@ -9486,13 +9510,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/VoiceGatewayError"
         "403":
-          description: Grant revoked, expired or not admitted.
+          description: Grant/canonical call revoked, expired, terminal, mismatched or not admitted.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/VoiceGatewayError"
         "503":
-          description: Gateway/provider/owner unavailable; no admission fallback.
+          description: Gateway/provider/owner/call-state dependency unavailable; no admission fallback.
           content:
             application/json:
               schema:
@@ -9514,7 +9538,13 @@ paths:
         signaling must be closed before acceptance. publish query is forbidden for scoped
         identities. HTTP101 alone is not provider proof: an exact positive Join/typed Reconnect and
         one verified provider connect attempt are required. Unresolved dispatched attempts persist
-        across timeout/restart and keep revocation pending. No retry to another ingress."
+        across timeout/restart and keep revocation pending. No retry to another ingress. Scoped
+        grants also require canonical grant.callId/room and current persistent COP call-state
+        admission before dispatch, after positive ACK and on signaling events/idle checks.
+        Terminal/missing/mismatched or timed-out non-connected calls are denied with 403; state
+        lookup outages use 503. End-state transport closure/removal is not app/installation
+        revocation proof and never clears uncertain dispatch. This guard does not make call end and
+        SFU dispatch one atomic transaction."
       security:
         - livekitBearer: []
         - livekitQueryToken: []
@@ -9554,13 +9584,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/VoiceGatewayError"
         "403":
-          description: Grant revoked, expired or not admitted.
+          description: Grant/canonical call revoked, expired, terminal, mismatched or not admitted.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/VoiceGatewayError"
         "503":
-          description: Gateway/provider/owner unavailable; no admission fallback.
+          description: Gateway/provider/owner/call-state dependency unavailable; no admission fallback.
           content:
             application/json:
               schema:
@@ -9582,7 +9612,13 @@ paths:
         signaling must be closed before acceptance. publish query is forbidden for scoped
         identities. HTTP101 alone is not provider proof: an exact positive Join/typed Reconnect and
         one verified provider connect attempt are required. Unresolved dispatched attempts persist
-        across timeout/restart and keep revocation pending. No retry to another ingress."
+        across timeout/restart and keep revocation pending. No retry to another ingress. Scoped
+        grants also require canonical grant.callId/room and current persistent COP call-state
+        admission before dispatch, after positive ACK and on signaling events/idle checks.
+        Terminal/missing/mismatched or timed-out non-connected calls are denied with 403; state
+        lookup outages use 503. End-state transport closure/removal is not app/installation
+        revocation proof and never clears uncertain dispatch. This guard does not make call end and
+        SFU dispatch one atomic transaction."
       security:
         - livekitBearer: []
         - livekitQueryToken: []
@@ -9623,13 +9659,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/VoiceGatewayError"
         "403":
-          description: Grant revoked, expired or not admitted.
+          description: Grant/canonical call revoked, expired, terminal, mismatched or not admitted.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/VoiceGatewayError"
         "503":
-          description: Gateway/provider/owner unavailable; no admission fallback.
+          description: Gateway/provider/owner/call-state dependency unavailable; no admission fallback.
           content:
             application/json:
               schema:
@@ -9651,7 +9687,13 @@ paths:
         signaling must be closed before acceptance. publish query is forbidden for scoped
         identities. HTTP101 alone is not provider proof: an exact positive Join/typed Reconnect and
         one verified provider connect attempt are required. Unresolved dispatched attempts persist
-        across timeout/restart and keep revocation pending. No retry to another ingress."
+        across timeout/restart and keep revocation pending. No retry to another ingress. Scoped
+        grants also require canonical grant.callId/room and current persistent COP call-state
+        admission before dispatch, after positive ACK and on signaling events/idle checks.
+        Terminal/missing/mismatched or timed-out non-connected calls are denied with 403; state
+        lookup outages use 503. End-state transport closure/removal is not app/installation
+        revocation proof and never clears uncertain dispatch. This guard does not make call end and
+        SFU dispatch one atomic transaction."
       security:
         - livekitBearer: []
         - livekitQueryToken: []
@@ -9691,13 +9733,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/VoiceGatewayError"
         "403":
-          description: Grant revoked, expired or not admitted.
+          description: Grant/canonical call revoked, expired, terminal, mismatched or not admitted.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/VoiceGatewayError"
         "503":
-          description: Gateway/provider/owner unavailable; no admission fallback.
+          description: Gateway/provider/owner/call-state dependency unavailable; no admission fallback.
           content:
             application/json:
               schema:

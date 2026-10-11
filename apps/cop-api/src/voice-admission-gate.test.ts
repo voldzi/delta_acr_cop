@@ -12,6 +12,8 @@ import { buildVoiceAdmissionGate, VOICE_GATEWAY_PENDING_PREFIX, type VoiceAdmiss
 import type { AuthenticatedActor } from "./security.js";
 import { PostgresVoiceGatewayOwner } from "./voice-admission-main.js";
 import { VOICE_REVOCATION_CONTROL_ROOM } from "./voice-grant-revocation.js";
+import { createVoiceCallAdmission } from "./voice-call-admission.js";
+import type { VoiceCallRecord } from "./voice-call-store.js";
 
 const apiKey = "synthetic-livekit-key", apiSecret = "synthetic-livekit-secret-over-32-characters";
 const issuer = "https://identity.synthetic.test/realms/cop", clientId = "jizda-mobile";
@@ -22,22 +24,39 @@ afterEach(async () => { for (const app of apps) await app.close(); apps.clear();
 const deferred = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; };
 
 async function fixture(options: Partial<VoiceAdmissionGateOptions> & { first?: "join" | "leave" | "reconnect" | "wrongIdentity" | "wrongRoom" | "none";
-  delay?: Promise<void>; store?: MemoryMobilityStore } = {}) {
+  delay?: Promise<void>; validateDelay?: Promise<void>; store?: MemoryMobilityStore } = {}) {
   const store = options.store ?? new MemoryMobilityStore();
   const ledger = new VoiceGrantLedger({ store, issuer, clientId, identitySecret: apiSecret });
   const owner = actor(), install = randomUUID(), callId = randomUUID(), room = "cop-call-" + callId;
+  const calls = new Map<string, VoiceCallRecord>();
+  const issue = ledger.issueGrant.bind(ledger);
+  vi.spyOn(ledger, "issueGrant").mockImplementation(async (...args) => {
+    const grant = await issue(...args);
+    if (!calls.has(grant.callId)) calls.set(grant.callId, {
+      callId: grant.callId, roomId: "!synthetic-matrix-room:example.test", phase: "connected", revision: 1,
+      expiresAt: new Date(Date.now() - 1000).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      initiatorSubjectId: owner.subjectId, participantSubjectIds: [owner.subjectId, "synthetic-user-B"], kind: "direct", title: "Synthetic call"
+    });
+    return grant;
+  });
+  const getCall = vi.fn(async (id: string) => calls.get(id) ?? null);
+  const assertCall = createVoiceCallAdmission({ get: getCall });
   await ledger.attestInstallation(owner, install, new Date());
   const backend = Fastify({ logger: false }); apps.add(backend); await backend.register(websocket);
   const observed: Array<{ url: string; authorization: string | undefined; clientHeader: unknown }> = [];
+  const backendSockets = new Map<string, websocket.WebSocket>();
+  const clientFrames: Buffer[] = [];
   const dispatched = deferred<void>();
   for (const path of ["/rtc", "/rtc/v1", "/rtc/validate", "/rtc/v1/validate"]) backend.route({ method: "GET", url: path,
-    handler: (request, reply) => { observed.push({ url: request.url, authorization: request.headers.authorization, clientHeader: request.headers["x-client-owned"] }); return reply.send("ok"); },
+    handler: async (request, reply) => { observed.push({ url: request.url, authorization: request.headers.authorization, clientHeader: request.headers["x-client-owned"] }); await options.validateDelay; return reply.send("ok"); },
     wsHandler: (socket, request) => {
       observed.push({ url: request.url, authorization: request.headers.authorization, clientHeader: request.headers["x-client-owned"] });
       dispatched.resolve();
       socket.on("error", () => undefined);
       void (async () => {
         const claims = await new TokenVerifier(apiKey, apiSecret).verify(request.headers.authorization!.slice(7));
+        backendSockets.set(claims.sub!, socket);
+        socket.on("message", (data: Buffer) => clientFrames.push(data));
         await options.delay;
         if (options.first === "none" || socket.readyState !== 1) return;
         let response: SignalResponse;
@@ -53,7 +72,7 @@ async function fixture(options: Partial<VoiceAdmissionGateOptions> & { first?: "
   const backendUrl = await backend.listen({ host: "127.0.0.1", port: 0 });
   const provider: VoiceGatewayProvider = options.provider ?? { removeParticipant: vi.fn(async () => undefined), listParticipants: vi.fn(async () => []) };
   const gateOptions = { ledger, apiKey, apiSecret, backendUrl, provider, owner: { assertOwned: async () => undefined },
-    acceptedTopology: true, singleConnectAttemptVerified: true, handshakeTimeoutMs: 150, ...options };
+    assertCall, acceptedTopology: true, singleConnectAttemptVerified: true, handshakeTimeoutMs: 150, ...options };
   const gate = await buildVoiceAdmissionGate(gateOptions); apps.add(gate); await gate.ready();
   const grant = await ledger.issueGrant(owner, install, callId, room, new Date());
   async function token(identity = grant.identity, tokenRoom = room, secret = apiSecret) {
@@ -72,7 +91,7 @@ async function fixture(options: Partial<VoiceAdmissionGateOptions> & { first?: "
     access.addGrant({ roomAdmin: true, room: VOICE_REVOCATION_CONTROL_ROOM });
     return gate.inject({ method: "POST", url: "/internal/voice-grants/revoke", headers: { authorization: "Bearer " + await access.toJwt() }, payload: body });
   }
-  return { store, ledger, owner, install, room, grant, token, gate, connect, revoke, observed, dispatched, provider, gateOptions };
+  return { store, ledger, owner, install, room, grant, token, gate, connect, revoke, observed, dispatched, provider, gateOptions, calls, getCall, assertCall, backendSockets, clientFrames };
 }
 
 describe("LiveKit scoped signaling admission", () => {
@@ -175,6 +194,111 @@ describe("LiveKit scoped signaling admission", () => {
   });
 });
 
+describe("canonical terminal call-state signaling guard", () => {
+  it.each(["created", "declined", "missed", "cancelled", "failed", "ended", "missing"] as const)("denies %s on all signaling/validate paths before any backend request", async phase => {
+    const f = await fixture();
+    if (phase === "missing") f.calls.delete(f.grant.callId); else f.calls.get(f.grant.callId)!.phase = phase;
+    const bearer = await f.token();
+    for (const path of ["/rtc", "/rtc/v1", "/rtc/validate", "/rtc/v1/validate"]) {
+      const response = await f.gate.inject({ url: path + "?access_token=" + bearer });
+      expect(response.statusCode).toBe(403); expect(response.json().error).toBe("VOICE_CALL_ADMISSION_DENIED");
+    }
+    expect(f.observed).toHaveLength(0); expect(await f.store.transact([], tx => tx.scan(VOICE_GATEWAY_PENDING_PREFIX))).toHaveLength(0);
+  });
+  it("denies original, refreshed and modern reconnect credentials after canonical end", async () => {
+    const f = await fixture(); const c = await f.connect(); await c.first; c.socket.terminate();
+    f.calls.get(f.grant.callId)!.phase = "ended";
+    const refreshed = new AccessToken(apiKey, apiSecret, { identity: f.grant.identity, ttl: 3600, metadata: "different-server-refresh" }); refreshed.addGrant({ roomJoin: true, room: f.room });
+    const wrapped = new WrappedJoinRequest({ joinRequest: new JoinRequest({ reconnect: true }).toBinary() });
+    for (const bearer of [await f.token(), await refreshed.toJwt()]) for (const path of ["/rtc", "/rtc/v1", "/rtc/validate", "/rtc/v1/validate"]) {
+      expect((await f.gate.inject({ url: path + "?access_token=" + bearer + "&reconnect=1&join_request=" + Buffer.from(wrapped.toBinary()).toString("base64url") })).statusCode).toBe(403);
+    }
+    expect(f.observed).toHaveLength(1);
+  });
+  it("returns sanitized 503 on call authority outage rather than user rejection", async () => {
+    const f = await fixture(); f.getCall.mockRejectedValue(new Error("private-subject-and-secret-dsn"));
+    const response = await f.gate.inject({ url: "/rtc/validate?access_token=" + await f.token() });
+    expect(response.statusCode).toBe(503); expect(response.json().error).toBe("VOICE_CALL_STATE_UNAVAILABLE");
+    expect(response.body).not.toContain("secret"); expect(f.observed).toHaveLength(0);
+  });
+  it("rechecks end at the validate handler boundary before fetch and after a suspended fetch", async () => {
+    const delay = deferred<void>(), f = await fixture({ validateDelay: delay.promise });
+    let reads = 0; const original = f.getCall.getMockImplementation()!;
+    f.getCall.mockImplementation(async id => { if (++reads === 2) f.calls.get(id)!.phase = "ended"; return original(id); });
+    expect((await f.gate.inject({ url: "/rtc/validate?access_token=" + await f.token() })).statusCode).toBe(403);
+    expect(f.observed).toHaveLength(0);
+    f.getCall.mockImplementation(original); f.calls.get(f.grant.callId)!.phase = "connected";
+    const response = f.gate.inject({ url: "/rtc/v1/validate?access_token=" + await f.token() });
+    await vi.waitFor(() => expect(f.observed).toHaveLength(1)); f.calls.get(f.grant.callId)!.phase = "ended"; delay.resolve();
+    expect((await response).statusCode).toBe(403);
+  });
+  it("checks current phase again after durable handshake write and never dispatches ended call", async () => {
+    const f = await fixture(); let reads = 0; const original = f.getCall.getMockImplementation()!;
+    f.getCall.mockImplementation(async id => { if (++reads === 3) f.calls.get(id)!.phase = "ended"; return original(id); });
+    const c = await f.connect(); await vi.waitFor(() => expect(c.socket.readyState).toBe(3));
+    expect(f.observed).toHaveLength(0);
+    const rows = await f.store.transact([], tx => tx.scan<{ state: string }>(VOICE_GATEWAY_PENDING_PREFIX));
+    expect(rows).toHaveLength(1); expect(rows[0]!.value.state).toBe("dispatched");
+  });
+  it("never dispatches after owner loss during the final call-store authority await", async () => {
+    let lost = false;
+    const f = await fixture({ owner: { assertOwned: async () => { if (lost) throw new Error("synthetic-lost-owner"); } } });
+    const entered = deferred<void>(), release = deferred<void>(); let reads = 0; const original = f.getCall.getMockImplementation()!;
+    f.getCall.mockImplementation(async id => { if (++reads === 3) { entered.resolve(); await release.promise; } return original(id); });
+    const c = await f.connect(); await entered.promise; lost = true; release.resolve();
+    await vi.waitFor(() => expect(c.socket.readyState).toBe(3)); expect(f.observed).toHaveLength(0);
+  });
+  it("records a real late ACK after end but never forwards it or creates app/install completion proof", async () => {
+    const delay = deferred<void>(), f = await fixture({ delay: delay.promise, handshakeTimeoutMs: 1500, callStatePollMs: 10 });
+    const c = await f.connect(), frames: unknown[] = []; c.socket.on("message", (data: unknown) => frames.push(data)); await f.dispatched.promise;
+    f.calls.get(f.grant.callId)!.phase = "ended";
+    await vi.waitFor(() => expect(c.socket.readyState).toBe(3));
+    let rows = await f.store.transact([], tx => tx.scan<{ state: string }>(VOICE_GATEWAY_PENDING_PREFIX)); expect(rows[0]!.value.state).toBe("dispatched");
+    delay.resolve();
+    await vi.waitFor(async () => { rows = await f.store.transact([], tx => tx.scan<{ state: string }>(VOICE_GATEWAY_PENDING_PREFIX)); expect(rows[0]!.value.state).toBe("acknowledged"); });
+    await vi.waitFor(() => expect(f.provider.removeParticipant).toHaveBeenCalledWith(f.room, f.grant.identity));
+    expect(frames).toHaveLength(0);
+    expect(await f.store.transact([], tx => tx.scan("voice-signaling-gateway:v1:completed:"))).toHaveLength(0);
+    expect(await f.store.transact([], tx => tx.scan("voice-signaling-gateway:v1:grant-completed:"))).toHaveLength(0);
+  });
+  it.each(["upstream", "downstream"] as const)("denies terminal signaling on a %s event while other scoped and legacy calls continue", async direction => {
+    const f = await fixture(), c = await f.connect(); await c.first;
+    const otherCall = randomUUID(), other = await f.ledger.issueGrant(f.owner, f.install, otherCall, "cop-call-" + otherCall, new Date());
+    const unaffected = await f.connect("/rtc", "", await f.token(other.identity, other.room)); await unaffected.first;
+    const legacy = await f.connect("/rtc", "", await f.token("legacy-subject")); await legacy.first;
+    f.calls.get(f.grant.callId)!.phase = "ended";
+    const blockedFrames: unknown[] = []; c.socket.on("message", (data: unknown) => blockedFrames.push(data));
+    if (direction === "upstream") f.backendSockets.get(f.grant.identity)!.send(new SignalResponse({ message: { case: "leave", value: new LeaveRequest() } }).toBinary());
+    else c.socket.send("synthetic-client-event");
+    await vi.waitFor(() => expect(c.socket.readyState).toBe(3));
+    await vi.waitFor(() => expect(f.provider.removeParticipant).toHaveBeenCalledWith(f.room, f.grant.identity));
+    expect(blockedFrames).toHaveLength(0); expect(f.clientFrames).toHaveLength(0);
+    expect(unaffected.socket.readyState).toBe(1); expect(legacy.socket.readyState).toBe(1);
+    expect(f.provider.removeParticipant).toHaveBeenCalledTimes(1);
+  });
+  it("idle sweep is single-flight, grouped by canonical call and closes scoped sessions on authority outage", async () => {
+    const f = await fixture({ callStatePollMs: 10 }), c = await f.connect(); await c.first;
+    const secondOwner = actor("synthetic-user-B"), secondInstall = randomUUID(); await f.ledger.attestInstallation(secondOwner, secondInstall, new Date());
+    const sameCall = await f.ledger.issueGrant(secondOwner, secondInstall, f.grant.callId, f.room, new Date());
+    const second = await f.connect("/rtc", "", await f.token(sameCall.identity, f.room)); await second.first;
+    const legacy = await f.connect("/rtc", "", await f.token("legacy-subject")); await legacy.first;
+    f.getCall.mockClear(); const entered = deferred<void>(), release = deferred<void>();
+    f.getCall.mockImplementation(async () => { entered.resolve(); await release.promise; throw new Error("synthetic-store-outage"); });
+    await entered.promise; await new Promise(resolve => setTimeout(resolve, 40)); expect(f.getCall).toHaveBeenCalledTimes(1);
+    release.resolve(); await vi.waitFor(() => { expect(c.socket.readyState).toBe(3); expect(second.socket.readyState).toBe(3); });
+    expect(legacy.socket.readyState).toBe(1); await vi.waitFor(() => expect(f.provider.removeParticipant).toHaveBeenCalledTimes(2));
+  });
+  it("terminal operational remove404 remains unresolved, never an app/install cleanup receipt", async () => {
+    const provider = { removeParticipant: vi.fn(async () => { throw Object.assign(new Error("synthetic-404"), { status: 404 }); }), listParticipants: vi.fn(async () => []) };
+    const f = await fixture({ provider, callStatePollMs: 10 }), c = await f.connect(); await c.first; f.calls.get(f.grant.callId)!.phase = "ended";
+    await vi.waitFor(() => expect(c.socket.readyState).toBe(3)); await vi.waitFor(() => expect(provider.removeParticipant).toHaveBeenCalledTimes(1));
+    await f.ledger.revokeInstallation(f.owner, f.install, randomUUID(), new Date());
+    expect((await f.revoke()).statusCode).toBe(503); expect(provider.listParticipants).not.toHaveBeenCalled();
+    const rows = await f.store.transact([], tx => tx.scan<{ state: string }>(VOICE_GATEWAY_PENDING_PREFIX)); expect(rows[0]!.value.state).toBe("acknowledged");
+    expect(await f.store.transact([], tx => tx.scan("voice-signaling-gateway:v1:grant-completed:"))).toHaveLength(0);
+  });
+});
+
 describe("scoped provider revocation evidence", () => {
   it("requires durable fence and body-bound short-lived service JWT before provider deletion", async () => {
     const f = await fixture(); expect((await f.revoke()).statusCode).toBe(409);
@@ -254,7 +378,7 @@ describe("scoped provider revocation evidence", () => {
       removed.add(identity);
     });
     const f = await fixture({ provider: { removeParticipant, listParticipants: async () => [] } });
-    second = await f.ledger.issueGrant(f.owner, f.install, randomUUID(), "cop-call-" + randomUUID(), new Date());
+    const secondCall = randomUUID(); second = await f.ledger.issueGrant(f.owner, f.install, secondCall, "cop-call-" + secondCall, new Date());
     const firstConnection = await f.connect(); await firstConnection.first;
     const secondConnection = await f.connect("/rtc", "", await f.token(second.identity, second.room)); await secondConnection.first;
     firstConnection.socket.terminate(); secondConnection.socket.terminate();

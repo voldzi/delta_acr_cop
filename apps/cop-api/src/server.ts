@@ -339,6 +339,7 @@ import {
   type VoiceCallMediaCredentials,
   type VoiceCallMediaIssuer
 } from "./voice-call-media.js";
+import { createVoiceCallAdmission, withVoiceCallStateDeadline } from "./voice-call-admission.js";
 import {
   createVoiceCallStoreFromEnv,
   isTerminalPhase,
@@ -1154,12 +1155,32 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const voiceGrantLedger = options.voiceGrantLedger ?? createVoiceGrantLedgerFromEnv(mobilityRuntimeStore);
   const voiceGrantRevoker = options.voiceGrantRevoker ?? createVoiceGrantRevokerFromEnv();
   const voiceCallMediaIssuer = options.voiceCallMediaIssuer ?? createVoiceCallMediaIssuerFromEnv(process.env, voiceGrantLedger);
+  const assertVoiceCallAdmission = createVoiceCallAdmission(voiceCallStore);
   registerVoiceGrantRevocationRoutes(app, voiceGrantLedger, voiceGrantRevoker, now);
+  function usesScopedVoiceGrants(actor: AuthenticatedActor): boolean {
+    const dedicatedClientId = voiceGrantLedger?.options.clientId ?? jizdaClientId;
+    return Boolean(voiceGrantLedger?.owns(actor) || (dedicatedClientId && actor.authorizedParty === dedicatedClientId));
+  }
+  async function denyVoiceMedia(request: FastifyRequest, reply: FastifyReply, error: unknown,
+    onDenied?: () => Promise<void>): Promise<void> {
+    let known = error instanceof VoiceGrantError ? error : new VoiceGrantError(503, "VOICE_GRANTS_UNAVAILABLE");
+    try { if (onDenied) await withVoiceCallStateDeadline(onDenied); }
+    catch { known = new VoiceGrantError(503, "VOICE_CALL_STATE_UNAVAILABLE"); }
+    sendError(reply, known.status, known.code, "Ověřený hlasový přístup nyní není dostupný.", correlationIdFrom(request.headers["x-correlation-id"]));
+  }
+  async function verifyVoiceMediaResponse(request: FastifyRequest, reply: FastifyReply, call: VoiceCallRecord,
+    actor: AuthenticatedActor, media: VoiceCallMediaCredentials | undefined, onDenied?: () => Promise<void>): Promise<boolean> {
+    if (!media || !usesScopedVoiceGrants(actor)) return true;
+    try {
+      // Run after the final profile/notification await. This is a current-state
+      // guard, not an atomic transaction with the caller's later SFU join.
+      await assertVoiceCallAdmission({ callId: call.callId, room: `cop-call-${call.callId}` }, now());
+      return true;
+    } catch (error) { await denyVoiceMedia(request, reply, error, onDenied); return false; }
+  }
   async function scopedVoiceInstallation(request: FastifyRequest, reply: FastifyReply, actor: AuthenticatedActor,
     onDenied?: () => Promise<void>): Promise<string | undefined | null> {
-    const dedicatedClientId = voiceGrantLedger?.options.clientId ?? jizdaClientId;
-    const dedicated = voiceGrantLedger?.owns(actor) || (!!dedicatedClientId && actor.authorizedParty === dedicatedClientId);
-    if (!dedicated) return undefined;
+    if (!usesScopedVoiceGrants(actor)) return undefined;
     try {
       if (!voiceGrantLedger || voiceGrantLedger.options.intakeEnabled === false) throw new VoiceGrantError(503, "VOICE_GRANTS_UNAVAILABLE");
       const installationId = request.headers["x-cop-installation-id"];
@@ -1167,9 +1188,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       await voiceGrantLedger.assertInstallation(actor, installationId, now());
       return installationId.toLowerCase();
     } catch (error) {
-      const known = error instanceof VoiceGrantError ? error : new VoiceGrantError(503, "VOICE_GRANTS_UNAVAILABLE");
-      await onDenied?.();
-      sendError(reply, known.status, known.code, "Ověřený hlasový přístup nyní není dostupný.", correlationIdFrom(request.headers["x-correlation-id"]));
+      await denyVoiceMedia(request, reply, error, onDenied);
       return null;
     }
   }
@@ -1177,11 +1196,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     actor: AuthenticatedActor, onDenied?: () => Promise<void>): Promise<VoiceCallMediaCredentials | null> {
     const installationId = await scopedVoiceInstallation(request, reply, actor, onDenied);
     if (installationId === null) return null;
-    try { return await voiceCallMediaIssuer.issue(call, actor, now(), installationId); }
+    try {
+      const target = { callId: call.callId, room: `cop-call-${call.callId}` };
+      if (installationId !== undefined) await assertVoiceCallAdmission(target, now());
+      const media = await voiceCallMediaIssuer.issue(call, actor, now(), installationId);
+      if (installationId !== undefined) await assertVoiceCallAdmission(target, now());
+      return media;
+    }
     catch (error) {
-      const known = error instanceof VoiceGrantError ? error : new VoiceGrantError(503, "VOICE_GRANTS_UNAVAILABLE");
-      await onDenied?.();
-      sendError(reply, known.status, known.code, "Ověřený hlasový přístup nyní není dostupný.", correlationIdFrom(request.headers["x-correlation-id"]));
+      await denyVoiceMedia(request, reply, error, onDenied);
       return null;
     }
   }
@@ -5449,7 +5472,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const media = await issueVoiceMedia(request, reply, call, actor, () => abortVoiceMediaClaim(call, actor));
       if (!media) return reply;
-      return reply.code(201).send(voiceCallAPIResponse(call, actor.subjectId, media, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id))));
+      const peer = await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id));
+      if (!await verifyVoiceMediaResponse(request, reply, call, actor, media, () => abortVoiceMediaClaim(call, actor))) return reply;
+      return reply.code(201).send(voiceCallAPIResponse(call, actor.subjectId, media, peer));
     },
     voiceCalls: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -5517,7 +5542,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           ? await issueVoiceMedia(request, reply, call, actor)
           : undefined;
       if (media === null) return reply;
-      return voiceCallAPIResponse(call, actor.subjectId, media, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id)));
+      const peer = await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id));
+      if (!await verifyVoiceMediaResponse(request, reply, call, actor, media)) return reply;
+      return voiceCallAPIResponse(call, actor.subjectId, media, peer);
     },
     transitionVoiceCall: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -5609,7 +5636,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         await sendVoiceCallLifecycleNotification({ actor, action: "answered_elsewhere", call: result.record,
           recipientUserIds: [actor.subjectId], requestNow: now() });
       }
-      return voiceCallAPIResponse(result.record, actor.subjectId, media, await readVoiceCallPeer(result.record, actor.subjectId, id => userProfileStore.getProfile(id)));
+      const peer = await readVoiceCallPeer(result.record, actor.subjectId, id => userProfileStore.getProfile(id));
+      if (!await verifyVoiceMediaResponse(request, reply, result.record, actor, media,
+        result.changed && input.action === "accept" ? () => abortVoiceMediaClaim(result.record, actor) : undefined)) return reply;
+      return voiceCallAPIResponse(result.record, actor.subjectId, media, peer);
     },
     conversationDetail: async (request, reply) => {
       const actor = requireActor(request, reply);

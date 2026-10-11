@@ -5,6 +5,7 @@ import { CsmMessagingProvider } from "./messaging-provider.js";
 import { MemoryMobilityStore, type MobilityStore } from "./mobility-store.js";
 import { clearJwksCacheForTests, type AuthenticatedActor } from "./security.js";
 import { buildServer } from "./server.js";
+import { InMemoryUserProfileStore } from "./user-profile-store.js";
 import { LiveKitVoiceCallMediaIssuer } from "./voice-call-media.js";
 import { InMemoryVoiceCallStore, type VoiceCallRecord } from "./voice-call-store.js";
 import { VoiceGrantError, VoiceGrantLedger, VOICE_GRANT_IDENTITY_PREFIX, type VoiceScopedGrant } from "./voice-grant-ledger.js";
@@ -124,6 +125,98 @@ describe("scoped LiveKit media issuance", () => {
 });
 
 describe("authenticated scoped voice API integration", () => {
+  it.each(["mint", "peer"] as const)("does not return scoped media when the call ends during the %s await", async (stage) => {
+    const f = authFixture(); await f.grants.attestInstallation(actor(), installationA, fixedNow);
+    const issuerService = mediaIssuer(f.grants), issueMedia = issuerService.issue.bind(issuerService);
+    const profiles = new InMemoryUserProfileStore();
+    let issuedCall: VoiceCallRecord | undefined;
+    const end = async () => {
+      expect(issuedCall).toBeDefined();
+      await f.calls.transition(issuedCall!.callId, { action: "cancel", actorSubjectId: actor().subjectId, now: fixedNow.toISOString() });
+    };
+    vi.spyOn(issuerService, "issue").mockImplementation(async (...args) => {
+      const result = await issueMedia(...args); issuedCall = args[0];
+      if (stage === "mint") await end();
+      return result;
+    });
+    if (stage === "peer") vi.spyOn(profiles, "getProfile").mockImplementation(async () => {
+      if (issuedCall) await end();
+      return null;
+    });
+    const app = buildServer({ messagingProvider: f.provider, mobilityStore: f.store, voiceGrantLedger: f.grants,
+      voiceCallMediaIssuer: issuerService, voiceCallStore: f.calls, userProfileStore: profiles, now: () => fixedNow });
+    try {
+      const result = await app.inject({ method: "POST", url: "/api/v1/messaging/calls",
+        headers: headers(actor().subjectId, installationA), payload: { roomId: matrixRoom } });
+      expect(result.statusCode).toBe(403); expect(result.json().error.code).toBe("VOICE_CALL_ADMISSION_DENIED");
+      expect(result.json()).not.toHaveProperty("media");
+      expect(await f.calls.get(issuedCall!.callId)).toMatchObject({ phase: "cancelled" });
+      expect(await f.store.transact([], tx => tx.scan("voice-grant-ledger:v1:identity:"))).toHaveLength(1);
+    } finally { await app.close(); }
+  });
+
+  it("rechecks accepted call state after answered-elsewhere notification before returning media", async () => {
+    const f = authFixture(); await f.grants.attestInstallation(actor(), installationA, fixedNow);
+    const incoming = await f.calls.create({ now: fixedNow.toISOString(), expiresAt: "2026-10-11T12:10:00Z",
+      initiatorSubjectId: "synthetic-caller", participantSubjectIds: [actor().subjectId], roomId: matrixRoom,
+      kind: "direct", title: "Synthetic incoming" });
+    f.notification.mockImplementation(async (...args) => {
+      if (args[3].type === "chat.voice_call.answered_elsewhere") await f.calls.transition(incoming.callId,
+        { action: "end", actorSubjectId: actor().subjectId, now: fixedNow.toISOString() });
+      return { status: "online", enabled: true, providerId: "csm.messaging", warnings: [] } as never;
+    });
+    const app = buildServer({ messagingProvider: f.provider, mobilityStore: f.store, voiceGrantLedger: f.grants,
+      voiceCallMediaIssuer: mediaIssuer(f.grants), voiceCallStore: f.calls, now: () => fixedNow });
+    try {
+      const result = await app.inject({ method: "POST", url: `/api/v1/messaging/calls/${incoming.callId}/actions`,
+        headers: headers(actor().subjectId, installationA), payload: { action: "accept" } });
+      expect(result.statusCode).toBe(403); expect(result.json().error.code).toBe("VOICE_CALL_ADMISSION_DENIED");
+      expect(result.json()).not.toHaveProperty("media"); expect(await f.calls.get(incoming.callId)).toMatchObject({ phase: "ended" });
+    } finally { await app.close(); }
+  });
+
+  it("returns sanitized 503 when the authoritative call state becomes unavailable after mint", async () => {
+    const f = authFixture(); await f.grants.attestInstallation(actor(), installationA, fixedNow);
+    const issuerService = mediaIssuer(f.grants), issueMedia = issuerService.issue.bind(issuerService);
+    vi.spyOn(issuerService, "issue").mockImplementation(async (...args) => {
+      const result = await issueMedia(...args);
+      vi.spyOn(f.calls, "get").mockRejectedValue(new Error("private-call-store-detail"));
+      vi.spyOn(f.calls, "transition").mockRejectedValue(new Error("private-compensation-detail"));
+      return result;
+    });
+    const app = buildServer({ messagingProvider: f.provider, mobilityStore: f.store, voiceGrantLedger: f.grants,
+      voiceCallMediaIssuer: issuerService, voiceCallStore: f.calls, now: () => fixedNow });
+    try {
+      const result = await app.inject({ method: "POST", url: "/api/v1/messaging/calls",
+        headers: headers(actor().subjectId, installationA), payload: { roomId: matrixRoom } });
+      expect(result.statusCode).toBe(503); expect(result.json().error.code).toBe("VOICE_CALL_STATE_UNAVAILABLE");
+      expect(result.json()).not.toHaveProperty("media"); expect(result.body).not.toContain("private-");
+    } finally { await app.close(); }
+  });
+
+  it("bounds both a stalled post-mint read and stalled denial compensation without returning media", async () => {
+    const f = authFixture(); await f.grants.attestInstallation(actor(), installationA, fixedNow);
+    const issuerService = mediaIssuer(f.grants), issueMedia = issuerService.issue.bind(issuerService);
+    let entered!: () => void; const minted = new Promise<void>(resolve => { entered = resolve; });
+    vi.spyOn(issuerService, "issue").mockImplementation(async (...args) => {
+      const result = await issueMedia(...args);
+      vi.spyOn(f.calls, "get").mockImplementation(() => new Promise(() => undefined));
+      vi.spyOn(f.calls, "transition").mockImplementation(() => new Promise(() => undefined));
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }); entered();
+      return result;
+    });
+    const app = buildServer({ messagingProvider: f.provider, mobilityStore: f.store, voiceGrantLedger: f.grants,
+      voiceCallMediaIssuer: issuerService, voiceCallStore: f.calls, now: () => fixedNow });
+    try {
+      const response = app.inject({ method: "POST", url: "/api/v1/messaging/calls",
+        headers: headers(actor().subjectId, installationA), payload: { roomId: matrixRoom } });
+      await minted; await vi.advanceTimersByTimeAsync(10_001);
+      const result = await response;
+      expect(result.statusCode).toBe(503); expect(result.json().error.code).toBe("VOICE_CALL_STATE_UNAVAILABLE");
+      expect(result.json()).not.toHaveProperty("media"); expect(f.calls.transition).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); await app.close(); }
+  });
+
   it("requires online server bootstrap ownership before creating or notifying a call, then persists an opaque refreshed identity", async () => {
     const f = authFixture(), create = vi.spyOn(f.calls, "create"), preflight = vi.spyOn(f.grants, "assertInstallation");
     const app = buildServer({ messagingProvider: f.provider, mobilityStore: f.store, voiceGrantLedger: f.grants,

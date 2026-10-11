@@ -11,6 +11,9 @@ alter firewall/network segmentation as part of this source change.
    it as one supervised process/container with the existing COP PostgreSQL
    connection, verified OIDC issuer/dedicated Jízda client and existing LiveKit
    API key/secret. Do not expose all other COP credentials to this process.
+   The terminal-admission candidate also requires explicit
+   `COP_VOICE_CALL_STORE=postgres` and the same authoritative COP call table.
+   Auto/memory/disabled startup is refused; a lookup outage fails closed.
 2. Configure `COP_VOICE_SIGNAL_GATEWAY_BACKEND_URL` as the private existing SFU
    origin, `COP_VOICE_SIGNAL_GATEWAY_CONTROL_URL` as the private gateway origin,
    and the same `COP_VOICE_SCOPED_GRANT_MAX_AGE_SECONDS` on API and gateway.

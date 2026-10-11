@@ -442,3 +442,14 @@ The JSON OpenAPI also marks all four `/rtc` signaling/validation paths and
 operation-level servers. They belong to a separately started gateway, not the
 ordinary COP API. All new intake/acceptance flags default off. Legacy
 `csm-mobile` keeps its existing media contract. No production activation occurs.
+
+The next source candidate adds canonical call-state admission for scoped media:
+exact call/room, current phase and existing non-connected deadlines. API checks
+before/after mint and after the last response await; gateway checks dispatch,
+ACK and active signaling. Terminal/missing/mismatch is403
+`VOICE_CALL_ADMISSION_DENIED`; state dependency failure is503
+`VOICE_CALL_STATE_UNAVAILABLE`. There are no new mobile JSON fields in this
+delta. See [integration47](integration/47_VOICE_TERMINAL_ADMISSION_AND_COMPACTION_PLAN.md).
+
+Scoped state lookup and denial compensation each stop waiting after5seconds.
+An unresolved compensation is503, never a successful terminal/provider receipt.

@@ -4,6 +4,8 @@ import { pathToFileURL } from "node:url";
 import { PostgresMobilityStore } from "./mobility-store.js";
 import { VoiceGrantLedger } from "./voice-grant-ledger.js";
 import { buildVoiceAdmissionGate, type VoiceGatewayOwner } from "./voice-admission-gate.js";
+import { PostgresVoiceCallStore } from "./voice-call-store.js";
+import { createVoiceCallAdmission } from "./voice-call-admission.js";
 
 /** Dedicated gateway lock, separate from the existing Dispatch singleton. Loss is
  * terminal for this process: never reconnect/adopt old in-memory WS ownership.
@@ -54,35 +56,41 @@ export async function startVoiceAdmissionGateway(env: NodeJS.ProcessEnv = proces
   if (env.COP_VOICE_SIGNAL_GATEWAY_ENABLED !== "true") throw new Error("Voice signaling gateway is disabled.");
   const apiKey = required(env, "COP_LIVEKIT_API_KEY"), apiSecret = required(env, "COP_LIVEKIT_API_SECRET");
   const connectionString = required(env, "COP_DATABASE_URL");
+  if (!["postgres", "postgresql"].includes(env.COP_VOICE_CALL_STORE?.trim().toLowerCase() ?? "")) throw new Error("Explicit persistent voice call store required.");
   const sslMode = env.COP_DATABASE_SSL?.trim().toLowerCase();
   if (sslMode && !["false", "0", "true", "1", "require"].includes(sslMode)) throw new Error("Unsupported PostgreSQL TLS configuration.");
   const config = { connectionString, connectionTimeoutMillis: 5000, query_timeout: 5000,
     ssl: ["true", "1", "require"].includes(sslMode ?? "") ? { rejectUnauthorized: true } : false };
-  const store = new PostgresMobilityStore({ ...config, max: 3, application_name: "cop-voice-signaling-store" });
   const backendUrl = required(env, "COP_VOICE_SIGNAL_GATEWAY_BACKEND_URL");
   const providerUrl = new URL(backendUrl);
   if (providerUrl.protocol === "ws:") providerUrl.protocol = "http:";
   if (providerUrl.protocol === "wss:") providerUrl.protocol = "https:";
+  const issuer = required(env, "COP_OIDC_ISSUER"), clientId = required(env, "COP_JIZDA_OIDC_CLIENT_ID");
+  const maxGrantAgeSeconds = Number(env.COP_VOICE_SCOPED_GRANT_MAX_AGE_SECONDS ?? 86_400);
+  if (!Number.isInteger(maxGrantAgeSeconds) || maxGrantAgeSeconds < 60 || maxGrantAgeSeconds > 86_400) throw new Error("Invalid scoped voice grant maximum age.");
+  const port = Number(env.COP_VOICE_SIGNAL_GATEWAY_PORT ?? "7884");
+  if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid voice gateway port.");
   const provider = new RoomServiceClient(providerUrl.origin, apiKey, apiSecret);
+  const store = new PostgresMobilityStore({ ...config, max: 3, application_name: "cop-voice-signaling-store" });
+  // Explicit durable mode, same canonical table, bounded SQL queries. No memory
+  // fallback and no pool is allocated until all required configuration is valid.
+  const calls = new PostgresVoiceCallStore({ ...config, max: 3, application_name: "cop-voice-signaling-calls" });
   let app: Awaited<ReturnType<typeof buildVoiceAdmissionGate>> | undefined;
   const owner = new PostgresVoiceGatewayOwner(new Pool({ ...config, max: 1, application_name: "cop-voice-signaling-owner",
     keepAlive: true, keepAliveInitialDelayMillis: 1000 }), () => { void app?.close(); });
   try {
+    await calls.init();
     await owner.claim();
-    const maxGrantAgeSeconds = Number(env.COP_VOICE_SCOPED_GRANT_MAX_AGE_SECONDS ?? 86_400);
-    if (!Number.isInteger(maxGrantAgeSeconds) || maxGrantAgeSeconds < 60 || maxGrantAgeSeconds > 86_400) throw new Error("Invalid scoped voice grant maximum age.");
-    const ledger = new VoiceGrantLedger({ store, issuer: required(env, "COP_OIDC_ISSUER"), clientId: required(env, "COP_JIZDA_OIDC_CLIENT_ID"),
+    const ledger = new VoiceGrantLedger({ store, issuer, clientId,
       identitySecret: apiSecret, intakeEnabled: env.COP_VOICE_SCOPED_GRANTS_ENABLED === "true", maxGrantAgeMs: maxGrantAgeSeconds * 1000 });
-    app = await buildVoiceAdmissionGate({ ledger, apiKey, apiSecret, backendUrl, provider, owner,
+    app = await buildVoiceAdmissionGate({ ledger, apiKey, apiSecret, backendUrl, provider, owner, assertCall: createVoiceCallAdmission(calls),
       acceptedTopology: env.COP_VOICE_SIGNAL_GATEWAY_ACCEPTED === "true",
       singleConnectAttemptVerified: env.COP_VOICE_SIGNAL_SINGLE_ATTEMPT_VERIFIED === "true" });
-    app.addHook("onClose", async () => { await owner.close(); await store.close(); });
-    const port = Number(env.COP_VOICE_SIGNAL_GATEWAY_PORT ?? "7884");
-    if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid voice gateway port.");
+    app.addHook("onClose", async () => { await owner.close(); await store.close(); await calls.close(); });
     await app.listen({ port, host: env.COP_VOICE_SIGNAL_GATEWAY_HOST ?? "127.0.0.1" });
     return app;
   } catch {
-    await app?.close().catch(() => undefined); await owner.close().catch(() => undefined); await store.close().catch(() => undefined);
+    await app?.close().catch(() => undefined); await owner.close().catch(() => undefined); await store.close().catch(() => undefined); await calls.close().catch(() => undefined);
     // Database URLs, JWTs and provider errors are never written to stdout/stderr.
     throw new Error("Voice signaling gateway unavailable.");
   }

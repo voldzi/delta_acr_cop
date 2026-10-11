@@ -93,6 +93,9 @@ export function createVoiceCallStoreFromEnv(env: Record<string, string | undefin
       connectionString,
       connectionTimeoutMillis: readPositiveInteger(env.COP_DATABASE_CONNECT_TIMEOUT_MS, 5_000),
       idleTimeoutMillis: readPositiveInteger(env.COP_DATABASE_IDLE_TIMEOUT_MS, 30_000),
+      // Admission and its failure compensation must not wait forever on SQL.
+      query_timeout: 5_000,
+      statement_timeout: 5_000,
       max: readPositiveInteger(env.COP_DATABASE_POOL_MAX, 5),
       ssl: readSslConfig(env)
     });

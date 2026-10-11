@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import { PostgresMobilityStore } from "./mobility-store.js";
 import { VoiceGrantLedger } from "./voice-grant-ledger.js";
 import { PostgresVoiceGatewayOwner } from "./voice-admission-main.js";
+import { createVoiceCallStoreFromEnv, PostgresVoiceCallStore } from "./voice-call-store.js";
+import { createVoiceCallAdmission } from "./voice-call-admission.js";
 
 const connectionString = process.env.COP_VOICE_TEST_DATABASE_URL;
 if (connectionString) {
@@ -17,6 +19,54 @@ const actor = (subjectId: string) => ({ authMode: "oidc" as const, issuer, autho
 const ledger = (store: PostgresMobilityStore) => new VoiceGrantLedger({ store, issuer, clientId, identitySecret: secret });
 
 describe.skipIf(!connectionString)("isolated real PostgreSQL scoped voice", () => {
+  it("bounds actual API call-state lookup and compensation SQL when an isolated table lock stalls them", async () => {
+    const admin = new Pool({ connectionString, max: 1 }), schema = "cop_voice_" + randomUUID().replaceAll("-", "");
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    const scopedURL = new URL(connectionString!); scopedURL.searchParams.set("options", `-c search_path=${schema}`);
+    const calls = createVoiceCallStoreFromEnv({ COP_VOICE_CALL_STORE: "postgres", COP_DATABASE_URL: scopedURL.href });
+    const blocker = await admin.connect();
+    try {
+      await calls.init();
+      const now = new Date(), owner = "synthetic-call-owner";
+      const call = await calls.create({ now: now.toISOString(), expiresAt: new Date(now.getTime() + 60_000).toISOString(),
+        initiatorSubjectId: owner, participantSubjectIds: ["synthetic-call-peer"], kind: "direct",
+        roomId: "!synthetic:example.test", title: "Synthetic" });
+      // Retain one session for the transaction; Pool.query would return its
+      // idle transaction to the pool and could release this lock via idle eviction.
+      await blocker.query("BEGIN"); await blocker.query(`LOCK TABLE ${schema}.cop_voice_calls IN ACCESS EXCLUSIVE MODE`);
+      await expect(createVoiceCallAdmission(calls)({ callId: call.callId, room: "cop-call-" + call.callId }, now))
+        .rejects.toMatchObject({ status: 503, code: "VOICE_CALL_STATE_UNAVAILABLE" });
+      await expect(calls.transition(call.callId, { action: "media_failed", actorSubjectId: owner, now: now.toISOString() })).rejects.toThrow();
+      await blocker.query("ROLLBACK");
+      expect(await calls.get(call.callId)).toMatchObject({ phase: "ringing" });
+    } finally {
+      await blocker.query("ROLLBACK"); blocker.release(); await calls.close();
+      await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end();
+    }
+  }, 20_000);
+
+  it("reads canonical call end across two durable pools and denies reconnect without a local cache", async () => {
+    const admin = new Pool({ connectionString, max: 1 }), schema = "cop_voice_" + randomUUID().replaceAll("-", "");
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    const config = { connectionString, max: 3, query_timeout: 5000, options: `-c search_path=${schema}` };
+    const apiCalls = new PostgresVoiceCallStore(config), gatewayCalls = new PostgresVoiceCallStore(config);
+    try {
+      await apiCalls.init(); await gatewayCalls.init();
+      const now = new Date(), owner = "synthetic-call-owner";
+      const call = await apiCalls.create({ now: now.toISOString(), expiresAt: new Date(now.getTime() + 60_000).toISOString(),
+        initiatorSubjectId: owner, participantSubjectIds: ["synthetic-call-peer"], kind: "direct",
+        roomId: "!synthetic:example.test", title: "Synthetic" });
+      const assert = createVoiceCallAdmission(gatewayCalls), target = { callId: call.callId, room: "cop-call-" + call.callId };
+      await expect(assert(target, now)).resolves.toBeUndefined();
+      await apiCalls.transition(call.callId, { action: "cancel", actorSubjectId: owner, now: now.toISOString() });
+      expect(await gatewayCalls.get(call.callId)).toMatchObject({ phase: "cancelled" });
+      await expect(assert(target, now)).rejects.toMatchObject({ status: 403, code: "VOICE_CALL_ADMISSION_DENIED" });
+    } finally {
+      await apiCalls.close(); await gatewayCalls.close();
+      await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end();
+    }
+  });
+
   it("serializes issuance/revocation across processes and preserves exact installation fences after restart", async () => {
     const admin = new Pool({ connectionString, max: 1 }), schema = "cop_voice_" + randomUUID().replaceAll("-", "");
     await admin.query(`CREATE SCHEMA ${schema}`);

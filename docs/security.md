@@ -260,3 +260,13 @@ and accepted sole ingress are independent gates. Shared legacy identities
 remain unchanged and cannot be retrospectively assigned to Jízda. See
 [ADR0047](adr/0047_APP_SCOPED_VOICE_GRANTS_AND_ADMISSION.md) and
 [integration45](integration/45_JIZDA_VOICE_GRANTS_AND_LEGACY_MIGRATION.md).
+
+The terminal-admission source delta also checks the exact grant call/room in
+the persistent CallStore. No configured in-memory gateway fallback is accepted.
+Terminal/missing state denies join/rejoin; a lookup outage denies service with
+503. Checks around awaits and idle polling limit stale admission but do not
+make a remote SFU join atomic with COP call end. Operational exact-participant
+cleanup must not write app/installation provider completion or erase pending
+handshakes. [ADR0048](adr/0048_TERMINAL_VOICE_CALL_ADMISSION.md) and
+[integration47](integration/47_VOICE_TERMINAL_ADMISSION_AND_COMPACTION_PLAN.md)
+separate this enforcement from the unapproved compaction/retention proposal.

@@ -150,3 +150,12 @@ them or use an empty participant list as evidence that a delayed join cannot
 appear. On rollback disable new intake while preserving admission/maintenance.
 Do not perform real-account deletion, global logout or production network
 changes under this source-only handoff.
+
+For terminal-call admission, verify the exact call/room binding, end during
+credential mint, end during pending Join/ACK, active idle-call end, reconnect
+after end, call-store outage, connected call past invitation expiry and another
+legacy/scoped call remaining available. Distinguish403 known denial from503
+dependency failure. Read back durable handshake rows; terminal closure must
+not turn an uncertain dispatch into completed revocation. Do not run compaction
+or age-based deletion: [integration47](integration/47_VOICE_TERMINAL_ADMISSION_AND_COMPACTION_PLAN.md)
+is a proposal requiring separate policy/provider/restore acceptance.
