@@ -28,8 +28,9 @@ global logout. An explicit fresh-auth relink protocol must be accepted before
 activation if the product offers relinking.
 
 The real candidate cleanup adapter **cannot currently return completed**:
-it reports `matrix_devices` and `live_permissions` until accepted app-specific
-revocation adapters exist. Legacy installations additionally remain unresolved.
+the coordinated Messaging source now removes and reads back exact attested Matrix
+devices, while `live_permissions` remains unresolved. Unknown legacy installations
+and unproven Matrix ownership additionally remain pending.
 A successful APNs cleanup is not full unlink or account deletion.
 
 ```json
@@ -113,13 +114,13 @@ complete. Native UI/source parsing is not a native build or device result.
    the attested app/installation. Finish scoped revocation and prove that COP
    Mobile's sessions/permissions survive. Do not infer app ownership from ID
    prefixes or globally revoke user-level consent/voice/vehicle data.
-3. Resolve the exact Xcode hardpin through the owning approved process. Apply
+3. The human approved exact Xcode27.1 build27A9275; its published verifier passes. Apply
    the minimal SDK delta to a new frozen Jízda snapshot; keep build 1.2 (30)
    unchanged. Complete native tests including cold-start fence and account switch.
 4. Assign `cop_communication_moderator` (proposed dedicated realm role) only to
    the actual COP administrator team; verify signed role access/denial. Accept
-   public contact, report retention, evidence-key rotation and moderation/filter
-   process. Do not infer those approvals from the owner choice alone.
+   evidence-key rotation and moderation/filter process. Approved public contact is
+   podpora@zeleznalady.cz; approved report retention is90/30/180days (integration43).
 5. Build immutable COP API/Messaging images with existing deployment paths and
    all new flags false. Dedicated evidence-key creation in the production secret
    file, exact client configuration and feature activation need explicit approval.
@@ -143,3 +144,12 @@ unexecuted. Exact file hashes are in the current transfer manifest. Xcode 27.1 b
 27A9275 / iPhoneOS SDK 27.1 is installed; hardpin requires 27A9269 and was not
 changed or bypassed. No iPhone, real Matrix/APNs/LiveKit, global erasure or live
 unlink acceptance was performed. No deployment, account reset or real push.
+
+## Completion candidate, 11 October
+
+[Integration 43](43_ACCOUNT_SAFETY_COMPLETION.md) defines the dedicated client,
+secure installation UUID, mandatory uncached pre-bootstrap gate and default-off
+activation sequence. New bootstrap attestation must wait for Messaging ledger
+acceptance. Intake disablement preserves existing COP fences; removing scope
+configuration or changing issuer/client requires an approved migration. A source
+Matrix proof is not LiveKit revocation or physical acceptance.

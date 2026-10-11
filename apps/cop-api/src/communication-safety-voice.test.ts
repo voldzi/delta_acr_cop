@@ -11,7 +11,7 @@ function setup() {
   vi.spyOn(provider,"fetchConversationByRoomId").mockResolvedValue({contractVersion:"cop-messaging-conversations-v1",enabled:true,providerId:"csm.messaging",status:"online",warnings:[],conversation:{conversationId:"conversation",conversationKind:"direct",type:"direct",title:"synthetic",members:[{userId:"lab"},{userId:"peer"}],directPeer:{userId:"peer"}}});
   const notify=vi.spyOn(provider,"sendNotification").mockResolvedValue({contractVersion:"cop-messaging-notification-v1",enabled:true,providerId:"csm.messaging",status:"online",warnings:[]});
   const policy={block:vi.fn(async()=>true),directAllowed:vi.fn(async()=>false),eventMatchesPeer:vi.fn(async()=>true)};
-  const safety=new CommunicationSafetyService({store:new MemoryMobilityStore(),policy,encryptionSecret:"test-communication-evidence-secret",moderatorRole:"cop-moderator",contactEmail:"test@example.test",retentionPolicyId:"test-only",validateTarget:async()=>{}});
+  const safety=new CommunicationSafetyService({store:new MemoryMobilityStore(),policy,encryptionSecret:"test-communication-evidence-secret",moderatorRole:"cop-moderator",contactEmail:"test@example.test",retentionPolicyId:"cop-communication-retention-90d-30d-180d-v1",validateTarget:async()=>{}});
   const store=new InMemoryVoiceCallStore(),issue=vi.fn(async()=>({e2eeKey:"test-only",expiresAt:new Date(now.getTime()+60000).toISOString(),serverUrl:"wss://media.test",token:"test-only"}));
   const app=buildServer({messagingProvider:provider,communicationSafety:safety,voiceCallStore:store,voiceCallMediaIssuer:{enabled:true,issue},now:()=>now});
   return {app,store,issue,policy,notify};

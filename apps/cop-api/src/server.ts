@@ -1,5 +1,8 @@
-import { CommunicationSafetyService, CommunicationSafetyError, MessagingCommunicationPolicy, registerCommunicationSafetyRoutes } from "./communication-safety.js";
+import { COMMUNICATION_SAFETY_CONFIG_KEY, CommunicationSafetyService, CommunicationSafetyError, MessagingCommunicationPolicy, registerCommunicationSafetyRoutes } from "./communication-safety.js";
 import { JizdaAppLinkService, disconnectJizdaMessaging, registerJizdaAppLinkRoutes } from "./jizda-app-link.js";
+import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureService, type AccountErasureAdapter } from "./account-erasure.js";
+import { registerAccountErasureRoutes } from "./account-erasure-routes.js";
+import { createCOPSessionsProfilesErasureAdapter } from "./cop-sessions-profiles-erasure.js";
 import { MediaNewsSourceAdapter } from "./media-news-source.js";
 import { createSafetyNotificationStoreFromEnv, type SafetyNotificationStore } from "./safety-notification-store.js";
 import { SafetyNotificationWorker, safetyNotificationWorkerConfigFromEnv, type SafetyNotificationWorkerConfig } from "./safety-notification-worker.js";
@@ -349,6 +352,8 @@ import {
 } from "./web-session-store.js";
 
 export interface BuildServerOptions {
+  accountErasure?: AccountErasureService;
+  accountErasureAdapters?: readonly AccountErasureAdapter[];
   communicationSafety?: CommunicationSafetyService;
   jizdaAppLink?: JizdaAppLinkService;
   mediaNewsSource?: Pick<MediaNewsSourceAdapter, "fetchContext">;
@@ -1117,21 +1122,44 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
   app.addHook("onRequest", requireBearerToken);
+  const erasureEnabled = process.env.COP_ACCOUNT_ERASURE_ENABLED === "true";
+  const erasureSecret = process.env.COP_ACCOUNT_ERASURE_SECRET?.trim();
   const mobilityRuntimeStore = options.mobilityStore ?? mobilityStoreFromEnv();
+  if (erasureEnabled && (!erasureSecret || !mobilityRuntimeStore || !process.env.COP_OIDC_ISSUER)) {
+    throw new Error("Account erasure requires the persistent store, dedicated secret and verified OIDC issuer.");
+  }
+  // Keep the guard present when intake is disabled; accepted tombstones are permanent.
+  const accountErasure = options.accountErasure ?? (erasureSecret && mobilityRuntimeStore && process.env.COP_OIDC_ISSUER
+    ? new AccountErasureService({ store: mobilityRuntimeStore, identitySecret: erasureSecret,
+      issuer: process.env.COP_OIDC_ISSUER, requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS,
+      adapters: options.accountErasureAdapters ?? [createCOPSessionsProfilesErasureAdapter({ issuer: process.env.COP_OIDC_ISSUER,
+        sessions: webSessionStore, profiles: [userProfileStore, userProfileFallbackStore] })], accepted: erasureEnabled, now }) : undefined);
+  const erasureWorkerAbort = new AbortController();
+  let erasureWorkerTimer: ReturnType<typeof setInterval> | undefined;
+  let erasureWorkerRunning: Promise<void> | undefined;
+  function resumeAccountErasure() {
+    if (!accountErasure || erasureWorkerRunning || erasureWorkerAbort.signal.aborted) return;
+    erasureWorkerRunning = accountErasure.resumePending(10, erasureWorkerAbort.signal)
+      .catch(() => { if (!erasureWorkerAbort.signal.aborted) app.log.warn({ component: "account-erasure", code: "ERASURE_WORKER_UNAVAILABLE" }, "Account erasure worker paused; fences retained."); })
+      .finally(() => { erasureWorkerRunning = undefined; });
+  }
+  registerAccountErasureRoutes(app, accountErasure);
   const jizdaClientId = process.env.COP_JIZDA_OIDC_CLIENT_ID?.trim();
-  const jizdaAppLink = options.jizdaAppLink ?? (process.env.COP_JIZDA_DISCONNECT_ENABLED === "true" && mobilityRuntimeStore &&
+  const jizdaAppLink = options.jizdaAppLink ?? (mobilityRuntimeStore &&
     jizdaClientId && jizdaClientId !== process.env.COP_OIDC_CLIENT_ID && process.env.COP_OIDC_ISSUER
     ? new JizdaAppLinkService({store:mobilityRuntimeStore,clientId:jizdaClientId,issuer:process.env.COP_OIDC_ISSUER,
-      now,cleanup:actor=>disconnectJizdaMessaging(actor,messagingProvider.config)}) : undefined);
+      intakeEnabled: process.env.COP_JIZDA_DISCONNECT_ENABLED === "true", now,
+      cleanup:actor=>disconnectJizdaMessaging(actor,messagingProvider.config)}) : undefined);
   registerJizdaAppLinkRoutes(app,jizdaAppLink);
   const communicationSafetyEnabled = process.env.COP_COMMUNICATION_SAFETY_ENABLED === "true";
   const communicationPolicy = new MessagingCommunicationPolicy(messagingProvider.config);
-  const communicationSafety = options.communicationSafety ?? (communicationSafetyEnabled && mobilityRuntimeStore &&
+  const communicationSafety = options.communicationSafety ?? (mobilityRuntimeStore &&
     process.env.COP_COMMUNICATION_EVIDENCE_SECRET && process.env.COP_COMMUNICATION_MODERATOR_ROLE &&
     process.env.COP_COMMUNICATION_CONTACT_EMAIL && process.env.COP_COMMUNICATION_RETENTION_POLICY_ID
     ? new CommunicationSafetyService({ store: mobilityRuntimeStore, policy: communicationPolicy,
       encryptionSecret: process.env.COP_COMMUNICATION_EVIDENCE_SECRET, moderatorRole: process.env.COP_COMMUNICATION_MODERATOR_ROLE,
-      contactEmail: process.env.COP_COMMUNICATION_CONTACT_EMAIL, retentionPolicyId: process.env.COP_COMMUNICATION_RETENTION_POLICY_ID, now,
+      contactEmail: process.env.COP_COMMUNICATION_CONTACT_EMAIL, retentionPolicyId: process.env.COP_COMMUNICATION_RETENTION_POLICY_ID,
+      intakeEnabled: communicationSafetyEnabled, now,
       validateTarget: async (actor, target) => {
         if (target.peerSubjectId === actor.subjectId) throw new CommunicationSafetyError(400, "VALIDATION_ERROR");
         if (target.kind === "call") {
@@ -1151,8 +1179,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         }
       } }) : undefined);
   registerCommunicationSafetyRoutes(app, communicationSafety);
+  let communicationRetentionTimer: ReturnType<typeof setInterval> | undefined;
+  let communicationRetentionRunning: Promise<void> | undefined;
+  let communicationRetentionStopping = false;
+  const pruneCommunicationReports = () => {
+    if (!communicationSafety || communicationRetentionRunning || communicationRetentionStopping) return;
+    communicationRetentionRunning = communicationSafety.pruneExpired()
+      .then(() => undefined)
+      .catch(() => { app.log.warn({ component: "communication-safety", code: "REPORT_RETENTION_UNAVAILABLE" }, "Report retention sweep unavailable."); })
+      .finally(() => { communicationRetentionRunning = undefined; });
+  };
   async function enforceDirectCommunication(request: FastifyRequest, reply: FastifyReply, actor: AuthenticatedActor, peer: string): Promise<boolean> {
-    if (!communicationSafetyEnabled && !options.communicationSafety) return true;
+    if (!communicationSafety && !communicationSafetyEnabled) return true;
     try {
       if (!communicationSafety) throw new CommunicationSafetyError(503, "COMMUNICATION_POLICY_UNAVAILABLE");
       if (!await communicationSafety.options.policy.directAllowed(actor.subjectId, peer)) throw new CommunicationSafetyError(403, "COMMUNICATION_BLOCKED");
@@ -1179,6 +1217,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       && driverMeasurementPilotFlag !== "false" && driverMeasurementPilotFlag !== "0",
     pilotSubjectIds: process.env.COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS,
     oidcClientId: process.env.COP_DRIVER_MEASUREMENTS_OIDC_CLIENT_ID?.trim() || "csm-mobile",
+    cleanupOidcClientIds: process.env.COP_DRIVER_MEASUREMENTS_CLEANUP_OIDC_CLIENT_IDS,
+    oidcIssuer: process.env.COP_OIDC_ISSUER?.trim().replace(/\/$/u, ""),
     secret: driverMeasurementSecret,
     store: driverMeasurementStore,
     source: driverMeasurementSource,
@@ -1302,6 +1342,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return reply.code(204).send();
   });
   app.addHook("onReady", async () => {
+    if (mobilityRuntimeStore) {
+      // Removing deployment configuration must not silently disable already accepted fences.
+      await mobilityRuntimeStore.init();
+      const guards = await mobilityRuntimeStore.transact([], async tx => ({
+        erasure: !!await tx.get("account-erasure:configuration-v1"),
+        jizda: (await tx.scan("jizda-app-link:")).length > 0,
+        communication: !!await tx.get(COMMUNICATION_SAFETY_CONFIG_KEY) || (await tx.scan("communication-safety:report:")).length > 0
+      }));
+      if ((guards.erasure && !accountErasure) || (guards.jizda && !jizdaAppLink)) {
+        throw new Error("Accepted account fences require their configured guard during rollout and rollback.");
+      }
+      if (guards.communication && !communicationSafety) {
+        throw new Error("Accepted communication state requires its retention and policy guard during rollout and rollback.");
+      }
+    }
+    if (jizdaAppLink) await jizdaAppLink.init();
+    if (accountErasure) await accountErasure.init();
+    if (communicationSafety) await communicationSafety.init();
     if (openAiMcpAssistant) {
       try {
         await openAiMcpAssistant.init();
@@ -1358,8 +1416,32 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }, aiContextIndexRefreshSeconds * 1000);
     aiContextIndexRefreshTimer.unref?.();
     safetyNotificationWorker?.start();
+    if (communicationSafety) {
+      await communicationSafety.pruneExpired();
+      communicationRetentionTimer = setInterval(pruneCommunicationReports, 60_000);
+      communicationRetentionTimer.unref();
+    }
+    if (accountErasure) {
+      resumeAccountErasure();
+      erasureWorkerTimer = setInterval(resumeAccountErasure, 60_000);
+      erasureWorkerTimer.unref();
+    }
   });
   app.addHook("onClose", async () => {
+    communicationRetentionStopping = true;
+    if (communicationRetentionTimer) clearInterval(communicationRetentionTimer);
+    if (communicationRetentionRunning) {
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      try { await Promise.race([communicationRetentionRunning, new Promise<void>(resolve => { deadline = setTimeout(resolve, 12_000); })]); }
+      finally { if (deadline) clearTimeout(deadline); }
+    }
+    if (erasureWorkerTimer) clearInterval(erasureWorkerTimer);
+    erasureWorkerAbort.abort();
+    if (erasureWorkerRunning) {
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      try { await Promise.race([erasureWorkerRunning, new Promise<void>(resolve => { deadline = setTimeout(resolve, 12_000); })]); }
+      finally { if (deadline) clearTimeout(deadline); }
+    }
     await safetyNotificationWorker?.stop();
     await safetyNotificationStore?.close();
     await openAiMcpAssistant?.close();
@@ -1512,6 +1594,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
       return null;
     }
+    if (accountErasure && session.accessTokenExpiresAt.getTime() > Date.now()) {
+      try { await assertBffActorAllowed(session.accessToken); }
+      catch {
+        await webSessionStore.revoke(sessionId);
+        appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
+        return null;
+      }
+    }
     if (session.accessTokenExpiresAt.getTime() > Date.now() + 60_000) return session;
     if (!session.refreshToken) {
       await webSessionStore.revoke(sessionId);
@@ -1572,9 +1662,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const decoded = decodeJwt(response.access_token)?.payload;
     const subjectId = decoded?.sub?.trim();
     if (!decoded || !subjectId) throw new Error("OIDC access token does not contain a subject.");
+    if (accountErasure) await assertBffActorAllowed(response.access_token);
     const username = decoded.preferred_username?.trim() || decoded.email?.trim() || decoded.name?.trim() || subjectId;
     const profile: WebSessionProfile = {
       subjectId,
+      ...(decoded.iss ? { issuer: decoded.iss } : {}),
       username,
       name: decoded.name?.trim() || username,
       ...(decoded.email?.trim() ? { email: decoded.email.trim() } : {})
@@ -1588,6 +1680,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         ? { refreshToken: response.refresh_token ?? fallbackRefreshToken }
         : {})
     };
+  }
+
+  async function assertBffActorAllowed(verifiedToken: string): Promise<void> {
+    if (!accountErasure) return;
+    if (!await verifyOidcToken(verifiedToken)) throw new Error("Invalid BFF actor.");
+    const claims = decodeJwt(verifiedToken)?.payload;
+    if (!claims?.sub || !claims.iss) throw new Error("Invalid BFF actor.");
+    await accountErasure.assertAllowed({ authMode: "oidc", issuer: claims.iss, subjectId: claims.sub,
+      authorizedParty: claims.azp, username: "", displayName: "" });
   }
 
   function signBffTransaction(transaction: BffTransaction): string {
@@ -3374,12 +3475,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     profile: Omit<UserProfileRecord, "createdAt" | "updatedAt">
   ): Promise<UserProfileRecord> {
     if (!(await ensureUserProfileStoreReady())) {
+      if (accountErasure) throw new Error("Persistent profile storage is required by the erasure guard.");
       return userProfileFallbackStore.upsertProfile(profile);
     }
     try {
       return await userProfileStore.upsertProfile(profile);
     } catch (error) {
       markUserProfileStoreDegraded(error);
+      if (accountErasure) throw error;
       return userProfileFallbackStore.upsertProfile(profile);
     }
   }
@@ -3401,6 +3504,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     acknowledgement: AlertAcknowledgement
   ): Promise<void> {
     if (!(await ensureUserProfileStoreReady())) {
+      if (accountErasure) throw new Error("Persistent profile storage is required by the erasure guard.");
       await userProfileFallbackStore.acknowledgeAlert(actor.subjectId, acknowledgement);
       return;
     }
@@ -3408,6 +3512,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       await userProfileStore.acknowledgeAlert(actor.subjectId, acknowledgement);
     } catch (error) {
       markUserProfileStoreDegraded(error);
+      if (accountErasure) throw error;
       await userProfileFallbackStore.acknowledgeAlert(actor.subjectId, acknowledgement);
     }
   }
@@ -4939,6 +5044,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       (await readUserProfile(actor)) ??
       (await upsertUserProfile({
         alertPreferences: {},
+        ...(actor.issuer ? { issuer: actor.issuer } : {}),
         displayName: actor.displayName,
         ...(actor.email ? { email: actor.email } : {}),
         preferences: {},
@@ -5111,16 +5217,30 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
       const body = isRecord(request.body) ? request.body : {};
       const deviceId = normalizeMatrixDeviceId(body.deviceId);
-      if (body.deviceId !== undefined && !deviceId) {
+      const installationId = typeof body.installationId === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(body.installationId)
+        ? body.installationId.toLowerCase() : undefined;
+      const dedicatedJizda = !!jizdaClientId && actor.authMode === "oidc" && actor.authorizedParty === jizdaClientId;
+      if ((request.body !== undefined && !isRecord(request.body)) ||
+          Object.keys(body).some(key => key !== "deviceId" && key !== "installationId") ||
+          (body.deviceId !== undefined && !deviceId) ||
+          (body.installationId !== undefined && (!installationId || !deviceId || actor.authMode !== "oidc" || !actor.issuer || !actor.authorizedParty)) ||
+          (dedicatedJizda && (!deviceId || !installationId))) {
         return sendError(
           reply,
           400,
           "VALIDATION_ERROR",
-          "Matrix deviceId may contain only A-Z, a-z, 0-9, dot, underscore, equals and dash, with max length 64.",
+          "Matrix bootstrap accepts only deviceId and installationId; the dedicated app requires both with verified OIDC scope.",
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
-      return messagingProvider.fetchMatrixBootstrap(actor, now(), deviceId);
+      const bootstrap = await messagingProvider.fetchMatrixBootstrap(actor, now(), deviceId, installationId);
+      if (installationId && (bootstrap.status !== "online" || !bootstrap.chatAvailable || !bootstrap.tokenAvailable)) {
+        reply.header("Cache-Control", "no-store");
+        return sendError(reply, 503, "MESSAGING_INSTALLATION_UNAVAILABLE", "Ověřený komunikační přístup nyní není dostupný.",
+          correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      return bootstrap;
     },
     e2eeResetAuth: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -6534,6 +6654,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       if (!profile) {
         profile = await userProfileStore.upsertProfile({ subjectId: actor.subjectId, username: actor.username, displayName: actor.displayName,
+          ...(actor.issuer ? { issuer: actor.issuer } : {}),
           ...(actor.email ? { email: actor.email } : {}), alertPreferences: {}, preferences: {} });
       }
       const saved = await userProfileStore.setSafetyNotificationsEnabled(actor.subjectId, request.body.enabled);
@@ -6565,6 +6686,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
     const profile = await upsertUserProfile({
       alertPreferences,
+      ...(actor.issuer ? { issuer: actor.issuer } : {}),
       displayName: actor.displayName,
       ...(actor.email ? { email: actor.email } : {}),
       preferences,

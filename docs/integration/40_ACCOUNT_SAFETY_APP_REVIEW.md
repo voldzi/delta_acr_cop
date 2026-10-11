@@ -3,6 +3,10 @@
 Date: 2026-10-11. No production activation, restart, account deletion, reset,
 real test message or real APNs delivery was performed for this change.
 
+Current completion delta and approved contact/retention are documented in
+[integration43](43_ACCOUNT_SAFETY_COMPLETION.md). The first-phase test and
+transfer evidence below remains historical evidence for that exact revision.
+
 ## Coordination revisions and decisions
 
 The source candidate starts from COP `78d4f87`, Messaging `05dac88` and COP
@@ -23,8 +27,9 @@ scoped delta onto the production source before any release.
 
 Human decisions verified in Jízda on 11 October: unlink only Jízda; moderation
 by the COP administrator; a separately approved whole-account management/removal
-action. No new production deployment, retention policy, actual account erasure
-or Xcode-pin change is implied by those decisions.
+action. Later direct human approvals selected contact podpora@zeleznalady.cz,
+90/30/180day retention and exact installed Xcode27.1 build27A9275. These
+approvals do not activate production or establish completed account erasure.
 
 - [Scoped unlink, exact SDK integration and proposed deployment](41_JIZDA_SCOPED_DISCONNECT.md).
 - [Separate real whole-account removal plan and canonical URL gate](42_COP_ACCOUNT_REMOVAL_PLAN.md).
@@ -64,14 +69,16 @@ history, live location, a voice transcript or decrypted content automatically.
 Status `submitted` is accepted for review, not resolved. `reviewing` is active
 review, `resolved` carries an operator resolution. `action_taken` records an
 operator attestation, not an automatic redaction or ban performed by this API.
-The actual operating process, filters, role assignment, public contact, retention
-and any automated action must be accepted before use as an App Review claim.
+The actual operating process, filters, role assignment and any automated action
+must be accepted before use as an App Review claim. Contact and retention are
+approved; see integration43 for enforced source behavior and production gates.
 
 Reports are capped at 20 new cases per actor/hour and 10,000 retained cases. The
 pending index is bounded and queue reading does not decrypt every historical
-case. Exhausted capacity is 503; actor rate limit is 429 with Retry-After. No
-report is automatically deleted before a policy is approved. The rate/dedup and
-report cleanup, key rotation and deletion linkage belong in that policy.
+case. Exhausted capacity is 503; actor rate limit is 429 with Retry-After. The approved policy now removes evidence at min(created+90days,
+firstclosure+30days) and report details/audit by180days. A content-free own
+receipt remains; global erasure, backup replay and evidence-key rotation still
+need acceptance.
 
 Unknown/unavailable upstream state fails 503. No direct OpenAI, shared-key,
 local-block-only or unauthenticated fallback is added. Reports are not MCP tools
@@ -143,10 +150,12 @@ hashes are recorded in the transfer manifest.
 Foundation model/preflight checks are not native SDK/XCTest, UI or HTTP tests.
 A direct isolated XCTest attempt returned `no such module XCTest`.
 
-Pinned SDK verifier at `scripts/verify-apple-toolchain.sh:5` requires Xcode
-27.1 build 27A9269; installed build is 27A9275 (iPhoneOS SDK 27.1). The exact gate was not bypassed and
-no toolchain was downloaded. Jízda's owner reports its approved installed27.1
-host tests; those results predate this delta and must not be attributed to it.
+The first-phase verifier required Xcode27.1 build27A9269 while installed
+build was27A9275. After explicit human approval, published SDK6e4b028 pins
+exact build27A9275 and its cheap verifier passed. Jízda's owner subsequently
+reported248nativeSDKtests, twoexplicit skips and zero failures for its frozen
+first-phase candidate. These results do not verify the newer lifecycle delta;
+no toolchain was downloaded or gate bypassed.
 Apply this minimal delta to the frozen Jízda candidate and run its accepted
 full toolchain/tests. SDK skeleton, 19 device-contract fixtures and project
 configuration validators passed; the full SDK XCTest suite was not run here.
@@ -183,9 +192,10 @@ account or expose existing credentials. Use separately approved synthetic
 accounts, with least-privilege user roles, fresh history and both app scopes;
 record availability and reviewer instructions without putting passwords in Git.
 
-COP administrator is the selected moderation owner, but approved public
-contact, actual moderator-role assignment, report-retention policy and dedicated
-evidence-key lifecycle remain unfilled production gates. They cannot be
+COP administrator is the selected moderation owner. The approved public contact
+is podpora@zeleznalady.cz and retention is90/30/180days. Actual moderator-role
+assignment, operating acceptance and dedicated evidence-key lifecycle remain
+unfilled production gates. They cannot be
 inferred from an account email or a successful build. No deletion URL is
 available and no working global erasure is claimed. CarPlay submission receipt
 is separate from Apple entitlement approval; this candidate does not activate it.

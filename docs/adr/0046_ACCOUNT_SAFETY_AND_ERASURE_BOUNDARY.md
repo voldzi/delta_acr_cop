@@ -36,8 +36,9 @@ legacy/Matrix/live permission cleanup stays pending; 202 is not completion.
 The actual adapter cannot yet prove full unlink. No global logout/delete occurs.
 
 Reporting uses the proposed dedicated cop_communication_moderator realm role
-assigned to the actual COP administrator team after approval. Public contact,
-retention/filter operating process and evidence-key lifecycle still need
+assigned to the actual COP administrator team after approval. The human approved
+public contact podpora@zeleznalady.cz and the retention policy below. The actual
+moderation/filter operating process and evidence-key lifecycle still need
 acceptance. The SDK rejects invalid evidence on decode and again before HTTP;
 target one-of/length/UUID checks are also performed before transport.
 
@@ -60,3 +61,31 @@ break the promise made to users.
 Prepared endpoints are excluded from the closed MCP tool list and are marked
 `x-cop-ai-exposure=forbidden`. Report excerpts are never implicit AI context.
 The production chat/SIM AI Router flags are not changed by this candidate.
+
+## Source completion, 11 October
+
+A separate whole-account workflow now has durable HMAC fence/checkpoints and
+AES-GCM sealed minimal principal for trusted worker recovery without OAuth
+credentials. Signed auth_time within300seconds is required; refreshed iat is
+not reauthentication. Actual session/profile storage enforces issuer-bound late
+write fences, verified in isolated PostgreSQL. All11 provider-domain proofs
+are still required; production capability remains false.
+
+Dedicated Jízda client/PKCE and per-account secure UUID are an explicit opt-in.
+A mandatory no-cache/no-redirect live link check precedes all SDK producers,
+with generation checks after async work. Messaging source records immutable
+app/device ownership and only selectively revokes proven Jízda Matrix devices.
+Old unknown grants remain pending. Intake flags do not disable accepted fences.
+
+The human approved evidence retention max90days from creation and max30days
+after first closure, audit withouttext180days and block until unblock/deletion.
+Exact implementation policy: cop-communication-retention-90d-30d-180d-v1. Public
+contact is podpora@zeleznalady.cz; neither approval activates production flags.
+LiveKit shared identity and self-hosted token rejoin behavior remain explicit
+revocation blockers, as documented in integration43.
+
+Communication safety maintenance/enforcement is independent of new intake.
+Disabling intake preserves retention and accepted blocks, own receipts, retries
+and unblock; new report/blocking is unavailable. Durable policy/key fingerprint
+and accepted-state startup checks prevent configuration rollback from silently
+turning these obligations off.

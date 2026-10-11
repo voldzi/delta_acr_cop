@@ -9,7 +9,7 @@ function setup() {
   const store = new MemoryMobilityStore();
   const validateTarget = vi.fn(async () => {});
   const policy = {block:vi.fn(async () => true),directAllowed:vi.fn(async () => false),eventMatchesPeer:vi.fn(async()=>true)};
-  const service = new CommunicationSafetyService({store,policy,validateTarget,encryptionSecret:"test-secret-only-32-characters-long",moderatorRole:"cop-moderator",contactEmail:"moderation@example.test",retentionPolicyId:"test-policy",now:()=>new Date("2026-10-10T10:00:00Z")});
+  const service = new CommunicationSafetyService({store,policy,validateTarget,encryptionSecret:"test-secret-only-32-characters-long",moderatorRole:"cop-moderator",contactEmail:"moderation@example.test",retentionPolicyId:"cop-communication-retention-90d-30d-180d-v1",now:()=>new Date("2026-10-10T10:00:00Z")});
   return {store,service,validateTarget};
 }
 describe("communication safety",()=>{

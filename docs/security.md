@@ -233,3 +233,12 @@ unavailable; deactivation is not described as erasure completion. No report
 excerpt enters automatic AI/MCP context. This candidate is not deployed.
 
 Scoped Jízda unlink and the separate whole-account removal gate: [integration 41](integration/41_JIZDA_SCOPED_DISCONNECT.md) and [implementation/activation plan 42](integration/42_COP_ACCOUNT_REMOVAL_PLAN.md). Both remain unactivated; unlink never deletes the common account.
+
+## Account erasure and installation fences
+
+Source candidates use issuer-bound encrypted ownership, durable revocation
+fences, fresh signed auth_time and immutable app/device attestation. Receipt
+recovery is the narrow exception to COP API blocking. Legacy ownership is never
+guessed. Health/metrics bypassing authentication must not decode unverified JWTs
+to probe private fences. Production safety/delete flags remain disabled.
+See [integration43](integration/43_ACCOUNT_SAFETY_COMPLETION.md).

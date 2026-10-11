@@ -1,0 +1,19 @@
+{
+  "clientId": "jizda-mobile",
+  "name": "Jízda iOS — dedicated COP identity candidate",
+  "enabled": false,
+  "protocol": "openid-connect",
+  "publicClient": true,
+  "standardFlowEnabled": true,
+  "implicitFlowEnabled": false,
+  "directAccessGrantsEnabled": false,
+  "serviceAccountsEnabled": false,
+  "fullScopeAllowed": false,
+  "redirectUris": ["jizda-cop://oauth/callback"],
+  "webOrigins": [],
+  "defaultClientScopes": [],
+  "optionalClientScopes": [],
+  "attributes": {
+    "pkce.code.challenge.method": "S256"
+  }
+}

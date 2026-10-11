@@ -170,3 +170,29 @@ Keep its flags false until the required process, data policy and real-device
 acceptance are approved. Do not roll back a real user's block or deletion state.
 
 Scoped Jízda unlink and the separate whole-account removal gate: [integration 41](integration/41_JIZDA_SCOPED_DISCONNECT.md) and [implementation/activation plan 42](integration/42_COP_ACCOUNT_REMOVAL_PLAN.md). Both remain unactivated; unlink never deletes the common account.
+
+## Default-off account lifecycle candidate
+
+COP_ACCOUNT_ERASURE_ENABLED=false. A dedicated COP_ACCOUNT_ERASURE_SECRET and
+persistent mobility storage are necessary for the guard but cannot replace
+all11 real cleanup adapters and accepted owner policies. After intake keep
+secret/config/fences/checkpoints on rollback; do not rotate the BFF owner secret
+without a fence migration. Source worker resumes confirmed jobs every60seconds
+without overlap, aborts before a bounded12second close wait and never uses OAuth
+credentials from the client. No production migration or activation occurred.
+
+Approved moderation policy is cop-communication-retention-90d-30d-180d-v1;
+approved public contact is podpora@zeleznalady.cz. Source retention runs at
+startup and every60seconds without overlap; reads/retries enforce deadlines
+immediately. Evidence expires at min(created+90days,firstclosure+30days);
+operator detail expires at180days (410), own content-free receipt remains.
+Actual moderator assignment and operating acceptance remain separate gates. See
+[integration43](integration/43_ACCOUNT_SAFETY_COMPLETION.md) for provisioning,
+SQL provenance, dependency acceptance and physical tests.
+
+After safety state exists, keep evidence secret, policy, contact, moderator and
+persistent store configured even when COP_COMMUNICATION_SAFETY_ENABLED=false.
+Intakeoff still enforces canonical blocks, retention, own receipts and unblock.
+The durable communication-safety:configuration-v1 fingerprint rejects silent
+key/policy change; missing config with old reports/marker fails startup. Never
+clear these markers to bypass a failed rollout.

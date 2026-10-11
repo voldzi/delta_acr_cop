@@ -32,7 +32,7 @@ function fixture(accepted: Partial<{ peerSubjectId: string; conversationId: stri
     COP_WEB_BFF_SESSION_ENABLED: "false", COP_COMMUNICATION_SAFETY_ENABLED: "true",
     COP_COMMUNICATION_EVIDENCE_SECRET: "fixture-evidence-secret-at-least-32-characters",
     COP_COMMUNICATION_MODERATOR_ROLE: "fixture-moderator", COP_COMMUNICATION_CONTACT_EMAIL: "moderation@example.test",
-    COP_COMMUNICATION_RETENTION_POLICY_ID: "fixture-only", COP_JIZDA_DISCONNECT_ENABLED: "false"
+    COP_COMMUNICATION_RETENTION_POLICY_ID: "cop-communication-retention-90d-30d-180d-v1", COP_JIZDA_DISCONNECT_ENABLED: "false"
   })) vi.stubEnv(key, value);
 
   const store = new MemoryMobilityStore();

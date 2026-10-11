@@ -304,7 +304,8 @@ export interface MessagingProvider {
   fetchMatrixBootstrap(
     actor: AuthenticatedActor,
     requestNow: Date,
-    deviceId?: string
+    deviceId?: string,
+    installationId?: string
   ): Promise<MessagingMatrixBootstrap>;
   completeE2eeResetAuth(
     actor: AuthenticatedActor,
@@ -605,7 +606,8 @@ export class CsmMessagingProvider implements MessagingProvider {
   async fetchMatrixBootstrap(
     actor: AuthenticatedActor,
     requestNow: Date,
-    deviceId?: string
+    deviceId?: string,
+    installationId?: string
   ): Promise<MessagingMatrixBootstrap> {
     if (!this.config.enabled) {
       return disabledMatrixBootstrap(requestNow, this.config);
@@ -619,9 +621,11 @@ export class CsmMessagingProvider implements MessagingProvider {
           ...(deviceId ? { body: JSON.stringify({ deviceId }) } : {}),
           headers: {
             ...actorHeaders(actor, deviceId),
+            ...matrixInstallationHeaders(actor, installationId),
             ...(deviceId ? { "Content-Type": "application/json" } : {})
           },
-          method: "POST"
+          method: "POST",
+          redirect: "error"
         }
       );
       if (!isRecord(tokenResult.body)) {
@@ -1592,7 +1596,7 @@ async function fetchJsonWithStatus(
   url: URL,
   config: MessagingProviderConfig,
   requestNow: Date,
-  options: { body?: string; headers?: Record<string, string>; method?: "DELETE" | "GET" | "POST" } = {}
+  options: { body?: string; headers?: Record<string, string>; method?: "DELETE" | "GET" | "POST"; redirect?: "error" } = {}
 ): Promise<{ body: unknown; ok: boolean; status: number }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -1609,6 +1613,7 @@ async function fetchJsonWithStatus(
       ...(options.body ? { body: options.body } : {}),
       headers: safeHeaderRecord(headers),
       method: options.method ?? "GET",
+      ...(options.redirect ? { redirect: options.redirect } : {}),
       signal: controller.signal
     });
     const text = await response.text();
@@ -2099,8 +2104,9 @@ function isClientSafeMatrixBootstrapReady(
 }
 
 function actorHeaders(actor: AuthenticatedActor, deviceId?: string): Record<string, string> {
+  if (!/^[\x21-\x7e]{1,256}$/u.test(actor.subjectId)) throw new Error("Messaging actor identity is not header-safe.");
   const headers: Record<string, string> = {
-    "x-csm-user-id": safeHeaderValue(actor.subjectId, "unknown"),
+    "x-csm-user-id": actor.subjectId,
     "x-csm-user-name": safeHeaderValue(actor.displayName || actor.username, actor.subjectId),
     "x-csm-user-role": safeHeaderValue(actor.roles?.[0] ?? actor.authMode, "user")
   };
@@ -2110,6 +2116,18 @@ function actorHeaders(actor: AuthenticatedActor, deviceId?: string): Record<stri
   }
 
   return headers;
+}
+
+/** App scope comes exclusively from the verified actor, never a browser header/body. */
+function matrixInstallationHeaders(actor: AuthenticatedActor, installationId?: string): Record<string, string> {
+  if (installationId === undefined) return {};
+  if (actor.authMode !== "oidc" || !actor.issuer || !actor.authorizedParty ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(installationId) ||
+      !/^[\x21-\x7e]{1,512}$/u.test(actor.issuer) || !/^[A-Za-z0-9._-]{1,128}$/u.test(actor.authorizedParty)) {
+    throw new Error("Matrix installation requires verified OIDC app scope.");
+  }
+  return { "x-csm-app-client-id": actor.authorizedParty, "x-csm-oidc-issuer": actor.issuer,
+    "x-csm-installation-id": installationId.toLowerCase() };
 }
 
 function safeHeaderValue(value: string | undefined, fallback: string): string {

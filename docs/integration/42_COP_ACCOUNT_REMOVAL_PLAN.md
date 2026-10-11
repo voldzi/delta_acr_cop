@@ -72,7 +72,7 @@ These are distinct from unlink's app-specific operations:
 | Dispatch / location | Stop producers/devices/grants, remove identity/contact/consent metadata and account-linked packets. RAM TTL is not proof of durable erasure. Verify restart/queue races. |
 | SIM measurements | Revoke and confirm deletion of every contributor day still retained. 202 remains pending until SIM confirms; restore must replay revocations. This is a whole-account adapter, not implicit unlink deletion. |
 | AI Router BYOK / linked usage | Revoke/remove the account's stored provider key and linked profile/limits/cache. Inventory usage/cost audit and retain only the specifically accepted evidence; never fall back to a shared key. No actual OpenAI call needed to test deletion. |
-| COP moderation / audit / logs | Resolve personal evidence/reporter/target links under the approved case-retention/exceptions policy; define role/contact and restricted access. Current reports have no automatic TTL. Infrastructure logs require owner-specific retention proof. |
+| COP moderation / audit / logs | Resolve personal evidence/reporter/target links under the approved90/30/180day policy (integration43). Public contact is podpora@zeleznalady.cz; operational role/access and account-erasure adapter still require acceptance. Infrastructure logs require owner-specific retention proof. |
 | Backups / restoration | User-confirmed Proxmox coverage is accepted as off-server backup, not instant account erasure or coverage of every external Matrix/DB/object store. Approve expiry/restricted access and durable deletion-fence replay before any restored service is exposed. Test an isolated restore; never resurrect the erased account. |
 
 ## Decisions/permissions and deployment approval required
@@ -98,3 +98,13 @@ Rollback after deletion is UI/code rollback that retains revocation/checkpoints
 and erasure fences. It must never restore deleted account data/credentials from
 an old backup. If an adapter is unavailable, stop at pending and report the exact
 remaining owner; do not pretend that the account has been erased.
+
+## Implemented source boundary, 11 October
+
+The durable `cop-account-erasure-v1` orchestrator, strict authenticated routes,
+signed fresh `auth_time`, trusted restart worker and real local BFF/profile
+adapter are implemented in the completion candidate. PostgreSQL race/restart
+tests passed. All 11 domains remain mandatory; missing/unaccepted adapters fail
+503 before intake. No global complete flow is activated or claimed. See
+[integration 43](43_ACCOUNT_SAFETY_COMPLETION.md) for exact endpoints, current
+provider blockers, provenance migration, flags and rollback rules.

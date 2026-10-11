@@ -69,13 +69,37 @@ describe("Jizda app link scope",()=>{
     } finally {await app.close();}
   });
   it("does not send or accept a user-selected app/key and never fabricates downstream completion",async()=>{
-    const fetchMock=vi.fn(async(_url:string|URL|Request,_options?:RequestInit)=>new Response(JSON.stringify({contractVersion:"csm-jizda-disconnect-v1",pushRegistrationsRemoved:true,legacyInstallationsResolved:true})));
+    const fetchMock=vi.fn(async(_url:string|URL|Request,_options?:RequestInit)=>new Response(JSON.stringify({contractVersion:"csm-jizda-disconnect-v1",pushRegistrationsRemoved:true,legacyInstallationsResolved:true,matrixDevicesRevoked:true,livePermissionsRevoked:false})));
     vi.stubGlobal("fetch",fetchMock);
     try {
       const proof=await disconnectJizdaMessaging(actor(),{baseUrl:"http://internal.test",token:"fixture-service-token",timeoutMs:1000});
-      expect(proof).toEqual({...complete,matrixDevicesRevoked:false,livePermissionsRevoked:false});
+      expect(proof).toEqual({...complete,livePermissionsRevoked:false});
       const options=fetchMock.mock.calls[0]![1] as RequestInit;
-      expect(options.headers).toMatchObject({"x-csm-user-id":"a"});expect(options.body).toBeUndefined();expect(options.redirect).toBe("error");
+      expect(options.headers).toMatchObject({"x-csm-user-id":"a","x-csm-app-client-id":"jizda-mobile","x-csm-oidc-issuer":actor().issuer});expect(options.body).toBeUndefined();expect(options.redirect).toBe("error");
     } finally {vi.unstubAllGlobals();}
+  });
+  it("rejects legacy, partial, unexpected and falsely completed provider proofs",async()=>{
+    const exact={contractVersion:"csm-jizda-disconnect-v1",pushRegistrationsRemoved:true,legacyInstallationsResolved:true,matrixDevicesRevoked:true,livePermissionsRevoked:false};
+    const fetchMock=vi.fn();vi.stubGlobal("fetch",fetchMock);
+    try {
+      for (const [body,status] of [
+        [{contractVersion:exact.contractVersion,pushRegistrationsRemoved:true,legacyInstallationsResolved:true},200],
+        [{...exact,livePermissionsRevoked:true},200],[{...exact,userId:"other"},200],[exact,202]
+      ] as const) {
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body),{status}));
+        await expect(disconnectJizdaMessaging(actor(),{baseUrl:"http://internal.test",token:"synthetic",timeoutMs:1000})).rejects.toMatchObject({status:503});
+      }
+    } finally {vi.unstubAllGlobals();}
+  });
+  it("retains accepted fences when intake is disabled and refuses an unreviewed scope change",async()=>{
+    const {service,cleanup}=setup();cleanup.mockResolvedValue({...complete,livePermissionsRevoked:false});
+    await service.disconnect(actor(),op);
+    const rollback=new JizdaAppLinkService({...service.options,intakeEnabled:false});
+    await expect(rollback.assertAllowed(actor())).rejects.toMatchObject({status:403});
+    await rollback.assertAllowed(actor("a","csm-mobile"));
+    expect(await rollback.disconnect(actor(),op)).toMatchObject({status:"disconnecting",remaining:["live_permissions"]});
+    await expect(rollback.disconnect(actor("b"),op)).rejects.toMatchObject({status:503});
+    const changed=new JizdaAppLinkService({...service.options,clientId:"jizda-mobile-other"});
+    await expect(changed.init()).rejects.toMatchObject({code:"JIZDA_SCOPE_CONFIGURATION_CHANGED"});
   });
 });

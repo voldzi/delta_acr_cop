@@ -410,3 +410,18 @@ Prepared account safety extension is documented in the binding JSON contract and
 activation and actual account erasure are not claimed by this candidate.
 
 Scoped Jízda unlink and the separate whole-account removal gate: [integration 41](integration/41_JIZDA_SCOPED_DISCONNECT.md) and [implementation/activation plan 42](integration/42_COP_ACCOUNT_REMOVAL_PLAN.md). Both remain unactivated; unlink never deletes the common account.
+
+## Account and installation completion candidate
+
+The binding JSON OpenAPI includes additive Matrix installationId and separate
+whole-account erasure routes. These derive authority from verified OIDC, forbid
+AI exposure and preserve no-store/correlation errors. POST202 is pending;
+POST200 deletion requires every provider proof. See [integration43](integration/43_ACCOUNT_SAFETY_COMPLETION.md).
+
+Attested installation bootstrap rejects invalid/extra fields with400 and an
+unavailable provider with503 MESSAGING_INSTALLATION_UNAVAILABLE, no credentials
+or legacy retry. Legacy requests without installationId retain degraded200.
+Driver measurement GET/DELETE consent uses explicit signed-azp cleanup clients;
+grant/batch/pilot authority is unchanged. See the binding JSON descriptions.
+Report intakeoff preserves existing receipt/unblock/moderation and retention;
+new report/block=true returns503 COMMUNICATION_SAFETY_INTAKE_DISABLED.
