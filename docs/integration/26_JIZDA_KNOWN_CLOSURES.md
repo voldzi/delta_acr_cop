@@ -1,11 +1,13 @@
 # 26. Ordinary navigation with reviewed known closures
 
-Status: ordinary reviewed known-closure routing is deployed and enabled. COP API
-runs `0311d4d6b362c70c90fa35b9c9787459db46edce`; SIM runs the pinned release
-`91bbfa049a73cf2dd86f3430578ed9e9d571ea77` (same binding schema as
-`3506663a70a32ecdab9ab2921656385dc998ea26`). Strict profiles and driver measurements
-remain off. Actual authenticated-user and physical-phone acceptance are pending.
-Coverage remains incomplete; this release has one individually reviewed closure.
+Status checked on 2026-10-11: ordinary reviewed known-closure routing is deployed
+and enabled. COP API runs `e99401213efbf9d6a7685443adc318eeeb422c15`; SIM runs
+`03b842e005f103bb02d622bb4fc95f27fbea9572`. The location-error refinement
+described below passed the joint server transport acceptance. Strict routing and
+voluntary driver measurements have separate
+activation and acceptance gates; see [measurement handoff](22_JIZDA_DRIVER_MEASUREMENTS_COP_HANDOFF.md).
+Actual authenticated-user routing and physical-phone acceptance are pending.
+Coverage remains incomplete; one closure is individually reviewed.
 
 ## Compatible additive response
 
@@ -82,6 +84,49 @@ COP verification failures return 502 `ROUTING_KNOWN_CLOSURES_INVALID`; SIM
 `ROUTING_KNOWN_CLOSURES_*` codes remain preserved with their HTTP status. Do not
 silently retry these failures through Apple/legacy routing that drops the exclusions.
 Keep the last route only with its actual expiry and explicit failure state.
+
+SIM location-error refinement is deployed on 2026-10-11. Only an accepted engine route or
+alternatives response with HTTP 400 and a numeric JSON `error_code=171` maps to
+422 `ROUTING_LOCATION_NOT_ROUTABLE`. COP preserves this status and code in its
+existing error envelope with the COP request correlation ID. The code means that
+at least one input location could not be correlated with a routable road; it
+does not identify the origin, destination, waypoint or location index. Do not
+blindly snap or change coordinates, discard requirements, or retry through
+another provider. HTTP 5xx, timeout, a non-route 171 response, invalid geometry
+and reviewed-closure intersections do not acquire this meaning.
+
+The older 502 `ROUTING_KNOWN_CLOSURES_ENGINE_FAILED` remains a mixed engine and
+verification failure, including a route intersecting a reviewed closure. It is
+not an availability-only code and does not authorize a new Apple/legacy fallback
+or automatic acceptance of a pending Apple result. Presence of `vehicleProfile`
+or `trip` in the canonical request requires its corresponding verification;
+an acknowledged ordinary-car profile does not waive it. An already explicitly
+chosen independent ordinary Apple route may remain only when its request has
+no `vehicleProfile`, `trip`, mandatory requirements or SIM proof, with an
+explicit COP failure state and unverified COP closure status. This adds no new
+provider-selection mode or fallback consent flow.
+
+COP local acceptance on 2026-10-11 passed 26 targeted tests, including 16 new
+adapter-to-handler cases for both endpoints: ordinary, mapped and strict requests;
+exact 422/code and COP correlation; sanitized error without route/proof; anonymous
+401 before any provider call; preserved protective 502/503 and no COP translation
+of raw Valhalla 171. Every authenticated fixture made exactly one mocked SIM call.
+API type-check, test-file ESLint, skeleton and OpenAPI validation passed (24 existing
+OpenAPI warnings). These are synthetic lab-auth tests; actual native-user acceptance
+remains pending. COP runtime code is unchanged.
+
+Joint live transport acceptance at 2026-10-11T11:09:44.417Z used exactly one
+agreed public synthetic fixture through the deployed compiled COP adapter:
+HTTP 422 `ROUTING_LOCATION_NOT_ROUTABLE`, 213 ms, one upstream fetch, no retry or
+accepted substitute route. Both API images were healthy: COP
+`sha256:8c61839a458ca82cfc79725b4763759c90d66ffcd31e1e24e2ff5defe9724741`
+and SIM `sha256:2f3aa1659d03c5eaf014353071e38f6abc1d2da1419a9ac2205a05b5873a5965`.
+The same captured error separately passed the compiled COP error-envelope helpers,
+with a matching own correlation and no route, proof or endpoint claim. No second
+fetch, authentication change or production store instance was used. This pure
+envelope check and the local actual-handler tests are separate evidence; the
+live probe is not an authenticated public native-user or physical iPhone test.
+It does not establish the cause of the user's earlier screenshot.
 
 Show incomplete coverage and conservative avoidance in the existing route UI.
 Do not promise an open road, complete legal passability or guaranteed bridge

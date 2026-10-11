@@ -7842,7 +7842,7 @@
             }
           },
           "422": {
-            "description": "Mandatory routing requirement is unsupported; no fallback.",
+            "description": "Mandatory routing requirement is unsupported, or ROUTING_LOCATION_NOT_ROUTABLE means the accepted engine could not correlate at least one input location with a routable road. This code does not identify the origin, destination, waypoint or location index. No provider fallback or automatic coordinate adjustment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7922,7 +7922,7 @@
             }
           },
           "422": {
-            "description": "Mandatory routing requirement is unsupported; no fallback.",
+            "description": "Mandatory routing requirement is unsupported, or ROUTING_LOCATION_NOT_ROUTABLE means the accepted engine could not correlate at least one input location with a routable road. This code does not identify the origin, destination, waypoint or location index. No provider fallback or automatic coordinate adjustment.",
             "content": {
               "application/json": {
                 "schema": {
