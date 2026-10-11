@@ -1,10 +1,10 @@
 # 26. Ordinary navigation with reviewed known closures
 
 Status checked on 2026-10-11: ordinary reviewed known-closure routing is deployed
-and enabled. COP API runs `e99401213efbf9d6a7685443adc318eeeb422c15`; the SIM
-baseline is `20a0d961ba4cdb1f100998d7f8e07787dad03327`. The location-error
-refinement described below is awaiting SIM production readiness and joint live
-acceptance. Strict routing and voluntary driver measurements have separate
+and enabled. COP API runs `e99401213efbf9d6a7685443adc318eeeb422c15`; SIM runs
+`03b842e005f103bb02d622bb4fc95f27fbea9572`. The location-error refinement
+described below passed the joint server transport acceptance. Strict routing and
+voluntary driver measurements have separate
 activation and acceptance gates; see [measurement handoff](22_JIZDA_DRIVER_MEASUREMENTS_COP_HANDOFF.md).
 Actual authenticated-user routing and physical-phone acceptance are pending.
 Coverage remains incomplete; one closure is individually reviewed.
@@ -85,8 +85,7 @@ COP verification failures return 502 `ROUTING_KNOWN_CLOSURES_INVALID`; SIM
 silently retry these failures through Apple/legacy routing that drops the exclusions.
 Keep the last route only with its actual expiry and explicit failure state.
 
-SIM location-error refinement is prepared on 2026-10-11; production readiness
-and the joint live acceptance are still pending. Only an accepted engine route or
+SIM location-error refinement is deployed on 2026-10-11. Only an accepted engine route or
 alternatives response with HTTP 400 and a numeric JSON `error_code=171` maps to
 422 `ROUTING_LOCATION_NOT_ROUTABLE`. COP preserves this status and code in its
 existing error envelope with the COP request correlation ID. The code means that
@@ -113,8 +112,21 @@ exact 422/code and COP correlation; sanitized error without route/proof; anonymo
 401 before any provider call; preserved protective 502/503 and no COP translation
 of raw Valhalla 171. Every authenticated fixture made exactly one mocked SIM call.
 API type-check, test-file ESLint, skeleton and OpenAPI validation passed (24 existing
-OpenAPI warnings). These are synthetic lab-auth tests; live SIM transport and
-actual native-user acceptance remain pending. COP runtime code is unchanged.
+OpenAPI warnings). These are synthetic lab-auth tests; actual native-user acceptance
+remains pending. COP runtime code is unchanged.
+
+Joint live transport acceptance at 2026-10-11T11:09:44.417Z used exactly one
+agreed public synthetic fixture through the deployed compiled COP adapter:
+HTTP 422 `ROUTING_LOCATION_NOT_ROUTABLE`, 213 ms, one upstream fetch, no retry or
+accepted substitute route. Both API images were healthy: COP
+`sha256:8c61839a458ca82cfc79725b4763759c90d66ffcd31e1e24e2ff5defe9724741`
+and SIM `sha256:2f3aa1659d03c5eaf014353071e38f6abc1d2da1419a9ac2205a05b5873a5965`.
+The same captured error separately passed the compiled COP error-envelope helpers,
+with a matching own correlation and no route, proof or endpoint claim. No second
+fetch, authentication change or production store instance was used. This pure
+envelope check and the local actual-handler tests are separate evidence; the
+live probe is not an authenticated public native-user or physical iPhone test.
+It does not establish the cause of the user's earlier screenshot.
 
 Show incomplete coverage and conservative avoidance in the existing route UI.
 Do not promise an open road, complete legal passability or guaranteed bridge
