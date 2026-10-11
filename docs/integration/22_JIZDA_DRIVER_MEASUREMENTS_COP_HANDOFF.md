@@ -1,9 +1,14 @@
 # Jízda → COP → SIM: dobrovolná měření provozu
 
-Stav: adaptér připraven v COP, **výchozí vypnutý**. Mobilní sběr v Jízdě zůstává
-vypnutý. SIM používá pouze `shadow_only`; toto rozhraní neaktualizuje navigační
-rychlosti ani TPEG2. Aktivace vyžaduje oddělený provozní souhlas, připravenou
-databázi, interní spojení, tajemství a společnou akceptaci.
+Stav 2026-10-11: serverový pilot COP i SIM je aktivní pro **jeden ověřený
+OIDC účet**, v režimu `shadow_only`. Výchozí konfigurace zůstává vypnutá.
+Serverové povolení neuděluje uživatelský souhlas a samo nezapíná sběr v telefonu.
+Vlastník Jízdy potvrdil instalaci diagnostického sestavení 1.2 (31) na pilotní
+iPhone a nezávislé ověření verze i běžícího procesu, bez resetu nebo odinstalace.
+Souhlas ani sběr nebyly automaticky zapnuty. Fyzické GPS/bateriové zkoušky
+nejsou touto serverovou akceptací dokončené. Rozhraní
+neaktualizuje navigační rychlosti, živé ETA ani TPEG2. Rozšíření pilotu vyžaduje
+samostatné schválení a každý uživatel musí udělit výslovný souhlas.
 
 Závazný mobilní kontrakt je `openapi/openapi.json`. Interní kontrakt SIM je
 `sim-driver-measurements-v1` v SIM `openapi/openapi.json` a
@@ -76,7 +81,7 @@ směru 20°. `estimated`, `simulated`, `personal_stop`, `paused` a `unknown`
 odmítne. Tělo je omezeno na 1 MiB. COP **nedokáže nezávisle prokázat**,
 že Jízda skutečně vynechala začátek/konec jízdy či osobní zóny; její
 `DriverMeasurementCollector` musí zachovat odstup nejméně 60 s a 300 m a
-to musí být ověřeno na telefonu před zapnutím.
+to musí být ověřeno na telefonu během omezeného pilotu a před jeho rozšířením.
 
 ## Trvalý souhlas, mazání a tajemství
 
@@ -140,12 +145,13 @@ důkazem dokončeného smazání.
 
 ## Ověřená serverová revize 2026-10-11
 
-Pilotní filtr je publikovaný v COP `71784fd`; produkční API obraz je
-`sha256:767009770661cb08748c932084730cefdecb4d3652bfc94922ab71e190b826ef`.
+Finální serverová revize COP je `e994012` (filtr, soukromé logování a
+potvrzení dokončeného mazání); produkční API obraz je
+`sha256:8c61839a458ca82cfc79725b4763759c90d66ffcd31e1e24e2ff5defe9724741`.
 Kód omezuje nové souhlasy a dávky na serverový seznam ověřených OIDC subjektů;
 GET/DELETE zůstávají dostupné i po odebrání účtu z pilotu a při vypnutém příjmu.
-CI `38122371303` prošlo včetně Docker sestavení/startu, auditu závislostí a
-kontroly secrets. Lokálně prošlo 1597 testů; 8 testů vyžadujících samostatnou
+CI `38124211468` prošlo včetně Docker sestavení/startu, auditu závislostí a
+kontroly secrets. Lokálně prošlo 1600 testů; 8 testů vyžadujících samostatnou
 místní databázi bylo přeskočeno. Prošel lint/typecheck, build, skeleton,
 11 JSON schémat a OpenAPI s 24 stávajícími varováními.
 
@@ -162,12 +168,37 @@ vytvořený před rotací byl odstraněn a tombstone zachován. Nejde o důkaz
 odstranění dat z PBS/WAL/PITR; jejich retenční a restore-quarantine pravidla
 zůstávají odpovědností SIM a infrastruktury.
 
-Serverové zapnutí se eviduje zvlášť od tohoto vydání. Telefonní akceptace,
+Po produkčním průchodu byl zapnut pouze COP příjem na stejném obrazu,
+pilotní filtr zůstal zapnutý pro jeden účet a cleanup zůstal dostupný všem
+oprávněným nativním účtům. Chrání jej zámek `/srv/cop/.storage.lock` a
+konfigurace zůstává pouze v chráněném `.env`; žádné hodnoty ani identity
+nepatří do Gitu. Záloha před aktivací:
+`/srv/x5-production/backups/cop/2026-10-11T083357.470951Z`. Provozní důkazy:
+`/srv/x5-production/staging/cop/job-8b685ebb7dd14d7e919bd5b2ff7dc696`.
+
+Skutečný zkompilovaný COP transport přijal vlastní **simulovanou** interní
+dávku s 200, nulou intervalů, `shadow_only` a `rawPositionsStored=false`,
+poté ji smazal platným 200 receipt. SIM read-only ověřil u obou vlastních
+syntetických fixture receipts/intervals/ETA = 0 a aktivní tombstone; žádný
+skutečný souhlas v COP se tím nezaložil. Izolovaný harness v produkčním obrazu
+použil pouze vlastní syntetický OIDC issuer/klíče v samostatném procesu:
+401 bez přihlášení, 403 mimo pilot, parser 400 a nula nalezených tokenů/IP/
+markerů těla v zachyceném logu. Hash loggeru i transportu odpovídal místnímu
+otestovanému kódu. Tento harness **není** veřejný nativní end-to-end test;
+COP mobilní validátor simulované GPS nadále odmítá.
+
+Samostatná párová read-only kontrola SIM v `2026-10-11T08:38:15.550Z`
+potvrdila oba zdravé API, zapnutý příjem, cleanup/revokaci, filtr pro jediný
+subjekt, shodu nového tokenu s runtime a chráněnými soubory mode 600,
+zachované HMAC a interní síť pouze dvou API. SIM souhrn vrátil 200,
+`shadow_only` a dataset `sim-routing-2026-10-11-1791687606`; bez autorizace 401.
+
+Telefonní akceptace skutečného přihlášení/souhlasu a GPS uploadu,
 reálná kvalita směrového přiřazení, soukromé zóny, baterie a síťová zátěž
 zatím nejsou tímto průchodem ověřené. Jízda vyžaduje oddělené pilotní sestavení
 s výslovným souhlasem; samotná instalace API sběr v telefonu nezapíná.
 
-## Akceptace před aktivací
+## Testy a podmínky rozšíření pilotu
 
 Lokální syntetické testy pokrývají dva uživatele, transformaci UUID, odmítnutí
 kontextu, odvolání, čekající smazání a chybové odpovědi SIM. Samostatný volitelný
@@ -179,11 +210,21 @@ a maže pouze vlastní náhodné schéma. Spouští se s
 `COP_DRIVER_MEASUREMENT_TEST_DATABASE_URL` ukazujícím na **dočasnou místní
 databázi s názvem končícím `_test`**; bez proměnné je přeskočen. Nepoužívejte
 produkční tunel či účet. Ani tento průchod není důkazem omezených oprávnění
-produkčního účtu, běhu na telefonu nebo produkčního propojení. Před zapnutím společně
+produkčního účtu, běhu na telefonu nebo produkčního propojení. V pilotu a před jeho rozšířením společně
 ověřte skutečné GPS/ETA s Jízdou, přihlášení běžného uživatele `csm-mobile`,
 odříznuté konce jízd, více zařízení, změnu dne, 429/503, durable mazání po
 restartu, audit a kvalitu souhrnů v SIM. Produkční síťové propojení a předání
-službového tokenu podléhají samostatnému schválení.
+službového tokenu podléhají samostatnému schválení; pro tento omezený pilot
+byly schváleny a provozně ověřeny.
+
+SIM uchovává derivované pseudonymní intervaly, omezené ETA a receipt sedm
+dnů od přijetí; raw GPS zpracovává pouze přechodně v paměti SIM/Valhally.
+Minutový úklid odstraňuje expirované receipt a tombstones, cascade pak
+intervaly/ETA; čtení expiraci vždy vylučuje. Mazání se týká živé databáze,
+nikoli automaticky historických záloh, WAL či PITR. Jejich samostatná politika
+a karanténa při obnově jsou vedeny SIM/infrastrukturou. COP uchovává stav
+souhlasu a durable seznam dnů čekajících na smazání, nikoli GPS. Nezařazujte
+tuto evidenci do obecného mazání cache.
 
 ### Společný pilot `shadow_only` na iPhonu
 
