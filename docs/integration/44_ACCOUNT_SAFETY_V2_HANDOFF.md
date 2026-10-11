@@ -103,3 +103,33 @@ nasazení se netvrdí.
 Rollback zachová trvalé guards, jejich konfiguraci a secrets, markers, fences,
 checkpointy, retenci i vynucování blokací. Před zpřístupněním obnovy ze zálohy
 se musí znovu uplatnit odstranění. [Podrobnosti kandidáta](43_ACCOUNT_SAFETY_COMPLETION.md).
+
+## Navazující serverová kontrola — 2026-10-11 17:40 CEST
+
+Jízda potvrdila přijetí v2. Sestavení 1.2 (33) ponechává beze změny; novou
+integraci a sériové nativní testy připraví v kandidátu 34. Toto potvrzení
+nedokládá, že nové testy nebo instalace již proběhly.
+
+Pouze čtením na `docker.home.cz` ověřeno:
+
+| Oblast | Skutečný produkční stav |
+| --- | --- |
+| COP checkout | `e99401213efbf9d6a7685443adc318eeeb422c15` |
+| COP API image | `sha256:8c61839a458ca82cfc79725b4763759c90d66ffcd31e1e24e2ff5defe9724741`; OCI revize není uvedena |
+| Messaging běžící image/revize | `sha256:ff80ec9a89155aae5081b118c6e9900dfccfce6187b90f4a90432c45b04d2079` / `d311b2c` |
+| Messaging serverový checkout | `224629034141a1a56f90c94021379a5d52d761fc`; není totožný s deklarovanou revizí běžícího obrazu |
+| Zdraví | Oba kontejnery healthy; COP `/health/live` a `/health/ready` HTTP 200 |
+| COP bezpečnostní přepínače | `COP_COMMUNICATION_SAFETY_ENABLED`, `COP_JIZDA_DISCONNECT_ENABLED`, `COP_ACCOUNT_ERASURE_ENABLED` nejsou nastavené |
+| Messaging bezpečnostní přepínače | `CSM_COMMUNICATION_SAFETY_ENABLED`, `CSM_JIZDA_DISCONNECT_ENABLED`, `CSM_APP_DEVICE_LEDGER_ENABLED`, `CSM_ACCOUNT_ERASURE_ENABLED` nejsou nastavené |
+| COP produkční podmínky | Evidence secret, erasure secret a moderator role nejsou nakonfigurované; ověřena pouze přítomnost, žádná hodnota se nevypisovala |
+
+V2 není nasazený. Zdraví dosavadního provozu nedokládá nové autorizované
+odpojení ani account-erasure flow. Produkce ani tajné hodnoty nebyly změněny.
+
+Znovu zkontrolované zdrojové podmínky: attested Matrix ledger a selektivní
+delete/readback jsou implementované a ověřené syntetickým Synapse HTTP fixture.
+Migrace starších zařízení bez ledgeru není dokončená. LiveKit stále vydává
+token se společným subject identity a nemá app/installation revoke/readback;
+`livePermissionsRevoked` proto zůstává false. SIM nepředal nový přijatý cleanup
+kontrakt; jeho poslední stav se nezměnil. Žádný z těchto bodů není nahrazen
+105 zdrojovými testy Messaging nebo přípravou klientského kandidáta 34.
