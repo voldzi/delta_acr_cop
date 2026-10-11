@@ -334,4 +334,19 @@ describe("Jizda driver measurement boundary", () => {
     }), { status: 403 }));
     await expect(source.send(input)).rejects.toMatchObject({ statusCode: 503 });
   });
+
+  it("requires an explicit completed SIM deletion receipt and never completes on 202", async () => {
+    const upstream = new HttpDriverMeasurementSource("https://sim.example.test/internal", "test-token");
+    const receipt = { contractVersion: "sim-driver-measurements-v1", deletedBatchCount: 1 };
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(receipt), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    for (const [status, body] of [[202, receipt], [200, {}], [200, { ...receipt, contractVersion: "unknown" }],
+      [200, { ...receipt, deletedBatchCount: -1 }], [200, "<html>not a deletion</html>"], [200, "x".repeat(4097)]] as const) {
+      fetchMock.mockImplementationOnce(async () => new Response(typeof body === "string" ? body : JSON.stringify(body), { status }));
+      await expect(upstream.delete("synthetic-contributor")).rejects.toMatchObject({ statusCode: 503 });
+    }
+    fetchMock.mockImplementationOnce(async () => new Response(null, { status: 204 }));
+    await expect(upstream.delete("synthetic-contributor")).rejects.toMatchObject({ statusCode: 503 });
+    await expect(upstream.delete("synthetic-contributor")).resolves.toBeUndefined();
+  });
 });

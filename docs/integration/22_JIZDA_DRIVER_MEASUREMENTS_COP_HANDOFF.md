@@ -132,6 +132,11 @@ souhlasu funguje dál. Na SIM musí zůstat zapnutý samostatný
 vypnutý. Pokud SIM DELETE odmítá, COP ponechá `pendingDeletion=true`
 a blokuje opětovný souhlas. Automatický cleanup zpracuje nejvýše čtyři denní
 pseudonymy na běh a má jediného pracovníka; po restartu se obnoví z databáze.
+Dokončení SIM mazání vyžaduje HTTP 200 a přesný malý receipt
+`{contractVersion:"sim-driver-measurements-v1",deletedBatchCount:N}` s
+nezáporným celočíselným N. HTTP 202/204, neplatný či příliš velký receipt
+ponechají durable mazání čekající; žádný obecný úspěšný HTTP status není
+důkazem dokončeného smazání.
 
 ## Ověřená serverová revize 2026-10-11
 

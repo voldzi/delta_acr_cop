@@ -69,7 +69,14 @@ export class HttpDriverMeasurementSource implements DriverMeasurementSource {
   }
   async delete(contributorIdDay: string): Promise<void> {
     const response = await this.request("/contributions", "DELETE", { contractVersion: DRIVER_MEASUREMENT_SIM_VERSION, contributorIdDay });
-    await response.body?.cancel();
+    if (response.status !== 200) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new DriverMeasurementSourceError(503);
+    }
+    try {
+      const receipt: unknown = JSON.parse(await readBoundedBody(response, 4096));
+      if (!deletionReceiptSchema.safeParse(receipt).success) throw new Error("Invalid deletion receipt.");
+    } catch { throw new DriverMeasurementSourceError(503); }
   }
 }
 
@@ -83,6 +90,11 @@ const receiptSchema = z.strictObject({
   etaAccepted: z.boolean(),
   applicationMode: z.literal("shadow_only"),
   rawPositionsStored: z.literal(false)
+});
+
+const deletionReceiptSchema = z.strictObject({
+  contractVersion: z.literal(DRIVER_MEASUREMENT_SIM_VERSION),
+  deletedBatchCount: z.number().int().nonnegative()
 });
 
 function isRevokedError(value: unknown): boolean {
