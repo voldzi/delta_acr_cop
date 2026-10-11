@@ -116,3 +116,5 @@ Scoped Jízda unlink and the separate whole-account removal gate: [integration 4
 - [46 — Neměnné hlasové předání Jízdě v3](integration/46_JIZDA_VOICE_V3_HANDOFF.md), [manifest](integration/46_JIZDA_VOICE_V3_MANIFEST.json): publikovaná source revize, SDK kroky pro candidate34, výsledky a samostatné zbývající brány.
 
 - [47 — Autoritativní stav hovoru a návrh compaction/quiescence](integration/47_VOICE_TERMINAL_ADMISSION_AND_COMPACTION_PLAN.md), [ADR 0048](adr/0048_TERMINAL_VOICE_CALL_ADMISSION.md): navazující source kandidát, samostatný mobilní návrh a dosud neschválená retenční politika. Produkce ani zmrazené předání v2/v3 se nemění.
+
+- [48 — Neměnné hlasové předání Jízdě v4](integration/48_JIZDA_VOICE_V4_HANDOFF.md), [manifest](integration/48_JIZDA_VOICE_V4_MANIFEST.json): přesná zdrojová revize, delta vůči v3, výsledky a samostatný mobilní návrh po zmrazené v2 candidate34.

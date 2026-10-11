@@ -1,0 +1,80 @@
+{
+  "handoffVersion": "cop-account-safety-voice-v4",
+  "date": "2026-10-11",
+  "repository": "https://github.com/voldzi/delta_acr_cop",
+  "branch": "codex/jizda-voice-terminal-20261011",
+  "sourceCommit": "c5b12881f539e959fe7543927c5a5f25fe102401",
+  "patchBaseCommit": "a8c3684996510155f0a8eb1737915305510c1320",
+  "sourcePatchSha256": "4e9567a8d00972127210aad4968ef61beef432889f76aa75a19f3c23603bd057",
+  "openApiSha256": "4e3a76eedb674b30bd8882195d6526fa7403b852ae615e0de609c21e80dbcf5a",
+  "unchangedDependencies": {
+    "messagingCommit": "ed045c442f540c279d5ab6a54bf26a5dd121a759",
+    "mobileSdkCommit": "73dcb1dfd1bc42775057ce5ddd17edb85ad574db"
+  },
+  "immutableArchiveSha256": {
+    "v2": "89890a17de6aa740c6da7df993cea454cb5b6f30bdeb30bea3178953558bc68e",
+    "v3": "863cca706fb1c298b4cbad8000385de743a677f899c5a3b77560dcd5feaa9d6c"
+  },
+  "verification": {
+    "fullTestsPassed": 1801,
+    "fullTestsSkipped": 16,
+    "focusedIncludedInFull": {
+      "gateway": 43,
+      "callAdmissionHelper": 18,
+      "copScopedHttp": 26,
+      "ledger": 14,
+      "receiptContract": 4
+    },
+    "separateRealPostgresPassed": 4,
+    "postgresIncludedInFullSkips": 4,
+    "otherConditionalTestsSkipped": 12,
+    "focusedFinalApiHelperCallStore": 52,
+    "build": "passed",
+    "typecheck": "passed",
+    "eslint": "passed",
+    "jsonSchemaCount": 11,
+    "openApi": "valid_with_26_warnings",
+    "skeleton": "passed",
+    "publicAnalytics": "passed",
+    "sourcePatchApplyCheck": "passed"
+  },
+  "activation": {
+    "productionDeployed": false,
+    "productionFlagsChanged": false,
+    "productionSecretsCreated": false,
+    "productionNetworkChanged": false,
+    "realAccountsDeleted": false,
+    "realAccountsRevoked": false,
+    "runtimeCompactionImplemented": false,
+    "realLiveKitVerified": false,
+    "physicalIphoneVerified": false,
+    "mobileSdkChanged": false,
+    "appStoreCompletenessClaimed": false
+  },
+  "remaining": [
+    "live_provider_and_sole_signaling_ingress_acceptance",
+    "legacy_matrix_push_grant_ownership",
+    "historical_acknowledged_grant_quiescence",
+    "approved_compaction_and_restore_policy",
+    "separate_native_candidate_and_physical_acceptance",
+    "moderator_operating_process",
+    "all11_account_erasure_owner_proofs"
+  ],
+  "filesSha256": {
+    "COP-source.patch": "4e9567a8d00972127210aad4968ef61beef432889f76aa75a19f3c23603bd057",
+    "HANDOFF.md": "94532c9fcb9bb55318e6a6c0dcf559fc38cfe78c0a1113684c8fb0fcd6123b51",
+    "verification/analytics.log": "a495f83f42c2e73639fb6135829626840dd20f5067d369d587cb5d696f145de2",
+    "verification/api-focused-final.log": "2309f3cc3fc301776a2a85d40f615fedff85e6ecbb4be37f0c0871e38cf90d78",
+    "verification/build.log": "49ca537faf8105db6f3fc95729a854ab177e6937d66442b711027eeb1399145f",
+    "verification/full-tests-final.log": "56a03a79533c666652f6f7697fb8c2e9362802476c756f6feff7e4b3a2af291d",
+    "verification/lint.log": "4d60d45d6efa1ea69301b9c1bbd421ee41d555fd95b64d123a019574787f549a",
+    "verification/openapi.log": "a192e7a3b0b822beaf6810c59726848e128e14651cd7f80649cc2d327315b137",
+    "verification/postgres-final.log": "57b1c571236c2dcac05427761b8aef511fb5db96f779765c6188d2b9aac9b9c6",
+    "verification/schemas.log": "b8723f7e103255d645521cdb9904d2dfe37b00420373caf904a8cf523bc88ca6",
+    "verification/skeleton.log": "c6a3c6904a5a068dd23fda8a14a5510671c67b6cb43b337e56409acf41aa7fc1"
+  },
+  "archive": {
+    "localPath": "/private/tmp/cop-account-safety-handoff-v4-20261011.tar.gz",
+    "sha256": "3e74a3f7c079466aa1b652370e8e9a14138cb1870cfd5677078f623cc1c74caa"
+  }
+}
