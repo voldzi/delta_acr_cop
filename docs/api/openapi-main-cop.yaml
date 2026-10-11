@@ -167,7 +167,9 @@ paths:
       summary: Read consent and deletion state for the authenticated native user.
       description: Available with intake or cleanup enabled, including outside a restricted pilot.
         canGrant also requires enabled intake and membership in a configured pilot cohort; false
-        does not revoke an existing consent.
+        does not revoke an existing consent. Measurement request logs contain only method, fixed
+        operation path and generated request correlation, never IP, ports, headers or raw JSON
+        parser content.
       responses:
         "200":
           description: Current consent state.
@@ -175,10 +177,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DriverMeasurementConsentState"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/ErrorResponse"
         "503":
           $ref: "#/components/responses/ErrorResponse"
     post:
@@ -189,7 +195,8 @@ paths:
       description: An optional server-owned pilot allowlist is checked against the verified OIDC subject.
         Non-members receive 403 DRIVER_MEASUREMENTS_PILOT_NOT_ELIGIBLE; empty or malformed enabled
         pilot configuration receives 503 DRIVER_MEASUREMENTS_PILOT_NOT_CONFIGURED. Client input
-        cannot select cohort membership.
+        cannot select cohort membership. Consent requests are bounded to 1024 bytes; parser failures
+        return a generic COP error without logging or forwarding raw input.
       requestBody:
         required: true
         content:
@@ -211,6 +218,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/ErrorResponse"
         "503":
           $ref: "#/components/responses/ErrorResponse"
     delete:
@@ -234,10 +243,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DriverMeasurementRevokeReceipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/ErrorResponse"
         "503":
           $ref: "#/components/responses/ErrorResponse"
   /api/v1/driver-measurements/v1/batches:

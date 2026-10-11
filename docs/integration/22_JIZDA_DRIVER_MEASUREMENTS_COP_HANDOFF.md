@@ -50,6 +50,11 @@ Potvrzený interní SIM kód `DRIVER_CONSENT_REVOKED` se mapuje na mobilní 403,
 se stejným kódem v COP chybovém obalu, aby Jízda zablokovala další dávky daného dne. Jiné interní 403 včetně chyby
 službového oprávnění se mapují na 503; COP čte jen omezený kód chyby a nikdy
 nepředává text interní odpovědi do telefonu.
+Požadavky souhlasu mají limit 1024 bytů (413 při překročení), dávky 1 MiB.
+Chybný JSON vrací obecný COP obal 400 bez úryvku těla. Měřicí request log
+obsahuje jen metodu, pevnou známou cestu operace a generované ID požadavku;
+neobsahuje IP, port, hlavičky, text parserové chyby ani surové tělo. Neznámé
+měřicí cesty se v logu maskují, aby do něj nešlo vložit identitu přes URL.
 
 ## Serverová hranice a minimalizace
 
@@ -127,6 +132,35 @@ souhlasu funguje dál. Na SIM musí zůstat zapnutý samostatný
 vypnutý. Pokud SIM DELETE odmítá, COP ponechá `pendingDeletion=true`
 a blokuje opětovný souhlas. Automatický cleanup zpracuje nejvýše čtyři denní
 pseudonymy na běh a má jediného pracovníka; po restartu se obnoví z databáze.
+
+## Ověřená serverová revize 2026-10-11
+
+Pilotní filtr je publikovaný v COP `71784fd`; produkční API obraz je
+`sha256:767009770661cb08748c932084730cefdecb4d3652bfc94922ab71e190b826ef`.
+Kód omezuje nové souhlasy a dávky na serverový seznam ověřených OIDC subjektů;
+GET/DELETE zůstávají dostupné i po odebrání účtu z pilotu a při vypnutém příjmu.
+CI `38122371303` prošlo včetně Docker sestavení/startu, auditu závislostí a
+kontroly secrets. Lokálně prošlo 1597 testů; 8 testů vyžadujících samostatnou
+místní databázi bylo přeskočeno. Prošel lint/typecheck, build, skeleton,
+11 JSON schémat a OpenAPI s 24 stávajícími varováními.
+
+Produkční kontrola potvrdila shodu hash zkompilované pilotní route s otestovaným
+kódem, jediný správně navázaný profil, zachované tokeny/HMAC, porty, sítě,
+mounty a resources API i ostatních COP kontejnerů. Skutečný produkční adaptér
+z COP API ověřil službové oprávnění na neplatném DELETE (400), chybné službové
+oprávnění (503) a nedostupnou službu (503). Neodesílal přitom GPS ani platnou
+dávku. API live/ready/dependencies a veřejné demo jsou 200 bez regrese.
+
+SIM dokončil párovou rotaci měřicího tokenu: starý token 401, nový token
+ověřený v obou runtime; oba identitní HMAC zůstaly stejné. Syntetický příspěvek
+vytvořený před rotací byl odstraněn a tombstone zachován. Nejde o důkaz
+odstranění dat z PBS/WAL/PITR; jejich retenční a restore-quarantine pravidla
+zůstávají odpovědností SIM a infrastruktury.
+
+Serverové zapnutí se eviduje zvlášť od tohoto vydání. Telefonní akceptace,
+reálná kvalita směrového přiřazení, soukromé zóny, baterie a síťová zátěž
+zatím nejsou tímto průchodem ověřené. Jízda vyžaduje oddělené pilotní sestavení
+s výslovným souhlasem; samotná instalace API sběr v telefonu nezapíná.
 
 ## Akceptace před aktivací
 

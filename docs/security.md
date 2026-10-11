@@ -57,6 +57,9 @@ verified OIDC subject against a server-owned allowlist, after the native client
 authentication gate. Empty or malformed pilot configuration closes intake;
 leaving the cohort never prevents revocation of historical contributions. See
 [ADR 0033](adr/0033_CONSENTED_JIZDA_MEASUREMENT_BOUNDARY.md).
+Measurement request logs omit IP, ports and all headers; unknown measurement
+path segments are redacted. Their bounded parser error handler never logs or
+forwards raw input, including malformed JSON. Consent bodies are at most 1 KiB.
 
 Community media rule: an attachment access update is owner-only, validates the
 requested users and groups, and produces an audit event. Public list and map
