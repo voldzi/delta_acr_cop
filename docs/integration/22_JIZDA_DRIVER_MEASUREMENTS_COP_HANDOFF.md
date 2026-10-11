@@ -1,9 +1,14 @@
 # Jízda → COP → SIM: dobrovolná měření provozu
 
-Stav: adaptér připraven v COP, **výchozí vypnutý**. Mobilní sběr v Jízdě zůstává
-vypnutý. SIM používá pouze `shadow_only`; toto rozhraní neaktualizuje navigační
-rychlosti ani TPEG2. Aktivace vyžaduje oddělený provozní souhlas, připravenou
-databázi, interní spojení, tajemství a společnou akceptaci.
+Stav 2026-10-11: serverový pilot COP i SIM je aktivní pro **jeden ověřený
+OIDC účet**, v režimu `shadow_only`. Výchozí konfigurace zůstává vypnutá.
+Serverové povolení neuděluje uživatelský souhlas a samo nezapíná sběr v telefonu.
+Vlastník Jízdy potvrdil instalaci diagnostického sestavení 1.2 (31) na pilotní
+iPhone a nezávislé ověření verze i běžícího procesu, bez resetu nebo odinstalace.
+Souhlas ani sběr nebyly automaticky zapnuty. Fyzické GPS/bateriové zkoušky
+nejsou touto serverovou akceptací dokončené. Rozhraní
+neaktualizuje navigační rychlosti, živé ETA ani TPEG2. Rozšíření pilotu vyžaduje
+samostatné schválení a každý uživatel musí udělit výslovný souhlas.
 
 Závazný mobilní kontrakt je `openapi/openapi.json`. Interní kontrakt SIM je
 `sim-driver-measurements-v1` v SIM `openapi/openapi.json` a
@@ -20,6 +25,7 @@ OIDC role nesmí vyloučit běžného přihlášeného uživatele.
 
 1. `GET /api/v1/driver-measurements/v1/consent` vrací
    `{contractVersion,granted,grantedAt,pendingDeletion,canGrant}`.
+   `canGrant=false` také při vypnutém příjmu nebo mimo povolené pilotní účty.
 2. Po samostatném výslovném souhlasu odešlete
    `POST /api/v1/driver-measurements/v1/consent` s přesným JSON
    `{ "contractVersion":"cop-driver-measurements-v1", "version":"traffic-quality-v1", "granted":true }`.
@@ -41,10 +47,19 @@ Všechny odpovědi používají `Cache-Control: no-store`. Při 400/403/409 neop
 stejný chybný požadavek; 429 respektuje `Retry-After`, 503 vyžaduje omezený
 retry se stejným `batchId`. Žádný přímý fallback do SIM. Bez zapnutého
 `COP_DRIVER_MEASUREMENTS_ENABLED` vrací adaptér 503 a Jízda zůstává vypnutá.
+GET/DELETE zůstávají dostupné při zapnutém cleanup, i mimo pilot. V omezeném
+pilotu nový souhlas a dávky mimo povolené účty vracejí 403
+`DRIVER_MEASUREMENTS_PILOT_NOT_ELIGIBLE`; prázdná nebo chybná konfigurace
+pilotních subjektů vrací 503 `DRIVER_MEASUREMENTS_PILOT_NOT_CONFIGURED`.
 Potvrzený interní SIM kód `DRIVER_CONSENT_REVOKED` se mapuje na mobilní 403,
 se stejným kódem v COP chybovém obalu, aby Jízda zablokovala další dávky daného dne. Jiné interní 403 včetně chyby
 službového oprávnění se mapují na 503; COP čte jen omezený kód chyby a nikdy
 nepředává text interní odpovědi do telefonu.
+Požadavky souhlasu mají limit 1024 bytů (413 při překročení), dávky 1 MiB.
+Chybný JSON vrací obecný COP obal 400 bez úryvku těla. Měřicí request log
+obsahuje jen metodu, pevnou známou cestu operace a generované ID požadavku;
+neobsahuje IP, port, hlavičky, text parserové chyby ani surové tělo. Neznámé
+měřicí cesty se v logu maskují, aby do něj nešlo vložit identitu přes URL.
 
 ## Serverová hranice a minimalizace
 
@@ -66,7 +81,7 @@ směru 20°. `estimated`, `simulated`, `personal_stop`, `paused` a `unknown`
 odmítne. Tělo je omezeno na 1 MiB. COP **nedokáže nezávisle prokázat**,
 že Jízda skutečně vynechala začátek/konec jízdy či osobní zóny; její
 `DriverMeasurementCollector` musí zachovat odstup nejméně 60 s a 300 m a
-to musí být ověřeno na telefonu před zapnutím.
+to musí být ověřeno na telefonu během omezeného pilotu a před jeho rozšířením.
 
 ## Trvalý souhlas, mazání a tajemství
 
@@ -91,6 +106,28 @@ vyžaduje `CREATE` oprávnění při prvním startu; pro nejmenší dlouhodobá 
 lze vytvořit obě tabulky předem řízenou migrací a runtime uživateli ponechat
 jen SELECT/INSERT/UPDATE a sekvenční práva dle konkrétního schématu.
 
+Omezený pilot používá `COP_DRIVER_MEASUREMENTS_PILOT_ENABLED=true` a
+`COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS`: čárkami oddělené ověřené OIDC
+`sub` z konkrétního COP realmu, nikoli e-mail nebo ID dodané klientem.
+Výchozí hodnota příznaku je `false`; zapnutí bez platného neprázdného seznamu
+uzavře příjem pro všechny, ale neblokuje cleanup. Nejvýše 100 položek a
+8192 znaků, každá položka 1–255 znaků bez mezer a řídicích znaků; chybný
+seznam se nepřijímá ani částečně. Členství samo nenahrazuje platný mobilní
+OIDC token ani výslovný souhlas. Změna seznamu vyžaduje restart COP API.
+Filtr deaktivuje jen chybějící příznak nebo přesné `false`/`0`; neznámá
+hodnota včetně překlepu filtr zachovává, aby neotevřela příjem všem účtům.
+Odstranění účtu ze seznamu neodvolává souhlas automaticky a nesmí znemožnit
+pozdější GET/DELETE nebo dokončení čekajícího mazání.
+Pilot ukončujte vypnutím příjmu, nikoli vypnutím pilotního filtru: samotné
+`PILOT_ENABLED=false` s `ENABLED=true` zpřístupní příjem všem oprávněným
+mobilním účtům. Před návratem k obrazu bez pilotního filtru nejprve nastavte
+`COP_DRIVER_MEASUREMENTS_ENABLED=false` a zachovejte cleanup a stabilní HMAC.
+
+Službový token lze párově vyměnit bez změny HMAC identit. Po rotaci ověřte
+oba runtime, odmítnutí starého tokenu a smazání syntetického příspěvku
+vytvořeného před rotací. Token i allowlist zapisujte pouze do chráněného
+produkčního prostředí, pod sdíleným deployment zámkem a se zálohou na X5.
+
 Při rollbacku vypněte pouze `COP_DRIVER_MEASUREMENTS_ENABLED`. Ponechte
 `COP_DRIVER_MEASUREMENTS_CLEANUP_ENABLED=true`, databázi, HMAC tajemství a
 SIM přístup, aby již udělené souhlasy bylo možné odvolat a čekající smazání
@@ -100,8 +137,68 @@ souhlasu funguje dál. Na SIM musí zůstat zapnutý samostatný
 vypnutý. Pokud SIM DELETE odmítá, COP ponechá `pendingDeletion=true`
 a blokuje opětovný souhlas. Automatický cleanup zpracuje nejvýše čtyři denní
 pseudonymy na běh a má jediného pracovníka; po restartu se obnoví z databáze.
+Dokončení SIM mazání vyžaduje HTTP 200 a přesný malý receipt
+`{contractVersion:"sim-driver-measurements-v1",deletedBatchCount:N}` s
+nezáporným celočíselným N. HTTP 202/204, neplatný či příliš velký receipt
+ponechají durable mazání čekající; žádný obecný úspěšný HTTP status není
+důkazem dokončeného smazání.
 
-## Akceptace před aktivací
+## Ověřená serverová revize 2026-10-11
+
+Finální serverová revize COP je `e994012` (filtr, soukromé logování a
+potvrzení dokončeného mazání); produkční API obraz je
+`sha256:8c61839a458ca82cfc79725b4763759c90d66ffcd31e1e24e2ff5defe9724741`.
+Kód omezuje nové souhlasy a dávky na serverový seznam ověřených OIDC subjektů;
+GET/DELETE zůstávají dostupné i po odebrání účtu z pilotu a při vypnutém příjmu.
+CI `38124211468` prošlo včetně Docker sestavení/startu, auditu závislostí a
+kontroly secrets. Lokálně prošlo 1600 testů; 8 testů vyžadujících samostatnou
+místní databázi bylo přeskočeno. Prošel lint/typecheck, build, skeleton,
+11 JSON schémat a OpenAPI s 24 stávajícími varováními.
+
+Produkční kontrola potvrdila shodu hash zkompilované pilotní route s otestovaným
+kódem, jediný správně navázaný profil, zachované tokeny/HMAC, porty, sítě,
+mounty a resources API i ostatních COP kontejnerů. Skutečný produkční adaptér
+z COP API ověřil službové oprávnění na neplatném DELETE (400), chybné službové
+oprávnění (503) a nedostupnou službu (503). Neodesílal přitom GPS ani platnou
+dávku. API live/ready/dependencies a veřejné demo jsou 200 bez regrese.
+
+SIM dokončil párovou rotaci měřicího tokenu: starý token 401, nový token
+ověřený v obou runtime; oba identitní HMAC zůstaly stejné. Syntetický příspěvek
+vytvořený před rotací byl odstraněn a tombstone zachován. Nejde o důkaz
+odstranění dat z PBS/WAL/PITR; jejich retenční a restore-quarantine pravidla
+zůstávají odpovědností SIM a infrastruktury.
+
+Po produkčním průchodu byl zapnut pouze COP příjem na stejném obrazu,
+pilotní filtr zůstal zapnutý pro jeden účet a cleanup zůstal dostupný všem
+oprávněným nativním účtům. Chrání jej zámek `/srv/cop/.storage.lock` a
+konfigurace zůstává pouze v chráněném `.env`; žádné hodnoty ani identity
+nepatří do Gitu. Záloha před aktivací:
+`/srv/x5-production/backups/cop/2026-10-11T083357.470951Z`. Provozní důkazy:
+`/srv/x5-production/staging/cop/job-8b685ebb7dd14d7e919bd5b2ff7dc696`.
+
+Skutečný zkompilovaný COP transport přijal vlastní **simulovanou** interní
+dávku s 200, nulou intervalů, `shadow_only` a `rawPositionsStored=false`,
+poté ji smazal platným 200 receipt. SIM read-only ověřil u obou vlastních
+syntetických fixture receipts/intervals/ETA = 0 a aktivní tombstone; žádný
+skutečný souhlas v COP se tím nezaložil. Izolovaný harness v produkčním obrazu
+použil pouze vlastní syntetický OIDC issuer/klíče v samostatném procesu:
+401 bez přihlášení, 403 mimo pilot, parser 400 a nula nalezených tokenů/IP/
+markerů těla v zachyceném logu. Hash loggeru i transportu odpovídal místnímu
+otestovanému kódu. Tento harness **není** veřejný nativní end-to-end test;
+COP mobilní validátor simulované GPS nadále odmítá.
+
+Samostatná párová read-only kontrola SIM v `2026-10-11T08:38:15.550Z`
+potvrdila oba zdravé API, zapnutý příjem, cleanup/revokaci, filtr pro jediný
+subjekt, shodu nového tokenu s runtime a chráněnými soubory mode 600,
+zachované HMAC a interní síť pouze dvou API. SIM souhrn vrátil 200,
+`shadow_only` a dataset `sim-routing-2026-10-11-1791687606`; bez autorizace 401.
+
+Telefonní akceptace skutečného přihlášení/souhlasu a GPS uploadu,
+reálná kvalita směrového přiřazení, soukromé zóny, baterie a síťová zátěž
+zatím nejsou tímto průchodem ověřené. Jízda vyžaduje oddělené pilotní sestavení
+s výslovným souhlasem; samotná instalace API sběr v telefonu nezapíná.
+
+## Testy a podmínky rozšíření pilotu
 
 Lokální syntetické testy pokrývají dva uživatele, transformaci UUID, odmítnutí
 kontextu, odvolání, čekající smazání a chybové odpovědi SIM. Samostatný volitelný
@@ -113,13 +210,32 @@ a maže pouze vlastní náhodné schéma. Spouští se s
 `COP_DRIVER_MEASUREMENT_TEST_DATABASE_URL` ukazujícím na **dočasnou místní
 databázi s názvem končícím `_test`**; bez proměnné je přeskočen. Nepoužívejte
 produkční tunel či účet. Ani tento průchod není důkazem omezených oprávnění
-produkčního účtu, běhu na telefonu nebo produkčního propojení. Před zapnutím společně
+produkčního účtu, běhu na telefonu nebo produkčního propojení. V pilotu a před jeho rozšířením společně
 ověřte skutečné GPS/ETA s Jízdou, přihlášení běžného uživatele `csm-mobile`,
 odříznuté konce jízd, více zařízení, změnu dne, 429/503, durable mazání po
 restartu, audit a kvalitu souhrnů v SIM. Produkční síťové propojení a předání
-službového tokenu podléhají samostatnému schválení.
+službového tokenu podléhají samostatnému schválení; pro tento omezený pilot
+byly schváleny a provozně ověřeny.
+
+SIM uchovává derivované pseudonymní intervaly, omezené ETA a receipt sedm
+dnů od přijetí; raw GPS zpracovává pouze přechodně v paměti SIM/Valhally.
+Minutový úklid odstraňuje expirované receipt a tombstones, cascade pak
+intervaly/ETA; čtení expiraci vždy vylučuje. Mazání se týká živé databáze,
+nikoli automaticky historických záloh, WAL či PITR. Jejich samostatná politika
+a karanténa při obnově jsou vedeny SIM/infrastrukturou. COP uchovává stav
+souhlasu a durable seznam dnů čekajících na smazání, nikoli GPS. Nezařazujte
+tuto evidenci do obecného mazání cache.
 
 ### Společný pilot `shadow_only` na iPhonu
+
+Pilotní sestavení Jízdy musí mít výslovně zapnutý
+`DriverMeasurementClient.productionPilotEnabled` a zachovat autentizovaný
+SDK transport i lokální soukromé zóny. Serverové povolení samo nepřepíná
+tuto kompilační konstantu ani již nainstalovanou aplikaci. Přihlaste se
+povoleným účtem, načtěte GET a nabídněte samostatný souhlas pouze při
+`canGrant=true`; nic se nesbírá pouze na základě členství v pilotu.
+Ukončení serverového pilotu nesmí skrýt odvolání dřívějšího souhlasu.
+Nevydávejte tento krok za telefonní akceptaci nebo zlepšení ETA.
 
 Před začátkem zaznamenejte revize Jízdy, sdíleného CSMCommunicationKit, COP a
 SIM, identitu nasazených obrazů, verzi Valhalla datasetu a stav příznaků.

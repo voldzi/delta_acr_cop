@@ -1,4 +1,6 @@
 import React from "react";
+import { MediaNewsPanel } from "./media-news";
+import { SafetyNotificationSettings, setSafetyNotificationConsent } from "./safety-notification-settings";
 import { localSafetyEmptyCopy, useLocalSafetyFeed } from "./local-safety-feed";
 import { featureNavigationTarget } from "./feature-navigation";
 import { appendBoundedStreamMessage, streamReconnectDelayMs } from "./stream-reconnect";
@@ -340,6 +342,7 @@ import {
   clamp,
   defaultMapCenter,
   normalizeAlertPreferences,
+  mergeHydratedAlertPreferences,
   normalizeMapView,
   normalizeUserPreferences,
   readLocalAlertPreferences,
@@ -1342,6 +1345,21 @@ export function App() {
   const [pwaCacheState, setPwaCacheState] = React.useState<CopPwaCacheState>({ kind: "unknown" });
   const [pwaStorageState, setPwaStorageState] = React.useState<CopStoragePersistenceState>({ kind: "unknown" });
   const [webPushBusy, setWebPushBusy] = React.useState(false);
+  const [safetyNotificationSaving, setSafetyNotificationSaving] = React.useState(false);
+  const [safetyNotificationError, setSafetyNotificationError] = React.useState<string | null>(null);
+  const safetyNotificationRequestRef = React.useRef<AbortController | null>(null);
+  const safetyNotificationScopeRef = React.useRef(userStorageScope);
+  safetyNotificationScopeRef.current = userStorageScope;
+  React.useEffect(() => {
+    safetyNotificationRequestRef.current?.abort();
+    safetyNotificationRequestRef.current = null;
+    setSafetyNotificationSaving(false);
+    setSafetyNotificationError(null);
+    setWebPushBusy(false);
+    return () => {
+      safetyNotificationRequestRef.current?.abort();
+    };
+  }, [userStorageScope]);
   const [incidentSuggestions, setIncidentSuggestions] = React.useState<IncidentFusionSuggestion[]>([]);
   const [incidents, setIncidents] = React.useState<IncidentRecord[]>([]);
   const [incidentTasksById, setIncidentTasksById] = React.useState<Record<string, IncidentTaskRecord[]>>({});
@@ -1683,6 +1701,7 @@ export function App() {
   const profileHydratedRef = React.useRef(false);
   const profileLoadKeyRef = React.useRef<string | null>(null);
   const profileSaveTimerRef = React.useRef<number | undefined>(undefined);
+  const profileSaveRequestRef = React.useRef<AbortController | null>(null);
   const lastScheduledProfileFingerprintRef = React.useRef<string | null>(null);
   const skipNextAlertPreferenceWriteRef = React.useRef(false);
   const skipNextPreferenceWriteRef = React.useRef(false);
@@ -2075,13 +2094,15 @@ export function App() {
         ...current,
         warnings: ["Webové notifikace vyžadují přihlášení."]
       }));
-      return;
+      return false;
     }
 
+    const registrationScope = safetyNotificationScopeRef.current;
     setWebPushBusy(true);
     try {
       if (nativeCompassAvailable()) {
         const registration = await enableNativeRemoteNotifications(apiBase, authToken);
+        if (safetyNotificationScopeRef.current !== registrationScope) return false;
         setWebPushState({
           deviceId: registration.deviceId,
           enabled: true,
@@ -2092,19 +2113,65 @@ export function App() {
           status: "registered",
           warnings: []
         });
+        return true;
       } else {
-        setWebPushState(await enableWebPushNotifications(apiBase, authToken));
+        const registered = await enableWebPushNotifications(apiBase, authToken);
+        if (safetyNotificationScopeRef.current !== registrationScope) return false;
+        setWebPushState(registered);
+        return registered.registered;
       }
     } catch (error) {
+      if (safetyNotificationScopeRef.current !== registrationScope) return false;
       setWebPushState((current) => ({
         ...current,
         status: "degraded",
         warnings: [error instanceof Error ? error.message : "Registrace webových notifikací selhala."]
       }));
+      return false;
     } finally {
-      setWebPushBusy(false);
+      if (safetyNotificationScopeRef.current === registrationScope) setWebPushBusy(false);
     }
   }, [authToken, authenticatedSessionActive]);
+
+  const handleSafetyNotificationToggle = React.useCallback(
+    async (enabled: boolean) => {
+      if (!authenticatedSessionActive || !authToken || safetyNotificationRequestRef.current) return;
+      if (enabled && !aoiRules.some((rule) => rule.enabled)) {
+        setSafetyNotificationError("Nejprve zapněte sledovanou zónu.");
+        return;
+      }
+      const scope = userStorageScope;
+      const controller = new AbortController();
+      safetyNotificationRequestRef.current = controller;
+      setSafetyNotificationSaving(true);
+      setSafetyNotificationError(null);
+      const timeout = window.setTimeout(() => controller.abort(), 30_000);
+      try {
+        // Re-register an existing subscription so COP confirms the account/device binding.
+        if (enabled && !(await handleEnableWebPush())) throw new Error("Nejprve povolte oznámení na tomto zařízení.");
+        if (controller.signal.aborted || safetyNotificationScopeRef.current !== scope) return;
+        const consent = await setSafetyNotificationConsent(apiBase, authToken, enabled, controller.signal);
+        if (controller.signal.aborted || safetyNotificationScopeRef.current !== scope) return;
+        setAlertPreferences((current) => ({ ...current, safetyNotificationsEnabled: consent.enabled }));
+        setServerProfileUpdatedAt(consent.updatedAt);
+      } catch (error: unknown) {
+        if (safetyNotificationScopeRef.current === scope) {
+          setSafetyNotificationError(
+            error instanceof Error && error.name !== "AbortError"
+              ? error.message
+              : "Změna nebyla potvrzena. Zkontrolujte připojení a zkuste to znovu."
+          );
+        }
+      } finally {
+        window.clearTimeout(timeout);
+        if (safetyNotificationRequestRef.current === controller) {
+          safetyNotificationRequestRef.current = null;
+          setSafetyNotificationSaving(false);
+        }
+      }
+    },
+    [aoiRules, authToken, authenticatedSessionActive, handleEnableWebPush, userStorageScope]
+  );
 
   const handleDisableWebPush = React.useCallback(async () => {
     if (!authenticatedSessionActive || !authToken) {
@@ -2116,17 +2183,21 @@ export function App() {
       return;
     }
 
+    const deletionScope = safetyNotificationScopeRef.current;
     setWebPushBusy(true);
     try {
-      setWebPushState(await disableWebPushNotifications(apiBase, authToken));
+      const nextState = await disableWebPushNotifications(apiBase, authToken);
+      if (safetyNotificationScopeRef.current !== deletionScope) return;
+      setWebPushState(nextState);
     } catch (error) {
+      if (safetyNotificationScopeRef.current !== deletionScope) return;
       setWebPushState((current) => ({
         ...current,
         status: "degraded",
         warnings: [error instanceof Error ? error.message : "Odhlášení webových notifikací selhalo."]
       }));
     } finally {
-      setWebPushBusy(false);
+      if (safetyNotificationScopeRef.current === deletionScope) setWebPushBusy(false);
     }
   }, [authToken, authenticatedSessionActive]);
 
@@ -4720,6 +4791,14 @@ export function App() {
   currentPreferencesRef.current = currentPreferences;
 
   React.useEffect(() => {
+    // A BFF bearer marker is shared across sessions. Never send one account's delayed profile with another cookie.
+    if (profileSaveTimerRef.current !== undefined) {
+      window.clearTimeout(profileSaveTimerRef.current);
+      profileSaveTimerRef.current = undefined;
+    }
+    profileSaveRequestRef.current?.abort();
+    profileSaveRequestRef.current = null;
+    lastScheduledProfileFingerprintRef.current = null;
     profileHydratedRef.current = false;
     profileLoadKeyRef.current = null;
     skipNextPreferenceWriteRef.current = true;
@@ -4784,12 +4863,14 @@ export function App() {
     }
     profileLoadKeyRef.current = loadKey;
     let cancelled = false;
+    const profileWriteController = new AbortController();
+    const hydrationScope = userStorageScope;
     setProfileSyncStatus("loading");
     setProfileSyncError(null);
 
     fetchUserProfile(apiBase, authToken)
       .then(async (profile) => {
-        if (cancelled) {
+        if (cancelled || safetyNotificationScopeRef.current !== hydrationScope) {
           return;
         }
         const serverPreferences = normalizeUserPreferences(profile.preferences);
@@ -4799,9 +4880,11 @@ export function App() {
           localAlertPreferences.updatedAt,
           profile.updatedAt
         );
-        const nextAlertPreferences = localAlertPreferencesWin
-          ? localAlertPreferences.alertPreferences
-          : serverAlertPreferences;
+        const nextAlertPreferences = mergeHydratedAlertPreferences(
+          serverAlertPreferences,
+          localAlertPreferences.alertPreferences,
+          localAlertPreferencesWin
+        );
         skipNextAlertPreferenceWriteRef.current = true;
         setAlertPreferences(nextAlertPreferences);
         if (!localAlertPreferencesWin) {
@@ -4830,12 +4913,23 @@ export function App() {
           });
         }
         if (localAlertPreferencesWin || shouldMirrorPreferences || Object.keys(serverPreferences).length === 0) {
-          savedProfile = await saveUserProfile(apiBase, authToken, {
-            alertPreferences: nextAlertPreferences,
-            preferences: hasHydratedPreferences ? hydratedPreferences : latestPreferences
-          });
+          if (
+            cancelled ||
+            profileWriteController.signal.aborted ||
+            safetyNotificationScopeRef.current !== hydrationScope
+          )
+            return;
+          savedProfile = await saveUserProfile(
+            apiBase,
+            authToken,
+            {
+              alertPreferences: nextAlertPreferences,
+              preferences: hasHydratedPreferences ? hydratedPreferences : latestPreferences
+            },
+            profileWriteController.signal
+          );
         }
-        if (savedProfile && !cancelled) {
+        if (savedProfile && !cancelled && safetyNotificationScopeRef.current === hydrationScope) {
           const savedUpdatedAt = savedProfile.updatedAt ?? new Date().toISOString();
           setServerProfileUpdatedAt(savedProfile.updatedAt);
           writeLocalAlertPreferences(
@@ -4845,13 +4939,13 @@ export function App() {
           );
           setLocalAlertPreferencesUpdatedAt(savedUpdatedAt);
         }
-        if (!cancelled) {
+        if (!cancelled && safetyNotificationScopeRef.current === hydrationScope) {
           profileHydratedRef.current = true;
           setProfileSyncStatus("synced");
         }
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
+        if (!cancelled && safetyNotificationScopeRef.current === hydrationScope) {
           profileHydratedRef.current = false;
           setProfileSyncStatus("error");
           setProfileSyncError(error instanceof Error ? error.message : "Synchronizace profilu selhala.");
@@ -4860,6 +4954,7 @@ export function App() {
 
     return () => {
       cancelled = true;
+      profileWriteController.abort();
     };
   }, [
     applyPreferenceSettings,
@@ -4876,6 +4971,7 @@ export function App() {
       if (profileSaveTimerRef.current !== undefined) {
         window.clearTimeout(profileSaveTimerRef.current);
       }
+      profileSaveRequestRef.current?.abort();
     },
     []
   );
@@ -4926,13 +5022,24 @@ export function App() {
       window.clearTimeout(profileSaveTimerRef.current);
     }
     setProfileSyncStatus("saving");
+    const scheduledScope = userStorageScope;
     profileSaveTimerRef.current = window.setTimeout(() => {
       profileSaveTimerRef.current = undefined;
-      saveUserProfile(apiBase, authToken, {
-        alertPreferences,
-        preferences: profilePreferencesForSync
-      })
+      if (safetyNotificationScopeRef.current !== scheduledScope || !profileHydratedRef.current) return;
+      profileSaveRequestRef.current?.abort();
+      const controller = new AbortController();
+      profileSaveRequestRef.current = controller;
+      saveUserProfile(
+        apiBase,
+        authToken,
+        {
+          alertPreferences,
+          preferences: profilePreferencesForSync
+        },
+        controller.signal
+      )
         .then((profile) => {
+          if (controller.signal.aborted || safetyNotificationScopeRef.current !== scheduledScope) return;
           setServerProfileUpdatedAt(profile.updatedAt);
           const savedUpdatedAt = profile.updatedAt ?? new Date().toISOString();
           writeLocalAlertPreferences(profile.alertPreferences ?? alertPreferences, userStorageScope, savedUpdatedAt);
@@ -4941,9 +5048,13 @@ export function App() {
           setProfileSyncStatus("synced");
         })
         .catch((error: unknown) => {
+          if (controller.signal.aborted || safetyNotificationScopeRef.current !== scheduledScope) return;
           lastScheduledProfileFingerprintRef.current = null;
           setProfileSyncStatus("error");
           setProfileSyncError(error instanceof Error ? error.message : "Uložení profilu selhalo.");
+        })
+        .finally(() => {
+          if (profileSaveRequestRef.current === controller) profileSaveRequestRef.current = null;
         });
     }, 650);
   }, [
@@ -8449,6 +8560,13 @@ export function App() {
                     setMobileSheet(mobileDetailSheetForSelection(isSelected));
                   }}
                 />
+                <MediaNewsPanel
+                  apiBase={apiBase}
+                  token={authToken}
+                  enabled={dataAccessReady}
+                  online={browserOnline}
+                  visible={documentVisible}
+                />
                 <IncidentWorkflowBoard
                   authenticated={profileAccessReady}
                   error={incidentWorkflowError}
@@ -9007,6 +9125,12 @@ export function App() {
           profileSyncError={profileSyncError}
           profileSyncStatus={profileSyncStatus}
           proximityAlertEnabled={proximityAlertEnabled}
+          safetyNotificationsEnabled={alertPreferences.safetyNotificationsEnabled === true}
+          safetyNotificationSaving={safetyNotificationSaving}
+          safetyNotificationError={safetyNotificationError}
+          safetyNotificationProfileReady={profileSyncStatus === "synced" || profileSyncStatus === "saving"}
+          safetyNotificationWatchedAreaCount={aoiRules.filter((rule) => rule.enabled).length}
+          onSafetyNotificationChange={(enabled) => void handleSafetyNotificationToggle(enabled)}
           refreshSeconds={refreshSeconds}
           serverProfileUpdatedAt={serverProfileUpdatedAt}
           mapClusterEnabled={mapClusterEnabled}
@@ -14525,6 +14649,12 @@ function SettingsDrawer({
   profileSyncError,
   profileSyncStatus,
   proximityAlertEnabled,
+  safetyNotificationsEnabled,
+  safetyNotificationSaving,
+  safetyNotificationError,
+  safetyNotificationProfileReady,
+  safetyNotificationWatchedAreaCount,
+  onSafetyNotificationChange,
   refreshSeconds,
   serverProfileUpdatedAt,
   showHistory,
@@ -14598,6 +14728,12 @@ function SettingsDrawer({
   profileSyncError: string | null;
   profileSyncStatus: ProfileSyncStatus;
   proximityAlertEnabled: boolean;
+  safetyNotificationsEnabled: boolean;
+  safetyNotificationSaving: boolean;
+  safetyNotificationError: string | null;
+  safetyNotificationProfileReady: boolean;
+  safetyNotificationWatchedAreaCount: number;
+  onSafetyNotificationChange: (enabled: boolean) => void;
   refreshSeconds: RefreshSeconds;
   serverProfileUpdatedAt: string | null;
   showHistory: boolean;
@@ -14857,6 +14993,17 @@ function SettingsDrawer({
           {activeTab === "awareness" ? (
             <section className="settings-section">
               <PanelTitle icon={<MapPin size={17} />} title="Výstrahy a zóny" />
+              <SafetyNotificationSettings
+                authenticated={authSession.status === "authenticated"}
+                enabled={safetyNotificationsEnabled}
+                saving={safetyNotificationSaving}
+                deviceRegistered={webPushState.registered}
+                watchedAreaCount={safetyNotificationWatchedAreaCount}
+                profileReady={safetyNotificationProfileReady}
+                error={safetyNotificationError}
+                onChange={onSafetyNotificationChange}
+                onRegisterDevice={onEnableWebPush}
+              />
               <label className="toggle-row">
                 <input
                   type="checkbox"

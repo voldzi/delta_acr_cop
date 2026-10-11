@@ -13,3 +13,7 @@ packages/*/dist
 
 # Shared versioned runtime is byte-pinned by SRI; never reformat locally.
 apps/cop-web/public/analytics/v1/tracker.js
+apps/cop-web/public/vcode-analytics-tiktok.js
+
+# Provider-issued verification response must remain byte-for-byte intact.
+apps/cop-web/public/google3a8915cd90e394a1.html

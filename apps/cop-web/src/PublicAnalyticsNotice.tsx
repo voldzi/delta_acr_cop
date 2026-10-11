@@ -12,10 +12,11 @@ export function PublicAnalyticsNotice() {
         </p>
         <p>
           Měření používá společnou službu VCode/Umami v naší infrastruktuře bez analytických cookies a bez záznamu
-          obrazovky. Zaznamenává pouze otevření předem vybraných veřejných stránek. Nesledujeme kliknutí, neodesíláme
-          obsah formulářů, údaje o účtu, rezervace, polohu, zprávy, zdravotní údaje, odpovědi ani herní postup.
-          Nepředáváme parametry adres, fragmenty, názvy stránek ani odkazující stránku a nespojujeme statistiky s vaším
-          účtem.
+          obrazovky. Zaznamenává otevření předem vybraných veřejných stránek, obecný zdroj příchodu z vybraných
+          veřejných služeb a kliknutí na určené veřejné odkazy do App Storu, na kontakt nebo mimo web. Neposíláme
+          původní ani cílové adresy odkazů, parametry adres, fragmenty, názvy stránek či obsah odkazů. Nesledujeme obsah
+          formulářů, údaje o účtu, rezervace, polohu, zprávy, zdravotní údaje, odpovědi ani herní postup a nespojujeme
+          statistiky s vaším účtem. Kliknutí neznamená instalaci, rezervaci ani odeslání zprávy.
         </p>
         <p>
           Při přijetí požadavku služba dočasně zpracuje síťovou adresu zařízení a údaje prohlížeče pro denně obměňované
@@ -38,9 +39,11 @@ export function PublicAnalyticsNotice() {
         </p>
         <p>
           Measurement uses the shared VCode/Umami service within our infrastructure without analytics cookies or screen
-          recording. It records only views of selected public pages. We do not track clicks or send form contents,
-          account information, bookings, location, messages, health data, answers or game progress. URL parameters,
-          fragments, page titles and referring pages are not sent, and statistics are not linked to your account.
+          recording. It records views of selected public pages, general traffic sources from selected public services,
+          and clicks on designated public links to the App Store, contact options or external websites. We do not send
+          original or destination link addresses, URL parameters, fragments, page titles or link contents. We do not
+          track form contents, account information, bookings, location, messages, health data, answers or game progress,
+          and statistics are not linked to your account. A click does not mean an installation, booking or sent message.
         </p>
         <p>
           When a request arrives, the service temporarily processes the device's network address and browser information

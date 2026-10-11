@@ -1,5 +1,13 @@
 # Observability
 
+Automatic safety notifications expose `safety-notification-worker` through
+`/health/dependencies`. Its state distinguishes disabled/idle/running/degraded
+and includes aggregate examined/accepted/skipped/failed counts and bounded
+failure codes. It contains no user IDs, area coordinates or notification text.
+An accepted count means Messaging intake with targeted devices, not physical
+phone delivery. Do not interpret empty or degraded SIM input as a safe area.
+See [acceptance and rollback](runbooks/21_COP_CRISIS_NOTIFICATIONS.md).
+
 This is the standard observability entry point for COP. Detailed observability
 and audit documentation remains in:
 
@@ -104,3 +112,18 @@ Recommended implementation phases:
 
 Detailed rollout guidance is in
 [runbooks/12_CHROMADB_AND_OPENTELEMETRY.md](runbooks/12_CHROMADB_AND_OPENTELEMETRY.md).
+
+## Private Dispatch ownership
+
+Structured lease transitions carry component/state/generation with existing
+request context where applicable. Raw PostgreSQL errors/DSNs and point data
+are not logged. `/health/live` remains process liveness. Enabled Dispatch with
+unavailable/recovering/stale ownership makes `/health/ready`503; dependencies
+returns200 with degraded status and a private-dispatch item. Capability states
+report shared vehicles and Dispatch separately. Record deployment source SHA,
+image ID, container start and repeated primary-lock observations separately
+from authenticated client and physical two-device acceptance.
+
+Invitation alert diagnostics use aggregate delivery/queue state only. Do not log
+notification payloads, account identity, emails, APNs tokens or provider errors.
+Record separate intake acceptance, APNs result and physical phone acceptance.

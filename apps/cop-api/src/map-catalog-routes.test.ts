@@ -1645,6 +1645,55 @@ describe("map catalog route", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { endpoint: "map/raster-overlay", upstream: "https://sim.zeleznalady.cz/radar.png" },
+    { endpoint: "weather/webcam-proxy", upstream: "https://sim.zeleznalady.cz/weather/camera.jpg" }
+  ])("refuses an unapproved upstream redirect for $endpoint", async ({ endpoint, upstream }) => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    const fetchMock = vi.fn(async () => new Response(null, {
+      status: 302,
+      headers: { location: "http://127.0.0.1/private/camera.png" }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({ situationDataSource: new FakeSituationDataSource() });
+    try {
+      const response = await app.inject({ url: `/api/v1/${endpoint}?url=${encodeURIComponent(upstream)}` });
+      expect(response.statusCode).toBe(502);
+      expect(response.json().error.code).toBe("UPSTREAM_UNAVAILABLE");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledWith(upstream, expect.objectContaining({ redirect: "manual" }));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it.each([
+    { endpoint: "map/raster-overlay", upstream: "https://sim.zeleznalady.cz/radar.png", maxBytes: 8 * 1024 * 1024 },
+    { endpoint: "weather/webcam-proxy", upstream: "https://sim.zeleznalady.cz/weather/camera.jpg", maxBytes: 12 * 1024 * 1024 }
+  ])("cancels an oversized chunked response and keeps the error contract for $endpoint", async ({ endpoint, upstream, maxBytes }) => {
+    vi.stubEnv("COP_PUBLIC_READ_ENABLED", "true");
+    let cancelled = false;
+    let received = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        received += 256 * 1024;
+        controller.enqueue(new Uint8Array(256 * 1024));
+      },
+      cancel() { cancelled = true; }
+    }, { highWaterMark: 0 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { headers: { "content-type": "image/png" } })));
+    const app = buildServer({ situationDataSource: new FakeSituationDataSource() });
+    try {
+      const response = await app.inject({ url: `/api/v1/${endpoint}?url=${encodeURIComponent(upstream)}` });
+      expect(response.statusCode).toBe(502);
+      expect(response.json().error.code).toBe("UPSTREAM_INVALID_RESPONSE");
+      expect(cancelled).toBe(true);
+      expect(received).toBe(maxBytes + 256 * 1024);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("allows authenticated map feature queries to include partner layers", async () => {
     const app = buildServer({
       now: () => new Date("2026-05-22T08:00:00Z"),

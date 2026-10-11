@@ -129,9 +129,8 @@ export function readLocalAlertPreferences(scope?: string): StoredLocalAlertPrefe
       return { alertPreferences: {}, updatedAt: null };
     }
     const key = scopedStorageKey(alertPreferencesKey, scope);
-    const raw =
-      window.localStorage.getItem(key) ??
-      (key === alertPreferencesKey ? null : window.localStorage.getItem(alertPreferencesKey));
+    const scopedRaw = window.localStorage.getItem(key);
+    const raw = scopedRaw ?? (key === alertPreferencesKey ? null : window.localStorage.getItem(alertPreferencesKey));
     if (!raw) {
       return { alertPreferences: {}, updatedAt: null };
     }
@@ -140,7 +139,12 @@ export function readLocalAlertPreferences(scope?: string): StoredLocalAlertPrefe
       return { alertPreferences: {}, updatedAt: null };
     }
     return {
-      alertPreferences: normalizeAlertPreferences(parsed.alertPreferences),
+      // A legacy shared browser preference must never grant another account's consent.
+      alertPreferences: normalizeAlertPreferences(
+        !scopedRaw && key !== alertPreferencesKey && isRecord(parsed.alertPreferences)
+          ? { ...parsed.alertPreferences, safetyNotificationsEnabled: false }
+          : parsed.alertPreferences
+      ),
       updatedAt: optionalIsoDateString(parsed.updatedAt) ?? null
     };
   } catch {
@@ -255,10 +259,29 @@ export function normalizeAlertPreferences(value: unknown): AlertPreferences {
   const aoiRules = Array.isArray(value.aoiRules) ? value.aoiRules.flatMap(normalizeLocalAoiRule) : undefined;
   const enabledTypes = optionalStringArray(value.enabledTypes);
   const minimumSeverity = optionalAlertSeverity(value.minimumSeverity);
+  const extensions = { ...value };
+  delete extensions.aoiRules;
+  delete extensions.enabledTypes;
+  delete extensions.minimumSeverity;
+  delete extensions.safetyNotificationsEnabled;
   return {
+    ...extensions,
+    safetyNotificationsEnabled: value.safetyNotificationsEnabled === true,
     ...(aoiRules ? { aoiRules } : {}),
     ...(enabledTypes ? { enabledTypes: enabledTypes.filter(isCopAlertType) } : {}),
     ...(minimumSeverity ? { minimumSeverity } : {})
+  };
+}
+
+/** Offline UI preferences may restore zones, but never grant or revoke server consent. */
+export function mergeHydratedAlertPreferences(
+  server: AlertPreferences,
+  local: AlertPreferences,
+  preferLocal: boolean
+): AlertPreferences {
+  return {
+    ...(preferLocal ? local : server),
+    safetyNotificationsEnabled: server.safetyNotificationsEnabled === true
   };
 }
 

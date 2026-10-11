@@ -27,3 +27,13 @@ Volba samostatné mobilní verze brání tomu, aby klient podvrhl interní
 existujícího draftu Jízdy a samostatná integrace tří endpointů souhlasu.
 Před zapnutím je nutná společná produkční a telefonní akceptace podle
 [předávacího kontraktu](../integration/22_JIZDA_DRIVER_MEASUREMENTS_COP_HANDOFF.md).
+
+## Doplnění 2026-10-11: omezení dobrovolného pilotu
+
+Pilotní příjem může být omezen serverovým seznamem ověřených OIDC subjektů.
+Prázdný či chybný seznam při zapnutém pilotním příznaku uzavírá nové souhlasy
+a dávky. GET/DELETE a cleanup historických příspěvků zůstávají nezávislé na
+členství v pilotu. Stav `canGrant` zahrnuje i připravenost příjmu a členství;
+mobilní schéma a význam `shadow_only` se nemění. Samostatné schválení pilotu
+opravňuje k serverové aktivaci pro fyzickou akceptaci, nikoli k tvrzení, že
+telefonní testy proběhly nebo že měření už ovlivňují navigaci.

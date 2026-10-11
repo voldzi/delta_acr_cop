@@ -1,3 +1,9 @@
+import { MediaNewsSourceAdapter } from "./media-news-source.js";
+import { createSafetyNotificationStoreFromEnv, type SafetyNotificationStore } from "./safety-notification-store.js";
+import { SafetyNotificationWorker, safetyNotificationWorkerConfigFromEnv, type SafetyNotificationWorkerConfig } from "./safety-notification-worker.js";
+import { buildSafetyCandidateNotificationDecision } from "./notification-decision.js";
+import { readVoiceCallPeer, type VoiceCallPeer } from "./voice-call-peer.js";
+import { registerCOPAccountProfile } from "./cop-account-profile.js";
 import { registerMobilityRoutes } from "./routes/mobility-routes.js";
 import { mobilityStoreFromEnv, type MobilityStore } from "./mobility-store.js";
 import { communityReportPresence } from "./community-report-presence.js";
@@ -18,10 +24,11 @@ import {
 } from "@cop/canonical-model";
 import { ContractValidators, formatValidationErrors } from "@cop/ingest-contracts";
 import { resolveSymbolFromRequest } from "@cop/nato-symbol-renderer";
-import { defaultSystemSubject, evaluateReadPolicy } from "@cop/policy-engine";
+import { defaultSystemSubject } from "@cop/policy-engine";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
+import { isDeepStrictEqual } from "node:util";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { buildCopAlerts, type AoiRule, type AoiRuleAffiliationScope, type CopAlert } from "./alerts.js";
 import {
@@ -46,7 +53,10 @@ import {
   type CommunityReportStore,
   type CommunityReportVisibility
 } from "./community-report-store.js";
-import { correlationIdFrom, sendError } from "./errors.js";
+import { correlationIdFrom, requestBodyLimitOptions, sendError } from "./errors.js";
+import { fetchBoundedProxyResource, isHttpUrlWithoutCredentials, readBoundedBody, UpstreamBodyTooLargeError } from "./bounded-upstream.js";
+import { safeRequestLog } from "./request-log.js";
+import { canReadCanonicalObject, canReadCanonicalHistoryPoint, isPublicCanonicalReleasePolicy } from "./canonical-read-policy.js";
 import { OpenAiMcpAssistant, openAiMcpAssistantConfig } from "./openai-mcp-assistant.js";
 import { AiRouterMcpAssistant, aiRouterMcpConfig } from "./ai-router-mcp-assistant.js";
 import { CopAiRouterChatAdapter, CopRouterChatError } from "./ai-router-chat.js";
@@ -209,7 +219,6 @@ import {
 } from "./mobile-device-store.js";
 import {
   buildCommunityReportNotificationDecision,
-  buildSafetyFeatureNotificationDecision,
   type CommunityReportNotificationEvent,
   type CopNotificationAudience,
   type CopNotificationDecision
@@ -338,6 +347,9 @@ import {
 } from "./web-session-store.js";
 
 export interface BuildServerOptions {
+  mediaNewsSource?: Pick<MediaNewsSourceAdapter, "fetchContext">;
+  safetyNotificationStore?: SafetyNotificationStore;
+  safetyNotificationWorkerConfig?: SafetyNotificationWorkerConfig;
   mobilityStore?: MobilityStore;
   sharedMobilityEnabled?: boolean;
   privateDispatchEnabled?: boolean;
@@ -799,7 +811,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       process.env.COP_API_BODY_LIMIT_BYTES,
       Math.max(1024 * 1024, maxCommunityAttachmentBytes * 2)
     ),
-    logger: options.logger ?? false
+    logger: options.logger ? { serializers: { req: safeRequestLog } } : false
   });
   const state = options.state ?? createInitialState();
   const validators = new ContractValidators();
@@ -830,7 +842,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const openAiMcpAssistant = openAiMcpConfig.enabled ? new OpenAiMcpAssistant(openAiMcpConfig) : undefined;
   let openAiMcpReady = false;
   const aiSemanticRetriever = new AiSemanticRetriever({
-    embedText: (input) => aiGateway.embedText(input),
+    embedText: (input, signal) => aiGateway.embedText(input, signal),
+    timeoutMs: readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_TIMEOUT_MS, 20000),
     enabled: readBoolean(process.env.COP_AI_SEMANTIC_RETRIEVAL_ENABLED, true),
     maxCacheEntries: readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_CACHE_ENTRIES, 500),
     maxDocuments: readPositiveInteger(process.env.COP_AI_SEMANTIC_RETRIEVAL_MAX_DOCUMENTS, 12)
@@ -868,6 +881,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const now = options.now ?? (() => new Date());
   const driverMeasurementsEnabled = readBoolean(process.env.COP_DRIVER_MEASUREMENTS_ENABLED, false);
   const driverMeasurementCleanupEnabled = readBoolean(process.env.COP_DRIVER_MEASUREMENTS_CLEANUP_ENABLED, false);
+  const driverMeasurementPilotFlag = process.env.COP_DRIVER_MEASUREMENTS_PILOT_ENABLED;
   const driverMeasurementRuntimeEnabled = driverMeasurementsEnabled || driverMeasurementCleanupEnabled;
   const driverMeasurementSecret = process.env.COP_DRIVER_MEASUREMENTS_HASH_SECRET ?? "";
   if (driverMeasurementRuntimeEnabled && !options.driverMeasurementConsentStore && !process.env.COP_DATABASE_URL) {
@@ -914,6 +928,62 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const placeGeocoder = options.placeGeocoder ?? createPlaceGeocoderFromEnv();
   const flightDataSource = options.flightDataSource ?? createFlightDataSourceFromEnv();
   const safetyDataSource = options.safetyDataSource ?? createSafetyDataSourceFromEnv();
+  const safetyNotificationConfig = options.safetyNotificationWorkerConfig ?? safetyNotificationWorkerConfigFromEnv();
+  const safetyNotificationStore = options.safetyNotificationStore ??
+    (process.env.COP_DATABASE_URL || safetyNotificationConfig.enabled ? createSafetyNotificationStoreFromEnv() : undefined);
+  if (safetyNotificationConfig.enabled && process.env.NODE_ENV === "production"
+      && (userProfileStore.name !== "postgres" || safetyNotificationStore?.name !== "postgres")) {
+    throw new Error("Production safety notifications require persistent PostgreSQL consent and delivery stores.");
+  }
+  const mediaNewsSource = options.mediaNewsSource ?? (safetyDataSource ? new MediaNewsSourceAdapter(safetyDataSource.config) : undefined);
+  let safetyNotificationStoreReady = false;
+  let safetyNotificationStoreInitializing: Promise<boolean> | undefined;
+  const safetyNotificationWorker = safetyNotificationStore && safetyDataSource?.fetchNotificationCandidates
+    ? new SafetyNotificationWorker({
+        profileStore: userProfileStore,
+        notificationStore: safetyNotificationStore,
+        fetchCandidates: (query, requestNow) => safetyDataSource.fetchNotificationCandidates!(query, requestNow),
+        hasEligibleDevice: hasEligibleSafetyDevice,
+        dispatch: (decision, requestNow) => messagingProvider.sendNotification(undefined, requestNow, decision.idempotencyKey, decision.notification),
+        now
+      }, safetyNotificationConfig)
+    : undefined;
+
+  async function ensureSafetyNotificationStoreReady(): Promise<boolean> {
+    if (!safetyNotificationStore) return false;
+    if (safetyNotificationStoreReady) return true;
+    if (safetyNotificationStoreInitializing) return safetyNotificationStoreInitializing;
+    const initializing = safetyNotificationStore.init().then(() => {
+      safetyNotificationStoreReady = true;
+      return true;
+    }).catch(() => {
+      app.log.warn("Safety notification store unavailable; automatic dispatch remains closed.");
+      return false;
+    });
+    safetyNotificationStoreInitializing = initializing;
+    try { return await initializing; } finally { safetyNotificationStoreInitializing = undefined; }
+  }
+
+  async function hasEligibleSafetyDevice(subjectId: string, _requestNow: Date): Promise<boolean> {
+    if (!(await ensureSafetyNotificationStoreReady())) {
+      throw new Error("Safety notification device registry unavailable.");
+    }
+    if (await safetyNotificationStore!.hasEligibleWebDevice(subjectId)) return true;
+    if (mobileDeviceStoreStatus !== "ok") throw new Error("Safety notification device registry unavailable.");
+    const devices = await mobileDeviceStore.listDevices(subjectId);
+    return devices.some((device) => device.subjectId === subjectId && device.status === "paired" && device.pushTokenRegistered === true);
+  }
+
+  function safetyNotificationDependency(): { name: string; status: DependencyStatus; detail: string } {
+    const snapshot = safetyNotificationWorker?.snapshot();
+    const enabled = safetyNotificationConfig.enabled;
+    return {
+      name: "safety-notification-worker",
+      status: !enabled ? "disabled" : !snapshot || !safetyNotificationStoreReady || snapshot.status === "degraded" ? "degraded" : "ok",
+      detail: !enabled ? "disabled" : !snapshot ? "required dependencies unavailable" : JSON.stringify(snapshot)
+    };
+  }
+
   const simSearchDataSource = options.simSearchDataSource ?? createSimSearchDataSourceFromEnv();
   const situationDataSource = options.situationDataSource ?? createSituationDataSourceFromEnv();
   const situationDataBaseUrl = situationDataSource?.config.baseUrl ?? createSituationDataSourceConfigFromEnv().baseUrl;
@@ -1014,8 +1084,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       done(null, body);
     }
   );
-  app.addHook("preHandler", async (request, reply) => {
-    if (!webBffEnabled || isBffAuthRoute(request.url)) {
+  // Authenticate headers/cookies before parsing a potentially large upload.
+  app.addHook("onRequest", async (request, reply) => {
+    if (request.method === "OPTIONS" || !webBffEnabled || isBffAuthRoute(request.url)) {
       return;
     }
     const presentedBearer = request.headers.authorization;
@@ -1041,8 +1112,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       request.headers.authorization = `Bearer ${resolved.accessToken}`;
     }
   });
-  app.addHook("preHandler", requireBearerToken);
-  registerMobilityRoutes(app, {
+  app.addHook("onRequest", requireBearerToken);
+  const mobilityDependency = registerMobilityRoutes(app, {
     messagingProvider,
     enabled: options.sharedMobilityEnabled ?? readBoolean(process.env.COP_SHARED_MOBILITY_ENABLED, false),
     dispatchEnabled: options.privateDispatchEnabled ?? readBoolean(process.env.COP_PRIVATE_DISPATCH_ENABLED, false),
@@ -1051,6 +1122,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   registerDriverMeasurementRoutes(app, {
     enabled: driverMeasurementsEnabled,
     cleanupEnabled: driverMeasurementCleanupEnabled,
+    // A typo must not turn an intended restricted pilot into unrestricted intake.
+    pilotEnabled: driverMeasurementPilotFlag !== undefined
+      && driverMeasurementPilotFlag !== "false" && driverMeasurementPilotFlag !== "0",
+    pilotSubjectIds: process.env.COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS,
     oidcClientId: process.env.COP_DRIVER_MEASUREMENTS_OIDC_CLIENT_ID?.trim() || "csm-mobile",
     secret: driverMeasurementSecret,
     store: driverMeasurementStore,
@@ -1157,7 +1232,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!session) return reply.code(401).send({ authenticated: false });
     return { authenticated: true, expiresAt: session.accessTokenExpiresAt.toISOString(), profile: session.profile };
   });
-  app.post("/api/v1/auth/logout", async (request, reply) => {
+  app.post("/api/v1/auth/logout", requestBodyLimitOptions(1024), async (request, reply) => {
     if (webBffEnabled && !isTrustedBffOrigin(request)) {
       return sendError(
         reply,
@@ -1188,6 +1263,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await initializeFederationRuntimeStore();
     await initializeUserProfileStore();
     await initializeMobileDeviceStore();
+    await ensureSafetyNotificationStoreReady();
     try {
       await voiceCallStore.init();
       voiceCallStoreStatus = "ok";
@@ -1229,8 +1305,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       });
     }, aiContextIndexRefreshSeconds * 1000);
     aiContextIndexRefreshTimer.unref?.();
+    safetyNotificationWorker?.start();
   });
   app.addHook("onClose", async () => {
+    await safetyNotificationWorker?.stop();
+    await safetyNotificationStore?.close();
     await openAiMcpAssistant?.close();
     if (flightDataPollTimer) {
       clearInterval(flightDataPollTimer);
@@ -1274,10 +1353,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       status: "ok",
       timestamp: new Date().toISOString()
     }),
-    ready: async () => ({
-      status: "ok",
-      timestamp: new Date().toISOString()
-    }),
+    ready: async (_request, reply) => {
+      const ready = mobilityDependency().status !== "unavailable";
+      return reply.code(ready ? 200 : 503).send({ status: ready ? "ok" : "unavailable", timestamp: new Date().toISOString() });
+    },
     dependencies: async () => {
       const messaging = await withDependencyTimeout("csm-messaging-provider", messagingDependency(), {
         detail: `Messaging provider dependency check timed out after ${healthDependencyTimeoutMs()} ms.`,
@@ -1299,8 +1378,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         aiHealthDependencyTimeoutMs()
       );
       return {
-        status: "ok",
+        status: mobilityDependency().status === "unavailable" ? "degraded" : "ok",
         dependencies: [
+          mobilityDependency(),
           { name: "source-registry", status: "ok" },
           { name: "in-memory-cop-state", status: "ok" },
           { name: "cop-stream-bus", status: streamBusDependencyStatus(), detail: streamBusDependencyDetail() },
@@ -1311,6 +1391,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           },
           { name: "track-history-store", status: trackHistoryStoreStatus, detail: trackHistoryStoreDependencyDetail() },
           { name: "user-profile-store", status: userProfileStoreStatus, detail: userProfileStoreDependencyDetail() },
+          safetyNotificationDependency(),
           {
             name: "community-report-store",
             status: communityReportStoreStatus,
@@ -1408,10 +1489,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         redirect_uri: transaction.callbackUri
       }),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      method: "POST"
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(8000)
     });
     if (!response.ok) throw new Error(`OIDC token exchange failed (${response.status}).`);
-    return tokensFromOidcResponse((await response.json()) as BffTokenResponse);
+    return tokensFromOidcResponse(JSON.parse((await readBoundedBody(response, 1024 * 1024)).toString("utf8")) as BffTokenResponse);
   }
 
   async function refreshBffTokens(refreshToken: string): Promise<WebSessionTokens> {
@@ -1420,10 +1503,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const response = await fetch(`${normalizedOidcIssuer()}/protocol/openid-connect/token`, {
       body: new URLSearchParams({ client_id: clientId, grant_type: "refresh_token", refresh_token: refreshToken }),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      method: "POST"
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(8000)
     });
     if (!response.ok) throw new Error(`OIDC token refresh failed (${response.status}).`);
-    return tokensFromOidcResponse((await response.json()) as BffTokenResponse, refreshToken);
+    return tokensFromOidcResponse(JSON.parse((await readBoundedBody(response, 1024 * 1024)).toString("utf8")) as BffTokenResponse, refreshToken);
   }
 
   async function tokensFromOidcResponse(
@@ -2140,10 +2225,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     query: string;
     retrievalIntent?: AiRetrievalIntent;
   }): Promise<AiSemanticContext> {
+    const controller = new AbortController();
     return withTimeoutFallback(
-      aiSemanticRetriever.retrieve(input),
+      aiSemanticRetriever.retrieve({ ...input, signal: controller.signal }),
       aiSemanticRetrievalTimeoutMs,
-      () => emptyAiSemanticContext(input, `Semantic retrieval timed out after ${aiSemanticRetrievalTimeoutMs} ms.`),
+      () => {
+        controller.abort(new Error("COP semantic retrieval deadline exceeded."));
+        return emptyAiSemanticContext(input, `Semantic retrieval timed out after ${aiSemanticRetrievalTimeoutMs} ms.`);
+      },
       "AI semantic retrieval completed after the request timeout."
     );
   }
@@ -2492,7 +2581,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         source: "geocoder"
       };
     } catch (error) {
-      app.log.warn({ error, placeQuery }, "AI context geocode lookup failed.");
+      app.log.warn({ error }, "AI context geocode lookup failed.");
       return undefined;
     }
   }
@@ -2878,7 +2967,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           });
         } catch (error) {
           app.log.warn(
-            { error, query: fallbackQuery, requestId: input.requestId },
+            { error, requestId: input.requestId },
             "AI geocoder map-search fallback failed."
           );
           warnings.push(`Geocoder fallback selhal: ${errorMessage(error)}`);
@@ -4484,12 +4573,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await flushQueuedTrackPersistence();
     if (trackHistoryStore && trackHistoryStoreStatus === "ok") {
       try {
-        return await trackHistoryStore.query(query, requestNow);
+        const items = await trackHistoryStore.query(query, requestNow);
+        return readableHistoryItems(items, requestNow);
       } catch (error) {
         markTrackHistoryStoreDegraded(error);
       }
     }
-    return queryTrackHistory(state, query, requestNow);
+    return readableHistoryItems(queryTrackHistory(state, query, requestNow), requestNow);
+  }
+
+  function readableHistoryItems(items: Array<{ objectId: string; points: TrackHistoryPoint[] }>, requestNow: Date) {
+    return items.map((item) => ({
+      ...item,
+      points: item.points.filter((point) => canReadCanonicalHistoryPoint(defaultSystemSubject(), point, state.events, requestNow))
+    })).filter((item) => item.points.length > 0);
+  }
+
+  function canReadObject(subject: ReturnType<typeof defaultSystemSubject>, object: ObservedObject): boolean {
+    return canReadCanonicalObject(subject, object, state.events, now());
+  }
+
+  function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {
+    return canReadCanonicalHistoryPoint(subject, point, state.events, now());
   }
 
   async function buildConflictEvidenceForObjects(
@@ -4757,10 +4862,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   function decorateObjectsWithInMemoryConflictEvidence(objects: ObservedObject[], requestNow: Date): ObservedObject[] {
-    const historyItems = objects.map((object) => ({
+    const historyItems = readableHistoryItems(objects.map((object) => ({
       objectId: object.objectId,
       points: state.trackHistory.get(object.objectId) ?? []
-    }));
+    })), requestNow);
     const evidenceIndex = buildConflictEvidenceIndex({
       evaluatedAt: requestNow.toISOString(),
       historyItems,
@@ -4769,6 +4874,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
     return objects.map((object) => withConflictEvidence(object, evidenceIndex.get(object.objectId)));
   }
+
+  registerCOPAccountProfile(app, { store: userProfileStore, requireActor, ready: ensureUserProfileStoreReady, degraded: markUserProfileStoreDegraded, now });
 
   app.get("/api/v1/me/preferences", async (request, reply) => {
     const actor = requireActor(request, reply);
@@ -5082,7 +5189,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const media = await voiceCallMediaIssuer.issue(call, actor, requestNow);
-      return reply.code(201).send(voiceCallAPIResponse(call, actor.subjectId, media));
+      return reply.code(201).send(voiceCallAPIResponse(call, actor.subjectId, media, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id))));
     },
     voiceCalls: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -5113,7 +5220,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         ...(roomId ? { roomId } : {})
       });
       return {
-        calls: calls.map((call) => voiceCallView(call, actor.subjectId)),
+        calls: await Promise.all(calls.map(async (call) => voiceCallView(call, actor.subjectId, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id))))),
         contractVersion: "cop-voice-call-v1" as const
       };
     },
@@ -5148,7 +5255,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         canIssueVoiceCallMedia(call, actor.subjectId) && voiceCallMediaIssuer.enabled
           ? await voiceCallMediaIssuer.issue(call, actor, now())
           : undefined;
-      return voiceCallAPIResponse(call, actor.subjectId, media);
+      return voiceCallAPIResponse(call, actor.subjectId, media, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id)));
     },
     transitionVoiceCall: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -5196,7 +5303,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       if (!result.changed && (result.conflict === "revision" || result.conflict === "claimed")) {
-        return reply.code(409).send(voiceCallAPIResponse(result.record, actor.subjectId));
+        return reply.code(409).send(voiceCallAPIResponse(result.record, actor.subjectId, undefined, await readVoiceCallPeer(result.record, actor.subjectId, id => userProfileStore.getProfile(id))));
       }
       if (!result.changed && result.conflict === "transition") {
         return sendError(
@@ -5237,7 +5344,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         canIssueVoiceCallMedia(result.record, actor.subjectId) && voiceCallMediaIssuer.enabled
           ? await voiceCallMediaIssuer.issue(result.record, actor, now())
           : undefined;
-      return voiceCallAPIResponse(result.record, actor.subjectId, media);
+      return voiceCallAPIResponse(result.record, actor.subjectId, media, await readVoiceCallPeer(result.record, actor.subjectId, id => userProfileStore.getProfile(id)));
     },
     conversationDetail: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -5336,6 +5443,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const result = await messagingProvider.deleteWebPushDevice(actor, now(), deviceId);
+      if (result.deleted && safetyNotificationStore) {
+        if (!(await ensureSafetyNotificationStoreReady())) return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Device notification capability update is unavailable.", correlationIdFrom(request.headers["x-correlation-id"]));
+        try { await safetyNotificationStore!.setWebDeviceEligibility(actor.subjectId, deviceId, false); }
+        catch { return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Device notification capability update is unavailable.", correlationIdFrom(request.headers["x-correlation-id"])); }
+      }
       return reply.code(result.status === "disabled" ? 503 : 202).send(result);
     },
     matrixPushGateway: async (request, reply) => {
@@ -5369,6 +5481,17 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const result = await messagingProvider.registerWebPushDevice(actor, now(), registration);
+      if (result.registered && safetyNotificationStore) {
+        if (!(await ensureSafetyNotificationStoreReady())) return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Device notification capability update is unavailable.", correlationIdFrom(request.headers["x-correlation-id"]));
+        try {
+          const preferences = registration.notificationPreferences;
+          const hasCategoryFlags = ["chatMessages", "communityReports", "safetyAlerts", "system", "voiceCalls", "watchedAreaAlerts"]
+            .some((flag) => typeof preferences?.[flag] === "boolean");
+          await safetyNotificationStore!.setWebDeviceEligibility(actor.subjectId, result.deviceId ?? registration.deviceId,
+            result.enabled && (!registration.capabilities || registration.capabilities.includes("notifications"))
+            && preferences?.enabled !== false && (!hasCategoryFlags || preferences?.safetyAlerts === true));
+        } catch { return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Device notification capability update is unavailable.", correlationIdFrom(request.headers["x-correlation-id"])); }
+      }
       return reply.code(result.status === "disabled" ? 503 : 202).send(result);
     },
     resolveConversation: async (request, reply) => {
@@ -5396,6 +5519,19 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         : await messagingProvider.fetchConversationByRoomId(actor, now(), roomId as string);
       return reply.code(result.conversation ? 200 : result.status === "online" ? 404 : 502).send(result);
     },
+    lookupMatrixIdentities: async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      const actor = requireActor(request, reply);
+      if (!actor) return reply;
+      const body = request.body;
+      const conversationId = isRecord(body) && Object.keys(body).length === 1 && typeof body.conversationId === "string" && body.conversationId === body.conversationId.trim()
+        ? normalizeMessagingConversationId(body.conversationId) : undefined;
+      if (!conversationId) return sendError(reply, 400, "VALIDATION_ERROR", "Identity lookup requires only conversationId.", correlationIdFrom(request.headers["x-correlation-id"]));
+      const result = await messagingProvider.lookupMatrixIdentities?.(actor, now(), conversationId);
+      if (result?.statusCode === 200 && result.body) return reply.send(result.body);
+      const code = result?.statusCode === 403 || result?.statusCode === 404 ? result.statusCode : 503;
+      return sendError(reply, code, code === 403 ? "FORBIDDEN" : code === 404 ? "NOT_FOUND" : "SERVICE_UNAVAILABLE", "Existing identity mapping is unavailable.", correlationIdFrom(request.headers["x-correlation-id"]));
+    },
     resolveMatrixIdentities: async (request, reply) => {
       const actor = requireActor(request, reply);
       if (!actor) {
@@ -5417,55 +5553,53 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     webPushConfig: async () => messagingProvider.fetchWebPushConfig(now())
   });
 
-  app.post("/api/v1/notifications/safety/evaluate", async (request, reply) => {
+  app.post("/api/v1/notifications/safety/evaluate", { bodyLimit: 64 * 1024 }, async (request, reply) => {
     const actor = requireActor(request, reply);
-    if (!actor) {
-      return reply;
-    }
+    if (!actor) return reply;
     const requestNow = now();
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const body = isRecord(request.body) ? request.body : {};
     const query = normalizeSafetyNotificationEvaluationRequest(body);
-    if (!query) {
-      return sendError(
-        reply,
-        400,
-        "VALIDATION_ERROR",
-        "Safety notification evaluation requires bbox=[west,south,east,north].",
-        correlationIdFrom(request.headers["x-correlation-id"])
-      );
+    if (!query) return sendError(reply, 400, "VALIDATION_ERROR", "Safety notification evaluation requires bbox=[west,south,east,north].", correlationId);
+    if (query.audience && ((query.audience.groupIds?.length ?? 0) > 0 || (query.audience.areaIds?.length ?? 0) > 0 || query.audience.userIds?.some((id) => id !== actor.subjectId))) {
+      return sendError(reply, 403, "NOTIFICATION_AUDIENCE_FORBIDDEN", "This endpoint evaluates only the authenticated user's own watched areas.", correlationId);
     }
-    const profile = await readUserProfile(actor);
-    const collection = await readSafetyMapQuery(query.safetyQuery, requestNow);
-    const features = (collection?.features ?? []) as SafetyFeature[];
-    const decisions = features.map((feature) =>
-      buildSafetyFeatureNotificationDecision(feature, {
-        actor,
-        audience: query.audience,
-        currentLocation: query.currentLocation,
-        now: requestNow,
-        watchedAreas: profile?.alertPreferences.aoiRules ?? []
-      })
-    );
-    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
-    const dispatch = query.dryRun
-      ? []
-      : await Promise.all(
-          decisions.map((decision) => dispatchNotificationDecision(actor, decision, requestNow, correlationId))
-        );
-    return {
-      contractVersion: "cop-notification-evaluation-v1",
-      decisions,
-      dispatch,
-      dryRun: query.dryRun,
-      query: query.safetyQuery,
-      serverTimestamp: requestNow.toISOString(),
-      summary: {
-        dispatchedCount: dispatch.filter((item) => item.status === "online").length,
-        eligibleCount: decisions.filter((decision) => decision.shouldSend).length,
-        featureCount: features.length,
-        skippedCount: decisions.filter((decision) => !decision.shouldSend).length
+    if (!safetyDataSource?.fetchNotificationCandidates || !(await ensureUserProfileStoreReady())) {
+      return sendError(reply, 503, "SAFETY_EVALUATION_UNAVAILABLE", "Verified safety notification evaluation is unavailable.", correlationId);
+    }
+    try {
+      const profile = await userProfileStore.getProfile(actor.subjectId);
+      const collection = await safetyDataSource.fetchNotificationCandidates({ ...query.safetyQuery, minSeverity: "warning" }, requestNow);
+      if (collection.inputReadiness.status !== "ready" || collection.completeness !== "complete") {
+        return sendError(reply, 503, "SAFETY_CANDIDATES_NOT_READY", "Safety source data is unavailable or incomplete; this is not evidence of a safe area.", correlationId);
       }
-    };
+      const decisions = collection.candidates.map((candidate) => buildSafetyCandidateNotificationDecision(candidate, {
+        actor, now: requestNow, watchedAreas: profile?.alertPreferences.aoiRules ?? [],
+        minimumSeverity: profile?.alertPreferences.minimumSeverity
+      }));
+      let dispatchSummary = { acceptedCount: 0, skippedCount: decisions.filter((decision) => !decision.shouldSend).length, failedCount: 0 };
+      if (!query.dryRun) {
+        if (profile?.alertPreferences.safetyNotificationsEnabled !== true) {
+          return sendError(reply, 403, "SAFETY_NOTIFICATION_CONSENT_REQUIRED", "Automatic safety notifications require explicit current-user consent.", correlationId);
+        }
+        if (!safetyNotificationConfig.enabled || !safetyNotificationWorker || !(await ensureSafetyNotificationStoreReady())) {
+          return sendError(reply, 503, "SAFETY_NOTIFICATIONS_UNAVAILABLE", "Automatic safety notifications are unavailable.", correlationId);
+        }
+        dispatchSummary = await safetyNotificationWorker.runForRecipient(actor.subjectId, collection);
+        if (dispatchSummary.failedCount > 0) {
+          return sendError(reply, 503, "NOTIFICATION_DISPATCH_UNAVAILABLE", "Safety notification dispatch is currently unavailable.", correlationId);
+        }
+      }
+      return {
+        contractVersion: "cop-notification-evaluation-v1", decisions, dispatch: [], dispatchSummary,
+        dryRun: query.dryRun, query: query.safetyQuery, serverTimestamp: requestNow.toISOString(),
+        inputReadiness: collection.inputReadiness,
+        summary: { dispatchedCount: dispatchSummary.acceptedCount, eligibleCount: decisions.filter((decision) => decision.shouldSend).length,
+          featureCount: collection.candidates.length, skippedCount: dispatchSummary.skippedCount }
+      };
+    } catch {
+      return sendError(reply, 503, "SAFETY_EVALUATION_UNAVAILABLE", "Verified safety notification evaluation is currently unavailable.", correlationId);
+    }
   });
 
   app.get("/api/v1/demo/scenarios", async (request, reply) => {
@@ -6320,6 +6454,36 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return task;
   });
 
+  app.put("/api/v1/me/notifications/safety", { bodyLimit: 1024 }, async (request, reply) => {
+    const actor = requireActor(request, reply);
+    if (!actor) return reply;
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    if (!isRecord(request.body) || typeof request.body.enabled !== "boolean" || Object.keys(request.body).some((key) => key !== "enabled")) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Safety notification consent requires only enabled=true or false.", correlationId);
+    }
+    if (!(await ensureUserProfileStoreReady())) {
+      return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Safety notification consent storage is unavailable.", correlationId);
+    }
+    try {
+      let profile = await userProfileStore.getProfile(actor.subjectId);
+      if (request.body.enabled && (!safetyNotificationWorker || !safetyNotificationConfig.enabled || !(await ensureSafetyNotificationStoreReady()))) {
+        return sendError(reply, 503, "SAFETY_NOTIFICATIONS_UNAVAILABLE", "Automatic safety notifications are currently unavailable.", correlationId);
+      }
+      if (request.body.enabled && (!(profile?.alertPreferences.aoiRules?.some((rule) => rule.enabled)) || !(await hasEligibleSafetyDevice(actor.subjectId, now())))) {
+        return sendError(reply, 409, "SAFETY_NOTIFICATION_PRECONDITION", "Enable a watched area and register a notification device before enabling automatic alerts.", correlationId);
+      }
+      if (!profile) {
+        profile = await userProfileStore.upsertProfile({ subjectId: actor.subjectId, username: actor.username, displayName: actor.displayName,
+          ...(actor.email ? { email: actor.email } : {}), alertPreferences: {}, preferences: {} });
+      }
+      const saved = await userProfileStore.setSafetyNotificationsEnabled(actor.subjectId, request.body.enabled);
+      if (!saved) throw new Error("Safety notification profile missing.");
+      return { contractVersion: "cop-safety-notification-consent-v1", enabled: saved.alertPreferences.safetyNotificationsEnabled === true, updatedAt: saved.updatedAt };
+    } catch {
+      return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Safety notification consent could not be stored. Retry the request.", correlationId);
+    }
+  });
+
   app.put("/api/v1/me/preferences", async (request, reply) => {
     const actor = requireActor(request, reply);
     if (!actor) {
@@ -6334,6 +6498,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const alertPreferences = hasOwn(body, "alertPreferences")
       ? normalizeAlertPreferences(body.alertPreferences)
       : (existing?.alertPreferences ?? {});
+    delete alertPreferences.safetyNotificationsEnabled;
+    if (typeof existing?.alertPreferences.safetyNotificationsEnabled === "boolean") {
+      alertPreferences.safetyNotificationsEnabled = existing.alertPreferences.safetyNotificationsEnabled;
+    }
 
     const profile = await upsertUserProfile({
       alertPreferences,
@@ -6425,7 +6593,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (
         !appInstanceId ||
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(appInstanceId) ||
-        bundleId !== "cz.voldzi.copmobile"
+        !bundleId || !["cz.voldzi.copmobile", "cz.voldzi.jizda"].includes(bundleId)
       ) {
         return sendError(
           reply,
@@ -7951,6 +8119,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         .header("Content-Type", contentType)
         .send(body);
     } catch (error) {
+      if (error instanceof UpstreamBodyTooLargeError) {
+        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Raster overlay image is too large.", correlationId);
+      }
       app.log.warn({ error, rasterHost: rasterUrl.hostname }, "Raster overlay request failed.");
       return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
     }
@@ -8069,6 +8240,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         .header("Content-Type", contentType)
         .send(body);
     } catch (error) {
+      if (error instanceof UpstreamBodyTooLargeError) {
+        return sendError(reply, 502, "UPSTREAM_INVALID_RESPONSE", "Weather camera response is too large.", correlationId);
+      }
       app.log.warn({ error, upstreamUrl: upstreamUrl.toString() }, "Weather camera proxy request failed.");
       return sendError(reply, 502, "UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
     }
@@ -8252,7 +8426,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         now()
       );
     } catch (error) {
-      app.log.warn({ error, q }, "Place geocode search failed.");
+      app.log.warn({ error }, "Place geocode search failed.");
       return sendError(
         reply,
         502,
@@ -8263,7 +8437,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
 
-  app.post("/api/v1/map/query", async (request, reply) => {
+  app.post("/api/v1/map/query", requestBodyLimitOptions(64 * 1024), async (request, reply) => {
     const requestNow = now();
     const actor = actorFromRequest(request);
     const query = parseMapQueryRequest(request.body);
@@ -8466,6 +8640,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return sendError(reply, 502, "ROUTING_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
       }
     }
+  });
+
+  app.get("/api/v1/safety/context/news", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    if (!mediaNewsSource) return sendError(reply, 503, "MEDIA_NEWS_UNAVAILABLE", "Zpravodajský kontext nyní není dostupný.", correlationId);
+    try { return await mediaNewsSource.fetchContext(now()); }
+    catch { return sendError(reply, 503, "MEDIA_NEWS_UNAVAILABLE", "Zpravodajský kontext nyní není dostupný.", correlationId); }
   });
 
   app.get("/api/v1/safety/hydro/stations/:stationId/observations", async (request, reply) => {
@@ -8921,7 +9102,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return node;
   });
 
-  app.post("/api/v1/federation/nodes/:nodeId/heartbeat", async (request, reply) => {
+  app.post("/api/v1/federation/nodes/:nodeId/heartbeat", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { nodeId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const previous = await getFederatedNode(params.nodeId);
@@ -8972,7 +9153,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return reply.code(previous ? 200 : 201).send(result.node);
   });
 
-  app.post("/api/v1/events/domain", async (request, reply) => {
+  app.post("/api/v1/events/domain", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const parsed = parseDomainEventPublishRequest(request.body, correlationId);
     if (!parsed.ok || !parsed.input) {
@@ -9047,7 +9228,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   });
 
-  app.post("/api/v1/edge/outbox/flush", async (request, reply) => {
+  app.post("/api/v1/edge/outbox/flush", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const body = isRecord(request.body) ? request.body : undefined;
     const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : "";
@@ -9189,7 +9370,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.post("/api/v1/edge/replay-cursors/:nodeId/ack", async (request, reply) => {
+  app.post("/api/v1/edge/replay-cursors/:nodeId/ack", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { nodeId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const node = await getFederatedNode(params.nodeId);
@@ -9237,7 +9418,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/edge/replay/:nodeId", async (request, reply) => {
+  app.get("/api/v1/edge/replay/:nodeId", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { nodeId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const node = await getFederatedNode(params.nodeId);
@@ -9314,7 +9495,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/events/domain", async (request) => {
+  app.get("/api/v1/events/domain", { onRequest: requirePrivilegedIntegrationActor }, async (request) => {
     const query = parseDomainEventReplayQuery(request.query);
     const result = await queryRuntimeDomainEvents(query);
     const items = result.items;
@@ -9331,7 +9512,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/events/dead-letter/:deadLetterId", async (request, reply) => {
+  app.get("/api/v1/events/dead-letter/:deadLetterId", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { deadLetterId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const deadLetter = await getRuntimeDomainDeadLetter(params.deadLetterId);
@@ -9345,7 +9526,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.post("/api/v1/events/dead-letter/:deadLetterId/redrive", async (request, reply) => {
+  app.post("/api/v1/events/dead-letter/:deadLetterId/redrive", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { deadLetterId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const deadLetter = await getRuntimeDomainDeadLetter(params.deadLetterId);
@@ -9421,7 +9602,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   });
 
-  app.post("/api/v1/events/dead-letter/:deadLetterId/resolve", async (request, reply) => {
+  app.post("/api/v1/events/dead-letter/:deadLetterId/resolve", { onRequest: requirePrivilegedIntegrationActor }, async (request, reply) => {
     const params = request.params as { deadLetterId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const actor = actorFromRequest(request);
@@ -9449,7 +9630,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.get("/api/v1/events/dead-letter", async (request) => {
+  app.get("/api/v1/events/dead-letter", { onRequest: requirePrivilegedIntegrationActor }, async (request) => {
     const query = request.query as { limit?: string };
     const parsedLimit = Number.parseInt(query.limit ?? "", 10);
     const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 500) : 100;
@@ -9465,7 +9646,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   });
 
-  app.post("/api/v1/sources", async (request, reply) => {
+  app.post("/api/v1/sources", { onRequest: requireSourceRegistryAdmin }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const validation = validators.validateSourceSystem(request.body);
     if (!validation.valid || !validation.data) {
@@ -9500,17 +9681,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return source;
   });
 
-  app.patch("/api/v1/sources/:sourceSystemId", async (request, reply) => {
+  app.patch("/api/v1/sources/:sourceSystemId", { onRequest: requireSourceRegistryAdmin }, async (request, reply) => {
     const params = request.params as { sourceSystemId: string };
     const source = state.sources.get(params.sourceSystemId);
     if (!source) {
       return sendError(reply, 404, "NOT_FOUND", "Source system was not found.", crypto.randomUUID());
     }
-    const patch = request.body as Partial<SourceSystem>;
-    const updated = {
+    const patch = request.body;
+    if (!isRecord(patch) || (hasOwn(patch, "sourceSystemId") && patch.sourceSystemId !== source.sourceSystemId)) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Source system patch must be an object and cannot change sourceSystemId.",
+        correlationIdFrom(request.headers["x-correlation-id"]));
+    }
+    const validation = validators.validateSourceSystem({
       ...source,
       ...patch,
-      sourceSystemId: source.sourceSystemId,
+      sourceSystemId: source.sourceSystemId
+    });
+    if (!validation.valid || !validation.data) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Updated source system does not match schema.",
+        correlationIdFrom(request.headers["x-correlation-id"]), formatValidationErrors(validation.errors));
+    }
+    const updated: SourceSystem = {
+      ...validation.data,
       updatedAt: new Date().toISOString()
     };
     state.sources.set(source.sourceSystemId, updated);
@@ -9518,7 +9710,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return updated;
   });
 
-  app.post("/api/v1/sources/:sourceSystemId/revoke", async (request, reply) => {
+  app.post("/api/v1/sources/:sourceSystemId/revoke", { onRequest: requireSourceRegistryAdmin }, async (request, reply) => {
     const params = request.params as { sourceSystemId: string };
     const source = state.sources.get(params.sourceSystemId);
     if (!source) {
@@ -9534,7 +9726,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   });
 
-  app.post("/api/v1/ingest/events", async (request, reply) => {
+  app.post("/api/v1/ingest/events", { onRequest: requireCanonicalIngestActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const validation = validators.validateCanonicalEvent(request.body);
     if (!validation.valid || !validation.data) {
@@ -9556,12 +9748,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       reply,
       correlationId,
       queueTrackPersistence,
-      publishCurrentTracks
+      publishCurrentTracks,
+      now()
     );
   });
 
-  app.post("/api/v1/ingest/batches", async (request, reply) => {
+  app.post("/api/v1/ingest/batches", { onRequest: requireCanonicalIngestActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
+    const requestNow = now();
     const body = request.body as {
       batchId?: string;
       contractVersion?: string;
@@ -9577,12 +9771,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendError(reply, 400, "VALIDATION_ERROR", "Batch payload does not match contract.", correlationId);
     }
 
-    const sourceCheck = validateSourceForRequest(state, body.sourceSystemId, body.sourceSystemId, correlationId);
+    const sourceCheck = validateSourceForRequest(state, headerAsString(request.headers["x-source-system-id"]), body.sourceSystemId, correlationId);
     if (!sourceCheck.valid) {
       return sendError(reply, sourceCheck.statusCode, sourceCheck.code, sourceCheck.message, correlationId);
     }
 
     const items: Array<{ eventId: string; status: "QUEUED" | "REJECTED"; errorCode?: string }> = [];
+    const validatedEvents: CanonicalEventEnvelope[] = [];
+    const eventClaims = new Map<string, CanonicalEventEnvelope>();
     const acceptedObjects: ObservedObject[] = [];
     for (const item of body.events) {
       const validation = validators.validateCanonicalEvent(item);
@@ -9591,12 +9787,30 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         continue;
       }
 
-      const result = acceptEvent(state, validation.data);
+      const itemSource = validateSourceForRequest(state, body.sourceSystemId, validation.data.source.sourceSystemId, correlationId);
+      if (!itemSource.valid) {
+        return sendError(reply, itemSource.statusCode, itemSource.code, itemSource.message, correlationId);
+      }
+      const policyFailure = ingestEventPolicyFailure(itemSource.source, validation.data, requestNow);
+      if (policyFailure) {
+        return sendError(reply, 422, policyFailure.code, policyFailure.message, correlationId);
+      }
+      const existing = state.events.get(validation.data.eventId) ?? eventClaims.get(validation.data.eventId);
+      if (existing && !sameCanonicalEventIdentity(existing, validation.data)) {
+        return sendError(reply, 409, "EVENT_ID_CONFLICT", "Event ID was reused with different canonical content.", correlationId);
+      }
+      eventClaims.set(validation.data.eventId, validation.data);
+      validatedEvents.push(validation.data);
+      items.push({ eventId: validation.data.eventId, status: "QUEUED" });
+    }
+    // Validate every item's source/security boundary before mutating any state.
+    for (const event of validatedEvents) {
+      if (state.events.has(event.eventId)) continue;
+      const result = acceptEvent(state, event, requestNow.toISOString());
       queueTrackPersistence(result.object, result.accepted, result.historyPoint);
       acceptedObjects.push(result.object);
-      items.push({ eventId: result.accepted.eventId, status: "QUEUED" });
     }
-    await publishCurrentTracks(acceptedObjects);
+    if (acceptedObjects.length > 0) await publishCurrentTracks(acceptedObjects);
 
     const response = {
       batchId: body.batchId,
@@ -9618,13 +9832,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       requestNow,
       trackLifecycle,
       includeExpired
-    ).filter((object) => {
-      const decision = evaluateReadPolicy(subject, {
-        classification: "UNCLASSIFIED",
-        synthetic: object.synthetic
-      });
-      return decision.allowed;
-    });
+    ).filter((object) => canReadObject(subject, object));
     const items = await decorateObjectsWithConflictEvidence(readableItems, requestNow);
     return { items, nextCursor: null };
   });
@@ -9778,7 +9986,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return;
       }
 
-      const visibleMessage = filterStreamMessage(subject, message);
+      const visibleMessage = filterStreamMessage(message, (object) => canReadObject(subject, object));
       if (!visibleMessage) {
         return;
       }
@@ -10938,6 +11146,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     actor: AuthenticatedActor | null | undefined,
     correlationId: string
   ): Promise<CopMcpToolInvocationEnvelope> {
+    if (privilegedIntegrationMcpTools.has(tool.toolId) && !canUsePrivilegedIntegration(actor)) {
+      throw new IntegrationAccessError();
+    }
     const startedAt = Date.now();
     const invocationId = crypto.randomUUID();
     let result: Record<string, unknown>;
@@ -11367,6 +11578,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           return mcpJsonRpcError(id, -32602, "Invalid params", "Requested COP MCP tool is not allowlisted.");
         }
         const input = isRecord(params.arguments) ? params.arguments : {};
+        if (privilegedIntegrationMcpTools.has(tool.toolId) && !canUsePrivilegedIntegration(actor)) {
+          return mcpJsonRpcError(id, -32003, "Forbidden", "INTEGRATION_FORBIDDEN: This tool requires a privileged integration actor.");
+        }
         const invocation = await invokeCopMcpToolInternal(tool, input, actor, correlationId);
         return mcpJsonRpcResult(id, {
           content: [
@@ -11393,7 +11607,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }));
 
-  app.post("/api/v1/mcp/tools/:toolId/invoke", async (request, reply) => {
+  app.post("/api/v1/mcp/tools/:toolId/invoke", { onRequest: requireMcpIntegrationActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const params = request.params as { toolId: string };
     const tool = copMcpTools.find((item) => item.toolId === params.toolId);
@@ -12149,7 +12363,8 @@ async function handleIngestEvent(
     event: CanonicalEventEnvelope,
     historyPoint: TrackHistoryPoint | undefined
   ) => void,
-  publishCurrentTracks: (objects: ObservedObject[]) => Promise<void>
+  publishCurrentTracks: (objects: ObservedObject[]) => Promise<void>,
+  requestNow: Date
 ) {
   const headerSource = headerAsString(headers["x-source-system-id"]);
   const sourceCheck = validateSourceForRequest(state, headerSource, event.source.sourceSystemId, correlationId);
@@ -12163,34 +12378,9 @@ async function handleIngestEvent(
     return sendError(reply, sourceCheck.statusCode, sourceCheck.code, sourceCheck.message, correlationId);
   }
 
-  if (!sourceCheck.source.allowedEventTypes.includes(event.eventType)) {
-    return sendError(
-      reply,
-      422,
-      "EVENT_TYPE_NOT_ALLOWED",
-      "Source is not allowed to publish this event type.",
-      correlationId
-    );
-  }
-
-  if (!sourceCheck.source.allowedObjectTypes.includes(event.payload.objectType)) {
-    return sendError(
-      reply,
-      422,
-      "OBJECT_TYPE_NOT_ALLOWED",
-      "Source is not allowed to publish this object type.",
-      correlationId
-    );
-  }
-
-  if (sourceCheck.source.synthetic && event.simulation?.synthetic !== true) {
-    return sendError(
-      reply,
-      422,
-      "SYNTHETIC_FLAG_REQUIRED",
-      "Synthetic source must mark events as synthetic.",
-      correlationId
-    );
+  const policyFailure = ingestEventPolicyFailure(sourceCheck.source, event, requestNow);
+  if (policyFailure) {
+    return sendError(reply, 422, policyFailure.code, policyFailure.message, correlationId);
   }
 
   const key = headerAsString(headers["x-idempotency-key"]);
@@ -12198,7 +12388,11 @@ async function handleIngestEvent(
     return sendError(reply, 400, "IDEMPOTENCY_KEY_REQUIRED", "X-Idempotency-Key header is required.", correlationId);
   }
 
-  const hash = hashPayload(event);
+  const existingEvent = state.events.get(event.eventId);
+  if (existingEvent && !sameCanonicalEventIdentity(existingEvent, event)) {
+    return sendError(reply, 409, "EVENT_ID_CONFLICT", "Event ID was reused with different canonical content.", correlationId);
+  }
+  const hash = hashPayload(canonicalEventIdentity(event));
   const previous = state.idempotency.get(key);
   if (previous && previous.hash !== hash) {
     appendAudit(state, "IDEMPOTENCY_CONFLICT", { eventId: event.eventId }, correlationId);
@@ -12214,10 +12408,13 @@ async function handleIngestEvent(
     return reply.code(202).send(previous.response);
   }
 
-  const result = acceptEvent(state, event);
-  queueTrackPersistence(result.object, result.accepted, result.historyPoint);
-  await publishCurrentTracks([result.object]);
-  const accepted = result.accepted;
+  let accepted = existingEvent;
+  if (!accepted) {
+    const result = acceptEvent(state, event, requestNow.toISOString());
+    queueTrackPersistence(result.object, result.accepted, result.historyPoint);
+    await publishCurrentTracks([result.object]);
+    accepted = result.accepted;
+  }
   const response = {
     accepted: true,
     eventId: accepted.eventId,
@@ -12238,11 +12435,12 @@ async function handleIngestEvent(
 
 function acceptEvent(
   state: CopState,
-  event: CanonicalEventEnvelope
+  event: CanonicalEventEnvelope,
+  serverIngestTimestamp?: string
 ): { accepted: CanonicalEventEnvelope; historyPoint: TrackHistoryPoint | undefined; object: ObservedObject } {
   const accepted: CanonicalEventEnvelope = {
     ...event,
-    ingestTimestamp: event.ingestTimestamp ?? new Date().toISOString()
+    ingestTimestamp: serverIngestTimestamp ?? event.ingestTimestamp ?? new Date().toISOString()
   };
   state.events.set(accepted.eventId, accepted);
   const object = withEventProvenance(createCopObjectFromEvent(accepted), accepted);
@@ -14090,25 +14288,6 @@ function canReadSituationSource(sourceId: string, actor: AuthenticatedActor | nu
   return requiredRole ? Boolean(actor.roles?.includes(requiredRole)) : true;
 }
 
-function canReadHistoryPoint(subject: ReturnType<typeof defaultSystemSubject>, point: TrackHistoryPoint): boolean {
-  return canReadBySyntheticFlag(subject, point.synthetic);
-}
-
-function canReadObject(subject: ReturnType<typeof defaultSystemSubject>, object: ObservedObject): boolean {
-  return canReadBySyntheticFlag(subject, object.synthetic);
-}
-
-function canReadBySyntheticFlag(
-  subject: ReturnType<typeof defaultSystemSubject>,
-  synthetic: boolean | undefined
-): boolean {
-  const decision = evaluateReadPolicy(subject, {
-    classification: "UNCLASSIFIED",
-    synthetic
-  });
-  return decision.allowed;
-}
-
 function conflictEvidenceCacheKey(
   objects: ObservedObject[],
   requestNow: Date,
@@ -14149,14 +14328,14 @@ function pruneBoundedCache<Key, Value>(cache: Map<Key, Value>, maxEntries: numbe
 }
 
 function filterStreamMessage(
-  subject: ReturnType<typeof defaultSystemSubject>,
-  message: CopStreamMessage
+  message: CopStreamMessage,
+  canRead: (object: ObservedObject) => boolean
 ): CopStreamMessage | null {
   if (message.type === "heartbeat" || message.type === "backpressure" || message.type === "reconnect_required") {
     return message;
   }
 
-  const changes = message.changes.filter((change) => canReadObject(subject, change.object));
+  const changes = message.changes.filter((change) => canRead(change.object));
   if (message.type === "snapshot") {
     return { ...message, changes };
   }
@@ -15422,16 +15601,17 @@ function normalizeVoiceCallActionRequest(
   };
 }
 
-function voiceCallAPIResponse(call: VoiceCallRecord, actorSubjectId: string, media?: VoiceCallMediaCredentials) {
+function voiceCallAPIResponse(call: VoiceCallRecord, actorSubjectId: string, media?: VoiceCallMediaCredentials, peer?: VoiceCallPeer) {
   return {
     contractVersion: "cop-voice-call-v1" as const,
-    call: voiceCallView(call, actorSubjectId),
+    call: voiceCallView(call, actorSubjectId, peer),
     ...(media ? { media } : {})
   };
 }
 
-function voiceCallView(call: VoiceCallRecord, actorSubjectId: string) {
+function voiceCallView(call: VoiceCallRecord, actorSubjectId: string, peer?: VoiceCallPeer) {
   return {
+    ...(peer ? {peer} : {}),
     ...(call.acceptedByEndpointId ? { acceptedByEndpointId: call.acceptedByEndpointId } : {}),
     callId: call.callId,
     createdAt: call.createdAt,
@@ -17782,6 +17962,7 @@ function isWeatherCameraPath(pathname: string): boolean {
 }
 
 function isAllowedWeatherCameraUrl(url: URL, env: Record<string, string | undefined> = process.env): boolean {
+  if (!isHttpUrlWithoutCredentials(url) || !isWeatherCameraPath(url.pathname)) return false;
   const hostname = url.hostname.toLowerCase();
   if (hostname === "chmi.cz" || hostname.endsWith(".chmi.cz")) {
     return false;
@@ -17796,6 +17977,7 @@ function isAllowedWeatherCameraUrl(url: URL, env: Record<string, string | undefi
 }
 
 function isAllowedRasterOverlayUrl(url: URL, env: Record<string, string | undefined> = process.env): boolean {
+  if (!isHttpUrlWithoutCredentials(url)) return false;
   const allowedHosts = new Set(
     (env.COP_RASTER_OVERLAY_ALLOWED_HOSTS ?? defaultRasterOverlayAllowedHosts)
       .split(",")
@@ -17832,36 +18014,28 @@ function readableResponseBody(response: Response): Readable {
 
 async function fetchWeatherCameraResource(url: URL): Promise<Response> {
   const timeoutMs = readPositiveInteger(process.env.COP_WEATHER_CAMERA_TIMEOUT_MS, 8000);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url.toString(), {
-      headers: {
-        accept: "application/json,image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
-        "user-agent": "CSM-COP weather camera proxy"
-      },
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
+  return fetchBoundedProxyResource(url, {
+    headers: {
+      accept: "application/json,image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
+      "user-agent": "CSM-COP weather camera proxy"
+    },
+    isAllowedUrl: isAllowedWeatherCameraUrl,
+    maxBytes: weatherCameraMaxBytes,
+    timeoutMs
+  });
 }
 
 async function fetchRasterOverlay(url: URL): Promise<Response> {
   const timeoutMs = readPositiveInteger(process.env.COP_RASTER_OVERLAY_TIMEOUT_MS, 8000);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url.toString(), {
-      headers: {
-        accept: "image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
-        "user-agent": "CSM-COP raster overlay proxy"
-      },
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
+  return fetchBoundedProxyResource(url, {
+    headers: {
+      accept: "image/png,image/webp,image/jpeg,image/*;q=0.8,*/*;q=0.1",
+      "user-agent": "CSM-COP raster overlay proxy"
+    },
+    isAllowedUrl: isAllowedRasterOverlayUrl,
+    maxBytes: rasterOverlayMaxBytes,
+    timeoutMs
+  });
 }
 
 async function fetchWeatherRadarFrames(url: URL, timeoutMsOverride?: number): Promise<unknown> {
@@ -19188,8 +19362,79 @@ function validateSourceForRequest(
   return { valid: true, source };
 }
 
+function ingestEventPolicyFailure(source: SourceSystem, event: CanonicalEventEnvelope, requestNow: Date): { code: string; message: string } | null {
+  const classificationLevels = ["UNCLASSIFIED", "RESTRICTED", "CONFIDENTIAL", "SECRET"];
+  const sourceClearance = classificationLevels.indexOf(source.classificationLimit);
+  const eventClassification = classificationLevels.indexOf(event.classification.level);
+  if (event.classification.level !== "UNCLASSIFIED" || eventClassification < 0 || sourceClearance < eventClassification) {
+    return { code: "CLASSIFICATION_NOT_ALLOWED", message: "The canonical COP feed currently accepts only unclassified events within the source's classification limit." };
+  }
+  if (!isPublicCanonicalReleasePolicy(event.payload.releasePolicy, requestNow)) {
+    return { code: "RELEASE_POLICY_NOT_ALLOWED", message: "The canonical COP feed accepts only public, unexpired release policies without targeted access restrictions." };
+  }
+  if (!source.allowedEventTypes.includes(event.eventType)) {
+    return { code: "EVENT_TYPE_NOT_ALLOWED", message: "Source is not allowed to publish this event type." };
+  }
+  if (!source.allowedObjectTypes.includes(event.payload.objectType)) {
+    return { code: "OBJECT_TYPE_NOT_ALLOWED", message: "Source is not allowed to publish this object type." };
+  }
+  if (source.synthetic && event.simulation?.synthetic !== true) {
+    return { code: "SYNTHETIC_FLAG_REQUIRED", message: "Synthetic source must mark events as synthetic." };
+  }
+  return null;
+}
+
+async function requireCanonicalIngestActor(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const actor = actorFromRequest(request);
+  const allowedRoles = new Set(["COP_OPERATOR", "INTEGRATION_ADMIN", "SYSTEM_CLIENT"]);
+  if (actor && (actor.authMode === "lab" || actor.roles?.some((role) => allowedRoles.has(role.trim().toUpperCase())))) return;
+  sendError(reply, 403, "INGEST_FORBIDDEN", "Canonical ingest requires an authorized operator or integration actor.",
+    correlationIdFrom(request.headers["x-correlation-id"]));
+}
+
+async function requireSourceRegistryAdmin(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const actor = actorFromRequest(request);
+  const allowedRoles = new Set(["INTEGRATION_ADMIN", "SECURITY_ADMIN"]);
+  if (actor && (actor.authMode === "lab" || actor.roles?.some((role) => allowedRoles.has(role.trim().toUpperCase())))) return;
+  sendError(reply, 403, "SOURCE_MANAGEMENT_FORBIDDEN", "Source registry changes require an authorized integration or security administrator.",
+    correlationIdFrom(request.headers["x-correlation-id"]));
+}
+
+const privilegedIntegrationMcpTools = new Set(["cop.events.replay", "cop.events.dead_letters.list"]);
+
+class IntegrationAccessError extends Error {
+  constructor() {
+    super("This tool requires a privileged integration actor.");
+  }
+}
+
+function canUsePrivilegedIntegration(actor: AuthenticatedActor | null | undefined): boolean {
+  const allowedRoles = new Set(["INTEGRATION_ADMIN", "SECURITY_ADMIN", "SYSTEM_CLIENT"]);
+  return Boolean(actor && (actor.authMode === "lab" || actor.roles?.some((role) => allowedRoles.has(role.trim().toUpperCase()))));
+}
+
+async function requirePrivilegedIntegrationActor(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (canUsePrivilegedIntegration(actorFromRequest(request))) return;
+  sendError(reply, 403, "INTEGRATION_FORBIDDEN", "This operation requires an authorized integration or security administrator or system client.",
+    correlationIdFrom(request.headers["x-correlation-id"]));
+}
+
+async function requireMcpIntegrationActor(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const params = request.params as { toolId: string };
+  if (privilegedIntegrationMcpTools.has(params.toolId)) await requirePrivilegedIntegrationActor(request, reply);
+}
+
 function hashPayload(data: unknown): string {
   return createHash("sha256").update(JSON.stringify(data)).digest("hex");
+}
+
+function canonicalEventIdentity(event: CanonicalEventEnvelope): Omit<CanonicalEventEnvelope, "ingestTimestamp"> {
+  const { ingestTimestamp: _clientIngestTimestamp, ...identity } = event;
+  return identity;
+}
+
+function sameCanonicalEventIdentity(left: CanonicalEventEnvelope, right: CanonicalEventEnvelope): boolean {
+  return isDeepStrictEqual(canonicalEventIdentity(left), canonicalEventIdentity(right));
 }
 
 function headerAsString(value: unknown): string | undefined {

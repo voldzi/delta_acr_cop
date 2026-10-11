@@ -5,6 +5,8 @@ import {
   clamp,
   defaultMapCenter,
   isUsableMapCenter,
+  mergeHydratedAlertPreferences,
+  normalizeAlertPreferences,
   normalizeMapView,
   normalizeUserPreferences,
   readLocalAlertPreferences,
@@ -18,6 +20,41 @@ beforeEach(() => {
 });
 
 describe("user preferences helpers", () => {
+  it("hydrates consent from the server even when newer local zones win", () => {
+    expect(
+      mergeHydratedAlertPreferences(
+        { safetyNotificationsEnabled: false, minimumSeverity: "warning" },
+        { safetyNotificationsEnabled: true, minimumSeverity: "critical" },
+        true
+      )
+    ).toEqual({ safetyNotificationsEnabled: false, minimumSeverity: "critical" });
+    expect(
+      mergeHydratedAlertPreferences({ safetyNotificationsEnabled: true }, { safetyNotificationsEnabled: false }, true)
+        .safetyNotificationsEnabled
+    ).toBe(true);
+  });
+  it("defaults safety consent off and preserves existing preference extensions", () => {
+    expect(normalizeAlertPreferences({ minimumSeverity: "critical", futurePreference: { value: 2 } })).toMatchObject({
+      safetyNotificationsEnabled: false,
+      minimumSeverity: "critical",
+      futurePreference: { value: 2 }
+    });
+    expect(normalizeAlertPreferences({ safetyNotificationsEnabled: "true" }).safetyNotificationsEnabled).toBe(false);
+    writeLocalAlertPreferences({ safetyNotificationsEnabled: true, minimumSeverity: "warning" }, "operator-a");
+    writeLocalAlertPreferences({ safetyNotificationsEnabled: false, minimumSeverity: "critical" }, "operator-b");
+    expect(readLocalAlertPreferences("operator-a").alertPreferences.safetyNotificationsEnabled).toBe(true);
+    expect(readLocalAlertPreferences("operator-b").alertPreferences.safetyNotificationsEnabled).toBe(false);
+    writeLocalAlertPreferences({ safetyNotificationsEnabled: false }, "operator-a");
+    expect(readLocalAlertPreferences("operator-a").alertPreferences.safetyNotificationsEnabled).toBe(false);
+  });
+
+  it("never inherits consent from a legacy shared browser profile", () => {
+    writeLocalAlertPreferences({ safetyNotificationsEnabled: true, minimumSeverity: "critical" });
+    expect(readLocalAlertPreferences("new-account").alertPreferences).toMatchObject({
+      safetyNotificationsEnabled: false,
+      minimumSeverity: "critical"
+    });
+  });
   it("normalizes persisted map view", () => {
     expect(normalizeMapView({ center: [14.4, 50.1], zoom: 9 })).toEqual({
       center: [14.4, 50.1],

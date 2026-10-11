@@ -62,7 +62,8 @@ export interface AiSemanticContext {
 }
 
 export interface AiSemanticRetrieverOptions {
-  embedText: (input: string) => Promise<AiEmbeddingResponse>;
+  embedText: (input: string, signal?: AbortSignal) => Promise<AiEmbeddingResponse>;
+  timeoutMs?: number;
   enabled?: boolean;
   maxCacheEntries?: number;
   maxDocuments?: number;
@@ -92,6 +93,7 @@ export class AiSemanticRetriever {
     limit?: number;
     query: string;
     retrievalIntent?: AiRetrievalIntent;
+    signal?: AbortSignal;
   }): Promise<AiSemanticContext> {
     const query = input.query.trim();
     const retrievalIntent = input.retrievalIntent ?? inferAiRetrievalIntent(query);
@@ -102,10 +104,14 @@ export class AiSemanticRetriever {
     if (!query || documents.length === 0) {
       return this.empty(input.generatedAt, query, "disabled", "Semantic retrieval has no query or documents.", retrievalIntent);
     }
+    const controller = new AbortController();
+    const timeoutMs = this.options.timeoutMs ?? 20000;
+    const timer = setTimeout(() => controller.abort(new Error(`Semantic retrieval timed out after ${timeoutMs} ms.`)), timeoutMs);
+    const signal = input.signal ? AbortSignal.any([controller.signal, input.signal]) : controller.signal;
     try {
-      const queryEmbedding = await this.embed(`query\n${query}`);
+      const queryEmbedding = await this.embed(`query\n${query}`, signal);
       const scored = await mapWithConcurrency(documents, 4, async (document) => {
-        const embedding = await this.embed(documentEmbeddingText(document));
+        const embedding = await this.embed(documentEmbeddingText(document), signal);
         const semanticScore = cosineSimilarity(queryEmbedding.embedding, embedding.embedding);
         const priorityScore = crisisPriorityScore(document, retrievalIntent);
         return {
@@ -150,7 +156,10 @@ export class AiSemanticRetriever {
         warnings: []
       };
     } catch (error) {
+      controller.abort(error);
       return this.empty(input.generatedAt, query, "degraded", `Semantic retrieval unavailable: ${errorMessage(error)}`, retrievalIntent);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -168,7 +177,8 @@ export class AiSemanticRetriever {
     };
   }
 
-  private async embed(text: string): Promise<CachedEmbedding> {
+  private async embed(text: string, signal: AbortSignal): Promise<CachedEmbedding> {
+    signal.throwIfAborted();
     const key = createHash("sha256").update(text).digest("hex");
     const cached = this.cache.get(key);
     const now = Date.now();
@@ -176,7 +186,8 @@ export class AiSemanticRetriever {
       cached.lastUsedAt = now;
       return cached;
     }
-    const response = await this.options.embedText(text.slice(0, 4000));
+    const response = await abortableEmbedding(() => this.options.embedText(text.slice(0, 4000), signal), signal);
+    signal.throwIfAborted();
     const next = {
       embedding: response.embedding,
       lastUsedAt: now,
@@ -202,6 +213,19 @@ export class AiSemanticRetriever {
       this.cache.delete(key);
     }
   }
+}
+
+function abortableEmbedding(start: () => Promise<AiEmbeddingResponse>, signal: AbortSignal): Promise<AiEmbeddingResponse> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) {
+      signal.removeEventListener("abort", abort);
+      reject(signal.reason);
+      return;
+    }
+    Promise.resolve().then(() => { signal.throwIfAborted(); return start(); }).then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
 }
 
 export function createSemanticDocuments(input: {

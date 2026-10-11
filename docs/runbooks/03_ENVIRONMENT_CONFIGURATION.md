@@ -197,6 +197,7 @@ COP_AI_OLLAMA_REASONING_RETRY_ATTEMPTS=1
 COP_AI_OLLAMA_REASONING_THINK=false
 COP_AI_OLLAMA_EMBEDDING_MODEL=bge-m3:latest
 COP_AI_OLLAMA_EMBEDDING_TIMEOUT_MS=10000
+COP_AI_OLLAMA_EMBEDDING_TOTAL_TIMEOUT_MS=10000
 COP_AI_SEMANTIC_RETRIEVAL_ENABLED=true
 COP_AI_SEMANTIC_RETRIEVAL_MAX_DOCUMENTS=12
 COP_AI_SEMANTIC_RETRIEVAL_CACHE_ENTRIES=500
@@ -372,6 +373,17 @@ COP_SAFETY_DATA_TIMEOUT_MS=15000
 Web klient volá pouze source-neutral COP API (`/api/v1/map/catalog`, `/api/v1/map/query`). COP API při volání SIM nepřeposílá bearer token operátora a v produkci používá interní server-to-server URL `http://docker.home.cz:5020/...`, nikoli veřejné browser API. COP při čtení katalogu načítá také `GET /safety-data/api/v1/taxonomy`; taxonomy zůstává server-side a promítá se do Source Health. ČHMÚ výstrahy se vyhodnocují podle normalizovaných polí `typeCode`, `sourceCode`, `sourceSystem`, `hazardType`, `category`, `severity`, `validFrom`, `validUntil`, `metrics`, `providerProperties.taxonomy`, `providerProperties.presentation` a `providerProperties.notification`; jazyková varianta `localized.cs`/`localized.en` je pouze prezentace a nesmí vytvářet duplicitní události. COP slučuje malé posuny mapy do kanonického bbox cache klíče a při výpadku vrací prázdný degraded `FeatureCollection`.
 
 COP také server-side čte `GET /safety-data/api/v1/observability`. Tento endpoint se nepoužívá jako mapová vrstva; promítá se jen do Source Health jako provozní kvalita safety provideru, cache hit-rate, stale feature count a varování zdrojových cache. `status=degraded` znamená sníženou kvalitu externích dat, ne výpadek SIM.
+
+For automatic safety delivery, map cache and the `cop-safety-source-v1`
+projection above are not sufficient. COP reads only SIM
+`sim-safety-notification-candidates-v1` from `/notifications/candidates`, requires
+fresh `inputReadiness=ready` and refuses incomplete results or stale fallback.
+`COP_SAFETY_NOTIFICATION_WORKER_ENABLED` defaults to `false`; enabling it does
+not grant account consent. Production uses durable profile/notification stores.
+All bounded poll/retry/cooldown settings and the separate ČT24 informational
+cache are documented in
+[runbook 21](21_COP_CRISIS_NOTIFICATIONS.md). No new port or service secret is
+needed for this additive release.
 
 ## SIM Search Data Source
 
@@ -781,3 +793,19 @@ i veřejná `/chat/` vracely 200 a zveřejněný skript obsahoval nové ovládá
 Cvičný účet po produkční zkoušce dosáhl svého denního limitu; další úspěšný
 dotaz ze stejné identity lze ověřit po obnovení denního okna nebo s jiným
 oprávněným uživatelem.
+
+### Bounded semantic retrieval (October 2026)
+
+`COP_AI_OLLAMA_EMBEDDING_TIMEOUT_MS` remains the per-attempt limit.
+`COP_AI_OLLAMA_EMBEDDING_TOTAL_TIMEOUT_MS` is a separate total limit over all
+embedding hosts, attempts and response-body reads (default 10,000 ms). It
+never enables another provider. `COP_AI_SEMANTIC_RETRIEVAL_TIMEOUT_MS`
+(default 20,000 ms) bounds the entire semantic ranking, including background
+index queries. Expiry cancels current embedding I/O, stops further document
+work and prevents late results entering the cache. Retrieval returns the
+existing degraded/empty context; model selection and data policy remain in
+force. Embedding health checks run independently with at most 1,500 ms per
+probe, including response bodies, and require the configured model to be
+present. An unavailable embedding service must be restored at its real
+endpoint; increasing timeouts or using a generative/OpenAI endpoint does not
+restore embeddings.

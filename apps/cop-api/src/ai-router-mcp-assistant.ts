@@ -1,4 +1,5 @@
 import { safeSourceHealthContext, type OpenAiUsageSnapshot } from "./openai-mcp-assistant.js";
+import { readBoundedBody } from "./bounded-upstream.js";
 
 export interface AiRouterMcpConfig {
   enabled: boolean;
@@ -37,6 +38,7 @@ export class AiRouterMcpAssistant {
 
   async init(): Promise<void> {
     const response = await this.call("/health/ready");
+    await response.body?.cancel();
     if (!response.ok) throw new Error("AI Router is not ready.");
   }
 
@@ -45,7 +47,7 @@ export class AiRouterMcpAssistant {
   async usage(): Promise<OpenAiUsageSnapshot> {
     const response = await this.call("/api/v1/ai-router/usage");
     if (!response.ok) throw new Error("AI Router usage is unavailable.");
-    const data = (await response.json()) as RouterUsage;
+    const data = JSON.parse((await readBoundedBody(response, 1024 * 1024)).toString("utf8")) as RouterUsage;
     for (const value of [data.dailyMicrousd, data.monthlyMicrousd, data.dailyRequests, data.monthlyRequests,
       data.dailyInputTokens, data.dailyOutputTokens, data.monthlyInputTokens, data.monthlyOutputTokens,
       data.limits?.dailyMicrousd, data.limits?.monthlyMicrousd]) {
@@ -92,7 +94,7 @@ export class AiRouterMcpAssistant {
     });
     if (response.status === 429) throw new Error("OpenAI MCP usage limit reached.");
     if (!response.ok) throw new Error("AI Router generation is unavailable.");
-    const result = (await response.json()) as { output?: unknown; model?: unknown; usage?: { inputTokens?: unknown; outputTokens?: unknown; estimatedMicrousd?: unknown }; requiresHumanReview?: unknown };
+    const result = JSON.parse((await readBoundedBody(response, 1024 * 1024)).toString("utf8")) as { output?: unknown; model?: unknown; usage?: { inputTokens?: unknown; outputTokens?: unknown; estimatedMicrousd?: unknown }; requiresHumanReview?: unknown };
     if (typeof result.output !== "string" || !result.output.trim() || result.output.length > 8_000 ||
       typeof result.model !== "string" || result.requiresHumanReview !== true ||
       !Number.isSafeInteger(result.usage?.inputTokens) || !Number.isSafeInteger(result.usage?.outputTokens) ||
@@ -105,11 +107,14 @@ export class AiRouterMcpAssistant {
       usage: await this.usage() };
   }
 
-  private call(path: string, options: RequestInit = {}): Promise<Response> {
-    return fetch(new URL(path, this.config.baseUrl), {
+  private async call(path: string, options: RequestInit = {}): Promise<Response> {
+    const response = await fetch(new URL(path, this.config.baseUrl), {
       ...options,
       headers: { authorization: `Bearer ${this.config.token}`, "content-type": "application/json", ...options.headers },
+      redirect: "error",
       signal: AbortSignal.timeout(30_000)
     });
+    if (!response.ok) await response.body?.cancel();
+    return response;
   }
 }

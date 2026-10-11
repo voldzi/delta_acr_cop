@@ -2203,6 +2203,8 @@ export interface CopActor {
 }
 
 export interface AlertPreferences {
+  /** Explicit consent; missing or false disables automated safety notifications. */
+  safetyNotificationsEnabled?: boolean;
   aoiRules?: AoiRule[];
   enabledTypes?: CopAlertType[];
   minimumSeverity?: CopAlertSeverity;
@@ -3512,7 +3514,8 @@ export async function searchUserDirectory(
 export async function saveUserProfile(
   apiBase: string,
   token: string,
-  payload: { alertPreferences?: AlertPreferences; preferences?: object }
+  payload: { alertPreferences?: AlertPreferences; preferences?: object },
+  signal?: AbortSignal
 ): Promise<ServerUserProfile> {
   return fetchJson<ServerUserProfile>(`${apiBase}/api/v1/me/preferences`, {
     body: JSON.stringify(payload),
@@ -3520,7 +3523,8 @@ export async function saveUserProfile(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
-    method: "PUT"
+    method: "PUT",
+    signal
   });
 }
 

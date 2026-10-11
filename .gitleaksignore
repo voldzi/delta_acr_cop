@@ -1,0 +1,9 @@
+# Reviewed historical test fixtures (2026-10-10), not production credentials.
+# Exact commit:path:rule:line fingerprints only; default rules/history stay enabled.
+# Four UUID request-idempotency fixtures:
+1514e4ee9ea1bb5e5d37ee0338b143d80e39f3ce:apps/cop-api/src/community-report-presence.test.ts:generic-api-key:13
+7f10f25d722fe7846185ec098f1cb9f0ec496de5:apps/cop-api/src/community-routes.test.ts:generic-api-key:260
+4df2dfeabe56ad6c260c0e1b960c62ca66d33dcd:apps/cop-api/src/community-routes.test.ts:generic-api-key:214
+4df2dfeabe56ad6c260c0e1b960c62ca66d33dcd:apps/cop-api/src/community-routes.test.ts:generic-api-key:215
+# Deterministic actor-signing fixture for isolated 127.0.0.1 redirect tests:
+040c1eb6c1455e4a807208848aaef823e7272b0f:apps/cop-api/src/ai-router-redirect.test.ts:generic-api-key:41

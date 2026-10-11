@@ -65,8 +65,8 @@ function check(schema: Schema, value: unknown, depth: number): boolean {
   if (schema.type === "string") {
     if (
       typeof value !== "string" ||
-      value.length < (schema.minLength ?? 0) ||
-      value.length > (schema.maxLength ?? Infinity)
+      Array.from(value).length < (schema.minLength ?? 0) ||
+      Array.from(value).length > (schema.maxLength ?? Infinity)
     )
       return false;
     if (schema.pattern && !new RegExp(schema.pattern, "u").test(value)) return false;

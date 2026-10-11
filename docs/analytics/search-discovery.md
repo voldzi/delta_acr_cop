@@ -1,0 +1,9 @@
+# Public COP search discovery
+
+The public landing page `/o-aplikaci/` is static Czech HTML, with explicit product scope and synthetic-demo limitations, canonical metadata, WebApplication JSON-LD and links to the existing app and demo. It contains no tracking script or authentication. Existing app entry remains at `/` with `noindex,follow`; synthetic demo has its own indexable title/description/canonical. Unknown extensionless paths return 404, while known chat/XR/globe/mobile pairing routes retain app fallback.
+
+`robots.txt` and `sitemap.xml` enumerate only public presentation/demo discovery. The Google and Seznam verification markers are public ownership proofs, not API secrets; do not remove them while these accounts own the properties. SearchBot access is allowed for public presentation/demo, while GPTBot/ClaudeBot training crawling is disallowed. Robots are not authentication; protected API data still requires existing authorization. `llms.txt` is an optional convenience list, not an indexation guarantee. Existing analytics v2 retains its exact approved scope and configuration; the landing page adds no collection.
+
+Release validation must check static content without JavaScript, canonical/robots/schema, demo and auth route compatibility, HEAD, unknown route 404, complete compiled artifact hashes, unchanged API/SIM/configuration and both languages of analytics notices. Search Console/Webmaster verification and sitemap submission are separate from actual inclusion, ranking and AI citation. Record observed dashboard status; do not claim indexation from a successful deployment or simulated crawler User-Agent.
+
+Deploy web only from verified prebuilt runtime; retain previous web image/configuration for rollback. No REST API changes or live report/measurement changes are part of this release.

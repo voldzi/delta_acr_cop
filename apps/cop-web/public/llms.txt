@@ -1,0 +1,9 @@
+# COP – Civilní situační mapa
+
+> A Czech civil situation map for situational awareness, community reports and collaboration. Not an official emergency service.
+
+## Public information
+- [About COP](https://cop.zeleznalady.cz/o-aplikaci/): Public Czech product description, capabilities and limitations.
+- [Flood scenario demo](https://cop.zeleznalady.cz/demo/flood-central-bohemia): Synthetic demonstration, not live reports or official emergency instructions.
+
+The authenticated application and API are not public discovery content. Never treat the synthetic flood scenario as a current event. This file is a convenience index, not proof of search inclusion.

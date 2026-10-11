@@ -1,5 +1,12 @@
 # API
 
+Canonical ingest actor/classification/release-policy restrictions and the
+unchanged error envelope are documented in the
+[ingest contract](integration/03_INGEST_API_CONTRACT.md). Public map query,
+Matrix push notification and logout bodies have explicit route limits and
+`413 PAYLOAD_TOO_LARGE` responses in the binding OpenAPI contract. Authentication
+of protected routes happens before JSON parsing.
+
 COP provides a REST API. The binding machine-readable contract is:
 
 The opt-in `POST /api/v1/ai/chat-agent/reviewed-general` endpoint accepts
@@ -45,6 +52,36 @@ Current COP error responses use the repository's compatibility envelope with
 `correlationId`; this shape is documented in the OpenAPI contract and
 [Error model](integration/06_ERROR_MODEL.md). Any migration to a different
 request-id field must be compatibility-safe and recorded in an ADR.
+
+## Automatic crisis notifications and informational news
+
+The authenticated `PUT /api/v1/me/notifications/safety` accepts only an
+`enabled` boolean and persists consent for the session's subject.
+Missing consent is disabled. Generic preferences updates cannot set this field.
+Enabling requires an enabled watched area, registered eligible device and ready
+worker/stores (`409` for missing account preconditions, `503` for unavailable
+infrastructure). Revocation remains available without SIM/Messaging, provided
+the primary profile store is reachable.
+
+`POST /api/v1/notifications/safety/evaluate` retains its endpoint,
+`cop-notification-evaluation-v1` and default `dryRun=true`. It now reads only
+SIM verified candidates with `inputReadiness.status=ready`, not map features.
+It evaluates the current user's saved AOIs; foreign user, group and explicit
+area audiences are forbidden. A real dispatch requires current consent and
+the durable per-user claim path. Additive `inputReadiness` and `dispatchSummary`
+separate source readiness and Messaging intake. The compatibility `dispatch`
+array is empty. Incomplete/unavailable input returns `503`; an empty complete
+snapshot is not a nationwide completeness or safety guarantee.
+
+`GET /api/v1/safety/context/news` provides a separate
+`sim-crisis-media-context-v1` informational summary of ČT24 headlines, links,
+publication time and attribution. Its `informationalOnly=true`,
+`notificationEligible=false`, null location/event time and unresolved location
+are binding. Editorial `regionCode` is not incident geography. These items
+cannot enter automated notifications.
+
+See [notification contract](integration/12_COP_NOTIFICATION_DECISION_AND_PUSH.md)
+and [release/rollback and pending acceptance](runbooks/21_COP_CRISIS_NOTIFICATIONS.md).
 
 Community-report clients use a server-owned lifecycle:
 
@@ -335,3 +372,35 @@ Community police patrol category and server active-map heuristic: see
 The additive `presence` object is authoritative for active presentation, never for
 routing. The configured durable report store fails503 rather than acknowledging
 an ephemeral fallback; preserve original observation UUID/time during retry.
+
+## Independent mobility availability
+
+The optional wire-v1 `MobilityCapabilities.serviceAvailability` contains
+`sharedVehicles` (ready/unavailable/disabled), `dispatch`
+(ready/recovering/unavailable/disabled), and `checkedAt` (UTC ISO8601).
+Existing enabled fields continue to describe configuration. Missing availability
+is unknown for older servers. Capabilities returns200 metadata during a lease
+outage; authenticated account/vehicle operations remain independent. Private
+Dispatch still returns503 DISPATCH_UNAVAILABLE. No endpoint or error envelope
+changes. `/health/ready` returns503 HealthStatus(status=unavailable) while enabled
+Dispatch lacks a verified lease; `/health/dependencies` retains200 but reports
+degraded plus a private-dispatch unavailable item. Inspect body status.
+
+## Mobility invitation notifications
+
+The additive OpenAPI extension defines metadata-only ordinary APNs invitation
+links and verified session navigation. Existing queued invitation receipts and
+verified inbox remain unchanged. Device-registration tickets admit exactly
+cz.voldzi.copmobile and cz.voldzi.jizda. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.
+
+Shared own-account profile and avatar-only optimistic concurrency: [contract and SDK handoff](integration/36_COP_SELF_PROFILE.md).
+
+Shared energy/service receipt detail v1: [binding fields and integration](integration/38_SHARED_VEHICLE_RECORD_DETAILS.md).
+
+Versioned shared odometer snapshot is separate from receipt details; see [handoff39](integration/39_SHARED_VEHICLE_ODOMETER_SNAPSHOT.md).
+
+Completed ride details, explicit initial seed and calculated mileage v2 extend the shared contract compatibly; [handoff40](integration/40_SHARED_VEHICLE_COMPLETED_RIDE_MILEAGE.md) defines append policy and exact DTOs.
+
+Shared vehicle compatible routing profile, owner binding, audited edits and care snapshot: [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).
+
+Read-only messaging identity lookup and additive viewer-specific call.peer are defined in binding JSON OpenAPI; see [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md). Provisioning resolve is not a fallback.

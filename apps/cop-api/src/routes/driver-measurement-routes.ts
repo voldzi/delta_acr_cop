@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   contributorIdDay, DRIVER_MEASUREMENT_CONSENT_VERSION, DRIVER_MEASUREMENT_MOBILE_VERSION,
@@ -19,6 +19,8 @@ const grantSchema = z.strictObject({
 export interface DriverMeasurementRoutesConfig {
   enabled: boolean;
   cleanupEnabled: boolean;
+  pilotEnabled?: boolean;
+  pilotSubjectIds?: string;
   oidcClientId: string;
   secret: string;
   store?: DriverMeasurementConsentStore;
@@ -29,6 +31,9 @@ export interface DriverMeasurementRoutesConfig {
 export function registerDriverMeasurementRoutes(app: FastifyInstance, config: DriverMeasurementRoutesConfig): void {
   const { enabled, cleanupEnabled, oidcClientId, secret, store, source, now } = config;
   const runtimeEnabled = enabled || cleanupEnabled;
+  const pilotSubjects = parsePilotSubjects(config.pilotSubjectIds);
+  const intakeAllowed = (subjectId: string): boolean => enabled
+    && (!config.pilotEnabled || (pilotSubjects !== null && pilotSubjects.has(subjectId)));
   if (runtimeEnabled && (!store || !source || secret.length < 32)) {
     throw new Error("Driver measurement COP adapter requires a durable store, SIM connection and 32-character HMAC secret.");
   }
@@ -90,6 +95,20 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
       sendError(reply, 403, "DRIVER_MEASUREMENTS_IDENTITY_REQUIRED", "Je nutné přihlášení uživatele.", correlationId);
       return null;
     }
+    // Cohort membership comes only from the verified OIDC actor. Cleanup is
+    // independent of intake and must remain available to former pilot users.
+    if (!cleanupOnly && config.pilotEnabled) {
+      if (!pilotSubjects?.size) {
+        sendError(reply, 503, "DRIVER_MEASUREMENTS_PILOT_NOT_CONFIGURED",
+          "Pilot měření dopravy není připraven.", correlationId);
+        return null;
+      }
+      if (!pilotSubjects.has(principal.subjectId)) {
+        sendError(reply, 403, "DRIVER_MEASUREMENTS_PILOT_NOT_ELIGIBLE",
+          "Účet není zařazen do pilotu měření dopravy.", correlationId);
+        return null;
+      }
+    }
     return principal.subjectId;
   }
   function failure(request: FastifyRequest, reply: FastifyReply, error: unknown): FastifyReply {
@@ -101,7 +120,16 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
     return sendError(reply, status, sourceError?.code ?? "DRIVER_MEASUREMENTS_UPSTREAM_ERROR",
       "Měření dopravy nyní nelze zpracovat.", correlationIdFrom(request.headers["x-correlation-id"]));
   }
-  app.get(`${prefix}/consent`, async (request, reply) => {
+  function requestError(error: FastifyError, request: FastifyRequest, reply: FastifyReply): FastifyReply {
+    // Parser messages can quote raw request bytes. Never log or forward them.
+    const status = error.statusCode === 413 ? 413 : [400, 415].includes(error.statusCode ?? 0) ? 400 : 503;
+    return sendError(reply, status,
+      status === 413 ? "DRIVER_MEASUREMENTS_BODY_TOO_LARGE" : "DRIVER_MEASUREMENTS_REQUEST_ERROR",
+      status === 413 ? "Požadavek překračuje povolenou velikost." : "Požadavek měření nelze zpracovat.",
+      correlationIdFrom(request.headers["x-correlation-id"]));
+  }
+  const consentOptions = { bodyLimit: 1024, errorHandler: requestError };
+  app.get(`${prefix}/consent`, consentOptions, async (request, reply) => {
     const subjectId = actor(request, reply, true);
     if (!subjectId) return reply;
     try {
@@ -110,10 +138,11 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
         granted: !!consent.grantedAt && !consent.revokedAt,
         grantedAt: consent.revokedAt ? null : consent.grantedAt,
         pendingDeletion: consent.pendingDays.length > 0,
-        canGrant: consent.pendingDays.length === 0 && consent.lastRevokedDay !== now().toISOString().slice(0, 10) });
+        canGrant: intakeAllowed(subjectId) && consent.pendingDays.length === 0
+          && consent.lastRevokedDay !== now().toISOString().slice(0, 10) });
     } catch (error) { return failure(request, reply, error); }
   });
-  app.post(`${prefix}/consent`, async (request, reply) => {
+  app.post(`${prefix}/consent`, consentOptions, async (request, reply) => {
     const subjectId = actor(request, reply);
     if (!subjectId) return reply;
     if (!grantSchema.safeParse(request.body).success) {
@@ -129,7 +158,7 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
         version: DRIVER_MEASUREMENT_CONSENT_VERSION, grantedAt: consent.grantedAt });
     } catch (error) { return failure(request, reply, error); }
   });
-  app.delete(`${prefix}/consent`, async (request, reply) => {
+  app.delete(`${prefix}/consent`, consentOptions, async (request, reply) => {
     const subjectId = actor(request, reply, true);
     if (!subjectId) return reply;
     if (request.body !== undefined) return sendError(reply, 400, "DRIVER_MEASUREMENTS_INVALID_REVOKE",
@@ -146,13 +175,7 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
   });
   app.post(`${prefix}/batches`, {
     bodyLimit: 1_048_576,
-    errorHandler: (error, request, reply) => {
-      const status = error.statusCode === 400 || error.statusCode === 413 ? error.statusCode : 503;
-      return sendError(reply, status,
-        status === 413 ? "DRIVER_MEASUREMENTS_BODY_TOO_LARGE" : "DRIVER_MEASUREMENTS_REQUEST_ERROR",
-        status === 413 ? "Dávka překračuje limit 1 MiB." : "Dávku měření nelze zpracovat.",
-        correlationIdFrom(request.headers["x-correlation-id"]));
-    }
+    errorHandler: requestError
   }, async (request, reply) => {
     const subjectId = actor(request, reply);
     if (!subjectId) return reply;
@@ -176,4 +199,13 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
       return reply.send(result.receipt);
     } catch (error) { return failure(request, reply, error); }
   });
+}
+
+function parsePilotSubjects(value: string | undefined): Set<string> | null {
+  if (!value?.trim()) return new Set();
+  if (value.length > 8192) return null;
+  const subjects = value.split(",").map((subject) => subject.trim());
+  // Malformed configuration disables all intake; never partially accept it.
+  if (subjects.length > 100 || subjects.some((subject) => !/^[A-Za-z0-9._~:@/\-]{1,255}$/.test(subject))) return null;
+  return new Set(subjects);
 }

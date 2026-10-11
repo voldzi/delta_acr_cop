@@ -1,6 +1,15 @@
 import type { AoiRule } from "./alerts.js";
 import type { CommunityReportRecord } from "./community-report-store.js";
 import type { SafetyFeature, SafetyGeometry } from "./safety-data-source.js";
+import {
+  evaluateSafetyNotificationCandidate,
+  safetyCandidateIncidentIdentity,
+  safetyCandidateRecipientIdempotency,
+  safetyGeometryIntersectsAoi,
+  safetyGeometryIntersectsCircle,
+  type SafetyNotificationCandidate
+} from "./safety-notification-candidates.js";
+export { safetyCandidateIncidentIdentity } from "./safety-notification-candidates.js";
 
 export type CopNotificationType = "community.report" | "safety.alert";
 export type CopNotificationSeverity = "advisory" | "critical" | "info" | "warning";
@@ -61,6 +70,7 @@ export interface SafetyNotificationContext {
     radiusKm?: number;
   };
   now: Date;
+  minimumSeverity?: CopNotificationSeverity;
   watchedAreas?: AoiRule[];
 }
 
@@ -170,6 +180,59 @@ function communityReportNotificationBody(event: CommunityReportNotificationEvent
   return "Otevřete COP pro detail, polohu a sdílená média.";
 }
 
+export function buildSafetyCandidateNotificationDecision(
+  candidate: SafetyNotificationCandidate,
+  context: SafetyNotificationContext
+): CopNotificationDecision {
+  const eligibility = evaluateSafetyNotificationCandidate(candidate, context.now, context.minimumSeverity ?? "warning");
+  const feature = candidate.feature;
+  const watchedAreas = (context.watchedAreas ?? []).filter((rule) => rule.severity !== "critical" || feature.severity === "critical");
+  const hasForeignAudience = Boolean(context.audience?.groupIds?.length || context.audience?.areaIds?.length
+    || context.audience?.userIds?.some((subjectId) => subjectId !== context.actor?.subjectId));
+  // The server owns the actor. An explicit audience cannot turn this self-service path into a broadcast.
+  const audienceResult = context.actor && !hasForeignAudience
+    ? resolveSafetyAudience({
+      type: "Feature", geometry: feature.geometry,
+      properties: {
+        ...feature, headline: candidate.message.title.cs, layer: feature.layer,
+        floodStage: typeof feature.floodStage === "number" ? feature.floodStage : undefined
+      }
+    }, { ...context, watchedAreas })
+    : { audience: {}, matchedAoiRuleIds: [], source: "none" as const };
+  const shouldSend = eligibility.ok && Boolean(context.actor) && !hasForeignAudience && hasAudience(audienceResult.audience);
+  const reason = !eligibility.ok ? eligibility.reason : !context.actor
+    ? "A verified recipient actor is required."
+    : hasForeignAudience ? "Safety candidate self-service evaluation cannot target other recipients."
+      : !hasAudience(audienceResult.audience) ? "Safety candidate has no intersection with the recipient's selected area."
+        : "Verified SIM candidate intersects the recipient's selected area.";
+  return {
+    contractVersion: "cop-notification-decision-v1",
+    decisionId: `safety:${safetyCandidateIncidentIdentity(candidate)}`,
+    idempotencyKey: safetyCandidateRecipientIdempotency(candidate, context.actor?.subjectId ?? "no-recipient"),
+    notification: {
+      // Keep the delivery strictly per user; matched area IDs are relevance evidence, not extra recipients.
+      audience: shouldSend && context.actor ? { userIds: [context.actor.subjectId] } : {},
+      body: { cs: candidate.message.recommendedAction.cs, en: candidate.message.recommendedAction.en },
+      deepLink: `csm://map/alert/${encodeURIComponent(feature.featureId)}`,
+      ...(feature.validUntil ? { expiresAt: feature.validUntil } : {}),
+      metadata: compactMetadata({
+        certainty: feature.certainty, confidence: feature.confidence, sourceCode: feature.sourceCode,
+        sourceSystem: feature.sourceSystem, typeCode: feature.typeCode, urgency: feature.urgency,
+        incidentIdentity: safetyCandidateIncidentIdentity(candidate)
+      }),
+      priority: priorityForSeverity(feature.severity),
+      severity: feature.severity,
+      source: { featureId: feature.featureId, layerId: feature.layerId, providerId: "sim.safety-data", sourceName: feature.sourceName },
+      title: candidate.message.title,
+      type: "safety.alert"
+    },
+    reason,
+    relevance: { matchedAoiRuleIds: audienceResult.matchedAoiRuleIds, source: audienceResult.source },
+    shouldSend
+  };
+}
+
+/** Legacy feature helper retained for compatibility; automatic dispatch uses typed SIM candidates. */
 export function buildSafetyFeatureNotificationDecision(
   feature: SafetyFeature,
   context: SafetyNotificationContext
@@ -319,84 +382,14 @@ function resolveSafetyAudience(
 }
 
 function safetyFeatureTouchesAoi(geometry: SafetyGeometry, rule: AoiRule): boolean {
-  const featureBbox = geometryBbox(geometry);
-  if (!featureBbox) {
-    return false;
-  }
-  if (rule.polygon) {
-    const ruleBbox = coordinateBbox(rule.polygon.coordinates.flat(1));
-    return Boolean(ruleBbox && bboxesIntersect(featureBbox, ruleBbox));
-  }
-  const point = geometryRepresentativePoint(geometry);
-  if (!point) {
-    return false;
-  }
-  return distanceKm(point.lat, point.lon, rule.lat, rule.lon) <= rule.radiusKm;
+  return safetyGeometryIntersectsAoi(geometry, rule);
 }
 
 function safetyFeatureTouchesCurrentLocation(
   geometry: SafetyGeometry,
   location: { lat: number; lon: number; radiusKm?: number }
 ): boolean {
-  const point = geometryRepresentativePoint(geometry);
-  return Boolean(point && distanceKm(point.lat, point.lon, location.lat, location.lon) <= (location.radiusKm ?? 10));
-}
-
-function geometryRepresentativePoint(geometry: SafetyGeometry): { lat: number; lon: number } | undefined {
-  if (geometry.type === "Point") {
-    return { lat: geometry.coordinates[1], lon: geometry.coordinates[0] };
-  }
-  const bbox = geometryBbox(geometry);
-  return bbox ? { lat: (bbox.south + bbox.north) / 2, lon: (bbox.west + bbox.east) / 2 } : undefined;
-}
-
-function geometryBbox(
-  geometry: SafetyGeometry
-): { east: number; north: number; south: number; west: number } | undefined {
-  if (geometry.type === "Point") {
-    const [lon, lat] = geometry.coordinates;
-    return { east: lon, north: lat, south: lat, west: lon };
-  }
-  const coordinates = geometry.type === "Polygon" ? geometry.coordinates.flat(1) : geometry.coordinates.flat(2);
-  return coordinateBbox(coordinates);
-}
-
-function coordinateBbox(
-  coordinates: Array<[number, number]>
-): { east: number; north: number; south: number; west: number } | undefined {
-  if (coordinates.length === 0) {
-    return undefined;
-  }
-  const lons = coordinates.map((coordinate) => coordinate[0]).filter(Number.isFinite);
-  const lats = coordinates.map((coordinate) => coordinate[1]).filter(Number.isFinite);
-  if (lons.length === 0 || lats.length === 0) {
-    return undefined;
-  }
-  return {
-    east: Math.max(...lons),
-    north: Math.max(...lats),
-    south: Math.min(...lats),
-    west: Math.min(...lons)
-  };
-}
-
-function bboxesIntersect(
-  a: { east: number; north: number; south: number; west: number },
-  b: { east: number; north: number; south: number; west: number }
-): boolean {
-  return a.west <= b.east && a.east >= b.west && a.south <= b.north && a.north >= b.south;
-}
-
-function distanceKm(latA: number, lonA: number, latB: number, lonB: number): number {
-  const radiusKm = 6371;
-  const dLat = toRadians(latB - latA);
-  const dLon = toRadians(lonB - lonA);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRadians(latA)) * Math.cos(toRadians(latB)) * Math.sin(dLon / 2) ** 2;
-  return 2 * radiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function toRadians(value: number): number {
-  return (value * Math.PI) / 180;
+  return safetyGeometryIntersectsCircle(geometry, location);
 }
 
 function publicSafetyLayerId(layer: string, layerId: string | undefined): string {

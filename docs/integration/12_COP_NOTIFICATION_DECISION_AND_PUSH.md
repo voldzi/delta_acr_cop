@@ -1,192 +1,220 @@
 # 12 COP Notification Decision And Push
 
-## Purpose
+## Status and ownership
 
-COP is the decision layer between SIM data providers and CSM Messaging push
-delivery. It evaluates which safety or community event is relevant to a user,
-group or watched area, then sends a minimal notification request to CSM
-Messaging. COP does not send APNs pushes directly and does not store APNs
-tokens.
-
-Runtime chain:
+The new automatic safety worker and ČT24 context are implemented as an additive
+release candidate. Production deployment, activation and physical delivery with
+the application closed are separate acceptance gates; see
+[runbook 21](../runbooks/21_COP_CRISIS_NOTIFICATIONS.md) and
+[ADR 0040](../adr/0040_VERIFIED_CRISIS_NOTIFICATIONS_AND_MEDIA_CONTEXT.md).
+A working map feed or accepted Messaging request is not evidence of a delivered
+phone notification or complete national crisis coverage.
 
 ```text
-SIM -> COP backend -> CSM Messaging -> APNs -> CSM Messenger iOS
-SIM -> COP backend -> CSM Messaging -> Web Push service -> COP browser/PWA
+SIM verified candidates -> COP recipient decision -> CSM Messaging -> APNs / Web Push
+SIM ČT24 context -> COP informational panel (no crisis notification)
 ```
 
-## Ownership
+- **SIM** owns source provenance, normalized safety candidates and input
+  readiness. It does not know COP users or devices.
+- **COP** owns explicit account consent, stored watched areas, severity,
+  recipient relevance and a durable recipient deduplication ledger. The worker
+  does not need an open browser, foreground refresh or a manufactured user token.
+- **CSM Messaging** owns APNs/Web Push credentials, device delivery and delivery
+  audit. COP sends requests server-to-server using the existing service
+  credential; no service credential reaches a client.
+- **Clients** register their device, choose watched areas and explicitly enable
+  automatic safety notifications. Notification permission or a push subscription
+  alone is not this consent.
 
-CSM Messenger iOS:
+## Explicit consent and device preconditions
 
-- registers the device with CSM Messaging, including APNs token, locale,
-  timezone and notification preferences;
-- receives push notifications;
-- opens deep links such as `csm://map/alert/<alertId>`,
-  `csm://map/report/<reportId>`, `csm://chat/room/<roomId>` and
-  `csm://message/<messageId>`;
-- does not call SIM directly and does not decide map relevance.
+The existing authenticated profile contains `alertPreferences.aoiRules` and
+`minimumSeverity`. A new optional `safetyNotificationsEnabled` is **false when
+missing**. Generic `PUT /api/v1/me/preferences` cannot set this protected consent
+field; it preserves the current server value.
 
-CSM Messaging:
+Enable or revoke consent through the authenticated endpoint:
 
-- owns device registry, APNs credentials, idempotency, audience expansion and
-  delivery audit;
-- receives notification intake from COP through server-to-server
-  `POST /api/v1/notifications`;
-- sends only minimized push payloads. E2E chat push payloads do not contain
-  plaintext message content.
+```http
+PUT /api/v1/me/notifications/safety
+Content-Type: application/json
 
-COP:
+{"enabled": true}
+```
 
-- reads SIM data server-side;
-- evaluates user relevance using explicit audience, user watched areas and
-  optional current location;
-- submits notification metadata to CSM Messaging;
-- keeps community report/media ACL on the report attachment metadata;
-- never stores APNs tokens and never sends push directly to APNs.
-- exposes a browser Web Push registration proxy for COP web/PWA clients, but
-  does not own delivery state or provider credentials.
+Only `enabled: boolean` is accepted. The subject comes from the verified COP
+session, never a body field. The response is
+`cop-safety-notification-consent-v1` with `enabled` and `updatedAt`.
 
-SIM:
+Enabling requires the configured worker, primary profile and notification
+stores, at least one enabled watched area, and an eligible device. Missing user
+preconditions return `409 SAFETY_NOTIFICATION_PRECONDITION`; unavailable
+infrastructure returns `503`, not an assertion that the user refused permission.
+Revocation uses `{"enabled":false}` and does not require a working SIM or
+Messaging connection. The primary profile store must still be reachable.
 
-- publishes safety/weather/flood/fire/mobile/traffic features and metadata;
-- does not know users, devices or groups;
-- does not send notifications.
+Native eligibility is an account-owned paired COP mobile device with
+`pushTokenRegistered=true`. Web eligibility is recorded only after Messaging
+accepts registration, subject to the device's `enabled` and `safetyAlerts`
+preferences; accepted deletion removes that eligibility. COP stores the minimum
+account/device capability reference, not APNs tokens or Web Push secrets.
+Messaging remains authoritative for actual delivery and stale-token rejection.
 
-## Safety Notification Evaluation
+The worker rereads the primary profile under the same subject lock used by
+consent/profile updates immediately before dispatch. A completed revocation
+precedes any subsequent dispatch. A request already accepted by Messaging may
+still arrive after revocation; COP cannot retract that notification.
 
-COP exposes an authenticated evaluation endpoint:
+## Verified SIM candidate boundary
+
+Both automatic work and authenticated manual evaluation use only:
+
+```http
+GET /safety-data/api/v1/notifications/candidates
+```
+
+Required contract: `sim-safety-notification-candidates-v1` with
+`policy.eligibilityPolicy=verified_alert_and_non_fallback_location_required`,
+`technicalWarningsPolicy=never_push_to_public_users`, and
+`inputReadiness.status=ready`. The input snapshot must have valid, fresh
+`snapshotGeneratedAt` and `snapshotAgeSeconds`; unavailable/incomplete input is
+not a known healthy empty area. COP checks the echoed query, timestamps, source,
+geometry and candidate structure. Redirects are forbidden; response size and
+whole-response time are bounded. There is no fallback to `/features`, map
+warning text, a stale map cache or technical diagnostics.
+
+SIM v1 has no documented paging cursor. A saturated feature query is
+`possibly_truncated` and cannot be dispatched as a complete result. The worker
+queries individual saved areas rather than claiming a nationwide scan. A ready
+result below the known limit confirms only the requested snapshot, not complete
+upstream coverage. SIM technical warnings and unrecovered cache errors block
+readiness. Source outages are operational degradation, never public crisis
+alerts.
+
+For every candidate COP independently rejects:
+
+- missing/malformed/future validity, expiry, stale or inactive events;
+- media, informational items and explicit `notificationEligible=false` /
+  `eligible=false` policy;
+- reference layers and unsupported/unverified sources;
+- fallback/centroid/representative points, unknown location, invalid geometry;
+- severity below `warning`, or below the recipient's `critical` threshold.
+
+Municipal alerts additionally require explicit event expiry. Generic municipal
+RSS bulletins do not qualify simply because they contain alarming words. The
+collection's SIM provenance attestation does not let COP verify the original
+publisher independently; COP does not invent a replacement attestation.
+
+## Relevance and automatic worker
+
+Saved circles and Polygon AOIs use actual geometric intersection. Official
+Polygon/MultiPolygon areas include their boundaries and exclude hole interiors;
+separate islands do not create an imaginary affected region between them.
+Bounding boxes are query envelopes only. A polygon centroid or a municipality /
+region fallback point is not evidence that an event is near a person.
+
+The worker selects only persisted opt-in profiles and then checks current
+consent, enabled areas, severity and device capability. It sends
+`audience.userIds=[authenticated persisted subject]` only. Matched area IDs are
+relevance evidence; they are not additional broadcast recipients. It sends no
+continuous/current GPS or plaintext private message context to SIM or Messaging.
+
+Defaults and bounds for the server poller are in the runbook. Paging is by
+persisted subject, with bounded pages, recipients, dispatches, concurrency and
+run time; one durable worker lease prevents concurrent pollers. Ready candidate
+results may be reused briefly for identical area queries. Failed/incomplete
+results are not reused as safety evidence. Failures produce bounded backoff.
+Restart preserves accepted deduplication keys in PostgreSQL.
+
+## Manual evaluation compatibility
 
 ```http
 POST /api/v1/notifications/safety/evaluate
-Authorization: Bearer <COP user access token>
 Content-Type: application/json
+
+{"bbox":[13.9,49.9,14.1,50.1],"layers":["weather_alerts","warnings"],"dryRun":true}
 ```
 
-Example dry run:
+`dryRun` still defaults to `true` and sends nothing. Relevance is evaluated only
+against the current user's **stored** watched areas; legacy `currentLocation`
+does not select delivery recipients. An explicit audience naming another user,
+any group or an area returns `403 NOTIFICATION_AUDIENCE_FORBIDDEN`. This endpoint
+is no longer a group/broadcast dispatch interface.
 
-```json
-{
-  "bbox": [11.8, 48.5, 19.2, 51.2],
-  "layers": ["weather_alerts", "fire", "flood"],
-  "dryRun": true,
-  "currentLocation": {
-    "lat": 50.075,
-    "lon": 14.438,
-    "radiusKm": 10
-  }
-}
-```
+`dryRun=false` also requires explicit consent and the running worker/durable
+ledger and uses the same recipient claim path. Responses preserve
+`cop-notification-evaluation-v1`, decisions and summary fields; `dispatch` is an
+empty compatibility array, with aggregate `dispatchSummary` and `inputReadiness`
+as additive fields. `dispatchedCount` / `acceptedCount` describe Messaging
+intake acceptance, not physical delivery. Missing/expired source input returns
+`503 SAFETY_CANDIDATES_NOT_READY` or `SAFETY_EVALUATION_UNAVAILABLE`.
 
-`dryRun` defaults to `true`. With `dryRun=false`, COP dispatches eligible
-decisions to CSM Messaging.
+## Recipient identity, deduplication and intake
 
-The endpoint is intended for server-side or operator-controlled evaluation,
-not for a public client polling loop. A normal iOS user receives notification
-delivery from CSM Messaging after COP has made the decision.
+The stable incident identity hashes the provider, source, explicit canonical
+`incidentId` when provided (otherwise `featureId`), `validFrom` and
+`validUntil`. Rendering layer and locale are excluded. Generic `sourceIncident`
+is retained as source metadata but is not a unique incident ID: for example,
+`CHMI_CAP_FIRE_DANGER` can be a common label for independent events.
 
-## Decision Rules
-
-COP sends only citizen-relevant notifications:
-
-- `weather_alerts`, `warnings`, `fire` and `flood` can become
-  `safety.alert`;
-- `boundary_admin` and other reference layers are never citizen safety push;
-- stale features are never pushed;
-- expired features are never pushed;
-- `info` features are below push threshold;
-- `warning` and `critical` features can be pushed when they have a concrete
-  audience;
-- technical SIM/COP warnings, cache errors, source degradation and health
-  diagnostics are not citizen safety alerts.
-
-Audience is resolved in this order:
-
-1. explicit `audience.userIds`, `audience.groupIds` or `audience.areaIds`;
-2. authenticated user's enabled watched areas from COP profile;
-3. authenticated user's optional `currentLocation`.
-
-No audience means no push request.
-
-## Messaging Intake
-
-For every eligible decision COP calls CSM Messaging server-side:
+The Messaging header is an opaque per-recipient key:
 
 ```http
 POST /api/v1/notifications
-Authorization: Bearer <COP_CSM_MESSAGING_TOKEN>
-Idempotency-Key: sim.safety-data:public.safety.weather_alerts:<featureId>:<validFrom>:<validUntil>
-Content-Type: application/json
+Authorization: Bearer <server-only Messaging credential>
+Idempotency-Key: cop.safety:<SHA-256 recipient and incident digest>
 ```
 
-Example body:
+Two users receive independent delivery claims. The same incident copied into
+multiple layers cannot suppress another user or duplicate a relevant delivery
+for the same user. CHMI hydro additionally scopes the key by severity and uses a
+persistent per-user/station-feature/severity cooldown (default one hour), so
+routine measurement timestamps do not repeatedly notify while severity
+escalation can notify separately.
 
-```json
-{
-  "type": "safety.alert",
-  "severity": "warning",
-  "priority": "time_sensitive",
-  "audience": {
-    "userIds": ["user-123"],
-    "areaIds": ["watched-area-1"]
-  },
-  "title": {
-    "cs": "Výstraha pro sledovanou oblast",
-    "en": "Warning for watched area"
-  },
-  "body": {
-    "cs": "Otevřete CSM pro aktuální detail výstrahy.",
-    "en": "Open CSM for the current warning detail."
-  },
-  "source": {
-    "providerId": "sim.safety-data",
-    "layerId": "public.safety.weather_alerts",
-    "featureId": "chmi-warning-123",
-    "sourceName": "ČHMÚ CAP"
-  },
-  "expiresAt": "2026-05-29T18:00:00Z",
-  "deepLink": "csm://map/alert/chmi-warning-123"
-}
-```
+COP persists opaque keys, attempt/lease/expiry/acceptance timestamps and a
+Messaging notification reference. It does not persist the source candidate
+body, geometry or user GPS in this ledger. Profile areas remain existing,
+authenticated account preferences. There is no automatic deletion of delivery,
+cooldown or audit evidence in this release; retention requires an explicit
+separate policy.
 
-COP does not include APNs tokens, device identifiers, Matrix tokens, media URLs
-or plaintext chat messages in notification intake.
+A claim is considered accepted only when Messaging reports `online`, a
+`notificationId`, and at least one targeted device. This does **not** establish
+APNs/Web Push success, a visible banner, user receipt or acknowledgement. After
+successful intake COP does not resubmit that key. Messaging owns downstream
+redelivery and invalid-token handling. COP retry is capped at five attempted
+intakes, bounded by expiry, and requires the candidate to appear in a subsequent
+valid SIM result; COP stores no full notification payload queue.
 
-For SIM safety-data features COP treats SIM normalized metadata as authoritative.
-The notification title/body should prefer `localized.cs` and may use
-`localized.en` for an English fallback. The notification metadata carries
-`typeCode`, `sourceCode`, `sourceSystem`, `providerProperties.presentation.iconKey`
-and `providerProperties.presentation.styleKey` when present. COP must not derive
-the safety phenomenon from free text such as `headline`, `event` or legacy
-`hazardType` when `typeCode`/taxonomy metadata is available. If
-`providerProperties.notification.eligible=false`, COP must not dispatch a push
-candidate for that feature, even when severity would otherwise meet the
-threshold.
+## ČT24 informational context
 
-## Community Reports
+COP adds `GET /api/v1/safety/context/news`, proxying SIM
+`GET /safety-data/api/v1/context/news` with
+`contractVersion=sim-crisis-media-context-v1`. The separate panel shows only
+bounded headlines, original links, publication time and attribution
+**Česká televize / ČT24**. It is not an official IZS alert, an automatically
+localized incident, a full article or a video proxy.
 
-When an owned community report is submitted, COP creates a
-`community.report` notification decision. The report is dispatched only when:
+Every item must remain `informationalOnly=true`,
+`notificationEligible=false`, `location=null`, `locationStatus=unresolved` and
+`eventAt=null`. `regionCode` with `regionScope=feed` denotes the editorial feed
+area, **not the location of the reported event**. It must not create a map pin,
+nearby-distance promise or crisis push. COP validates fixed ČT24 feed/link
+origins, uses bounded server fetching and keeps the informational cache separate
+from notification candidate processing. No ČT24 content enters the worker.
 
-- report status is `submitted` or `published`;
-- report validity has not expired;
-- report severity is `advisory`, `warning` or `critical`;
-- a concrete audience exists through public visibility, explicit users or
-  watched-area relevance.
+## Community reports
 
-The push text is intentionally minimal. It points users to the app and report
-context but does not include protected media URLs. Media access remains governed
-by attachment ACL and signed media tokens.
-
-Community idempotency key:
+Existing `community.report` lifecycle notifications remain separate and
+unchanged. Submit/update use the report's authorized discussion group; resolve
+and withdrawal produce bounded lifecycle notices. Media access remains governed
+by attachment ACL and signed content tokens. Report text/media do not become
+SIM safety candidates or an implicit public broadcast.
 
 ```text
-cop.community-report:<reportId>:<submittedAt-or-updatedAt>
-```
-
-Deep link:
-
-```text
+cop.community-report:<reportId>:<event>:<version>:<updatedAt>
 csm://map/report/<reportId>
 ```
 

@@ -193,6 +193,8 @@ describe("Jizda driver measurement boundary", () => {
     const token = setupOidc();
     process.env.COP_DRIVER_MEASUREMENTS_ENABLED = "false";
     process.env.COP_DRIVER_MEASUREMENTS_CLEANUP_ENABLED = "true";
+    process.env.COP_DRIVER_MEASUREMENTS_PILOT_ENABLED = "true";
+    process.env.COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS = "other-pilot";
     process.env.COP_DRIVER_MEASUREMENTS_OIDC_CLIENT_ID = "jizda";
     process.env.COP_DRIVER_MEASUREMENTS_HASH_SECRET = "test-only-driver-secret-at-least-32-chars";
     const store = new InMemoryDriverMeasurementConsentStore();
@@ -205,8 +207,98 @@ describe("Jizda driver measurement boundary", () => {
     expect((await app.inject({ method: "POST", url: `${root}/batches`, headers, payload: draft() })).statusCode).toBe(503);
     expect((await app.inject({ method: "DELETE", url: `${root}/consent`, headers })).statusCode).toBe(202);
     expect((await app.inject({ method: "GET", url: `${root}/consent`, headers })).json().pendingDeletion).toBe(true);
+    expect((await app.inject({ method: "GET", url: `${root}/consent`, headers })).json().canGrant).toBe(false);
     expect((await app.inject({ method: "POST", url: `${root}/consent`, headers,
       payload: { contractVersion: "cop-driver-measurements-v1", version: "traffic-quality-v1", granted: true } })).statusCode).toBe(503);
+    await app.close();
+  });
+
+  it("restricts pilot intake to the verified actor while retaining cleanup for other users", async () => {
+    const token = setupOidc();
+    process.env.COP_DRIVER_MEASUREMENTS_ENABLED = "true";
+    process.env.COP_DRIVER_MEASUREMENTS_PILOT_ENABLED = "true";
+    process.env.COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS = " pilot-a, pilot-a ";
+    process.env.COP_DRIVER_MEASUREMENTS_OIDC_CLIENT_ID = "jizda";
+    process.env.COP_DRIVER_MEASUREMENTS_HASH_SECRET = "test-only-driver-secret-at-least-32-chars";
+    const store = new InMemoryDriverMeasurementConsentStore();
+    // A previous participant still owns contributions after leaving the cohort.
+    await store.grant("outside-b", new Date(fixedNow.getTime() - 200_000));
+    const sim = source();
+    let currentNow = new Date(fixedNow.getTime() - 200_000);
+    const app = buildServer({ driverMeasurementConsentStore: store, driverMeasurementSource: sim,
+      now: () => currentNow });
+    const root = "/api/v1/driver-measurements/v1";
+    const auth = (subject: string) => ({ authorization: `Bearer ${token(subject)}` });
+    const consent = { contractVersion: "cop-driver-measurements-v1", version: "traffic-quality-v1", granted: true };
+    expect((await app.inject({ method: "GET", url: `${root}/consent`, headers: auth("pilot-a") })).json().canGrant).toBe(true);
+    expect((await app.inject({ method: "GET", url: `${root}/consent`, headers: auth("outside-b") })).json()).toMatchObject({
+      granted: true, canGrant: false
+    });
+    expect((await app.inject({ method: "POST", url: `${root}/batches`, headers: auth("pilot-a"), payload: draft() })).json().error.code)
+      .toBe("DRIVER_MEASUREMENTS_CONSENT_REQUIRED");
+    expect((await app.inject({ method: "POST", url: `${root}/consent`, headers: auth("pilot-a"),
+      payload: { ...consent, subjectId: "outside-b" } })).statusCode).toBe(400);
+    expect((await app.inject({ method: "POST", url: `${root}/consent`, headers: auth("pilot-a"), payload: consent })).statusCode).toBe(200);
+    currentNow = fixedNow;
+    expect((await app.inject({ method: "POST", url: `${root}/batches`, headers: auth("pilot-a"), payload: draft() })).statusCode).toBe(200);
+    for (const endpoint of ["consent", "batches"]) {
+      const denied = await app.inject({ method: "POST", url: `${root}/${endpoint}`, headers: auth("outside-b"),
+        payload: endpoint === "consent" ? consent : draft({ subjectId: "pilot-a" }) });
+      expect(denied.statusCode).toBe(403);
+      expect(denied.json().error.code).toBe("DRIVER_MEASUREMENTS_PILOT_NOT_ELIGIBLE");
+    }
+    expect((await app.inject({ method: "POST", url: `${root}/consent`,
+      headers: { authorization: `Bearer ${token("pilot-a", "cop-web")}` }, payload: consent })).statusCode).toBe(403);
+    const revoke = await app.inject({ method: "DELETE", url: `${root}/consent`, headers: auth("outside-b") });
+    expect(revoke.statusCode).toBe(202);
+    await vi.waitFor(() => expect(sim.deletions.length).toBeGreaterThan(0));
+    expect(sim.batches).toHaveLength(1);
+    await app.close();
+  });
+
+  it.each(["", "pilot-a,,outside-b", "pilot-a,invalid subject", "x".repeat(8193)])(
+    "fails closed for unconfigured or malformed pilot cohort without blocking revocation (%#)", async (cohort) => {
+      const token = setupOidc();
+      process.env.COP_DRIVER_MEASUREMENTS_ENABLED = "true";
+      process.env.COP_DRIVER_MEASUREMENTS_PILOT_ENABLED = "true";
+      process.env.COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS = cohort;
+      process.env.COP_DRIVER_MEASUREMENTS_OIDC_CLIENT_ID = "jizda";
+      process.env.COP_DRIVER_MEASUREMENTS_HASH_SECRET = "test-only-driver-secret-at-least-32-chars";
+      const app = buildServer({ driverMeasurementConsentStore: new InMemoryDriverMeasurementConsentStore(),
+        driverMeasurementSource: source(), now: () => fixedNow });
+      const headers = { authorization: `Bearer ${token("pilot-a")}` };
+      const root = "/api/v1/driver-measurements/v1";
+      const state = await app.inject({ method: "GET", url: `${root}/consent`, headers });
+      expect(state.statusCode).toBe(200);
+      expect(state.json().canGrant).toBe(false);
+      for (const endpoint of ["consent", "batches"]) {
+        const response = await app.inject({ method: "POST", url: `${root}/${endpoint}`, headers,
+          payload: endpoint === "consent" ? { contractVersion: "cop-driver-measurements-v1", version: "traffic-quality-v1", granted: true } : draft() });
+        expect(response.statusCode).toBe(503);
+        expect(response.json().error.code).toBe("DRIVER_MEASUREMENTS_PILOT_NOT_CONFIGURED");
+      }
+      expect((await app.inject({ method: "DELETE", url: `${root}/consent`, headers })).statusCode).toBe(200);
+      await app.close();
+    }
+  );
+
+  it("does not bypass the pilot filter for an invalid pilot flag", async () => {
+    const token = setupOidc();
+    process.env.COP_DRIVER_MEASUREMENTS_ENABLED = "true";
+    process.env.COP_DRIVER_MEASUREMENTS_PILOT_ENABLED = "tru";
+    process.env.COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS = "pilot-a";
+    process.env.COP_DRIVER_MEASUREMENTS_OIDC_CLIENT_ID = "jizda";
+    process.env.COP_DRIVER_MEASUREMENTS_HASH_SECRET = "test-only-driver-secret-at-least-32-chars";
+    const app = buildServer({ driverMeasurementConsentStore: new InMemoryDriverMeasurementConsentStore(),
+      driverMeasurementSource: source(), now: () => fixedNow });
+    const headers = { authorization: `Bearer ${token("outside-b")}` };
+    const root = "/api/v1/driver-measurements/v1";
+    const grant = await app.inject({ method: "POST", url: `${root}/consent`, headers,
+      payload: { contractVersion: "cop-driver-measurements-v1", version: "traffic-quality-v1", granted: true } });
+    expect(grant.statusCode).toBe(403);
+    expect(grant.json().error.code).toBe("DRIVER_MEASUREMENTS_PILOT_NOT_ELIGIBLE");
+    expect((await app.inject({ method: "GET", url: `${root}/consent`, headers })).json().canGrant).toBe(false);
+    expect((await app.inject({ method: "DELETE", url: `${root}/consent`, headers })).statusCode).toBe(200);
     await app.close();
   });
 
@@ -241,5 +333,20 @@ describe("Jizda driver measurement boundary", () => {
       error: { code: "DRIVER_CONSENT_REVOKED", message: "x".repeat(5000), correlationId: "synthetic" }
     }), { status: 403 }));
     await expect(source.send(input)).rejects.toMatchObject({ statusCode: 503 });
+  });
+
+  it("requires an explicit completed SIM deletion receipt and never completes on 202", async () => {
+    const upstream = new HttpDriverMeasurementSource("https://sim.example.test/internal", "test-token");
+    const receipt = { contractVersion: "sim-driver-measurements-v1", deletedBatchCount: 1 };
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(receipt), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    for (const [status, body] of [[202, receipt], [200, {}], [200, { ...receipt, contractVersion: "unknown" }],
+      [200, { ...receipt, deletedBatchCount: -1 }], [200, "<html>not a deletion</html>"], [200, "x".repeat(4097)]] as const) {
+      fetchMock.mockImplementationOnce(async () => new Response(typeof body === "string" ? body : JSON.stringify(body), { status }));
+      await expect(upstream.delete("synthetic-contributor")).rejects.toMatchObject({ statusCode: 503 });
+    }
+    fetchMock.mockImplementationOnce(async () => new Response(null, { status: 204 }));
+    await expect(upstream.delete("synthetic-contributor")).rejects.toMatchObject({ statusCode: 503 });
+    await expect(upstream.delete("synthetic-contributor")).resolves.toBeUndefined();
   });
 });

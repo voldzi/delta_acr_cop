@@ -7,6 +7,12 @@ import {
   type ProviderTaxonomy
 } from "./provider-map-catalog.js";
 import type { SourceHealthOverride } from "./types.js";
+import {
+  normalizeSafetyNotificationCandidateCollection,
+  type SafetyNotificationCandidateCollection,
+  type SafetyNotificationCandidateQuery
+} from "./safety-notification-candidates.js";
+export type { SafetyNotificationCandidate, SafetyNotificationCandidateCollection, SafetyNotificationCandidateQuery } from "./safety-notification-candidates.js";
 
 export type SafetyLayerId = "boundary_admin" | "fire" | "flood" | "warnings" | "weather_alerts";
 export type SafetyDataSourceId = "admin_boundaries" | "chmi_alerts" | "chmi_hydro" | "fire_hotspots" | "fire_incidents" | "gdacs_alerts" | "hzs_incidents" | "mock" | "municipal_alerts" | "nasa_firms" | "road_srti_lod" | "weather_alerts";
@@ -231,6 +237,7 @@ export interface SafetyDataSource {
   fetchCatalog?(requestNow: Date): Promise<ProviderMapCatalog>;
   fetchConfig(requestNow: Date): Promise<SafetyDataPublicConfig>;
   fetchFeatures(query: SafetyFeatureQuery, requestNow: Date): Promise<SafetyFeatureCollection>;
+  fetchNotificationCandidates?(query: SafetyNotificationCandidateQuery, requestNow: Date): Promise<SafetyNotificationCandidateCollection>;
   fetchHydroStationDetail?(stationId: string, query: SafetyHydroStationDetailQuery, requestNow: Date): Promise<unknown>;
   fetchLayers(requestNow: Date): Promise<SafetyLayerDescriptor[]>;
   fetchObservability?(requestNow: Date): Promise<SafetyDataObservability>;
@@ -421,6 +428,73 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
 
   async fetchHydroStationDetail(stationId: string, query: SafetyHydroStationDetailQuery, requestNow: Date): Promise<unknown> {
     return fetchSafetyHydroStationDetail(this.config, stationId, query, requestNow);
+  }
+
+  async fetchNotificationCandidates(query: SafetyNotificationCandidateQuery, requestNow: Date): Promise<SafetyNotificationCandidateCollection> {
+    const normalizedQuery = { ...normalizeSafetyFeatureQuery(query, this.config), minSeverity: query.minSeverity ?? "warning" };
+    if (!["warning", "critical"].includes(normalizedQuery.minSeverity)) {
+      throw new Error("Notification candidates require warning or critical severity.");
+    }
+    if (![query.bbox.west, query.bbox.east, query.bbox.south, query.bbox.north].every(Number.isFinite)
+      || query.bbox.west >= query.bbox.east || query.bbox.south >= query.bbox.north
+      || normalizedQuery.layers.some((layer) => layer === "boundary_admin")) {
+      throw new Error("Notification candidate query must have a valid alert area and layers.");
+    }
+    const url = new URL(`${trimTrailingSlash(this.config.baseUrl)}/notifications/candidates`);
+    url.searchParams.set("bbox", `${normalizedQuery.bbox.west},${normalizedQuery.bbox.south},${normalizedQuery.bbox.east},${normalizedQuery.bbox.north}`);
+    url.searchParams.set("layers", normalizedQuery.layers.join(","));
+    url.searchParams.set("limit", String(normalizedQuery.limit));
+    url.searchParams.set("minSeverity", normalizedQuery.minSeverity);
+    url.searchParams.set("includeStale", "false");
+    if (normalizedQuery.sources?.length) {
+      url.searchParams.set("source", normalizedQuery.sources.join(","));
+    }
+    // Never reuse map feature cache or stale-if-error data for push decisions.
+    return normalizeSafetyNotificationCandidateCollection(await fetchNotificationJson(url, this.config, requestNow), normalizedQuery, requestNow);
+  }
+}
+
+async function fetchNotificationJson(url: URL, config: SafetyDataSourceConfig, requestNow: Date): Promise<unknown> {
+  const maximumBytes = 8 * 1024 * 1024;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: "application/json", "X-COP-Request-At": requestNow.toISOString() },
+      redirect: "error",
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`SIM notification candidates unavailable (${response.status}).`);
+    }
+    const declaredBytes = Number(response.headers.get("content-length"));
+    if (declaredBytes > maximumBytes) {
+      await response.body?.cancel();
+      throw new Error("SIM notification candidate response exceeds the body limit.");
+    }
+    if (!response.body) {
+      throw new Error("SIM notification candidate response has no body.");
+    }
+    reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    for (;;) {
+      const result = await reader.read();
+      if (result.done) {
+        break;
+      }
+      bytes += result.value.byteLength;
+      if (bytes > maximumBytes) {
+        await reader.cancel();
+        throw new Error("SIM notification candidate response exceeds the body limit.");
+      }
+      chunks.push(result.value);
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  } finally {
+    reader?.releaseLock();
+    clearTimeout(timeout);
   }
 }
 

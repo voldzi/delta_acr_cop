@@ -180,3 +180,48 @@ describe("AiSemanticRetriever", () => {
     expect(context.warnings.join(" ")).toContain("embedding unavailable");
   });
 });
+
+describe("semantic retrieval cancellation", () => {
+  const documents = Array.from({ length: 12 }, (_, index) => ({ documentId: `d${index}`, entityId: `e${index}`, entityType: "incident" as const, text: `Synthetic incident ${index}` }));
+
+  it("aborts concurrent embedding work and starts no more documents after the total deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const signals: AbortSignal[] = [];
+      const embedText = vi.fn(async (_input: string, signal?: AbortSignal) => {
+        if (embedText.mock.calls.length === 1) return { embedding: [1, 0], model: "test" };
+        signals.push(signal!);
+        return new Promise<{ embedding: number[]; model: string }>((_resolve, reject) => {
+          signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+        });
+      });
+      const retriever = new AiSemanticRetriever({ embedText, timeoutMs: 50 });
+      const outcome = retriever.retrieve({ documents, generatedAt: new Date(), query: "synthetic query" });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(await outcome).toMatchObject({ status: "degraded", items: [] });
+      expect(embedText).toHaveBeenCalledTimes(5);
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(embedText).toHaveBeenCalledTimes(5);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("does not cache late embeddings from an abandoned request", async () => {
+    vi.useFakeTimers();
+    try {
+      let finish!: (value: { embedding: number[]; model: string }) => void;
+      const embedText = vi.fn(async () => new Promise<{ embedding: number[]; model: string }>((resolve) => { finish = resolve; }));
+      const retriever = new AiSemanticRetriever({ embedText, timeoutMs: 50 });
+      const input = { documents, generatedAt: new Date(), query: "synthetic query" };
+      const first = retriever.retrieve(input);
+      await vi.advanceTimersByTimeAsync(50);
+      expect((await first).status).toBe("degraded");
+      finish({ embedding: [1, 0], model: "late" });
+      await vi.advanceTimersByTimeAsync(0);
+      const second = retriever.retrieve(input);
+      await vi.advanceTimersByTimeAsync(50);
+      expect((await second).status).toBe("degraded");
+      expect(embedText).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+  });
+});

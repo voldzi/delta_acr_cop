@@ -146,10 +146,10 @@ If a check cannot be run, state that explicitly with the observed error.
 COP uses the versioned shared VCode public analytics standard. Preserve its bridge
 in the synthetic public demo, fixed domain/path allowlist and release check.
 Collection is disabled until the COP privacy notice and shared runtime/collector
-are accepted. Measure only approved public pageviews; no clicks in phase one.
+are accepted. Measure only the approved anonymous public demo path and normalized public-service entry sources in v2. COP has no eligible public click links and keeps allowedEvents empty. No automatic click tracking.
 Never collect accounts, forms, messages, reports, identifiers, coordinates, map
 state or health data. Respect DNT/GPC; no cookies, replay, offline queues, query,
-fragment, title or referrer. Keep credentials/internal collector addresses on the
+fragment, title or raw referrer. Keep credentials/internal collector addresses on the
 server. Scope changes require privacy review. Changes to navigation, CSP or
 deployment require analytics acceptance, including rejection of private paths.
 See docs/analytics/integration.md and docs/analytics/privacy-review.md.

@@ -1,4 +1,5 @@
 import type { FastifyInstance, RouteHandlerMethod } from "fastify";
+import { requestBodyLimitOptions } from "../errors.js";
 
 export interface MessagingRouteHandlers {
   addConversationMembers: RouteHandlerMethod;
@@ -12,6 +13,7 @@ export interface MessagingRouteHandlers {
   matrixPushGateway: RouteHandlerMethod;
   registerWebPushDevice: RouteHandlerMethod;
   resolveConversation: RouteHandlerMethod;
+  lookupMatrixIdentities: RouteHandlerMethod;
   resolveMatrixIdentities: RouteHandlerMethod;
   startVoiceCall: RouteHandlerMethod;
   status: RouteHandlerMethod;
@@ -22,7 +24,7 @@ export interface MessagingRouteHandlers {
 }
 
 export function registerMessagingRoutes(app: FastifyInstance, handlers: MessagingRouteHandlers): void {
-  app.post("/_matrix/push/v1/notify", handlers.matrixPushGateway);
+  app.post("/_matrix/push/v1/notify", requestBodyLimitOptions(256 * 1024), handlers.matrixPushGateway);
   app.get("/api/v1/messaging/status", handlers.status);
   app.get("/api/v1/push/web/config", handlers.webPushConfig);
   app.post("/api/v1/push/web/devices", handlers.registerWebPushDevice);
@@ -49,6 +51,7 @@ export function registerMessagingRoutes(app: FastifyInstance, handlers: Messagin
   app.get("/api/v1/messaging/conversations/resolve", handlers.resolveConversation);
   app.get("/api/v1/messaging/conversations/:conversationId", handlers.conversationDetail);
   app.post("/api/v1/messaging/conversations", handlers.createConversation);
+  app.post("/api/v1/messaging/matrix/identities/lookup", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, handlers.lookupMatrixIdentities);
   app.post("/api/v1/messaging/matrix/identities/resolve", handlers.resolveMatrixIdentities);
   app.post("/api/v1/messaging/conversations/:conversationId/members", handlers.addConversationMembers);
   app.post("/api/v1/messaging/conversations/:conversationId/matrix-room", handlers.bindMatrixRoom);

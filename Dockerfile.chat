@@ -8,6 +8,8 @@ COPY apps/cop-chat/package.json apps/cop-chat/package.json
 COPY apps/cop-web/package.json apps/cop-web/package.json
 COPY packages/core/package.json packages/core/package.json
 COPY packages/messaging/package.json packages/messaging/package.json
+COPY packages/geo-client/package.json packages/geo-client/package.json
+COPY packages/nato-symbol-renderer/package.json packages/nato-symbol-renderer/package.json
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
@@ -15,6 +17,8 @@ COPY apps/cop-chat apps/cop-chat
 COPY apps/cop-web apps/cop-web
 COPY packages/core packages/core
 COPY packages/messaging packages/messaging
+COPY packages/geo-client packages/geo-client
+COPY packages/nato-symbol-renderer packages/nato-symbol-renderer
 ARG VITE_COP_API_BASE_URL=http://localhost:4310
 ARG VITE_COP_PUBLIC_LAB_VALUE=dev-lab-token
 ARG VITE_COP_AUTH_MODE=lab
@@ -41,12 +45,14 @@ ENV NODE_OPTIONS=--max-old-space-size=768
 RUN pnpm --filter @cop/cop-chat... build
 
 FROM node:24-alpine AS runtime
-WORKDIR /app
-RUN corepack enable
-COPY --from=build /app ./
+WORKDIR /app/apps/cop-chat
+COPY --from=build --chown=node:node /app/apps/cop-chat/dist ./dist
+COPY --from=build --chown=node:node /app/apps/cop-chat/server.mjs ./server.mjs
+ENV NODE_ENV=production
 ENV COP_API_BASE_URL=http://cop-api:4310
 ENV COP_CHAT_PORT=4314
 ENV COP_CHAT_BASE_PATH=/chat/
 ENV COP_OIDC_ISSUER=
 EXPOSE 4314
-CMD ["pnpm", "--filter", "@cop/cop-chat", "preview"]
+USER node
+CMD ["node", "server.mjs"]

@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { opaqueUserId, type CopRouterChatConfig } from "./ai-router-chat.js";
+import { readBoundedBody } from "./bounded-upstream.js";
 
 export interface CopByokConfig extends CopRouterChatConfig {
   actorSecret: string;
@@ -91,9 +92,11 @@ export class CopByokRouterClient {
         headers: { authorization: `Bearer ${this.config.token}`, ...actorHeaders,
           ...(body ? { "content-type": "application/json" } : {}), "cache-control": "no-store" },
         ...(body ? { body: JSON.stringify(body) } : {}),
+        redirect: "error",
         signal: AbortSignal.timeout(60_000)
       });
     } catch { throw new CopByokError("router_unavailable"); }
+    if (!response.ok) await response.body?.cancel();
     if (response.status === 400) throw new CopByokError("invalid_input");
     if (response.status === 422) throw new CopByokError(method === "PUT" ? "invalid_key" : "key_unavailable");
     if (response.status === 429) throw new CopByokError("limit_reached");
@@ -103,7 +106,7 @@ export class CopByokRouterClient {
 
   private async json(response: Response): Promise<Record<string, unknown>> {
     let data: unknown;
-    try { data = await response.json(); } catch { throw new CopByokError("invalid_response"); }
+    try { data = JSON.parse((await readBoundedBody(response, 1024 * 1024)).toString("utf8")); } catch { throw new CopByokError("invalid_response"); }
     if (!data || typeof data !== "object" || Array.isArray(data)) throw new CopByokError("invalid_response");
     return data as Record<string, unknown>;
   }

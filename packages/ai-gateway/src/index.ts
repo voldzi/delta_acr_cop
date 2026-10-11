@@ -155,6 +155,7 @@ export interface OllamaChatModelProfile {
 }
 
 export interface OllamaEmbeddingProviderOptions {
+  totalTimeoutMs?: number;
   baseUrls: string[];
   token?: string;
   model: string;
@@ -404,7 +405,7 @@ export class OllamaEmbeddingProvider {
     return this.options.model;
   }
 
-  async embed(input: string): Promise<AiEmbeddingResponse> {
+  async embed(input: string, signal?: AbortSignal): Promise<AiEmbeddingResponse> {
     const body = {
       model: this.options.model,
       input
@@ -416,7 +417,8 @@ export class OllamaEmbeddingProvider {
         headers: this.headers(),
         body: JSON.stringify(body)
       },
-      this.options.timeoutMs
+      this.options.timeoutMs,
+      signal
     ) as OllamaEmbedResponse;
     const embedding = Array.isArray(response.embeddings?.[0])
       ? response.embeddings[0]
@@ -433,58 +435,53 @@ export class OllamaEmbeddingProvider {
   }
 
   async health(): Promise<AiProviderHealth> {
-    const errors: string[] = [];
-    for (const baseUrl of this.normalizedBaseUrls()) {
+    // Independent probes share a short wall-clock budget, even when all hosts are down.
+    const results = await Promise.all(this.normalizedBaseUrls().map(async (baseUrl) => {
       try {
-        const response = await fetchWithTimeout(
-          `${baseUrl}/api/tags`,
-          {
-            method: "GET",
-            headers: this.headers()
-          },
-          Math.min(this.options.timeoutMs, 1500)
-        );
-        if (!response.ok) {
-          errors.push(`${baseUrl}: HTTP ${response.status}`);
-          continue;
-        }
-        const tags = (await response.json()) as OllamaTagsResponse;
+        const tags = await fetchJsonWithTimeout(`${baseUrl}/api/tags`, {
+          method: "GET", headers: this.headers()
+        }, Math.min(this.options.timeoutMs, 1500)) as OllamaTagsResponse;
         const available = new Set((tags.models ?? []).flatMap((model) => [model.name, model.model]).filter(isNonEmptyString));
-        if (available.size > 0 && !available.has(this.options.model)) {
-          errors.push(`${baseUrl}: missing embedding model ${this.options.model}`);
-          continue;
+        if (available.size === 0 || !available.has(this.options.model)) {
+          return { baseUrl, error: `missing embedding model ${this.options.model}` };
         }
-        return {
-          status: "ok",
-          detail: `Ollama embedding provider ready; model ${this.options.model}; endpoint ${baseUrl}`
-        };
+        return { baseUrl };
       } catch (error) {
-        errors.push(`${baseUrl}: ${errorMessage(error)}`);
+        return { baseUrl, error: errorMessage(error) };
       }
-    }
-    return {
+    }));
+    const ready = results.find((result) => result.error === undefined);
+    return ready ? {
+      status: "ok",
+      detail: `Ollama embedding provider ready; model ${this.options.model}; endpoint ${ready.baseUrl}`
+    } : {
       status: "degraded",
-      detail: `Ollama embedding provider unavailable: ${errors.join("; ") || "no endpoint responded"}`
+      detail: `Ollama embedding provider unavailable: ${results.map((result) => `${result.baseUrl}: ${result.error}`).join("; ") || "no endpoint responded"}`
     };
   }
 
-  private async requestJsonWithFallback(path: string, init: RequestInit, timeoutMs: number): Promise<Record<string, unknown>> {
+  private async requestJsonWithFallback(path: string, init: RequestInit, timeoutMs: number, callerSignal?: AbortSignal): Promise<Record<string, unknown>> {
+    const controller = new AbortController();
+    const totalTimeoutMs = this.options.totalTimeoutMs ?? timeoutMs;
+    const timer = setTimeout(() => controller.abort(new Error("Ollama embedding total deadline exceeded.")), totalTimeoutMs);
+    const signal = callerSignal ? AbortSignal.any([controller.signal, callerSignal]) : controller.signal;
     let lastError: unknown;
-    for (let attempt = 0; attempt <= this.options.retryAttempts; attempt += 1) {
-      for (const baseUrl of this.normalizedBaseUrls()) {
-        try {
-          const response = await fetchWithTimeout(`${baseUrl}${path}`, init, timeoutMs);
-          if (!response.ok) {
-            const detail = await readShortResponse(response);
-            throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+    try {
+      for (let attempt = 0; attempt <= this.options.retryAttempts; attempt += 1) {
+        for (const baseUrl of this.normalizedBaseUrls()) {
+          signal.throwIfAborted();
+          try {
+            return await fetchJsonWithTimeout(`${baseUrl}${path}`, { ...init, signal }, timeoutMs);
+          } catch (error) {
+            signal.throwIfAborted();
+            lastError = error;
           }
-          return (await response.json()) as Record<string, unknown>;
-        } catch (error) {
-          lastError = error;
         }
       }
+      throw new Error(`Ollama embedding request failed: ${errorMessage(lastError)}`);
+    } finally {
+      clearTimeout(timer);
     }
-    throw new Error(`Ollama embedding request failed: ${errorMessage(lastError)}`);
   }
 
   private normalizedBaseUrls(): string[] {
@@ -646,6 +643,7 @@ export interface AiGatewayEnv {
   COP_AI_OLLAMA_REASONING_THINK?: string;
   COP_AI_OLLAMA_EMBEDDING_MODEL?: string;
   COP_AI_OLLAMA_EMBEDDING_TIMEOUT_MS?: string;
+  COP_AI_OLLAMA_EMBEDDING_TOTAL_TIMEOUT_MS?: string;
   COP_AI_LOCAL_GATEWAY_URL?: string;
   COP_AI_LOCAL_GATEWAY_TOKEN?: string;
   COP_AI_LOCAL_MODEL?: string;
@@ -708,6 +706,7 @@ export function createOllamaEmbeddingProvider(env: AiGatewayEnv = process.env): 
     token: optionalTrimmedString(env.COP_AI_OLLAMA_TOKEN),
     model,
     timeoutMs: parsePositiveInteger(env.COP_AI_OLLAMA_EMBEDDING_TIMEOUT_MS, 10000),
+    totalTimeoutMs: parsePositiveInteger(env.COP_AI_OLLAMA_EMBEDDING_TOTAL_TIMEOUT_MS, 10000),
     retryAttempts: parseNonNegativeInteger(env.COP_AI_OLLAMA_RETRY_ATTEMPTS, 2)
   });
 }
@@ -883,11 +882,11 @@ export class AiGateway {
     };
   }
 
-  async embedText(input: string): Promise<AiEmbeddingResponse> {
+  async embedText(input: string, signal?: AbortSignal): Promise<AiEmbeddingResponse> {
     if (!this.embeddingProvider) {
       throw new Error("AI embedding provider is not configured.");
     }
-    return this.embeddingProvider.embed(input);
+    return this.embeddingProvider.embed(input, signal);
   }
 
   listProviders(): Array<{ id: AiProviderId; model: string; available: boolean }> {
@@ -1093,6 +1092,27 @@ function buildUserPrompt(query: AiCopQuery): string {
     `Dotaz: ${query.prompt}`,
     `Kontext JSON: ${JSON.stringify(query.context ?? {})}`
   ].join("\n");
+}
+
+// Keep cancellation active through headers AND body consumption.
+async function fetchJsonWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Record<string, unknown>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error("Ollama embedding attempt timed out.")), timeoutMs);
+  const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal;
+  try {
+    signal.throwIfAborted();
+    const response = await fetch(input, { ...init, redirect: "error", signal });
+    if (!response.ok) {
+      const detail = await readShortResponse(response);
+      signal.throwIfAborted();
+      throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+    }
+    const result = await response.json() as Record<string, unknown>;
+    signal.throwIfAborted();
+    return result;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Response> {

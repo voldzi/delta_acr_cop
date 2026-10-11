@@ -488,6 +488,17 @@ describe("Matrix client diagnostics", () => {
   });
 
   it("starts an encrypted Matrix group voice call and rings room members", async () => {
+    const externalFetch = vi.fn(async () => {
+      throw new Error("Unexpected external fetch in an isolated Matrix voice fixture");
+    });
+    vi.stubGlobal("fetch", externalFetch);
+    const profiles: Record<string, Record<string, unknown>> = {
+      "@alice:cop.local": { avatar_url: "mxc://cop.local/alice-avatar", displayname: "Alice Example" },
+      "@bob:cop.local": { avatar_url: "mxc://cop.local/bob-avatar", displayname: "Bob Example" }
+    };
+    const getProfileInfo = vi.fn<NonNullable<MockMatrixClient["getProfileInfo"]>>(
+      async (userId) => profiles[userId] ?? {}
+    );
     stubVoiceCallBrowserSupport();
     const room = createRoom({
       members: [
@@ -506,6 +517,7 @@ describe("Matrix client diagnostics", () => {
         createGroupCall,
         getGroupCallForRoom: vi.fn(() => null),
         getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!group:cop.local"] }),
+        getProfileInfo,
         rooms: [room],
         waitUntilRoomReadyForGroupCalls
       })
@@ -532,9 +544,27 @@ describe("Matrix client diagnostics", () => {
       callId: "group-call-1",
       roomId: "!group:cop.local"
     });
+
+    await vi.waitFor(() => {
+      expect(getProfileInfo.mock.calls.map(([userId]) => userId)).toEqual(["@alice:cop.local", "@bob:cop.local"]);
+      expect(session.getRooms()[0]?.presence?.updatedAt).toEqual(expect.any(String));
+    });
+    session.stop();
+    expect(externalFetch).not.toHaveBeenCalled();
   });
 
   it("rings only selected eligible members when extending a group call", async () => {
+    const externalFetch = vi.fn(async () => {
+      throw new Error("Unexpected external fetch in an isolated Matrix voice fixture");
+    });
+    vi.stubGlobal("fetch", externalFetch);
+    const profiles: Record<string, Record<string, unknown>> = {
+      "@alice:cop.local": { avatar_url: "mxc://cop.local/alice-avatar", displayname: "Alice Example" },
+      "@bob:cop.local": { avatar_url: "mxc://cop.local/bob-avatar", displayname: "Bob Example" }
+    };
+    const getProfileInfo = vi.fn<NonNullable<MockMatrixClient["getProfileInfo"]>>(
+      async (userId) => profiles[userId] ?? {}
+    );
     stubVoiceCallBrowserSupport();
     const operator = { displayName: "Operátor", userId: "@operator:cop.local" };
     const alice = { displayName: "Alice", userId: "@alice:cop.local" };
@@ -553,6 +583,7 @@ describe("Matrix client diagnostics", () => {
         createGroupCall: vi.fn().mockResolvedValue(groupCall),
         getGroupCallForRoom: vi.fn(() => groupCall),
         getJoinedRooms: vi.fn().mockResolvedValue({ joined_rooms: ["!group:cop.local"] }),
+        getProfileInfo,
         rooms: [room],
         waitUntilRoomReadyForGroupCalls: vi.fn().mockResolvedValue(undefined)
       })
@@ -569,6 +600,13 @@ describe("Matrix client diagnostics", () => {
       roomId: "!group:cop.local"
     });
     expect(onVoiceCallWake).toHaveBeenCalledTimes(2);
+
+    await vi.waitFor(() => {
+      expect(getProfileInfo.mock.calls.map(([userId]) => userId)).toEqual(["@alice:cop.local", "@bob:cop.local"]);
+      expect(session.getRooms()[0]?.presence?.updatedAt).toEqual(expect.any(String));
+    });
+    session.stop();
+    expect(externalFetch).not.toHaveBeenCalled();
   });
 
   it("appends configured ICE server URLs without duplicating homeserver URLs", async () => {

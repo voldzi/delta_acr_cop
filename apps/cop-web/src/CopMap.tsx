@@ -7857,7 +7857,14 @@ function buildSituationRenderProperties(
     };
   }
   if (feature.properties.layer === "community" && feature.properties.category === "police_patrol") {
-    return { osmPoi: true, osmSymbolKey: getOsmCategoryIconKey("police"), osmCategoryLabel: "Policejní hlídka", situationStatusColor: "#60a5fa", situationStatusLabel: "HLÁŠENO", situationStatusTone: "info" };
+    return {
+      osmPoi: true,
+      osmSymbolKey: getOsmCategoryIconKey("police"),
+      osmCategoryLabel: "Policejní hlídka",
+      situationStatusColor: "#60a5fa",
+      situationStatusLabel: "HLÁŠENO",
+      situationStatusTone: "info"
+    };
   }
   const communityPlace = resolveCommunityPlacePresentation(feature);
   if (communityPlace) {
