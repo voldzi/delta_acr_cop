@@ -1,11 +1,13 @@
 # 26. Ordinary navigation with reviewed known closures
 
-Status: ordinary reviewed known-closure routing is deployed and enabled. COP API
-runs `0311d4d6b362c70c90fa35b9c9787459db46edce`; SIM runs the pinned release
-`91bbfa049a73cf2dd86f3430578ed9e9d571ea77` (same binding schema as
-`3506663a70a32ecdab9ab2921656385dc998ea26`). Strict profiles and driver measurements
-remain off. Actual authenticated-user and physical-phone acceptance are pending.
-Coverage remains incomplete; this release has one individually reviewed closure.
+Status checked on 2026-10-11: ordinary reviewed known-closure routing is deployed
+and enabled. COP API runs `e99401213efbf9d6a7685443adc318eeeb422c15`; the SIM
+baseline is `20a0d961ba4cdb1f100998d7f8e07787dad03327`. The location-error
+refinement described below is awaiting SIM production readiness and joint live
+acceptance. Strict routing and voluntary driver measurements have separate
+activation and acceptance gates; see [measurement handoff](22_JIZDA_DRIVER_MEASUREMENTS_COP_HANDOFF.md).
+Actual authenticated-user routing and physical-phone acceptance are pending.
+Coverage remains incomplete; one closure is individually reviewed.
 
 ## Compatible additive response
 
@@ -82,6 +84,37 @@ COP verification failures return 502 `ROUTING_KNOWN_CLOSURES_INVALID`; SIM
 `ROUTING_KNOWN_CLOSURES_*` codes remain preserved with their HTTP status. Do not
 silently retry these failures through Apple/legacy routing that drops the exclusions.
 Keep the last route only with its actual expiry and explicit failure state.
+
+SIM location-error refinement is prepared on 2026-10-11; production readiness
+and the joint live acceptance are still pending. Only an accepted engine route or
+alternatives response with HTTP 400 and a numeric JSON `error_code=171` maps to
+422 `ROUTING_LOCATION_NOT_ROUTABLE`. COP preserves this status and code in its
+existing error envelope with the COP request correlation ID. The code means that
+at least one input location could not be correlated with a routable road; it
+does not identify the origin, destination, waypoint or location index. Do not
+blindly snap or change coordinates, discard requirements, or retry through
+another provider. HTTP 5xx, timeout, a non-route 171 response, invalid geometry
+and reviewed-closure intersections do not acquire this meaning.
+
+The older 502 `ROUTING_KNOWN_CLOSURES_ENGINE_FAILED` remains a mixed engine and
+verification failure, including a route intersecting a reviewed closure. It is
+not an availability-only code and does not authorize a new Apple/legacy fallback
+or automatic acceptance of a pending Apple result. Presence of `vehicleProfile`
+or `trip` in the canonical request requires its corresponding verification;
+an acknowledged ordinary-car profile does not waive it. An already explicitly
+chosen independent ordinary Apple route may remain only when its request has
+no `vehicleProfile`, `trip`, mandatory requirements or SIM proof, with an
+explicit COP failure state and unverified COP closure status. This adds no new
+provider-selection mode or fallback consent flow.
+
+COP local acceptance on 2026-10-11 passed 26 targeted tests, including 16 new
+adapter-to-handler cases for both endpoints: ordinary, mapped and strict requests;
+exact 422/code and COP correlation; sanitized error without route/proof; anonymous
+401 before any provider call; preserved protective 502/503 and no COP translation
+of raw Valhalla 171. Every authenticated fixture made exactly one mocked SIM call.
+API type-check, test-file ESLint, skeleton and OpenAPI validation passed (24 existing
+OpenAPI warnings). These are synthetic lab-auth tests; live SIM transport and
+actual native-user acceptance remain pending. COP runtime code is unchanged.
 
 Show incomplete coverage and conservative avoidance in the existing route UI.
 Do not promise an open road, complete legal passability or guaranteed bridge
