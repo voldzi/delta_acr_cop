@@ -282,6 +282,26 @@ describe("Jizda driver measurement boundary", () => {
     }
   );
 
+  it("does not bypass the pilot filter for an invalid pilot flag", async () => {
+    const token = setupOidc();
+    process.env.COP_DRIVER_MEASUREMENTS_ENABLED = "true";
+    process.env.COP_DRIVER_MEASUREMENTS_PILOT_ENABLED = "tru";
+    process.env.COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS = "pilot-a";
+    process.env.COP_DRIVER_MEASUREMENTS_OIDC_CLIENT_ID = "jizda";
+    process.env.COP_DRIVER_MEASUREMENTS_HASH_SECRET = "test-only-driver-secret-at-least-32-chars";
+    const app = buildServer({ driverMeasurementConsentStore: new InMemoryDriverMeasurementConsentStore(),
+      driverMeasurementSource: source(), now: () => fixedNow });
+    const headers = { authorization: `Bearer ${token("outside-b")}` };
+    const root = "/api/v1/driver-measurements/v1";
+    const grant = await app.inject({ method: "POST", url: `${root}/consent`, headers,
+      payload: { contractVersion: "cop-driver-measurements-v1", version: "traffic-quality-v1", granted: true } });
+    expect(grant.statusCode).toBe(403);
+    expect(grant.json().error.code).toBe("DRIVER_MEASUREMENTS_PILOT_NOT_ELIGIBLE");
+    expect((await app.inject({ method: "GET", url: `${root}/consent`, headers })).json().canGrant).toBe(false);
+    expect((await app.inject({ method: "DELETE", url: `${root}/consent`, headers })).statusCode).toBe(200);
+    await app.close();
+  });
+
   it("rejects SIM redirects and oversized or invalid receipts; preserves 429", async () => {
     const source = new HttpDriverMeasurementSource("https://sim.example.test/internal", "test-token");
     const input = { batchId };

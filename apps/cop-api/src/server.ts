@@ -881,6 +881,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const now = options.now ?? (() => new Date());
   const driverMeasurementsEnabled = readBoolean(process.env.COP_DRIVER_MEASUREMENTS_ENABLED, false);
   const driverMeasurementCleanupEnabled = readBoolean(process.env.COP_DRIVER_MEASUREMENTS_CLEANUP_ENABLED, false);
+  const driverMeasurementPilotFlag = process.env.COP_DRIVER_MEASUREMENTS_PILOT_ENABLED;
   const driverMeasurementRuntimeEnabled = driverMeasurementsEnabled || driverMeasurementCleanupEnabled;
   const driverMeasurementSecret = process.env.COP_DRIVER_MEASUREMENTS_HASH_SECRET ?? "";
   if (driverMeasurementRuntimeEnabled && !options.driverMeasurementConsentStore && !process.env.COP_DATABASE_URL) {
@@ -1121,7 +1122,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   registerDriverMeasurementRoutes(app, {
     enabled: driverMeasurementsEnabled,
     cleanupEnabled: driverMeasurementCleanupEnabled,
-    pilotEnabled: readBoolean(process.env.COP_DRIVER_MEASUREMENTS_PILOT_ENABLED, false),
+    // A typo must not turn an intended restricted pilot into unrestricted intake.
+    pilotEnabled: driverMeasurementPilotFlag !== undefined
+      && driverMeasurementPilotFlag !== "false" && driverMeasurementPilotFlag !== "0",
     pilotSubjectIds: process.env.COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS,
     oidcClientId: process.env.COP_DRIVER_MEASUREMENTS_OIDC_CLIENT_ID?.trim() || "csm-mobile",
     secret: driverMeasurementSecret,

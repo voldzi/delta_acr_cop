@@ -104,6 +104,8 @@ uzavře příjem pro všechny, ale neblokuje cleanup. Nejvýše 100 položek a
 8192 znaků, každá položka 1–255 znaků bez mezer a řídicích znaků; chybný
 seznam se nepřijímá ani částečně. Členství samo nenahrazuje platný mobilní
 OIDC token ani výslovný souhlas. Změna seznamu vyžaduje restart COP API.
+Filtr deaktivuje jen chybějící příznak nebo přesné `false`/`0`; neznámá
+hodnota včetně překlepu filtr zachovává, aby neotevřela příjem všem účtům.
 Odstranění účtu ze seznamu neodvolává souhlas automaticky a nesmí znemožnit
 pozdější GET/DELETE nebo dokončení čekajícího mazání.
 Pilot ukončujte vypnutím příjmu, nikoli vypnutím pilotního filtru: samotné
