@@ -201,6 +201,10 @@ Původní neúspěšná lokální regrese měla chybějící workspace závislos
 sentinel nové testovací fixture; obojí opraveno před finálním během výše.
 Static smoke po sandbox EPERM a jedné timeout kontrole oprávnění prošel při
 povoleném opakování. Není to důkaz produkčního nebo mobilního doručení.
+Reindex kandidáta odmítlo nativní Chroma CLI: `native retrieval is restricted
+to projects selected in the app`. Oddělený dočasný checkout není vybraný projekt;
+původní pracovní strom ani jeho index se neměnil. Po začlenění do vybraného
+projektu opakovat standardní reindex, bez obcházení této hranice.
 Místní source testy skutečně používají PostgreSQL pro transakční závody,
 restart, izolaci účtů a změnu owner-secret; ostatní provider cleanup důkazy
 v orchestrátoru jsou syntetické. Nativní sestavení, skutečné externí odstranění

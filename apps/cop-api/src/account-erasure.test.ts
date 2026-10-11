@@ -196,4 +196,3 @@ describe("durable whole COP account erasure", () => {
     } finally { await app.close(); }
   });
 });
-
