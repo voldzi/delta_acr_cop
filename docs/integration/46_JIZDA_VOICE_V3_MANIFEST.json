@@ -1,0 +1,66 @@
+{
+  "handoffVersion": "cop-account-safety-voice-v3",
+  "date": "2026-10-11",
+  "repository": "https://github.com/voldzi/delta_acr_cop",
+  "branch": "codex/jizda-voice-grants-20261011",
+  "sourceCommit": "496d81170d9fabae134bfa1bbea82a07cb43d329",
+  "patchBaseCommit": "8b56bb8620ea2d37ced3e2d7ca74589013deb008",
+  "sourcePatchSha256": "e8010a32629e6bcd2d1ac1f9a2f1ebf4462f573b06b77bf50ac9edd28c1ba145",
+  "openApiSha256": "c5cb26c94967584936f8c2c79e3013b6a83517e3dca8d7dfa7ba7f87660cb406",
+  "unchangedDependencies": {
+    "messagingCommit": "ed045c442f540c279d5ab6a54bf26a5dd121a759",
+    "mobileSdkCommit": "73dcb1dfd1bc42775057ce5ddd17edb85ad574db"
+  },
+  "immutableV2ArchiveSha256": "89890a17de6aa740c6da7df993cea454cb5b6f30bdeb30bea3178953558bc68e",
+  "verification": {
+    "fullTestsPassed": 1761,
+    "fullTestsSkipped": 14,
+    "focusedIncludedInFull": {
+      "ledgerAndCopHttp": 35,
+      "gateway": 26,
+      "receiptContract": 4
+    },
+    "separateRealPostgresPassed": 2,
+    "build": "passed",
+    "typecheck": "passed",
+    "eslint": "passed",
+    "jsonSchemaCount": 11,
+    "openApi": "valid_with_26_warnings",
+    "skeleton": "passed",
+    "frozenOfflineLockfile": "passed",
+    "publicAnalytics": "passed"
+  },
+  "activation": {
+    "productionDeployed": false,
+    "productionFlagsChanged": false,
+    "productionSecretsCreated": false,
+    "productionNetworkChanged": false,
+    "realAccountsDeleted": false,
+    "realLiveKitVerified": false,
+    "physicalIphoneVerified": false,
+    "appStoreCompletenessClaimed": false
+  },
+  "remaining": [
+    "live_provider_and_sole_signaling_ingress_acceptance",
+    "legacy_matrix_push_grant_ownership",
+    "historical_acknowledged_grant_quiescence",
+    "call_terminal_state_admission_hook",
+    "grant_compaction_policy",
+    "native_candidate34_integration_and_physical_acceptance",
+    "moderator_operating_process",
+    "all11_account_erasure_owner_proofs"
+  ],
+  "filesSha256": {
+    "full-tests-final.log": "31943f03a1e86c00a76083063e9bb779c182ad67fbd11f546e0f6f00eb87796c",
+    "postgres-final.log": "6f55c7049285497ab7f7c470a2be48a0fd068fe0d2ed6b6dff25ba66a070f37b",
+    "build.log": "1dfe739fb0627bac7d3eea1913356ee54d05642f745ef7a7c63332546d512a17",
+    "lint.log": "4d60d45d6efa1ea69301b9c1bbd421ee41d555fd95b64d123a019574787f549a",
+    "openapi.log": "82f3b4684954b845d63d875b85e2dc6387617551ce3d6ef2d3e3988612e16fb5",
+    "schemas.log": "b8723f7e103255d645521cdb9904d2dfe37b00420373caf904a8cf523bc88ca6",
+    "skeleton.log": "c6a3c6904a5a068dd23fda8a14a5510671c67b6cb43b337e56409acf41aa7fc1"
+  },
+  "archive": {
+    "localPath": "/private/tmp/cop-account-safety-handoff-v3-20261011.tar.gz",
+    "sha256": "863cca706fb1c298b4cbad8000385de743a677f899c5a3b77560dcd5feaa9d6c"
+  }
+}
