@@ -408,3 +408,5 @@ Read-only messaging identity lookup and additive viewer-specific call.peer are d
 Prepared account safety extension is documented in the binding JSON contract and
 [the Jízda handoff](integration/40_ACCOUNT_SAFETY_APP_REVIEW.md). Production
 activation and actual account erasure are not claimed by this candidate.
+
+Scoped Jízda unlink and the separate whole-account removal gate: [integration 41](integration/41_JIZDA_SCOPED_DISCONNECT.md) and [implementation/activation plan 42](integration/42_COP_ACCOUNT_REMOVAL_PLAN.md). Both remain unactivated; unlink never deletes the common account.

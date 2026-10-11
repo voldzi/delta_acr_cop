@@ -8647,6 +8647,147 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/DispatchParticipantOpen"
+  /api/v1/me/app-links/jizda/capabilities:
+    get:
+      tags:
+        - Identity
+      operationId: getJizdaLinkCapabilities
+      summary: Read scoped Jizda unlink capability
+      description: Candidate disabled in production. Verified OIDC authorized-party claim must match a
+        dedicated Jizda client. A shared csm-mobile token, audience, bundle or header does not prove
+        app scope. No caller identity/app/model selection. No global account deletion. No automatic
+        reconnection.
+      security:
+        - bearerAuth: []
+      x-cop-ai-exposure: forbidden
+      responses:
+        "200":
+          description: Current state or completed scoped unlink; never account deletion.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JizdaLinkCapabilities"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/me/app-links/jizda:
+    get:
+      tags:
+        - Identity
+      operationId: getJizdaLinkStatus
+      summary: Read pending or completed Jizda app unlink
+      description: Candidate disabled in production. Verified OIDC authorized-party claim must match a
+        dedicated Jizda client. A shared csm-mobile token, audience, bundle or header does not prove
+        app scope. No caller identity/app/model selection. No global account deletion. No automatic
+        reconnection.
+      security:
+        - bearerAuth: []
+      x-cop-ai-exposure: forbidden
+      responses:
+        "200":
+          description: Current state or completed scoped unlink; never account deletion.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JizdaLinkStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/me/app-links/jizda/disconnect:
+    post:
+      tags:
+        - Identity
+      operationId: disconnectJizdaAppLink
+      summary: Odpojit Jizdu; preserve the common COP account and local data
+      description: Candidate disabled in production. Verified OIDC authorized-party claim must match a
+        dedicated Jizda client. A shared csm-mobile token, audience, bundle or header does not prove
+        app scope. No caller identity/app/model selection. No global account deletion. No automatic
+        reconnection. Empty body only. Durable fence precedes upstream cleanup; 503 never removes
+        the fence. Other applications retain authority.
+      security:
+        - bearerAuth: []
+      x-cop-ai-exposure: forbidden
+      responses:
+        "200":
+          description: "Scoped unlink completed: status=disconnected and remaining=[]. Never account deletion."
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/JizdaLinkReceipt"
+                  - properties:
+                      status:
+                        const: disconnected
+        "202":
+          description: "Durable app fence accepted: status=disconnecting with nonempty remaining. Cleanup is
+            pending, not completed."
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/JizdaLinkReceipt"
+                  - properties:
+                      status:
+                        const: disconnecting
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Reuse this UUID for retries. GET status to recover an existing operation; another UUID
+            conflicts.
   /api/v1/me/account-safety/capabilities:
     get:
       tags:
@@ -10067,6 +10208,9 @@ components:
         - subjectId
         - username
       properties:
+        authorizedParty:
+          type: string
+          description: Verified OIDC azp claim. A shared client or an audience does not prove app scope.
         authMode:
           type: string
           enum:
@@ -23071,6 +23215,140 @@ components:
           type: string
           minLength: 1
           maxLength: 512
+    JizdaLinkCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - app
+        - scope
+        - disconnectAvailable
+        - accountDeletion
+        - localDataDeleted
+      properties:
+        contractVersion:
+          type: string
+          const: cop-jizda-link-v1
+        app:
+          type: string
+          const: jizda
+        scope:
+          type: string
+          const: jizda_app_link
+        disconnectAvailable:
+          type: boolean
+        accountDeletion:
+          type: boolean
+          const: false
+        localDataDeleted:
+          type: boolean
+          const: false
+        unavailableReason:
+          type: string
+          enum:
+            - app_identity_not_separated
+            - not_enabled
+    JizdaLinkReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - app
+        - scope
+        - operationId
+        - status
+        - requestedAt
+        - accountDeleted
+        - localDataDeleted
+        - remaining
+      properties:
+        contractVersion:
+          type: string
+          const: cop-jizda-link-v1
+        app:
+          type: string
+          const: jizda
+        scope:
+          type: string
+          const: jizda_app_link
+        operationId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - disconnecting
+            - disconnected
+        requestedAt:
+          type: string
+          format: date-time
+        accountDeleted:
+          type: boolean
+          const: false
+        localDataDeleted:
+          type: boolean
+          const: false
+        remaining:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - push_registrations
+              - legacy_installations
+              - matrix_devices
+              - live_permissions
+      description: disconnecting remains pending. disconnected is valid only with remaining=[].
+        Account/SwiftData are never deleted. Current production adapter cannot complete Matrix/live
+        permission cleanup.
+      oneOf:
+        - properties:
+            status:
+              const: disconnecting
+            remaining:
+              minItems: 1
+          required:
+            - status
+            - remaining
+        - properties:
+            status:
+              const: disconnected
+            remaining:
+              maxItems: 0
+          required:
+            - status
+            - remaining
+    JizdaLinkStatus:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required:
+            - contractVersion
+            - app
+            - scope
+            - status
+            - accountDeleted
+            - localDataDeleted
+          properties:
+            contractVersion:
+              type: string
+              const: cop-jizda-link-v1
+            app:
+              type: string
+              const: jizda
+            scope:
+              type: string
+              const: jizda_app_link
+            status:
+              type: string
+              const: linked
+            accountDeleted:
+              type: boolean
+              const: false
+            localDataDeleted:
+              type: boolean
+              const: false
+        - $ref: "#/components/schemas/JizdaLinkReceipt"
     AccountSafetyCapabilities:
       type: object
       additionalProperties: false
@@ -23094,6 +23372,10 @@ components:
           const: false
           description: Account erasure is not yet accepted or available. Never expose a delete action based on
             this candidate.
+        accountDeletionUrl:
+          type: "null"
+          description: No functioning direct account deletion flow is deployed. Never substitute a generic
+            support or account-console URL.
         accountDeletionUnavailableReason:
           type: string
         reportContactEmail:
@@ -23125,10 +23407,14 @@ components:
               type: string
               minLength: 1
               maxLength: 256
+              description: Maximum 256 UTF-8 bytes, enforced separately by the COP/SDK runtime. JSON Schema
+                maxLength counts characters and cannot enforce the byte bound.
             conversationId:
               type: string
               minLength: 1
-              maxLength: 256
+              maxLength: 255
+              description: Maximum 255 UTF-8 bytes, enforced separately by the COP/SDK runtime. JSON Schema
+                maxLength counts characters and cannot enforce the byte bound.
         - type: object
           additionalProperties: false
           required:
@@ -23144,14 +23430,20 @@ components:
               type: string
               minLength: 1
               maxLength: 256
+              description: Maximum 256 UTF-8 bytes, enforced separately by the COP/SDK runtime. JSON Schema
+                maxLength counts characters and cannot enforce the byte bound.
             conversationId:
               type: string
               minLength: 1
-              maxLength: 256
+              maxLength: 255
+              description: Maximum 255 UTF-8 bytes, enforced separately by the COP/SDK runtime. JSON Schema
+                maxLength counts characters and cannot enforce the byte bound.
             eventId:
               type: string
               pattern: ^\$
               maxLength: 255
+              description: Maximum 255 UTF-8 bytes, enforced separately by the COP/SDK runtime. JSON Schema
+                maxLength counts characters and cannot enforce the byte bound.
         - type: object
           additionalProperties: false
           required:
@@ -23166,6 +23458,8 @@ components:
               type: string
               minLength: 1
               maxLength: 256
+              description: Maximum 256 UTF-8 bytes, enforced separately by the COP/SDK runtime. JSON Schema
+                maxLength counts characters and cannot enforce the byte bound.
             callId:
               type: string
               format: uuid
@@ -23233,6 +23527,29 @@ components:
           enum:
             - no_action
             - action_taken
+      oneOf:
+        - properties:
+            status:
+              type: string
+              enum:
+                - submitted
+                - reviewing
+            resolution:
+              not: {}
+          required:
+            - status
+        - properties:
+            status:
+              type: string
+              const: resolved
+            resolution:
+              type: string
+              enum:
+                - no_action
+                - action_taken
+          required:
+            - status
+            - resolution
     CommunicationBlockQuery:
       type: object
       additionalProperties: false
@@ -23276,6 +23593,28 @@ components:
           enum:
             - no_action
             - action_taken
+      oneOf:
+        - properties:
+            status:
+              type: string
+              enum:
+                - reviewing
+            resolution:
+              not: {}
+          required:
+            - status
+        - properties:
+            status:
+              type: string
+              const: resolved
+            resolution:
+              type: string
+              enum:
+                - no_action
+                - action_taken
+          required:
+            - status
+            - resolution
     CommunicationReportOperatorRecord:
       type: object
       additionalProperties: false

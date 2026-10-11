@@ -231,3 +231,5 @@ actor/explicit-evidence boundary. [The handoff](integration/40_ACCOUNT_SAFETY_AP
 lists encryption, role, retention and activation gates. Account deletion remains
 unavailable; deactivation is not described as erasure completion. No report
 excerpt enters automatic AI/MCP context. This candidate is not deployed.
+
+Scoped Jízda unlink and the separate whole-account removal gate: [integration 41](integration/41_JIZDA_SCOPED_DISCONNECT.md) and [implementation/activation plan 42](integration/42_COP_ACCOUNT_REMOVAL_PLAN.md). Both remain unactivated; unlink never deletes the common account.

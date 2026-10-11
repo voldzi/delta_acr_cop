@@ -104,3 +104,5 @@ Account safety candidate: [COP/Jízda handoff](integration/40_ACCOUNT_SAFETY_APP
 [data inventory](privacy/01_SERVER_DATA_INVENTORY.md),
 [public text candidate](privacy/02_PUBLIC_PRIVACY_TEXT_CANDIDATE.md),
 [ADR 0046](adr/0046_ACCOUNT_SAFETY_AND_ERASURE_BOUNDARY.md).
+
+Scoped Jízda unlink and the separate whole-account removal gate: [integration 41](integration/41_JIZDA_SCOPED_DISCONNECT.md) and [implementation/activation plan 42](integration/42_COP_ACCOUNT_REMOVAL_PLAN.md). Both remain unactivated; unlink never deletes the common account.

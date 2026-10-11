@@ -168,3 +168,5 @@ Account safety has an unexecuted coordinated deployment plan in
 [integration/40_ACCOUNT_SAFETY_APP_REVIEW.md](integration/40_ACCOUNT_SAFETY_APP_REVIEW.md).
 Keep its flags false until the required process, data policy and real-device
 acceptance are approved. Do not roll back a real user's block or deletion state.
+
+Scoped Jízda unlink and the separate whole-account removal gate: [integration 41](integration/41_JIZDA_SCOPED_DISCONNECT.md) and [implementation/activation plan 42](integration/42_COP_ACCOUNT_REMOVAL_PLAN.md). Both remain unactivated; unlink never deletes the common account.

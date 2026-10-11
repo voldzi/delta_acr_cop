@@ -1,24 +1,33 @@
 # COP/Jízda account safety – candidate handoff
 
-Date: 2026-10-10. No production activation, restart, account deletion, reset,
+Date: 2026-10-11. No production activation, restart, account deletion, reset,
 real test message or real APNs delivery was performed for this change.
 
-## Coordination revisions
+## Coordination revisions and decisions
 
-All three candidates use `codex/account-deletion-moderation`; this is a
-coordination branch, not a merged or deployed release.
+The source candidate starts from COP `78d4f87`, Messaging `05dac88` and COP
+Mobile `dd3a83f`; SDK transfer base is Jízda's pinned `09493a0`. The earlier
+SDK transfer does not include the later correction and scoped unlink delta.
+Use the complete transfer manifest and exact published revision, rather than
+copying the earlier three-file patch. Publication is not deployment.
 
-- COP API/OpenAPI: this branch, based on the deployed COP source `d4eec834`.
-- Messaging: `05dac885c35f11cb2e2eb24e32a3854a954ff36a`, based on production
-  image source `d311b2c85c15e8f00cd62c5d3fdf83198d665e3d`.
-- COP Mobile-owned SDK: `dd3a83f60f3e65c2010d6a0bf99e53ccc63bd85d`, based on
-  Jízda's pinned `09493a0cc4aa2bcd45dae75c72f83db0ab37735f`.
+Current production was read back on 11 October: COP source
+`e99401213efbf9d6a7685443adc318eeeb422c15`, API image
+`sha256:8c61839a458ca82cfc79725b4763759c90d66ffcd31e1e24e2ff5defe9724741`,
+healthy; Messaging image
+`sha256:ff80ec9a89155aae5081b118c6e9900dfccfce6187b90f4a90432c45b04d2079`,
+revision `d311b2c`, healthy. The candidate COP files are absent from deployment
+and the new safety/unlink flags are absent. The older candidate base
+`d4eec834` is not the current production baseline; integrate only the accepted
+scoped delta onto the production source before any release.
 
-The SDK delta is only the new `CSMAccountSafety.swift`, the optional idempotency
-header in `CSMMobility.swift` and four XCTest cases. Merge those source changes
-into the approved frozen host; keep its unrelated notification/voice/send-ack
-patches. No shared toolchain pin was changed. The documentation in this handoff
-does not establish native or live integration acceptance.
+Human decisions verified in Jízda on 11 October: unlink only Jízda; moderation
+by the COP administrator; a separately approved whole-account management/removal
+action. No new production deployment, retention policy, actual account erasure
+or Xcode-pin change is implied by those decisions.
+
+- [Scoped unlink, exact SDK integration and proposed deployment](41_JIZDA_SCOPED_DISCONNECT.md).
+- [Separate real whole-account removal plan and canonical URL gate](42_COP_ACCOUNT_REMOVAL_PLAN.md).
 
 ## Delivered interface
 
@@ -26,7 +35,7 @@ Binding source for the candidate: `openapi/openapi.json` (generated YAML export)
 
 | Operation | Endpoint | Exact boundary |
 | --- | --- | --- |
-| Capability | GET `/api/v1/me/account-safety/capabilities` | Verified OIDC; `cop-account-safety-v1`; unavailable flags are false. Account deletion is false. |
+| Capability | GET `/api/v1/me/account-safety/capabilities` | Verified OIDC; `cop-account-safety-v1`; unavailable flags are false. Account deletion is false and its URL is null. |
 | Report | POST `/api/v1/me/communication/reports` | Mandatory stable `Idempotency-Key` 16–128 ASCII chars (SDK UUID); caller never supplies reporter. Same actor/key/body returns the existing receipt, conflicting body 409. |
 | Own status | GET `/api/v1/me/communication/reports/{reportId}` | Other users' reports are 404. Receipt contains status/revision, no excerpt, target or reporter. |
 | Block state | POST `/api/v1/me/communication/blocks/query` | Body only `peerSubjectId`. POST keeps peer IDs out of request URLs. |
@@ -43,7 +52,9 @@ Report example (synthetic references):
 ```
 
 Target is exactly one of user+conversation, message+conversation+event, or
-call+peer+callId (UUID). COP verifies conversation/call access and the canonical event
+call+peer+callId (UUID). Peer references are at most 256 UTF-8 bytes;
+conversation/event references at most 255 UTF-8 bytes. Both server and SDK
+enforce bytes; OpenAPI maxLength alone measures characters. COP verifies conversation/call access and the canonical event
 sender. The browser/native host cannot choose a Matrix room or use a raw Matrix
 identity instead of a canonical peer. Optional evidence is exactly
 `{selectedText, explicitlyConfirmed:true}`, at most 4096 UTF-8 bytes. The host
@@ -68,7 +79,7 @@ and are forbidden automatic AI context.
 
 ## SDK delta for pinned 09493a0
 
-Add `CSMAccountSafety.swift` to `Sources/CSMCommunicationKit` and append the
+Add the account-safety/Jízda-link DTOs and owned native safety sheet, and append the
 optional `idempotencyKey` parameter to the existing internal `mobilityRequest`.
 All existing calls preserve their signature through the nil default. The helper
 validates the operation UUID and adds the header. The existing actor/scope and
@@ -83,8 +94,12 @@ Public methods:
 - `copCommunicationBlockState(peerSubjectId:expectedScope:)`
 - `copCommunicationSetBlocked(_:peerSubjectId:expectedScope:)`
 
-DTOs include target factories, reason, explicit evidence, status receipt and
-canonical block state. Default report has no evidence. Keep the UUID across
+DTOs include strict target factories, encoder/decoder validation, reason, explicit evidence, status receipt and
+canonical block state. Capabilities and unlink receipts are also validated
+during standalone encoding/decoding; false erasure flags, arbitrary deletion
+URLs or a malformed completed receipt fail. Plain JSONEncoder and JSONDecoder cannot bypass target
+validation or evidence confirmation/UTF-8 limits; every submission is revalidated
+before HTTP. Default report has no evidence. Keep the UUID across
 retries. On account change, discard the deferred operation, rather than retrying
 as the new actor. On a block, hide that peer's cached history and explicitly
 remove their queued drafts; keep other group members. A failed/offline block is
@@ -92,31 +107,41 @@ not locally reported as a confirmed server block. Do not imply that already
 issued media credentials, active call audio or copied old history are revoked.
 
 Capability=false or an older server's 404/503 must not be presented as an
-implemented report/block/delete feature. Account removal UI and App Store
-release remain blocked until actual deletion is ready.
+implemented report/block/delete feature. The native conversation surface now
+contains report and direct-block UI; it is source-only and not natively accepted.
+Unlink remains separate from actual account removal. Its POST response preserves
+HTTP status for validation: 202 requires disconnecting/nonempty remaining; 200
+requires disconnected/empty remaining. Any mismatch fails before local
+completion/fence notifications. GET may recover a pending receipt with HTTP 200.
+App Review account-creation acceptance stays blocked until the separate real
+deletion flow exists.
 
 ## Current runtime and tests
 
-COP API runtime was inspected read-only on docker.home.cz; it is running and
-this candidate is absent. Messaging container runs image revision `d311b2c`;
-its `/srv/csm-messaging` checkout still has `2246290`, so checkout identity alone
-is not release proof. This candidate is based on the actual image's source
-`d311b2c`. APNs/WebPush mode is live, PostgreSQL backend and secret-encryption
-configuration are present. Neither new safety flag was present/enabled.
+The 11 October production readback above is read-only. `/health/ready` returns
+200; an unauthenticated capabilities request returns 401. That 401 proves the
+general authentication guard, not implementation or activation of this
+candidate endpoint. No authenticated report/block/unlink was performed against
+production. The `/srv/csm-messaging` checkout remains `2246290`; the running
+image is `d311b2c`, so checkout identity alone is not release proof.
 
 Matrix is reached through `comm.home.cz`, public `msg.zeleznalady.cz`; its public
 version endpoint is reachable. Declared federation flag is false; actual
 Synapse retention/federation configuration and old-room redaction completeness
 were not inspected. There was no SSH access or mutation on comm.home.cz.
 
-COP targeted tests: 12 passed (report/auth boundary and actual call start,
-accept/media/termination routes). Full COP regression: 1,597 passed, 8 skipped;
-build, type-check/lint, skeleton and 11 JSON Schemas passed. OpenAPI validation
-passed with the existing 24 warnings. Messaging fixture tests: 78 passed on the
-production source base, including existing delivery and serialization of a
-recipient push handoff against a block mutation. SDK Foundation model
-harness passed confirmation, UTF-8 size and metadata-only encoding. Added SDK
-XCTest cases are not a claim of a full native run.
+Earlier candidate regression: COP 1,603 passed / eight skipped; Messaging 83
+passed; Foundation 18 checks passed. Those runs predate the latest encoder and
+HTTP-status corrections and are not full regression evidence for the new
+transfer. Fresh focused verification: COP 31 tests passed, including five actual
+buildServer/OIDC target-authority cases; Messaging 9 tests passed; OpenAPI
+receipt/status/reference contract 9 tests passed; Foundation 128 model/codec/preflight and
+receipt checks passed. API typecheck/focused lint and syntax parsing of all seven
+Swift files passed. The SDK contains 15 XCTest cases, unexecuted as a native
+suite. Static SDK skeleton/device 19 fixtures/project checks passed. Exact file
+hashes are recorded in the transfer manifest.
+Foundation model/preflight checks are not native SDK/XCTest, UI or HTTP tests.
+A direct isolated XCTest attempt returned `no such module XCTest`.
 
 Pinned SDK verifier at `scripts/verify-apple-toolchain.sh:5` requires Xcode
 27.1 build 27A9269; installed build is 27A9275 (iPhoneOS SDK 27.1). The exact gate was not bypassed and
@@ -130,32 +155,37 @@ this candidate are not performed.
 
 ## Exact proposed deployment order – not executed
 
-1. Approve the shared-account deletion scope and moderation owner/contact.
-   Approve concrete retention, exceptions, backup restore replay and key rotation;
-   publish the accepted privacy text through the VCode owner. Do not activate
-   reporting merely by inventing an arbitrary retentionPolicyId.
-2. Finish actual erasure adapters and moderation/filter process; verify old and
-   left Matrix rooms, >1,000 own events, media, sessions, tickets, metadata,
-   financial/vehicle ownership choices and restored-backup tombstones. Add the
-   public deletion contract and SDK only when this is an actual service.
-3. Accept the prepared COP/Messaging revisions and exact immutable images. Keep
-   both flags false for build/deployment smoke checks. Prepare a dedicated report
-   evidence key only in an explicitly approved production secret file; no new
-   secret has been created. Configure the accepted role/contact/policy.
-4. In an isolated environment test two users/devices, block/unblock and reports,
-   altered identity/event/room, retries, outages, state events/group consistency,
-   pending drafts and active media. Verify APNs queue races and LiveKit grant
-   revocation before feature activation. No real user history reset.
-5. Deploy only the approved COP API and Messaging images using their existing
-   deployment paths/networks/tokens. No ports, Docker data-root, shared builder,
-   other app or SIM setting changes. Stage rollback images and read back image
-   IDs, env hashes, health, contract and no-store/auth responses.
-6. Enable only after acceptance; then install the matching Jízda/COP Mobile
-   candidate on a real iPhone and test locked/background/multiple-device cases.
-   App Store upload/submission is separately authorized by the Jízda owner.
+The unlink/report/block sequence is [plan 41](41_JIZDA_SCOPED_DISCONNECT.md).
+It requires the separate Jízda OIDC client, attested legacy migration, real
+Matrix/live permission adapters, accepted native tests, COP moderator role/
+contact/retention and dedicated evidence-key approval. Keep all new flags false
+for initial smoke. No new public port, network, Docker data-root, SIM setting,
+other application, real user account or frozen Jízda build is changed.
+
+The separately approved whole COP deletion is [plan 42](42_COP_ACCOUNT_REMOVAL_PLAN.md).
+It has no verified canonical URL or working production erasure flow; capability
+is false/URL null. Its impact, exceptions/retention, adapter permissions,
+restoration replay and explicit production plan are separate gates. Whole-account
+erasure is not a prerequisite that silently widens the unlink operation, and
+unlink never calls it. App Review registration requirements remain open.
 
 Before activation, rollback is the previous verified images with flags false.
 After a real block/deletion is used, retain enforcement, evidence encryption and
 revocation/tombstones when rolling back UI or code. Never undo a deletion by
 restoring an unfiltered old backup. This candidate has no production erasure
 and no destructive migration.
+
+## App Review and review-account status
+
+No accepted review-account pair with real report/block/unlink acceptance is
+provided by this source transfer. Do not repurpose a driver's live pilot
+account or expose existing credentials. Use separately approved synthetic
+accounts, with least-privilege user roles, fresh history and both app scopes;
+record availability and reviewer instructions without putting passwords in Git.
+
+COP administrator is the selected moderation owner, but approved public
+contact, actual moderator-role assignment, report-retention policy and dedicated
+evidence-key lifecycle remain unfilled production gates. They cannot be
+inferred from an account email or a successful build. No deletion URL is
+available and no working global erasure is claimed. CarPlay submission receipt
+is separate from Apple entitlement approval; this candidate does not activate it.
