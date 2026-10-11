@@ -108,3 +108,5 @@ Account safety candidate: [COP/Jízda handoff](integration/40_ACCOUNT_SAFETY_APP
 Scoped Jízda unlink and the separate whole-account removal gate: [integration 41](integration/41_JIZDA_SCOPED_DISCONNECT.md) and [implementation/activation plan 42](integration/42_COP_ACCOUNT_REMOVAL_PLAN.md). Both remain unactivated; unlink never deletes the common account.
 
 - [43 — Hranice účtu a instalace, zdrojový kandidát bez aktivace](integration/43_ACCOUNT_SAFETY_COMPLETION.md)
+
+- [44 — Publikované předání Jízdě v2, revize a výsledky ověření](integration/44_ACCOUNT_SAFETY_V2_HANDOFF.md), [neměnný manifest](integration/44_ACCOUNT_SAFETY_V2_MANIFEST.json). Produkční aktivace a fyzická akceptace zůstávají nedokončené.

@@ -1,0 +1,175 @@
+{
+  "createdAt": "2026-10-11T15:33:18.856204+00:00",
+  "contractVersions": [
+    "cop-account-safety-v1",
+    "cop-jizda-link-v1"
+  ],
+  "copCodeRevision": "6b6d80ce8b7975375d12e2b90ec0e3575d114644",
+  "messagingRevision": "ed045c442f540c279d5ab6a54bf26a5dd121a759",
+  "sdkRevision": "73dcb1dfd1bc42775057ce5ddd17edb85ad574db",
+  "sdkTransferBase": "09493a0cc4aa2bcd45dae75c72f83db0ab37735f",
+  "patchSha256": "0e063f4a11c7931359f904b76b5a4c0d4a68ebac493bbb597d9eab2ec7d41c58",
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "f5c1d46c0205fb1ff2c431f9d465824c52f8d5b30af98a4c62ddbed29351f3ee"
+    },
+    {
+      "path": "CLAUDE.md",
+      "sha256": "7785fdd9173533e288bc3a0080663ac43fc4d2973fddfe74e7d36e933367aa0a"
+    },
+    {
+      "path": "docs/README.md",
+      "sha256": "ca350e0cd676735882e3f7c7fc9bf984351ed593f9c5e27cf304aa9785bec5a9"
+    },
+    {
+      "path": "docs/adr/0007-approved-xcode-27-beta-toolchain.md",
+      "sha256": "459422538137968d9275fbcf893f3e52a8b0b0c0f6ee7d3455d8445329f79cfa"
+    },
+    {
+      "path": "docs/integration/ACCOUNT_SAFETY_COP_CANDIDATE.md",
+      "sha256": "1762e3969a90dfc75a4cd8d6b1bbcd3e14d8cc61da4f3dbbd78198697e8f9fe5"
+    },
+    {
+      "path": "docs/integration/JIZDA_LIFECYCLE_COMPLETION.md",
+      "sha256": "62eda2fd6163ca7477c0ada9ebfe55ec8bb473f680ea21a7f5e7f556f5411d64"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Apps/CSMMobile/ConversationWorkspace.swift",
+      "sha256": "b5f66c79d5cb06e8f8d461218b39a6b6ad21abbaf1e55a8b6fe4670fc25715ac"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCommunicationKit/CSMAccountSafety.swift",
+      "sha256": "1c08a0adcf5175e670ae41e1bebfef4660184f5becb12adf57e5c782170cb3ba"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCommunicationKit/CSMCommunicationHost.swift",
+      "sha256": "ea5720f665b3fb727195c5b5c5bb545a94a5a6f9906bdd49b8f1e2863113b2f8"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCommunicationKit/CSMCommunicationSafetySheet.swift",
+      "sha256": "fbe115847b40b48abfeb4bd979cea8e6a45d0800f0702bd0b2965a6f48d50f21"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCommunicationKit/CSMDriverMeasurements.swift",
+      "sha256": "449d42ba3e376e90886759a2f75340538524c85efbb238220d1ebce9b55c9697"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCommunicationKit/CSMJizdaAppLink.swift",
+      "sha256": "6856462ac9bda828b0e78e76f9183772c1cc4ef6160b05609434840830ad9202"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCommunicationKit/CSMJizdaLifecycle.swift",
+      "sha256": "4a621bcea7695a3cd56011f0e2c3d8be51d53a9f2d2c887631a7b0f154598af3"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCommunicationKit/CSMMobility.swift",
+      "sha256": "67a7be18c08c18ba7ce05f9884eb03116b9310f9316944704ec06820d74328ba"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCore/AppConfiguration.swift",
+      "sha256": "7790e36737ec392caaabe254ef9f288eb92418a99eb1ec35f57bbb6eb9dbb7cd"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCore/CommunicationModel.swift",
+      "sha256": "ee6084a3dee0c8b826dd133a508f077fa6db6df078d06d64091d2fafde40853a"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCore/HTTPClient.swift",
+      "sha256": "ff943e0090fcdc9cccdccff59fbbda498567379a9d970ea15be304084791f2f5"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCore/KeychainCredentialStore.swift",
+      "sha256": "c977d4bf7603fc9f4af9716744f505c04045893119e9d4b8a20c08bc4d473728"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCore/MatrixRustE2EEMessagingClient.swift",
+      "sha256": "6c5cf3152e35f052f2e281c2545ecdad5e087f1496da9e62749d320168fe9a15"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCore/ProductionCopAPIClient.swift",
+      "sha256": "83414a00a23d13f41aa9f32bac669020d20e95d84d9639ef1d5d842eb7eaab5c"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Sources/CSMCore/ServiceProtocols.swift",
+      "sha256": "2ad022a8a17884d5a182e21d51cb75682892bd423989541e0c927053969743d6"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Tests/CSMCommunicationKitTests/AccountSafetyContractsTests.swift",
+      "sha256": "a9d6d794869d134e7bb6753625fa44eebfe0b0837c327b9ae1eba6bb074bc1ee"
+    },
+    {
+      "path": "packages/CSMCommunicationKit/Tests/CSMCommunicationKitTests/JizdaLifecycleContractsTests.swift",
+      "sha256": "43778e594dd54fe97e5d9c8a8c1aa0d083b9fcc9b903759e6c49226cc3672ce5"
+    },
+    {
+      "path": "scripts/verify-apple-toolchain.sh",
+      "sha256": "7b531d002d7ed4c10a8f6e4f60012eb342b7f3ab55c68b29ee571aea4d2905de"
+    }
+  ],
+  "repositories": {
+    "cop": "https://github.com/voldzi/delta_acr_cop",
+    "messaging": "https://github.com/voldzi/csm_messaging",
+    "sdk": "https://github.com/voldzi/COP-Mobile"
+  },
+  "branch": "codex/account-safety-completion-20261011",
+  "contact": "podpora@zeleznalady.cz",
+  "retentionPolicy": "cop-communication-retention-90d-30d-180d-v1",
+  "retention": {
+    "reportTextMaxDays": 90,
+    "reportTextMaxDaysAfterFirstClosure": 30,
+    "auditWithoutTextMaxDays": 180,
+    "block": "until_unblock_or_account_deletion"
+  },
+  "verification": {
+    "copPassed": 1696,
+    "copSkipped": 12,
+    "copFilesPassed": 198,
+    "copFilesSkipped": 8,
+    "isolatedPostgresPassed": 4,
+    "messagingPassed": 105,
+    "sdkIsolatedFoundationPassed": 431,
+    "sdkSourceAssertions": 52,
+    "swiftSyntaxParsedFiles": 14,
+    "sdkNativeXCTestPrepared": 33,
+    "sdkNativeXCTestExecuted": 0,
+    "deviceContractFixturesPassed": 19,
+    "cleanBaseApplyAndByteIntegrity": true,
+    "schemaValidation": 11,
+    "openapiErrors": 0,
+    "openapiWarnings": 24,
+    "copBuildLintSkeletonBudgetsStaticRuntimeAnalytics": "passed",
+    "messagingCompileWarningsAsErrorsAndDiffCheck": "passed"
+  },
+  "toolchain": {
+    "approvedXcodeVersion": "27.1",
+    "approvedXcodeBuild": "27A9275",
+    "iPhoneOSSDK": "27.1",
+    "minimumIOS": "26"
+  },
+  "production": {
+    "deployedByThisCandidate": false,
+    "safetyIntakeActivated": false,
+    "dedicatedJizdaClientActivated": false,
+    "wholeAccountDeletionComplete": false,
+    "chatOrBYOKFlagsChanged": false
+  },
+  "notTested": [
+    "native XCTest of this SDK delta",
+    "physical iPhone acceptance of this delta",
+    "real Matrix/APNs/LiveKit revocation",
+    "full app-scoped unlink",
+    "whole COP account erasure across all 11 owners",
+    "SIM all-retained-day/BYOK cleanup acceptance"
+  ],
+  "remainingGates": [
+    "dedicated jizda-mobile provisioning and new-login acceptance",
+    "verified legacy Matrix/push installation migration",
+    "app/install-scoped LiveKit grant revocation and readback",
+    "moderator role/process and production evidence-key lifecycle",
+    "11 actual account-erasure owner proofs",
+    "serialized native build and physical acceptance by Jizda"
+  ],
+  "rollback": "Keep durable guards, markers, secrets, fences, checkpoints and retention/enforcement after disabling new intake; replay erasures before restoring service.",
+  "integration": "Apply as narrow reviewed merge to a new frozen candidate; preserve newer expectedNotificationScope and onAccountProfileRequested. Repository AGENTS/CLAUDE are reference only, not host policy replacements."
+}
