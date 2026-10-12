@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
-import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 import type { AoiRule, AoiRuleAffiliationScope, CopAlertSeverity, CopAlertType } from "./alerts.js";
 import type { AlertAcknowledgement } from "./types.js";
-
-const { Pool } = pg;
 
 export interface UserAlertPreferences {
   /** Explicit consent for automated safety push. Missing always means disabled. */
@@ -200,7 +199,7 @@ export class PostgresUserProfileStore implements UserProfileStore {
   private readonly pool: PgPool;
 
   constructor(config: PoolConfig) {
-    this.pool = new Pool(config);
+    this.pool = createCopPgPool("user-profile", config);
     this.pool.on("error", (error) => {
       this.lastIdleClientError = errorMessage(error);
     });

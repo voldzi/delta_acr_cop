@@ -1,4 +1,5 @@
-import { Pool, type PoolConfig } from "pg";
+import type { Pool, PoolConfig } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 import { DispatchLease, type DispatchLeaseHooks, type DispatchLeaseState } from "./dispatch-lease.js";
 
 export interface MobilityStore {
@@ -60,10 +61,10 @@ export class PostgresMobilityStore implements MobilityStore {
   private readonly pool: Pool;
   private readonly lease: DispatchLease;
   constructor(config: PoolConfig, timing: ConstructorParameters<typeof DispatchLease>[1] = {}) {
-    this.pool = new Pool(config);
+    this.pool = createCopPgPool("mobility", config);
     // Pool errors are availability failures, never raw credential-bearing logs.
     this.pool.on("error", () => undefined);
-    const leasePool = new Pool({ ...config, max: 1, application_name: "cop-private-dispatch-lease",
+    const leasePool = createCopPgPool("dispatch-lease", { ...config, max: 1, application_name: "cop-private-dispatch-lease",
       keepAlive: true, keepAliveInitialDelayMillis: 10000, query_timeout: 3000, connectionTimeoutMillis: 5000 });
     leasePool.on("error", () => undefined);
     this.lease = new DispatchLease(leasePool, timing);

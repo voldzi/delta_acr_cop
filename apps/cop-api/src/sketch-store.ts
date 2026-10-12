@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { Pool, type PoolConfig } from "pg";
+import type { Pool, PoolConfig } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 
 export type SketchDrawingKind = "arrow" | "circle" | "line" | "marker" | "measurement" | "point" | "polygon" | "text";
 export type SketchDrawingVisibility = "event" | "group" | "private" | "public";
@@ -235,7 +236,7 @@ export class PostgresSketchDrawingStore implements SketchDrawingStore {
   private readonly pool: Pool;
 
   constructor(config: PoolConfig) {
-    this.pool = new Pool(config);
+    this.pool = createCopPgPool("sketch", config);
     this.pool.on("error", (error) => {
       this.lastIdleClientError = errorMessage(error);
     });

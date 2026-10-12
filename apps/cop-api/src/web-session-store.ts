@@ -1,7 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
-import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
-
-const { Pool } = pg;
+import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 
 export interface WebSessionProfile {
   email?: string;
@@ -95,7 +94,7 @@ export class PostgresWebSessionStore implements WebSessionStore {
   constructor(config: PostgresWebSessionStoreConfig) {
     const { encryptionSecret, ...poolConfig } = config;
     this.key = createHash("sha256").update(encryptionSecret).digest();
-    this.pool = new Pool(poolConfig);
+    this.pool = createCopPgPool("web-session", poolConfig);
   }
   async init(): Promise<void> {
     await this.pool.query(createWebSessionTableSql);

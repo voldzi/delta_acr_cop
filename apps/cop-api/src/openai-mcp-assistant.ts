@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import pg, { type Pool as PgPool } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 
-const { Pool } = pg;
 const model = "gpt-6-luna";
 const maxOutputTokens = 512;
 const maxInputBytes = 12_000;
@@ -97,7 +97,7 @@ export class OpenAiMcpAssistant {
   private readonly pool: PgPool;
 
   constructor(private readonly config: OpenAiMcpAssistantConfig) {
-    this.pool = new Pool({
+    this.pool = createCopPgPool("openai-mcp", {
       connectionString: config.connectionString,
       connectionTimeoutMillis: 5_000,
       max: 2,

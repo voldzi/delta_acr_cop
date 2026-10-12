@@ -1,10 +1,9 @@
-import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 import type { CanonicalEventEnvelope, ObservedObject } from "@cop/canonical-model";
 import { withStoredCurrentProvenance } from "./provenance.js";
 import type { TrackHistoryQuery } from "./temporal-history.js";
 import type { TrackHistoryPoint } from "./types.js";
-
-const { Pool } = pg;
 
 export interface TrackHistoryStore {
   readonly name: string;
@@ -48,7 +47,7 @@ export class PostgresTrackHistoryStore implements TrackHistoryStore {
   private readonly pool: PgPool;
 
   constructor(config: PoolConfig) {
-    this.pool = new Pool(config);
+    this.pool = createCopPgPool("track-history", config);
     this.pool.on("error", (error) => {
       this.lastIdleClientError = errorMessage(error);
     });

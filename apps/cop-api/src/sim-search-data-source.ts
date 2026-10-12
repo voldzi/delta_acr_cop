@@ -101,7 +101,7 @@ export interface SimSearchEntity {
 
 export interface SimSearchQueryResponse {
   contractVersion: "sim-search-source-v1" | string;
-  generatedAt: string;
+  generatedAt?: string;
   providerId: string;
   query?: Record<string, unknown>;
   results: SimSearchEntity[];
@@ -111,6 +111,29 @@ export interface SimSearchQueryResponse {
     warningCount: number;
   };
   warnings: string[];
+  warningsKnown?: boolean;
+  freshness?: SimSearchFreshness;
+  consumptionExpiry?: SimSearchConsumptionExpiry;
+}
+
+export interface SimSearchConsumptionExpiry {
+  scope: "returned_entities";
+  derivation: "COP_DERIVED";
+  evaluatedAt: string;
+  expiredCount: number;
+  missingExpiryCount: number;
+  invalidExpiryCount: number;
+}
+
+export interface SimSearchFreshness {
+  scope: "returned_entities";
+  evaluatedAt: string;
+  feedTimestampState: "valid" | "future" | "invalid";
+  feedAgeSeconds: number | null;
+  returnedStaleCount: number;
+  returnedExpiredCount: number;
+  missingExpiryCount: number;
+  invalidExpiryCount: number;
 }
 
 export interface SimSearchEntitiesRequest {
@@ -124,10 +147,39 @@ export interface SimSearchEntitiesResponse extends SimSearchQueryResponse {
 
 export interface SimSearchObservability {
   generatedAt?: string;
+  dataQualityStatus?: "degraded" | "ok";
+  degradedSourceCount?: number;
+  sources?: SimSearchSourceObservability[];
+  sourcesKnown?: boolean;
+  cache?: SimSearchCacheObservability;
   sourceCaches?: Array<Record<string, unknown>>;
   status: "degraded" | "ok" | string;
   summary?: Record<string, unknown>;
   warnings?: string[];
+  warningsKnown?: boolean;
+}
+
+export interface SimSearchSourceObservability {
+  sourceSystem: string;
+  status: "degraded" | "ok" | "unknown";
+  dataQualityStatus?: "degraded" | "ok";
+  entityCount?: number;
+  staleCount?: number;
+  lastSuccessAt?: string;
+  warningCount?: number;
+}
+
+export interface SimSearchCacheObservability {
+  entries?: number;
+  inflight?: number;
+  maxEntries?: number;
+  hits?: number;
+  misses?: number;
+  hitRate?: number;
+  staleHits?: number;
+  refreshes?: number;
+  errors?: number;
+  evictions?: number;
 }
 
 export interface SimSearchDataSource {
@@ -166,7 +218,7 @@ export function createSimSearchDataSourceFromEnv(env: Record<string, string | un
 export class SimSearchDataSourceAdapter implements SimSearchDataSource {
   readonly sourceSystem: SourceSystem;
 
-  constructor(readonly config: SimSearchDataSourceConfig) {
+  constructor(readonly config: SimSearchDataSourceConfig, private readonly clock: () => Date = () => new Date()) {
     this.sourceSystem = createSimSearchDataSourceSystem();
   }
 
@@ -178,7 +230,7 @@ export class SimSearchDataSourceAdapter implements SimSearchDataSource {
     return normalizeSimSearchQueryResponse(await fetchJson(new URL(`${trimTrailingSlash(this.config.baseUrl)}/query`), this.config, requestNow, {
       body: JSON.stringify(body),
       method: "POST"
-    }), body);
+    }), body, this.clock());
   }
 
   async fetchEntities(request: SimSearchEntitiesRequest, requestNow: Date): Promise<SimSearchEntitiesResponse> {
@@ -191,12 +243,12 @@ export class SimSearchDataSourceAdapter implements SimSearchDataSource {
     return normalizeSimSearchEntitiesResponse(await fetchJson(url, this.config, requestNow), {
       ...(request.cursor ? { cursor: request.cursor } : {}),
       limit
-    });
+    }, this.clock());
   }
 
   async fetchEntity(providerEntityId: string, requestNow: Date): Promise<SimSearchEntity | undefined> {
     const value = await fetchJson(new URL(`${trimTrailingSlash(this.config.baseUrl)}/entities/${encodeURIComponent(providerEntityId)}`), this.config, requestNow);
-    return normalizeSimSearchEntityResponse(value);
+    return normalizeSimSearchEntityResponse(value, this.clock());
   }
 
   async fetchObservability(requestNow: Date): Promise<SimSearchObservability> {
@@ -211,12 +263,14 @@ export class SimSearchDataSourceAdapter implements SimSearchDataSource {
 
 export function buildSimSearchDataHealth(response: SimSearchQueryResponse | SimSearchObservability, requestNow: Date): SourceHealthOverride {
   const warnings = warningStrings("warnings" in response ? response.warnings : undefined);
-  const resultCount = "summary" in response && isRecord(response.summary) && typeof response.summary.resultCount === "number"
-    ? response.summary.resultCount
-    : undefined;
-  const staleResultCount = "summary" in response && isRecord(response.summary) && typeof response.summary.staleResultCount === "number"
-    ? response.summary.staleResultCount
-    : undefined;
+  const reportedResultCount = "summary" in response && isRecord(response.summary) ? optionalCounter(response.summary.resultCount) : undefined;
+  const reportedStaleResultCount = "summary" in response && isRecord(response.summary) ? optionalCounter(response.summary.staleResultCount) : undefined;
+  const resultCount = "results" in response ? Math.max(reportedResultCount ?? 0, response.results.length) : reportedResultCount;
+  const staleResultCount = "results" in response
+    ? Math.max(reportedStaleResultCount ?? 0, response.results.filter((item) => item.stale === true).length)
+    : reportedStaleResultCount;
+  const consumptionExpiry = "results" in response ? normalizeConsumptionExpiry(response.consumptionExpiry, response.results.length) : undefined;
+  const providerFreshness = "results" in response ? normalizeSearchFreshness(response.freshness, response.results.length) : undefined;
   const status = "status" in response ? response.status : undefined;
   const health: SourceHealthOverride["health"] = status === "degraded" || warnings.length > 0 || (staleResultCount ?? 0) > 0
     ? "DEGRADED"
@@ -226,13 +280,22 @@ export function buildSimSearchDataHealth(response: SimSearchQueryResponse | SimS
   return {
     detail: `SIM search-data ${health.toLowerCase()}${resultCount !== undefined ? `; ${resultCount} results` : ""}`,
     evaluatedAt: requestNow.toISOString(),
-    generatedAt: optionalString(response.generatedAt) ?? requestNow.toISOString(),
+    generatedAt: optionalTimestamp(response.generatedAt),
     health,
     lastPollAt: requestNow.toISOString(),
     ...(health === "ONLINE" ? { lastSuccessAt: requestNow.toISOString() } : {}),
     summary: {
       ...(resultCount !== undefined ? { resultCount } : {}),
-      ...(staleResultCount !== undefined ? { staleResultCount } : {})
+      ...(staleResultCount !== undefined ? { staleResultCount } : {}),
+      ...(consumptionExpiry ? { consumptionExpiry } : {}),
+      ...(providerFreshness ? { providerFreshness } : {}),
+      warningsKnown: response.warningsKnown ?? false,
+      ...("status" in response ? {
+        serviceStatus: response.status,
+        dataQualityStatus: response.dataQualityStatus ?? "unknown",
+        sourcesKnown: response.sourcesKnown ?? false,
+        ...(response.degradedSourceCount !== undefined ? { degradedSourceCount: response.degradedSourceCount } : {})
+      } : {})
     },
     warnings
   };
@@ -276,8 +339,8 @@ type FetchJsonInit = RequestInit & { timeoutMs?: number };
 class SimSearchDataHttpError extends Error {
   readonly status: number;
 
-  constructor(status: number, statusText: string, url: URL) {
-    super(`${status} ${statusText || "SIM search-data request failed"} for ${url.pathname}`);
+  constructor(status: number) {
+    super(`SIM search-data request returned HTTP ${status}.`);
     this.name = "SimSearchDataHttpError";
     this.status = status;
   }
@@ -286,28 +349,99 @@ class SimSearchDataHttpError extends Error {
 async function fetchJson(url: URL, config: SimSearchDataSourceConfig, requestNow: Date, init: FetchJsonInit = {}): Promise<unknown> {
   const controller = new AbortController();
   const { timeoutMs, ...requestInit } = init;
-  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? config.timeoutMs);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      reject(new SimSearchDataTimeoutError());
+      controller.abort();
+    }, timeoutMs ?? config.timeoutMs);
+  });
   try {
-    const response = await fetch(url, {
-      ...requestInit,
-      headers: {
-        Accept: "application/json",
-        ...(requestInit.body ? { "Content-Type": "application/json" } : {}),
-        "X-COP-Request-At": requestNow.toISOString(),
-        ...(requestInit.headers ?? {})
-      },
-      signal: controller.signal
-    });
-    if (!response.ok) {
-      throw new SimSearchDataHttpError(response.status, response.statusText, url);
+    return await Promise.race([
+      (async () => {
+        const response = await fetch(url, {
+          ...requestInit,
+          headers: {
+            Accept: "application/json",
+            ...(requestInit.body ? { "Content-Type": "application/json" } : {}),
+            "X-COP-Request-At": requestNow.toISOString(),
+            ...(requestInit.headers ?? {})
+          },
+          redirect: "error",
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          void response.body?.cancel().catch(() => {});
+          throw new SimSearchDataHttpError(response.status);
+        }
+        return await readBoundedJson(response, controller.signal);
+      })(),
+      deadline
+    ]);
+  } catch (error) {
+    controller.abort();
+    if (error instanceof SimSearchDataHttpError || error instanceof SimSearchDataResponseError || error instanceof SimSearchDataTimeoutError) {
+      throw error;
     }
-    return response.json();
+    throw new Error("SIM search-data transport failed.");
   } finally {
     clearTimeout(timeout);
   }
 }
 
-function normalizeSimSearchQueryResponse(value: unknown, query: Record<string, unknown>): SimSearchQueryResponse {
+class SimSearchDataResponseError extends Error {}
+
+class SimSearchDataTimeoutError extends Error {
+  constructor() {
+    super("SIM search-data request timed out.");
+    this.name = "TimeoutError";
+  }
+}
+
+async function readBoundedJson(response: Response, signal: AbortSignal): Promise<unknown> {
+  if (signal.aborted) {
+    void response.body?.cancel().catch(() => {});
+    throw new SimSearchDataTimeoutError();
+  }
+  const maxBytes = 16 * 1024 * 1024;
+  const contentLength = response.headers.get("content-length");
+  if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > maxBytes) {
+    void response.body?.cancel().catch(() => {});
+    throw new SimSearchDataResponseError("SIM search-data response exceeded the size limit.");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new SimSearchDataResponseError("SIM search-data response body is missing.");
+  }
+  const decoder = new TextDecoder();
+  const cancel = () => { void reader.cancel().catch(() => {}); };
+  signal.addEventListener("abort", cancel, { once: true });
+  let bytes = 0;
+  let text = "";
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > maxBytes) {
+        void reader.cancel().catch(() => {});
+        throw new SimSearchDataResponseError("SIM search-data response exceeded the size limit.");
+      }
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    text += decoder.decode();
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    reader.releaseLock();
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new SimSearchDataResponseError("SIM search-data response is not valid JSON.");
+  }
+}
+
+function normalizeSimSearchQueryResponse(value: unknown, query: Record<string, unknown>, requestNow: Date): SimSearchQueryResponse {
   if (!isRecord(value)) {
     throw new Error("SIM search-data query response is not an object.");
   }
@@ -318,28 +452,31 @@ function normalizeSimSearchQueryResponse(value: unknown, query: Record<string, u
       : Array.isArray(value.items)
         ? value.items
         : [];
-  const results = rawResults.flatMap(normalizeSimSearchEntity);
+  const entries = rawResults.flatMap((raw) => normalizeSimSearchEntity(raw, requestNow).map((entity) => ({ entity, raw })));
+  const results = entries.map((entry) => entry.entity);
   return {
     contractVersion: optionalString(value.contractVersion) ?? "sim-search-source-v1",
-    generatedAt: optionalString(value.generatedAt) ?? new Date().toISOString(),
+    generatedAt: optionalTimestamp(value.generatedAt),
     providerId: optionalString(value.providerId) ?? "sim.search-data",
     query: isRecord(value.query) ? value.query : query,
     results,
     summary: {
-      resultCount: optionalNumber(isRecord(value.summary) ? value.summary.resultCount : undefined) ?? results.length,
-      staleResultCount: optionalNumber(isRecord(value.summary) ? value.summary.staleResultCount : undefined)
-        ?? results.filter((item) => item.stale === true).length,
+      resultCount: Math.max(optionalCounter(isRecord(value.summary) ? value.summary.resultCount : undefined) ?? 0, results.length),
+      staleResultCount: Math.max(optionalCounter(isRecord(value.summary) ? value.summary.staleResultCount : undefined) ?? 0, results.filter((item) => item.stale === true).length),
       warningCount: warningStrings(value.warnings).length
     },
-    warnings: warningStrings(value.warnings)
+    warnings: warningStrings(value.warnings),
+    warningsKnown: knownWarningArray(value.warnings),
+    freshness: normalizeSearchFreshness(value.freshness, results.length),
+    consumptionExpiry: buildConsumptionExpiry(entries.map((entry) => entry.raw), requestNow)
   };
 }
 
-function normalizeSimSearchEntitiesResponse(value: unknown, query: Record<string, unknown>): SimSearchEntitiesResponse {
+function normalizeSimSearchEntitiesResponse(value: unknown, query: Record<string, unknown>, requestNow: Date): SimSearchEntitiesResponse {
   if (!isRecord(value)) {
     throw new Error("SIM search-data entities response is not an object.");
   }
-  const response = normalizeSimSearchQueryResponse(value, query);
+  const response = normalizeSimSearchQueryResponse(value, query, requestNow);
   const nextCursor = optionalString(value.nextCursor);
   return {
     ...response,
@@ -347,16 +484,16 @@ function normalizeSimSearchEntitiesResponse(value: unknown, query: Record<string
   };
 }
 
-function normalizeSimSearchEntityResponse(value: unknown): SimSearchEntity | undefined {
+function normalizeSimSearchEntityResponse(value: unknown, requestNow: Date): SimSearchEntity | undefined {
   const raw = isRecord(value) && isRecord(value.entity)
     ? value.entity
     : isRecord(value) && isRecord(value.result)
       ? value.result
       : value;
-  return normalizeSimSearchEntity(raw)[0];
+  return normalizeSimSearchEntity(raw, requestNow)[0];
 }
 
-function normalizeSimSearchEntity(value: unknown): SimSearchEntity[] {
+function normalizeSimSearchEntity(value: unknown, requestNow: Date): SimSearchEntity[] {
   if (!isRecord(value)) {
     return [];
   }
@@ -400,7 +537,7 @@ function normalizeSimSearchEntity(value: unknown): SimSearchEntity[] {
     sourceEntityId: optionalString(value.sourceEntityId),
     sourceRevision: optionalString(value.sourceRevision),
     sourceSystem: optionalString(value.sourceSystem),
-    stale: typeof value.stale === "boolean" ? value.stale : undefined,
+    stale: classifyConsumptionExpiry(value, requestNow).expired ? true : typeof value.stale === "boolean" ? value.stale : undefined,
     status: optionalString(value.status),
     summary: optionalString(value.summary) ?? localizedString(value.localized, "cs", "summary"),
     tags: value.tags,
@@ -413,17 +550,147 @@ function normalizeSimSearchEntity(value: unknown): SimSearchEntity[] {
   return [entity];
 }
 
+export function projectSimSearchEntitiesForConsumption(entities: SimSearchEntity[], consumedAt: Date): { results: SimSearchEntity[]; expiredCount: number } {
+  const expired = entities.map((entity) => classifyConsumptionExpiry(entity, consumedAt).expired);
+  return {
+    results: entities.map((entity, index) => expired[index] && entity.stale !== true ? { ...entity, stale: true } : entity),
+    expiredCount: expired.filter(Boolean).length
+  };
+}
+
+function classifyConsumptionExpiry(value: unknown, requestNow: Date): { expired: boolean; invalid: boolean; missing: boolean } {
+  if (!isRecord(value)) return { expired: false, invalid: false, missing: true };
+  const deadlines = [value.expiresAt, value.validUntil].filter((deadline) => deadline !== undefined);
+  const timestamps = deadlines.map(optionalTimestamp);
+  return {
+    expired: value.status === "expired" || timestamps.some((timestamp) => timestamp !== undefined && Date.parse(timestamp) <= requestNow.getTime()),
+    invalid: timestamps.some((timestamp) => timestamp === undefined),
+    missing: deadlines.length === 0
+  };
+}
+
+function buildConsumptionExpiry(values: unknown[], requestNow: Date): SimSearchConsumptionExpiry {
+  const states = values.map((value) => classifyConsumptionExpiry(value, requestNow));
+  return {
+    scope: "returned_entities",
+    derivation: "COP_DERIVED",
+    evaluatedAt: requestNow.toISOString(),
+    expiredCount: states.filter((state) => state.expired).length,
+    missingExpiryCount: states.filter((state) => state.missing).length,
+    invalidExpiryCount: states.filter((state) => state.invalid).length
+  };
+}
+
+function normalizeConsumptionExpiry(value: unknown, returnedCount: number): SimSearchConsumptionExpiry | undefined {
+  if (!isRecord(value) || value.scope !== "returned_entities" || value.derivation !== "COP_DERIVED") return undefined;
+  const evaluatedAt = optionalTimestamp(value.evaluatedAt);
+  const expiredCount = optionalCounter(value.expiredCount);
+  const missingExpiryCount = optionalCounter(value.missingExpiryCount);
+  const invalidExpiryCount = optionalCounter(value.invalidExpiryCount);
+  if (!evaluatedAt || expiredCount === undefined || missingExpiryCount === undefined || invalidExpiryCount === undefined
+    || [expiredCount, missingExpiryCount, invalidExpiryCount].some((count) => count > returnedCount)) return undefined;
+  return { scope: "returned_entities", derivation: "COP_DERIVED", evaluatedAt, expiredCount, missingExpiryCount, invalidExpiryCount };
+}
+
 function normalizeSimSearchObservability(value: unknown): SimSearchObservability {
   if (!isRecord(value)) {
     throw new Error("SIM search-data observability response is not an object.");
   }
   return {
-    generatedAt: optionalString(value.generatedAt),
+    generatedAt: optionalTimestamp(value.generatedAt),
+    dataQualityStatus: qualityStatus(value.dataQualityStatus),
+    degradedSourceCount: optionalCounter(value.degradedSourceCount),
+    sources: Array.isArray(value.sources) ? value.sources.flatMap(normalizeSearchSourceObservability) : undefined,
+    sourcesKnown: Array.isArray(value.sources) && value.sources.every(knownSearchSourceObservability),
+    cache: isRecord(value.cache) ? normalizeSearchCacheObservability(value.cache) : undefined,
     sourceCaches: Array.isArray(value.sourceCaches) ? value.sourceCaches.filter(isRecord) : undefined,
-    status: optionalString(value.status) ?? "degraded",
+    status: qualityStatus(value.status) ?? "degraded",
     summary: isRecord(value.summary) ? value.summary : undefined,
-    warnings: warningStrings(value.warnings)
+    warnings: warningStrings(value.warnings),
+    warningsKnown: knownWarningArray(value.warnings)
   };
+}
+
+function normalizeSearchSourceObservability(value: unknown): SimSearchSourceObservability[] {
+  if (!isRecord(value)) return [];
+  const sourceSystem = optionalString(value.sourceSystem);
+  if (!sourceSystem) return [];
+  return [{
+    sourceSystem,
+    status: qualityStatus(value.status) ?? "unknown",
+    dataQualityStatus: qualityStatus(value.dataQualityStatus),
+    entityCount: optionalCounter(value.entityCount),
+    staleCount: optionalCounter(value.staleCount),
+    lastSuccessAt: optionalTimestamp(value.lastSuccessAt),
+    warningCount: knownWarningArray(value.warnings) ? value.warnings.length : undefined
+  }];
+}
+
+function knownSearchSourceObservability(value: unknown): boolean {
+  return isRecord(value) && optionalString(value.sourceSystem) !== undefined && qualityStatus(value.status) !== undefined
+    && optionalCounter(value.entityCount) !== undefined && optionalCounter(value.staleCount) !== undefined && knownWarningArray(value.warnings)
+    && (value.dataQualityStatus === undefined || qualityStatus(value.dataQualityStatus) !== undefined)
+    && (value.lastSuccessAt === undefined || optionalTimestamp(value.lastSuccessAt) !== undefined);
+}
+
+function normalizeSearchCacheObservability(value: Record<string, unknown>): SimSearchCacheObservability {
+  const cache: SimSearchCacheObservability = {};
+  const keys = ["entries", "inflight", "maxEntries", "hits", "misses", "staleHits", "refreshes", "errors", "evictions"] as const;
+  for (const key of keys) {
+    const count = optionalCounter(value[key]);
+    if (count !== undefined) cache[key] = count;
+  }
+  if (typeof value.hitRate === "number" && Number.isFinite(value.hitRate) && value.hitRate >= 0 && value.hitRate <= 1) {
+    cache.hitRate = value.hitRate;
+  }
+  return cache;
+}
+
+function optionalCounter(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function normalizeSearchFreshness(value: unknown, returnedCount: number): SimSearchFreshness | undefined {
+  if (!isRecord(value) || value.scope !== "returned_entities") return undefined;
+  const evaluatedAt = optionalTimestamp(value.evaluatedAt);
+  const feedTimestampState = value.feedTimestampState;
+  if (!evaluatedAt || (feedTimestampState !== "valid" && feedTimestampState !== "future" && feedTimestampState !== "invalid")) return undefined;
+  const feedAgeSeconds = value.feedAgeSeconds;
+  if (feedTimestampState === "valid"
+    ? typeof feedAgeSeconds !== "number" || !Number.isFinite(feedAgeSeconds) || feedAgeSeconds < 0
+    : feedAgeSeconds !== null) return undefined;
+  const returnedStaleCount = optionalCounter(value.returnedStaleCount);
+  const returnedExpiredCount = optionalCounter(value.returnedExpiredCount);
+  const missingExpiryCount = optionalCounter(value.missingExpiryCount);
+  const invalidExpiryCount = optionalCounter(value.invalidExpiryCount);
+  if (returnedStaleCount === undefined || returnedExpiredCount === undefined || missingExpiryCount === undefined || invalidExpiryCount === undefined
+    || [returnedStaleCount, returnedExpiredCount, missingExpiryCount, invalidExpiryCount].some((count) => count > returnedCount)) return undefined;
+  return {
+    scope: "returned_entities",
+    evaluatedAt,
+    feedTimestampState,
+    feedAgeSeconds: feedAgeSeconds as number | null,
+    returnedStaleCount,
+    returnedExpiredCount,
+    missingExpiryCount,
+    invalidExpiryCount
+  };
+}
+
+function qualityStatus(value: unknown): "degraded" | "ok" | undefined {
+  return value === "ok" || value === "degraded" ? value : undefined;
+}
+
+function optionalTimestamp(value: unknown): string | undefined {
+  const timestamp = optionalString(value);
+  if (!timestamp || !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(timestamp)
+    || !Number.isFinite(Date.parse(timestamp))) return undefined;
+  const calendarDay = new Date(`${timestamp.slice(0, 10)}T00:00:00Z`);
+  return Number.isFinite(calendarDay.getTime()) && calendarDay.toISOString().slice(0, 10) === timestamp.slice(0, 10) ? timestamp : undefined;
+}
+
+function knownWarningArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string" && item.trim() !== "");
 }
 
 function normalizeCoordinate(value: unknown): SimSearchCoordinate | undefined {

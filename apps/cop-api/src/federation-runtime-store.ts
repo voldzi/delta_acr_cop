@@ -1,4 +1,5 @@
-import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 import {
   buildDomainDeadLetterRecord,
   buildDomainEventRecord,
@@ -19,8 +20,6 @@ import {
   type FederatedNodeRole,
   type PilotClassificationLevel
 } from "./federation.js";
-
-const { Pool } = pg;
 
 export interface DomainEventReplayResult {
   items: DomainEventRecord[];
@@ -89,7 +88,7 @@ export class PostgresFederationRuntimeStore implements FederationRuntimeStore {
   private readonly pool: PgPool;
 
   constructor(config: PoolConfig) {
-    this.pool = new Pool(config);
+    this.pool = createCopPgPool("federation-runtime", config);
     this.pool.on("error", (error) => {
       this.lastIdleClientError = errorMessage(error);
     });

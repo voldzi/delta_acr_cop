@@ -1,7 +1,6 @@
-import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 import { randomUUID } from "node:crypto";
-
-const { Pool } = pg;
 
 export type VoiceCallKind = "direct";
 export type VoiceCallPhase =
@@ -199,7 +198,7 @@ export class PostgresVoiceCallStore implements VoiceCallStore {
   private readonly pool: PgPool;
 
   constructor(config: PoolConfig) {
-    this.pool = new Pool(config);
+    this.pool = createCopPgPool("voice-call", config);
   }
 
   async init(): Promise<void> {

@@ -78,6 +78,12 @@ graph clearance denies replay with 503 and no items. MCP reads use the public
 data view; `cop_tenant_id` scopes the service credential grant and does not by
 itself establish a new general tenant data model.
 
+MCP batch preflight checks authorization for every member before execution. It
+does not promise transactional JSON-RPC syntax validation: an authorized read
+may execute and create its normal audit record before a later member receives
+an invalid-request error. This does not admit an unapproved tool or widen the
+service grant. Audit assertions use the stored `eventType` field.
+
 Both clients also bound the complete central response by time and bytes
 (defaults 10 seconds/16 MiB), cancel unread readiness/error bodies and refuse
 redirects. This fixes existing slow-body hangs and prevents 307/308 from

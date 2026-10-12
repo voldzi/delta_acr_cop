@@ -283,6 +283,8 @@ import {
   type SimSearchDataSource,
   type SimSearchEntitiesResponse
 } from "./sim-search-data-source.js";
+import { combineSimSearchPages, simSearchHealthMetadata } from "./sim-search-pages.js";
+import { copPgErrorCode, readCopPgPoolDiagnostics, setCopPgPoolErrorSink } from "./cop-pg-pool.js";
 import { VehicleProfileVerificationError } from "./routing-vehicle-profile.js";
 import { KnownClosureVerificationError } from "./routing-known-closures.js";
 import { createRoutingSourceFromEnv, RoutingHttpError, type RoutingRouteRequest, type RoutingSource } from "./routing-source.js";
@@ -815,6 +817,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     ),
     logger: options.logger ? { serializers: { req: safeRequestLog } } : false
   });
+  setCopPgPoolErrorSink(options.logger ? (metadata) => {
+    app.log.warn({ component: "cop-postgres", metadata }, "COP PostgreSQL idle connection failure.");
+  } : undefined);
+  let lastPoolSnapshotAt = 0;
   const state = options.state ?? createInitialState();
   const validators = new ContractValidators();
   const aiGateway = options.aiGateway ?? AiGateway.fromEnv(process.env);
@@ -1281,7 +1287,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     } catch (error) {
       voiceCallStoreStatus = "degraded";
       voiceCallStoreDetail = `${voiceCallStore.name}: ${errorMessage(error)}`;
-      app.log.error({ error }, "Voice call store initialization failed.");
+      app.log.error({ component: "voice-call", reasonCode: copPgErrorCode(error), database: readCopPgPoolDiagnostics() }, "Voice call store initialization failed.");
       throw error;
     }
     await initializeCommunityReportStore();
@@ -1298,7 +1304,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       } catch (error) {
         trackHistoryStoreStatus = "degraded";
         trackHistoryStoreDetail = `${trackHistoryStore.name}: ${errorMessage(error)}`;
-        app.log.error({ error }, "Track history store initialization failed; using in-memory fallback.");
+        app.log.error({ component: "track-history", reasonCode: copPgErrorCode(error), database: readCopPgPoolDiagnostics() }, "Track history store initialization failed; using in-memory fallback.");
       }
     }
     await initializeFlightDataSource();
@@ -1310,6 +1316,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }, aiContextIndexRefreshSeconds * 1000);
     aiContextIndexRefreshTimer.unref?.();
     safetyNotificationWorker?.start();
+    logPoolSnapshot("startup");
   });
   app.addHook("onClose", async () => {
     await safetyNotificationWorker?.stop();
@@ -1350,6 +1357,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     await mobileDeviceStore.close();
     await mobileDeviceFallbackStore.close();
     await voiceCallStore.close();
+    if (options.logger) setCopPgPoolErrorSink();
   });
 
   registerHealthRoutes(app, {
@@ -1668,7 +1676,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     } catch (error) {
       incidentStoreStatus = "degraded";
       incidentStoreDetail = `${incidentStore.name}: ${errorMessage(error)}`;
-      app.log.error({ error }, "Incident store initialization failed; using in-memory fallback.");
+      app.log.error({ component: "incident", reasonCode: copPgErrorCode(error), database: readCopPgPoolDiagnostics() }, "Incident store initialization failed; using in-memory fallback.");
     }
   }
 
@@ -1744,7 +1752,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     trackHistoryStoreStatus = "degraded";
     trackHistoryStoreDetail = `${trackHistoryStore.name}: ${errorMessage(error)}`;
-    app.log.error({ error }, "Track history store failed; using in-memory fallback.");
+    app.log.error({ component: "track-history", reasonCode: copPgErrorCode(error), database: readCopPgPoolDiagnostics() }, "Track history store failed; using in-memory fallback.");
   }
 
   function markFederationRuntimeStoreDegraded(error: unknown): void {
@@ -1843,7 +1851,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     incidentStoreStatus = "degraded";
     incidentStoreDetail = `${incidentStore.name}: ${errorMessage(error)}`;
-    app.log.error({ error }, "Incident store failed; using in-memory fallback.");
+    app.log.error({ component: "incident", reasonCode: copPgErrorCode(error), database: readCopPgPoolDiagnostics() }, "Incident store failed; using in-memory fallback.");
   }
 
   function incidentStoreDependencyDetail(): string {
@@ -2056,7 +2064,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return await aiContextIndexRefreshInFlight;
     } finally {
       aiContextIndexRefreshInFlight = undefined;
+      if (reason !== "startup") logPoolSnapshot("normal-processing");
     }
+  }
+
+  function logPoolSnapshot(phase: "startup" | "normal-processing"): void {
+    if (!options.logger) return;
+    const snapshotAt = Date.now();
+    if (phase !== "startup" && snapshotAt - lastPoolSnapshotAt < 60_000) return;
+    lastPoolSnapshotAt = snapshotAt;
+    app.log.info({ component: "cop-postgres", phase, database: readCopPgPoolDiagnostics(),
+      stream: streamBus.diagnosticCounters?.(),
+      search: simSearchHealthMetadata(readSimSearchDataHealth(simSearchDataSource ? state.sources.get(simSearchDataSource.sourceSystem.sourceSystemId) : undefined)) }, "COP PostgreSQL pool snapshot.");
   }
 
   async function buildAiContextIndexSnapshot(requestNow: Date): Promise<{
@@ -2132,22 +2151,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           break;
         }
       }
-      const combined: SimSearchEntitiesResponse = {
-        contractVersion: "sim-search-source-v1",
-        generatedAt: requestNow.toISOString(),
-        providerId: responses[0]?.providerId ?? "sim.search-data",
-        query: {
-          limit: aiContextIndexSimSearchEntityLimit
-        },
-        results: responses.flatMap((response) => response.results),
-        summary: {
-          resultCount: responses.reduce((sum, response) => sum + response.results.length, 0),
-          staleResultCount: responses.reduce((sum, response) => sum + response.summary.staleResultCount, 0),
-          warningCount: responses.reduce((sum, response) => sum + response.warnings.length, 0)
-        },
-        warnings: Array.from(new Set(responses.flatMap((response) => response.warnings)))
-      };
+      const { metadata, response: combined } = combineSimSearchPages(responses, aiContextIndexSimSearchEntityLimit, now());
       const health = buildSimSearchDataHealth(combined, requestNow);
+      health.summary = { ...health.summary, ...metadata };
       state.sources.set(
         simSearchDataSource.sourceSystem.sourceSystemId,
         withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health)
@@ -2774,6 +2780,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       try {
         const response = await simSearchDataSource.query(query, input.requestNow);
         const health = buildSimSearchDataHealth(response, input.requestNow);
+        health.summary = { ...health.summary, receivedAt: now().toISOString(), responseScope: "query" };
         state.sources.set(
           simSearchDataSource.sourceSystem.sourceSystemId,
           withSimSearchDataHealth(activeSimSearchDataSourceSystem(), health)

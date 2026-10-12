@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import pg, { type Client as PgClient, type Pool as PgPool, type PoolConfig } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 import type { CopStreamMessage } from "./cop-stream.js";
 
-const { Client, Pool } = pg;
+const { Client } = pg;
 const defaultChannel = "cop_stream_events";
 
 export interface CopStreamBusMetrics {
@@ -22,6 +23,12 @@ export interface CopStreamBus {
   readonly metrics: CopStreamBusMetrics;
   close(): Promise<void>;
   diagnostics(): string;
+  diagnosticCounters?(): {
+    ownedListenerCount: 0 | 1;
+    listenerConnected: boolean;
+    poolHealthy: boolean;
+    closed: boolean;
+  };
   init(): Promise<void>;
   publish(message: CopStreamMessage): Promise<void>;
   subscribe(subscriber: (message: CopStreamMessage) => void): () => void;
@@ -91,21 +98,33 @@ export class PostgresCopStreamBus implements CopStreamBus {
   private lastPublishedAt: string | undefined;
   private lastReceivedAt: string | undefined;
   private listener: PgClient | undefined;
+  private provisionalListener: PgClient | undefined;
+  private readonly ownedListeners = new Set<PgClient>();
+  private readonly listenerClosures = new WeakMap<PgClient, Promise<void>>();
+  private readonly listenerCancellations = new WeakMap<PgClient, () => void>();
+  private listenerReady = false;
+  private initializing: Promise<void> | undefined;
+  private closing: Promise<void> | undefined;
+  private closed = false;
   private localDeliveriesTotal = 0;
   private readonly pool: PgPool;
+  private poolReady = false;
   private publishedMessagesTotal = 0;
-  private ready = false;
   private receivedMessagesTotal = 0;
   private readonly subscribers = new Set<(message: CopStreamMessage) => void>();
 
   constructor(config: PoolConfig, options: { channel?: string; instanceId?: string } = {}) {
-    this.clientConfig = config;
+    this.clientConfig = {
+      ...config,
+      application_name: config.application_name ?? "cop-api:stream-listener",
+      fallback_application_name: config.fallback_application_name ?? "cop-api:stream-listener"
+    };
     this.channel = normalizePostgresChannel(options.channel ?? defaultChannel);
     this.instanceId = options.instanceId?.trim() || randomUUID();
-    this.pool = new Pool(config);
-    this.pool.on("error", (error) => {
-      this.lastError = errorMessage(error);
-      this.ready = false;
+    this.pool = createCopPgPool("stream", config);
+    this.pool.on("error", () => {
+      this.lastError = "STREAM_POOL_UNAVAILABLE";
+      this.poolReady = false;
     });
   }
 
@@ -118,39 +137,148 @@ export class PostgresCopStreamBus implements CopStreamBus {
       localDeliveriesTotal: this.localDeliveriesTotal,
       mode: this.name,
       publishedMessagesTotal: this.publishedMessagesTotal,
-      ready: this.ready,
+      ready: !this.closed && this.listenerReady && this.poolReady,
       receivedMessagesTotal: this.receivedMessagesTotal
     };
   }
 
   async init(): Promise<void> {
-    await this.pool.query(createStreamBusEventsSql);
+    if (this.closed) throw new Error("STREAM_BUS_CLOSED");
+    if (this.listenerReady && this.poolReady) return;
+    if (this.initializing) return this.initializing;
+    const initializing = this.initialize();
+    this.initializing = initializing;
+    try {
+      await initializing;
+    } finally {
+      if (this.initializing === initializing) this.initializing = undefined;
+    }
+  }
+
+  private async initialize(): Promise<void> {
+    const previousListener = this.listener;
+    this.listener = undefined;
+    this.listenerReady = false;
+    if (previousListener) await this.closeListener(previousListener);
+    if (this.closed) throw new Error("STREAM_BUS_CLOSED");
+    if (this.ownedListeners.size > 0) {
+      this.lastError = "STREAM_LISTENER_CLOSE_UNAVAILABLE";
+      throw new Error(this.lastError);
+    }
+    try {
+      await this.pool.query(createStreamBusEventsSql);
+      this.poolReady = true;
+    } catch {
+      this.poolReady = false;
+      this.lastError = "STREAM_SCHEMA_UNAVAILABLE";
+      throw new Error(this.lastError);
+    }
+    if (this.closed) throw new Error("STREAM_BUS_CLOSED");
     const listener = new Client(this.clientConfig);
+    this.ownedListeners.add(listener);
+    this.provisionalListener = listener;
+    let listenerFailed = false;
+    let cancelListener!: () => void;
+    const interrupted = new Promise<never>((_resolve, reject) => {
+      cancelListener = () => reject(new Error("STREAM_LISTENER_UNAVAILABLE"));
+    });
     listener.on("notification", (notification) => {
-      if (notification.channel !== this.channel || !notification.payload) {
+      if (
+        this.closed ||
+        !this.listenerReady ||
+        this.listener !== listener ||
+        notification.channel !== this.channel ||
+        !notification.payload
+      ) {
         return;
       }
       void this.handleNotification(notification.payload);
     });
-    listener.on("error", (error) => {
-      this.lastError = errorMessage(error);
-      this.ready = false;
-    });
-    await listener.connect();
-    await listener.query(`LISTEN ${quoteIdentifier(this.channel)}`);
-    this.listener = listener;
-    this.ready = true;
+    const lost = () => {
+      if (listenerFailed) return;
+      listenerFailed = true;
+      cancelListener();
+      if (this.listener === listener) {
+        this.lastError = "STREAM_LISTENER_UNAVAILABLE";
+        this.listenerReady = false;
+      }
+    };
+    this.listenerCancellations.set(listener, lost);
+    listener.on("error", lost);
+    listener.on("end", lost);
+    try {
+      await Promise.race([listener.connect(), interrupted]);
+      if (this.closed || listenerFailed) throw new Error("STREAM_LISTENER_UNAVAILABLE");
+      await Promise.race([listener.query(`LISTEN ${quoteIdentifier(this.channel)}`), interrupted]);
+      if (this.closed || listenerFailed) throw new Error("STREAM_LISTENER_UNAVAILABLE");
+      this.provisionalListener = undefined;
+      this.listener = listener;
+      this.listenerReady = true;
+      if (this.poolReady) this.lastError = undefined;
+    } catch {
+      if (this.provisionalListener === listener) this.provisionalListener = undefined;
+      this.lastError = this.closed ? "STREAM_BUS_CLOSED" : "STREAM_LISTENER_UNAVAILABLE";
+      await this.closeListener(listener);
+      throw new Error(this.lastError);
+    }
   }
 
   async close(): Promise<void> {
+    if (this.closing) return this.closing;
+    this.closed = true;
     this.subscribers.clear();
-    this.ready = false;
-    if (this.listener) {
-      await this.listener.query(`UNLISTEN ${quoteIdentifier(this.channel)}`).catch(() => undefined);
-      await this.listener.end().catch(() => undefined);
-      this.listener = undefined;
-    }
-    await this.pool.end().catch(() => undefined);
+    this.listenerReady = false;
+    this.poolReady = false;
+    const closing = (async () => {
+      // End the owned provisional connection first; this cancels an unfinished
+      // non-pipelined LISTEN instead of waiting for it to complete by itself.
+      if (this.provisionalListener) await this.closeListener(this.provisionalListener);
+      await this.initializing?.catch(() => undefined);
+      if (this.listener) {
+        const listener = this.listener;
+        this.listener = undefined;
+        // Closing the session also removes its LISTEN subscription.
+        await this.closeListener(listener);
+      }
+      await this.pool.end().catch(() => undefined);
+    })();
+    this.closing = closing;
+    return closing;
+  }
+
+  private closeListener(listener: PgClient): Promise<void> {
+    const existing = this.listenerClosures.get(listener);
+    if (existing) return existing;
+    this.listenerCancellations.get(listener)?.();
+    const closing = listener.end().then(
+      () => {
+        this.ownedListeners.delete(listener);
+      },
+      () => {
+        this.lastError = "STREAM_LISTENER_CLOSE_UNAVAILABLE";
+      }
+    );
+    this.listenerClosures.set(listener, closing);
+    return closing;
+  }
+
+  diagnosticCounters(): {
+    ownedListenerCount: 0 | 1;
+    listenerConnected: boolean;
+    poolHealthy: boolean;
+    closed: boolean;
+  } {
+    return {
+      ownedListenerCount: this.ownedListeners.size > 0 ? 1 : 0,
+      listenerConnected: this.listenerReady && !this.closed,
+      poolHealthy: this.poolReady && !this.closed,
+      closed: this.closed
+    };
+  }
+
+  private markPoolAvailable(): void {
+    this.poolReady = true;
+    if (this.listenerReady && !this.closed) this.lastError = undefined;
   }
 
   diagnostics(): string {
@@ -175,11 +303,10 @@ export class PostgresCopStreamBus implements CopStreamBus {
         [eventId, this.instanceId, JSON.stringify(envelope)]
       );
       await this.pool.query("SELECT pg_notify($1, $2)", [this.channel, eventId]);
-      this.lastError = undefined;
-      this.ready = true;
-    } catch (error) {
-      this.lastError = errorMessage(error);
-      this.ready = false;
+      this.markPoolAvailable();
+    } catch {
+      this.lastError = "STREAM_PUBLISH_UNAVAILABLE";
+      this.poolReady = false;
     }
     this.emit(message);
   }
@@ -209,12 +336,11 @@ export class PostgresCopStreamBus implements CopStreamBus {
       }
       this.receivedMessagesTotal += 1;
       this.lastReceivedAt = envelope.message.serverTimestamp;
-      this.lastError = undefined;
-      this.ready = true;
+      this.markPoolAvailable();
       this.emit(envelope.message);
-    } catch (error) {
-      this.lastError = errorMessage(error);
-      this.ready = false;
+    } catch {
+      this.lastError = "STREAM_RECEIVE_UNAVAILABLE";
+      this.poolReady = false;
     }
   }
 
@@ -270,7 +396,7 @@ CREATE INDEX IF NOT EXISTS idx_cop_stream_bus_events_created_at
 `;
 
 function parseEnvelope(value: CopStreamBusEnvelope | string): CopStreamBusEnvelope | undefined {
-  const parsed = typeof value === "string" ? JSON.parse(value) as unknown : value;
+  const parsed = typeof value === "string" ? (JSON.parse(value) as unknown) : value;
   if (!parsed || typeof parsed !== "object") {
     return undefined;
   }
@@ -293,7 +419,7 @@ function normalizePostgresChannel(channel: string): string {
 }
 
 function quoteIdentifier(value: string): string {
-  return `"${value.replaceAll("\"", "\"\"")}"`;
+  return `"${value.replaceAll('"', '""')}"`;
 }
 
 function readPositiveInteger(value: string | undefined, fallback: number): number {
@@ -309,8 +435,4 @@ function readSslConfig(env: Record<string, string | undefined>): PoolConfig["ssl
   return {
     rejectUnauthorized: env.COP_DATABASE_SSL_REJECT_UNAUTHORIZED !== "false"
   };
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

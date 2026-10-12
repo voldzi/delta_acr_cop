@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import pg, { type Pool as PgPool, type PoolConfig } from "pg";
-
-const { Pool } = pg;
+import { type Pool as PgPool, type PoolConfig } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 
 export interface SafetyNotificationCooldown {
   key: string;
@@ -118,7 +117,7 @@ export class PostgresSafetyNotificationStore implements SafetyNotificationStore 
   private readonly pool: PgPool;
 
   constructor(config: PoolConfig) {
-    this.pool = new Pool({ ...config, max: Math.max(2, config.max ?? 3) });
+    this.pool = createCopPgPool("safety-notification", { ...config, max: Math.max(2, config.max ?? 3) });
     // pg requires an idle error listener; callers observe active query failures.
     this.pool.on("error", () => {});
   }

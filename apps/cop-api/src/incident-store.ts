@@ -1,7 +1,6 @@
-import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 import { randomUUID } from "node:crypto";
-
-const { Pool } = pg;
 
 export type IncidentCategory =
   | "community"
@@ -294,7 +293,7 @@ export class PostgresIncidentStore implements IncidentStore {
   private readonly pool: PgPool;
 
   constructor(config: PoolConfig) {
-    this.pool = new Pool(config);
+    this.pool = createCopPgPool("incident", config);
     this.pool.on("error", (error) => {
       this.lastIdleClientError = error instanceof Error ? error.message : String(error);
     });

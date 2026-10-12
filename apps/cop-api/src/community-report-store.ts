@@ -1,8 +1,7 @@
 import { PostgresRoadEnrichmentQueue, roadEnrichmentSchema, type RoadEnrichment, type RoadEnrichmentQueue } from "./road-enrichment.js";
-import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 import { randomUUID } from "node:crypto";
-
-const { Pool } = pg;
 
 export type CommunityReportCategory =
   | "fire"
@@ -861,7 +860,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   private readonly pool: PgPool;
 
   constructor(config: PoolConfig) {
-    this.pool = new Pool(config);
+    this.pool = createCopPgPool("community-report", config);
     this.roadEnrichmentQueue = new PostgresRoadEnrichmentQueue(this.pool);
     this.pool.on("error", (error) => {
       this.lastIdleClientError = errorMessage(error);

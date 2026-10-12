@@ -58,6 +58,47 @@ as COP source health or operator diagnostics, not as public map layers.
 `taxonomyCount`, `taxonomyEntryCount`, cache status and stale-feature counts;
 these values are operational diagnostics and must not be interpreted as public
 alerts.
+
+SIM search health describes the last entities-index or query response. It is not
+a global assertion about every SIM source. Index summaries retain `responseScope`,
+`receivedAt`, `pageCount`, `returnedCount`, `pageStaleCount`, `warningCount` and
+`warningsKnown`. `providerOldestGeneratedAt`/`providerNewestGeneratedAt` preserve
+known feed timestamps; `providerGeneratedAtKnown=false` means at least one page
+is unknown. The combined `generatedAt` is omitted in that case and otherwise is
+the oldest page timestamp. Receipt time is never substituted for source age.
+Feed timestamps also do not prove the observation age of individual entities.
+
+The SIM observability adapter preserves validated `sources`, `cache`, optional
+`dataQualityStatus` and `degradedSourceCount`. It is not newly polled by COP.
+Reachability `status=ok` alone does not mean fresh or complete data. Missing
+quality, warnings or expiry metadata must not become confirmed zero/freshness.
+Cache counts are cumulative or scoped as defined by SIM; source counts are not
+unique global entity totals. Optional returned-page freshness is separate from
+collection summary counts and must be validated before use.
+
+`providerFreshnessTimestampState` distinguishes valid, future, invalid and unknown
+feed time metadata. Known deadlines are checked with an actual post-body clock
+and again at combined-page consumption. `consumptionExpiry` is labeled
+`COP_DERIVED`, with its own `evaluatedAt` and returned-page expired/missing/invalid
+counts. The provider's `freshness.evaluatedAt` stays unchanged even if a gateway
+returns an older cache response. Missing reference expiry alone is not an outage.
+
+PostgreSQL stream readiness requires the configured persistence path and active
+LISTEN connection. A successful publish does not certify an interrupted listener.
+Failed provisional listeners are closed by their owner; other store pools and
+global database settings are untouched. See [ADR 0047](adr/0047_PROVIDER_PROVENANCE_AND_STREAM_OWNERSHIP.md).
+
+Owned PostgreSQL diagnostics use a bounded weak registry of at most 64 live
+records, fixed component labels and `total`, `idle`, `waiting`, `configuredMax`
+counts. Invalid/missing counters are null. Counts are per API process, not the
+shared database total. The dedicated stream listener is counted separately.
+Startup and at most one normal-processing snapshot per minute use the existing
+structured logger and its retention. Fixed-code idle and selected store failures
+carry counters without raw errors, SQL, connection strings, identities or rows.
+Historical error counts do not prove a current outage; closed pools are removed.
+Default names are `cop-api:<component>` (listener `cop-api:stream-listener`),
+unless existing pg/DSN configuration explicitly supplies another name. There is
+no new public diagnostic endpoint, query, connection, retry or pool-limit change.
 Lazy map providers that have not received their first viewport request are
 reported in `/health/dependencies` as `ok` with an `idle; waiting for first
 request` detail. This prevents an unused optional layer from making the PoC

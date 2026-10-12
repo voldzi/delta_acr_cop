@@ -1,7 +1,6 @@
-import pg, { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 import { randomBytes } from "node:crypto";
-
-const { Pool } = pg;
 
 export type MobilePlatform = "ios" | "ipados";
 export type MobileDeviceStatus = "paired" | "revoked";
@@ -254,7 +253,7 @@ export class PostgresMobileDeviceStore implements MobileDeviceStore {
   private readonly pool: PgPool;
 
   constructor(config: PoolConfig) {
-    this.pool = new Pool(config);
+    this.pool = createCopPgPool("mobile-device", config);
     this.pool.on("error", (error) => {
       this.lastIdleClientError = errorMessage(error);
     });

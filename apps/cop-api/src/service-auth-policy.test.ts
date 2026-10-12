@@ -437,7 +437,7 @@ describe("scoped MCP requests", () => {
         const response = await app.inject({ method: "POST", url: "/api/v1/mcp", headers: headers("mcp"),
           payload: [rpc("tools/call", { name: "cop.sources.health" }), forbidden] });
         expect(response.statusCode).toBe(403);
-        expect(state.auditEvents.filter((event) => event.action === "MCP_TOOL_INVOKED")).toHaveLength(0);
+        expect(state.auditEvents.filter((event) => event.eventType === "MCP_TOOL_INVOKED")).toHaveLength(0);
         expect(state.domainEvents).toHaveLength(0);
       }
     } finally { await app.close(); }

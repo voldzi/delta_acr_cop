@@ -18267,7 +18267,8 @@
           },
           "summary": {
             "type": "object",
-            "additionalProperties": true
+            "additionalProperties": true,
+            "description": "Scoped operational metadata. For SIM search, responseScope distinguishes query from entities-index; receivedAt is COP receipt time, not source freshness. Page counts apply only to returned pages. warningsKnown, providerGeneratedAtKnown, providerFreshnessKnown and consumptionExpiryKnown explicitly distinguish unknown values. Known providerOldestGeneratedAt/providerNewestGeneratedAt and providerFreshnessOldestEvaluatedAt/providerFreshnessNewestEvaluatedAt preserve feed/evaluation times. consumptionExpiry contains COP_DERIVED returned_entities expiry counts with its own evaluatedAt; provider freshness is never rewritten. Missing quality or expiry must not be interpreted as confirmed zero or fresh data. See docs/observability.md."
           },
           "lastEventAt": {
             "type": "string",
@@ -20577,7 +20578,8 @@
           },
           "generatedAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "Provider generation time when valid and known. For a combined SIM search index this is the oldest page time only when every page supplies a valid timestamp; otherwise omitted. Never replaced by COP receipt time and not proof of individual measurement freshness."
           },
           "lastPollAt": {
             "type": "string",
@@ -20595,7 +20597,8 @@
           },
           "summary": {
             "type": "object",
-            "additionalProperties": true
+            "additionalProperties": true,
+            "description": "Scoped operational metadata. For SIM search, responseScope distinguishes query from entities-index; receivedAt is COP receipt time, not source freshness. Page counts apply only to returned pages. warningsKnown, providerGeneratedAtKnown, providerFreshnessKnown and consumptionExpiryKnown explicitly distinguish unknown values. Known providerOldestGeneratedAt/providerNewestGeneratedAt and providerFreshnessOldestEvaluatedAt/providerFreshnessNewestEvaluatedAt preserve feed/evaluation times. consumptionExpiry contains COP_DERIVED returned_entities expiry counts with its own evaluatedAt; provider freshness is never rewritten. Missing quality or expiry must not be interpreted as confirmed zero or fresh data. See docs/observability.md."
           },
           "warnings": {
             "type": "array",

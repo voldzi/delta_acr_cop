@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
 import pg, { type Pool as PgPool } from "pg";
+import { createCopPgPool } from "./cop-pg-pool.js";
 import { deletionDays, type DriverConsent } from "./driver-measurement-contract.js";
-
-const { Pool } = pg;
 
 export interface DriverMeasurementConsentStore {
   init(secret: string): Promise<void>;
@@ -88,7 +87,7 @@ function fromRow(row?: ConsentRow): DriverConsent {
 export class PostgresDriverMeasurementConsentStore implements DriverMeasurementConsentStore {
   private readonly pool: PgPool;
   constructor(connectionString: string) {
-    this.pool = new Pool({ connectionString, max: 5, connectionTimeoutMillis: 5000,
+    this.pool = createCopPgPool("driver-consent", { connectionString, max: 5, connectionTimeoutMillis: 5000,
       statement_timeout: 15_000, query_timeout: 20_000 });
   }
   async init(secret: string): Promise<void> {

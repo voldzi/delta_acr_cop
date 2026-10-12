@@ -68,3 +68,4 @@ Use the full linked filename when referring to these decisions; existing
 published paths are preserved for integration references.
 
 - [0046: Staged service credentials and lab removal](0046_STAGED_SERVICE_CREDENTIALS_AND_LAB_REMOVAL.md).
+- [0047: Provider provenance and stream connection ownership](0047_PROVIDER_PROVENANCE_AND_STREAM_OWNERSHIP.md).

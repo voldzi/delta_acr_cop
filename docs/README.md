@@ -42,6 +42,12 @@ COP security, performance and compatible dependency audit:
 [standalone chat release and SIM acceptance](runbooks/22_COP_CHAT_RELEASE_20261010.md),
 [canonical publication ADR](adr/0039_CANONICAL_PUBLICATION_BOUNDARY.md).
 
+Provider freshness and stream ownership safeguards:
+[observability semantics](observability.md),
+[ADR 0047](adr/0047_PROVIDER_PROVENANCE_AND_STREAM_OWNERSHIP.md).
+[Stability and service-account acceptance](runbooks/23_COP_SERVICE_ACCOUNT_STABILITY.md)
+records the prepared source checks and remaining coordinated production gates.
+
 COP host storage separation, retention, deployment and recovery evidence:
 [X5 runbook](runbooks/19_COP_X5_STORAGE.md),
 [ADR 0038](adr/0038_COP_X5_OPERATIONAL_STORAGE_BOUNDARY.md).

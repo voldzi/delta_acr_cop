@@ -1514,8 +1514,8 @@ type FetchJsonInit = RequestInit & { timeoutMs?: number };
 class SituationDataHttpError extends Error {
   readonly status: number;
 
-  constructor(status: number, statusText: string, url: URL) {
-    super(`${status} ${statusText || "Situation data request failed"} for ${url.pathname}`);
+  constructor(status: number) {
+    super(`Situation data request returned HTTP ${status}.`);
     this.name = "SituationDataHttpError";
     this.status = status;
   }
@@ -1529,24 +1529,95 @@ async function fetchJson(
 ): Promise<unknown> {
   const controller = new AbortController();
   const { timeoutMs, ...requestInit } = init;
-  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? config.timeoutMs);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      reject(new SituationDataTimeoutError());
+      controller.abort();
+    }, timeoutMs ?? config.timeoutMs);
+  });
   try {
-    const response = await fetch(url, {
-      ...requestInit,
-      headers: {
-        Accept: "application/json",
-        ...(requestInit.body ? { "Content-Type": "application/json" } : {}),
-        "X-COP-Request-At": requestNow.toISOString(),
-        ...(requestInit.headers ?? {})
-      },
-      signal: controller.signal
-    });
-    if (!response.ok) {
-      throw new SituationDataHttpError(response.status, response.statusText, url);
+    return await Promise.race([
+      (async () => {
+        const response = await fetch(url, {
+          ...requestInit,
+          headers: {
+            Accept: "application/json",
+            ...(requestInit.body ? { "Content-Type": "application/json" } : {}),
+            "X-COP-Request-At": requestNow.toISOString(),
+            ...(requestInit.headers ?? {})
+          },
+          redirect: "error",
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          void response.body?.cancel().catch(() => {});
+          throw new SituationDataHttpError(response.status);
+        }
+        return await readBoundedSituationJson(response, controller.signal);
+      })(),
+      deadline
+    ]);
+  } catch (error) {
+    controller.abort();
+    if (error instanceof SituationDataHttpError || error instanceof SituationDataResponseError || error instanceof SituationDataTimeoutError) {
+      throw error;
     }
-    return response.json();
+    throw new Error("Situation data transport failed.");
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+class SituationDataResponseError extends Error {}
+
+class SituationDataTimeoutError extends Error {
+  constructor() {
+    super("Situation data request timed out.");
+    this.name = "TimeoutError";
+  }
+}
+
+async function readBoundedSituationJson(response: Response, signal: AbortSignal): Promise<unknown> {
+  if (signal.aborted) {
+    void response.body?.cancel().catch(() => {});
+    throw new SituationDataTimeoutError();
+  }
+  const maxBytes = 16 * 1024 * 1024;
+  const contentLength = response.headers.get("content-length");
+  if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > maxBytes) {
+    void response.body?.cancel().catch(() => {});
+    throw new SituationDataResponseError("Situation data response exceeded the size limit.");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new SituationDataResponseError("Situation data response body is missing.");
+  }
+  const decoder = new TextDecoder();
+  const cancel = () => { void reader.cancel().catch(() => {}); };
+  signal.addEventListener("abort", cancel, { once: true });
+  let bytes = 0;
+  let text = "";
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > maxBytes) {
+        void reader.cancel().catch(() => {});
+        throw new SituationDataResponseError("Situation data response exceeded the size limit.");
+      }
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    text += decoder.decode();
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    reader.releaseLock();
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new SituationDataResponseError("Situation data response is not valid JSON.");
   }
 }
 

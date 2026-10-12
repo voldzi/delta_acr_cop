@@ -9,6 +9,7 @@ import {
 describe("SituationDataSourceAdapter", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("keeps live traffic cache shorter than the PID refresh cadence", () => {
@@ -488,7 +489,115 @@ describe("SituationDataSourceAdapter", () => {
 
     expect(features.cache?.ttlMs).toBe(15 * 60 * 1000);
   });
+
+  it("bounds a stalled response body after headers and cancels it without retry", async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | null | undefined;
+    let cancelled = false;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal;
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new TextEncoder().encode("{")); },
+        cancel() { cancelled = true; }
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const request = transportTestAdapter(20).fetchTaxonomy(new Date("2026-10-12T17:00:00Z"));
+    const rejection = expect(request).rejects.toThrow("Situation data request timed out.");
+    await vi.advanceTimersByTimeAsync(25);
+    await rejection;
+    expect(signal?.aborted).toBe(true);
+    expect(cancelled).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[1]?.redirect).toBe("error");
+  });
+
+  it("retains the existing 20-second viewshed deadline including its response body", async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | null | undefined;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal;
+      return new Response(new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new TextEncoder().encode("{")); } }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const request = transportTestAdapter(20).fetchMobileTowerViewshed("synthetic-tower", { technology: "4G", radiusM: 1000, azimuthStepDeg: 10, distanceStepM: 50 }, new Date("2026-10-12T17:00:00Z"));
+    const rejection = expect(request).rejects.toThrow("Situation data request timed out.");
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(signal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await rejection;
+    expect(signal?.aborted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a viewshed body that finishes within its existing longer deadline", async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | null | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal;
+      return new Response(new ReadableStream<Uint8Array>({ start(controller) {
+        setTimeout(() => {
+          controller.enqueue(new TextEncoder().encode(JSON.stringify({ contractVersion: "sim-mobile-coverage-tower-viewshed-v1", type: "FeatureCollection", features: [], warnings: [] })));
+          controller.close();
+        }, 500);
+      } }));
+    }));
+    const request = transportTestAdapter(20).fetchMobileTowerViewshed("synthetic-tower", { technology: "4G", radiusM: 1000, azimuthStepDeg: 10, distanceStepM: 50 }, new Date("2026-10-12T17:00:00Z"));
+    await vi.advanceTimersByTimeAsync(500);
+    await expect(request).resolves.toMatchObject({ contractVersion: "sim-mobile-coverage-tower-viewshed-v1", type: "FeatureCollection", features: [] });
+    expect(signal?.aborted).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("bounds a stalled fetch before headers and sanitizes transport failures", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(() => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetchMock);
+    const rejection = expect(transportTestAdapter(20).fetchTaxonomy(new Date("2026-10-12T17:00:00Z"))).rejects.toThrow("Situation data request timed out.");
+    await vi.advanceTimersByTimeAsync(25);
+    await rejection;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("synthetic private provider error https://private.example.test"); }));
+    await expect(transportTestAdapter().fetchTaxonomy(new Date("2026-10-12T17:00:00Z"))).rejects.toThrow("Situation data transport failed.");
+  });
+
+  it("preserves HTTP status classification while omitting private path, status text and body", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("synthetic private body", { status: 503, statusText: "synthetic private status" })));
+    await expect(transportTestAdapter().fetchTaxonomy(new Date("2026-10-12T17:00:00Z"))).rejects.toMatchObject({ name: "SituationDataHttpError", status: 503, message: "Situation data request returned HTTP 503." });
+  });
+
+  it("cancels a native non-success response without awaiting stalled cleanup", async () => {
+    let cancelled = false;
+    let signal: AbortSignal | null | undefined;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal;
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new TextEncoder().encode("synthetic private body")); },
+        cancel() { cancelled = true; return new Promise<void>(() => {}); }
+      }), { status: 503 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(transportTestAdapter(20).fetchTaxonomy(new Date("2026-10-12T17:00:00Z"))).rejects.toMatchObject({ status: 503, message: "Situation data request returned HTTP 503." });
+    expect(cancelled).toBe(true);
+    expect(signal?.aborted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    () => new Response("synthetic private invalid JSON"),
+    () => new Response("{}", { headers: { "content-length": String(16 * 1024 * 1024 + 1) } }),
+    () => new Response(new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array(16 * 1024 * 1024 + 1)); controller.close(); } }))
+  ])("rejects invalid and oversized response bodies with bounded safe errors", async (response) => {
+    const fetchMock = vi.fn(async () => response());
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(transportTestAdapter().fetchTaxonomy(new Date("2026-10-12T17:00:00Z"))).rejects.toThrow(/^Situation data response (?:is not valid JSON|exceeded the size limit)\.$/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
+
+function transportTestAdapter(timeoutMs = 7000): SituationDataSourceAdapter {
+  return new SituationDataSourceAdapter({ baseUrl: "https://sim.example.test/situation-data/api/v1", cacheTtlMs: 20000, enabled: true, maxLimit: 250, timeoutMs });
+}
 
 function sampleHealthFeatureCollection(now: Date) {
   return emptySituationFeatureCollection({
