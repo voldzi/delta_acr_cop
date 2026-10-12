@@ -1,6 +1,56 @@
 # 23 COP service-account stability acceptance
 
-Date: 2026-10-12. Source prepared; this document does not claim production cutover.
+Date: 2026-10-12. API and Edge/MCP stages are deployed; final acceptance and lab
+removal remain pending.
+
+## Current verified production stage
+
+The Edge/MCP stage started at **2026-10-12 21:53:56 CEST** and passed the unchanged
+standard gate with all 26 dependencies `ok`. The host checkout is
+`f84fe6f6177d70a533620ea86dd154376bfe7c3a`; application revisions differ by service:
+
+- API remains application source `3a0101270bfb59b9bcf61eb2126588fc1f688fe7`, image
+  `sha256:6d3fedf34265e4697fcea6dc23c38fc531a2d0f0eae45451671f71b86561b5a3`.
+  Authentication remains `hybrid`, lab access `true`, two service bindings,
+  four allowed client IDs (`cop-web,csm-mobile,cop-edge-pilot-sync,cop-mcp-readonly`)
+  and BFF enabled. The nullable-expiry correction in `f84fe6f` remains source-only
+  until a separate final API release.
+- Edge is deployed from `f84fe6f` with OIDC, image
+  `sha256:8b7b58dd63586ef87ff07f96307136731de3977d840ee659cfee372fe5615745`.
+- MCP is deployed from `f84fe6f` with OIDC, image
+  `sha256:1f1a7cd133e00316229487b17882ee4d7f9185cd7f41ac6406032bcecf5209fa`.
+- Web and chat retain their original images. Their publication and API lab
+  removal have not been completed by this stage.
+
+The staged Edge/MCP runtime is Node **24.21.0**, Alpine **3.24.2**, x64. Its
+resolved base is
+`sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1`;
+the frozen lock fingerprint is
+`89326942986b1d781be5fa011198969b14baa3e11bc88272c93de57ab3053ca2`.
+Do not assume runtime/base/dependency identity with the older images.
+
+The sole real strict observation window **passed for Edge and MCP**: each
+completed 610 real seconds and 62 actual readiness samples, with exit code 0 and
+the final `strictAcceptancePassed=true`. Each separate helper verified three RSA
+grants with 300-second lifetime, zero roles and exactly one `cop-api` audience,
+and observed two helper-token rotations. Edge recorded 61 advancing sync times
+with autosync enabled, no future times and age at most 30 seconds; MCP readiness
+used its own running provider throughout. The owner-verified final readback at
+**2026-10-12 22:18:50 CEST** confirmed unchanged container/image/start identities,
+zero restarts, no OOM, all 26 API dependencies `ok`, the preserved API/BFF/auth
+stage and original web/chat images. Edge outbox was empty and sync age 0.23 s.
+Observer
+`33730a091cdfc932885a0a130429d341e50653cd3b49499003d0ad57bc213460`
+repairs only the helper's ESM import URL resolution. Its 35 offline assertions
+and two full synthetic transport fixtures are instrumentation checks, not
+production acceptance. Verified helper-grant counts concern a separate token
+cache; they are not counters from the running services. The isolated
+outage checks cold helper acquisition; failure during warm renewal remains
+source-fixture evidence, not a production identity-provider outage.
+
+Final API release and public-build activation remain on hold pending an explicit
+next scoped GO. SIM/global database/network
+changes are not authorized by this stage.
 
 ## Confirmed source defects and boundaries
 
