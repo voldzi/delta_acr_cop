@@ -13,6 +13,9 @@ a [Keycloak runbooku](runbooks/08_KEYCLOAK_COP.md#bezpecne-odstraneni-lab-pristu
 Zdrojová ochrana sestavení a produkční přepnutí autentizace jsou samostatná ověření.
 Připravený serverový token provider a zbývající omezení službových oprávnění
 popisuje [ADR 0046](adr/0046_STAGED_SERVICE_CREDENTIALS_AND_LAB_REMOVAL.md).
+Pokus o produkční přechod z 12. října, provedený návrat API a neuzavřené
+akceptační body jsou v [archivovaném provozním dokladu](archive/2026-10-12_COP_SERVICE_AUTH_ROLLOUT.md).
+Odstranění lab přístupu zatím není produkčně dokončené.
 
 ## Standard Topic Mapping
 
