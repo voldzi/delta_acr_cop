@@ -32,6 +32,15 @@ skip writes or remove a queued batch before a failure. A successful connectivity
 read alone cannot certify persistence completeness. This release does not reset
 that state or introduce unreviewed replay/reconciliation.
 
+The first production API stage of `3a01012` passed the unchanged health gate.
+Its diagnostic invalid-expiry count prompted a source-contract check; actual
+entity values were not read or stored. SIM permits explicit null deadlines as
+absence. A minimal source followup corrects that classification and preserves
+stale/expiry/health behavior. It is not declared deployed by this document, and
+no inference that all production items were null is made from an aggregate.
+Followup validation: 68 targeted search/page tests, API TypeScript build, selected
+ESLint and diff check passed; these are source checks, not another deployment.
+
 ## Source checks
 
 - Full suite: 1,852 passed, 8 skipped (database prerequisites absent).

@@ -82,6 +82,10 @@ and again at combined-page consumption. `consumptionExpiry` is labeled
 `COP_DERIVED`, with its own `evaluatedAt` and returned-page expired/missing/invalid
 counts. The provider's `freshness.evaluatedAt` stays unchanged even if a gateway
 returns an older cache response. Missing reference expiry alone is not an outage.
+The SIM contract permits `expiresAt:null` and `validUntil:null`: null and omitted
+values mean absent deadlines. Empty strings, wrong types and invalid dates remain
+invalid. This distinction affects missing/invalid counters and does not change
+expiry projection, provider stale flags or dependency-health rules.
 
 PostgreSQL stream readiness requires the configured persistence path and active
 LISTEN connection. A successful publish does not certify an interrupted listener.

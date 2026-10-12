@@ -560,7 +560,7 @@ export function projectSimSearchEntitiesForConsumption(entities: SimSearchEntity
 
 function classifyConsumptionExpiry(value: unknown, requestNow: Date): { expired: boolean; invalid: boolean; missing: boolean } {
   if (!isRecord(value)) return { expired: false, invalid: false, missing: true };
-  const deadlines = [value.expiresAt, value.validUntil].filter((deadline) => deadline !== undefined);
+  const deadlines = [value.expiresAt, value.validUntil].filter((deadline) => deadline !== undefined && deadline !== null);
   const timestamps = deadlines.map(optionalTimestamp);
   return {
     expired: value.status === "expired" || timestamps.some((timestamp) => timestamp !== undefined && Date.parse(timestamp) <= requestNow.getTime()),

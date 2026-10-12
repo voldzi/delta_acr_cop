@@ -273,7 +273,29 @@ describe("SimSearchDataSourceAdapter", () => {
     expect(buildSimSearchDataHealth(page, now).health).toBe("ONLINE");
   });
 
-  it.each(["not-a-date", "2026-02-30T17:00:00Z", null, 12])("reports invalid expiry as unknown while retaining an already-stale flag: %j", async (expiresAt) => {
+  it.each([false, true])("treats explicit nullable reference deadlines as absent and preserves stale=%s", async (stale) => {
+    const entity = { ...sampleEntity(), sourceSystem: "osm_reference", sourceAuthority: "reference", status: "active", stale, validUntil: null, expiresAt: null };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ...sampleSearchResponse(), results: [entity] }))));
+    const now = new Date("2026-10-12T17:00:00Z");
+    const page = await testAdapter().fetchEntities({}, now);
+    expect(page.consumptionExpiry).toMatchObject({ expiredCount: 0, missingExpiryCount: 1, invalidExpiryCount: 0 });
+    expect(page.results[0]).toMatchObject({ stale, status: "active", sourceSystem: "osm_reference", sourceAuthority: "reference" });
+    expect(buildSimSearchDataHealth(page, now).health).toBe(stale ? "DEGRADED" : "ONLINE");
+  });
+
+  it.each([
+    { validUntil: "2026-10-12T16:59:59Z", expiredCount: 1, invalidExpiryCount: 0 },
+    { validUntil: "2026-10-12T17:00:01Z", expiredCount: 0, invalidExpiryCount: 0 },
+    { validUntil: "invalid", expiredCount: 0, invalidExpiryCount: 1 }
+  ])("ignores one null deadline while retaining the other deadline classification: $validUntil", async ({ validUntil, expiredCount, invalidExpiryCount }) => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ...sampleSearchResponse(), results: [{ ...sampleEntity(), stale: false, expiresAt: null, validUntil }] }))));
+    const now = new Date("2026-10-12T17:00:00Z");
+    const page = await testAdapter().fetchEntities({}, now);
+    expect(page.consumptionExpiry).toMatchObject({ expiredCount, missingExpiryCount: 0, invalidExpiryCount });
+    expect(page.results[0]?.stale).toBe(expiredCount > 0);
+  });
+
+  it.each(["", "not-a-date", "2026-02-30T17:00:00Z", 12, false])("reports invalid expiry as unknown while retaining an already-stale flag: %j", async (expiresAt) => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ...sampleSearchResponse(), results: [{ ...sampleEntity(), stale: true, expiresAt }] }))));
     const now = new Date("2026-10-12T17:00:00Z");
     const page = await testAdapter().fetchEntities({}, now);
