@@ -30,6 +30,14 @@ Databáze, SIM, Messaging, SeaweedFS a další sdílené služby běží v pilot
 prostředí jako samostatné stacky mimo tento compose soubor. COP se k nim
 připojuje přes `.env`.
 
+Produkční nasazení používá stávající `scripts/deploy-production.sh` pouze s
+explicitními službami. Jeho snapshot i denní COP snapshot mají výslovný režim
+`--exclude-env`, který nekopíruje provozní secrets. X5, společný zámek, všechny
+aktivní Compose overrides, dedikovaný builder, image a health kontroly zůstávají
+zachované. Návratový bod obsahuje Compose/Git a samostatně zaznamenané image IDs
+a netajný konfigurační rozdíl; živou `.env` tímto snapshotem neobnovujte.
+Podrobnosti jsou v [úložném runbooku](19_COP_X5_STORAGE.md#snapshot-kontrola-a-obnova).
+
 Při vynechání frontendových auth build argumentů používají web i chat OIDC
 a prázdnou veřejnou lab hodnotu. Výslovný lokální lab režim z `.env.example`
 zůstává dostupný. API má vlastní vývojové výchozí hodnoty; úspěšný frontend build

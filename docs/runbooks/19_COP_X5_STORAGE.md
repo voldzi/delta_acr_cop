@@ -74,7 +74,7 @@ Sdílené rodičovské adresáře X5 se tímto nástrojem nepřepisují ani nech
 
 Snapshot obsahuje pouze:
 
-- chráněnou `.env` a výslovně předané skutečné Compose soubory/overrides;
+- výslovně předané skutečné Compose soubory/overrides;
 - Git bundle a patch změněných tracked souborů;
 - privátní manifest integrity a potřebných metadat.
 
@@ -82,12 +82,27 @@ Snapshot **nezahrnuje databázi, aktivní fronty, média ani obsah untracked
 souborů**. U untracked souborů zaznamená pouze počet. Secrets, obsahy souborů
 a jejich hashe se nevypisují do běžného výstupu.
 
+Standardní nasazení i denní údržba používají `snapshot --exclude-env`.
+Manifest a výsledek výslovně uvádějí `environmentIncluded=false`: `.env` se
+nečte, nekopíruje ani neobnovuje v kontrolním adresáři. Jde o obnovu Compose
+a zdroje, nikoli o úplnou obnovu provozní konfigurace. Před změnou zaznamenejte
+přesné původní image/revizi a pouze schválené netajné autentizační přepínače,
+allowed-client IDs a bindings. Přístupy zůstávají v živé `.env`.
+
+Samostatný legacy snapshot bez `--exclude-env` může obsahovat chráněnou `.env`,
+ale odmítne i přítomnost definice `COP_EDGE_CENTRAL_OIDC_CLIENT_SECRET` nebo
+`COP_MCP_CENTRAL_OIDC_CLIENT_SECRET` před první kopií. Výslovné předání `.env`
+v `--compose-file` v režimu vyloučení je také odmítnuto. Dřívější snapshoty
+zůstávají kompatibilní; tato změna je automaticky nemaže.
+Režim vyloučení odmítne také `.env` v Git indexu nebo jeho historii, aby se
+soubor nedostal do bundle či dirty patche. Nástroj historii Gitu neupravuje.
+
 Příklad ověření na hostu:
 
 ```bash
 cd /srv/cop
 python3 scripts/cop-storage.py preflight
-python3 scripts/cop-storage.py snapshot \
+python3 scripts/cop-storage.py snapshot --exclude-env \
   --compose-file docker-compose.yml \
   --compose-file docker-compose.driver-measurements.yml \
   --compose-file docker-compose.x5.yml
@@ -182,7 +197,8 @@ službami. Wrapper:
 
 1. Ověří X5 a získá společný zámek.
 2. Zachová základní Compose, driver-measurements, X5 a přítomný AI Router
-   override a před změnou vytvoří jejich privátní snapshot.
+   override a vytvoří jejich privátní snapshot bez `.env`. Netajný návratový
+   rozdíl konfigurace zaznamenejte před změnou `.env`, nikoli až při nasazení.
 3. Vytvoří vlastní staging/cache jobs na X5 a drží jejich `.job.lock` po
    celou dobu zápisů. `TMPDIR` a `XDG_CACHE_HOME` míří na tyto jobs.
 4. Vyžaduje pouze dedikovaný builder `cop-x5` a kontroluje jeho bind volume;
@@ -214,7 +230,7 @@ GC se týká pouze tohoto COP builderu. BuildKit data nejsou
 obyčejný dokončený job a `cop-storage.py cleanup` je nemaže. Docker image
 layers zůstávají v dosavadním daemon storage; tento krok nemění `data-root`.
 
-`scripts/cop-storage-daily.sh` provádí snapshot, bezpečný cleanup dokončených
+`scripts/cop-storage-daily.sh` provádí snapshot bez `.env`, bezpečný cleanup dokončených
 jobs, GC dedikovaného builderu a retenční preview. Je zapojen do vlastního
 spravovaného COP bloku uživatelského cronu v **03:17 Europe/Prague**; ostatní
 záznamy nebyly změněny. Celý skript byl spuštěn také ručně a prošel. Jde o

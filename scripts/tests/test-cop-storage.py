@@ -182,6 +182,62 @@ class StorageTests(unittest.TestCase):
         with self.assertRaisesRegex(storage.StorageError, 'integrity'):
             storage.verify_snapshot(dest, self.guard)
 
+    def test_restricted_service_credentials_refuse_plaintext_snapshot_before_copy(self):
+        self.snapshot()
+        (self.source / '.env').write_text('COP_EDGE_CENTRAL_OIDC_CLIENT_SECRET=synthetic-restricted\n')
+        with mock.patch.object(storage, 'copy_private', wraps=storage.copy_private) as copying:
+            with self.assertRaisesRegex(storage.StorageError, 'require_exclude_env'):
+                storage.snapshot(['docker-compose.yml'], self.guard, self.x5, self.source)
+            copying.assert_not_called()
+
+    def test_excluded_environment_is_never_read_copied_or_restored(self):
+        self.snapshot()
+        environment = self.source / '.env'
+        environment.write_text('COP_MCP_CENTRAL_OIDC_CLIENT_SECRET=synthetic-restricted\n')
+        read_bytes = Path.read_bytes
+        def guarded_read(path):
+            if path == environment:
+                raise AssertionError('excluded environment must not be read')
+            return read_bytes(path)
+        with mock.patch.object(Path, 'read_bytes', guarded_read):
+            result = storage.snapshot(['docker-compose.yml'], self.guard, self.x5, self.source,
+                                      exclude_env=True)
+        dest = Path(result['snapshot'])
+        metadata = storage.read_marker(dest / '.cop-backup.json')
+        self.assertFalse(result['environmentIncluded'])
+        self.assertFalse(metadata['environmentIncluded'])
+        self.assertNotIn('.env', metadata['files'])
+        self.assertFalse((dest / 'config' / '.env').exists())
+        self.assertTrue(storage.verify_snapshot(dest, self.guard)['ok'])
+        environment.unlink()
+        self.assertTrue(storage.verify_snapshot(dest, self.guard)['ok'])
+
+    def test_exclude_env_rejects_explicit_environment_path(self):
+        self.snapshot()
+        for filename in ('.env', 'nested/.env'):
+            with self.assertRaisesRegex(storage.StorageError, 'environment_excluded'):
+                storage.snapshot([filename], self.guard, self.x5, self.source, exclude_env=True)
+
+    def test_excluded_environment_cannot_be_copied_through_git(self):
+        self.snapshot()
+        self.git('add', '.env')
+        with self.assertRaisesRegex(storage.StorageError, 'environment_in_git'):
+            storage.snapshot(['docker-compose.yml'], self.guard, self.x5, self.source, exclude_env=True)
+        self.git('commit', '-m', 'synthetic tracked environment')
+        self.git('rm', '.env')
+        self.git('commit', '-m', 'synthetic environment removal')
+        with self.assertRaisesRegex(storage.StorageError, 'environment_in_git'):
+            storage.snapshot(['docker-compose.yml'], self.guard, self.x5, self.source, exclude_env=True)
+
+    def test_excluded_manifest_cannot_advertise_environment_file(self):
+        result = self.snapshot()
+        dest = Path(result['snapshot'])
+        metadata = storage.read_marker(dest / '.cop-backup.json')
+        metadata['environmentIncluded'] = False
+        storage.write_json(dest / '.cop-backup.json', metadata, self.guard)
+        with self.assertRaisesRegex(storage.StorageError, 'excluded_environment_in_manifest'):
+            storage.verify_snapshot(dest, self.guard)
+
     @unittest.skipUnless(hasattr(os, 'listxattr'), 'Linux xattr API unavailable in this Python')
     def test_linux_extended_metadata_round_trip(self):
         result = self.snapshot()

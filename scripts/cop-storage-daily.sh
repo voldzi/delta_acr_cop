@@ -11,7 +11,7 @@ python3 scripts/cop-storage.py preflight >/dev/null
 files=(docker-compose.yml docker-compose.driver-measurements.yml docker-compose.x5.yml)
 if [[ -f docker-compose.ai-router.yml ]]; then files+=(docker-compose.ai-router.yml); fi
 args=(); for f in "${files[@]}"; do args+=(--compose-file "$f"); done
-python3 scripts/cop-storage.py snapshot "${args[@]}"
+python3 scripts/cop-storage.py snapshot --exclude-env "${args[@]}"
 python3 scripts/cop-storage.py cleanup
 running=$(python3 scripts/verify-cop-builder.py --allow-stopped | python3 -c 'import json,sys;print("yes" if json.load(sys.stdin)["running"] else "no")')
 python3 scripts/cop-storage.py preflight >/dev/null

@@ -16,7 +16,7 @@ for f in "${files[@]}"; do
   [[ -f "$f" ]] || { echo 'Required COP Compose override is missing' >&2; exit 1; }
   compose+=(-f "$f"); backup+=(--compose-file "$f")
 done
-python3 scripts/cop-storage.py snapshot "${backup[@]}"
+python3 scripts/cop-storage.py snapshot --exclude-env "${backup[@]}"
 if [[ $# -eq 0 ]]; then echo 'Specify the reviewed service(s), for example cop-api' >&2; exit 1; fi
 for service in "$@"; do
   case "$service" in cop-api|cop-web|cop-chat|cop-edge|cop-mcp) ;; *) echo 'Unknown COP service' >&2; exit 1;; esac

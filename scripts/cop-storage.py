@@ -14,6 +14,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import stat
@@ -226,9 +227,28 @@ def git_state(source, run):
 
 
 def snapshot(compose_files, guard=preflight, root=X5_ROOT, source=SOURCE_ROOT,
-             run=command, now=None):
+             run=command, now=None, *, exclude_env=False):
     """Returns public status only. Private manifest retains hashes/metadata."""
     guard()
+    relatives = [safe_relative(value) for value in compose_files]
+    if exclude_env and any(path.name == '.env' for path in relatives):
+        raise StorageError('environment_excluded_from_snapshot')
+    if exclude_env and (run(['git', '-C', str(source), 'ls-files', '--', '.env']).strip()
+                        or run(['git', '-C', str(source), 'log', '--all', '--format=%H', '--', '.env']).strip()):
+        # --all bundles/dirty patches must not smuggle an excluded environment
+        # through a tracked file or its history. Never rewrite Git here.
+        raise StorageError('environment_in_git_requires_separate_review')
+    if not exclude_env and not (source / '.env').is_symlink():
+        # Names only: no values, hashes or environment content enter diagnostics.
+        # Legacy snapshots remain compatible, but restricted service secrets may
+        # never be copied into a plaintext snapshot or its restore-check folder.
+        regular_source(source / '.env')
+        fields = re.findall(rb'^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=',
+                            (source / '.env').read_bytes(), flags=re.MULTILINE)
+        if any(field in fields for field in (
+                b'COP_EDGE_CENTRAL_OIDC_CLIENT_SECRET',
+                b'COP_MCP_CENTRAL_OIDC_CLIENT_SECRET')):
+            raise StorageError('restricted_credentials_require_exclude_env')
     layout(guard, root)
     now = now or dt.datetime.now(dt.timezone.utc)
     name = now.strftime('%Y-%m-%dT%H%M%S.%fZ')
@@ -238,9 +258,12 @@ def snapshot(compose_files, guard=preflight, root=X5_ROOT, source=SOURCE_ROOT,
     marker = dest / '.cop-backup.json'
     metadata = {'tool': TOOL, 'version': 1, 'scope': 'deployment_config_and_git_only',
                 'createdAt': now.isoformat(), 'verified': False, 'files': {},
+                'environmentIncluded': not exclude_env,
                 'excludes': ['databases', 'active_queues', 'media', 'untracked_file_contents']}
+    if exclude_env:
+        metadata['excludes'].append('.env')
     write_json(marker, metadata, guard)
-    files = [Path('.env')] + [safe_relative(value) for value in compose_files]
+    files = ([] if exclude_env else [Path('.env')]) + relatives
     if len(set(files)) != len(files):
         raise StorageError('duplicate_config_path')
     for relative in files:
@@ -279,6 +302,7 @@ def snapshot(compose_files, guard=preflight, root=X5_ROOT, source=SOURCE_ROOT,
     metadata['verifiedAt'] = dt.datetime.now(dt.timezone.utc).isoformat()
     write_json(marker, metadata, guard)
     return {'ok': True, 'snapshot': str(dest), 'scope': metadata['scope'],
+            'environmentIncluded': not exclude_env,
             'isolatedRestoreVerified': True, 'databaseRestoreVerified': False,
             'untrackedFileCount': metadata['untrackedFileCount']}
 
@@ -301,6 +325,9 @@ def verify_snapshot(dest, guard=preflight, source=None, run=command):
     metadata = read_marker(dest / '.cop-backup.json')
     if not metadata or metadata.get('scope') != 'deployment_config_and_git_only':
         raise StorageError('unrecognized_backup')
+    if metadata.get('environmentIncluded', True) is False and any(
+            Path(value).name == '.env' for value in metadata['files']):
+        raise StorageError('excluded_environment_in_manifest')
     guard()
     scratch = Path(tempfile.mkdtemp(prefix='.restore-check-', dir=dest))
     try:
@@ -538,6 +565,8 @@ def main(argv=None):
     snap = commands.add_parser('snapshot')
     snap.add_argument('--compose-file', action='append', default=None,
                       help='Actual compose file relative to /srv/cop; repeat for overrides')
+    snap.add_argument('--exclude-env', action='store_true',
+                      help='Snapshot Compose/Git only; never copy .env or restore its secrets')
     verify = commands.add_parser('verify')
     verify.add_argument('snapshot')
     commands.add_parser('retention-plan')
@@ -562,7 +591,7 @@ def main(argv=None):
                     layout()
                     result = {'ok': True, 'paths': [str(X5_ROOT / kind / 'cop') for kind in KINDS]}
                 elif args.action == 'snapshot':
-                    result = snapshot(args.compose_file or ['docker-compose.yml'])
+                    result = snapshot(args.compose_file or ['docker-compose.yml'], exclude_env=args.exclude_env)
                 elif args.action == 'verify':
                     path = Path(args.snapshot)
                     if path.parent != X5_ROOT / 'backups' / 'cop' or path.is_symlink():

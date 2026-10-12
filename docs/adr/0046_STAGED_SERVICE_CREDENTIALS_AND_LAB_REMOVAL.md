@@ -87,6 +87,16 @@ publishing a partial response.
 
 ## Rollout and evidence
 
+The existing production deploy and daily storage procedures explicitly use
+`snapshot --exclude-env`. They preserve X5, locking, Compose overlays, dedicated
+builder, offline image and health gates while excluding `.env` from copies and
+restore checks. The snapshot declares `environmentIncluded=false`; rollback
+requires separately recorded exact images and nonsecret auth configuration.
+Restricted service secrets remain in the live `.env` and authorized process
+memory. Legacy explicit snapshots refuse these credential-field definitions
+before copying; previous backups are not deleted. This is a documented change
+to the repository procedure, not a separate ad hoc deployment wrapper.
+
 Keep source/build verification, production deployment and production cutover
 separate. First verify the token-provider exchange, renewal/concurrency,
 invalid-token handling and outage behavior with synthetic credentials. Then

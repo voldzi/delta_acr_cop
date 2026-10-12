@@ -219,6 +219,11 @@ COP_USER_PROFILE_STORE=auto
 1. Zaznamenejte přesné image všech měněných služeb a skutečně použité Compose
    soubory/overlaye. Připravte omezený rozdíl konfigurace; hodnoty secrets
    nevypisujte ani nekopírujte do předávacího protokolu nebo Gitu.
+   Standardní deploy a denní snapshot používají `--exclude-env`; nové službové
+   přístupy zůstávají jen v živé `.env` a paměti schválených serverových procesů.
+   Snapshot doloží Compose/Git, ne obnovu secrets. Původní netajné flags/allowed
+   IDs/bindings zaznamenejte před změnou. Při návratu starého API koordinovaně
+   vraťte i klientské režimy a povolené identity; staré API bindings nevynucuje.
 2. Zkontrolujte browser BFF, povolené nativní klienty a všechny službové
    konzumenty COP. Zachovejte issuer, klienty, role, BFF, relace a interní
    síťové přílohy. Výsledek přihlášení do jiné administrace není důkaz COP relace.
