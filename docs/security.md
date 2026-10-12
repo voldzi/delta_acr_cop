@@ -129,6 +129,22 @@ and retention policy belong to the audited production infrastructure boundary.
 
 ## Webové přihlášení (BFF)
 
+Frontend Docker/Compose build při chybějícím nastavení používá OIDC a prázdnou
+veřejnou lab hodnotu. Vývojový lab fallback v samostatném chatu je omezen na
+Vite `DEV`. Výslovně dodaná konfigurace má přednost; `.env.example` je pouze
+lokální lab konfigurace. Tato ochrana sestavení nemění autentizaci běžícího API.
+Serverově povolený lab token je sdílené oprávnění a jeho nezabudování do webu
+není zákazem použití na veřejném API. Pro úplné odstranění použijte
+[ověřený přechod všech klientů](runbooks/08_KEYCLOAK_COP.md#bezpecne-odstraneni-lab-pristupu).
+
+Připravená službová politika `COP_SERVICE_AUTH_BINDINGS` používá pouze přesnou
+ověřenou OIDC identitu/audience/tenant; rezervovaný principál nemůže přes jiné
+role získat obecný uživatelský přístup. Edge je omezen na vlastní uzel a clearance,
+MCP na přidělené veřejné read tools v REST i JSON-RPC. Tokeny se obnovují pouze
+serverově a při selhání nepřecházejí na lab. Zdrojová/testovací připravenost
+není důkazem produkčního přepnutí. Viz
+[ADR 0046](adr/0046_STAGED_SERVICE_CREDENTIALS_AND_LAB_REMOVAL.md).
+
 Produkční COP může používat serverovou BFF relaci (`COP_WEB_BFF_SESSION_ENABLED=true`). OAuth kód se vymění pouze v COP API a přístupový i obnovovací token zůstávají šifrované v PostgreSQL. Prohlížeč pracuje pouze s relací v cookie `Secure`, `HttpOnly`, `SameSite=Lax`; tokeny proto nejsou dostupné skriptům stránky ani rozšířením prohlížeče. Relace nelze spustit bez databáze a tajného `COP_WEB_SESSION_SECRET` o minimálně 32 znacích.
 
 Driver confirmation support excludes the original reporter's own vote. Counts

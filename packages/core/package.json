@@ -24,6 +24,10 @@
     "./pwa-release": {
       "types": "./dist/pwa-release.d.ts",
       "import": "./dist/pwa-release.js"
+    },
+    "./service-token": {
+      "types": "./dist/service-token.d.ts",
+      "import": "./dist/service-token.js"
     }
   },
   "scripts": {

@@ -39,6 +39,11 @@ the current `/srv/cop` Git revision before every pilot update so the same
 Compose deployment can be restored and smoke-tested without changing secrets or
 server-owned provider endpoints.
 
+Odstranění produkčního lab přístupu má samostatný
+[postup a podmínky přepnutí](runbooks/08_KEYCLOAK_COP.md#bezpecne-odstraneni-lab-pristupu).
+Bezpečné výchozí hodnoty frontend buildů nezmění běžící API ani přihlašování
+služeb Edge/MCP; konfiguraci přepínejte až po jejich akceptaci.
+
 Before release, `pnpm test:load:stream -- <base-url> <clients> <duration-ms>`
 opens bounded concurrent SSE clients and fails when any connection cannot be
 established. Browser reconnects use capped exponential jitter; the client queue

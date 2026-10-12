@@ -30,6 +30,12 @@ Databáze, SIM, Messaging, SeaweedFS a další sdílené služby běží v pilot
 prostředí jako samostatné stacky mimo tento compose soubor. COP se k nim
 připojuje přes `.env`.
 
+Při vynechání frontendových auth build argumentů používají web i chat OIDC
+a prázdnou veřejnou lab hodnotu. Výslovný lokální lab režim z `.env.example`
+zůstává dostupný. API má vlastní vývojové výchozí hodnoty; úspěšný frontend build
+nedokládá odstranění lab přístupu z běžícího API. Viz
+[konfigurace přihlášení](03_ENVIRONMENT_CONFIGURATION.md#výchozí-přihlášení-při-sestavení).
+
 ## Porty
 
 Výchozí porty:

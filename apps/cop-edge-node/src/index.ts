@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { ServiceTokenProvider, type ServiceAuthMode } from "@cop/core/service-token";
 
 type EdgeMode = "ONLINE" | "DEGRADED" | "OFFLINE";
 type EdgeHealth = "degraded" | "offline" | "ok";
@@ -58,7 +59,13 @@ export interface EdgeNodeStatus {
 interface EdgeConfig {
   adminToken: string;
   autoSync: boolean;
+  centralAuthMode?: ServiceAuthMode;
   centralApiUrl: string;
+  centralOidcIssuer?: string;
+  centralOidcClientId?: string;
+  centralOidcClientSecret?: string;
+  centralTimeoutMs?: number;
+  centralMaxResponseBytes?: number;
   centralToken: string;
   classificationMax: ClassificationLevel;
   dataDir: string;
@@ -179,7 +186,13 @@ export function readEdgeConfig(env: Record<string, string | undefined> = process
   return {
     adminToken: env.COP_EDGE_ADMIN_TOKEN?.trim() ?? "",
     autoSync: readBoolean(env.COP_EDGE_AUTO_SYNC, true),
+    centralAuthMode: readCentralAuthMode(env.COP_EDGE_CENTRAL_AUTH_MODE),
     centralApiUrl: trimTrailingSlash(env.COP_EDGE_CENTRAL_API_URL ?? "http://localhost:4310"),
+    centralOidcIssuer: env.COP_EDGE_CENTRAL_OIDC_ISSUER?.trim(),
+    centralOidcClientId: env.COP_EDGE_CENTRAL_OIDC_CLIENT_ID?.trim(),
+    centralOidcClientSecret: env.COP_EDGE_CENTRAL_OIDC_CLIENT_SECRET?.trim(),
+    centralTimeoutMs: readInteger(env.COP_EDGE_CENTRAL_TIMEOUT_MS, 10_000, 500, 120_000),
+    centralMaxResponseBytes: readInteger(env.COP_EDGE_CENTRAL_MAX_RESPONSE_BYTES, 16 * 1024 * 1024, 1024, 128 * 1024 * 1024),
     centralToken: env.COP_EDGE_CENTRAL_TOKEN?.trim() ?? "",
     classificationMax: readClassification(env.COP_EDGE_CLASSIFICATION_MAX),
     dataDir: env.COP_EDGE_DATA_DIR?.trim() || path.resolve(process.cwd(), ".cop-edge"),
@@ -194,6 +207,7 @@ export function readEdgeConfig(env: Record<string, string | undefined> = process
 
 export class EdgeRuntime {
   private readonly statePath: string;
+  private readonly centralAuth: ServiceTokenProvider;
   private state: EdgeState;
   private syncInProgress = false;
 
@@ -203,6 +217,14 @@ export class EdgeRuntime {
   ) {
     this.state = state;
     this.statePath = path.join(config.dataDir, "state.json");
+    this.centralAuth = new ServiceTokenProvider({
+      mode: config.centralAuthMode ?? "static",
+      staticToken: config.centralToken,
+      issuer: config.centralOidcIssuer,
+      clientId: config.centralOidcClientId,
+      clientSecret: config.centralOidcClientSecret,
+      timeoutMs: Math.min(config.centralTimeoutMs ?? 10_000, 30_000)
+    });
   }
 
   static async create(config: EdgeConfig): Promise<EdgeRuntime> {
@@ -444,27 +466,63 @@ export class EdgeRuntime {
   }
 
   private async centralRequest<T = Record<string, unknown>>(route: string, init: RequestInit): Promise<T> {
-    if (!this.config.centralToken) {
-      throw new Error("COP_EDGE_CENTRAL_TOKEN is not configured.");
+    let token: string;
+    try {
+      token = await this.centralAuth.getToken();
+      if (!token.trim()) throw new Error("Missing central credential.");
+    } catch {
+      throw new Error("Central COP authentication is unavailable.");
     }
-    const response = await fetch(`${this.config.centralApiUrl}${route}`, {
-      ...init,
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${this.config.centralToken}`,
-        "content-type": "application/json",
-        ...(init.headers ?? {})
-      }
-    });
-    const text = await response.text();
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let text: string;
+    try {
+      const deadline = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(centralTimeoutError());
+        }, this.config.centralTimeoutMs ?? 10_000);
+      });
+      text = await Promise.race([
+        this.fetchCentralText(route, init, token, controller.signal),
+        deadline
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+
     const body = text ? parseJson(text) : {};
-    if (!response.ok) {
-      const message = isRecord(body) && isRecord(body.error) && typeof body.error.message === "string"
-        ? body.error.message
-        : `${response.status} ${response.statusText}`;
-      throw new Error(message);
-    }
     return body as T;
+  }
+
+  private async fetchCentralText(route: string, init: RequestInit, token: string, signal: AbortSignal): Promise<string> {
+    let response: Response;
+    try {
+      response = await fetch(`${this.config.centralApiUrl}${route}`, {
+        ...init,
+        headers: {
+          accept: "application/json",
+          ...(init.headers ?? {}),
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json"
+        },
+        signal,
+        redirect: "error"
+      });
+    } catch {
+      throw signal.aborted ? centralTimeoutError() : new Error("Central COP request is unavailable.");
+    }
+    if (signal.aborted) {
+      void response.body?.cancel().catch(() => undefined);
+      throw centralTimeoutError();
+    }
+    if (response.status === 401) this.centralAuth.invalidate(token);
+    if (!response.ok) {
+      // Never wait on or reflect an upstream error body.
+      void response.body?.cancel().catch(() => undefined);
+      throw new Error(`Central COP request failed (HTTP ${response.status}).`);
+    }
+    return readCentralResponseText(response, signal, this.config.centralMaxResponseBytes ?? 16 * 1024 * 1024);
   }
 
   private async persist(): Promise<void> {
@@ -762,6 +820,60 @@ function readBoolean(value: string | undefined, fallback: boolean): boolean {
     return fallback;
   }
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+function readCentralAuthMode(value: string | undefined): ServiceAuthMode {
+  if (value === undefined) return "static";
+  const mode = value.trim();
+  if (mode === "static" || mode === "oidc") return mode;
+  throw new Error("COP_EDGE_CENTRAL_AUTH_MODE must be static or oidc.");
+}
+
+async function readCentralResponseText(response: Response, signal: AbortSignal, maximumBytes: number): Promise<string> {
+  const length = response.headers.get("content-length");
+  if (length && /^\d+$/u.test(length) && Number(length) > maximumBytes) {
+    void response.body?.cancel().catch(() => undefined);
+    throw new Error("Central COP response exceeds its size limit.");
+  }
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const abort = () => { void reader.cancel().catch(() => undefined); };
+  signal.addEventListener("abort", abort, { once: true });
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  let finished = false;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (signal.aborted) throw centralTimeoutError();
+      if (chunk.done) {
+        finished = true;
+        break;
+      }
+      bytes += chunk.value.byteLength;
+      if (bytes > maximumBytes) throw new Error("Central COP response exceeds its size limit.");
+      chunks.push(chunk.value);
+    }
+    const data = new Uint8Array(bytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      data.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return new TextDecoder("utf-8", { fatal: true }).decode(data);
+  } catch (error) {
+    if (signal.aborted) throw centralTimeoutError();
+    if (error instanceof Error && error.message === "Central COP response exceeds its size limit.") throw error;
+    throw new Error("Central COP response is unavailable.");
+  } finally {
+    signal.removeEventListener("abort", abort);
+    if (!finished) void reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
+function centralTimeoutError(): Error {
+  return new Error("Central COP request timed out.");
 }
 
 function readClassification(value: string | undefined): ClassificationLevel {

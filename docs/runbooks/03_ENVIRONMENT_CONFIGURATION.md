@@ -30,6 +30,84 @@ Environment configuration musí oddělit vývoj, test, demo a produkční režim
 
 Citlivé hodnoty nesmí být commitované do repozitáře.
 
+## Výchozí přihlášení při sestavení
+
+`Dockerfile.web`, `Dockerfile.chat` a jejich Compose build argumenty při
+chybějícím nastavení používají `VITE_COP_AUTH_MODE=oidc` a prázdné
+`VITE_COP_PUBLIC_LAB_VALUE`. Samostatný chat doplní vývojovou lab hodnotu pouze
+v režimu Vite `DEV`; produkční JavaScript ji při chybějícím nastavení nedoplňuje.
+Výslovně nastavený `hybrid`, BFF a OIDC parametry se nadále předávají oběma
+frontendům. Chybějící issuer musí správce doplnit; tento výchozí režim nevytváří
+funkční přihlášení sám.
+
+`.env.example` výslovně zapíná lokální lab režim. Jeho převzetí přepíše nové
+výchozí hodnoty sestavení a není produkční konfigurací. Vývojové výchozí hodnoty
+API zůstávají samostatné: oprava frontendů nevypíná `COP_ALLOW_LAB_TOKEN` ani
+nemění běžící API. Bezpečný přechod služeb a ověření skutečných relací popisuje
+[postup odstranění lab přístupu](08_KEYCLOAK_COP.md#bezpecne-odstraneni-lab-pristupu).
+
+## Připravené službové OIDC pro Edge a MCP
+
+`COP_EDGE_CENTRAL_AUTH_MODE` a `COP_MCP_CENTRAL_AUTH_MODE` přijímají `static`
+(výchozí kompatibilní režim) nebo `oidc`. Jiná hodnota je chyba konfigurace.
+Každá služba má oddělené `*_CENTRAL_OIDC_ISSUER`, `*_CENTRAL_OIDC_CLIENT_ID`
+a tajné `*_CENTRAL_OIDC_CLIENT_SECRET`; prefix je `COP_EDGE` nebo `COP_MCP`.
+Issuer musí být HTTPS adresa Keycloak realmu bez uživatelských údajů, query
+nebo fragmentu. Token endpoint se odvozuje jako
+`<issuer>/protocol/openid-connect/token`; není volitelným cílem z klientského
+požadavku. Secrets patří pouze do schváleného produkčního úložiště, nikdy do
+browser build argumentů, statusu, logů nebo edge stavu.
+
+Služba získává krátkodobý bearer pomocí `client_credentials`, uchovává jej jen
+v RAM a před expirací získá nový. Souběžné požadavky sdílejí jednu výměnu.
+Výměna má časový a velikostní limit, nepřijímá přesměrování a při chybě má
+obecný výsledek bez obsahu odpovědi poskytovatele. Ve zvoleném `oidc` režimu
+se `*_CENTRAL_TOKEN` nikdy nepoužije jako náhradní přístup. Upstream 401 zneplatní
+použitý cached token pro další požadavek; původní mutace se automaticky
+neopakuje. MCP hlásí selhání získání tokenu jako 503, Edge ponechá svůj dosavadní
+degradovaný/outbox retry postup.
+
+Toto je zdrojová příprava, nikoli povolení produkčního přístupu. Nevytváří
+Keycloak klienty, jejich credentials, role ani COP oprávnění. Současné API
+obsahuje připravenou explicitní `COP_SERVICE_AUTH_BINDINGS` politiku pro tyto
+služby. Její nepřítomnost nebo prázdné pole zachová stávající klienty; chybná
+neprázdná konfigurace zabrání startu. Široká role `SYSTEM_CLIENT` se novým
+klientům nemá přidělit jako zkratka. Viz
+[ADR službového přechodu](../adr/0046_STAGED_SERVICE_CREDENTIALS_AND_LAB_REMOVAL.md).
+
+Binding je JSON pole s nejvýše 64 unikátními službami. Společná povinná pole:
+`issuer` (přesný HTTPS issuer bez koncového `/`), `clientId`, `subjectId`
+(přesný service-account `sub`), `audience`, `tenantId`, `kind`. `kind=edge`
+vyžaduje také `nodeId` a `maxClassification` z existujícího COP pořadí
+`PUBLIC`, `INTERNAL`, `RESTRICTED_SIMULATED`, `SENSITIVE`; `kind=mcp`
+vyžaduje `allowedTools`, podmnožinu čtyř přijatých veřejných nástrojů.
+Neznámá pole, duplicitní identity a interaktivní klienti nejsou povoleni.
+Binding musí mít shodu s ověřenými raw `iss`, `azp`, `sub`, příslušnou položkou
+`aud` a podepsaným claimem `cop_tenant_id`. Detekce rezervované služby
+nepovolí únik přes oříznutý subject, chybějící/jiný klient ani service audience.
+Dodatečné administrátorské role rozsah služby nerozšiřují.
+
+Edge má pouze vlastní heartbeat/outbox/replay/ack. Politika kontroluje uzel
+v URL i těle, normalizovanou klasifikaci a kanál celé dávky před první změnou;
+nepovoluje změnu trust/release metadat. Replay používá nižší z uložené a
+přidělené clearance; neznámá uložená klasifikace znamená 503 bez položek.
+MCP smí používat pouze `cop.area.summary`, `cop.community.reports.search`,
+`cop.fusion.explain`, `cop.sources.health` v přidělené podmnožině. Stejná
+hranice platí pro REST a každý JSON-RPC batch; registry vrací jen přidělené
+nástroje. Data se vyhodnocují jako veřejné čtení bez uživatelského/partnerského
+kontextu, ověřená identita služby zůstává v auditu. Claim `tenantId` sám
+nezavádí obecnou víceuživatelskou tenant izolaci všech COP dat.
+
+Oba klienti navíc mají `*_CENTRAL_TIMEOUT_MS` (výchozí 10000, environment
+rozsah 500–120000 ms) pro hlavičky i celé tělo odpovědi a
+`*_CENTRAL_MAX_RESPONSE_BYTES` (výchozí 16777216 B, rozsah 1024–134217728 B).
+Tento nový limit celkových odpovědí se vztahuje na klienty, nikoli na COP
+upload limit. Zaseknutá/nadlimitní odpověď se zruší; Edge zachová čekající
+událost pro příští synchronizaci, MCP vrátí obecnou 503 před odesláním části
+těla. MCP readiness nepotřebné tělo zruší. Oba klienti odmítají přesměrování,
+aby se POST nebo credentials neposlaly dalšímu endpointu. Větší schválené
+odpovědi vyžadují výslovné zvýšení klientského limitu, nikoli tichý neomezený read.
+
 ## Web Runtime Ports
 
 Lokální a pilotní compose používá oddělené runtime služby pro mapový shell a

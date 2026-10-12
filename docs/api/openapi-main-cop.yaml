@@ -4222,7 +4222,16 @@ paths:
       description: Requires configured lab authentication or an authenticated actor with
         INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR
         does not grant access. Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the
-        correlation-aware COP error envelope.
+        correlation-aware COP error envelope. Explicit COP_SERVICE_AUTH_BINDINGS Edge services are
+        authorized by exact verified issuer, azp, subject, audience and tenant, without broad
+        integration roles. Configured service principals and service-client audiences remain
+        reserved when azp is missing or altered. Their authority is limited to their own bound node
+        and the four heartbeat/outbox/replay/ack operations; extra token roles, headers and payload
+        identity fields never widen access. Violations return HTTP 403 SERVICE_AUTH_FORBIDDEN in the
+        existing correlation-aware COP error envelope. Scoped heartbeat accepts only capabilities,
+        classificationMax, detail, health, nodeName, nodeRole and softwareVersion; nodeRole must
+        remain edge-node and classification may not exceed the binding. Trust, release scope and
+        endpoint changes are forbidden.
       security:
         - bearerAuth: []
       parameters:
@@ -4397,7 +4406,19 @@ paths:
         accepted, duplicate, or rejected status. Requires configured lab authentication or an
         authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication
         alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403
-        INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.
+        INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope. Explicit
+        COP_SERVICE_AUTH_BINDINGS Edge services are authorized by exact verified issuer, azp,
+        subject, audience and tenant, without broad integration roles. Configured service principals
+        and service-client audiences remain reserved when azp is missing or altered. Their authority
+        is limited to their own bound node and the four heartbeat/outbox/replay/ack operations;
+        extra token roles, headers and payload identity fields never widen access. Violations return
+        HTTP 403 SERVICE_AUTH_FORBIDDEN in the existing correlation-aware COP error envelope. Scoped
+        outbox body nodeId must exactly match the binding. All items are checked before the first
+        mutation; classification cannot exceed the binding (missing classification defaults to
+        INTERNAL). Only cop.domain.events and cop.node.sync channels are available; reserved AI,
+        notification and provider-health event types cannot be submitted even with an explicit
+        allowed channel. Effective nested/default classification and the derived event channel use
+        the same parser as publication. The producer node is set server-side.
       operationId: flushEdgeOutbox
       security:
         - bearerAuth: []
@@ -4464,7 +4485,14 @@ paths:
         is monotonic and will not move backwards. Requires configured lab authentication or an
         authenticated actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Authentication
         alone or COP_OPERATOR does not grant access. Denied actors receive HTTP 403
-        INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope.
+        INTEGRATION_FORBIDDEN in the correlation-aware COP error envelope. Explicit
+        COP_SERVICE_AUTH_BINDINGS Edge services are authorized by exact verified issuer, azp,
+        subject, audience and tenant, without broad integration roles. Configured service principals
+        and service-client audiences remain reserved when azp is missing or altered. Their authority
+        is limited to their own bound node and the four heartbeat/outbox/replay/ack operations;
+        extra token roles, headers and payload identity fields never widen access. Violations return
+        HTTP 403 SERVICE_AUTH_FORBIDDEN in the existing correlation-aware COP error envelope. A
+        scoped service may acknowledge only its own bound node cursor.
       operationId: ackEdgeReplayCursor
       security:
         - bearerAuth: []
@@ -4612,7 +4640,20 @@ paths:
         Requires configured lab authentication or an authenticated actor with INTEGRATION_ADMIN,
         SECURITY_ADMIN or SYSTEM_CLIENT. Authentication alone or COP_OPERATOR does not grant access.
         Denied actors receive HTTP 403 INTEGRATION_FORBIDDEN in the correlation-aware COP error
-        envelope.
+        envelope. Explicit COP_SERVICE_AUTH_BINDINGS Edge services are authorized by exact verified
+        issuer, azp, subject, audience and tenant, without broad integration roles. Configured
+        service principals and service-client audiences remain reserved when azp is missing or
+        altered. Their authority is limited to their own bound node and the four
+        heartbeat/outbox/replay/ack operations; extra token roles, headers and payload identity
+        fields never widen access. Violations return HTTP 403 SERVICE_AUTH_FORBIDDEN in the existing
+        correlation-aware COP error envelope. Replay classification is limited by the lower of the
+        stored graph and binding limits on a separate copy; stored node policy and release filtering
+        remain unchanged. An unknown stored classification returns HTTP 503
+        SERVICE_AUTH_POLICY_UNAVAILABLE without replaying data. Scoped Edge replay admits only
+        cop.domain.events and cop.node.sync channels before applying graph classification and
+        release checks. The optional filteredOut.serviceScope counter reports excluded channels
+        separately; nextOffset still advances to the highest scanned offset, including excluded
+        events.
       operationId: replayEdgeDomainEvents
       security:
         - bearerAuth: []
@@ -4675,6 +4716,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/mcp:
     get:
       tags:
@@ -4682,7 +4725,15 @@ paths:
       summary: Describe the COP MCP protocol endpoint.
       operationId: describeCopMcpEndpoint
       description: Returns client-safe metadata for the stateless MCP Streamable HTTP JSON-RPC endpoint.
-        The endpoint exposes only read-only allowlisted COP tools.
+        The endpoint exposes only read-only allowlisted COP tools. Explicit
+        COP_SERVICE_AUTH_BINDINGS MCP services require exact verified issuer, azp, subject, audience
+        and tenant and may only use their configured subset of cop.area.summary,
+        cop.community.reports.search, cop.fusion.explain and cop.sources.health. Configured service
+        principals and service-client audiences remain reserved when azp is missing or altered.
+        Registries advertise only that subset. Computed context uses the public policy view; the
+        authenticated service identity is retained only for audit. Extra roles never grant other
+        routes or tools. Binding violations return HTTP 403 SERVICE_AUTH_FORBIDDEN in the existing
+        COP error envelope; unbound caller behavior is unchanged.
       security:
         - bearerAuth: []
       responses:
@@ -4694,6 +4745,8 @@ paths:
                 $ref: "#/components/schemas/CopMcpServerInfoResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     post:
       tags:
         - MCP
@@ -4706,7 +4759,17 @@ paths:
         actor with INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Other allowlisted tools
         retain their existing access rules. A denied privileged-tool call returns JSON-RPC error
         -32003 Forbidden with INTEGRATION_FORBIDDEN in its detail, preserving the JSON-RPC transport
-        response.
+        response. Explicit COP_SERVICE_AUTH_BINDINGS MCP services require exact verified issuer,
+        azp, subject, audience and tenant and may only use their configured subset of
+        cop.area.summary, cop.community.reports.search, cop.fusion.explain and cop.sources.health.
+        Configured service principals and service-client audiences remain reserved when azp is
+        missing or altered. Registries advertise only that subset. Computed context uses the public
+        policy view; the authenticated service identity is retained only for audit. Extra roles
+        never grant other routes or tools. Binding violations return HTTP 403 SERVICE_AUTH_FORBIDDEN
+        in the existing COP error envelope; unbound caller behavior is unchanged. The entire service
+        JSON-RPC batch is authorized before any call executes. Only initialize,
+        notifications/initialized, ping, tools/list and approved tools/call are permitted; a
+        forbidden method or tool rejects the whole batch.
       security:
         - bearerAuth: []
       requestBody:
@@ -4737,6 +4800,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/mcp/tools:
     get:
       tags:
@@ -4744,7 +4809,15 @@ paths:
       summary: List audited COP MCP tools.
       operationId: listCopMcpTools
       description: Returns the allowlisted COP tool registry. The registry is client-safe metadata only;
-        it does not expose provider tokens or arbitrary execution.
+        it does not expose provider tokens or arbitrary execution. Explicit
+        COP_SERVICE_AUTH_BINDINGS MCP services require exact verified issuer, azp, subject, audience
+        and tenant and may only use their configured subset of cop.area.summary,
+        cop.community.reports.search, cop.fusion.explain and cop.sources.health. Configured service
+        principals and service-client audiences remain reserved when azp is missing or altered.
+        Registries advertise only that subset. Computed context uses the public policy view; the
+        authenticated service identity is retained only for audit. Extra roles never grant other
+        routes or tools. Binding violations return HTTP 403 SERVICE_AUTH_FORBIDDEN in the existing
+        COP error envelope; unbound caller behavior is unchanged.
       security:
         - bearerAuth: []
       responses:
@@ -4756,6 +4829,8 @@ paths:
                 $ref: "#/components/schemas/CopMcpToolRegistryResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/mcp/tools/{toolId}/invoke:
     post:
       tags:
@@ -4768,7 +4843,15 @@ paths:
         additionally require configured lab authentication or an authenticated actor with
         INTEGRATION_ADMIN, SECURITY_ADMIN or SYSTEM_CLIENT. Other allowlisted tools retain their
         existing access rules. Denied privileged-tool calls return HTTP 403 INTEGRATION_FORBIDDEN in
-        the correlation-aware COP error envelope.
+        the correlation-aware COP error envelope. Explicit COP_SERVICE_AUTH_BINDINGS MCP services
+        require exact verified issuer, azp, subject, audience and tenant and may only use their
+        configured subset of cop.area.summary, cop.community.reports.search, cop.fusion.explain and
+        cop.sources.health. Configured service principals and service-client audiences remain
+        reserved when azp is missing or altered. Registries advertise only that subset. Computed
+        context uses the public policy view; the authenticated service identity is retained only for
+        audit. Extra roles never grant other routes or tools. Binding violations return HTTP 403
+        SERVICE_AUTH_FORBIDDEN in the existing COP error envelope; unbound caller behavior is
+        unchanged. A service REST tool violation is rejected before parsing the request body.
       security:
         - bearerAuth: []
       parameters:
@@ -16763,6 +16846,11 @@ components:
             releasePolicy:
               type: integer
               minimum: 0
+            serviceScope:
+              type: integer
+              minimum: 0
+              description: "Optional for explicitly bound Edge services: events excluded by the service channel
+                scope, before graph classification and release checks."
           additionalProperties: false
         nodeId:
           type: string

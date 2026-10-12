@@ -66,3 +66,5 @@
 Some ADR numbers originate from independently shipped maintenance branches.
 Use the full linked filename when referring to these decisions; existing
 published paths are preserved for integration references.
+
+- [0046: Staged service credentials and lab removal](0046_STAGED_SERVICE_CREDENTIALS_AND_LAB_REMOVAL.md).

@@ -57,6 +57,22 @@ const jwksFailureCacheMs = 1000;
 const jwksTimeoutMs = 5000;
 const jwksMaxBytes = 256 * 1024;
 
+export interface VerifiedOidcIdentity {
+  issuer: string;
+  subjectId: string;
+  clientId?: string;
+  audiences: readonly string[];
+  tenantId?: string;
+}
+
+const verifiedOidcIdentities = new WeakMap<FastifyRequest, { bearer: string; identity: VerifiedOidcIdentity }>();
+
+/** Internal authority only; never derive service privileges from an unverified JWT. */
+export function verifiedOidcIdentityFromRequest(request: FastifyRequest): VerifiedOidcIdentity | undefined {
+  const verified = verifiedOidcIdentities.get(request);
+  return verified?.bearer === readBearerToken(request.headers.authorization) ? verified.identity : undefined;
+}
+
 export async function requireBearerToken(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   // CORS handles preflight without credentials before the application handler.
   if (request.method === "OPTIONS") return;
@@ -77,6 +93,17 @@ export async function requireBearerToken(request: FastifyRequest, reply: Fastify
     }
 
     if (isOidcMode() && await verifyOidcToken(token)) {
+      const payload = decodeJwt(token)?.payload;
+      if (payload?.iss && payload.sub) {
+        const tenant = (payload as Record<string, unknown>).cop_tenant_id;
+        verifiedOidcIdentities.set(request, { bearer: token, identity: Object.freeze({
+          issuer: payload.iss,
+          subjectId: payload.sub,
+          ...(payload.azp ? { clientId: payload.azp } : {}),
+          audiences: Object.freeze(Array.isArray(payload.aud) ? [...payload.aud] : payload.aud ? [payload.aud] : []),
+          ...(typeof tenant === "string" ? { tenantId: tenant } : {})
+        }) });
+      }
       return;
     }
 

@@ -1,11 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
+import { ServiceTokenProvider, type ServiceAuthMode } from "@cop/core/service-token";
 
 export interface McpGatewayConfig {
   centralApiUrl: string;
   centralTimeoutMs: number;
+  centralMaxResponseBytes?: number;
   centralToken: string;
+  centralAuthMode?: ServiceAuthMode;
+  centralOidcIssuer?: string;
+  centralOidcClientId?: string;
+  centralOidcClientSecret?: string;
   gatewayToken: string;
   host: string;
   port: number;
@@ -21,12 +27,22 @@ interface GatewayErrorBody {
 }
 
 const maxBodyBytes = 1024 * 1024;
+const defaultMaxCentralResponseBytes = 16 * 1024 * 1024;
 
 export function readMcpGatewayConfig(env: NodeJS.ProcessEnv = process.env): McpGatewayConfig {
+  const centralAuthMode = stringValue(env.COP_MCP_CENTRAL_AUTH_MODE) || "static";
+  if (centralAuthMode !== "static" && centralAuthMode !== "oidc") {
+    throw new Error("COP_MCP_CENTRAL_AUTH_MODE must be static or oidc.");
+  }
   return {
     centralApiUrl: stripTrailingSlash(stringValue(env.COP_MCP_CENTRAL_API_URL) || "http://cop-api:4310"),
     centralTimeoutMs: intValue(env.COP_MCP_CENTRAL_TIMEOUT_MS, 10_000, 500, 120_000),
+    centralMaxResponseBytes: intValue(env.COP_MCP_CENTRAL_MAX_RESPONSE_BYTES, defaultMaxCentralResponseBytes, 1024, 128 * 1024 * 1024),
     centralToken: stringValue(env.COP_MCP_CENTRAL_TOKEN),
+    centralAuthMode,
+    centralOidcIssuer: stringValue(env.COP_MCP_CENTRAL_OIDC_ISSUER),
+    centralOidcClientId: stringValue(env.COP_MCP_CENTRAL_OIDC_CLIENT_ID),
+    centralOidcClientSecret: stringValue(env.COP_MCP_CENTRAL_OIDC_CLIENT_SECRET),
     gatewayToken: stringValue(env.COP_MCP_GATEWAY_TOKEN),
     host: stringValue(env.COP_MCP_HOST) || "0.0.0.0",
     port: intValue(env.COP_MCP_PORT, 4313, 1, 65_535),
@@ -47,6 +63,7 @@ export function mcpGatewayMetadata(config: McpGatewayConfig): Record<string, unk
     },
     security: {
       centralAudit: true,
+      centralAuthMode: config.centralAuthMode ?? "static",
       gatewayTokenConfigured: config.gatewayToken.length > 0,
       gatewayTokenRequired: true,
       providerTokensExposed: false
@@ -72,6 +89,14 @@ export function stripTrailingSlash(value: string): string {
 }
 
 export function createMcpGatewayServer(config = readMcpGatewayConfig()) {
+  const centralTokens = new ServiceTokenProvider({
+    mode: config.centralAuthMode ?? "static",
+    staticToken: config.centralToken,
+    issuer: config.centralOidcIssuer,
+    clientId: config.centralOidcClientId,
+    clientSecret: config.centralOidcClientSecret,
+    timeoutMs: Math.min(config.centralTimeoutMs, 30_000)
+  });
   return createServer(async (request, response) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
 
@@ -92,7 +117,7 @@ export function createMcpGatewayServer(config = readMcpGatewayConfig()) {
       }
 
       if (request.method === "GET" && pathname === "/health/ready") {
-        return handleReady(config, response, correlationId);
+        return await handleReady(config, centralTokens, response, correlationId);
       }
 
       if (!isMcpGatewayAuthorized(request.headers, config.gatewayToken)) {
@@ -100,11 +125,11 @@ export function createMcpGatewayServer(config = readMcpGatewayConfig()) {
       }
 
       if ((request.method === "GET" || request.method === "POST") && pathname === "/mcp") {
-        return proxyToCentral(config, request, response, "/api/v1/mcp", correlationId);
+        return await proxyToCentral(config, centralTokens, request, response, "/api/v1/mcp", correlationId);
       }
 
       if (request.method === "GET" && pathname === "/mcp/tools") {
-        return proxyToCentral(config, request, response, "/api/v1/mcp/tools", correlationId);
+        return await proxyToCentral(config, centralTokens, request, response, "/api/v1/mcp/tools", correlationId);
       }
 
       if (request.method === "POST" && pathname.startsWith("/mcp/tools/") && pathname.endsWith("/invoke")) {
@@ -112,8 +137,9 @@ export function createMcpGatewayServer(config = readMcpGatewayConfig()) {
         if (!toolId) {
           return sendError(response, 400, "BAD_REQUEST", "MCP tool id is missing.", correlationId);
         }
-        return proxyToCentral(
+        return await proxyToCentral(
           config,
+          centralTokens,
           request,
           response,
           `/api/v1/mcp/tools/${encodeURIComponent(decodeURIComponent(toolId))}/invoke`,
@@ -122,8 +148,8 @@ export function createMcpGatewayServer(config = readMcpGatewayConfig()) {
       }
 
       return sendError(response, 404, "NOT_FOUND", "MCP gateway endpoint was not found.", correlationId);
-    } catch (error) {
-      return sendError(response, 500, "INTERNAL_ERROR", errorMessage(error), correlationId);
+    } catch {
+      return sendError(response, 500, "INTERNAL_ERROR", "MCP gateway request could not be completed.", correlationId);
     }
   });
 }
@@ -135,6 +161,7 @@ export async function startMcpGatewayServer(config = readMcpGatewayConfig()): Pr
   });
   console.log(JSON.stringify({
     centralApiUrl: config.centralApiUrl,
+    centralAuthMode: config.centralAuthMode ?? "static",
     gatewayTokenConfigured: config.gatewayToken.length > 0,
     gatewayTokenRequired: true,
     host: config.host,
@@ -144,7 +171,12 @@ export async function startMcpGatewayServer(config = readMcpGatewayConfig()): Pr
   }));
 }
 
-async function handleReady(config: McpGatewayConfig, response: ServerResponse, correlationId: string): Promise<void> {
+async function handleReady(
+  config: McpGatewayConfig,
+  centralTokens: ServiceTokenProvider,
+  response: ServerResponse,
+  correlationId: string
+): Promise<void> {
   if (!config.gatewayToken) {
     return sendJson(response, 503, {
       detail: "COP_MCP_GATEWAY_TOKEN is required.",
@@ -155,13 +187,20 @@ async function handleReady(config: McpGatewayConfig, response: ServerResponse, c
   }
 
   try {
+    const token = await centralTokens.getToken();
     const upstream = await fetchWithTimeout(
       `${config.centralApiUrl}/api/v1/mcp/tools`,
       {
-        headers: centralHeaders(config, correlationId, "application/json"),
+        headers: centralHeaders(token, correlationId, "application/json"),
         method: "GET"
       },
-      config.centralTimeoutMs
+      config.centralTimeoutMs,
+      async (upstream) => {
+        if (upstream.status === 401 && token) centralTokens.invalidate(token);
+        // Readiness needs the authenticated status, not a potentially unbounded body.
+        await upstream.body?.cancel();
+        return { ok: upstream.ok, status: upstream.status };
+      }
     );
 
     if (!upstream.ok) {
@@ -182,9 +221,9 @@ async function handleReady(config: McpGatewayConfig, response: ServerResponse, c
         status: "ok"
       }
     }, correlationId);
-  } catch (error) {
+  } catch {
     return sendJson(response, 503, {
-      detail: errorMessage(error),
+      detail: "Central service authentication or availability could not be verified.",
       service: "cop-mcp-gateway",
       status: "degraded",
       timestamp: new Date().toISOString()
@@ -194,6 +233,7 @@ async function handleReady(config: McpGatewayConfig, response: ServerResponse, c
 
 async function proxyToCentral(
   config: McpGatewayConfig,
+  centralTokens: ServiceTokenProvider,
   request: IncomingMessage,
   response: ServerResponse,
   targetPath: string,
@@ -202,39 +242,115 @@ async function proxyToCentral(
   const requestUrl = new URL(request.url ?? "/", "http://localhost");
   const targetUrl = `${config.centralApiUrl}${targetPath}${requestUrl.search}`;
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await readBody(request);
-  const upstream = await fetchWithTimeout(
-    targetUrl,
-    {
-      body,
-      headers: centralHeaders(config, correlationId, firstHeader(request.headers["content-type"]) || "application/json"),
-      method: request.method
-    },
-    config.centralTimeoutMs
-  );
-
+  let token: string | undefined;
+  try {
+    token = await centralTokens.getToken();
+  } catch {
+    return sendError(response, 503, "CENTRAL_AUTH_UNAVAILABLE", "Central service authentication is unavailable.", correlationId);
+  }
+  let upstream: { status: number; headers: Headers; payload: Buffer };
+  try {
+    upstream = await fetchWithTimeout(
+      targetUrl,
+      {
+        body,
+        headers: centralHeaders(token, correlationId, firstHeader(request.headers["content-type"]) || "application/json"),
+        method: request.method
+      },
+      config.centralTimeoutMs,
+      async (result, signal) => {
+        if (result.status === 401 && token) centralTokens.invalidate(token);
+        const maxResponseBytes = intValue(config.centralMaxResponseBytes, defaultMaxCentralResponseBytes, 1024, 128 * 1024 * 1024);
+        const payload = await readBoundedResponse(result, maxResponseBytes, signal);
+        return { status: result.status, headers: result.headers, payload };
+      }
+    );
+  } catch {
+    return sendError(response, 503, "CENTRAL_UNAVAILABLE", "Central service is unavailable.", correlationId);
+  }
+  // Publish only after the whole response has passed its size and time bounds.
   response.statusCode = upstream.status;
   response.setHeader("x-correlation-id", correlationId);
   copyHeader(upstream.headers, response, "content-type");
   copyHeader(upstream.headers, response, "cache-control");
+  copyHeader(upstream.headers, response, "retry-after");
 
-  const payload = Buffer.from(await upstream.arrayBuffer());
-  response.end(payload);
+  response.end(upstream.payload);
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+async function fetchWithTimeout<T>(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  consume: (response: Response, signal: AbortSignal) => Promise<T>
+): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error("Central service is unavailable."));
+    }, timeoutMs);
+  });
   try {
-    return await fetch(url, {
-      ...init,
-      signal: controller.signal
-    });
+    return await Promise.race([
+      (async () => {
+        const upstream = await fetch(url, {
+          ...init,
+          redirect: "error",
+          signal: controller.signal
+        });
+        if (controller.signal.aborted) {
+          void upstream.body?.cancel().catch(() => undefined);
+          throw new Error("Central service is unavailable.");
+        }
+        return await consume(upstream, controller.signal);
+      })(),
+      deadline
+    ]);
+  } catch {
+    controller.abort();
+    throw new Error("Central service is unavailable.");
   } finally {
-    clearTimeout(timeout);
+    if (timeout !== undefined) clearTimeout(timeout);
   }
 }
 
-function centralHeaders(config: McpGatewayConfig, correlationId: string, contentType: string): Record<string, string> {
+async function readBoundedResponse(upstream: Response, maxBytes: number, signal: AbortSignal): Promise<Buffer> {
+  const declaredLength = upstream.headers.get("content-length");
+  if (declaredLength && /^\d+$/u.test(declaredLength) && Number(declaredLength) > maxBytes) {
+    await upstream.body?.cancel();
+    throw new Error("Central service is unavailable.");
+  }
+  if (!upstream.body) return Buffer.alloc(0);
+  const reader = upstream.body.getReader();
+  const abort = () => { void reader.cancel().catch(() => undefined); };
+  signal.addEventListener("abort", abort, { once: true });
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  let complete = false;
+  try {
+    while (true) {
+      if (signal.aborted) throw new Error("Central service is unavailable.");
+      const chunk = await reader.read();
+      if (signal.aborted) throw new Error("Central service is unavailable.");
+      if (chunk.done) {
+        complete = true;
+        break;
+      }
+      bytes += chunk.value.byteLength;
+      if (bytes > maxBytes) throw new Error("Central service is unavailable.");
+      chunks.push(chunk.value);
+    }
+    return Buffer.concat(chunks, bytes);
+  } finally {
+    signal.removeEventListener("abort", abort);
+    if (!complete) void reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
+function centralHeaders(token: string | undefined, correlationId: string, contentType: string): Record<string, string> {
   const headers: Record<string, string> = {
     accept: "application/json",
     "content-type": contentType,
@@ -242,8 +358,8 @@ function centralHeaders(config: McpGatewayConfig, correlationId: string, content
     "x-correlation-id": correlationId
   };
 
-  if (config.centralToken) {
-    headers.authorization = `Bearer ${config.centralToken}`;
+  if (token) {
+    headers.authorization = `Bearer ${token}`;
   }
 
   return headers;
@@ -318,10 +434,6 @@ function intValue(value: unknown, fallback: number, min: number, max: number): n
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

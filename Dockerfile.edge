@@ -6,11 +6,13 @@ FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.json ./
 COPY apps/cop-edge-node/package.json apps/cop-edge-node/package.json
 COPY packages/canonical-model/package.json packages/canonical-model/package.json
+COPY packages/core/package.json packages/core/package.json
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY apps/cop-edge-node apps/cop-edge-node
 COPY packages/canonical-model packages/canonical-model
+COPY packages/core packages/core
 RUN pnpm --filter @cop/cop-edge-node... build
 
 FROM node:24-alpine AS runtime

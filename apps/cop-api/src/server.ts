@@ -56,6 +56,7 @@ import {
 import { correlationIdFrom, requestBodyLimitOptions, sendError } from "./errors.js";
 import { fetchBoundedProxyResource, isHttpUrlWithoutCredentials, readBoundedBody, UpstreamBodyTooLargeError } from "./bounded-upstream.js";
 import { safeRequestLog } from "./request-log.js";
+import { ServiceAuthPolicy, serviceAuthBindingFromRequest, serviceMcpTools, scopedEdgeNode } from "./service-auth-policy.js";
 import { canReadCanonicalObject, canReadCanonicalHistoryPoint, isPublicCanonicalReleasePolicy } from "./canonical-read-policy.js";
 import { OpenAiMcpAssistant, openAiMcpAssistantConfig } from "./openai-mcp-assistant.js";
 import { AiRouterMcpAssistant, aiRouterMcpConfig } from "./ai-router-mcp-assistant.js";
@@ -805,6 +806,7 @@ const floodDemoBbox = {
 };
 
 export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
+  const serviceAuthPolicy = new ServiceAuthPolicy(process.env.COP_SERVICE_AUTH_BINDINGS);
   const maxCommunityAttachmentBytes = readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024);
   const app = Fastify({
     bodyLimit: readPositiveInteger(
@@ -1113,6 +1115,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   });
   app.addHook("onRequest", requireBearerToken);
+  app.addHook("onRequest", serviceAuthPolicy.onRequest);
+  app.addHook("preValidation", serviceAuthPolicy.preValidation);
   const mobilityDependency = registerMobilityRoutes(app, {
     messagingProvider,
     enabled: options.sharedMobilityEnabled ?? readBoolean(process.env.COP_SHARED_MOBILITY_ENABLED, false),
@@ -9106,6 +9110,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const params = request.params as { nodeId: string };
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const previous = await getFederatedNode(params.nodeId);
+    if (serviceAuthBindingFromRequest(request)?.kind === "edge" && previous && previous.nodeRole !== "edge-node") {
+      return sendError(reply, 403, "SERVICE_AUTH_FORBIDDEN", "Service identity is not authorized for this operation.", correlationId);
+    }
     const result = updateFederatedNodeHeartbeat(state, params.nodeId, request.body, now());
     if (!result.ok || !result.node) {
       return sendError(
@@ -9432,6 +9439,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
     }
 
+    const deliveryNode = scopedEdgeNode(request, node);
+    if (!deliveryNode) {
+      return sendError(reply, 503, "SERVICE_AUTH_POLICY_UNAVAILABLE", "Service synchronization policy is unavailable.", correlationId);
+    }
     const cursor = await getRuntimeEdgeCursor(node.nodeId);
     const query = parseDomainEventReplayQuery({
       ...(request.query as Record<string, unknown>),
@@ -9440,8 +9451,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const result = await queryRuntimeDomainEvents(query);
     const blockedByClassification: string[] = [];
     const blockedByReleasePolicy: string[] = [];
+    const scopedEdge = serviceAuthBindingFromRequest(request)?.kind === "edge";
+    const blockedByServiceScope: string[] = [];
     const items = result.items.filter((event) => {
-      const decision = canDeliverDomainEventToNode(event, node);
+      if (scopedEdge && event.channel !== "cop.domain.events" && event.channel !== "cop.node.sync") {
+        blockedByServiceScope.push(event.id);
+        return false;
+      }
+      const decision = canDeliverDomainEventToNode(event, deliveryNode);
       if (decision.allowed) {
         return true;
       }
@@ -9478,10 +9495,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       items,
       nextOffset: highestScannedOffset,
       policy: {
-        classificationMax: node.classificationMax,
+        classificationMax: deliveryNode.classificationMax,
         filteredOut: {
           classification: blockedByClassification.length,
-          releasePolicy: blockedByReleasePolicy.length
+          releasePolicy: blockedByReleasePolicy.length,
+          ...(scopedEdge ? { serviceScope: blockedByServiceScope.length } : {})
         },
         nodeId: node.nodeId,
         nodeRole: node.nodeRole
@@ -11144,7 +11162,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     tool: CopMcpToolDefinition,
     input: Record<string, unknown>,
     actor: AuthenticatedActor | null | undefined,
-    correlationId: string
+    correlationId: string,
+    publicOnly = false
   ): Promise<CopMcpToolInvocationEnvelope> {
     if (privilegedIntegrationMcpTools.has(tool.toolId) && !canUsePrivilegedIntegration(actor)) {
       throw new IntegrationAccessError();
@@ -11152,18 +11171,21 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const startedAt = Date.now();
     const invocationId = crypto.randomUUID();
     let result: Record<string, unknown>;
+    // A bound MCP service reads the public policy view. Its verified identity is
+    // retained for audit, never used to expose owned reports or partner layers.
+    const dataActor = publicOnly ? null : actor ?? null;
 
     switch (tool.toolId) {
       case "cop.area.summary": {
-        result = await buildCopAreaSummaryToolResult(input, actor ?? null, invocationId);
+        result = await buildCopAreaSummaryToolResult(input, dataActor, invocationId);
         break;
       }
       case "cop.community.reports.search": {
-        result = await buildCopCommunityReportSearchToolResult(input, actor ?? null);
+        result = await buildCopCommunityReportSearchToolResult(input, dataActor);
         break;
       }
       case "cop.fusion.explain": {
-        result = await buildCopAreaFusionToolResult(input, actor ?? null, invocationId);
+        result = await buildCopAreaFusionToolResult(input, dataActor, invocationId);
         break;
       }
       case "cop.federation.nodes.list": {
@@ -11474,13 +11496,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   }
 
-  app.get("/api/v1/mcp", async () => ({
+  app.get("/api/v1/mcp", async (request) => ({
     contractVersion: "cop-mcp-http-server-v1",
     generatedAt: now().toISOString(),
     methods: ["initialize", "notifications/initialized", "ping", "tools/list", "tools/call"],
     protocolVersion: "2025-06-18",
     summary: {
-      toolCount: copMcpTools.length,
+      toolCount: serviceMcpTools(request, copMcpTools).length,
       transport: "streamable-http-json-rpc"
     },
     toolsEndpoint: "/api/v1/mcp/tools"
@@ -11499,7 +11521,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const responses: Record<string, unknown>[] = [];
 
     for (const message of messages) {
-      const response = await handleMcpJsonRpcMessage(message, actor, correlationId);
+      const response = await handleMcpJsonRpcMessage(message, actor, correlationId,
+        serviceMcpTools(request, copMcpTools), serviceAuthBindingFromRequest(request)?.kind === "mcp");
       if (response) {
         responses.push(response);
       }
@@ -11515,7 +11538,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   async function handleMcpJsonRpcMessage(
     message: unknown,
     actor: AuthenticatedActor | null | undefined,
-    correlationId: string
+    correlationId: string,
+    availableTools: readonly CopMcpToolDefinition[] = copMcpTools,
+    publicOnly = false
   ): Promise<Record<string, unknown> | undefined> {
     if (!isRecord(message)) {
       return mcpJsonRpcError(null, -32600, "Invalid Request", "MCP message must be a JSON object.");
@@ -11557,7 +11582,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         return mcpJsonRpcResult(id, {});
       case "tools/list":
         return mcpJsonRpcResult(id, {
-          tools: copMcpTools.map((tool) => ({
+          tools: availableTools.map((tool) => ({
             annotations: {
               destructiveHint: false,
               idempotentHint: true,
@@ -11573,7 +11598,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       case "tools/call": {
         const params = isRecord(message.params) ? message.params : {};
         const toolName = typeof params.name === "string" ? params.name : "";
-        const tool = copMcpTools.find((item) => item.toolId === toolName);
+        const tool = availableTools.find((item) => item.toolId === toolName);
         if (!tool) {
           return mcpJsonRpcError(id, -32602, "Invalid params", "Requested COP MCP tool is not allowlisted.");
         }
@@ -11581,7 +11606,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         if (privilegedIntegrationMcpTools.has(tool.toolId) && !canUsePrivilegedIntegration(actor)) {
           return mcpJsonRpcError(id, -32003, "Forbidden", "INTEGRATION_FORBIDDEN: This tool requires a privileged integration actor.");
         }
-        const invocation = await invokeCopMcpToolInternal(tool, input, actor, correlationId);
+        const invocation = await invokeCopMcpToolInternal(tool, input, actor, correlationId, publicOnly);
         return mcpJsonRpcResult(id, {
           content: [
             {
@@ -11598,26 +11623,27 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
   }
 
-  app.get("/api/v1/mcp/tools", async () => ({
+  app.get("/api/v1/mcp/tools", async (request) => ({
     contractVersion: "cop-mcp-tool-registry-v1",
     generatedAt: now().toISOString(),
-    items: copMcpTools,
+    items: serviceMcpTools(request, copMcpTools),
     summary: {
-      count: copMcpTools.length
+      count: serviceMcpTools(request, copMcpTools).length
     }
   }));
 
   app.post("/api/v1/mcp/tools/:toolId/invoke", { onRequest: requireMcpIntegrationActor }, async (request, reply) => {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     const params = request.params as { toolId: string };
-    const tool = copMcpTools.find((item) => item.toolId === params.toolId);
+    const tool = serviceMcpTools(request, copMcpTools).find((item) => item.toolId === params.toolId);
     if (!tool) {
       return sendError(reply, 404, "NOT_FOUND", "COP MCP tool was not found.", correlationId);
     }
 
     const body = isRecord(request.body) ? request.body : {};
     const input = isRecord(body.input) ? body.input : body;
-    return invokeCopMcpToolInternal(tool, input, actorFromRequest(request), correlationId);
+    return invokeCopMcpToolInternal(tool, input, actorFromRequest(request), correlationId,
+      serviceAuthBindingFromRequest(request)?.kind === "mcp");
   });
 
   async function readFlightCatalogProvider(requestNow: Date) {
@@ -19414,6 +19440,7 @@ function canUsePrivilegedIntegration(actor: AuthenticatedActor | null | undefine
 }
 
 async function requirePrivilegedIntegrationActor(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (serviceAuthBindingFromRequest(request)?.kind === "edge") return;
   if (canUsePrivilegedIntegration(actorFromRequest(request))) return;
   sendError(reply, 403, "INTEGRATION_FORBIDDEN", "This operation requires an authorized integration or security administrator or system client.",
     correlationIdFrom(request.headers["x-correlation-id"]));

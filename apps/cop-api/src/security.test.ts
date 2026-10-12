@@ -342,6 +342,66 @@ describe("COP API authentication", () => {
     await app.close();
   });
 
+  it("preserves web, BFF and native OIDC access when the configured lab credential is disabled", async () => {
+    const issuer = "https://identity.example.test/realms/cop";
+    const keyId = "synthetic-strict-oidc-key";
+    const labToken = "synthetic-disabled-lab-credential";
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const publicJwk = { ...publicKey.export({ format: "jwk" }), alg: "RS256", kid: keyId, use: "sig" };
+
+    process.env.COP_AUTH_MODE = "oidc";
+    process.env.COP_ALLOW_LAB_TOKEN = "false";
+    process.env.COP_LAB_TOKEN = labToken;
+    process.env.COP_PUBLIC_READ_ENABLED = "true";
+    process.env.COP_WEB_BFF_SESSION_ENABLED = "true";
+    process.env.COP_OIDC_ISSUER = issuer;
+    process.env.COP_OIDC_JWKS_URI = `${issuer}/jwks`;
+    process.env.COP_OIDC_CLIENT_ID = "cop-web";
+    process.env.COP_OIDC_ALLOWED_CLIENTS = "cop-web,csm-mobile";
+    process.env.COP_OIDC_REQUIRED_ROLE = "";
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ keys: [publicJwk] })));
+
+    const now = Math.floor(Date.now() / 1000);
+    const tokenFor = (clientId: string, subjectId: string) => signJwt(privateKey, keyId, {
+      azp: clientId, exp: now + 300, iat: now, iss: issuer, sub: subjectId
+    });
+    const bffAccessToken = tokenFor("cop-web", "synthetic-bff-user");
+    const sessions = new InMemoryWebSessionStore();
+    const record = await sessions.create({
+      accessToken: bffAccessToken,
+      accessTokenExpiresAt: new Date((now + 300) * 1000),
+      profile: { name: "Synthetic BFF user", subjectId: "synthetic-bff-user", username: "synthetic-bff-user" }
+    }, new Date((now + 3600) * 1000));
+    const cookie = `cop_web_session_v1=${record.sessionId}`;
+    const app = buildServer({ webSessionStore: sessions });
+    try {
+      const positiveCases = [
+        { headers: { authorization: `Bearer ${tokenFor("cop-web", "synthetic-web-user")}` }, subjectId: "synthetic-web-user" },
+        { headers: { cookie }, subjectId: "synthetic-bff-user" },
+        { headers: { cookie, authorization: "Bearer cop-bff-session" }, subjectId: "synthetic-bff-user" },
+        { headers: { authorization: `Bearer ${tokenFor("csm-mobile", "synthetic-native-user")}` }, subjectId: "synthetic-native-user" }
+      ];
+      for (const { headers, subjectId } of positiveCases) {
+        const response = await app.inject({ method: "GET", url: "/api/v1/me/preferences", headers });
+        expect(response.statusCode).toBe(200);
+        expect(response.json().actor).toMatchObject({ authMode: "oidc", subjectId });
+        expect(response.body).not.toContain(bffAccessToken);
+      }
+
+      for (const headers of [
+        {},
+        { authorization: `Bearer ${labToken}` },
+        { authorization: `Bearer ${tokenFor("unapproved-client", "synthetic-unapproved-user")}` }
+      ]) {
+        const response = await app.inject({ method: "GET", url: "/api/v1/me/preferences", headers });
+        expect(response.statusCode).toBe(401);
+        expect(response.json().error.code).toBe("UNAUTHORIZED");
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
   it("rejects OIDC tokens without surfacing JWKS fetch failures", async () => {
     const issuer = "https://login.zeleznalady.cz/realms/cop";
     const keyId = "missing-key";

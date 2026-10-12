@@ -5,11 +5,13 @@ RUN corepack enable
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.json ./
 COPY apps/cop-mcp-gateway/package.json apps/cop-mcp-gateway/package.json
+COPY packages/core/package.json packages/core/package.json
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY apps/cop-mcp-gateway apps/cop-mcp-gateway
-RUN pnpm --filter @cop/cop-mcp-gateway build
+COPY packages/core packages/core
+RUN pnpm --filter @cop/cop-mcp-gateway... build
 
 FROM node:24-alpine AS runtime
 WORKDIR /app

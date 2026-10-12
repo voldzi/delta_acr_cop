@@ -391,7 +391,7 @@ interface ChatDeviceDiagnostics {
 }
 
 const apiBase = trimTrailingSlash(import.meta.env.VITE_COP_API_BASE_URL ?? "");
-const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? "dev-lab-token";
+const labToken = import.meta.env.VITE_COP_PUBLIC_LAB_VALUE ?? (import.meta.env.DEV ? "dev-lab-token" : "");
 const copUserPreferencesStorageKey = "cop.user.preferences.v1";
 const chatPreferencesStoragePrefix = "cop.chat.preferences.v1";
 const initialHistoryLoadRetryLimit = 8;

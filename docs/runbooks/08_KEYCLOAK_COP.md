@@ -165,7 +165,9 @@ http://docker.home.cz:8081/realms/cop/protocol/openid-connect/auth?client_id=cop
 
 ## COP .env
 
-Prechodovy rezim, kdy funguje Keycloak i lab token pro SIM/pilot:
+Historický přechodový režim, kdy funguje Keycloak i lab token pro SIM/pilot.
+Není cílovou konfigurací veřejného API; před odstraněním sdíleného lab přístupu
+postupujte podle [migračního ověření](#bezpecne-odstraneni-lab-pristupu):
 
 ```bash
 COP_AUTH_MODE=hybrid
@@ -187,9 +189,14 @@ COP_USER_PROFILE_STORE=auto
 
 `COP_PUBLIC_READ_ENABLED=true` povoli anonymni cteni verejne mapy a verejnych vrstev. Bez prihlaseni jsou dostupne pouze GET endpointy pro situacni obraz, zdroje, stream, historii tracku a odeslana komunitni hlaseni. Zapisove operace, uzivatelsky profil, potvrzovani vystrah, AI asistent, registrace mobilniho zarizeni a upload priloh stale vyzaduji platny bearer token.
 
-`COP_PUBLIC_LAB_VALUE` nech v internetovem buildu prazdne. Serverovy `COP_LAB_TOKEN` muze zustat pro interni pilotni zdroje, ale nesmi byt zabudovany do verejneho web bundle.
+`COP_PUBLIC_LAB_VALUE` nech v internetovem buildu prazdne. Nezabudování tokenu
+do veřejného webu neomezuje síťový dosah serverové lab autentizace. Je-li lab
+povolen na stejném API, může jej použít každý, kdo se k tomuto API dostane a
+zná token. Interní pilotní klienti proto nejsou důvodem k trvalému povolení
+sdíleného lab oprávnění na veřejném API.
 
-Striktni rezim bez lab tokenu:
+Striktni rezim bez lab tokenu (příklad pouze pro web; při přechodu zachovejte
+všechny již ověřené povolené klienty, včetně `csm-mobile` pro nativní aplikace):
 
 ```bash
 COP_AUTH_MODE=oidc
@@ -205,6 +212,62 @@ COP_WEB_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
 COP_CHAT_OIDC_TOKEN_ENDPOINT=/chat/oidc/token
 COP_USER_PROFILE_STORE=auto
 ```
+
+<a id="bezpecne-odstraneni-lab-pristupu"></a>
+### Bezpečné odstranění lab přístupu
+
+1. Zaznamenejte přesné image všech měněných služeb a skutečně použité Compose
+   soubory/overlaye. Připravte omezený rozdíl konfigurace; hodnoty secrets
+   nevypisujte ani nekopírujte do předávacího protokolu nebo Gitu.
+2. Zkontrolujte browser BFF, povolené nativní klienty a všechny službové
+   konzumenty COP. Zachovejte issuer, klienty, role, BFF, relace a interní
+   síťové přílohy. Výsledek přihlášení do jiné administrace není důkaz COP relace.
+3. Dosavadní Edge (`COP_EDGE_CENTRAL_API_URL`) a MCP
+   (`COP_MCP_CENTRAL_API_URL`) používají pouze statický `centralToken` načtený
+   při startu. Připravená zdrojová větev přidává výslovný režim
+   `*_CENTRAL_AUTH_MODE=oidc` s automatickým získáním nového tokenu; výchozí
+   režim zůstává `static`. Viz [konfigurace služeb](03_ENVIRONMENT_CONFIGURATION.md#připravené-službové-oidc-pro-edge-a-mcp).
+   Přítomnost nastavení nedokládá typ či platnost credentials. Před přepnutím
+   doložte jejich kompatibilní autentizaci a životnost i omezení oprávnění;
+   jednorázový krátkodobý JWT není provozní řešení. Nové službové identity, role, secrets a jejich
+   správa vyžadují koordinovaný, konkrétně schválený rozsah.
+4. Edge heartbeat/outbox/replay/ack vyžadují ověřený privilegovaný integration
+   actor; nejmenší současná role je `SYSTEM_CLIENT`. Samotná role neváže klienta
+   na konkrétní node a novým službovým klientům ji nepřidělujte jako náhradu lab.
+   U MCP rozlišujte schválené veřejné read tools od interního auditu, federation,
+   replay a dead-letter nástrojů. Před přepnutím připravte a ověřte omezenou
+   službovou politiku; neměňte dosavadní role ostatních aktérů.
+5. V izolaci ověřte `COP_AUTH_MODE=oidc` a `COP_ALLOW_LAB_TOKEN=false`:
+   podepsaný povolený web/nativní bearer a BFF relace projdou chráněným GET;
+   nakonfigurovaný syntetický lab token, neplatný bearer, nepovolený klient a
+   anonymní požadavek jsou odmítnuty. Veřejné čtení zůstane dostupné bez tokenu,
+   ale přiložený neplatný bearer se nesmí ignorovat. Role správy zdrojů ověřte
+   samostatně. V testech nepoužívejte produkční token.
+6. Sestavte web i chat s prázdnou veřejnou lab hodnotou a zachovanou schválenou
+   OIDC/BFF konfigurací. Ověřte výsledné JavaScript soubory a veřejnou analytickou
+   hranici; pouhý test Compose argumentů nestačí.
+7. Teprve po pozitivní čtecí produkční zkoušce COP relace a připravenosti všech
+   službových klientů změňte API na `oidc` + `COP_ALLOW_LAB_TOKEN=false`.
+   Recreate pouze dohodnuté služby, s připnutou image a všemi aktivními overlayi.
+   Nevytvářejte IP výjimku, nevypínejte WAF a neměňte DMZ/firewall. Není-li
+   kterýkoli důkaz k dispozici, přepnutí pozastavte a uveďte konkrétní závislost.
+8. Po změně zopakujte skutečný read-only chráněný COP požadavek s BFF/nativní
+   identitou, anonymní a neplatné odmítnutí i funkčnost služeb. Není nutné číst
+   nebo posílat skutečný starý lab token: jeho odmítnutí doložte izolovaným testem,
+   přesným runtime nastavením a shodou nasazeného bezpečnostního modulu.
+
+Edge `/health/ready` vrací HTTP 200 i při degradovaném stavu a sám nevolá COP;
+jeho zelený kontejner tedy není důkaz autentizace. MCP `/health/ready` zkouší
+čtecí COP tools endpoint, nikoli oprávnění privilegovaných nástrojů. Tyto
+výsledky evidujte odděleně od přihlášení uživatele a od klientské akceptace.
+
+Rollback zachová známé image a nezměněné secrets/overlaye. Předem rozlište
+návrat frontend image od návratu serverového auth režimu. Automaticky
+neobnovujte veřejný lab přístup kvůli chybě jedné služby; izolujte její výpadek
+a vraťte poslední ověřenou OIDC kompatibilní konfiguraci. Pokud je k zachování
+provozu nutné obnovit původní hybrid/lab konfiguraci, bezpečnostní cíl není
+dokončen: jde o výslovně koordinovaný dočasný návrat, který musí být uveden
+ve výsledku, včetně otevřených klientských závislostí.
 
 Pro komunitni provoz s registraci pres overeny e-mail je vhodne mit vlastni realm `cop`, zapnutou registraci uzivatelu a overeni e-mailu. Pokud ma byt zapis do COP dostupny vsem overenym uzivatelum tohoto realmu, nech `COP_OIDC_REQUIRED_ROLE` prazdne. Pokud chces role vynucovat, nastav treba `COP_OIDC_REQUIRED_ROLE=cop_user` a pridej `cop_user` jako default realm roli pro nove uzivatele.
 

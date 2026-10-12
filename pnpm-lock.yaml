@@ -190,8 +190,15 @@ importers:
       '@cop/canonical-model':
         specifier: workspace:*
         version: link:../../packages/canonical-model
+      '@cop/core':
+        specifier: workspace:*
+        version: link:../../packages/core
 
-  apps/cop-mcp-gateway: {}
+  apps/cop-mcp-gateway:
+    dependencies:
+      '@cop/core':
+        specifier: workspace:*
+        version: link:../../packages/core
 
   apps/cop-web:
     dependencies:

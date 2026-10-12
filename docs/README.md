@@ -7,6 +7,13 @@ numbered documents.
 
 Decision record: [ADR 0009](adr/0009_STANDARD_DOCUMENTATION_MAPPING_AND_JSON_OPENAPI.md).
 
+Frontendové výchozí hodnoty přihlášení a bezpečný přechod veřejného API bez lab
+přístupu jsou popsány v [konfiguraci](runbooks/03_ENVIRONMENT_CONFIGURATION.md#výchozí-přihlášení-při-sestavení)
+a [Keycloak runbooku](runbooks/08_KEYCLOAK_COP.md#bezpecne-odstraneni-lab-pristupu).
+Zdrojová ochrana sestavení a produkční přepnutí autentizace jsou samostatná ověření.
+Připravený serverový token provider a zbývající omezení službových oprávnění
+popisuje [ADR 0046](adr/0046_STAGED_SERVICE_CREDENTIALS_AND_LAB_REMOVAL.md).
+
 ## Standard Topic Mapping
 
 | Standard topic                   | Local canonical document(s)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
