@@ -48,6 +48,10 @@ Provider freshness and stream ownership safeguards:
 [Stability and service-account acceptance](runbooks/23_COP_SERVICE_ACCOUNT_STABILITY.md)
 records the prepared source checks and remaining coordinated production gates.
 
+Explicit session routes for database leases and PostgreSQL LISTEN:
+[ADR 0048](adr/0048_SESSION_AFFINE_DATABASE_ROUTES.md),
+[configuration](runbooks/03_ENVIRONMENT_CONFIGURATION.md#režim-postgresql-a-připojení-pro-session-operace).
+
 COP host storage separation, retention, deployment and recovery evidence:
 [X5 runbook](runbooks/19_COP_X5_STORAGE.md),
 [ADR 0038](adr/0038_COP_X5_OPERATIONAL_STORAGE_BOUNDARY.md).

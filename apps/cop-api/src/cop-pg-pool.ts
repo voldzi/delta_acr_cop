@@ -10,6 +10,7 @@ export type CopPgComponent =
   | "user-profile"
   | "track-history"
   | "safety-notification"
+  | "safety-notification-lease"
   | "federation-runtime"
   | "web-session"
   | "sketch"

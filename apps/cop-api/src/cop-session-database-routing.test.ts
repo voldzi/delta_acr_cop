@@ -1,0 +1,153 @@
+import { EventEmitter } from "node:events";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mobilityStoreFromEnv } from "./mobility-store.js";
+import { createSafetyNotificationStoreFromEnv } from "./safety-notification-store.js";
+import { createCopStreamBusFromEnv } from "./cop-stream-bus.js";
+
+const pgState = vi.hoisted(() => ({ pools: [] as FakePool[], listeners: [] as FakeClient[] }));
+
+class FakeClient extends EventEmitter {
+  query = vi.fn(async (sql: string) => ({ rows: sql.includes("AS acquired") ? [{ acquired: true }] : sql.includes("pg_backend_pid()") ? [{ owned: true }] : [] }));
+  connect = vi.fn(async () => undefined);
+  release = vi.fn();
+  end = vi.fn(async () => undefined);
+  constructor(readonly config: Record<string, unknown> = {}) { super(); }
+}
+
+class FakePool extends EventEmitter {
+  readonly client = new FakeClient();
+  readonly options: Record<string, unknown>;
+  ended = false;
+  ending = false;
+  connect = vi.fn(async () => this.client);
+  query = vi.fn(async () => ({ rows: [] }));
+  end = vi.fn(async () => { this.ending = true; this.ended = true; });
+  constructor(readonly config: Record<string, unknown>) { super(); this.options = config; }
+}
+
+vi.mock("pg", () => ({ default: {
+  Pool: class {
+    constructor(config: Record<string, unknown>) { const pool = new FakePool(config); pgState.pools.push(pool); return pool; }
+  },
+  Client: class {
+    constructor(config: Record<string, unknown>) { const client = new FakeClient(config); pgState.listeners.push(client); return client; }
+  }
+} }));
+
+const transactionUrl = "postgresql://synthetic:business-password@broker.example.test:6432/cop";
+const sessionUrl = "postgresql://synthetic:lease-password@database.example.test:5432/cop";
+const env = { COP_DATABASE_POOL_MODE: "transaction", COP_DATABASE_URL: transactionUrl, COP_LEASE_DATABASE_URL: sessionUrl, COP_SHARED_MOBILITY_ENABLED: "true", COP_DATABASE_SSL: "true" };
+
+beforeEach(() => { pgState.pools.length = 0; pgState.listeners.length = 0; });
+afterEach(async () => { await Promise.all(pgState.pools.filter((pool) => !pool.ended).map((pool) => pool.end())); });
+
+describe("store and stream session connection ownership", () => {
+  it("routes Dispatch ownership/PID verification to the explicit session pool and leaves business transactions on the main route", async () => {
+    const store = mobilityStoreFromEnv(env)!;
+    const [business, lease] = pgState.pools;
+    expect(business!.config).toMatchObject({ connectionString: transactionUrl, max: 3, ssl: { rejectUnauthorized: true } });
+    expect(lease!.config).toMatchObject({ connectionString: sessionUrl, max: 1, ssl: { rejectUnauthorized: true }, application_name: "cop-private-dispatch-lease", query_timeout: 3000, connectionTimeoutMillis: 5000 });
+    await store.init();
+    await store.claimDispatchInstance();
+    expect(store.dispatchIsAvailable()).toBe(true);
+    expect(lease!.client.query).toHaveBeenNthCalledWith(1, "SELECT CASE WHEN pg_is_in_recovery() THEN false ELSE pg_try_advisory_lock(731031,1) END AS acquired");
+    expect(lease!.client.query).toHaveBeenNthCalledWith(2, "SELECT NOT pg_is_in_recovery() AND EXISTS (SELECT 1 FROM pg_locks WHERE locktype='advisory' AND classid=731031 AND objid=1 AND pid=pg_backend_pid() AND granted) AS owned");
+    await store.transact([], async () => "business-result");
+    expect(business!.client.query).toHaveBeenCalledWith("BEGIN");
+    expect(business!.client.query).toHaveBeenCalledWith("COMMIT");
+    expect(business!.client.query.mock.calls.some(([sql]) => sql.includes("pg_try_advisory_lock"))).toBe(false);
+    await store.close();
+    expect(lease!.client.release).toHaveBeenCalledWith(true);
+    expect(lease!.end).toHaveBeenCalledTimes(1);
+    expect(business!.end).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds and unlocks Safety's session lease on its own pool while ledger reads use the main route", async () => {
+    const store = createSafetyNotificationStoreFromEnv(env);
+    const [business, lease] = pgState.pools;
+    expect(business!.config).toMatchObject({ connectionString: transactionUrl, max: 3, ssl: { rejectUnauthorized: true } });
+    expect(lease!.config).toMatchObject({ connectionString: sessionUrl, max: 1, ssl: { rejectUnauthorized: true }, application_name: "cop-api:safety-notification-lease" });
+    expect(await store.withWorkerLease(async (valid) => {
+      expect(valid()).toBe(true);
+      expect(await store.hasEligibleWebDevice("synthetic-user")).toBe(false);
+      return "leased-operation";
+    })).toBe("leased-operation");
+    expect(lease!.client.query).toHaveBeenNthCalledWith(1, "SELECT pg_try_advisory_lock(18101202, 1) AS acquired");
+    expect(lease!.client.query).toHaveBeenNthCalledWith(2, "SELECT pg_advisory_unlock(18101202, 1)");
+    expect(business!.connect).not.toHaveBeenCalled();
+    expect(business!.query).toHaveBeenCalledTimes(1);
+    await store.close();
+    expect(lease!.end).toHaveBeenCalledTimes(1);
+    expect(business!.end).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not borrow the transaction business pool when a lease connection fails", async () => {
+    const store = createSafetyNotificationStoreFromEnv(env);
+    pgState.pools[1]!.connect.mockRejectedValueOnce(new Error("synthetic lease outage"));
+    const operation = vi.fn();
+    await expect(store.withWorkerLease(operation)).rejects.toThrow("synthetic lease outage");
+    expect(operation).not.toHaveBeenCalled();
+    expect(pgState.pools[0]!.connect).not.toHaveBeenCalled();
+    expect(pgState.pools[0]!.query).not.toHaveBeenCalled();
+    await store.close();
+  });
+
+  it("preserves Safety lease invalidation and destroys a lost session without replaying its operation", async () => {
+    const store = createSafetyNotificationStoreFromEnv(env);
+    const lease = pgState.pools[1]!;
+    const operation = vi.fn(async (valid: () => boolean) => {
+      expect(valid()).toBe(true);
+      lease.client.emit("error", new Error("synthetic lost lease"));
+      expect(valid()).toBe(false);
+    });
+    await expect(store.withWorkerLease(operation)).rejects.toThrow("Safety worker lease connection was lost.");
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(lease.client.query).toHaveBeenCalledTimes(1);
+    expect(lease.client.release).toHaveBeenCalledWith(true);
+    await store.close();
+  });
+
+  it("keeps the legacy pool paths and sharing when no new routing settings are supplied", async () => {
+    const legacy = { COP_DATABASE_URL: "/synthetic/socket cop", COP_SHARED_MOBILITY_ENABLED: "true" };
+    const mobility = mobilityStoreFromEnv(legacy)!;
+    const safety = createSafetyNotificationStoreFromEnv(legacy);
+    expect(pgState.pools).toHaveLength(3);
+    expect(pgState.pools.every((pool) => pool.config.connectionString === legacy.COP_DATABASE_URL)).toBe(true);
+    await safety.withWorkerLease(async () => "legacy");
+    expect(pgState.pools[2]!.connect).toHaveBeenCalledTimes(1);
+    await Promise.all([mobility.close(), safety.close()]);
+    expect(pgState.pools.every((pool) => pool.end.mock.calls.length === 1)).toBe(true);
+  });
+
+  it("fails before creating pools when transaction leases are missing or alias the main endpoint", () => {
+    for (const settings of [
+      { ...env, COP_LEASE_DATABASE_URL: undefined },
+      { ...env, COP_LEASE_DATABASE_URL: "postgres://other:other-password@BROKER.example.test:6432/cop?sslmode=require" },
+      { ...env, COP_LEASE_DATABASE_URL: "postgres://database.example.test/cop" }
+    ]) {
+      expect(() => mobilityStoreFromEnv(settings)).toThrow();
+      expect(() => createSafetyNotificationStoreFromEnv(settings)).toThrow();
+    }
+    expect(pgState.pools).toHaveLength(0);
+  });
+
+  it("requires a separately declared stream session route and gives LISTEN that route", async () => {
+    expect(() => createCopStreamBusFromEnv({ ...env, COP_STREAM_BUS: "postgres" })).toThrow("COP_STREAM_BUS_DATABASE_URL is required");
+    expect(() => createCopStreamBusFromEnv({ ...env, COP_STREAM_BUS: "postgres", COP_STREAM_BUS_DATABASE_URL: "postgres://other:password@broker.example.test:6432/cop?sslmode=require" })).toThrow("separate direct or session");
+    expect(pgState.pools).toHaveLength(0);
+    const bus = createCopStreamBusFromEnv({ ...env, COP_STREAM_BUS: "postgres", COP_STREAM_BUS_DATABASE_URL: sessionUrl });
+    await bus.init();
+    expect(pgState.pools[0]!.config).toMatchObject({ connectionString: sessionUrl, max: 2, ssl: { rejectUnauthorized: true } });
+    expect(pgState.listeners[0]!.config).toMatchObject({ connectionString: sessionUrl, ssl: { rejectUnauthorized: true } });
+    expect(pgState.listeners[0]!.query).toHaveBeenCalledWith('LISTEN "cop_stream_events"');
+    await bus.close();
+  });
+
+  it("preserves memory stream operation and direct PostgreSQL fallback", async () => {
+    expect(createCopStreamBusFromEnv(env).name).toBe("memory");
+    expect(pgState.pools).toHaveLength(0);
+    const bus = createCopStreamBusFromEnv({ COP_DATABASE_URL: sessionUrl, COP_STREAM_BUS: "postgres" });
+    expect(pgState.pools[0]!.config.connectionString).toBe(sessionUrl);
+    await bus.close();
+  });
+});

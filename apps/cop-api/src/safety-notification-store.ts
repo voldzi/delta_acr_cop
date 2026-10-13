@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type Pool as PgPool, type PoolConfig } from "pg";
 import { createCopPgPool } from "./cop-pg-pool.js";
+import { resolveCopSessionDatabaseUrl } from "./cop-session-database.js";
 
 export interface SafetyNotificationCooldown {
   key: string;
@@ -35,14 +36,16 @@ export function createSafetyNotificationStoreFromEnv(env: Record<string, string 
   if (mode !== "postgres" || !connectionString) {
     throw new Error("Automatic safety notifications require an explicit durable PostgreSQL store.");
   }
+  const leaseConnectionString = resolveCopSessionDatabaseUrl(env, "COP_LEASE_DATABASE_URL");
   const sslMode = env.COP_DATABASE_SSL?.trim().toLowerCase();
-  return new PostgresSafetyNotificationStore({
+  const config: PoolConfig = {
     connectionString,
     connectionTimeoutMillis: 5000,
     idleTimeoutMillis: 30000,
     max: 3,
     ssl: ["true", "1", "require"].includes(sslMode ?? "") ? { rejectUnauthorized: env.COP_DATABASE_SSL_REJECT_UNAUTHORIZED !== "false" } : false
-  });
+  };
+  return new PostgresSafetyNotificationStore(config, env.COP_LEASE_DATABASE_URL?.trim() ? { ...config, connectionString: leaseConnectionString } : undefined);
 }
 
 interface MemoryDelivery {
@@ -115,18 +118,20 @@ export class InMemorySafetyNotificationStore implements SafetyNotificationStore 
 export class PostgresSafetyNotificationStore implements SafetyNotificationStore {
   readonly name = "postgres";
   private readonly pool: PgPool;
+  private readonly leasePool: PgPool;
 
-  constructor(config: PoolConfig) {
+  constructor(config: PoolConfig, leaseConfig?: PoolConfig) {
     this.pool = createCopPgPool("safety-notification", { ...config, max: Math.max(2, config.max ?? 3) });
     // pg requires an idle error listener; callers observe active query failures.
     this.pool.on("error", () => {});
+    this.leasePool = leaseConfig ? createCopPgPool("safety-notification-lease", { ...leaseConfig, max: 1 }) : this.pool;
   }
 
   async init(): Promise<void> { await this.pool.query(createSafetyNotificationTableSql); }
-  async close(): Promise<void> { await this.pool.end(); }
+  async close(): Promise<void> { await Promise.all(this.leasePool === this.pool ? [this.pool.end()] : [this.pool.end(), this.leasePool.end()]); }
 
   async withWorkerLease<T>(operation: (leaseValid: () => boolean) => Promise<T>): Promise<T | undefined> {
-    const client = await this.pool.connect();
+    const client = await this.leasePool.connect();
     let leased = false;
     let leaseLost = false;
     const onError = (): void => { leaseLost = true; };

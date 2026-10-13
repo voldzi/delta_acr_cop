@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import pg, { type Client as PgClient, type Pool as PgPool, type PoolConfig } from "pg";
 import { createCopPgPool } from "./cop-pg-pool.js";
+import { resolveCopSessionDatabaseUrl } from "./cop-session-database.js";
 import type { CopStreamMessage } from "./cop-stream.js";
 
 const { Client } = pg;
@@ -359,7 +360,7 @@ export function createCopStreamBusFromEnv(env: Record<string, string | undefined
     return new MemoryCopStreamBus();
   }
 
-  const connectionString = env.COP_STREAM_BUS_DATABASE_URL?.trim() || env.COP_DATABASE_URL?.trim();
+  const connectionString = resolveCopSessionDatabaseUrl(env, "COP_STREAM_BUS_DATABASE_URL");
   if ((mode === "postgres" || mode === "postgresql") && connectionString) {
     return new PostgresCopStreamBus(
       {
