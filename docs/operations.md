@@ -79,8 +79,10 @@ owns actual secret values, socket permissions, runtime GID and the read-only
 single-file CA mount, and must also prove the broker-to-PostgreSQL TLS path.
 
 For the reviewed configuration with general pool max `5`, explicit lease URL and
-memory stream, factory maxima are main `58` plus direct/session leases `2`:
-`60` clients across `15` pools per API process. This is not the number of open
+memory stream, direct/session mode keeps maxima main `58` plus separate leases
+`2`. The repaired transaction candidate moves the five consent connections to
+the verified route: main `53`, direct/session `7`. Both total `60` clients across
+`15` pools per API process. This is not the number of open
 connections or PostgreSQL backends. Broker backend cap `10` and client cap `80`
 are configured, but the accepted production application currently uses DIRECT;
 TX application startup was not accepted and broker boot activation is disabled.
@@ -93,8 +95,10 @@ image and accepted in DIRECT mode. A same-image TX attempt failed at application
 startup; infrastructure restored DIRECT and completed the recovery journal
 without recreating the already restored container. The original health gate
 and baseline passed, and the owner's protected web profile was synchronized.
-The cause of the TX startup failure remains under investigation; the
-`statement_timeout` hypothesis is not established. No web, normal chat,
+The owner's isolated read-only diagnostic confirmed rejection of startup
+`statement_timeout=15000` with PostgreSQL `08P01`. The source repair routes the
+consent store through the validated separate URL only in transaction mode,
+retaining all timeouts and SQL; it has not been deployed. No web, normal chat,
 measurement/authentication flags or other service changes were included.
 Exact dated image/profile evidence is in
 [runbook 24](runbooks/24_COP_API_RUNTIME_PROFILE.md#production-evidence-on-2026-10-13).

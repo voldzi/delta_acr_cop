@@ -25,6 +25,13 @@ through the ordinary transaction endpoint does not establish that guarantee.
 - Use `COP_LEASE_DATABASE_URL` for Dispatch and Safety session leases. Use
   `COP_STREAM_BUS_DATABASE_URL` for the PostgreSQL stream listener and its
   existing publish pool. Memory stream mode creates no database listener.
+- In transaction mode, use the validated `COP_LEASE_DATABASE_URL` for the
+  complete measurement consent store. Its PostgreSQL startup parameter
+  `statement_timeout=15000` is rejected by the configured transaction broker.
+  Keep all SQL, pool max `5`, connection timeout `5000 ms`, statement timeout
+  `15000 ms` and query timeout `20000 ms`. In direct/session mode consent keeps
+  the exact original main URL even when a lease override exists. Preserve
+  lazy injected-store selection and the intake-or-cleanup activation guard.
 - Preserve the previous main-route fallback in declared direct/session mode.
   In transaction mode require explicit, separately addressed session routes.
   Missing, unassessable or equivalent endpoint URIs fail before pool creation
@@ -68,9 +75,11 @@ otherwise it keeps the existing shared pool. Add that connection to the
 operator's capacity budget. Both owned pools close, while a shared pool closes
 once. No API, tenant authority or persistent schema changes are introduced.
 
-With the known active factory configuration, general pool max `5`, explicit
-lease URL and memory stream, the main client pool maxima total `58`; Dispatch
-and Safety leases add `1` each: `60` clients across `15` pools per API process.
+With the reviewed factory configuration, general pool max `5`, explicit lease
+URL and memory stream, direct/session mode retains main client maxima `58`
+and separate leases `2`. The transaction candidate moves the five consent
+connections to the verified route: main `53`, separately addressed direct/session
+`7`. Both configurations total `60` clients across `15` pools per API process.
 These are client limits, not open connections or broker backend counts. The
 configured broker has backend cap `10` and client cap `80`, but the accepted
 application is using DIRECT and transaction startup has not been accepted. PostgreSQL stream mode would add its publish pool
@@ -89,6 +98,25 @@ recovery, stream lifecycle, Safety invalidation and pool disposal. Record their
 result, the API TypeScript build, selected ESLint, skeleton validation and source
 review against the exact candidate pin. Synthetic URI/parser checks are not
 actual TLS, broker or production acceptance.
+
+The infrastructure owner's isolated production-image diagnostic on
+2026-10-13 at `14:04:39.570529Z` used image `6299846`, source `b1230d7` and
+installed `pg 8.23.1`: read-only `SELECT 1` passed without the startup parameter,
+but the sole addition of `statement_timeout=15000` produced PostgreSQL `08P01`
+and the query did not run. Both clients closed; the owned diagnostic container
+was removed; no configuration or application data were written. This confirms
+the startup incompatibility, not acceptance of the source repair or a new TX
+deployment. The repair requires its own reviewed build and DIRECT acceptance
+before same-image TX acceptance. No startup parameter is ignored or removed.
+
+Local verification of the consent route repair: `108` targeted tests pass;
+one optional real-PostgreSQL consent test is skipped because no isolated test
+database is configured. The dependency/API TypeScript build, selected ESLint,
+skeleton validation and diff checks pass. Independent source review found no
+actionable defect. These tests retain the original consent API/cleanup behavior
+and exercise invalid routing before pool creation, unchanged timeouts, startup
+failure without fallback and fixed errors without private URI values. They do
+not prove a live TLS handshake or repaired-image production startup.
 
 Local verification on 2026-10-13 with Node `24.21.0`, installed `pg 8.23.1`
 and `pg-connection-string 2.14.1`: `112` targeted tests pass. Two optional

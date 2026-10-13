@@ -40,7 +40,7 @@ neurčuje z hostname ani portu.
 | Proměnná | Výchozí hodnota | Účel |
 | --- | --- | --- |
 | `COP_DATABASE_POOL_MODE` | `direct` | Deklarovaný režim hlavní databázové cesty. |
-| `COP_LEASE_DATABASE_URL` | prázdná | Přímá nebo session cesta pro session advisory lock Private Dispatch a Safety `withWorkerLease`. |
+| `COP_LEASE_DATABASE_URL` | prázdná | Přímá nebo session cesta pro session advisory lock Private Dispatch a Safety `withWorkerLease`; v režimu `transaction` také pro celý store souhlasů dopravních měření. |
 | `COP_STREAM_BUS_DATABASE_URL` | prázdná | Přímá nebo session cesta pro PostgreSQL stream bus a jeho `LISTEN` spojení. |
 
 V režimu `direct` nebo `session` jsou oddělené URL volitelné. Bez nich zůstává
@@ -50,7 +50,7 @@ samostatný lease pool s `max: 1`. Safety bez explicitní lease URL sdílí svů
 dosavadní ledger pool; s `COP_LEASE_DATABASE_URL` používá samostatný lease pool
 s `max: 1`. Ledger a ostatní business dotazy dál používají hlavní URL.
 
-V režimu `transaction` vyžadují PostgreSQL továrny mobility a Safety explicitní
+V režimu `transaction` vyžadují PostgreSQL továrny mobility, Safety a souhlasů měření explicitní
 `COP_LEASE_DATABASE_URL`; PostgreSQL stream bus vyžaduje explicitní
 `COP_STREAM_BUS_DATABASE_URL`. Hlavní i příslušné oddělené URL musí být bezpečně
 posouditelné PostgreSQL URI (`postgres://` nebo `postgresql://`) s explicitním
@@ -63,6 +63,14 @@ ještě před vytvořením poolů dané továrny. Změna hesla, query parametrů
 aliasu `postgres`/`postgresql` neobchází kontrolu shody endpointu. V tomto režimu
 neexistuje fallback na hlavní URL. `COP_STREAM_BUS=memory|disabled|off` žádné
 PostgreSQL `LISTEN` spojení nevytváří.
+
+Store souhlasů měření v režimu `transaction` používá tuto ověřenou oddělenou
+cestu pro všechny své dotazy, pokud běží příjem nebo mazání. Zachovává limit
+poolu `5`, připojení `5000 ms`, serverový `statement_timeout=15000 ms` a klientský
+`query_timeout=20000 ms`. V režimech `direct` a `session` nadále používá přesnou
+dosavadní hlavní URL, i když je nastavena oddělená lease URL. Vložený testovací
+store a vypnutý runtime tuto továrnu nevytvářejí; chyba oddělené cesty nezpůsobí
+přechod na hlavní transaction endpoint.
 
 ### Úzký kontrakt Unix IPC pro hlavní transaction cestu
 
@@ -104,11 +112,14 @@ místního IPC, zatímco každá vzdálená session URI samostatně vyžaduje TL
 certifikátu a danou CA. Samostatně je třeba ověřit i TLS od brokeru k PostgreSQL.
 Syntetický test parseru není důkaz úspěšného TLS spojení ani session affinity.
 
-Při známé aktivní sadě továren, obecném max `5`, explicitní lease URL a streamu
-`memory` je součet hlavních client poolů `58` a dvou lease poolů `2`, tedy max
-`60` klientských spojení v `15` poolech na API proces. Nejde o aktuálně otevřená
+Při ověřené sadě továren, obecném max `5`, explicitní lease URL a streamu
+`memory` režim `direct/session` zachovává hlavní client pooly `58` a dva lease
+pooly `2`. Opravený kandidát `transaction` přesouvá pět spojení consent store na
+ověřenou oddělenou cestu: hlavní `53`, přímá/session `7`. Obě varianty tedy mají
+max `60` klientských spojení v `15` poolech na API proces. Nejde o aktuálně otevřená
 spojení ani počet PostgreSQL backendů. Broker backend cap `10` a client cap `80`
-jsou pouze návrh infrastruktury. PostgreSQL stream by přidal query pool
+jsou nakonfigurované; produkční aplikace však nyní používá DIRECT a transaction
+start dosud nebyl přijat. PostgreSQL stream by přidal query pool
 (výchozí max `2`) a jedno samostatné `Client` spojení pro `LISTEN`, které pool
 diagnostika nezapočítává.
 
@@ -118,19 +129,27 @@ odlišnost DNS aliasů ani session affinity brokeru; správce musí doložit sku
 režim obou cest. Lock SQL a ověřování PID, business dotazy, retry/replay i
 persistentní stav zůstávají beze změny.
 
-Jde o přípravu nad skutečným runtime zdrojem `3a010127` a session route změnami,
-bez `f84fe6f`, měření, autentizačních změn a Messaging změn. Produkce se nemění. Tento krok nic nenasazuje a nemění broker, síť ani globální
-databázovou konfiguraci. Cílené route/parser/recovery testy se evidují proti
+Zdroj `b1230d7` byl přijat v produkčním DIRECT režimu a po neúspěšném TX startu
+bezpečně obnoven. Izolovaný čtecí test v tomto obrazu potvrdil, že jediný startup
+parametr `statement_timeout=15000` vyvolá `08P01`; bez něj `SELECT 1` projde.
+Oprava směrování consent store tento limit zachovává. Nový kandidát ještě není
+nasazen a nemění síť, globální databázovou konfiguraci ani příznaky měření a
+autentizace. Zdroj legacy obrazu není prokázaný. Doložený stav je v
+[runbooku 24](24_COP_API_RUNTIME_PROFILE.md#production-evidence-on-2026-10-13).
+Cílené route/parser/recovery testy se evidují proti
 přesnému zdrojovému pinu. Správce infrastruktury musí tento pin zkontrolovat a
 před produkčním sestavením dát oddělené build-only GO. Standardní
 `scripts/deploy-production.sh cop-api` provádí build i aktualizaci služby;
-nejde o build-only příkaz. Nevytvářejte náhradní build-only wrapper a tento skript
+nejde o build-only příkaz. Publikovaný wrapper má oddělenou variantu
+`bash scripts/deploy-production.sh --build-only cop-api`; použijte správcem
+zkontrolovaný build runner a jeho nezávislý záznam dokončení. Standardní skript
 nespouštějte pouze na základě build-only souhlasu. Runtime aktivace vyžaduje
 samostatné koordinované GO. Budoucí transaction rollout je samostatná etapa:
 prokázat business cestu a přímou/session lease cestu, samostatně ověřit `LISTEN`,
-shodnou logickou databázi a identitu i TLS. Před přepnutím uchovat identitu původního
-image a původní routing flags. Rollback obnoví původní image, hlavní direct/session
-cestu a její routing flags při zachování persistentního stavu. Secrets zůstávají
+shodnou logickou databázi a identitu i TLS. Před přepnutím uchovat ověřenou
+DIRECT dvojici image/profil a její routing flags. Primární rollback obnoví tuto
+přijatou dvojici a ověřenou hlavní direct/session cestu při zachování persistentního
+stavu; legacy image je pouze samostatně koordinovaná poslední možnost. Secrets zůstávají
 ve stávajícím serverovém secret store; rollback nevyžaduje jejich kopírování do
 dokumentace nebo pracovních souborů.
 

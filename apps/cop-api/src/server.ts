@@ -234,7 +234,7 @@ import { registerMessagingRoutes } from "./routes/messaging-routes.js";
 import { registerMobileRoutes } from "./routes/mobile-routes.js";
 import { registerRadioRoutes } from "./routes/radio-routes.js";
 import { registerRoutingRoutes } from "./routes/routing-routes.js";
-import { PostgresDriverMeasurementConsentStore, type DriverMeasurementConsentStore } from "./driver-measurement-consent-store.js";
+import { createDriverMeasurementConsentStoreFromEnv, type DriverMeasurementConsentStore } from "./driver-measurement-consent-store.js";
 import { HttpDriverMeasurementSource, type DriverMeasurementSource } from "./driver-measurement-source.js";
 import {
   actorFromRequest,
@@ -896,7 +896,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     throw new Error("Driver measurement COP adapter requires COP_DATABASE_URL.");
   }
   const driverMeasurementStore = driverMeasurementRuntimeEnabled
-    ? options.driverMeasurementConsentStore ?? new PostgresDriverMeasurementConsentStore(process.env.COP_DATABASE_URL!)
+    ? options.driverMeasurementConsentStore ?? createDriverMeasurementConsentStoreFromEnv()
     : undefined;
   const driverMeasurementSource = driverMeasurementRuntimeEnabled
     ? options.driverMeasurementSource ?? new HttpDriverMeasurementSource(

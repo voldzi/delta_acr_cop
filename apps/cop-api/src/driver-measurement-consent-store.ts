@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import pg, { type Pool as PgPool } from "pg";
 import { createCopPgPool } from "./cop-pg-pool.js";
+import { readCopDatabasePoolMode, resolveCopSessionDatabaseUrl } from "./cop-session-database.js";
 import { deletionDays, type DriverConsent } from "./driver-measurement-contract.js";
 
 export interface DriverMeasurementConsentStore {
@@ -12,6 +13,20 @@ export interface DriverMeasurementConsentStore {
   markDeleted(subjectId: string, day: string): Promise<void>;
   pending(): Promise<Array<{ subjectId: string; days: string[] }>>;
   withActive<T>(subjectId: string, operation: (consent: DriverConsent) => Promise<T>): Promise<T | null>;
+}
+
+export function createDriverMeasurementConsentStoreFromEnv(
+  env: Record<string, string | undefined> = process.env
+): PostgresDriverMeasurementConsentStore {
+  if (!env.COP_DATABASE_URL?.trim()) throw new Error("Driver measurement COP adapter requires COP_DATABASE_URL.");
+  // This store retains its startup statement timeout. In transaction mode its
+  // entire pool therefore uses the validated direct/session route, never the
+  // business broker. Preserve the exact original main DSN in other modes.
+  const connectionString = readCopDatabasePoolMode(env) === "transaction"
+    ? resolveCopSessionDatabaseUrl(env, "COP_LEASE_DATABASE_URL")
+    : env.COP_DATABASE_URL;
+  if (!connectionString?.trim()) throw new Error("Driver measurement COP adapter requires COP_DATABASE_URL.");
+  return new PostgresDriverMeasurementConsentStore(connectionString);
 }
 
 const emptyConsent = (): DriverConsent => ({ grantedAt: null, lastRevokedDay: null, pendingDays: [], revokedAt: null });

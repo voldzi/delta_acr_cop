@@ -39,11 +39,22 @@ observed as synchronized. No timeout, authentication or security gate was
 weakened for acceptance.
 
 The configured broker has backend/client caps of 10/80, but the application is
-using DIRECT and broker boot activation remains disabled. Startup handling of
-`statement_timeout=15000` is an unproven hypothesis under investigation, not a
-confirmed rejection or root cause. A diagnostic probe that did not produce a
-valid result proves no startup compatibility. Another build, runtime change or
-TX attempt requires its own exact owner GO and fresh acceptance evidence.
+using DIRECT and broker boot activation remains disabled. At
+`2026-10-13T14:04:39.570529Z`, the infrastructure owner's isolated diagnostic
+used this pinned image/source and `pg 8.23.1`. Read-only `SELECT 1` passed on the
+transaction route; adding only startup `statement_timeout=15000` produced
+PostgreSQL `08P01` (unsupported startup parameter) and prevented the query.
+Both clients closed and the owned diagnostic container was removed; no
+configuration or application data were written. This confirms the consent
+store's startup incompatibility. Earlier diagnostics that stopped before a
+valid result supplied no such evidence.
+
+The source repair routes the complete consent store through the validated
+direct/session URL only in transaction mode, preserving its startup and query
+timeouts and all SQL. It is a candidate; no repaired image, DIRECT rollout or
+TX acceptance is claimed here. Another build, runtime change or TX attempt
+requires its own exact owner GO and fresh acceptance evidence. No startup
+parameter may be ignored or removed to clear this gate.
 
 This operation did not change the web image, normal chat, measurement or
 authentication flags, business SQL, data retention or the other COP services.

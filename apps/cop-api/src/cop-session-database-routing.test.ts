@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mobilityStoreFromEnv } from "./mobility-store.js";
 import { createSafetyNotificationStoreFromEnv } from "./safety-notification-store.js";
 import { createCopStreamBusFromEnv } from "./cop-stream-bus.js";
+import { createDriverMeasurementConsentStoreFromEnv } from "./driver-measurement-consent-store.js";
 
 const pgState = vi.hoisted(() => ({ pools: [] as FakePool[], listeners: [] as FakeClient[] }));
 
@@ -36,10 +37,91 @@ vi.mock("pg", () => ({ default: {
 
 const transactionUrl = "postgresql://synthetic:business-password@broker.example.test:6432/cop";
 const sessionUrl = "postgresql://synthetic:lease-password@database.example.test:5432/cop";
+const unixUrl = "postgresql://synthetic:business-password@%2Frun%2Fvcode-cop-pgbouncer:6432/cop?sslmode=disable";
+const verifiedSessionUrl = `${sessionUrl}?sslmode=verify-full&sslrootcert=%2Fetc%2Fvcode-cop-pgbouncer%2Fpostgres-ca.crt`;
 const env = { COP_DATABASE_POOL_MODE: "transaction", COP_DATABASE_URL: transactionUrl, COP_LEASE_DATABASE_URL: sessionUrl, COP_SHARED_MOBILITY_ENABLED: "true", COP_DATABASE_SSL: "true" };
 
 beforeEach(() => { pgState.pools.length = 0; pgState.listeners.length = 0; });
 afterEach(async () => { await Promise.all(pgState.pools.filter((pool) => !pool.ended).map((pool) => pool.end())); });
+
+describe("driver consent startup connection routing", () => {
+  it.each([
+    { ...env },
+    { ...env, COP_DATABASE_URL: unixUrl, COP_LEASE_DATABASE_URL: verifiedSessionUrl, COP_DATABASE_SSL: "false" }
+  ])("keeps the complete consent pool and all timeouts on the declared session route (%#)", async (settings) => {
+    const store = createDriverMeasurementConsentStoreFromEnv(settings);
+    expect(pgState.pools).toHaveLength(1);
+    const pool = pgState.pools[0]!;
+    expect(pool.config).toEqual({
+      connectionString: settings.COP_LEASE_DATABASE_URL,
+      max: 5, connectionTimeoutMillis: 5000, statement_timeout: 15000, query_timeout: 20000,
+      application_name: "cop-api:driver-consent", fallback_application_name: "cop-api:driver-consent"
+    });
+    expect((await store.get("synthetic-subject")).grantedAt).toBeNull();
+    expect(pool.query).toHaveBeenCalledTimes(1);
+    expect(pgState.pools.some((entry) => entry.config.connectionString === settings.COP_DATABASE_URL)).toBe(false);
+    await store.close();
+    expect(pool.end).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([undefined, "direct", "session", " SESSION "])("preserves the exact original main DSN in mode %s even with a lease override", async (mode) => {
+    const originalMain = " /synthetic/socket cop ";
+    const store = createDriverMeasurementConsentStoreFromEnv({
+      COP_DATABASE_POOL_MODE: mode, COP_DATABASE_URL: originalMain, COP_LEASE_DATABASE_URL: verifiedSessionUrl
+    });
+    expect(pgState.pools).toHaveLength(1);
+    expect(pgState.pools[0]!.config.connectionString).toBe(originalMain);
+    await store.close();
+    expect(pgState.pools[0]!.end).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { COP_DATABASE_URL: undefined },
+    { COP_DATABASE_URL: "" },
+    { COP_DATABASE_URL: "   " },
+    { ...env, COP_LEASE_DATABASE_URL: undefined },
+    { ...env, COP_LEASE_DATABASE_URL: " " },
+    { ...env, COP_LEASE_DATABASE_URL: "postgres://other:other-password@BROKER.example.test:6432/cop?sslmode=require" },
+    { ...env, COP_LEASE_DATABASE_URL: "postgres://database.example.test/cop" },
+    { ...env, COP_DATABASE_URL: unixUrl, COP_LEASE_DATABASE_URL: sessionUrl },
+    { ...env, COP_DATABASE_URL: unixUrl, COP_LEASE_DATABASE_URL: verifiedSessionUrl.replace("verify-full", "verify-ca") },
+    { ...env, COP_DATABASE_URL: unixUrl, COP_LEASE_DATABASE_URL: `${verifiedSessionUrl}&ssl=0` },
+    { ...env, COP_DATABASE_URL: unixUrl, COP_LEASE_DATABASE_URL: `${verifiedSessionUrl}&sslrootcert=%2Fother-ca` },
+    { ...env, COP_DATABASE_URL: `${unixUrl}&application_name=%ZZ`, COP_LEASE_DATABASE_URL: verifiedSessionUrl },
+    { ...env, COP_DATABASE_POOL_MODE: "private-unknown-mode" }
+  ])("rejects missing or invalid routes before constructing any pool (%#)", (settings) => {
+    expect(() => createDriverMeasurementConsentStoreFromEnv(settings)).toThrow();
+    expect(pgState.pools).toHaveLength(0);
+    expect(pgState.listeners).toHaveLength(0);
+  });
+
+  it("propagates consent startup failure without creating an alternate main pool", async () => {
+    const store = createDriverMeasurementConsentStoreFromEnv({
+      ...env, COP_DATABASE_URL: unixUrl, COP_LEASE_DATABASE_URL: verifiedSessionUrl
+    });
+    const pool = pgState.pools[0]!;
+    pool.query.mockRejectedValueOnce(new Error("synthetic direct consent outage"));
+    await expect(store.init("synthetic-test-secret")).rejects.toThrow("synthetic direct consent outage");
+    expect(pool.query).toHaveBeenCalledTimes(1);
+    expect(pgState.pools).toHaveLength(1);
+    expect(pool.config.connectionString).toBe(verifiedSessionUrl);
+    await store.close();
+    expect(pool.end).toHaveBeenCalledTimes(1);
+  });
+
+  it("withholds malformed private DSN values from its fixed routing error", () => {
+    let failure: unknown;
+    try {
+      createDriverMeasurementConsentStoreFromEnv({
+        ...env, COP_LEASE_DATABASE_URL: "postgresql://synthetic:never-print-this@[invalid:5432/cop"
+      });
+    } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(Error);
+    expect(String(failure)).not.toMatch(/never-print-this|synthetic|invalid|postgresql:\/\//u);
+    expect((failure as Error).cause).toBeUndefined();
+    expect(pgState.pools).toHaveLength(0);
+  });
+});
 
 describe("store and stream session connection ownership", () => {
   it("keeps Unix business pools and remote lease pools separate without changing the global SSL flag", async () => {
