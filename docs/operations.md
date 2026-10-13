@@ -78,32 +78,49 @@ and configure verified remote TLS explicitly in each session URI. Infrastructure
 owns actual secret values, socket permissions, runtime GID and the read-only
 single-file CA mount, and must also prove the broker-to-PostgreSQL TLS path.
 
-At the known active configuration, general pool max `5`, explicit lease URL and
+For the reviewed configuration with general pool max `5`, explicit lease URL and
 memory stream, factory maxima are main `58` plus direct/session leases `2`:
 `60` clients across `15` pools per API process. This is not the number of open
 connections or PostgreSQL backends. Broker backend cap `10` and client cap `80`
-are infrastructure proposals, not deployed values. Memory stream creates no
-listener; PostgreSQL stream adds its pool (default max `2`) and one independent
-`LISTEN` client outside pool diagnostics.
+are configured, but the accepted production application currently uses DIRECT;
+TX application startup was not accepted and broker boot activation is disabled.
+Memory stream creates no listener; PostgreSQL stream adds its pool (default max
+`2`) and one independent `LISTEN` client outside pool diagnostics.
 
-This source preparation deploys nothing and changes no broker, network or global
-database configuration. The candidate is based only on actual runtime source
-`3a010127` plus session route changes; exclude `f84fe6f`, measurements,
-authentication and Messaging changes. Production is unchanged. A future transaction rollout is a separate stage:
-prove the business and direct/session lease paths and `LISTEN`, the same logical
-database/identity and verified TLS. Preserve lock SQL/PID checks, business
-queries, retry/replay and persistent state. Retain the original image identity
-and routing flags; rollback restores that image and the original direct/session
-main path and flags. Use the existing server secret store without copying
-secrets into release artifacts.
+The compatibility application source
+`b1230d701a4477b12b8eaa756b8faac86f723cd5` was built into the reviewed immutable
+image and accepted in DIRECT mode. A same-image TX attempt failed at application
+startup; infrastructure restored DIRECT and completed the recovery journal
+without recreating the already restored container. The original health gate
+and baseline passed, and the owner's protected web profile was synchronized.
+The cause of the TX startup failure remains under investigation; the
+`statement_timeout` hypothesis is not established. No web, normal chat,
+measurement/authentication flags or other service changes were included.
+Exact dated image/profile evidence is in
+[runbook 24](runbooks/24_COP_API_RUNTIME_PROFILE.md#production-evidence-on-2026-10-13).
+The original legacy image's source remains unproven; its manifest records
+`null` rather than inferring source identity from the server checkout.
+
+Any future transaction activation requires separate owner GO and complete
+application startup, business and direct/session lease acceptance, plus `LISTEN`
+acceptance if that mode is enabled. Preserve the same logical database/identity,
+verified TLS, lock SQL/PID checks, business queries, retry/replay and persistent
+state. The primary rollback pair is the reviewed compatibility image with its
+accepted DIRECT profile; the legacy pair is only a separately coordinated last
+resort. Preserve routing flags and use the existing server secret store without
+copying secrets into release artifacts.
 
 Record targeted route/parser/recovery tests against the exact reviewed source
 pin. Synthetic parser tests do not prove TLS, broker affinity or live acceptance.
 Infrastructure must approve that pin and give separate build-only authority
-before a production build. `scripts/deploy-production.sh cop-api` builds and
-updates the service; it is not a build-only command. Do not invent a build-only
-wrapper or use that script under build-only authority. Runtime deployment needs
-the separately agreed release GO and all current production overlays.
+before a production build. The published wrapper provides
+`bash scripts/deploy-production.sh --build-only cop-api` and an explicit immutable
+API deploy-only path, as described in [runbook 24](runbooks/24_COP_API_RUNTIME_PROFILE.md).
+Use the infrastructure owner's reviewed build runner and independent terminal
+receipt; a foreground CLI exit does not prove BuildKit completion after a
+disconnection. `scripts/deploy-production.sh cop-api` is not a build-only command
+and must not be used under build-only authority. Runtime deployment needs the
+separately agreed release GO and all current production overlays.
 
 SIM live-traffic routing release and rollback checks are documented in
 [SIM Live Traffic Routing](integration/19_SIM_LIVE_TRAFFIC_ROUTING.md). Record

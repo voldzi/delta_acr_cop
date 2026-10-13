@@ -2,11 +2,12 @@
 
 ## Status
 
-Accepted for source preparation on 2026-10-13. The production COP broker rollout
-remains on hold; this decision does not activate it or change authentication.
-The candidate is limited to actual runtime source `3a010127` plus the session
-route changes. It excludes `f84fe6f`, measurement changes, authentication changes
-and Messaging changes. Production remains unchanged.
+Accepted on 2026-10-13. The reviewed compatibility source `b1230d7` was
+accepted in production DIRECT mode and safely restored after a failed
+same-image transaction-mode startup. Transaction activation remains on hold;
+this decision does not change authentication or measurement flags. The source
+of the original legacy image remains unproven. Dated deployment and recovery
+evidence is recorded in [runbook 24](../runbooks/24_COP_API_RUNTIME_PROFILE.md#production-evidence-on-2026-10-13).
 
 ## Context
 
@@ -71,8 +72,8 @@ With the known active factory configuration, general pool max `5`, explicit
 lease URL and memory stream, the main client pool maxima total `58`; Dispatch
 and Safety leases add `1` each: `60` clients across `15` pools per API process.
 These are client limits, not open connections or broker backend counts. The
-infrastructure proposal is broker backend cap `10` and client cap `80`; neither
-is claimed deployed here. PostgreSQL stream mode would add its publish pool
+configured broker has backend cap `10` and client cap `80`, but the accepted
+application is using DIRECT and transaction startup has not been accepted. PostgreSQL stream mode would add its publish pool
 (default max `2`) and one independent `LISTEN` client outside the pool registry.
 
 The URI guard cannot prove actual broker pool mode, DNS alias separation,

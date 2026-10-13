@@ -2,8 +2,12 @@
 
 ## Status
 
-Accepted for isolated script preparation on 2026-10-13. No production
-provisioning, image build, database migration or runtime activation is claimed.
+Accepted on 2026-10-13 and used for the owner-accepted production DIRECT
+image/profile deployment and recovery. Transaction mode was attempted but not
+accepted; the application was restored to the accepted DIRECT pair. This
+mechanism introduces no database migration. Dated production evidence and
+remaining gates are recorded in the
+[runtime profile runbook](../runbooks/24_COP_API_RUNTIME_PROFILE.md#production-evidence-on-2026-10-13).
 This follows [ADR 0048](0048_SESSION_AFFINE_DATABASE_ROUTES.md).
 
 ## Decision
@@ -60,6 +64,7 @@ uses Node built-ins only, opens no database connection and receives no runtime
 environment or credentials. Root's private proof owns host path integrity.
 
 Offline fault tests and client-only Compose rendering do not prove broker
-behavior, TLS, production deployment or recovery. Those remain separate owner
-gates. Procedures and exact attestation shape:
+behavior, TLS, production deployment or recovery. The recorded DIRECT
+deployment and recovery have separate owner evidence; complete TX application
+startup and acceptance remain open. Procedures and exact attestation shape:
 [runtime profile runbook](../runbooks/24_COP_API_RUNTIME_PROFILE.md).

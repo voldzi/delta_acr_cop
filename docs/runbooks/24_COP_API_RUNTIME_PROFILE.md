@@ -2,10 +2,51 @@
 
 ## Scope and state
 
-This is a prepared deployment mechanism, not production activation evidence.
-It changes scripts and operational metadata only. The exact reviewed API image
-can be activated without rebuilding it. See [ADR 0049](../adr/0049_API_IMAGE_RUNTIME_PROFILE_BINDINGS.md)
-and the existing [X5 gates](19_COP_X5_STORAGE.md).
+This deployment mechanism has been used for the accepted production DIRECT
+image/profile pair and its recovery. Transaction mode has not been accepted.
+The mechanism changes deployment scripts and operational metadata; an exact
+reviewed API image can be activated without rebuilding it. See
+[ADR 0049](../adr/0049_API_IMAGE_RUNTIME_PROFILE_BINDINGS.md) and the existing
+[X5 gates](19_COP_X5_STORAGE.md).
+
+### Production evidence on 2026-10-13
+
+The accepted application image is
+`sha256:62998467041dee23ac27c072a14780e897273d95380a40a02ad124f5c083f150`,
+with proven application source
+`b1230d701a4477b12b8eaa756b8faac86f723cd5`. Its accepted DIRECT profile is
+`f331252b-4f0a-44dd-876e-2ea225eeca5c`, bound by
+`release-3f3789147a3044388bb817834779c2a3`. These are dated acceptance references;
+read and validate the actual active pointer and container before any operation.
+The original legacy image's application source remains unproven and is recorded
+as `null`, not inferred from a checkout revision.
+
+The same-image attempt using TX profile
+`206c4507-5e00-458e-b0ee-4061309aa7a8` failed during application startup and
+repeatedly restarted the API. There was no successful TX acceptance. The
+infrastructure owner restored the accepted image/profile pair to DIRECT and
+then completed its pending recovery without another container recreation or
+Docker `up`. The restored container's start time was preserved, its restart
+count was zero, and the pending journal was closed.
+
+The first post-restore health verification failed. A separate diagnostic read
+with a five-second timeout also timed out; this does not establish the cause of
+the earlier verification failure. Subsequent verification passed against the
+original health baseline with the existing health gate unchanged: live, ready,
+dependencies and the public demo returned 200, and all 27 dependencies were
+healthy. The already authenticated owner's protected web profile was also
+observed as synchronized. No timeout, authentication or security gate was
+weakened for acceptance.
+
+The configured broker has backend/client caps of 10/80, but the application is
+using DIRECT and broker boot activation remains disabled. Startup handling of
+`statement_timeout=15000` is an unproven hypothesis under investigation, not a
+confirmed rejection or root cause. A diagnostic probe that did not produce a
+valid result proves no startup compatibility. Another build, runtime change or
+TX attempt requires its own exact owner GO and fresh acceptance evidence.
+
+This operation did not change the web image, normal chat, measurement or
+authentication flags, business SQL, data retention or the other COP services.
 
 ## Owner-controlled layout
 
@@ -286,8 +327,8 @@ Compose-client tests (source list normalization and candidate/legacy rendering) 
 5.5.1. Shell syntax, skeleton validation and diff whitespace checks passed.
 The existing public analytics release guard separately passed in the owner
 operations workspace. No web, collector or analytics activation change is part
-of this patch. Server Compose compatibility must still pass the same fail-closed
-render gate before deployment.
+of this patch. The server Compose render gate passed for the recorded DIRECT
+operation and must pass again before every deployment.
 
 The independent review accepts the current immutable API deploy-only path.
 The standard build branch has not been verified under SSH disconnection or
@@ -296,8 +337,12 @@ Use the infrastructure owner's separately reviewed build runner and terminal
 receipt for such controlled builds. Do not interpret this source acceptance as
 proof of build-worker recovery or safe concurrent redispatch.
 
-Production permissions/provisioning, exact current runtime parity, root private
-proof, real broker affinity/TLS, direct compatibility rollout, transaction
-activation and live rollback remain owner gates. Local tests do not establish
-any of those facts. Off-server backups and X5 restore gates remain in the X5
-runbook; this mechanism deletes no images, backups, volumes or application data.
+Owner evidence established production provisioning, the reviewed image build,
+the DIRECT compatibility rollout and recovery for the dated pair above. Local
+tests do not establish those production facts. Isolated broker affinity/TLS
+checks do not establish complete application startup or TX acceptance. TX
+startup diagnosis, application acceptance and any broker boot activation remain
+open owner gates. Every future operation still requires fresh current runtime
+parity and its exact image/source/profile acceptance. Off-server backups and X5
+restore gates remain in the X5 runbook; this mechanism deletes no images,
+backups, volumes or application data.
