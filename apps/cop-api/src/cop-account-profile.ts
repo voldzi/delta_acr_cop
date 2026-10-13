@@ -57,7 +57,7 @@ export function registerCOPAccountProfile(app: FastifyInstance, options: {
         }
         try {
           const profile = method === "GET" ? await options.store.getProfile(actor.subjectId)
-            : await options.store.updateAvatar!({ subjectId: actor.subjectId, username: actor.username, displayName: actor.displayName, ...(actor.email ? { email: actor.email } : {}) }, avatar, revision!);
+            : await options.store.updateAvatar!({ subjectId: actor.subjectId, issuer: actor.issuer, username: actor.username, displayName: actor.displayName, ...(actor.email ? { email: actor.email } : {}) }, avatar, revision!);
           if (method === "PATCH" && !profile) return fail(412, "PROFILE_CHANGED", "Profil se změnil. Načtěte jej znovu a potvrďte změnu.");
           const result = wire(actor, profile);
           reply.header("ETag", '"' + result.revision + '"');

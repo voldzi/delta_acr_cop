@@ -123,3 +123,22 @@ or phone receipt.
 - [Shared vehicle profile/audit/recovery](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md): current mapped profile, exact owner UUID and retained correction history.
 
 - [Verified read-only Matrix identities and caller presentation](integration/42_VERIFIED_MATRIX_IDENTITIES.md).
+
+Account safety candidate: [COP/Jízda handoff](integration/40_ACCOUNT_SAFETY_APP_REVIEW.md),
+[data inventory](privacy/01_SERVER_DATA_INVENTORY.md),
+[public text candidate](privacy/02_PUBLIC_PRIVACY_TEXT_CANDIDATE.md),
+[ADR 0050](adr/0050_ACCOUNT_SAFETY_AND_ERASURE_BOUNDARY.md).
+
+One-account local Jízda activation and planned server installation revocation:
+[integration 41](integration/41_JIZDA_SCOPED_DISCONNECT.md). Separate whole-account
+removal gates: [plan 42](integration/42_COP_ACCOUNT_REMOVAL_PLAN.md). Neither a
+local feature choice nor the disabled historical unlink source deletes the account.
+
+- [43 — Hranice účtu a instalace, zdrojový kandidát bez aktivace](integration/43_ACCOUNT_SAFETY_COMPLETION.md)
+
+Historical account-safety source evidence and the superseded dedicated-client
+proposal are preserved in `docs/archive/2026-10-11_ACCOUNT_SAFETY_*` and
+`docs/archive/2026-10-11_JIZDA_DEDICATED_CLIENT_UNLINK_PROPOSAL.md`; they are not
+current provisioning or production activation instructions.
+
+Account erasure preflight/tracking: [ADR 0051](adr/0051_ERASURE_PREFLIGHT_AND_RECEIPT_TRACKING.md); infrastructure activation blocker: [runbook 25](runbooks/25_ACCOUNT_SAFETY_GUARD_BINDING_PROPOSAL.md).

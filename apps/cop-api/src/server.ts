@@ -1,3 +1,9 @@
+import { COMMUNICATION_SAFETY_CONFIG_KEY, CommunicationSafetyService, CommunicationSafetyError, MessagingCommunicationPolicy, registerCommunicationSafetyRoutes } from "./communication-safety.js";
+import { JizdaAppLinkService, disconnectJizdaMessaging, registerJizdaAppLinkRoutes } from "./jizda-app-link.js";
+import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureError, AccountErasureService, type AccountErasureAdapter } from "./account-erasure.js";
+import { registerAccountErasureRoutes } from "./account-erasure-routes.js";
+import { isAccountErasureReceiptRead } from "./account-erasure-transport.js";
+import { createCOPSessionsProfilesErasureAdapter } from "./cop-sessions-profiles-erasure.js";
 import { MediaNewsSourceAdapter } from "./media-news-source.js";
 import { createSafetyNotificationStoreFromEnv, type SafetyNotificationStore } from "./safety-notification-store.js";
 import { SafetyNotificationWorker, safetyNotificationWorkerConfigFromEnv, type SafetyNotificationWorkerConfig } from "./safety-notification-worker.js";
@@ -5,7 +11,7 @@ import { buildSafetyCandidateNotificationDecision } from "./notification-decisio
 import { readVoiceCallPeer, type VoiceCallPeer } from "./voice-call-peer.js";
 import { registerCOPAccountProfile } from "./cop-account-profile.js";
 import { registerMobilityRoutes } from "./routes/mobility-routes.js";
-import { mobilityStoreFromEnv, type MobilityStore } from "./mobility-store.js";
+import { accountSafetyGuardStoreFromEnv, MemoryMobilityStore, mobilityStoreFromEnv, type MobilityStore } from "./mobility-store.js";
 import { communityReportPresence } from "./community-report-presence.js";
 import { groupRoadObservations, RoadEnrichmentRunner } from "./road-enrichment.js";
 import compress from "@fastify/compress";
@@ -350,10 +356,16 @@ import {
 } from "./web-session-store.js";
 
 export interface BuildServerOptions {
+  accountErasure?: AccountErasureService;
+  accountErasureAdapters?: readonly AccountErasureAdapter[];
+  communicationSafety?: CommunicationSafetyService;
+  jizdaAppLink?: JizdaAppLinkService;
   mediaNewsSource?: Pick<MediaNewsSourceAdapter, "fetchContext">;
   safetyNotificationStore?: SafetyNotificationStore;
   safetyNotificationWorkerConfig?: SafetyNotificationWorkerConfig;
   mobilityStore?: MobilityStore;
+  /** Guard-only dependency injection; never enables mobility or Dispatch intake. */
+  accountSafetyStore?: MobilityStore;
   sharedMobilityEnabled?: boolean;
   privateDispatchEnabled?: boolean;
   driverMeasurementConsentStore?: DriverMeasurementConsentStore;
@@ -815,7 +827,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       process.env.COP_API_BODY_LIMIT_BYTES,
       Math.max(1024 * 1024, maxCommunityAttachmentBytes * 2)
     ),
-    logger: options.logger ? { serializers: { req: safeRequestLog } } : false
+    logger: options.logger ? { serializers: { req: safeRequestLog }, redact: ['req.headers["x-cop-erasure-receipt-capability"]', 'res.headers["x-cop-erasure-receipt-capability"]', "req.headers.cookie", 'res.headers["set-cookie"]'] } : false
   });
   setCopPgPoolErrorSink(options.logger ? (metadata) => {
     app.log.warn({ component: "cop-postgres", metadata }, "COP PostgreSQL idle connection failure.");
@@ -1094,6 +1106,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   );
   // Authenticate headers/cookies before parsing a potentially large upload.
   app.addHook("onRequest", async (request, reply) => {
+    if (isAccountErasureReceiptRead(request)) return;
     if (request.method === "OPTIONS" || !webBffEnabled || isBffAuthRoute(request.url)) {
       return;
     }
@@ -1116,6 +1129,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
     }
     const resolved = await resolveWebBffSession(request, reply);
+    if (reply.sent) return reply;
     if (resolved) {
       request.headers.authorization = `Bearer ${resolved.accessToken}`;
     }
@@ -1123,11 +1137,99 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   app.addHook("onRequest", requireBearerToken);
   app.addHook("onRequest", serviceAuthPolicy.onRequest);
   app.addHook("preValidation", serviceAuthPolicy.preValidation);
+  const erasureEnabled = process.env.COP_ACCOUNT_ERASURE_ENABLED === "true";
+  const erasureSecret = process.env.COP_ACCOUNT_ERASURE_SECRET?.trim();
+  const mobilityRuntimeStore = options.mobilityStore ?? mobilityStoreFromEnv();
+  const accountSafetyStore = options.accountSafetyStore ?? mobilityRuntimeStore ?? accountSafetyGuardStoreFromEnv();
+  const erasureStoreId = process.env.COP_ACCOUNT_SAFETY_STORE_ID?.trim();
+  if (erasureEnabled && (process.env.COP_ACCOUNT_SAFETY_RUNTIME_ATTESTATION !== "account-safety-guard-v1" || !erasureStoreId)) {
+    throw new Error("Account erasure activation requires the independently bound guard store and supported runtime attestation.");
+  }
+  if (process.env.COP_ACCOUNT_SAFETY_GUARD_REQUIRED === "true" && (!accountSafetyStore || !erasureStoreId)) throw new Error("Required account guard configuration is unavailable.");
+  if ((erasureEnabled || process.env.COP_ACCOUNT_SAFETY_GUARD_REQUIRED === "true") && accountSafetyStore instanceof MemoryMobilityStore) throw new Error("Accepted account safety requires persistent storage; RAM fallback is forbidden.");
+  if (erasureEnabled && (!erasureSecret || !accountSafetyStore || !process.env.COP_OIDC_ISSUER)) {
+    throw new Error("Account erasure requires the persistent store, dedicated secret and verified OIDC issuer.");
+  }
+  // Keep the guard present when intake is disabled; accepted tombstones are permanent.
+  const accountErasure = options.accountErasure ?? (erasureSecret && accountSafetyStore && process.env.COP_OIDC_ISSUER
+    ? new AccountErasureService({ store: accountSafetyStore, identitySecret: erasureSecret, expectedGuardStoreId: erasureStoreId,
+      issuer: process.env.COP_OIDC_ISSUER, requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS,
+      adapters: options.accountErasureAdapters ?? [createCOPSessionsProfilesErasureAdapter({ issuer: process.env.COP_OIDC_ISSUER,
+        sessions: webSessionStore, profiles: [userProfileStore, userProfileFallbackStore] })], accepted: erasureEnabled, now }) : undefined);
+  const erasureWorkerAbort = new AbortController();
+  let erasureWorkerTimer: ReturnType<typeof setInterval> | undefined;
+  let erasureWorkerRunning: Promise<void> | undefined;
+  function resumeAccountErasure() {
+    if (!accountErasure || erasureWorkerRunning || erasureWorkerAbort.signal.aborted) return;
+    erasureWorkerRunning = accountErasure.resumePending(10, erasureWorkerAbort.signal)
+      .catch(() => { if (!erasureWorkerAbort.signal.aborted) app.log.warn({ component: "account-erasure", code: "ERASURE_WORKER_UNAVAILABLE" }, "Account erasure worker paused; fences retained."); })
+      .finally(() => { erasureWorkerRunning = undefined; });
+  }
+  registerAccountErasureRoutes(app, accountErasure);
+  const jizdaClientId = process.env.COP_JIZDA_OIDC_CLIENT_ID?.trim();
+  const jizdaAppLink = options.jizdaAppLink ?? (accountSafetyStore &&
+    jizdaClientId && jizdaClientId !== process.env.COP_OIDC_CLIENT_ID && process.env.COP_OIDC_ISSUER
+    ? new JizdaAppLinkService({store:accountSafetyStore,clientId:jizdaClientId,issuer:process.env.COP_OIDC_ISSUER,
+      intakeEnabled: process.env.COP_JIZDA_DISCONNECT_ENABLED === "true", now,
+      cleanup:actor=>disconnectJizdaMessaging(actor,messagingProvider.config)}) : undefined);
+  registerJizdaAppLinkRoutes(app,jizdaAppLink);
+  const communicationSafetyEnabled = process.env.COP_COMMUNICATION_SAFETY_ENABLED === "true";
+  const communicationPolicy = new MessagingCommunicationPolicy(messagingProvider.config);
+  const communicationSafety = options.communicationSafety ?? (accountSafetyStore &&
+    process.env.COP_COMMUNICATION_EVIDENCE_SECRET && process.env.COP_COMMUNICATION_MODERATOR_ROLE &&
+    process.env.COP_COMMUNICATION_CONTACT_EMAIL && process.env.COP_COMMUNICATION_RETENTION_POLICY_ID
+    ? new CommunicationSafetyService({ store: accountSafetyStore, policy: communicationPolicy,
+      encryptionSecret: process.env.COP_COMMUNICATION_EVIDENCE_SECRET, moderatorRole: process.env.COP_COMMUNICATION_MODERATOR_ROLE,
+      contactEmail: process.env.COP_COMMUNICATION_CONTACT_EMAIL, retentionPolicyId: process.env.COP_COMMUNICATION_RETENTION_POLICY_ID,
+      intakeEnabled: communicationSafetyEnabled, now,
+      validateTarget: async (actor, target) => {
+        if (target.peerSubjectId === actor.subjectId) throw new CommunicationSafetyError(400, "VALIDATION_ERROR");
+        if (target.kind === "call") {
+          const call = await voiceCallStore.get(target.callId!);
+          if (!call || !voiceCallIncludesSubject(call, actor.subjectId) || !voiceCallIncludesSubject(call, target.peerSubjectId))
+            throw new CommunicationSafetyError(404, "NOT_FOUND");
+          return;
+        }
+        const result = await messagingProvider.fetchConversation(actor, now(), target.conversationId!);
+        if (result.status !== "online") throw new CommunicationSafetyError(503, "COMMUNICATION_POLICY_UNAVAILABLE");
+        const conversation = result.conversation;
+        if (!conversation || !(conversation.members ?? []).some(member => member.userId === target.peerSubjectId)) throw new CommunicationSafetyError(404, "NOT_FOUND");
+        if (target.kind === "message") {
+          const room = conversation.matrix?.roomId;
+          if (!room) throw new CommunicationSafetyError(503, "COMMUNICATION_POLICY_UNAVAILABLE");
+          if (!await communicationPolicy.eventMatchesPeer(actor.subjectId, target.peerSubjectId, room, target.eventId!)) throw new CommunicationSafetyError(404, "NOT_FOUND");
+        }
+      } }) : undefined);
+  registerCommunicationSafetyRoutes(app, communicationSafety);
+  let communicationRetentionTimer: ReturnType<typeof setInterval> | undefined;
+  let communicationRetentionRunning: Promise<void> | undefined;
+  let communicationRetentionStopping = false;
+  const pruneCommunicationReports = () => {
+    if (!communicationSafety || communicationRetentionRunning || communicationRetentionStopping) return;
+    communicationRetentionRunning = communicationSafety.pruneExpired()
+      .then(() => undefined)
+      .catch(() => { app.log.warn({ component: "communication-safety", code: "REPORT_RETENTION_UNAVAILABLE" }, "Report retention sweep unavailable."); })
+      .finally(() => { communicationRetentionRunning = undefined; });
+  };
+  async function enforceDirectCommunication(request: FastifyRequest, reply: FastifyReply, actor: AuthenticatedActor, peer: string): Promise<boolean> {
+    if (!communicationSafety && !communicationSafetyEnabled) return true;
+    try {
+      if (!communicationSafety) throw new CommunicationSafetyError(503, "COMMUNICATION_POLICY_UNAVAILABLE");
+      if (!await communicationSafety.options.policy.directAllowed(actor.subjectId, peer)) throw new CommunicationSafetyError(403, "COMMUNICATION_BLOCKED");
+      return true;
+    } catch (error) {
+      const known = error instanceof CommunicationSafetyError ? error : new CommunicationSafetyError(503, "COMMUNICATION_POLICY_UNAVAILABLE");
+      sendError(reply, known.status, known.code, "Hovor nyní nelze navázat.", correlationIdFrom(request.headers["x-correlation-id"]));
+      return false;
+    }
+  }
+  const directPeerForCall = (call: VoiceCallRecord, subject: string) => [call.initiatorSubjectId, ...call.participantSubjectIds].find(id => id !== subject)!;
+
   const mobilityDependency = registerMobilityRoutes(app, {
     messagingProvider,
     enabled: options.sharedMobilityEnabled ?? readBoolean(process.env.COP_SHARED_MOBILITY_ENABLED, false),
     dispatchEnabled: options.privateDispatchEnabled ?? readBoolean(process.env.COP_PRIVATE_DISPATCH_ENABLED, false),
-    store: options.mobilityStore ?? mobilityStoreFromEnv(), now
+    store: mobilityRuntimeStore, now
   });
   registerDriverMeasurementRoutes(app, {
     enabled: driverMeasurementsEnabled,
@@ -1137,6 +1239,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       && driverMeasurementPilotFlag !== "false" && driverMeasurementPilotFlag !== "0",
     pilotSubjectIds: process.env.COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS,
     oidcClientId: process.env.COP_DRIVER_MEASUREMENTS_OIDC_CLIENT_ID?.trim() || "csm-mobile",
+    cleanupOidcClientIds: process.env.COP_DRIVER_MEASUREMENTS_CLEANUP_OIDC_CLIENT_IDS,
+    oidcIssuer: process.env.COP_OIDC_ISSUER?.trim().replace(/\/$/u, ""),
     secret: driverMeasurementSecret,
     store: driverMeasurementStore,
     source: driverMeasurementSource,
@@ -1219,6 +1323,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     try {
       const tokens = await exchangeBffAuthorizationCode(query.code, transaction);
+      if (accountErasure) await assertBffActorAllowed(tokens.accessToken);
       const record = await webSessionStore.create(tokens, new Date(Date.now() + webBffSessionTtlSeconds * 1000));
       appendSetCookie(
         reply,
@@ -1232,6 +1337,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
       return reply.redirect(transaction.returnTo);
     } catch (error) {
+      if (error instanceof AccountErasureError && error.status === 503) {
+        // The one-use OIDC transaction is consumed, but an existing healthy
+        // web session must survive an unavailable account guard.
+        return sendError(reply, 503, "ERASURE_GUARD_UNAVAILABLE", "Ověření účtu nyní není dostupné.", correlationIdFrom(request.headers["x-correlation-id"]));
+      }
       app.log.warn({ error }, "OIDC BFF callback failed.");
       return reply.redirect(`${transaction.returnTo}?authError=login`);
     }
@@ -1239,6 +1349,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   app.get("/api/v1/auth/session", async (request, reply) => {
     if (!webBffEnabled) return reply.code(401).send({ authenticated: false });
     const session = await resolveWebBffSession(request, reply);
+    if (reply.sent) return reply;
     if (!session) return reply.code(401).send({ authenticated: false });
     return { authenticated: true, expiresAt: session.accessTokenExpiresAt.toISOString(), profile: session.profile };
   });
@@ -1260,6 +1371,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return reply.code(204).send();
   });
   app.addHook("onReady", async () => {
+    if (accountSafetyStore) {
+      // Removing deployment configuration must not silently disable already accepted fences.
+      await accountSafetyStore.init();
+      if (erasureStoreId) {
+        const identity = await accountSafetyStore.transact([], tx => tx.get<{ storeId: string }>("account-safety:store-identity-v1"));
+        if (identity?.storeId !== erasureStoreId) throw new Error("Account safety guard store identity mismatch.");
+      }
+      const guards = await accountSafetyStore.transact([], async tx => ({
+        erasure: !!await tx.get("account-erasure:configuration-v1"),
+        jizda: (await tx.scan("jizda-app-link:")).length > 0,
+        communication: !!await tx.get(COMMUNICATION_SAFETY_CONFIG_KEY) || (await tx.scan("communication-safety:report:")).length > 0
+      }));
+      if ((guards.erasure && !accountErasure) || (guards.jizda && !jizdaAppLink)) {
+        throw new Error("Accepted account fences require their configured guard during rollout and rollback.");
+      }
+      if (guards.communication && !communicationSafety) {
+        throw new Error("Accepted communication state requires its retention and policy guard during rollout and rollback.");
+      }
+    }
+    if (jizdaAppLink) await jizdaAppLink.init();
+    if (accountErasure) await accountErasure.init();
+    if (communicationSafety) await communicationSafety.init();
     if (openAiMcpAssistant) {
       try {
         await openAiMcpAssistant.init();
@@ -1317,8 +1450,33 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     aiContextIndexRefreshTimer.unref?.();
     safetyNotificationWorker?.start();
     logPoolSnapshot("startup");
+    if (communicationSafety) {
+      await communicationSafety.pruneExpired();
+      communicationRetentionTimer = setInterval(pruneCommunicationReports, 60_000);
+      communicationRetentionTimer.unref();
+    }
+    if (accountErasure) {
+      resumeAccountErasure();
+      erasureWorkerTimer = setInterval(resumeAccountErasure, 60_000);
+      erasureWorkerTimer.unref();
+    }
   });
   app.addHook("onClose", async () => {
+    communicationRetentionStopping = true;
+    if (communicationRetentionTimer) clearInterval(communicationRetentionTimer);
+    if (communicationRetentionRunning) {
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      try { await Promise.race([communicationRetentionRunning, new Promise<void>(resolve => { deadline = setTimeout(resolve, 12_000); })]); }
+      finally { if (deadline) clearTimeout(deadline); }
+    }
+    if (erasureWorkerTimer) clearInterval(erasureWorkerTimer);
+    erasureWorkerAbort.abort();
+    if (erasureWorkerRunning) {
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      try { await Promise.race([erasureWorkerRunning, new Promise<void>(resolve => { deadline = setTimeout(resolve, 12_000); })]); }
+      finally { if (deadline) clearTimeout(deadline); }
+    }
+    if (accountSafetyStore && accountSafetyStore !== mobilityRuntimeStore) await accountSafetyStore.close();
     await safetyNotificationWorker?.stop();
     await safetyNotificationStore?.close();
     await openAiMcpAssistant?.close();
@@ -1472,21 +1630,57 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
       return null;
     }
+    if (accountErasure && session.accessTokenExpiresAt.getTime() > Date.now()) {
+      try { await assertBffActorAllowed(session.accessToken); }
+      catch (error) {
+        if (error instanceof AccountErasureError && error.code === "ACCOUNT_ERASURE_FENCED") {
+          await webSessionStore.revoke(sessionId);
+          appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
+        } else {
+          // An unavailable guard/JWKS/configuration is not a confirmed revocation.
+          // Preserve the healthy server session and terminate this request as 503.
+          sendError(reply, 503, "ERASURE_GUARD_UNAVAILABLE", "Ověření účtu nyní není dostupné.", correlationIdFrom(request.headers["x-correlation-id"]));
+        }
+        return null;
+      }
+    }
     if (session.accessTokenExpiresAt.getTime() > Date.now() + 60_000) return session;
     if (!session.refreshToken) {
       await webSessionStore.revoke(sessionId);
       appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
       return null;
     }
+    let refreshedSession: WebSessionRecord | null;
     try {
       const refreshed = await refreshBffTokens(session.refreshToken);
-      return await webSessionStore.update(sessionId, { ...refreshed, profile: refreshed.profile ?? session.profile });
+      if (refreshed.profile.issuer !== session.profile.issuer || refreshed.profile.subjectId !== session.profile.subjectId)
+        throw new Error("OIDC refresh changed the session actor.");
+      // Persist verified rotated credentials before probing the erasure guard.
+      // update checks the owner/fence atomically and never creates a missing row.
+      refreshedSession = await webSessionStore.update(sessionId, refreshed);
     } catch (error) {
       app.log.info({ error }, "COP web session refresh failed.");
       await webSessionStore.revoke(sessionId);
       appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
       return null;
     }
+    if (!refreshedSession) {
+      appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
+      return null;
+    }
+    if (accountErasure) {
+      try { await assertBffActorAllowed(refreshedSession.accessToken); }
+      catch (error) {
+        if (error instanceof AccountErasureError && error.status === 503) {
+          sendError(reply, 503, "ERASURE_GUARD_UNAVAILABLE", "Ověření účtu nyní není dostupné.", correlationIdFrom(request.headers["x-correlation-id"]));
+        } else {
+          await webSessionStore.revoke(sessionId);
+          appendSetCookie(reply, clearCookie("cop_web_session_v1", "/"));
+        }
+        return null;
+      }
+    }
+    return refreshedSession;
   }
 
   async function exchangeBffAuthorizationCode(code: string, transaction: BffTransaction): Promise<WebSessionTokens> {
@@ -1535,6 +1729,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const username = decoded.preferred_username?.trim() || decoded.email?.trim() || decoded.name?.trim() || subjectId;
     const profile: WebSessionProfile = {
       subjectId,
+      ...(decoded.iss ? { issuer: decoded.iss } : {}),
       username,
       name: decoded.name?.trim() || username,
       ...(decoded.email?.trim() ? { email: decoded.email.trim() } : {})
@@ -1548,6 +1743,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         ? { refreshToken: response.refresh_token ?? fallbackRefreshToken }
         : {})
     };
+  }
+
+  async function assertBffActorAllowed(verifiedToken: string): Promise<void> {
+    if (!accountErasure) return;
+    if (!await verifyOidcToken(verifiedToken)) throw new Error("Invalid BFF actor.");
+    const claims = decodeJwt(verifiedToken)?.payload;
+    if (!claims?.sub || !claims.iss) throw new Error("Invalid BFF actor.");
+    await accountErasure.assertAllowed({ authMode: "oidc", issuer: claims.iss, subjectId: claims.sub,
+      authorizedParty: claims.azp, username: "", displayName: "" });
   }
 
   function signBffTransaction(transaction: BffTransaction): string {
@@ -3333,12 +3537,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     profile: Omit<UserProfileRecord, "createdAt" | "updatedAt">
   ): Promise<UserProfileRecord> {
     if (!(await ensureUserProfileStoreReady())) {
+      if (accountErasure) throw new Error("Persistent profile storage is required by the erasure guard.");
       return userProfileFallbackStore.upsertProfile(profile);
     }
     try {
       return await userProfileStore.upsertProfile(profile);
     } catch (error) {
       markUserProfileStoreDegraded(error);
+      if (accountErasure) throw error;
       return userProfileFallbackStore.upsertProfile(profile);
     }
   }
@@ -3360,6 +3566,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     acknowledgement: AlertAcknowledgement
   ): Promise<void> {
     if (!(await ensureUserProfileStoreReady())) {
+      if (accountErasure) throw new Error("Persistent profile storage is required by the erasure guard.");
       await userProfileFallbackStore.acknowledgeAlert(actor.subjectId, acknowledgement);
       return;
     }
@@ -3367,6 +3574,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       await userProfileStore.acknowledgeAlert(actor.subjectId, acknowledgement);
     } catch (error) {
       markUserProfileStoreDegraded(error);
+      if (accountErasure) throw error;
       await userProfileFallbackStore.acknowledgeAlert(actor.subjectId, acknowledgement);
     }
   }
@@ -4898,6 +5106,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       (await readUserProfile(actor)) ??
       (await upsertUserProfile({
         alertPreferences: {},
+        ...(actor.issuer ? { issuer: actor.issuer } : {}),
         displayName: actor.displayName,
         ...(actor.email ? { email: actor.email } : {}),
         preferences: {},
@@ -5070,16 +5279,30 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
       const body = isRecord(request.body) ? request.body : {};
       const deviceId = normalizeMatrixDeviceId(body.deviceId);
-      if (body.deviceId !== undefined && !deviceId) {
+      const installationId = typeof body.installationId === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(body.installationId)
+        ? body.installationId.toLowerCase() : undefined;
+      const dedicatedJizda = !!jizdaClientId && actor.authMode === "oidc" && actor.authorizedParty === jizdaClientId;
+      if ((request.body !== undefined && !isRecord(request.body)) ||
+          Object.keys(body).some(key => key !== "deviceId" && key !== "installationId") ||
+          (body.deviceId !== undefined && !deviceId) ||
+          (body.installationId !== undefined && (!installationId || !deviceId || actor.authMode !== "oidc" || !actor.issuer || !actor.authorizedParty)) ||
+          (dedicatedJizda && (!deviceId || !installationId))) {
         return sendError(
           reply,
           400,
           "VALIDATION_ERROR",
-          "Matrix deviceId may contain only A-Z, a-z, 0-9, dot, underscore, equals and dash, with max length 64.",
+          "Matrix bootstrap accepts only deviceId and installationId; the dedicated app requires both with verified OIDC scope.",
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
-      return messagingProvider.fetchMatrixBootstrap(actor, now(), deviceId);
+      const bootstrap = await messagingProvider.fetchMatrixBootstrap(actor, now(), deviceId, installationId);
+      if (installationId && (bootstrap.status !== "online" || !bootstrap.chatAvailable || !bootstrap.tokenAvailable)) {
+        reply.header("Cache-Control", "no-store");
+        return sendError(reply, 503, "MESSAGING_INSTALLATION_UNAVAILABLE", "Ověřený komunikační přístup nyní není dostupný.",
+          correlationIdFrom(request.headers["x-correlation-id"]));
+      }
+      return bootstrap;
     },
     e2eeResetAuth: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -5166,6 +5389,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
+      if (!await enforceDirectCommunication(request, reply, actor, requestedRecipients[0]!)) return reply;
       const requestNow = now();
       const call = await voiceCallStore.create({
         expiresAt: new Date(requestNow.getTime() + 90_000).toISOString(),
@@ -5198,6 +5422,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           "The recipient could not be notified about the call.",
           correlationIdFrom(request.headers["x-correlation-id"])
         );
+      }
+      if (!await enforceDirectCommunication(request, reply, actor, requestedRecipients[0]!)) {
+        await voiceCallStore.transition(call.callId, {action: "media_failed", actorSubjectId: actor.subjectId, now: now().toISOString(), reason: "communication_policy_changed"});
+        return reply;
       }
       const media = await voiceCallMediaIssuer.issue(call, actor, requestNow);
       return reply.code(201).send(voiceCallAPIResponse(call, actor.subjectId, media, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id))));
@@ -5262,6 +5490,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
+      if (canIssueVoiceCallMedia(call, actor.subjectId) && !await enforceDirectCommunication(request, reply, actor, directPeerForCall(call, actor.subjectId))) return reply;
       const media =
         canIssueVoiceCallMedia(call, actor.subjectId) && voiceCallMediaIssuer.enabled
           ? await voiceCallMediaIssuer.issue(call, actor, now())
@@ -5296,6 +5525,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
+      if (input.action === "accept" && !await enforceDirectCommunication(request, reply, actor, directPeerForCall(current, actor.subjectId))) return reply;
       const result = await voiceCallStore.transition(callId, {
         action: input.action,
         actorSubjectId: actor.subjectId,
@@ -5351,6 +5581,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           requestNow: now()
         });
       }
+      if (canIssueVoiceCallMedia(result.record, actor.subjectId) && !await enforceDirectCommunication(request, reply, actor, directPeerForCall(result.record, actor.subjectId))) return reply;
       const media =
         canIssueVoiceCallMedia(result.record, actor.subjectId) && voiceCallMediaIssuer.enabled
           ? await voiceCallMediaIssuer.issue(result.record, actor, now())
@@ -6485,6 +6716,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       if (!profile) {
         profile = await userProfileStore.upsertProfile({ subjectId: actor.subjectId, username: actor.username, displayName: actor.displayName,
+          ...(actor.issuer ? { issuer: actor.issuer } : {}),
           ...(actor.email ? { email: actor.email } : {}), alertPreferences: {}, preferences: {} });
       }
       const saved = await userProfileStore.setSafetyNotificationsEnabled(actor.subjectId, request.body.enabled);
@@ -6516,6 +6748,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
     const profile = await upsertUserProfile({
       alertPreferences,
+      ...(actor.issuer ? { issuer: actor.issuer } : {}),
       displayName: actor.displayName,
       ...(actor.email ? { email: actor.email } : {}),
       preferences,
@@ -6626,7 +6859,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const issuedAt = Math.floor(now().getTime() / 1000);
       const expiresAt = issuedAt + 120;
+      const verifiedJizdaScope = !!jizdaClientId && !["csm-mobile", "cop-web"].includes(jizdaClientId) &&
+        actor.authorizedParty === jizdaClientId && bundleId === "cz.voldzi.jizda";
       const claims = {
+        ...(verifiedJizdaScope ? {verifiedAppScope:"jizda",appClientId:jizdaClientId} : {}),
         appInstanceId,
         aud: "csm-messaging-device-registration",
         bundleId,

@@ -255,7 +255,7 @@
         "tags": ["Mobile"],
         "operationId": "getDriverMeasurementConsent",
         "summary": "Read consent and deletion state for the authenticated native user.",
-        "description": "Available with intake or cleanup enabled, including outside a restricted pilot. canGrant also requires enabled intake and membership in a configured pilot cohort; false does not revoke an existing consent. Measurement request logs contain only method, fixed operation path and generated request correlation, never IP, ports, headers or raw JSON parser content.",
+        "description": "Available with intake or cleanup enabled, including outside a restricted pilot. canGrant also requires enabled intake and membership in a configured pilot cohort; false does not revoke an existing consent. Measurement request logs contain only method, fixed operation path and generated request correlation, never IP, ports, headers or raw JSON parser content. Own read/revoke accepts only explicitly configured cleanup clients from verified signed azp and pinned issuer. Default and currently authorized cleanup client is csm-mobile; dedicated Jizda OAuth provisioning is not authorized by this source integration. This does not authorize grant/batch or expand the pilot subject cohort. Missing/invalid explicit cleanup configuration returns503.",
         "responses": {
           "200": {"description": "Current consent state.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementConsentState"}}}},
           "400": {"$ref": "#/components/responses/BadRequest"},
@@ -285,7 +285,7 @@
         "tags": ["Mobile"],
         "operationId": "revokeDriverMeasurementConsent",
         "summary": "Stop uploads immediately and delete retained SIM contributions.",
-        "description": "202 means local consent is revoked but SIM deletion is pending and retried. Same UTC day regrant is blocked; pending deletion blocks all regrants. Revocation remains available outside the pilot and with intake disabled when cleanup is enabled.",
+        "description": "202 means local consent is revoked but SIM deletion is pending and retried. Same UTC day regrant is blocked; pending deletion blocks all regrants. Revocation remains available outside the pilot and with intake disabled when cleanup is enabled. Own read/revoke accepts only explicitly configured cleanup clients from verified signed azp and pinned issuer. Default and currently authorized cleanup client is csm-mobile; dedicated Jizda OAuth provisioning is not authorized by this source integration. This does not authorize grant/batch or expand the pilot subject cohort. Missing/invalid explicit cleanup configuration returns503.",
         "responses": {
           "200": {"description": "Consent revoked and deletion completed.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementRevokeReceipt"}}}},
           "202": {"description": "Consent revoked locally; durable deletion pending.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DriverMeasurementRevokeReceipt"}}}},
@@ -603,6 +603,9 @@
         "responses": {
           "302": {
             "description": "Browser redirect after the authorization callback."
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       }
@@ -669,6 +672,9 @@
           },
           "401": {
             "description": "No valid secure web session."
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       }
@@ -4815,7 +4821,7 @@
           "Messaging"
         ],
         "summary": "Create client-safe Matrix bootstrap for the authenticated user.",
-        "description": "Authenticated COP users may request a short-lived Matrix user token for direct Matrix client-server communication with E2EE. This endpoint never returns provider, service or Synapse admin tokens and does not proxy plaintext messages.\n",
+        "description": "Authenticated COP users may request a short-lived Matrix user token for direct Matrix client-server communication with E2EE. This endpoint never returns provider, service or Synapse admin tokens and does not proxy plaintext messages.\n Optional installationId is an app installation UUID attested server-side from the verified issuer/azp; dedicated Jízda requires it together with deviceId. Forged or extra body fields return400. An unavailable attested installation bootstrap returns503 MESSAGING_INSTALLATION_UNAVAILABLE with no credentials or legacy retry. Requests without installationId preserve the existing degraded200 compatibility behavior.",
         "operationId": "createMessagingBootstrap",
         "requestBody": {
           "required": false,
@@ -4843,6 +4849,12 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
           }
         }
       }
@@ -13110,6 +13122,1185 @@
           }
         }
       }
+    },
+    "/api/v1/me/account-safety/capabilities": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "operationId": "getAccountSafetyCapabilities",
+        "summary": "Read truthful account safety capabilities",
+        "description": "Prepared compatible extension; disabled in production. Verified OIDC session required. No-store. Actor is derived only from the verified session; caller identity fields are forbidden.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted result or current state. A submitted report is awaiting moderation, not resolved.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSafetyCapabilities"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "x-cop-ai-exposure": "forbidden"
+      }
+    },
+    "/api/v1/me/communication/reports": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "operationId": "submitCommunicationReport",
+        "summary": "Submit explicit communication report",
+        "description": "Prepared compatible extension; disabled in production. Verified OIDC session required. No-store. Actor is derived only from the verified session; caller identity fields are forbidden.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted result or current state. A submitted report is awaiting moderation, not resolved.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationReportReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunicationReportRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{16,128}$"
+            },
+            "description": "Stable operation UUID for all retries; scoped to the authenticated actor."
+          }
+        ],
+        "x-cop-ai-exposure": "forbidden"
+      }
+    },
+    "/api/v1/me/communication/reports/{reportId}": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "operationId": "getOwnCommunicationReport",
+        "summary": "Read own communication report status",
+        "description": "Prepared compatible extension; disabled in production. Verified OIDC session required. No-store. Actor is derived only from the verified session; caller identity fields are forbidden.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted result or current state. A submitted report is awaiting moderation, not resolved.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationReportReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "x-cop-ai-exposure": "forbidden"
+      }
+    },
+    "/api/v1/me/communication/blocks/query": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "operationId": "getCommunicationBlockState",
+        "summary": "Read canonical peer block state",
+        "description": "Prepared compatible extension; disabled in production. Verified OIDC session required. No-store. Actor is derived only from the verified session; caller identity fields are forbidden.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted result or current state. A submitted report is awaiting moderation, not resolved.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationBlockState"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunicationBlockQuery"
+              }
+            }
+          }
+        },
+        "x-cop-ai-exposure": "forbidden"
+      }
+    },
+    "/api/v1/me/communication/blocks": {
+      "put": {
+        "tags": [
+          "Identity"
+        ],
+        "operationId": "setCommunicationBlockState",
+        "summary": "Block or unblock a peer",
+        "description": "Prepared compatible extension; disabled in production. Verified OIDC session required. No-store. Actor is derived only from the verified session; caller identity fields are forbidden.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted result or current state. A submitted report is awaiting moderation, not resolved.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationBlockState"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunicationBlockState"
+              }
+            }
+          }
+        },
+        "x-cop-ai-exposure": "forbidden"
+      }
+    },
+    "/api/v1/moderation/communication/reports": {
+      "get": {
+        "tags": [
+          "Messaging"
+        ],
+        "operationId": "listCommunicationReports",
+        "summary": "List up to 100 oldest unresolved reports",
+        "description": "Prepared compatible extension; disabled in production. Verified OIDC session required. No-store. Requires the configured moderator role. Selected report evidence is disclosed only to authorized moderation.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted result or current state. A submitted report is awaiting moderation, not resolved.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationReportQueue"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "x-cop-ai-exposure": "forbidden"
+      }
+    },
+    "/api/v1/moderation/communication/reports/{reportId}": {
+      "get": {
+        "tags": [
+          "Messaging"
+        ],
+        "operationId": "getModerationCommunicationReport",
+        "summary": "Read report including explicitly selected evidence",
+        "description": "Prepared compatible extension; disabled in production. Verified OIDC session required. No-store. Requires the configured moderator role. Selected report evidence is disclosed only to authorized moderation. Approved90/30/180day retention is enforced before access. At180days the report details are removed and this endpoint returns410 REPORT_DETAIL_EXPIRED. Own content-free receipt is unaffected.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted result or current state. A submitted report is awaiting moderation, not resolved.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationReportOperatorRecord"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "410": {
+            "description": "REPORT_DETAIL_EXPIRED: report details have been durably removed under the approved retention policy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "x-cop-ai-exposure": "forbidden"
+      },
+      "patch": {
+        "tags": [
+          "Messaging"
+        ],
+        "operationId": "reviewCommunicationReport",
+        "summary": "Record operator review with revision and resolution",
+        "description": "Prepared compatible extension; disabled in production. Verified OIDC session required. No-store. Requires the configured moderator role. Selected report evidence is disclosed only to authorized moderation. Approved90/30/180day retention is enforced before access. At180days the report details are removed and this endpoint returns410 REPORT_DETAIL_EXPIRED. Own content-free receipt is unaffected.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted result or current state. A submitted report is awaiting moderation, not resolved.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationReportReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "410": {
+            "description": "REPORT_DETAIL_EXPIRED: report details have been durably removed under the approved retention policy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunicationReportReview"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "x-cop-ai-exposure": "forbidden"
+      }
+    },
+    "/api/v1/me/app-links/jizda/capabilities": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "operationId": "getJizdaLinkCapabilities",
+        "summary": "Read scoped Jizda unlink capability",
+        "description": "Candidate disabled in production. Verified OIDC authorized-party claim must match a dedicated Jizda client. A shared csm-mobile token, audience, bundle or header does not prove app scope. No caller identity/app/model selection. No global account deletion. No automatic reconnection. Historical disabled compatibility contract: dedicated Jizda OAuth provisioning is not authorized for the current product. Jizda keeps csm-mobile with explicit local host consent. Common-client installation proof-of-possession grants and completed remote revocation are not implemented or accepted; local disable does not call this old server unlink path.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-cop-ai-exposure": "forbidden",
+        "responses": {
+          "200": {
+            "description": "Current state or completed scoped unlink; never account deletion.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JizdaLinkCapabilities"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/me/app-links/jizda": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "operationId": "getJizdaLinkStatus",
+        "summary": "Read pending or completed Jizda app unlink",
+        "description": "Candidate disabled in production. Verified OIDC authorized-party claim must match a dedicated Jizda client. A shared csm-mobile token, audience, bundle or header does not prove app scope. No caller identity/app/model selection. No global account deletion. No automatic reconnection. Historical disabled compatibility contract: dedicated Jizda OAuth provisioning is not authorized for the current product. Jizda keeps csm-mobile with explicit local host consent. Common-client installation proof-of-possession grants and completed remote revocation are not implemented or accepted; local disable does not call this old server unlink path.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-cop-ai-exposure": "forbidden",
+        "responses": {
+          "200": {
+            "description": "Current state or completed scoped unlink; never account deletion.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JizdaLinkStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/me/app-links/jizda/disconnect": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "operationId": "disconnectJizdaAppLink",
+        "summary": "Odpojit Jizdu; preserve the common COP account and local data",
+        "description": "Candidate disabled in production. Verified OIDC authorized-party claim must match a dedicated Jizda client. A shared csm-mobile token, audience, bundle or header does not prove app scope. No caller identity/app/model selection. No global account deletion. No automatic reconnection. Empty body only. Durable fence precedes upstream cleanup; 503 never removes the fence. Other applications retain authority. Historical disabled compatibility contract: dedicated Jizda OAuth provisioning is not authorized for the current product. Jizda keeps csm-mobile with explicit local host consent. Common-client installation proof-of-possession grants and completed remote revocation are not implemented or accepted; local disable does not call this old server unlink path.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-cop-ai-exposure": "forbidden",
+        "responses": {
+          "200": {
+            "description": "Scoped unlink completed: status=disconnected and remaining=[]. Never account deletion.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/JizdaLinkReceipt"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "disconnected"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "202": {
+            "description": "Durable app fence accepted: status=disconnecting with nonempty remaining. Cleanup is pending, not completed.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/JizdaLinkReceipt"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "disconnecting"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Reuse this UUID for retries. GET status to recover an existing operation; another UUID conflicts."
+          }
+        ]
+      }
+    },
+    "/api/v1/me/account-deletion/capabilities": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-cop-ai-exposure": "forbidden",
+        "operationId": "getAccountErasureCapabilities",
+        "summary": "Availability of separate whole COP account erasure",
+        "description": "Source candidate, disabled. Availability requires every real provider adapter and accepted retention/restore policy. No browser-supplied identity. A report or app unlink capability does not imply deletion readiness.",
+        "responses": {
+          "200": {
+            "description": "Verified caller sees current readiness.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountErasureCapabilities"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/me/account-deletion/{operationId}": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-cop-ai-exposure": "forbidden",
+        "operationId": "getAccountErasureReceipt",
+        "summary": "Recover own account erasure status",
+        "description": "Requires verified OIDC issuer/subject and fresh signed auth_time within 300 seconds. Operation belongs to the caller. Deleting is pending; completion requires all owner proofs. No personal data in the receipt.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operationId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Own durable receipt, which may still be pending.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountErasureReceipt"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/me/account-deletion": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-cop-ai-exposure": "forbidden",
+        "operationId": "requestAccountErasure",
+        "summary": "Explicitly request whole COP account deletion",
+        "description": "Separate from Jizda unlink. Requires verified signed auth_time no older than 300 seconds; refreshed iat is insufficient. Idempotency is issuer/subject bound. Durable global fence precedes cleanup and survives provider outages, retries, intake disablement and code rollback. Missing or unaccepted adapters fail 503 before a new fence. Existing jobs resume in a trusted worker after login removal; no token is stored in the job. Flags are disabled in production. First acceptance additionally requires a current server preflight plan and possession of its already issued read capability. Unknown ownership or changed/expired plan fails before fence. Keycloak cleanup runs only after all other durable owner proofs complete. Accepted workers and fences remain active when intake is off; existing own idempotent retries preserve their behavior. Activation is blocked until stable guard-store identity and supported infrastructure runtime attestation are accepted.",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-COP-Erasure-Plan",
+            "required": false,
+            "description": "Required for initial acceptance; UUID from current server preflight. Existing own idempotent retries do not create a new plan.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-COP-Erasure-Receipt-Capability",
+            "required": false,
+            "description": "Initial acceptance requires native header or HttpOnly capability cookie, alongside fresh OIDC. Never log.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "x-cop-sensitive": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountErasureRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deleted: every required cleanup proof verified.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/AccountErasureReceipt"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "deleted"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted with permanent fence; nonempty remaining means cleanup is pending.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/AccountErasureReceipt"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": "deleting"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/me/account-deletion/preflight": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-cop-ai-exposure": "forbidden",
+        "operationId": "preflightAccountErasure",
+        "summary": "Read-only actor-specific assessment before permanent erasure fence",
+        "description": "Source candidate, disabled. Requires verified fresh signed auth_time within 300 seconds. Does not fence or delete. Missing custom preflight, uncertain provenance and unresolved ownership choices prevent confirmation. Positive result issues read capability only in HttpOnly cookie and native response header; JSON never contains it. Plan expires after 300 seconds. Neither duration defines personal-data retention. Capability is issued before destructive confirmation so response loss after acceptance does not lose tracking.",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "maxProperties": 0
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Assessment; canConfirm=false means no capability and no fence.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "X-COP-Erasure-Receipt-Capability": {
+                "description": "Sensitive opaque value for native Keychain. Present only for positive assessment. Never logged.",
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{43}$"
+                },
+                "x-cop-sensitive": true
+              },
+              "Set-Cookie": {
+                "description": "Secure HttpOnly SameSite=Strict read capability; not available to JavaScript.",
+                "schema": {
+                  "type": "string"
+                },
+                "x-cop-sensitive": true
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountErasurePreflight"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/me/account-deletion/receipts/{operationId}": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "security": [
+          {
+            "erasureReceiptHeader": []
+          },
+          {
+            "erasureReceiptCookie": []
+          }
+        ],
+        "x-cop-ai-exposure": "forbidden",
+        "operationId": "getAccountErasureReceiptWithCapability",
+        "summary": "Read own erasure receipt after login removal",
+        "description": "Only this exact GET path authenticates the operation-bound read capability independently of BFF/OIDC. Query parameters are forbidden; no other path/method bypasses ordinary authentication. Wrong/expired capability returns401; it cannot authorize retry, account creation, login, erasure or other APIs. Returns the unchanged strict cop-account-erasure-v1 content-free receipt. No-store. 30-day technical grant validity; not a data-retention policy.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operationId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Own durable receipt, which may still be pending.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountErasureReceipt"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -13118,6 +14309,18 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
+      },
+      "erasureReceiptHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-COP-Erasure-Receipt-Capability",
+        "description": "Opaque 256-bit read-only authority for one erasure receipt, issued before confirmation. No account or deletion authority. Never log, put in URL, JSON, analytics or Git."
+      },
+      "erasureReceiptCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Secure-cop_erasure_receipt_v1",
+        "description": "Secure HttpOnly SameSite=Strict cookie scoped to /api/v1/me/account-deletion, 30-day technical validity. This is not a personal-data retention policy."
       }
     },
     "parameters": {
@@ -14303,6 +15506,10 @@
           },
           "username": {
             "type": "string"
+          },
+          "authorizedParty": {
+            "type": "string",
+            "description": "Verified OIDC azp claim. A shared client or an audience does not prove app scope."
           }
         }
       },
@@ -20982,6 +22189,11 @@
             "maxLength": 64,
             "pattern": "^[A-Za-z0-9._=-]{1,64}$",
             "description": "Stable per-browser Matrix device identifier generated by the client and sent in the request body and as x-csm-device-id to Messaging."
+          },
+          "installationId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable secure per-account/app installation UUID. Required together with deviceId for the dedicated Jizda OIDC client. Issuer and client are derived exclusively from signed verified authentication; body/header claims never choose app scope. Legacy clients may omit this additive field."
           }
         }
       },
@@ -31827,6 +33039,1157 @@
             "maxLength": 512
           }
         }
+      },
+      "JizdaLinkCapabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "app",
+          "scope",
+          "disconnectAvailable",
+          "accountDeletion",
+          "localDataDeleted"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-jizda-link-v1"
+          },
+          "app": {
+            "type": "string",
+            "const": "jizda"
+          },
+          "scope": {
+            "type": "string",
+            "const": "jizda_app_link"
+          },
+          "disconnectAvailable": {
+            "type": "boolean"
+          },
+          "accountDeletion": {
+            "type": "boolean",
+            "const": false
+          },
+          "localDataDeleted": {
+            "type": "boolean",
+            "const": false
+          },
+          "unavailableReason": {
+            "type": "string",
+            "enum": [
+              "app_identity_not_separated",
+              "not_enabled"
+            ]
+          }
+        }
+      },
+      "JizdaLinkReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "app",
+          "scope",
+          "operationId",
+          "status",
+          "requestedAt",
+          "accountDeleted",
+          "localDataDeleted",
+          "remaining"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-jizda-link-v1"
+          },
+          "app": {
+            "type": "string",
+            "const": "jizda"
+          },
+          "scope": {
+            "type": "string",
+            "const": "jizda_app_link"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "disconnecting",
+              "disconnected"
+            ]
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "accountDeleted": {
+            "type": "boolean",
+            "const": false
+          },
+          "localDataDeleted": {
+            "type": "boolean",
+            "const": false
+          },
+          "remaining": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "push_registrations",
+                "legacy_installations",
+                "matrix_devices",
+                "live_permissions"
+              ]
+            }
+          }
+        },
+        "description": "disconnecting remains pending. disconnected is valid only with remaining=[]. Account/SwiftData are never deleted. Current production adapter cannot complete Matrix/live permission cleanup.",
+        "oneOf": [
+          {
+            "properties": {
+              "status": {
+                "const": "disconnecting"
+              },
+              "remaining": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "status",
+              "remaining"
+            ]
+          },
+          {
+            "properties": {
+              "status": {
+                "const": "disconnected"
+              },
+              "remaining": {
+                "maxItems": 0
+              }
+            },
+            "required": [
+              "status",
+              "remaining"
+            ]
+          }
+        ]
+      },
+      "JizdaLinkStatus": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "contractVersion",
+              "app",
+              "scope",
+              "status",
+              "accountDeleted",
+              "localDataDeleted"
+            ],
+            "properties": {
+              "contractVersion": {
+                "type": "string",
+                "const": "cop-jizda-link-v1"
+              },
+              "app": {
+                "type": "string",
+                "const": "jizda"
+              },
+              "scope": {
+                "type": "string",
+                "const": "jizda_app_link"
+              },
+              "status": {
+                "type": "string",
+                "const": "linked"
+              },
+              "accountDeleted": {
+                "type": "boolean",
+                "const": false
+              },
+              "localDataDeleted": {
+                "type": "boolean",
+                "const": false
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/JizdaLinkReceipt"
+          }
+        ]
+      },
+      "AccountSafetyCapabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "reporting",
+          "blocking",
+          "accountDeletion",
+          "evidence",
+          "blockDelivery"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-account-safety-v1"
+          },
+          "reporting": {
+            "type": "boolean"
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "accountDeletion": {
+            "type": "boolean",
+            "const": false,
+            "description": "Account erasure is not yet accepted or available. Never expose a delete action based on this candidate."
+          },
+          "accountDeletionUrl": {
+            "type": "null",
+            "description": "No functioning direct account deletion flow is deployed. Never substitute a generic support or account-console URL."
+          },
+          "accountDeletionUnavailableReason": {
+            "type": "string"
+          },
+          "reportContactEmail": {
+            "type": "string",
+            "format": "email",
+            "example": "podpora@zeleznalady.cz"
+          },
+          "retentionPolicyId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "For reporting=true, the approved policy is cop-communication-retention-90d-30d-180d-v1. Text expires at min(created+90days,firstclosure+30days); audit has no excerpt and expires within180days. Blocking lasts until unblock or account deletion."
+          },
+          "evidence": {
+            "type": "string",
+            "const": "explicitly_selected_text_only"
+          },
+          "blockDelivery": {
+            "type": "string",
+            "const": "matrix_ignore_policy"
+          }
+        }
+      },
+      "CommunicationReportTarget": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "peerSubjectId",
+              "conversationId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "user"
+              },
+              "peerSubjectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "Maximum 256 UTF-8 bytes, enforced separately by the COP/SDK runtime. JSON Schema maxLength counts characters and cannot enforce the byte bound."
+              },
+              "conversationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "description": "Maximum 255 UTF-8 bytes, enforced separately by the COP/SDK runtime. JSON Schema maxLength counts characters and cannot enforce the byte bound."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "peerSubjectId",
+              "conversationId",
+              "eventId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "message"
+              },
+              "peerSubjectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "Maximum 256 UTF-8 bytes, enforced separately by the COP/SDK runtime. JSON Schema maxLength counts characters and cannot enforce the byte bound."
+              },
+              "conversationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "description": "Maximum 255 UTF-8 bytes, enforced separately by the COP/SDK runtime. JSON Schema maxLength counts characters and cannot enforce the byte bound."
+              },
+              "eventId": {
+                "type": "string",
+                "pattern": "^\\$",
+                "maxLength": 255,
+                "description": "Maximum 255 UTF-8 bytes, enforced separately by the COP/SDK runtime. JSON Schema maxLength counts characters and cannot enforce the byte bound."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "peerSubjectId",
+              "callId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "call"
+              },
+              "peerSubjectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "Maximum 256 UTF-8 bytes, enforced separately by the COP/SDK runtime. JSON Schema maxLength counts characters and cannot enforce the byte bound."
+              },
+              "callId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        ]
+      },
+      "CommunicationReportEvidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "selectedText",
+          "explicitlyConfirmed"
+        ],
+        "properties": {
+          "selectedText": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Only an excerpt the user explicitly selected and confirmed; maximum 4096 UTF-8 bytes. Never attach automatic decrypted timeline/context."
+          },
+          "explicitlyConfirmed": {
+            "type": "boolean",
+            "const": true
+          }
+        }
+      },
+      "CommunicationReportRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target",
+          "reason"
+        ],
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/CommunicationReportTarget"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "harassment",
+              "threats",
+              "spam",
+              "sexual_content",
+              "other"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/CommunicationReportEvidence"
+          }
+        }
+      },
+      "CommunicationReportReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reportId",
+          "createdAt",
+          "status",
+          "revision"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "submitted",
+              "reviewing",
+              "resolved"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "no_action",
+              "action_taken"
+            ]
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "submitted",
+                  "reviewing"
+                ]
+              },
+              "resolution": {
+                "not": {}
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          {
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "resolved"
+              },
+              "resolution": {
+                "type": "string",
+                "enum": [
+                  "no_action",
+                  "action_taken"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "resolution"
+            ]
+          }
+        ],
+        "description": "Own content-free receipt. Remains readable and idempotent after report details expire; never exposes target, excerpt or identities."
+      },
+      "CommunicationBlockQuery": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "peerSubjectId"
+        ],
+        "properties": {
+          "peerSubjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      },
+      "CommunicationBlockState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "peerSubjectId",
+          "blocked"
+        ],
+        "properties": {
+          "peerSubjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "blocked": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CommunicationReportReview": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedRevision",
+          "status"
+        ],
+        "properties": {
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "reviewing",
+              "resolved"
+            ]
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "no_action",
+              "action_taken"
+            ]
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "reviewing"
+                ]
+              },
+              "resolution": {
+                "not": {}
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          {
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "resolved"
+              },
+              "resolution": {
+                "type": "string",
+                "enum": [
+                  "no_action",
+                  "action_taken"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "resolution"
+            ]
+          }
+        ]
+      },
+      "CommunicationReportOperatorRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target",
+          "reason",
+          "reportId",
+          "reporter",
+          "createdAt",
+          "status",
+          "revision",
+          "audit",
+          "reporterIssuer"
+        ],
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/CommunicationReportTarget"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "harassment",
+              "threats",
+              "spam",
+              "sexual_content",
+              "other"
+            ]
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/CommunicationReportEvidence"
+          },
+          "reportId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reporter": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "submitted",
+              "reviewing",
+              "resolved"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "no_action",
+              "action_taken"
+            ]
+          },
+          "audit": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "actor",
+                "at",
+                "action"
+              ],
+              "properties": {
+                "actor": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "action": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "reporterIssuer": {
+            "type": "string",
+            "format": "uri"
+          },
+          "closedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "First known closure timestamp in UTC. Later reviews cannot extend evidence retention."
+          },
+          "evidenceExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Exact UTC expiry of selected text: earliest of creation+90days and first closure+30days. Evidence is absent at and after this deadline."
+          }
+        }
+      },
+      "CommunicationReportQueue": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "reportId",
+                "createdAt",
+                "reason",
+                "status",
+                "revision"
+              ],
+              "properties": {
+                "reportId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "harassment",
+                    "threats",
+                    "spam",
+                    "sexual_content",
+                    "other"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "submitted",
+                    "reviewing",
+                    "resolved"
+                  ]
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      "AccountErasureRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "confirmAccountDeletion"
+        ],
+        "properties": {
+          "confirmAccountDeletion": {
+            "type": "boolean",
+            "const": true,
+            "description": "Explicit separate confirmation to erase the whole COP account; Jizda unlink must never send this request."
+          }
+        }
+      },
+      "AccountErasureCapabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "accountDeletion"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "cop-account-erasure-v1"
+          },
+          "accountDeletion": {
+            "type": "boolean"
+          },
+          "unavailableReason": {
+            "type": "string",
+            "enum": [
+              "not_enabled",
+              "not_accepted",
+              "required_adapters_missing",
+              "adapter_unavailable"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "accountDeletion": {
+                  "const": false
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "unavailableReason"
+              ],
+              "properties": {
+                "unavailableReason": {
+                  "type": "string",
+                  "enum": [
+                    "not_enabled",
+                    "not_accepted",
+                    "required_adapters_missing",
+                    "adapter_unavailable"
+                  ]
+                }
+              }
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "unavailableReason"
+                ],
+                "properties": {
+                  "unavailableReason": {
+                    "type": "string",
+                    "enum": [
+                      "not_enabled",
+                      "not_accepted",
+                      "required_adapters_missing",
+                      "adapter_unavailable"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "AccountErasureReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "operationId",
+          "status",
+          "requestedAt",
+          "accountDeleted",
+          "revocationEnforced",
+          "remaining",
+          "pendingReasons"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "cop-account-erasure-v1"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "deleting",
+              "deleted"
+            ]
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "accountDeleted": {
+            "type": "boolean"
+          },
+          "revocationEnforced": {
+            "type": "boolean",
+            "const": true
+          },
+          "remaining": {
+            "type": "array",
+            "uniqueItems": true,
+            "maxItems": 11,
+            "items": {
+              "type": "string",
+              "enum": [
+                "keycloak",
+                "cop_sessions_profiles",
+                "cop_devices",
+                "messaging_matrix",
+                "voice_livekit",
+                "cop_content_media",
+                "mobility_dispatch",
+                "sim_measurements",
+                "ai_router",
+                "moderation_audit",
+                "backup_restore"
+              ]
+            }
+          },
+          "pendingReasons": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "keycloak": {
+                "type": "string",
+                "enum": [
+                  "cleanup_pending",
+                  "adapter_missing",
+                  "adapter_unavailable",
+                  "not_accepted"
+                ]
+              },
+              "cop_sessions_profiles": {
+                "type": "string",
+                "enum": [
+                  "cleanup_pending",
+                  "adapter_missing",
+                  "adapter_unavailable",
+                  "not_accepted"
+                ]
+              },
+              "cop_devices": {
+                "type": "string",
+                "enum": [
+                  "cleanup_pending",
+                  "adapter_missing",
+                  "adapter_unavailable",
+                  "not_accepted"
+                ]
+              },
+              "messaging_matrix": {
+                "type": "string",
+                "enum": [
+                  "cleanup_pending",
+                  "adapter_missing",
+                  "adapter_unavailable",
+                  "not_accepted"
+                ]
+              },
+              "voice_livekit": {
+                "type": "string",
+                "enum": [
+                  "cleanup_pending",
+                  "adapter_missing",
+                  "adapter_unavailable",
+                  "not_accepted"
+                ]
+              },
+              "cop_content_media": {
+                "type": "string",
+                "enum": [
+                  "cleanup_pending",
+                  "adapter_missing",
+                  "adapter_unavailable",
+                  "not_accepted"
+                ]
+              },
+              "mobility_dispatch": {
+                "type": "string",
+                "enum": [
+                  "cleanup_pending",
+                  "adapter_missing",
+                  "adapter_unavailable",
+                  "not_accepted"
+                ]
+              },
+              "sim_measurements": {
+                "type": "string",
+                "enum": [
+                  "cleanup_pending",
+                  "adapter_missing",
+                  "adapter_unavailable",
+                  "not_accepted"
+                ]
+              },
+              "ai_router": {
+                "type": "string",
+                "enum": [
+                  "cleanup_pending",
+                  "adapter_missing",
+                  "adapter_unavailable",
+                  "not_accepted"
+                ]
+              },
+              "moderation_audit": {
+                "type": "string",
+                "enum": [
+                  "cleanup_pending",
+                  "adapter_missing",
+                  "adapter_unavailable",
+                  "not_accepted"
+                ]
+              },
+              "backup_restore": {
+                "type": "string",
+                "enum": [
+                  "cleanup_pending",
+                  "adapter_missing",
+                  "adapter_unavailable",
+                  "not_accepted"
+                ]
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "deleted"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "completedAt"
+              ],
+              "properties": {
+                "accountDeleted": {
+                  "const": true
+                },
+                "remaining": {
+                  "maxItems": 0
+                },
+                "pendingReasons": {
+                  "maxProperties": 0
+                },
+                "completedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "completedAt"
+                ],
+                "properties": {
+                  "completedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              },
+              "properties": {
+                "accountDeleted": {
+                  "const": false
+                },
+                "remaining": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "AccountErasurePreflight": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "operationId",
+          "canConfirm",
+          "blockers"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-account-erasure-preflight-v1"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "canConfirm": {
+            "type": "boolean"
+          },
+          "planId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirmBy": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "domain",
+                "reason"
+              ],
+              "properties": {
+                "domain": {
+                  "type": "string",
+                  "enum": [
+                    "keycloak",
+                    "cop_sessions_profiles",
+                    "cop_devices",
+                    "messaging_matrix",
+                    "voice_livekit",
+                    "cop_content_media",
+                    "mobility_dispatch",
+                    "sim_measurements",
+                    "ai_router",
+                    "moderation_audit",
+                    "backup_restore"
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "ownership_unresolved",
+                    "choice_required",
+                    "adapter_preflight_missing",
+                    "adapter_unavailable"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "canConfirm": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "planId",
+                "confirmBy"
+              ],
+              "properties": {
+                "blockers": {
+                  "maxItems": 0
+                },
+                "planId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "confirmBy": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "blockers": {
+                  "minItems": 1
+                }
+              },
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "planId"
+                    ],
+                    "properties": {
+                      "planId": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    }
+                  },
+                  {
+                    "required": [
+                      "confirmBy"
+                    ],
+                    "properties": {
+                      "confirmBy": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
       }
     }
   },

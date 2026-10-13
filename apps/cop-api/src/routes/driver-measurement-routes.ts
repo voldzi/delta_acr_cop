@@ -7,7 +7,7 @@ import {
 import type { DriverMeasurementConsentStore } from "../driver-measurement-consent-store.js";
 import { DriverMeasurementSourceError, type DriverMeasurementSource } from "../driver-measurement-source.js";
 import { correlationIdFrom, sendError } from "../errors.js";
-import { actorFromRequest, decodeJwt } from "../security.js";
+import { actorFromRequest, type AuthenticatedActor } from "../security.js";
 
 const prefix = "/api/v1/driver-measurements/v1";
 const grantSchema = z.strictObject({
@@ -22,6 +22,9 @@ export interface DriverMeasurementRoutesConfig {
   pilotEnabled?: boolean;
   pilotSubjectIds?: string;
   oidcClientId: string;
+  /** Separate, exact signed-azp allowlist for own-state read and revocation. */
+  cleanupOidcClientIds?: string;
+  oidcIssuer?: string;
   secret: string;
   store?: DriverMeasurementConsentStore;
   source?: DriverMeasurementSource;
@@ -31,6 +34,8 @@ export interface DriverMeasurementRoutesConfig {
 export function registerDriverMeasurementRoutes(app: FastifyInstance, config: DriverMeasurementRoutesConfig): void {
   const { enabled, cleanupEnabled, oidcClientId, secret, store, source, now } = config;
   const runtimeEnabled = enabled || cleanupEnabled;
+  const oidcIssuer = config.oidcIssuer ?? process.env.COP_OIDC_ISSUER?.trim().replace(/\/$/u, "");
+  const cleanupClients = parseCleanupClients(config.cleanupOidcClientIds);
   const pilotSubjects = parsePilotSubjects(config.pilotSubjectIds);
   const intakeAllowed = (subjectId: string): boolean => enabled
     && (!config.pilotEnabled || (pilotSubjects !== null && pilotSubjects.has(subjectId)));
@@ -77,7 +82,7 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
       await store!.close();
     });
   }
-  function actor(request: FastifyRequest, reply: FastifyReply, cleanupOnly = false): string | null {
+  function actor(request: FastifyRequest, reply: FastifyReply, cleanupOnly = false): AuthenticatedActor | null {
     reply.header("Cache-Control", "no-store");
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     if (!(cleanupOnly ? runtimeEnabled : enabled)) {
@@ -88,10 +93,17 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
       sendError(reply, 403, "DRIVER_MEASUREMENTS_NATIVE_ONLY", "Měření dopravy vyžaduje nativní aplikaci.", correlationId);
       return null;
     }
+    if (cleanupOnly && !cleanupClients) {
+      sendError(reply, 503, "DRIVER_MEASUREMENTS_CLEANUP_CLIENTS_NOT_CONFIGURED",
+        "Odvolání měření dopravy nyní není připraveno.", correlationId);
+      return null;
+    }
+    // Registered behind the verified bearer guard. Neither aud nor request data
+    // may substitute for the pinned issuer and the token's signed azp.
     const principal = actorFromRequest(request);
-    const bearer = /^Bearer\s+(.+)$/iu.exec(request.headers.authorization ?? "")?.[1];
-    const clientId = bearer ? decodeJwt(bearer)?.payload.azp : undefined;
-    if (!principal || principal.authMode !== "oidc" || clientId !== oidcClientId) {
+    const clientId = principal?.authorizedParty;
+    if (!principal || principal.authMode !== "oidc" || !oidcIssuer || principal.issuer !== oidcIssuer ||
+        typeof clientId !== "string" || !(cleanupOnly ? cleanupClients!.has(clientId) : clientId === oidcClientId)) {
       sendError(reply, 403, "DRIVER_MEASUREMENTS_IDENTITY_REQUIRED", "Je nutné přihlášení uživatele.", correlationId);
       return null;
     }
@@ -109,7 +121,7 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
         return null;
       }
     }
-    return principal.subjectId;
+    return principal;
   }
   function failure(request: FastifyRequest, reply: FastifyReply, error: unknown): FastifyReply {
     const sourceError = error instanceof DriverMeasurementSourceError ? error : undefined;
@@ -130,21 +142,23 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
   }
   const consentOptions = { bodyLimit: 1024, errorHandler: requestError };
   app.get(`${prefix}/consent`, consentOptions, async (request, reply) => {
-    const subjectId = actor(request, reply, true);
-    if (!subjectId) return reply;
+    const principal = actor(request, reply, true);
+    if (!principal) return reply;
+    const subjectId = principal.subjectId;
     try {
       const consent = await store!.get(subjectId);
       return reply.send({ contractVersion: DRIVER_MEASUREMENT_MOBILE_VERSION,
         granted: !!consent.grantedAt && !consent.revokedAt,
         grantedAt: consent.revokedAt ? null : consent.grantedAt,
         pendingDeletion: consent.pendingDays.length > 0,
-        canGrant: intakeAllowed(subjectId) && consent.pendingDays.length === 0
+        canGrant: principal.authorizedParty === oidcClientId && intakeAllowed(subjectId) && consent.pendingDays.length === 0
           && consent.lastRevokedDay !== now().toISOString().slice(0, 10) });
     } catch (error) { return failure(request, reply, error); }
   });
   app.post(`${prefix}/consent`, consentOptions, async (request, reply) => {
-    const subjectId = actor(request, reply);
-    if (!subjectId) return reply;
+    const principal = actor(request, reply);
+    if (!principal) return reply;
+    const subjectId = principal.subjectId;
     if (!grantSchema.safeParse(request.body).success) {
       return sendError(reply, 400, "DRIVER_MEASUREMENTS_INVALID_CONSENT", "Neplatné potvrzení souhlasu.",
         correlationIdFrom(request.headers["x-correlation-id"]));
@@ -159,8 +173,9 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
     } catch (error) { return failure(request, reply, error); }
   });
   app.delete(`${prefix}/consent`, consentOptions, async (request, reply) => {
-    const subjectId = actor(request, reply, true);
-    if (!subjectId) return reply;
+    const principal = actor(request, reply, true);
+    if (!principal) return reply;
+    const subjectId = principal.subjectId;
     if (request.body !== undefined) return sendError(reply, 400, "DRIVER_MEASUREMENTS_INVALID_REVOKE",
       "Odvolání souhlasu nemá tělo.", correlationIdFrom(request.headers["x-correlation-id"]));
     try {
@@ -177,8 +192,9 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
     bodyLimit: 1_048_576,
     errorHandler: requestError
   }, async (request, reply) => {
-    const subjectId = actor(request, reply);
-    if (!subjectId) return reply;
+    const principal = actor(request, reply);
+    if (!principal) return reply;
+    const subjectId = principal.subjectId;
     try {
       const result = await store!.withActive(subjectId, async (consent) => {
         const batch = validateMobileBatch(request.body, consent, now());
@@ -199,6 +215,14 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
       return reply.send(result.receipt);
     } catch (error) { return failure(request, reply, error); }
   });
+}
+
+function parseCleanupClients(value: string | undefined): Set<string> | null {
+  const configured = value === undefined ? "csm-mobile" : value;
+  if (!configured.trim() || configured.length > 8192) return null;
+  const clients = configured.split(",").map(client => client.trim());
+  if (clients.length > 100 || clients.some(client => !/^[A-Za-z0-9._:\-]{1,255}$/u.test(client))) return null;
+  return new Set(clients);
 }
 
 function parsePilotSubjects(value: string | undefined): Set<string> | null {

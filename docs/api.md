@@ -404,3 +404,35 @@ Completed ride details, explicit initial seed and calculated mileage v2 extend t
 Shared vehicle compatible routing profile, owner binding, audited edits and care snapshot: [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).
 
 Read-only messaging identity lookup and additive viewer-specific call.peer are defined in binding JSON OpenAPI; see [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md). Provisioning resolve is not a fallback.
+
+Prepared account safety extension is documented in the binding JSON contract and
+[the Jízda handoff](integration/40_ACCOUNT_SAFETY_APP_REVIEW.md). Production
+activation and actual account erasure are not claimed by this candidate.
+
+The current one-account Jízda activation and future server revocation boundary
+are in [integration 41](integration/41_JIZDA_SCOPED_DISCONNECT.md); the separate
+whole-account removal gate is [plan 42](integration/42_COP_ACCOUNT_REMOVAL_PLAN.md).
+The imported dedicated-client unlink contract remains disabled compatibility
+source, not the current host path. Local disable never deletes the common account.
+
+## Account and installation completion candidate
+
+The binding JSON OpenAPI includes additive Matrix installationId and separate
+whole-account erasure routes. These derive authority from verified OIDC, forbid
+AI exposure and preserve no-store/correlation errors. POST202 is pending;
+POST200 deletion requires every provider proof. See [integration43](integration/43_ACCOUNT_SAFETY_COMPLETION.md).
+
+Dedicated Jízda OAuth provisioning is not authorized. The current client keeps
+`csm-mobile` with explicit local host consent; raw installation IDs do not
+prove a per-app server scope. Common-client key-bound installation grants are
+planned separately and are not implemented or accepted by these old routes.
+
+Attested installation bootstrap rejects invalid/extra fields with400 and an
+unavailable provider with503 MESSAGING_INSTALLATION_UNAVAILABLE, no credentials
+or legacy retry. Legacy requests without installationId retain degraded200.
+Driver measurement GET/DELETE consent uses explicit signed-azp cleanup clients;
+grant/batch/pilot authority is unchanged. See the binding JSON descriptions.
+Report intakeoff preserves existing receipt/unblock/moderation and retention;
+new report/block=true returns503 COMMUNICATION_SAFETY_INTAKE_DISABLED.
+
+Prepared erasure source adds authenticated actor-specific `POST /api/v1/me/account-deletion/preflight` and independent capability-only `GET /api/v1/me/account-deletion/receipts/{operationId}`. Confirmation keeps the strict v1 body but requires the current plan and pre-issued capability for initial acceptance. See binding JSON OpenAPI and ADR 0051. Deletion remains disabled.

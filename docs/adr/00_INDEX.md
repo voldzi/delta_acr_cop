@@ -70,3 +70,6 @@ published paths are preserved for integration references.
 - [0046: Staged service credentials and lab removal](0046_STAGED_SERVICE_CREDENTIALS_AND_LAB_REMOVAL.md).
 - [0047: Provider provenance and stream connection ownership](0047_PROVIDER_PROVENANCE_AND_STREAM_OWNERSHIP.md).
 - [0048: Explicit database routes for session state](0048_SESSION_AFFINE_DATABASE_ROUTES.md).
+- [0050: Account safety and erasure boundary](0050_ACCOUNT_SAFETY_AND_ERASURE_BOUNDARY.md): prepared source and separate provider acceptance.
+
+- [0051: Erasure preflight and receipt tracking](0051_ERASURE_PREFLIGHT_AND_RECEIPT_TRACKING.md): source candidate, independent read-only tracking and explicit runtime binding blocker.

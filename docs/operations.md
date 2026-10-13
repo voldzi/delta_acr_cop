@@ -309,3 +309,42 @@ The chat update and joint cache/authentication evidence are in
 [release runbook 22](runbooks/22_COP_CHAT_RELEASE_20261010.md). A healthy
 generative gateway does not prove that the configured embedding server or
 default Ollama inference is available; verify each separately.
+Account safety has an unexecuted coordinated deployment plan in
+[integration/40_ACCOUNT_SAFETY_APP_REVIEW.md](integration/40_ACCOUNT_SAFETY_APP_REVIEW.md).
+Keep its flags false until the required process, data policy and real-device
+acceptance are approved. Do not roll back a real user's block or deletion state.
+
+The current Jízda path keeps `csm-mobile` and explicit local host consent; no
+dedicated OAuth client is provisioned. Local disable is separate from planned
+server installation revocation and whole-account erasure. See
+[integration 41](integration/41_JIZDA_SCOPED_DISCONNECT.md) and
+[plan 42](integration/42_COP_ACCOUNT_REMOVAL_PLAN.md). Keep the historical unlink
+flag false and its client ID empty; do not use its old provisioning plan.
+
+## Default-off account lifecycle candidate
+
+COP_ACCOUNT_ERASURE_ENABLED=false. A dedicated COP_ACCOUNT_ERASURE_SECRET and
+persistent mobility storage are necessary for the guard but cannot replace
+all11 real cleanup adapters and accepted owner policies. After intake keep
+secret/config/fences/checkpoints on rollback; do not rotate the BFF owner secret
+without a fence migration. Source worker resumes confirmed jobs every60seconds
+without overlap, aborts before a bounded12second close wait and never uses OAuth
+credentials from the client. No production migration or activation occurred.
+
+Approved moderation policy is cop-communication-retention-90d-30d-180d-v1;
+approved public contact is podpora@zeleznalady.cz. Source retention runs at
+startup and every60seconds without overlap; reads/retries enforce deadlines
+immediately. Evidence expires at min(created+90days,firstclosure+30days);
+operator detail expires at180days (410), own content-free receipt remains.
+Actual moderator assignment and operating acceptance remain separate gates. See
+[integration43](integration/43_ACCOUNT_SAFETY_COMPLETION.md) for provisioning,
+SQL provenance, dependency acceptance and physical tests.
+
+After safety state exists, keep evidence secret, policy, contact, moderator and
+persistent store configured even when COP_COMMUNICATION_SAFETY_ENABLED=false.
+Intakeoff still enforces canonical blocks, retention, own receipts and unblock.
+The durable communication-safety:configuration-v1 fingerprint rejects silent
+key/policy change; missing config with old reports/marker fails startup. Never
+clear these markers to bypass a failed rollout.
+
+Prepared account-erasure P1 repairs: 300-second actor-specific plan, 30-day content-free read capability, Keycloak cleanup barrier, fair pending retries and continued accepted workers with intake disabled. Guard lookup is independent of the mobility flag; guard-only max=1 pool has no Dispatch lease and needs a separately reviewed future profile/budget. Native helper 49ca96be does not enforce the new protected store/image binding, so activation remains blocked. No production `.env`, image, store identity or account was changed. See ADR 0051/runbook 25; technical TTL does not define personal-data retention.

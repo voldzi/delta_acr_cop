@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { type Pool as PgPool, type PoolConfig, type PoolClient, type QueryResultRow } from "pg";
 import { createCopPgPool } from "./cop-pg-pool.js";
 import type { AoiRule, AoiRuleAffiliationScope, CopAlertSeverity, CopAlertType } from "./alerts.js";
 import type { AlertAcknowledgement } from "./types.js";
@@ -17,6 +17,8 @@ export interface UserProfileRecord {
   createdAt?: string;
   displayName: string;
   email?: string;
+  /** Only populated from a signature-verified OIDC actor. Legacy rows remain unknown. */
+  issuer?: string;
   preferences: Record<string, unknown>;
   subjectId: string;
   updatedAt: string;
@@ -44,6 +46,9 @@ function avatarPreferences(profile: UserProfileRecord | null, avatarDataUrl: str
 
 export interface UserProfileStore {
   readonly name: string;
+  erasureReady?(): Promise<boolean>;
+  preflightActorErasure?(actor: { issuer: string; subjectId: string }): Promise<{ ready: boolean; version: string }>;
+  purgeActor?(actor: { issuer: string; subjectId: string }): Promise<{ complete: boolean }>;
   updateAvatar?(actor: Omit<UserProfileRecord, "createdAt" | "updatedAt" | "preferences" | "alertPreferences">, avatarDataUrl: string | null, expectedRevision: string): Promise<UserProfileRecord | null>;
   acknowledgeAlert(subjectId: string, acknowledgement: AlertAcknowledgement): Promise<void>;
   close(): Promise<void>;
@@ -86,15 +91,39 @@ export class InMemoryUserProfileStore implements UserProfileStore {
   private readonly acknowledgements = new Map<string, Map<string, AlertAcknowledgement>>();
   private readonly profiles = new Map<string, UserProfileRecord>();
   private readonly profileLocks = new Map<string, Promise<void>>();
+  private readonly erasureFences = new Set<string>();
 
   constructor(name = "memory") {
     this.name = name;
   }
 
   async init(): Promise<void> {}
+  async erasureReady(): Promise<boolean> { return true; }
+  async preflightActorErasure(actor: { issuer: string; subjectId: string }): Promise<{ ready: boolean; version: string }> {
+    requireProfileOwner(actor);
+    return this.withProfileLock(actor.subjectId, async () => {
+      const profile = this.profiles.get(actor.subjectId), acknowledgements = [...(this.acknowledgements.get(actor.subjectId)?.keys() ?? [])].sort();
+      return { ready: profile ? profile.issuer === actor.issuer : acknowledgements.length === 0,
+        version: createHash("sha256").update(JSON.stringify([profile?.issuer ?? null, acknowledgements])).digest("hex") };
+    });
+  }
+  private assertWritable(subjectId: string): void {
+    if (this.erasureFences.has(profileSubjectHash(subjectId))) throw new Error("PROFILE_ACCOUNT_ERASURE_FENCED");
+  }
+  async purgeActor(actor: { issuer: string; subjectId: string }): Promise<{ complete: boolean }> {
+    requireProfileOwner(actor);
+    return this.withProfileLock(actor.subjectId, async () => {
+      this.erasureFences.add(profileSubjectHash(actor.subjectId));
+      const profile = this.profiles.get(actor.subjectId);
+      if (profile && profile.issuer !== actor.issuer) return { complete: false };
+      if (!profile && this.acknowledgements.has(actor.subjectId)) return { complete: false };
+      this.profiles.delete(actor.subjectId); this.acknowledgements.delete(actor.subjectId);
+      return { complete: true };
+    });
+  }
 
   async getProfile(subjectId: string): Promise<UserProfileRecord | null> {
-    return structuredClone(this.profiles.get(subjectId) ?? null);
+    return this.erasureFences.has(profileSubjectHash(subjectId)) ? null : structuredClone(this.profiles.get(subjectId) ?? null);
   }
 
   async setSafetyNotificationsEnabled(subjectId: string, enabled: boolean): Promise<UserProfileRecord | null> {
@@ -112,36 +141,45 @@ export class InMemoryUserProfileStore implements UserProfileStore {
 
   async listSafetyNotificationProfiles(afterSubjectId: string | undefined, limit: number): Promise<UserProfileRecord[]> {
     return [...this.profiles.values()]
-      .filter((profile) => profile.alertPreferences.safetyNotificationsEnabled === true
+      .filter((profile) => !this.erasureFences.has(profileSubjectHash(profile.subjectId)) && profile.alertPreferences.safetyNotificationsEnabled === true
         && (!afterSubjectId || profile.subjectId > afterSubjectId))
       .sort((left, right) => left.subjectId < right.subjectId ? -1 : left.subjectId > right.subjectId ? 1 : 0)
       .slice(0, boundedSafetyProfilePageSize(limit))
       .map((profile) => structuredClone(profile));
   }
 
-  async withSafetyNotificationProfile<T>(subjectId: string, operation: (profile: UserProfileRecord | null, profileLeaseValid: () => boolean) => Promise<T>): Promise<T> {
+  private async withProfileLock<T>(subjectId: string, operation: () => Promise<T>): Promise<T> {
     const previous = this.profileLocks.get(subjectId) ?? Promise.resolve();
     let unlock!: () => void;
     const released = new Promise<void>((resolve) => { unlock = resolve; });
     const queued = previous.then(() => released);
     this.profileLocks.set(subjectId, queued);
     await previous;
-    let active = true;
     try {
-      return await operation(await this.getProfile(subjectId), () => active);
+      return await operation();
     } finally {
-      active = false;
       unlock();
       if (this.profileLocks.get(subjectId) === queued) this.profileLocks.delete(subjectId);
     }
   }
 
+  async withSafetyNotificationProfile<T>(subjectId: string, operation: (profile: UserProfileRecord | null, profileLeaseValid: () => boolean) => Promise<T>): Promise<T> {
+    return this.withProfileLock(subjectId, async () => {
+      this.assertWritable(subjectId);
+      let active = true;
+      try { return await operation(await this.getProfile(subjectId), () => active); }
+      finally { active = false; }
+    });
+  }
+
   async updateAvatar(actor: Omit<UserProfileRecord, "createdAt" | "updatedAt" | "preferences" | "alertPreferences">, avatarDataUrl: string | null, expectedRevision: string): Promise<UserProfileRecord | null> {
+    this.assertWritable(actor.subjectId);
     const current = this.profiles.get(actor.subjectId) ?? null;
+    if (current?.issuer && actor.issuer !== current.issuer) throw new Error("PROFILE_OWNER_MISMATCH");
     if (userAvatarRevision(actor.subjectId, current) !== expectedRevision) return null;
     // No await between the comparison and map mutation: atomic in this implementation.
     const timestamp = new Date(Math.max(Date.now(), Date.parse(current?.updatedAt ?? "") + 1 || 0)).toISOString();
-    const next = { ...actor, preferences: avatarPreferences(current, avatarDataUrl), alertPreferences: current?.alertPreferences ?? {}, createdAt: current?.createdAt ?? timestamp, updatedAt: timestamp };
+    const next = { ...actor, issuer: current ? current.issuer : actor.issuer, preferences: avatarPreferences(current, avatarDataUrl), alertPreferences: current?.alertPreferences ?? {}, createdAt: current?.createdAt ?? timestamp, updatedAt: timestamp };
     this.profiles.set(actor.subjectId, next);
     return next;
   }
@@ -152,6 +190,7 @@ export class InMemoryUserProfileStore implements UserProfileStore {
       return [];
     }
     return Array.from(this.profiles.values())
+      .filter((profile) => !this.erasureFences.has(profileSubjectHash(profile.subjectId)))
       .filter((profile) =>
         normalizeProfileSearchText(profile.subjectId) === normalized ||
         normalizeProfileSearchText(profile.username).includes(normalized) ||
@@ -164,9 +203,12 @@ export class InMemoryUserProfileStore implements UserProfileStore {
 
   async upsertProfile(profile: Omit<UserProfileRecord, "createdAt" | "updatedAt">): Promise<UserProfileRecord> {
     return this.withSafetyNotificationProfile(profile.subjectId, async (existing) => {
+      if (existing?.issuer && profile.issuer !== existing.issuer) throw new Error("PROFILE_OWNER_MISMATCH");
       const timestamp = new Date().toISOString();
       const next: UserProfileRecord = {
         ...structuredClone(profile),
+        // A legacy row is not assigned an owner merely by being touched by an upgraded client.
+        issuer: existing ? existing.issuer : profile.issuer,
         alertPreferences: {
           ...withoutSafetyNotificationConsent(profile.alertPreferences),
           ...(typeof existing?.alertPreferences.safetyNotificationsEnabled === "boolean"
@@ -185,9 +227,12 @@ export class InMemoryUserProfileStore implements UserProfileStore {
   }
 
   async acknowledgeAlert(subjectId: string, acknowledgement: AlertAcknowledgement): Promise<void> {
-    const acknowledgements = this.acknowledgements.get(subjectId) ?? new Map<string, AlertAcknowledgement>();
-    acknowledgements.set(acknowledgement.alertId, acknowledgement);
-    this.acknowledgements.set(subjectId, acknowledgements);
+    await this.withProfileLock(subjectId, async () => {
+      this.assertWritable(subjectId);
+      const acknowledgements = this.acknowledgements.get(subjectId) ?? new Map<string, AlertAcknowledgement>();
+      acknowledgements.set(acknowledgement.alertId, acknowledgement);
+      this.acknowledgements.set(subjectId, acknowledgements);
+    });
   }
 
   async close(): Promise<void> {}
@@ -209,12 +254,52 @@ export class PostgresUserProfileStore implements UserProfileStore {
     await this.pool.query(createUserProfileTablesSql);
   }
 
+  async erasureReady(): Promise<boolean> {
+    await this.pool.query("SELECT 1 FROM cop_user_profile_erasure_fences LIMIT 1");
+    return true;
+  }
+  async preflightActorErasure(actor: { issuer: string; subjectId: string }): Promise<{ ready: boolean; version: string }> {
+    requireProfileOwner(actor);
+    const result = await this.pool.query<{ issuer: string | null; present: boolean; acknowledgements: string[] } & QueryResultRow>(
+      "SELECT p.issuer, (p.subject_id IS NOT NULL) AS present, ARRAY(SELECT alert_id FROM cop_user_alert_acknowledgements WHERE subject_id=$1 ORDER BY alert_id) AS acknowledgements FROM (SELECT $1::text AS subject_id) s LEFT JOIN cop_user_profiles p ON p.subject_id=s.subject_id", [actor.subjectId]);
+    const value = result.rows[0]!;
+    return { ready: value.present ? value.issuer === actor.issuer : value.acknowledgements.length === 0,
+      version: createHash("sha256").update(JSON.stringify([value.issuer, value.acknowledgements])).digest("hex") };
+  }
+  private async assertWritable(client: PoolClient, subjectId: string): Promise<void> {
+    const result = await client.query("SELECT 1 FROM cop_user_profile_erasure_fences WHERE subject_hash=$1", [profileSubjectHash(subjectId)]);
+    if (result.rows.length) throw new Error("PROFILE_ACCOUNT_ERASURE_FENCED");
+  }
+  async purgeActor(actor: { issuer: string; subjectId: string }): Promise<{ complete: boolean }> {
+    requireProfileOwner(actor);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(18101201, hashtext($1))", [actor.subjectId]);
+      await client.query("INSERT INTO cop_user_profile_erasure_fences(subject_hash) VALUES($1) ON CONFLICT DO NOTHING", [profileSubjectHash(actor.subjectId)]);
+      await client.query("UPDATE cop_user_profiles SET erasure_fenced=true WHERE subject_id=$1", [actor.subjectId]);
+      const result = await client.query<{ issuer: string | null } & QueryResultRow>("SELECT issuer FROM cop_user_profiles WHERE subject_id=$1 FOR UPDATE", [actor.subjectId]);
+      const profile = result.rows[0];
+      let complete = false;
+      if (profile?.issuer === actor.issuer) {
+        await client.query("DELETE FROM cop_user_alert_acknowledgements WHERE subject_id=$1", [actor.subjectId]);
+        await client.query("DELETE FROM cop_user_profiles WHERE subject_id=$1 AND issuer=$2", [actor.subjectId, actor.issuer]);
+        complete = true;
+      } else if (!profile) {
+        const remaining = await client.query("SELECT 1 FROM cop_user_alert_acknowledgements WHERE subject_id=$1 LIMIT 1", [actor.subjectId]);
+        complete = remaining.rows.length === 0;
+      }
+      await client.query("COMMIT"); return { complete };
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }
+
   async getProfile(subjectId: string): Promise<UserProfileRecord | null> {
     const result = await this.pool.query<UserProfileRow>(
-      `SELECT subject_id, username, display_name, email, preferences, alert_preferences, created_at, updated_at
+      `SELECT subject_id, issuer, username, display_name, email, preferences, alert_preferences, created_at, updated_at
       FROM cop_user_profiles
-      WHERE subject_id = $1`,
-      [subjectId]
+      WHERE subject_id = $1 AND NOT EXISTS(SELECT 1 FROM cop_user_profile_erasure_fences WHERE subject_hash=$2)`,
+      [subjectId, profileSubjectHash(subjectId)]
     );
     const row = result.rows[0];
     return row ? profileFromRow(row) : null;
@@ -225,11 +310,12 @@ export class PostgresUserProfileStore implements UserProfileStore {
     try {
       await client.query("BEGIN");
       await client.query("SELECT pg_advisory_xact_lock(18101201, hashtext($1))", [subjectId]);
+      await this.assertWritable(client, subjectId);
       const result = await client.query<UserProfileRow>(
         `UPDATE cop_user_profiles SET
          alert_preferences = jsonb_set(alert_preferences, '{safetyNotificationsEnabled}', $2::jsonb, true), updated_at = now()
          WHERE subject_id = $1
-         RETURNING subject_id, username, display_name, email, preferences, alert_preferences, created_at, updated_at`,
+         RETURNING subject_id, issuer, username, display_name, email, preferences, alert_preferences, created_at, updated_at`,
         [subjectId, JSON.stringify(enabled)]
       );
       await client.query("COMMIT");
@@ -245,9 +331,9 @@ export class PostgresUserProfileStore implements UserProfileStore {
 
   async listSafetyNotificationProfiles(afterSubjectId: string | undefined, limit: number): Promise<UserProfileRecord[]> {
     const result = await this.pool.query<UserProfileRow>(
-      `SELECT subject_id, username, display_name, email, preferences, alert_preferences, created_at, updated_at
+      `SELECT subject_id, issuer, username, display_name, email, preferences, alert_preferences, created_at, updated_at
        FROM cop_user_profiles
-       WHERE alert_preferences->>'safetyNotificationsEnabled' = 'true'
+       WHERE erasure_fenced=false AND alert_preferences->>'safetyNotificationsEnabled' = 'true'
          AND ($1::text IS NULL OR subject_id > $1 COLLATE "C")
        ORDER BY subject_id COLLATE "C" LIMIT $2`,
       [afterSubjectId ?? null, boundedSafetyProfilePageSize(limit)]
@@ -265,8 +351,9 @@ export class PostgresUserProfileStore implements UserProfileStore {
       await client.query("BEGIN");
       // Shared with profile updates: a completed revocation precedes any later dispatch.
       await client.query("SELECT pg_advisory_xact_lock(18101201, hashtext($1))", [subjectId]);
+      await this.assertWritable(client, subjectId);
       const result = await client.query<UserProfileRow>(
-        `SELECT subject_id, username, display_name, email, preferences, alert_preferences, created_at, updated_at
+        `SELECT subject_id, issuer, username, display_name, email, preferences, alert_preferences, created_at, updated_at
          FROM cop_user_profiles WHERE subject_id = $1`, [subjectId]
       );
       const row = result.rows[0];
@@ -290,18 +377,21 @@ export class PostgresUserProfileStore implements UserProfileStore {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const inserted = await client.query(`INSERT INTO cop_user_profiles(subject_id,username,display_name,email)
-        VALUES($1,$2,$3,$4) ON CONFLICT(subject_id) DO NOTHING`, [actor.subjectId, actor.username, actor.displayName, actor.email ?? null]);
-      const selected = await client.query<UserProfileRow>(`SELECT subject_id,username,display_name,email,preferences,alert_preferences,created_at,updated_at
+      await client.query("SELECT pg_advisory_xact_lock(18101201, hashtext($1))", [actor.subjectId]);
+      await this.assertWritable(client, actor.subjectId);
+      const inserted = await client.query(`INSERT INTO cop_user_profiles(subject_id,issuer,username,display_name,email)
+        VALUES($1,$2,$3,$4,$5) ON CONFLICT(subject_id) DO NOTHING`, [actor.subjectId, actor.issuer ?? null, actor.username, actor.displayName, actor.email ?? null]);
+      const selected = await client.query<UserProfileRow>(`SELECT subject_id,issuer,username,display_name,email,preferences,alert_preferences,created_at,updated_at
         FROM cop_user_profiles WHERE subject_id=$1 FOR UPDATE`, [actor.subjectId]);
       const current = inserted.rowCount === 1 ? null : profileFromRow(selected.rows[0]!);
+      if (current?.issuer && current.issuer !== actor.issuer) throw new Error("PROFILE_OWNER_MISMATCH");
       if (userAvatarRevision(actor.subjectId, current) !== expectedRevision) {
         await client.query("ROLLBACK");
         return null;
       }
       const result = await client.query<UserProfileRow>(`UPDATE cop_user_profiles SET preferences=$2::jsonb,
         updated_at=greatest(clock_timestamp(), updated_at + interval '1 millisecond') WHERE subject_id=$1
-        RETURNING subject_id,username,display_name,email,preferences,alert_preferences,created_at,updated_at`,
+        RETURNING subject_id,issuer,username,display_name,email,preferences,alert_preferences,created_at,updated_at`,
         [actor.subjectId, JSON.stringify(avatarPreferences(current, avatarDataUrl))]);
       await client.query("COMMIT");
       return profileFromRow(result.rows[0]!);
@@ -316,12 +406,12 @@ export class PostgresUserProfileStore implements UserProfileStore {
     }
     const like = `%${escapePostgresLike(normalized)}%`;
     const result = await this.pool.query<UserProfileRow>(
-      `SELECT subject_id, username, display_name, email, preferences, alert_preferences, created_at, updated_at
+      `SELECT subject_id, issuer, username, display_name, email, preferences, alert_preferences, created_at, updated_at
       FROM cop_user_profiles
-      WHERE translate(lower(subject_id), $4, $5) = $1
+      WHERE erasure_fenced=false AND (translate(lower(subject_id), $4, $5) = $1
         OR translate(lower(username), $4, $5) LIKE $2 ESCAPE '\\'
         OR translate(lower(display_name), $4, $5) LIKE $2 ESCAPE '\\'
-        OR translate(lower(coalesce(email, '')), $4, $5) LIKE $2 ESCAPE '\\'
+        OR translate(lower(coalesce(email, '')), $4, $5) LIKE $2 ESCAPE '\\')
       ORDER BY
         CASE
           WHEN translate(lower(subject_id), $4, $5) = $1 THEN 0
@@ -342,16 +432,18 @@ export class PostgresUserProfileStore implements UserProfileStore {
     try {
       await client.query("BEGIN");
       await client.query("SELECT pg_advisory_xact_lock(18101201, hashtext($1))", [profile.subjectId]);
+      await this.assertWritable(client, profile.subjectId);
       const result = await client.query<UserProfileRow>(
         `INSERT INTO cop_user_profiles (
           subject_id,
+          issuer,
           username,
           display_name,
           email,
           preferences,
           alert_preferences
         )
-        VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+        VALUES ($1, $7, $2, $3, $4, $5::jsonb, $6::jsonb)
         ON CONFLICT (subject_id) DO UPDATE SET
           username = EXCLUDED.username,
           display_name = EXCLUDED.display_name,
@@ -362,14 +454,16 @@ export class PostgresUserProfileStore implements UserProfileStore {
             THEN jsonb_build_object('safetyNotificationsEnabled', cop_user_profiles.alert_preferences->'safetyNotificationsEnabled')
             ELSE '{}'::jsonb END,
           updated_at = now()
-        RETURNING subject_id, username, display_name, email, preferences, alert_preferences, created_at, updated_at`,
+        WHERE cop_user_profiles.issuer IS NULL OR cop_user_profiles.issuer = EXCLUDED.issuer
+        RETURNING subject_id, issuer, username, display_name, email, preferences, alert_preferences, created_at, updated_at`,
         [
           profile.subjectId,
           profile.username,
           profile.displayName,
           profile.email ?? null,
           JSON.stringify(profile.preferences),
-          JSON.stringify(withoutSafetyNotificationConsent(profile.alertPreferences))
+          JSON.stringify(withoutSafetyNotificationConsent(profile.alertPreferences)),
+          profile.issuer ?? null
         ]
       );
       const row = result.rows[0];
@@ -398,7 +492,12 @@ export class PostgresUserProfileStore implements UserProfileStore {
   }
 
   async acknowledgeAlert(subjectId: string, acknowledgement: AlertAcknowledgement): Promise<void> {
-    await this.pool.query(
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(18101201, hashtext($1))", [subjectId]);
+      await this.assertWritable(client, subjectId);
+      await client.query(
       `INSERT INTO cop_user_alert_acknowledgements (
         subject_id,
         alert_id,
@@ -419,6 +518,9 @@ export class PostgresUserProfileStore implements UserProfileStore {
         acknowledgement.note ?? null
       ]
     );
+      await client.query("COMMIT");
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
   }
 
   diagnostics(): string | undefined {
@@ -435,6 +537,7 @@ interface UserProfileRow extends QueryResultRow {
   created_at: Date | string;
   display_name: string;
   email: string | null;
+  issuer?: string | null;
   preferences: Record<string, unknown> | string | null;
   subject_id: string;
   updated_at: Date | string;
@@ -451,6 +554,7 @@ interface AlertAcknowledgementRow extends QueryResultRow {
 const createUserProfileTablesSql = `
 CREATE TABLE IF NOT EXISTS cop_user_profiles (
   subject_id text PRIMARY KEY,
+  issuer text,
   username text NOT NULL,
   display_name text NOT NULL,
   email text,
@@ -460,6 +564,12 @@ CREATE TABLE IF NOT EXISTS cop_user_profiles (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE cop_user_profiles ADD COLUMN IF NOT EXISTS issuer text;
+ALTER TABLE cop_user_profiles ADD COLUMN IF NOT EXISTS erasure_fenced boolean NOT NULL DEFAULT false;
+CREATE TABLE IF NOT EXISTS cop_user_profile_erasure_fences (
+  subject_hash text PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS cop_user_alert_acknowledgements (
   subject_id text NOT NULL,
   alert_id text NOT NULL,
@@ -487,6 +597,7 @@ function profileFromRow(row: UserProfileRow): UserProfileRecord {
     createdAt: isoString(row.created_at),
     displayName: row.display_name,
     ...(row.email ? { email: row.email } : {}),
+    ...(row.issuer ? { issuer: row.issuer } : {}),
     preferences: jsonRecord(row.preferences),
     subjectId: row.subject_id,
     updatedAt: isoString(row.updated_at),
@@ -709,4 +820,11 @@ function readSslConfig(env: Record<string, string | undefined>): PoolConfig["ssl
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function profileSubjectHash(subjectId: string): string {
+  return createHash("sha256").update("cop-profile-erasure-fence-v1\0").update(subjectId).digest("hex");
+}
+function requireProfileOwner(actor: { issuer: string; subjectId: string }): void {
+  if (!actor.issuer || !actor.subjectId) throw new Error("Verified OIDC profile ownership is required.");
 }

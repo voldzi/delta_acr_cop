@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { createPublicKey, createVerify, type JsonWebKey as NodeJsonWebKey } from "node:crypto";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { readBoundedBody } from "./bounded-upstream.js";
+import { isAccountErasureReceiptRead } from "./account-erasure-transport.js";
 
 type AuthMode = "lab" | "hybrid" | "oidc";
 
@@ -13,6 +14,7 @@ interface JwtHeader {
 
 export interface JwtPayload {
   aud?: string | string[];
+  auth_time?: number;
   azp?: string;
   email?: string;
   email_verified?: boolean;
@@ -30,7 +32,10 @@ export interface JwtPayload {
 }
 
 export interface AuthenticatedActor {
+  /** Authentication time from the signed OIDC claim, never token issue/refresh time. */
+  authTime?: number;
   issuer?: string;
+  authorizedParty?: string;
   emailVerified?: boolean;
   authMode: "lab" | "oidc";
   displayName: string;
@@ -74,6 +79,8 @@ export function verifiedOidcIdentityFromRequest(request: FastifyRequest): Verifi
 }
 
 export async function requireBearerToken(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  // Only this exact GET authenticates its operation-bound read capability itself.
+  if (isAccountErasureReceiptRead(request)) return;
   // CORS handles preflight without credentials before the application handler.
   if (request.method === "OPTIONS") return;
   if (request.url.startsWith("/health") || request.url === "/metrics") {
@@ -195,7 +202,10 @@ export function actorFromRequest(request: FastifyRequest): AuthenticatedActor | 
     || subjectId;
   return {
     authMode: "oidc",
+    ...(Number.isSafeInteger(decoded.payload.auth_time) && Number(decoded.payload.auth_time) >= 0
+      ? { authTime: decoded.payload.auth_time } : {}),
     issuer: decoded.payload.iss,
+    ...(decoded.payload.azp ? { authorizedParty: decoded.payload.azp } : {}),
     emailVerified: decoded.payload.email_verified === true,
     displayName: decoded.payload.name?.trim() || username,
     ...(decoded.payload.email?.trim() ? { email: decoded.payload.email.trim() } : {}),
@@ -419,6 +429,7 @@ function validJwtClaims(payload: JwtPayload): boolean {
   for (const field of ["exp", "iat", "nbf"]) {
     if (values[field] !== undefined && (typeof values[field] !== "number" || !Number.isFinite(values[field]))) return false;
   }
+  if (values.auth_time !== undefined && (!Number.isSafeInteger(values.auth_time) || Number(values.auth_time) < 0)) return false;
   if (values.email_verified !== undefined && typeof values.email_verified !== "boolean") return false;
   const strings = (value: unknown) => Array.isArray(value) && value.every((item) => typeof item === "string");
   if (values.aud !== undefined && typeof values.aud !== "string" && !strings(values.aud)) return false;

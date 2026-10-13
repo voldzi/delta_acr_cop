@@ -60,9 +60,10 @@ export class MemoryMobilityStore implements MobilityStore {
  */
 export class PostgresMobilityStore implements MobilityStore {
   private readonly pool: Pool;
-  private readonly lease: DispatchLease;
-  constructor(config: PoolConfig, timing: ConstructorParameters<typeof DispatchLease>[1] = {}, leaseConfig: PoolConfig = config) {
+  private readonly lease: DispatchLease | undefined;
+  constructor(config: PoolConfig, timing: ConstructorParameters<typeof DispatchLease>[1] = {}, leaseConfig: PoolConfig = config, guardOnly = false) {
     this.pool = createCopPgPool("mobility", config);
+    if (guardOnly) return;
     // Pool errors are availability failures, never raw credential-bearing logs.
     this.pool.on("error", () => undefined);
     const leasePool = createCopPgPool("dispatch-lease", { ...leaseConfig, max: 1, application_name: "cop-private-dispatch-lease",
@@ -75,12 +76,12 @@ export class PostgresMobilityStore implements MobilityStore {
       key text PRIMARY KEY, value jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now()
     )`);
   }
-  async claimDispatchInstance(): Promise<void> { await this.lease.claim(); }
-  dispatchIsAvailable(): boolean { return this.lease.available(); }
-  dispatchGeneration(): number { return this.lease.generation(); }
-  dispatchState(): DispatchLeaseState { return this.lease.state(); }
-  async startDispatchRecovery(hooks: DispatchLeaseHooks): Promise<void> { await this.lease.start(hooks); }
-  async close(): Promise<void> { await this.lease.close(); await this.pool.end(); }
+  async claimDispatchInstance(): Promise<void> { if (!this.lease) throw new Error("Guard-only store cannot dispatch"); await this.lease.claim(); }
+  dispatchIsAvailable(): boolean { return this.lease?.available() ?? false; }
+  dispatchGeneration(): number { return this.lease?.generation() ?? 0; }
+  dispatchState(): DispatchLeaseState { return this.lease?.state() ?? "unavailable"; }
+  async startDispatchRecovery(hooks: DispatchLeaseHooks): Promise<void> { if (!this.lease) throw new Error("Guard-only store cannot dispatch"); await this.lease.start(hooks); }
+  async close(): Promise<void> { await this.lease?.close(); await this.pool.end(); }
   async transact<T>(keys: string[], run: (transaction: MobilityTransaction) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
     try {
@@ -135,4 +136,13 @@ export function mobilityStoreFromEnv(env = process.env): MobilityStore | undefin
     ssl: ["true", "1", "require"].includes(sslMode ?? "") ? { rejectUnauthorized: true } : false
   };
   return new PostgresMobilityStore(config, {}, env.COP_LEASE_DATABASE_URL?.trim() ? { ...config, connectionString: leaseConnectionString } : config);
+}
+
+/** Independent guard loader. Does not claim a Dispatch lease or enable mobility routes. */
+export function accountSafetyGuardStoreFromEnv(env = process.env): MobilityStore | undefined {
+  if (!env.COP_DATABASE_URL) return undefined;
+  const sslMode = env.COP_DATABASE_SSL?.trim().toLowerCase();
+  if (sslMode && !["false", "0", "true", "1", "require"].includes(sslMode)) throw new Error("Unsupported PostgreSQL TLS configuration.");
+  return new PostgresMobilityStore({ connectionString: env.COP_DATABASE_URL, max: 1, connectionTimeoutMillis: 5000,
+    ssl: ["true", "1", "require"].includes(sslMode ?? "") ? { rejectUnauthorized: true } : false }, {}, undefined, true);
 }

@@ -29,6 +29,7 @@ function setupOidc(): (subjectId: string, clientId?: string) => string {
   process.env.COP_OIDC_ISSUER = issuer;
   process.env.COP_OIDC_ALLOWED_CLIENTS = "jizda,cop-web";
   process.env.COP_OIDC_REQUIRED_ROLE = "cop_operator";
+  process.env.COP_DRIVER_MEASUREMENTS_CLEANUP_OIDC_CLIENT_IDS = "jizda";
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ keys: [publicJwk] }), {
     headers: { "content-type": "application/json" }, status: 200
   })));
