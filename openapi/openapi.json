@@ -14175,15 +14175,71 @@
           }
         }
       },
-      "DriverMeasurementConsentState": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "granted", "grantedAt", "pendingDeletion", "canGrant"],
+      "DriverMeasurementUserStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message"
+        ],
+        "description": "Optional human-readable result derived from the existing consent state or validated SIM receipt. It is not authorization to collect measurements and does not certify navigation improvement. No upload history is retained by COP.",
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "granted": {"type": "boolean"},
-          "grantedAt": {"type": ["string", "null"], "format": "date-time"},
-          "pendingDeletion": {"type": "boolean"},
-          "canGrant": {"type": "boolean"}
+          "code": {
+            "type": "string",
+            "enum": [
+              "consent_required",
+              "consent_active",
+              "regrant_wait",
+              "intake_unavailable",
+              "deletion_pending",
+              "deletion_complete",
+              "accepted",
+              "partially_accepted",
+              "already_received",
+              "no_usable_measurements"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Fixed Czech message selected by COP. Upstream error text, coordinates and user identifiers are never included."
+          }
+        }
+      },
+      "DriverMeasurementConsentState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "granted",
+          "grantedAt",
+          "pendingDeletion",
+          "canGrant"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "granted": {
+            "type": "boolean"
+          },
+          "grantedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "pendingDeletion": {
+            "type": "boolean"
+          },
+          "canGrant": {
+            "type": "boolean"
+          },
+          "userStatus": {
+            "$ref": "#/components/schemas/DriverMeasurementUserStatus"
+          }
         }
       },
       "DriverMeasurementConsentGrant": {
@@ -14196,21 +14252,54 @@
         }
       },
       "DriverMeasurementConsentGrantReceipt": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "version", "grantedAt"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "version",
+          "grantedAt"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "version": {"type": "string", "const": "traffic-quality-v1"},
-          "grantedAt": {"type": "string", "format": "date-time"}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "version": {
+            "type": "string",
+            "const": "traffic-quality-v1"
+          },
+          "grantedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "userStatus": {
+            "$ref": "#/components/schemas/DriverMeasurementUserStatus"
+          }
         }
       },
       "DriverMeasurementRevokeReceipt": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "granted", "pendingDeletion"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "granted",
+          "pendingDeletion"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "granted": {"type": "boolean", "const": false},
-          "pendingDeletion": {"type": "boolean"}
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "granted": {
+            "type": "boolean",
+            "const": false
+          },
+          "pendingDeletion": {
+            "type": "boolean"
+          },
+          "userStatus": {
+            "$ref": "#/components/schemas/DriverMeasurementUserStatus"
+          }
         }
       },
       "DriverMeasurementPoint": {
@@ -14260,19 +14349,63 @@
         }
       },
       "DriverMeasurementMobileReceipt": {
-        "type": "object", "additionalProperties": false,
-        "required": ["contractVersion", "batchId", "receivedAt", "acceptedIntervalCount", "deduplicatedIntervalCount", "rejectionCounts", "etaAccepted", "applicationMode", "rawPositionsStored"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "batchId",
+          "receivedAt",
+          "acceptedIntervalCount",
+          "deduplicatedIntervalCount",
+          "rejectionCounts",
+          "etaAccepted",
+          "applicationMode",
+          "rawPositionsStored"
+        ],
         "properties": {
-          "contractVersion": {"type": "string", "const": "cop-driver-measurements-v1"},
-          "batchId": {"type": "string", "format": "uuid"},
-          "receivedAt": {"type": "string", "format": "date-time"},
-          "acceptedIntervalCount": {"type": "integer", "minimum": 0},
-          "deduplicatedIntervalCount": {"type": "integer", "minimum": 0},
-          "rejectionCounts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
-          "etaAccepted": {"type": "boolean"},
-          "applicationMode": {"type": "string", "const": "shadow_only"},
-          "rawPositionsStored": {"type": "boolean", "const": false}
-        }
+          "contractVersion": {
+            "type": "string",
+            "const": "cop-driver-measurements-v1"
+          },
+          "batchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "acceptedIntervalCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deduplicatedIntervalCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rejectionCounts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "etaAccepted": {
+            "type": "boolean"
+          },
+          "applicationMode": {
+            "type": "string",
+            "const": "shadow_only"
+          },
+          "rawPositionsStored": {
+            "type": "boolean",
+            "const": false
+          },
+          "userStatus": {
+            "$ref": "#/components/schemas/DriverMeasurementUserStatus"
+          }
+        },
+        "description": "A successful HTTP response confirms processing, not acceptance of every sample. Counts and optional userStatus distinguish usable, partially accepted, duplicate and unusable measurements. applicationMode remains shadow_only."
       },
       "AuthenticatedActor": {
         "type": "object",

@@ -404,3 +404,20 @@ Completed ride details, explicit initial seed and calculated mileage v2 extend t
 Shared vehicle compatible routing profile, owner binding, audited edits and care snapshot: [integration41](integration/41_SHARED_VEHICLE_PROFILE_AUDIT_RECOVERY.md).
 
 Read-only messaging identity lookup and additive viewer-specific call.peer are defined in binding JSON OpenAPI; see [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md). Provisioning resolve is not a fallback.
+
+## Consented driver measurements
+
+`/api/v1/driver-measurements/v1/consent` and `/batches` retain the authenticated
+native `cop-driver-measurements-v1` contract. Intake can be enabled for every
+verified account of the allowed native client, but each must grant its own
+consent. GET/DELETE and durable pending deletion remain available during intake
+rollback. A DELETE 202 means pending deletion, never completion.
+
+Successful consent and batch receipts may include `userStatus:{code,message}`.
+This fixed Czech status is derived from existing consent or validated receipt
+fields. HTTP 200 can still contain no usable measurements; counts and
+`userStatus` distinguish acceptance, partial acceptance, duplicates and rejection.
+The fields required by v1, its `shadow_only` mode and the COP error envelope are
+unchanged. No upload history or raw GPS is stored by this addition. See the
+[mobile handoff](integration/22_JIZDA_DRIVER_MEASUREMENTS_COP_HANDOFF.md) and binding
+JSON OpenAPI for exact states, integration gates and examples.

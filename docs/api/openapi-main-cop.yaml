@@ -9520,6 +9520,34 @@ components:
         serverTimestamp:
           type: string
           format: date-time
+    DriverMeasurementUserStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      description: Optional human-readable result derived from the existing consent state or validated SIM
+        receipt. It is not authorization to collect measurements and does not certify navigation
+        improvement. No upload history is retained by COP.
+      properties:
+        code:
+          type: string
+          enum:
+            - consent_required
+            - consent_active
+            - regrant_wait
+            - intake_unavailable
+            - deletion_pending
+            - deletion_complete
+            - accepted
+            - partially_accepted
+            - already_received
+            - no_usable_measurements
+        message:
+          type: string
+          maxLength: 200
+          description: Fixed Czech message selected by COP. Upstream error text, coordinates and user
+            identifiers are never included.
     DriverMeasurementConsentState:
       type: object
       additionalProperties: false
@@ -9544,6 +9572,8 @@ components:
           type: boolean
         canGrant:
           type: boolean
+        userStatus:
+          $ref: "#/components/schemas/DriverMeasurementUserStatus"
     DriverMeasurementConsentGrant:
       type: object
       additionalProperties: false
@@ -9578,6 +9608,8 @@ components:
         grantedAt:
           type: string
           format: date-time
+        userStatus:
+          $ref: "#/components/schemas/DriverMeasurementUserStatus"
     DriverMeasurementRevokeReceipt:
       type: object
       additionalProperties: false
@@ -9594,6 +9626,8 @@ components:
           const: false
         pendingDeletion:
           type: boolean
+        userStatus:
+          $ref: "#/components/schemas/DriverMeasurementUserStatus"
     DriverMeasurementPoint:
       type: object
       additionalProperties: false
@@ -9778,6 +9812,11 @@ components:
         rawPositionsStored:
           type: boolean
           const: false
+        userStatus:
+          $ref: "#/components/schemas/DriverMeasurementUserStatus"
+      description: A successful HTTP response confirms processing, not acceptance of every sample. Counts
+        and optional userStatus distinguish usable, partially accepted, duplicate and unusable
+        measurements. applicationMode remains shadow_only.
     AuthenticatedActor:
       type: object
       required:

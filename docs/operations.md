@@ -79,13 +79,21 @@ stop while revocation remains available. Restrict a voluntary pilot with
 Empty or invalid pilot configuration blocks intake, while GET/DELETE and
 pending cleanup remain available to every authenticated native account. See the
 [mobile handoff](integration/22_JIZDA_DRIVER_MEASUREMENTS_COP_HANDOFF.md).
+The approved next source stage supports every authenticated account of the
+allowed native client with `ENABLED=true`, `PILOT_ENABLED=false` and
+`CLEANUP_ENABLED=true`. It never grants consent automatically or bypasses global
+OIDC validation. Optional `userStatus` messages describe individual receipts;
+COP retains no upload history. This stage has not changed production flags.
 Compose passes the measurement settings from the protected production `.env`
 to `cop-api`; the intake, cleanup and pilot flags default to `false`. Deploying the API image
 alone does not provision the SIM connection, create consent state, or begin
 collecting GPS.
-For the approved internal pilot link, create the dedicated Docker bridge
-`cop_sim_driver_measurements_internal` with `--internal` and deploy the API
-using `docker compose -f docker-compose.yml -f docker-compose.driver-measurements.yml up -d --no-deps cop-api`.
+Preserve the approved internal bridge `cop_sim_driver_measurements_internal`
+and use the standard `scripts/deploy-production.sh cop-api` process only in the
+agreed release slot. Preserve all current production overlays, including the
+measurement, X5 and AI Router overlays; do not release using only two Compose
+files. Any initial network creation or secret transfer remains a separately
+approved infrastructure operation.
 Only COP API joins this bridge; SIM must attach only
 its situation-data-api under the DNS alias `sim-driver-measurements`. The COP
 upstream URL is then
