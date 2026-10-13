@@ -89,17 +89,28 @@ TX application startup was not accepted and broker boot activation is disabled.
 Memory stream creates no listener; PostgreSQL stream adds its pool (default max
 `2`) and one independent `LISTEN` client outside pool diagnostics.
 
-The compatibility application source
-`b1230d701a4477b12b8eaa756b8faac86f723cd5` was built into the reviewed immutable
-image and accepted in DIRECT mode. A same-image TX attempt failed at application
-startup; infrastructure restored DIRECT and completed the recovery journal
-without recreating the already restored container. The original health gate
-and baseline passed, and the owner's protected web profile was synchronized.
-The owner's isolated read-only diagnostic confirmed rejection of startup
-`statement_timeout=15000` with PostgreSQL `08P01`. The source repair routes the
-consent store through the validated separate URL only in transaction mode,
-retaining all timeouts and SQL; it has not been deployed. No web, normal chat,
-measurement/authentication flags or other service changes were included.
+Repair application source
+`b13fbdc71f3d9821f8b857c3f73255a75c46fa76` is running in the accepted immutable
+a06 image in DIRECT mode. One reviewed build-only operation passed the image
+guard, actual Sharp conversion, offline package manager and compiled PostgreSQL
+verified-TLS `SELECT 1` with `statement_timeout=15000`. The native DIRECT receipt
+and authenticated synchronized protected profile passed. The accepted health
+witness records `situation-data-source=degraded` and all other recorded statuses
+OK; cached ONLINE/CATALOG snapshots do not establish that feature's freshness
+or explain a historical reason. The health gate and baseline were unchanged.
+Same-a06 TX native preflight passed but was not dispatched: automatic approval
+review rejected the proposed process twice pending explicit human authorization
+for another attempt after the earlier startup failure. There is no pending TX
+operation, and broker boot activation is disabled.
+
+Earlier 629/b123 DIRECT acceptance and recovery are historical evidence. The
+owner's isolated read-only diagnostic on that image confirmed rejection of
+startup `statement_timeout=15000` with PostgreSQL `08P01`. The b13 repair retains
+all timeouts and SQL and routes consent through the validated separate URL only
+when transaction mode is selected; full a06 TX application startup remains
+unexecuted. No web, normal chat, measurement/authentication flags or other
+service changes were included. A later documentation-only revision does not
+change the deployed application's b13 source identity.
 Exact dated image/profile evidence is in
 [runbook 24](runbooks/24_COP_API_RUNTIME_PROFILE.md#production-evidence-on-2026-10-13).
 The original legacy image's source remains unproven; its manifest records
@@ -109,10 +120,12 @@ Any future transaction activation requires separate owner GO and complete
 application startup, business and direct/session lease acceptance, plus `LISTEN`
 acceptance if that mode is enabled. Preserve the same logical database/identity,
 verified TLS, lock SQL/PID checks, business queries, retry/replay and persistent
-state. The primary rollback pair is the reviewed compatibility image with its
-accepted DIRECT profile; the legacy pair is only a separately coordinated last
-resort. Preserve routing flags and use the existing server secret store without
-copying secrets into release artifacts.
+state. The primary rollback pair is a06 with its accepted DIRECT profile;
+accepted 629 DIRECT is the secondary reserve. The legacy pair is only a
+separately coordinated last resort. Return through the existing native immutable
+`activate` path requires separate exact owner GO and current CAS checks.
+Preserve routing flags and use the existing server secret store without copying
+secrets into release artifacts.
 
 Record targeted route/parser/recovery tests against the exact reviewed source
 pin. Synthetic parser tests do not prove TLS, broker affinity or live acceptance.

@@ -11,13 +11,57 @@ reviewed API image can be activated without rebuilding it. See
 
 ### Production evidence on 2026-10-13
 
-The accepted application image is
-`sha256:62998467041dee23ac27c072a14780e897273d95380a40a02ad124f5c083f150`,
+#### Current accepted a06 DIRECT pair
+
+The running, accepted application image is
+`sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f`,
 with proven application source
-`b1230d701a4477b12b8eaa756b8faac86f723cd5`. Its accepted DIRECT profile is
+`b13fbdc71f3d9821f8b857c3f73255a75c46fa76`. It uses DIRECT profile
 `f331252b-4f0a-44dd-876e-2ea225eeca5c`, bound by
-`release-3f3789147a3044388bb817834779c2a3`. These are dated acceptance references;
-read and validate the actual active pointer and container before any operation.
+`release-6247605ebd2149b6bccdd90afa13b74b`. The dated active generation is
+`74820c5040e84bfd8d73dd3a3fcef8b5` and container ID is
+`20a37b247b9a8e1cdafcdbd408aa967a90b92b2cc847dd4b2204696af33e718e`,
+started at `2026-10-13T14:59:50.435240322Z` with restart count zero. These are
+dated evidence references; read and validate the actual active pointer and
+container before any operation.
+
+One reviewed build-only operation produced this image. Its runtime guard,
+actual Sharp conversion, offline package manager, compiled PostgreSQL client
+and verified-TLS read-only `SELECT 1` with `statement_timeout=15000` passed.
+The native DIRECT deployment completed with its accepted health witness, and
+the already authenticated owner's protected web profile was synchronized.
+The witness records `situation-data-source=degraded`; all other recorded
+statuses are OK. A cached ONLINE/CATALOG snapshot does not establish that
+feature's data freshness or explain a historical degradation reason. The
+health gate and its baseline were not changed to clear this status.
+
+The a06 DIRECT pair is the primary rollback point. The earlier accepted 629
+DIRECT pair, `release-3f3789147a3044388bb817834779c2a3`, is the secondary reserve;
+the legacy R0 pair remains a separately coordinated last resort. Any return to
+an accepted ancestor uses the existing native immutable `activate` path with a
+separate exact owner GO and current CAS checks, never an automatic fallback or
+plain mutable Compose `up`.
+
+The same-a06 TX native preflight passed, but no dispatch occurred. Automatic
+approval review rejected the proposed process twice pending explicit human
+authorization for another attempt after the earlier startup failure; that
+authorization question remains open. No new TX container or pending TX journal
+was created. The application remains DIRECT and broker boot activation is
+disabled. Preflight is not runtime activation or full TX application acceptance.
+
+`b13fbdc71f3d9821f8b857c3f73255a75c46fa76` is the deployed application source.
+A later documentation-only commit does not change that image's application
+revision. This operation did not change the web image, normal chat, measurement
+or authentication flags, business SQL, data retention or the other COP services.
+
+#### Historical 629 DIRECT acceptance, failed TX attempt and recovery
+
+Earlier on this date, application image
+`sha256:62998467041dee23ac27c072a14780e897273d95380a40a02ad124f5c083f150`,
+with proven source
+`b1230d701a4477b12b8eaa756b8faac86f723cd5`, was accepted in DIRECT profile
+`f331252b-4f0a-44dd-876e-2ea225eeca5c`, bound by
+`release-3f3789147a3044388bb817834779c2a3`.
 The original legacy image's application source remains unproven and is recorded
 as `null`, not inferred from a checkout revision.
 
@@ -29,7 +73,8 @@ then completed its pending recovery without another container recreation or
 Docker `up`. The restored container's start time was preserved, its restart
 count was zero, and the pending journal was closed.
 
-The first post-restore health verification failed. A separate diagnostic read
+For that earlier 629 recovery, the first post-restore health verification failed.
+A separate diagnostic read
 with a five-second timeout also timed out; this does not establish the cause of
 the earlier verification failure. Subsequent verification passed against the
 original health baseline with the existing health gate unchanged: live, ready,
@@ -38,10 +83,9 @@ healthy. The already authenticated owner's protected web profile was also
 observed as synchronized. No timeout, authentication or security gate was
 weakened for acceptance.
 
-The configured broker has backend/client caps of 10/80, but the application is
-using DIRECT and broker boot activation remains disabled. At
+The configured broker has backend/client caps of 10/80. At
 `2026-10-13T14:04:39.570529Z`, the infrastructure owner's isolated diagnostic
-used this pinned image/source and `pg 8.23.1`. Read-only `SELECT 1` passed on the
+used the pinned 629 image/b123 source and `pg 8.23.1`. Read-only `SELECT 1` passed on the
 transaction route; adding only startup `statement_timeout=15000` produced
 PostgreSQL `08P01` (unsupported startup parameter) and prevented the query.
 Both clients closed and the owned diagnostic container was removed; no
@@ -49,15 +93,12 @@ configuration or application data were written. This confirms the consent
 store's startup incompatibility. Earlier diagnostics that stopped before a
 valid result supplied no such evidence.
 
-The source repair routes the complete consent store through the validated
+The b13 repair routes the complete consent store through the validated
 direct/session URL only in transaction mode, preserving its startup and query
-timeouts and all SQL. It is a candidate; no repaired image, DIRECT rollout or
-TX acceptance is claimed here. Another build, runtime change or TX attempt
-requires its own exact owner GO and fresh acceptance evidence. No startup
-parameter may be ignored or removed to clear this gate.
-
-This operation did not change the web image, normal chat, measurement or
-authentication flags, business SQL, data retention or the other COP services.
+timeouts and all SQL. It was subsequently built and accepted in a06 DIRECT as
+recorded above; full repaired-image TX startup remains untested. Another build,
+runtime change or TX attempt requires its own exact owner GO and fresh acceptance
+evidence. No startup parameter may be ignored or removed to clear this gate.
 
 ## Owner-controlled layout
 
@@ -303,9 +344,10 @@ pair. Unaccepted prepared releases cannot be rollback targets. It preserves the
 original profile, absence of legacy environment fields, original mounts and
 direct route, and uses the saved accepted baseline exception only where needed.
 
-The primary rollback after the first transaction change is the reviewed
-compatibility image with its accepted direct profile. Its package-manager
-cache was independently verified offline by the infrastructure owner. The
+The primary rollback after a transaction change is the current accepted
+application image with its DIRECT profile; the dated a06 primary and 629
+secondary pairs are recorded above. Their package-manager caches were verified
+offline. The
 legacy R0 image is retained only as a coherent last-resort pair: its original
 running container has a mutable package-manager cache, while an independent
 immutable-image `pnpm --version` check failed. Restoring that image depends on
@@ -348,12 +390,13 @@ Use the infrastructure owner's separately reviewed build runner and terminal
 receipt for such controlled builds. Do not interpret this source acceptance as
 proof of build-worker recovery or safe concurrent redispatch.
 
-Owner evidence established production provisioning, the reviewed image build,
-the DIRECT compatibility rollout and recovery for the dated pair above. Local
-tests do not establish those production facts. Isolated broker affinity/TLS
-checks do not establish complete application startup or TX acceptance. TX
-startup diagnosis, application acceptance and any broker boot activation remain
-open owner gates. Every future operation still requires fresh current runtime
-parity and its exact image/source/profile acceptance. Off-server backups and X5
-restore gates remain in the X5 runbook; this mechanism deletes no images,
+Owner evidence established production provisioning, the reviewed builds,
+the historical 629 DIRECT rollout/recovery and current a06 DIRECT acceptance
+recorded above. Local tests do not establish those production facts. Isolated
+broker affinity/TLS checks and native preflight do not establish complete TX
+application startup or acceptance. Explicit authorization for the repaired-image
+TX attempt, its full application acceptance and any broker boot activation
+remain open owner gates. Every future operation still requires fresh current
+runtime parity and its exact image/source/profile acceptance. Off-server backups
+and X5 restore gates remain in the X5 runbook; this mechanism deletes no images,
 backups, volumes or application data.

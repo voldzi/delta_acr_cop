@@ -2,12 +2,18 @@
 
 ## Status
 
-Accepted on 2026-10-13. The reviewed compatibility source `b1230d7` was
-accepted in production DIRECT mode and safely restored after a failed
-same-image transaction-mode startup. Transaction activation remains on hold;
-this decision does not change authentication or measurement flags. The source
-of the original legacy image remains unproven. Dated deployment and recovery
-evidence is recorded in [runbook 24](../runbooks/24_COP_API_RUNTIME_PROFILE.md#production-evidence-on-2026-10-13).
+Accepted on 2026-10-13. Repair source `b13fbdc7` is running in the owner-accepted
+a06 production image in DIRECT mode. Its reviewed build-only operation and
+actual DIRECT deployment passed; the authenticated protected profile was
+synchronized. Same-image repaired TX preflight passed, but the attempt was not
+dispatched: explicit human authorization remains pending after automatic
+approval review rejected the proposed process twice following the earlier
+startup failure. Transaction activation and broker boot activation remain on
+hold; there is no pending TX operation. The earlier 629/b123 DIRECT acceptance
+and recovery are historical evidence, not the current image. This decision does
+not change authentication or measurement flags. The original legacy image's
+source remains unproven. Dated current and historical evidence is recorded in
+[runbook 24](../runbooks/24_COP_API_RUNTIME_PROFILE.md#production-evidence-on-2026-10-13).
 
 ## Context
 
@@ -82,7 +88,8 @@ connections to the verified route: main `53`, separately addressed direct/sessio
 `7`. Both configurations total `60` clients across `15` pools per API process.
 These are client limits, not open connections or broker backend counts. The
 configured broker has backend cap `10` and client cap `80`, but the accepted
-application is using DIRECT and transaction startup has not been accepted. PostgreSQL stream mode would add its publish pool
+application is using DIRECT and repaired-image transaction startup has not been
+executed or accepted. PostgreSQL stream mode would add its publish pool
 (default max `2`) and one independent `LISTEN` client outside the pool registry.
 
 The URI guard cannot prove actual broker pool mode, DNS alias separation,
@@ -105,9 +112,10 @@ installed `pg 8.23.1`: read-only `SELECT 1` passed without the startup parameter
 but the sole addition of `statement_timeout=15000` produced PostgreSQL `08P01`
 and the query did not run. Both clients closed; the owned diagnostic container
 was removed; no configuration or application data were written. This confirms
-the startup incompatibility, not acceptance of the source repair or a new TX
-deployment. The repair requires its own reviewed build and DIRECT acceptance
-before same-image TX acceptance. No startup parameter is ignored or removed.
+the historical startup incompatibility. That diagnostic alone did not establish
+repair acceptance. The repair was later built and accepted in a06 DIRECT, but
+no repaired-image TX deployment has occurred. No startup parameter is ignored
+or removed.
 
 Local verification of the consent route repair: `108` targeted tests pass;
 one optional real-PostgreSQL consent test is skipped because no isolated test
@@ -116,7 +124,19 @@ skeleton validation and diff checks pass. Independent source review found no
 actionable defect. These tests retain the original consent API/cleanup behavior
 and exercise invalid routing before pool creation, unchanged timeouts, startup
 failure without fallback and fixed errors without private URI values. They do
-not prove a live TLS handshake or repaired-image production startup.
+not by themselves prove a live TLS handshake or repaired-image production startup.
+
+Separate production-image evidence for a06/source b13 establishes one reviewed
+build-only operation with runtime guard, actual Sharp conversion, offline
+package manager, compiled PostgreSQL client and verified-TLS read-only
+`SELECT 1` with `statement_timeout=15000` passing. The actual native DIRECT
+deployment and protected-profile check passed. Its accepted health witness
+records `situation-data-source=degraded` and all other recorded statuses OK;
+cached ONLINE/CATALOG values do not establish feature freshness or a historical
+reason. The original gate and baseline were unchanged. a06 DIRECT is the
+primary rollback pair; accepted 629 DIRECT is the secondary reserve. Complete
+TX application startup, acceptance and an exact authorized rollback remain
+separate owner operations.
 
 Local verification on 2026-10-13 with Node `24.21.0`, installed `pg 8.23.1`
 and `pg-connection-string 2.14.1`: `112` targeted tests pass. Two optional
@@ -127,8 +147,8 @@ reinterpret a Unix authority as TCP; the guard rejects that URI before pool
 construction. No real broker/TLS handshake, failover or production cutover is
 claimed by these checks.
 
-The infrastructure owner must review the exact source pin and grant a separate
-build-only GO before any production build. The service form
+For every future production build, the infrastructure owner must review the
+exact source pin and grant a separate build-only GO. The service form
 `scripts/deploy-production.sh cop-api` performs build and service update; it is
 not a build-only command. [ADR 0049](0049_API_IMAGE_RUNTIME_PROFILE_BINDINGS.md)
 adds an explicit reviewed `--build-only` preparation and immutable deploy-only
