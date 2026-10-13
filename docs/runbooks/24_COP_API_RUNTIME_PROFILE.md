@@ -143,6 +143,13 @@ reviewed compatibility image has exactly
 Transition comparison permits only that image-provenance addition/removal,
 without a Compose label override. Post-up label equality remains strict.
 
+The known Compose/Docker extra-host delimiter difference (`=` versus `:`) is
+compared as exact hostname/address pairs, splitting only the first delimiter.
+Names, addresses and counts remain unchanged; malformed entries and duplicate
+hostnames are rejected. There is no DNS lookup or address rewriting. Compose
+`null` command/entrypoint inherits only the exact immutable image default;
+explicit `[]` or `''` remains explicit and cannot inherit a different command.
+
 Transaction mode adds only read-only socket directory and CA leaf bind mounts
 with `create_host_path:false`, plus API group 982. Deployment UID1000 requires
 no host traversal grant: a fixed metadata-only container probe uses the exact
@@ -274,7 +281,7 @@ Compose test invokes only `config` on synthetic files, with no Docker daemon,
 server, images or real secrets. It proves literal-dollar serialization handling
 and true legacy key omission despite conflicting shell/base values.
 
-Local verification on 2026-10-13: 50 offline fault tests passed, plus two
+Local verification on 2026-10-13: 53 offline fault tests passed, plus two
 Compose-client tests (source list normalization and candidate/legacy rendering) on Compose
 5.5.1. Shell syntax, skeleton validation and diff whitespace checks passed.
 The existing public analytics release guard separately passed in the owner

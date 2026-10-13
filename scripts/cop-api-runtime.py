@@ -291,6 +291,26 @@ def host_parity(current, desired, image_config):
     require(normalize(actual_health) == normalize(expected_health), 'live_healthcheck_parity_mismatch')
 
 
+def host_pairs(value):
+    """Only delimiter spelling differs; names, addresses and counts stay exact."""
+    require(isinstance(value, (dict, list)), 'extra_hosts_invalid')
+    if isinstance(value, dict):
+        pairs = list(value.items())
+    else:
+        pairs = []
+        for item in value:
+            require(isinstance(item, str), 'extra_hosts_invalid')
+            separator = '=' if '=' in item else ':'
+            name, delimiter, address = item.partition(separator)
+            require(bool(delimiter), 'extra_hosts_invalid')
+            pairs.append((name, address))
+    require(all(isinstance(name, str) and re.fullmatch(r'[A-Za-z0-9_.-]+', name)
+                and isinstance(address, str) and address and not any(char.isspace() for char in address)
+                for name, address in pairs), 'extra_hosts_invalid')
+    require(len(set(pairs)) == len(pairs) and len({name for name, _ in pairs}) == len(pairs), 'extra_hosts_duplicate')
+    return sorted(pairs)
+
+
 def runtime_parity(current, desired, image_config, transition=False):
     """Compare desired runtime with inspected API, never a second new render.
 
@@ -329,15 +349,16 @@ def runtime_parity(current, desired, image_config, transition=False):
         ('Init', 'init', None), ('Dns', 'dns', []), ('DnsOptions', 'dns_opt', []), ('DnsSearch', 'dns_search', [])):
         require((host.get(field) if host.get(field) is not None else default) == desired.get(key, default),
                 'live_host_parity_mismatch')
-    hosts = desired.get('extra_hosts', {})
-    expected_hosts = sorted(k + ':' + v for k, v in hosts.items()) if isinstance(hosts, dict) else sorted(hosts)
-    require(sorted(host.get('ExtraHosts') or []) == expected_hosts, 'live_extra_hosts_parity_mismatch')
+    require(host_pairs(host.get('ExtraHosts') or []) == host_pairs(desired.get('extra_hosts', {})),
+            'live_extra_hosts_parity_mismatch')
     wanted_restart = desired.get('restart', 'no').split(':', 1)
     require(host.get('RestartPolicy', {}).get('Name', 'no') == wanted_restart[0]
             and host.get('RestartPolicy', {}).get('MaximumRetryCount', 0) ==
             (int(wanted_restart[1]) if len(wanted_restart) == 2 else 0), 'live_restart_parity_mismatch')
     for field, key in (('User', 'user'), ('Cmd', 'command'), ('Entrypoint', 'entrypoint'), ('WorkingDir', 'working_dir')):
         actual, expected = current['Config'].get(field), desired.get(key, image_config.get(field))
+        if key in {'command', 'entrypoint'} and expected is None:
+            expected = image_config.get(field)  # Compose null inherits; []/'' do not.
         if key in {'user', 'working_dir'} and key not in desired and expected in (None, ''):
             require(actual in (None, ''), 'live_command_parity_mismatch')
         else:

@@ -827,5 +827,44 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn('COP_LEASE_DATABASE_URL', binding['legacyEnvironment'])
         self.assertEqual(self.docker.up_calls, []); self.assertEqual(current['containerId'], CID)
 
+    def test_extra_host_delimiters_preserve_exact_pairs_and_reject_drift(self):
+        current = {'Config': {}, 'HostConfig': {'ExtraHosts': ['api.fixture.invalid:host-gateway']}, 'Mounts': []}
+        for expected in (['api.fixture.invalid=host-gateway'], ['api.fixture.invalid:host-gateway'],
+                         {'api.fixture.invalid': 'host-gateway'}):
+            m.runtime_parity(current, {'extra_hosts': expected}, {})
+        self.assertEqual(m.host_pairs(['fixture=2001:db8::1']), m.host_pairs(['fixture:2001:db8::1']))
+        for expected in (['api.fixture.invalid=127.0.0.2'], [],
+                         ['api.fixture.invalid=host-gateway', 'other.fixture.invalid=host-gateway'],
+                         ['api.fixture.invalid=host-gateway', 'api.fixture.invalid:host-gateway'],
+                         ['api.fixture.invalid=host-gateway', 'api.fixture.invalid=127.0.0.2'],
+                         ['bare'], ['=address'], ['name='], [None]):
+            with self.subTest(shape=type(expected).__name__), self.assertRaises(m.RuntimeError):
+                m.runtime_parity(current, {'extra_hosts': expected}, {})
+
+    def test_null_command_and_entrypoint_use_only_exact_image_defaults(self):
+        defaults = {'Cmd': ['fixture-command', '--unchanged'], 'Entrypoint': ['fixture-entrypoint']}
+        current = {'Config': copy.deepcopy(defaults), 'HostConfig': {}, 'Mounts': []}
+        m.runtime_parity(current, {'command': None, 'entrypoint': None}, defaults)
+        m.runtime_parity(current, {}, defaults)
+        for key in ('command', 'entrypoint'):
+            for value in ([], '', ['changed-command']):
+                with self.subTest(key=key, value=value), self.assertRaisesRegex(m.RuntimeError, 'live_command_parity_mismatch'):
+                    m.runtime_parity(current, {key: value}, defaults)
+        explicit_empty = {'Config': {'Cmd': [], 'Entrypoint': []}, 'HostConfig': {}, 'Mounts': []}
+        m.runtime_parity(explicit_empty, {'command': [], 'entrypoint': []}, defaults)
+
+    def test_legacy_adoption_accepts_proven_equivalent_host_and_image_default_serialization(self):
+        defaults = {'Cmd': ['fixture-command', '--unchanged'], 'Entrypoint': ['fixture-entrypoint']}
+        self.docker.image_configs[OLD] = defaults
+        self.docker.base['services']['cop-api'].update(extra_hosts=['api.fixture.invalid=host-gateway'],
+                                                     command=None, entrypoint=None)
+        directory, binding = self.prepare_origin_adoption()
+        self.docker.live_container['HostConfig']['ExtraHosts'] = ['api.fixture.invalid:host-gateway']
+        self.docker.live_container['Config'].update(defaults)
+        current = self.store.activate(binding['releaseId'], 'absent', adopt=True)
+        self.assertEqual(current['containerId'], CID); self.assertEqual(self.docker.up_calls, [])
+        self.assertEqual(self.docker.live_container['Config']['Cmd'], defaults['Cmd'])
+        self.assertEqual(self.docker.live_container['Config']['Entrypoint'], defaults['Entrypoint'])
+
 
 if __name__ == '__main__': unittest.main()
