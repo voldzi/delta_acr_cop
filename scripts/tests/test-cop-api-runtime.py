@@ -17,6 +17,8 @@ NEW = 'sha256:' + '2' * 64
 LATER = 'sha256:' + '3' * 64
 REV = 'b' * 40
 CID = 'a' * 64
+HEALTH = {url: {'httpStatus': 200, 'status': 'ok', 'dependencies': {'database': 'ok'}}
+          if url != m.HEALTH_URLS[-1] else {'httpStatus': 200} for url in m.HEALTH_URLS}
 
 
 def write(path, value, mode=0o600):
@@ -48,6 +50,10 @@ class FakeDocker:
         self.release_overrides = {}
         self.interrupt_health = False
         self.image_configs = {}
+        self.health_calls = []
+        self.health_unobservable = False
+        self.verified_baselines = []
+        self.health_verify_failure = False
 
     def config(self, directory, profile=None, raw=False):
         value = copy.deepcopy(self.base)
@@ -83,7 +89,7 @@ class FakeDocker:
         return {s: s + '-stable' for s in ('cop-web', 'cop-chat', 'cop-edge', 'cop-mcp')}
 
     def current(self, directory):
-        return self.live_container
+        return copy.deepcopy(self.live_container)  # docker inspect is a snapshot.
 
     def live(self, directory, binding, profile, require_label=True):
         # Exercise the real inspection checks against a fake immutable container.
@@ -117,10 +123,12 @@ class FakeDocker:
 
     def container(self, api, legacy=False):
         self.created += 1
+        self.health_unobservable = False
         env = dict(api['environment'])
         if legacy:
             env.pop('COP_DATABASE_POOL_MODE', None); env.pop('COP_LEASE_DATABASE_URL', None)
         self.live_container = {'Id': CID if legacy else format(self.created, '064x'), 'Image': api['image'],
+            'State': {'Running': True, 'Status': 'running'},
             'Config': {'Env': [key + '=' + value for key, value in env.items()], 'Labels': api.get('labels', {})},
             'NetworkSettings': {'Networks': {name: {'NetworkID': value} for name, value in m.NETWORKS.items()}},
             'HostConfig': {'GroupAdd': api.get('group_add', []), 'Mounts': [
@@ -130,10 +138,19 @@ class FakeDocker:
                        for v in api.get('volumes', [])]}
 
     def health(self, action, path):
+        self.health_calls.append((action, path))
+        if self.health_unobservable:
+            raise m.RuntimeError('synthetic_api_unobservable')
         if action == 'verify' and self.interrupt_health:
             self.interrupt_health = False
             raise KeyboardInterrupt('synthetic post-start interruption')
-        return b'{"baselineHealthy":true}\n'
+        if action == 'verify' and self.health_verify_failure:
+            raise m.RuntimeError('synthetic_post_restore_verify_failed')
+        if action == 'capture':
+            return m.encoded(HEALTH)
+        baseline = m.health_statuses(json.loads(path.read_bytes()))
+        self.verified_baselines.append(baseline)
+        return m.encoded({'healthAndPublicDemoPreserved': True, 'statuses': HEALTH})
 
 
 class RuntimeTests(unittest.TestCase):
@@ -415,6 +432,37 @@ class RuntimeTests(unittest.TestCase):
         docker.current(self.root)
         self.assertEqual(args[0][-4:], ['ps', '--all', '-q', 'cop-api'])
 
+    def test_approved_base_provenance_change_is_transition_only(self):
+        self.compatible_direct()
+        desired = copy.deepcopy(self.docker.base['services']['cop-api'])
+        current = copy.deepcopy(self.docker.live_container)
+        approved = {'Labels': {m.BASE_NAME_LABEL: m.APPROVED_BASE_NAME}}
+        m.runtime_parity(current, desired, approved, transition=True)
+        with self.assertRaisesRegex(m.RuntimeError, 'live_label_parity_mismatch'):
+            m.runtime_parity(current, desired, approved)
+        current['Config']['Labels'][m.BASE_NAME_LABEL] = m.APPROVED_BASE_NAME
+        m.runtime_parity(current, desired, approved)
+        m.runtime_parity(current, desired, {}, transition=True)
+        with self.assertRaisesRegex(m.RuntimeError, 'live_label_parity_mismatch'):
+            m.runtime_parity(current, desired, {})
+
+    def test_other_base_provenance_drift_and_compose_override_stop(self):
+        self.compatible_direct()
+        desired = copy.deepcopy(self.docker.base['services']['cop-api'])
+        current = copy.deepcopy(self.docker.live_container)
+        foreign = 'node@sha256:' + 'f' * 64
+        for actual, expected in ((None, foreign), (foreign, None), (foreign, m.APPROVED_BASE_NAME)):
+            with self.subTest(actual=actual, expected=expected):
+                current['Config']['Labels'].pop(m.BASE_NAME_LABEL, None)
+                if actual is not None: current['Config']['Labels'][m.BASE_NAME_LABEL] = actual
+                image_config = {'Labels': {m.BASE_NAME_LABEL: expected}} if expected is not None else {}
+                with self.assertRaisesRegex(m.RuntimeError, 'live_label_parity_mismatch'):
+                    m.runtime_parity(current, desired, image_config, transition=True)
+        current['Config']['Labels'].pop(m.BASE_NAME_LABEL, None)
+        desired['labels'] = {m.BASE_NAME_LABEL: m.APPROVED_BASE_NAME}
+        with self.assertRaisesRegex(m.RuntimeError, 'live_label_parity_mismatch'):
+            m.runtime_parity(current, desired, {}, transition=True)
+
     def test_wrapper_pins_daemon_before_its_direct_docker_actions(self):
         wrapper = (Path(__file__).parents[1] / 'deploy-production.sh').read_text()
         prefix = wrapper[wrapper.index('case "${DOCKER_HOST'):wrapper.index('python3 scripts/cop-storage.py preflight')]
@@ -619,6 +667,125 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(completed['releaseId'], direct['releaseId'])
         self.assertEqual(probes, []); self.assertEqual(len(self.docker.up_calls), calls)
         self.assertFalse((self.root / 'pending.json').exists())
+
+    def unobservable_api(self):
+        self.docker.health_unobservable = True
+        self.docker.live_container['State'] = {'Running': False, 'Status': 'exited'}
+
+    def test_accepted_direct_health_witness_restores_unobservable_owned_api(self):
+        direct = self.compatible_direct()
+        directory, binding, _ = self.store.binding(direct['releaseId'])
+        raw = (directory / 'accepted-health.json').read_bytes(); witness = json.loads(raw)
+        self.assertEqual(binding['acceptedHealthSha256'], m.sha(raw))
+        self.assertEqual(witness['containerId'], direct['containerId'])
+        for key in ('releaseId', 'imageId', 'sourceRevision', 'profileId', 'profileGeneration'):
+            self.assertEqual(witness[key], binding[key])
+        self.assertEqual(witness['statuses'], HEALTH)
+        self.assertEqual((directory / 'accepted-health.json').stat().st_mode & 0o777, 0o600)
+        self.assertNotIn('literal$${preserved}', raw.decode())
+        target = self.candidate(direct, profile=self.transaction)
+        current = self.store.activate(target['releaseId'], direct['generation'])
+        self.unobservable_api(); probes = self.unavailable_broker()
+        before = len(self.docker.health_calls)
+        restored = self.store.activate(direct['releaseId'], current['generation'], rollback=True)
+        self.assertEqual(restored['releaseId'], direct['releaseId']); self.assertEqual(probes, [])
+        self.assertEqual([action for action, _ in self.docker.health_calls[before:]], ['verify'])
+        self.assertEqual(self.docker.verified_baselines[-1], witness['statuses'])
+        self.assertEqual((directory / 'accepted-health.json').read_bytes(), raw)
+        self.assertNotEqual(restored['containerId'], witness['containerId'])
+
+    def test_health_witness_tamper_scope_and_permissions_stop_unobservable_restore(self):
+        direct = self.compatible_direct(); directory, binding, _ = self.store.binding(direct['releaseId'])
+        target = self.candidate(direct, profile=self.transaction)
+        current = self.store.activate(target['releaseId'], direct['generation'])
+        self.unobservable_api(); self.unavailable_broker()
+        path = directory / 'accepted-health.json'; original = path.read_bytes()
+        manifest_path = directory / 'release.json'; manifest = manifest_path.read_bytes()
+        for mutation in ('bytes', 'scope', 'permissions'):
+            write(path, original); write(manifest_path, manifest)
+            if mutation == 'bytes': write(path, original + b'\n')
+            if mutation == 'permissions': path.chmod(0o640)
+            if mutation == 'scope':
+                value = json.loads(original); value['profileGeneration'] = str(uuid.uuid4())
+                altered = m.encoded(value); write(path, altered)
+                changed = json.loads(manifest); changed['acceptedHealthSha256'] = m.sha(altered); write(manifest_path, changed)
+            calls = len(self.docker.health_calls)
+            with self.subTest(mutation=mutation), self.assertRaises(m.RuntimeError):
+                self.store.activate(direct['releaseId'], current['generation'], rollback=True)
+            self.assertEqual(len(self.docker.up_calls), 2); self.assertEqual(len(self.docker.health_calls), calls)
+
+    def test_missing_health_witness_cannot_be_backfilled_from_unobservable_source(self):
+        direct = self.compatible_direct(); directory, binding, _ = self.store.binding(direct['releaseId'])
+        target = self.candidate(direct, profile=self.transaction)
+        current = self.store.activate(target['releaseId'], direct['generation'])
+        self.unobservable_api(); self.unavailable_broker()
+        binding['acceptedHealthSha256'] = None; write(directory / 'release.json', binding)
+        (directory / 'accepted-health.json').unlink()
+        calls = len(self.docker.health_calls)
+        with self.assertRaisesRegex(m.RuntimeError, 'accepted_health_witness_missing'):
+            self.store.activate(direct['releaseId'], current['generation'], rollback=True)
+        self.assertEqual(len(self.docker.up_calls), 2); self.assertEqual(len(self.docker.health_calls), calls)
+
+    def test_unobservable_source_does_not_weaken_foreign_actor_guards(self):
+        direct = self.compatible_direct(); target = self.candidate(direct, profile=self.transaction)
+        current = self.store.activate(target['releaseId'], direct['generation'])
+        self.unobservable_api(); self.unavailable_broker()
+        calls = len(self.docker.health_calls)
+        self.assert_broken_source_keeps_foreign_actor_guards(
+            lambda: self.store.activate(direct['releaseId'], current['generation'], rollback=True))
+        self.assertEqual(len(self.docker.health_calls), calls)
+
+    def test_post_restore_verify_failure_keeps_pending_and_original_witness(self):
+        direct = self.compatible_direct(); directory, _, _ = self.store.binding(direct['releaseId'])
+        witness = (directory / 'accepted-health.json').read_bytes()
+        target = self.candidate(direct, profile=self.transaction)
+        current = self.store.activate(target['releaseId'], direct['generation'])
+        self.unobservable_api(); self.unavailable_broker(); self.docker.health_verify_failure = True
+        with self.assertRaisesRegex(m.RuntimeError, 'synthetic_post_restore_verify_failed'):
+            self.store.activate(direct['releaseId'], current['generation'], rollback=True)
+        self.assertEqual(self.store.pointer(), current)
+        self.assertTrue((self.root / 'pending.json').exists())
+        self.assertEqual((directory / 'accepted-health.json').read_bytes(), witness)
+
+    def prepare_origin_adoption(self):
+        receipt = self.receipt(self.direct, OLD, True)
+        binding = self.store.prepare(OLD, None, receipt, 'absent', self.direct[0], baseline=True)
+        directory, _, profile = self.store.binding(binding['releaseId'])
+        api = self.docker.config(directory, profile['directory'])['services']['cop-api']
+        api['labels'] = {}; self.docker.container(api, legacy=True)
+        return directory, binding
+
+    def test_legacy_adoption_cannot_invent_unobservable_health(self):
+        directory, binding = self.prepare_origin_adoption(); self.unobservable_api()
+        with self.assertRaisesRegex(m.RuntimeError, 'synthetic_api_unobservable'):
+            self.store.activate(binding['releaseId'], 'absent', adopt=True)
+        self.assertIsNone(self.store.pointer()); self.assertEqual(self.docker.up_calls, [])
+        self.assertFalse((directory / 'accepted-health.json').exists())
+
+    def test_legacy_adoption_health_witness_requires_same_post_verify_cid(self):
+        directory, binding = self.prepare_origin_adoption(); original_health = self.docker.health
+        def switched(action, path):
+            result = original_health(action, path)
+            if action == 'verify': self.docker.live_container['Id'] = 'f' * 64
+            return result
+        self.docker.health = switched
+        with self.assertRaisesRegex(m.RuntimeError, 'api_runtime_changed_before_mutation'):
+            self.store.activate(binding['releaseId'], 'absent', adopt=True)
+        self.assertIsNone(self.store.pointer()); self.assertEqual(self.docker.up_calls, [])
+        self.assertFalse((directory / 'accepted-health.json').exists())
+
+    def test_interrupted_direct_restore_rejects_tampered_health_copy(self):
+        direct = self.compatible_direct(); target = self.candidate(direct, profile=self.transaction)
+        current = self.store.activate(target['releaseId'], direct['generation'])
+        self.unobservable_api(); self.unavailable_broker(); self.docker.interrupt_health = True
+        with self.assertRaises(KeyboardInterrupt):
+            self.store.activate(direct['releaseId'], current['generation'], rollback=True)
+        altered = copy.deepcopy(HEALTH); altered[m.HEALTH_URLS[1]]['status'] = 'degraded'
+        write(self.root / 'pending-health.json', altered)
+        calls = len(self.docker.health_calls)
+        with self.assertRaisesRegex(m.RuntimeError, 'recovery_health_witness_changed'):
+            self.store.recover(current['generation'])
+        self.assertEqual(len(self.docker.up_calls), 3); self.assertEqual(len(self.docker.health_calls), calls)
 
 
 if __name__ == '__main__': unittest.main()

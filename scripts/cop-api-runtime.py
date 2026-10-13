@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fixed COP API image/profile bindings. Never prints resolved config or secrets."""
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
@@ -24,6 +25,8 @@ NETWORKS = {
     'cop_sim_driver_measurements_internal': 'b0dba318afe538b7abd8593623611f393dfdbf0c3c8923598176625e3ff3f946'}
 SOCKET = Path('/run/vcode-cop-pgbouncer')
 CA = Path('/etc/vcode-cop-pgbouncer/postgres-ca.crt')
+BASE_NAME_LABEL = 'org.opencontainers.image.base.name'
+APPROVED_BASE_NAME = 'node@sha256:83f1c388c31fb2e51f7cbd4dea949b96260798c98f206e8e4696bc93bd964e3a'
 ENV = {name: 'COP_API_RUNTIME_' + name.removeprefix('COP_') for name in (
     'COP_DATABASE_URL', 'COP_LEASE_DATABASE_URL',
     'COP_STREAM_BUS_DATABASE_URL')}
@@ -33,6 +36,10 @@ REVISION = re.compile(r'[0-9a-f]{40}')
 GENERATION = re.compile(r'[0-9a-f]{32}')
 PROFILE_UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 MODE_ENV = 'COP_API_RUNTIME_DATABASE_POOL_MODE'
+HEALTH_URLS = ('http://127.0.0.1:4310/health/live', 'http://127.0.0.1:4310/health/ready',
+               'http://127.0.0.1:4310/health/dependencies',
+               'https://cop.zeleznalady.cz/demo/flood-central-bohemia')
+HEALTH_STATES = {'ok', 'online', 'degraded', 'unavailable', 'offline', 'disabled', 'skipped'}
 
 
 class RuntimeError(Exception):
@@ -118,6 +125,25 @@ def normalized_config(value):
     for service in value.get('services', {}).values():
         service['environment'] = {key: item.replace('$$', '$') if isinstance(item, str) else item
                                   for key, item in service.get('environment', {}).items()}
+    return value
+
+
+def health_statuses(value):
+    """Closed public status metadata only; never retain raw health responses."""
+    require(isinstance(value, dict) and set(value) == set(HEALTH_URLS), 'health_witness_status_invalid')
+    for url, item in value.items():
+        require(isinstance(item, dict) and type(item.get('httpStatus')) is int
+                and 100 <= item['httpStatus'] <= 599, 'health_witness_status_invalid')
+        if url == HEALTH_URLS[-1]:
+            require(set(item) == {'httpStatus'} and item['httpStatus'] == 200, 'health_witness_status_invalid')
+        else:
+            require(set(item) in ({'httpStatus', 'status'}, {'httpStatus', 'status', 'dependencies'})
+                    and item['status'] in HEALTH_STATES, 'health_witness_status_invalid')
+            dependencies = item.get('dependencies', {})
+            require(isinstance(dependencies, dict) and len(dependencies) <= 256
+                    and all(re.fullmatch(r'[a-z0-9_-]{1,80}', key) and state in HEALTH_STATES
+                            for key, state in dependencies.items()), 'health_witness_status_invalid')
+    require(value[HEALTH_URLS[0]]['httpStatus'] == 200, 'health_witness_status_invalid')
     return value
 
 
@@ -295,7 +321,19 @@ def runtime_parity(current, desired, image_config, transition=False):
     expected_labels = {**(image_config.get('Labels') or {}), **(desired.get('labels') or {})}
     public_labels = lambda labels: {k: v for k, v in labels.items()
                                     if k not in ignored_labels and not k.startswith('com.docker.compose.')}
-    require(public_labels(current['Config'].get('Labels') or {}) == public_labels(expected_labels),
+    actual_public = public_labels(current['Config'].get('Labels') or {})
+    expected_public = public_labels(expected_labels)
+    # The reviewed replacement image adds this exact base provenance label.
+    # Permit only its image-owned addition/removal during the transition;
+    # post-start validation still compares the complete target label strictly.
+    if transition and BASE_NAME_LABEL not in (desired.get('labels') or {}):
+        approved_change = (
+            BASE_NAME_LABEL not in actual_public and expected_public.get(BASE_NAME_LABEL) == APPROVED_BASE_NAME
+            or BASE_NAME_LABEL not in expected_public and actual_public.get(BASE_NAME_LABEL) == APPROVED_BASE_NAME)
+        if approved_change:
+            actual_public.pop(BASE_NAME_LABEL, None)
+            expected_public.pop(BASE_NAME_LABEL, None)
+    require(actual_public == expected_public,
             'live_label_parity_mismatch')
     # Fixed COP does not use these escape hatches. Refuse an out-of-band setting
     # instead of letting recreation silently remove it.
@@ -603,7 +641,8 @@ class Store:
         binding = private_json(directory / 'release.json', self.uid)
         require(set(binding) == {'contractVersion', 'releaseId', 'imageId', 'sourceRevision', 'profileId',
                 'profileGeneration', 'kind', 'attestationPath', 'previousReleaseId', 'attestationSha256',
-                'driverContract', 'legacyContainerId', 'legacyEnvPresence', 'legacyEnvironment', 'composeHashes'}, 'release_schema_invalid')
+                'driverContract', 'legacyContainerId', 'legacyEnvPresence', 'legacyEnvironment', 'composeHashes',
+                'acceptedHealthSha256'}, 'release_schema_invalid')
         require(set(binding['composeHashes']) == set(FILES), 'release_compose_scope')
         require(binding.get('contractVersion') == 'cop-api-runtime-release-v1'
                 and binding.get('releaseId') == identifier and IMAGE.fullmatch(binding.get('imageId', ''))
@@ -627,6 +666,8 @@ class Store:
                 'runtime_overlay_changed')
         require(private_read(directory / 'image.env', self.uid) == self.image_env(binding, profile['mode']),
                 'runtime_image_file_changed')
+        if binding['acceptedHealthSha256'] is not None:
+            self.accepted_health(directory, binding)
         return directory, binding, profile
 
     def active(self, probe_mounts=True):
@@ -636,6 +677,8 @@ class Store:
         directory, binding, profile = self.binding(pointer['releaseId'], probe_mounts=probe_mounts)
         require(all(pointer[key] == binding[key] for key in ('profileId', 'profileGeneration', 'imageId')),
                 'active_pair_mismatch')
+        if profile['mode'] == 'direct':
+            self.accepted_health(directory, binding)
         return pointer, directory, binding, profile
 
     def prepare(self, image, revision, attestation, expected, profile_id=None, baseline=False):
@@ -657,7 +700,7 @@ class Store:
             _, _, active_binding, _ = self.active()
             require(active_binding['driverContract'] == contract, 'active_profile_contract_changed')
         binding.update(attestationSha256=receipt_sha, driverContract=contract, legacyContainerId=witness,
-                       legacyEnvPresence=presence, legacyEnvironment=None)
+                       legacyEnvPresence=presence, legacyEnvironment=None, acceptedHealthSha256=None)
         self.docker.image(image, baseline=baseline, revision=revision)
         self.check_mounts(binding, profile)
         # Validate unresolved source in RAM before any release artifact is
@@ -719,6 +762,44 @@ class Store:
             ancestor = self.binding(ancestor, probe_mounts=probe_mounts)[1]['previousReleaseId']
         return False
 
+    def accepted_health(self, directory, binding):
+        digest = binding['acceptedHealthSha256']
+        require(binding['driverContract']['poolMode'] == 'direct' and isinstance(digest, str)
+                and re.fullmatch(r'[0-9a-f]{64}', digest), 'accepted_health_witness_missing')
+        raw = private_read(directory / 'accepted-health.json', self.uid)
+        require(sha(raw) == digest, 'accepted_health_witness_changed')
+        value = json.loads(raw)
+        scope = ('releaseId', 'imageId', 'sourceRevision', 'profileId', 'profileGeneration')
+        require(set(value) == {'contractVersion', 'containerId', 'acceptedAtUtc', 'statuses', *scope}
+                and value['contractVersion'] == 'cop-api-runtime-health-witness-v1'
+                and all(value[key] == binding[key] for key in scope)
+                and re.fullmatch(r'[0-9a-f]{64}', value['containerId'])
+                and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', value['acceptedAtUtc']),
+                'accepted_health_witness_scope_changed')
+        return encoded(health_statuses(value['statuses']))
+
+    def record_accepted_health(self, directory, binding, current, verified):
+        if binding['driverContract']['poolMode'] != 'direct':
+            return
+        if binding['acceptedHealthSha256'] is not None:
+            self.accepted_health(directory, binding)
+            return  # Preserve the original accepted observation, including CID.
+        value = json.loads(verified)
+        require(set(value) == {'healthAndPublicDemoPreserved', 'statuses'}
+                and value['healthAndPublicDemoPreserved'] is True
+                and current.get('State', {}).get('Running') is True
+                and current['Image'] == binding['imageId'], 'accepted_health_verification_invalid')
+        witness = {'contractVersion': 'cop-api-runtime-health-witness-v1',
+                   'containerId': current['Id'],
+                   'acceptedAtUtc': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                   'statuses': health_statuses(value['statuses']),
+                   **{key: binding[key] for key in ('releaseId', 'imageId', 'sourceRevision', 'profileId', 'profileGeneration')}}
+        raw = encoded(witness)
+        require(len(raw) <= 65536, 'health_witness_too_large')
+        self.write(directory / 'accepted-health.json', raw)
+        binding['acceptedHealthSha256'] = sha(raw)
+        self.write(directory / 'release.json', encoded(binding))
+
     def activate(self, release, expected, adopt=False, rollback=False):
         self.clean(); previous = self.check_cas(expected)
         directory, binding, profile = self.binding(release)
@@ -745,12 +826,20 @@ class Store:
         verify_api_diff(self.docker.config(directory), self.docker.config(directory, profile['directory']),
                         profile['values'], profile['mode'], binding['imageId'], binding['legacyEnvPresence'])
         if adopt:
-            require(self.docker.current(directory)['Id'] == binding['legacyContainerId'], 'legacy_container_witness_mismatch')
+            actual = self.docker.current(directory)
+            require(actual['Id'] == binding['legacyContainerId'], 'legacy_container_witness_mismatch')
             self.docker.live(directory, binding, profile, require_label=False)
+            self.write(directory / 'adoption-health.json', self.docker.health('capture', None))
+            self.docker.unchanged(directory, actual)
+            verified = self.docker.health('verify', directory / 'adoption-health.json')
+            self.docker.live(directory, binding, profile, require_label=False)
+            self.docker.unchanged(directory, actual)
+            self.record_accepted_health(directory, binding, actual, verified)
             return self.commit_pointer(binding, expected, binding['legacyContainerId'])
         require(previous is not None, 'accepted_baseline_pair_required')
         self.docker.preserve(directory, profile['directory'], self.docker.current(old_dir))
-        baseline = self.docker.health('capture', None)
+        baseline = (self.accepted_health(directory, binding) if restore_direct
+                    else self.docker.health('capture', None))
         self.write(self.root / 'pending-health.json', baseline)
         pending = {'contractVersion': 'cop-api-runtime-pending-v1', 'previous': previous,
                    'targetReleaseId': release, 'targetContainerId': None,
@@ -765,8 +854,13 @@ class Store:
         pending['targetContainerId'] = self.docker.current(directory)['Id']
         self.write(self.root / 'pending.json', encoded(pending))
         require(self.docker.peers(directory) == pending['peers'], 'peer_container_changed')
-        self.docker.health('verify', self.root / 'pending-health.json')
-        require(self.docker.current(directory)['Id'] == pending['targetContainerId'], 'live_container_changed')
+        verified = self.docker.health('verify', self.root / 'pending-health.json')
+        actual = self.docker.current(directory)
+        require(actual['Id'] == pending['targetContainerId'], 'live_container_changed')
+        self.docker.live(directory, binding, profile)
+        self.docker.unchanged(directory, actual)
+        self.record_accepted_health(directory, binding, actual, verified)
+        self.docker.unchanged(directory, actual)
         pointer = self.commit_pointer(binding, expected, pending['targetContainerId'])
         self.finish_pending()
         return pointer
@@ -798,6 +892,9 @@ class Store:
         if not restore_direct:
             self.check_mounts(old_binding, old_profile)
             self.check_mounts(new_binding, new_profile)
+        elif not rollback:
+            require(private_read(self.root / 'pending-health.json', self.uid) ==
+                    self.accepted_health(new_dir, new_binding), 'recovery_health_witness_changed')
         actual = self.docker.current(new_dir)
         if actual['Image'] == new_binding['imageId'] and actual['Config'].get('Labels', {}).get('com.cop.runtime.release') == new_binding['releaseId']:
             self.docker.live(new_dir, new_binding, new_profile)
@@ -827,8 +924,14 @@ class Store:
             pending['restoredContainerId'] = owned_id
             self.write(self.root / 'pending.json', encoded(pending))
         require(self.docker.peers(directory) == pending['peers'], 'peer_container_changed')
-        self.docker.health('verify', self.root / 'pending-health.json')
-        require(self.docker.current(directory)['Id'] == owned_id, 'recovery_container_changed')
+        verified = self.docker.health('verify', self.root / 'pending-health.json')
+        actual = self.docker.current(directory)
+        require(actual['Id'] == owned_id, 'recovery_container_changed')
+        self.docker.live(directory, binding, profile,
+                         require_label=not (binding['kind'] == 'accepted-baseline' and not target_running))
+        self.docker.unchanged(directory, actual)
+        self.record_accepted_health(directory, binding, actual, verified)
+        self.docker.unchanged(directory, actual)
         pointer = self.commit_pointer(binding, expected, owned_id)
         self.finish_pending()
         return pointer

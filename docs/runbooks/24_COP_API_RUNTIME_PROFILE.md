@@ -16,6 +16,7 @@ and the existing [X5 gates](19_COP_X5_STORAGE.md).
 | `<UUID>/attestation-<image-sha256-without-prefix>.json` | root:GID1000, 0640 | Public compatibility acceptance for this image/source/generation |
 | `/srv/cop/runtime/api` and children | deployment owner, 0700 | Active pointer, releases and pending operation journal |
 | Files below `/srv/cop/runtime/api` | deployment owner, 0600 | Safe references and metadata; no DSNs |
+| `releases/<release-id>/accepted-health.json` | deployment owner, 0600 | Previously accepted public health statuses bound to the exact DIRECT pair and historical CID |
 
 Root provisions these paths before use. Files must be regular, singly linked
 and non-symlinked; the generation parents must satisfy the root ownership and
@@ -127,6 +128,12 @@ an unknown runtime option, a foreign CID/image/label, altered source metadata,
 pending journal or pointer CAS mismatch causes STOP. Do not print raw Compose
 config, container environment or subprocess stderr to diagnose a rejection.
 
+The known original image lacks `org.opencontainers.image.base.name`; the
+reviewed compatibility image has exactly
+`node@sha256:83f1c388c31fb2e51f7cbd4dea949b96260798c98f206e8e4696bc93bd964e3a`.
+Transition comparison permits only that image-provenance addition/removal,
+without a Compose label override. Post-up label equality remains strict.
+
 Transaction mode adds only read-only socket directory and CA leaf bind mounts
 with `create_host_path:false`, plus API group 982. Deployment UID1000 requires
 no host traversal grant: a fixed metadata-only container probe uses the exact
@@ -190,6 +197,32 @@ completion. Completion of an interrupted DIRECT restoration verifies its
 accepted ancestry without requiring the failed source TX endpoint. A failed
 broker therefore cannot block owned DIRECT recovery.
 
+Successful DIRECT acceptance records a health witness from the real post-up
+health verification. Its closed envelope contains only public status metadata,
+release/image/source/profile references, the actually observed container ID and
+UTC acceptance time. `acceptedHealthSha256` in the private release manifest
+binds the exact 0600 witness bytes; no DSNs or secret-dependent digests are
+stored. The original observation is preserved across later recreations. Its
+historical CID is separate from the current live CID/CAS requirement.
+
+Legacy adoption obtains its witness only through real capture and verification
+on the unchanged original container, with CID/image/profile/runtime checks
+before and after. It creates no replacement container and proves no offline
+restore capability. Capture or verification failure causes STOP, with no
+invented/default health witness. Prepared releases initially have a null health
+hash; they cannot serve as completed DIRECT rollback targets without actual
+acceptance evidence.
+
+Completed DIRECT rollback uses that previously accepted, hash/scope-checked
+witness as its health baseline. It does not attempt to capture an exited or
+unobservable source API. After replacement, health verification against the
+stored baseline remains mandatory before publishing the new active pointer.
+Witness tampering, missing evidence or failed post-restore verification causes
+STOP. Interrupted completion also checks the copied baseline against the bound
+witness. Ordinary pending recovery retains its existing previous health
+snapshot. Source availability exemptions do not weaken ownership, protected
+profile/attestation integrity, ancestry or full runtime parity.
+
 After explicit recovery GO, `recover --expect-active <generation>` completes an
 owned healthy target without another recreation. Add `--rollback` to restore
 the recorded previous image/profile pair. If it is already restored, recovery
@@ -232,7 +265,7 @@ Compose test invokes only `config` on synthetic files, with no Docker daemon,
 server, images or real secrets. It proves literal-dollar serialization handling
 and true legacy key omission despite conflicting shell/base values.
 
-Local verification on 2026-10-13: 37 offline fault tests passed, plus the
+Local verification on 2026-10-13: 47 offline fault tests passed, plus the
 Compose-client rendering test (both candidate and legacy subcases) on Compose
 5.5.1. Shell syntax, skeleton validation and diff whitespace checks passed.
 The existing public analytics release guard separately passed in the owner
