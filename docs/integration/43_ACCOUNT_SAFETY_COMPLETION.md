@@ -94,11 +94,39 @@ identity, restore replay and shared/retained identity policy remain unverified.
 It is not a completed COP provider adapter. No absent domain is represented by a synthetic completed
 proof. Account deletion capability stays false and its usable URL is absent.
 
-Shared vehicle records use account ownership/authorship, not an automatically
-accepted company retention category. Preserve other authors' records; present
-transfer/removal choices for owned resources and define any minimal retained
-business facts explicitly before activation. No new retention period or blanket
-shared-history exception is invented. See [plan 42](42_COP_ACCOUNT_REMOVAL_PLAN.md).
+### Approved shared-vehicle policy and local source scope
+
+On 2026-10-13 the human approved deletion of own contributions and personal
+links, preservation of other authors' records, and an actual transfer of every
+active owned shared vehicle to another authorized existing member before
+whole-account deletion. This resolves the vehicle policy choice; it authorizes
+no automatic reassignment, deletion of other authors' history or new financial
+retention exception. A sole owner without an eligible member must resolve the
+transfer first. See [ADR 0052](../adr/0052_APPROVED_SHARED_VEHICLE_ERASURE_POLICY.md)
+and [plan 42](42_COP_ACCOUNT_REMOVAL_PLAN.md).
+
+The local `SharedVehicleErasureService` source candidate assesses the verified
+actor, removes own vehicle records and historical copies, scrubs personal links
+from surviving snapshots and invalidates cross-account cached results that
+would otherwise expose those records or derived projections. A permanent local
+identity/account fence prevents new local vehicle writes and stale receipt
+replay. It is deliberately not registered as a completed `mobility_dispatch`
+adapter: mobility identity, Dispatch and provider cleanup are separate unfinished
+boundaries. The ten missing adapters above, false global deletion capability
+and absent usable deletion URL are unchanged.
+
+Unresolved mapping, ownership and record provenance block before a new local
+fence. An owner's latest edit of another author's current record cannot be
+silently rolled back or retained under the original author's ID to claim erasure.
+Current projections use surviving records. Another author's correction/reference
+to an owned record blocks cleanup until the dependency is explicitly resolved;
+neither that record nor its personal source link is silently rewritten. Every
+affected vehicle invalidates prior sync cursors through its membership revision.
+An active Dispatch group owner has no approved transfer policy/API
+from this vehicle decision. Claimed invitation notifications may be in flight
+outside SQL, and current email does not establish all historical invitation or
+provider ownership. Those checks remain pending actual owner proof. No
+production deletion, deployment, secret or grant is performed.
 
 ## Rollout and rollback
 
@@ -120,4 +148,33 @@ The new preflight/tracking source is described in [ADR 0051](../adr/0051_ERASURE
 
 Current SDK pin 85d79966 also adds a noncreating authentication snapshot and payloadless authentication-change signal over Voice pin 7fbe8878. SDK source/simulator gates were accepted by its owner; this is not proof of the final Jízda host build, physical two-application provider flows, production erasure or account deletion. One existing csm-mobile/COP login remains the integration boundary.
 
-Final COP P1 source gate: 165 synthetic/regression tests passed, 4 real PostgreSQL tests skipped because COP_ERASURE_TEST_DATABASE_URL was not configured. Typecheck, scoped ESLint, JSON schema validation, binding OpenAPI lint (24 existing warnings), generated YAML, skeleton and diff validation passed. The gate includes the actual buildServer BFF outage path (503 preserves session/cookie), signed bearer/JWKS/service-auth, mobility-off guard/retention wiring and registered pool checks. Six cases against a real local loopback HTTP OIDC fixture cover expired-token refresh with rotation, 503 recovery, changed issuer/subject, purge during refresh, confirmed fence and callback 503. Verified rotated credentials are saved only into the existing same-owner session; an unavailable guard grants no API access. Callback 503 preserves any prior session but creates no new one and consumes the one-use transaction. No real provider, database, production deployment or physical erasure acceptance was performed.
+Previous published COP P1 source gate (`9d58cfa`, before the local shared-vehicle component): 165 synthetic/regression tests passed, 4 real PostgreSQL tests skipped because COP_ERASURE_TEST_DATABASE_URL was not configured. Typecheck, scoped ESLint, JSON schema validation, binding OpenAPI lint (24 existing warnings), generated YAML, skeleton and diff validation passed. The gate includes the actual buildServer BFF outage path (503 preserves session/cookie), signed bearer/JWKS/service-auth, mobility-off guard/retention wiring and registered pool checks. Six cases against a real local loopback HTTP OIDC fixture cover expired-token refresh with rotation, 503 recovery, changed issuer/subject, purge during refresh, confirmed fence and callback 503. Verified rotated credentials are saved only into the existing same-owner session; an unavailable guard grants no API access. Callback 503 preserves any prior session but creates no new one and consumes the one-use transaction. No real provider, database, production deployment or physical erasure acceptance was performed.
+
+Current shared-vehicle source gate (2026-10-13): **116 tests passed and 4 opt-in
+real PostgreSQL tests skipped**, across 14 files. The 26 new component/race
+cases cover actual ownership transfer, exact two-account/issuer isolation,
+physical record/tombstone/history purge, unchanged other-author and unrelated
+vehicle data, cross-author dependency blocking, expired cached receipts,
+cursor invalidation after leaving, writer/retry/restart fences, readback failure,
+outage and vehicle-subset versus whole-account status. Actual service tests also
+hold a Dispatch publication after SQL commit and fence the sender or recipient;
+late RAM writes are rejected. Competing publications obey the 512-point bound;
+the unchanged 32-MiB byte ceiling was not separately stress tested. New invitation
+emission is prevented after the inviter/recipient fence;
+an already captured external send is not claimed cancelled.
+
+API TypeScript build/typecheck, scoped ESLint (9 files), 11 JSON schema files,
+binding OpenAPI validation (24 existing warnings), generated YAML, skeleton and
+diff checks passed. The OpenAPI change consists only of two descriptions mirrored
+in the shared mobility artifact; methods, paths and DTO shapes are unchanged.
+The first HTTP-fixture run was blocked by sandbox `listen EPERM` on 127.0.0.1;
+the final local-only synthetic run passed with that test permission. The schema
+CLI's sandbox-blocked IPC was avoided with the Node import loader. No test
+protection, authentication rule or production network boundary was weakened.
+
+No whole-repository web build/full test suite, real PostgreSQL lock/restore,
+provider, physical iPhone or production erasure acceptance was performed in this
+local phase. The component is not invoked by a public route or production worker.
+One existing account/login, the ten missing adapters and disabled whole-account
+deletion remain unchanged. SIM currently has approval for contract/proposal only;
+this vehicle decision creates no SIM implementation or deployment authority.

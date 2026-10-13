@@ -142,3 +142,10 @@ proposal are preserved in `docs/archive/2026-10-11_ACCOUNT_SAFETY_*` and
 current provisioning or production activation instructions.
 
 Account erasure preflight/tracking: [ADR 0051](adr/0051_ERASURE_PREFLIGHT_AND_RECEIPT_TRACKING.md); infrastructure activation blocker: [runbook 25](runbooks/25_ACCOUNT_SAFETY_GUARD_BINDING_PROPOSAL.md).
+
+Approved shared-vehicle deletion/ownership policy:
+[ADR 0052](adr/0052_APPROVED_SHARED_VEHICLE_ERASURE_POLICY.md). Own contributions
+and personal links are removed; other authors' records are preserved and active
+owned vehicles must be transferred first. The local vehicle-cleanup candidate
+is not the complete `mobility_dispatch` adapter and does not activate account
+deletion or authorize a production deployment.

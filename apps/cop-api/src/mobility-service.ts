@@ -6,6 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { MobilityStore, MobilityTransaction } from "./mobility-store.js";
 import type { AuthenticatedActor } from "./security.js";
 import type * as Wire from "./mobility-types.js";
+import { mobilityAccountIsFenced, mobilityIdentityFenceKey } from "./mobility-erasure-guard.js";
 
 export class MobilityFailure extends Error {
   constructor(
@@ -30,8 +31,9 @@ export type GroupState = {
   shares: Record<string, Wire.DispatchShare & { lastObservedAt?: string; lastHash?: string; startOperationId?: string }>;
   deletedAt?: string;
 };
-type PrincipalAccount = Wire.MobilityAccount & { issuer: string; subject: string };
-type Receipt = { hash: string; result?: unknown; createdAt: string; expired?: boolean };
+export type PrincipalAccount = Wire.MobilityAccount & { issuer: string; subject: string };
+export type MobilityOperationReceipt = { hash: string; result?: unknown; createdAt: string; expired?: boolean };
+type Receipt = MobilityOperationReceipt;
 export type Invite = {
   invitationId: string;
   entityType: "vehicle" | "group";
@@ -105,7 +107,9 @@ export class MobilityService {
     );
     const identity = mobilityDigest({ issuer: actor.issuer, subject: actor.subjectId });
     return this.store.transact([`identity:${identity}`], async (tx) => {
+      requireMobility(!await tx.get(mobilityIdentityFenceKey(identity)), 403, "ACCOUNT_ERASURE_FENCED", "Účet se odstraňuje.");
       const current = await tx.get<PrincipalAccount>(`identity:${identity}`);
+      if (current) await this.assertAccountAllowed(tx, current.accountId);
       const value: PrincipalAccount = {
         contractVersion: "cop-mobility-account-v1",
         accountId: current?.accountId ?? randomUUID(),
@@ -133,6 +137,7 @@ export class MobilityService {
     const receiptKey = `operation:${account.accountId}:${operationId.toLowerCase()}`;
     const hash = mobilityDigest({ scope, body });
     return this.store.transact([receiptKey, ...keys], async (tx) => {
+      await this.assertAccountAllowed(tx, account.accountId);
       const receipt = await tx.get<Receipt>(receiptKey);
       if (receipt) {
         requireMobility(receipt.hash === hash, 409, "OPERATION_CONFLICT", "Operace již existuje s jinými údaji.");
@@ -144,6 +149,10 @@ export class MobilityService {
       return result;
     });
   }
+  /** Runs inside the same transaction lock as erasure, including receipt replay. */
+  async assertAccountAllowed(tx: MobilityTransaction, accountId: string): Promise<void> {
+    requireMobility(!await mobilityAccountIsFenced(tx, accountId), 403, "ACCOUNT_ERASURE_FENCED", "Účet se odstraňuje.");
+  }
   async vehicle(
     tx: MobilityTransaction,
     vehicleId: string,
@@ -151,6 +160,7 @@ export class MobilityService {
     capability: Wire.SharedVehicleMember["capabilities"][number] = "readVehicle",
     allowDeleted = false
   ): Promise<VehicleState> {
+    await this.assertAccountAllowed(tx, account.accountId);
     const state = await tx.get<VehicleState>(`vehicle:${vehicleId}`);
     requireMobility(state && (allowDeleted || !state.vehicle.deleted), 404, "NOT_FOUND", "Vozidlo není dostupné.");
     const member = state.vehicle.members.find((m) => m.accountId === account.accountId);
@@ -269,7 +279,7 @@ export class MobilityService {
     );
   }
   async listVehicles(account: Wire.MobilityAccount): Promise<Wire.SharedVehicleList> {
-    return this.store.transact([], async (tx) => ({
+    return this.store.transact([], async (tx) => { await this.assertAccountAllowed(tx, account.accountId); return ({
       contractVersion: "cop-shared-vehicles-v1",
       items: (await tx.scan<VehicleState>("vehicle:"))
         .filter(
@@ -282,7 +292,7 @@ export class MobilityService {
         .map((x) => this.vehicleView(x.value, account))
         .slice(0, 100),
       serverTimestamp: this.now().toISOString()
-    }));
+    }); });
   }
   async getVehicle(account: Wire.MobilityAccount, id: string): Promise<Wire.SharedVehicle> {
     return this.store.transact([`vehicle:${id}`], async (tx) => this.vehicleView(await this.vehicle(tx, id, account), account));
@@ -332,9 +342,19 @@ export class MobilityService {
             "OWNER_REQUIRED",
             "Převod může provést pouze vlastník."
           );
+          const successor = await tx.get<PrincipalAccount>(`account:${target.accountId}`);
+          requireMobility(successor?.accountId === target.accountId && successor.issuer && successor.subject && target.capabilities.includes("readVehicle"),
+            409, "OWNER_TRANSFER_TARGET_UNAVAILABLE", "Nový vlastník musí být ověřeným členem vozidla.");
+          const identity = await tx.get<PrincipalAccount>(`identity:${mobilityDigest({ issuer: successor.issuer, subject: successor.subject })}`);
+          requireMobility(identity?.accountId === successor.accountId && identity.issuer === successor.issuer && identity.subject === successor.subject,
+            409, "OWNER_TRANSFER_TARGET_UNAVAILABLE", "Identita nového vlastníka není potvrzena.");
+          await this.assertAccountAllowed(tx, target.accountId);
           self.role = "driver";
           target.role = "owner";
           target.capabilities = [...fullCapabilities];
+          // A local vehicle UUID belongs to the previous owner, never to the successor.
+          delete state.ownerBinding;
+          delete state.vehicle.ownerBinding;
         } else if (input.action === "set_capabilities") {
           const capabilities = input.capabilities ?? [];
           requireMobility(

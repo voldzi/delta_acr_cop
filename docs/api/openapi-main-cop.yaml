@@ -6699,6 +6699,12 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/SharedVehicleMembershipChange"
+      description: Membership changes use the current membership revision and stable operation receipt.
+        Ownership transfer requires a verified existing eligible member; an unavailable identity
+        returns 409 OWNER_TRANSFER_TARGET_UNAVAILABLE and a local erasure fence returns 403
+        ACCOUNT_ERASURE_FENCED. Dependency failures remain 503. Shared-vehicle account-erasure
+        source is not a public account deletion endpoint or an activated whole-account deletion
+        capability.
   /api/v1/shared-vehicles/v1/vehicles/{vehicleId}/invitations:
     post:
       operationId: sharedVehicleInvite
@@ -22338,6 +22344,11 @@ components:
             - remove
             - transfer_ownership
             - leave
+          description: transfer_ownership is owner-only and targets a distinct existing member with
+            readVehicle, a verified persisted identity/account binding and no local erasure fence.
+            The previous owner localVehicleId binding is removed; it is never assigned to the
+            successor. A successful transfer is required before shared-vehicle account-erasure
+            cleanup.
         capabilities:
           type: array
           items:

@@ -11,6 +11,14 @@ odstranění účtu COP** action. It does not authorize testing on a real accoun
 production deployment, an invented retention policy or global deletion as part
 of **Odpojit Jízdu**.
 
+On 2026-10-13 the human approved the shared-vehicle rule: remove own contributions
+and personal links, preserve other authors' records, and first complete transfer
+of active owned vehicles to another authorized existing member. The policy is
+recorded in [ADR 0052](../adr/0052_APPROVED_SHARED_VEHICLE_ERASURE_POLICY.md).
+It approves neither production deletion nor a retention exception. The local
+`SharedVehicleErasureService` candidate is not connected as the complete
+`mobility_dispatch` adapter; all ten missing domain adapters remain required.
+
 ## Truthful capability now
 
 No functioning direct production deletion workflow or canonical initiation URL
@@ -76,7 +84,7 @@ These are distinct from unlink's app-specific operations:
 | Matrix/Synapse | Enumerate current and left rooms, all own events (paginate beyond 1,000), redact own UGC, delete owned uploads/media and personal metadata; verify jobs across restart/failure. `deactivate(erase=true)` alone is insufficient. Revoke credentials only after required owner work is tracked. Other people's identities/state are preserved. Actual federation/remote-copy limits must be stated. |
 | LiveKit / voice stores | Revoke outstanding media grants, remove that account's participation and personal call metadata using accepted ownership/history rules; verify old grants denied. Do not end unrelated users' rooms/calls. |
 | Community / sketches / media / tracks | Remove/redact own UGC and owned attachments in durable COP and object stores. Enumerate by verified ownership; no guessed prefix deletion or orphaned uploads. Preserve only specifically approved nonpersonal/shared structure. |
-| Mobility / vehicles / ownership | Present transfer/remove choices for resources the account owns; revoke shares/invites/outbox. Do not silently delete another person's vehicle, membership or historical record. Define approved minimal financial evidence explicitly. |
+| Mobility / vehicles / ownership | Approved policy: physically remove own contributions/historical copies and personal links, preserve other authors' records, and complete existing owner-only transfer of active owned vehicles to a valid distinct member before the fence. Clear stale local owner binding; do not autoassign or delete others' records. Local vehicle cleanup/fencing and cached-result invalidation are not completion of the mobility identity, Dispatch or provider domain. Unresolved current edits of another author's record or cross-author correction/source references block; never silently roll history back or rewrite another author's record. No financial retention exception is approved. |
 | Dispatch / location | Stop producers/devices/grants, remove identity/contact/consent metadata and account-linked packets. RAM TTL is not proof of durable erasure. Verify restart/queue races. |
 | SIM measurements | Revoke and confirm deletion of every contributor day still retained. 202 remains pending until SIM confirms; restore must replay revocations. This is a whole-account adapter, not implicit unlink deletion. |
 | AI Router BYOK / linked usage | Revoke/remove the account's stored provider key and linked profile/limits/cache. Inventory usage/cost audit and retain only the specifically accepted evidence; never fall back to a shared key. No actual OpenAI call needed to test deletion. |
@@ -88,8 +96,11 @@ These are distinct from unlink's app-specific operations:
 - Approve each retained category's purpose, exact duration, access and deletion
   rule, including financial/moderation exceptions, logs and backup expiry/replay.
   Do not invent a blanket 30-day/indefinite legal exception.
-- Accept resource ownership choices and handling of own shared UGC, media and
-  historical contributions; do not infer permission to delete others' data.
+- The shared-vehicle choice is approved as described above. Resolve other owned
+  resources and own shared UGC/media separately. Active Dispatch group ownership
+  has no approved transfer policy/API; do not infer automatic reassignment,
+  deletion of the group or permission to erase other authors' data. Historical
+  invitation/email provenance and in-flight provider work still require proof.
 - Provide narrowly scoped server-side permissions for Keycloak, Synapse/media,
   object storage and SIM/Router adapters through approved secret files. No new
   production secret or permission was created by this candidate.

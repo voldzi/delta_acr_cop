@@ -3,6 +3,7 @@ import type { MessagingProvider, MessagingNotificationIntakeRequest } from "./me
 import { normalizeEmail, type Invite, type GroupState, type VehicleState } from "./mobility-service.js";
 import type { MobilityStore, MobilityTransaction } from "./mobility-store.js";
 import type { MobilityAccount } from "./mobility-types.js";
+import { mobilityAccountIsFenced } from "./mobility-erasure-guard.js";
 
 type Principal = MobilityAccount & { issuer: string; subject: string };
 export type InvitationNotificationJob = {
@@ -14,14 +15,15 @@ export type InvitationNotificationJob = {
 export async function enqueueInvitationNotifications(tx: MobilityTransaction, invite: Invite, now: Date): Promise<void> {
   const recipients = (await tx.scan<Principal>("account:")).filter(x => x.value.emailVerified && x.value.email &&
     normalizeEmail(x.value.email) === invite.email && x.value.accountId !== invite.inviterAccountId && x.value.subject && x.value.issuer).slice(0,20);
-  for (const { value } of recipients) await tx.set(`invite-notification:${invite.invitationId}:${value.accountId}`, {
+  for (const { value } of recipients) { if (await mobilityAccountIsFenced(tx, value.accountId)) continue; await tx.set(`invite-notification:${invite.invitationId}:${value.accountId}`, {
     invitationId: invite.invitationId, recipientAccountId: value.accountId, expiresAt: invite.expiresAt,
     state: "pending", attempts: 0, nextAttemptAt: now.toISOString()
-  } satisfies InvitationNotificationJob);
+  } satisfies InvitationNotificationJob); }
 }
 export async function invitationNotificationTarget(tx: MobilityTransaction, job: InvitationNotificationJob, now: Date): Promise<{subject: string; payload: MessagingNotificationIntakeRequest} | undefined> {
   const invite = await tx.get<Invite>(`invite:${job.invitationId}`);
   const recipient = await tx.get<Principal>(`account:${job.recipientAccountId}`);
+  if (await mobilityAccountIsFenced(tx, job.recipientAccountId) || (invite && await mobilityAccountIsFenced(tx, invite.inviterAccountId))) return;
   if (!invite || invite.state !== "pending" || Date.parse(invite.expiresAt) <= now.getTime() ||
     !recipient?.emailVerified || !recipient.email || normalizeEmail(recipient.email) !== invite.email || !recipient.subject || !recipient.issuer) return;
   if (invite.entityType === "vehicle") {

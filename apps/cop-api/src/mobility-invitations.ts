@@ -30,6 +30,7 @@ export class SharedMobilityService extends DispatchService {
   async pendingInvitations(account: Wire.MobilityAccount): Promise<Wire.MobilityPendingInvitations> {
     requireMobility(account.emailVerified && account.email, 403, "EMAIL_VERIFICATION_REQUIRED", "Nejprve ověřte e-mail účtu COP.");
     return this.store.transact(["dispatch-directory"], async tx => {
+      await this.assertAccountAllowed(tx, account.accountId);
       const items: Wire.MobilityPendingInvitation[] = [];
       for (const entry of await tx.scan<Invite>("invite:")) {
         const invite = entry.value;

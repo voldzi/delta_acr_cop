@@ -14,6 +14,7 @@ export async function openDispatchParticipant(service: SharedMobilityService, pr
     const member=group.group.members.find(m=>m.accountId===targetId);
     const target=await tx.get<{issuer:string;subject:string;displayName:string}>(`account:${targetId}`);
     requireMobility(member && target && targetId!==account.accountId && target.issuer===actor.issuer,404,"NOT_FOUND","Účastník není dostupný.");
+    await service.assertAccountAllowed(tx, targetId);
     const created=await provider.createConversation(actor,service.now(),{conversationKind:"direct",type:"direct",title:target.displayName,members:[{userId:actor.subjectId,displayName:actor.displayName},{userId:target.subject,displayName:target.displayName}]});
     let conversation=created.conversation;
     requireMobility(created.enabled && conversation?.conversationId,503,"MESSAGING_UNAVAILABLE","Šifrovaná komunikace není dostupná.");
