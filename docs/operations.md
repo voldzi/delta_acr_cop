@@ -22,6 +22,7 @@ documentation remains in:
 - [COP storage on X5: paths, retention and deployment gates](runbooks/19_COP_X5_STORAGE.md)
 - [Automatic crisis notifications and ČT24 context](runbooks/21_COP_CRISIS_NOTIFICATIONS.md)
 - [Standalone chat runtime release](runbooks/22_COP_CHAT_RELEASE_20261010.md)
+- [API immutable image/runtime profile and scoped rollback](runbooks/24_COP_API_RUNTIME_PROFILE.md)
 
 Local defaults:
 

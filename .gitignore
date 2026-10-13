@@ -20,3 +20,6 @@ apps/cop-chat/dist/
 apps/cop-api/dist/
 apps/cop-edge-node/dist/
 .chroma-state/
+
+# Private runtime bindings are not source/build input.
+runtime/

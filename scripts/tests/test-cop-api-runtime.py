@@ -1,0 +1,520 @@
+#!/usr/bin/env python3
+"""Offline fault tests. No Docker, server, secrets or application requests."""
+import copy
+import importlib.util
+import json
+import os
+from pathlib import Path
+import tempfile
+import unittest
+import uuid
+from unittest import mock
+
+spec = importlib.util.spec_from_file_location('runtime', Path(__file__).parents[1] / 'cop-api-runtime.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+OLD = 'sha256:' + '1' * 64
+NEW = 'sha256:' + '2' * 64
+LATER = 'sha256:' + '3' * 64
+REV = 'b' * 40
+CID = 'a' * 64
+
+
+def write(path, value, mode=0o600):
+    path.write_bytes(value if isinstance(value, bytes) else m.encoded(value)); path.chmod(mode)
+
+
+def contract(mode):
+    transaction = mode == 'transaction'
+    return {'poolMode': mode, 'streamMode': 'memory', 'mainEnvAndMigrations': 'direct',
+            'frontend': 'unix' if transaction else mode,
+            'socketPath': str(m.SOCKET) if transaction else None, 'socketPort': 6432 if transaction else None,
+            'supplementaryGid': 982 if transaction else None, 'caPath': str(m.CA) if transaction else None,
+            'caSha256': 'f' * 64 if transaction else None, 'leasePath': 'direct_verify_full' if transaction else 'direct',
+            'backendBudget': 10 if transaction else None, 'clientBudget': 80 if transaction else None}
+
+
+class FakeDocker:
+    def __init__(self):
+        self.base = {'name': 'cop', 'networks': {k: {'name': k} for k in m.NETWORKS}, 'services': {
+            'cop-api': {'image': 'delta-acr-cop-api:local', 'environment': {'COP_DATABASE_URL': 'direct-placeholder',
+                        'COP_DATABASE_POOL_MODE': 'direct', 'COP_LEASE_DATABASE_URL': '',
+                        'COP_STREAM_BUS_DATABASE_URL': '', 'COP_DATABASE_SSL': 'false', 'COP_STREAM_BUS': 'memory'},
+                        'volumes': [{'type': 'bind', 'source': '/srv/x5-production/staging/cop/media-conversions',
+                                     'target': '/data/cop-media-conversions', 'bind': {'create_host_path': False}}],
+                        'networks': list(m.NETWORKS)},
+            **{s: {'image': s + ':existing'} for s in ('cop-web', 'cop-chat', 'cop-edge', 'cop-mcp')}}}
+        self.live_container = None; self.images = []; self.up_calls = []; self.interrupt = False
+        self.created = 0
+        self.release_overrides = {}
+        self.interrupt_health = False
+        self.image_configs = {}
+
+    def config(self, directory, profile=None, raw=False):
+        value = copy.deepcopy(self.base)
+        value['services']['cop-api'].update(self.release_overrides.get(directory.name, {}))
+        if raw:
+            value['services']['cop-api']['environment'].update({key: '${' + key + '}' for key in m.ENV})
+        if profile:
+            data = json.loads((directory / 'release.json').read_text()) if (directory / 'release.json').exists() else None
+            image_env = dict(line.removesuffix("'").split("='", 1) for line in (directory / 'image.env').read_text().splitlines())
+            api = value['services']['cop-api']
+            api['image'] = image_env['COP_API_RUNTIME_IMAGE_ID']
+            api['environment'].update(m.env_values((profile / 'runtime.env').read_bytes()))
+            api['environment']['COP_DATABASE_POOL_MODE'] = image_env[m.MODE_ENV]
+            text = (directory / 'compose.runtime.yml').read_text()
+            if text.startswith('services:'):
+                override = {line.strip().split(': ', 1)[0]: json.loads(line.strip().split(': ', 1)[1].removeprefix('!override '))
+                            for line in text.splitlines()[2:]}
+                api['environment'] = {k: v for k, v in api['environment'].items() if k in override['environment']}
+            else:
+                override = json.loads(text)['services']['cop-api']
+            api['labels'] = {**api.get('labels', {}), **override['labels']}
+            if 'volumes' in override: api['volumes'] += override['volumes']
+            if 'group_add' in override: api['group_add'] = override['group_add']
+        return value
+
+    def image(self, image, baseline=False, revision=None):
+        self.images.append((image, baseline, revision))
+
+    def source_config(self):
+        return self.config(Path('synthetic-source'), raw=True)
+
+    def peers(self, directory):
+        return {s: s + '-stable' for s in ('cop-web', 'cop-chat', 'cop-edge', 'cop-mcp')}
+
+    def current(self, directory):
+        return self.live_container
+
+    def live(self, directory, binding, profile, require_label=True):
+        # Exercise the real inspection checks against a fake immutable container.
+        real = m.Docker()
+        real.current = self.current; real.config = self.config; real.run = self.run
+        real.live(directory, binding, profile, require_label)
+
+    def non_profile(self, directory, profile, current=None):
+        real = m.Docker(); real.current = self.current; real.config = self.config; real.run = self.run
+        real.non_profile(directory, profile, current)
+
+    def preserve(self, directory, profile, current):
+        real = m.Docker(); real.current = self.current; real.config = self.config; real.run = self.run
+        real.preserve(directory, profile, current)
+
+    def unchanged(self, directory, witnessed):
+        real = m.Docker(); real.current = self.current
+        real.unchanged(directory, witnessed)
+
+    def run(self, argv):
+        if argv[:3] == ['docker', 'image', 'inspect']:
+            return json.dumps([{'Config': self.image_configs.get(argv[3], {})}]).encode()
+        raise AssertionError('Unexpected fake command; never call real Docker')
+
+    def up(self, directory, profile):
+        self.up_calls.append(directory.name)
+        self.container(self.config(directory, profile)['services']['cop-api'])
+        if self.interrupt:
+            self.interrupt = False
+            raise KeyboardInterrupt('synthetic interrupted activation')
+
+    def container(self, api, legacy=False):
+        self.created += 1
+        env = dict(api['environment'])
+        if legacy:
+            env.pop('COP_DATABASE_POOL_MODE', None); env.pop('COP_LEASE_DATABASE_URL', None)
+        self.live_container = {'Id': CID if legacy else format(self.created, '064x'), 'Image': api['image'],
+            'Config': {'Env': [key + '=' + value for key, value in env.items()], 'Labels': api.get('labels', {})},
+            'NetworkSettings': {'Networks': {name: {'NetworkID': value} for name, value in m.NETWORKS.items()}},
+            'HostConfig': {'GroupAdd': api.get('group_add', []), 'Mounts': [
+                {'Type': v['type'], 'Target': v['target'], 'BindOptions': {
+                    'CreateMountpoint': v.get('bind', {}).get('create_host_path', False)}} for v in api.get('volumes', [])]},
+            'Mounts': [{'Type': v['type'], 'Source': v['source'], 'Destination': v['target'], 'RW': not v.get('read_only', False)}
+                       for v in api.get('volumes', [])]}
+
+    def health(self, action, path):
+        if action == 'verify' and self.interrupt_health:
+            self.interrupt_health = False
+            raise KeyboardInterrupt('synthetic post-start interruption')
+        return b'{"baselineHealthy":true}\n'
+
+
+class RuntimeTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name).resolve(); self.source = self.home / 'cop'; self.source.mkdir()
+        self.root = self.source / 'runtime-api'; self.root.mkdir(mode=0o700)
+        self.protected = self.home / 'protected'; self.protected.mkdir(mode=0o750)
+        for name in m.FILES: (self.source / name).write_text('# unresolved approved compose\n')
+        (self.source / '.env').write_text('COP_DATABASE_URL=synthetic-direct-sentinel\n')
+        self.docker = FakeDocker()
+        self.store = m.Store(self.root, self.source, docker=self.docker, protected_root=self.protected,
+            protected_uid=os.geteuid(), protected_gid=os.getegid(), mount_guard=lambda fingerprint: None)
+        self.direct = self.profile('direct'); self.transaction = self.profile('transaction')
+
+    def profile(self, mode):
+        generation = str(uuid.uuid4()); directory = self.protected / generation; directory.mkdir(mode=0o750)
+        values = {key: ('postgresql://fixture:literal$${preserved}@db.fixture.invalid:5432/cop'
+                         if key == 'COP_DATABASE_URL' else '') for key in m.ENV}
+        if mode == 'transaction':
+            values['COP_DATABASE_URL'] = 'postgresql://fixture:literal$${preserved}@%2Frun%2Fvcode-cop-pgbouncer:6432/cop?sslmode=disable'
+            values['COP_LEASE_DATABASE_URL'] = 'postgresql://fixture@db.fixture.invalid:5432/cop?sslmode=verify-full'
+        raw = ''.join(m.ENV[key] + "='" + value + "'\n" for key, value in values.items()).encode()
+        write(directory / 'runtime.env', raw, 0o640)
+        return generation, contract(mode)
+
+    def receipt(self, profile, image, baseline=False, revision=REV):
+        generation, driver = profile
+        value = {'contractVersion': 'cop-api-runtime-attestation-v1', 'application': 'cop', 'service': 'cop-api',
+                 'profileGeneration': generation, 'imageId': image, 'sourceRevision': None if baseline else revision,
+                 'kind': 'accepted-baseline' if baseline else 'candidate', 'ownerAcceptance': True,
+                 'driverContract': driver, 'legacyContainerId': CID if baseline else None,
+                 'legacyEnvPresence': {'COP_DATABASE_URL': True, 'COP_DATABASE_POOL_MODE': False,
+                    'COP_LEASE_DATABASE_URL': False, 'COP_STREAM_BUS_DATABASE_URL': True} if baseline else None,
+                 'checks': {'x5RuntimeGuard': not baseline, 'sharpConversion': not baseline,
+                            'databaseRouting': not baseline, 'acceptedBaselineRollback': baseline}}
+        path = self.protected / generation / ('attestation-' + image[7:] + '.json')
+        write(path, value, 0o640); return path
+
+    def baseline(self):
+        receipt = self.receipt(self.direct, OLD, True)
+        binding = self.store.prepare(OLD, None, receipt, 'absent', self.direct[0], baseline=True)
+        directory, _, profile = self.store.binding(binding['releaseId'])
+        api = self.docker.config(directory, profile['directory'])['services']['cop-api']
+        api['labels'] = {}; self.docker.container(api, legacy=True)
+        return self.store.activate(binding['releaseId'], 'absent', adopt=True)
+
+    def candidate(self, current, image=NEW, profile=None):
+        chosen = profile or (current['profileId'], self.store.active()[2]['driverContract'])
+        receipt = self.receipt(chosen, image)
+        return self.store.prepare(image, REV, receipt, current['generation'], None if profile is None else profile[0])
+
+    def compatible_direct(self):
+        original = self.baseline()
+        binding = self.candidate(original)
+        return self.store.activate(binding['releaseId'], original['generation'])
+
+    def test_legacy_adoption_needs_no_recreate_and_keeps_source_unknown(self):
+        current = self.baseline()
+        self.assertEqual(self.docker.up_calls, [])
+        self.assertIsNone(self.store.active()[2]['sourceRevision'])
+        self.assertEqual(current['imageId'], OLD)
+        self.assertEqual(self.docker.live_container['Id'], CID)
+
+    def test_next_release_reuses_profile_but_binds_the_new_image(self):
+        initial = self.compatible_direct()
+        first = self.candidate(initial, profile=self.transaction)
+        current = self.store.activate(first['releaseId'], initial['generation'])
+        later = self.candidate(current, LATER)
+        self.assertEqual(later['profileGeneration'], self.transaction[0])
+        self.assertEqual(later['imageId'], LATER)
+        self.assertNotEqual(later['releaseId'], first['releaseId'])
+        self.store.activate(later['releaseId'], current['generation'])
+        self.assertEqual(self.docker.live_container['Image'], LATER)
+        self.assertEqual((self.source / '.env').read_text(), 'COP_DATABASE_URL=synthetic-direct-sentinel\n')
+        for path in (self.root / 'releases').rglob('*'):
+            if path.is_file(): self.assertNotIn('literal$${preserved}', path.read_text())
+
+    def test_stale_cas_does_not_change_api(self):
+        current = self.baseline(); binding = self.candidate(current, profile=self.transaction)
+        with self.assertRaisesRegex(m.RuntimeError, 'active_pointer_changed'):
+            self.store.activate(binding['releaseId'], '0' * 32)
+        self.assertEqual(self.docker.up_calls, [])
+
+    def test_interruption_blocks_deploy_and_whole_pair_can_roll_back(self):
+        original = self.compatible_direct(); binding = self.candidate(original, profile=self.transaction)
+        self.docker.interrupt = True
+        with self.assertRaises(KeyboardInterrupt): self.store.activate(binding['releaseId'], original['generation'])
+        self.assertEqual(self.store.pointer(), original)
+        with self.assertRaisesRegex(m.RuntimeError, 'runtime_activation_pending'):
+            self.store.active()
+        restored = self.store.recover(original['generation'], rollback=True)
+        self.assertEqual(restored['releaseId'], original['releaseId'])
+        self.assertEqual(restored['profileGeneration'], self.direct[0])
+        self.assertEqual(self.docker.live_container['Image'], NEW)
+        self.assertNotIn(str(m.SOCKET), [v['Destination'] for v in self.docker.live_container['Mounts']])
+        self.assertEqual(self.docker.live_container['HostConfig']['GroupAdd'], [])
+
+    def test_interrupted_success_can_complete_without_second_recreate(self):
+        original = self.compatible_direct(); binding = self.candidate(original, profile=self.transaction)
+        self.docker.interrupt = True
+        with self.assertRaises(KeyboardInterrupt): self.store.activate(binding['releaseId'], original['generation'])
+        completed = self.store.recover(original['generation'])
+        self.assertEqual(completed['imageId'], NEW)
+        self.assertEqual(len(self.docker.up_calls), 2)
+
+    def test_missing_profile_or_foreign_generation_stops_before_image(self):
+        with self.assertRaises(OSError): self.store.profile(str(uuid.uuid4()), contract('direct'))
+        with self.assertRaisesRegex(m.RuntimeError, 'profile_generation_invalid'):
+            self.store.profile('../foreign', contract('direct'))
+        self.assertEqual(self.docker.images, [])
+
+    def test_root_attestation_unknown_fields_and_wrong_image_are_rejected(self):
+        path = self.receipt(self.direct, NEW)
+        value = json.loads(path.read_text()); value['secretEnvDigest'] = 'forbidden'
+        write(path, value, 0o640)
+        with self.assertRaisesRegex(m.RuntimeError, 'attestation_binding_mismatch'):
+            self.store.prepare(NEW, REV, path, 'absent', self.direct[0])
+        self.assertEqual(self.docker.images, [])
+
+    def test_symlink_hardlink_and_writable_protected_env_are_rejected(self):
+        path = self.protected / self.direct[0] / 'runtime.env'
+        os.link(path, path.with_name('foreign-hardlink'))
+        with self.assertRaisesRegex(m.RuntimeError, 'private_file_permissions'): self.store.profile(*self.direct)
+        path.with_name('foreign-hardlink').unlink(); path.chmod(0o660)
+        with self.assertRaisesRegex(m.RuntimeError, 'private_file_permissions'): self.store.profile(*self.direct)
+        path.chmod(0o640); path.rename(path.with_name('actual-env')); path.symlink_to('actual-env')
+        with self.assertRaisesRegex(m.RuntimeError, 'private_path_symlink'): self.store.profile(*self.direct)
+
+    def test_unavailable_mount_and_unaccepted_receipt_stop(self):
+        self.store.mount_guard = lambda fingerprint: (_ for _ in ()).throw(m.RuntimeError('missing_socket'))
+        transaction_receipt = self.receipt(self.transaction, NEW)
+        with self.assertRaisesRegex(m.RuntimeError, 'missing_socket'):
+            self.store.prepare(NEW, REV, transaction_receipt, 'absent', self.transaction[0])
+        path = self.receipt(self.direct, NEW); value = json.loads(path.read_text())
+        value['checks']['sharpConversion'] = False; write(path, value, 0o640)
+        with self.assertRaisesRegex(m.RuntimeError, 'compatibility_not_accepted'):
+            self.store.prepare(NEW, REV, path, 'absent', self.direct[0])
+
+    def test_only_api_changes_and_literal_dollar_survives_render(self):
+        initial = self.baseline(); binding = self.candidate(initial, profile=self.transaction)
+        directory, _, profile = self.store.binding(binding['releaseId'])
+        base = self.docker.config(directory); desired = self.docker.config(directory, profile['directory'])
+        m.verify_api_diff(base, desired, profile['values'], 'transaction', NEW)
+        desired['services']['cop-api']['environment']['COP_DATABASE_URL'] = 'silently-interpolated'
+        with self.assertRaisesRegex(m.RuntimeError, 'runtime_interpolation_mismatch'):
+            m.verify_api_diff(base, desired, profile['values'], 'transaction', NEW)
+        desired = self.docker.config(directory, profile['directory']); desired['services']['cop-web']['image'] = 'foreign'
+        with self.assertRaisesRegex(m.RuntimeError, 'non_api_service_changed'):
+            m.verify_api_diff(base, desired, profile['values'], 'transaction', NEW)
+
+    def test_activation_cli_is_no_build_no_pull_api_only(self):
+        args = []
+        docker = m.Docker(self.source); docker.run = lambda argv: args.append(argv) or b''
+        docker.up(self.root / 'release', self.protected / self.direct[0])
+        self.assertEqual(args[0][-7:], ['up', '-d', '--no-build', '--pull', 'never', '--no-deps', 'cop-api'])
+        self.assertNotIn('create', args[0]); self.assertNotIn('build', args[0])
+
+    def test_target_runtime_drift_stops_before_up_even_when_two_new_renders_agree(self):
+        original = self.compatible_direct()
+        faults = ({'privileged': True}, {'read_only': True}, {'security_opt': ['no-new-privileges:true']},
+                  {'mem_limit': 12345}, {'pids_limit': 100},
+                  {'ports': [{'target': 4310, 'published': '54321'}]},
+                  {'healthcheck': {'test': ['CMD', 'false']}}, {'command': ['foreign-command']},
+                  {'extra_hosts': {'foreign.invalid': '127.0.0.1'}},
+                  {'labels': {'foreign.label': 'foreign'}},
+                  {'volumes': [{'type': 'bind', 'source': '/foreign', 'target': '/data/cop-media-conversions'}]})
+        calls = len(self.docker.up_calls)
+        for fault in faults:
+            with self.subTest(field=next(iter(fault))):
+                candidate = self.candidate(original, LATER)
+                self.docker.release_overrides[candidate['releaseId']] = fault
+                # config(base) and config(target) both include the fault, so the
+                # inspected original runtime is the only effective drift gate.
+                with self.assertRaises(m.RuntimeError): self.store.activate(candidate['releaseId'], original['generation'])
+                self.assertEqual(len(self.docker.up_calls), calls)
+                self.assertFalse((self.root / 'pending.json').exists())
+
+    def test_actual_non_profile_env_and_resource_drift_stop_activation(self):
+        original = self.compatible_direct(); candidate = self.candidate(original, profile=self.transaction)
+        for mutation in ('environment', 'memory', 'port', 'security'):
+            previous = copy.deepcopy(self.docker.live_container)
+            if mutation == 'environment': self.docker.live_container['Config']['Env'].append('COP_WEB_BFF_SESSION_ENABLED=drift')
+            if mutation == 'memory': self.docker.live_container['HostConfig']['Memory'] = 999
+            if mutation == 'port': self.docker.live_container['HostConfig']['PortBindings'] = {'4310/tcp': [{'HostIp': '', 'HostPort': '12345'}]}
+            if mutation == 'security': self.docker.live_container['HostConfig']['Privileged'] = True
+            with self.subTest(mutation=mutation), self.assertRaises(m.RuntimeError):
+                self.store.activate(candidate['releaseId'], original['generation'])
+            self.docker.live_container = previous
+        self.assertEqual(len(self.docker.up_calls), 1)
+
+    def test_first_transaction_flip_requires_same_accepted_image(self):
+        original = self.compatible_direct(); binding = self.candidate(original, LATER, self.transaction)
+        with self.assertRaisesRegex(m.RuntimeError, 'route_change_requires_same_accepted_image'):
+            self.store.activate(binding['releaseId'], original['generation'])
+        self.assertEqual(len(self.docker.up_calls), 1)
+
+    def test_recovery_foreign_instance_and_runtime_drift_cannot_be_overwritten(self):
+        original = self.compatible_direct(); binding = self.candidate(original, profile=self.transaction)
+        self.docker.interrupt_health = True
+        with self.assertRaises(KeyboardInterrupt): self.store.activate(binding['releaseId'], original['generation'])
+        owned = copy.deepcopy(self.docker.live_container)
+        for field in ('cid', 'image', 'release', 'profile', 'environment', 'memory', 'port', 'security'):
+            self.docker.live_container = copy.deepcopy(owned)
+            if field == 'cid': self.docker.live_container['Id'] = 'f' * 64
+            if field == 'image': self.docker.live_container['Image'] = LATER
+            if field == 'release': self.docker.live_container['Config']['Labels']['com.cop.runtime.release'] = 'foreign'
+            if field == 'profile': self.docker.live_container['Config']['Labels']['com.cop.runtime.profile-generation'] = str(uuid.uuid4())
+            if field == 'environment': self.docker.live_container['Config']['Env'].append('COP_AUTH_MODE=foreign')
+            if field == 'memory': self.docker.live_container['HostConfig']['Memory'] = 999
+            if field == 'port': self.docker.live_container['HostConfig']['PortBindings'] = {'4310/tcp': [{'HostIp': '', 'HostPort': '1'}]}
+            if field == 'security': self.docker.live_container['HostConfig']['SecurityOpt'] = ['foreign']
+            with self.subTest(field=field), self.assertRaises(m.RuntimeError):
+                self.store.recover(original['generation'], rollback=True)
+            self.assertEqual(len(self.docker.up_calls), 2)
+        self.docker.live_container = owned
+        self.store.recover(original['generation'], rollback=True)
+        self.assertEqual(len(self.docker.up_calls), 3)
+
+    def test_legacy_rollback_preserves_absent_keys_and_updates_container_witness(self):
+        original = self.baseline(); binding = self.candidate(original)
+        self.docker.interrupt_health = True
+        with self.assertRaises(KeyboardInterrupt): self.store.activate(binding['releaseId'], original['generation'])
+        restored = self.store.recover(original['generation'], rollback=True)
+        values = dict(item.split('=', 1) for item in self.docker.live_container['Config']['Env'])
+        self.assertNotIn('COP_DATABASE_POOL_MODE', values); self.assertNotIn('COP_LEASE_DATABASE_URL', values)
+        self.assertIn('COP_STREAM_BUS_DATABASE_URL', values)
+        self.assertEqual(restored['imageId'], OLD); self.assertNotEqual(restored['containerId'], CID)
+        self.store.active()
+        candidate = self.candidate(restored)
+        self.store.activate(candidate['releaseId'], restored['generation'])
+
+    def test_interruption_after_pointer_publish_can_finish_without_second_up(self):
+        original = self.compatible_direct(); binding = self.candidate(original, profile=self.transaction)
+        real_finish = self.store.finish_pending
+        self.store.finish_pending = lambda: (_ for _ in ()).throw(KeyboardInterrupt())
+        with self.assertRaises(KeyboardInterrupt): self.store.activate(binding['releaseId'], original['generation'])
+        published = self.store.pointer(); self.assertEqual(published['releaseId'], binding['releaseId'])
+        self.store.finish_pending = real_finish
+        result = self.store.recover(published['generation'])
+        self.assertEqual(result['releaseId'], binding['releaseId']); self.assertEqual(len(self.docker.up_calls), 2)
+
+    def test_docker_context_cannot_override_local_target(self):
+        with mock.patch.dict(os.environ, {'DOCKER_CONTEXT': 'foreign'}, clear=True), mock.patch.object(m.subprocess, 'run') as run:
+            with self.assertRaisesRegex(m.RuntimeError, 'foreign_docker_host'): m.Docker().run(['docker', 'info'])
+            run.assert_not_called()
+        with mock.patch.dict(os.environ, {'DOCKER_HOST': 'ssh://foreign.invalid'}, clear=True), mock.patch.object(m.subprocess, 'run') as run:
+            with self.assertRaisesRegex(m.RuntimeError, 'foreign_docker_host'): m.Docker().run(['docker', 'info'])
+            run.assert_not_called()
+        with mock.patch.dict(os.environ, {'DOCKER_CONTEXT': 'default', 'DOCKER_TLS_VERIFY': '1'}, clear=True), mock.patch.object(m.subprocess, 'run') as run:
+            run.return_value = mock.Mock(returncode=0, stdout=b'public', stderr=b'')
+            self.assertEqual(m.Docker().run(['docker', 'image', 'inspect', NEW]), b'public')
+            self.assertEqual(run.call_args.args[0][:3], ['docker', '--host', 'unix:///var/run/docker.sock'])
+            self.assertNotIn('DOCKER_CONTEXT', run.call_args.kwargs['env'])
+            self.assertNotIn('DOCKER_TLS_VERIFY', run.call_args.kwargs['env'])
+
+    def test_metadata_mount_probe_is_pinned_offline_and_strict(self):
+        docker = m.Docker(); commands = []
+        response = {'contractVersion': 'cop-api-runtime-mount-probe-v1', 'socketDirectoryApproved': True,
+                    'socketApproved': True, 'caApproved': True, 'caSha256': 'f' * 64}
+        docker.run = lambda command: commands.append(command) or m.encoded(response)
+        docker.mounts(NEW, 'f' * 64)
+        command = commands[0]
+        self.assertIn(NEW, command); self.assertIn('--mount', command); self.assertNotIn('-v', command)
+        self.assertEqual(command[command.index('--network') + 1], 'none')
+        self.assertEqual(command[command.index('--group-add') + 1], '982')
+        self.assertNotIn('--env', command); self.assertNotIn('--env-file', command)
+        self.assertIn('--read-only', command); self.assertIn('--cap-drop', command)
+        self.assertNotIn('connect', command[-1]); self.assertNotIn('/app/', command[-1])
+        for key, value in (('caApproved', False), ('socketApproved', 1), ('caSha256', '0' * 64), ('unknown', True)):
+            with self.subTest(key=key):
+                previous = dict(response); response[key] = value
+                with self.assertRaisesRegex(m.RuntimeError, 'mount_probe_rejected'): docker.mounts(NEW, 'f' * 64)
+                response = previous
+
+    def test_current_includes_stopped_owned_candidate(self):
+        docker = m.Docker(self.source); args = []
+        docker.run = lambda command: args.append(command) or (b'[{}]' if command[:2] == ['docker', 'inspect'] else CID.encode())
+        docker.current(self.root)
+        self.assertEqual(args[0][-4:], ['ps', '--all', '-q', 'cop-api'])
+
+    def test_wrapper_pins_daemon_before_its_direct_docker_actions(self):
+        wrapper = (Path(__file__).parents[1] / 'deploy-production.sh').read_text()
+        prefix = wrapper[wrapper.index('case "${DOCKER_HOST'):wrapper.index('python3 scripts/cop-storage.py preflight')]
+        binary = self.home / 'bin'; binary.mkdir()
+        fake = binary / 'docker'; fake.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n'); fake.chmod(0o700)
+        environment = {'PATH': str(binary) + ':' + os.environ['PATH']}
+        result = m.subprocess.run(['bash', '-c', prefix + '\ndocker image inspect synthetic-fixture'],
+                                  capture_output=True, env=environment)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.decode().splitlines()[:2], ['--host', 'unix:///var/run/docker.sock'])
+        result = m.subprocess.run(['bash', '-c', prefix + '\ndocker image inspect synthetic-fixture'],
+                                  capture_output=True, env={**environment, 'DOCKER_CONTEXT': 'foreign'})
+        self.assertNotEqual(result.returncode, 0); self.assertEqual(result.stdout, b'')
+
+    def test_completed_pair_rollback_restores_accepted_legacy_without_global_fallback(self):
+        original = self.baseline(); direct = self.candidate(original)
+        current = self.store.activate(direct['releaseId'], original['generation'])
+        transaction = self.candidate(current, profile=self.transaction)
+        current = self.store.activate(transaction['releaseId'], current['generation'])
+        restored = self.store.activate(original['releaseId'], current['generation'], rollback=True)
+        self.assertEqual(restored['imageId'], OLD); self.assertEqual(restored['profileId'], self.direct[0])
+        values = dict(item.split('=', 1) for item in self.docker.live_container['Config']['Env'])
+        self.assertNotIn('COP_DATABASE_POOL_MODE', values); self.assertNotIn('COP_LEASE_DATABASE_URL', values)
+        self.assertNotIn(str(m.SOCKET), [v['Destination'] for v in self.docker.live_container['Mounts']])
+
+    def test_unaccepted_prepared_pair_is_not_a_rollback_target(self):
+        current = self.compatible_direct()
+        unaccepted = self.candidate(current, LATER)
+        with self.assertRaisesRegex(m.RuntimeError, 'rollback_pair_not_previously_accepted'):
+            self.store.activate(unaccepted['releaseId'], current['generation'], rollback=True)
+        self.assertEqual(len(self.docker.up_calls), 1)
+
+    def test_interrupted_rollback_health_can_finish_without_recreating_previous(self):
+        original = self.compatible_direct(); candidate = self.candidate(original, profile=self.transaction)
+        self.docker.interrupt_health = True
+        with self.assertRaises(KeyboardInterrupt): self.store.activate(candidate['releaseId'], original['generation'])
+        self.docker.interrupt_health = True
+        with self.assertRaises(KeyboardInterrupt): self.store.recover(original['generation'], rollback=True)
+        restored_id = self.docker.live_container['Id']; calls = len(self.docker.up_calls)
+        result = self.store.recover(original['generation'], rollback=True)
+        self.assertEqual(result['containerId'], restored_id); self.assertEqual(len(self.docker.up_calls), calls)
+
+    def test_interrupted_rollback_cleanup_can_finish_after_pointer_publish(self):
+        original = self.baseline(); candidate = self.candidate(original)
+        self.docker.interrupt_health = True
+        with self.assertRaises(KeyboardInterrupt): self.store.activate(candidate['releaseId'], original['generation'])
+        real_finish = self.store.finish_pending
+        self.store.finish_pending = lambda: (_ for _ in ()).throw(KeyboardInterrupt())
+        with self.assertRaises(KeyboardInterrupt): self.store.recover(original['generation'], rollback=True)
+        published = self.store.pointer(); calls = len(self.docker.up_calls)
+        self.store.finish_pending = real_finish
+        self.store.recover(published['generation'], rollback=True)
+        self.assertEqual(len(self.docker.up_calls), calls)
+
+    def test_invalid_inline_secret_is_rejected_before_writing_release_copy(self):
+        raw_source = self.docker.source_config()
+        raw_source['services']['cop-api']['environment']['COP_LAB_TOKEN'] = 'synthetic-forbidden-inline'
+        self.docker.source_config = lambda: raw_source
+        receipt = self.receipt(self.direct, NEW)
+        with self.assertRaisesRegex(m.RuntimeError, 'inline_secret_in_compose'):
+            self.store.prepare(NEW, REV, receipt, 'absent', self.direct[0])
+        self.assertFalse((self.root / 'releases').exists())
+
+    def test_empty_user_and_workdir_image_defaults_do_not_change_actual_identity(self):
+        original = self.baseline()
+        self.docker.live_container['Config'].update(User='', WorkingDir='')
+        self.docker.image_configs[OLD] = {'User': None, 'WorkingDir': None, 'Labels': None}
+        candidate = self.candidate(original)
+        self.store.activate(candidate['releaseId'], original['generation'])
+
+    def test_nondefault_container_user_is_not_normalized_to_root(self):
+        original = self.baseline()
+        self.docker.live_container['Config']['User'] = '1001'
+        candidate = self.candidate(original)
+        with self.assertRaisesRegex(m.RuntimeError, 'live_command_parity_mismatch'):
+            self.store.activate(candidate['releaseId'], original['generation'])
+        self.assertEqual(self.docker.up_calls, [])
+
+    def test_target_bind_create_or_propagation_drift_stops_before_up(self):
+        original = self.compatible_direct()
+        for options in ({'create_host_path': True}, {'create_host_path': False, 'propagation': 'shared'}):
+            candidate = self.candidate(original, LATER)
+            mount = copy.deepcopy(self.docker.base['services']['cop-api']['volumes'][0]); mount['bind'] = options
+            self.docker.release_overrides[candidate['releaseId']] = {'volumes': [mount]}
+            with self.assertRaisesRegex(m.RuntimeError, 'live_bind_options_parity_mismatch'):
+                self.store.activate(candidate['releaseId'], original['generation'])
+        self.assertEqual(len(self.docker.up_calls), 1)
+
+    def test_target_network_name_drift_stops_before_mutation(self):
+        original = self.compatible_direct(); candidate = self.candidate(original, LATER)
+        before = self.docker.config
+        def altered(directory, profile=None, raw=False):
+            result = before(directory, profile, raw)
+            if directory.name == candidate['releaseId']:
+                result['networks'][next(iter(m.NETWORKS))]['name'] = 'foreign-new-network'
+            return result
+        self.docker.config = altered
+        with self.assertRaisesRegex(m.RuntimeError, 'target_network_scope_changed'):
+            self.store.activate(candidate['releaseId'], original['generation'])
+        self.assertEqual(len(self.docker.up_calls), 1); self.assertFalse((self.root / 'pending.json').exists())
+
+
+if __name__ == '__main__': unittest.main()

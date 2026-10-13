@@ -3,11 +3,47 @@ set -euo pipefail
 # Run only on docker.home.cz; explicit service arguments, no whole-stack update.
 cd /srv/cop
 umask 077
+# Pin every Docker operation before build context or inspection can reach a
+# different daemon. Do not alter the user's saved Docker context.
+case "${DOCKER_HOST:-unix:///var/run/docker.sock}" in
+  unix:///var/run/docker.sock|unix:///run/docker.sock) ;;
+  *) echo 'COP deployment requires the local Docker daemon' >&2; exit 1 ;;
+esac
+[[ "${DOCKER_CONTEXT:-default}" == default ]] || { echo 'COP deployment rejects a foreign Docker context' >&2; exit 1; }
+unset DOCKER_CONTEXT DOCKER_TLS DOCKER_TLS_VERIFY DOCKER_CERT_PATH
+export DOCKER_HOST=unix:///var/run/docker.sock
+docker() {
+  if command docker --host unix:///var/run/docker.sock "$@" 2>/dev/null; then return 0; fi
+  echo 'COP Docker operation failed; private diagnostics were suppressed' >&2
+  return 1
+}
 python3 scripts/cop-storage.py preflight >/dev/null
 exec 9>>/srv/cop/.storage.lock
 flock -n 9
 export COP_STORAGE_LOCK_FD=9
 python3 scripts/cop-storage.py preflight >/dev/null
+build_only=false
+deploy_only=false
+api_profile_args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --build-only) build_only=true; shift ;;
+    --api-image|--api-source|--api-attestation|--api-profile)
+      [[ $# -ge 2 ]] || { echo 'API deployment option requires a value' >&2; exit 1; }
+      case "$1" in
+        --api-image) api_image="$2"; deploy_only=true ;;
+        --api-source) api_revision="$2" ;;
+        --api-attestation) COP_API_RUNTIME_ATTESTATION="$2" ;;
+        --api-profile) api_profile_args=(--profile "$2") ;;
+      esac
+      shift 2 ;;
+    *) break ;;
+  esac
+done
+if $deploy_only; then
+  [[ $# -eq 0 && "$build_only" == false && -n "${api_revision:-}" ]] || { echo 'Immutable API activation must be API-only with a source pin' >&2; exit 1; }
+  set -- cop-api
+fi
 files=(docker-compose.yml docker-compose.driver-measurements.yml docker-compose.x5.yml)
 # Keep the approved Router attachment when present. Never silently drop it.
 if [[ -f docker-compose.ai-router.yml ]]; then files+=(docker-compose.ai-router.yml); fi
@@ -16,11 +52,36 @@ for f in "${files[@]}"; do
   [[ -f "$f" ]] || { echo 'Required COP Compose override is missing' >&2; exit 1; }
   compose+=(-f "$f"); backup+=(--compose-file "$f")
 done
-python3 scripts/cop-storage.py snapshot --exclude-env "${backup[@]}"
 if [[ $# -eq 0 ]]; then echo 'Specify the reviewed service(s), for example cop-api' >&2; exit 1; fi
 for service in "$@"; do
   case "$service" in cop-api|cop-web|cop-chat|cop-edge|cop-mcp) ;; *) echo 'Unknown COP service' >&2; exit 1;; esac
 done
+api_requested=false
+other_services=()
+for service in "$@"; do
+  if [[ "$service" == cop-api ]]; then api_requested=true; else other_services+=("$service"); fi
+done
+if $api_requested; then
+  # Missing, corrupt or interrupted profiles stop every mixed API deployment.
+  api_state=$(python3 scripts/cop-api-runtime.py validate)
+  api_generation=$(python3 -c 'import json,sys;print(json.load(sys.stdin)["generation"])' <<< "$api_state")
+  if ! $build_only; then
+    [[ -n "${COP_API_RUNTIME_ATTESTATION:-}" ]] || { echo 'Fresh API owner attestation is required' >&2; exit 1; }
+  fi
+  if ! $deploy_only; then
+    # Tracked and untracked build input must match the source label. Only the
+    # approved local Compose attachment and operational lock may be untracked.
+    api_revision=$(python3 - <<'PYSOURCE'
+import subprocess,sys
+records = subprocess.check_output(['git', 'status', '--porcelain=v1', '--untracked-files=all', '-z']).split(b'\0')
+if any(value and value not in {b'?? .storage.lock', b'?? docker-compose.ai-router.yml'} for value in records):
+    sys.exit('API source has uncommitted or untracked build input')
+print(subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip())
+PYSOURCE
+)
+  fi
+fi
+python3 scripts/cop-storage.py snapshot --exclude-env "${backup[@]}"
 job=$(python3 scripts/cop-storage.py new-job staging | python3 -c 'import json,sys;print(json.load(sys.stdin)["job"])')
 cachejob=$(python3 scripts/cop-storage.py new-job cache | python3 -c 'import json,sys;print(json.load(sys.stdin)["job"])')
 export TMPDIR="$job" XDG_CACHE_HOME="$cachejob" PYTHONDONTWRITEBYTECODE=1
@@ -29,6 +90,7 @@ flock -n 8
 exec 7>>"$cachejob/.job.lock"
 flock -n 7
 python3 scripts/cop-health-gate.py capture > "$job/baseline-health.json"
+if ! $deploy_only; then
 # COP's dedicated builder is backed by a bind volume on X5. Never use/prune a
 # shared builder or reconfigure the daemon. Provisioning is in the runbook.
 export BUILDX_BUILDER=cop-x5
@@ -36,26 +98,62 @@ python3 scripts/verify-cop-builder.py --allow-stopped >/dev/null
 python3 scripts/cop-storage.py preflight >/dev/null
 docker buildx inspect cop-x5 --bootstrap >/dev/null
 python3 scripts/verify-cop-builder.py
-docker compose "${compose[@]}" build --builder cop-x5 "$@"
+build_compose=("${compose[@]}")
+if $api_requested; then
+  python3 - "$job/api-build-label.json" "$api_revision" <<'PYLABEL'
+import json,sys
+with open(sys.argv[1], 'x') as handle:
+    json.dump({'services': {'cop-api': {'build': {'labels': {
+        'org.opencontainers.image.revision': sys.argv[2]}}}}}, handle)
+PYLABEL
+  build_compose+=(-f "$job/api-build-label.json")
+fi
+docker compose --project-name cop "${build_compose[@]}" build --builder cop-x5 "$@" >/dev/null
+fi
+api_check_image=delta-acr-cop-api:local
+if $deploy_only; then api_check_image="$api_image"; fi
 for service in "$@"; do
   if [[ "$service" == cop-chat ]]; then
-    docker run --rm -i --network none --read-only --cap-drop ALL --entrypoint node delta-acr-cop-chat:local \
-      --input-type=module < scripts/check-chat-image.mjs
+    docker run --rm --pull never -i --network none --read-only --cap-drop ALL --entrypoint node delta-acr-cop-chat:local \
+      --input-type=module < scripts/check-chat-image.mjs >/dev/null
   fi
   if [[ "$service" == cop-api ]]; then
     # Reject a rollback/release without the runtime guard, even when Compose
     # happens to contain X5 variables. Do not enable an internal tmp fallback.
-    docker run --rm --network none --read-only --entrypoint node delta-acr-cop-api:local \
-      -e 'const fs=require("fs");const s=fs.readFileSync("/app/apps/cop-api/dist/media-conversion.js","utf8");if(!s.includes("verifyConversionStorage")||!s.includes("expectedStorageUuid")||!s.includes("expectedDeviceId"))process.exit(1)'
+    docker run --rm --pull never --network none --read-only --entrypoint node "$api_check_image" \
+      -e 'const fs=require("fs");const s=fs.readFileSync("/app/apps/cop-api/dist/media-conversion.js","utf8");if(!s.includes("verifyConversionStorage")||!s.includes("expectedStorageUuid")||!s.includes("expectedDeviceId"))process.exit(1)' >/dev/null
     # Avatar sanitation depends on the Linux-native Sharp binary. Verify an
     # actual conversion in the exact image before replacing the running API.
-    docker run --rm --network none --read-only --cap-drop ALL --entrypoint node delta-acr-cop-api:local \
-      -e 'const sharp=require("/app/apps/cop-api/node_modules/sharp");sharp({create:{width:1,height:1,channels:3,background:{r:0,g:0,b:0}}}).png().toBuffer().then(b=>{if(!b.length)process.exitCode=1}).catch(()=>{process.exitCode=1})'
+    docker run --rm --pull never --network none --read-only --cap-drop ALL --entrypoint node "$api_check_image" \
+      -e 'const sharp=require("/app/apps/cop-api/node_modules/sharp");sharp({create:{width:1,height:1,channels:3,background:{r:0,g:0,b:0}}}).png().toBuffer().then(b=>{if(!b.length)process.exitCode=1}).catch(()=>{process.exitCode=1})' >/dev/null
   fi
 done
 python3 scripts/cop-storage.py preflight >/dev/null
-docker compose "${compose[@]}" up -d --no-deps "$@"
+if $build_only; then
+  # The reviewed image/source metadata is needed to obtain a fresh root proof.
+  if $api_requested; then
+    docker image inspect --format '{{.Id}}' delta-acr-cop-api:local
+    echo "API source revision: $api_revision"
+  fi
+  python3 scripts/cop-health-gate.py verify "$job/baseline-health.json"
+else
+if $api_requested; then
+  # Resolve the newly built image, never an image saved in the active manifest.
+  if ! $deploy_only; then api_image=$(docker image inspect --format '{{.Id}}' delta-acr-cop-api:local); fi
+  api_binding=$(python3 scripts/cop-api-runtime.py prepare --image "$api_image" \
+    --revision "$api_revision" --attestation "$COP_API_RUNTIME_ATTESTATION" \
+    --expect-active "$api_generation" "${api_profile_args[@]}")
+  api_release=$(python3 -c 'import json,sys;print(json.load(sys.stdin)["releaseId"])' <<< "$api_binding")
+fi
+# Compatibility preparation finishes before mutating any selected service.
+if [[ ${#other_services[@]} -gt 0 ]]; then
+  docker compose --project-name cop "${compose[@]}" up -d --no-build --pull never --no-deps "${other_services[@]}" >/dev/null
+fi
+if $api_requested; then
+  python3 scripts/cop-api-runtime.py activate --release "$api_release" --expect-active "$api_generation"
+fi
 python3 scripts/cop-health-gate.py verify "$job/baseline-health.json" --allow-added-dependency safety-notification-worker
+fi
 flock -u 8
 exec 8>&-
 python3 scripts/cop-storage.py complete-job "$job"

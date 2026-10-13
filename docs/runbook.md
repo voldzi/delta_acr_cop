@@ -19,6 +19,7 @@ procedures remain in the established runbook set:
 - [COP storage on X5: verification and scoped rollback](runbooks/19_COP_X5_STORAGE.md)
 - [Automatic crisis notifications: consent, source readiness, release and rollback](runbooks/21_COP_CRISIS_NOTIFICATIONS.md)
 - [Standalone chat release and SIM acceptance](runbooks/22_COP_CHAT_RELEASE_20261010.md)
+- [API immutable image/runtime profile deployment and recovery](runbooks/24_COP_API_RUNTIME_PROFILE.md)
 
 Common checks:
 

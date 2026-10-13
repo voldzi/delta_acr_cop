@@ -99,10 +99,11 @@ construction. No real broker/TLS handshake, failover or production cutover is
 claimed by these checks.
 
 The infrastructure owner must review the exact source pin and grant a separate
-build-only GO before any production build. The standard
+build-only GO before any production build. The service form
 `scripts/deploy-production.sh cop-api` performs build and service update; it is
-not a build-only command. Do not invent a build-only wrapper or run that script
-under build-only authority. Runtime activation requires its own coordinated GO.
+not a build-only command. [ADR 0049](0049_API_IMAGE_RUNTIME_PROFILE_BINDINGS.md)
+adds an explicit reviewed `--build-only` preparation and immutable deploy-only
+path. Runtime activation still requires its own coordinated GO.
 
 For rollback restore the verified main direct/session route and routing mode
 before using an older image that cannot enforce the new separation. Preserve

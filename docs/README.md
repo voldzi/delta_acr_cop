@@ -52,6 +52,10 @@ Explicit session routes for database leases and PostgreSQL LISTEN:
 [ADR 0048](adr/0048_SESSION_AFFINE_DATABASE_ROUTES.md),
 [configuration](runbooks/03_ENVIRONMENT_CONFIGURATION.md#režim-postgresql-a-připojení-pro-session-operace).
 
+API-only immutable image/profile deployment and recovery:
+[ADR 0049](adr/0049_API_IMAGE_RUNTIME_PROFILE_BINDINGS.md),
+[runtime profile runbook](runbooks/24_COP_API_RUNTIME_PROFILE.md).
+
 COP host storage separation, retention, deployment and recovery evidence:
 [X5 runbook](runbooks/19_COP_X5_STORAGE.md),
 [ADR 0038](adr/0038_COP_X5_OPERATIONAL_STORAGE_BOUNDARY.md).

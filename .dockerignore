@@ -17,3 +17,6 @@ output
 .codex-backups
 .chroma-state*
 **/__pycache__
+
+# Private runtime bindings are not source/build input.
+runtime/
