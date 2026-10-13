@@ -516,5 +516,109 @@ class RuntimeTests(unittest.TestCase):
             self.store.activate(candidate['releaseId'], original['generation'])
         self.assertEqual(len(self.docker.up_calls), 1); self.assertFalse((self.root / 'pending.json').exists())
 
+    def unavailable_broker(self):
+        probes = []
+        def reject(fingerprint):
+            probes.append(fingerprint)
+            raise m.RuntimeError('synthetic_broker_unavailable')
+        self.store.mount_guard = reject
+        return probes
+
+    def test_unavailable_broker_allows_completed_owned_direct_rollback(self):
+        direct = self.compatible_direct(); target = self.candidate(direct, profile=self.transaction)
+        current = self.store.activate(target['releaseId'], direct['generation'])
+        probes = self.unavailable_broker()
+        restored = self.store.activate(direct['releaseId'], current['generation'], rollback=True)
+        self.assertEqual(probes, [])
+        self.assertEqual(restored['releaseId'], direct['releaseId'])
+        self.assertEqual(restored['imageId'], NEW); self.assertEqual(restored['profileId'], self.direct[0])
+        self.assertNotIn(str(m.SOCKET), [v['Destination'] for v in self.docker.live_container['Mounts']])
+        self.assertEqual(len(self.docker.up_calls), 3)
+
+    def test_unavailable_broker_allows_pending_owned_direct_rollback(self):
+        direct = self.compatible_direct(); target = self.candidate(direct, profile=self.transaction)
+        self.docker.interrupt_health = True
+        with self.assertRaises(KeyboardInterrupt): self.store.activate(target['releaseId'], direct['generation'])
+        probes = self.unavailable_broker()
+        restored = self.store.recover(direct['generation'], rollback=True)
+        self.assertEqual(probes, [])
+        self.assertEqual(restored['releaseId'], direct['releaseId'])
+        self.assertFalse((self.root / 'pending.json').exists())
+        self.assertEqual(len(self.docker.up_calls), 3)
+
+    def assert_broken_source_keeps_foreign_actor_guards(self, restore):
+        owned = copy.deepcopy(self.docker.live_container); calls = len(self.docker.up_calls)
+        for field in ('cid', 'image', 'release', 'profile', 'environment', 'memory'):
+            self.docker.live_container = copy.deepcopy(owned)
+            if field == 'cid': self.docker.live_container['Id'] = 'f' * 64
+            if field == 'image': self.docker.live_container['Image'] = LATER
+            if field == 'release': self.docker.live_container['Config']['Labels']['com.cop.runtime.release'] = 'foreign'
+            if field == 'profile': self.docker.live_container['Config']['Labels']['com.cop.runtime.profile-generation'] = str(uuid.uuid4())
+            if field == 'environment': self.docker.live_container['Config']['Env'].append('COP_AUTH_MODE=foreign')
+            if field == 'memory': self.docker.live_container['HostConfig']['Memory'] = 999
+            with self.subTest(field=field), self.assertRaises(m.RuntimeError): restore()
+            self.assertEqual(len(self.docker.up_calls), calls)
+        self.docker.live_container = owned
+
+    def test_broken_tx_completed_rollback_does_not_overwrite_foreign_actor(self):
+        direct = self.compatible_direct(); target = self.candidate(direct, profile=self.transaction)
+        current = self.store.activate(target['releaseId'], direct['generation'])
+        probes = self.unavailable_broker()
+        self.assert_broken_source_keeps_foreign_actor_guards(
+            lambda: self.store.activate(direct['releaseId'], current['generation'], rollback=True))
+        self.assertEqual(probes, [])
+
+    def test_broken_tx_pending_rollback_does_not_overwrite_foreign_actor(self):
+        direct = self.compatible_direct(); target = self.candidate(direct, profile=self.transaction)
+        self.docker.interrupt_health = True
+        with self.assertRaises(KeyboardInterrupt): self.store.activate(target['releaseId'], direct['generation'])
+        probes = self.unavailable_broker()
+        self.assert_broken_source_keeps_foreign_actor_guards(
+            lambda: self.store.recover(direct['generation'], rollback=True))
+        self.assertEqual(probes, [])
+
+    def test_unavailable_tx_target_still_blocks_activation_and_completion(self):
+        direct = self.compatible_direct(); target = self.candidate(direct, profile=self.transaction)
+        probes = self.unavailable_broker()
+        with self.assertRaisesRegex(m.RuntimeError, 'synthetic_broker_unavailable'):
+            self.store.activate(target['releaseId'], direct['generation'])
+        self.assertEqual(len(self.docker.up_calls), 1); self.assertEqual(len(probes), 1)
+        self.store.mount_guard = lambda fingerprint: None
+        self.docker.interrupt_health = True
+        with self.assertRaises(KeyboardInterrupt): self.store.activate(target['releaseId'], direct['generation'])
+        probes = self.unavailable_broker()
+        with self.assertRaisesRegex(m.RuntimeError, 'synthetic_broker_unavailable'):
+            self.store.recover(direct['generation'])
+        self.assertEqual(len(self.docker.up_calls), 2); self.assertEqual(len(probes), 1)
+        self.assertTrue((self.root / 'pending.json').exists())
+
+    def test_broken_tx_rollback_still_requires_protected_source_integrity(self):
+        direct = self.compatible_direct(); target = self.candidate(direct, profile=self.transaction)
+        current = self.store.activate(target['releaseId'], direct['generation'])
+        probes = self.unavailable_broker()
+        profile_env = self.protected / self.transaction[0] / 'runtime.env'
+        profile_env.chmod(0o660)
+        with self.assertRaisesRegex(m.RuntimeError, 'private_file_permissions'):
+            self.store.activate(direct['releaseId'], current['generation'], rollback=True)
+        profile_env.chmod(0o640)
+        attestation = Path(target['attestationPath']); original = attestation.read_bytes()
+        write(attestation, original + b'\n', 0o640)
+        with self.assertRaisesRegex(m.RuntimeError, 'attestation_changed'):
+            self.store.activate(direct['releaseId'], current['generation'], rollback=True)
+        self.assertEqual(probes, []); self.assertEqual(len(self.docker.up_calls), 2)
+
+    def test_owned_direct_restore_completion_does_not_depend_on_failed_source_tx(self):
+        direct = self.compatible_direct(); target = self.candidate(direct, profile=self.transaction)
+        current = self.store.activate(target['releaseId'], direct['generation'])
+        probes = self.unavailable_broker()
+        self.docker.interrupt_health = True
+        with self.assertRaises(KeyboardInterrupt):
+            self.store.activate(direct['releaseId'], current['generation'], rollback=True)
+        calls = len(self.docker.up_calls)
+        completed = self.store.recover(current['generation'])
+        self.assertEqual(completed['releaseId'], direct['releaseId'])
+        self.assertEqual(probes, []); self.assertEqual(len(self.docker.up_calls), calls)
+        self.assertFalse((self.root / 'pending.json').exists())
+
 
 if __name__ == '__main__': unittest.main()

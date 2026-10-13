@@ -182,6 +182,13 @@ Jobs are completed only after terminal worker commands and health acceptance.
 container including stopped/exited containers; it validates previous or owned
 target image/profile/labels, saved CID when available, runtime parity and CAS.
 A foreign instance is never overwritten. Health failure does not weaken gates.
+For explicit restoration of an accepted DIRECT pair, source TX socket/CA
+availability is not required: protected source profile/attestation integrity,
+actual CID/image/labels, full runtime parity and accepted ancestry still apply.
+The availability probe remains mandatory for any target TX activation or
+completion. Completion of an interrupted DIRECT restoration verifies its
+accepted ancestry without requiring the failed source TX endpoint. A failed
+broker therefore cannot block owned DIRECT recovery.
 
 After explicit recovery GO, `recover --expect-active <generation>` completes an
 owned healthy target without another recreation. Add `--rollback` to restore
@@ -225,7 +232,7 @@ Compose test invokes only `config` on synthetic files, with no Docker daemon,
 server, images or real secrets. It proves literal-dollar serialization handling
 and true legacy key omission despite conflicting shell/base values.
 
-Local verification on 2026-10-13: 30 offline fault tests passed, plus the
+Local verification on 2026-10-13: 37 offline fault tests passed, plus the
 Compose-client rendering test (both candidate and legacy subcases) on Compose
 5.5.1. Shell syntax, skeleton validation and diff whitespace checks passed.
 The existing public analytics release guard separately passed in the owner

@@ -597,7 +597,7 @@ class Store:
                     'compatibility_not_accepted')
         return sha(raw), contract, value['legacyContainerId'], value['legacyEnvPresence']
 
-    def binding(self, identifier):
+    def binding(self, identifier, probe_mounts=True):
         require(ID.fullmatch(identifier) is not None, 'release_id_invalid')
         directory = self.directory(self.root / 'releases' / identifier)
         binding = private_json(directory / 'release.json', self.uid)
@@ -617,7 +617,8 @@ class Store:
         require(binding['legacyContainerId'] == witness, 'legacy_witness_changed')
         require(binding['attestationSha256'] == attestation_sha,
                 'attestation_changed')
-        self.check_mounts(binding, profile)
+        if probe_mounts:
+            self.check_mounts(binding, profile)
         self.directory(directory / 'compose')
         for name in FILES:
             require(sha(private_read(directory / 'compose' / name, self.uid)) == binding['composeHashes'][name],
@@ -628,11 +629,11 @@ class Store:
                 'runtime_image_file_changed')
         return directory, binding, profile
 
-    def active(self):
+    def active(self, probe_mounts=True):
         self.clean()
         pointer = self.pointer()
         require(pointer is not None, 'active_runtime_profile_missing')
-        directory, binding, profile = self.binding(pointer['releaseId'])
+        directory, binding, profile = self.binding(pointer['releaseId'], probe_mounts=probe_mounts)
         require(all(pointer[key] == binding[key] for key in ('profileId', 'profileGeneration', 'imageId')),
                 'active_pair_mismatch')
         return pointer, directory, binding, profile
@@ -708,24 +709,33 @@ class Store:
         self.write(self.root / 'active.json', encoded(pointer))
         return pointer
 
+    def accepted_ancestor(self, binding, release, probe_mounts=True):
+        ancestor = binding['previousReleaseId']
+        for _ in range(128):
+            if ancestor == release:
+                return True
+            if ancestor is None:
+                break
+            ancestor = self.binding(ancestor, probe_mounts=probe_mounts)[1]['previousReleaseId']
+        return False
+
     def activate(self, release, expected, adopt=False, rollback=False):
         self.clean(); previous = self.check_cas(expected)
         directory, binding, profile = self.binding(release)
         require(adopt == (binding['kind'] == 'accepted-baseline' and previous is None), 'activation_kind_invalid')
         require(not rollback or previous is not None and not adopt, 'rollback_kind_invalid')
+        # A failed source TX endpoint must not prevent explicit restoration of
+        # an accepted DIRECT pair. Its protected identity/parity still applies;
+        # availability probes remain mandatory for every TX target.
+        restore_direct = rollback and profile['mode'] == 'direct'
         if previous:
-            _, old_dir, old_binding, old_profile = self.active()
+            _, old_dir, old_binding, old_profile = self.active(probe_mounts=not restore_direct)
             self.docker.live(old_dir, old_binding, old_profile,
                              require_label=old_binding['kind'] != 'accepted-baseline')
             require(self.docker.current(old_dir)['Id'] == previous['containerId'], 'live_container_changed')
             if rollback:
-                ancestor = old_binding['previousReleaseId']; found = False
-                for _ in range(128):
-                    if ancestor == release:
-                        found = True; break
-                    if ancestor is None: break
-                    ancestor = self.binding(ancestor)[1]['previousReleaseId']
-                require(found, 'rollback_pair_not_previously_accepted')
+                require(self.accepted_ancestor(old_binding, release, probe_mounts=not restore_direct),
+                        'rollback_pair_not_previously_accepted')
             else:
                 require(binding['previousReleaseId'] == previous['releaseId'], 'prepared_pair_stale')
             if old_profile['mode'] != profile['mode'] and not rollback:
@@ -780,8 +790,14 @@ class Store:
                 or current['releaseId'] == previous['releaseId']
                 and current['containerId'] == pending['restoredContainerId']),
                 'recovery_pointer_changed')
-        old_dir, old_binding, old_profile = self.binding(previous['releaseId'])
-        new_dir, new_binding, new_profile = self.binding(pending['targetReleaseId'])
+        old_dir, old_binding, old_profile = self.binding(previous['releaseId'], probe_mounts=False)
+        new_dir, new_binding, new_profile = self.binding(pending['targetReleaseId'], probe_mounts=False)
+        restore_direct = (rollback and old_profile['mode'] == 'direct' or not rollback
+                          and new_profile['mode'] == 'direct'
+                          and self.accepted_ancestor(old_binding, new_binding['releaseId'], probe_mounts=False))
+        if not restore_direct:
+            self.check_mounts(old_binding, old_profile)
+            self.check_mounts(new_binding, new_profile)
         actual = self.docker.current(new_dir)
         if actual['Image'] == new_binding['imageId'] and actual['Config'].get('Labels', {}).get('com.cop.runtime.release') == new_binding['releaseId']:
             self.docker.live(new_dir, new_binding, new_profile)
