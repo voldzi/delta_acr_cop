@@ -4,6 +4,9 @@
 
 Accepted for source preparation on 2026-10-13. The production COP broker rollout
 remains on hold; this decision does not activate it or change authentication.
+The candidate is limited to actual runtime source `3a010127` plus the session
+route changes. It excludes `f84fe6f`, measurement changes, authentication changes
+and Messaging changes. Production remains unchanged.
 
 ## Context
 
@@ -29,6 +32,29 @@ through the ordinary transaction endpoint does not establish that guarantee.
   TLS query parameters or the PostgreSQL protocol alias does not create a
   separate endpoint. Errors contain fixed text, never URI values or parser
   causes that might expose credentials.
+- Permit one additional transaction route: an encoded absolute Unix socket
+  directory in the PostgreSQL URI authority, explicit port (approved deployment
+  port `6432`), explicit
+  database, mandatory `sslmode=disable` and optional `application_name`. No
+  other query keys, endpoint overrides, duplicate or case-variant keys,
+  fragments, malformed percent escapes or dot-segment paths are permitted. Raw socket/service DSNs are
+  not an alternative to this contract. The socket directory is protected local
+  IPC; there is no TCP frontend or public broker port.
+- When that Unix main route is selected, the separate lease route and any
+  enabled PostgreSQL stream route must be TCP PostgreSQL URIs with explicit
+  host, port and database, exact `sslmode=verify-full` and canonical absolute
+  `sslrootcert` path. The approved deployment uses
+  `/etc/vcode-cop-pgbouncer/postgres-ca.crt`; the source does not hardcode that
+  path. Reject endpoint
+  overrides, duplicate/case-variant keys, alternate `ssl`, libpq compatibility,
+  certificate/key overrides and noncanonical paths. These remote routes retain
+  verified TLS; the historical global `COP_DATABASE_SSL=false` is unchanged.
+- Account for the installed `pg` behavior: SSL URI parameters replace the
+  entire inherited `PoolConfig.ssl` object. The Unix URI disables SSL only for
+  local IPC; the TCP session URIs explicitly configure certificate-verified
+  TLS and the CA. Infrastructure owns the real secrets, socket permissions,
+  runtime GID and a read-only mount of the single CA file, and must separately
+  verify the broker's PostgreSQL backend TLS.
 - Preserve lock SQL, backend PID checks, invalidation, release, recovery,
   business queries, TLS/authentication settings and existing retry/replay
   behavior. Do not replay work after losing a lease.
@@ -41,6 +67,14 @@ otherwise it keeps the existing shared pool. Add that connection to the
 operator's capacity budget. Both owned pools close, while a shared pool closes
 once. No API, tenant authority or persistent schema changes are introduced.
 
+With the known active factory configuration, general pool max `5`, explicit
+lease URL and memory stream, the main client pool maxima total `58`; Dispatch
+and Safety leases add `1` each: `60` clients across `15` pools per API process.
+These are client limits, not open connections or broker backend counts. The
+infrastructure proposal is broker backend cap `10` and client cap `80`; neither
+is claimed deployed here. PostgreSQL stream mode would add its publish pool
+(default max `2`) and one independent `LISTEN` client outside the pool registry.
+
 The URI guard cannot prove actual broker pool mode, DNS alias separation,
 session affinity, the same logical database/identity or effective TLS. Before
 activation the infrastructure owner must verify those facts on the immutable
@@ -48,11 +82,27 @@ build, alongside lock ownership, reconnect/HA behavior, client authentication,
 dependency health and a scoped rollback. PostgreSQL LISTEN acceptance is
 separate when the stream is enabled.
 
-Seventy-one isolated tests cover route separation and normalization, missing
-configuration, lease failure without fallback, original Dispatch recovery,
-stream lifecycle, Safety invalidation and pool disposal. API TypeScript build,
-selected ESLint and skeleton validation pass; independent source review is
-closed. These are source checks, not a real broker or production acceptance.
+Targeted route/parser/recovery tests cover route separation and normalization,
+missing configuration, lease failure without fallback, original Dispatch
+recovery, stream lifecycle, Safety invalidation and pool disposal. Record their
+result, the API TypeScript build, selected ESLint, skeleton validation and source
+review against the exact candidate pin. Synthetic URI/parser checks are not
+actual TLS, broker or production acceptance.
+
+Local verification on 2026-10-13 with Node `24.21.0`, installed `pg 8.23.1`
+and `pg-connection-string 2.14.1`: `112` targeted tests pass. Two optional
+real-PostgreSQL mobility tests are skipped because no isolated test database
+was configured. API TypeScript build, selected ESLint, skeleton and diff checks
+pass. The malformed-query regression demonstrates that the installed parser can
+reinterpret a Unix authority as TCP; the guard rejects that URI before pool
+construction. No real broker/TLS handshake, failover or production cutover is
+claimed by these checks.
+
+The infrastructure owner must review the exact source pin and grant a separate
+build-only GO before any production build. The standard
+`scripts/deploy-production.sh cop-api` performs build and service update; it is
+not a build-only command. Do not invent a build-only wrapper or run that script
+under build-only authority. Runtime activation requires its own coordinated GO.
 
 For rollback restore the verified main direct/session route and routing mode
 before using an older image that cannot enforce the new separation. Preserve

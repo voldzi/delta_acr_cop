@@ -64,14 +64,69 @@ aliasu `postgres`/`postgresql` neobchází kontrolu shody endpointu. V tomto re�
 neexistuje fallback na hlavní URL. `COP_STREAM_BUS=memory|disabled|off` žádné
 PostgreSQL `LISTEN` spojení nevytváří.
 
+### Úzký kontrakt Unix IPC pro hlavní transaction cestu
+
+Nová povolená varianta hlavní URL má procentně zakódovaný absolutní adresář Unix
+socketu v authority PostgreSQL URI, explicitní port a explicitní databázi. Pro
+schválené nasazení je port `6432`; zdroj vyžaduje explicitní port, ne tuto konstantu.
+Vyžaduje jediný parametr `sslmode=disable`; navíc lze použít pouze
+`application_name`. Query endpoint overrides, duplicitní či jinak velkými písmeny
+zapsané klíče, fragmenty, neplatné procentní escape sekvence kdekoli v URI a cesty
+se segmenty `.` nebo `..` se odmítají. Nejde o
+obecnou podporu raw socket/service DSN. Broker nemá TCP frontend ani veřejný port;
+přístup k místnímu IPC určují práva adresáře/socketu a runtime GID.
+
+Při této Unix variantě musí `COP_LEASE_DATABASE_URL` a případně zapnutá
+PostgreSQL `COP_STREAM_BUS_DATABASE_URL` používat TCP URI s explicitním hostem,
+portem a databází, přesným `sslmode=verify-full` a kanonickou absolutní cestou
+`sslrootcert`. Schválené nasazení používá `/etc/vcode-cop-pgbouncer/postgres-ca.crt`;
+zdroj tuto konkrétní cestu nezakóduje napevno. Endpoint overrides,
+duplicitní/case-variant klíče, alternativní `ssl`, libpq compatibility,
+`sslkey`/`sslcert` ani nekanonické CA cesty nejsou přípustné. Správce infrastruktury
+vlastní skutečné secrets, socket mount a runtime GID a připojí pouze tento jediný
+CA soubor pro čtení. Žádný CA adresář ani soukromý klíč se do aplikace nepřidává.
+
+Následují pouze syntetické příklady tvaru URI; nejsou to produkční přístupové údaje
+a nejsou určeny ke spuštění:
+
+```text
+COP_DATABASE_POOL_MODE=transaction
+COP_DATABASE_URL=postgresql://fixture_user@%2Frun%2Ffixture-cop-pgbouncer:6432/cop_fixture?sslmode=disable
+COP_LEASE_DATABASE_URL=postgresql://fixture_user@postgres.fixture.invalid:5432/cop_fixture?sslmode=verify-full&sslrootcert=%2Fetc%2Fvcode-cop-pgbouncer%2Fpostgres-ca.crt
+COP_DATABASE_SSL=false
+COP_STREAM_BUS=memory
+```
+
+V místním `pg` přepisují SSL parametry URI celý zděděný objekt
+`PoolConfig.ssl`, nikoli jednotlivé vlastnosti. Historická globální hodnota
+`COP_DATABASE_SSL=false` se proto nemění: `sslmode=disable` se týká jen chráněného
+místního IPC, zatímco každá vzdálená session URI samostatně vyžaduje TLS s ověřením
+certifikátu a danou CA. Samostatně je třeba ověřit i TLS od brokeru k PostgreSQL.
+Syntetický test parseru není důkaz úspěšného TLS spojení ani session affinity.
+
+Při známé aktivní sadě továren, obecném max `5`, explicitní lease URL a streamu
+`memory` je součet hlavních client poolů `58` a dvou lease poolů `2`, tedy max
+`60` klientských spojení v `15` poolech na API proces. Nejde o aktuálně otevřená
+spojení ani počet PostgreSQL backendů. Broker backend cap `10` a client cap `80`
+jsou pouze návrh infrastruktury. PostgreSQL stream by přidal query pool
+(výchozí max `2`) a jedno samostatné `Client` spojení pro `LISTEN`, které pool
+diagnostika nezapočítává.
+
 Oddělené cesty musí směřovat do stejné logické databáze se stejnou databázovou
 identitou a ověřeným TLS podle stávajících pravidel. Kontrola URL neprokazuje
 odlišnost DNS aliasů ani session affinity brokeru; správce musí doložit skutečný
 režim obou cest. Lock SQL a ověřování PID, business dotazy, retry/replay i
 persistentní stav zůstávají beze změny.
 
-Jde o přípravu zdrojů; tento krok nic nenasazuje a nemění broker, síť ani globální
-databázovou konfiguraci. Budoucí transaction rollout je samostatná etapa:
+Jde o přípravu nad skutečným runtime zdrojem `3a010127` a session route změnami,
+bez `f84fe6f`, měření, autentizačních změn a Messaging změn. Produkce se nemění. Tento krok nic nenasazuje a nemění broker, síť ani globální
+databázovou konfiguraci. Cílené route/parser/recovery testy se evidují proti
+přesnému zdrojovému pinu. Správce infrastruktury musí tento pin zkontrolovat a
+před produkčním sestavením dát oddělené build-only GO. Standardní
+`scripts/deploy-production.sh cop-api` provádí build i aktualizaci služby;
+nejde o build-only příkaz. Nevytvářejte náhradní build-only wrapper a tento skript
+nespouštějte pouze na základě build-only souhlasu. Runtime aktivace vyžaduje
+samostatné koordinované GO. Budoucí transaction rollout je samostatná etapa:
 prokázat business cestu a přímou/session lease cestu, samostatně ověřit `LISTEN`,
 shodnou logickou databázi a identitu i TLS. Před přepnutím uchovat identitu původního
 image a původní routing flags. Rollback obnoví původní image, hlavní direct/session

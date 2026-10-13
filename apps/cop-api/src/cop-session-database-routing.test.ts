@@ -42,6 +42,23 @@ beforeEach(() => { pgState.pools.length = 0; pgState.listeners.length = 0; });
 afterEach(async () => { await Promise.all(pgState.pools.filter((pool) => !pool.ended).map((pool) => pool.end())); });
 
 describe("store and stream session connection ownership", () => {
+  it("keeps Unix business pools and remote lease pools separate without changing the global SSL flag", async () => {
+    const main = "postgresql://synthetic:business-password@%2Frun%2Fvcode-cop-pgbouncer:6432/cop?sslmode=disable";
+    const session = `${sessionUrl}?sslmode=verify-full&sslrootcert=%2Fetc%2Fvcode-cop-pgbouncer%2Fpostgres-ca.crt`;
+    const settings = { ...env, COP_DATABASE_URL: main, COP_LEASE_DATABASE_URL: session, COP_DATABASE_SSL: "false" };
+    const mobility = mobilityStoreFromEnv(settings)!;
+    const safety = createSafetyNotificationStoreFromEnv(settings);
+    expect(pgState.pools.map((pool) => [pool.config.connectionString, pool.config.max, pool.config.ssl])).toEqual([
+      [main, 3, false], [session, 1, false], [main, 3, false], [session, 1, false]
+    ]);
+    // Real pg URI parsing is checked separately; these inherited false values
+    // must be overridden by verify-full/rootcert on the remote routes only.
+    expect(createCopStreamBusFromEnv(settings).name).toBe("memory");
+    expect(pgState.listeners).toHaveLength(0);
+    await Promise.all([mobility.close(), safety.close()]);
+    expect(pgState.pools.every((pool) => pool.end.mock.calls.length === 1)).toBe(true);
+  });
+
   it("routes Dispatch ownership/PID verification to the explicit session pool and leaves business transactions on the main route", async () => {
     const store = mobilityStoreFromEnv(env)!;
     const [business, lease] = pgState.pools;

@@ -57,14 +57,52 @@ parameters or `postgres`/`postgresql` aliases do not establish a different
 endpoint. URI checks cannot prove DNS alias separation or the broker mode.
 See [environment configuration](runbooks/03_ENVIRONMENT_CONFIGURATION.md#režim-postgresql-a-připojení-pro-session-operace).
 
+The agreed additional transaction frontend uses protected Unix IPC, not a TCP
+listener or public broker port. Its PostgreSQL URI contains an encoded absolute
+socket-directory authority, explicit port (approved deployment `6432`), explicit
+database and mandatory
+`sslmode=disable`; only optional `application_name` may accompany that query
+key. Endpoint overrides, duplicate/case-variant query keys, fragments and
+malformed percent escapes and dot-segment paths are rejected. This is a narrowly permitted route, not a reason
+to declare a transaction broker as `direct`.
+
+For a Unix main route, the lease and enabled PostgreSQL stream routes must use
+explicit TCP PostgreSQL host/port/database with exact `sslmode=verify-full` and
+canonical absolute `sslrootcert` path. The approved deployment mounts
+`/etc/vcode-cop-pgbouncer/postgres-ca.crt`; the source does not hardcode that path.
+Reject endpoint overrides, alternate `ssl`, libpq compatibility and certificate
+or key overrides. URI SSL parameters replace the complete inherited
+`PoolConfig.ssl` object; preserve the historical global `COP_DATABASE_SSL=false`
+and configure verified remote TLS explicitly in each session URI. Infrastructure
+owns actual secret values, socket permissions, runtime GID and the read-only
+single-file CA mount, and must also prove the broker-to-PostgreSQL TLS path.
+
+At the known active configuration, general pool max `5`, explicit lease URL and
+memory stream, factory maxima are main `58` plus direct/session leases `2`:
+`60` clients across `15` pools per API process. This is not the number of open
+connections or PostgreSQL backends. Broker backend cap `10` and client cap `80`
+are infrastructure proposals, not deployed values. Memory stream creates no
+listener; PostgreSQL stream adds its pool (default max `2`) and one independent
+`LISTEN` client outside pool diagnostics.
+
 This source preparation deploys nothing and changes no broker, network or global
-database configuration. A future transaction rollout is a separate stage:
+database configuration. The candidate is based only on actual runtime source
+`3a010127` plus session route changes; exclude `f84fe6f`, measurements,
+authentication and Messaging changes. Production is unchanged. A future transaction rollout is a separate stage:
 prove the business and direct/session lease paths and `LISTEN`, the same logical
 database/identity and verified TLS. Preserve lock SQL/PID checks, business
 queries, retry/replay and persistent state. Retain the original image identity
 and routing flags; rollback restores that image and the original direct/session
 main path and flags. Use the existing server secret store without copying
 secrets into release artifacts.
+
+Record targeted route/parser/recovery tests against the exact reviewed source
+pin. Synthetic parser tests do not prove TLS, broker affinity or live acceptance.
+Infrastructure must approve that pin and give separate build-only authority
+before a production build. `scripts/deploy-production.sh cop-api` builds and
+updates the service; it is not a build-only command. Do not invent a build-only
+wrapper or use that script under build-only authority. Runtime deployment needs
+the separately agreed release GO and all current production overlays.
 
 SIM live-traffic routing release and rollback checks are documented in
 [SIM Live Traffic Routing](integration/19_SIM_LIVE_TRAFFIC_ROUTING.md). Record
