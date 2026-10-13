@@ -1,9 +1,12 @@
 # Jízda → COP → SIM: dobrovolná měření provozu
 
-Stav: adaptér připraven v COP, **výchozí vypnutý**. Mobilní sběr v Jízdě zůstává
-vypnutý. SIM používá pouze `shadow_only`; toto rozhraní neaktualizuje navigační
-rychlosti ani TPEG2. Aktivace vyžaduje oddělený provozní souhlas, připravenou
-databázi, interní spojení, tajemství a společnou akceptaci.
+Stav: serverový adaptér má ověřenou pilotní revizi uvedenou níže; výchozí
+konfigurace příjmu je vypnutá. Rozšíření pro všechny přihlášené účty a čitelné
+výsledky z 13. října 2026 je **zdrojová příprava, bez přepnutí produkce**.
+Mobilní sběr vyžaduje samostatnou integraci a ověření Jízdy. Mobilní kontrakt
+zůstává `shadow_only`; toto rozhraní neaktualizuje navigační rychlosti ani TPEG2.
+Další aktivace proběhne ve společném provozním okně po dokončení autentizačních
+a infrastrukturních kontrol, se zachováním připravené databáze, spojení a secrets.
 
 Závazný mobilní kontrakt je `openapi/openapi.json`. Interní kontrakt SIM je
 `sim-driver-measurements-v1` v SIM `openapi/openapi.json` a
@@ -17,6 +20,119 @@ Používejte přihlášený bearer token uživatele z klienta `csm-mobile` proti
 API. Nevolejte SIM ani Valhallu přímo. Nikdy nedávejte službový SIM token do
 aplikace. Konfigurace COP musí klienta `csm-mobile` přijímat a příslušná
 OIDC role nesmí vyloučit běžného přihlášeného uživatele.
+
+## Zpřístupnění všem účtům a čitelné výsledky — příprava 2026-10-13
+
+Po společné akceptaci použijte existující konfiguraci
+`COP_DRIVER_MEASUREMENTS_ENABLED=true`,
+`COP_DRIVER_MEASUREMENTS_PILOT_ENABLED=false`,
+`COP_DRIVER_MEASUREMENTS_CLEANUP_ENABLED=true`. Pilotní seznam lze vyprázdnit;
+při přesném `false` nebo `0` se nepoužívá. Tato změna nikdy automaticky neudělí
+souhlas. Každý účet povoleného nativního klienta potřebuje vlastní výslovné
+potvrzení. Před aktivací doložte přístup běžného účtu bez privilegovaných rolí;
+globální OIDC pravidla i `azp=csm-mobile` zůstávají v platnosti. Samotné zrušení
+pilotního filtru není změna autentizace.
+
+Úspěšné odpovědi GET/POST/DELETE souhlasu a POST dávky nově obsahují volitelné
+`userStatus: {code,message}`. Starší v1 klient jej může ignorovat. Autoritativní
+zůstávají `granted`, `pendingDeletion`, `canGrant`, počty a HTTP status; text není
+oprávnění ke sběru ani důkaz dostupnosti SIM. `message` je pevný český text COP,
+nikdy text upstream chyby, souřadnice nebo identita. COP nevytváří historii
+uploadů ani nové úložiště výsledků.
+
+| Odpověď / stav | `userStatus.code` | Význam |
+| --- | --- | --- |
+| Souhlas dosud neudělen | `consent_required` | Sběr vyžaduje samostatný souhlas. |
+| Platný souhlas a povolený příjem | `consent_active` | Neprokazuje, že telefon skutečně sbírá nebo odeslal data. |
+| Příjem nedostupný i při dřívějším souhlasu | `intake_unavailable` | Cleanup zůstává dostupný. |
+| Mazání čeká | `deletion_pending` | Má přednost i při vypnutém příjmu. DELETE vrací 202. |
+| Potvrzené mazání | `deletion_complete` | DELETE vrací 200; při GET také po odvolání v dřívějším UTC dni. |
+| Mazání dokončené, odvolání ve stejném UTC dni | `regrant_wait` | Nový souhlas nejdříve další UTC den, pokud bude příjem dostupný. |
+| Nové přijatelné intervaly nebo ETA pozorování | `accepted` | Přijato pro stínové vyhodnocení. |
+| Nový příspěvek a kladný počet odmítnutí | `partially_accepted` | Použitelná byla pouze část dávky. |
+| Žádný nový příspěvek, pouze duplicity bez odmítnutí | `already_received` | Opakované úseky již byly zpracovány. |
+| Žádný použitelný nový příspěvek | `no_usable_measurements` | Platí i pro zcela odmítnutou dávku s HTTP 200. |
+
+GET stav má pořadí: čekající mazání, nedostupný příjem, platný souhlas, zákaz
+opětovného souhlasu ve stejném UTC dni, dokončené odvolání, chybějící souhlas.
+Nulová položka `rejectionCounts` není odmítnutí; `etaAccepted=true` potvrzuje
+přijetí pozorování pro vyhodnocení, nikoli změnu navigační ETA. HTTP 429 zachová
+omezený `Retry-After`, 503 zůstane nedostupnost služby a potvrzený SIM
+`DRIVER_CONSENT_REVOKED` zůstane 403. Zprávy vycházejí jen z této známé mapy.
+
+Příklady ze syntetických serverových fixtures, nikoli z reálné jízdy:
+
+```json
+{
+  "contractVersion": "cop-driver-measurements-v1",
+  "batchId": "00000000-0000-4000-8000-000000000001",
+  "receivedAt": "2026-10-02T12:00:00.000Z",
+  "acceptedIntervalCount": 0,
+  "deduplicatedIntervalCount": 0,
+  "rejectionCounts": { "poor_quality": 2 },
+  "etaAccepted": false,
+  "applicationMode": "shadow_only",
+  "rawPositionsStored": false,
+  "userStatus": {
+    "code": "no_usable_measurements",
+    "message": "Dávka byla zpracována, ale neobsahuje použitelná nová měření."
+  }
+}
+```
+
+Tato zpracovaná dávka má HTTP 200, ale žádný nový použitelný příspěvek. Klíč
+`poor_quality` je zde syntetický důvod fixture, nikoli katalog všech SIM důvodů.
+Čekající odvolání má HTTP 202:
+
+```json
+{
+  "contractVersion": "cop-driver-measurements-v1",
+  "granted": false,
+  "pendingDeletion": true,
+  "userStatus": {
+    "code": "deletion_pending",
+    "message": "Souhlas je odvolán. Smazání dřívějších dopravních příspěvků čeká na dokončení."
+  }
+}
+```
+
+**Zbývající práce Jízdy:** její současný upload úspěšný receipt zahazuje a
+produkční sběr má stále samostatný build gate. Pro uživatelský přehled zpřístupněte
+počty a poslední `userStatus` z potvrzení pouze v RAM. Při změně účtu/resetu jej
+zahodit, opakovaný receipt stejného `batchId` nezapočítávat znovu a neznámé
+textové klíče `rejectionCounts` nevykreslovat bez bezpečné místní mapy. Nezobrazovat
+HTTP 200 jako přijetí všech měření a 202 jako dokončené smazání. Serverová revize
+sama tuto mobilní obrazovku ani sběr nezapíná.
+
+SIM může připravit samostatný vypnutý pilot živých rychlostí. Zapojení těchto
+`shadow_only` příspěvků do živé navigace vyžaduje koordinovanou změnu smluveného
+režimu a klientské akceptace. Pozdní dokončení SIM uploadu po COP timeoutu musí
+také zastavit transakční revokační/tombstone kontrola SIM; COP řádkový zámek sám
+tento případ neprokazuje. Tyto dvě hranice ověřte společně před aktivací.
+
+### Zdrojové ověření rozšíření
+
+Lokální průchod: 35 testů měřicí hranice a kontraktů prošlo; jeden PostgreSQL
+test je přeskočen, protože v tomto průchodu nebyla připojena izolovaná testovací
+databáze. Ověřeny běžné účty bez rolí, samostatné souhlasy, izolace, podvržená
+identita, browserový Origin, přesné vypnutí pilotního filtru, čekající a potvrzené
+mazání, 429/503, odmítnuté/deduplikované/ETA receipts a přechod přes půlnoc UTC.
+Nezávislé čtecí review je uzavřené po opravě jednotného časového snapshotu.
+Vyhledávací index nepokrýval tuto izolovanou aktuální revizi; kontrola použila
+vybrané přímé zdrojové soubory a diff, původní pracovní checkout byl zachován.
+
+Lint/typecheck, API sestavení, skeleton, JSON OpenAPI a generovaný YAML prošly;
+OpenAPI má stejných 24 dřívějších varování. Jedenáct JSON schémat prošlo při
+`node --import tsx scripts/validate-schemas.ts`; standardní CLI `tsx` v sandboxu
+narazilo na zakázané vytvoření lokální IPC pipe (`EPERM`). Tento náhradní příkaz
+spustil tentýž ověřovací skript bez IPC serveru.
+
+Tento průchod neověřoval produkční databázi, skutečné příspěvky, SIM souhrny,
+telefon, baterii ani dokončení opožděného SIM uploadu po timeoutu. Provozní
+příznaky nebyly změněny a nasazení zůstává koordinované s autentizačním a
+databázovým oknem infrastruktury.
+
+## Mobilní operace
 
 1. `GET /api/v1/driver-measurements/v1/consent` vrací
    `{contractVersion,granted,grantedAt,pendingDeletion,canGrant}`.

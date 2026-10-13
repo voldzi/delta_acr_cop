@@ -6,6 +6,7 @@ import {
 } from "../driver-measurement-contract.js";
 import type { DriverMeasurementConsentStore } from "../driver-measurement-consent-store.js";
 import { DriverMeasurementSourceError, type DriverMeasurementSource } from "../driver-measurement-source.js";
+import { batchUserStatus, consentUserStatus, revocationUserStatus } from "../driver-measurement-user-status.js";
 import { correlationIdFrom, sendError } from "../errors.js";
 import { actorFromRequest, decodeJwt } from "../security.js";
 
@@ -117,8 +118,15 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
     if (status === 429 && sourceError?.retryAfter && /^\d{1,5}$/.test(sourceError.retryAfter)) {
       reply.header("Retry-After", sourceError.retryAfter);
     }
+    const message = sourceError?.code === "DRIVER_CONSENT_REVOKED"
+      ? "Souhlas pro tento den byl odvolán. Další dávky nyní neposílejte."
+      : status === 429 ? "Byl dosažen limit odesílání měření. Zkuste to později."
+      : status === 400 ? "Dávka měření nesplňuje pravidla příjmu."
+      : status === 409 ? "Dávku měření nelze v této podobě zpracovat."
+      : status === 413 ? "Dávka měření překračuje povolenou velikost."
+      : "Služba měření je dočasně nedostupná. Odeslání bude potřeba zopakovat.";
     return sendError(reply, status, sourceError?.code ?? "DRIVER_MEASUREMENTS_UPSTREAM_ERROR",
-      "Měření dopravy nyní nelze zpracovat.", correlationIdFrom(request.headers["x-correlation-id"]));
+      message, correlationIdFrom(request.headers["x-correlation-id"]));
   }
   function requestError(error: FastifyError, request: FastifyRequest, reply: FastifyReply): FastifyReply {
     // Parser messages can quote raw request bytes. Never log or forward them.
@@ -134,12 +142,14 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
     if (!subjectId) return reply;
     try {
       const consent = await store!.get(subjectId);
+      const requestNow = now();
       return reply.send({ contractVersion: DRIVER_MEASUREMENT_MOBILE_VERSION,
         granted: !!consent.grantedAt && !consent.revokedAt,
         grantedAt: consent.revokedAt ? null : consent.grantedAt,
         pendingDeletion: consent.pendingDays.length > 0,
+        userStatus: consentUserStatus(consent, intakeAllowed(subjectId), requestNow),
         canGrant: intakeAllowed(subjectId) && consent.pendingDays.length === 0
-          && consent.lastRevokedDay !== now().toISOString().slice(0, 10) });
+          && consent.lastRevokedDay !== requestNow.toISOString().slice(0, 10) });
     } catch (error) { return failure(request, reply, error); }
   });
   app.post(`${prefix}/consent`, consentOptions, async (request, reply) => {
@@ -155,7 +165,8 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
         "Opětovný souhlas je možný až po dokončení smazání a v dalším UTC dni.",
         correlationIdFrom(request.headers["x-correlation-id"]));
       return reply.send({ contractVersion: DRIVER_MEASUREMENT_MOBILE_VERSION,
-        version: DRIVER_MEASUREMENT_CONSENT_VERSION, grantedAt: consent.grantedAt });
+        version: DRIVER_MEASUREMENT_CONSENT_VERSION, grantedAt: consent.grantedAt,
+        userStatus: consentUserStatus(consent, true, now()) });
     } catch (error) { return failure(request, reply, error); }
   });
   app.delete(`${prefix}/consent`, consentOptions, async (request, reply) => {
@@ -169,7 +180,8 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
       scheduleCleanup();
       return reply.code(consent.pendingDays.length ? 202 : 200).send({
         contractVersion: DRIVER_MEASUREMENT_MOBILE_VERSION, granted: false,
-        pendingDeletion: consent.pendingDays.length > 0
+        pendingDeletion: consent.pendingDays.length > 0,
+        userStatus: revocationUserStatus(consent.pendingDays.length > 0)
       });
     } catch (error) { return failure(request, reply, error); }
   });
@@ -189,7 +201,8 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
         }
         const receipt = await source!.send(upstreamBatch);
         return { invalid: false as const, receipt: {
-          ...receipt, contractVersion: DRIVER_MEASUREMENT_MOBILE_VERSION, batchId: batch.batchId
+          ...receipt, contractVersion: DRIVER_MEASUREMENT_MOBILE_VERSION, batchId: batch.batchId,
+          userStatus: batchUserStatus(receipt)
         } };
       });
       if (!result) return sendError(reply, 403, "DRIVER_MEASUREMENTS_CONSENT_REQUIRED",
