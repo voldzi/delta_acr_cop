@@ -3,16 +3,23 @@
 ## Status
 
 Accepted on 2026-10-13. Repair source `b13fbdc7` is running in the owner-accepted
-a06 production image in DIRECT mode. Its reviewed build-only operation and
-actual DIRECT deployment passed; the authenticated protected profile was
-synchronized. Same-image repaired TX preflight passed, but the attempt was not
-dispatched: explicit human authorization remains pending after automatic
-approval review rejected the proposed process twice following the earlier
-startup failure. Transaction activation and broker boot activation remain on
-hold; there is no pending TX operation. The earlier 629/b123 DIRECT acceptance
-and recovery are historical evidence, not the current image. This decision does
-not change authentication or measurement flags. The original legacy image's
-source remains unproven. Dated current and historical evidence is recorded in
+a06 production image in transaction mode. Explicit human authorization preceded
+one wrapper dispatch, which exited `1` with a healthy owned target pending.
+The specific first failure cause is unconfirmed. The infrastructure owner
+completed that same startup through native recovery without Docker `up`,
+recreation, retry deployment or baseline rebase; the original health baseline,
+native effective configuration/peers and CAS passed, and the journal closed.
+Independent read-only verification confirmed the accepted TX binding and its
+primary a06 DIRECT rollback witness. The owner explicitly confirmed the TX
+protected profile; that confirmation, rather than the transport-failed automatic
+browser check, is the profile PASS. Infrastructure subsequently enabled broker
+boot activation once without a service restart or API/database mutation.
+Actual cold boot, failover and restoration tests remain unperformed.
+The completion checked only three
+selected deployment source pins, not the entire original dispatch's
+source/environment parity. The earlier 629/b123 DIRECT acceptance and recovery
+are historical evidence. Authentication and measurement flags are unchanged.
+The original legacy image's source remains unproven. Dated evidence is recorded in
 [runbook 24](../runbooks/24_COP_API_RUNTIME_PROFILE.md#production-evidence-on-2026-10-13).
 
 ## Context
@@ -87,9 +94,10 @@ and separate leases `2`. The transaction candidate moves the five consent
 connections to the verified route: main `53`, separately addressed direct/session
 `7`. Both configurations total `60` clients across `15` pools per API process.
 These are client limits, not open connections or broker backend counts. The
-configured broker has backend cap `10` and client cap `80`, but the accepted
-application is using DIRECT and repaired-image transaction startup has not been
-executed or accepted. PostgreSQL stream mode would add its publish pool
+configured broker has backend cap `10` and client cap `80`; the accepted
+application now uses transaction mode and broker boot activation is enabled.
+No actual cold boot has been tested. PostgreSQL stream mode would add its
+publish pool
 (default max `2`) and one independent `LISTEN` client outside the pool registry.
 
 The URI guard cannot prove actual broker pool mode, DNS alias separation,
@@ -113,9 +121,9 @@ but the sole addition of `statement_timeout=15000` produced PostgreSQL `08P01`
 and the query did not run. Both clients closed; the owned diagnostic container
 was removed; no configuration or application data were written. This confirms
 the historical startup incompatibility. That diagnostic alone did not establish
-repair acceptance. The repair was later built and accepted in a06 DIRECT, but
-no repaired-image TX deployment has occurred. No startup parameter is ignored
-or removed.
+repair acceptance. The repair was later built and accepted in a06 DIRECT, then
+the same image's transaction startup was accepted through the native journal
+completion recorded in runbook 24. No startup parameter is ignored or removed.
 
 Local verification of the consent route repair: `108` targeted tests pass;
 one optional real-PostgreSQL consent test is skipped because no isolated test
@@ -134,9 +142,14 @@ deployment and protected-profile check passed. Its accepted health witness
 records `situation-data-source=degraded` and all other recorded statuses OK;
 cached ONLINE/CATALOG values do not establish feature freshness or a historical
 reason. The original gate and baseline were unchanged. a06 DIRECT is the
-primary rollback pair; accepted 629 DIRECT is the secondary reserve. Complete
-TX application startup, acceptance and an exact authorized rollback remain
-separate owner operations.
+primary rollback pair; accepted 629 DIRECT is the secondary reserve. The dated
+TX startup completion passed without recreating the target. The owner later
+confirmed the protected profile, and infrastructure enabled broker boot
+activation with the running service PID and API binding unchanged. Actual cold
+boot, failover, restoration tests and any future exact authorized rollback
+remain separate owner operations. A successful startup does not establish
+situation-data freshness or the uncompleted whole source/environment parity
+proof for the original wrapper dispatch.
 
 Local verification on 2026-10-13 with Node `24.21.0`, installed `pg 8.23.1`
 and `pg-connection-string 2.14.1`: `112` targeted tests pass. Two optional
@@ -152,7 +165,9 @@ exact source pin and grant a separate build-only GO. The service form
 `scripts/deploy-production.sh cop-api` performs build and service update; it is
 not a build-only command. [ADR 0049](0049_API_IMAGE_RUNTIME_PROFILE_BINDINGS.md)
 adds an explicit reviewed `--build-only` preparation and immutable deploy-only
-path. Runtime activation still requires its own coordinated GO.
+path. Preserve its reviewed operations from `6b123ec` together with the consent
+repair from `b13fbdc`, and obtain a fresh attestation for every exact new
+image/source/profile. Runtime activation still requires its own coordinated GO.
 
 For rollback restore the verified main direct/session route and routing mode
 before using an older image that cannot enforce the new separation. Preserve

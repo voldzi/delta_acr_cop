@@ -3,7 +3,10 @@
 ## Scope and state
 
 This deployment mechanism has been used for the accepted production DIRECT
-image/profile pair and its recovery. Transaction mode has not been accepted.
+image/profile pair, its recovery and the same-image transaction startup.
+The repaired a06 transaction pair is accepted; the owner confirmed its
+protected profile and infrastructure enabled broker boot activation. Actual
+cold boot, failover and restoration tests have not been performed.
 The mechanism changes deployment scripts and operational metadata; an exact
 reviewed API image can be activated without rebuilding it. See
 [ADR 0049](../adr/0049_API_IMAGE_RUNTIME_PROFILE_BINDINGS.md) and the existing
@@ -11,9 +14,75 @@ reviewed API image can be activated without rebuilding it. See
 
 ### Production evidence on 2026-10-13
 
-#### Current accepted a06 DIRECT pair
+#### Current accepted a06 TX pair
 
-The running, accepted application image is
+After explicit human authorization on 2026-10-13, one wrapper dispatch used
+the previously reviewed a06 image and TX profile. Worker `1496127` ended with
+exit code `1`, leaving a healthy target container in the pending journal while
+the active pointer still referenced DIRECT. The specific cause of that first
+native failure has not been confirmed; a healthy container does not explain it.
+
+The infrastructure owner then completed that same owned target through native
+recovery bound to active generation `74820c5040e84bfd8d73dd3a3fcef8b5`, with
+rollback disabled.
+QGA worker `1593484` ended with terminal code `0` and PASS at
+`2026-10-13T16:18:44Z`. Docker `up` was explicitly forbidden and
+`api_up_calls=0`: this was journal completion, not another deployment attempt,
+container recreation or health-baseline rebase. The original pending health
+baseline, native runtime/peer checks and pointer CAS passed; the pending
+journal was closed.
+
+The dated accepted binding is:
+
+| Field | Accepted value |
+| --- | --- |
+| Image | `sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f` |
+| Application source | `b13fbdc71f3d9821f8b857c3f73255a75c46fa76` |
+| TX profile | `206c4507-5e00-458e-b0ee-4061309aa7a8` |
+| Release | `release-cfc42353256f4f24ab026ffc4d3ed993` |
+| Active generation | `7a351c5cb66e45cdbb845a76206fc282` |
+| Container | `b4e1c9d7bf45efdab931d0c24bed056f4a65341ed7fc77348d6735a940503ddc` |
+| Started at | `2026-10-13T16:08:33.251879399Z` |
+| Restart count | `0` |
+
+Independent read-only QGA worker `1612638` passed at
+`2026-10-13T16:20:17Z`, confirming these exact bindings, the primary a06 DIRECT
+rollback witness, Unix main route, read-only socket/CA mounts, supplementary
+GID `982` and separate lease URI with `sslmode=verify-full`. The dated broker
+observation was five backends against cap ten, nine frontend clients and zero
+waiting clients. This observation preceded the separately completed boot
+activation recorded below.
+
+The completion helper `47fed` checked three selected deployment source pins
+and the native effective configuration/peers. It did not complete proof of the
+original dispatch's entire source/environment parity. Do not describe its
+receipt as that broader proof or reuse it to authorize a different release.
+
+Earlier on this date, the Mac's default route to the COP address refused the
+connection; the same HTTP check through the already existing `ppp0` interface
+returned `200`. No network configuration or authentication control was changed.
+The subsequent protected-profile acceptance is the owner's explicit post-TX
+reply to confirmation `09e441678596486d859435fa29ff3e63`:
+"Profil se načetl a je synchronizovaný". The automatic in-app-browser check
+failed at the transport layer and is not the source of this PASS. An HTTP
+connectivity check alone is not authenticated profile acceptance.
+
+The infrastructure owner then completed broker boot activation once. QGA
+worker `1754080` ended with terminal code `0` and PASS:
+`enableattempts=1`, `confirmed=true`. The running service PID and accepted
+API image/source/profile/release/container binding remained unchanged. The
+existing ordering before Docker was preserved, `servicerestartcalls=0`, and
+no API or database mutation was performed. The infrastructure-owned receipt
+is `reports/postgresql-pool-audit-20261013/cop-a06-broker-boot-enabled.json`;
+the reviewed root helper's SHA256 is
+`a05518e2c0e61bdba69f1c0af824b92b8bf7e74f4395836df051404313199d41`.
+
+Boot enablement is configuration evidence, not an executed cold boot.
+Actual cold boot, failover and restoration tests remain unperformed.
+
+#### Accepted a06 DIRECT primary rollback pair
+
+The previously accepted DIRECT application image is
 `sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f`,
 with proven application source
 `b13fbdc71f3d9821f8b857c3f73255a75c46fa76`. It uses DIRECT profile
@@ -42,12 +111,11 @@ an accepted ancestor uses the existing native immutable `activate` path with a
 separate exact owner GO and current CAS checks, never an automatic fallback or
 plain mutable Compose `up`.
 
-The same-a06 TX native preflight passed, but no dispatch occurred. Automatic
-approval review rejected the proposed process twice pending explicit human
-authorization for another attempt after the earlier startup failure; that
-authorization question remains open. No new TX container or pending TX journal
-was created. The application remains DIRECT and broker boot activation is
-disabled. Preflight is not runtime activation or full TX application acceptance.
+The same-a06 TX preflight preceded the authorized dispatch and completion
+recorded above. Earlier automatic-review rejections were resolved by explicit
+human authorization; they are not a current authorization blocker. The DIRECT
+witness remains the rollback baseline and does not become evidence of TX
+protected-profile acceptance or situation-data freshness.
 
 `b13fbdc71f3d9821f8b857c3f73255a75c46fa76` is the deployed application source.
 A later documentation-only commit does not change that image's application
@@ -95,10 +163,10 @@ valid result supplied no such evidence.
 
 The b13 repair routes the complete consent store through the validated
 direct/session URL only in transaction mode, preserving its startup and query
-timeouts and all SQL. It was subsequently built and accepted in a06 DIRECT as
-recorded above; full repaired-image TX startup remains untested. Another build,
+timeouts and all SQL. It was subsequently built and accepted in a06 DIRECT,
+then the same image's TX startup was accepted as recorded above. Another build,
 runtime change or TX attempt requires its own exact owner GO and fresh acceptance
-evidence. No startup parameter may be ignored or removed to clear this gate.
+evidence. No startup parameter may be ignored or removed to clear a gate.
 
 ## Owner-controlled layout
 
@@ -277,6 +345,10 @@ to direct mode, then change its route using the same image.
 For a future release:
 
 1. Commit/review clean application source; untracked build input is rejected.
+   Preserve the reviewed immutable deployment operations from `6b123ec` and
+   consent-route repair from application source `b13fbdc`; a later release must
+   not restore the earlier startup-incompatible transaction route. Review the
+   exact combined source and retain per-image/profile attestation.
 2. Run `bash scripts/deploy-production.sh --build-only cop-api` under build-only
    authority. The API build label overlay stamps its actual Git source. Other
    services and the API remain running. Record the resulting immutable image.
@@ -391,12 +463,15 @@ receipt for such controlled builds. Do not interpret this source acceptance as
 proof of build-worker recovery or safe concurrent redispatch.
 
 Owner evidence established production provisioning, the reviewed builds,
-the historical 629 DIRECT rollout/recovery and current a06 DIRECT acceptance
-recorded above. Local tests do not establish those production facts. Isolated
-broker affinity/TLS checks and native preflight do not establish complete TX
-application startup or acceptance. Explicit authorization for the repaired-image
-TX attempt, its full application acceptance and any broker boot activation
-remain open owner gates. Every future operation still requires fresh current
-runtime parity and its exact image/source/profile acceptance. Off-server backups
+the historical 629 DIRECT rollout/recovery, a06 DIRECT rollback acceptance and
+the same a06 TX startup/journal completion recorded above. Local tests do not
+establish those production facts. The owner confirmed the TX protected profile
+and infrastructure enabled broker boot activation without restarting services.
+Actual cold boot, failover and restoration tests remain unperformed; data
+freshness and any enabled PostgreSQL LISTEN acceptance are separate. The limited
+completion source-pin checks are not proof of the original dispatch's whole
+source/environment parity.
+Every future operation still requires fresh current runtime parity and its
+exact image/source/profile acceptance. Off-server backups
 and X5 restore gates remain in the X5 runbook; this mechanism deletes no images,
 backups, volumes or application data.

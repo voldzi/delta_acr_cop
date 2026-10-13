@@ -84,31 +84,60 @@ memory stream, direct/session mode keeps maxima main `58` plus separate leases
 the verified route: main `53`, direct/session `7`. Both total `60` clients across
 `15` pools per API process. This is not the number of open
 connections or PostgreSQL backends. Broker backend cap `10` and client cap `80`
-are configured, but the accepted production application currently uses DIRECT;
-TX application startup was not accepted and broker boot activation is disabled.
+are configured; the accepted production application now uses transaction mode
+and broker boot activation is enabled. The dated broker observation
+after completion was five backends, nine frontend clients and zero waiting.
 Memory stream creates no listener; PostgreSQL stream adds its pool (default max
 `2`) and one independent `LISTEN` client outside pool diagnostics.
 
 Repair application source
 `b13fbdc71f3d9821f8b857c3f73255a75c46fa76` is running in the accepted immutable
-a06 image in DIRECT mode. One reviewed build-only operation passed the image
+a06 image in transaction mode. One reviewed build-only operation passed the image
 guard, actual Sharp conversion, offline package manager and compiled PostgreSQL
 verified-TLS `SELECT 1` with `statement_timeout=15000`. The native DIRECT receipt
 and authenticated synchronized protected profile passed. The accepted health
 witness records `situation-data-source=degraded` and all other recorded statuses
 OK; cached ONLINE/CATALOG snapshots do not establish that feature's freshness
 or explain a historical reason. The health gate and baseline were unchanged.
-Same-a06 TX native preflight passed but was not dispatched: automatic approval
-review rejected the proposed process twice pending explicit human authorization
-for another attempt after the earlier startup failure. There is no pending TX
-operation, and broker boot activation is disabled.
+After explicit human authorization, one same-a06 TX wrapper dispatch exited
+`1`, leaving a healthy target pending; the specific first native failure cause
+is unconfirmed. The infrastructure owner completed that same target through
+native recovery at `2026-10-13T16:18:44Z` without Docker `up`, recreation,
+another deployment attempt or baseline rebase. The original pending health
+baseline, native effective configuration/peer checks and pointer CAS passed;
+the pending journal is closed. The accepted active generation is
+`7a351c5cb66e45cdbb845a76206fc282`, release
+`release-cfc42353256f4f24ab026ffc4d3ed993`, with unchanged target start time
+and restart count zero.
+
+Independent read-only verification at `2026-10-13T16:20:17Z` confirmed the exact
+TX binding, a06 DIRECT rollback witness, Unix main route, read-only socket/CA,
+GID `982` and separate verified-TLS lease URI. The completion helper checked
+three selected deployment source pins; the original dispatch's entire
+source/environment parity proof was not completed and is not claimed.
+The Mac's earlier default route refused COP, while the same HTTP check through
+the existing `ppp0` interface returned `200`; no network or authentication
+change was made. The owner subsequently confirmed the protected TX profile:
+"Profil se načetl a je synchronizovaný". This explicit human confirmation is
+the profile PASS; the automatic in-app-browser check failed at the transport
+layer and supplies no such evidence.
+
+Infrastructure QGA worker `1754080` then completed one broker boot enablement
+with terminal code `0`, PASS, `enableattempts=1` and `confirmed=true`. Service
+PID and the accepted API binding remained unchanged; the existing ordering
+before Docker was preserved, with zero service restarts and no API/database
+mutation. The infrastructure-owned receipt is
+`reports/postgresql-pool-audit-20261013/cop-a06-broker-boot-enabled.json`
+with root helper SHA256
+`a05518e2c0e61bdba69f1c0af824b92b8bf7e74f4395836df051404313199d41`.
+Actual cold boot, failover and restoration tests have not been performed.
 
 Earlier 629/b123 DIRECT acceptance and recovery are historical evidence. The
 owner's isolated read-only diagnostic on that image confirmed rejection of
 startup `statement_timeout=15000` with PostgreSQL `08P01`. The b13 repair retains
 all timeouts and SQL and routes consent through the validated separate URL only
-when transaction mode is selected; full a06 TX application startup remains
-unexecuted. No web, normal chat, measurement/authentication flags or other
+when transaction mode is selected; same-a06 TX startup acceptance is recorded
+above. No web, normal chat, measurement/authentication flags or other
 service changes were included. A later documentation-only revision does not
 change the deployed application's b13 source identity.
 Exact dated image/profile evidence is in
@@ -116,7 +145,7 @@ Exact dated image/profile evidence is in
 The original legacy image's source remains unproven; its manifest records
 `null` rather than inferring source identity from the server checkout.
 
-Any future transaction activation requires separate owner GO and complete
+Any future runtime activation requires separate owner GO and complete
 application startup, business and direct/session lease acceptance, plus `LISTEN`
 acceptance if that mode is enabled. Preserve the same logical database/identity,
 verified TLS, lock SQL/PID checks, business queries, retry/replay and persistent
@@ -125,7 +154,10 @@ accepted 629 DIRECT is the secondary reserve. The legacy pair is only a
 separately coordinated last resort. Return through the existing native immutable
 `activate` path requires separate exact owner GO and current CAS checks.
 Preserve routing flags and use the existing server secret store without copying
-secrets into release artifacts.
+secrets into release artifacts. Future releases must preserve the reviewed
+immutable deployment operations from `6b123ec` and consent routing from `b13fbdc`,
+with fresh exact image/source/profile attestation. This documentation update
+does not rebuild or change the deployed application source.
 
 Record targeted route/parser/recovery tests against the exact reviewed source
 pin. Synthetic parser tests do not prove TLS, broker affinity or live acceptance.
