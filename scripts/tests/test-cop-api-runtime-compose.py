@@ -7,12 +7,43 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location('runtime', Path(__file__).parents[1] / 'cop-api-runtime.py')
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
 
 class ComposeClientTests(unittest.TestCase):
+    def test_real_source_config_normalizes_raw_list_without_decoding(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name).resolve(); (root / '.env').write_text('SYNTHETIC=unused\n')
+            raw = {'services': {'cop-api': {'image': 'cop-fixture:local', 'environment': [
+                'COP_DATABASE_URL=${COP_DATABASE_URL:-synthetic}', 'PUBLIC_LITERAL=left=right=$$${KEEP}',
+                'EMPTY=']},
+                'cop-web': {'image': 'cop-web-fixture:local', 'environment': {'MAP_VALUE': '${UNCHANGED:-fixture}'}},
+                'cop-edge': {'image': 'cop-edge-fixture:local'}}}
+            for index, filename in enumerate(m.FILES):
+                (root / filename).write_bytes(m.encoded(raw if index == 0 else {'services': {}}))
+            docker = m.Docker(root); original_run = docker.run; seen = []
+            def capture(command):
+                result = original_run(command); seen.append(json.loads(result)); return result
+            docker.run = capture
+            with mock.patch.dict(os.environ, {'PATH': os.environ['PATH'], 'HOME': os.environ['HOME']}, clear=True), \
+                 mock.patch.object(m, 'normalized_config', side_effect=AssertionError('Do not decode unresolved data')):
+                result = docker.source_config()
+            environment = result['services']['cop-api']['environment']
+            emitted = seen[0]['services']['cop-api']['environment']
+            if isinstance(emitted, list):
+                self.assertTrue(all('=' in item for item in emitted))
+                expected = {item.partition('=')[0]: item.partition('=')[2] for item in emitted}
+            else:
+                expected = emitted
+            self.assertEqual(environment, expected)
+            self.assertTrue(environment['PUBLIC_LITERAL'].endswith('$$${KEEP}'))
+            self.assertIn('left=right=', environment['PUBLIC_LITERAL'])
+            self.assertEqual(environment['EMPTY'], '')
+            self.assertNotIn('environment', result['services']['cop-edge'])
+
     def test_real_render_preserves_literal_dollar_and_legacy_absence(self):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name).resolve()

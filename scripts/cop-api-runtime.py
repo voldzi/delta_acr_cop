@@ -119,6 +119,31 @@ def driver_contract(value):
     return value
 
 
+def unresolved_config(value):
+    """Normalize raw Compose environment shapes without interpolation/decoding."""
+    require(isinstance(value, dict) and isinstance(value.get('services'), dict), 'unresolved_compose_invalid')
+    for service in value['services'].values():
+        require(isinstance(service, dict), 'unresolved_compose_invalid')
+        if 'environment' not in service:
+            continue
+        environment = service['environment']
+        require(isinstance(environment, (dict, list)), 'unresolved_environment_invalid')
+        if isinstance(environment, list):
+            mapping = {}
+            for entry in environment:
+                require(isinstance(entry, str), 'unresolved_environment_invalid')
+                key, separator, item = entry.partition('=')
+                require(separator == '=' and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key) and key not in mapping,
+                        'unresolved_environment_invalid')
+                mapping[key] = item
+            environment = mapping
+        require(all(isinstance(key, str) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key)
+                    and (item is None or isinstance(item, str)) for key, item in environment.items()),
+                'unresolved_environment_invalid')
+        service['environment'] = environment
+    return value
+
+
 def normalized_config(value):
     # Compose's reusable config serializer doubles literal dollars. Decode its
     # environment serialization once in RAM; never write/pass resolved config.
@@ -382,13 +407,13 @@ class Docker:
         if raw:
             args += ['--no-interpolate', '--no-env-resolution']
         value = json.loads(self.run(args))
-        return value if raw else normalized_config(value)
+        return unresolved_config(value) if raw else normalized_config(value)
 
     def source_config(self):
         args = ['docker', 'compose', '--project-name', 'cop', '--project-directory', str(self.source),
                 '--env-file', str(self.source / '.env')]
         args += [part for name in FILES for part in ('-f', str(self.source / name))]
-        return json.loads(self.run(args + ['config', '--format', 'json', '--no-interpolate', '--no-env-resolution']))
+        return unresolved_config(json.loads(self.run(args + ['config', '--format', 'json', '--no-interpolate', '--no-env-resolution'])))
 
     def mounts(self, image, fingerprint):
         # UID1000 has no host traversal grant. Root attestation owns parent/path

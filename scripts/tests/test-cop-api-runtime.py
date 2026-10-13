@@ -787,5 +787,45 @@ class RuntimeTests(unittest.TestCase):
             self.store.recover(current['generation'])
         self.assertEqual(len(self.docker.up_calls), 3); self.assertEqual(len(self.docker.health_calls), calls)
 
+    def test_raw_source_and_release_environment_lists_preserve_unresolved_values(self):
+        raw = {'services': {'cop-api': {'environment': [
+            'KEY=alpha=beta=$$${KEEP}', 'EXPRESSION=${VALUE:-a=b}', 'EMPTY=']},
+            'cop-web': {'environment': {'MAP_VALUE': '${UNCHANGED}', 'EXISTING_MAP_NONE': None}}, 'cop-edge': {'image': 'fixture'}}}
+        commands = []; docker = m.Docker(self.source)
+        docker.run = lambda argv: commands.append(argv) or m.encoded(raw)
+        with mock.patch.object(m, 'normalized_config', side_effect=AssertionError('Do not decode unresolved data')):
+            for result in (docker.source_config(), docker.config(self.root, raw=True)):
+                self.assertEqual(result['services']['cop-api']['environment'], {
+                    'KEY': 'alpha=beta=$$${KEEP}', 'EXPRESSION': '${VALUE:-a=b}', 'EMPTY': ''})
+                self.assertEqual(result['services']['cop-web']['environment'], {'MAP_VALUE': '${UNCHANGED}', 'EXISTING_MAP_NONE': None})
+                self.assertNotIn('environment', result['services']['cop-edge'])
+        self.assertTrue(all('--no-interpolate' in command and '--no-env-resolution' in command for command in commands))
+
+    def test_malformed_or_duplicate_raw_environment_stops_before_release_writes(self):
+        receipt = self.receipt(self.direct, OLD, True)
+        for environment in (['KEY=x', 'KEY=y'], ['KEY'], ['KEY', 'KEY=x'], [None], [123],
+                            ['=value'], ['BAD KEY=value'], 'KEY=value', {'KEY': True}):
+            real = m.Docker(self.source)
+            real.run = lambda argv: m.encoded({'services': {'cop-api': {'environment': environment}}})
+            self.docker.source_config = real.source_config
+            with self.subTest(environment_type=type(environment).__name__), self.assertRaisesRegex(m.RuntimeError, 'unresolved_environment_invalid'):
+                self.store.prepare(OLD, None, receipt, 'absent', self.direct[0], baseline=True)
+            self.assertFalse((self.root / 'releases').exists()); self.assertEqual(self.docker.up_calls, [])
+
+    def test_legacy_prepare_and_adopt_accept_actual_raw_list_shape(self):
+        literal = 'before=after=$$${UNCHANGED}'
+        self.docker.base['services']['cop-api']['environment']['COP_PUBLIC_FIXTURE'] = literal
+        raw = self.docker.source_config()
+        environment = raw['services']['cop-api']['environment']
+        raw['services']['cop-api']['environment'] = [key + '=' + item for key, item in environment.items()]
+        real = m.Docker(self.source); real.run = lambda argv: m.encoded(raw)
+        self.docker.source_config = real.source_config
+        current = self.baseline()
+        _, binding, _ = self.store.binding(current['releaseId'])
+        self.assertEqual(binding['legacyEnvironment']['COP_PUBLIC_FIXTURE'], literal)
+        self.assertNotIn('COP_DATABASE_POOL_MODE', binding['legacyEnvironment'])
+        self.assertNotIn('COP_LEASE_DATABASE_URL', binding['legacyEnvironment'])
+        self.assertEqual(self.docker.up_calls, []); self.assertEqual(current['containerId'], CID)
+
 
 if __name__ == '__main__': unittest.main()

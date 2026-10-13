@@ -41,6 +41,15 @@ Compose config serialization doubles dollar signs; the helper decodes that
 serialization once in RAM for verification and never feeds the resolved model
 back to Compose.
 
+Unresolved `config --no-interpolate --no-env-resolution` may serialize a
+service environment as a string list instead of a map. The source reader
+normalizes that legitimate list by splitting only the first `=`, retaining
+unresolved expressions and literal dollar/equal signs exactly. Every list entry
+must contain `=`; bare list keys are rejected. Existing map `null` values retain
+their semantics. Missing environment blocks stay missing; malformed entries,
+invalid names and duplicate keys cause STOP before release copies are written.
+The resolved-config dollar decoder is never used on these unresolved values.
+
 Main `/srv/cop/.env` is unchanged. Migrations and CLI keep its direct database
 route. Global SSL and memory-stream flags are preserved; the profile replaces
 only `COP_DATABASE_URL`, `COP_DATABASE_POOL_MODE`, `COP_LEASE_DATABASE_URL` and
@@ -265,8 +274,8 @@ Compose test invokes only `config` on synthetic files, with no Docker daemon,
 server, images or real secrets. It proves literal-dollar serialization handling
 and true legacy key omission despite conflicting shell/base values.
 
-Local verification on 2026-10-13: 47 offline fault tests passed, plus the
-Compose-client rendering test (both candidate and legacy subcases) on Compose
+Local verification on 2026-10-13: 50 offline fault tests passed, plus two
+Compose-client tests (source list normalization and candidate/legacy rendering) on Compose
 5.5.1. Shell syntax, skeleton validation and diff whitespace checks passed.
 The existing public analytics release guard separately passed in the owner
 operations workspace. No web, collector or analytics activation change is part
