@@ -22,3 +22,4 @@
 - [21 COP crisis notifications and ČT24 context](21_COP_CRISIS_NOTIFICATIONS.md)
 - [20 COP code health: security, performance and dependencies](20_COP_CODE_HEALTH.md)
 - [22 Standalone chat release and joint SIM acceptance](22_COP_CHAT_RELEASE_20261010.md)
+- [24 Measurement-only release against the deployed COP base](24_COP_MEASUREMENT_RELEASE_20261013.md)

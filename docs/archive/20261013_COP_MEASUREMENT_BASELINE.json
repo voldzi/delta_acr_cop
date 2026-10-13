@@ -1,0 +1,49 @@
+{
+  "flags": {
+    "COP_DRIVER_MEASUREMENTS_ENABLED": "true",
+    "COP_DRIVER_MEASUREMENTS_CLEANUP_ENABLED": "true",
+    "COP_DRIVER_MEASUREMENTS_PILOT_ENABLED": "true",
+    "COP_DRIVER_MEASUREMENTS_OIDC_CLIENT_ID": "csm-mobile",
+    "COP_AUTH_MODE": "hybrid",
+    "COP_ALLOW_LAB_TOKEN": "true",
+    "COP_WEB_BFF_SESSION_ENABLED": "true",
+    "oidcRoleRestrictionPresent": false
+  },
+  "modules": {
+    "cop-pg-pool": {
+      "sha256": "5a78e6fd31ce4c18229fdce9c7eec3f92a6b7e0b883e1779a6ee4d158cfb2f0c",
+      "matchesRecordedSource3a": true
+    },
+    "cop-stream-bus": {
+      "sha256": "98f818612ecf583ed48f5594be1c5dd415bf631ca469c457b2810eaf7e9d34c8",
+      "matchesRecordedSource3a": true
+    },
+    "security": {
+      "sha256": "fd9ee0b15fd68f65482c16597e6522e38417b10e337499cd2518777d12ebff39",
+      "matchesRecordedSource3a": true
+    },
+    "server": {
+      "sha256": "1a3f3b2751ac385e494620209396d5b4937759ef4f388bddeef78d964ca68ff3",
+      "matchesRecordedSource3a": true
+    },
+    "sim-search-data-source": {
+      "sha256": "c04528b37712cb35e36df0fd8a0a3bd2d79fab4d1b265151059697d4d69a842a",
+      "matchesRecordedSource3a": true
+    },
+    "sim-search-pages": {
+      "sha256": "b26f28401a898c087fe39fa396f90d8f0855fe413ceac972ddd3d6ece9d80559",
+      "matchesRecordedSource3a": true
+    },
+    "situation-data-source": {
+      "sha256": "c9ac2deff77390464ae09a135b88ee6d79f7bc590ed383ab93259040214c88a5",
+      "matchesRecordedSource3a": true
+    }
+  },
+  "recordType": "cop_measurement_release_baseline_read_only",
+  "checkedAt": "2026-10-13T07:33:35.511098+00:00",
+  "containerId": "7e83bac61b720bef264db39058de3ab7acacefe2b2edc53dd62aeb21013a2400",
+  "image": "sha256:6d3fedf34265e4697fcea6dc23c38fc531a2d0f0eae45451671f71b86561b5a3",
+  "historicallyRecordedSourcePin": "3a0101270bfb59b9bcf61eb2126588fc1f688fe7",
+  "runtimeChanged": false,
+  "fullBuildAttestation": false
+}
