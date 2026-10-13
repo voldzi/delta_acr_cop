@@ -33,6 +33,39 @@ Pilot deployment runs from `/srv/cop` on `docker.home.cz`. Health and
 readiness are exposed as `/health/live`, `/health/ready` and
 `/health/dependencies`.
 
+## PostgreSQL routing and session operations
+
+`COP_DATABASE_POOL_MODE=direct|session|transaction` declares the main
+`COP_DATABASE_URL` path and defaults to `direct`. This is an administrator
+assertion; a hostname or port does not establish the runtime broker mode.
+Direct/session mode preserves the existing database path and TLS/authentication
+rules when optional session URLs are absent. Dispatch keeps its dedicated
+`max: 1` lease pool; Safety shares its ledger pool unless explicit
+`COP_LEASE_DATABASE_URL` selects a separate `max: 1` lease pool.
+
+Transaction mode requires explicit `COP_LEASE_DATABASE_URL` for the PostgreSQL
+Dispatch/Safety factories and explicit `COP_STREAM_BUS_DATABASE_URL` for the
+PostgreSQL stream bus (`LISTEN`). Both must provide direct/session affinity.
+The main and relevant session URLs must be assessable PostgreSQL URIs with an
+explicit host/port/database. The port is mandatory to avoid `PGPORT` and `pg`
+default ambiguity. Fragments and query endpoint overrides (`host`, `hostaddr`,
+`port`, `database`, `dbname`, `service`, case-insensitive keys) are rejected in
+transaction mode. Missing or unassessable URLs, or a session URL with the
+same normalized host/port/database endpoint as the main URL, fail before the
+factory creates pools, without fallback. Different passwords, SSL query
+parameters or `postgres`/`postgresql` aliases do not establish a different
+endpoint. URI checks cannot prove DNS alias separation or the broker mode.
+See [environment configuration](runbooks/03_ENVIRONMENT_CONFIGURATION.md#režim-postgresql-a-připojení-pro-session-operace).
+
+This source preparation deploys nothing and changes no broker, network or global
+database configuration. A future transaction rollout is a separate stage:
+prove the business and direct/session lease paths and `LISTEN`, the same logical
+database/identity and verified TLS. Preserve lock SQL/PID checks, business
+queries, retry/replay and persistent state. Retain the original image identity
+and routing flags; rollback restores that image and the original direct/session
+main path and flags. Use the existing server secret store without copying
+secrets into release artifacts.
+
 SIM live-traffic routing release and rollback checks are documented in
 [SIM Live Traffic Routing](integration/19_SIM_LIVE_TRAFFIC_ROUTING.md). Record
 the current `/srv/cop` Git revision before every pilot update so the same
@@ -99,8 +132,10 @@ The optional strict road-trip integration depends on SIM runtime capability and 
 ## Shared mobility deployment
 
 `COP_SHARED_MOBILITY_ENABLED=false` and `COP_PRIVATE_DISPATCH_ENABLED=false` are
-explicit opt-in defaults. Reuse existing COP_DATABASE_URL/TLS settings; no new
-secret. Startup creates additive cop_mobility_v1 and runs30day domain cleanup.
+explicit opt-in defaults. Default direct/session routing reuses existing
+`COP_DATABASE_URL`/TLS settings; an explicit `COP_LEASE_DATABASE_URL` selects the
+session lease path described above. Startup creates additive cop_mobility_v1 and
+runs30day domain cleanup.
 Private Dispatch requires one API instance with a dedicated PostgreSQL session
 advisory lease on a dedicated connection. A contender stays unready and retries;
 lease loss returns Dispatch503 while shared vehicles remain independent.

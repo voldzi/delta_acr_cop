@@ -1,5 +1,6 @@
 import type { Pool, PoolConfig } from "pg";
 import { createCopPgPool } from "./cop-pg-pool.js";
+import { resolveCopSessionDatabaseUrl } from "./cop-session-database.js";
 import { DispatchLease, type DispatchLeaseHooks, type DispatchLeaseState } from "./dispatch-lease.js";
 
 export interface MobilityStore {
@@ -60,11 +61,11 @@ export class MemoryMobilityStore implements MobilityStore {
 export class PostgresMobilityStore implements MobilityStore {
   private readonly pool: Pool;
   private readonly lease: DispatchLease;
-  constructor(config: PoolConfig, timing: ConstructorParameters<typeof DispatchLease>[1] = {}) {
+  constructor(config: PoolConfig, timing: ConstructorParameters<typeof DispatchLease>[1] = {}, leaseConfig: PoolConfig = config) {
     this.pool = createCopPgPool("mobility", config);
     // Pool errors are availability failures, never raw credential-bearing logs.
     this.pool.on("error", () => undefined);
-    const leasePool = createCopPgPool("dispatch-lease", { ...config, max: 1, application_name: "cop-private-dispatch-lease",
+    const leasePool = createCopPgPool("dispatch-lease", { ...leaseConfig, max: 1, application_name: "cop-private-dispatch-lease",
       keepAlive: true, keepAliveInitialDelayMillis: 10000, query_timeout: 3000, connectionTimeoutMillis: 5000 });
     leasePool.on("error", () => undefined);
     this.lease = new DispatchLease(leasePool, timing);
@@ -124,12 +125,14 @@ export function mobilityStoreFromEnv(env = process.env): MobilityStore | undefin
   if (env.COP_SHARED_MOBILITY_ENABLED !== "true") return undefined;
   const connectionString = env.COP_DATABASE_URL;
   if (!connectionString) throw new Error("Shared mobility requires the existing PostgreSQL connection.");
+  const leaseConnectionString = resolveCopSessionDatabaseUrl(env, "COP_LEASE_DATABASE_URL");
   const sslMode = env.COP_DATABASE_SSL?.trim().toLowerCase();
   if (sslMode && !["false", "0", "true", "1", "require"].includes(sslMode)) throw new Error("Unsupported PostgreSQL TLS configuration.");
-  return new PostgresMobilityStore({
+  const config: PoolConfig = {
     connectionString,
     max: 3,
     connectionTimeoutMillis: 5000,
     ssl: ["true", "1", "require"].includes(sslMode ?? "") ? { rejectUnauthorized: true } : false
-  });
+  };
+  return new PostgresMobilityStore(config, {}, env.COP_LEASE_DATABASE_URL?.trim() ? { ...config, connectionString: leaseConnectionString } : config);
 }

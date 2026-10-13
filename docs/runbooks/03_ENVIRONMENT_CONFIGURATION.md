@@ -30,6 +30,55 @@ Environment configuration musí oddělit vývoj, test, demo a produkční režim
 
 Citlivé hodnoty nesmí být commitované do repozitáře.
 
+## Režim PostgreSQL a připojení pro session operace
+
+`COP_DATABASE_POOL_MODE=direct|session|transaction` popisuje způsob směrování
+business dotazů přes `COP_DATABASE_URL`; výchozí hodnota je `direct`. Je to
+tvrzení správce, nikoli důkaz skutečného režimu běžícího brokeru. Aplikace režim
+neurčuje z hostname ani portu.
+
+| Proměnná | Výchozí hodnota | Účel |
+| --- | --- | --- |
+| `COP_DATABASE_POOL_MODE` | `direct` | Deklarovaný režim hlavní databázové cesty. |
+| `COP_LEASE_DATABASE_URL` | prázdná | Přímá nebo session cesta pro session advisory lock Private Dispatch a Safety `withWorkerLease`. |
+| `COP_STREAM_BUS_DATABASE_URL` | prázdná | Přímá nebo session cesta pro PostgreSQL stream bus a jeho `LISTEN` spojení. |
+
+V režimu `direct` nebo `session` jsou oddělené URL volitelné. Bez nich zůstává
+dosavadní cesta přes `COP_DATABASE_URL`, včetně stávajících pravidel TLS a
+autentizace; nový URI parser tuto starou cestu neomezuje. Dispatch nadále používá
+samostatný lease pool s `max: 1`. Safety bez explicitní lease URL sdílí svůj
+dosavadní ledger pool; s `COP_LEASE_DATABASE_URL` používá samostatný lease pool
+s `max: 1`. Ledger a ostatní business dotazy dál používají hlavní URL.
+
+V režimu `transaction` vyžadují PostgreSQL továrny mobility a Safety explicitní
+`COP_LEASE_DATABASE_URL`; PostgreSQL stream bus vyžaduje explicitní
+`COP_STREAM_BUS_DATABASE_URL`. Hlavní i příslušné oddělené URL musí být bezpečně
+posouditelné PostgreSQL URI (`postgres://` nebo `postgresql://`) s explicitním
+hostem, portem a databází. Explicitní port je povinný, aby výsledek nezávisel na
+`PGPORT` a výchozích hodnotách `pg`. Fragmenty a query parametry měnící endpoint
+(`host`, `hostaddr`, `port`, `database`, `dbname`, `service`, bez ohledu na velikost
+písmen názvu) jsou v tomto režimu odmítnuty. Chybějící nebo neposouditelná URL,
+stejně jako shodný normalizovaný endpoint host/port/database s `COP_DATABASE_URL`, znamená chybu
+ještě před vytvořením poolů dané továrny. Změna hesla, query parametrů TLS ani
+aliasu `postgres`/`postgresql` neobchází kontrolu shody endpointu. V tomto režimu
+neexistuje fallback na hlavní URL. `COP_STREAM_BUS=memory|disabled|off` žádné
+PostgreSQL `LISTEN` spojení nevytváří.
+
+Oddělené cesty musí směřovat do stejné logické databáze se stejnou databázovou
+identitou a ověřeným TLS podle stávajících pravidel. Kontrola URL neprokazuje
+odlišnost DNS aliasů ani session affinity brokeru; správce musí doložit skutečný
+režim obou cest. Lock SQL a ověřování PID, business dotazy, retry/replay i
+persistentní stav zůstávají beze změny.
+
+Jde o přípravu zdrojů; tento krok nic nenasazuje a nemění broker, síť ani globální
+databázovou konfiguraci. Budoucí transaction rollout je samostatná etapa:
+prokázat business cestu a přímou/session lease cestu, samostatně ověřit `LISTEN`,
+shodnou logickou databázi a identitu i TLS. Před přepnutím uchovat identitu původního
+image a původní routing flags. Rollback obnoví původní image, hlavní direct/session
+cestu a její routing flags při zachování persistentního stavu. Secrets zůstávají
+ve stávajícím serverovém secret store; rollback nevyžaduje jejich kopírování do
+dokumentace nebo pracovních souborů.
+
 ## Výchozí přihlášení při sestavení
 
 `Dockerfile.web`, `Dockerfile.chat` a jejich Compose build argumenty při
