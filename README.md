@@ -57,3 +57,10 @@ pnpm check:bundles
 ## Bezpečnostní hranice
 
 Systém je situační datová platforma pro civilní informování a ochranu osob. Nepřidává targeting, navádění, řízení zbraní, doporučování použití síly ani autonomní operační rozhodování.
+
+### Obnova webové relace a profilu
+
+BFF obnova stejného účtu zachovává synchronizovaný profil a jeho automatické
+ukládání. Při změně účtu nebo autorizačního kontextu se profil načte znovu a
+čekající zápisy předchozího účtu se zruší. Ověření obnovy bez zachytávání tokenů
+popisuje [runbook](docs/runbook.md#bff-session-renewal-and-profile-synchronization).

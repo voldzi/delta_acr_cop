@@ -1682,6 +1682,8 @@ export function App() {
   const situationFeatureRequestRef = React.useRef<StableFeatureRequest | null>(null);
   const profileHydratedRef = React.useRef(false);
   const profileLoadKeyRef = React.useRef<string | null>(null);
+  const profileHydrationOwnerRef = React.useRef<string | null>(null);
+  const profileHydrationGenerationRef = React.useRef(0);
   const profileSaveTimerRef = React.useRef<number | undefined>(undefined);
   const lastScheduledProfileFingerprintRef = React.useRef<string | null>(null);
   const skipNextAlertPreferenceWriteRef = React.useRef(false);
@@ -1695,6 +1697,16 @@ export function App() {
   const authSessionRetainedForOffline = isAuthSessionRetainedForOffline(authSession);
   const dataAccessReady = authConfig.publicReadEnabled || Boolean(authToken) || authSessionRetainedForOffline;
   const profileAccessReady = Boolean(authToken);
+  const profileHydrationOwnerKey = JSON.stringify([
+    authConfig.issuer,
+    authConfig.clientId,
+    authConfig.scope,
+    authSession.status,
+    authSession.transport ?? "token",
+    authSession.profile?.subjectId ?? authSession.profile?.username,
+    userStorageScope,
+    profileAccessReady
+  ]);
   const [mobilePairCodeFromPath, setMobilePairCodeFromPath] = React.useState(readMobilePairCodeFromLocation);
   const authSubjectId = subjectIdFromAuthSession(authSession);
   const messagingRuntimeEnabled = Boolean(authToken);
@@ -4720,6 +4732,20 @@ export function App() {
   currentPreferencesRef.current = currentPreferences;
 
   React.useEffect(() => {
+    // A renewed BFF session keeps the same profile owner and authorization marker.
+    // Resetting only hydration here would leave the unchanged fetch effect idle.
+    if (authSession.transport === "bff" && profileHydrationOwnerRef.current === profileHydrationOwnerKey) {
+      return;
+    }
+    if (profileHydrationOwnerRef.current !== profileHydrationOwnerKey) {
+      profileHydrationGenerationRef.current += 1;
+      if (profileSaveTimerRef.current !== undefined) {
+        window.clearTimeout(profileSaveTimerRef.current);
+        profileSaveTimerRef.current = undefined;
+      }
+      lastScheduledProfileFingerprintRef.current = null;
+    }
+    profileHydrationOwnerRef.current = profileHydrationOwnerKey;
     profileHydratedRef.current = false;
     profileLoadKeyRef.current = null;
     skipNextPreferenceWriteRef.current = true;
@@ -4769,7 +4795,14 @@ export function App() {
     setServerProfileUpdatedAt(null);
     setProfileSyncError(null);
     setProfileSyncStatus(profileAccessReady ? "loading" : "disabled");
-  }, [applyPreferenceSettings, authSession, initialSharedMap, profileAccessReady, userStorageScope]);
+  }, [
+    applyPreferenceSettings,
+    authSession,
+    initialSharedMap,
+    profileAccessReady,
+    profileHydrationOwnerKey,
+    userStorageScope
+  ]);
 
   React.useEffect(() => {
     if (!profileAccessReady || !authToken) {
@@ -4778,7 +4811,7 @@ export function App() {
       return;
     }
 
-    const loadKey = `${userStorageScope}:${authSession.profile?.subjectId ?? authSession.profile?.username ?? authSession.status}`;
+    const loadKey = profileHydrationOwnerKey;
     if (profileLoadKeyRef.current === loadKey) {
       return;
     }
@@ -4861,15 +4894,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [
-    applyPreferenceSettings,
-    authSession.profile?.subjectId,
-    authSession.profile?.username,
-    authSession.status,
-    authToken,
-    profileAccessReady,
-    userStorageScope
-  ]);
+  }, [applyPreferenceSettings, authToken, profileAccessReady, profileHydrationOwnerKey, userStorageScope]);
 
   React.useEffect(
     () => () => {
@@ -4926,13 +4951,20 @@ export function App() {
       window.clearTimeout(profileSaveTimerRef.current);
     }
     setProfileSyncStatus("saving");
+    const profileGeneration = profileHydrationGenerationRef.current;
     profileSaveTimerRef.current = window.setTimeout(() => {
       profileSaveTimerRef.current = undefined;
+      if (profileHydrationGenerationRef.current !== profileGeneration) {
+        return;
+      }
       saveUserProfile(apiBase, authToken, {
         alertPreferences,
         preferences: profilePreferencesForSync
       })
         .then((profile) => {
+          if (profileHydrationGenerationRef.current !== profileGeneration) {
+            return;
+          }
           setServerProfileUpdatedAt(profile.updatedAt);
           const savedUpdatedAt = profile.updatedAt ?? new Date().toISOString();
           writeLocalAlertPreferences(profile.alertPreferences ?? alertPreferences, userStorageScope, savedUpdatedAt);
@@ -4941,6 +4973,9 @@ export function App() {
           setProfileSyncStatus("synced");
         })
         .catch((error: unknown) => {
+          if (profileHydrationGenerationRef.current !== profileGeneration) {
+            return;
+          }
           lastScheduledProfileFingerprintRef.current = null;
           setProfileSyncStatus("error");
           setProfileSyncError(error instanceof Error ? error.message : "Uložení profilu selhalo.");

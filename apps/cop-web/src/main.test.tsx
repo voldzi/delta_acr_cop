@@ -880,6 +880,143 @@ describe("COP web dashboard", () => {
     expect(screen.getByTestId("cop-map").getAttribute("data-focus-center")).toBe(expectedCenter);
   });
 
+  it("keeps a synchronized BFF profile and autosave active across session renewal", async () => {
+    const fixture = installBffProfileFixture();
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Účet - otevřít nastavení" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Účet - otevřít nastavení" }));
+    await waitFor(() => expect(profileStorageValue()).toBe("synchronizován"));
+    const readsBeforeRenewal = fixture.profileReads.mock.calls.length;
+    const sessionReadsBeforeRenewal = fixture.sessionReads.mock.calls.length;
+
+    await fixture.renew("user-a");
+    await waitFor(() => expect(fixture.sessionReads.mock.calls.length).toBeGreaterThan(sessionReadsBeforeRenewal));
+    expect(profileStorageValue()).toBe("synchronizován");
+    expect(fixture.profileReads.mock.calls.length).toBe(readsBeforeRenewal);
+    expect(screen.getByDisplayValue("Profile A")).toBeTruthy();
+
+    const writesBeforeEdit = fixture.profileWrites.mock.calls.length;
+    fireEvent.change(screen.getByDisplayValue("Profile A"), { target: { value: "Profile A updated" } });
+    await fixture.renew("user-a");
+    expect(profileStorageValue()).toBe("ukládám");
+    expect(screen.getByDisplayValue("Profile A updated")).toBeTruthy();
+    expect(fixture.profileReads.mock.calls.length).toBe(readsBeforeRenewal);
+    await waitFor(() => expect(fixture.profileWrites.mock.calls.length).toBeGreaterThan(writesBeforeEdit), {
+      timeout: 2000
+    });
+    const payload = fixture.profileWrites.mock.calls.at(-1)?.[0] as {
+      preferences?: { operatorProfile?: { displayName?: string } };
+    };
+    expect(payload.preferences?.operatorProfile?.displayName).toBe("Profile A updated");
+    await waitFor(() => expect(profileStorageValue()).toBe("synchronizován"));
+  });
+
+  it("keeps a pending BFF edit when the same subject receives a new username", async () => {
+    const fixture = installBffProfileFixture();
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Účet - otevřít nastavení" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Účet - otevřít nastavení" }));
+    await waitFor(() => expect(profileStorageValue()).toBe("synchronizován"));
+    const readsBeforeRename = fixture.profileReads.mock.calls.length;
+    const writesBeforeEdit = fixture.profileWrites.mock.calls.length;
+    fireEvent.change(screen.getByDisplayValue("Profile A"), { target: { value: "Pending edit during rename" } });
+
+    await fixture.renew("user-a", "renamed-operator");
+    expect(profileStorageValue()).toBe("ukládám");
+    expect(screen.getByDisplayValue("Pending edit during rename")).toBeTruthy();
+    expect(fixture.profileReads.mock.calls.length).toBe(readsBeforeRename);
+    await waitFor(() => expect(fixture.profileWrites.mock.calls.length).toBeGreaterThan(writesBeforeEdit), {
+      timeout: 2000
+    });
+    const [payload, owner] = fixture.profileWrites.mock.calls.at(-1) ?? [];
+    expect(owner).toBe("user-a");
+    expect(JSON.stringify(payload)).toContain("Pending edit during rename");
+    await waitFor(() => expect(profileStorageValue()).toBe("synchronizován"));
+  });
+
+  it("lets a pending BFF profile GET finish after the same subject changes username", async () => {
+    const fixture = installBffProfileFixture();
+    let finishProfileRead: ((response: Response) => void) | undefined;
+    fixture.profileReads.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finishProfileRead = resolve;
+        })
+    );
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Účet - otevřít nastavení" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Účet - otevřít nastavení" }));
+    await waitFor(() => expect(finishProfileRead).toBeTypeOf("function"));
+    expect(profileStorageValue()).toBe("načítám");
+    const readsBeforeRename = fixture.profileReads.mock.calls.length;
+
+    await fixture.renew("user-a", "renamed-operator");
+    expect(fixture.profileReads.mock.calls.length).toBe(readsBeforeRename);
+    await act(async () => {
+      finishProfileRead?.(jsonResponse(fixture.profile("user-a")));
+    });
+    await waitFor(() => expect(profileStorageValue()).toBe("synchronizován"));
+    expect(screen.getByDisplayValue("Profile A")).toBeTruthy();
+  });
+
+  it("cancels a queued BFF profile save when renewal reveals another account", async () => {
+    const fixture = installBffProfileFixture();
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Účet - otevřít nastavení" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Účet - otevřít nastavení" }));
+    await waitFor(() => expect(profileStorageValue()).toBe("synchronizován"));
+    const writesBeforeEdit = fixture.profileWrites.mock.calls.length;
+    fireEvent.change(screen.getByDisplayValue("Profile A"), { target: { value: "A queued edit" } });
+
+    await fixture.renew("user-b");
+    await waitFor(() => expect(screen.getByDisplayValue("Profile B")).toBeTruthy());
+    await waitFor(() => expect(profileStorageValue()).toBe("synchronizován"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    });
+    const writesAfterSwitch = fixture.profileWrites.mock.calls.slice(writesBeforeEdit);
+    expect(writesAfterSwitch.some(([payload]) => JSON.stringify(payload).includes("A queued edit"))).toBe(false);
+    expect(fixture.profileReads.mock.calls.some(([subject]) => subject === "user-b")).toBe(true);
+  });
+
+  it("ignores an old BFF autosave result while another account is loading", async () => {
+    const fixture = installBffProfileFixture();
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Účet - otevřít nastavení" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Účet - otevřít nastavení" }));
+    await waitFor(() => expect(profileStorageValue()).toBe("synchronizován"));
+    let finishOldSave: ((response: Response) => void) | undefined;
+    fixture.profileWrites.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finishOldSave = resolve;
+        })
+    );
+    fireEvent.change(screen.getByDisplayValue("Profile A"), { target: { value: "A in-flight edit" } });
+    await waitFor(() => expect(finishOldSave).toBeTypeOf("function"), { timeout: 2000 });
+    let finishNextProfile: ((response: Response) => void) | undefined;
+    fixture.profileReads.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finishNextProfile = resolve;
+        })
+    );
+
+    await fixture.renew("user-b");
+    await waitFor(() => expect(finishNextProfile).toBeTypeOf("function"));
+    expect(profileStorageValue()).toBe("načítám");
+    await act(async () => {
+      finishOldSave?.(jsonResponse(fixture.profile("user-a")));
+    });
+    expect(profileStorageValue()).toBe("načítám");
+    await act(async () => {
+      finishNextProfile?.(jsonResponse(fixture.profile("user-b")));
+    });
+    await waitFor(() => expect(profileStorageValue()).toBe("synchronizován"));
+    expect(screen.getByDisplayValue("Profile B")).toBeTruthy();
+    expect(screen.queryByDisplayValue("A in-flight edit")).toBeNull();
+  });
+
   it("restores catalog defaults when a persisted profile contains an empty layer selection", async () => {
     vi.stubEnv("VITE_COP_AUTH_MODE", "hybrid");
     vi.stubEnv("VITE_COP_BFF_SESSION_ENABLED", "false");
@@ -3156,4 +3293,68 @@ function installTestLocalStorage(): void {
       setItem: (key: string, value: string) => localStorageData.set(key, value)
     }
   });
+}
+
+function profileStorageValue(): string | null {
+  return screen.getByText("Uložení profilu").closest(".readiness-row")?.querySelector("strong")?.textContent ?? null;
+}
+
+function installBffProfileFixture() {
+  vi.stubEnv("VITE_COP_AUTH_MODE", "oidc");
+  vi.stubEnv("VITE_COP_BFF_SESSION_ENABLED", "true");
+  vi.stubEnv("VITE_COP_OIDC_ISSUER", "https://auth.example.test/realms/cop");
+  vi.stubEnv("VITE_COP_OIDC_CLIENT_ID", "cop-web");
+  installMatchMedia(false);
+  Object.defineProperty(navigator, "geolocation", { configurable: true, value: undefined });
+  let now = Date.now();
+  let subject = "user-a";
+  let username = subject;
+  vi.spyOn(Date, "now").mockImplementation(() => now);
+  const profile = (owner: string) => ({
+    actor: { authMode: "oidc", displayName: owner, subjectId: owner, username: owner },
+    alertPreferences: {},
+    preferences: { operatorProfile: { displayName: owner === "user-a" ? "Profile A" : "Profile B" } },
+    updatedAt: new Date(now).toISOString()
+  });
+  const profileReads = vi.fn((owner: string): Promise<Response> => Promise.resolve(jsonResponse(profile(owner))));
+  const profileWrites = vi.fn((_payload: unknown, owner: string): Promise<Response> =>
+    Promise.resolve(jsonResponse(profile(owner)))
+  );
+  const sessionReads = vi.fn(() =>
+    jsonResponse({
+      authenticated: true,
+      expiresAt: new Date(now + 5 * 60_000).toISOString(),
+      profile: { name: subject, subjectId: subject, username }
+    })
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/v1/auth/session")) return sessionReads();
+      if (url.includes("/api/v1/me/preferences")) {
+        if (init?.method === "PUT") return profileWrites(JSON.parse(String(init.body)), subject);
+        return profileReads(subject);
+      }
+      if (url.includes("/api/v1/mobile/devices")) return jsonResponse({ devices: [] });
+      if (url.includes("/health/ready")) return jsonResponse({ status: "ok" });
+      if (url.includes("/api/v1/map/catalog")) return jsonResponse(testMapCatalogResponse());
+      if (url.includes("/api/v1/map/query")) return jsonResponse(emptyMapQueryResponse([]));
+      return jsonResponse({ items: [] });
+    })
+  );
+  return {
+    profile,
+    profileReads,
+    profileWrites,
+    sessionReads,
+    renew: async (nextSubject: string, nextUsername = nextSubject) => {
+      now += 4 * 60_000;
+      subject = nextSubject;
+      username = nextUsername;
+      await act(async () => {
+        window.dispatchEvent(new Event("focus"));
+      });
+    }
+  };
 }

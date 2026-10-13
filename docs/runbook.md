@@ -90,3 +90,33 @@ advance `account_data_key` and return that canary. Only then retry E2EE recovery
 and verify that `m.secret_storage.default_key`, cross-signing secrets, and one
 active key-backup version were created. Do not log access tokens, recovery keys,
 secret-storage content, or room keys during diagnosis.
+
+## BFF session renewal and profile synchronization
+
+The browser intentionally keeps no access or refresh token in local/session
+storage in BFF mode. The current diagnostics panel therefore reports no stored
+browser session and no browser refresh token; those labels alone do not show
+whether server renewal works. Verify renewal with the status and expiry returned
+by `GET /api/v1/auth/session`, followed by a protected request after the original
+expiry. Do not capture cookie values, bearer tokens or profile payloads.
+
+Renewing the same BFF account must preserve a synchronized profile and pending
+profile edits, including a username change under the same stable subject ID.
+Username is an ownership fallback only when the subject ID is absent. A changed account, issuer, OIDC client/scope, transport or active
+session state must reset hydration and cancel queued profile saves. Results of
+an autosave started under an earlier profile generation must not update the new
+account's UI or local profile cache. The protected profile operations remain
+`GET` and `PUT /api/v1/me/preferences`.
+
+For a profile stuck at **Načítám**, collect only method, time, status and duration
+of those two operations around renewal. No new profile request after a reset
+indicates a frontend lifecycle problem; a pending request needs separate server
+or transport diagnosis. This fix does not add request deadlines or change the
+BFF server, account settings or API contract.
+
+Source preparation on 2026-10-13 uses baseline `3ac75841`. Forty-five rendered
+dashboard tests, selected ESLint, TypeScript, formatting and skeleton checks
+pass. Regression scenarios cover renewal, pending edits, account switches,
+late saves and username changes with a stable subject. Independent source
+review is closed. This is not a production deployment: confirm the running
+web artifact's source and build-time BFF settings before a separate release.
