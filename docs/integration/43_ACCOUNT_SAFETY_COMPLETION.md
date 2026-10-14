@@ -237,7 +237,25 @@ human policy above; its narrowly scoped authority still requires acceptance.
 
 ## Verification / release
 
-Final verification on 2026-10-14:
+Latest candidate verification on 2026-10-14 used clean documentation HEAD
+`4a1154146b1cd99daedb7e18956fd1c65fc2021b`, with unchanged application
+implementation `898cd5132f513259b226d5beff5c3876156b56e7`:
+**2,429 reconciled passed cases, zero remaining failures, eight older opt-in
+PostgreSQL skips** across 247 files / 2,437 cases. This is not one green full run:
+the original complete run had 2,412 passed, four environment failures and 21
+skips because the owned PostgreSQL18.3 environment lacked PostGIS. Only the 17
+blocked cases were then rerun on an already available actual
+PostgreSQL17.5/PostGIS3.5.2 image; all 17 passed. Reconciliation preserves exact
+file/name/parameterized occurrence and replaces only these 17 original results,
+without duplicate pass summation. Both original reports and hashes are retained.
+The new consent PostgreSQL cases passed on the separate actual PostgreSQL18.3
+cluster. Both owned database environments, the container and temporary synthetic
+credential were stopped/removed; source remained clean. No installation,
+production mutation, real account, phone or restore was involved. See
+[the final bounded regression evidence](../testing/account-erasure-final-regression-20261014.json).
+Do not add the overlapping 99-, 72-, 44- or pair-test counts below to this count.
+
+Earlier wider verification before the latest follow-ups:
 
 - Full suite: **2,393 passed, zero failed, eight skipped**, 243 test files.
   Skipped cases use seven separate legacy test database configurations (profile,
