@@ -367,6 +367,14 @@ export function endSession(config: AuthConfig, session: AuthSession): void {
   window.location.assign(url.toString());
 }
 
+/** Clears this browser's credentials after a confirmed server revocation.
+ * No provider request or navigation: the deletion receipt remains readable.
+ */
+export function forgetLocalAuthSession(): void {
+  clearStoredSession();
+  clearCallbackState();
+}
+
 export function subjectIdFromAuthSession(session: AuthSession): string | undefined {
   return stableSubjectId(session.profile);
 }

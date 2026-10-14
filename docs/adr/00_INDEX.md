@@ -73,3 +73,5 @@ published paths are preserved for integration references.
 - [0050: Account safety and erasure boundary](0050_ACCOUNT_SAFETY_AND_ERASURE_BOUNDARY.md): prepared source and separate provider acceptance.
 
 - [0051: Erasure preflight and receipt tracking](0051_ERASURE_PREFLIGHT_AND_RECEIPT_TRACKING.md): source candidate, independent read-only tracking and explicit runtime binding blocker.
+
+- [0053: COP/Jizda erasure preserves shared identity and SIM](0053_COP_ERASURE_PRESERVES_SHARED_SIM_IDENTITY.md)

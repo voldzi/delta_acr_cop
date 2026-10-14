@@ -20,6 +20,32 @@ async function start(f: ReturnType<typeof fixture>, actor = f.actor, operationId
   return { capability: p.capability!, receipt: await f.service.request(actor, operationId, { confirmAccountDeletion: true }, { planId: p.response.planId!, capability: p.capability! }) };
 }
 describe("actor-aware erasure preflight and independent receipt", () => {
+  it("rejects a local ownership change under the final fence transaction", async () => {
+    const f = fixture(), adapter = f.adapters.find(a => a.id === "mobility_dispatch")!;
+    await f.store.transact([], tx => tx.set("synthetic-impact", "impact_version_v1"));
+    adapter.preflight = async () => ({ ready: true, version: "synthetic_remote_v1", transactionVersion: "impact_version_v1" });
+    adapter.preflightWithin = async (_actor, context) => ({ ready: true, version: (await context.transaction.get<string>("synthetic-impact"))! });
+    const p = await f.service.preflight(f.actor, operation);
+    // The ordinary provider probe remains unchanged; only the same-transaction
+    // impact CAS can detect the admitted write before accepting a global fence.
+    await f.store.transact([], tx => tx.set("synthetic-impact", "impact_version_v2"));
+    await expect(f.service.request(f.actor, operation, { confirmAccountDeletion: true }, { planId: p.response.planId!, capability: p.capability! })).rejects.toMatchObject({ status: 409 });
+    await f.service.assertAllowed(f.actor);
+    expect(await f.store.transact([], tx => tx.scan("account-erasure:job:"))).toEqual([]);
+    for (const a of f.adapters) expect(a.erase).not.toHaveBeenCalled();
+  });
+  it("reassesses and commits the global fence inside the actual admission hook, then releases it before provider erasure", async () => {
+    const f = fixture(); let held = false, guardedProbes = 0;
+    const admissionGuard = { async run<T>(_actor: unknown, _signal: AbortSignal, run: () => Promise<T>) { held = true; try { return await run(); } finally { held = false; } } };
+    f.adapters[2]!.preflight = async () => { if (held) guardedProbes++; return { ready: true, version: "synthetic_version_v1" }; };
+    f.adapters[2]!.erase = vi.fn(async () => { expect(held).toBe(false); return { status: "completed" as const, proofId: "synthetic_proof_v1" }; });
+    const service = new AccountErasureService({ ...f.options, admissionGuard });
+    expect(service.usesAdmissionGuard(admissionGuard)).toBe(true);
+    const p = await service.preflight(f.actor, operation);
+    expect((await service.request(f.actor, operation, { confirmAccountDeletion: true }, { planId: p.response.planId!, capability: p.capability! })).accountDeleted).toBe(true);
+    expect(guardedProbes).toBe(1); expect(held).toBe(false);
+    await expect(f.store.transact([], tx => service.assertAllowedWithin(tx, f.actor))).rejects.toMatchObject({ status: 403 });
+  });
   it("does not fence an unresolved owner or unsupported custom preflight", async () => {
     const f = fixture(); delete f.adapters[2]!.preflight;
     f.adapters[1]!.preflight = async () => ({ ready: false, reason: "ownership_unresolved" });

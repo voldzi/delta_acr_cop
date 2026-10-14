@@ -5,6 +5,7 @@ import type { AuthenticatedActor } from "./security.js";
 import { actorFromRequest } from "./security.js";
 import { correlationIdFrom, sendError } from "./errors.js";
 import { readBoundedBody } from "./bounded-upstream.js";
+import type { AccountErasureAdapter, AccountErasureAssessment, AccountErasureProof } from "./account-erasure.js";
 
 export class CommunicationSafetyError extends Error {
   constructor(readonly status: number, readonly code: string) { super(code); }
@@ -28,19 +29,20 @@ export const COMMUNICATION_RETENTION_POLICY = {
 const dayMs = 86_400_000;
 const reportPrefix = "communication-safety:report:";
 const pendingIndexKey = "communication-safety:pending-index";
+const erasurePrefix = "communication-safety:erasure-fence:";
 interface Report {
   target?: CommunicationReportInput["target"]; reason?: CommunicationReportInput["reason"];
   evidence?: CommunicationReportInput["evidence"];
-  reportId: string; reporter?: string; reporterIssuer?: string; ownerKey?: string; createdAt: string;
+  reportId: string; reporter?: string; reporterIssuer?: string; ownerKey?: string; targetIssuer?: string; createdAt: string;
   status: "submitted" | "reviewing" | "resolved"; closedAt?: string; detailsExpiredAt?: string; evidenceExpiresAt?: string;
   resolution?: "no_action" | "action_taken"; revision: number;
   provenance?: { contractVersion: "cop-communication-report-v1"; retentionPolicyId: string; receivedAt: string };
-  audit: { actor: string; at: string; action: string }[];
+  audit: { actor: string; actorIssuer?: string; at: string; action: string }[];
 }
 interface StoredReport { sealed: string }
 interface ReportOperation { hash: string; hashVersion?: "hmac-v1"; reportId: string }
 export interface CommunicationRetentionResult { reportsChanged: number; evidencePurged: number; detailsPurged: number; auditEventsPurged: number }
-export type ValidateReportTarget = (actor: AuthenticatedActor, input: CommunicationReportInput["target"]) => Promise<void>;
+export type ValidateReportTarget = (actor: AuthenticatedActor, input: CommunicationReportInput["target"]) => Promise<void | { peerIssuer: string }>;
 
 /** All endpoints use the authenticated COP subject. No caller can supply a reporter or payer. */
 export class CommunicationSafetyService {
@@ -103,16 +105,25 @@ export class CommunicationSafetyService {
     return this.publicReport(report);
   }
   async submit(actor: AuthenticatedActor, value: CommunicationReportInput, operationId: string) {
+    this.requireErasureIdentity(actor);
     const input = normalizeCommunicationReport(value);
     if (!input) throw new CommunicationSafetyError(400, "VALIDATION_ERROR");
     await this.init();
     const ownerKey = digest(JSON.stringify([actor.issuer, actor.subjectId])), key = `communication-safety:operation:${ownerKey}:${operationId}`;
-    const existing = await this.options.store.transact([key], tx => this.previous(tx, key, ownerKey, input));
+    const existing = await this.options.store.transact([key], async tx => {
+      await this.assertWriterAllowed(tx, actor);
+      return this.previous(tx, key, ownerKey, input);
+    });
     if (existing) return existing; // A verified original receipt survives later removal of its target.
     this.assertIntake();
-    await this.options.validateTarget(actor, input.target);
+    const targetWitness = await this.options.validateTarget(actor, input.target);
     const now = this.now().toISOString();
     return this.options.store.transact([key], async tx => {
+      // The target check can await a provider. Recheck the permanent fence in the
+      // same transaction as every local write; a late validated request cannot
+      // recreate deleted content or refer to an erased account.
+      await this.assertWriterAllowed(tx, actor);
+      await this.assertWriterAllowed(tx, { ...actor, issuer: targetWitness?.peerIssuer ?? actor.issuer, subjectId: input.target.peerSubjectId });
       const previous = await this.previous(tx, key, ownerKey, input);
       if (previous) return previous;
       const hour = now.slice(0, 13), rateKey = `communication-safety:rate:${ownerKey}:${hour}`;
@@ -120,8 +131,9 @@ export class CommunicationSafetyService {
       if (count >= 20) throw new CommunicationSafetyError(429, "REPORT_RATE_LIMITED");
       const countAll = await tx.get<number>("communication-safety:report-count") ?? 0;
       if (countAll >= 10000) throw new CommunicationSafetyError(503, "REPORT_CAPACITY_UNAVAILABLE");
-      const report: Report = { ...input, ownerKey, reporterIssuer: actor.issuer!, reportId: randomUUID(), reporter: actor.subjectId, createdAt: now,
-        status: "submitted", revision: 1, audit: [{ actor: actor.subjectId, at: now, action: "submitted" }],
+      const report: Report = { ...input, ownerKey, reporterIssuer: actor.issuer!,
+        ...(targetWitness?.peerIssuer ? { targetIssuer: targetWitness.peerIssuer } : {}), reportId: randomUUID(), reporter: actor.subjectId, createdAt: now,
+        status: "submitted", revision: 1, audit: [{ actor: actor.subjectId, actorIssuer: actor.issuer!, at: now, action: "submitted" }],
         provenance: { contractVersion: "cop-communication-report-v1", retentionPolicyId: COMMUNICATION_RETENTION_POLICY_ID, receivedAt: now } };
       this.prune(report);
       await tx.set(reportPrefix + report.reportId, { sealed: this.seal(report) });
@@ -135,8 +147,10 @@ export class CommunicationSafetyService {
     });
   }
   async read(actor: AuthenticatedActor, id: string, operator = false) {
+    this.requireErasureIdentity(actor);
     await this.init();
     const report = await this.options.store.transact([reportPrefix + id], async tx => {
+      await this.assertWriterAllowed(tx, actor);
       const row = await tx.get<StoredReport>(reportPrefix + id);
       if (!row) throw new CommunicationSafetyError(404, "NOT_FOUND");
       const report = this.open(row.sealed);
@@ -148,7 +162,8 @@ export class CommunicationSafetyService {
     if (operator && report.detailsExpiredAt) throw new CommunicationSafetyError(410, "REPORT_DETAIL_EXPIRED");
     if (!operator) return this.publicReport(report);
     const detail = structuredClone(report);
-    delete detail.ownerKey; delete detail.provenance; delete detail.detailsExpiredAt;
+    detail.audit = detail.audit.map(({ actorIssuer: _privateIssuer, ...entry }) => entry);
+    delete detail.ownerKey; delete detail.provenance; delete detail.detailsExpiredAt; delete detail.targetIssuer;
     return detail;
   }
   async queue() {
@@ -158,8 +173,10 @@ export class CommunicationSafetyService {
   }
   private summary(report: Report) { return {reportId:report.reportId,createdAt:report.createdAt,reason:report.reason!,status:report.status,revision:report.revision}; }
   async review(actor: AuthenticatedActor, id: string, input: { expectedRevision: number; status: "reviewing" | "resolved"; resolution?: "no_action" | "action_taken" }) {
+    this.requireErasureIdentity(actor);
     await this.init();
     const result = await this.options.store.transact([reportPrefix + id], async tx => {
+      await this.assertWriterAllowed(tx, actor);
       const row = await tx.get<StoredReport>(reportPrefix + id);
       if (!row) throw new CommunicationSafetyError(404, "NOT_FOUND");
       const report = this.open(row.sealed);
@@ -170,7 +187,7 @@ export class CommunicationSafetyService {
       if (input.resolution) report.resolution = input.resolution;
       const at = this.now().toISOString();
       if (input.status === "resolved") report.closedAt = earliest(report.closedAt, at);
-      report.audit.push({ actor: actor.subjectId, at, action: input.status });
+      report.audit.push({ actor: actor.subjectId, actorIssuer: actor.issuer!, at, action: input.status });
       this.prune(report); // Closing never extends the original 90-day deadline.
       const index = (await tx.get<Array<ReturnType<CommunicationSafetyService["summary"]>>>(pendingIndexKey) ?? []).filter(entry => entry.reportId !== id);
       if (report.status !== "resolved") index.push(this.summary(report));
@@ -182,6 +199,115 @@ export class CommunicationSafetyService {
     if ("conflict" in result && result.conflict) throw new CommunicationSafetyError(409, "REPORT_REVISION_CONFLICT");
     if ("receipt" in result && result.receipt) return result.receipt;
     throw new CommunicationSafetyError(503, "REPORT_STORE_UNAVAILABLE");
+  }
+
+  /** COP-local moderation only. Canonical Matrix blocks are erased by the
+   * messaging_matrix adapter, never inferred from local report removal. */
+  accountErasureAdapter(): AccountErasureAdapter {
+    return {
+      id: "moderation_audit",
+      ready: async () => { try { await this.init(); return true; } catch { return false; } },
+      preflight: (actor, context) => this.erasurePreflight(actor, context.signal),
+      erase: (actor, context) => this.eraseAccount(actor, context)
+    };
+  }
+
+  async erasurePreflight(actor: AuthenticatedActor, signal: AbortSignal): Promise<AccountErasureAssessment> {
+    this.requireErasureIdentity(actor); signal.throwIfAborted(); await this.init();
+    try {
+      return await this.options.store.transact([], async tx => {
+        signal.throwIfAborted();
+        const reports = await tx.scan<StoredReport>(reportPrefix);
+        for (const row of reports) if (!this.erasureProvenanceKnown(this.open(row.value.sealed), actor)) {
+          return { ready: false, reason: "ownership_unresolved" };
+        }
+        return { ready: true, version: "cop-moderation-erasure-v1" };
+      });
+    } catch (error) {
+      signal.throwIfAborted();
+      if (error instanceof CommunicationSafetyError) throw error;
+      throw new CommunicationSafetyError(503, "MODERATION_ERASURE_UNAVAILABLE");
+    }
+  }
+
+  async eraseAccount(actor: AuthenticatedActor, context: { operationId: string; signal: AbortSignal }): Promise<AccountErasureProof> {
+    this.requireErasureIdentity(actor); context.signal.throwIfAborted(); await this.init();
+    const ownerKey = this.erasureOwner(actor), fence = erasurePrefix + ownerKey;
+    try {
+      return await this.options.store.transact([fence], async tx => {
+        context.signal.throwIfAborted();
+        const existing = await tx.get<{ operationId: string; proofId?: string }>(fence);
+        if (existing && existing.operationId !== context.operationId) throw new CommunicationSafetyError(409, "MODERATION_ERASURE_OPERATION_CONFLICT");
+        // The fence is committed even when historical provenance remains unknown.
+        // It contains no subject, display name, excerpt or provider credential.
+        await tx.set(fence, existing ?? { operationId: context.operationId });
+        const reports = await tx.scan<StoredReport>(reportPrefix);
+        if (reports.some(row => !this.erasureProvenanceKnown(this.open(row.value.sealed), actor))) {
+          return { status: "pending", remaining: "cleanup_pending" };
+        }
+        const removed = new Set<string>();
+        for (const row of reports) {
+          context.signal.throwIfAborted();
+          const report = this.open(row.value.sealed);
+          if (this.reportOwner(report) === ownerKey) {
+            removed.add(report.reportId); await tx.remove(row.key); continue;
+          }
+          const before = JSON.stringify(report);
+          report.audit = report.audit.filter(entry => !(entry.actor === actor.subjectId && entry.actorIssuer === actor.issuer));
+          if (report.target?.peerSubjectId === actor.subjectId && report.targetIssuer === actor.issuer) {
+            // Another reporter's content-free status remains. Their selected text
+            // can mention the erased person and is not retained as an audit body.
+            delete report.target; delete report.targetIssuer; delete report.evidence; delete report.reason;
+            report.detailsExpiredAt = this.now().toISOString();
+          }
+          if (JSON.stringify(report) !== before) await tx.set(row.key, { sealed: this.seal(report) });
+        }
+        for (const prefix of [`communication-safety:operation:${ownerKey}:`, `communication-safety:rate:${ownerKey}:`]) {
+          for (const row of await tx.scan(prefix)) await tx.remove(row.key);
+        }
+        const index = await tx.get<Array<ReturnType<CommunicationSafetyService["summary"]>>>(pendingIndexKey) ?? [];
+        const active = new Set((await tx.scan<StoredReport>(reportPrefix)).map(row => this.open(row.value.sealed))
+          .filter(report => !report.detailsExpiredAt && report.status !== "resolved").map(report => report.reportId));
+        await tx.set(pendingIndexKey, index.filter(entry => active.has(entry.reportId)));
+        const count = await tx.get<number>("communication-safety:report-count") ?? 0;
+        await tx.set("communication-safety:report-count", Math.max(0, count - removed.size));
+        // Read back all retained reports and idempotency/rate links before proof.
+        for (const row of await tx.scan<StoredReport>(reportPrefix)) {
+          if (this.reportHasActorLink(this.open(row.value.sealed), actor)) return { status: "pending", remaining: "cleanup_pending" };
+        }
+        for (const prefix of [`communication-safety:operation:${ownerKey}:`, `communication-safety:rate:${ownerKey}:`]) {
+          if ((await tx.scan(prefix)).length) return { status: "pending", remaining: "cleanup_pending" };
+        }
+        context.signal.throwIfAborted();
+        const proofId = existing?.proofId ?? randomUUID(); await tx.set(fence, { operationId: context.operationId, proofId });
+        return { status: "completed", proofId };
+      });
+    } catch (error) {
+      context.signal.throwIfAborted();
+      if (error instanceof CommunicationSafetyError) throw error;
+      throw new CommunicationSafetyError(503, "MODERATION_ERASURE_UNAVAILABLE");
+    }
+  }
+
+  private requireErasureIdentity(actor: AuthenticatedActor): void {
+    if (actor.authMode !== "oidc" || !actor.issuer || !actor.subjectId) throw new CommunicationSafetyError(401, "UNAUTHORIZED");
+  }
+  private erasureOwner(actor: AuthenticatedActor): string { return digest(JSON.stringify([actor.issuer, actor.subjectId])); }
+  private async assertWriterAllowed(tx: MobilityTransaction, actor: AuthenticatedActor): Promise<void> {
+    if (await tx.get(erasurePrefix + this.erasureOwner(actor))) throw new CommunicationSafetyError(403, "ACCOUNT_ERASURE_FENCED");
+  }
+  private erasureProvenanceKnown(report: Report, actor: AuthenticatedActor): boolean {
+    if (report.reporter === actor.subjectId && !report.reporterIssuer) return false;
+    if (report.reporter === actor.subjectId && report.reporterIssuer === actor.issuer && this.reportOwner(report) !== this.erasureOwner(actor)) return false;
+    if (report.target?.peerSubjectId === actor.subjectId && !report.targetIssuer) return false;
+    if (report.audit.some(entry => entry.actor === actor.subjectId && !entry.actorIssuer)) return false;
+    return true;
+  }
+  private reportHasActorLink(report: Report, actor: AuthenticatedActor): boolean {
+    return this.reportOwner(report) === this.erasureOwner(actor)
+      || (report.reporter === actor.subjectId && report.reporterIssuer === actor.issuer)
+      || (report.target?.peerSubjectId === actor.subjectId && report.targetIssuer === actor.issuer)
+      || report.audit.some(entry => entry.actor === actor.subjectId && entry.actorIssuer === actor.issuer);
   }
   /** Trusted periodic worker. Concurrent callers share one run; all purges/checkpoints/index changes commit atomically. */
   pruneExpired(): Promise<CommunicationRetentionResult> {
@@ -304,7 +430,8 @@ export function normalizeCommunicationReport(value: unknown): CommunicationRepor
     Buffer.byteLength(value.evidence.selectedText) > 4096)) return null;
   return structuredClone(value) as unknown as CommunicationReportInput;
 }
-export function registerCommunicationSafetyRoutes(app: FastifyInstance, service?: CommunicationSafetyService, verifiedActor: (request: FastifyRequest) => AuthenticatedActor | null = actorFromRequest) {
+export function registerCommunicationSafetyRoutes(app: FastifyInstance, service?: CommunicationSafetyService, verifiedActor: (request: FastifyRequest) => AuthenticatedActor | null = actorFromRequest,
+  accountDeletion?: () => Promise<{ accountDeletion: boolean }>) {
   const actor = (request: FastifyRequest) => {
     const value = verifiedActor(request);
     if (!value || value.authMode !== "oidc" || !value.issuer) throw new CommunicationSafetyError(401,"UNAUTHORIZED");
@@ -329,10 +456,21 @@ export function registerCommunicationSafetyRoutes(app: FastifyInstance, service?
   };
   app.get("/api/v1/me/account-safety/capabilities", async (request,reply) => {
     reply.header("Cache-Control","no-store");
-    try { actor(request); return service?.capabilities() ?? { contractVersion:"cop-account-safety-v1", reporting:false,blocking:false,accountDeletion:false,
-      accountDeletionUrl:null,accountDeletionUnavailableReason:"erasure_adapters_not_accepted", reportContactEmail:"podpora@zeleznalady.cz",
-      evidence:"explicitly_selected_text_only",blockDelivery:"matrix_ignore_policy" }; }
+    try { actor(request); }
     catch { return sendError(reply,401,"UNAUTHORIZED","Je nutná ověřená relace COP.",correlationIdFrom(request.headers["x-correlation-id"])); }
+    try {
+      const capabilities = service?.capabilities() ?? { contractVersion:"cop-account-safety-v1", reporting:false,blocking:false,accountDeletion:false,
+      accountDeletionUrl:null,accountDeletionUnavailableReason:"erasure_adapters_not_accepted", reportContactEmail:"podpora@zeleznalady.cz",
+      evidence:"explicitly_selected_text_only",blockDelivery:"matrix_ignore_policy" };
+      // Published native v1 decoders intentionally accept only false/null.
+      // Explicit negotiation prevents an activation from breaking their report
+      // and block UI. The web deletion controller has its own capability route.
+      if (!accountDeletion || request.headers["x-cop-account-erasure-link"] !== "canonical-web-v1") return capabilities;
+      const deletion = await accountDeletion();
+      return { ...capabilities, accountDeletion: deletion.accountDeletion === true,
+        accountDeletionUrl: deletion.accountDeletion === true ? "/account/delete" : null,
+        accountDeletionUnavailableReason: deletion.accountDeletion === true ? null : "erasure_adapters_not_accepted" };
+    } catch { return sendError(reply,503,"COMMUNICATION_SAFETY_UNAVAILABLE","Dostupnost správy účtu nyní nelze ověřit.",correlationIdFrom(request.headers["x-correlation-id"])); }
   });
   route("POST","/api/v1/me/communication/reports", async(r,a,s) => {
     const input = normalizeCommunicationReport(r.body), operation = r.headers["idempotency-key"];

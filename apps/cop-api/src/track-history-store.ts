@@ -1,5 +1,8 @@
 import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
 import { createCopPgPool } from "./cop-pg-pool.js";
+import { assertProjectionPayloadAllowed, canonicalProjectionReference, fenceProjectionResources, loadProjectionFences, projectionPayloadMatch, projectionReferences,
+  projectionSearchPatterns, projectionTransaction, resourceProjectionFenceTableSql, type ProjectionEraseContext, type ProjectionResources } from "./resource-projection-erasure.js";
+import { requireRuntimeOwner, runtimeAssessment, runtimeSubjectHash, type RuntimeOwner, type RuntimeOwnerAssessment } from "./runtime-owner-erasure.js";
 import type { CanonicalEventEnvelope, ObservedObject } from "@cop/canonical-model";
 import { withStoredCurrentProvenance } from "./provenance.js";
 import type { TrackHistoryQuery } from "./temporal-history.js";
@@ -7,7 +10,11 @@ import type { TrackHistoryPoint } from "./types.js";
 
 export interface TrackHistoryStore {
   readonly name: string;
-  append(point: TrackHistoryPoint): Promise<void>;
+  projectionErasureReady?(): Promise<boolean>;
+  loadProjectionFences?(): ReturnType<typeof loadProjectionFences>;
+  preflightActorProjections?(owner: RuntimeOwner): Promise<RuntimeOwnerAssessment>;
+  eraseResourceProjections?(resources: ProjectionResources, context: ProjectionEraseContext): Promise<boolean>;
+  append(point: TrackHistoryPoint, owner?: RuntimeOwner): Promise<void>;
   close(): Promise<void>;
   countCurrent(): Promise<number>;
   count(): Promise<number>;
@@ -15,7 +22,7 @@ export interface TrackHistoryStore {
   init(): Promise<void>;
   loadCurrent(): Promise<ObservedObject[]>;
   query(query: TrackHistoryQuery, now: Date): Promise<Array<{ objectId: string; points: TrackHistoryPoint[] }>>;
-  upsertCurrent(object: ObservedObject, event: CanonicalEventEnvelope): Promise<void>;
+  upsertCurrent(object: ObservedObject, event: CanonicalEventEnvelope, owner?: RuntimeOwner): Promise<void>;
 }
 
 export function createTrackHistoryStoreFromEnv(env: Record<string, string | undefined> = process.env): TrackHistoryStore | undefined {
@@ -54,44 +61,51 @@ export class PostgresTrackHistoryStore implements TrackHistoryStore {
   }
 
   async init(): Promise<void> {
-    await this.pool.query(createPersistenceTablesSql);
+    await this.pool.query(resourceProjectionFenceTableSql + createPersistenceTablesSql);
   }
 
-  async append(point: TrackHistoryPoint): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO cop_track_history (
-        event_id,
-        object_id,
-        object_type,
-        affiliation,
-        status,
-        lat,
-        lon,
-        observed_at,
-        producer_timestamp,
-        ingest_timestamp,
-        source_system_id,
-        synthetic,
-        confidence
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9::timestamptz, $10::timestamptz, $11, $12, $13)
-      ON CONFLICT (event_id) DO NOTHING`,
-      [
-        point.eventId,
-        point.objectId,
-        point.objectType,
-        point.affiliation,
-        point.status,
-        point.lat,
-        point.lon,
-        point.timestamp,
-        point.producerTimestamp,
-        point.ingestTimestamp ?? null,
-        point.sourceSystemId,
-        point.synthetic,
-        point.confidence ?? null
-      ]
-    );
+  async append(point: TrackHistoryPoint, owner?: RuntimeOwner): Promise<void> {
+    await projectionTransaction(this.pool, async client => {
+      await assertProjectionPayloadAllowed(client, point, owner);
+      await client.query(
+        `INSERT INTO cop_track_history (
+          event_id,
+          owner_issuer,
+          owner_subject_hash,
+          object_id,
+          object_type,
+          affiliation,
+          status,
+          lat,
+          lon,
+          observed_at,
+          producer_timestamp,
+          ingest_timestamp,
+          source_system_id,
+          synthetic,
+          confidence
+        )
+        VALUES ($1, $14, $15, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9::timestamptz, $10::timestamptz, $11, $12, $13)
+        ON CONFLICT (event_id) DO NOTHING`,
+        [
+          point.eventId,
+          point.objectId,
+          point.objectType,
+          point.affiliation,
+          point.status,
+          point.lat,
+          point.lon,
+          point.timestamp,
+          point.producerTimestamp,
+          point.ingestTimestamp ?? null,
+          point.sourceSystemId,
+          point.synthetic,
+          point.confidence ?? null,
+          owner?.issuer ?? null,
+          owner ? runtimeSubjectHash(owner.subjectId) : null
+        ]
+      );
+    });
   }
 
   async query(query: TrackHistoryQuery, now: Date): Promise<Array<{ objectId: string; points: TrackHistoryPoint[] }>> {
@@ -154,49 +168,58 @@ export class PostgresTrackHistoryStore implements TrackHistoryStore {
     return Number(result.rows[0]?.count ?? 0);
   }
 
-  async upsertCurrent(object: ObservedObject, event: CanonicalEventEnvelope): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO cop_current_tracks (
-        object_id,
-        object_type,
-        affiliation,
-        domain,
-        status,
-        object_json,
-        event_id,
-        source_system_id,
-        last_updated_at,
-        synthetic,
-        confidence
-      )
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::timestamptz, $10, $11)
-      ON CONFLICT (object_id) DO UPDATE SET
-        object_type = EXCLUDED.object_type,
-        affiliation = EXCLUDED.affiliation,
-        domain = EXCLUDED.domain,
-        status = EXCLUDED.status,
-        object_json = EXCLUDED.object_json,
-        event_id = EXCLUDED.event_id,
-        source_system_id = EXCLUDED.source_system_id,
-        last_updated_at = EXCLUDED.last_updated_at,
-        synthetic = EXCLUDED.synthetic,
-        confidence = EXCLUDED.confidence,
-        updated_at = now()
-      WHERE cop_current_tracks.last_updated_at <= EXCLUDED.last_updated_at`,
-      [
-        object.objectId,
-        object.objectType,
-        object.affiliation,
-        object.domain,
-        object.status,
-        JSON.stringify(object),
-        event.eventId,
-        event.source.sourceSystemId,
-        object.lastUpdatedAt ?? event.ingestTimestamp ?? event.producerTimestamp,
-        object.synthetic ?? false,
-        object.confidence ?? null
-      ]
-    );
+  async upsertCurrent(object: ObservedObject, event: CanonicalEventEnvelope, owner?: RuntimeOwner): Promise<void> {
+    await projectionTransaction(this.pool, async client => {
+      await assertProjectionPayloadAllowed(client, { object, event }, owner);
+      const existing = await client.query<{ owner_issuer: string | null; owner_subject_hash: string | null }>("SELECT owner_issuer,owner_subject_hash FROM cop_current_tracks WHERE object_id=$1", [object.objectId]);
+      if (existing.rows[0]?.owner_issuer && (existing.rows[0].owner_issuer !== owner?.issuer || existing.rows[0].owner_subject_hash !== (owner ? runtimeSubjectHash(owner.subjectId) : null))) throw new Error("CONTENT_PROJECTION_OWNER_CONFLICT");
+      await client.query(
+        `INSERT INTO cop_current_tracks (
+          object_id,
+          owner_issuer,
+          owner_subject_hash,
+          object_type,
+          affiliation,
+          domain,
+          status,
+          object_json,
+          event_id,
+          source_system_id,
+          last_updated_at,
+          synthetic,
+          confidence
+        )
+        VALUES ($1, $12, $13, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::timestamptz, $10, $11)
+        ON CONFLICT (object_id) DO UPDATE SET
+          object_type = EXCLUDED.object_type,
+          affiliation = EXCLUDED.affiliation,
+          domain = EXCLUDED.domain,
+          status = EXCLUDED.status,
+          object_json = EXCLUDED.object_json,
+          event_id = EXCLUDED.event_id,
+          source_system_id = EXCLUDED.source_system_id,
+          last_updated_at = EXCLUDED.last_updated_at,
+          synthetic = EXCLUDED.synthetic,
+          confidence = EXCLUDED.confidence,
+          updated_at = now()
+        WHERE cop_current_tracks.last_updated_at <= EXCLUDED.last_updated_at`,
+        [
+          object.objectId,
+          object.objectType,
+          object.affiliation,
+          object.domain,
+          object.status,
+          JSON.stringify(object),
+          event.eventId,
+          event.source.sourceSystemId,
+          object.lastUpdatedAt ?? event.ingestTimestamp ?? event.producerTimestamp,
+          object.synthetic ?? false,
+          object.confidence ?? null,
+          owner?.issuer ?? null,
+          owner ? runtimeSubjectHash(owner.subjectId) : null
+        ]
+      );
+    });
   }
 
   async loadCurrent(): Promise<ObservedObject[]> {
@@ -211,6 +234,50 @@ export class PostgresTrackHistoryStore implements TrackHistoryStore {
   async countCurrent(): Promise<number> {
     const result = await this.pool.query<{ count: string }>("SELECT count(*)::text AS count FROM cop_current_tracks");
     return Number(result.rows[0]?.count ?? 0);
+  }
+
+  async projectionErasureReady(): Promise<boolean> {
+    await this.pool.query("SELECT 1 FROM cop_content_projection_fences LIMIT 0; SELECT owner_issuer,owner_subject_hash,object_json FROM cop_current_tracks LIMIT 0; SELECT owner_issuer,owner_subject_hash FROM cop_track_history LIMIT 0"); return true;
+  }
+  loadProjectionFences(): ReturnType<typeof loadProjectionFences> { return loadProjectionFences(this.pool); }
+  async preflightActorProjections(owner: RuntimeOwner): Promise<RuntimeOwnerAssessment> {
+    requireRuntimeOwner(owner);
+    const rows = await this.pool.query<{ object_json: unknown; owner_issuer: string | null; owner_subject_hash: string | null }>(
+      "SELECT object_json,owner_issuer,owner_subject_hash FROM cop_current_tracks WHERE lower(object_json::text) LIKE ANY($1::text[]) OR lower(source_system_id) LIKE ANY($1::text[]) OR owner_subject_hash=$2 LIMIT 10001", [projectionSearchPatterns([], owner), runtimeSubjectHash(owner.subjectId)]);
+    const history = await this.pool.query<{ event_id: string; owner_issuer: string | null; owner_subject_hash: string | null }>("SELECT event_id,owner_issuer,owner_subject_hash FROM cop_track_history WHERE owner_subject_hash=$1 OR lower(object_id) LIKE ANY($2::text[]) OR lower(source_system_id) LIKE ANY($2::text[]) LIMIT 10001", [runtimeSubjectHash(owner.subjectId), projectionSearchPatterns([], owner)]);
+    return { ...runtimeAssessment([rows.rows, history.rows]), ready: rows.rows.length <= 10000 && history.rows.length <= 10000 && [...rows.rows, ...history.rows].every(row =>
+      row.owner_issuer === owner.issuer && row.owner_subject_hash === runtimeSubjectHash(owner.subjectId)) };
+  }
+  async eraseResourceProjections(resources: ProjectionResources, context: ProjectionEraseContext): Promise<boolean> {
+    const refs = projectionReferences(resources), aliases = refs.flatMap(ref => ref.kind === "communityReport" ? [ref.id, `community:${ref.id}`] : [ref.id]);
+    return projectionTransaction(this.pool, async client => {
+      await fenceProjectionResources(client, resources, context);
+      const patterns = projectionSearchPatterns(refs, context.actor);
+      const current = await client.query<{ object_id: string; source_system_id: string; object_json: unknown; owner_issuer: string | null; owner_subject_hash: string | null }>(
+        "SELECT object_id,source_system_id,object_json,owner_issuer,owner_subject_hash FROM cop_current_tracks WHERE lower(object_id)=ANY($1::text[]) OR lower(object_json::text) LIKE ANY($2::text[]) OR lower(source_system_id) LIKE ANY($2::text[]) OR owner_subject_hash=$3 LIMIT 10001",
+        [aliases, patterns, context.actor ? runtimeSubjectHash(context.actor.subjectId) : null]);
+      const history = await client.query<{ event_id: string; object_id: string; source_system_id: string; owner_issuer: string | null; owner_subject_hash: string | null }>(
+        "SELECT event_id,object_id,source_system_id,owner_issuer,owner_subject_hash FROM cop_track_history WHERE lower(object_id)=ANY($1::text[]) OR owner_subject_hash=$2 OR lower(object_id) LIKE ANY($3::text[]) OR lower(source_system_id) LIKE ANY($3::text[]) LIMIT 10001", [aliases, context.actor ? runtimeSubjectHash(context.actor.subjectId) : null, patterns]);
+      if (current.rows.length > 10000 || history.rows.length > 10000) return false;
+      let complete = true;
+      const owned = (row: { object_id: string; source_system_id: string; owner_issuer: string | null; owner_subject_hash: string | null }) => {
+        if (row.owner_issuer && (!context.actor || row.owner_issuer !== context.actor.issuer || row.owner_subject_hash !== runtimeSubjectHash(context.actor.subjectId))) return false;
+        const ref = canonicalProjectionReference(row.object_id, row.source_system_id);
+        return !!(ref && refs.some(item => item.kind === ref.kind && item.id === ref.id)) || !!(context.actor && row.owner_issuer === context.actor.issuer && row.owner_subject_hash === runtimeSubjectHash(context.actor.subjectId));
+      };
+      for (const row of current.rows) {
+        context.signal.throwIfAborted();
+        if (!owned(row)) { complete = false; continue; }
+        await client.query("DELETE FROM cop_current_tracks WHERE object_id=$1", [row.object_id]);
+      }
+      for (const row of history.rows) {
+        context.signal.throwIfAborted();
+        if (!owned(row)) { complete = false; continue; }
+        await client.query("DELETE FROM cop_track_history WHERE event_id=$1", [row.event_id]);
+      }
+      const remaining = await client.query("SELECT 1 FROM cop_current_tracks WHERE lower(object_id)=ANY($1::text[]) OR lower(object_json::text) LIKE ANY($2::text[]) OR lower(source_system_id) LIKE ANY($2::text[]) OR owner_subject_hash=$3 UNION ALL SELECT 1 FROM cop_track_history WHERE lower(object_id)=ANY($1::text[]) OR lower(object_id) LIKE ANY($2::text[]) OR lower(source_system_id) LIKE ANY($2::text[]) OR owner_subject_hash=$3 LIMIT 1", [aliases, patterns, context.actor ? runtimeSubjectHash(context.actor.subjectId) : null]);
+      context.signal.throwIfAborted(); return complete && !remaining.rowCount;
+    }, true);
   }
 
   diagnostics(): string | undefined {
@@ -285,6 +352,12 @@ CREATE TABLE IF NOT EXISTS cop_current_tracks (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE cop_track_history ADD COLUMN IF NOT EXISTS owner_issuer text;
+ALTER TABLE cop_track_history ADD COLUMN IF NOT EXISTS owner_subject_hash text;
+ALTER TABLE cop_current_tracks ADD COLUMN IF NOT EXISTS owner_issuer text;
+ALTER TABLE cop_current_tracks ADD COLUMN IF NOT EXISTS owner_subject_hash text;
+CREATE INDEX IF NOT EXISTS cop_track_history_owner_idx ON cop_track_history(owner_subject_hash);
+CREATE INDEX IF NOT EXISTS cop_current_tracks_owner_idx ON cop_current_tracks(owner_subject_hash);
 CREATE INDEX IF NOT EXISTS cop_current_tracks_last_updated_idx
   ON cop_current_tracks (last_updated_at DESC);
 

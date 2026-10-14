@@ -1,6 +1,9 @@
 import type { AiEmbeddingResponse } from "@cop/ai-gateway";
 import { createHash } from "node:crypto";
 import { aiIntentSuppressesRoutineCivilAir, inferAiRetrievalIntent, isRoutineCivilAirText, type AiRetrievalIntent } from "./ai-retrieval-intent.js";
+import { aiCopiesAssessment, aiDocumentScope, aiQueryScope, aiScopeMatch, cloneAiSemanticDocument, type AiCopyScope, type AiProjectionFence } from "./ai-retained-copies-erasure.js";
+import { projectionReferences, type ProjectionEraseContext, type ProjectionResources } from "./resource-projection-erasure.js";
+import { requireRuntimeOwner, runtimeOwnerHash, type RuntimeOwner, type RuntimeOwnerAssessment } from "./runtime-owner-erasure.js";
 
 export type AiSemanticEntityType =
   | "alert"
@@ -73,6 +76,7 @@ interface CachedEmbedding {
   embedding: number[];
   lastUsedAt: number;
   model: string;
+  scope: AiCopyScope;
 }
 
 export class AiSemanticRetriever {
@@ -80,11 +84,60 @@ export class AiSemanticRetriever {
   private readonly enabled: boolean;
   private readonly maxCacheEntries: number;
   private readonly maxDocuments: number;
+  private aiFence?: AiProjectionFence;
+  private readonly activeRuns = new Set<{ documents: AiSemanticDocument[]; queryScope: AiCopyScope; controller: AbortController; owner?: RuntimeOwner }>();
+  private readonly activeEmbeddings = new Set<AiCopyScope>();
 
   constructor(private readonly options: AiSemanticRetrieverOptions) {
     this.enabled = options.enabled !== false;
     this.maxCacheEntries = Math.max(0, Math.trunc(options.maxCacheEntries ?? 500));
     this.maxDocuments = Math.max(1, Math.trunc(options.maxDocuments ?? 12));
+  }
+
+  bindAiProjectionFence(fence: AiProjectionFence): boolean {
+    if (this.aiFence && this.aiFence !== fence) return false;
+    this.aiFence = fence;
+    // Old derivative vectors without a trustworthy manifest are reconstructible;
+    // actually invalidate them rather than claim an owner from today's login.
+    for (const [id, value] of this.cache) if (value.scope.unknown) this.cache.delete(id);
+    return true;
+  }
+  aiProjectionFenceMatches(fence: AiProjectionFence): boolean { return this.aiFence === fence; }
+  retainedCopyDiagnostics(): { embeddingCacheEntries: number; activeProviderEmbeddings: number; activeRuns: number } {
+    return { embeddingCacheEntries: this.cache.size, activeProviderEmbeddings: this.activeEmbeddings.size, activeRuns: this.activeRuns.size };
+  }
+  purgeFencedAiCopies(): boolean {
+    if (!this.aiFence?.ready()) return false;
+    for (const [id, value] of this.cache) if (this.aiFence.matchFenced(value.scope) === "owned") this.cache.delete(id);
+    for (const run of this.activeRuns) if (this.aiFence.matchFenced(run.queryScope) === "owned" ||
+      run.documents.some(document => this.aiFence!.matchFenced(aiDocumentScope(document, run.owner)) === "owned")) {
+      run.controller.abort(new Error("AI_COPY_FENCED"));
+      for (let i = run.documents.length - 1; i >= 0; i--) if (this.aiFence.matchFenced(aiDocumentScope(run.documents[i]!, run.owner)) === "owned") run.documents.splice(i, 1);
+    }
+    return ![...this.cache.values()].some(value => this.aiFence!.matchFenced(value.scope) !== "none") &&
+      ![...this.activeEmbeddings].some(scope => this.aiFence!.matchFenced(scope) !== "none") &&
+      ![...this.activeRuns].some(run => this.aiFence!.matchFenced(run.queryScope) !== "none" || run.documents.some(document => this.aiFence!.matchFenced(aiDocumentScope(document, run.owner)) !== "none"));
+  }
+  preflightAiCopies(owner: RuntimeOwner): RuntimeOwnerAssessment {
+    requireRuntimeOwner(owner);
+    const scopes = [...this.cache.values()].map(value => value.scope).concat([...this.activeEmbeddings]);
+    for (const run of this.activeRuns) scopes.push(run.queryScope, ...run.documents.map(document => aiDocumentScope(document, run.owner)));
+    return aiCopiesAssessment(scopes, owner);
+  }
+  eraseAiCopies(resources: ProjectionResources, context: ProjectionEraseContext): boolean {
+    context.signal.throwIfAborted(); if (!context.actor || !this.aiFence?.ready()) return false;
+    const references = projectionReferences(resources), owner = context.actor;
+    this.aiFence.fence(owner, resources);
+    for (const [id, value] of this.cache) if (aiScopeMatch(value.scope, references, owner) === "owned") this.cache.delete(id);
+    for (const run of this.activeRuns) if (aiScopeMatch(run.queryScope, references, owner) === "owned" ||
+      run.documents.some(document => aiScopeMatch(aiDocumentScope(document, run.owner), references, owner) === "owned")) {
+      run.controller.abort(new Error("AI_COPY_FENCED"));
+      for (let i = run.documents.length - 1; i >= 0; i--) if (aiScopeMatch(aiDocumentScope(run.documents[i]!, run.owner), references, owner) === "owned") run.documents.splice(i, 1);
+    }
+    const retained = [...this.cache.values()].some(value => aiScopeMatch(value.scope, references, owner) !== "none") ||
+      [...this.activeEmbeddings].some(scope => aiScopeMatch(scope, references, owner) !== "none") ||
+      [...this.activeRuns].some(run => aiScopeMatch(run.queryScope, references, owner) !== "none" || run.documents.some(document => aiScopeMatch(aiDocumentScope(document, run.owner), references, owner) !== "none"));
+    context.signal.throwIfAborted(); return !retained;
   }
 
   async retrieve(input: {
@@ -94,10 +147,17 @@ export class AiSemanticRetriever {
     query: string;
     retrievalIntent?: AiRetrievalIntent;
     signal?: AbortSignal;
+    /** Server-verified requester; never browser-selected billing/owner data. */
+    owner?: RuntimeOwner;
   }): Promise<AiSemanticContext> {
     const query = input.query.trim();
     const retrievalIntent = input.retrievalIntent ?? inferAiRetrievalIntent(query);
-    const documents = dedupeDocuments(input.documents).filter((document) => document.text.trim());
+    const requester = input.owner ? Object.freeze({ ...input.owner }) : undefined;
+    if (requester) requireRuntimeOwner(requester);
+    const queryScope = aiQueryScope(query, requester);
+    if (this.aiFence) this.aiFence.assertAllowed(queryScope, requester);
+    const documents = dedupeDocuments(input.documents).filter((document) => document.text.trim()).map(cloneAiSemanticDocument)
+      .filter(document => !this.aiFence || this.aiFence.allows(aiDocumentScope(document, requester), requester));
     if (!this.enabled) {
       return this.empty(input.generatedAt, query, "disabled", "Semantic retrieval is disabled.", retrievalIntent);
     }
@@ -108,10 +168,14 @@ export class AiSemanticRetriever {
     const timeoutMs = this.options.timeoutMs ?? 20000;
     const timer = setTimeout(() => controller.abort(new Error(`Semantic retrieval timed out after ${timeoutMs} ms.`)), timeoutMs);
     const signal = input.signal ? AbortSignal.any([controller.signal, input.signal]) : controller.signal;
+    const active = { documents, queryScope, controller, ...(requester ? { owner: { ...requester } } : {}) };
+    this.activeRuns.add(active);
     try {
-      const queryEmbedding = await this.embed(`query\n${query}`, signal);
+      const queryEmbedding = await this.embed(`query\n${query}`, signal, queryScope, requester);
       const scored = await mapWithConcurrency(documents, 4, async (document) => {
-        const embedding = await this.embed(documentEmbeddingText(document), signal);
+        const scope = aiDocumentScope(document, requester);
+        const embedding = await this.embed(documentEmbeddingText(document), signal, scope, requester);
+        signal.throwIfAborted(); this.aiFence?.assertAllowed(scope, requester);
         const semanticScore = cosineSimilarity(queryEmbedding.embedding, embedding.embedding);
         const priorityScore = crisisPriorityScore(document, retrievalIntent);
         return {
@@ -124,6 +188,7 @@ export class AiSemanticRetriever {
       });
       const limit = Math.max(1, Math.min(Math.trunc(input.limit ?? this.maxDocuments), this.maxDocuments));
       const items = scored
+        .filter(item => !this.aiFence || this.aiFence.allows(aiDocumentScope(item.document, requester), requester))
         .filter((item) => Number.isFinite(item.score))
         .sort((left, right) => right.score - left.score || left.document.documentId.localeCompare(right.document.documentId))
         .slice(0, limit)
@@ -160,6 +225,8 @@ export class AiSemanticRetriever {
       return this.empty(input.generatedAt, query, "degraded", `Semantic retrieval unavailable: ${errorMessage(error)}`, retrievalIntent);
     } finally {
       clearTimeout(timer);
+      this.activeRuns.delete(active);
+      documents.length = 0;
     }
   }
 
@@ -177,23 +244,37 @@ export class AiSemanticRetriever {
     };
   }
 
-  private async embed(text: string, signal: AbortSignal): Promise<CachedEmbedding> {
+  private async embed(text: string, signal: AbortSignal, scope: AiCopyScope, owner?: RuntimeOwner): Promise<CachedEmbedding> {
     signal.throwIfAborted();
+    this.aiFence?.assertAllowed(scope, owner);
     const key = createHash("sha256").update(text).digest("hex");
     const cached = this.cache.get(key);
     const now = Date.now();
     if (cached) {
+      this.aiFence?.assertAllowed(cached.scope, owner);
+      cached.scope = { resources: [...new Set([...cached.scope.resources, ...scope.resources])], owners: [...new Set([...cached.scope.owners, ...scope.owners])],
+        subjects: [...new Set([...cached.scope.subjects, ...scope.subjects])], resourceMentions: [...new Set([...cached.scope.resourceMentions, ...scope.resourceMentions])], unknown: cached.scope.unknown || scope.unknown,
+        verifiedOwners: [...new Map([...cached.scope.verifiedOwners, ...scope.verifiedOwners].map(value => [runtimeOwnerHash(value), value])).values()] };
       cached.lastUsedAt = now;
       return cached;
     }
-    const response = await abortableEmbedding(() => this.options.embedText(text.slice(0, 4000), signal), signal);
+    const response = await abortableEmbedding(() => {
+      this.aiFence?.assertAllowed(scope, owner);
+      this.activeEmbeddings.add(scope);
+      // Retain the lease until the actual provider promise settles, even when
+      // abortableEmbedding already abandoned a transport that ignored abort.
+      return Promise.resolve().then(() => { signal.throwIfAborted(); this.aiFence?.assertAllowed(scope, owner);
+        return this.options.embedText(text.slice(0, 4000), signal); }).finally(() => this.activeEmbeddings.delete(scope));
+    }, signal);
     signal.throwIfAborted();
+    this.aiFence?.assertAllowed(scope, owner);
     const next = {
       embedding: response.embedding,
       lastUsedAt: now,
-      model: response.model
+      model: response.model,
+      scope
     };
-    if (this.maxCacheEntries > 0) {
+    if (this.maxCacheEntries > 0 && (!this.aiFence || !scope.unknown)) {
       this.cache.set(key, next);
       this.evictCache();
     }

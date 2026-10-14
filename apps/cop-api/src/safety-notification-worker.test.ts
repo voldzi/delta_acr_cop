@@ -71,6 +71,32 @@ function deferred<T>() {
 }
 
 describe("automatic opt-in safety notifications", () => {
+  it("waits for a held manual run and prevents post-erasure dispatch while another owner keeps working", async () => {
+    const f = fixture(), issuer = "https://identity.synthetic.test/realms/cop";
+    for (const subjectId of ["alice", "bob"]) {
+      await f.profileStore.upsertProfile({ issuer, subjectId, username: subjectId, displayName: "Synthetic", preferences: {}, alertPreferences: { aoiRules: [home] } });
+      await f.profileStore.setSafetyNotificationsEnabled(subjectId, true);
+    }
+    const entered = deferred<void>(), release = deferred<boolean>();
+    f.hasEligibleDevice.mockImplementationOnce(() => { entered.resolve(); return release.promise; });
+    const guard = vi.fn(async (owner?: { issuer: string; subjectId: string }) => {
+      if (!owner || owner.issuer !== issuer) throw new Error("unproven owner");
+    });
+    const worker = new SafetyNotificationWorker({ ...f.deps, assertAccountAllowed: guard }, config);
+    const run = worker.runForRecipient("alice", recipientCollection([candidate()]));
+    await entered.promise;
+    let finished = false;
+    const erase = worker.projectionErasureOwner().erase({ reportIds: [], groupIds: [] }, {
+      actor: { issuer, subjectId: "alice" }, operationId: "317015c1-b7fa-413d-9c44-3d44b851f8a4", signal: new AbortController().signal
+    }).then(value => { finished = true; return value; });
+    await Promise.resolve(); expect(finished).toBe(false);
+    release.resolve(true); await run; expect(await erase).toBe(true);
+    expect(f.dispatch).not.toHaveBeenCalled();
+    expect((await worker.runForRecipient("alice", recipientCollection([candidate()]))).acceptedCount).toBe(0);
+    expect((await worker.runForRecipient("bob", recipientCollection([candidate()]))).acceptedCount).toBe(1);
+    expect(f.dispatch.mock.calls[0]![0].notification.audience).toEqual({ userIds: ["bob"] });
+    expect(await new SafetyNotificationWorker(f.deps, config).projectionErasureOwner().ready()).toBe(false);
+  });
   it("isolates two persisted users and matching areas, without group/area broadcasts", async () => {
     const f = fixture();
     await profile(f.profileStore, "alice"); await profile(f.profileStore, "bob", [far]);

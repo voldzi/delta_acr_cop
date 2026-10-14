@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { AiSemanticCitation, AiSemanticContext, AiSemanticDocument, AiSemanticRetriever } from "./ai-semantic-retrieval.js";
 import type { AiRetrievalIntent } from "./ai-retrieval-intent.js";
+import { aiCopiesAssessment, aiDocumentScope, aiQueryScope, aiScopeMatch, cloneAiSemanticDocument, type AiProjectionFence } from "./ai-retained-copies-erasure.js";
+import { projectionReferences, type ProjectionEraseContext, type ProjectionResources } from "./resource-projection-erasure.js";
+import { requireRuntimeOwner, type RuntimeOwner, type RuntimeOwnerAssessment } from "./runtime-owner-erasure.js";
 
 export interface AiContextGeoFilter {
   bbox?: AiContextBbox;
@@ -82,10 +85,56 @@ export class AiContextIndex {
   private readonly maxDocuments: number;
   private lastRefreshReason: string | undefined;
   private refreshedAt: string | undefined;
+  private aiFence?: AiProjectionFence;
+  private readonly activeQueries = new Set<{ documents: AiSemanticDocument[]; matched: AiSemanticDocument[]; controller: AbortController; owner?: RuntimeOwner }>();
 
   constructor(options: AiContextIndexOptions = {}) {
     this.enabled = options.enabled !== false;
     this.maxDocuments = Math.max(1, Math.trunc(options.maxDocuments ?? 800));
+  }
+
+  bindAiProjectionFence(fence: AiProjectionFence): boolean {
+    if (this.aiFence && this.aiFence !== fence) return false;
+    this.aiFence = fence; return true;
+  }
+  aiProjectionFenceMatches(fence: AiProjectionFence): boolean { return this.aiFence === fence; }
+  purgeFencedAiCopies(): boolean {
+    if (!this.aiFence?.ready()) return false;
+    for (const [id, value] of this.documents) if (this.aiFence.matchFenced(aiDocumentScope(value.document)) === "owned") this.documents.delete(id);
+    for (const run of this.activeQueries) if (this.aiFence.matchFenced(aiQueryScope("", run.owner)) === "owned" ||
+      run.documents.some(document => this.aiFence!.matchFenced(aiDocumentScope(document, run.owner)) === "owned")) {
+      run.controller.abort(new Error("AI_COPY_FENCED"));
+      for (const values of [run.documents, run.matched]) for (let i = values.length - 1; i >= 0; i--) {
+        if (this.aiFence.matchFenced(aiDocumentScope(values[i]!, run.owner)) === "owned") values.splice(i, 1);
+      }
+    }
+    return ![...this.documents.values()].some(value => this.aiFence!.matchFenced(aiDocumentScope(value.document)) !== "none") &&
+      ![...this.activeQueries].some(run => this.aiFence!.matchFenced(aiQueryScope("", run.owner)) !== "none" ||
+        run.documents.some(document => this.aiFence!.matchFenced(aiDocumentScope(document, run.owner)) !== "none"));
+  }
+  preflightAiCopies(owner: RuntimeOwner): RuntimeOwnerAssessment {
+    requireRuntimeOwner(owner);
+    const scopes = [...this.documents.values()].map(value => aiDocumentScope(value.document));
+    for (const run of this.activeQueries) scopes.push(...run.documents.map(document => aiDocumentScope(document, run.owner)));
+    return aiCopiesAssessment(scopes, owner);
+  }
+  eraseAiCopies(resources: ProjectionResources, context: ProjectionEraseContext): boolean {
+    context.signal.throwIfAborted(); if (!context.actor || !this.aiFence?.ready()) return false;
+    const references = projectionReferences(resources), owner = context.actor;
+    this.aiFence.fence(owner, resources);
+    for (const [id, value] of this.documents) if (aiScopeMatch(aiDocumentScope(value.document), references, owner) === "owned") this.documents.delete(id);
+    for (const run of this.activeQueries) {
+      if (run.documents.some(document => aiScopeMatch(aiDocumentScope(document, run.owner), references, owner) === "owned")) {
+        run.controller.abort(new Error("AI_COPY_FENCED"));
+        for (const values of [run.documents, run.matched]) for (let i = values.length - 1; i >= 0; i--) {
+          if (aiScopeMatch(aiDocumentScope(values[i]!, run.owner), references, owner) === "owned") values.splice(i, 1);
+        }
+      }
+    }
+    const retained = [...this.documents.values()].some(value => aiScopeMatch(aiDocumentScope(value.document), references, owner) !== "none");
+    const active = [...this.activeQueries].some(run => run.owner?.issuer === owner.issuer && run.owner.subjectId === owner.subjectId ||
+      run.documents.some(document => aiScopeMatch(aiDocumentScope(document, run.owner), references, owner) !== "none"));
+    context.signal.throwIfAborted(); return !retained && !active;
   }
 
   replaceDocuments(documents: AiSemanticDocument[], input: { indexedAt: Date; reason: string }): AiContextIndexRefreshResult {
@@ -103,7 +152,10 @@ export class AiContextIndex {
     }
     const indexedAt = input.indexedAt.toISOString();
     this.documents.clear();
-    for (const document of documents.filter((item) => item.text.trim()).slice(0, this.maxDocuments)) {
+    for (const original of documents.filter((item) => item.text.trim())) {
+      if (this.documents.size >= this.maxDocuments) break;
+      const document = cloneAiSemanticDocument(original);
+      if (this.aiFence && !this.aiFence.allows(aiDocumentScope(document))) continue;
       this.documents.set(document.documentId, {
         document,
         indexedAt
@@ -151,6 +203,9 @@ export class AiContextIndex {
     query: string;
     retrievalIntent?: AiRetrievalIntent;
     timeWindow?: AiContextTimeWindow;
+    /** Only the server-verified requester; never request-body identity. */
+    owner?: RuntimeOwner;
+    signal?: AbortSignal;
   }): Promise<AiIndexedContext> {
     const startedAt = Date.now();
     const invocationId = randomUUID();
@@ -161,6 +216,11 @@ export class AiContextIndex {
     const matchedDocuments = this.enabled
       ? allDocuments.filter((document) => matchesGeoFilter(document, input.geo) && matchesTimeWindow(document, input.timeWindow, input.generatedAt))
       : [];
+    const requester = input.owner ? Object.freeze({ ...input.owner }) : undefined;
+    if (requester) requireRuntimeOwner(requester);
+    if (this.aiFence) for (let i = matchedDocuments.length - 1; i >= 0; i--) {
+      if (!this.aiFence.allows(aiDocumentScope(matchedDocuments[i]!, requester), requester)) matchedDocuments.splice(i, 1);
+    }
     if (!this.enabled) {
       warnings.push("COP AI context index is disabled.");
     }
@@ -170,15 +230,29 @@ export class AiContextIndex {
     if (this.enabled && allDocuments.length > 0 && matchedDocuments.length === 0) {
       warnings.push("COP AI context index matched no documents for the requested geo/time filter.");
     }
-    const semanticContext = this.enabled
+    const controller = new AbortController();
+    const active = { documents: allDocuments, matched: matchedDocuments, controller, ...(requester ? { owner: { ...requester } } : {}) };
+    this.activeQueries.add(active);
+    let semanticContext: AiSemanticContext;
+    try {
+      semanticContext = this.enabled
       ? remapSemanticContextCitations(await retriever.retrieve({
           documents: matchedDocuments,
           generatedAt: input.generatedAt,
           limit,
           query,
-          ...(input.retrievalIntent ? { retrievalIntent: input.retrievalIntent } : {})
+          ...(input.retrievalIntent ? { retrievalIntent: input.retrievalIntent } : {}),
+          ...(requester ? { owner: requester } : {}),
+          signal: input.signal ? AbortSignal.any([controller.signal, input.signal]) : controller.signal
         }), "I")
       : emptySemanticContext(input.generatedAt, query, "disabled", warnings[0] ?? "COP AI context index is disabled.", input.retrievalIntent);
+      if (this.aiFence) {
+        const allowed = new Set(matchedDocuments.filter(document => this.aiFence!.allows(aiDocumentScope(document, requester), requester)).map(document => document.documentId));
+        semanticContext.items = semanticContext.items.filter(item => allowed.has(item.documentId));
+        semanticContext.citations = semanticContext.items.map(item => item.citation);
+        semanticContext.includedDocumentCount = semanticContext.items.length;
+      }
+    } finally { this.activeQueries.delete(active); }
     for (const warning of warnings) {
       if (!semanticContext.warnings.includes(warning)) {
         semanticContext.warnings.push(warning);

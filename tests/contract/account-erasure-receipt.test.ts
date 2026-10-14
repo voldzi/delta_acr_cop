@@ -5,7 +5,7 @@ const openapi=JSON.parse(readFileSync(new URL("../../openapi/openapi.json",impor
 const components={schemas:{AccountErasureReceipt:openapi.components.schemas.AccountErasureReceipt,
   AccountErasureRequest:openapi.components.schemas.AccountErasureRequest,AccountErasureCapabilities:openapi.components.schemas.AccountErasureCapabilities, AccountErasurePreflight:openapi.components.schemas.AccountErasurePreflight}};
 const compile=(schema:Record<string,unknown>)=>createAjv().compile({...schema,components});
-const pending={contractVersion:"cop-account-erasure-v1",operationId:"24c37f84-62d6-4b65-9c62-f2dcb17c349d",
+const pending={contractVersion:"cop-account-erasure-v1",deletionScope:"cop_jizda_preserve_shared_identity_sim",operationId:"24c37f84-62d6-4b65-9c62-f2dcb17c349d",
   status:"deleting",requestedAt:"2026-10-11T00:00:00Z",accountDeleted:false,revocationEnforced:true,
   remaining:["sim_measurements"],pendingReasons:{sim_measurements:"cleanup_pending"}};
 const completed={...pending,status:"deleted",accountDeleted:true,remaining:[],pendingReasons:{},completedAt:"2026-10-11T00:05:00Z"};
@@ -16,7 +16,7 @@ describe("whole COP erasure binding contract",()=>{
     for(const value of [{...pending,remaining:[]},{...completed,remaining:["sim_measurements"]},
       {...pending,completedAt:completed.completedAt},{...completed,completedAt:undefined},
       {...pending,remaining:["unknown"]},{...pending,remaining:["sim_measurements","sim_measurements"]},
-      {...pending,accountDeleted:true},{...pending,subjectId:"another-user"}])expect(validate(value)).toBe(false);
+      {...pending,accountDeleted:true},{...pending,deletionScope:undefined},{...completed,deletionScope:"shared_identity_deleted"},{...pending,subjectId:"another-user"}])expect(validate(value)).toBe(false);
   });
   it("accepts POST200 only for deleted and POST202 only for pending",()=>{
     const responses=openapi.paths["/api/v1/me/account-deletion"].post.responses;
@@ -42,10 +42,10 @@ describe("whole COP erasure binding contract",()=>{
 describe("preflight and independent receipt capability contract",()=>{
   it("requires a complete server plan only for an unblocked preflight and never a JSON capability",()=>{
     const validate=compile({$ref:"#/components/schemas/AccountErasurePreflight"});
-    const ready={contractVersion:"cop-account-erasure-preflight-v1",operationId:pending.operationId,canConfirm:true,planId:pending.operationId,confirmBy:"2026-10-13T12:05:00Z",blockers:[]};
-    const blocked={contractVersion:"cop-account-erasure-preflight-v1",operationId:pending.operationId,canConfirm:false,blockers:[{domain:"cop_sessions_profiles",reason:"ownership_unresolved"}]};
+    const ready={contractVersion:"cop-account-erasure-preflight-v1",deletionScope:"cop_jizda_preserve_shared_identity_sim",operationId:pending.operationId,canConfirm:true,planId:pending.operationId,confirmBy:"2026-10-13T12:05:00Z",blockers:[]};
+    const blocked={contractVersion:"cop-account-erasure-preflight-v1",deletionScope:"cop_jizda_preserve_shared_identity_sim",operationId:pending.operationId,canConfirm:false,blockers:[{domain:"cop_sessions_profiles",reason:"ownership_unresolved"}]};
     expect(validate(ready)).toBe(true);expect(validate(blocked)).toBe(true);
-    for(const value of [{...ready,planId:undefined},{...ready,blockers:blocked.blockers},{...blocked,planId:pending.operationId},{...ready,capability:"must-not-be-json"},{...blocked,blockers:[]}])expect(validate(value)).toBe(false);
+    for(const value of [{...ready,planId:undefined},{...ready,deletionScope:undefined},{...ready,deletionScope:"shared_identity_deleted"},{...ready,blockers:blocked.blockers},{...blocked,planId:pending.operationId},{...ready,capability:"must-not-be-json"},{...blocked,blockers:[]}])expect(validate(value)).toBe(false);
   });
   it("reserves capability authority to the dedicated GET and retains strict v1 receipt",()=>{
     const tracking=openapi.paths["/api/v1/me/account-deletion/receipts/{operationId}"].get;

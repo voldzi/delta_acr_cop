@@ -34,6 +34,7 @@ export type GroupState = {
 export type PrincipalAccount = Wire.MobilityAccount & { issuer: string; subject: string };
 export type MobilityOperationReceipt = { hash: string; result?: unknown; createdAt: string; expired?: boolean };
 type Receipt = MobilityOperationReceipt;
+export type MobilityTransactionGuard = (transaction: MobilityTransaction, actor: AuthenticatedActor) => Promise<void>;
 export type Invite = {
   invitationId: string;
   entityType: "vehicle" | "group";
@@ -44,6 +45,8 @@ export type Invite = {
   expiresAt: string;
   state: "pending" | "accepted" | "revoked";
   acceptedBy?: string;
+  /** Verified account bindings captured at creation; never reconstructed from a later login. */
+  recipientAccountIds?: string[];
 };
 const fullCapabilities: Wire.SharedVehicleMember["capabilities"] = [
   "readVehicle",
@@ -76,7 +79,8 @@ export function requireMobility(condition: unknown, status: number, code: string
 export class MobilityService {
   constructor(
     readonly store: MobilityStore,
-    readonly now: () => Date = () => new Date()
+    readonly now: () => Date = () => new Date(),
+    readonly transactionGuard?: MobilityTransactionGuard
   ) {}
   async pruneRetainedData(): Promise<void> {
     const cutoff = this.now().getTime() - 30 * 86400000;
@@ -107,9 +111,12 @@ export class MobilityService {
     );
     const identity = mobilityDigest({ issuer: actor.issuer, subject: actor.subjectId });
     return this.store.transact([`identity:${identity}`], async (tx) => {
+      await this.transactionGuard?.(tx, actor);
       requireMobility(!await tx.get(mobilityIdentityFenceKey(identity)), 403, "ACCOUNT_ERASURE_FENCED", "Účet se odstraňuje.");
       const current = await tx.get<PrincipalAccount>(`identity:${identity}`);
       if (current) await this.assertAccountAllowed(tx, current.accountId);
+      else requireMobility(!(await tx.scan<PrincipalAccount>("account:")).some(entry => entry.value.issuer === actor.issuer && entry.value.subject === actor.subjectId),
+        503, "MOBILITY_IDENTITY_UNAVAILABLE", "Ověření účtu není dostupné.");
       const value: PrincipalAccount = {
         contractVersion: "cop-mobility-account-v1",
         accountId: current?.accountId ?? randomUUID(),
@@ -122,6 +129,13 @@ export class MobilityService {
       };
       await tx.set(`identity:${identity}`, value);
       await tx.set(`account:${value.accountId}`, value);
+      if (!current) await tx.set(`account-provenance:${value.accountId}`, { version: 1, identity,
+        verifiedEmailHistoryComplete: !value.email || value.emailVerified });
+      else if (value.email && !value.emailVerified) {
+        const provenance = await tx.get<{ version: number; identity: string; verifiedEmailHistoryComplete: boolean }>(`account-provenance:${value.accountId}`);
+        if (provenance?.version === 1 && provenance.identity === identity) await tx.set(`account-provenance:${value.accountId}`, { ...provenance, verifiedEmailHistoryComplete: false });
+      }
+      if (value.emailVerified && value.email) await tx.set(`account-email:${value.accountId}:${mobilityDigest(normalizeEmail(value.email))}`, { version: 1, accountId: value.accountId });
       const { issuer: _issuer, subject: _subject, ...publicValue } = value;
       return publicValue;
     });
@@ -152,6 +166,16 @@ export class MobilityService {
   /** Runs inside the same transaction lock as erasure, including receipt replay. */
   async assertAccountAllowed(tx: MobilityTransaction, accountId: string): Promise<void> {
     requireMobility(!await mobilityAccountIsFenced(tx, accountId), 403, "ACCOUNT_ERASURE_FENCED", "Účet se odstraňuje.");
+    if (this.transactionGuard) {
+      const principal = await tx.get<PrincipalAccount>(`account:${accountId}`);
+      requireMobility(principal?.issuer && principal.subject && principal.accountId === accountId,
+        503, "MOBILITY_IDENTITY_UNAVAILABLE", "Ověření účtu není dostupné.");
+      const binding = await tx.get<PrincipalAccount>(`identity:${mobilityDigest({ issuer: principal.issuer, subject: principal.subject })}`);
+      requireMobility(binding?.accountId === accountId && binding.issuer === principal.issuer && binding.subject === principal.subject,
+        503, "MOBILITY_IDENTITY_UNAVAILABLE", "Ověření účtu není dostupné.");
+      await this.transactionGuard(tx, { authMode: "oidc", issuer: principal.issuer, subjectId: principal.subject,
+        displayName: "", username: "", roles: [] });
+    }
   }
   async vehicle(
     tx: MobilityTransaction,

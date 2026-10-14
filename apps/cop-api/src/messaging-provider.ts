@@ -1096,6 +1096,7 @@ export class CsmMessagingProvider implements MessagingProvider {
           body: JSON.stringify(input),
           headers: {
             ...(actor ? actorHeaders(actor) : {}),
+            ...(actor?.authMode === "oidc" && actor.issuer ? { "x-csm-oidc-issuer": actor.issuer } : {}),
             "Content-Type": "application/json",
             "Idempotency-Key": idempotencyKey
           },
@@ -2107,6 +2108,7 @@ function actorHeaders(actor: AuthenticatedActor, deviceId?: string): Record<stri
   if (!/^[\x21-\x7e]{1,256}$/u.test(actor.subjectId)) throw new Error("Messaging actor identity is not header-safe.");
   const headers: Record<string, string> = {
     "x-csm-user-id": actor.subjectId,
+    ...(actor.authMode === "oidc" && actor.issuer ? { "x-csm-oidc-issuer": actor.issuer } : {}),
     "x-csm-user-name": safeHeaderValue(actor.displayName || actor.username, actor.subjectId),
     "x-csm-user-role": safeHeaderValue(actor.roles?.[0] ?? actor.authMode, "user")
   };

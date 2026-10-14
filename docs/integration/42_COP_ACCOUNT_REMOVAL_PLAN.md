@@ -1,10 +1,12 @@
 # 42 Separate whole COP account removal – implementation/activation plan
 
-Current source integration on 2026-10-13 preserves this separate workflow. The
-host uses one existing `csm-mobile` account and explicit local feature consent;
-dedicated OAuth provisioning is not authorized. Local feature disable is neither
-server revocation nor whole-account deletion. The real factory still connects
-only `cop_sessions_profiles`; the other ten domain adapters remain missing.
+Current completion work on 2026-10-14 preserves one existing `csm-mobile` account
+and explicit local feature consent. Local feature disable is neither server
+revocation nor whole-account deletion. The source factory now connects actual
+local owner components; external provider, restoration, permissions and live
+acceptance gates remain. [Integration43](43_ACCOUNT_SAFETY_COMPLETION.md) is the
+current evidence and production status; the original plan below is not a claim
+that all eleven providers are deployed or ready.
 
 Human approval in Jízda on 2026-10-11 permits adding a separate **Správa /
 odstranění účtu COP** action. It does not authorize testing on a real account,

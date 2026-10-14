@@ -2,6 +2,10 @@ import { PostgresRoadEnrichmentQueue, roadEnrichmentSchema, type RoadEnrichment,
 import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
 import { createCopPgPool } from "./cop-pg-pool.js";
 import { randomUUID } from "node:crypto";
+import { contentErasureSchema, type ContentErasureComponent } from "./content-erasure.js";
+import { communityErasureSchema, MemoryCommunityErasureBoundary, PostgresCommunityErasureBoundary, withVerifiedCommunityActor, type CommunityProjectionEraser } from "./community-erasure.js";
+import type { AuthenticatedActor } from "./security.js";
+import type { MediaStorage } from "./media-storage.js";
 
 export type CommunityReportCategory =
   | "fire"
@@ -49,6 +53,7 @@ export interface CommunityReportLocation {
 
 export interface CommunityReportActor {
   displayName: string;
+  issuer?: string;
   subjectId: string;
   username: string;
 }
@@ -191,6 +196,7 @@ export interface CreateCommunityAttachmentInput {
   objectKey: string;
   reportId: string;
   subjectId: string;
+  issuer?: string;
   uploadExpiresAt: string;
 }
 
@@ -201,6 +207,7 @@ export interface CompleteCommunityAttachmentInput {
   completedAt: string;
   reportId: string;
   subjectId: string;
+  issuer?: string;
 }
 
 export interface UpdateCommunityAttachmentMetadataInput {
@@ -290,6 +297,13 @@ export interface CommunityReportStore {
     input: CommunityReportLifecycleInput,
     now: Date
   ): Promise<CommunityReportRecord | null>;
+  withVerifiedActor?<T>(actor: AuthenticatedActor, run: () => T): T;
+  /** Server-only immutable ledger read; never serialized as public report data. */
+  readVerifiedProjectionOwner?(kind: "report", id: string): Promise<{ issuer: string; subjectId: string } | undefined>;
+  readVerifiedProjectionOwners?(kind: "report", ids: readonly string[]): Promise<Map<string, { issuer: string; subjectId: string }>>;
+  accountErasureComponent?(options?: { media?: MediaStorage; projections?: CommunityProjectionEraser; now?: () => Date }): ContentErasureComponent;
+  withOwnedMediaWrite?<T>(input: { reportId: string; attachmentId: string; objectKey: string }, run: () => Promise<T>): Promise<T>;
+  extendOwnedMediaUpload?(input: { reportId: string; attachmentId: string; objectKey: string; subjectId: string; issuer: string; expiresAt: string }): Promise<void>;
 }
 
 export function createCommunityReportStoreFromEnv(
@@ -326,10 +340,19 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
   >();
   private readonly groups = new Map<string, CommunityGroupRecord>();
   private readonly reports = new Map<string, CommunityReportRecord>();
+  private readonly erasure: MemoryCommunityErasureBoundary;
 
   constructor(name = "memory") {
     this.name = name;
+    this.erasure = new MemoryCommunityErasureBoundary({ reports: this.reports, groups: this.groups, attachments: this.attachments, confirmations: this.confirmations });
+    this.erasure.install(this);
   }
+  withVerifiedActor<T>(actor: AuthenticatedActor, run: () => T): T { return withVerifiedCommunityActor(actor, run); }
+  accountErasureComponent(options: { media?: MediaStorage; projections?: CommunityProjectionEraser; now?: () => Date } = {}): ContentErasureComponent { return this.erasure.component(this.name, options); }
+  readVerifiedProjectionOwner(kind: "report", id: string): Promise<{ issuer: string; subjectId: string } | undefined> { return this.erasure.readVerifiedProjectionOwner(kind, id); }
+  readVerifiedProjectionOwners(kind: "report", ids: readonly string[]): Promise<Map<string, { issuer: string; subjectId: string }>> { return this.erasure.readVerifiedProjectionOwners(kind, ids); }
+  withOwnedMediaWrite<T>(input: { reportId: string; attachmentId: string; objectKey: string }, run: () => Promise<T>): Promise<T> { return this.erasure.withOwnedMediaWrite(input, run); }
+  extendOwnedMediaUpload(input: { reportId: string; attachmentId: string; objectKey: string; subjectId: string; issuer: string; expiresAt: string }): Promise<void> { return this.erasure.extendOwnedMediaUpload(input); }
 
   async init(): Promise<void> {}
 
@@ -346,7 +369,7 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
       attachments: [],
       category: input.category,
       createdAt: timestamp,
-      createdBy: input.createdBy,
+      createdBy: { displayName: input.createdBy.displayName, subjectId: input.createdBy.subjectId, username: input.createdBy.username },
       ...(input.description ? { description: input.description } : {}),
       location: input.location,
       observedAt: input.observedAt,
@@ -385,7 +408,7 @@ export class InMemoryCommunityReportStore implements CommunityReportStore {
     const group: CommunityGroupRecord = {
       ...(input.anchorLocation ? { anchorLocation: input.anchorLocation } : {}),
       createdAt: timestamp,
-      createdBy: input.createdBy,
+      createdBy: { displayName: input.createdBy.displayName, subjectId: input.createdBy.subjectId, username: input.createdBy.username },
       ...(input.description ? { description: input.description } : {}),
       groupId: randomUUID(),
       metadata: input.metadata ?? {},
@@ -858,9 +881,13 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   readonly name = "postgres";
   private lastIdleClientError: string | undefined;
   private readonly pool: PgPool;
+  private readonly erasure: PostgresCommunityErasureBoundary;
+  private get database(): Pick<PgPool, "query"> { return this.erasure.database; }
 
   constructor(config: PoolConfig) {
     this.pool = createCopPgPool("community-report", config);
+    this.erasure = new PostgresCommunityErasureBoundary(this.pool);
+    this.erasure.install(this);
     this.roadEnrichmentQueue = new PostgresRoadEnrichmentQueue(this.pool);
     this.pool.on("error", (error) => {
       this.lastIdleClientError = errorMessage(error);
@@ -868,9 +895,17 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   }
 
   async init(): Promise<void> {
-    await this.pool.query(createCommunityReportTablesSql);
-    await this.pool.query(roadEnrichmentSchema);
+    await this.database.query(createCommunityReportTablesSql);
+    await this.database.query(roadEnrichmentSchema);
+    await this.database.query(contentErasureSchema);
+    await this.database.query(communityErasureSchema);
   }
+  withVerifiedActor<T>(actor: AuthenticatedActor, run: () => T): T { return withVerifiedCommunityActor(actor, run); }
+  accountErasureComponent(options: { media?: MediaStorage; projections?: CommunityProjectionEraser; now?: () => Date } = {}): ContentErasureComponent { return this.erasure.component(options); }
+  readVerifiedProjectionOwner(kind: "report", id: string): Promise<{ issuer: string; subjectId: string } | undefined> { return this.erasure.readVerifiedProjectionOwner(kind, id); }
+  readVerifiedProjectionOwners(kind: "report", ids: readonly string[]): Promise<Map<string, { issuer: string; subjectId: string }>> { return this.erasure.readVerifiedProjectionOwners(kind, ids); }
+  withOwnedMediaWrite<T>(input: { reportId: string; attachmentId: string; objectKey: string }, run: () => Promise<T>): Promise<T> { return this.erasure.withOwnedMediaWrite(input, run); }
+  extendOwnedMediaUpload(input: { reportId: string; attachmentId: string; objectKey: string; subjectId: string; issuer: string; expiresAt: string }): Promise<void> { return this.erasure.extendOwnedMediaUpload(input); }
 
   async createReport(input: CreateCommunityReportInput, now: Date): Promise<CommunityReportRecord> {
     const timestamp = now.toISOString();
@@ -880,7 +915,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
       kind: "created",
       version
     });
-    const result = await this.pool.query<CommunityReportRow>(
+    const result = await this.database.query<CommunityReportRow>(
       `INSERT INTO cop_community_reports (
         report_id,
         subject_id,
@@ -940,7 +975,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   }
 
   async getReport(reportId: string): Promise<CommunityReportRecord | null> {
-    const result = await this.pool.query<CommunityReportRow>(
+    const result = await this.database.query<CommunityReportRow>(
       "SELECT * FROM cop_community_reports WHERE report_id = $1",
       [reportId]
     );
@@ -954,9 +989,10 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   async createGroup(input: CreateCommunityGroupInput, now: Date): Promise<CommunityGroupRecord> {
     const groupId = randomUUID();
     const timestamp = now.toISOString();
-    const client = await this.pool.connect();
+    const provided = this.erasure.client;
+    const client = provided ?? await this.pool.connect();
     try {
-      await client.query("BEGIN");
+      if (!provided) await client.query("BEGIN");
       const groupResult = await client.query<CommunityGroupRow>(
         `INSERT INTO cop_community_groups (
           group_id, name, description, visibility, owner_subject_id, owner_username, owner_display_name,
@@ -1002,18 +1038,18 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
       // Return the inserted member without requesting another pooled connection
       // while this transaction still owns one (including a pool of size one).
       const group = groupFromRow(row, memberResult.rows.map(groupMemberFromRow));
-      await client.query("COMMIT");
+      if (!provided) await client.query("COMMIT");
       return group;
     } catch (error) {
-      await client.query("ROLLBACK");
+      if (!provided) await client.query("ROLLBACK");
       throw error;
     } finally {
-      client.release();
+      if (!provided) client.release();
     }
   }
 
   async getGroup(groupId: string): Promise<CommunityGroupRecord | null> {
-    const result = await this.pool.query<CommunityGroupRow>("SELECT * FROM cop_community_groups WHERE group_id = $1", [
+    const result = await this.database.query<CommunityGroupRow>("SELECT * FROM cop_community_groups WHERE group_id = $1", [
       groupId
     ]);
     const row = result.rows[0];
@@ -1030,7 +1066,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
       return { status: "last_manager" };
     }
     const timestamp = now.toISOString();
-    await this.pool.query(
+    await this.database.query(
       `UPDATE cop_community_group_members
       SET username = $3,
         display_name = $4,
@@ -1060,7 +1096,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
       return { status: "last_manager" };
     }
     const timestamp = now.toISOString();
-    await this.pool.query(
+    await this.database.query(
       `UPDATE cop_community_group_members
       SET status = 'left'
       WHERE group_id = $1
@@ -1074,7 +1110,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   }
 
   async deleteGroup(groupId: string, subjectId: string, _now: Date): Promise<boolean> {
-    const result = await this.pool.query(
+    const result = await this.database.query(
       `DELETE FROM cop_community_groups g
       WHERE g.group_id = $1
         AND EXISTS (
@@ -1091,7 +1127,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   }
 
   async deleteGroupForDemoScenario(groupId: string, demoScenarioId: string, _now: Date): Promise<boolean> {
-    const result = await this.pool.query(
+    const result = await this.database.query(
       `DELETE FROM cop_community_groups
       WHERE group_id = $1
         AND metadata->>'demoScenarioId' = $2`,
@@ -1104,7 +1140,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     const params: unknown[] = [];
     const clauses = buildCommunityGroupQueryClauses(query, params);
     const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(" OR ")}` : "";
-    const result = await this.pool.query<CommunityGroupRow>(
+    const result = await this.database.query<CommunityGroupRow>(
       `SELECT DISTINCT g.*
       FROM cop_community_groups g
       LEFT JOIN cop_community_group_members m ON m.group_id = g.group_id
@@ -1128,7 +1164,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     }
     const status: CommunityGroupMemberStatus = group.visibility === "public" ? "active" : "pending";
     const timestamp = now.toISOString();
-    await this.pool.query(
+    await this.database.query(
       `INSERT INTO cop_community_group_members (
         group_id, subject_id, username, display_name, role, status, requested_at, joined_at
       )
@@ -1166,7 +1202,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     }
     const timestamp = now.toISOString();
     const metadata = mergeCommunityGroupMetadata(group.metadata, input.metadata);
-    const result = await this.pool.query<CommunityGroupRow>(
+    const result = await this.database.query<CommunityGroupRow>(
       `UPDATE cop_community_groups
       SET metadata = $2::jsonb,
         updated_at = $3::timestamptz
@@ -1187,7 +1223,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
       return null;
     }
     const timestamp = now.toISOString();
-    await this.pool.query(
+    await this.database.query(
       `INSERT INTO cop_community_group_members (
         group_id, subject_id, username, display_name, role, status, requested_at, joined_at
       )
@@ -1258,7 +1294,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
       }
     }
     const nextLocation = input.location ?? existing.location;
-    const result = await this.pool.query<CommunityReportRow>(
+    const result = await this.database.query<CommunityReportRow>(
       `UPDATE cop_community_reports
       SET
         category = $3,
@@ -1299,7 +1335,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   }
 
   async deleteReport(reportId: string, subjectId: string, _now: Date): Promise<boolean> {
-    const result = await this.pool.query(
+    const result = await this.database.query(
       `DELETE FROM cop_community_reports
       WHERE report_id = $1
         AND subject_id = $2
@@ -1310,7 +1346,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   }
 
   async deleteReportForDemoScenario(reportId: string, demoScenarioId: string, _now: Date): Promise<boolean> {
-    const result = await this.pool.query(
+    const result = await this.database.query(
       `DELETE FROM cop_community_reports
       WHERE report_id = $1
         AND properties->>'demoScenarioId' = $2`,
@@ -1324,7 +1360,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     const clauses = buildCommunityQueryClauses(query, params);
     const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
     const limitParam = addParam(params, resolveLimit(query.limit));
-    const result = await this.pool.query<CommunityReportRow>(
+    const result = await this.database.query<CommunityReportRow>(
       `SELECT *
       FROM cop_community_reports
       ${whereClause}
@@ -1341,7 +1377,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     currentSubjectId?: string
   ): Promise<Record<string, CommunityReportConfirmationSummary>> {
     if (reportIds.length === 0) return {};
-    const result = await this.pool.query<CommunityReportConfirmationSummaryRow>(
+    const result = await this.database.query<CommunityReportConfirmationSummaryRow>(
       `SELECT
         c.report_id,
         COUNT(*) FILTER (WHERE confirmation = 'still_there' AND c.subject_id <> r.subject_id)::integer AS independent_still_there_count,
@@ -1366,7 +1402,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     value: CommunityReportConfirmationValue,
     now: Date
   ): Promise<CommunityReportConfirmationSummary> {
-    await this.pool.query(
+    await this.database.query(
       `INSERT INTO cop_community_report_confirmations (report_id, subject_id, confirmation, created_at, updated_at)
       VALUES ($1, $2, $3, $4::timestamptz, $4::timestamptz)
       ON CONFLICT (report_id, subject_id) DO UPDATE SET
@@ -1389,7 +1425,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
       kind: "submitted",
       version
     });
-    const result = await this.pool.query<CommunityReportRow>(
+    const result = await this.database.query<CommunityReportRow>(
       `UPDATE cop_community_reports
       SET
         status = 'submitted',
@@ -1430,7 +1466,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   }
 
   async createAttachment(input: CreateCommunityAttachmentInput): Promise<CommunityReportAttachmentRecord> {
-    const result = await this.pool.query<CommunityAttachmentRow>(
+    const result = await this.database.query<CommunityAttachmentRow>(
       `INSERT INTO cop_community_report_attachments (
         attachment_id,
         report_id,
@@ -1492,7 +1528,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   }
 
   async completeAttachment(input: CompleteCommunityAttachmentInput): Promise<CommunityReportAttachmentRecord | null> {
-    const result = await this.pool.query<CommunityAttachmentRow>(
+    const result = await this.database.query<CommunityAttachmentRow>(
       `UPDATE cop_community_report_attachments
       SET
         status = 'uploaded',
@@ -1516,7 +1552,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   async updateAttachmentMetadata(
     input: UpdateCommunityAttachmentMetadataInput
   ): Promise<CommunityReportAttachmentRecord | null> {
-    const result = await this.pool.query<CommunityAttachmentRow>(
+    const result = await this.database.query<CommunityAttachmentRow>(
       `UPDATE cop_community_report_attachments
       SET metadata = $3::jsonb
       WHERE attachment_id = $1 AND report_id = $2
@@ -1565,7 +1601,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
         version
       }
     );
-    const result = await this.pool.query<CommunityReportRow>(
+    const result = await this.database.query<CommunityReportRow>(
       `UPDATE cop_community_reports
       SET status = $3,
         properties = $4::jsonb,
@@ -1586,7 +1622,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     if (reportIds.length === 0) {
       return [];
     }
-    const result = await this.pool.query<CommunityAttachmentRow>(
+    const result = await this.database.query<CommunityAttachmentRow>(
       `SELECT *
       FROM cop_community_report_attachments
       WHERE report_id = ANY($1::uuid[]) AND status <> 'removed'
@@ -1600,7 +1636,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     if (groupIds.length === 0) {
       return [];
     }
-    const result = await this.pool.query<CommunityGroupMemberRow>(
+    const result = await this.database.query<CommunityGroupMemberRow>(
       `SELECT *
       FROM cop_community_group_members
       WHERE group_id = ANY($1::uuid[])
@@ -1611,7 +1647,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
   }
 
   private async touchGroup(groupId: string, timestamp: string): Promise<void> {
-    await this.pool.query("UPDATE cop_community_groups SET updated_at = $2::timestamptz WHERE group_id = $1", [
+    await this.database.query("UPDATE cop_community_groups SET updated_at = $2::timestamptz WHERE group_id = $1", [
       groupId,
       timestamp
     ]);

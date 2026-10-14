@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { Pool, PoolConfig } from "pg";
+import type { Pool, PoolClient, PoolConfig } from "pg";
 import { createCopPgPool } from "./cop-pg-pool.js";
+import { assertContentWriter, contentErasureSchema, contentOwnerKey, contentSubjectKey, contentTransaction,
+  assertGlobalContentWriter, ContentSerialLock, ContentWriterGuardBinding, ContentErasureStoreError, fenceContentOwner, requireContentActor, type ContentErasureComponent } from "./content-erasure.js";
+import type { AuthenticatedActor } from "./security.js";
+import type { AccountErasureAssessment, AccountErasureProof } from "./account-erasure.js";
+import type { CommunityProjectionEraser } from "./community-erasure.js";
 
 export type SketchDrawingKind = "arrow" | "circle" | "line" | "marker" | "measurement" | "point" | "polygon" | "text";
 export type SketchDrawingVisibility = "event" | "group" | "private" | "public";
@@ -26,6 +31,8 @@ export interface SketchDrawingSymbol {
 
 export interface SketchDrawingActor {
   displayName: string;
+  /** Trusted OIDC issuer supplied by COP; never accepted from the request body. */
+  issuer?: string;
   subjectId: string;
   username: string;
 }
@@ -116,6 +123,7 @@ export interface UpdateSketchDrawingInput {
 export interface SketchDrawingAuditEntry {
   action: "created" | "deleted" | "updated";
   actorSubjectId: string;
+  actorIssuer?: string;
   at: string;
   drawingId: string;
   revision: number;
@@ -132,6 +140,7 @@ export interface SketchDrawingStore {
   init(): Promise<void>;
   list(query: SketchDrawingQuery): Promise<SketchDrawingFeature[]>;
   update(drawingId: string, actor: SketchDrawingActor, input: UpdateSketchDrawingInput, now: Date): Promise<SketchDrawingFeature | null>;
+  accountErasureComponent?(options?: { projections?: CommunityProjectionEraser }): ContentErasureComponent;
 }
 
 export function createSketchDrawingStoreFromEnv(env: Record<string, string | undefined> = process.env): SketchDrawingStore | undefined {
@@ -160,15 +169,28 @@ export class InMemorySketchDrawingStore implements SketchDrawingStore {
   readonly name: string;
   private readonly drawings = new Map<string, SketchDrawingFeature>();
   private readonly audit: SketchDrawingAuditEntry[] = [];
+  private readonly owners = new Map<string, { subjectId: string; issuer?: string }>();
+  private readonly fences = new Map<string, { subjectKey: string; operationId: string; proofId?: string }>();
+  private readonly admission = new ContentSerialLock();
+  private readonly writerBinding = new ContentWriterGuardBinding();
+  private readonly projections = new Map<string, Set<string>>();
 
   constructor(name = "memory") {
     this.name = name;
+    for (const method of ["create", "update", "delete", "deleteForDemoScenario"] as const) {
+      const original = this[method].bind(this) as (...args: unknown[]) => Promise<unknown>;
+      Object.defineProperty(this, method, { value: (...args: unknown[]) => this.admission.run(async () => {
+        const actor = (method === "create" ? (args[0] as CreateSketchDrawingInput).actor : args[method === "deleteForDemoScenario" ? 2 : 1]) as SketchDrawingActor;
+        await assertGlobalContentWriter(actor, this.writerBinding.guard); return original(...args);
+      }) });
+    }
   }
 
   async init(): Promise<void> {}
   async close(): Promise<void> {}
 
   async create(input: CreateSketchDrawingInput, now: Date): Promise<SketchDrawingFeature> {
+    this.assertWriter(input.actor);
     const drawing = buildSketchDrawingFeature({
       actor: input.actor,
       drawingId: randomUUID(),
@@ -178,7 +200,8 @@ export class InMemorySketchDrawingStore implements SketchDrawingStore {
       revision: 1
     });
     this.drawings.set(drawing.id, drawing);
-    this.audit.push({ action: "created", actorSubjectId: input.actor.subjectId, at: now.toISOString(), drawingId: drawing.id, revision: 1 });
+    this.owners.set(drawing.id, { subjectId: input.actor.subjectId, ...(input.actor.issuer ? { issuer: input.actor.issuer } : {}) });
+    this.audit.push({ action: "created", actorSubjectId: input.actor.subjectId, actorIssuer: input.actor.issuer, at: now.toISOString(), drawingId: drawing.id, revision: 1 });
     return drawing;
   }
 
@@ -198,35 +221,84 @@ export class InMemorySketchDrawingStore implements SketchDrawingStore {
   }
 
   async update(drawingId: string, actor: SketchDrawingActor, input: UpdateSketchDrawingInput, now: Date): Promise<SketchDrawingFeature | null> {
+    this.assertWriter(actor);
     const current = this.drawings.get(drawingId);
-    if (!current || current.properties.ownerSubjectId !== actor.subjectId) {
+    if (!current || !this.actorOwns(drawingId, actor)) {
       return null;
     }
     const revision = current.properties.revision + 1;
     const next = mergeSketchDrawingFeature(current, actor, input, now, revision);
     this.drawings.set(drawingId, next);
-    this.audit.push({ action: "updated", actorSubjectId: actor.subjectId, at: now.toISOString(), drawingId, revision });
+    this.audit.push({ action: "updated", actorSubjectId: actor.subjectId, actorIssuer: actor.issuer, at: now.toISOString(), drawingId, revision });
     return next;
   }
 
   async delete(drawingId: string, actor: SketchDrawingActor, now: Date): Promise<boolean> {
+    this.assertWriter(actor);
     const current = this.drawings.get(drawingId);
-    if (!current || current.properties.ownerSubjectId !== actor.subjectId) {
+    if (!current || !this.actorOwns(drawingId, actor)) {
       return false;
     }
     this.drawings.delete(drawingId);
-    this.audit.push({ action: "deleted", actorSubjectId: actor.subjectId, at: now.toISOString(), drawingId, revision: current.properties.revision + 1 });
+    this.audit.push({ action: "deleted", actorSubjectId: actor.subjectId, actorIssuer: actor.issuer, at: now.toISOString(), drawingId, revision: current.properties.revision + 1 });
     return true;
   }
 
   async deleteForDemoScenario(drawingId: string, demoScenarioId: string, actor: SketchDrawingActor, now: Date): Promise<boolean> {
+    this.assertWriter(actor);
     const current = this.drawings.get(drawingId);
     if (!current || current.properties.properties.demoScenarioId !== demoScenarioId) {
       return false;
     }
     this.drawings.delete(drawingId);
-    this.audit.push({ action: "deleted", actorSubjectId: actor.subjectId, at: now.toISOString(), drawingId, revision: current.properties.revision + 1 });
+    this.audit.push({ action: "deleted", actorSubjectId: actor.subjectId, actorIssuer: actor.issuer, at: now.toISOString(), drawingId, revision: current.properties.revision + 1 });
     return true;
+  }
+  private actorOwns(id: string, actor: SketchDrawingActor): boolean {
+    const owner = this.owners.get(id);
+    return owner?.subjectId === actor.subjectId && (owner.issuer ? owner.issuer === actor.issuer : true);
+  }
+  private assertWriter(actor: SketchDrawingActor): void {
+    const blocked = actor.issuer ? this.fences.has(contentOwnerKey(actor))
+      : [...this.fences.values()].some(fence => fence.subjectKey === contentSubjectKey(actor.subjectId));
+    if (blocked) throw new ContentErasureStoreError(403, "ACCOUNT_ERASURE_FENCED");
+  }
+  private provenanceKnown(actor: AuthenticatedActor): boolean {
+    return ![...this.owners.values()].some(owner => owner.subjectId === actor.subjectId && !owner.issuer)
+      && !this.audit.some(entry => entry.actorSubjectId === actor.subjectId && !entry.actorIssuer);
+  }
+  accountErasureComponent(options: { projections?: CommunityProjectionEraser } = {}): ContentErasureComponent {
+    return { component: "sketch_drawings:" + this.name, ready: async () => ![...this.owners.values()].some(owner => !owner.issuer) && !this.audit.some(entry => !entry.actorIssuer),
+      bindWriterGuard: guard => this.writerBinding.bind(guard), writerGuardMatches: guard => this.writerBinding.matches(guard),
+      withAdmission: run => this.admission.run(run),
+      preflight: (actor, signal) => this.admission.run(async () => { requireContentActor(actor); signal.throwIfAborted();
+        return this.provenanceKnown(actor) ? { ready: true, version: "cop-sketch-erasure-v1" } : { ready: false, reason: "ownership_unresolved" }; }),
+      erase: async (actor, context) => {
+        const result = await this.admission.run(async (): Promise<AccountErasureProof> => {
+        requireContentActor(actor); context.signal.throwIfAborted(); const key = contentOwnerKey(actor), previous = this.fences.get(key);
+        if (previous && previous.operationId !== context.operationId) throw new ContentErasureStoreError(409, "CONTENT_ERASURE_OPERATION_CONFLICT");
+        this.fences.set(key, previous ?? { subjectKey: contentSubjectKey(actor.subjectId), operationId: context.operationId });
+        if (!this.provenanceKnown(actor)) return { status: "pending", remaining: "cleanup_pending" };
+        const own = new Set([...this.owners].filter(([, owner]) => owner.subjectId === actor.subjectId && owner.issuer === actor.issuer).map(([id]) => id));
+        const manifest = this.projections.get(key) ?? new Set<string>(); for (const id of own) manifest.add(id); this.projections.set(key, manifest);
+        for (const id of own) { this.drawings.delete(id); this.owners.delete(id); }
+        for (let i = this.audit.length - 1; i >= 0; i--) {
+          const entry = this.audit[i]!;
+          if (own.has(entry.drawingId) || (entry.actorSubjectId === actor.subjectId && entry.actorIssuer === actor.issuer)) this.audit.splice(i, 1);
+        }
+        if ([...this.owners.values()].some(owner => owner.subjectId === actor.subjectId && owner.issuer === actor.issuer)
+          || this.audit.some(entry => entry.actorSubjectId === actor.subjectId && entry.actorIssuer === actor.issuer)) return { status: "pending", remaining: "cleanup_pending" };
+        const proofId = previous?.proofId ?? randomUUID(); this.fences.set(key, { subjectKey: contentSubjectKey(actor.subjectId), operationId: context.operationId, proofId });
+        return { status: "completed", proofId };
+        });
+        if (result.status !== "completed") return result;
+        const key = contentOwnerKey(actor), ids = this.projections.get(key) ?? new Set<string>();
+        if (ids.size) {
+          if (!options.projections || !await options.projections.erase({ reportIds: [], groupIds: [], drawingIds: [...ids] }, { ...context, actor: { issuer: actor.issuer!, subjectId: actor.subjectId } })) return { status: "pending", remaining: "cleanup_pending" };
+          await this.admission.run(async () => { context.signal.throwIfAborted(); this.projections.delete(key); });
+        }
+        context.signal.throwIfAborted(); return result;
+      } };
   }
 }
 
@@ -234,6 +306,7 @@ export class PostgresSketchDrawingStore implements SketchDrawingStore {
   readonly name = "postgres";
   private lastIdleClientError: string | undefined;
   private readonly pool: Pool;
+  private readonly writerBinding = new ContentWriterGuardBinding();
 
   constructor(config: PoolConfig) {
     this.pool = createCopPgPool("sketch", config);
@@ -257,15 +330,17 @@ export class PostgresSketchDrawingStore implements SketchDrawingStore {
   async create(input: CreateSketchDrawingInput, now: Date): Promise<SketchDrawingFeature> {
     const drawingId = randomUUID();
     const normalized = buildSketchDrawingFeature({ actor: input.actor, drawingId, geometry: input.geometry, input, now, revision: 1 });
-    const row = await this.pool.query<SketchDrawingRow>(
+    return contentTransaction(this.pool, async client => {
+    await assertContentWriter(client, input.actor, this.writerBinding.guard);
+    const row = await client.query<SketchDrawingRow>(
       `INSERT INTO cop_user_drawings (
         drawing_id, owner_subject_id, owner_username, owner_display_name, visibility, group_id, event_id,
-        kind, label, geometry, style, symbol, properties, locked, revision, created_at, updated_at
+        kind, label, geometry, style, symbol, properties, locked, revision, created_at, updated_at, owner_issuer
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9,
         ST_SetSRID(ST_GeomFromGeoJSON($10), 4326),
-        $11::jsonb, $12::jsonb, $13::jsonb, $14, 1, $15::timestamptz, $15::timestamptz
+        $11::jsonb, $12::jsonb, $13::jsonb, $14, 1, $15::timestamptz, $15::timestamptz, $16
       )
       RETURNING *, ST_AsGeoJSON(geometry)::json AS geometry_json`,
       [
@@ -283,11 +358,12 @@ export class PostgresSketchDrawingStore implements SketchDrawingStore {
         JSON.stringify(normalized.properties.symbol),
         JSON.stringify(normalized.properties.properties),
         normalized.properties.locked,
-        now.toISOString()
+        now.toISOString(), input.actor.issuer ?? null
       ]
     );
-    await this.audit(drawingId, input.actor.subjectId, "created", 1, now);
+    await this.audit(client, drawingId, input.actor, "created", 1, now);
     return sketchDrawingFromRow(requireRow(row.rows[0]));
+    });
   }
 
   async get(drawingId: string): Promise<SketchDrawingFeature | null> {
@@ -333,12 +409,15 @@ export class PostgresSketchDrawingStore implements SketchDrawingStore {
   }
 
   async update(drawingId: string, actor: SketchDrawingActor, input: UpdateSketchDrawingInput, now: Date): Promise<SketchDrawingFeature | null> {
-    const current = await this.get(drawingId);
+    return contentTransaction(this.pool, async client => {
+    await assertContentWriter(client, actor, this.writerBinding.guard);
+    const currentRows = await client.query<SketchDrawingRow>("SELECT *, ST_AsGeoJSON(geometry)::json AS geometry_json FROM cop_user_drawings WHERE drawing_id=$1 AND deleted_at IS NULL AND (owner_issuer IS NULL OR owner_issuer=$2)", [drawingId, actor.issuer ?? null]);
+    const current = currentRows.rows[0] ? sketchDrawingFromRow(currentRows.rows[0]) : null;
     if (!current || current.properties.ownerSubjectId !== actor.subjectId) {
       return null;
     }
     const next = mergeSketchDrawingFeature(current, actor, input, now, current.properties.revision + 1);
-    const result = await this.pool.query<SketchDrawingRow>(
+    const result = await client.query<SketchDrawingRow>(
       `UPDATE cop_user_drawings
       SET
         visibility = $3,
@@ -353,7 +432,7 @@ export class PostgresSketchDrawingStore implements SketchDrawingStore {
         locked = $12,
         revision = revision + 1,
         updated_at = $13::timestamptz
-      WHERE drawing_id = $1 AND owner_subject_id = $2 AND deleted_at IS NULL
+      WHERE drawing_id = $1 AND owner_subject_id = $2 AND deleted_at IS NULL AND (owner_issuer IS NULL OR owner_issuer=$14)
       RETURNING *, ST_AsGeoJSON(geometry)::json AS geometry_json`,
       [
         drawingId,
@@ -368,35 +447,41 @@ export class PostgresSketchDrawingStore implements SketchDrawingStore {
         JSON.stringify(next.properties.symbol),
         JSON.stringify(next.properties.properties),
         next.properties.locked,
-        now.toISOString()
+        now.toISOString(), actor.issuer ?? null
       ]
     );
     const row = result.rows[0];
     if (!row) {
       return null;
     }
-    await this.audit(drawingId, actor.subjectId, "updated", row.revision, now);
+    await this.audit(client, drawingId, actor, "updated", row.revision, now);
     return sketchDrawingFromRow(row);
+    });
   }
 
   async delete(drawingId: string, actor: SketchDrawingActor, now: Date): Promise<boolean> {
-    const result = await this.pool.query<{ revision: number }>(
+    return contentTransaction(this.pool, async client => {
+    await assertContentWriter(client, actor, this.writerBinding.guard);
+    const result = await client.query<{ revision: number }>(
       `UPDATE cop_user_drawings
       SET deleted_at = $3::timestamptz, updated_at = $3::timestamptz, revision = revision + 1
-      WHERE drawing_id = $1 AND owner_subject_id = $2 AND deleted_at IS NULL
+      WHERE drawing_id = $1 AND owner_subject_id = $2 AND deleted_at IS NULL AND (owner_issuer IS NULL OR owner_issuer=$4)
       RETURNING revision`,
-      [drawingId, actor.subjectId, now.toISOString()]
+      [drawingId, actor.subjectId, now.toISOString(), actor.issuer ?? null]
     );
     const row = result.rows[0];
     if (!row) {
       return false;
     }
-    await this.audit(drawingId, actor.subjectId, "deleted", row.revision, now);
+    await this.audit(client, drawingId, actor, "deleted", row.revision, now);
     return true;
+    });
   }
 
   async deleteForDemoScenario(drawingId: string, demoScenarioId: string, actor: SketchDrawingActor, now: Date): Promise<boolean> {
-    const result = await this.pool.query<{ revision: number }>(
+    return contentTransaction(this.pool, async client => {
+    await assertContentWriter(client, actor, this.writerBinding.guard);
+    const result = await client.query<{ revision: number }>(
       `UPDATE cop_user_drawings
       SET deleted_at = $3::timestamptz, updated_at = $3::timestamptz, revision = revision + 1
       WHERE drawing_id = $1
@@ -409,16 +494,72 @@ export class PostgresSketchDrawingStore implements SketchDrawingStore {
     if (!row) {
       return false;
     }
-    await this.audit(drawingId, actor.subjectId, "deleted", row.revision, now);
+    await this.audit(client, drawingId, actor, "deleted", row.revision, now);
     return true;
+    });
   }
 
-  private async audit(drawingId: string, actorSubjectId: string, action: SketchDrawingAuditEntry["action"], revision: number, now: Date): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO cop_user_drawing_audit (drawing_id, actor_subject_id, action, revision, created_at)
-      VALUES ($1, $2, $3, $4, $5::timestamptz)`,
-      [drawingId, actorSubjectId, action, revision, now.toISOString()]
+  private async audit(client: PoolClient, drawingId: string, actor: SketchDrawingActor, action: SketchDrawingAuditEntry["action"], revision: number, now: Date): Promise<void> {
+    await client.query(
+      `INSERT INTO cop_user_drawing_audit (drawing_id, actor_subject_id, action, revision, created_at, actor_issuer)
+      VALUES ($1, $2, $3, $4, $5::timestamptz, $6)`,
+      [drawingId, actor.subjectId, action, revision, now.toISOString(), actor.issuer ?? null]
     );
+  }
+
+  accountErasureComponent(options: { projections?: CommunityProjectionEraser } = {}): ContentErasureComponent {
+    return { component: "sketch_drawings:postgres", ready: async () => {
+      try { return await contentTransaction(this.pool, async client => {
+        const result = await client.query("SELECT 1 FROM cop_user_drawings WHERE owner_issuer IS NULL UNION ALL SELECT 1 FROM cop_user_drawing_audit WHERE actor_issuer IS NULL LIMIT 1"); return result.rowCount === 0;
+      }); } catch { return false; }
+    }, bindWriterGuard: guard => this.writerBinding.bind(guard), writerGuardMatches: guard => this.writerBinding.matches(guard),
+    withAdmission: run => contentTransaction(this.pool, async () => run()),
+    preflight: (actor, signal) => this.erasurePreflight(actor, signal), erase: (actor, context) => this.eraseOwner(actor, context, options.projections) };
+  }
+  private async provenanceKnown(client: PoolClient, actor: AuthenticatedActor): Promise<boolean> {
+    const result = await client.query<{ unknown: boolean }>(`SELECT
+      EXISTS(SELECT 1 FROM cop_user_drawings WHERE owner_subject_id=$1 AND owner_issuer IS NULL)
+      OR EXISTS(SELECT 1 FROM cop_user_drawing_audit WHERE actor_subject_id=$1 AND actor_issuer IS NULL) AS unknown`, [actor.subjectId]);
+    return result.rows[0]?.unknown === false;
+  }
+  private async erasurePreflight(actor: AuthenticatedActor, signal: AbortSignal): Promise<AccountErasureAssessment> {
+    requireContentActor(actor); signal.throwIfAborted();
+    return contentTransaction(this.pool, async client => {
+      const known = await this.provenanceKnown(client, actor); signal.throwIfAborted();
+      return known ? { ready: true, version: "cop-sketch-erasure-v1" } : { ready: false, reason: "ownership_unresolved" };
+    });
+  }
+  private async eraseOwner(actor: AuthenticatedActor, context: { operationId: string; signal: AbortSignal }, projections?: CommunityProjectionEraser): Promise<AccountErasureProof> {
+    requireContentActor(actor); context.signal.throwIfAborted();
+    const result = await contentTransaction(this.pool, async (client: PoolClient): Promise<AccountErasureProof> => {
+      await fenceContentOwner(client, actor, context.operationId);
+      if (!(await this.provenanceKnown(client, actor))) return { status: "pending", remaining: "cleanup_pending" };
+      context.signal.throwIfAborted();
+      await client.query(`INSERT INTO cop_content_erasure_projection_manifest(owner_key,operation_id,kind,row_key)
+        SELECT $1,$2,'drawing',drawing_id::text FROM cop_user_drawings WHERE owner_subject_id=$3 AND owner_issuer=$4
+        ON CONFLICT(owner_key,kind,row_key) DO NOTHING`, [contentOwnerKey(actor), context.operationId, actor.subjectId, actor.issuer]);
+      await client.query(`DELETE FROM cop_user_drawing_audit WHERE (actor_subject_id=$1 AND actor_issuer=$2)
+        OR drawing_id IN (SELECT drawing_id FROM cop_user_drawings WHERE owner_subject_id=$1 AND owner_issuer=$2)`, [actor.subjectId, actor.issuer]);
+      // Hard delete includes every soft-deleted geometry/properties history row.
+      await client.query("DELETE FROM cop_user_drawings WHERE owner_subject_id=$1 AND owner_issuer=$2", [actor.subjectId, actor.issuer]);
+      const remaining = await client.query<{ remaining: boolean }>(`SELECT
+        EXISTS(SELECT 1 FROM cop_user_drawings WHERE owner_subject_id=$1 AND owner_issuer=$2)
+        OR EXISTS(SELECT 1 FROM cop_user_drawing_audit WHERE actor_subject_id=$1 AND actor_issuer=$2) AS remaining`, [actor.subjectId, actor.issuer]);
+      if (remaining.rows[0]?.remaining !== false) return { status: "pending", remaining: "cleanup_pending" };
+      context.signal.throwIfAborted(); const key = contentOwnerKey(actor);
+      const previous = await client.query<{ proof_id: string; operation_id: string }>("SELECT proof_id,operation_id FROM cop_content_erasure_component_proofs WHERE owner_key=$1 AND component='sketch_drawings:postgres'", [key]);
+      if (previous.rows[0]?.operation_id && previous.rows[0].operation_id !== context.operationId) throw new ContentErasureStoreError(409, "CONTENT_ERASURE_OPERATION_CONFLICT");
+      const proofId = previous.rows[0]?.proof_id ?? randomUUID();
+      await client.query("INSERT INTO cop_content_erasure_component_proofs(owner_key,component,operation_id,proof_id) VALUES($1,'sketch_drawings:postgres',$2,$3) ON CONFLICT(owner_key,component) DO NOTHING", [key, context.operationId, proofId]);
+      return { status: "completed", proofId };
+    });
+    if (result.status !== "completed") return result;
+    const key = contentOwnerKey(actor), manifest = await this.pool.query<{ row_key: string }>("SELECT row_key FROM cop_content_erasure_projection_manifest WHERE owner_key=$1 AND operation_id=$2 AND kind='drawing' ORDER BY row_key", [key, context.operationId]);
+    if (manifest.rows.length) {
+      if (!projections || !await projections.erase({ reportIds: [], groupIds: [], drawingIds: manifest.rows.map(row => row.row_key) }, { ...context, actor: { issuer: actor.issuer!, subjectId: actor.subjectId } })) return { status: "pending", remaining: "cleanup_pending" };
+      await contentTransaction(this.pool, async client => { context.signal.throwIfAborted(); for (const row of manifest.rows) await client.query("DELETE FROM cop_content_erasure_projection_manifest WHERE owner_key=$1 AND operation_id=$2 AND kind='drawing' AND row_key=$3", [key, context.operationId, row.row_key]); });
+    }
+    context.signal.throwIfAborted(); return result;
   }
 }
 
@@ -755,10 +896,12 @@ function requireRow<T>(row: T | undefined): T {
 
 const createSketchDrawingTablesSql = `
 CREATE EXTENSION IF NOT EXISTS postgis;
+${contentErasureSchema}
 
 CREATE TABLE IF NOT EXISTS cop_user_drawings (
   drawing_id uuid PRIMARY KEY,
   owner_subject_id text NOT NULL,
+  owner_issuer text,
   owner_username text NOT NULL,
   owner_display_name text NOT NULL,
   visibility text NOT NULL,
@@ -776,6 +919,7 @@ CREATE TABLE IF NOT EXISTS cop_user_drawings (
   updated_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz
 );
+ALTER TABLE cop_user_drawings ADD COLUMN IF NOT EXISTS owner_issuer text;
 
 CREATE INDEX IF NOT EXISTS cop_user_drawings_geometry_gix
   ON cop_user_drawings USING gist (geometry)
@@ -797,10 +941,12 @@ CREATE TABLE IF NOT EXISTS cop_user_drawing_audit (
   audit_id bigserial PRIMARY KEY,
   drawing_id uuid NOT NULL,
   actor_subject_id text NOT NULL,
+  actor_issuer text,
   action text NOT NULL,
   revision integer NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE cop_user_drawing_audit ADD COLUMN IF NOT EXISTS actor_issuer text;
 
 CREATE INDEX IF NOT EXISTS cop_user_drawing_audit_drawing_idx
   ON cop_user_drawing_audit (drawing_id, created_at DESC);

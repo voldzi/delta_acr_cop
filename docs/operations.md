@@ -323,6 +323,20 @@ flag false and its client ID empty; do not use its old provisioning plan.
 
 ## Default-off account lifecycle candidate
 
+Current completion evidence and authoritative production state are in
+[integration 43](integration/43_ACCOUNT_SAFETY_COMPLETION.md). The dedicated
+Keycloak erasure client/secret and authority acceptance default to absent/false;
+the LiveKit admin endpoint must be explicitly HTTPS. These are server-only
+settings. Existing user tokens are never administrative credentials. The private
+web controller at `/account/delete` offers confirmation only after actual
+accepted owner readiness. Deploying that source is not activation.
+The Compose API environment now forwards the documented account, scoped
+Keycloak, dedicated SIM erasure and moderation settings with false/empty
+defaults. This changes candidate Compose hashes/environment metadata and needs
+a fresh exact native image/profile acceptance; it must not be copied into the
+accepted production files as a workaround. No native verifier is supplied by
+these variables. The historical Jízda unlink configuration remains disabled.
+
 COP_ACCOUNT_ERASURE_ENABLED=false. A dedicated COP_ACCOUNT_ERASURE_SECRET and
 persistent mobility storage are necessary for the guard but cannot replace
 all11 real cleanup adapters and accepted owner policies. After intake keep

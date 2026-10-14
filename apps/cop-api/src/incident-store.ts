@@ -1,6 +1,9 @@
 import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
 import { createCopPgPool } from "./cop-pg-pool.js";
 import { randomUUID } from "node:crypto";
+import { contentErasureSchema, type ContentErasureComponent } from "./content-erasure.js";
+import { incidentErasureSchema, MemoryIncidentErasureBoundary, PostgresIncidentErasureBoundary } from "./incident-erasure.js";
+import type { CommunityProjectionEraser } from "./community-erasure.js";
 
 export type IncidentCategory =
   | "community"
@@ -22,6 +25,7 @@ export type IncidentTaskStatus = "blocked" | "cancelled" | "done" | "in_progress
 
 export interface IncidentActor {
   displayName: string;
+  issuer?: string;
   subjectId: string;
   username: string;
 }
@@ -106,6 +110,7 @@ export interface IncidentUpdateInput {
 
 export interface CreateIncidentTaskInput {
   assigneeSubjectId?: string;
+  assigneeIssuer?: string;
   createdBy: IncidentActor;
   description?: string;
   dueAt?: string;
@@ -119,6 +124,7 @@ export interface CreateIncidentTaskInput {
 
 export interface IncidentTaskUpdateInput {
   assigneeSubjectId?: string | null;
+  assigneeIssuer?: string;
   description?: string | null;
   dueAt?: string | null;
   priority?: IncidentTaskPriority;
@@ -160,6 +166,10 @@ export interface IncidentStore {
   listTasks(query: IncidentTaskQuery): Promise<IncidentTaskRecord[]>;
   updateIncident(incidentId: string, actor: IncidentActor, input: IncidentUpdateInput, now: Date): Promise<IncidentRecord | null>;
   updateTask(taskId: string, actor: IncidentActor, input: IncidentTaskUpdateInput, now: Date): Promise<IncidentTaskRecord | null>;
+  accountErasureComponent?(options?: { projections?: CommunityProjectionEraser }): ContentErasureComponent;
+  /** Server-only immutable insertion witness; historical unknown stays unknown. */
+  readVerifiedProjectionOwner?(kind: "incident", id: string): Promise<{ issuer: string; subjectId: string } | undefined>;
+  readVerifiedProjectionOwners?(kind: "incident", ids: readonly string[]): Promise<Map<string, { issuer: string; subjectId: string }>>;
 }
 
 export function createIncidentStoreFromEnv(env: Record<string, string | undefined> = process.env): IncidentStore | undefined {
@@ -189,10 +199,15 @@ export class InMemoryIncidentStore implements IncidentStore {
   readonly name: string;
   private readonly incidents = new Map<string, IncidentRecord>();
   private readonly tasks = new Map<string, IncidentTaskRecord>();
+  private readonly erasure: MemoryIncidentErasureBoundary;
 
   constructor(name = "memory") {
     this.name = name;
+    this.erasure = new MemoryIncidentErasureBoundary({ incidents: this.incidents, tasks: this.tasks }); this.erasure.install(this);
   }
+  accountErasureComponent(options: { projections?: CommunityProjectionEraser } = {}): ContentErasureComponent { return this.erasure.component(this.name, options.projections); }
+  readVerifiedProjectionOwner(kind: "incident", id: string): Promise<{ issuer: string; subjectId: string } | undefined> { return this.erasure.readVerifiedProjectionOwner(kind, id); }
+  readVerifiedProjectionOwners(kind: "incident", ids: readonly string[]): Promise<Map<string, { issuer: string; subjectId: string }>> { return this.erasure.readVerifiedProjectionOwners(kind, ids); }
 
   async init(): Promise<void> {}
   async close(): Promise<void> {}
@@ -291,9 +306,12 @@ export class PostgresIncidentStore implements IncidentStore {
   readonly name = "postgres";
   private lastIdleClientError: string | undefined;
   private readonly pool: PgPool;
+  private readonly erasure: PostgresIncidentErasureBoundary;
+  private get database(): Pick<PgPool, "query"> { return this.erasure.database; }
 
   constructor(config: PoolConfig) {
     this.pool = createCopPgPool("incident", config);
+    this.erasure = new PostgresIncidentErasureBoundary(this.pool); this.erasure.install(this);
     this.pool.on("error", (error) => {
       this.lastIdleClientError = error instanceof Error ? error.message : String(error);
     });
@@ -304,7 +322,9 @@ export class PostgresIncidentStore implements IncidentStore {
   }
 
   async init(): Promise<void> {
-    await this.pool.query(`
+    await this.database.query(contentErasureSchema);
+    await this.database.query(incidentErasureSchema);
+    await this.database.query(`
       CREATE TABLE IF NOT EXISTS cop_incidents (
         incident_id text PRIMARY KEY,
         record jsonb NOT NULL,
@@ -316,11 +336,11 @@ export class PostgresIncidentStore implements IncidentStore {
         updated_at timestamptz NOT NULL
       )
     `);
-    await this.pool.query("CREATE INDEX IF NOT EXISTS cop_incidents_bbox_idx ON cop_incidents (lon, lat)");
-    await this.pool.query("CREATE INDEX IF NOT EXISTS cop_incidents_status_idx ON cop_incidents (status)");
-    await this.pool.query("CREATE INDEX IF NOT EXISTS cop_incidents_category_idx ON cop_incidents (category)");
-    await this.pool.query("CREATE INDEX IF NOT EXISTS cop_incidents_updated_at_idx ON cop_incidents (updated_at DESC)");
-    await this.pool.query(`
+    await this.database.query("CREATE INDEX IF NOT EXISTS cop_incidents_bbox_idx ON cop_incidents (lon, lat)");
+    await this.database.query("CREATE INDEX IF NOT EXISTS cop_incidents_status_idx ON cop_incidents (status)");
+    await this.database.query("CREATE INDEX IF NOT EXISTS cop_incidents_category_idx ON cop_incidents (category)");
+    await this.database.query("CREATE INDEX IF NOT EXISTS cop_incidents_updated_at_idx ON cop_incidents (updated_at DESC)");
+    await this.database.query(`
       CREATE TABLE IF NOT EXISTS cop_incident_tasks (
         task_id text PRIMARY KEY,
         incident_id text NOT NULL REFERENCES cop_incidents(incident_id) ON DELETE CASCADE,
@@ -330,9 +350,12 @@ export class PostgresIncidentStore implements IncidentStore {
         updated_at timestamptz NOT NULL
       )
     `);
-    await this.pool.query("CREATE INDEX IF NOT EXISTS cop_incident_tasks_incident_idx ON cop_incident_tasks (incident_id)");
-    await this.pool.query("CREATE INDEX IF NOT EXISTS cop_incident_tasks_status_idx ON cop_incident_tasks (status)");
+    await this.database.query("CREATE INDEX IF NOT EXISTS cop_incident_tasks_incident_idx ON cop_incident_tasks (incident_id)");
+    await this.database.query("CREATE INDEX IF NOT EXISTS cop_incident_tasks_status_idx ON cop_incident_tasks (status)");
   }
+  accountErasureComponent(options: { projections?: CommunityProjectionEraser } = {}): ContentErasureComponent { return this.erasure.component(options.projections); }
+  readVerifiedProjectionOwner(kind: "incident", id: string): Promise<{ issuer: string; subjectId: string } | undefined> { return this.erasure.readVerifiedProjectionOwner(kind, id); }
+  readVerifiedProjectionOwners(kind: "incident", ids: readonly string[]): Promise<Map<string, { issuer: string; subjectId: string }>> { return this.erasure.readVerifiedProjectionOwners(kind, ids); }
 
   async createIncident(input: CreateIncidentInput, now: Date): Promise<IncidentRecord> {
     const timestamp = now.toISOString();
@@ -357,7 +380,7 @@ export class PostgresIncidentStore implements IncidentStore {
   }
 
   async getIncident(incidentId: string): Promise<IncidentRecord | null> {
-    const result = await this.pool.query<StoredIncidentRow>("SELECT record FROM cop_incidents WHERE incident_id = $1", [incidentId]);
+    const result = await this.database.query<StoredIncidentRow>("SELECT record FROM cop_incidents WHERE incident_id = $1", [incidentId]);
     return result.rows[0] ? rowIncident(result.rows[0]) : null;
   }
 
@@ -387,7 +410,7 @@ export class PostgresIncidentStore implements IncidentStore {
       ORDER BY updated_at DESC
       LIMIT $${values.length}
     `;
-    const result = await this.pool.query<StoredIncidentRow>(sql, values);
+    const result = await this.database.query<StoredIncidentRow>(sql, values);
     return result.rows.map(rowIncident);
   }
 
@@ -423,7 +446,7 @@ export class PostgresIncidentStore implements IncidentStore {
   }
 
   async getTask(taskId: string): Promise<IncidentTaskRecord | null> {
-    const result = await this.pool.query<StoredTaskRow>("SELECT record FROM cop_incident_tasks WHERE task_id = $1", [taskId]);
+    const result = await this.database.query<StoredTaskRow>("SELECT record FROM cop_incident_tasks WHERE task_id = $1", [taskId]);
     return result.rows[0] ? rowTask(result.rows[0]) : null;
   }
 
@@ -445,7 +468,7 @@ export class PostgresIncidentStore implements IncidentStore {
       ORDER BY updated_at DESC
       LIMIT $${values.length}
     `;
-    const result = await this.pool.query<StoredTaskRow>(sql, values);
+    const result = await this.database.query<StoredTaskRow>(sql, values);
     return result.rows.map(rowTask);
   }
 
@@ -464,7 +487,7 @@ export class PostgresIncidentStore implements IncidentStore {
   }
 
   private async upsertIncidentRecord(incident: IncidentRecord): Promise<void> {
-    await this.pool.query(
+    await this.database.query(
       `
         INSERT INTO cop_incidents (incident_id, record, lon, lat, status, category, severity, updated_at)
         VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8)
@@ -491,7 +514,7 @@ export class PostgresIncidentStore implements IncidentStore {
   }
 
   private async upsertTaskRecord(task: IncidentTaskRecord): Promise<void> {
-    await this.pool.query(
+    await this.database.query(
       `
         INSERT INTO cop_incident_tasks (task_id, incident_id, record, status, priority, updated_at)
         VALUES ($1, $2, $3::jsonb, $4, $5, $6)

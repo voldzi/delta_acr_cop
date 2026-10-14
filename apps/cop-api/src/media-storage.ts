@@ -1,4 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
+import { readBoundedBody } from "./bounded-upstream.js";
 
 export interface MediaUploadRequest {
   attachmentId: string;
@@ -41,6 +42,18 @@ export interface MediaStorage {
   createReadUrl(request: MediaObjectReadRequest, now: Date): Promise<string>;
   getObject(request: MediaObjectReadRequest, now: Date): Promise<MediaObjectReadResult>;
   putObject(request: MediaObjectWriteRequest, now: Date): Promise<void>;
+  /** Deletes exactly an already verified owner manifest object, then checks its
+   * absence. Unsupported/versioned storage remains pending, never completed. */
+  eraseVerifiedObject?(request: { bucket: string; objectKey: string }, now: Date, signal: AbortSignal): Promise<"absent" | "pending">;
+  verifiedErasureReady?(): Promise<boolean>;
+}
+export interface MediaUploadSettlementVerifier {
+  /** Actual provider/runtime proof that all possible write paths are governed,
+   * including any legacy presigned credentials; never a static policy label. */
+  ready(bucket: string, signal: AbortSignal): Promise<boolean>;
+  /** Verify a durable write gate and no unsettled admitted upload for this exact
+   * object. Signature expiry alone cannot prove an already started PUT ended. */
+  verify(request: { bucket: string; objectKey: string }, signal: AbortSignal): Promise<boolean>;
 }
 
 interface S3MediaStorageConfig {
@@ -51,9 +64,10 @@ interface S3MediaStorageConfig {
   region: string;
   secretAccessKey: string;
   uploadExpiresSeconds: number;
+  uploadSettlement?: MediaUploadSettlementVerifier;
 }
 
-export function createMediaStorageFromEnv(env: Record<string, string | undefined> = process.env): MediaStorage | undefined {
+export function createMediaStorageFromEnv(env: Record<string, string | undefined> = process.env, options: { uploadSettlement?: MediaUploadSettlementVerifier } = {}): MediaStorage | undefined {
   const mode = (env.COP_MEDIA_STORE ?? "disabled").trim().toLowerCase();
   if (mode === "disabled" || mode === "none" || mode === "off") {
     return undefined;
@@ -71,7 +85,8 @@ export function createMediaStorageFromEnv(env: Record<string, string | undefined
     publicEndpoint,
     region: env.COP_MEDIA_S3_REGION?.trim() || "us-east-1",
     secretAccessKey: requiredEnv(env, "COP_MEDIA_S3_SECRET_ACCESS_KEY"),
-    uploadExpiresSeconds: readPositiveInteger(env.COP_MEDIA_UPLOAD_EXPIRES_SECONDS, 900)
+    uploadExpiresSeconds: readPositiveInteger(env.COP_MEDIA_UPLOAD_EXPIRES_SECONDS, 900),
+    ...(options.uploadSettlement ? { uploadSettlement: options.uploadSettlement } : {})
   });
 }
 
@@ -170,6 +185,48 @@ export class S3PresignedMediaStorage implements MediaStorage {
     }
   }
 
+  async eraseVerifiedObject(request: { bucket: string; objectKey: string }, now: Date, signal: AbortSignal): Promise<"absent" | "pending"> {
+    signal.throwIfAborted();
+    if (request.bucket !== this.config.bucket || !isExactCommunityObjectKey(request.objectKey) || !this.config.uploadSettlement) return "pending";
+    const input = { accessKeyId: this.config.accessKeyId, bucket: this.config.bucket, endpoint: this.config.endpoint,
+      region: this.config.region, secretAccessKey: this.config.secretAccessKey, timestamp: now,
+      signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) };
+    try {
+      if (!await this.config.uploadSettlement.verify(request, input.signal)) return "pending";
+      // A DELETE in a versioned bucket only creates a delete marker. Refuse both
+      // enabled and suspended versioning until a version inventory adapter exists.
+      const versioning = await signedS3Request({ ...input, method: "GET", query: { versioning: "" } });
+      if (!versioning.ok) { await versioning.body?.cancel(); return "pending"; }
+      const body = (await readBoundedBody(versioning, 4096)).toString("utf8");
+      if (!isVerifiedUnversionedResponse(body)) return "pending";
+      const deleted = await signedS3Request({ ...input, method: "DELETE", objectKey: request.objectKey });
+      await deleted.body?.cancel();
+      if (!deleted.ok && deleted.status !== 404) return "pending";
+      const readback = await signedS3Request({ ...input, method: "HEAD", objectKey: request.objectKey });
+      await readback.body?.cancel(); signal.throwIfAborted();
+      if (readback.status !== 404 || !await this.config.uploadSettlement.verify(request, input.signal)) return "pending";
+      // Verify absence after the final settlement witness, so a PUT that settled
+      // between the first HEAD and the witness cannot leave a recreated object.
+      input.signal.throwIfAborted(); const settledReadback = await signedS3Request({ ...input, method: "HEAD", objectKey: request.objectKey });
+      await settledReadback.body?.cancel(); input.signal.throwIfAborted(); signal.throwIfAborted();
+      return settledReadback.status === 404 ? "absent" : "pending";
+    } catch {
+      signal.throwIfAborted();
+      return "pending";
+    }
+  }
+  async verifiedErasureReady(): Promise<boolean> {
+    if (!this.config.uploadSettlement) return false;
+    try {
+      const signal = AbortSignal.timeout(5000);
+      if (!await this.config.uploadSettlement.ready(this.config.bucket, signal)) return false;
+      const response = await signedS3Request({ accessKeyId: this.config.accessKeyId, bucket: this.config.bucket, endpoint: this.config.endpoint,
+        region: this.config.region, secretAccessKey: this.config.secretAccessKey, timestamp: new Date(), method: "GET", query: { versioning: "" }, signal });
+      if (!response.ok) { await response.body?.cancel(); return false; }
+      return isVerifiedUnversionedResponse((await readBoundedBody(response, 4096)).toString("utf8"));
+    } catch { return false; }
+  }
+
   private async ensureBucket(): Promise<void> {
     const headResponse = await signedS3Request({
       accessKeyId: this.config.accessKeyId,
@@ -219,7 +276,10 @@ interface SignedS3RequestInput {
   accessKeyId: string;
   bucket: string;
   endpoint: string;
-  method: "HEAD" | "PUT";
+  method: "HEAD" | "PUT" | "GET" | "DELETE";
+  objectKey?: string;
+  query?: Record<string, string>;
+  signal?: AbortSignal;
   region: string;
   secretAccessKey: string;
   timestamp: Date;
@@ -230,7 +290,8 @@ async function signedS3Request(input: SignedS3RequestInput): Promise<Response> {
   const amzDate = formatAmzDate(input.timestamp);
   const dateScope = amzDate.slice(0, 8);
   const credentialScope = `${dateScope}/${input.region}/s3/aws4_request`;
-  const urlPath = joinUrlPath(endpoint.pathname, input.bucket);
+  const urlPath = joinUrlPath(endpoint.pathname, input.bucket, ...(input.objectKey ? [input.objectKey] : []));
+  const query = canonicalQueryString(input.query ?? {});
   const payloadHash = sha256Hex("");
   const headers: Record<string, string> = {
     "x-amz-content-sha256": payloadHash,
@@ -243,7 +304,7 @@ async function signedS3Request(input: SignedS3RequestInput): Promise<Response> {
   const canonicalRequest = [
     input.method,
     urlPath,
-    "",
+    query,
     canonicalHeaders,
     signedHeaders,
     payloadHash
@@ -256,13 +317,29 @@ async function signedS3Request(input: SignedS3RequestInput): Promise<Response> {
   ].join("\n");
   const signature = hmacHex(signingKey(input.secretAccessKey, dateScope, input.region), stringToSign);
   const authorization = `AWS4-HMAC-SHA256 Credential=${input.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-  return fetch(`${endpoint.origin}${urlPath}`, {
+  return fetch(`${endpoint.origin}${urlPath}${query ? "?" + query : ""}`, {
     headers: {
       ...headers,
       authorization
     },
-    method: input.method
+    method: input.method,
+    redirect: "error",
+    ...(input.signal ? { signal: input.signal } : {})
   });
+}
+
+function isExactCommunityObjectKey(value: string): boolean {
+  // Match the server's communityObjectKey path grammar. No prefix deletion,
+  // normalization, path traversal, caller URL, or cross-bucket request is used.
+  return /^community-reports\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/(?:[A-Za-z0-9_.-]+|derivatives\/xr-sbs\.mp4)$/u.test(value)
+    && !value.split("/").some(segment => segment === "." || segment === "..");
+}
+
+function isVerifiedUnversionedResponse(value: string): boolean {
+  // The only accepted S3 result is the defined empty VersioningConfiguration.
+  // An unsupported API, malformed XML, entity/DTD, unknown element or Status is
+  // conservatively pending. No XML entities or external resources are parsed.
+  return /^\s*(?:<\?xml\s+version=["']1\.0["'](?:\s+encoding=["']UTF-8["'])?\s*\?>\s*)?<VersioningConfiguration\s+xmlns=["']http:\/\/s3\.amazonaws\.com\/doc\/2006-03-01\/["']\s*(?:\/>|>\s*<\/VersioningConfiguration>)\s*$/u.test(value);
 }
 
 function presignPutUrl(input: PresignPutUrlInput): string {

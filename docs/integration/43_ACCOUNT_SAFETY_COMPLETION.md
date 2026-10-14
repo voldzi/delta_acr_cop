@@ -1,180 +1,193 @@
-# 43. Common-account safety and erasure — current source gates
+# 43. Whole COP account removal — current completion evidence
 
-Status on 2026-10-13: the four source commits ending at
-`6b6d80ce8b7975375d12e2b90ec0e3575d114644` are integrated onto the accepted
-a06 application source `b13fbdc71f3d9821f8b857c3f73255a75c46fa76` and its current
-immutable deployment documentation. This change is not a production deployment.
-It creates no secrets, roles, network link, data deletion or activation. Source
-integration preserves service authorization, registered PostgreSQL pool
-factories, consent transaction routing and immutable deployment operations.
+Source work: 2026-10-14. Production still runs accepted image
+`sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f`,
+application source `b13fbdc71f3d9821f8b857c3f73255a75c46fa76`.
+Read-only SSH and runtime validation succeeded: healthy, zero restarts, profile
+`206c4507-5e00-458e-b0ee-4061309aa7a8`, generation
+`7a351c5cb66e45cdbb845a76206fc282`. This source work is not yet deployed or
+activated. No real account was deleted.
+Earlier imports and vehicle-subset gates are [archived](../archive/2026-10-13_ACCOUNT_SAFETY_SOURCE_GATES.md);
+they do not establish this candidate or live erasure.
 
-The earlier completion/provisioning plan and its executed test counts are
-[archived](../archive/2026-10-11_ACCOUNT_SAFETY_COMPLETION_CANDIDATE.md).
-They are not current-merge or real-provider evidence.
+## Authority and scope
 
-## Identity and clients
+The human requested completion with SIM and deployment after verification on
+14 October. SIM's old proposal-only instruction is superseded. The human also
+approved its concrete erasure operations/limited permissions and daily cost
+carry-forward without user linkage until the end of the current UTC month,
+expiring after reservations settle at the start of the next month. This is not
+an anonymity claim or approval of other retention, broad rights, live restoration
+or deletion of a real test account. SIM independently received its direct confirmation and resumed implementation.
+Earlier automatic-review scope rejection is superseded; no rejected action was
+bypassed. Independent native/provider acceptance remains a separate gate.
 
-Jízda uses its existing `csm-mobile` account and one login entry in Já. The
-published shared SDK `85d79966a4674f4888f57ff022e219b4c65a8953` includes authentication-only
-startup and explicit local host consent. Voice/host integration remains separately
-accepted. A new dedicated OAuth client has not been authorized; no provisioning
-manifest is included. Future server installation PoP grants are planned, not
-accepted. Local off is not server unlink or whole-account deletion.
+The approved vehicle policy remains: delete own contributions/personal links,
+preserve other authors' records, transfer active owned vehicles to a distinct
+existing authorized member first. No automatic reassignment or blanket financial
+exception. Unresolved shared group ownership or cross-author dependencies block
+before a permanent fence. See [ADR 0052](../adr/0052_APPROVED_SHARED_VEHICLE_ERASURE_POLICY.md).
+The existing `csm-mobile` one-account login is preserved. Chat, BYOK activation,
+measurement intake and live ETA policies are not changed. Approved reporting
+retention stays `cop-communication-retention-90d-30d-180d-v1`, contact
+`podpora@zeleznalady.cz`.
 
-The imported optional installation headers/old unlink DTOs remain compatibility
-source behind disabled configuration. They neither prove that a common-client
-request came from Jízda nor authorize adopting an unknown Matrix device. See
-[integration 41](41_JIZDA_SCOPED_DISCONNECT.md).
+After finding the shared `csm-sim-web` realm client, the human explicitly chose
+to delete COP/Jízda while preserving the account and access to SIM. The Keycloak
+owner therefore revokes only the approved COP application grants; it must never
+delete the realm user, globally log out SSO sessions, or alter SIM/realm roles.
+The canonical confirmation explains this scope. COP's permanent fence denies
+old COP tokens independently of retained SIM identity. No real account was
+changed to test this policy.
 
-Measurement replies remain `shadow_only`. Own consent GET/DELETE cleanup must
-stay available after disabling producers; no consent is automatically granted
-and no old queue is uploaded by login. The cleanup-client list defaults to the
-existing `csm-mobile`; no dedicated-client migration is performed.
+## Controller and browser
 
-## Reports, blocking and approved retention
+All eleven owners remain mandatory. Missing/unknown/unavailable owner evidence
+keeps capability false and creates no new fence. HTTP202 is pending; confirmation
+HTTP200/accountDeleted=true requires every actual cleanup/readback proof.
+Signed auth_time must be no older than300seconds. A300-second operation-bound
+plan and read capability precede confirmation; the capability is hash-only at
+rest and delivered to web in a scoped Secure/HttpOnly/SameSite=Strict cookie.
+The browser stores only its operation UUID in session storage, never a principal
+or capability in URLs/storage. Exact receipt GET remains readable after login
+removal. Its30-day technical validity is not a personal-data retention policy.
 
-Prepared `cop-account-safety-v1` includes verified targets, stable idempotency,
-canonical Matrix block state, own receipts and moderator operations. Report
-evidence is only explicitly selected/confirmed text, at most 4096 UTF-8 bytes;
-no history, GPS or transcript is automatically attached. The contact is
-`podpora@zeleznalady.cz`. Policy
-`cop-communication-retention-90d-30d-180d-v1` enforces evidence expiry at
-`min(created+90days, firstclosure+30days)` and audit without text by 180 days.
-Block state lasts until unblock or account deletion. These already approved
-durations are not changed by integration.
+The controller uses scope-bound configuration version3; old version2 is not
+adopted. Preflight and receipt require `deletionScope=
+cop_jizda_preserve_shared_identity_sim` in the new browser. The new
+`COP_KEYCLOAK_COP_SCOPE_AUTHORITY_ACCEPTED` defaults false and never reuses old
+identity-delete acceptance. See [ADR0053](../adr/0053_COP_ERASURE_PRESERVES_SHARED_SIM_IDENTITY.md).
 
-Reads/retries and startup/60-second nonsimultaneous maintenance enforce the
-policy. Intake off retains maintenance, accepted blocks, existing receipts,
-idempotent retry, unblock and moderation. Missing or mismatched evidence-key
-configuration cannot silently take over a saved marker. Content-free own
-receipts/HMAC links remain; account-erasure handling and backup replay need
-their actual owner adapter. They are not asserted anonymous.
+New private `/account/delete` does not mount the map/producers. It shows account,
+scope, blockers, an unchecked confirmation, pending owners and final receipt.
+Lost confirmation responses recover the same operation. Local browser credentials
+clear after confirmed revocation; another phone's local deletion is not implied.
+Service worker never supplies the cached map shell for this page. Analytics
+rejects its page/API/receipts. Account-safety API offers the URL only when actual
+deletion is ready.
 
-Remaining production gates: moderator role and accepted operating/filtering
-process, evidence-key lifecycle, verified provider policy/push/call readback,
-multiple-device tests and physical native acceptance. An `action_taken` receipt
-does not itself redact content or ban an account. Already issued LiveKit JWTs
-and active audio are not claimed revoked.
+Content reassessment and first global fence share actual writer admission locks.
+Mobility local impact is compared inside the exact global-store transaction.
+Lock order is content then global store; remote cleanup runs outside admission.
+Queued writes and ownership created after initial preflight cannot slip through.
 
-## Whole-account erasure
+## Actual local owner source
 
-`cop-account-erasure-v1` is a separate explicit operation. Actor-aware preflight
-and confirmation require signed `auth_time` no older than 300 seconds, not
-refreshed `iat`. A positive preflight issues a hash-only operation-bound read
-capability before the permanent fence. The additive exact capability GET remains
-readable after BFF/OIDC removal; legacy authenticated read is unchanged. The
-strict v1 receipt/body remain unchanged. Plans last 300 seconds and read grants
-30 days as technical validity, not personal-data retention. Readiness and
-actor-specific provenance checks require all actual domains before accepting the first
-request; missing adapters return 503 without a new fence. After acceptance,
-durable checkpoints/fences survive restart and disabled intake. HTTP 202 and
-nonempty remaining mean pending, not deleted.
+- Sessions/profiles: every primary/fallback, exact issuer/subject and alert acks.
+- Devices/pairing/mesh: immutable internal issuer, same-transaction permanent
+  fences, purge/readback; provenance omitted from public DTOs. Confirmed denial
+  is403, unknown/outage503; no replacement RAM store after guard acceptance.
+- Voice: actual signed JWT expiry recorded before every response plus final
+  actor/recipient check. LiveKit removes only exact participant and reads back.
+  Unused grants still require waiting through maximum3,600seconds+30seconds
+  then repeated removal. Current disabled voice is not historical zero proof.
+- RAM/derived copies: actual per-state guarded collections, generation-bound
+  account cache, SQL projection fences, private ownership witnesses and hydration
+  without adoption. AI index/vector copies, queued writes and manual notification
+  flights require actual settlement and readback. Concrete local cache ports are
+  bound to the actual Situation, Safety, TAK and SIM Search instances before
+  producers start. They clear reconstructible copies and wait for actual older
+  fetch/body promises; timeout or cancel invocation alone is not settlement.
+  Reference scans are denial checks and never assign authorship. Unknown source
+  subclasses or missing external-stream owner keep readiness false. Local cache
+  clearing does not acknowledge remote SIM/TAK or subscriber deletion.
+- Mobility/Dispatch: routes/outbox/owner share exact guarded service. Identity,
+  invitations, own records and cross-account caches are purged. Provider manifests
+  survive local deletion. Claim+handoff check global fences. Future notices carry
+  verified inviter identity; historical pilot attribution stays unresolved.
+- Moderation: actual local evidence/reports/operations/rates and deleting-actor
+  links in surviving reports are purged/read back. Matrix blocks belong to Messaging.
+- Content: guarded community/sketch/incident stores, immutable provenance and
+  original/derivative manifests. S3 erasure requires actual upload settlement before and after DELETE, plus
+  repeated absence readback. URL expiry/HEAD404 alone are insufficient; default
+  production readiness remains false without a real settlement owner. Unknown
+  writes/versioned buckets remain pending. Projection owners are required.
+- Keycloak: dedicated server authority and exact HTTPS realm/client identity.
+  Scoped COP grants/repeated readback and an identity-generation checkpoint;
+  shared SIM user and sessions are preserved. Unsupported scope, incorrect or
+  service identity, false acknowledgement or generation change cannot complete.
+  It runs last; no global user DELETE/logout is permitted by the selected policy.
 
-The source factory currently connects only the actual
-`cop_sessions_profiles` adapter. It removes provably owned BFF sessions, every
-configured profile store and alert acknowledgements; unknown historical
-issuer ownership remains pending. The other ten adapters are absent:
+## Actual external/production gates
 
-- `keycloak`;
-- `cop_devices`;
-- `messaging_matrix`;
-- `voice_livekit`;
-- `cop_content_media`;
-- `mobility_dispatch`;
-- `sim_measurements`;
-- `ai_router`;
-- `moderation_audit`;
-- `backup_restore`.
+SIM published implementation is frozen at
+[`68e96e7`](https://github.com/voldzi/delta_acr_sim/tree/68e96e7ec19cbbd99b08c0eac865016082521186).
+Its 586 application tests, 40 actual PostgreSQL18.3 cases and 62 contract cases
+passed; six unrelated legacy PostgreSQL cases were skipped in the unit run.
+Typecheck, build and skeleton passed. It is not deployed: actual independently
+owned per-principal admission/drain/commit and completed-history restore replay
+are still required. A healthy runtime or signed TTL document cannot replace
+those operations. COP strict adapters use dedicated server-only erasure origins
+and credentials, actual existing-alias review and complete retained/outbox/key
+inventory; no normal Router token fallback or guessed retained-day completeness.
+Exact existing Router aliases, all retained measurement days/key versions,
+scoped readiness and actor preflight must be accepted; health is insufficient.
+No OpenAI call is needed for erasure tests.
+Messaging published source
+[`ee3b464`](https://github.com/voldzi/csm_messaging/tree/ee3b4641962bf1a72e3709074d1ccc8a69e0ac44)
+adds strict whole-owner v2, targeted mobility effects and actor namespace scope.
+166 isolated tests, production compilation without warnings and binding
+validation (six paths/nine schemas/33 references/13 negative cases) passed.
+COP adds a strict server-only adapter; 70 targeted controller/HTTP cases passed.
+Both preflight versions include the independently verified scopeVersion, so
+namespace changes invalidate the confirmation plan even if provider readiness
+version stays constant. Actual native resolver, Matrix
+identity/devices/keys/media, protocol retention and restore acceptance remain
+required; published source is not a production proof.
+The new actor-specific scope boundary additionally requires an actual native
+`cop_jizda_exclusive` witness for Matrix, notifications, conversations, devices
+and policy metadata. Shared/unknown/matrix-only bindings block before the first
+permanent provider fence. The exact scopeVersion is pinned in that fence and
+rechecked through cleanup/readback. A changed scope stays pending; it never
+authorizes global deactivation. COP exposes separate typed configured-owner and
+actor-scope verifier ports; absence is unavailable, with no env boolean shortcut.
+Local SQL/cache removal cannot stand in for external subscribers/copies.
 
-The current published Messaging source `d61e632eed069a888b5e91b0bf02fb7d6cad7782`
-adds bounded account/device lifecycle jobs alongside selective device cleanup.
-It remains source-only disabled; v1 whole-account receipts are always HTTP 202
-pending with wholeAccountErased=false. Actual Synapse/version/admin HTTPS, store
-identity, restore replay and shared/retained identity policy remain unverified.
-It is not a completed COP provider adapter. No absent domain is represented by a synthetic completed
-proof. Account deletion capability stays false and its usable URL is absent.
+Production safe metadata readback: no effective erasure secret/storeID/runtime
+binding, dedicated Keycloak authority, explicit LiveKit admin URL or moderation
+evidence config. No secret values were printed. Native guard binding, old-image
+rollback rejection and restore quarantine/replay remain required; env labels
+alone are not proof. Activation also requires OIDC-only account authentication
+and an explicitly disabled lab token; current hybrid/lab compatibility cannot
+prove all account writers fenced. No production authentication change was made.
+Human-confirmed Proxmox off-server/X5 backup coverage is
+accepted, but is not account erasure/replay acceptance. Do not ask again for a
+backup-point identifier to repeat that confirmation. See [runbook25](../runbooks/25_ACCOUNT_SAFETY_GUARD_BINDING_PROPOSAL.md).
+Keycloak's discovered shared realm has been resolved by the explicit COP-only
+human policy above; its narrowly scoped authority still requires acceptance.
 
-### Approved shared-vehicle policy and local source scope
+## Verification / release
 
-On 2026-10-13 the human approved deletion of own contributions and personal
-links, preservation of other authors' records, and an actual transfer of every
-active owned shared vehicle to another authorized existing member before
-whole-account deletion. This resolves the vehicle policy choice; it authorizes
-no automatic reassignment, deletion of other authors' history or new financial
-retention exception. A sole owner without an eligible member must resolve the
-transfer first. See [ADR 0052](../adr/0052_APPROVED_SHARED_VEHICLE_ERASURE_POLICY.md)
-and [plan 42](42_COP_ACCOUNT_REMOVAL_PLAN.md).
+Final verification on 2026-10-14:
 
-The local `SharedVehicleErasureService` source candidate assesses the verified
-actor, removes own vehicle records and historical copies, scrubs personal links
-from surviving snapshots and invalidates cross-account cached results that
-would otherwise expose those records or derived projections. A permanent local
-identity/account fence prevents new local vehicle writes and stale receipt
-replay. It is deliberately not registered as a completed `mobility_dispatch`
-adapter: mobility identity, Dispatch and provider cleanup are separate unfinished
-boundaries. The ten missing adapters above, false global deletion capability
-and absent usable deletion URL are unchanged.
+- Full suite: **2,366 passed, zero failed, eight skipped**, 243 test files.
+  Skipped cases use seven separate legacy test database configurations (profile,
+  driver consent, mileage, mobility, receipt details, vehicle audit and safety
+  notification). New account-erasure PostgreSQL/PostGIS and signed HTTP cases
+  ran on the isolated actual database without skips.
+- The actual local erasure lanes cover PostgreSQL17/PostGIS3.5 and a separate
+  PostgreSQL18.3 cluster. Fences, late writes, immutable provenance, duplicate
+  publication, recovery and the unaffected second user are exercised.
+- The complete unit/contract/HTTP suite includes scoped Keycloak18, provider
+  cache93, new actual four-instance server wiring/503 cases, strict SIM HTTP
+  adapter37 and changed Messaging namespace impact. Counts overlap and must
+  not be added to the full suite count.
+- API/web typecheck, all changed code ESLint, skeleton,11 JSON schemas,
+  OpenAPI JSON and generated YAML passed. OpenAPI retains24 existing warnings.
+- All16 workspace builds passed. Bundle budgets, actual local static-runtime
+  smoke and public-demo analytics release/privacy checks passed. Vite retains
+  its existing Cesium large-chunk advisory; the separate bundle budget passed.
 
-Unresolved mapping, ownership and record provenance block before a new local
-fence. An owner's latest edit of another author's current record cannot be
-silently rolled back or retained under the original author's ID to claim erasure.
-Current projections use surviving records. Another author's correction/reference
-to an owned record blocks cleanup until the dependency is explicitly resolved;
-neither that record nor its personal source link is silently rewritten. Every
-affected vehicle invalidates prior sync cursors through its membership revision.
-An active Dispatch group owner has no approved transfer policy/API
-from this vehicle decision. Claimed invitation notifications may be in flight
-outside SQL, and current email does not establish all historical invitation or
-provider ownership. Those checks remain pending actual owner proof. No
-production deletion, deployment, secret or grant is performed.
+The final machine-readable source/test boundary is
+[testing/account-erasure-20261014.json](../testing/account-erasure-20261014.json).
+Provider mocks do not establish actual provider permissions, root resolver
+coverage or production account removal. Actual shared SIM login/refresh after
+scoped revoke, physical whole-account use, native restore quarantine and
+completed-history replay acceptance remain unverified. No real account was
+used or removed; no OpenAI call was needed.
 
-## Rollout and rollback
-
-Safety, old unlink and account-erasure flags remain false in source defaults.
-No production `.env`, database, provider or real account was changed. Future
-activation requires an exact reviewed image/contract, actual owner adapters,
-isolated synthetic-account acceptance and a separately coordinated rollout.
-After use, rollback must preserve keys, policy, fences and checkpoints; restored
-services must replay deletion fences before exposure. Proxmox off-server backup
-coverage does not by itself establish account erasure or replay completion.
-
-The initial source import used JSON semantic merge, generated YAML and
-source/skeleton checks while the shared voice gate was running. The subsequent
-COP P1 validation below includes typecheck and targeted tests; it does not
-establish production, real-database, provider or physical acceptance. No App
-Review submission is authorized by this document.
-
-The new preflight/tracking source is described in [ADR 0051](../adr/0051_ERASURE_PREFLIGHT_AND_RECEIPT_TRACKING.md). Identity cleanup waits for every other owner proof. Accepted workers continue with intake off; fair retries rotate beyond blocked jobs. The independent guard loader and stable-store checks do not establish native old-image rollback enforcement. The current legacy helper remains an explicit blocker, detailed in [runbook 25](../runbooks/25_ACCOUNT_SAFETY_GUARD_BINDING_PROPOSAL.md). The completed source validation below does not activate account deletion.
-
-Current SDK pin 85d79966 also adds a noncreating authentication snapshot and payloadless authentication-change signal over Voice pin 7fbe8878. SDK source/simulator gates were accepted by its owner; this is not proof of the final Jízda host build, physical two-application provider flows, production erasure or account deletion. One existing csm-mobile/COP login remains the integration boundary.
-
-Previous published COP P1 source gate (`9d58cfa`, before the local shared-vehicle component): 165 synthetic/regression tests passed, 4 real PostgreSQL tests skipped because COP_ERASURE_TEST_DATABASE_URL was not configured. Typecheck, scoped ESLint, JSON schema validation, binding OpenAPI lint (24 existing warnings), generated YAML, skeleton and diff validation passed. The gate includes the actual buildServer BFF outage path (503 preserves session/cookie), signed bearer/JWKS/service-auth, mobility-off guard/retention wiring and registered pool checks. Six cases against a real local loopback HTTP OIDC fixture cover expired-token refresh with rotation, 503 recovery, changed issuer/subject, purge during refresh, confirmed fence and callback 503. Verified rotated credentials are saved only into the existing same-owner session; an unavailable guard grants no API access. Callback 503 preserves any prior session but creates no new one and consumes the one-use transaction. No real provider, database, production deployment or physical erasure acceptance was performed.
-
-Current shared-vehicle source gate (2026-10-13): **116 tests passed and 4 opt-in
-real PostgreSQL tests skipped**, across 14 files. The 26 new component/race
-cases cover actual ownership transfer, exact two-account/issuer isolation,
-physical record/tombstone/history purge, unchanged other-author and unrelated
-vehicle data, cross-author dependency blocking, expired cached receipts,
-cursor invalidation after leaving, writer/retry/restart fences, readback failure,
-outage and vehicle-subset versus whole-account status. Actual service tests also
-hold a Dispatch publication after SQL commit and fence the sender or recipient;
-late RAM writes are rejected. Competing publications obey the 512-point bound;
-the unchanged 32-MiB byte ceiling was not separately stress tested. New invitation
-emission is prevented after the inviter/recipient fence;
-an already captured external send is not claimed cancelled.
-
-API TypeScript build/typecheck, scoped ESLint (9 files), 11 JSON schema files,
-binding OpenAPI validation (24 existing warnings), generated YAML, skeleton and
-diff checks passed. The OpenAPI change consists only of two descriptions mirrored
-in the shared mobility artifact; methods, paths and DTO shapes are unchanged.
-The first HTTP-fixture run was blocked by sandbox `listen EPERM` on 127.0.0.1;
-the final local-only synthetic run passed with that test permission. The schema
-CLI's sandbox-blocked IPC was avoided with the Node import loader. No test
-protection, authentication rule or production network boundary was weakened.
-
-No whole-repository web build/full test suite, real PostgreSQL lock/restore,
-provider, physical iPhone or production erasure acceptance was performed in this
-local phase. The component is not invoked by a public route or production worker.
-One existing account/login, the ten missing adapters and disabled whole-account
-deletion remain unchanged. SIM currently has approval for contract/proposal only;
-this vehicle decision creates no SIM implementation or deployment authority.
+Deploy reviewed immutable source with intakefalse first. Activate only after
+actual two-synthetic-account owner/readback/restore acceptance and native binding
+of exact source/image/store. After first accepted deletion preserve keys/fences/
+checkpoints through rollback. Never run an old unguarded binary or expose restored
+services before replay. No actual account erasure/production activation is claimed.

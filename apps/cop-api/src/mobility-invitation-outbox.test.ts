@@ -21,7 +21,8 @@ describe("durable metadata-only mobility invitation outbox",()=>{
   const f=await setup(type);const invite=await f.service.createInvitation(f.a,type,f.entity,f.input);
   expect(await f.service.createInvitation(f.a,type,f.entity,f.input)).toEqual(invite);expect(await f.jobs()).toHaveLength(1);
   const worker=new MobilityInvitationOutbox(f.store,f.provider,f.now);await Promise.all([worker.drain(),worker.drain()]);
-  expect(f.send).toHaveBeenCalledTimes(1);const [sender,_now,key,payload]=f.send.mock.calls[0]!;expect(sender).toBeUndefined();expect(key).toContain(invite.invitationId);
+  expect(f.send).toHaveBeenCalledTimes(1);const [sender,_now,key,payload]=f.send.mock.calls[0]!;
+  expect(sender).toEqual({authMode:"oidc",issuer:"https://synthetic.example",subjectId:"a",username:"",displayName:""});expect(key).toContain(invite.invitationId);
   expect(payload.audience).toEqual({userIds:["b"]});expect(payload.type).toBe("system.account");
   expect(payload.deepLink).toBe(`csm://mobility/invitations/v1/${f.b.accountId}/${type}/${invite.invitationId}`);
   for(const forbidden of ["@example.test","Private name","Private vehicle","Private group",'"lat"','"lon"','"token"'])expect(JSON.stringify(payload)).not.toContain(forbidden);
@@ -54,6 +55,7 @@ describe("durable metadata-only mobility invitation outbox",()=>{
   const fetchMock=vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{
    expect(String(url)).toBe("http://synthetic-messaging.test/api/v1/notifications");expect(init?.method).toBe("POST");
    const headers=new Headers(init?.headers);expect(headers.get("authorization")).toBe("Bearer synthetic-service-token");expect(headers.get("idempotency-key")).toContain("cop-mobility-invitation-v1:");
+   expect(headers.get("x-csm-user-id")).toBe("a");
    const body=JSON.parse(String(init?.body));expect(body.audience).toEqual({userIds:["b"]});expect(body.deepLink).toContain(f.b.accountId);expect(body.type).toBe("system.account");expect(body.body.cs).toBe("Otevřete aplikaci a zkontrolujte pozvánku.");expect(JSON.stringify(body)).not.toContain("@example.test");
    return new Response(JSON.stringify({contractVersion:"csm-notification-v1",providerId:"csm.messaging",notificationId:"synthetic-id",status:"online"}),{status:201});
   });vi.stubGlobal("fetch",fetchMock);

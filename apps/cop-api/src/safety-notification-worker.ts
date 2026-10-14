@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { runtimeAssessment, runtimeOwnerHash, requireRuntimeOwner } from "./runtime-owner-erasure.js";
+import type { ProjectionStateOwner } from "./resource-projection-erasure.js";
 import type { AoiRule } from "./alerts.js";
 import type { MessagingNotificationIntakeResponse } from "./messaging-provider.js";
 import { buildSafetyCandidateNotificationDecision, type CopNotificationDecision } from "./notification-decision.js";
@@ -50,6 +52,8 @@ export interface SafetyNotificationWorkerDependencies {
   notificationStore: SafetyNotificationStore;
   fetchCandidates(query: SafetyNotificationCandidateQuery, now: Date): Promise<SafetyNotificationCandidateCollection>;
   hasEligibleDevice(subjectId: string, now: Date): Promise<boolean>;
+  /** Verified persisted-profile provenance only; fail closed on guard outage. */
+  assertAccountAllowed?(owner?: { issuer: string; subjectId: string }): Promise<void>;
   /** Call existing provider with actor=undefined and the exact decision audience. */
   dispatch(decision: CopNotificationDecision, now: Date): Promise<MessagingNotificationIntakeResponse>;
   now?: () => Date;
@@ -91,6 +95,9 @@ export class SafetyNotificationWorker {
   private cursor?: string;
   private backoffMs = 0;
   private readonly cache = new Map<string, CandidateCacheEntry>();
+  private readonly erasedOwners = new Set<string>();
+  private readonly manualRuns = new Set<Promise<SafetyNotificationRecipientResult>>();
+  private cacheEpoch = 0;
   private state: SafetyNotificationWorkerState;
 
   constructor(private readonly dependencies: SafetyNotificationWorkerDependencies, private readonly config: SafetyNotificationWorkerConfig) {
@@ -102,6 +109,30 @@ export class SafetyNotificationWorker {
   }
 
   snapshot(): SafetyNotificationWorkerState { return { ...this.state }; }
+
+  /** Actual worker copies, including manual HTTP runs. External dispatch remains
+   * a separately required Messaging proof; this port never claims delivery erasure. */
+  projectionErasureOwner(): ProjectionStateOwner {
+    return {
+      ready: async () => !this.config.enabled || !!this.dependencies.assertAccountAllowed,
+      preflight: async owner => {
+        requireRuntimeOwner(owner);
+        return { ...runtimeAssessment(["safety-worker-copies-v1", owner.issuer]), ready: !this.config.enabled || !!this.dependencies.assertAccountAllowed };
+      },
+      erase: async (_resources, context) => {
+        if (!context.actor || (this.config.enabled && !this.dependencies.assertAccountAllowed)) return false;
+        this.erasedOwners.add(runtimeOwnerHash(context.actor));
+        this.cacheEpoch += 1; this.cache.clear();
+        // Existing closures may retain a profile/AOI or an accepted request.
+        // Wait for both scheduler and manual runs before claiming local purge.
+        await Promise.allSettled([...(this.activeRun ? [this.activeRun] : []), ...this.manualRuns]);
+        context.signal.throwIfAborted();
+        if (this.cursor === context.actor.subjectId) this.cursor = undefined;
+        this.cacheEpoch += 1; this.cache.clear();
+        return !this.activeRun && this.manualRuns.size === 0;
+      }
+    };
+  }
 
   start(): void {
     if (!this.config.enabled || this.started) return;
@@ -130,7 +161,14 @@ export class SafetyNotificationWorker {
   }
 
   /** The HTTP caller must independently authorize this exact persisted subjectId. */
-  async runForRecipient(subjectId: string, collection: SafetyNotificationCandidateCollection): Promise<SafetyNotificationRecipientResult> {
+  runForRecipient(subjectId: string, collection: SafetyNotificationCandidateCollection): Promise<SafetyNotificationRecipientResult> {
+    const run = this.executeForRecipient(subjectId, collection);
+    this.manualRuns.add(run);
+    void run.then(() => this.manualRuns.delete(run), () => this.manualRuns.delete(run));
+    return run;
+  }
+
+  private async executeForRecipient(subjectId: string, collection: SafetyNotificationCandidateCollection): Promise<SafetyNotificationRecipientResult> {
     const candidates = collection.candidates;
     const freshUntil = safetyNotificationCollectionFreshUntil(collection, this.now());
     const result: SafetyNotificationRecipientResult = { acceptedCount: 0, skippedCount: 0, failedCount: 0 };
@@ -264,7 +302,12 @@ export class SafetyNotificationWorker {
           ])).digest("hex")}`,
           durationMs: this.config.hydroCooldownMs
         } : undefined;
-        const claim = await this.dependencies.notificationStore.claim(decision.idempotencyKey, expiresAt, this.now(), 180000, cooldown);
+        const owner = current.issuer ? { issuer: current.issuer, subjectId: current.subjectId } : undefined;
+        if (owner && this.erasedOwners.has(runtimeOwnerHash(owner))) return "skipped";
+        if (this.dependencies.assertAccountAllowed) {
+          await this.dependencies.assertAccountAllowed(owner);
+        }
+        const claim = await this.dependencies.notificationStore.claim(decision.idempotencyKey, expiresAt, this.now(), 180000, cooldown, owner);
         if (!claim) return "skipped";
         try {
           if (this.stopping || (!leaseValid() || !profileLeaseValid()) || expiresAt.getTime() <= this.now().getTime()
@@ -273,6 +316,8 @@ export class SafetyNotificationWorker {
             return "skipped";
           }
           decision.notification.audience = { userIds: [subjectId] };
+          if (owner && this.erasedOwners.has(runtimeOwnerHash(owner))) return "skipped";
+          if (this.dependencies.assertAccountAllowed) await this.dependencies.assertAccountAllowed(owner);
           const result = await this.dependencies.dispatch(decision, this.now());
           if (result.status === "online" && result.notificationId && result.deliverySummary
             && result.deliverySummary.targetDeviceCount > 0) {
@@ -291,6 +336,10 @@ export class SafetyNotificationWorker {
   }
 
   private async candidatesForProfile(profile: UserProfileRecord, deadline: number): Promise<FreshCandidate[]> {
+    const owner = profile.issuer ? { issuer: profile.issuer, subjectId: profile.subjectId } : undefined;
+    if (owner && this.erasedOwners.has(runtimeOwnerHash(owner))) return [];
+    if (this.dependencies.assertAccountAllowed) await this.dependencies.assertAccountAllowed(owner);
+    const epoch = this.cacheEpoch;
     const areas = profile.alertPreferences.aoiRules?.filter((area) => area.enabled).slice(0, 10) ?? [];
     const candidates: FreshCandidate[] = [];
     for (const area of areas) {
@@ -306,6 +355,8 @@ export class SafetyNotificationWorker {
       if (!collection || safetyNotificationCollectionFreshUntil(collection, now) === undefined) {
         this.cache.delete(key);
         collection = await this.dependencies.fetchCandidates(query, now);
+        if (epoch !== this.cacheEpoch || (owner && this.erasedOwners.has(runtimeOwnerHash(owner)))) return [];
+        if (this.dependencies.assertAccountAllowed) await this.dependencies.assertAccountAllowed(owner);
         const freshUntil = safetyNotificationCollectionFreshUntil(collection, this.now());
         if (freshUntil === undefined) { this.failure("candidate_source_unavailable"); continue; }
         if (this.cache.size >= 100) this.cache.delete(this.cache.keys().next().value ?? "");

@@ -1,5 +1,10 @@
-import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
+import { type Pool as PgPool, type PoolConfig, type QueryResultRow, type PoolClient } from "pg";
 import { createCopPgPool } from "./cop-pg-pool.js";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { assertProjectionPayloadAllowed, fenceProjectionResources, loadProjectionFences, projectionPayloadMatch, projectionReferences, projectionSearchPatterns,
+  projectionTransaction, resourceProjectionFenceTableSql, type ProjectionEraseContext, type ProjectionResources } from "./resource-projection-erasure.js";
+import { requireRuntimeOwner, runtimeAssessment, runtimeSubjectHash, type RuntimeOwner, type RuntimeOwnerAssessment } from "./runtime-owner-erasure.js";
+import { ContentErasureStoreError } from "./content-erasure.js";
 import {
   buildDomainDeadLetterRecord,
   buildDomainEventRecord,
@@ -30,11 +35,22 @@ export interface DomainDeadLetterQueryResult {
   items: DomainDeadLetterRecord[];
   totalAvailable: number;
 }
+/** Internal witness from one actual PG row; never part of the REST cursor view. */
+export interface EdgeReplayCursorProjection {
+  cursor: EdgeReplayCursorRecord;
+  owner?: RuntimeOwner;
+  ownershipKnown: boolean;
+}
 
 export interface FederationRuntimeStore {
   readonly name: string;
+  projectionErasureReady?(): Promise<boolean>;
+  loadProjectionFences?(): ReturnType<typeof loadProjectionFences>;
+  preflightActorProjections?(owner: RuntimeOwner): Promise<RuntimeOwnerAssessment>;
+  eraseResourceProjections?(resources: ProjectionResources, context: ProjectionEraseContext): Promise<boolean>;
   appendDeadLetter(input: {
     body: unknown;
+    owner?: RuntimeOwner;
     channel?: DomainEventChannel;
     correlationId: string;
     errorCode: string;
@@ -47,15 +63,16 @@ export interface FederationRuntimeStore {
   diagnostics?(): string | undefined;
   getDeadLetter(deadLetterId: string): Promise<DomainDeadLetterRecord | null>;
   getEdgeCursor(nodeId: string): Promise<EdgeReplayCursorRecord | null>;
+  getEdgeCursorProjection?(nodeId: string): Promise<EdgeReplayCursorProjection | null>;
   getNode(nodeId: string): Promise<FederatedNodeRecord | null>;
   init(defaultNodes?: FederatedNodeRecord[]): Promise<void>;
   listDeadLetters(limit: number): Promise<DomainDeadLetterQueryResult>;
   listNodes(): Promise<FederatedNodeRecord[]>;
-  publishEvent(input: DomainEventPublishInput, now?: Date): Promise<DomainEventPublishResult>;
+  publishEvent(input: DomainEventPublishInput, now?: Date, owner?: RuntimeOwner): Promise<DomainEventPublishResult>;
   queryEvents(query: DomainEventReplayQuery): Promise<DomainEventReplayResult>;
-  redriveDeadLetter(deadLetterId: string, input: DomainEventPublishInput, options: { now?: Date; resolvedBy?: string }): Promise<DomainDeadLetterRedriveResult>;
-  resolveDeadLetter(deadLetterId: string, options: { now?: Date; resolvedBy?: string }): Promise<DomainDeadLetterRecord | null>;
-  updateEdgeCursor(input: { lastAckedOffset: number; nodeId: string; now?: Date; updatedBy?: string }): Promise<EdgeReplayCursorRecord>;
+  redriveDeadLetter(deadLetterId: string, input: DomainEventPublishInput, options: { now?: Date; resolvedBy?: string; owner?: RuntimeOwner }): Promise<DomainDeadLetterRedriveResult>;
+  resolveDeadLetter(deadLetterId: string, options: { now?: Date; resolvedBy?: string; owner?: RuntimeOwner }): Promise<DomainDeadLetterRecord | null>;
+  updateEdgeCursor(input: { lastAckedOffset: number; nodeId: string; now?: Date; updatedBy?: string; owner?: RuntimeOwner }): Promise<EdgeReplayCursorRecord>;
   upsertNode(node: FederatedNodeRecord): Promise<void>;
 }
 
@@ -86,6 +103,7 @@ export class PostgresFederationRuntimeStore implements FederationRuntimeStore {
   readonly name = "postgres";
   private lastIdleClientError: string | undefined;
   private readonly pool: PgPool;
+  private readonly projectionClient = new AsyncLocalStorage<PoolClient>();
 
   constructor(config: PoolConfig) {
     this.pool = createCopPgPool("federation-runtime", config);
@@ -95,7 +113,7 @@ export class PostgresFederationRuntimeStore implements FederationRuntimeStore {
   }
 
   async init(defaultNodes: FederatedNodeRecord[] = Array.from(createDefaultFederatedNodes().values())): Promise<void> {
-    await this.pool.query(createFederationRuntimeTablesSql);
+    await this.pool.query(resourceProjectionFenceTableSql + createFederationRuntimeTablesSql);
     for (const node of defaultNodes) {
       await this.upsertNode(node);
     }
@@ -122,80 +140,94 @@ export class PostgresFederationRuntimeStore implements FederationRuntimeStore {
   }
 
   async upsertNode(node: FederatedNodeRecord): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO cop_federation_nodes (
-        node_id, node_role, node_name, health, classification_max, capabilities,
-        software_version, detail, last_seen_at, node_json
-      )
-      VALUES ($1, $2, $3, $4, $5, $6::text[], $7, $8, $9::timestamptz, $10::jsonb)
-      ON CONFLICT (node_id) DO UPDATE SET
-        node_role = EXCLUDED.node_role,
-        node_name = EXCLUDED.node_name,
-        health = EXCLUDED.health,
-        classification_max = EXCLUDED.classification_max,
-        capabilities = EXCLUDED.capabilities,
-        software_version = EXCLUDED.software_version,
-        detail = EXCLUDED.detail,
-        last_seen_at = EXCLUDED.last_seen_at,
-        node_json = EXCLUDED.node_json,
-        updated_at = now()`,
-      [
-        node.nodeId,
-        node.nodeRole,
-        node.nodeName,
-        node.health,
-        node.classificationMax,
-        node.capabilities,
-        node.softwareVersion,
-        node.detail ?? null,
-        node.lastSeenAt,
-        JSON.stringify(node)
-      ]
-    );
+    return this.projectionTx(async client => {
+      await assertProjectionPayloadAllowed(client, node, undefined);
+      await client.query(
+        `INSERT INTO cop_federation_nodes (
+          node_id, node_role, node_name, health, classification_max, capabilities,
+          software_version, detail, last_seen_at, node_json
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::text[], $7, $8, $9::timestamptz, $10::jsonb)
+        ON CONFLICT (node_id) DO UPDATE SET
+          node_role = EXCLUDED.node_role,
+          node_name = EXCLUDED.node_name,
+          health = EXCLUDED.health,
+          classification_max = EXCLUDED.classification_max,
+          capabilities = EXCLUDED.capabilities,
+          software_version = EXCLUDED.software_version,
+          detail = EXCLUDED.detail,
+          last_seen_at = EXCLUDED.last_seen_at,
+          node_json = EXCLUDED.node_json,
+          updated_at = now()`,
+        [
+          node.nodeId,
+          node.nodeRole,
+          node.nodeName,
+          node.health,
+          node.classificationMax,
+          node.capabilities,
+          node.softwareVersion,
+          node.detail ?? null,
+          node.lastSeenAt,
+          JSON.stringify(node)
+        ]
+      );
+    });
   }
 
-  async publishEvent(input: DomainEventPublishInput, now: Date = new Date()): Promise<DomainEventPublishResult> {
-    const event = buildDomainEventRecord(input, 0, now);
-    const inserted = await this.pool.query<DomainEventRow>(
-      `INSERT INTO cop_domain_events (
-        event_id, event_type, channel, producer_node_id, entity_type, entity_id,
-        event_time, received_at, source, subject, event_json
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz, $9, $10, $11::jsonb)
-      ON CONFLICT (event_id) DO NOTHING
-      RETURNING replay_offset, event_id, event_type, channel, producer_node_id, entity_type, entity_id,
-        event_time, received_at, source, subject, event_json`,
-      [
-        event.id,
-        event.type,
-        event.channel,
-        event.data.producerNodeId,
-        event.data.entityType,
-        event.data.entityId,
-        event.time,
-        event.receivedAt,
-        event.source,
-        event.subject ?? null,
-        JSON.stringify(event)
-      ]
-    );
-    const insertedRow = inserted.rows[0];
-    if (insertedRow) {
-      return { duplicate: false, event: eventFromRow(insertedRow) };
-    }
+  async publishEvent(input: DomainEventPublishInput, now: Date = new Date(), owner?: RuntimeOwner): Promise<DomainEventPublishResult> {
+    return this.projectionTx(async client => {
+      await assertProjectionPayloadAllowed(client, input, owner);
+      if (owner && input.subject && input.subject !== owner.subjectId) throw new Error("CONTENT_PROJECTION_OWNER_CONFLICT");
+      const event = buildDomainEventRecord(input, 0, now);
+      const inserted = await client.query<DomainEventRow>(
+        `INSERT INTO cop_domain_events (
+          event_id, owner_issuer, owner_subject_hash, event_type, channel, producer_node_id, entity_type, entity_id,
+          event_time, received_at, source, subject, event_json
+        )
+        VALUES ($1, $12, $13, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz, $9, $10, $11::jsonb)
+        ON CONFLICT (event_id) DO NOTHING
+        RETURNING replay_offset, event_id, event_type, channel, producer_node_id, entity_type, entity_id,
+          event_time, received_at, source, subject, event_json`,
+        [
+          event.id,
+          event.type,
+          event.channel,
+          event.data.producerNodeId,
+          event.data.entityType,
+          event.data.entityId,
+          event.time,
+          event.receivedAt,
+          event.source,
+          event.subject ?? null,
+          JSON.stringify(event),
+          owner?.issuer ?? null,
+          owner ? runtimeSubjectHash(owner.subjectId) : null
+        ]
+      );
+      const insertedRow = inserted.rows[0];
+      if (insertedRow) {
+        return { duplicate: false, event: eventFromRow(insertedRow) };
+      }
 
-    const existing = await this.pool.query<DomainEventRow>(
-      `SELECT replay_offset, event_id, event_type, channel, producer_node_id, entity_type, entity_id,
-        event_time, received_at, source, subject, event_json
-      FROM cop_domain_events
-      WHERE event_id = $1`,
-      [event.id]
-    );
-    const existingRow = existing.rows[0];
-    if (!existingRow) {
-      throw new Error(`Domain event ${event.id} was neither inserted nor found after conflict handling.`);
-    }
-    return { duplicate: true, event: eventFromRow(existingRow) };
+      const existing = await client.query<DomainEventRow & { owner_issuer: string | null; owner_subject_hash: string | null }>(
+        `SELECT replay_offset, event_id, owner_issuer, owner_subject_hash, event_type, channel, producer_node_id, entity_type, entity_id,
+          event_time, received_at, source, subject, event_json
+        FROM cop_domain_events
+        WHERE event_id = $1`,
+        [event.id]
+      );
+      const existingRow = existing.rows[0];
+      if (!existingRow) {
+        throw new Error(`Domain event ${event.id} was neither inserted nor found after conflict handling.`);
+      }
+      // A duplicate is a read of the immutable original row. Today's caller
+      // must never turn a cold legacy/foreign row into a newly attested record.
+      if (owner && (existingRow.owner_issuer !== owner.issuer || existingRow.owner_subject_hash !== runtimeSubjectHash(owner.subjectId))) {
+        throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
+      }
+      return { duplicate: true, event: eventFromRow(existingRow) };
+    });
   }
 
   async queryEvents(query: DomainEventReplayQuery): Promise<DomainEventReplayResult> {
@@ -238,29 +270,35 @@ export class PostgresFederationRuntimeStore implements FederationRuntimeStore {
 
   async appendDeadLetter(input: {
     body: unknown;
+    owner?: RuntimeOwner;
     channel?: DomainEventChannel;
     correlationId: string;
     errorCode: string;
     message: string;
     now?: Date;
   }): Promise<DomainDeadLetterRecord> {
-    const record = buildDomainDeadLetterRecord(input);
-    await this.pool.query(
-      `INSERT INTO cop_domain_dead_letters (
-        dead_letter_id, channel, correlation_id, error_code, message, body_json, received_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz)`,
-      [
-        record.deadLetterId,
-        record.channel,
-        record.correlationId,
-        record.errorCode,
-        record.message,
-        JSON.stringify(record.body ?? null),
-        record.receivedAt
-      ]
-    );
-    return record;
+    return this.projectionTx(async client => {
+      await assertProjectionPayloadAllowed(client, input, input.owner);
+      const record = buildDomainDeadLetterRecord(input);
+      await client.query(
+        `INSERT INTO cop_domain_dead_letters (
+          dead_letter_id, owner_issuer, owner_subject_hash, channel, correlation_id, error_code, message, body_json, received_at
+        )
+        VALUES ($1, $8, $9, $2, $3, $4, $5, $6::jsonb, $7::timestamptz)`,
+        [
+          record.deadLetterId,
+          record.channel,
+          record.correlationId,
+          record.errorCode,
+          record.message,
+          JSON.stringify(record.body ?? null),
+          record.receivedAt,
+          input.owner?.issuer ?? null,
+          input.owner ? runtimeSubjectHash(input.owner.subjectId) : null
+        ]
+      );
+      return record;
+    });
   }
 
   async listDeadLetters(limit: number): Promise<DomainDeadLetterQueryResult> {
@@ -293,48 +331,58 @@ export class PostgresFederationRuntimeStore implements FederationRuntimeStore {
   async redriveDeadLetter(
     deadLetterId: string,
     input: DomainEventPublishInput,
-    options: { now?: Date; resolvedBy?: string }
+    options: { now?: Date; resolvedBy?: string; owner?: RuntimeOwner }
   ): Promise<DomainDeadLetterRedriveResult> {
-    const result = await this.publishEvent(input, options.now);
-    const timestamp = (options.now ?? new Date()).toISOString();
-    const updated = await this.pool.query<DomainDeadLetterRow>(
-      `UPDATE cop_domain_dead_letters
-      SET status = 'redriven',
-        retry_count = retry_count + 1,
-        retry_last_at = $2::timestamptz,
-        retry_last_event_id = $3,
-        resolved_at = COALESCE(resolved_at, $2::timestamptz),
-        resolved_by = COALESCE(resolved_by, $4)
-      WHERE dead_letter_id = $1
-      RETURNING dead_letter_id, channel, correlation_id, error_code, message, body_json, received_at,
-        status, retry_count, retry_last_at, retry_last_event_id, resolved_at, resolved_by`,
-      [deadLetterId, timestamp, result.event.id, options.resolvedBy ?? null]
-    );
-    const row = updated.rows[0];
-    if (!row) {
-      throw new Error(`Dead-letter ${deadLetterId} was not found during re-drive.`);
-    }
-    return {
-      deadLetter: deadLetterFromRow(row),
-      event: result.event,
-      status: result.duplicate ? "duplicate" : "redriven"
-    };
+    return this.projectionTx(async client => {
+      await assertProjectionPayloadAllowed(client, { input, resolvedBy: options.resolvedBy }, options.owner);
+      if (options.owner && options.resolvedBy !== options.owner.subjectId) throw new Error("CONTENT_PROJECTION_OWNER_CONFLICT");
+      const result = await this.publishEvent(input, options.now);
+      const timestamp = (options.now ?? new Date()).toISOString();
+      const updated = await client.query<DomainDeadLetterRow>(
+        `UPDATE cop_domain_dead_letters
+        SET status = 'redriven',
+          retry_count = retry_count + 1,
+          retry_last_at = $2::timestamptz,
+          retry_last_event_id = $3,
+          resolved_at = COALESCE(resolved_at, $2::timestamptz),
+          resolved_by_issuer = CASE WHEN resolved_by IS NULL THEN $5 ELSE resolved_by_issuer END,
+          resolved_by = COALESCE(resolved_by, $4)
+        WHERE dead_letter_id = $1
+        RETURNING dead_letter_id, channel, correlation_id, error_code, message, body_json, received_at,
+          status, retry_count, retry_last_at, retry_last_event_id, resolved_at, resolved_by`,
+        [deadLetterId, timestamp, result.event.id, options.resolvedBy ?? null, options.owner?.issuer ?? null]
+      );
+      const row = updated.rows[0];
+      if (!row) {
+        throw new Error(`Dead-letter ${deadLetterId} was not found during re-drive.`);
+      }
+      return {
+        deadLetter: deadLetterFromRow(row),
+        event: result.event,
+        status: result.duplicate ? "duplicate" : "redriven"
+      };
+    });
   }
 
-  async resolveDeadLetter(deadLetterId: string, options: { now?: Date; resolvedBy?: string }): Promise<DomainDeadLetterRecord | null> {
-    const timestamp = (options.now ?? new Date()).toISOString();
-    const result = await this.pool.query<DomainDeadLetterRow>(
-      `UPDATE cop_domain_dead_letters
-      SET status = 'resolved',
-        resolved_at = COALESCE(resolved_at, $2::timestamptz),
-        resolved_by = COALESCE(resolved_by, $3)
-      WHERE dead_letter_id = $1
-      RETURNING dead_letter_id, channel, correlation_id, error_code, message, body_json, received_at,
-        status, retry_count, retry_last_at, retry_last_event_id, resolved_at, resolved_by`,
-      [deadLetterId, timestamp, options.resolvedBy ?? null]
-    );
-    const row = result.rows[0];
-    return row ? deadLetterFromRow(row) : null;
+  async resolveDeadLetter(deadLetterId: string, options: { now?: Date; resolvedBy?: string; owner?: RuntimeOwner }): Promise<DomainDeadLetterRecord | null> {
+    return this.projectionTx(async client => {
+      await assertProjectionPayloadAllowed(client, { resolvedBy: options.resolvedBy }, options.owner);
+      if (options.owner && options.resolvedBy !== options.owner.subjectId) throw new Error("CONTENT_PROJECTION_OWNER_CONFLICT");
+      const timestamp = (options.now ?? new Date()).toISOString();
+      const result = await client.query<DomainDeadLetterRow>(
+        `UPDATE cop_domain_dead_letters
+        SET status = 'resolved',
+          resolved_at = COALESCE(resolved_at, $2::timestamptz),
+          resolved_by_issuer = CASE WHEN resolved_by IS NULL THEN $4 ELSE resolved_by_issuer END,
+          resolved_by = COALESCE(resolved_by, $3)
+        WHERE dead_letter_id = $1
+        RETURNING dead_letter_id, channel, correlation_id, error_code, message, body_json, received_at,
+          status, retry_count, retry_last_at, retry_last_event_id, resolved_at, resolved_by`,
+        [deadLetterId, timestamp, options.resolvedBy ?? null, options.owner?.issuer ?? null]
+      );
+      const row = result.rows[0];
+      return row ? deadLetterFromRow(row) : null;
+    });
   }
 
   async getEdgeCursor(nodeId: string): Promise<EdgeReplayCursorRecord | null> {
@@ -347,28 +395,42 @@ export class PostgresFederationRuntimeStore implements FederationRuntimeStore {
     const row = result.rows[0];
     return row ? edgeCursorFromRow(row) : null;
   }
-
-  async updateEdgeCursor(input: { lastAckedOffset: number; nodeId: string; now?: Date; updatedBy?: string }): Promise<EdgeReplayCursorRecord> {
-    const timestamp = (input.now ?? new Date()).toISOString();
-    const result = await this.pool.query<EdgeReplayCursorRow>(
-      `INSERT INTO cop_edge_replay_cursors (node_id, last_acked_offset, acked_at, last_replay_at, updated_by)
-      VALUES ($1, $2, $3::timestamptz, $3::timestamptz, $4)
-      ON CONFLICT (node_id) DO UPDATE SET
-        last_acked_offset = GREATEST(cop_edge_replay_cursors.last_acked_offset, EXCLUDED.last_acked_offset),
-        acked_at = CASE
-          WHEN EXCLUDED.last_acked_offset >= cop_edge_replay_cursors.last_acked_offset THEN EXCLUDED.acked_at
-          ELSE cop_edge_replay_cursors.acked_at
-        END,
-        last_replay_at = EXCLUDED.last_replay_at,
-        updated_by = EXCLUDED.updated_by
-      RETURNING node_id, last_acked_offset, acked_at, last_replay_at, updated_by`,
-      [input.nodeId, input.lastAckedOffset, timestamp, input.updatedBy ?? null]
-    );
+  async getEdgeCursorProjection(nodeId: string): Promise<EdgeReplayCursorProjection | null> {
+    const result = await this.pool.query<EdgeReplayCursorRow & { owner_issuer: string | null }>(
+      "SELECT node_id,last_acked_offset,acked_at,last_replay_at,updated_by,owner_issuer FROM cop_edge_replay_cursors WHERE node_id=$1", [nodeId]);
     const row = result.rows[0];
-    if (!row) {
-      throw new Error(`Edge replay cursor for ${input.nodeId} was not returned after acknowledgement.`);
-    }
-    return edgeCursorFromRow(row);
+    if (!row) return null;
+    const owner = row.updated_by && row.owner_issuer ? { issuer: row.owner_issuer, subjectId: row.updated_by } : undefined;
+    if (owner) requireRuntimeOwner(owner);
+    return { cursor: edgeCursorFromRow(row), ownershipKnown: !row.updated_by || !!owner, ...(owner ? { owner } : {}) };
+  }
+
+  async updateEdgeCursor(input: { lastAckedOffset: number; nodeId: string; now?: Date; updatedBy?: string; owner?: RuntimeOwner }): Promise<EdgeReplayCursorRecord> {
+    return this.projectionTx(async client => {
+      await assertProjectionPayloadAllowed(client, input, input.owner);
+      if (input.owner && input.updatedBy !== input.owner.subjectId) throw new Error("CONTENT_PROJECTION_OWNER_CONFLICT");
+      const timestamp = (input.now ?? new Date()).toISOString();
+      const result = await client.query<EdgeReplayCursorRow>(
+        `INSERT INTO cop_edge_replay_cursors (node_id, last_acked_offset, acked_at, last_replay_at, updated_by, owner_issuer)
+        VALUES ($1, $2, $3::timestamptz, $3::timestamptz, $4, $5)
+        ON CONFLICT (node_id) DO UPDATE SET
+          last_acked_offset = GREATEST(cop_edge_replay_cursors.last_acked_offset, EXCLUDED.last_acked_offset),
+          acked_at = CASE
+            WHEN EXCLUDED.last_acked_offset >= cop_edge_replay_cursors.last_acked_offset THEN EXCLUDED.acked_at
+            ELSE cop_edge_replay_cursors.acked_at
+          END,
+          last_replay_at = EXCLUDED.last_replay_at,
+          updated_by = EXCLUDED.updated_by,
+          owner_issuer = EXCLUDED.owner_issuer
+        RETURNING node_id, last_acked_offset, acked_at, last_replay_at, updated_by`,
+        [input.nodeId, input.lastAckedOffset, timestamp, input.updatedBy ?? null, input.owner?.issuer ?? null]
+      );
+      const row = result.rows[0];
+      if (!row) {
+        throw new Error(`Edge replay cursor for ${input.nodeId} was not returned after acknowledgement.`);
+      }
+      return edgeCursorFromRow(row);
+    });
   }
 
   async countEvents(): Promise<number> {
@@ -379,6 +441,53 @@ export class PostgresFederationRuntimeStore implements FederationRuntimeStore {
   async countDeadLetters(): Promise<number> {
     const result = await this.pool.query<{ count: string }>("SELECT count(*)::text AS count FROM cop_domain_dead_letters");
     return Number(result.rows[0]?.count ?? 0);
+  }
+
+  private projectionTx<T>(run: (client: PoolClient) => Promise<T>, exclusive = false): Promise<T> {
+    const current = this.projectionClient.getStore();
+    return current ? run(current) : projectionTransaction(this.pool, client => this.projectionClient.run(client, () => run(client)), exclusive);
+  }
+  async projectionErasureReady(): Promise<boolean> {
+    await this.pool.query("SELECT 1 FROM cop_content_projection_fences LIMIT 0; SELECT owner_issuer,owner_subject_hash,event_json FROM cop_domain_events LIMIT 0; SELECT owner_issuer,owner_subject_hash,body_json FROM cop_domain_dead_letters LIMIT 0; SELECT owner_issuer FROM cop_edge_replay_cursors LIMIT 0; SELECT node_json FROM cop_federation_nodes LIMIT 0");
+    return true;
+  }
+  loadProjectionFences(): ReturnType<typeof loadProjectionFences> { return loadProjectionFences(this.pool); }
+  async preflightActorProjections(owner: RuntimeOwner): Promise<RuntimeOwnerAssessment> {
+    requireRuntimeOwner(owner);
+    const patterns = projectionSearchPatterns([], owner), hash = runtimeSubjectHash(owner.subjectId);
+    const events = await this.pool.query<{ owner_issuer: string | null; owner_subject_hash: string | null; event_json: unknown }>("SELECT owner_issuer,owner_subject_hash,event_json FROM cop_domain_events WHERE lower(event_json::text) LIKE ANY($1::text[]) OR owner_subject_hash=$2 LIMIT 10001", [patterns, hash]);
+    const dead = await this.pool.query<{ owner_issuer: string | null; owner_subject_hash: string | null; body_json: unknown }>("SELECT owner_issuer,owner_subject_hash,body_json FROM cop_domain_dead_letters WHERE lower(body_json::text) LIKE ANY($1::text[]) OR lower(message) LIKE ANY($1::text[]) OR lower(correlation_id) LIKE ANY($1::text[]) OR owner_subject_hash=$2 LIMIT 10001", [patterns, hash]);
+    const resolutions = await this.pool.query<{ resolved_by_issuer: string | null }>("SELECT resolved_by_issuer FROM cop_domain_dead_letters WHERE resolved_by=$1", [owner.subjectId]);
+    const cursors = await this.pool.query<{ owner_issuer: string | null }>("SELECT owner_issuer FROM cop_edge_replay_cursors WHERE updated_by=$1", [owner.subjectId]);
+    const nodes = await this.pool.query("SELECT node_id FROM cop_federation_nodes WHERE lower(node_json::text) LIKE ANY($1::text[]) LIMIT 1", [patterns]);
+    return { ...runtimeAssessment([events.rows, dead.rows, resolutions.rows, cursors.rows, nodes.rows]), ready: !nodes.rowCount && events.rows.length <= 10000 && dead.rows.length <= 10000 && resolutions.rows.every(row => row.resolved_by_issuer === owner.issuer) && cursors.rows.every(row => row.owner_issuer === owner.issuer) && [...events.rows, ...dead.rows].every(row => row.owner_issuer === owner.issuer && row.owner_subject_hash === hash) };
+  }
+  async eraseResourceProjections(resources: ProjectionResources, context: ProjectionEraseContext): Promise<boolean> {
+    const refs = projectionReferences(resources), ids = refs.map(ref => ref.id), patterns = projectionSearchPatterns(refs, context.actor), hash = context.actor ? runtimeSubjectHash(context.actor.subjectId) : null;
+    return this.projectionTx(async client => {
+      await fenceProjectionResources(client, resources, context);
+      const events = await client.query<{ event_id: string; event_json: unknown; owner_issuer: string | null; owner_subject_hash: string | null }>("SELECT event_id,event_json,owner_issuer,owner_subject_hash FROM cop_domain_events WHERE lower(entity_id)=ANY($1::text[]) OR lower(event_json::text) LIKE ANY($2::text[]) OR owner_subject_hash=$3 LIMIT 10001", [ids, patterns, hash]);
+      const dead = await client.query<{ dead_letter_id: string; body_json: unknown; owner_issuer: string | null; owner_subject_hash: string | null }>("SELECT dead_letter_id,body_json,owner_issuer,owner_subject_hash FROM cop_domain_dead_letters WHERE lower(body_json::text) LIKE ANY($1::text[]) OR lower(message) LIKE ANY($1::text[]) OR lower(correlation_id) LIKE ANY($1::text[]) OR owner_subject_hash=$2 LIMIT 10001", [patterns, hash]);
+      if (events.rows.length > 10000 || dead.rows.length > 10000) return false;
+      let complete = true;
+      for (const row of events.rows) {
+        context.signal.throwIfAborted();
+        const ownerCompatible = !row.owner_issuer || !!(context.actor && row.owner_issuer === context.actor.issuer && row.owner_subject_hash === hash);
+        const owned = ownerCompatible && (projectionPayloadMatch(row.event_json, refs, context.actor) === "owned" || !!(context.actor && row.owner_issuer === context.actor.issuer && row.owner_subject_hash === hash));
+        if (owned) await client.query("DELETE FROM cop_domain_events WHERE event_id=$1", [row.event_id]); else complete = false;
+      }
+      for (const row of dead.rows) {
+        context.signal.throwIfAborted();
+        // Raw validation failures can forge source/producer fields. Only the
+        // separate actor witness written by the server establishes ownership.
+        const owned = !!(context.actor && row.owner_issuer === context.actor.issuer && row.owner_subject_hash === hash);
+        if (owned) await client.query("DELETE FROM cop_domain_dead_letters WHERE dead_letter_id=$1", [row.dead_letter_id]); else complete = false;
+      }
+      if (context.actor) await client.query("UPDATE cop_edge_replay_cursors SET updated_by=NULL,owner_issuer=NULL WHERE updated_by=$1 AND owner_issuer=$2", [context.actor.subjectId, context.actor.issuer]);
+      if (context.actor) await client.query("UPDATE cop_domain_dead_letters SET resolved_by=NULL,resolved_by_issuer=NULL WHERE resolved_by=$1 AND resolved_by_issuer=$2", [context.actor.subjectId, context.actor.issuer]);
+      const remaining = await client.query("SELECT 1 FROM cop_domain_events WHERE lower(entity_id)=ANY($1::text[]) OR lower(event_json::text) LIKE ANY($2::text[]) OR owner_subject_hash=$3 UNION ALL SELECT 1 FROM cop_domain_dead_letters WHERE lower(body_json::text) LIKE ANY($2::text[]) OR lower(message) LIKE ANY($2::text[]) OR lower(correlation_id) LIKE ANY($2::text[]) OR resolved_by=$4 OR owner_subject_hash=$3 UNION ALL SELECT 1 FROM cop_edge_replay_cursors WHERE updated_by=$4 UNION ALL SELECT 1 FROM cop_federation_nodes WHERE lower(node_json::text) LIKE ANY($2::text[]) LIMIT 1", [ids, patterns, hash, context.actor?.subjectId ?? null]);
+      context.signal.throwIfAborted(); return complete && !remaining.rowCount;
+    }, true);
   }
 
   diagnostics(): string | undefined {
@@ -533,6 +642,13 @@ CREATE INDEX IF NOT EXISTS cop_domain_dead_letters_error_idx
 CREATE INDEX IF NOT EXISTS cop_domain_dead_letters_status_idx
   ON cop_domain_dead_letters (status, received_at DESC);
 
+ALTER TABLE cop_domain_events ADD COLUMN IF NOT EXISTS owner_issuer text;
+ALTER TABLE cop_domain_events ADD COLUMN IF NOT EXISTS owner_subject_hash text;
+ALTER TABLE cop_domain_dead_letters ADD COLUMN IF NOT EXISTS owner_issuer text;
+ALTER TABLE cop_domain_dead_letters ADD COLUMN IF NOT EXISTS owner_subject_hash text;
+ALTER TABLE cop_domain_dead_letters ADD COLUMN IF NOT EXISTS resolved_by_issuer text;
+CREATE INDEX IF NOT EXISTS cop_domain_events_owner_idx ON cop_domain_events(owner_subject_hash);
+CREATE INDEX IF NOT EXISTS cop_domain_dead_letters_owner_idx ON cop_domain_dead_letters(owner_subject_hash);
 CREATE TABLE IF NOT EXISTS cop_edge_replay_cursors (
   node_id text PRIMARY KEY,
   last_acked_offset bigint NOT NULL DEFAULT 0,
@@ -540,6 +656,7 @@ CREATE TABLE IF NOT EXISTS cop_edge_replay_cursors (
   last_replay_at timestamptz,
   updated_by text
 );
+ALTER TABLE cop_edge_replay_cursors ADD COLUMN IF NOT EXISTS owner_issuer text;
 `;
 
 function nodeFromRow(row: FederatedNodeRow): FederatedNodeRecord {

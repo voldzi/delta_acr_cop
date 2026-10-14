@@ -13178,7 +13178,21 @@
             "$ref": "#/components/responses/ServiceUnavailable"
           }
         },
-        "x-cop-ai-exposure": "forbidden"
+        "x-cop-ai-exposure": "forbidden",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-COP-Account-Erasure-Link",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "canonical-web-v1"
+              ]
+            },
+            "description": "Opt in to the canonical private web deletion link. Published native v1 decoders require false/null; clients without this header retain that compatible response. The separate whole-deletion controller still requires all owner gates and fresh authentication."
+          }
+        ]
       }
     },
     "/api/v1/me/communication/reports": {
@@ -14017,7 +14031,7 @@
         "x-cop-ai-exposure": "forbidden",
         "operationId": "requestAccountErasure",
         "summary": "Explicitly request whole COP account deletion",
-        "description": "Separate from Jizda unlink. Requires verified signed auth_time no older than 300 seconds; refreshed iat is insufficient. Idempotency is issuer/subject bound. Durable global fence precedes cleanup and survives provider outages, retries, intake disablement and code rollback. Missing or unaccepted adapters fail 503 before a new fence. Existing jobs resume in a trusted worker after login removal; no token is stored in the job. Flags are disabled in production. First acceptance additionally requires a current server preflight plan and possession of its already issued read capability. Unknown ownership or changed/expired plan fails before fence. Keycloak cleanup runs only after all other durable owner proofs complete. Accepted workers and fences remain active when intake is off; existing own idempotent retries preserve their behavior. Activation is blocked until stable guard-store identity and supported infrastructure runtime attestation are accepted.",
+        "description": "Separate from Jizda unlink. Requires verified signed auth_time no older than 300 seconds; refreshed iat is insufficient. Idempotency is issuer/subject bound. Durable global fence precedes cleanup and survives provider outages, retries, intake disablement and code rollback. Missing or unaccepted adapters fail 503 before a new fence. Existing jobs resume in a trusted worker after login removal; no token is stored in the job. Flags are disabled in production. First acceptance additionally requires a current server preflight plan and possession of its already issued read capability. Unknown ownership or changed/expired plan fails before fence. Keycloak revokes only COP/Jizda application grants after all other durable owner proofs complete; the explicitly retained shared identity and SIM access/sessions are not deleted or globally logged out. Accepted workers and fences remain active when intake is off; existing own idempotent retries preserve their behavior. Activation is blocked until stable guard-store identity and supported infrastructure runtime attestation are accepted. Content impact reassessment and the first global fence share the actual domain admission locks; Mobility ownership is rechecked inside the exact global store transaction. A queued writer cannot recreate owned content after acceptance. Local owner proof does not cover external projections, Messaging, SIM or restored copies.",
         "parameters": [
           {
             "in": "header",
@@ -33251,15 +33265,24 @@
           },
           "accountDeletion": {
             "type": "boolean",
-            "const": false,
-            "description": "Account erasure is not yet accepted or available. Never expose a delete action based on this candidate."
+            "description": "True only when the accepted whole-account controller proves every required owner adapter and runtime/restore gate ready. Disabled or incomplete installations return false."
           },
           "accountDeletionUrl": {
-            "type": "null",
-            "description": "No functioning direct account deletion flow is deployed. Never substitute a generic support or account-console URL."
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "/account/delete",
+              null
+            ],
+            "description": "Canonical same-origin whole COP account form, offered only with accountDeletion=true. Its own checks and fresh authentication remain required. Null while the flow is unavailable; never substitute a generic support or console URL."
           },
           "accountDeletionUnavailableReason": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "reportContactEmail": {
             "type": "string",
@@ -33280,7 +33303,41 @@
             "type": "string",
             "const": "matrix_ignore_policy"
           }
-        }
+        },
+        "oneOf": [
+          {
+            "required": ["accountDeletion"],
+            "properties": {
+              "accountDeletion": {
+                "const": false
+              },
+              "accountDeletionUrl": {
+                "type": "null"
+              },
+              "accountDeletionUnavailableReason": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "required": [
+              "accountDeletion",
+              "accountDeletionUrl",
+              "accountDeletionUnavailableReason"
+            ],
+            "properties": {
+              "accountDeletion": {
+                "const": true
+              },
+              "accountDeletionUrl": {
+                "const": "/account/delete"
+              },
+              "accountDeletionUnavailableReason": {
+                "type": "null"
+              }
+            }
+          }
+        ]
       },
       "CommunicationReportTarget": {
         "oneOf": [
@@ -33843,6 +33900,7 @@
         "additionalProperties": false,
         "required": [
           "contractVersion",
+          "deletionScope",
           "operationId",
           "status",
           "requestedAt",
@@ -33854,6 +33912,11 @@
         "properties": {
           "contractVersion": {
             "const": "cop-account-erasure-v1"
+          },
+          "deletionScope": {
+            "type": "string",
+            "const": "cop_jizda_preserve_shared_identity_sim",
+            "description": "COP/Jizda data and access only; shared identity, SIM profile, roles and sessions are outside erasure scope."
           },
           "operationId": {
             "type": "string",
@@ -34066,6 +34129,7 @@
         "additionalProperties": false,
         "required": [
           "contractVersion",
+          "deletionScope",
           "operationId",
           "canConfirm",
           "blockers"
@@ -34074,6 +34138,11 @@
           "contractVersion": {
             "type": "string",
             "const": "cop-account-erasure-preflight-v1"
+          },
+          "deletionScope": {
+            "type": "string",
+            "const": "cop_jizda_preserve_shared_identity_sim",
+            "description": "COP/Jizda data and access only; shared identity, SIM profile, roles and sessions are outside erasure scope."
           },
           "operationId": {
             "type": "string",

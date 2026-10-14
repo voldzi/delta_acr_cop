@@ -1,3 +1,4 @@
+import { ProviderCopiesBoundary, prepareProviderCacheCopy, trackProviderCopyFetch, providerCopyCancellationTracker } from "./provider-copies-erasure.js";
 import { createTakGatewaySourceSystem, type SourceSystem } from "@cop/canonical-model";
 import { normalizeProviderMapCatalog, type ProviderMapCatalog } from "./provider-map-catalog.js";
 import type { SourceHealthOverride } from "./types.js";
@@ -126,6 +127,7 @@ export interface TakGatewayFeatureCollection {
 }
 
 export interface TakGatewaySource {
+  providerCopiesBoundary?(): ProviderCopiesBoundary;
   readonly config: TakGatewaySourceConfig;
   readonly sourceSystem: SourceSystem;
   cacheStats?(): TakGatewayCacheStats;
@@ -167,6 +169,7 @@ export function createTakGatewaySourceFromEnv(env: Record<string, string | undef
 }
 
 export class TakGatewaySourceAdapter implements TakGatewaySource {
+  private readonly copies: ProviderCopiesBoundary;
   readonly sourceSystem: SourceSystem;
   private readonly featureCache: ManagedTakGatewayCache<TakGatewayFeatureCollection>;
   private catalogCache: { expiresAtMs: number; value: ProviderMapCatalog } | null = null;
@@ -180,7 +183,12 @@ export class TakGatewaySourceAdapter implements TakGatewaySource {
       maxEntries: cacheMaxEntries(config),
       staleIfErrorMs: staleIfErrorMs(config)
     });
+    this.copies = new ProviderCopiesBoundary({ family: "TakGatewaySource", target: this, prototype: TakGatewaySourceAdapter.prototype,
+      methods: ["fetchCatalog", "fetchLayers", "fetchSources", "fetchFeatures"],
+      caches: { clear: () => { this.catalogCache = null; this.layerCache = null; this.sourceCache = null; this.featureCache.clear(); }, values: () => [...this.featureCache.values(), this.catalogCache?.value, this.layerCache?.value, this.sourceCache?.value].filter(value => value !== undefined), inflight: () => this.featureCache.stats().inflight + (this.catalogInflight ? 1 : 0) } });
   }
+
+  providerCopiesBoundary(): ProviderCopiesBoundary { return this.copies; }
 
   cacheStats(): TakGatewayCacheStats {
     return this.featureCache.stats();
@@ -198,7 +206,7 @@ export class TakGatewaySourceAdapter implements TakGatewaySource {
       const value = await this.catalogInflight;
       this.catalogCache = {
         expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
-        value
+        value: prepareProviderCacheCopy(value)
       };
       return value;
     } finally {
@@ -213,7 +221,7 @@ export class TakGatewaySourceAdapter implements TakGatewaySource {
     const value = takGatewayLayersFromProviderCatalog(await this.fetchCatalog(requestNow));
     this.layerCache = {
       expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
-      value
+      value: prepareProviderCacheCopy(value)
     };
     return value;
   }
@@ -225,7 +233,7 @@ export class TakGatewaySourceAdapter implements TakGatewaySource {
     const value = takGatewaySourcesFromProviderCatalog(await this.fetchCatalog(requestNow));
     this.sourceCache = {
       expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
-      value
+      value: prepareProviderCacheCopy(value)
     };
     return value;
   }
@@ -318,6 +326,9 @@ class ManagedTakGatewayCache<T> {
     return { status: refreshedEntry && refreshedEntry.expiresAtMs > Date.now() ? "miss" : "stale", value };
   }
 
+  clear(): void { this.entries.clear(); }
+  values(): T[] { return [...this.entries.values()].map(entry => entry.value); }
+
   stats(): TakGatewayCacheStats {
     return {
       entries: this.entries.size,
@@ -332,7 +343,7 @@ class ManagedTakGatewayCache<T> {
       expiresAtMs: now + Math.max(0, ttlMs),
       lastAccessedAtMs: now,
       staleUntilMs: now + Math.max(0, ttlMs) + Math.max(0, this.options.staleIfErrorMs),
-      value
+      value: prepareProviderCacheCopy(value)
     });
     this.evictIfNeeded();
   }
@@ -566,6 +577,10 @@ function takGatewaySourcesFromProviderCatalog(catalog: ProviderMapCatalog): TakG
 }
 
 async function fetchJson(url: URL, config: TakGatewaySourceConfig, requestNow: Date): Promise<unknown> {
+  return trackProviderCopyFetch(() => fetchJsonUntracked(url, config, requestNow));
+}
+
+async function fetchJsonUntracked(url: URL, config: TakGatewaySourceConfig, requestNow: Date): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
   const headers: Record<string, string> = {
@@ -581,6 +596,7 @@ async function fetchJson(url: URL, config: TakGatewaySourceConfig, requestNow: D
       signal: controller.signal
     });
     if (!response.ok) {
+      void providerCopyCancellationTracker()(() => response.body?.cancel() ?? Promise.resolve()).catch(() => {});
       if (response.status === 401) {
         throw new Error("TAK Gateway read token was rejected (401). Check COP_TAK_GATEWAY_READ_TOKEN.");
       }

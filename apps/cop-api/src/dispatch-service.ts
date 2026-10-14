@@ -74,6 +74,15 @@ export class DispatchService extends MobilityService {
     });
   }
   closeDispatch(): void { if (this.cleanupTimer) clearInterval(this.cleanupTimer); this.latestPoints.clear(); this.invalidatedShares.clear(); }
+  /** Erasure runs under the store's same global writer transaction lock. Clear sender and
+   * recipient ciphertext for every changed audience, including already stopped shares. */
+  forgetErasedDispatchShares(shareIds: readonly string[], deviceIds: readonly string[] = []): void {
+    const devices = new Set(deviceIds), forgotten = new Set(shareIds);
+    for (const [id, point] of this.latestPoints) if (devices.has(point.deviceId) || point.boxes.some(box => devices.has(box.recipientDeviceId))) forgotten.add(id);
+    for (const id of forgotten) { this.latestPoints.delete(id); this.invalidatedShares.delete(id); }
+    if ([...forgotten].some(id => this.latestPoints.has(id) || this.invalidatedShares.has(id)) ||
+      [...this.latestPoints.values()].some(point => devices.has(point.deviceId) || point.boxes.some(box => devices.has(box.recipientDeviceId)))) throw new Error("Dispatch cache erasure incomplete");
+  }
   async createGroup(account: Wire.MobilityAccount, input: Wire.DispatchGroupCreate): Promise<Wire.DispatchGroup> {
     return this.operation(account, input.operationId, "group:create", input, ["dispatch-directory", `owner:${account.accountId}`], async tx => {
       const owned = (await tx.scan<GroupState>("group:")).filter(x => !x.value.deletedAt && x.value.group.members.some(m => m.accountId === account.accountId && m.role === "owner"));
@@ -106,6 +115,7 @@ export class DispatchService extends MobilityService {
       requireMobility(state.group.membershipRevision === input.expectedMembershipRevision, 409, "REVISION_CONFLICT", "Členství se změnilo.");
       const target = state.group.members.find(m => m.accountId === input.accountId);
       requireMobility(target && target.role !== "owner", 409, "OWNER_REQUIRED", "Vlastník nemůže opustit aktivní skupinu.");
+      if (input.action === "set_role") await this.assertAccountAllowed(tx, target.accountId);
       if (input.action === "set_role") { requireMobility(state.group.members.find(m => m.accountId === account.accountId)?.role === "owner" && input.role, 403, "OWNER_REQUIRED", "Roli může změnit pouze vlastník."); target.role = input.role; }
       else { requireMobility(input.action !== "leave" || input.accountId === account.accountId, 403, "SELF_REQUIRED", "Odchod se týká pouze vašeho účtu."); state.group.members = state.group.members.filter(m => m.accountId !== input.accountId); }
       state.group.membershipRevision++; this.invalidateShares(state); await tx.set(`group:${id}`, state); return state.group;

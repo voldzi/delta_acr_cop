@@ -48,7 +48,7 @@ export class LiveKitVoiceCallMediaIssuer implements VoiceCallMediaIssuer {
   async issue(
     record: VoiceCallRecord,
     actor: AuthenticatedActor,
-    now: Date
+    _now: Date
   ): Promise<VoiceCallMediaCredentials> {
     const identity = actor.subjectId;
     const token = new AccessToken(this.apiKey, this.apiSecret, {
@@ -63,13 +63,17 @@ export class LiveKitVoiceCallMediaIssuer implements VoiceCallMediaIssuer {
       room: liveKitRoomName(record.callId),
       roomJoin: true
     });
+    const jwt = await token.toJwt();
+    // The server SDK signs using its real issuance clock, not the route's injected clock.
+    const payload = JSON.parse(Buffer.from(jwt.split(".")[1]!, "base64url").toString("utf8")) as { exp?: unknown };
+    if (!Number.isSafeInteger(payload.exp) || Number(payload.exp) <= 0) throw new Error("Issued voice token expiry is invalid.");
     return {
       e2eeKey: createHmac("sha256", this.e2eeSecret)
         .update(`cop-voice-call-e2ee:${record.callId}`, "utf8")
         .digest("base64url"),
-      expiresAt: new Date(now.getTime() + this.tokenTtlSeconds * 1_000).toISOString(),
+      expiresAt: new Date(Number(payload.exp) * 1_000).toISOString(),
       serverUrl: this.publicUrl,
-      token: await token.toJwt()
+      token: jwt
     };
   }
 }

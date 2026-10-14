@@ -4,6 +4,26 @@ import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureError, AccountErasureService
 import { registerAccountErasureRoutes } from "./account-erasure-routes.js";
 import { isAccountErasureReceiptRead } from "./account-erasure-transport.js";
 import { createCOPSessionsProfilesErasureAdapter } from "./cop-sessions-profiles-erasure.js";
+import { createCOPDevicesErasureAdapter } from "./cop-devices-erasure.js";
+import { createVoiceLiveKitErasureAdapter, LiveKitVoiceErasureProvider } from "./voice-livekit-erasure.js";
+import { createKeycloakAccountErasureAdapter } from "./keycloak-account-erasure.js";
+import { MobilityAccountErasureAdapter } from "./mobility-account-erasure.js";
+import { SharedMobilityService } from "./mobility-invitations.js";
+import { MobilityInvitationOutbox } from "./mobility-invitation-outbox.js";
+import { MobilityFailure } from "./mobility-service.js";
+import { createCOPContentMediaErasureAdapter } from "./cop-content-media-erasure.js";
+import type { CommunityProjectionEraser } from "./community-erasure.js";
+import { withVerifiedCommunityActor, withoutVerifiedCommunityActor } from "./community-erasure.js";
+import { ContentErasureStoreError } from "./content-erasure.js";
+import { installCopStateProjectionOwner, runWithProjectionActor, runWithProjectionHydration, runWithVerifiedProjectionOwner, type CopStateProjectionOwner } from "./cop-state-erasure.js";
+import { createMessagingAccountErasureAdapter, createMessagingMobilityProviderEffects, type MessagingAccountErasureOptions } from "./messaging-account-erasure.js";
+import { createSimRouterAccountErasureAdapter, createSimMeasurementsAccountErasureAdapter,
+  type SimAccountErasureOptions, type SimMeasurementsErasureOptions } from "./sim-account-erasure.js";
+import { createCommunityProjectionEraser, boundedProjectionJSON, canonicalProjectionReference, projectionPayloadMatch, projectionReferences,
+  type ProjectionStateOwner, type ProjectionRemoteOwner, type ResourceProjectionStore } from "./resource-projection-erasure.js";
+import { runtimeAssessment, type RuntimeOwner, type RuntimeOwnerAssessment } from "./runtime-owner-erasure.js";
+import { createAiRetainedCopiesErasure, attachAiSemanticDocumentProvenance } from "./ai-retained-copies-erasure.js";
+import { createProviderCopiesErasure, ProviderCopiesUnavailableError, type ProviderCopiesOwner, type ProviderLocalCopiesSource } from "./provider-copies-erasure.js";
 import { MediaNewsSourceAdapter } from "./media-news-source.js";
 import { createSafetyNotificationStoreFromEnv, type SafetyNotificationStore } from "./safety-notification-store.js";
 import { SafetyNotificationWorker, safetyNotificationWorkerConfigFromEnv, type SafetyNotificationWorkerConfig } from "./safety-notification-worker.js";
@@ -12,6 +32,7 @@ import { readVoiceCallPeer, type VoiceCallPeer } from "./voice-call-peer.js";
 import { registerCOPAccountProfile } from "./cop-account-profile.js";
 import { registerMobilityRoutes } from "./routes/mobility-routes.js";
 import { accountSafetyGuardStoreFromEnv, MemoryMobilityStore, mobilityStoreFromEnv, type MobilityStore } from "./mobility-store.js";
+import { RuntimeOwnerErasedError, RuntimeOwnerUnknownError } from "./runtime-owner-erasure.js";
 import { communityReportPresence } from "./community-report-presence.js";
 import { groupRoadObservations, RoadEnrichmentRunner } from "./road-enrichment.js";
 import compress from "@fastify/compress";
@@ -358,6 +379,14 @@ import {
 export interface BuildServerOptions {
   accountErasure?: AccountErasureService;
   accountErasureAdapters?: readonly AccountErasureAdapter[];
+  contentErasureProjections?: CommunityProjectionEraser & { ready(): Promise<boolean> };
+  /** Actual configured provider/stream copies; never a boolean acceptance label. */
+  contentRemoteProjectionOwner?: ProjectionRemoteOwner;
+  messagingErasureOwnerVerifier?: MessagingAccountErasureOptions["verifyConfiguredOwner"];
+  messagingErasureActorScopeVerifier?: MessagingAccountErasureOptions["verifyActorScope"];
+  simErasureOwnerVerifier?: SimAccountErasureOptions["verifyConfiguredOwner"];
+  simErasureIdentityReview?: SimAccountErasureOptions["reviewExistingIdentity"];
+  simMeasurementErasureInventory?: SimMeasurementsErasureOptions["inventory"];
   communicationSafety?: CommunicationSafetyService;
   jizdaAppLink?: JizdaAppLinkService;
   mediaNewsSource?: Pick<MediaNewsSourceAdapter, "fetchContext">;
@@ -418,6 +447,7 @@ type AiChatAgentJobStatus = "completed" | "failed" | "queued" | "running";
 
 interface AiChatAgentJobRecord {
   actorSubjectId: string;
+  actorIssuer?: string;
   createdAt: string;
   error?: {
     message: string;
@@ -934,7 +964,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const mediaConversionManager: MediaConversionManager | undefined = createMediaConversionManagerFromEnv({
     logger: app.log,
     mediaStorage,
-    updateAttachmentMetadata: updateCommunityAttachmentMetadata
+    updateAttachmentMetadata: updateCommunityAttachmentMetadata,
+    withOwnedMediaWrite: withOwnedCommunityMediaWrite
   });
   const messagingProvider = options.messagingProvider ?? createMessagingProviderFromEnv();
   const mobileDeviceStore = options.mobileDeviceStore ?? createMobileDeviceStoreFromEnv();
@@ -964,6 +995,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         notificationStore: safetyNotificationStore,
         fetchCandidates: (query, requestNow) => safetyDataSource.fetchNotificationCandidates!(query, requestNow),
         hasEligibleDevice: hasEligibleSafetyDevice,
+      assertAccountAllowed: async owner => {
+        if (!accountErasure) return;
+        if (!owner) throw new AccountErasureError(503, "ACCOUNT_OWNERSHIP_UNRESOLVED");
+        await accountErasure.assertAllowed({ authMode: "oidc", ...owner, username: "", displayName: "" });
+      },
         dispatch: (decision, requestNow) => messagingProvider.sendNotification(undefined, requestNow, decision.idempotencyKey, decision.notification),
         now
       }, safetyNotificationConfig)
@@ -988,9 +1024,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!(await ensureSafetyNotificationStoreReady())) {
       throw new Error("Safety notification device registry unavailable.");
     }
-    if (await safetyNotificationStore!.hasEligibleWebDevice(subjectId)) return true;
+    if (mobileDeviceStore.assertSubjectAllowed) await mobileDeviceStore.assertSubjectAllowed(subjectId);
+    else if (accountErasure) throw new RuntimeOwnerUnknownError();
+    const webEligible = await safetyNotificationStore!.hasEligibleWebDevice(subjectId);
+    if (mobileDeviceStore.assertSubjectAllowed) await mobileDeviceStore.assertSubjectAllowed(subjectId);
+    if (webEligible) return true;
     if (mobileDeviceStoreStatus !== "ok") throw new Error("Safety notification device registry unavailable.");
     const devices = await mobileDeviceStore.listDevices(subjectId);
+    if (mobileDeviceStore.assertSubjectAllowed) await mobileDeviceStore.assertSubjectAllowed(subjectId);
     return devices.some((device) => device.subjectId === subjectId && device.status === "paired" && device.pushTokenRegistered === true);
   }
 
@@ -1013,6 +1054,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const takGatewaySource = options.takGatewaySource ?? createTakGatewaySourceFromEnv();
   const weatherRadarFramesCache = new Map<string, WeatherRadarFramesCacheEntry>();
   const edgeReplayCursors = new Map<string, EdgeReplayCursorRecord>();
+  const edgeReplayCursorOwners = new Map<string, RuntimeOwner | undefined>();
   let federationRuntimeStoreStatus: DependencyStatus = federationRuntimeStore ? "degraded" : "disabled";
   let federationRuntimeStoreDetail = federationRuntimeStore
     ? `${federationRuntimeStore.name}: initializing`
@@ -1055,6 +1097,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   >();
   const pendingCurrentTrackPersistence = new Map<string, { event: CanonicalEventEnvelope; object: ObservedObject }>();
   const pendingTrackHistoryPersistence: TrackHistoryPoint[] = [];
+  const projectionRetainedFlights = new Set<Promise<unknown>>();
+  function retainProjectionFlight<T>(run: Promise<T>): Promise<T> {
+    projectionRetainedFlights.add(run);
+    void run.then(() => projectionRetainedFlights.delete(run), () => projectionRetainedFlights.delete(run));
+    return run;
+  }
 
   app.decorate("copState", state);
   if (flightDataSource) {
@@ -1145,17 +1193,115 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   if (erasureEnabled && (process.env.COP_ACCOUNT_SAFETY_RUNTIME_ATTESTATION !== "account-safety-guard-v1" || !erasureStoreId)) {
     throw new Error("Account erasure activation requires the independently bound guard store and supported runtime attestation.");
   }
+  if (erasureEnabled && (process.env.COP_AUTH_MODE !== "oidc" || process.env.COP_ALLOW_LAB_TOKEN !== "false"))
+    throw new Error("Account erasure activation requires verified OIDC and explicitly disabled lab access.");
   if (process.env.COP_ACCOUNT_SAFETY_GUARD_REQUIRED === "true" && (!accountSafetyStore || !erasureStoreId)) throw new Error("Required account guard configuration is unavailable.");
   if ((erasureEnabled || process.env.COP_ACCOUNT_SAFETY_GUARD_REQUIRED === "true") && accountSafetyStore instanceof MemoryMobilityStore) throw new Error("Accepted account safety requires persistent storage; RAM fallback is forbidden.");
   if (erasureEnabled && (!erasureSecret || !accountSafetyStore || !process.env.COP_OIDC_ISSUER)) {
     throw new Error("Account erasure requires the persistent store, dedicated secret and verified OIDC issuer.");
   }
-  // Keep the guard present when intake is disabled; accepted tombstones are permanent.
-  const accountErasure = options.accountErasure ?? (erasureSecret && accountSafetyStore && process.env.COP_OIDC_ISSUER
-    ? new AccountErasureService({ store: accountSafetyStore, identitySecret: erasureSecret, expectedGuardStoreId: erasureStoreId,
-      issuer: process.env.COP_OIDC_ISSUER, requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS,
-      adapters: options.accountErasureAdapters ?? [createCOPSessionsProfilesErasureAdapter({ issuer: process.env.COP_OIDC_ISSUER,
-        sessions: webSessionStore, profiles: [userProfileStore, userProfileFallbackStore] })], accepted: erasureEnabled, now }) : undefined);
+  // The exact service/store is shared by routes, outbox and the erasure owner.
+  // Closures are evaluated after construction; no writer starts during setup.
+  let accountErasure: AccountErasureService | undefined = options.accountErasure;
+  let stateProjectionOwner: CopStateProjectionOwner | undefined;
+  let localProjectionEraser: ReturnType<typeof createCommunityProjectionEraser> | undefined;
+  let aiRetainedProjectionOwner: (ProjectionStateOwner & { init(): Promise<void> }) | undefined;
+  let providerCopiesProjectionOwner: ProviderCopiesOwner | undefined;
+  const projectionStores = [trackHistoryStore, federationRuntimeStore, safetyNotificationStore].filter(Boolean) as ResourceProjectionStore[];
+  const loadActualProjectionFences = async () => {
+    const frontiers = [];
+    for (const store of projectionStores) {
+      if (!store.loadProjectionFences) throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
+      frontiers.push(await store.loadProjectionFences());
+    }
+    return { resources: frontiers.flatMap(value => value.resources), ownerHashes: frontiers.flatMap(value => value.ownerHashes),
+      subjectHashes: frontiers.flatMap(value => value.subjectHashes), version: runtimeAssessment(frontiers.map(value => value.version)).version };
+  };
+  const actualContentProjections: CommunityProjectionEraser & { ready(): Promise<boolean> } = {
+    ready: async () => !!localProjectionEraser && await localProjectionEraser.ready(),
+    preflight: async (owner, signal) => {
+      if (!localProjectionEraser) return { ready: false, reason: "adapter_unavailable" };
+      const result = await localProjectionEraser.preflight(owner, signal);
+      return result.ready ? { ready: true, version: result.version } : { ready: false, reason: "ownership_unresolved" };
+    },
+    erase: async (resources, context) => !!localProjectionEraser && await localProjectionEraser.erase(resources, context)
+  };
+  const retainedProjectionOwner: ProjectionStateOwner = {
+    ready: async () => !!aiRetainedProjectionOwner && await aiRetainedProjectionOwner.ready()
+      && (!safetyNotificationWorker || await safetyNotificationWorker.projectionErasureOwner().ready())
+      && !!providerCopiesProjectionOwner && await providerCopiesProjectionOwner.ready(),
+    preflight: async owner => {
+      const mentions = (value: unknown) => boundedProjectionJSON(value).includes(JSON.stringify(owner.subjectId));
+      const jobs = [...aiChatAgentJobs.values()].filter(job => job.actorSubjectId === owner.subjectId || mentions(job));
+      const unknown = jobs.some(job => job.actorSubjectId !== owner.subjectId || job.actorIssuer !== owner.issuer)
+        || [...pendingCurrentTrackPersistence.values(), ...pendingTrackHistoryPersistence].some(mentions);
+      const other = [await preflightEdgeCursorCopies(owner)];
+      if (aiRetainedProjectionOwner) other.push(await aiRetainedProjectionOwner.preflight(owner));
+      if (safetyNotificationWorker) other.push(await safetyNotificationWorker.projectionErasureOwner().preflight(owner));
+      if (providerCopiesProjectionOwner) other.push(await providerCopiesProjectionOwner.preflight(owner));
+      return { ...runtimeAssessment([jobs, other.map(value => value.version)]),
+        ready: !unknown && projectionRetainedFlights.size === 0 && !trackPersistenceFlushInFlight && !aiContextIndexRefreshInFlight
+          && !!aiRetainedProjectionOwner && other.every(value => value.ready) };
+    },
+    erase: async (resources, context) => {
+      if (!context.actor || !aiRetainedProjectionOwner) return false;
+      const owner = context.actor, refs = projectionReferences(resources);
+      const mentions = (value: unknown) => boundedProjectionJSON(value).includes(JSON.stringify(owner.subjectId));
+      let complete = true;
+      if (!eraseEdgeCursorCopies(owner)) complete = false;
+      for (const [id, job] of aiChatAgentJobs) {
+        if (job.actorSubjectId === owner.subjectId && job.actorIssuer === owner.issuer) aiChatAgentJobs.delete(id);
+        else if (mentions(job)) complete = false;
+      }
+      // Real SQL writer fences reject late writes; local queue admission also
+      // checks the actual state frontier before and after every await.
+      for (const [id, value] of pendingCurrentTrackPersistence) {
+        const canonical = canonicalProjectionReference(value.object.objectId, value.event.source.sourceSystemId);
+        const match = canonical && refs.some(ref => ref.kind === canonical.kind && ref.id === canonical.id) ? "owned" : projectionPayloadMatch(value.object, refs, owner);
+        if (match === "owned") pendingCurrentTrackPersistence.delete(id);
+        else if (match === "unknown" || mentions(value)) complete = false;
+      }
+      for (let index = pendingTrackHistoryPersistence.length - 1; index >= 0; index--) {
+        const point = pendingTrackHistoryPersistence[index]!;
+        const canonical = canonicalProjectionReference(point.objectId, point.sourceSystemId);
+        const match = canonical && refs.some(ref => ref.kind === canonical.kind && ref.id === canonical.id) ? "owned" : projectionPayloadMatch(point, refs, owner);
+        if (match === "owned") pendingTrackHistoryPersistence.splice(index, 1);
+        else if (match === "unknown" || mentions(point)) complete = false;
+      }
+      conflictEvidenceCache.clear();
+      await Promise.allSettled([...projectionRetainedFlights, ...(aiContextIndexRefreshInFlight ? [aiContextIndexRefreshInFlight] : [])]);
+      context.signal.throwIfAborted();
+      conflictEvidenceCache.clear();
+      if (!await aiRetainedProjectionOwner.erase(resources, context)) complete = false;
+      if (safetyNotificationWorker && !await safetyNotificationWorker.projectionErasureOwner().erase(resources, context)) complete = false;
+      if (!providerCopiesProjectionOwner || !await providerCopiesProjectionOwner.erase(resources, context)) complete = false;
+      if ([...pendingCurrentTrackPersistence.values(), ...pendingTrackHistoryPersistence, ...aiChatAgentJobs.values()].some(mentions)) complete = false;
+      if (!(await preflightEdgeCursorCopies(owner)).ready) complete = false;
+      return complete && projectionRetainedFlights.size === 0 && !trackPersistenceFlushInFlight;
+    }
+  };
+  // All handlers run only after authentication hooks. Ownership is never taken
+  // from body/query/header labels; restored/provider records remain unadopted.
+  app.addHook("onRoute", route => {
+    const handler = route.handler;
+    route.handler = function (request, reply) {
+      const actor = actorFromRequest(request);
+      if (stateProjectionOwner && actor?.authMode === "oidc" && actor.issuer)
+        return runWithProjectionActor({ issuer: actor.issuer, subjectId: actor.subjectId }, () => handler.call(this, request, reply));
+      return handler.call(this, request, reply);
+    };
+  });
+  const mobilityService = mobilityRuntimeStore ? new SharedMobilityService(mobilityRuntimeStore, now, async (transaction, actor) => {
+    if (!accountErasure) return;
+    if (accountErasure.options.store !== mobilityRuntimeStore) throw new MobilityFailure(503, "ERASURE_STORE_UNAVAILABLE", "Ochrana účtu není dostupná.");
+    try { await accountErasure.assertAllowedWithin(transaction, actor); }
+    catch (error) {
+      if (error instanceof AccountErasureError) throw new MobilityFailure(error.status, error.code, "Operace účtu není dostupná.");
+      throw new MobilityFailure(503, "ERASURE_STORE_UNAVAILABLE", "Ochrana účtu není dostupná.");
+    }
+  }) : undefined;
+  const mobilityOutbox = mobilityRuntimeStore && mobilityService ? new MobilityInvitationOutbox(mobilityRuntimeStore, messagingProvider, now,
+    (transaction, accountId) => mobilityService.assertAccountAllowed(transaction, accountId)) : undefined;
   const erasureWorkerAbort = new AbortController();
   let erasureWorkerTimer: ReturnType<typeof setInterval> | undefined;
   let erasureWorkerRunning: Promise<void> | undefined;
@@ -1165,7 +1311,6 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       .catch(() => { if (!erasureWorkerAbort.signal.aborted) app.log.warn({ component: "account-erasure", code: "ERASURE_WORKER_UNAVAILABLE" }, "Account erasure worker paused; fences retained."); })
       .finally(() => { erasureWorkerRunning = undefined; });
   }
-  registerAccountErasureRoutes(app, accountErasure);
   const jizdaClientId = process.env.COP_JIZDA_OIDC_CLIENT_ID?.trim();
   const jizdaAppLink = options.jizdaAppLink ?? (accountSafetyStore &&
     jizdaClientId && jizdaClientId !== process.env.COP_OIDC_CLIENT_ID && process.env.COP_OIDC_ISSUER
@@ -1188,7 +1333,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           const call = await voiceCallStore.get(target.callId!);
           if (!call || !voiceCallIncludesSubject(call, actor.subjectId) || !voiceCallIncludesSubject(call, target.peerSubjectId))
             throw new CommunicationSafetyError(404, "NOT_FOUND");
-          return;
+          return call.ownerIssuer && call.ownerIssuer === actor.issuer ? { peerIssuer: call.ownerIssuer } : undefined;
         }
         const result = await messagingProvider.fetchConversation(actor, now(), target.conversationId!);
         if (result.status !== "online") throw new CommunicationSafetyError(503, "COMMUNICATION_POLICY_UNAVAILABLE");
@@ -1199,8 +1344,61 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           if (!room) throw new CommunicationSafetyError(503, "COMMUNICATION_POLICY_UNAVAILABLE");
           if (!await communicationPolicy.eventMatchesPeer(actor.subjectId, target.peerSubjectId, room, target.eventId!)) throw new CommunicationSafetyError(404, "NOT_FOUND");
         }
+        // Current authenticated caller does not attest the peer's historical
+        // issuer. Use only that peer's immutable canonical profile witness.
+        const peerProfile = userProfileStoreStatus === "ok" ? await userProfileStore.getProfile(target.peerSubjectId) : null;
+        if (peerProfile?.subjectId === target.peerSubjectId && peerProfile.issuer && peerProfile.issuer === actor.issuer)
+          return { peerIssuer: peerProfile.issuer };
       } }) : undefined);
-  registerCommunicationSafetyRoutes(app, communicationSafety);
+  registerCommunicationSafetyRoutes(app, communicationSafety, actorFromRequest,
+    async () => accountErasure?.capabilities() ?? { accountDeletion: false });
+  // Keep the guard present with intake disabled. Missing external owners remain
+  // absent and make capability false; local proofs never stand in for them.
+  if (!accountErasure && erasureSecret && accountSafetyStore && process.env.COP_OIDC_ISSUER) {
+    const issuer = process.env.COP_OIDC_ISSUER;
+    const contentErasure = createCOPContentMediaErasureAdapter({
+      communityStores: [...(communityReportStore ? [communityReportStore] : []), communityReportFallbackStore],
+      sketchStores: [...(sketchDrawingStore ? [sketchDrawingStore] : []), sketchDrawingFallbackStore],
+      incidentStores: [...(incidentStore ? [incidentStore] : []), incidentFallbackStore],
+      media: mediaStorage, projections: options.contentErasureProjections ?? actualContentProjections, now,
+      assertAllowed: async owner => {
+        if (!accountErasure) throw new AccountErasureError(503, "ERASURE_STORE_UNAVAILABLE");
+        await accountErasure.assertAllowed({ authMode: "oidc", ...owner, username: "", displayName: "" });
+      },
+      usesAdmissionGuard: guard => accountErasure?.usesAdmissionGuard(guard) === true
+    });
+    const localAdapters: AccountErasureAdapter[] = [
+      createCOPSessionsProfilesErasureAdapter({ issuer, sessions: webSessionStore, profiles: [userProfileStore, userProfileFallbackStore] }),
+      createCOPDevicesErasureAdapter({ issuer, stores: [mobileDeviceStore, mobileDeviceFallbackStore] }),
+      createMessagingAccountErasureAdapter({ issuer, config: messagingProvider.config, verifyConfiguredOwner: options.messagingErasureOwnerVerifier,
+        verifyActorScope: options.messagingErasureActorScopeVerifier }),
+      createSimRouterAccountErasureAdapter({ issuer, baseUrl: process.env.COP_SIM_ERASURE_ROUTER_URL ?? "", token: process.env.COP_SIM_ERASURE_ROUTER_TOKEN ?? "",
+        actorSecret: process.env.COP_SIM_ERASURE_ACTOR_SECRET ?? "", userIdSecret: process.env.COP_AI_CHAT_ROUTER_USER_ID_SECRET ?? "", now,
+        verifyConfiguredOwner: options.simErasureOwnerVerifier, reviewExistingIdentity: options.simErasureIdentityReview }),
+      createSimMeasurementsAccountErasureAdapter({ issuer, baseUrl: process.env.COP_SIM_ERASURE_DRIVER_URL ?? "", token: process.env.COP_SIM_ERASURE_DRIVER_TOKEN ?? "",
+        actorSecret: process.env.COP_SIM_ERASURE_ACTOR_SECRET ?? "", userIdSecret: process.env.COP_AI_CHAT_ROUTER_USER_ID_SECRET ?? "", now,
+        verifyConfiguredOwner: options.simErasureOwnerVerifier, reviewExistingIdentity: options.simErasureIdentityReview,
+        inventory: options.simMeasurementErasureInventory }),
+      contentErasure.adapter,
+      createVoiceLiveKitErasureAdapter({ issuer, stores: [voiceCallStore], now,
+        provider: process.env.COP_LIVEKIT_ADMIN_URL && process.env.COP_LIVEKIT_API_KEY && process.env.COP_LIVEKIT_API_SECRET
+          ? new LiveKitVoiceErasureProvider({ adminUrl: process.env.COP_LIVEKIT_ADMIN_URL,
+            apiKey: process.env.COP_LIVEKIT_API_KEY, apiSecret: process.env.COP_LIVEKIT_API_SECRET }) : undefined }),
+      ...(mobilityService ? [new MobilityAccountErasureAdapter({ issuer, service: mobilityService, outbox: mobilityOutbox,
+        providerEffects: createMessagingMobilityProviderEffects({ issuer, config: messagingProvider.config, verifyConfiguredOwner: options.messagingErasureOwnerVerifier,
+          verifyActorScope: options.messagingErasureActorScopeVerifier }) })] : []),
+      ...(communicationSafety ? [communicationSafety.accountErasureAdapter()] : []),
+      ...(process.env.COP_KEYCLOAK_ERASURE_CLIENT_ID && process.env.COP_KEYCLOAK_ERASURE_CLIENT_SECRET
+        ? [createKeycloakAccountErasureAdapter({ issuer, clientId: process.env.COP_KEYCLOAK_ERASURE_CLIENT_ID,
+          clientSecret: process.env.COP_KEYCLOAK_ERASURE_CLIENT_SECRET,
+          authorityAccepted: process.env.COP_KEYCLOAK_COP_SCOPE_AUTHORITY_ACCEPTED === "true",
+          assertCopAccessFenced: async (actor, context) => accountErasure?.operationFenceConfirmed(actor, context) ?? false }, accountSafetyStore)] : [])
+    ];
+    accountErasure = new AccountErasureService({ store: accountSafetyStore, identitySecret: erasureSecret, expectedGuardStoreId: erasureStoreId,
+      issuer, requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS, adapters: options.accountErasureAdapters ?? localAdapters,
+      admissionGuard: contentErasure.admissionGuard, accepted: erasureEnabled, now });
+  }
+  registerAccountErasureRoutes(app, accountErasure);
   let communicationRetentionTimer: ReturnType<typeof setInterval> | undefined;
   let communicationRetentionRunning: Promise<void> | undefined;
   let communicationRetentionStopping = false;
@@ -1229,7 +1427,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     messagingProvider,
     enabled: options.sharedMobilityEnabled ?? readBoolean(process.env.COP_SHARED_MOBILITY_ENABLED, false),
     dispatchEnabled: options.privateDispatchEnabled ?? readBoolean(process.env.COP_PRIVATE_DISPATCH_ENABLED, false),
-    store: mobilityRuntimeStore, now
+    store: mobilityRuntimeStore, now, service: mobilityService, invitationOutbox: mobilityOutbox
   });
   registerDriverMeasurementRoutes(app, {
     enabled: driverMeasurementsEnabled,
@@ -1392,6 +1590,37 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     if (jizdaAppLink) await jizdaAppLink.init();
     if (accountErasure) await accountErasure.init();
+    if (accountErasure) {
+      // Read the actual persistent frontier before hydration, asynchronous
+      // producer startup or any request can replace controlled collections.
+      if (trackHistoryStore) await trackHistoryStore.init();
+      if (federationRuntimeStore) await federationRuntimeStore.init(Array.from(state.federatedNodes.values()));
+      if (safetyNotificationStore && !await ensureSafetyNotificationStoreReady())
+        throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
+      aiRetainedProjectionOwner = createAiRetainedCopiesErasure({ contextIndexes: [aiContextIndex], semanticRetrievers: [aiSemanticRetriever],
+        cachedGuard: { ready: () => accountErasure!.cachedGuardReady(), assertActorAllowed: owner => accountErasure!.assertCachedActorAllowed(owner) },
+        loadFences: loadActualProjectionFences });
+      await aiRetainedProjectionOwner.init();
+      providerCopiesProjectionOwner = createProviderCopiesErasure({
+        sources: [situationDataSource, safetyDataSource, takGatewaySource, simSearchDataSource].filter(Boolean) as ProviderLocalCopiesSource[],
+        issuer: accountErasure.options.issuer,
+        cachedGuard: { ready: () => accountErasure!.cachedGuardReady(), assertActorAllowed: owner => accountErasure!.assertCachedActorAllowed(owner) },
+        loadFences: loadActualProjectionFences
+      });
+      await providerCopiesProjectionOwner.init();
+      stateProjectionOwner = installCopStateProjectionOwner(state, {
+        issuer: accountErasure.options.issuer,
+        cachedGuard: { ready: () => accountErasure!.cachedGuardReady(),
+          version: () => accountErasure!.cachedFenceGeneration(),
+          assertActorAllowed: owner => accountErasure!.assertCachedActorAllowed(owner) },
+        loadFences: loadActualProjectionFences, retainedCopies: retainedProjectionOwner
+      });
+      await stateProjectionOwner.init();
+      localProjectionEraser = createCommunityProjectionEraser({ stores: projectionStores, state: stateProjectionOwner,
+        producerFenceInstalled: () => stateProjectionOwner?.usesState(state) === true && stateProjectionOwner.producerBindingInstalled(),
+        remoteRequired: streamBus.name !== "memory" || [...state.federatedNodes.values()].some(node => node.nodeId !== "node_central_cop"),
+        remote: options.contentRemoteProjectionOwner });
+    }
     if (communicationSafety) await communicationSafety.init();
     if (openAiMcpAssistant) {
       try {
@@ -1435,6 +1664,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         trackHistoryStoreStatus = "ok";
         trackHistoryStoreDetail = `${trackHistoryStore.name}: ready; restored ${restoredCurrentTrackCount} current tracks`;
       } catch (error) {
+        if (accountErasure) throw error;
         trackHistoryStoreStatus = "degraded";
         trackHistoryStoreDetail = `${trackHistoryStore.name}: ${errorMessage(error)}`;
         app.log.error({ component: "track-history", reasonCode: copPgErrorCode(error), database: readCopPgPoolDiagnostics() }, "Track history store initialization failed; using in-memory fallback.");
@@ -1812,10 +2042,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     try {
       await federationRuntimeStore.init(Array.from(state.federatedNodes.values()));
       const persistedNodes = await federationRuntimeStore.listNodes();
-      state.federatedNodes.clear();
-      for (const node of persistedNodes) {
-        state.federatedNodes.set(node.nodeId, node);
-      }
+      runWithProjectionHydration(() => { state.federatedNodes.clear(); for (const node of persistedNodes) state.federatedNodes.set(node.nodeId, node); });
       federationRuntimeStoreStatus = "ok";
       federationRuntimeStoreDetail = `${federationRuntimeStore.name}: ready; nodes ${persistedNodes.length}; events ${await federationRuntimeStore.countEvents()}`;
     } catch (error) {
@@ -1951,6 +2178,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   function markTrackHistoryStoreDegraded(error: unknown): void {
+    if (accountErasure) throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
     if (!trackHistoryStore) {
       return;
     }
@@ -1960,6 +2188,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   function markFederationRuntimeStoreDegraded(error: unknown): void {
+    if (accountErasure) throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
     if (!federationRuntimeStore) {
       return;
     }
@@ -2025,9 +2254,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   function markMobileDeviceStoreDegraded(error: unknown): void {
+    if (error instanceof RuntimeOwnerErasedError || error instanceof RuntimeOwnerUnknownError) return;
     mobileDeviceStoreStatus = "degraded";
-    mobileDeviceStoreDetail = `${mobileDeviceStore.name}: ${errorMessage(error)}`;
-    app.log.error({ error }, "Mobile device store failed; using in-memory fallback.");
+    mobileDeviceStoreDetail = `${mobileDeviceStore.name}: unavailable`;
+    app.log.error({ component: "mobile-device", code: "MOBILE_DEVICE_STORE_UNAVAILABLE" }, "Mobile device store unavailable.");
   }
 
   function mobileDeviceStoreDependencyDetail(): string {
@@ -2036,6 +2266,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   function markCommunityReportStoreDegraded(error: unknown): void {
+    if (error instanceof ContentErasureStoreError) throw error;
     if (!communityReportStore) {
       return;
     }
@@ -2064,6 +2295,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   function markSketchDrawingStoreDegraded(error: unknown): void {
+    if (error instanceof ContentErasureStoreError) throw error;
     if (!sketchDrawingStore) {
       return;
     }
@@ -2142,8 +2374,87 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     });
   }
 
+  const previousRuntimeErrorHandler = app.errorHandler;
+  app.setErrorHandler(function (error, request, reply) {
+    if (error instanceof ProviderCopiesUnavailableError)
+      return sendError(reply, 503, error.code, "Ověření uložených kopií nyní neumožňuje tuto operaci.", correlationIdFrom(request.headers["x-correlation-id"]));
+    if (error instanceof ContentErasureStoreError || error instanceof AccountErasureError)
+      return sendError(reply, error.status, error.code, "Ověření oprávnění účtu nyní neumožňuje tuto operaci.", correlationIdFrom(request.headers["x-correlation-id"]));
+    if (error instanceof RuntimeOwnerErasedError || error instanceof RuntimeOwnerUnknownError)
+      return sendError(reply, error.status, error.code, "Ověření oprávnění účtu nyní neumožňuje tuto operaci.", correlationIdFrom(request.headers["x-correlation-id"]));
+    if (isRecord(error) && error.code === "MOBILE_DEVICE_STORE_UNAVAILABLE" && error.statusCode === 503)
+      return sendError(reply, 503, error.code, "Evidence zařízení nyní není dostupná.", correlationIdFrom(request.headers["x-correlation-id"]));
+    return previousRuntimeErrorHandler.call(this, error, request, reply);
+  });
+  const mobileStoreFacades = new WeakMap<MobileDeviceStore, MobileDeviceStore>();
+  const mobileOperationNames = new Set(["claimPairingSession", "confirmPairingSession", "createPairingSession", "getPairingSession",
+    "ingestMeshBundle", "listDevices", "listMeshAcks", "revokeDevice", "upsertDevice", "assertSubjectAllowed"]);
   function activeMobileDeviceStore(): MobileDeviceStore {
-    return mobileDeviceStoreStatus === "ok" ? mobileDeviceStore : mobileDeviceFallbackStore;
+    if (mobileDeviceStoreStatus !== "ok" && (accountErasure || process.env.COP_ACCOUNT_SAFETY_GUARD_REQUIRED === "true"))
+      throw Object.assign(new Error("MOBILE_DEVICE_STORE_UNAVAILABLE"), { statusCode: 503, code: "MOBILE_DEVICE_STORE_UNAVAILABLE" });
+    const store = mobileDeviceStoreStatus === "ok" ? mobileDeviceStore : mobileDeviceFallbackStore;
+    let facade = mobileStoreFacades.get(store);
+    if (!facade) {
+      facade = new Proxy(store, { get(target, key, receiver) {
+        const value = Reflect.get(target, key, receiver);
+        if (typeof value !== "function") return value;
+        if (typeof key !== "string" || !mobileOperationNames.has(key)) return value.bind(target);
+        return async (...args: unknown[]) => {
+          try { return await Reflect.apply(value, target, args); }
+          catch (error) {
+            if (error instanceof RuntimeOwnerErasedError || error instanceof RuntimeOwnerUnknownError) throw error;
+            markMobileDeviceStoreDegraded(error);
+            throw Object.assign(new Error("MOBILE_DEVICE_STORE_UNAVAILABLE"), { statusCode: 503, code: "MOBILE_DEVICE_STORE_UNAVAILABLE" });
+          }
+        };
+      } });
+      mobileStoreFacades.set(store, facade);
+    }
+    return facade;
+  }
+  async function assertRuntimeActorAllowed(actor: AuthenticatedActor): Promise<void> {
+    if (!accountErasure || actor.authMode !== "oidc") return;
+    if (!actor.issuer) throw new RuntimeOwnerUnknownError();
+    try { await accountErasure.assertAllowed(actor); }
+    catch (error) {
+      if (error instanceof AccountErasureError && error.status === 403) throw new RuntimeOwnerErasedError();
+      throw new RuntimeOwnerUnknownError();
+    }
+  }
+  async function assertMobileActorAllowed(actor: AuthenticatedActor): Promise<void> {
+    await assertRuntimeActorAllowed(actor);
+    const active = activeMobileDeviceStore();
+    for (const store of new Set([active, mobileDeviceFallbackStore])) {
+      if (store.assertSubjectAllowed) await store.assertSubjectAllowed(actor.subjectId);
+      else if (accountErasure) throw new RuntimeOwnerUnknownError();
+    }
+  }
+  async function assertVoiceActorAllowed(actor: AuthenticatedActor, call: VoiceCallRecord): Promise<void> {
+    await assertVoiceSubjectsAllowed(actor, [call.initiatorSubjectId, ...call.participantSubjectIds]);
+  }
+  async function assertVoiceSubjectsAllowed(actor: AuthenticatedActor, subjects: readonly string[]): Promise<void> {
+    await assertRuntimeActorAllowed(actor);
+    for (const subjectId of new Set([actor.subjectId, ...subjects])) {
+      if (voiceCallStore.assertSubjectAllowed) await voiceCallStore.assertSubjectAllowed(subjectId);
+      else if (accountErasure) throw new RuntimeOwnerUnknownError();
+      if (accountErasure && actor.authMode === "oidc" && actor.issuer)
+        await assertRuntimeActorAllowed({ ...actor, subjectId });
+    }
+  }
+  async function issueGuardedVoiceMedia(call: VoiceCallRecord, actor: AuthenticatedActor): Promise<VoiceCallMediaCredentials> {
+    await assertVoiceActorAllowed(actor, call);
+    const issuedAt = now();
+    const media = await voiceCallMediaIssuer.issue(call, actor, issuedAt);
+    if (actor.authMode === "oidc" && actor.issuer) {
+      if (!voiceCallStore.recordMediaGrant) throw new RuntimeOwnerUnknownError();
+      try { await voiceCallStore.recordMediaGrant({ issuer: actor.issuer, subjectId: actor.subjectId }, call.callId, media.expiresAt, now().toISOString()); }
+      catch (error) {
+        if (error instanceof RuntimeOwnerErasedError || error instanceof RuntimeOwnerUnknownError) throw error;
+        throw new RuntimeOwnerUnknownError();
+      }
+    }
+    await assertVoiceActorAllowed(actor, call);
+    return media;
   }
 
   function activeCommunityReportStore(): CommunityReportStore {
@@ -2158,6 +2469,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   function activeSketchDrawingStore(): SketchDrawingStore {
+    if (accountErasure && sketchDrawingStore && sketchDrawingStoreStatus !== "ok") throw new ContentErasureStoreError(503, "SKETCH_STORE_UNAVAILABLE");
     return sketchDrawingStore && sketchDrawingStoreStatus === "ok" ? sketchDrawingStore : sketchDrawingFallbackStore;
   }
 
@@ -2250,7 +2562,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return aiContextIndexRefreshInFlight;
     }
     aiContextIndexRefreshInFlight = (async () => {
-      const documents = createSemanticDocuments(await buildAiContextIndexSnapshot(requestNow));
+      // These two arrays were read from the actual guarded COP stores. Resource
+      // UUID witnesses are attached in memory, never imported from free context.
+      const snapshot = await buildAiContextIndexSnapshot(requestNow);
+      const documents = await attestStoredCopAiDocuments(createSemanticDocuments(snapshot));
       const result = aiContextIndex.replaceDocuments(documents, {
         indexedAt: requestNow,
         reason
@@ -2270,6 +2585,26 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       aiContextIndexRefreshInFlight = undefined;
       if (reason !== "startup") logPoolSnapshot("normal-processing");
     }
+  }
+
+  /** Caller supplies only documents built above/from actual COP store summaries,
+   * never free context. Resolve the private immutable ledger in two bounded
+   * queries, rather than adopting public creator fields or issuing N+1 reads. */
+  async function attestStoredCopAiDocuments(documents: AiSemanticDocument[]): Promise<AiSemanticDocument[]> {
+    if (!accountErasure) return documents;
+    const reports = documents.filter(value => value.entityType === "communityReport").map(value => value.entityId).filter(id => !!optionalUuid(id));
+    const incidents = documents.filter(value => value.entityType === "incident").map(value => value.entityId).filter(id => !!optionalUuid(id));
+    const reportOwners = await activeCommunityReportStore().readVerifiedProjectionOwners?.("report", reports) ?? new Map();
+    const incidentOwners = await activeIncidentStore().readVerifiedProjectionOwners?.("incident", incidents) ?? new Map();
+    return documents.filter(document => {
+      if (document.entityType !== "communityReport" && document.entityType !== "incident") return true;
+      const owner = (document.entityType === "communityReport" ? reportOwners : incidentOwners).get(document.entityId.toLowerCase());
+      if (!owner || owner.issuer !== accountErasure!.options.issuer) return false;
+      try { accountErasure!.assertCachedActorAllowed(owner); }
+      catch (error) { if (error instanceof AccountErasureError && error.status === 403) return false; throw error; }
+      attachAiSemanticDocumentProvenance(document, { owner, resources: [{ kind: document.entityType, id: document.entityId }] });
+      return true;
+    });
   }
 
   function logPoolSnapshot(phase: "startup" | "normal-processing"): void {
@@ -2364,6 +2699,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       );
       return summarizeSimSearchResponseForAi(combined, undefined);
     } catch (error) {
+      if (error instanceof ProviderCopiesUnavailableError) throw error;
       const health = unavailableSimSearchDataHealth(error, requestNow);
       state.sources.set(
         simSearchDataSource.sourceSystem.sourceSystemId,
@@ -2405,6 +2741,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const timeWindow = resolveAiContextTimeWindow(input.body);
     const indexedContext = await aiContextIndex.query(aiSemanticRetriever, {
       generatedAt: input.requestNow,
+      ...(input.actor.authMode === "oidc" && input.actor.issuer ? { owner: { issuer: input.actor.issuer, subjectId: input.actor.subjectId } } : {}),
       ...(geo ? { geo } : {}),
       limit: aiContextIndexQueryLimit,
       query: input.query,
@@ -2433,6 +2770,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   async function retrieveAiSemanticContext(input: {
+    actor?: AuthenticatedActor;
     documents: AiSemanticDocument[];
     generatedAt: Date;
     limit?: number;
@@ -2441,7 +2779,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }): Promise<AiSemanticContext> {
     const controller = new AbortController();
     return withTimeoutFallback(
-      aiSemanticRetriever.retrieve({ ...input, signal: controller.signal }),
+      aiSemanticRetriever.retrieve({ ...input, signal: controller.signal,
+        ...(input.actor?.authMode === "oidc" && input.actor.issuer ? { owner: { issuer: input.actor.issuer, subjectId: input.actor.subjectId } } : {}) }),
       aiSemanticRetrievalTimeoutMs,
       () => {
         controller.abort(new Error("COP semantic retrieval deadline exceeded."));
@@ -2560,6 +2899,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!current) {
       return undefined;
     }
+    if (accountErasure) {
+      if (!current.actorIssuer) throw new RuntimeOwnerUnknownError();
+      accountErasure.assertCachedActorAllowed({ issuer: current.actorIssuer, subjectId: current.actorSubjectId });
+    }
     const next = {
       ...current,
       ...update,
@@ -2575,9 +2918,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     correlationId: string;
     jobId: string;
   }): void {
-    setImmediate(() => {
-      void runAiChatAgentJob(input);
-    });
+    void retainProjectionFlight(new Promise<void>((resolve, reject) => {
+      setImmediate(() => {
+        if (!aiChatAgentJobs.has(input.jobId)) { resolve(); return; }
+        runAiChatAgentJob(input).then(resolve, reject);
+      });
+    })).catch(() => undefined);
   }
 
   async function runAiChatAgentJob(input: {
@@ -2586,6 +2932,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     correlationId: string;
     jobId: string;
   }): Promise<void> {
+    if (!aiChatAgentJobs.has(input.jobId)) return;
     updateAiChatAgentJob(input.jobId, { status: "running" });
     try {
       const response = await app.inject({
@@ -3003,6 +3350,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           warnings: response.warnings
         });
       } catch (error) {
+        if (error instanceof ProviderCopiesUnavailableError) throw error;
         const health = unavailableSimSearchDataHealth(error, input.requestNow);
         state.sources.set(
           simSearchDataSource.sourceSystem.sourceSystemId,
@@ -3632,11 +3980,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     requestNow: Date
   ): Promise<CommunityReportConfirmationSummary> {
     try {
-      return await activeCommunityReportStore().upsertReportConfirmation(reportId, actor.subjectId, value, requestNow);
+      return await withCommunityActor(actor, () => activeCommunityReportStore().upsertReportConfirmation(reportId, actor.subjectId, value, requestNow));
     } catch (error) {
       markCommunityReportStoreDegraded(error);
       if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
-      return communityReportFallbackStore.upsertReportConfirmation(reportId, actor.subjectId, value, requestNow);
+      return withCommunityActor(actor, () => communityReportFallbackStore.upsertReportConfirmation(reportId, actor.subjectId, value, requestNow));
     }
   }
 
@@ -3646,11 +3994,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     requestNow: Date
   ): Promise<CommunityReportRecord | null> {
     try {
-      return await activeCommunityReportStore().submitReport(reportId, actor.subjectId, requestNow);
+      return await withCommunityActor(actor, () => activeCommunityReportStore().submitReport(reportId, actor.subjectId, requestNow));
     } catch (error) {
       markCommunityReportStoreDegraded(error);
       if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
-      return communityReportFallbackStore.submitReport(reportId, actor.subjectId, requestNow);
+      return withCommunityActor(actor, () => communityReportFallbackStore.submitReport(reportId, actor.subjectId, requestNow));
     }
   }
 
@@ -3661,11 +4009,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     requestNow: Date
   ): Promise<CommunityReportRecord | null> {
     try {
-      return await activeCommunityReportStore().resolveReport(reportId, actor.subjectId, input, requestNow);
+      return await withCommunityActor(actor, () => activeCommunityReportStore().resolveReport(reportId, actor.subjectId, input, requestNow));
     } catch (error) {
       markCommunityReportStoreDegraded(error);
       if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
-      return communityReportFallbackStore.resolveReport(reportId, actor.subjectId, input, requestNow);
+      return withCommunityActor(actor, () => communityReportFallbackStore.resolveReport(reportId, actor.subjectId, input, requestNow));
     }
   }
 
@@ -3676,11 +4024,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     requestNow: Date
   ): Promise<CommunityReportRecord | null> {
     try {
-      return await activeCommunityReportStore().withdrawReport(reportId, actor.subjectId, input, requestNow);
+      return await withCommunityActor(actor, () => activeCommunityReportStore().withdrawReport(reportId, actor.subjectId, input, requestNow));
     } catch (error) {
       markCommunityReportStoreDegraded(error);
       if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
-      return communityReportFallbackStore.withdrawReport(reportId, actor.subjectId, input, requestNow);
+      return withCommunityActor(actor, () => communityReportFallbackStore.withdrawReport(reportId, actor.subjectId, input, requestNow));
     }
   }
 
@@ -3691,11 +4039,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     requestNow: Date
   ): Promise<CommunityReportRecord | null> {
     try {
-      return await activeCommunityReportStore().updateReport(reportId, actor.subjectId, input, requestNow);
+      return await withCommunityActor(actor, () => activeCommunityReportStore().updateReport(reportId, actor.subjectId, input, requestNow));
     } catch (error) {
       markCommunityReportStoreDegraded(error);
       if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
-      return communityReportFallbackStore.updateReport(reportId, actor.subjectId, input, requestNow);
+      return withCommunityActor(actor, () => communityReportFallbackStore.updateReport(reportId, actor.subjectId, input, requestNow));
     }
   }
 
@@ -3705,11 +4053,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     requestNow: Date
   ): Promise<boolean> {
     try {
-      return await activeCommunityReportStore().deleteReport(reportId, actor.subjectId, requestNow);
+      return await withCommunityActor(actor, () => activeCommunityReportStore().deleteReport(reportId, actor.subjectId, requestNow));
     } catch (error) {
       markCommunityReportStoreDegraded(error);
       if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
-      return communityReportFallbackStore.deleteReport(reportId, actor.subjectId, requestNow);
+      return withCommunityActor(actor, () => communityReportFallbackStore.deleteReport(reportId, actor.subjectId, requestNow));
     }
   }
 
@@ -3735,6 +4083,27 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
       return communityReportFallbackStore.createAttachment(input);
     }
+  }
+
+  function withCommunityActor<T>(actor: AuthenticatedActor, run: () => T): T {
+    return actor.authMode === "oidc" && actor.issuer ? withVerifiedCommunityActor(actor, run) : run();
+  }
+  function communityMutationSubjects(actor: AuthenticatedActor): string[] {
+    return accountErasure && actor.authMode === "oidc" ? [actor.subjectId] : actorCommunitySubjectAliases(actor);
+  }
+  function withCommunitySubject<T>(actor: AuthenticatedActor, subjectId: string, run: () => T): T {
+    return subjectId === actor.subjectId ? withCommunityActor(actor, run) : withoutVerifiedCommunityActor(run);
+  }
+  async function withOwnedCommunityMediaWrite<T>(input: { reportId: string; attachmentId: string; objectKey: string }, run: () => Promise<T>): Promise<T> {
+    // Legacy ordinary uploads remain available before the guard is installed;
+    // they do not acquire verified ownership and cannot pass erasure preflight.
+    if (!accountErasure) return run();
+    const store = activeCommunityReportStore();
+    if (!store.withOwnedMediaWrite) {
+      if (accountErasure) throw new ContentErasureStoreError(503, "COMMUNITY_MEDIA_OWNER_UNVERIFIED");
+      return run();
+    }
+    return store.withOwnedMediaWrite(input, run);
   }
 
   async function completeCommunityAttachment(input: Parameters<CommunityReportStore["completeAttachment"]>[0]) {
@@ -3875,7 +4244,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       subject: actor.subjectId,
       time: incident.updatedAt,
       type
-    });
+    }, actor);
   }
 
   async function publishIncidentTaskDomainEvent(
@@ -3909,7 +4278,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       subject: actor.subjectId,
       time: task.updatedAt,
       type
-    });
+    }, actor);
   }
 
   async function enqueueSpatialVideoConversion(
@@ -3966,15 +4335,15 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   async function deleteCommunityGroup(groupId: string, actor: AuthenticatedActor, requestNow: Date): Promise<boolean> {
-    for (const subjectId of actorCommunitySubjectAliases(actor)) {
+    for (const subjectId of communityMutationSubjects(actor)) {
       try {
-        if (await activeCommunityReportStore().deleteGroup(groupId, subjectId, requestNow)) {
+        if (await withCommunitySubject(actor, subjectId, () => activeCommunityReportStore().deleteGroup(groupId, subjectId, requestNow))) {
           return true;
         }
       } catch (error) {
         markCommunityReportStoreDegraded(error);
       if (communityReportStore) throw Object.assign(new Error("Community report store unavailable"), { statusCode: 503, code: "COMMUNITY_REPORT_STORE_UNAVAILABLE" });
-        if (await communityReportFallbackStore.deleteGroup(groupId, subjectId, requestNow)) {
+        if (await withCommunitySubject(actor, subjectId, () => communityReportFallbackStore.deleteGroup(groupId, subjectId, requestNow))) {
           return true;
         }
       }
@@ -4016,10 +4385,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     requestNow: Date
   ): Promise<LeaveCommunityGroupResult> {
     let lastManager = false;
-    for (const subjectId of actorCommunitySubjectAliases(actor)) {
+    for (const subjectId of communityMutationSubjects(actor)) {
       const communityActor = {
         ...actorToCommunityActor(actor),
-        subjectId
+        subjectId, ...(subjectId !== actor.subjectId ? { issuer: undefined } : {})
       };
       try {
         const result = await activeCommunityReportStore().leaveGroup(groupId, communityActor, requestNow);
@@ -4051,10 +4420,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     requestNow: Date
   ): Promise<RemoveCommunityGroupMemberResult> {
     let lastManager = false;
-    for (const subjectId of actorCommunitySubjectAliases(actor)) {
+    for (const subjectId of communityMutationSubjects(actor)) {
       const communityActor = {
         ...actorToCommunityActor(actor),
-        subjectId
+        subjectId, ...(subjectId !== actor.subjectId ? { issuer: undefined } : {})
       };
       try {
         const result = await activeCommunityReportStore().removeGroupMember(
@@ -4562,6 +4931,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         objectKey,
         reportId: report.reportId,
         subjectId: actor.subjectId,
+        ...(actor.authMode === "oidc" && actor.issuer ? { issuer: actor.issuer } : {}),
         uploadExpiresAt: isoAfter(requestNow, 1)
       });
       await completeCommunityAttachment({
@@ -4570,7 +4940,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         checksumSha256: createHash("sha256").update(`${report.reportId}:${attachmentSeed.fileName}`).digest("hex"),
         completedAt: requestNow.toISOString(),
         reportId: report.reportId,
-        subjectId: actor.subjectId
+        subjectId: actor.subjectId,
+        ...(actor.authMode === "oidc" && actor.issuer ? { issuer: actor.issuer } : {})
       });
       created += 1;
     }
@@ -4692,6 +5063,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     event: CanonicalEventEnvelope,
     historyPoint: TrackHistoryPoint | undefined
   ): void {
+    stateProjectionOwner?.assertWriteAllowed({ object, event, historyPoint });
     if (!trackHistoryStore || trackHistoryStoreStatus !== "ok") {
       return;
     }
@@ -4732,10 +5104,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       while (pendingCurrentTrackPersistence.size > 0 || pendingTrackHistoryPersistence.length > 0) {
         const currentBatch = takeQueuedCurrentTrackPersistence(trackPersistenceBatchSize);
         const historyBatch = pendingTrackHistoryPersistence.splice(0, trackPersistenceBatchSize);
-        const results = await Promise.allSettled([
+        const results = await retainProjectionFlight(Promise.allSettled([
           ...currentBatch.map(({ event, object }) => persistCurrentTrack(object, event)),
           ...historyBatch.map((point) => persistTrackHistoryPoint(point))
-        ]);
+        ]));
         const rejected = results.filter((result) => result.status === "rejected").length;
         if (rejected > 0) {
           app.log.warn({ rejected }, "Queued track persistence operations failed.");
@@ -4768,7 +5140,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return;
     }
     try {
+      stateProjectionOwner?.assertWriteAllowed(point);
       await trackHistoryStore.append(point);
+      stateProjectionOwner?.assertWriteAllowed(point);
     } catch (error) {
       markTrackHistoryStoreDegraded(error);
     }
@@ -4779,7 +5153,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return;
     }
     try {
+      stateProjectionOwner?.assertWriteAllowed({ object, event });
       await trackHistoryStore.upsertCurrent(object, event);
+      stateProjectionOwner?.assertWriteAllowed({ object, event });
     } catch (error) {
       markTrackHistoryStoreDegraded(error);
     }
@@ -4822,6 +5198,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     query: TrackHistoryQuery = {}
   ): Promise<Map<string, ObjectConflictEvidence>> {
     const objectIds = objects.map((object) => object.objectId);
+    stateProjectionOwner?.assertWriteAllowed(objects);
     if (objectIds.length === 0) {
       return new Map();
     }
@@ -4842,15 +5219,16 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       conflictEvidenceCache.delete(cacheKey);
     }
 
-    const operation = (async () => {
+    const operation = retainProjectionFlight((async () => {
       const historyItems = await readTrackHistory(effectiveQuery, requestNow);
+      stateProjectionOwner?.assertWriteAllowed({ objects, historyItems });
       return buildConflictEvidenceIndex({
         evaluatedAt: requestNow.toISOString(),
         historyItems,
         objects,
         sourceHealth: buildSourceHealthItems(state, requestNow, trackLifecycle)
       });
-    })();
+    })());
     conflictEvidenceCache.set(cacheKey, {
       expiresAt: currentTime + conflictEvidenceCacheTtlMs,
       value: operation
@@ -5390,8 +5768,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       if (!await enforceDirectCommunication(request, reply, actor, requestedRecipients[0]!)) return reply;
+      await assertVoiceSubjectsAllowed(actor, requestedRecipients);
       const requestNow = now();
       const call = await voiceCallStore.create({
+        ...(actor.authMode === "oidc" && actor.issuer ? { ownerIssuer: actor.issuer } : {}),
         expiresAt: new Date(requestNow.getTime() + 90_000).toISOString(),
         initiatorSubjectId: actor.subjectId,
         kind: "direct",
@@ -5400,6 +5780,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         roomId: input.roomId,
         title: input.title ?? conversation.title ?? "COP hovor"
       });
+      await assertVoiceActorAllowed(actor, call);
       const notification = await sendVoiceCallLifecycleNotification({
         actor,
         action: "incoming",
@@ -5407,6 +5788,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         recipientUserIds: call.participantSubjectIds,
         requestNow
       });
+      await assertVoiceActorAllowed(actor, call);
       if (notification.status !== "online") {
         await voiceCallStore.transition(call.callId, {
           action: "media_failed",
@@ -5427,8 +5809,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         await voiceCallStore.transition(call.callId, {action: "media_failed", actorSubjectId: actor.subjectId, now: now().toISOString(), reason: "communication_policy_changed"});
         return reply;
       }
-      const media = await voiceCallMediaIssuer.issue(call, actor, requestNow);
-      return reply.code(201).send(voiceCallAPIResponse(call, actor.subjectId, media, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id))));
+      const peer = await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id));
+      const media = await issueGuardedVoiceMedia(call, actor);
+      return reply.code(201).send(voiceCallAPIResponse(call, actor.subjectId, media, peer));
     },
     voiceCalls: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -5491,11 +5874,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       if (canIssueVoiceCallMedia(call, actor.subjectId) && !await enforceDirectCommunication(request, reply, actor, directPeerForCall(call, actor.subjectId))) return reply;
+      const peer = await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id));
       const media =
         canIssueVoiceCallMedia(call, actor.subjectId) && voiceCallMediaIssuer.enabled
-          ? await voiceCallMediaIssuer.issue(call, actor, now())
+          ? await issueGuardedVoiceMedia(call, actor)
           : undefined;
-      return voiceCallAPIResponse(call, actor.subjectId, media, await readVoiceCallPeer(call, actor.subjectId, id => userProfileStore.getProfile(id)));
+      await assertVoiceActorAllowed(actor, call);
+      return voiceCallAPIResponse(call, actor.subjectId, media, peer);
     },
     transitionVoiceCall: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -5582,11 +5967,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         });
       }
       if (canIssueVoiceCallMedia(result.record, actor.subjectId) && !await enforceDirectCommunication(request, reply, actor, directPeerForCall(result.record, actor.subjectId))) return reply;
+      const peer = await readVoiceCallPeer(result.record, actor.subjectId, id => userProfileStore.getProfile(id));
       const media =
         canIssueVoiceCallMedia(result.record, actor.subjectId) && voiceCallMediaIssuer.enabled
-          ? await voiceCallMediaIssuer.issue(result.record, actor, now())
+          ? await issueGuardedVoiceMedia(result.record, actor)
           : undefined;
-      return voiceCallAPIResponse(result.record, actor.subjectId, media, await readVoiceCallPeer(result.record, actor.subjectId, id => userProfileStore.getProfile(id)));
+      await assertVoiceActorAllowed(actor, result.record);
+      return voiceCallAPIResponse(result.record, actor.subjectId, media, peer);
     },
     conversationDetail: async (request, reply) => {
       const actor = requireActor(request, reply);
@@ -5687,7 +6074,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const result = await messagingProvider.deleteWebPushDevice(actor, now(), deviceId);
       if (result.deleted && safetyNotificationStore) {
         if (!(await ensureSafetyNotificationStoreReady())) return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Device notification capability update is unavailable.", correlationIdFrom(request.headers["x-correlation-id"]));
-        try { await safetyNotificationStore!.setWebDeviceEligibility(actor.subjectId, deviceId, false); }
+        try { await safetyNotificationStore!.setWebDeviceEligibility(actor.subjectId, deviceId, false, actor.authMode === "oidc" && actor.issuer ? { issuer: actor.issuer, subjectId: actor.subjectId } : undefined); }
         catch { return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Device notification capability update is unavailable.", correlationIdFrom(request.headers["x-correlation-id"])); }
       }
       return reply.code(result.status === "disabled" ? 503 : 202).send(result);
@@ -5731,7 +6118,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             .some((flag) => typeof preferences?.[flag] === "boolean");
           await safetyNotificationStore!.setWebDeviceEligibility(actor.subjectId, result.deviceId ?? registration.deviceId,
             result.enabled && (!registration.capabilities || registration.capabilities.includes("notifications"))
-            && preferences?.enabled !== false && (!hasCategoryFlags || preferences?.safetyAlerts === true));
+            && preferences?.enabled !== false && (!hasCategoryFlags || preferences?.safetyAlerts === true),
+            actor.authMode === "oidc" && actor.issuer ? { issuer: actor.issuer, subjectId: actor.subjectId } : undefined);
         } catch { return sendError(reply, 503, "NOTIFICATION_STORE_UNAVAILABLE", "Device notification capability update is unavailable.", correlationIdFrom(request.headers["x-correlation-id"])); }
       }
       return reply.code(result.status === "disabled" ? 503 : 202).send(result);
@@ -6794,6 +7182,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
+      await assertMobileActorAllowed(actor);
       const requestNow = now();
       const registration = normalizeMobileDeviceRegistration(request.body, actor, requestNow);
       if (!registration) {
@@ -6806,6 +7195,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const device = await activeMobileDeviceStore().upsertDevice(registration, "paired", requestNow.toISOString());
+      await assertMobileActorAllowed(actor);
       appendAudit(
         state,
         "MOBILE_DEVICE_REGISTERED",
@@ -6823,7 +7213,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return reply.code(202).send({
         actor,
         contractVersion: "cop-mobile-devices-v1",
-        device,
+        device: mobilePublicRecord(device),
         policy: mobileNativePolicy(),
         serverTimestamp: requestNow.toISOString()
       });
@@ -6831,6 +7221,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     deviceRegistrationTicket: async (request, reply) => {
       const actor = requireActor(request, reply);
       if (!actor) return reply;
+      await assertMobileActorAllowed(actor);
       const body = isRecord(request.body) ? request.body : {};
       const appInstanceId = optionalTrimmedString(body.appInstanceId, 200);
       const bundleId = optionalTrimmedString(body.bundleId, 200);
@@ -6875,6 +7266,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       };
       const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
       const signature = createHmac("sha256", secret).update(payload).digest("base64url");
+      await assertMobileActorAllowed(actor);
       appendAudit(
         state,
         "MOBILE_DEVICE_REGISTRATION_TICKET_ISSUED",
@@ -6893,6 +7285,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
+      await assertMobileActorAllowed(actor);
       const params = request.params as { deviceId: string };
       const deviceId = normalizeMobileDeviceId(params.deviceId);
       if (!deviceId) {
@@ -6905,6 +7298,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const device = await activeMobileDeviceStore().revokeDevice(actor.subjectId, deviceId, now().toISOString());
+      await assertMobileActorAllowed(actor);
       if (!device) {
         return sendError(
           reply,
@@ -6927,7 +7321,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return reply.code(202).send({
         actor,
         contractVersion: "cop-mobile-devices-v1",
-        device,
+        device: mobilePublicRecord(device),
         serverTimestamp: now().toISOString()
       });
     },
@@ -6936,11 +7330,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
+      await assertMobileActorAllowed(actor);
       const devices = await activeMobileDeviceStore().listDevices(actor.subjectId);
+      await assertMobileActorAllowed(actor);
       return {
         actor,
         contractVersion: "cop-mobile-devices-v1",
-        devices,
+        devices: devices.map(mobilePublicRecord),
         policy: mobileNativePolicy(),
         serverTimestamp: now().toISOString()
       };
@@ -6950,12 +7346,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
+      await assertMobileActorAllowed(actor);
       const query = request.query as Record<string, unknown>;
       const since = optionalIsoDateString(query.since);
       const limit = readBoundedInteger(query.limit, 50, 1, 250);
       const acks = await activeMobileDeviceStore().listMeshAcks(actor.subjectId, since, limit);
+      await assertMobileActorAllowed(actor);
       return {
-        acks,
+        acks: acks.map(mobilePublicRecord),
         contractVersion: "cop-mobile-mesh-acks-v1",
         serverTimestamp: now().toISOString()
       };
@@ -6965,6 +7363,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
+      await assertMobileActorAllowed(actor);
       const requestNow = now();
       const normalized = normalizeMobileMeshBundle(request.body, actor, requestNow);
       if (!normalized.valid) {
@@ -6990,6 +7389,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       try {
         const result = await activeMobileDeviceStore().ingestMeshBundle(normalized.input);
+        await assertMobileActorAllowed(actor);
         appendAudit(
           state,
           "MOBILE_MESH_BUNDLE_INGESTED",
@@ -7005,6 +7405,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
         return reply.code(result.duplicate ? 200 : 202).send(mobileMeshAckResponse(result.record));
       } catch (error) {
+        if (error instanceof RuntimeOwnerErasedError || error instanceof RuntimeOwnerUnknownError) throw error;
         markMobileDeviceStoreDegraded(error);
         return sendError(
           reply,
@@ -7036,6 +7437,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
+      await assertMobileActorAllowed(actor);
       const params = request.params as { code: string };
       const code = normalizeMobilePairingCode(params.code);
       const requestNow = now();
@@ -7050,6 +7452,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const current = await activeMobileDeviceStore().getPairingSession(code, requestNow.toISOString());
+      await assertMobileActorAllowed(actor);
       if (!current) {
         return sendError(
           reply,
@@ -7074,6 +7477,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         registration,
         requestNow.toISOString()
       );
+      await assertMobileActorAllowed(actor);
       if (!session || session.status !== "claimed") {
         return sendError(
           reply,
@@ -7102,6 +7506,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
+      await assertMobileActorAllowed(actor);
       const params = request.params as { code: string };
       const code = normalizeMobilePairingCode(params.code);
       if (!code) {
@@ -7115,6 +7520,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const requestNow = now();
       const current = await activeMobileDeviceStore().getPairingSession(code, requestNow.toISOString());
+      await assertMobileActorAllowed(actor);
       if (!current) {
         return sendError(
           reply,
@@ -7143,6 +7549,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const confirmed = await activeMobileDeviceStore().confirmPairingSession(code, requestNow.toISOString());
+      await assertMobileActorAllowed(actor);
       if (!confirmed || confirmed.status !== "confirmed" || !confirmed.claimedDevice) {
         return sendError(
           reply,
@@ -7158,6 +7565,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         requestNow.toISOString(),
         code
       );
+      await assertMobileActorAllowed(actor);
       appendAudit(
         state,
         "MOBILE_PAIRING_SESSION_CONFIRMED",
@@ -7177,6 +7585,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
+      await assertMobileActorAllowed(actor);
       const requestNow = now();
       const ttlSeconds = normalizeMobilePairingTtlSeconds(request.body);
       const expiresAt = new Date(requestNow.getTime() + ttlSeconds * 1000).toISOString();
@@ -7186,6 +7595,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           expiresAt,
           now: requestNow.toISOString()
         });
+        await assertMobileActorAllowed(actor);
         appendAudit(
           state,
           "MOBILE_PAIRING_SESSION_CREATED",
@@ -7199,6 +7609,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
         return reply.code(201).send(mobilePairingSessionResponse(session, request));
       } catch (error) {
+        if (error instanceof RuntimeOwnerErasedError || error instanceof RuntimeOwnerUnknownError) throw error;
         markMobileDeviceStoreDegraded(error);
         return sendError(
           reply,
@@ -7214,6 +7625,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       if (!actor) {
         return reply;
       }
+      await assertMobileActorAllowed(actor);
       const params = request.params as { code: string };
       const code = normalizeMobilePairingCode(params.code);
       if (!code) {
@@ -7226,6 +7638,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const session = await activeMobileDeviceStore().getPairingSession(code, now().toISOString());
+      await assertMobileActorAllowed(actor);
       if (!session || !canViewMobilePairingSession(actor, session)) {
         return sendError(
           reply,
@@ -7848,6 +8261,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           },
           requestNow
         );
+        if (accountErasure) {
+          const store = activeCommunityReportStore();
+          if (actor.authMode !== "oidc" || !actor.issuer || !store.extendOwnedMediaUpload)
+            throw new ContentErasureStoreError(503, "COMMUNITY_MEDIA_OWNER_UNVERIFIED");
+          await store.extendOwnedMediaUpload({ reportId: report.reportId, attachmentId,
+            objectKey: retryUpload.objectKey, issuer: actor.issuer, subjectId: actor.subjectId, expiresAt: retryUpload.expiresAt });
+          await accountErasure.assertAllowed(actor);
+        }
         return reply.code(200).send({ attachment: existingAttachment, upload: retryUpload });
       }
       const upload = await mediaStorage.createUploadSlot(
@@ -7874,8 +8295,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         objectKey: upload.objectKey,
         reportId: report.reportId,
         subjectId: actor.subjectId,
+        ...(actor.authMode === "oidc" && actor.issuer ? { issuer: actor.issuer } : {}),
         uploadExpiresAt: upload.expiresAt
       });
+      if (accountErasure && actor.authMode === "oidc") await accountErasure.assertAllowed(actor);
       appendAudit(
         state,
         "COMMUNITY_ATTACHMENT_UPLOAD_CREATED",
@@ -7984,7 +8407,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         checksumSha256: optionalChecksumSha256(body.checksumSha256),
         completedAt: requestNow.toISOString(),
         reportId: params.reportId,
-        subjectId: actor.subjectId
+        subjectId: actor.subjectId,
+        ...(actor.authMode === "oidc" && actor.issuer ? { issuer: actor.issuer } : {})
       });
       if (!attachment) {
         return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
@@ -8040,21 +8464,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
       const checksumSha256 = createHash("sha256").update(uploadBody.body).digest("hex");
       const requestNow = now();
-      await mediaStorage.putObject(
+      await withOwnedCommunityMediaWrite({ reportId: report.reportId, attachmentId: attachment.attachmentId, objectKey: attachment.objectKey }, () => mediaStorage.putObject(
         {
           body: uploadBody.body,
           contentType: attachment.contentType,
           objectKey: attachment.objectKey
         },
         requestNow
-      );
+      ));
       const completed = await completeCommunityAttachment({
         attachmentId: attachment.attachmentId,
         byteSize: uploadBody.body.length,
         checksumSha256,
         completedAt: requestNow.toISOString(),
         reportId: report.reportId,
-        subjectId: actor.subjectId
+        subjectId: actor.subjectId,
+        ...(actor.authMode === "oidc" && actor.issuer ? { issuer: actor.issuer } : {})
       });
       if (!completed) {
         return sendError(reply, 404, "NOT_FOUND", "Community report attachment was not found.", crypto.randomUUID());
@@ -8926,6 +9351,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     try {
       return await safetyDataSource.fetchHydroStationDetail(stationId, query, requestNow);
     } catch (error) {
+      if (error instanceof ProviderCopiesUnavailableError) throw error;
       app.log.warn({ error, stationId }, "Safety hydro station detail failed.");
       return sendError(reply, 502, "SAFETY_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
     }
@@ -8951,6 +9377,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       try {
         return await situationDataSource.createRadioProfile(profile, requestNow);
       } catch (error) {
+        if (error instanceof ProviderCopiesUnavailableError) throw error;
         app.log.warn({ error }, "Radio profile creation failed.");
         return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
       }
@@ -8974,6 +9401,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       try {
         return await situationDataSource.runRadioLinkCheck(body, requestNow);
       } catch (error) {
+        if (error instanceof ProviderCopiesUnavailableError) throw error;
         app.log.warn({ error }, "Radio link-check failed.");
         return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
       }
@@ -8987,6 +9415,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       try {
         return await situationDataSource.fetchRadioProfiles(requestNow);
       } catch (error) {
+        if (error instanceof ProviderCopiesUnavailableError) throw error;
         app.log.warn({ error }, "Radio profile catalog failed.");
         return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
       }
@@ -9021,6 +9450,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       try {
         return await situationDataSource.fetchMobileTowerViewshed(towerId, query, requestNow);
       } catch (error) {
+        if (error instanceof ProviderCopiesUnavailableError) throw error;
         app.log.warn({ error, towerId }, "Mobile tower viewshed failed.");
         const upstreamStatus = upstreamHttpStatus(error);
         if (upstreamStatus === 400 || upstreamStatus === 404) {
@@ -9054,6 +9484,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       try {
         return await situationDataSource.runRadioCoverage(body, requestNow);
       } catch (error) {
+        if (error instanceof ProviderCopiesUnavailableError) throw error;
         app.log.warn({ error }, "Radio coverage failed.");
         return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
       }
@@ -9077,6 +9508,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       try {
         return await situationDataSource.runRadioSiteSearch(body, requestNow);
       } catch (error) {
+        if (error instanceof ProviderCopiesUnavailableError) throw error;
         app.log.warn({ error }, "Radio site-search failed.");
         return sendError(reply, 502, "SITUATION_DATA_UPSTREAM_UNAVAILABLE", errorMessage(error), correlationId);
       }
@@ -9087,10 +9519,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
       try {
         const nodes = await federationRuntimeStore.listNodes();
-        state.federatedNodes.clear();
-        for (const node of nodes) {
-          state.federatedNodes.set(node.nodeId, node);
-        }
+        runWithProjectionHydration(() => { state.federatedNodes.clear(); for (const node of nodes) state.federatedNodes.set(node.nodeId, node); });
         return nodes;
       } catch (error) {
         markFederationRuntimeStoreDegraded(error);
@@ -9104,7 +9533,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       try {
         const node = await federationRuntimeStore.getNode(nodeId);
         if (node) {
-          state.federatedNodes.set(node.nodeId, node);
+          runWithProjectionHydration(() => state.federatedNodes.set(node.nodeId, node));
         }
         return node;
       } catch (error) {
@@ -9115,29 +9544,41 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   }
 
   async function upsertFederatedNode(node: FederatedNodeRecord): Promise<void> {
-    state.federatedNodes.set(node.nodeId, node);
+    stateProjectionOwner?.assertWriteAllowed(node);
+    if (accountErasure && federationRuntimeStore && federationRuntimeStoreStatus !== "ok") throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
     if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
       try {
         await federationRuntimeStore.upsertNode(node);
+        stateProjectionOwner?.assertWriteAllowed(node);
       } catch (error) {
         markFederationRuntimeStoreDegraded(error);
       }
     }
+    state.federatedNodes.set(node.nodeId, node);
   }
 
-  async function publishRuntimeDomainEvent(input: DomainEventPublishInput): Promise<DomainEventPublishResult> {
+  async function publishRuntimeDomainEvent(input: DomainEventPublishInput, actor?: AuthenticatedActor): Promise<DomainEventPublishResult> {
+    const owner = actor?.authMode === "oidc" && actor.issuer ? { issuer: actor.issuer, subjectId: actor.subjectId } : undefined;
+    if (owner && input.subject && input.subject !== owner.subjectId) throw new ContentErasureStoreError(401, "PROJECTION_OWNER_MISMATCH");
+    stateProjectionOwner?.assertWriteAllowed(input, owner);
+    if (accountErasure && actor?.authMode === "oidc") await accountErasure.assertAllowed(actor);
     if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
       try {
-        const result = await federationRuntimeStore.publishEvent(input, now());
+        const result = await federationRuntimeStore.publishEvent(input, now(), owner);
+        stateProjectionOwner?.assertWriteAllowed(result.event, owner);
+        if (accountErasure && actor?.authMode === "oidc") await accountErasure.assertAllowed(actor);
         if (!state.domainEvents.some((event) => event.id === result.event.id)) {
-          state.domainEvents.push(result.event);
+          if (owner) runWithVerifiedProjectionOwner(owner, () => state.domainEvents.push(result.event));
+          else runWithProjectionHydration(() => state.domainEvents.push(result.event));
         }
         return result;
       } catch (error) {
+        if (accountErasure) throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
         markFederationRuntimeStoreDegraded(error);
       }
     }
-    return publishDomainEventWithResult(state, input, now());
+    if (accountErasure && federationRuntimeStore) throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
+    return owner ? runWithVerifiedProjectionOwner(owner, () => publishDomainEventWithResult(state, input, now())) : runWithProjectionHydration(() => publishDomainEventWithResult(state, input, now()));
   }
 
   async function appendRuntimeDomainDeadLetter(input: {
@@ -9147,19 +9588,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     errorCode: string;
     message: string;
     now?: Date;
-  }): Promise<DomainDeadLetterRecord> {
+  }, actor?: AuthenticatedActor): Promise<DomainDeadLetterRecord> {
+    const owner = actor?.authMode === "oidc" && actor.issuer ? { issuer: actor.issuer, subjectId: actor.subjectId } : undefined;
+    stateProjectionOwner?.assertWriteAllowed(input, owner);
+    if (accountErasure && federationRuntimeStore && federationRuntimeStoreStatus !== "ok") throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
     if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
       try {
-        const record = await federationRuntimeStore.appendDeadLetter(input);
+        const record = await federationRuntimeStore.appendDeadLetter({ ...input, ...(owner ? { owner } : {}) });
+        stateProjectionOwner?.assertWriteAllowed(record, owner);
         if (!state.domainDeadLetters.some((deadLetter) => deadLetter.deadLetterId === record.deadLetterId)) {
-          state.domainDeadLetters.push(record);
+          if (owner) runWithVerifiedProjectionOwner(owner, () => state.domainDeadLetters.push(record));
+          else runWithProjectionHydration(() => state.domainDeadLetters.push(record));
         }
         return record;
       } catch (error) {
         markFederationRuntimeStoreDegraded(error);
       }
     }
-    return appendDomainDeadLetter(state, input);
+    return owner ? runWithVerifiedProjectionOwner(owner, () => appendDomainDeadLetter(state, input)) : runWithProjectionHydration(() => appendDomainDeadLetter(state, input));
   }
 
   async function queryRuntimeDomainEvents(
@@ -9198,7 +9644,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       try {
         const record = await federationRuntimeStore.getDeadLetter(deadLetterId);
         if (record && !state.domainDeadLetters.some((deadLetter) => deadLetter.deadLetterId === record.deadLetterId)) {
-          state.domainDeadLetters.push(record);
+          runWithProjectionHydration(() => state.domainDeadLetters.push(record));
         }
         return record;
       } catch (error) {
@@ -9211,19 +9657,28 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   async function redriveRuntimeDomainDeadLetter(
     deadLetterId: string,
     input: DomainEventPublishInput,
-    options: { now?: Date; resolvedBy?: string }
+    options: { now?: Date; resolvedBy?: string; owner?: { issuer: string; subjectId: string } }
   ): Promise<DomainDeadLetterRedriveResult> {
+    stateProjectionOwner?.assertWriteAllowed({ deadLetterId, input }, options.owner);
+    if (accountErasure && federationRuntimeStore && federationRuntimeStoreStatus !== "ok") throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
     if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
       try {
+        // Read the original author-neutral view before resolving it. Hydration
+        // cannot promote the logged-in resolver to owner of somebody else's body.
+        const original = await federationRuntimeStore.getDeadLetter(deadLetterId);
+        if (!original) throw new ContentErasureStoreError(404, "NOT_FOUND");
+        if (!state.domainDeadLetters.some(item => item.deadLetterId === deadLetterId))
+          runWithProjectionHydration(() => state.domainDeadLetters.push(original));
         const result = await federationRuntimeStore.redriveDeadLetter(deadLetterId, input, options);
+        stateProjectionOwner?.assertWriteAllowed(result, options.owner);
         if (!state.domainEvents.some((event) => event.id === result.event.id)) {
-          state.domainEvents.push(result.event);
+          runWithProjectionHydration(() => state.domainEvents.push(result.event));
         }
         const index = state.domainDeadLetters.findIndex((deadLetter) => deadLetter.deadLetterId === deadLetterId);
         if (index >= 0) {
           state.domainDeadLetters[index] = result.deadLetter;
         } else {
-          state.domainDeadLetters.push(result.deadLetter);
+          runWithProjectionHydration(() => state.domainDeadLetters.push(result.deadLetter));
         }
         return result;
       } catch (error) {
@@ -9231,20 +9686,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
     }
 
-    const result = publishDomainEventWithResult(state, input, options.now ?? now());
+    const result = runWithProjectionHydration(() => publishDomainEventWithResult(state, input, options.now ?? now()));
     const timestamp = (options.now ?? now()).toISOString();
     const deadLetter = state.domainDeadLetters.find((item) => item.deadLetterId === deadLetterId);
     if (!deadLetter) {
       throw new Error(`Dead-letter ${deadLetterId} was not found during re-drive.`);
     }
-    deadLetter.status = "redriven";
-    deadLetter.retryCount = (deadLetter.retryCount ?? 0) + 1;
-    deadLetter.retryLastAt = timestamp;
-    deadLetter.retryLastEventId = result.event.id;
-    deadLetter.resolvedAt ??= timestamp;
-    deadLetter.resolvedBy ??= options.resolvedBy;
+    const updated = { ...deadLetter, status: "redriven" as const, retryCount: (deadLetter.retryCount ?? 0) + 1,
+      retryLastAt: timestamp, retryLastEventId: result.event.id,
+      resolvedAt: deadLetter.resolvedAt ?? timestamp, resolvedBy: deadLetter.resolvedBy ?? options.resolvedBy };
+    state.domainDeadLetters[state.domainDeadLetters.indexOf(deadLetter)] = updated;
     return {
-      deadLetter,
+      deadLetter: updated,
       event: result.event,
       status: result.duplicate ? "duplicate" : "redriven"
     };
@@ -9252,17 +9705,24 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   async function resolveRuntimeDomainDeadLetter(
     deadLetterId: string,
-    options: { now?: Date; resolvedBy?: string }
+    options: { now?: Date; resolvedBy?: string; owner?: { issuer: string; subjectId: string } }
   ): Promise<DomainDeadLetterRecord | null> {
+    stateProjectionOwner?.assertWriteAllowed({ deadLetterId, ...options }, options.owner);
+    if (accountErasure && federationRuntimeStore && federationRuntimeStoreStatus !== "ok") throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
     if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
       try {
+        const original = await federationRuntimeStore.getDeadLetter(deadLetterId);
+        if (!original) return null;
+        if (!state.domainDeadLetters.some(item => item.deadLetterId === deadLetterId))
+          runWithProjectionHydration(() => state.domainDeadLetters.push(original));
         const record = await federationRuntimeStore.resolveDeadLetter(deadLetterId, options);
+        stateProjectionOwner?.assertWriteAllowed(record, options.owner);
         if (record) {
           const index = state.domainDeadLetters.findIndex((deadLetter) => deadLetter.deadLetterId === deadLetterId);
           if (index >= 0) {
             state.domainDeadLetters[index] = record;
           } else {
-            state.domainDeadLetters.push(record);
+            runWithProjectionHydration(() => state.domainDeadLetters.push(record));
           }
         }
         return record;
@@ -9275,20 +9735,57 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return null;
     }
     const timestamp = (options.now ?? now()).toISOString();
-    deadLetter.status = "resolved";
-    deadLetter.resolvedAt ??= timestamp;
-    deadLetter.resolvedBy ??= options.resolvedBy;
-    return deadLetter;
+    const updated = { ...deadLetter, status: "resolved" as const, resolvedAt: deadLetter.resolvedAt ?? timestamp,
+      resolvedBy: deadLetter.resolvedBy ?? options.resolvedBy };
+    state.domainDeadLetters[state.domainDeadLetters.indexOf(deadLetter)] = updated;
+    return updated;
   }
 
+  const cursorMentions = (cursor: EdgeReplayCursorRecord, owner: RuntimeOwner) => {
+    const json = boundedProjectionJSON(cursor);
+    return json.includes(JSON.stringify(owner.subjectId)) || (owner.subjectId.length >= 16 && json.includes(owner.subjectId));
+  };
+  function cacheRuntimeEdgeCursor(cursor: EdgeReplayCursorRecord, owner?: RuntimeOwner): EdgeReplayCursorRecord {
+    stateProjectionOwner?.assertWriteAllowed(cursor, owner);
+    const copy = Object.freeze({ ...cursor });
+    edgeReplayCursors.set(cursor.nodeId, copy);
+    edgeReplayCursorOwners.set(cursor.nodeId, owner ? Object.freeze({ ...owner }) : undefined);
+    return copy;
+  }
+  async function preflightEdgeCursorCopies(owner: RuntimeOwner): Promise<RuntimeOwnerAssessment> {
+    const rows = [...edgeReplayCursors.values()].filter(cursor => cursorMentions(cursor, owner));
+    const verified = (cursor: EdgeReplayCursorRecord) => {
+      const witness = edgeReplayCursorOwners.get(cursor.nodeId);
+      const { updatedBy: _updatedBy, ...withoutActor } = cursor;
+      return cursor.updatedBy === owner.subjectId && witness?.issuer === owner.issuer && witness.subjectId === owner.subjectId && !cursorMentions(withoutActor, owner);
+    };
+    return { ...runtimeAssessment(rows.map(cursor => [cursor, edgeReplayCursorOwners.get(cursor.nodeId)])), ready: rows.every(verified) };
+  }
+  function eraseEdgeCursorCopies(owner: RuntimeOwner): boolean {
+    let complete = true;
+    for (const cursor of edgeReplayCursors.values()) {
+      if (!cursorMentions(cursor, owner)) continue;
+      const witness = edgeReplayCursorOwners.get(cursor.nodeId);
+      const { updatedBy: _updatedBy, ...withoutActor } = cursor;
+      if (cursor.updatedBy !== owner.subjectId || witness?.issuer !== owner.issuer || witness.subjectId !== owner.subjectId || cursorMentions(withoutActor, owner)) { complete = false; continue; }
+      cacheRuntimeEdgeCursor(withoutActor);
+    }
+    return complete && ![...edgeReplayCursors.values()].some(cursor => cursorMentions(cursor, owner));
+  }
+  async function readActualEdgeCursor(nodeId: string): Promise<EdgeReplayCursorRecord | null> {
+    if (!federationRuntimeStore) return null;
+    if (federationRuntimeStore.getEdgeCursorProjection) {
+      const proof = await federationRuntimeStore.getEdgeCursorProjection(nodeId);
+      return proof ? cacheRuntimeEdgeCursor(proof.cursor, proof.ownershipKnown ? proof.owner : undefined) : null;
+    }
+    if (accountErasure) throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
+    const cursor = await federationRuntimeStore.getEdgeCursor(nodeId);
+    return cursor ? cacheRuntimeEdgeCursor(cursor) : null;
+  }
   async function getRuntimeEdgeCursor(nodeId: string): Promise<EdgeReplayCursorRecord | null> {
     if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
       try {
-        const cursor = await federationRuntimeStore.getEdgeCursor(nodeId);
-        if (cursor) {
-          edgeReplayCursors.set(nodeId, cursor);
-        }
-        return cursor;
+        return await readActualEdgeCursor(nodeId);
       } catch (error) {
         markFederationRuntimeStoreDegraded(error);
       }
@@ -9301,12 +9798,18 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     nodeId: string;
     now?: Date;
     updatedBy?: string;
+    owner?: { issuer: string; subjectId: string };
   }): Promise<EdgeReplayCursorRecord> {
+    stateProjectionOwner?.assertWriteAllowed(input, input.owner);
+    if (accountErasure && federationRuntimeStore && federationRuntimeStoreStatus !== "ok") throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
     if (federationRuntimeStore && federationRuntimeStoreStatus === "ok") {
       try {
         const cursor = await federationRuntimeStore.updateEdgeCursor(input);
-        edgeReplayCursors.set(input.nodeId, cursor);
-        return cursor;
+        stateProjectionOwner?.assertWriteAllowed(cursor, input.owner);
+        const observed = await readActualEdgeCursor(input.nodeId);
+        if (!observed) throw new ContentErasureStoreError(503, "CONTENT_PROJECTION_UNAVAILABLE");
+        stateProjectionOwner?.assertWriteAllowed(observed, input.owner);
+        return observed;
       } catch (error) {
         markFederationRuntimeStoreDegraded(error);
       }
@@ -9324,8 +9827,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           ? { updatedBy: previous.updatedBy }
           : {})
     };
-    edgeReplayCursors.set(input.nodeId, cursor);
-    return cursor;
+    return cacheRuntimeEdgeCursor(cursor, input.updatedBy ? input.owner : edgeReplayCursorOwners.get(input.nodeId));
   }
 
   app.get("/api/v1/federation/nodes", async () => ({
@@ -9413,7 +9915,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         errorCode: "VALIDATION_ERROR",
         message: parsed.message ?? "Domain event payload does not match contract.",
         now: now()
-      });
+      }, actorFromRequest(request) ?? undefined);
       appendAudit(
         state,
         "DOMAIN_EVENT_REJECTED",
@@ -9438,7 +9940,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         errorCode: "UNKNOWN_PRODUCER_NODE",
         message: "Domain event producer node is not registered.",
         now: now()
-      });
+      }, actorFromRequest(request) ?? undefined);
       appendAudit(
         state,
         "DOMAIN_EVENT_REJECTED",
@@ -9456,7 +9958,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         correlationId
       );
     }
-    const { event } = await publishRuntimeDomainEvent(parsed.input);
+    const { event } = await publishRuntimeDomainEvent(parsed.input, accountErasure && parsed.input.producerNodeId === "node_central_cop" ? actorFromRequest(request) ?? undefined : undefined);
     appendAudit(
       state,
       "DOMAIN_EVENT_PUBLISHED",
@@ -9539,7 +10041,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           errorCode: "VALIDATION_ERROR",
           message: parsed.message ?? "Edge outbox event payload does not match contract.",
           now: now()
-        });
+        }, actorFromRequest(request) ?? undefined);
         results.push({
           ...(clientEventId ? { clientEventId } : {}),
           errorCode: "VALIDATION_ERROR",
@@ -9649,7 +10151,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       lastAckedOffset: offset,
       nodeId: node.nodeId,
       now: now(),
-      updatedBy: actor?.subjectId ?? "cop-api"
+      updatedBy: actor?.subjectId ?? "cop-api",
+      ...(actor?.authMode === "oidc" && actor.issuer ? { owner: { issuer: actor.issuer, subjectId: actor.subjectId } } : {})
     });
     appendAudit(
       state,
@@ -9839,7 +10342,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const actor = actorFromRequest(request);
     const result = await redriveRuntimeDomainDeadLetter(deadLetter.deadLetterId, parsed.input, {
       now: now(),
-      resolvedBy: actor?.subjectId ?? "cop-api"
+      resolvedBy: actor?.subjectId ?? "cop-api",
+      ...(actor?.authMode === "oidc" && actor.issuer ? { owner: { issuer: actor.issuer, subjectId: actor.subjectId } } : {})
     });
     appendAudit(
       state,
@@ -9869,7 +10373,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const actor = actorFromRequest(request);
     const deadLetter = await resolveRuntimeDomainDeadLetter(params.deadLetterId, {
       now: now(),
-      resolvedBy: actor?.subjectId ?? "cop-api"
+      resolvedBy: actor?.subjectId ?? "cop-api",
+      ...(actor?.authMode === "oidc" && actor.issuer ? { owner: { issuer: actor.issuer, subjectId: actor.subjectId } } : {})
     });
     if (!deadLetter) {
       return sendError(reply, 404, "NOT_FOUND", "Domain event dead-letter record was not found.", correlationId);
@@ -10500,7 +11005,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const retrievalQuery = buildAiRetrievalQuery(summaryQuery, retrievalIntent);
     const semanticStartedAt = Date.now();
     const semanticContext = await retrieveAiSemanticContext({
-      documents: limitAiSemanticDocuments(
+      actor,
+      documents: await attestStoredCopAiDocuments(limitAiSemanticDocuments(
         createSemanticDocuments({
           alerts: aiAlerts,
           communityReports: aiCommunityReports,
@@ -10510,7 +11016,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         }),
         aiSemanticRetrievalCandidateLimit,
         retrievalIntent
-      ),
+      )),
       generatedAt: requestNow,
       limit: 12,
       query: retrievalQuery,
@@ -10676,6 +11182,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const jobId = randomUUID();
     const job: AiChatAgentJobRecord = {
       actorSubjectId: actor.subjectId,
+      ...(actor.authMode === "oidc" && actor.issuer ? { actorIssuer: actor.issuer } : {}),
       createdAt: requestNow.toISOString(),
       expiresAt: new Date(requestNow.getTime() + aiChatAgentJobTtlMs).toISOString(),
       jobId,
@@ -10683,6 +11190,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       status: "queued",
       updatedAt: requestNow.toISOString()
     };
+    if (accountErasure && actor.authMode === "oidc" && actor.issuer) accountErasure.assertCachedActorAllowed(actor as { issuer: string; subjectId: string });
     aiChatAgentJobs.set(jobId, job);
     appendAudit(
       state,
@@ -10726,7 +11234,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!job) {
       return sendError(reply, 404, "NOT_FOUND", "AI chat agent job was not found or has expired.", correlationId);
     }
-    if (job.actorSubjectId !== actor.subjectId) {
+    if (job.actorSubjectId !== actor.subjectId || (accountErasure && job.actorIssuer !== actor.issuer)) {
       return sendError(reply, 403, "FORBIDDEN", "Current user cannot read this AI chat agent job.", correlationId);
     }
     return aiChatAgentJobPayload(job);
@@ -11014,7 +11522,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const retrievalQuery = buildAiRetrievalQuery(effectiveQuestion, retrievalIntent);
     const semanticStartedAt = Date.now();
     const semanticContext = await retrieveAiSemanticContext({
-      documents: limitAiSemanticDocuments(
+      actor,
+      documents: await attestStoredCopAiDocuments(limitAiSemanticDocuments(
         createSemanticDocuments({
           alerts: aiAlerts,
           chatContext,
@@ -11026,7 +11535,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         }),
         aiSemanticRetrievalCandidateLimit,
         retrievalIntent
-      ),
+      )),
       generatedAt: requestNow,
       limit: 12,
       query: retrievalQuery,
@@ -11956,7 +12465,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
   function withCatalogProviderTimeout<T>(providerId: string, operation: Promise<T>, fallback: () => T): Promise<T> {
     const timeoutMs = mapCatalogProviderTimeoutMs();
-    return new Promise<T>((resolve) => {
+    return new Promise<T>((resolve, reject) => {
       let settled = false;
       const timeout = setTimeout(() => {
         if (settled) {
@@ -11983,6 +12492,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           }
           settled = true;
           clearTimeout(timeout);
+          if (error instanceof ProviderCopiesUnavailableError) {
+            reject(error);
+            return;
+          }
           app.log.warn(
             { error, providerId },
             "Map catalog provider rejected before timeout; returning degraded catalog slice."
@@ -12071,6 +12584,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         status: "online" as const
       };
     } catch (error) {
+      if (error instanceof ProviderCopiesUnavailableError) throw error;
       const health = unavailableSituationDataHealth(error, requestNow);
       state.sources.set(
         situationDataSource.sourceSystem.sourceSystemId,
@@ -12120,6 +12634,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         status: "online" as const
       };
     } catch (error) {
+      if (error instanceof ProviderCopiesUnavailableError) throw error;
       const health = unavailableSafetyDataHealth(error, requestNow);
       state.sources.set(
         safetyDataSource.sourceSystem.sourceSystemId,
@@ -12146,6 +12661,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     try {
       return await situationDataSource.fetchTaxonomy(requestNow);
     } catch (error) {
+      if (error instanceof ProviderCopiesUnavailableError) throw error;
       appendAudit(state, "MAP_CATALOG_SITUATION_TAXONOMY_FAILED", {
         error: errorMessage(error),
         sourceSystemId: situationDataSource.sourceSystem.sourceSystemId
@@ -12162,6 +12678,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     try {
       return await safetyDataSource.fetchTaxonomy(requestNow);
     } catch (error) {
+      if (error instanceof ProviderCopiesUnavailableError) throw error;
       appendAudit(state, "MAP_CATALOG_SAFETY_TAXONOMY_FAILED", {
         error: errorMessage(error),
         sourceSystemId: safetyDataSource.sourceSystem.sourceSystemId
@@ -12178,6 +12695,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     try {
       return await safetyDataSource.fetchObservability(requestNow);
     } catch (error) {
+      if (error instanceof ProviderCopiesUnavailableError) throw error;
       app.log.warn({ error }, "Safety data observability request failed.");
       return undefined;
     }
@@ -12211,6 +12729,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         status: "online" as const
       };
     } catch (error) {
+      if (error instanceof ProviderCopiesUnavailableError) throw error;
       const health = unavailableTakGatewayHealth(error, requestNow);
       state.sources.set(
         takGatewaySource.sourceSystem.sourceSystemId,
@@ -12321,6 +12840,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         sourceHealth: health
       };
     } catch (error) {
+      if (error instanceof ProviderCopiesUnavailableError) throw error;
       const health = unavailableSituationDataHealth(error, requestNow);
       state.sources.set(
         situationDataSource.sourceSystem.sourceSystemId,
@@ -12371,6 +12891,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         sourceHealth: health
       };
     } catch (error) {
+      if (error instanceof ProviderCopiesUnavailableError) throw error;
       const health = unavailableSafetyDataHealth(error, requestNow);
       state.sources.set(
         safetyDataSource.sourceSystem.sourceSystemId,
@@ -12574,6 +13095,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         sourceHealth: health
       };
     } catch (error) {
+      if (error instanceof ProviderCopiesUnavailableError) throw error;
       const health = unavailableTakGatewayHealth(error, requestNow);
       state.sources.set(
         takGatewaySource.sourceSystem.sourceSystemId,
@@ -14693,11 +15215,7 @@ function normalizeCreateCommunityReport(
   };
   return {
     category,
-    createdBy: {
-      displayName: actor.displayName,
-      subjectId: actor.subjectId,
-      username: actor.username
-    },
+    createdBy: actorToCommunityActor(actor),
     ...(optionalTrimmedString(value.description, 2000)
       ? { description: optionalTrimmedString(value.description, 2000) }
       : {}),
@@ -14788,7 +15306,8 @@ function actorToCommunityActor(actor: AuthenticatedActor) {
   return {
     displayName: actor.displayName,
     subjectId: actor.subjectId,
-    username: actor.username
+    username: actor.username,
+    ...(actor.authMode === "oidc" && actor.issuer ? { issuer: actor.issuer } : {})
   };
 }
 
@@ -14796,7 +15315,8 @@ function actorToIncidentActor(actor: AuthenticatedActor): IncidentActor {
   return {
     displayName: actor.displayName,
     subjectId: actor.subjectId,
-    username: actor.username
+    username: actor.username,
+    ...(actor.authMode === "oidc" && actor.issuer ? { issuer: actor.issuer } : {})
   };
 }
 
@@ -14812,6 +15332,7 @@ function actorCommunitySubjectAliases(actor: AuthenticatedActor): string[] {
 
 function actorToSketchActor(actor: AuthenticatedActor) {
   return {
+    ...(actor.authMode === "oidc" && actor.issuer ? { issuer: actor.issuer } : {}),
     displayName: actor.displayName,
     subjectId: actor.subjectId,
     username: actor.username
@@ -17471,6 +17992,7 @@ function normalizeMobileDeviceRegistration(
   }
   const pushToken = optionalTrimmedString(value.pushToken, 4096);
   return {
+    ...(actor.authMode === "oidc" && actor.issuer ? { ownerIssuer: actor.issuer } : {}),
     appVersion,
     ...(optionalTrimmedString(value.buildNumber, 40)
       ? { buildNumber: optionalTrimmedString(value.buildNumber, 40) }
@@ -17551,6 +18073,7 @@ function normalizeMobileMeshBundle(
       ...(expiresAt ? { expiresAt } : {}),
       ...(payloadSizeBytes !== undefined ? { payloadSizeBytes } : {}),
       receivedAt: receivedAt.toISOString(),
+      ...(actor.authMode === "oidc" && actor.issuer ? { ownerIssuer: actor.issuer } : {}),
       subjectId: actor.subjectId
     },
     valid: true
@@ -17590,6 +18113,7 @@ function mobileMeshAckResponse(ack: MobileMeshAckRecord) {
 
 function mobilePairingActor(actor: AuthenticatedActor): MobilePairingActorRecord {
   return {
+    ...(actor.authMode === "oidc" && actor.issuer ? { ownerIssuer: actor.issuer } : {}),
     displayName: actor.displayName,
     subjectId: actor.subjectId,
     username: actor.username
@@ -17609,10 +18133,10 @@ function mobilePairingSessionResponse(
   const scheme = mobileAuthConfig().redirectUriScheme;
   return {
     contractVersion: "cop-mobile-pairing-v1",
-    device: device ?? null,
+    device: device ? mobilePublicRecord(device) : null,
     pairing: {
       claimedAt: session.claimedAt ?? null,
-      claimedBy: session.claimedBy ?? null,
+      claimedBy: session.claimedBy ? mobilePublicRecord(session.claimedBy) : null,
       claimedDevice: session.claimedDevice
         ? {
             appVersion: session.claimedDevice.appVersion,
@@ -17629,7 +18153,7 @@ function mobilePairingSessionResponse(
       code: session.code,
       confirmedAt: session.confirmedAt ?? null,
       createdAt: session.createdAt,
-      createdBy: session.createdBy,
+      createdBy: mobilePublicRecord(session.createdBy),
       expiresAt: session.expiresAt,
       links: {
         customSchemeUrl: `${scheme}://pair?code=${encodeURIComponent(session.code)}`,
@@ -17646,6 +18170,12 @@ function mobilePairingSessionResponse(
     },
     serverTimestamp: new Date().toISOString()
   };
+}
+
+/** Ownership provenance is server-only and is not an additive public field. */
+function mobilePublicRecord<T extends { ownerIssuer?: string }>(record: T): Omit<T, "ownerIssuer"> {
+  const { ownerIssuer: _ownerIssuer, ...safe } = record;
+  return safe;
 }
 
 function appleAppSiteAssociation(env: Record<string, string | undefined> = process.env) {

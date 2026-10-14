@@ -1,3 +1,4 @@
+import { ProviderCopiesBoundary, trackProviderCopyFetch, providerCopyCancellationTracker, ProviderCopiesUnavailableError } from "./provider-copies-erasure.js";
 import type { SourceSystem } from "@cop/canonical-model";
 import type { SourceHealthOverride } from "./types.js";
 
@@ -183,6 +184,7 @@ export interface SimSearchCacheObservability {
 }
 
 export interface SimSearchDataSource {
+  providerCopiesBoundary?(): ProviderCopiesBoundary;
   readonly config: SimSearchDataSourceConfig;
   readonly sourceSystem: SourceSystem;
   fetchEntities?(request: SimSearchEntitiesRequest, requestNow: Date): Promise<SimSearchEntitiesResponse>;
@@ -216,11 +218,17 @@ export function createSimSearchDataSourceFromEnv(env: Record<string, string | un
 }
 
 export class SimSearchDataSourceAdapter implements SimSearchDataSource {
+  private readonly copies: ProviderCopiesBoundary;
   readonly sourceSystem: SourceSystem;
 
   constructor(readonly config: SimSearchDataSourceConfig, private readonly clock: () => Date = () => new Date()) {
     this.sourceSystem = createSimSearchDataSourceSystem();
+    this.copies = new ProviderCopiesBoundary({ family: "SimSearchDataSource", target: this, prototype: SimSearchDataSourceAdapter.prototype,
+      methods: ["query", "fetchEntities", "fetchEntity", "fetchObservability", "fetchTaxonomy"],
+      caches: { clear: () => {  }, values: () => [], inflight: () => 0 } });
   }
+
+  providerCopiesBoundary(): ProviderCopiesBoundary { return this.copies; }
 
   async query(request: SimSearchQueryRequest, requestNow: Date): Promise<SimSearchQueryResponse> {
     const body = {
@@ -358,7 +366,7 @@ async function fetchJson(url: URL, config: SimSearchDataSourceConfig, requestNow
   });
   try {
     return await Promise.race([
-      (async () => {
+      trackProviderCopyFetch(async () => {
         const response = await fetch(url, {
           ...requestInit,
           headers: {
@@ -371,15 +379,16 @@ async function fetchJson(url: URL, config: SimSearchDataSourceConfig, requestNow
           signal: controller.signal
         });
         if (!response.ok) {
-          void response.body?.cancel().catch(() => {});
+          void providerCopyCancellationTracker()(() => response.body?.cancel() ?? Promise.resolve()).catch(() => {});
           throw new SimSearchDataHttpError(response.status);
         }
         return await readBoundedJson(response, controller.signal);
-      })(),
+      }, controller),
       deadline
     ]);
   } catch (error) {
     controller.abort();
+    if (error instanceof ProviderCopiesUnavailableError) throw error;
     if (error instanceof SimSearchDataHttpError || error instanceof SimSearchDataResponseError || error instanceof SimSearchDataTimeoutError) {
       throw error;
     }
@@ -399,14 +408,15 @@ class SimSearchDataTimeoutError extends Error {
 }
 
 async function readBoundedJson(response: Response, signal: AbortSignal): Promise<unknown> {
+  const cancelBody = providerCopyCancellationTracker();
   if (signal.aborted) {
-    void response.body?.cancel().catch(() => {});
+    void providerCopyCancellationTracker()(() => response.body?.cancel() ?? Promise.resolve()).catch(() => {});
     throw new SimSearchDataTimeoutError();
   }
   const maxBytes = 16 * 1024 * 1024;
   const contentLength = response.headers.get("content-length");
   if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > maxBytes) {
-    void response.body?.cancel().catch(() => {});
+    void providerCopyCancellationTracker()(() => response.body?.cancel() ?? Promise.resolve()).catch(() => {});
     throw new SimSearchDataResponseError("SIM search-data response exceeded the size limit.");
   }
   const reader = response.body?.getReader();
@@ -414,7 +424,7 @@ async function readBoundedJson(response: Response, signal: AbortSignal): Promise
     throw new SimSearchDataResponseError("SIM search-data response body is missing.");
   }
   const decoder = new TextDecoder();
-  const cancel = () => { void reader.cancel().catch(() => {}); };
+  const cancel = () => { void cancelBody(() => reader.cancel()).catch(() => {}); };
   signal.addEventListener("abort", cancel, { once: true });
   let bytes = 0;
   let text = "";
@@ -424,7 +434,7 @@ async function readBoundedJson(response: Response, signal: AbortSignal): Promise
       if (chunk.done) break;
       bytes += chunk.value.byteLength;
       if (bytes > maxBytes) {
-        void reader.cancel().catch(() => {});
+        void cancelBody(() => reader.cancel()).catch(() => {});
         throw new SimSearchDataResponseError("SIM search-data response exceeded the size limit.");
       }
       text += decoder.decode(chunk.value, { stream: true });

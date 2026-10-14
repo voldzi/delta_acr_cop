@@ -150,6 +150,19 @@ describe("COP PWA service worker routing", () => {
 
     expect(respondWith).not.toHaveBeenCalled();
   });
+  it("never substitutes the cached map shell for the whole-account deletion controller", () => {
+    const serviceWorker = loadServiceWorkerContext();
+    const fetchListener = serviceWorker.self.addEventListener.mock.calls.find(([type]) => type === "fetch")?.[1];
+    const respondWith = vi.fn();
+    for (const path of [
+      "/account/delete",
+      "/account/delete/",
+      "/api/v1/me/account-deletion/receipts/1a0e80dc-9c45-4988-a6f6-56b7ac9b5c66"
+    ]) {
+      fetchListener({ request: new Request(`https://cop.example.test${path}`), respondWith });
+    }
+    expect(respondWith).not.toHaveBeenCalled();
+  });
 
   it("retries a rate-limited tile and returns the successful response", async () => {
     const fetchMock = vi

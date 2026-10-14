@@ -10,12 +10,15 @@ import type * as Wire from "../mobility-types.js";
 
 import type { MessagingProvider } from "../messaging-provider.js";
 import { openDispatchParticipant } from "../mobility-participant.js";
-type Options = { messagingProvider?: MessagingProvider; enabled: boolean; dispatchEnabled: boolean; store?: MobilityStore; now: () => Date };
+type Options = { messagingProvider?: MessagingProvider; enabled: boolean; dispatchEnabled: boolean; store?: MobilityStore; now: () => Date;
+  /** The same guarded instances are shared with the account erasure owner. */
+  service?: SharedMobilityService; invitationOutbox?: MobilityInvitationOutbox };
 export function registerMobilityRoutes(app: FastifyInstance, options: Options): () => { name: string; status: "ok" | "unavailable" | "disabled"; detail: string } {
-  const service = options.store ? new SharedMobilityService(options.store, options.now) : undefined;
+  const service = options.service ?? (options.store ? new SharedMobilityService(options.store, options.now) : undefined);
+  if (service && service.store !== options.store) throw new Error("Mobility routes and erasure must share the exact store.");
   if (options.enabled && !service) throw new Error("Shared mobility requires durable storage.");
   if (options.dispatchEnabled && !options.enabled) throw new Error("Private Dispatch requires shared mobility.");
-  const invitationOutbox = options.enabled && options.store && options.messagingProvider ? new MobilityInvitationOutbox(options.store, options.messagingProvider, options.now) : undefined;
+  const invitationOutbox = options.invitationOutbox ?? (options.enabled && options.store && options.messagingProvider ? new MobilityInvitationOutbox(options.store, options.messagingProvider, options.now) : undefined);
   let retentionTimer: NodeJS.Timeout | undefined;
   app.addHook("onReady", async () => { if (options.enabled) { await options.store!.init(); await service!.pruneRetainedData(); invitationOutbox?.start(); retentionTimer = setInterval(() => { void service!.pruneRetainedData().catch(() => undefined); }, 3600000); retentionTimer.unref(); if (options.dispatchEnabled) await service!.initializeDispatch((state, generation) => { app.log.info({ component: "private-dispatch", state, generation }, "Dispatch lease state changed."); }); } });
   app.addHook("onClose", async () => { if (retentionTimer) clearInterval(retentionTimer); service?.closeDispatch(); await invitationOutbox?.close(); if (options.enabled) await options.store?.close(); });

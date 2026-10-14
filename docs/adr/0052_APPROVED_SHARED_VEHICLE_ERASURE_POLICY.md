@@ -63,9 +63,12 @@ assessment, local vehicle cleanup and a permanent local identity/account fence
 against new writes and receipt replay. It deliberately is **not** registered as
 a completed `mobility_dispatch` adapter. Vehicle cleanup does not establish
 erasure of mobility identity, Dispatch, invitation providers or the whole COP
-account. The source factory still connects only `cop_sessions_profiles`; all ten
-other required adapters remain missing. Global deletion capability stays false
-and its usable URL stays absent.
+account. The 14 October source factory connects local domain owners and strict
+server-only Messaging. Actual external continuity/provider proofs remain
+mandatory; see [integration 43](../integration/43_ACCOUNT_SAFETY_COMPLETION.md).
+Production deletion capability remains false until every gate passes. The
+subsequently approved COP-only scope preserves identity and SIM; see
+[ADR 0053](0053_COP_ERASURE_PRESERVES_SHARED_SIM_IDENTITY.md).
 
 The mobility store serializes all transactions with the `mobility-v1` PostgreSQL
 transaction lock, with a serial test-memory equivalent. Local cleanup and

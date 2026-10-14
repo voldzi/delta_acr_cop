@@ -58,6 +58,9 @@ self.addEventListener("fetch", (event) => {
   }
 
   const url = new URL(request.url);
+  // Account erasure must always show the current network-backed controller.
+  // Never serve a cached application shell as a deletion page.
+  if (url.origin === self.location.origin && (url.pathname === "/account/delete" || url.pathname === "/account/delete/")) return;
   // Analytics is network-only: never cache, retry or replay tracker/collector.
   if (
     url.origin === self.location.origin &&

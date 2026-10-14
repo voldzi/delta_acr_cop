@@ -1,3 +1,4 @@
+import { ProviderCopiesBoundary, prepareProviderCacheCopy, trackProviderCopyFetch, providerCopyCancellationTracker } from "./provider-copies-erasure.js";
 import { createPublicSafetyAggregateSourceSystem, type SourceSystem } from "@cop/canonical-model";
 import {
   normalizeProviderMapCatalog,
@@ -231,6 +232,7 @@ export interface SafetyFeatureCollection {
 }
 
 export interface SafetyDataSource {
+  providerCopiesBoundary?(): ProviderCopiesBoundary;
   readonly config: SafetyDataSourceConfig;
   readonly sourceSystem: SourceSystem;
   cacheStats?(): SafetyDataCacheStats;
@@ -292,6 +294,7 @@ export function createSafetyDataSourceFromEnv(env: Record<string, string | undef
 }
 
 export class SafetyDataSourceAdapter implements SafetyDataSource {
+  private readonly copies: ProviderCopiesBoundary;
   readonly sourceSystem: SourceSystem;
   private readonly featureCache: ManagedSafetyCache<SafetyFeatureCollection>;
   private catalogCache: { expiresAtMs: number; value: ProviderMapCatalog } | null = null;
@@ -310,7 +313,12 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
       maxEntries: cacheMaxEntries(config),
       staleIfErrorMs: staleIfErrorMs(config)
     });
+    this.copies = new ProviderCopiesBoundary({ family: "SafetyDataSource", target: this, prototype: SafetyDataSourceAdapter.prototype,
+      methods: ["fetchCatalog", "fetchConfig", "fetchLayers", "fetchObservability", "fetchSources", "fetchTaxonomy", "fetchFeatures", "fetchHydroStationDetail", "fetchNotificationCandidates"],
+      caches: { clear: () => { this.catalogCache = null; this.configCache = null; this.layerCache = null; this.observabilityCache = null; this.sourceCache = null; this.taxonomyCache = null; this.featureCache.clear(); }, values: () => [...this.featureCache.values(), this.catalogCache?.value, this.configCache?.value, this.layerCache?.value, this.observabilityCache?.value, this.sourceCache?.value, this.taxonomyCache?.value].filter(value => value !== undefined), inflight: () => this.featureCache.stats().inflight + (this.catalogInflight ? 1 : 0) + (this.observabilityInflight ? 1 : 0) + (this.taxonomyInflight ? 1 : 0) } });
   }
+
+  providerCopiesBoundary(): ProviderCopiesBoundary { return this.copies; }
 
   cacheStats(): SafetyDataCacheStats {
     return this.featureCache.stats();
@@ -328,7 +336,7 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
       const value = await this.catalogInflight;
       this.catalogCache = {
         expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
-        value
+        value: prepareProviderCacheCopy(value)
       };
       return value;
     } finally {
@@ -343,7 +351,7 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
     const value = normalizeSafetyConfig(await fetchJson(new URL(`${trimTrailingSlash(this.config.baseUrl)}/config`), this.config, requestNow));
     this.configCache = {
       expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
-      value
+      value: prepareProviderCacheCopy(value)
     };
     return value;
   }
@@ -355,7 +363,7 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
     const value = safetyLayersFromProviderCatalog(await this.fetchCatalog(requestNow));
     this.layerCache = {
       expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
-      value
+      value: prepareProviderCacheCopy(value)
     };
     return value;
   }
@@ -372,7 +380,7 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
       const value = await this.observabilityInflight;
       this.observabilityCache = {
         expiresAtMs: requestNow.getTime() + observabilityCacheTtlMs(this.config),
-        value
+        value: prepareProviderCacheCopy(value)
       };
       return value;
     } finally {
@@ -387,7 +395,7 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
     const value = safetySourcesFromProviderCatalog(await this.fetchCatalog(requestNow));
     this.sourceCache = {
       expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
-      value
+      value: prepareProviderCacheCopy(value)
     };
     return value;
   }
@@ -404,7 +412,7 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
       const value = await this.taxonomyInflight;
       this.taxonomyCache = {
         expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
-        value
+        value: prepareProviderCacheCopy(value)
       };
       return value;
     } finally {
@@ -455,6 +463,10 @@ export class SafetyDataSourceAdapter implements SafetyDataSource {
 }
 
 async function fetchNotificationJson(url: URL, config: SafetyDataSourceConfig, requestNow: Date): Promise<unknown> {
+  return trackProviderCopyFetch(() => fetchNotificationJsonUntracked(url, config, requestNow));
+}
+
+async function fetchNotificationJsonUntracked(url: URL, config: SafetyDataSourceConfig, requestNow: Date): Promise<unknown> {
   const maximumBytes = 8 * 1024 * 1024;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -466,11 +478,12 @@ async function fetchNotificationJson(url: URL, config: SafetyDataSourceConfig, r
       signal: controller.signal
     });
     if (!response.ok) {
+      void providerCopyCancellationTracker()(() => response.body?.cancel() ?? Promise.resolve()).catch(() => {});
       throw new Error(`SIM notification candidates unavailable (${response.status}).`);
     }
     const declaredBytes = Number(response.headers.get("content-length"));
     if (declaredBytes > maximumBytes) {
-      await response.body?.cancel();
+      await providerCopyCancellationTracker()(() => response.body?.cancel() ?? Promise.resolve());
       throw new Error("SIM notification candidate response exceeds the body limit.");
     }
     if (!response.body) {
@@ -486,7 +499,7 @@ async function fetchNotificationJson(url: URL, config: SafetyDataSourceConfig, r
       }
       bytes += result.value.byteLength;
       if (bytes > maximumBytes) {
-        await reader.cancel();
+        await providerCopyCancellationTracker()(() => reader!.cancel());
         throw new Error("SIM notification candidate response exceeds the body limit.");
       }
       chunks.push(result.value);
@@ -572,6 +585,9 @@ class ManagedSafetyCache<T> {
     return { status: refreshedEntry && refreshedEntry.expiresAtMs > Date.now() ? "miss" : "stale", value };
   }
 
+  clear(): void { this.entries.clear(); }
+  values(): T[] { return [...this.entries.values()].map(entry => entry.value); }
+
   stats(): SafetyDataCacheStats {
     return {
       entries: this.entries.size,
@@ -586,7 +602,7 @@ class ManagedSafetyCache<T> {
       expiresAtMs: now + Math.max(0, ttlMs),
       lastAccessedAtMs: now,
       staleUntilMs: now + Math.max(0, ttlMs) + Math.max(0, this.options.staleIfErrorMs),
-      value
+      value: prepareProviderCacheCopy(value)
     });
     this.evictIfNeeded();
   }
@@ -934,6 +950,10 @@ function safetySourcesFromProviderCatalog(catalog: ProviderMapCatalog): SafetySo
 }
 
 async function fetchJson(url: URL, config: SafetyDataSourceConfig, requestNow: Date): Promise<unknown> {
+  return trackProviderCopyFetch(() => fetchJsonUntracked(url, config, requestNow));
+}
+
+async function fetchJsonUntracked(url: URL, config: SafetyDataSourceConfig, requestNow: Date): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
   try {
@@ -945,6 +965,7 @@ async function fetchJson(url: URL, config: SafetyDataSourceConfig, requestNow: D
       signal: controller.signal
     });
     if (!response.ok) {
+      void providerCopyCancellationTracker()(() => response.body?.cancel() ?? Promise.resolve()).catch(() => {});
       throw new Error(`${response.status} ${response.statusText || "Safety data request failed"}`);
     }
     return response.json();

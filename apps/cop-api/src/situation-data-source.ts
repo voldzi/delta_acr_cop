@@ -1,3 +1,4 @@
+import { ProviderCopiesBoundary, prepareProviderCacheCopy, trackProviderCopyFetch, providerCopyCancellationTracker, ProviderCopiesUnavailableError } from "./provider-copies-erasure.js";
 import { createPublicSituationAggregateSourceSystem, type SourceSystem } from "@cop/canonical-model";
 import {
   normalizeProviderMapCatalog,
@@ -313,6 +314,7 @@ export interface SituationSourceDescriptor {
 }
 
 export interface SituationDataSource {
+  providerCopiesBoundary?(): ProviderCopiesBoundary;
   readonly config: SituationDataSourceConfig;
   readonly sourceSystem: SourceSystem;
   cacheStats?(): SituationDataCacheStats;
@@ -689,6 +691,7 @@ export function createSituationDataSourceFromEnv(
 }
 
 export class SituationDataSourceAdapter implements SituationDataSource {
+  private readonly copies: ProviderCopiesBoundary;
   readonly sourceSystem: SourceSystem;
   private readonly featureCache: ManagedSituationCache<SituationFeatureCollection>;
   private catalogCache: { expiresAtMs: number; value: ProviderMapCatalog } | null = null;
@@ -704,7 +707,12 @@ export class SituationDataSourceAdapter implements SituationDataSource {
       maxEntries: cacheMaxEntries(config),
       staleIfErrorMs: staleIfErrorMs(config)
     });
+    this.copies = new ProviderCopiesBoundary({ family: "SituationDataSource", target: this, prototype: SituationDataSourceAdapter.prototype,
+      methods: ["fetchCatalog", "fetchLayers", "fetchSources", "fetchTaxonomy", "fetchFeatures", "fetchMobileTowerViewshed", "createRadioProfile", "fetchRadioProfiles", "runRadioCoverage", "runRadioLinkCheck", "runRadioSiteSearch"],
+      caches: { clear: () => { this.catalogCache = null; this.layerCache = null; this.sourceCache = null; this.taxonomyCache = null; this.featureCache.clear(); }, values: () => [...this.featureCache.values(), this.catalogCache?.value, this.layerCache?.value, this.sourceCache?.value, this.taxonomyCache?.value].filter(value => value !== undefined), inflight: () => this.featureCache.stats().inflight + (this.catalogInflight ? 1 : 0) + (this.taxonomyInflight ? 1 : 0) } });
   }
+
+  providerCopiesBoundary(): ProviderCopiesBoundary { return this.copies; }
 
   cacheStats(): SituationDataCacheStats {
     return this.featureCache.stats();
@@ -722,7 +730,7 @@ export class SituationDataSourceAdapter implements SituationDataSource {
       const value = await this.catalogInflight;
       this.catalogCache = {
         expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
-        value
+        value: prepareProviderCacheCopy(value)
       };
       return value;
     } finally {
@@ -737,7 +745,7 @@ export class SituationDataSourceAdapter implements SituationDataSource {
     const layers = situationLayersFromProviderCatalog(await this.fetchCatalog(requestNow));
     this.layerCache = {
       expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
-      value: layers
+      value: prepareProviderCacheCopy(layers)
     };
     return layers;
   }
@@ -749,7 +757,7 @@ export class SituationDataSourceAdapter implements SituationDataSource {
     const sources = situationSourcesFromProviderCatalog(await this.fetchCatalog(requestNow));
     this.sourceCache = {
       expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
-      value: sources
+      value: prepareProviderCacheCopy(sources)
     };
     return sources;
   }
@@ -766,7 +774,7 @@ export class SituationDataSourceAdapter implements SituationDataSource {
       const value = await this.taxonomyInflight;
       this.taxonomyCache = {
         expiresAtMs: requestNow.getTime() + this.config.cacheTtlMs,
-        value
+        value: prepareProviderCacheCopy(value)
       };
       return value;
     } finally {
@@ -984,6 +992,9 @@ class ManagedSituationCache<T> {
     return { status: refreshedEntry && refreshedEntry.expiresAtMs > Date.now() ? "miss" : "stale", value };
   }
 
+  clear(): void { this.entries.clear(); }
+  values(): T[] { return [...this.entries.values()].map(entry => entry.value); }
+
   stats(): SituationDataCacheStats {
     return {
       entries: this.entries.size,
@@ -998,7 +1009,7 @@ class ManagedSituationCache<T> {
       expiresAtMs: now + Math.max(0, ttlMs),
       lastAccessedAtMs: now,
       staleUntilMs: now + Math.max(0, ttlMs) + Math.max(0, this.options.staleIfErrorMs),
-      value
+      value: prepareProviderCacheCopy(value)
     });
     this.evictIfNeeded();
   }
@@ -1538,7 +1549,7 @@ async function fetchJson(
   });
   try {
     return await Promise.race([
-      (async () => {
+      trackProviderCopyFetch(async () => {
         const response = await fetch(url, {
           ...requestInit,
           headers: {
@@ -1551,15 +1562,16 @@ async function fetchJson(
           signal: controller.signal
         });
         if (!response.ok) {
-          void response.body?.cancel().catch(() => {});
+          void providerCopyCancellationTracker()(() => response.body?.cancel() ?? Promise.resolve()).catch(() => {});
           throw new SituationDataHttpError(response.status);
         }
         return await readBoundedSituationJson(response, controller.signal);
-      })(),
+      }, controller),
       deadline
     ]);
   } catch (error) {
     controller.abort();
+    if (error instanceof ProviderCopiesUnavailableError) throw error;
     if (error instanceof SituationDataHttpError || error instanceof SituationDataResponseError || error instanceof SituationDataTimeoutError) {
       throw error;
     }
@@ -1579,14 +1591,15 @@ class SituationDataTimeoutError extends Error {
 }
 
 async function readBoundedSituationJson(response: Response, signal: AbortSignal): Promise<unknown> {
+  const cancelBody = providerCopyCancellationTracker();
   if (signal.aborted) {
-    void response.body?.cancel().catch(() => {});
+    void providerCopyCancellationTracker()(() => response.body?.cancel() ?? Promise.resolve()).catch(() => {});
     throw new SituationDataTimeoutError();
   }
   const maxBytes = 16 * 1024 * 1024;
   const contentLength = response.headers.get("content-length");
   if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > maxBytes) {
-    void response.body?.cancel().catch(() => {});
+    void providerCopyCancellationTracker()(() => response.body?.cancel() ?? Promise.resolve()).catch(() => {});
     throw new SituationDataResponseError("Situation data response exceeded the size limit.");
   }
   const reader = response.body?.getReader();
@@ -1594,7 +1607,7 @@ async function readBoundedSituationJson(response: Response, signal: AbortSignal)
     throw new SituationDataResponseError("Situation data response body is missing.");
   }
   const decoder = new TextDecoder();
-  const cancel = () => { void reader.cancel().catch(() => {}); };
+  const cancel = () => { void cancelBody(() => reader.cancel()).catch(() => {}); };
   signal.addEventListener("abort", cancel, { once: true });
   let bytes = 0;
   let text = "";
@@ -1604,7 +1617,7 @@ async function readBoundedSituationJson(response: Response, signal: AbortSignal)
       if (chunk.done) break;
       bytes += chunk.value.byteLength;
       if (bytes > maxBytes) {
-        void reader.cancel().catch(() => {});
+        void cancelBody(() => reader.cancel()).catch(() => {});
         throw new SituationDataResponseError("Situation data response exceeded the size limit.");
       }
       text += decoder.decode(chunk.value, { stream: true });

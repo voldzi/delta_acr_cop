@@ -62,9 +62,91 @@ describe("S3PresignedMediaStorage", () => {
     expect(upload.uploadUrl).toContain("https://media.example.test/cop-community-media/community-reports/report-1/attachment-1/Pozar-u-mostu.jpg?");
     expect(upload.uploadUrl).toContain("X-Amz-Signature=");
   });
+
+  it("deletes only the exact verified object in an unversioned bucket and requires 404 readback", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      if (init?.method === "GET") return new Response('<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></VersioningConfiguration>');
+      return new Response(null, { status: init?.method === "HEAD" ? 404 : 204 });
+    });
+    const request = { bucket: "cop-community-media", objectKey: "community-reports/report-1/attachment-1/image.jpg" };
+    expect(await testStorage().eraseVerifiedObject(request, new Date("2026-10-14T00:00:00Z"), new AbortController().signal)).toBe("absent");
+    expect(calls.map(call => call.init?.method)).toEqual(["GET", "DELETE", "HEAD", "HEAD"]);
+    expect(calls.map(call => call.url)).toEqual([
+      "http://seaweed.test:8333/cop-community-media?versioning=",
+      "http://seaweed.test:8333/cop-community-media/community-reports/report-1/attachment-1/image.jpg",
+      "http://seaweed.test:8333/cop-community-media/community-reports/report-1/attachment-1/image.jpg",
+      "http://seaweed.test:8333/cop-community-media/community-reports/report-1/attachment-1/image.jpg"
+    ]);
+    for (const call of calls) { expect(call.init?.redirect).toBe("error"); expect(call.init?.signal).toBeDefined(); }
+  });
+
+  it.each([
+    '<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Enabled</Status></VersioningConfiguration>',
+    '<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Suspended</Status></VersioningConfiguration>',
+    '<VersioningConfiguration><Unexpected/></VersioningConfiguration>',
+    '<!DOCTYPE object SYSTEM "https://other.test/private"><VersioningConfiguration/>',
+    '{}'
+  ])("does not treat unsupported/versioned storage as permanently erased", async body => {
+    const fetchMock = vi.fn(async () => new Response(body)); vi.stubGlobal("fetch", fetchMock);
+    expect(await testStorage().eraseVerifiedObject({ bucket: "cop-community-media", objectKey: "community-reports/r/a/file.jpg" }, new Date(), new AbortController().signal)).toBe("pending");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects cross-bucket, traversal, prefix deletion, and arbitrary URL manifests before contacting storage", async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    for (const request of [
+      { bucket: "other-bucket", objectKey: "community-reports/r/a/file.jpg" },
+      { bucket: "cop-community-media", objectKey: "community-reports/r/../file.jpg" },
+      { bucket: "cop-community-media", objectKey: "community-reports/r/" },
+      { bucket: "cop-community-media", objectKey: "https://other.test/private" }
+    ]) expect(await testStorage().eraseVerifiedObject(request, new Date(), new AbortController().signal)).toBe("pending");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([200, 403, 503])("leaves failed absence readback %s pending without exposing provider text", async status => {
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => init?.method === "GET"
+      ? new Response('<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>')
+      : new Response(null, { status: init?.method === "HEAD" ? status : 204 }));
+    expect(await testStorage().eraseVerifiedObject({ bucket: "cop-community-media", objectKey: "community-reports/r/a/file.jpg" }, new Date(), new AbortController().signal)).toBe("pending");
+  });
+
+  it("does not complete after cancellation or an oversized versioning response", async () => {
+    const fetchMock = vi.fn(async () => new Response("x".repeat(4097))); vi.stubGlobal("fetch", fetchMock);
+    const request = { bucket: "cop-community-media", objectKey: "community-reports/r/a/file.jpg" };
+    expect(await testStorage().eraseVerifiedObject(request, new Date(), new AbortController().signal)).toBe("pending");
+    const controller = new AbortController(); controller.abort();
+    await expect(testStorage().eraseVerifiedObject(request, new Date(), controller.signal)).rejects.toBeDefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it("keeps unknown legacy presigned upload settlement unavailable instead of accepting expiry plus a404", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 })); vi.stubGlobal("fetch", fetchMock);
+    const storage = testStorage(false), request = { bucket: "cop-community-media", objectKey: "community-reports/r/a/file.jpg" };
+    expect(await storage.verifiedErasureReady()).toBe(false);
+    expect(await storage.eraseVerifiedObject(request, new Date("2026-10-14T00:00:00Z"), new AbortController().signal)).toBe("pending");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it("keeps deletion pending if a PUT admitted before expiry can finish after the absence readback", async () => {
+    const settled = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const storage = new S3PresignedMediaStorage({ accessKeyId: "cop-access", bucket: "cop-community-media", endpoint: "http://seaweed.test:8333", publicEndpoint: "https://media.example.test", region: "us-east-1", secretAccessKey: "cop-secret", uploadExpiresSeconds: 900,
+      uploadSettlement: { ready: async () => true, verify: settled } });
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => init?.method === "GET"
+      ? new Response('<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>') : new Response(null, { status: init?.method === "HEAD" ? 404 : 204 }));
+    expect(await storage.eraseVerifiedObject({ bucket: "cop-community-media", objectKey: "community-reports/r/a/file.jpg" }, new Date(), new AbortController().signal)).toBe("pending");
+    expect(settled).toHaveBeenCalledTimes(2);
+  });
+  it("rechecks absence after settlement and catches a recreated object after an earlier404", async () => {
+    let heads = 0;
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => init?.method === "GET"
+      ? new Response('<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>')
+      : new Response(null, { status: init?.method === "HEAD" ? (++heads === 1 ? 404 : 200) : 204 }));
+    expect(await testStorage().eraseVerifiedObject({ bucket: "cop-community-media", objectKey: "community-reports/r/a/file.jpg" }, new Date(), new AbortController().signal)).toBe("pending");
+    expect(heads).toBe(2);
+  });
 });
 
-function testStorage(): S3PresignedMediaStorage {
+function testStorage(verifiedSettlement = true): S3PresignedMediaStorage {
   return new S3PresignedMediaStorage({
     accessKeyId: "cop-access",
     bucket: "cop-community-media",
@@ -72,6 +154,7 @@ function testStorage(): S3PresignedMediaStorage {
     publicEndpoint: "https://media.example.test",
     region: "us-east-1",
     secretAccessKey: "cop-secret",
-    uploadExpiresSeconds: 900
+    uploadExpiresSeconds: 900,
+    ...(verifiedSettlement ? { uploadSettlement: { ready: async () => true, verify: async () => true } } : {})
   });
 }

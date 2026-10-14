@@ -84,10 +84,14 @@ describe("server-owned community presence", () => {
     ).toBe(true);
   });
   it("returns 503 and never acknowledges ephemeral fallback on durable storage failure", async () => {
-    const store = new InMemoryCommunityReportStore();
-    store.createReport = async () => {
-      throw Error("synthetic outage");
-    };
+    // Use a real failing implementation before its writer boundary is bound.
+    // An accepted store cannot replace its guarded writer methods afterwards.
+    class UnavailableStore extends InMemoryCommunityReportStore {
+      override async createReport(..._args: Parameters<InMemoryCommunityReportStore["createReport"]>): ReturnType<InMemoryCommunityReportStore["createReport"]> {
+        throw Error("synthetic outage");
+      }
+    }
+    const store = new UnavailableStore();
     const app = buildServer({ communityReportStore: store });
     try {
       const r = await app.inject({

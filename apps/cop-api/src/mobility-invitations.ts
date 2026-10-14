@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { DispatchService } from "./dispatch-service.js";
 import { requireMobility, normalizeEmail, type Invite, type VehicleState, type GroupState } from "./mobility-service.js";
 import type * as Wire from "./mobility-types.js";
+import { mobilityAccountIsFenced } from "./mobility-erasure-guard.js";
 
 export class SharedMobilityService extends DispatchService {
   async createInvitation(account: Wire.MobilityAccount, type: "vehicle" | "group", id: string,
@@ -34,6 +35,7 @@ export class SharedMobilityService extends DispatchService {
       const items: Wire.MobilityPendingInvitation[] = [];
       for (const entry of await tx.scan<Invite>("invite:")) {
         const invite = entry.value;
+        if (await mobilityAccountIsFenced(tx, invite.inviterAccountId)) continue;
         if (invite.state !== "pending" || invite.email !== normalizeEmail(account.email!) || Date.parse(invite.expiresAt) <= this.now().getTime()) continue;
         let name: string | undefined;
         if (invite.entityType === "vehicle") { const state = await tx.get<VehicleState>(`vehicle:${invite.entityId}`); if (state && !state.vehicle.deleted && state.vehicle.members.some(m => m.accountId === invite.inviterAccountId && m.capabilities.includes("manageMembers"))) name = state.vehicle.details.name; }
@@ -53,6 +55,7 @@ export class SharedMobilityService extends DispatchService {
     return this.operation(account, input.operationId, `${type}:accept`, input, ["dispatch-directory", `invite:${input.invitationId}`, `${type}:${known.entityId}`], async tx => {
       const invite = await tx.get<Invite>(`invite:${input.invitationId}`);
       requireMobility(invite && invite.email === normalizeEmail(account.email!), 404, "NOT_FOUND", "Pozvánka není dostupná.");
+      await this.assertAccountAllowed(tx, invite.inviterAccountId);
       requireMobility(Date.parse(invite.expiresAt) > this.now().getTime() && invite.state !== "revoked", 410, "INVITATION_EXPIRED", "Pozvánka již neplatí.");
       requireMobility(invite.state !== "accepted" || invite.acceptedBy === account.accountId, 410, "INVITATION_USED", "Pozvánka již byla použita.");
       let result: Wire.SharedVehicle | Wire.DispatchGroup;

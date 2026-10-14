@@ -50,8 +50,20 @@ describe("LiveKitVoiceCallMediaIssuer", () => {
     expect(first.e2eeKey).not.toBe(anotherCall.e2eeKey);
     expect(first.e2eeKey.length).toBeGreaterThanOrEqual(32);
     expect(first.e2eeKey).not.toContain(deploymentSecret);
-    expect(first.expiresAt).toBe("2026-09-21T12:02:00.000Z");
+    const payload = JSON.parse(Buffer.from(first.token.split(".")[1]!, "base64url").toString("utf8")) as { exp: number; iat?: number };
+    expect(first.expiresAt).toBe(new Date(payload.exp * 1000).toISOString());
     expect(first.serverUrl).toBe("wss://livekit.example.test");
+  });
+
+  it("uses the emitted JWT expiry even when the caller's request clock is two hours stale", async () => {
+    const issuer = new LiveKitVoiceCallMediaIssuer({ apiKey: "synthetic-key", apiSecret: "synthetic-api-secret-at-least-32-characters",
+      e2eeSecret: "synthetic-e2ee-secret-at-least-32-characters", publicUrl: "wss://synthetic-livekit.example.test", tokenTtlSeconds: 120 });
+    const actualBefore = Date.now(), staleRequest = new Date(actualBefore - 7_200_000);
+    const media = await issuer.issue(call("synthetic-stale-clock"), actor, staleRequest);
+    const payload = JSON.parse(Buffer.from(media.token.split(".")[1]!, "base64url").toString("utf8")) as { exp: number };
+    expect(media.expiresAt).toBe(new Date(payload.exp * 1000).toISOString());
+    expect(Date.parse(media.expiresAt)).toBeGreaterThanOrEqual(actualBefore + 119_000);
+    expect(Date.parse(media.expiresAt)).toBeLessThanOrEqual(Date.now() + 120_000);
   });
 
   it("requires an independent E2EE secret whenever voice media is configured", () => {

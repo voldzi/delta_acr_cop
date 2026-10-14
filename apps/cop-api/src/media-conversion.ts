@@ -58,6 +58,9 @@ export interface MediaConversionManagerOptions {
     metadata: Record<string, unknown>;
     reportId: string;
   }): Promise<CommunityReportAttachmentRecord | null>;
+  /** Registers the exact derivative before the remote PUT and holds a durable
+   * owner lease until confirmed provider success. Required by accepted erasure. */
+  withOwnedMediaWrite?<T>(input: { reportId: string; attachmentId: string; objectKey: string }, run: () => Promise<T>): Promise<T>;
 }
 
 interface QueuedSpatialConversion {
@@ -117,7 +120,8 @@ export class AsyncMediaConversionManager implements MediaConversionManager {
       status: "queued",
       updatedAt: input.requestNow.toISOString()
     });
-    const attachment = queued ?? input.attachment;
+    if (!queued) return input.attachment; // A deleted attachment cannot enter a late work queue.
+    const attachment = queued;
     this.queue.push({ attachment, reportId: input.reportId });
     this.pump();
     return attachment;
@@ -156,7 +160,8 @@ export class AsyncMediaConversionManager implements MediaConversionManager {
       status: "processing",
       updatedAt: processingAt
     });
-    const attachment = processing ?? item.attachment;
+    if (!processing) return; // A removed attachment cannot be reconstructed from the queued snapshot.
+    const attachment = processing;
     try {
       const source = await this.options.mediaStorage?.getObject({ objectKey: attachment.objectKey }, new Date());
       if (!source) {
@@ -166,11 +171,13 @@ export class AsyncMediaConversionManager implements MediaConversionManager {
         ? await this.options.runSpatialConversion({ attachment, source: source.body })
         : await convertAppleSpatialMovWithFfmpeg(source.body, attachment, this.options.config);
       const objectKey = derivativeObjectKey(attachment.reportId, attachment.attachmentId);
-      await this.options.mediaStorage?.putObject({
+      const write = () => this.options.mediaStorage!.putObject({
         body: output,
         contentType: "video/mp4",
         objectKey
       }, new Date());
+      if (this.options.withOwnedMediaWrite) await this.options.withOwnedMediaWrite({ reportId: attachment.reportId, attachmentId: attachment.attachmentId, objectKey }, write);
+      else await write();
       const checksumSha256 = createHash("sha256").update(output).digest("hex");
       await this.updateDerivative(attachment, {
         byteSize: output.length,

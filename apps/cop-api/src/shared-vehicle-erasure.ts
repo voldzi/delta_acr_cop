@@ -17,7 +17,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
  * No public route or production worker invokes this source candidate.
  */
 export class SharedVehicleErasureService {
-  constructor(readonly store: MobilityStore, readonly issuer: string) {
+  constructor(readonly store: MobilityStore, readonly issuer: string,
+    readonly beforeVehiclePurge?: (tx: MobilityTransaction, account: PrincipalAccount, operationId: string) => Promise<void>) {
     if (!issuer) throw new Error("Shared vehicle erasure requires a verified issuer.");
   }
   private identity(actor: AuthenticatedActor): string {
@@ -25,13 +26,14 @@ export class SharedVehicleErasureService {
     return mobilityIdentityDigest(this.issuer, actor.subjectId);
   }
   async preflight(actor: AuthenticatedActor, signal: AbortSignal): Promise<AccountErasureAssessment> {
+    return this.store.transact([], tx => this.preflightWithin(actor, tx, signal));
+  }
+  async preflightWithin(actor: AuthenticatedActor, tx: MobilityTransaction, signal: AbortSignal): Promise<AccountErasureAssessment> {
     const identity = this.identity(actor);
-    return this.store.transact([], async tx => {
-      signal.throwIfAborted();
-      const assessment = await this.assess(tx, actor, identity);
-      signal.throwIfAborted();
-      return assessment.ready ? { ready: true, version: assessment.version } : { ready: false, reason: "ownership_unresolved" };
-    });
+    signal.throwIfAborted();
+    const assessment = await this.assess(tx, actor, identity);
+    signal.throwIfAborted();
+    return assessment.ready ? { ready: true, version: assessment.version } : { ready: false, reason: "ownership_unresolved" };
   }
   async erase(actor: AuthenticatedActor, context: { operationId: string; requestedAt: string; signal: AbortSignal }): Promise<SharedVehicleErasureResult> {
     const identity = this.identity(actor);
@@ -58,6 +60,7 @@ export class SharedVehicleErasureService {
           const existing = await tx.get<{ operationId: string }>(key);
           if (existing && existing.operationId !== operationId) throw new Error("Erasure fence conflict");
           await tx.set(key, marker);
+          await this.beforeVehiclePurge?.(tx, assessed.account!, operationId);
           await this.purgeVehicles(tx, accountId, context.signal);
         }
         context.signal.throwIfAborted();

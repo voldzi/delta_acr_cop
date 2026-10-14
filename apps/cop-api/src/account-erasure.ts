@@ -1,27 +1,35 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
-import type { MobilityStore } from "./mobility-store.js";
+import type { MobilityStore, MobilityTransaction } from "./mobility-store.js";
 import type { AuthenticatedActor } from "./security.js";
 
 export const ACCOUNT_ERASURE_ADAPTER_IDS = [
   "keycloak", "cop_sessions_profiles", "cop_devices", "messaging_matrix", "voice_livekit",
   "cop_content_media", "mobility_dispatch", "sim_measurements", "ai_router", "moderation_audit", "backup_restore"
 ] as const;
+export const ACCOUNT_ERASURE_SCOPE = "cop_jizda_preserve_shared_identity_sim" as const;
 export type AccountErasureAdapterId = typeof ACCOUNT_ERASURE_ADAPTER_IDS[number];
 export type AccountErasurePendingReason = "cleanup_pending" | "adapter_missing" | "adapter_unavailable" | "not_accepted";
 export type AccountErasurePreflightReason = "ownership_unresolved" | "choice_required" | "adapter_preflight_missing" | "adapter_unavailable";
-export type AccountErasureAssessment = { ready: true; version: string } | { ready: false; reason: AccountErasurePreflightReason };
+export type AccountErasureAssessment = { ready: true; version: string; transactionVersion?: string } | { ready: false; reason: AccountErasurePreflightReason };
 export type AccountErasureProof = { status: "completed"; proofId: string } |
   { status: "pending"; remaining: "cleanup_pending" };
 export interface AccountErasureAdapter {
   readonly id: AccountErasureAdapterId;
   ready(): Promise<boolean>;
   /** Read-only, actor-specific impact/provenance assessment. No implicit legacy fallback. */
-  preflight?(actor: AuthenticatedActor, context: { signal: AbortSignal }): Promise<AccountErasureAssessment>;
+  preflight?(actor: AuthenticatedActor, context: { signal: AbortSignal; operationId?: string }): Promise<AccountErasureAssessment>;
+  /** Read-only local impact under this exact store transaction; no network or nested transactions. */
+  preflightWithin?(actor: AuthenticatedActor, context: { transaction: MobilityTransaction; signal: AbortSignal; operationId: string }): Promise<AccountErasureAssessment>;
   /** Idempotent per operationId; cancellation never reverses a revocation fence. */
   erase(actor: AuthenticatedActor, context: { operationId: string; requestedAt: string; accountKey: string; signal: AbortSignal }): Promise<AccountErasureProof>;
 }
+/** Admission locks must be shared with the actual domain writers. */
+export interface AccountErasureAdmissionGuard {
+  run<T>(actor: AuthenticatedActor, signal: AbortSignal, run: () => Promise<T>): Promise<T>;
+}
 export interface AccountErasureReceipt {
   contractVersion: "cop-account-erasure-v1";
+  deletionScope: typeof ACCOUNT_ERASURE_SCOPE;
   operationId: string;
   status: "deleting" | "deleted";
   requestedAt: string;
@@ -40,11 +48,11 @@ interface Job {
   lastAttemptAt?: string;
 }
 export interface AccountErasurePreflight {
-  contractVersion: "cop-account-erasure-preflight-v1"; operationId: string; canConfirm: boolean;
+  contractVersion: "cop-account-erasure-preflight-v1"; deletionScope: typeof ACCOUNT_ERASURE_SCOPE; operationId: string; canConfirm: boolean;
   planId?: string; confirmBy?: string;
   blockers: Array<{ domain: AccountErasureAdapterId; reason: AccountErasurePreflightReason }>;
 }
-interface Plan { operationId: string; planId: string; confirmBy: string; versions: Record<string, string>; receiptHash: string; receiptExpiresAt: string }
+interface Plan { operationId: string; planId: string; confirmBy: string; versions: Record<string, string>; transactionVersions?: Record<string, string>; receiptHash: string; receiptExpiresAt: string }
 interface ReceiptAccess { accountKey: string; operationId: string; planId: string; expiresAt: string }
 export class AccountErasureError extends Error {
   constructor(readonly status: number, readonly code: string) { super(code); }
@@ -67,9 +75,16 @@ export class AccountErasureService {
   private readonly required: AccountErasureAdapterId[];
   private readonly sealKey: Buffer;
   private initialized?: Promise<void>;
+  private readonly cachedFenceKeys = new Set<string>();
+  private cacheLoaded = false;
+  private cacheGeneration = 0;
+  private cacheFence(key: string): void {
+    if (!this.cachedFenceKeys.has(key)) { this.cachedFenceKeys.add(key); this.cacheGeneration += 1; }
+  }
   constructor(readonly options: { store: MobilityStore; identitySecret: string; issuer: string;
     requiredAdapters: readonly AccountErasureAdapterId[]; adapters: readonly AccountErasureAdapter[];
-    accepted: boolean; expectedGuardStoreId?: string; allowUnboundSyntheticStore?: boolean; adapterTimeoutMs?: number; now?: () => Date }) {
+    accepted: boolean; expectedGuardStoreId?: string; allowUnboundSyntheticStore?: boolean; adapterTimeoutMs?: number; now?: () => Date;
+    admissionGuard?: AccountErasureAdmissionGuard }) {
     this.required = [...options.requiredAdapters];
     if (options.identitySecret.length < 32 || !options.issuer || this.required.length !== ACCOUNT_ERASURE_ADAPTER_IDS.length ||
         new Set(this.required).size !== this.required.length || ACCOUNT_ERASURE_ADAPTER_IDS.some(id => !this.required.includes(id)) ||
@@ -80,6 +95,17 @@ export class AccountErasureService {
     this.sealKey = createHash("sha256").update("cop-account-erasure-principal-v1\0").update(options.identitySecret).digest();
   }
   private get timeoutMs() { return Math.max(1, Math.min(adapterTimeoutMs, this.options.adapterTimeoutMs ?? adapterTimeoutMs)); }
+  usesAdmissionGuard(guard: AccountErasureAdmissionGuard): boolean { return this.options.admissionGuard === guard; }
+  /** Synchronous local producer barrier for the accepted single-writer runtime.
+   * The durable request/SQL guards remain authoritative; this is not a replica
+   * substitute or proof that a restored snapshot contains the current frontier.
+   */
+  assertCachedActorAllowed(owner: { issuer: string; subjectId: string }): void {
+    const actor: AuthenticatedActor = { authMode: "oidc", ...owner, username: "", displayName: "" };
+    this.requireActor(actor);
+    if (!this.cacheLoaded) throw new AccountErasureError(503, "ERASURE_STORE_UNAVAILABLE");
+    if (this.cachedFenceKeys.has(this.accountKey(actor))) throw new AccountErasureError(403, "ACCOUNT_ERASURE_FENCED");
+  }
   private now() { return this.options.now?.() ?? new Date(); }
   private requireActor(actor: AuthenticatedActor, fresh = false) {
     if (actor.authMode !== "oidc" || actor.issuer !== this.options.issuer || !actor.subjectId || Buffer.byteLength(actor.subjectId) > 512) {
@@ -97,15 +123,18 @@ export class AccountErasureService {
   async init(): Promise<void> {
     if (!this.initialized) this.initialized = this.options.store.transact([CONFIG], async tx => {
       const fingerprint = createHash("sha256").update("cop-account-erasure-config-v1\0").update(this.options.identitySecret).digest("hex");
-      const saved = await tx.get<{ fingerprint: string; storeId?: string; issuerFingerprint?: string; version?: number; accepted?: boolean }>(CONFIG);
+      const saved = await tx.get<{ fingerprint: string; storeId?: string; issuerFingerprint?: string; version?: number; accepted?: boolean; deletionScope?: string }>(CONFIG);
       if (this.options.expectedGuardStoreId && (await tx.get<{ storeId: string }>("account-safety:store-identity-v1"))?.storeId !== this.options.expectedGuardStoreId) throw new AccountErasureError(503, "ERASURE_STORE_ID_MISMATCH");
       if (saved?.accepted && !this.options.expectedGuardStoreId && !this.options.allowUnboundSyntheticStore) throw new AccountErasureError(503, "ERASURE_GUARD_BINDING_REQUIRED");
       if (saved && saved.fingerprint !== fingerprint) throw new AccountErasureError(503, "ERASURE_CONFIGURATION_CHANGED");
       const issuerFingerprint = createHash("sha256").update(this.options.issuer).digest("hex");
-      if (saved && (saved.version !== 2 || !saved.storeId || saved.issuerFingerprint !== issuerFingerprint)) throw new AccountErasureError(503, "ERASURE_CONFIGURATION_UNSUPPORTED");
+      if (saved && (saved.version !== 3 || saved.deletionScope !== ACCOUNT_ERASURE_SCOPE || !saved.storeId || saved.issuerFingerprint !== issuerFingerprint)) throw new AccountErasureError(503, "ERASURE_CONFIGURATION_UNSUPPORTED");
       if (saved && this.options.expectedGuardStoreId && saved.storeId !== this.options.expectedGuardStoreId) throw new AccountErasureError(503, "ERASURE_STORE_ID_MISMATCH");
-      if (!saved) await tx.set(CONFIG, { fingerprint, issuerFingerprint, version: 2, storeId: this.options.expectedGuardStoreId ?? randomUUID(), accepted: false });
-    }).catch(error => { this.initialized = undefined; throw error instanceof AccountErasureError ? error : new AccountErasureError(503, "ERASURE_STORE_UNAVAILABLE"); });
+      if (!saved) await tx.set(CONFIG, { fingerprint, issuerFingerprint, version: 3, deletionScope: ACCOUNT_ERASURE_SCOPE, storeId: this.options.expectedGuardStoreId ?? randomUUID(), accepted: false });
+      for (const entry of await tx.scan<Job>(PREFIX)) this.cacheFence(entry.key.slice(PREFIX.length));
+      this.cacheGeneration += 1;
+      this.cacheLoaded = true;
+    }).catch(error => { this.initialized = undefined; this.cacheLoaded = false; throw error instanceof AccountErasureError ? error : new AccountErasureError(503, "ERASURE_STORE_UNAVAILABLE"); });
     await this.initialized;
   }
   async capabilities() {
@@ -125,8 +154,28 @@ export class AccountErasureService {
     await this.init();
     try {
       const job = await this.options.store.transact([], tx => tx.get<Job>(PREFIX + this.accountKey(actor)));
-      if (job) throw new AccountErasureError(403, "ACCOUNT_ERASURE_FENCED");
+      if (job) { this.cacheFence(this.accountKey(actor)); throw new AccountErasureError(403, "ACCOUNT_ERASURE_FENCED"); }
     } catch (error) { throw known(error); }
+  }
+  cachedGuardReady(): boolean { return this.cacheLoaded; }
+  cachedFenceGeneration(): number { return this.cacheGeneration; }
+  /** Owner-private readback for final COP grant revocation; never a public API. */
+  async operationFenceConfirmed(actor: AuthenticatedActor, context: { operationId: string; accountKey: string }): Promise<boolean> {
+    this.requireActor(actor); validateOperation(context.operationId); await this.init();
+    if (this.accountKey(actor) !== context.accountKey) return false;
+    return this.options.store.transact([], async tx => {
+      const job = await tx.get<Job>(PREFIX + context.accountKey);
+      const config = await tx.get<{ accepted?: boolean }>(CONFIG);
+      return config?.accepted === true && job?.operationId === context.operationId.toLowerCase();
+    });
+  }
+  /** For writers sharing this exact durable store: guard and write under the same xact lock.
+   * Call only after init; never start a nested transaction from this hook.
+   */
+  async assertAllowedWithin(tx: MobilityTransaction, actor: AuthenticatedActor): Promise<void> {
+    this.requireActor(actor);
+    if (!this.initialized) throw new AccountErasureError(503, "ERASURE_STORE_UNAVAILABLE");
+    if (await tx.get(PREFIX + this.accountKey(actor))) throw new AccountErasureError(403, "ACCOUNT_ERASURE_FENCED");
   }
   /** Receipt recovery is the explicit exception to the ordinary-operation fence. */
   async read(actor: AuthenticatedActor, operationId: string): Promise<AccountErasureReceipt> {
@@ -146,8 +195,8 @@ export class AccountErasureService {
     if (!this.options.accepted) throw new AccountErasureError(503, "ERASURE_NOT_READY");
     const accountKey = this.accountKey(actor);
     if (await this.options.store.transact([], tx => tx.get<Job>(PREFIX + accountKey))) throw new AccountErasureError(409, "ERASURE_ALREADY_REQUESTED");
-    const assessed = await this.assess(actor);
-    const response: AccountErasurePreflight = { contractVersion: "cop-account-erasure-preflight-v1", operationId: operationId.toLowerCase(), canConfirm: assessed.blockers.length === 0, blockers: assessed.blockers };
+    const assessed = await this.assess(actor, operationId.toLowerCase());
+    const response: AccountErasurePreflight = { contractVersion: "cop-account-erasure-preflight-v1", deletionScope: ACCOUNT_ERASURE_SCOPE, operationId: operationId.toLowerCase(), canConfirm: assessed.blockers.length === 0, blockers: assessed.blockers };
     if (!response.canConfirm) return { response };
     this.requireActor(actor, true);
     const capability = randomBytes(32).toString("base64url"), receiptHash = this.accessHash(capability);
@@ -157,7 +206,8 @@ export class AccountErasureService {
       if (await tx.get(PREFIX + accountKey)) throw new AccountErasureError(409, "ERASURE_ALREADY_REQUESTED");
       const previous = await tx.get<Plan>(PLAN + accountKey);
       if (previous) await tx.remove(ACCESS + previous.receiptHash);
-      await tx.set(PLAN + accountKey, { operationId: response.operationId, planId, confirmBy, versions: assessed.versions, receiptHash, receiptExpiresAt } satisfies Plan);
+      await tx.set(PLAN + accountKey, { operationId: response.operationId, planId, confirmBy, versions: assessed.versions,
+        transactionVersions: assessed.transactionVersions, receiptHash, receiptExpiresAt } satisfies Plan);
       await tx.set(ACCESS + receiptHash, { accountKey, operationId: response.operationId, planId, expiresAt: receiptExpiresAt } satisfies ReceiptAccess);
     });
     return { response: { ...response, planId, confirmBy }, capability };
@@ -177,25 +227,29 @@ export class AccountErasureService {
     if (typeof capability !== "string" || !/^[A-Za-z0-9_-]{43}$/u.test(capability)) throw new AccountErasureError(401, "ERASURE_RECEIPT_UNAUTHORIZED");
     return createHmac("sha256", this.options.identitySecret).update("cop-erasure-read-capability-v1\0").update(capability).digest("hex");
   }
-  private async assess(actor: AuthenticatedActor) {
-    const blockers: AccountErasurePreflight["blockers"] = [], versions: Record<string, string> = {};
+  private async assess(actor: AuthenticatedActor, operationId: string) {
+    const blockers: AccountErasurePreflight["blockers"] = [], versions: Record<string, string> = {}, transactionVersions: Record<string, string> = {};
     for (const id of this.required) {
       const adapter = this.adapters.get(id);
       if (!adapter?.preflight) { blockers.push({ domain: id, reason: "adapter_preflight_missing" }); continue; }
       try {
         const signal = AbortSignal.timeout(this.timeoutMs);
         if (!await bounded(adapter.ready(), signal)) { blockers.push({ domain: id, reason: "adapter_unavailable" }); continue; }
-        const result = await bounded(adapter.preflight(actor, { signal }), signal);
+        const result = await bounded(adapter.preflight(actor, { signal, operationId }), signal);
         if (result.ready === false) {
           if (!["ownership_unresolved", "choice_required", "adapter_preflight_missing", "adapter_unavailable"].includes(result.reason)) throw new Error("Invalid preflight blocker");
           blockers.push({ domain: id, reason: result.reason }); continue;
         }
         if (result.ready !== true) throw new Error("Invalid preflight assessment");
         if (!/^[A-Za-z0-9_-]{8,128}$/u.test(result.version)) throw new Error("Invalid preflight version");
+        if (adapter.preflightWithin) {
+          if (!result.transactionVersion || !/^[A-Za-z0-9_-]{8,128}$/u.test(result.transactionVersion)) throw new Error("Atomic impact version missing");
+          transactionVersions[id] = result.transactionVersion;
+        }
         versions[id] = result.version;
       } catch { blockers.push({ domain: id, reason: "adapter_unavailable" }); }
     }
-    return { blockers, versions };
+    return { blockers, versions, transactionVersions };
   }
   async request(actor: AuthenticatedActor, operationId: string, input: unknown, authorization?: { planId: string; capability: string }): Promise<AccountErasureReceipt> {
     this.requireActor(actor, true); validateOperation(operationId);
@@ -206,16 +260,17 @@ export class AccountErasureService {
     try {
       const existing = await this.options.store.transact([], tx => tx.get<Job>(key));
       if (!existing && !(await this.capabilities()).accountDeletion) throw new AccountErasureError(503, "ERASURE_NOT_READY");
+      const admit = async () => {
       let prepared: Plan | undefined;
       if (!existing) {
         if (!authorization || !UUID.test(authorization.planId)) throw new AccountErasureError(409, "ERASURE_PREFLIGHT_REQUIRED");
         prepared = await this.options.store.transact([], tx => tx.get<Plan>(PLAN + accountKey));
         if (!prepared || prepared.planId !== authorization.planId || prepared.operationId !== operationId.toLowerCase() || prepared.receiptHash !== this.accessHash(authorization.capability) || !validUntil(prepared.confirmBy, this.now().getTime())) throw new AccountErasureError(409, "ERASURE_PLAN_EXPIRED_OR_CHANGED");
-        const current = await this.assess(actor);
+        const current = await this.assess(actor, operationId.toLowerCase());
         this.requireActor(actor, true);
         if (current.blockers.length || this.required.some(id => current.versions[id] !== prepared!.versions[id])) throw new AccountErasureError(409, "ERASURE_PLAN_EXPIRED_OR_CHANGED");
       }
-      const job = await this.options.store.transact([key], async tx => {
+      const acceptedJob = await this.options.store.transact([key], async tx => {
         const saved = await tx.get<Job>(key);
         if (saved) {
           if (saved.operationId !== operationId.toLowerCase()) throw new AccountErasureError(409, "IDEMPOTENCY_CONFLICT");
@@ -223,6 +278,17 @@ export class AccountErasureService {
         }
         const currentPlan = await tx.get<Plan>(PLAN + accountKey);
         if (!prepared || currentPlan?.planId !== prepared.planId || !validUntil(currentPlan.confirmBy, this.now().getTime())) throw new AccountErasureError(409, "ERASURE_PLAN_EXPIRED_OR_CHANGED");
+        // Keep local ownership checks and global fence commit atomic with admitted
+        // writers. A vehicle/group created after the earlier impact probe cannot
+        // strand its owner behind a permanent fence without a transfer choice.
+        for (const id of this.required) {
+          const adapter = this.adapters.get(id);
+          if (!adapter?.preflightWithin) continue;
+          const signal = AbortSignal.timeout(this.timeoutMs);
+          const impact = await bounded(adapter.preflightWithin(actor, { transaction: tx, operationId: operationId.toLowerCase(), signal }), signal);
+          if (!impact.ready || impact.version !== currentPlan.transactionVersions?.[id]) throw new AccountErasureError(409, "ERASURE_PLAN_EXPIRED_OR_CHANGED");
+        }
+        this.requireActor(actor, true);
         const value: Job = { operationId: operationId.toLowerCase(), requestedAt: this.now().toISOString(),
           required: [...this.required], checkpoints: {}, sealedPrincipal: this.seal(actor) };
         await tx.set(key, value); // Durable global tombstone before every downstream handoff.
@@ -231,6 +297,17 @@ export class AccountErasureService {
         await tx.remove(PLAN + accountKey);
         return value;
       });
+      // Commit happens before the RAM barrier is published; admission remains
+      // held until this synchronous update, before any downstream erase await.
+      this.cacheFence(accountKey);
+      return acceptedJob;
+      };
+      // Lock order: domain admission -> global store. The external worker runs
+      // after release. A protected content writer cannot slip between the
+      // actor-specific reassessment and the permanent global fence.
+      const job = this.options.admissionGuard && !existing
+        ? await this.options.admissionGuard.run(actor, AbortSignal.timeout(180_000), admit)
+        : await admit();
       if (job.completedAt) return this.receipt(job);
       return await this.run(accountKey);
     } catch (error) { throw known(error); }
@@ -341,7 +418,7 @@ export class AccountErasureService {
     const remaining = job.required.filter(id => !completeCheckpoint(job.checkpoints[id]));
     const accountDeleted = !!job.completedAt && remaining.length === 0 && job.required.length === ACCOUNT_ERASURE_ADAPTER_IDS.length &&
       ACCOUNT_ERASURE_ADAPTER_IDS.every(id => job.required.includes(id) && completeCheckpoint(job.checkpoints[id]));
-    return { contractVersion: "cop-account-erasure-v1", operationId: job.operationId, requestedAt: job.requestedAt,
+    return { contractVersion: "cop-account-erasure-v1", deletionScope: ACCOUNT_ERASURE_SCOPE, operationId: job.operationId, requestedAt: job.requestedAt,
       status: accountDeleted ? "deleted" : "deleting", accountDeleted, revocationEnforced: true, remaining,
       ...(accountDeleted ? { completedAt: job.completedAt } : {}),
       pendingReasons: Object.fromEntries(remaining.map(id => [id, job.checkpoints[id]?.reason ?? "cleanup_pending"])) };

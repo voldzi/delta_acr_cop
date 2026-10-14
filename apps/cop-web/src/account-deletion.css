@@ -1,0 +1,67 @@
+.account-deletion-page {
+  min-height: 100vh;
+  padding: clamp(1rem, 4vw, 3rem);
+  background: #101923;
+  color: #f4f7fa;
+  font:
+    1rem/1.6 system-ui,
+    sans-serif;
+}
+.account-deletion-page section {
+  max-width: 44rem;
+  margin: 0 auto;
+}
+.account-deletion-page a {
+  color: #a6d5ff;
+  text-decoration: underline;
+}
+.account-deletion-page h1 {
+  font-size: clamp(1.6rem, 5vw, 2.2rem);
+  line-height: 1.2;
+}
+.account-deletion-page h2 {
+  font-size: 1.3rem;
+}
+.account-deletion-page button {
+  border: 1px solid #8dbde5;
+  border-radius: 0.5rem;
+  background: #203d55;
+  color: #fff;
+  padding: 0.75rem 1rem;
+  font: inherit;
+  cursor: pointer;
+}
+.account-deletion-page button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.account-deletion-page :focus-visible {
+  outline: 3px solid #ffe081;
+  outline-offset: 4px;
+}
+.deletion-confirm {
+  margin-block: 1.5rem;
+  padding: 1rem;
+  border: 1px solid #e9a6a6;
+  border-radius: 0.5rem;
+}
+.deletion-confirm label {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+.deletion-confirm input {
+  margin-top: 0.4rem;
+  width: 1.2rem;
+  height: 1.2rem;
+  flex-shrink: 0;
+}
+.deletion-confirm button {
+  background: #782a2a;
+  border-color: #e9a6a6;
+}
+.deletion-operation {
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}

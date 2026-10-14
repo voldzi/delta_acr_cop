@@ -52,7 +52,7 @@ describe("Communication report contract", () => {
     const service = new CommunicationSafetyService({ store: new MemoryMobilityStore(),
       encryptionSecret: "synthetic-contract-retention-secret-32-plus", moderatorRole: "synthetic-moderator",
       contactEmail: "podpora@zeleznalady.cz", retentionPolicyId: COMMUNICATION_RETENTION_POLICY_ID, now: () => new Date(now),
-      policy: { block: async () => true, directAllowed: async () => true, eventMatchesPeer: async () => true }, validateTarget: async () => {} });
+      policy: { block: async () => true, directAllowed: async () => true, eventMatchesPeer: async () => true }, validateTarget: async () => ({ peerIssuer: "https://identity.test/cop" }) });
     const actor = { authMode: "oidc" as const, issuer: "https://identity.test/cop", subjectId: "synthetic-owner", displayName: "", username: "" };
     const receipt = await service.submit(actor, { target: { kind: "user", peerSubjectId: "synthetic-peer", conversationId: "synthetic-room" },
       reason: "spam", evidence: { selectedText: "Synthetic selected excerpt", explicitlyConfirmed: true } }, "synthetic-contract-operation");
@@ -65,6 +65,8 @@ describe("Communication report contract", () => {
     const detail = await service.read(actor, receipt.reportId, true);
     expect(validate(detail), JSON.stringify(validate.errors)).toBe(true);
     expect(detail).not.toHaveProperty("ownerKey"); expect(detail).not.toHaveProperty("provenance");
+    for (const entry of detail.audit) expect(entry).not.toHaveProperty("actorIssuer");
+    expect(detail).not.toHaveProperty("targetIssuer");
     expect(validate({ ...detail, ownerKey: "internal-owner" })).toBe(false);
     now += 30 * day;
     const expiredEvidence = await service.read(actor, receipt.reportId, true);

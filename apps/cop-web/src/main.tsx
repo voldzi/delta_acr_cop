@@ -480,6 +480,7 @@ const PublicFloodDemo = React.lazy(() =>
   import("./PublicFloodDemo").then((module) => ({ default: module.PublicFloodDemo }))
 );
 const TrackTable = React.lazy(() => import("./TrackTable"));
+const AccountDeletionPage = React.lazy(() => import("./AccountDeletionPage"));
 const XrWorkspace = React.lazy(() => import("./XrWorkspace"));
 const GlobeWorkspace = React.lazy(() => {
   (window as Window & { CESIUM_BASE_URL?: string }).CESIUM_BASE_URL = "/cesium/";
@@ -26559,6 +26560,8 @@ const rootElement = document.getElementById("root");
 if (rootElement) {
   const isXrRoute = window.location.pathname === "/xr" || window.location.pathname.startsWith("/xr/");
   const isGlobeRoute = window.location.pathname === "/globe" || window.location.pathname.startsWith("/globe/");
+  const isAccountDeletionRoute =
+    window.location.pathname === "/account/delete" || window.location.pathname === "/account/delete/";
   const isPublicFloodDemoRoute =
     window.location.pathname === "/demo/flood-central-bohemia" ||
     window.location.pathname === "/ardos-demo" ||
@@ -26569,7 +26572,11 @@ if (rootElement) {
   root.render(
     <React.StrictMode>
       <RootErrorBoundary>
-        {isPublicFloodDemoRoute ? (
+        {isAccountDeletionRoute ? (
+          <React.Suspense fallback={<main className="app-fatal-fallback">Načítám správu účtu…</main>}>
+            <AccountDeletionPage />
+          </React.Suspense>
+        ) : isPublicFloodDemoRoute ? (
           <React.Suspense fallback={<main className="app-fatal-fallback">Načítám povodňovou ukázku COP…</main>}>
             <PublicFloodDemo />
           </React.Suspense>

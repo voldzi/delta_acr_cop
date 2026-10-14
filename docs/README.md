@@ -134,7 +134,12 @@ One-account local Jízda activation and planned server installation revocation:
 removal gates: [plan 42](integration/42_COP_ACCOUNT_REMOVAL_PLAN.md). Neither a
 local feature choice nor the disabled historical unlink source deletes the account.
 
-- [43 — Hranice účtu a instalace, zdrojový kandidát bez aktivace](integration/43_ACCOUNT_SAFETY_COMPLETION.md)
+- [43 — Dokončování mazání celého účtu, aktuální testy a oddělený stav produkce](integration/43_ACCOUNT_SAFETY_COMPLETION.md)
+- [Strojová evidence mazání účtu 2026-10-14](testing/account-erasure-20261014.json) — místní testy databází/HTTP; produkční aktivace zatím neověřená.
+
+Source gates from 13 October are archived in
+`docs/archive/2026-10-13_ACCOUNT_SAFETY_SOURCE_GATES.md`; they do not establish
+the current candidate or production erasure.
 
 Historical account-safety source evidence and the superseded dedicated-client
 proposal are preserved in `docs/archive/2026-10-11_ACCOUNT_SAFETY_*` and
@@ -149,3 +154,5 @@ and personal links are removed; other authors' records are preserved and active
 owned vehicles must be transferred first. The local vehicle-cleanup candidate
 is not the complete `mobility_dispatch` adapter and does not activate account
 deletion or authorize a production deployment.
+
+- [ADR0053: COP/Jizda removal preserves shared identity and SIM](adr/0053_COP_ERASURE_PRESERVES_SHARED_SIM_IDENTITY.md)

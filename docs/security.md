@@ -265,3 +265,14 @@ to probe private fences. Production safety/delete flags remain disabled.
 See [integration43](integration/43_ACCOUNT_SAFETY_COMPLETION.md).
 
 Account erasure uses actor-aware preflight before a permanent fence. Only the exact new receipt GET authenticates an operation-bound read capability without OIDC/BFF; it grants no other API authority. Capability values are only in the scoped HttpOnly cookie/native header, redacted and hash-only at rest. Unknown/custom ownership blocks preflight. Infrastructure guard binding and old-image rollback rejection remain unimplemented activation gates; `.env` attestation labels alone are not trusted proof. See ADR 0051 and runbook 25.
+
+Local content writers and deletion admission share actual locks; ownership is
+reassessed while they are held before committing the global fence. Mobility
+impact is compared inside its exact durable transaction. Actual voice grant
+expiry is recorded before response; participant removal alone cannot revoke
+unused JWTs. A resumed guard rejects stale tokens and queued writes. The private
+web deletion page has no analytics/offline shell fallback and stores only an
+operation UUID; accepted-receipt access stays in an HttpOnly cookie. The
+Keycloak provider is server-only, dedicated, scoped to the exact HTTPS realm,
+and last after all other verified owners. See integration43 for remaining actual
+provider/restore acceptance gates.
