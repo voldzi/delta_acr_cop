@@ -151,6 +151,38 @@ journal hash needs privacy/retention acceptance. Actual Root connection/custody,
 SDK/native producer/delivery, policy/schema/refs, continuity and restore remain
 unaccepted. SIM source and production were not changed by this fixture work.
 
+### Coordinated measurement privilege transition
+
+The [source boundary review](../testing/account-safety-driver-role-transition-review-20261014.json)
+pins the actual SIM writer/provisioning sources and current COP HTTP boundary.
+SIM provisioning both grants and verifies broad SELECT/INSERT/UPDATE/DELETE on
+all four tables. Its grant and verification must change together with the actual
+consent-revoke and account-erasure paths, which currently issue direct receipt
+DELETE under their existing locks and guards. Removing DELETE first would break
+legitimate removal. Bounded owner functions must preserve those locks, current
+intake/fence checks, immutable operation manifest and both receipt cascades.
+Receipt UPDATE must be limited to the actual writer field; no generic UPDATE
+policy is inferred from the simplified fixture.
+
+Do not import the contributor-revocation fixture seam. Besides absent real
+admission/locks and unaccepted contributor-linked journal retention, its CHECK
+allows a NULL contributor through SQL UNKNOWN; the target NOT NULL later
+rejects the operation. Historical SQL/proof pins remain unchanged and do not
+establish production revocation correctness.
+
+Current COP account-erasure HTTP handling already keeps 503 or service-permission
+failures unavailable/pending and preserves the original UUID/accepted manifest.
+Existing tests cover the shared client's failed statuses, immutable accepted
+retry, and service 403-to-503 mapping; this read-only review ran no new tests.
+The legacy `DELETE /contributions` carries no operation UUID and retries the same
+contributor-day DELETE. Its pending day clears only after a valid `200` receipt.
+That HTTP behavior is not proof of the internal Root origin/probe-only contract;
+SIM must enforce original-origin settlement inside its new execution path.
+Missing role/function must never be labelled `DRIVER_CONSENT_REVOKED`.
+
+This is source coordination, not actual production ACL/schema inspection,
+migration, grants, native installation or restore acceptance.
+
 Application configuration proposals (all disabled/empty by default):
 
 - COP_ACCOUNT_SAFETY_GUARD_REQUIRED: retained after first acceptance;

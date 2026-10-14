@@ -1,0 +1,57 @@
+{
+  "recordType": "cop-sim-driver-role-transition-boundary-review-v1",
+  "date": "2026-10-14",
+  "status": "SOURCE_REVIEW_ONLY_COORDINATED_TRANSITION_REQUIRED",
+  "copApplicationSource": "b5c154b8a492d4f5578f4a369677c6c693160494",
+  "simApplicationSource": "25de85abf2ab00ad125c9482f1ddb70bb81cfce2",
+  "copSourcePins": {
+    "apps/cop-api/src/sim-account-erasure.ts": "d9e20c5fbbbf25eb75182a328f26055d15a159279f55daffe787af20c27f676a",
+    "apps/cop-api/src/sim-account-erasure.test.ts": "b6a6ea109df1ca6d9eaac01f8fe35188c0a017214cea79d0462ef8d9f93416c5",
+    "apps/cop-api/src/account-erasure.ts": "597d79d34e23f279bc527b2870a954198fc5b4f59f16dd409be9a3401704bdb7",
+    "apps/cop-api/src/driver-measurements.test.ts": "83a8b30cdfc6c0b6c669024fb4554cbb2911eb7589c63d0d3e98c5453336917f",
+    "apps/cop-api/src/driver-measurement-consent-store.ts": "e0c368cee3eee5a6d1a5f56a0419ace4cc949a05733aeb2a3bffb6d7777be6be"
+  },
+  "simSourcePins": {
+    "scripts/provision-driver-measurements-postgres.sh": "235aa0c32008e1177b32083f4f1edd9c770a615f9dbaf10314a0b5e889631624",
+    "apps/situation-data-api/src/driver-measurement-store.ts": "cc7d103d28c9ff8b0b02b8e8d40db0fc0303a0f9cf5c219a4dfe796ea019c912",
+    "apps/situation-data-api/src/driver-account-erasure-store.ts": "b387529d2fac4f28a01ff126ace9318703272dfd890f24affd853395d5657399",
+    "deploy/driver-measurements/schema.sql": "6dd60a3acf28d63575198c8526c368df19bbd543f4063d4985fb55f308da02d0",
+    "deploy/driver-measurements/002_account_erasure.sql": "f13db2106a1fe1a02d0d1a26afa8ad7d7c045172ba4419749719ed0f166e16ad"
+  },
+  "sourceFindings": [
+    "Provisioning grants SELECT/INSERT/UPDATE/DELETE on all four measurement tables; its verification requires the same broad privileges. Both grant and verification must change together.",
+    "Existing consent revoke locks the contributor, inserts/updates its revocation, then directly deletes receipts in the same transaction. Existing whole-account erase locks operation and sorted contributors, fences contributors, deletes receipts and updates the durable operation.",
+    "The installed-source account guard is a BEFORE INSERT OR UPDATE receipt trigger. Fixed routines must preserve actual schema, current intake/fence checks, contributor locks, immutable account-operation manifest, and both foreign-key cascades.",
+    "Restrict receipt UPDATE to the actual receipt field needed by the existing writer; a generic UPDATE grant is not the chosen bounded policy. Do not derive the field from simplified fixtures.",
+    "No actual production ACL/schema inspection or migration was performed for this review."
+  ],
+  "coordinatedChange": [
+    "Adapt and test both existing revoke and whole-account erase against bounded owner functions before removing runtime direct DELETE; update provisioning grants and its verification in the same source change.",
+    "Do not import the fixture contributor-revocation seam. It lacks actual guard/admission/locks and stores a contributor-linked origin journal with unaccepted unlink/retention behavior.",
+    "A missing role/function, service permission failure or store outage must remain 503/unavailable/pending, never DRIVER_CONSENT_REVOKED.",
+    "Account erasure keeps the original operation UUID and accepted immutable manifest. Internal store retries with uncertain outcome must resolve only that original origin; the legacy HTTP repeated DELETE is not proof of origin-probe-only enforcement.",
+    "Keep production migration, grants, native delivery, activation and restore acceptance as separate unperformed gates."
+  ],
+  "copHttpBoundary": {
+    "finding": "No required code change found in the reviewed current HTTP boundary.",
+    "nonSuccess": "Client.request accepts only 200/202; all other statuses including 403/503 become unavailable. Adapter leaves pending or ready=false.",
+    "identity": "AccountErasureService uses claimed.job.operationId. Manifest first reads the same UUID and uses acceptedAt; failed read stops before mutation.",
+    "existingEvidence": [
+      "sim-account-erasure.test.ts:127 parametrized HTTP 202/401/403/409/429/503 cannot complete; directly Router over shared Client.request.",
+      "sim-account-erasure.test.ts:152 retry through UTC midnight preserves accepted body/UUID.",
+      "sim-account-erasure.test.ts:180 accepted operation resumes with original body; :217 changed immutable inventory is rejected before mutation even when count stays fixed.",
+      "driver-measurements.test.ts:329 service 403 becomes 503; only valid explicit DRIVER_CONSENT_REVOKED remains 403.",
+      "driver-measurements.test.ts:339 202/malformed deletion receipt never completes legacy cleanup."
+    ],
+    "legacyQualification": "DELETE /contributions has no operation UUID or manifest. Pending contributor-day is cleared only after valid 200 receipt; repeated same DELETE is current HTTP behavior, not the new Root origin semantics.",
+    "newTestsRun": 0,
+    "sourceEdited": false
+  },
+  "actual": {
+    "productionChanged": false,
+    "sqlOrGrantsApplied": false,
+    "nativeProducerAccepted": false,
+    "restoreAccepted": false,
+    "realAccountDeleted": false
+  }
+}

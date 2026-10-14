@@ -40,7 +40,8 @@
     "Fixed whole-namespace protection, actual schema/writer/protection generation and four actual refs are unaccepted.",
     "Revocation source seam lacks current contributor/batch/global fence admission and stores contributor hash; privacy, retention and actual account-unlink still need separate acceptance.",
     "Function-returned terminal JSON is an inner SQL observation until actual outer COMMIT and fresh readback. It is not an opaque independently resolved Root outcome reference.",
-    "Exact-origin no-effect closure is distinct from backend/socket close and full owner-wide drain/replay."
+    "Exact-origin no-effect closure is distinct from backend/socket close and full owner-wide drain/replay.",
+    "Historical revocation fixture CHECK permits NULL contributor_hash through SQL UNKNOWN; the later target NOT NULL rejects execution. This known unusable registration is not an accepted revoke implementation. Preserve historical pins/evidence; do not adopt that seam."
   ],
   "isolation": {
     "image": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
@@ -62,5 +63,6 @@
     "restoreAccepted": false,
     "productionChanged": false,
     "realAccountDeleted": false
-  }
+  },
+  "coordinatedRoleTransitionReview": "account-safety-driver-role-transition-review-20261014.json"
 }
