@@ -1,0 +1,25 @@
+{
+  "scope": "production_cop_consent_counts_only",
+  "checkedByUtc": "2026-10-14T09:18:08Z",
+  "copRuntimeApplicationSource": "b13fbdc71f3d9821f8b857c3f73255a75c46fa76",
+  "copRuntimeImage": "sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f",
+  "tablePresent": true,
+  "rows": 0,
+  "rowsWithoutIssuer": 0,
+  "issuerColumnPresent": false,
+  "relationKind": "r",
+  "rowSecurityActive": false,
+  "method": "existing_runtime_session_route_BEGIN_READ_ONLY_count_and_relation_metadata_only",
+  "mutates": false,
+  "identifiersRead": false,
+  "userRowsOrContentRead": false,
+  "credentialsPrinted": false,
+  "readbackScriptSha256": "fa2c1a9f8f211d18e7ff52bfcbd450dc57fa5e635215b2f7e5e59aed6cc2c874",
+  "doesNotProve": [
+    "SIM_retained_contributions",
+    "offline_outbox_inventory",
+    "historical_key_versions",
+    "native_authority",
+    "restore_or_account_erasure_acceptance"
+  ]
+}

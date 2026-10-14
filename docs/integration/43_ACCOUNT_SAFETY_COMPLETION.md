@@ -124,7 +124,7 @@ SIM's initial published implementation was
 [`68e96e7`](https://github.com/voldzi/delta_acr_sim/tree/68e96e7ec19cbbd99b08c0eac865016082521186).
 Its subsequent tested application source is
 [`7bd5a63`](https://github.com/voldzi/delta_acr_sim/tree/7bd5a6381006810c7a4bf3ffa51d13e3b63a61ed),
-with documentation-only HEAD
+with the earlier compatibility receipt published at
 [`fe0eec5`](https://github.com/voldzi/delta_acr_sim/tree/fe0eec57f7a3b5266b6b88d6b8498b180114b16c).
 SIM reported 591 application tests, 41 actual PostgreSQL18.3 cases and 70
 contract cases passed; six unrelated legacy PostgreSQL cases were skipped in the unit run.
@@ -170,6 +170,14 @@ The application database migration adds nullable
 `cop_driver_consent_erasure_fences` table. It changes no root metadata tables,
 grants or secrets. Actual production schema permissions/history still require
 acceptance. A pending operation retains the consent and minimal day inventory.
+On the unchanged production image/source, COP performed a bounded counts-only
+readback through its existing session/direct database route in a read-only
+transaction: the actual table has zero rows and no active RLS filtering; the
+new issuer column has not been applied. Thus this particular current COP store
+has no historic null-issuer row to migrate. This does not establish zero SIM
+history, complete offline outboxes/key versions or accepted native authority.
+No identifiers, user rows or content were read. See
+[the separate production counts evidence](../testing/account-erasure-consent-production-counts-20261014.json).
 After the actual completed SIM proof, one local transaction verifies absence,
 deletes the consent and clears all stored day dates. Completed retries compare
 a fresh authenticated GET-only SIM proof and fresh local absence with the
@@ -293,6 +301,25 @@ cannot relabel the original2,393-case or ten-handler-pair evidence. No real
 provider, native authority, human account or production deletion was tested.
 Exact source, SQL/lifecycle and verification boundaries are in
 [testing/account-erasure-consent-followup-20261014.json](../testing/account-erasure-consent-followup-20261014.json).
+
+COP also independently ran the new orchestration pair against clean published
+COP source `898cd5132f513259b226d5beff5c3876156b56e7` and the exact actual
+SIM handler bytes from application source `7bd5a63`, with frozen runner
+SHA-256 `5aba43cc6bac09b98a3ffb01b830037eb019784ea9037efc7b89ef5851698088`:
+**8/8 PASS**, 53 loopback HTTP requests. It uses the actual COP controller,
+local in-memory consent implementation/composition and SIM Express handlers.
+It covers first handoff, pending202, complete old local day inventory,
+feature-off own-operation resume, interruption after local purge and a
+restarted controller's fresh GET-only completed proof, plus foreign actor/op
+and missing identity/authority denial. Stores, identity/native authority,
+publication and other owners are explicitly synthetic. PostgreSQL, physical
+restart/login/iPhone, actual Root/provider/backup and production acceptance are
+not inferred. Provider/matcher/forbidden network calls were zero. The old ten
+adapter/handler pair receipt remains unchanged. Exact new scope and source
+pins are in
+[testing/account-erasure-cop-sim-controller-http-20261014.json](../testing/account-erasure-cop-sim-controller-http-20261014.json).
+The new runner requires a clean exact898 checkout; a later documentation-only
+HEAD cannot be substituted without a separate reviewed pin.
 
 The X5 build-only source option now supports a separately provisioned, clean
 root-owned read-only detached COP checkout with an explicit exact source pin.

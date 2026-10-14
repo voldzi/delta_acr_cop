@@ -1,0 +1,105 @@
+{
+  "scope": "synthetic_controller_consent_loopback_HTTP_only",
+  "copRevision": "898cd5132f513259b226d5beff5c3876156b56e7",
+  "copTree": "a41ee5b065216dfb5e8ab37ee020fc766b66a5c6",
+  "copSourceSha256": {
+    "apps/cop-api/src/account-erasure.ts": "597d79d34e23f279bc527b2870a954198fc5b4f59f16dd409be9a3401704bdb7",
+    "apps/cop-api/src/cop-driver-consent-erasure.ts": "b3db56b6a67a401d76544ede3df32707be8d7b20005e84d5955483db4a15d690",
+    "apps/cop-api/src/driver-measurement-consent-store.ts": "e0c368cee3eee5a6d1a5f56a0419ace4cc949a05733aeb2a3bffb6d7777be6be",
+    "apps/cop-api/src/sim-account-erasure.ts": "d9e20c5fbbbf25eb75182a328f26055d15a159279f55daffe787af20c27f676a",
+    "apps/cop-api/src/mobility-store.ts": "d125b4c96c14bcba1ec323e8003ca1f6882d3cd02a686b5821d974cc57c82e8a",
+    "apps/cop-api/src/ai-router-chat.ts": "a2357095540f118c1c77208e2ae4abd767178558969e00b1af7277efdba14e57",
+    "apps/cop-api/src/driver-measurement-contract.ts": "d0d5c9275c8cb04ae97c3199508509a4e2dd6e08738eb226aa1acdf46b4b40c0",
+    "apps/cop-api/src/cop-pg-pool.ts": "13c8d567ff1860a6bfb4d0fba04cafb6c6236f51ad24f0ac09ac3118823b71ed",
+    "apps/cop-api/src/cop-session-database.ts": "f5da56a3e4d85b476c607233dd675da3d60f5e17a3d7896a18df3da1fa6358f8",
+    "apps/cop-api/src/bounded-upstream.ts": "5f691417fc4064dd699f7bc015ae55e9023bb8e2de50a5c4b06c66d2dfb5112a",
+    "apps/cop-api/src/dispatch-lease.ts": "cb48402a1c5701b82ba5148d0ba9d4ed88a85cc9a8012c8321bbbc673875ffa8",
+    "docs/testing/account-erasure-consent-followup-20261014.json": "2319d529ee8640f953cef9fa9c11a0a953e2d74180396fd3e9bda89239cf7aca"
+  },
+  "simSourceSha256": {
+    "apps/ai-router-api/src/app.ts": "e298137791c2240aab3f2d0996fbb1ed6d1b0e9e91b881520f47e676bd5dce37",
+    "apps/ai-router-api/src/account-erasure.ts": "0d59e2009749dc973b76f9fa3b15da1afe28c2eaeb5589b3ce32f2fa93c39d7a",
+    "apps/situation-data-api/src/driver-measurements.ts": "bf128290ecaca8250e763f2347b0733a66296c39ff8dd0411c82c5b1879d7652",
+    "apps/situation-data-api/src/driver-account-erasure.ts": "25e6c9731452150c4424b3bc60a0679d03b99044e824813d19a92674d342ca23"
+  },
+  "runnerSha256": "5aba43cc6bac09b98a3ffb01b830037eb019784ea9037efc7b89ef5851698088",
+  "actualCopController": true,
+  "actualCopConsentComposition": true,
+  "actualCopInMemoryConsentLogic": true,
+  "actualCopSimAdapters": true,
+  "actualSimExpressHandlers": true,
+  "actualPublicCopLoginOrHttpRoutes": false,
+  "syntheticDependencies": [
+    "COP durable store in memory",
+    "SIM Router and Driver stores",
+    "OIDC actor and identity review",
+    "native admission and owner authority",
+    "publication barrier",
+    "all other owners"
+  ],
+  "productionGo": false,
+  "productionChanged": false,
+  "actualUserDeletion": false,
+  "actualPostgres": false,
+  "actualNativeAuthority": false,
+  "providerCalls": 0,
+  "matcherCalls": 0,
+  "forbiddenNetworkCalls": 0,
+  "sharedIdentityAndSimIzsPreservedByFixture": true,
+  "backupCompletionClaimed": false,
+  "cases": [
+    {
+      "name": "actual controller preflight is ordinary-ready without premature own-provider acceptance",
+      "result": "PASS"
+    },
+    {
+      "name": "first SIM handoff follows actual durable confirmed COP job; Driver202 preserves consent inventory",
+      "result": "PASS"
+    },
+    {
+      "name": "actual composition sends every old COP pending date, never raw subject or secret",
+      "result": "PASS"
+    },
+    {
+      "name": "feature-off resumes only this own accepted job; interruption preserves pending controller checkpoint after actual local purge",
+      "result": "PASS"
+    },
+    {
+      "name": "actual restarted controller uses fresh GET-only Driver proof after consent and every inventory date are removed",
+      "result": "PASS"
+    },
+    {
+      "name": "foreign actor and operation cannot resume, mutate or reconstruct completed inventory",
+      "result": "PASS"
+    },
+    {
+      "name": "missing identity and unapproved authority prevent new controller jobs without fallback",
+      "result": "PASS"
+    },
+    {
+      "name": "no shared SIM/IZS or identity deletion and no real backup/provider proof is claimed",
+      "result": "PASS"
+    }
+  ],
+  "requestCounts": {
+    "total": 53,
+    "routerStarts": 1,
+    "driverStarts": 2,
+    "controllerHandoffs": 4
+  },
+  "unverified": [
+    "real COP/SIM native admission, commit, drain and restore",
+    "production database and identity/key-version/outbox provenance",
+    "public login/frontend/iPhone",
+    "provider and backup retention",
+    "production activation"
+  ],
+  "copRootExecution": {
+    "nodeVersion": "24.21.0",
+    "runnerCommand": "node --import ./apps/ai-router-api/node_modules/tsx/dist/loader.mjs scripts/test-cop-sim-erasure-controller-http.mts --run --cop-source /private/tmp/cop-runtime-source-recovery-20261013",
+    "exitCode": 0,
+    "originalReportSha256": "aeda92ca38f3504fe757f10136175fd919bd02fd0233e88ddeb1a657c2de3a88",
+    "simApplicationSource": "7bd5a6381006810c7a4bf3ffa51d13e3b63a61ed",
+    "simRunnerPublication": "0e16587c51b505d830976ba43d2d908e5dc2d67d"
+  }
+}
