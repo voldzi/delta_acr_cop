@@ -364,6 +364,51 @@ preparation before any service update; invalid API state blocks the whole mixed
 mutation. X5 mount/UUID gates, FD9 common lock and FD8/7 job locks remain in place.
 Jobs are completed only after terminal worker commands and health acceptance.
 
+### API-only build from an independent reviewed X5 checkout
+
+When `/srv/cop` contains protected operational script changes, do not reset,
+stash or overwrite them to obtain a clean application build. Infrastructure may
+provision a separate full COP Git checkout as a concrete reviewed release step.
+The source must be a strict child of `/srv/x5-production/staging/cop`, on the
+verified X5 filesystem, root-owned and read-only throughout (including `.git`),
+with detached `HEAD` at the exact reviewed 40-hex commit. No symlink, hardlink, submodule,
+external Git worktree/object metadata, dirty, untracked or ignored build input
+is accepted. Both checkout origins must identify `voldzi/delta_acr_cop`; HTTPS,
+the GitHub SSH host and the existing `github-cop` SSH alias are accepted. The
+validator also compares actual tracked bytes and executable modes to that Git
+tree, so `assume-unchanged` cannot conceal different build input.
+
+After the separate provisioning/review, the operator may use:
+
+```bash
+bash /srv/cop/scripts/deploy-production.sh --build-only \
+  --api-source "$reviewed_source" --api-build-context "$reviewed_x5_checkout" cop-api
+```
+
+`--api-build-context` requires `--build-only`, the explicit source pin and exactly
+one `cop-api` service. Activation, `--api-image`, another service and mixed builds
+are rejected. The temporary Compose overlay changes only `cop-api.build.context`
+and its existing `org.opencontainers.image.revision` build label. Compose files,
+environment, `cop-storage.py`, `verify-cop-builder.py`, runtime validation and
+health-baseline helpers continue to come from `/srv/cop`. The local daemon,
+dedicated X5 builder, UUID preflight, FD9 storage lock and FD8/7 job locks are
+preserved. No runtime service is recreated by this build-only operation.
+
+The existing locked staging job records the context path, filesystem device,
+directory inode, commit and effective source/Git input digest. The validator
+rechecks that identity and actual bytes immediately before and after the build;
+a mismatch stops image acceptance and leaves the operation unfinished. The
+later immutable activation still needs a fresh exact image/source/profile
+attestation and the normal independent deployment acceptance.
+
+Read-only root ownership prevents the deployment user from editing source
+files; it is not immutability against root or the infrastructure administrator.
+Writable staging parents can still permit directory replacement. Trusted
+provisioning plus the existing deployment locks and before/after identity
+checks are the actual boundary. Do not provision, rename or alter the selected
+checkout during that operation. The helper does not create checkouts, change
+permissions, add mounts/roles or remove protected operational files.
+
 ## Interruption and whole-pair rollback
 
 `pending.json` blocks all further deployment. Recovery inspects one API
@@ -437,6 +482,7 @@ clear a pending journal or use plain mutable Compose up to bypass the gate.
 ```bash
 python3 -B scripts/tests/test-cop-api-runtime.py
 python3 -B scripts/tests/test-cop-api-runtime-compose.py
+python3 -B scripts/tests/test-cop-api-build-context.py
 bash -n scripts/deploy-production.sh
 bash scripts/validate-skeleton.sh
 git diff --check

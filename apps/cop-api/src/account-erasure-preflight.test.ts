@@ -101,6 +101,38 @@ describe("actor-aware erasure preflight and independent receipt", () => {
     expect((await restarted.readWithCapability(operation, capability)).accountDeleted).toBe(true);
     expect(f.adapters[0]!.erase).toHaveBeenCalledTimes(1);
   });
+  it("uses accepted-operation readiness only after a durable confirmed job, while new intake stays unavailable", async () => {
+    const f = fixture(), adapter = f.adapters.find(value => value.id === "ai_router")!;
+    adapter.erase = vi.fn(async () => ({ status: "pending" as const, remaining: "cleanup_pending" as const }));
+    adapter.readyForAcceptedOperation = vi.fn(async (actor, context) => {
+      expect(actor.subjectId).toBe(f.actor.subjectId); expect(context.operationId).toBe(operation);
+      expect(await f.service.operationFenceConfirmed(actor, context)).toBe(true);
+      return true;
+    });
+    const plan = await f.service.preflight(f.actor, operation);
+    expect(adapter.readyForAcceptedOperation).not.toHaveBeenCalled();
+    await f.service.request(f.actor, operation, { confirmAccountDeletion: true }, { planId: plan.response.planId!, capability: plan.capability! });
+    adapter.ready = async () => false;
+    expect((await f.service.capabilities()).accountDeletion).toBe(false);
+    const other = { ...f.actor, subjectId: "synthetic-other-unconfirmed" };
+    expect((await f.service.preflight(other, "54b48135-0f3d-4a69-80e3-f076e17b1509")).response.canConfirm).toBe(false);
+    adapter.erase = vi.fn(async () => ({ status: "completed" as const, proofId: "accepted_existing_provider_proof" }));
+    await f.service.resumePending();
+    expect(adapter.readyForAcceptedOperation).toHaveBeenCalledTimes(2);
+    expect(adapter.erase).toHaveBeenCalledTimes(1);
+    expect((await f.service.readWithCapability(operation, plan.capability!)).accountDeleted).toBe(true);
+    await f.service.assertAllowed(other);
+  });
+  it("does not erase an accepted job when its operation-specific authority is unavailable", async () => {
+    const f = fixture(), adapter = f.adapters.find(value => value.id === "ai_router")!;
+    adapter.erase = vi.fn(async () => ({ status: "pending" as const, remaining: "cleanup_pending" as const }));
+    const started = await start(f);
+    adapter.erase = vi.fn(async () => ({ status: "completed" as const, proofId: "must_not_be_used_proof" }));
+    adapter.readyForAcceptedOperation = async () => false;
+    await f.service.resumePending();
+    expect(adapter.erase).not.toHaveBeenCalled();
+    expect(await f.service.readWithCapability(operation, started.capability)).toMatchObject({ accountDeleted: false, remaining: ["keycloak", "ai_router"] });
+  });
   it("rotates beyond persistently pending jobs instead of starving later jobs", async () => {
     const f = fixture(); f.adapters[7]!.erase = vi.fn(async () => ({ status: "pending" as const, remaining: "cleanup_pending" as const }));
     const principals = Array.from({ length: 4 }, (_, index) => ({ ...f.actor, subjectId: "synthetic-" + index }));

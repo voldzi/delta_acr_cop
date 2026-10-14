@@ -117,7 +117,15 @@ passed; six unrelated legacy PostgreSQL cases were skipped in the unit run.
 Typecheck, build and skeleton passed. It is not deployed: actual independently
 owned per-principal admission/drain/commit and completed-history restore replay
 are still required. A healthy runtime or signed TTL document cannot replace
-those operations. COP strict adapters use dedicated server-only erasure origins
+those operations. COP now accepts the HTTP no-store directive with other legitimate cache
+directives, rather than comparing the whole header text. Actor control characters
+and measurement operation UUIDs match SIM. New intake/preflight requires
+enabled service readiness; continuing a durable accepted COP job additionally
+requires its own actual existing SIM receipt, current protected authority,
+identity and immutable manifest/first acceptedAt. Missing or foreign operations
+never receive the disabled-only resume exception. Controller capability and
+new preflight never call accepted-operation readiness.
+COP strict adapters use dedicated server-only erasure origins
 and credentials, actual existing-alias review and complete retained/outbox/key
 inventory; no normal Router token fallback or guessed retained-day completeness.
 Exact existing Router aliases, all retained measurement days/key versions,
@@ -160,7 +168,7 @@ human policy above; its narrowly scoped authority still requires acceptance.
 
 Final verification on 2026-10-14:
 
-- Full suite: **2,366 passed, zero failed, eight skipped**, 243 test files.
+- Full suite: **2,393 passed, zero failed, eight skipped**, 243 test files.
   Skipped cases use seven separate legacy test database configurations (profile,
   driver consent, mileage, mobility, receipt details, vehicle audit and safety
   notification). New account-erasure PostgreSQL/PostGIS and signed HTTP cases
@@ -178,13 +186,23 @@ Final verification on 2026-10-14:
   smoke and public-demo analytics release/privacy checks passed. Vite retains
   its existing Cesium large-chunk advisory; the separate bundle budget passed.
 
-The final machine-readable source/test boundary is
-[testing/account-erasure-20261014.json](../testing/account-erasure-20261014.json).
+The first published source/test boundary is
+[testing/account-erasure-20261014.json](../testing/account-erasure-20261014.json);
+the subsequent compatibility/resume and X5 build-only corrections are recorded
+in [testing/account-erasure-resume-20261014.json](../testing/account-erasure-resume-20261014.json).
 Provider mocks do not establish actual provider permissions, root resolver
 coverage or production account removal. Actual shared SIM login/refresh after
 scoped revoke, physical whole-account use, native restore quarantine and
 completed-history replay acceptance remain unverified. No real account was
 used or removed; no OpenAI call was needed.
+
+The X5 build-only source option now supports a separately provisioned, clean
+root-owned read-only detached COP checkout with an explicit exact source pin.
+Seventeen actual Git/argument tests and53 existing runtime fault regressions
+passed. It changes only the API build context/revision label, preserves current
+operational helpers/locks/health baseline, and does not reset `/srv/cop`. This
+source option has not built a production image or changed the accepted script.
+See [runbook24](../runbooks/24_COP_API_RUNTIME_PROFILE.md).
 
 Deploy reviewed immutable source with intakefalse first. Activate only after
 actual two-synthetic-account owner/readback/restore acceptance and native binding

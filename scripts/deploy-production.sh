@@ -24,15 +24,20 @@ export COP_STORAGE_LOCK_FD=9
 python3 scripts/cop-storage.py preflight >/dev/null
 build_only=false
 deploy_only=false
+api_build_context=
+api_source_explicit=false
 api_profile_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --build-only) build_only=true; shift ;;
+    --api-build-context)
+      [[ $# -ge 2 && -z "$api_build_context" && -n "$2" && "$2" != --* ]] || { echo 'API build context requires one value' >&2; exit 1; }
+      api_build_context="$2"; shift 2 ;;
     --api-image|--api-source|--api-attestation|--api-profile)
       [[ $# -ge 2 ]] || { echo 'API deployment option requires a value' >&2; exit 1; }
       case "$1" in
         --api-image) api_image="$2"; deploy_only=true ;;
-        --api-source) api_revision="$2" ;;
+        --api-source) api_revision="$2"; api_source_explicit=true ;;
         --api-attestation) COP_API_RUNTIME_ATTESTATION="$2" ;;
         --api-profile) api_profile_args=(--profile "$2") ;;
       esac
@@ -40,6 +45,13 @@ while [[ $# -gt 0 ]]; do
     *) break ;;
   esac
 done
+if [[ -n "$api_build_context" ]]; then
+  $api_source_explicit || { echo 'API build context requires an explicit reviewed source pin' >&2; exit 1; }
+  context_args=()
+  for service in "$@"; do context_args+=(--service "$service"); done
+  python3 scripts/cop-api-build-context.py validate --context "$api_build_context" \
+    --revision "${api_revision:-}" --build-only "$build_only" --deploy-only "$deploy_only" "${context_args[@]}" >/dev/null
+fi
 if $deploy_only; then
   [[ $# -eq 0 && "$build_only" == false && -n "${api_revision:-}" ]] || { echo 'Immutable API activation must be API-only with a source pin' >&2; exit 1; }
   set -- cop-api
@@ -68,7 +80,7 @@ if $api_requested; then
   if ! $build_only; then
     [[ -n "${COP_API_RUNTIME_ATTESTATION:-}" ]] || { echo 'Fresh API owner attestation is required' >&2; exit 1; }
   fi
-  if ! $deploy_only; then
+  if ! $deploy_only && [[ -z "$api_build_context" ]]; then
     # Tracked and untracked build input must match the source label. Only the
     # approved local Compose attachment and operational lock may be untracked.
     api_revision=$(python3 - <<'PYSOURCE'
@@ -90,6 +102,10 @@ flock -n 8
 exec 7>>"$cachejob/.job.lock"
 flock -n 7
 python3 scripts/cop-health-gate.py capture > "$job/baseline-health.json"
+if [[ -n "$api_build_context" ]]; then
+  python3 scripts/cop-api-build-context.py pin --context "$api_build_context" --revision "$api_revision" \
+    --pin-file "$job/api-build-context-pin.json"
+fi
 if ! $deploy_only; then
 # COP's dedicated builder is backed by a bind volume on X5. Never use/prune a
 # shared builder or reconfigure the daemon. Provisioning is in the runbook.
@@ -100,15 +116,24 @@ docker buildx inspect cop-x5 --bootstrap >/dev/null
 python3 scripts/verify-cop-builder.py
 build_compose=("${compose[@]}")
 if $api_requested; then
-  python3 - "$job/api-build-label.json" "$api_revision" <<'PYLABEL'
+  python3 - "$job/api-build-label.json" "$api_revision" "$api_build_context" <<'PYLABEL'
 import json,sys
+build = {'labels': {'org.opencontainers.image.revision': sys.argv[2]}}
+if sys.argv[3]: build['context'] = sys.argv[3]
 with open(sys.argv[1], 'x') as handle:
-    json.dump({'services': {'cop-api': {'build': {'labels': {
-        'org.opencontainers.image.revision': sys.argv[2]}}}}}, handle)
+    json.dump({'services': {'cop-api': {'build': build}}}, handle)
 PYLABEL
   build_compose+=(-f "$job/api-build-label.json")
 fi
+if [[ -n "$api_build_context" ]]; then
+  python3 scripts/cop-api-build-context.py verify --context "$api_build_context" --revision "$api_revision" \
+    --pin-file "$job/api-build-context-pin.json"
+fi
 docker compose --project-name cop "${build_compose[@]}" build --builder cop-x5 "$@" >/dev/null
+if [[ -n "$api_build_context" ]]; then
+  python3 scripts/cop-api-build-context.py verify --context "$api_build_context" --revision "$api_revision" \
+    --pin-file "$job/api-build-context-pin.json"
+fi
 fi
 api_check_image=delta-acr-cop-api:local
 if $deploy_only; then api_check_image="$api_image"; fi

@@ -16,6 +16,9 @@ export type AccountErasureProof = { status: "completed"; proofId: string } |
 export interface AccountErasureAdapter {
   readonly id: AccountErasureAdapterId;
   ready(): Promise<boolean>;
+  /** Read-only readiness for the exact already-confirmed durable job. Never
+   * used by capability/preflight or to authorize a new provider operation. */
+  readyForAcceptedOperation?(actor: AuthenticatedActor, context: { operationId: string; requestedAt: string; accountKey: string; signal: AbortSignal }): Promise<boolean>;
   /** Read-only, actor-specific impact/provenance assessment. No implicit legacy fallback. */
   preflight?(actor: AuthenticatedActor, context: { signal: AbortSignal; operationId?: string }): Promise<AccountErasureAssessment>;
   /** Read-only local impact under this exact store transaction; no network or nested transactions. */
@@ -364,7 +367,11 @@ export class AccountErasureService {
         else {
           try {
             const readinessSignal = timedSignal(workerSignal, this.timeoutMs);
-            if (!(await bounded(adapter.ready(), readinessSignal))) { reason = "adapter_unavailable"; unavailable = true; }
+            const ready = adapter.readyForAcceptedOperation
+              ? adapter.readyForAcceptedOperation(actor, { accountKey, operationId: claimed.job.operationId,
+                requestedAt: claimed.job.requestedAt, signal: readinessSignal })
+              : adapter.ready();
+            if (!(await bounded(ready, readinessSignal))) { reason = "adapter_unavailable"; unavailable = true; }
             else {
               await this.renew(key, token);
               const signal = timedSignal(workerSignal, this.timeoutMs);

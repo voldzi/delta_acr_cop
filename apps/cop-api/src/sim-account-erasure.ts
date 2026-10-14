@@ -33,7 +33,8 @@ export interface SimMeasurementsErasureOptions extends SimAccountErasureOptions 
 }
 const VERSION = "sim-account-erasure-v1", COST = "aggregate-costs-current-month-v1";
 const ROUTER = "/api/v1/ai-router/cop/users/me/erasure-operations", DRIVER = "/api/v1/internal/driver-measurements/v1/account-erasure-operations";
-const HEX = /^[0-9a-f]{64}$/u, UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+const HEX = /^[0-9a-f]{64}$/u, UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const DRIVER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const bool = z.boolean(), time = z.iso.datetime({ offset: false }), count = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const protections = z.enum(["unverified", "no_report", "enforced_single_writer", "shared_generation_fence"]);
 const blockers = z.enum(["erasure_disabled", "schema_not_ready", "permissions_not_ready", "identity_review_required", "restore_checkpoint_not_current", "retention_review_required", "publication_proof_required", "provider_requests_pending", "identity_binding_review_required"]);
@@ -43,12 +44,12 @@ const probe = { contractVersion: z.literal(VERSION), enabled: bool, ready: bool,
 const routerCap = z.strictObject({ ...probe, owner: z.literal("ai_router"), scope: z.literal("cop_router_primary_database"), checks: z.strictObject(checks), costPolicy: z.enum(["pending_requires_review", COST]) });
 const driverCap = z.strictObject({ ...probe, owner: z.literal("sim_measurements"), scope: z.literal("online_driver_scope"), checks: z.strictObject({ ...checks, publicationFenceVerified: bool }), reportProtection: protections });
 const routerPreflight = routerCap.extend({ operationId: z.uuid(), identityBinding: z.literal("cop_attested_existing_router_alias"), checks: z.strictObject({ ...checks, identityBindingReviewed: bool, providerRequestsSettled: bool }) });
-const driverPreflight = driverCap.extend({ operationId: z.uuid(), identityBinding: z.literal("cop_attested_daily_manifest"), checks: z.strictObject({ ...checks, publicationFenceVerified: bool, identityBindingReviewed: bool, manifestShapeAndCoverageValid: bool }),
+const driverPreflight = driverCap.extend({ operationId: z.string().regex(DRIVER_UUID), identityBinding: z.literal("cop_attested_daily_manifest"), checks: z.strictObject({ ...checks, publicationFenceVerified: bool, identityBindingReviewed: bool, manifestShapeAndCoverageValid: bool }),
   coverageAnchor: z.strictObject({ kind: z.enum(["checked_at", "first_accepted_at"]), at: time }), contributorCount: count.min(9).max(40), manifestValid: z.literal(true) });
 const routerReceipt = z.strictObject({ contractVersion: z.literal(VERSION), operationId: z.uuid(), status: z.enum(["pending", "online_complete"]), scope: z.literal("cop_router_primary_database"),
   pendingReasons: z.array(z.enum(["provider_requests_pending", "cost_retention_review_required", "backup_replay_not_ready", "erasure_processing_pending"])).max(4), pendingRequestCount: count, onlineScopeComplete: bool,
   wholeAccountComplete: z.literal(false), backupsComplete: z.literal(false), providerRetentionComplete: z.literal(false), retainedMinimumReplayFence: z.literal(true), aliasScope: z.literal("sim_izs_preserved_out_of_scope") });
-const driverReceipt = z.strictObject({ contractVersion: z.literal(VERSION), operationId: z.uuid(), status: z.enum(["pending", "completed"]), scope: z.literal("online_driver_scope"),
+const driverReceipt = z.strictObject({ contractVersion: z.literal(VERSION), operationId: z.string().regex(DRIVER_UUID), status: z.enum(["pending", "completed"]), scope: z.literal("online_driver_scope"),
   wholeAccountComplete: z.literal(false), backupReplayRequired: z.literal(true), acceptedAt: time, updatedAt: time, contributorCount: count.min(9).max(40), deletedBatchCount: count, remainingBatchCount: count,
   databaseZeroVerified: bool, derivedReportAcknowledged: bool, reportProtection: protections, publicationFenceVerified: bool, replayReady: bool, retentionReviewed: bool,
   pendingReason: z.enum(["replay_review_required", "publisher_review_required", "retention_review_required", "derived_report_pending", "stored_rows_remaining"]).nullable() });
@@ -56,10 +57,18 @@ const pending = (): AccountErasureProof => ({ status: "pending", remaining: "cle
 const unavailable = (): AccountErasureAssessment => ({ ready: false, reason: "adapter_unavailable" });
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 function requireActor(actor: AuthenticatedActor, issuer: string): void {
-  if (actor.authMode !== "oidc" || actor.issuer !== issuer || !actor.subjectId || actor.subjectId.length > 512 || /[\u0000-\u001f\u007f]/u.test(actor.subjectId)) throw new AccountErasureError(401, "UNAUTHORIZED");
+  if (actor.authMode !== "oidc" || actor.issuer !== issuer || !actor.subjectId || actor.subjectId.length > 512 || /[\u0000-\u001f\u007f-\u009f]/u.test(actor.subjectId)) throw new AccountErasureError(401, "UNAUTHORIZED");
 }
-function requireOperation(value?: string): string {
-  if (!value || !UUID.test(value)) throw new AccountErasureError(400, "INVALID_ERASURE_OPERATION"); return value.toLowerCase();
+function requireOperation(value?: string, driver = false): string {
+  if (!value || !(driver ? DRIVER_UUID : UUID).test(value)) throw new AccountErasureError(400, "INVALID_ERASURE_OPERATION"); return value.toLowerCase();
+}
+/** Cache-Control is a comma-separated directive list, not a literal label.
+ * Require a bounded explicit no-store directive and only compatible controls. */
+function noStore(header: string | null): boolean {
+  if (!header || header.length > 512 || /[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/u.test(header)) return false;
+  const directives = header.toLowerCase().split(",").map(value => value.trim());
+  return directives.length <= 16 && directives.filter(value => value === "no-store").length === 1 &&
+    directives.every(value => /^(?:no-store|private|no-cache|must-revalidate|max-age=0)$/u.test(value));
 }
 async function bounded<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) { void promise.catch(() => undefined); signal.throwIfAborted(); }
@@ -104,7 +113,7 @@ class Client {
     if (!this.root) throw new Error("SIM_ERASURE_UNAVAILABLE"); signal.throwIfAborted();
     const headers: Record<string, string> = { authorization: `Bearer ${this.options.token}`, accept: "application/json", "cache-control": "no-store" };
     if (actor) {
-      const op = requireOperation(operationId), iat = Math.floor(this.now().getTime() / 1000);
+      const op = requireOperation(operationId, this.owner === "sim_measurements"), iat = Math.floor(this.now().getTime() / 1000);
       const claim = { iss: this.options.issuer, sub: actor.subjectId, aud: "sim-account-erasure", iat, exp: iat + 60, operationId: op, routerUserId: this.routerId(actor) };
       const encoded = Buffer.from(JSON.stringify(claim)).toString("base64url");
       headers["x-cop-actor"] = encoded; headers["x-cop-actor-signature"] = createHmac("sha256", this.options.actorSecret).update(encoded).digest("hex");
@@ -113,7 +122,7 @@ class Client {
     const response = await bounded(fetch(new URL(this.path + suffix, this.root), { method: body === undefined ? "GET" : "POST", redirect: "error", signal, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), signal);
     if (response.status === 404 && suffix.startsWith("/") && UUID.test(suffix.slice(1))) { await response.body?.cancel().catch(() => undefined); return { status: 404, value: null }; }
     if (![200, 202].includes(response.status)) { await response.body?.cancel().catch(() => undefined); throw new Error("SIM_ERASURE_UNAVAILABLE"); }
-    if (response.headers.get("cache-control")?.toLowerCase() !== "no-store" || (response.headers.get("content-type") ?? "").split(";", 1)[0]?.trim().toLowerCase() !== "application/json") { await response.body?.cancel().catch(() => undefined); throw new Error("SIM_ERASURE_UNPROVEN"); }
+    if (!noStore(response.headers.get("cache-control")) || (response.headers.get("content-type") ?? "").split(";", 1)[0]?.trim().toLowerCase() !== "application/json") { await response.body?.cancel().catch(() => undefined); throw new Error("SIM_ERASURE_UNPROVEN"); }
     const bytes = await bounded(readBoundedBody(response, 16_384), signal); signal.throwIfAborted(); return { status: response.status, value: JSON.parse(bytes.toString("utf8")) as unknown };
   }
   validateProbe(input: unknown, actor = false) {
@@ -124,9 +133,16 @@ class Client {
         Math.abs(this.now().getTime() - Date.parse(value.checkedAt)) > 30_000) throw new Error("SIM_ERASURE_UNPROVEN");
     return value;
   }
-  async capability(signal: AbortSignal): Promise<boolean> {
+  resumeProbe(value: ReturnType<Client["validateProbe"]>, providerPending = false): boolean {
+    const safeChecks = Object.entries(value.checks).every(([key, checked]) => checked === true || providerPending && key === "providerRequestsSettled");
+    const allowed = new Set(["erasure_disabled", ...(providerPending ? ["provider_requests_pending"] : [])]);
+    return safeChecks && value.blockers.every(reason => allowed.has(reason)) &&
+      ("costPolicy" in value ? value.costPolicy === COST : value.reportProtection !== "unverified");
+  }
+  async capability(signal: AbortSignal, existing = false): Promise<boolean> {
     if (!await this.authority(signal)) return false;
-    const result = await this.request("/capability", signal); return result.status === 200 && this.validateProbe(result.value).ready;
+    const result = await this.request("/capability", signal); const value = this.validateProbe(result.value);
+    return result.status === 200 && (value.ready || existing && this.resumeProbe(value));
   }
 }
 /** Completes only the declared COP Router primary-DB subdomain. The three
@@ -138,6 +154,15 @@ function routerProof(status: number, input: unknown, op: string, identity: strin
   if (receipt.operationId !== op || new Set(receipt.pendingReasons).size !== receipt.pendingReasons.length) return pending();
   return status === 200 && receipt.status === "online_complete" && receipt.pendingRequestCount === 0 && receipt.pendingReasons.length === 0 && receipt.onlineScopeComplete
     ? { status: "completed", proofId: hash(["cop-router-online-erasure-v1", identity, receipt]) } : pending();
+}
+async function routerOperation(client: Client, actor: AuthenticatedActor, op: string, signal: AbortSignal): Promise<boolean> {
+  const previous = await client.request("/" + op, signal, actor, op);
+  if (previous.status === 404) return false;
+  const receipt = routerReceipt.parse(previous.value);
+  if (receipt.operationId !== op || new Set(receipt.pendingReasons).size !== receipt.pendingReasons.length ||
+      (previous.status === 200 ? receipt.status !== "online_complete" || !receipt.onlineScopeComplete || receipt.pendingRequestCount !== 0 || receipt.pendingReasons.length !== 0 :
+        receipt.status !== "pending" || receipt.onlineScopeComplete || receipt.pendingReasons.length === 0)) throw new Error("SIM_OPERATION_UNPROVEN");
+  return true;
 }
 /** Online driver rows/derived publication only; backup replay is still a
  * separate owner obligation. False wholeAccountComplete is never promoted. */
@@ -152,6 +177,15 @@ export function createSimRouterAccountErasureAdapter(options: SimAccountErasureO
   return {
     id: "ai_router",
     async ready() { if (!client.options.reviewExistingIdentity) return false; try { return await client.capability(client.signal()); } catch { return false; } },
+    async readyForAcceptedOperation(actor, context) {
+      requireActor(actor, options.issuer); const op = requireOperation(context.operationId), signal = client.signal(context.signal);
+      try {
+        if (!await client.authority(signal) || !await client.identity(actor, signal) || !await routerOperation(client, actor, op, signal) || !await client.capability(signal, true)) return false;
+        const checked = await client.request("/preflight", signal, actor, op, { contractVersion: VERSION, operationId: op });
+        const probe = client.validateProbe(checked.value, true);
+        return checked.status === 200 && "operationId" in probe && probe.operationId === op && client.resumeProbe(probe, true);
+      } catch { return false; }
+    },
     async preflight(actor, context) {
       requireActor(actor, options.issuer); if (!context.operationId) return unavailable(); const op = requireOperation(context.operationId), signal = client.signal(context.signal);
       try { if (!await client.capability(signal)) return unavailable(); const identity = await client.identity(actor, signal); if (!identity) return unavailable();
@@ -162,8 +196,14 @@ export function createSimRouterAccountErasureAdapter(options: SimAccountErasureO
     },
     async erase(actor, context) {
       requireActor(actor, options.issuer); const op = requireOperation(context.operationId), signal = client.signal(context.signal);
-      try { if (!await client.capability(signal) || !await client.identity(actor, signal)) return pending();
-        const response = await client.request("", signal, actor, op, { contractVersion: VERSION, operationId: op });
+      try { if (!await client.authority(signal)) return pending(); const identity = await client.identity(actor, signal); if (!identity) return pending();
+        const existing = await routerOperation(client, actor, op, signal);
+        if (!await client.capability(signal, existing)) return pending();
+        const body = { contractVersion: VERSION, operationId: op };
+        const checked = await client.request("/preflight", signal, actor, op, body), probe = client.validateProbe(checked.value, true);
+        if (checked.status !== 200 || !("operationId" in probe) || probe.operationId !== op || !client.resumeProbe(probe, true) || !existing && !probe.enabled) return pending();
+        if (!await client.authority(signal) || await client.identity(actor, signal) !== identity) return pending();
+        const response = await client.request("", signal, actor, op, body);
         if (!await client.authority(signal)) return pending(); return routerProof(response.status, response.value, op, hash([options.issuer, client.routerId(actor)]));
       } catch { return pending(); }
     }
@@ -192,8 +232,19 @@ export function createSimMeasurementsAccountErasureAdapter(options: SimMeasureme
   return {
     id: "sim_measurements",
     async ready() { if (!bound.inventory || !bound.reviewExistingIdentity) return false; try { return await client.capability(client.signal()); } catch { return false; } },
+    async readyForAcceptedOperation(actor, context) {
+      requireActor(actor, bound.issuer); const op = requireOperation(context.operationId, true), signal = client.signal(context.signal);
+      try {
+        if (!await client.authority(signal) || !await client.identity(actor, signal)) return false;
+        const snapshot = await manifest(bound, client, actor, op, signal);
+        if (!snapshot.existing || !await client.capability(signal, true)) return false;
+        const checked = await client.request("/preflight", signal, actor, op, snapshot.body), probe = driverPreflight.parse(checked.value); client.validateProbe(probe, true);
+        return checked.status === 200 && probe.operationId === op && client.resumeProbe(probe) && probe.contributorCount === snapshot.body.contributors.length &&
+          probe.coverageAnchor.kind === "first_accepted_at" && probe.coverageAnchor.at === snapshot.anchorAt;
+      } catch { return false; }
+    },
     async preflight(actor, context) {
-      requireActor(actor, bound.issuer); if (!context.operationId) return unavailable(); const op = requireOperation(context.operationId), signal = client.signal(context.signal);
+      requireActor(actor, bound.issuer); if (!context.operationId) return unavailable(); const op = requireOperation(context.operationId, true), signal = client.signal(context.signal);
       try { if (!await client.capability(signal)) return unavailable(); const identity = await client.identity(actor, signal); if (!identity) return unavailable();
         const snapshot = await manifest(bound, client, actor, op, signal), response = await client.request("/preflight", signal, actor, op, snapshot.body);
         const value = driverPreflight.parse(response.value); client.validateProbe(value, true);
@@ -204,10 +255,19 @@ export function createSimMeasurementsAccountErasureAdapter(options: SimMeasureme
       } catch { return unavailable(); }
     },
     async erase(actor, context) {
-      requireActor(actor, bound.issuer); const op = requireOperation(context.operationId), signal = client.signal(context.signal);
-      try { if (!await client.capability(signal) || !await client.identity(actor, signal)) return pending(); const snapshot = await manifest(bound, client, actor, op, signal);
+      requireActor(actor, bound.issuer); const op = requireOperation(context.operationId, true), signal = client.signal(context.signal);
+      try { if (!await client.authority(signal)) return pending(); const identity = await client.identity(actor, signal); if (!identity) return pending();
+        const snapshot = await manifest(bound, client, actor, op, signal);
+        if (!await client.capability(signal, snapshot.existing)) return pending();
+        const checked = await client.request("/preflight", signal, actor, op, snapshot.body), probe = driverPreflight.parse(checked.value); client.validateProbe(probe, true);
+        if (checked.status !== 200 || probe.operationId !== op || !client.resumeProbe(probe) || !snapshot.existing && !probe.enabled ||
+            probe.contributorCount !== snapshot.body.contributors.length || probe.coverageAnchor.kind !== (snapshot.existing ? "first_accepted_at" : "checked_at") ||
+            probe.coverageAnchor.at !== (snapshot.existing ? snapshot.anchorAt : probe.checkedAt)) return pending();
+        if (!await client.authority(signal) || await client.identity(actor, signal) !== identity) return pending();
         const response = await client.request("", signal, actor, op, snapshot.body);
-        if (!await client.authority(signal)) return pending(); return measurementProof(response.status, response.value, op, snapshot.body.contributors.length, hash([bound.issuer, client.routerId(actor), snapshot.body]));
+        if (!await client.authority(signal)) return pending();
+        const receipt = driverReceipt.parse(response.value); if (snapshot.existing && receipt.acceptedAt !== snapshot.anchorAt) return pending();
+        return measurementProof(response.status, receipt, op, snapshot.body.contributors.length, hash([bound.issuer, client.routerId(actor), snapshot.body]));
       } catch { return pending(); }
     }
   };

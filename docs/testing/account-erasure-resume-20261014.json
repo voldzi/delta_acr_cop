@@ -1,0 +1,41 @@
+{
+  "contractVersion": "cop-account-erasure-followup-evidence-v1",
+  "date": "2026-10-14",
+  "baseRevision": "e2f896c39411ded3b82411eca54bb11129acb679",
+  "productionDeployed": false,
+  "productionErasureActivated": false,
+  "jointSimHandlerAcceptance": false,
+  "realAccountsDeleted": 0,
+  "externalModelCalls": 0,
+  "fullSuite": {
+    "passed": 2393,
+    "failed": 0,
+    "skipped": 8,
+    "files": 243,
+    "actualErasureDatabaseCasesSkipped": 0,
+    "reportSha256": "7f3c1cd66e7bff8c7fde0dd6739d0a88b01ba98b06f024deaffe6c11658d5cb2"
+  },
+  "additionalGates": {
+    "simAdapterAndControllerTests": 75,
+    "newBuildContextTests": 17,
+    "existingRuntimeFaultRegression": 53,
+    "apiTypecheck": "pass",
+    "changedApiLint": "pass",
+    "bashSyntax": "pass",
+    "skeleton": "pass"
+  },
+  "sourceSha256": {
+    "apps/cop-api/src/account-erasure-preflight.test.ts": "e848d77c5418d49b24ae772fd038f76d9ef7bc15f68f78d1bb8cfe4587cb3021",
+    "apps/cop-api/src/account-erasure.ts": "57fdd98aafa528753df8e328b23fa78f052b47561292401f31e6d3973e7dec04",
+    "apps/cop-api/src/sim-account-erasure.test.ts": "3563f068485ba03a34a96760666d0c140c062308b3e8d5e45473b6b577bfd0f0",
+    "apps/cop-api/src/sim-account-erasure.ts": "75e4bfde21c8e3ece5f6853e44c13c6158ba8c5504cee6bb14467201e04dfe2d",
+    "scripts/cop-api-build-context.py": "c67d19ee3f26cf7afa6ae428bf9af60b422bb08ed376f2eaf72a9b23d744e7f6",
+    "scripts/deploy-production.sh": "4691bfc42907ec14c791a623884f30ee11b2d4ad9c89d504be77fec234a2652e",
+    "scripts/tests/test-cop-api-build-context.py": "ad2ab4df3ea541fa7a2815d867e70dabc2aa0dce89450a5c8a6bb4535146d815"
+  },
+  "remaining": [
+    "actual COP adapter to new SIM Express handler pair test",
+    "native authority and scoped provider acceptance",
+    "fresh image/profile source acceptance and deployment"
+  ]
+}
