@@ -1,0 +1,81 @@
+{
+  "scope": "web_only_canonical_account_identity_before_erasure",
+  "sourceBase": "8603c890a813f07598e1c063f0c568223a6964e4",
+  "canonicalContract": "cop-account-profile-v1",
+  "canonicalPath": "/api/v1/me/profile",
+  "identityBinding": [
+    "pinned_issuer",
+    "current_session_subject",
+    "displayed_name_email_emailVerified"
+  ],
+  "readbackStages": [
+    "initial",
+    "before_preflight",
+    "after_preflight",
+    "before_confirmation_post"
+  ],
+  "storage": "operation_uuid_only_after_confirm_checks_pass; profile_and_bound_plan_ram_only",
+  "tests": {
+    "targetedTransportAndDom": {
+      "pass": 21,
+      "fail": 0,
+      "skip": 0
+    },
+    "withServiceWorkerRegression": {
+      "pass": 44,
+      "fail": 0,
+      "skip": 0
+    }
+  },
+  "verification": {
+    "webTypecheck": "PASS",
+    "scopedEslint": "PASS",
+    "scopedPrettier": "PASS",
+    "diffCheck": "PASS"
+  },
+  "notVerified": [
+    "real_browser_authenticated_session",
+    "production_runtime",
+    "real_account_erasure"
+  ],
+  "productionChanged": false,
+  "backendContractChanged": false,
+  "nativeSdkChanged": false,
+  "commitOrPushPerformed": false,
+  "files": [
+    {
+      "path": "apps/cop-web/src/AccountDeletionPage.tsx",
+      "sha256": "14a1c36476b97046c236a5cb41409b702bf876fa425de7a016feddc28aaacdab"
+    },
+    {
+      "path": "apps/cop-web/src/account-deletion-api.ts",
+      "sha256": "9c4cafbfdf152837f005cb06c5a390886f4e6f1231fc7e64deebc5edcb1c9269"
+    },
+    {
+      "path": "apps/cop-web/src/AccountDeletionPage.test.tsx",
+      "sha256": "0b2ff8b9a9b4093373146278d66de6c5799e314fa1b7e1a75fba321457a87b91"
+    },
+    {
+      "path": "apps/cop-web/src/account-deletion-api.test.ts",
+      "sha256": "23a0d28326f76ba0ff630729a94ee1b9d5776720ed6bc396c5e23a1975e9be85"
+    }
+  ],
+  "identityDisplay": "canonical name/email; unverified email explicitly labeled; exact subject in details also with email; subject shown directly without email",
+  "commands": [
+    "/Users/voldzi/.local/share/mise/installs/node/24.21.0/bin/node node_modules/vitest/vitest.mjs run apps/cop-web/src/account-deletion-api.test.ts apps/cop-web/src/AccountDeletionPage.test.tsx apps/cop-web/src/pwa-service-worker.test.ts",
+    "/Users/voldzi/.local/share/mise/installs/node/24.21.0/bin/node node_modules/typescript/bin/tsc -b apps/cop-web/tsconfig.json --pretty false",
+    "/Users/voldzi/.local/share/mise/installs/node/24.21.0/bin/node node_modules/eslint/bin/eslint.js apps/cop-web/src/account-deletion-api.ts apps/cop-web/src/account-deletion-api.test.ts apps/cop-web/src/AccountDeletionPage.tsx apps/cop-web/src/AccountDeletionPage.test.tsx --max-warnings=0",
+    "/Users/voldzi/.local/share/mise/installs/node/24.21.0/bin/node node_modules/prettier/bin/prettier.cjs --check apps/cop-web/src/account-deletion-api.ts apps/cop-web/src/account-deletion-api.test.ts apps/cop-web/src/AccountDeletionPage.tsx apps/cop-web/src/AccountDeletionPage.test.tsx",
+    "git diff --check"
+  ],
+  "rootReview": {
+    "canonicalProfileSource": "apps/cop-api/src/cop-account-profile.ts",
+    "webProductionBuild": "PASS",
+    "bundleBudgets": "PASS",
+    "skeleton": "PASS",
+    "publicAnalytics": "PASS",
+    "buildAdvisory": "existing_Cesium_chunk_warning",
+    "realBrowserAuthenticatedSession": false,
+    "productionChanged": false
+  }
+}

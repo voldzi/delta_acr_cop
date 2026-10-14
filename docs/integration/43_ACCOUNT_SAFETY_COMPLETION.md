@@ -60,6 +60,16 @@ identity-delete acceptance. See [ADR0053](../adr/0053_COP_ERASURE_PRESERVES_SHAR
 
 New private `/account/delete` does not mount the map/producers. It shows account,
 scope, blockers, an unchecked confirmation, pending owners and final receipt.
+The web account is read from the existing authenticated
+`GET /api/v1/me/profile` (`cop-account-profile-v1`), checked against the current
+session subject and configured issuer, and kept only in RAM. The page shows the
+canonical name/email, labels an unverified email, and exposes the exact subject
+ID even when two accounts have the same name/email. It rechecks the displayed
+identity before and after preflight and immediately before confirmation. A
+changed identity clears the plan and sends no confirmation or receipt-recovery
+request. The backend still binds the plan to the actual actor on the POST;
+browser checks do not replace that authorization. Only the operation UUID is
+stored after the non-destructive checks have passed.
 Lost confirmation responses recover the same operation. Local browser credentials
 clear after confirmed revocation; another phone's local deletion is not implied.
 Service worker never supplies the cached map shell for this page. Analytics
@@ -110,10 +120,14 @@ Queued writes and ownership created after initial preflight cannot slip through.
 
 ## Actual external/production gates
 
-SIM published implementation is frozen at
+SIM's initial published implementation was
 [`68e96e7`](https://github.com/voldzi/delta_acr_sim/tree/68e96e7ec19cbbd99b08c0eac865016082521186).
-Its 586 application tests, 40 actual PostgreSQL18.3 cases and 62 contract cases
-passed; six unrelated legacy PostgreSQL cases were skipped in the unit run.
+Its subsequent tested application source is
+[`7bd5a63`](https://github.com/voldzi/delta_acr_sim/tree/7bd5a6381006810c7a4bf3ffa51d13e3b63a61ed),
+with documentation-only HEAD
+[`fe0eec5`](https://github.com/voldzi/delta_acr_sim/tree/fe0eec57f7a3b5266b6b88d6b8498b180114b16c).
+SIM reported 591 application tests, 41 actual PostgreSQL18.3 cases and 70
+contract cases passed; six unrelated legacy PostgreSQL cases were skipped in the unit run.
 Typecheck, build and skeleton passed. It is not deployed: actual independently
 owned per-principal admission/drain/commit and completed-history restore replay
 are still required. A healthy runtime or signed TTL document cannot replace
@@ -210,6 +224,15 @@ coverage or production account removal. Actual shared SIM login/refresh after
 scoped revoke, physical whole-account use, native restore quarantine and
 completed-history replay acceptance remain unverified. No real account was
 used or removed; no OpenAI call was needed.
+
+The separate web identity follow-up passed 44 targeted transport/DOM/service
+worker cases, with no failures or skips; web typecheck, scoped lint/format,
+web production build, bundle budgets, skeleton and public analytics checks
+passed. The build retains the existing Cesium chunk advisory. API behavior,
+OpenAPI, native SDK and production were unchanged by this follow-up. This is
+not a real-browser login or real-account deletion acceptance. Exact source file
+hashes and commands are in
+[testing/account-erasure-web-identity-20261014.json](../testing/account-erasure-web-identity-20261014.json).
 
 The X5 build-only source option now supports a separately provisioned, clean
 root-owned read-only detached COP checkout with an explicit exact source pin.

@@ -1,12 +1,21 @@
 import { useEffect, useState } from "react";
-import { beginLogin, forgetLocalAuthSession, initializeAuth, readAuthConfig, type AuthSession } from "./auth";
+import {
+  beginLogin,
+  forgetLocalAuthSession,
+  initializeAuth,
+  readAuthConfig,
+  type AuthConfig,
+  type AuthSession
+} from "./auth";
 import {
   confirmDeletion,
   deletionAvailable,
   DeletionRequestError,
   prepareDeletion,
   readDeletionReceipt,
-  type DeletionPreflight,
+  readDeletionIdentity,
+  type BoundDeletionPreflight,
+  type DeletionIdentity,
   type DeletionReceipt
 } from "./account-deletion-api";
 import "./account-deletion.css";
@@ -44,7 +53,9 @@ function saveOperation(value?: string) {
 export default function AccountDeletionPage() {
   const [session, setSession] = useState<AuthSession>(),
     [available, setAvailable] = useState<boolean>(),
-    [plan, setPlan] = useState<DeletionPreflight>();
+    [plan, setPlan] = useState<BoundDeletionPreflight>(),
+    [identity, setIdentity] = useState<DeletionIdentity>(),
+    [config] = useState<AuthConfig>(readAuthConfig);
   const [tracking, setTracking] = useState(storedOperation),
     [receipt, setReceipt] = useState<DeletionReceipt>();
   const [busy, setBusy] = useState(true),
@@ -54,14 +65,25 @@ export default function AccountDeletionPage() {
   useEffect(() => {
     if (tracking) return;
     let live = true;
-    void initializeAuth(readAuthConfig())
+    void initializeAuth(config)
       .then(async (current) => {
         if (!live) return;
         setSession(current);
-        if (current.status === "authenticated") setAvailable(await deletionAvailable(current));
+        if (current.status === "authenticated") {
+          const account = await readDeletionIdentity(current, config);
+          if (!live) return;
+          setIdentity(account);
+          const enabled = await deletionAvailable(current);
+          if (live) setAvailable(enabled);
+        }
       })
-      .catch(() => {
-        if (live) setError("Dostupnost odstranění účtu nyní nelze ověřit. Zkuste to znovu později.");
+      .catch((cause: unknown) => {
+        if (live)
+          setError(
+            cause instanceof DeletionRequestError && cause.code === "ACCOUNT_IDENTITY_CHANGED"
+              ? "Webově přihlášený účet se změnil. Obnovte stránku a znovu zkontrolujte účet; požadavek jsme nezahájili."
+              : "Dostupnost odstranění účtu nyní nelze ověřit. Zkuste to znovu později."
+          );
       })
       .finally(() => {
         if (live) setBusy(false);
@@ -69,7 +91,7 @@ export default function AccountDeletionPage() {
     return () => {
       live = false;
     };
-  }, [tracking]);
+  }, [tracking, config]);
   useEffect(() => {
     if (!tracking) return;
     let live = true,
@@ -117,21 +139,27 @@ export default function AccountDeletionPage() {
   const failure = (cause: unknown) => {
     const needsFresh = cause instanceof DeletionRequestError && cause.code === "FRESH_AUTH_REQUIRED";
     setFresh(needsFresh);
+    setPlan(undefined);
+    setConfirmed(false);
     setError(
-      needsFresh
-        ? "Pro odstranění účtu je potřeba nové přihlášení."
-        : "Odstranění nyní nelze potvrdit. Nic nepovažujeme za smazané; znovu zkontrolujte podmínky."
+      cause instanceof DeletionRequestError && cause.code === "ACCOUNT_IDENTITY_CHANGED"
+        ? "Webově přihlášený účet nebo jeho údaje se změnily. Nic jsme nepotvrdili. Obnovte stránku a znovu zkontrolujte účet."
+        : needsFresh
+          ? "Pro odstranění účtu je potřeba nové přihlášení."
+          : "Odstranění nyní nelze potvrdit. Nic nepovažujeme za smazané; znovu zkontrolujte podmínky."
     );
   };
   const prepare = async () => {
-    if (!session) return;
+    if (!session || !identity) return;
     setBusy(true);
     setError(undefined);
     setConfirmed(false);
     setPlan(undefined);
     try {
-      setPlan(await prepareDeletion(session, crypto.randomUUID()));
+      setPlan(await prepareDeletion(session, crypto.randomUUID(), identity, config));
     } catch (cause) {
+      setIdentity(undefined);
+      setAvailable(undefined);
       failure(cause);
     } finally {
       setBusy(false);
@@ -141,13 +169,22 @@ export default function AccountDeletionPage() {
     if (!session || !plan || !confirmed) return;
     setBusy(true);
     setError(undefined);
-    saveOperation(plan.operationId);
+    let submitted = false;
     try {
-      const current = await confirmDeletion(session, plan);
+      const current = await confirmDeletion(session, plan, config, () => {
+        submitted = true;
+        saveOperation(plan.operationId);
+      });
       setReceipt(current);
       setTracking(plan.operationId);
       forgetLocalAuthSession();
     } catch (cause) {
+      if (!submitted) {
+        setIdentity(undefined);
+        setAvailable(undefined);
+        failure(cause);
+        return;
+      }
       // A lost response may follow an accepted fence. Recover through its exact
       // cookie-bound receipt before offering any new destructive operation.
       try {
@@ -205,13 +242,38 @@ export default function AccountDeletionPage() {
           </button>
         ) : (
           <>
-            <p>
-              Přihlášený účet: <strong>{session.profile?.name ?? session.profile?.username ?? "COP"}</strong>
-            </p>
+            {identity ? (
+              <div aria-label="Ověřený webový účet">
+                <p>
+                  Webově přihlášený účet: <strong>{identity.displayName}</strong>
+                </p>
+                <p>
+                  {identity.email ? (
+                    <>
+                      E-mail{identity.emailVerified ? "" : " (neověřený)"}: <strong>{identity.email}</strong>
+                    </>
+                  ) : (
+                    <>
+                      ID účtu: <strong>{identity.subjectId}</strong>
+                    </>
+                  )}
+                </p>
+                {identity.email && (
+                  <details>
+                    <summary>Rozlišovací ID účtu</summary>
+                    <p className="deletion-operation">{identity.subjectId}</p>
+                  </details>
+                )}
+                <p>Odstranění se týká tohoto webového účtu. Zkontrolujte jej i při příchodu z Jízdy nebo COP Mobile.</p>
+              </div>
+            ) : (
+              <p>Aktuální webový účet není ověřený. Obnovte stránku před další kontrolou.</p>
+            )}
             {available === false ? (
               <p>Odstranění celého účtu zatím není dostupné. Požadavek jsme nezahájili.</p>
             ) : (
-              available === true && (
+              available === true &&
+              identity && (
                 <>
                   <p>
                     Vaše příspěvky a osobní vazby budou odstraněny. Záznamy ostatních lidí zůstanou. Vlastněná sdílená
@@ -249,8 +311,8 @@ export default function AccountDeletionPage() {
                           checked={confirmed}
                           onChange={(event) => setConfirmed(event.target.checked)}
                         />{" "}
-                        Rozumím, že nevratně odstraním účet COP/Jízdy a své příspěvky. Přihlášení do SIM zůstane
-                        zachováno.
+                        Rozumím, že nevratně odstraním účet COP/Jízdy {identity.email ?? identity.subjectId} a své
+                        příspěvky. Přihlášení do SIM zůstane zachováno.
                       </label>
                       <button
                         type="button"
