@@ -288,7 +288,7 @@ acceptance remain open. See [the companion source review](../testing/account-saf
 
 ## Verification / release
 
-Latest candidate verification on 2026-10-14 used clean documentation HEAD
+Full-suite baseline verification on 2026-10-14 used clean documentation HEAD
 `4a1154146b1cd99daedb7e18956fd1c65fc2021b`, with unchanged application
 implementation `898cd5132f513259b226d5beff5c3876156b56e7`:
 **2,429 reconciled passed cases, zero remaining failures, eight older opt-in
@@ -430,7 +430,21 @@ authority, physical device or production acceptance is inferred. Exact source
 pins and commands are in
 [testing/account-erasure-legacy-bff-refresh-20261014.json](../testing/account-erasure-legacy-bff-refresh-20261014.json).
 
-Deploy reviewed immutable source with intakefalse first. Activate only after
+The combined follow-up is published at application source
+`b5c154b8a492d4f5578f4a369677c6c693160494`. COP root independently reviewed
+the implementation, verified all ten frozen source/document pins, checked the
+actual 44-case console report hash and summary, and observed the owned cluster
+directory absent after cleanup. It did not rerun these tests. The older
+2,429-case reconciled full-suite result belongs to `898cd51`, not this new
+source; counts are not added. See [the release review](../testing/account-erasure-legacy-bff-release-20261014.json).
+
+Before first acceptance, a dormant staging deployment must keep intake false,
+add no erasure secret or required-guard/runtime binding, and verify there are
+no previously accepted jobs or guard markers. Intake false alone does not
+disable recovery workers when an erasure service is configured. After first
+acceptance, preserve the existing secrets and guard bindings even with intake
+false; never use this initial dormant profile as a rollback bypass.
+Activate only after
 actual two-synthetic-account owner/readback/restore acceptance and native binding
 of exact source/image/store. After first accepted deletion preserve keys/fences/
 checkpoints through rollback. Never run an old unguarded binary or expose restored

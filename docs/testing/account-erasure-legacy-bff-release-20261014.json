@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-10-14 12:11:37 UTC",
+  "applicationSource": "b5c154b8a492d4f5578f4a369677c6c693160494",
+  "applicationTree": "fe33f4fb1a86caeae789ffbe7a4a60f6d8e0b34e",
+  "previousApplicationSource": "898cd5132f513259b226d5beff5c3876156b56e7",
+  "scope": "additive_restore_owner_composition_and_legacy_BFF_refresh",
+  "rootSourceReview": "PASS_no_remaining_concrete_P1_P2",
+  "rootSourcePinsVerified": 10,
+  "agentReceipt": {
+    "path": "docs/testing/account-erasure-legacy-bff-refresh-20261014.json",
+    "sha256": "5e603a9b7e7dc2e52b25db2391b6ca472daf2d54a3bee4691f051387c7ef6bea",
+    "sourceCommit": "b5c154b8a492d4f5578f4a369677c6c693160494"
+  },
+  "rawTestReport": {
+    "path": "/private/tmp/cop-legacy-bff-pg-tests-20261014.txt",
+    "format": "Vitest_console_text",
+    "sha256": "24e1acc9b4b60b70498a6a856a81857b660ebdbebcfa82fb1e86760885a0ef59",
+    "rootHashAndSummaryReadback": "PASS",
+    "passed": 44,
+    "failed": 0,
+    "skipped": 0,
+    "files": 7,
+    "actualPostgresCases": 5,
+    "rerunByRoot": false
+  },
+  "testCluster": {
+    "unixOnly": true,
+    "agentObservedStopExit": 0,
+    "rootObservedOwnedDirectoryAbsent": true,
+    "existingOtherClusterUsed": false
+  },
+  "historicalFullSuite": {
+    "applicationSource": "898cd5132f513259b226d5beff5c3876156b56e7",
+    "passed": 2429,
+    "skipped": 8,
+    "reconciledMultipleRuns": true,
+    "notCurrentApplicationFullSuite": true,
+    "newTargetedCasesAddedToHistoricalCount": false
+  },
+  "configurationChanged": false,
+  "publicApiChangedByFollowup": false,
+  "actualNativeAuthorityAccepted": false,
+  "actualProviderOrRestoreAccepted": false,
+  "productionDeployed": false,
+  "productionErasureActivated": false,
+  "realAccountDeleted": false
+}
