@@ -1,0 +1,13 @@
+{
+  "nativeAuthority": false,
+  "originalPinsSha256": "d8e34133198d774c30e02534056064ddbfdcae2a25d91c22cf3feae23cdbe569",
+  "productionRootCompositionAccepted": false,
+  "sha256": {
+    "FOLLOWUP-QUALIFICATION.md": "c9f79cf44482d6af4cad877e1b6985909cb43519a75787dc0f84e6524d3186e4",
+    "OUTER-SEAL-PATCH.patch": "8666cd2ce45447e1ff5a26fcc1bf82e5caa5df58c79dad7492abe2091845044d",
+    "outer-seal-proof.json": "392697864259f2b7a4780f35268b5f1f98c0b64fae7b06b20e7bdbec6b2a2989",
+    "owned-outer-seal-run.log": "e176b6b2dfbfa1e7f516f5ae390d69ad64e6cd2734a96899249b8afa4840f83f",
+    "test_outer_seal_pg.py": "da6d61e04e86b150002a6948a63b1f3e1a154a1d59c437896ffecb3d532411f7"
+  },
+  "status": "OWNED_OUTER_SEAL_QUALIFICATION_NOT_NATIVE_ACCEPTANCE"
+}

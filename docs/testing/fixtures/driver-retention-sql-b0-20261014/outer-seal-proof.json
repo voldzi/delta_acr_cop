@@ -1,0 +1,52 @@
+{
+  "actualAuthority": false,
+  "containerName": "cop-retention-outer-seal-b0-20261014",
+  "facts": {
+    "committedControlSealReadBack": true,
+    "controlTransactionRolledBack": true,
+    "finalOriginCommitKnown": true,
+    "freshReadbackStillClaimed": true,
+    "innerJsonReportedNoEffect": true,
+    "lateOriginDeniedAfterDurableSeal": true,
+    "originalExecutedAfterControlRollback": true
+  },
+  "frozenInputsUnchanged": true,
+  "image": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+  "inputPins": {
+    "candidate.sql": "40a486bc72046291ad2287a489d3688a1f2d2bbbb53f4d7202c6192de91af8cf",
+    "test_owned_pg.py": "17f228af8fed4735bbec52259b212ddd98302db4dd7e85cc92385c85d186f72e"
+  },
+  "isolation": {
+    "globalDockerContextChanged": false,
+    "mountTypes": [],
+    "networkMode": "none",
+    "ports": {},
+    "readOnlyRootfs": true,
+    "tmpfsPaths": [
+      "/tmp",
+      "/var/lib/postgresql",
+      "/var/run/postgresql"
+    ]
+  },
+  "nativeDeliveryAccepted": false,
+  "ownedContainerRemoved": true,
+  "productionRootCompositionAccepted": false,
+  "result": {
+    "errors": 0,
+    "failures": 0,
+    "run": 1,
+    "success": true
+  },
+  "scope": "ONE_OWNED_PG_OUTER_CONTROL_TRANSACTION_QUALIFICATION_ONLY",
+  "sourcePins": {
+    "candidate.sql": "40a486bc72046291ad2287a489d3688a1f2d2bbbb53f4d7202c6192de91af8cf",
+    "test_outer_seal_pg.py": "da6d61e04e86b150002a6948a63b1f3e1a154a1d59c437896ffecb3d532411f7",
+    "test_owned_pg.py": "17f228af8fed4735bbec52259b212ddd98302db4dd7e85cc92385c85d186f72e"
+  },
+  "volumes": {
+    "addedCount": 0,
+    "afterCount": 29,
+    "beforeCount": 29,
+    "removedCount": 0
+  }
+}

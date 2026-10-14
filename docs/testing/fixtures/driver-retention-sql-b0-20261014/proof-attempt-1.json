@@ -1,0 +1,45 @@
+{
+  "actual": {
+    "deliveryAccepted": false,
+    "nativeAuthority": false,
+    "nativeRpc": false,
+    "policyAccepted": false,
+    "producerAccepted": false,
+    "productionInstall": false,
+    "productionRootOriginComposition": false,
+    "realDataUsed": false,
+    "restoreAccepted": false,
+    "rootCustody": false,
+    "storeContinuityAccepted": false
+  },
+  "containerName": "cop-retention-xid-b0-20261014",
+  "fatal": "psql: error: connection to server on socket \"/var/run/postgresql/.s.PGSQL.5432\" failed: No such file or directory\n\tIs the server running locally and accepting connections on that socket?",
+  "image": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+  "isolation": {
+    "globalDockerContextChanged": false,
+    "mountTypes": [],
+    "networkMode": "none",
+    "ports": {},
+    "privileged": false,
+    "readOnlyRootfs": true,
+    "tmpfsPaths": [
+      "/tmp",
+      "/var/lib/postgresql",
+      "/var/run/postgresql"
+    ]
+  },
+  "ownedContainerRemoved": true,
+  "sourcePins": {
+    "candidate.sql": "40a486bc72046291ad2287a489d3688a1f2d2bbbb53f4d7202c6192de91af8cf",
+    "test_owned_pg.py": "d263b6e257d0c6758362e6dc29240a8ff6926641269179e657c55eb75c99b83a"
+  },
+  "sourceUnchangedDuringRun": true,
+  "status": "OWNED_MECHANICAL_SQL_FIXTURE_ONLY",
+  "tests": [],
+  "volumes": {
+    "addedCount": 0,
+    "afterCount": 29,
+    "beforeCount": 29,
+    "removedCount": 0
+  }
+}

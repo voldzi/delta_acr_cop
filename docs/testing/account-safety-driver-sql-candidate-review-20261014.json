@@ -1,0 +1,66 @@
+{
+  "recordType": "cop-independent-driver-retention-sql-candidate-review-v1",
+  "date": "2026-10-14",
+  "status": "MECHANICAL_SQL_SOURCE_GATE_ONLY_NOT_NATIVE_OR_PRODUCTION_ACCEPTANCE",
+  "sourceDirectory": "fixtures/driver-retention-sql-b0-20261014",
+  "sqlSha256": "40a486bc72046291ad2287a489d3688a1f2d2bbbb53f4d7202c6192de91af8cf",
+  "patchSha256": "31a73bac86febf7eb103469520e58ad8a7963a6353c3b39c1af2cf17b3200a25",
+  "sourcePinsManifestSha256": "d8e34133198d774c30e02534056064ddbfdcae2a25d91c22cf3feae23cdbe569",
+  "proof9Sha256": "5e65ff2cbf148ef4957c60325a72dc9ee77e0aba004cd56c7f0a3ace9ec68006",
+  "outerSealProof1Sha256": "392697864259f2b7a4780f35268b5f1f98c0b64fae7b06b20e7bdbec6b2a2989",
+  "rootReview": "Selected full SQL source read; all two-manifest source/evidence pins verified; results and cleanup read back. Tests executed by root child, not rerun by parent.",
+  "tests": {
+    "primary": {
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0
+    },
+    "separateOuterSealFollowup": {
+      "passed": 1,
+      "failed": 0
+    },
+    "countsNotAddedToExistingCopOrSimSuites": true
+  },
+  "postgresVersion": "18.6",
+  "preparedTransactions": 0,
+  "verifiedScope": [
+    "17 raw DML/role bypass statements denied",
+    "once-only immutable actual transaction claim",
+    "four effects and marker atomic",
+    "new transaction cannot reuse original claim after rollback",
+    "seal blocks late original while backend still alive",
+    "held executor lock keeps sealer pending",
+    "ignored controller COMMIT acknowledgement resolves by readback only; not a packet loss test",
+    "stored cutoff preserves later rows",
+    "control seal must COMMIT and fresh readback before terminal publication"
+  ],
+  "qualifiedGaps": [
+    "Actual Root-controlled origin/control connections, native execution/delivery and custody are not implemented or accepted. A caller-selected backend/XID is not that channel.",
+    "The source uses simplified dedicated fixture tables and LOGIN roles; it is not a production migration or exact installed schema proof.",
+    "Fixed whole-namespace protection, actual schema/writer/protection generation and four actual refs are unaccepted.",
+    "Revocation source seam lacks current contributor/batch/global fence admission and stores contributor hash; privacy, retention and actual account-unlink still need separate acceptance.",
+    "Function-returned terminal JSON is an inner SQL observation until actual outer COMMIT and fresh readback. It is not an opaque independently resolved Root outcome reference.",
+    "Exact-origin no-effect closure is distinct from backend/socket close and full owner-wide drain/replay."
+  ],
+  "isolation": {
+    "image": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+    "network": "none",
+    "bindsPortsVolumes": false,
+    "ownedContainersRemoved": true,
+    "dockerVolumesBeforeAfter": [
+      29,
+      29
+    ],
+    "globalDockerContextChanged": false,
+    "pullBuildInstallOrPrune": false
+  },
+  "actual": {
+    "sourceSdkAccepted": false,
+    "nativeProducerAccepted": false,
+    "policyAccepted": false,
+    "storeContinuityAccepted": false,
+    "restoreAccepted": false,
+    "productionChanged": false,
+    "realAccountDeleted": false
+  }
+}

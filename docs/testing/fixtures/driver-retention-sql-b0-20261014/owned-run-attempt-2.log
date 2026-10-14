@@ -1,0 +1,15 @@
+test_01_runtime_delete_marker_and_role_bypasses_denied (__main__.MechanicalStoreTests.test_01_runtime_delete_marker_and_role_bypasses_denied) ... ok
+test_02_claim_once_and_immutable_binding (__main__.MechanicalStoreTests.test_02_claim_once_and_immutable_binding) ... ok
+test_03_commit_marker_and_four_effects_share_transaction (__main__.MechanicalStoreTests.test_03_commit_marker_and_four_effects_share_transaction) ... ok
+test_04_rollback_then_new_xid_cannot_reuse_claim (__main__.MechanicalStoreTests.test_04_rollback_then_new_xid_cannot_reuse_claim) ... ok
+test_05_seal_denies_late_original_while_transaction_alive (__main__.MechanicalStoreTests.test_05_seal_denies_late_original_while_transaction_alive) ... ok
+test_06_active_executor_lock_keeps_sealer_pending (__main__.MechanicalStoreTests.test_06_active_executor_lock_keeps_sealer_pending) ... ok
+test_07_ambiguous_commit_uses_readback_without_reexecution (__main__.MechanicalStoreTests.test_07_ambiguous_commit_uses_readback_without_reexecution) ... ok
+test_08_missing_origin_unknown_and_future_cutoff_excluded (__main__.MechanicalStoreTests.test_08_missing_origin_unknown_and_future_cutoff_excluded) ... ok
+test_09_revocation_source_seam_is_contributor_bounded (__main__.MechanicalStoreTests.test_09_revocation_source_seam_is_contributor_bounded) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 5.050s
+
+OK
+{"fatal": null, "ownedContainerRemoved": true, "proof": "/private/tmp/cop-driver-retention-xid-b0-20261014/proof.json", "result": {"errors": 0, "failures": 0, "run": 9, "skipped": 0, "success": true}}

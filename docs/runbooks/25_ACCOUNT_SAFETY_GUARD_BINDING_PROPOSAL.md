@@ -86,6 +86,71 @@ before `cop-storage.py` import. Actual authority, custody, installation and
 store/replay/restore acceptance remain unverified; this source review grants no
 production permission.
 
+### Driver maintenance source selection
+
+COP's 14 October response selects one concrete source design for joint SIM/infra
+review, recorded in [the source decision](../testing/account-safety-driver-source-decision-review-20261014.json).
+This is not an accepted native ABI, policy, installed SDK or runtime authority.
+The internal V2 context carries the full immutable origin; the proposed measurement
+store origin channel registers a durable original transaction, serializes its fixed
+executor with the Root-owned resolver/sealer, and commits both DELETE/cascade
+effects with its protected marker.
+Existing or uncertain origins permit probing only. A seal proves no effects
+only with a non-bypassable execution gate covering every original path; metadata
+or an application if alone cannot establish that. Marker absence is not abort.
+The existing direct DELETE privilege on all four tables is a concrete bypass: the
+source candidate must close it and preserve legitimate revoke/erasure through
+bounded owner functions. Root-controlled SQL connections and one immutable xid8
+claim are being reviewed; they are not an accepted producer or runtime channel.
+Exact-origin effect quiescence is distinct from a synchronous connection release
+and from complete owner-wide drain/replay.
+
+The selected minimum is a one-shot Root-delivered operation with
+`init/runOnce/close`, without the current periodic start. The fixed COP namespace
+expiration plan requires an independently accepted all-scope no-retain/report
+protection decision covering receipts, revocations, intervals and ETA, including
+historical routing datasets. If that decision cannot be accepted, the plan stays
+denied; selective filtering requires a different store-owned plan.
+
+The proposed carrier is an in-process Node-API addon using SEQPACKET and
+per-message kernel credentials/pidfd on both sides. Linux6.12 pidfs matching is
+a source inference requiring actual target tests; no STREAM or peer-credentials-only
+fallback is selected. Current registration/grant, fixed execution custody and
+Root operation delivery remain separate unimplemented gates. No continuous
+process/executable liveness proof through external SQL COMMIT is required.
+Actual store/schema, restricted routines, five-method V2 ABI, consumer/producer,
+keys, grants, independent anchor and restoration remain unaccepted. This source
+selection performs no migration, allocation, installation or production change.
+
+### Concrete owned PostgreSQL source candidate
+
+The selected mechanical database portion now has a pinned
+[SQL/test source patch](../testing/fixtures/driver-retention-sql-b0-20261014/SOURCE-PATCH.patch)
+and [bounded review](../testing/account-safety-driver-sql-candidate-review-20261014.json).
+Owned PostgreSQL18.6 fixtures passed **9/9** cases and a separate **1/1**
+outer-control-transaction qualification. Parent COP reviewed the SQL and all
+source/evidence pins; it did not rerun or add these cases to previous suites.
+The candidate closes direct runtime DELETE/journal/role paths and checks the
+original xid8, backend and start under the same executor/sealer lock. The
+marker shares all four expiration effects. New transactions cannot reuse a
+rolled-back claim; a durable seal denies a still-live delayed original.
+
+A SQL function's terminal JSON remains an observation until actual outer
+control COMMIT and fresh readback. The separate test showed that rolling back
+that control transaction leaves the original free to execute; no terminal may
+be published early. Exact-origin closure does not prove physical connection
+termination or complete owner-wide drain. The ACK-loss case deliberately ignored
+the controller's COMMIT response and is not a network packet-loss experiment.
+
+Both owned containers/tmpfs fixtures were removed; Docker volumes remained29
+before and after, with no ports, binds, volumes, network, pull/build/install,
+context change or prune. The first startup failure is retained separately.
+These simplified fixture tables/LOGIN roles are not a production migration.
+The contributor revocation seam lacks actual current guard/admission and its
+journal hash needs privacy/retention acceptance. Actual Root connection/custody,
+SDK/native producer/delivery, policy/schema/refs, continuity and restore remain
+unaccepted. SIM source and production were not changed by this fixture work.
+
 Application configuration proposals (all disabled/empty by default):
 
 - COP_ACCOUNT_SAFETY_GUARD_REQUIRED: retained after first acceptance;

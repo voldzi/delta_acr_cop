@@ -1,0 +1,7 @@
+test_outer_control_rollback_is_not_durable_no_effect (__main__.OuterSealCase.test_outer_control_rollback_is_not_durable_no_effect) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.519s
+
+OK
+{"fatal": null, "ownedContainerRemoved": true, "proof": "/private/tmp/cop-driver-retention-xid-b0-20261014/outer-seal-proof.json", "result": {"errors": 0, "failures": 0, "run": 1, "success": true}}

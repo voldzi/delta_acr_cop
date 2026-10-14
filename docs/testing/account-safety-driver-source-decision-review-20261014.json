@@ -1,0 +1,240 @@
+{
+  "recordType": "cop-driver-retention-joint-source-response-v1",
+  "date": "2026-10-14",
+  "status": "SELECTED_SOURCE_DESIGN_OWNER_ABI_AND_RUNTIME_ACCEPTANCE_PENDING",
+  "scope": "Concrete conditional source specification response; protected execution-channel enforcement and actual store/lineage remain unresolved. No tests, install, SQL, migration, runtime grant or production acceptance.",
+  "inputs": {
+    "simApplicationSource": "25de85abf2ab00ad125c9482f1ddb70bb81cfce2",
+    "simSourcePins": {
+      "apps/situation-data-api/src/driver-measurement-store.ts": "cc7d103d28c9ff8b0b02b8e8d40db0fc0303a0f9cf5c219a4dfe796ea019c912",
+      "apps/situation-data-api/src/driver-retention-lifecycle.ts": "bc3f261916458a716121ed7b37d84800ba1fc904869834831325fe48aa161c93",
+      "deploy/driver-measurements/schema.sql": "6dd60a3acf28d63575198c8526c368df19bbd543f4063d4985fb55f308da02d0"
+    },
+    "infraDraftJsonSha256": "3465294373aea651ac66b7e51b45d9d80d9d0c8ba61bcb88b61c6594eedaf272",
+    "infraDraftMarkdownSha256": "77726e599b63ea5509ec4dfc9d9c03af06702da2c89a0d61e35b79c641261fc0",
+    "storeReviewProposalSha256": "5dbc6f42d6d92b1fea8f0daf7cab95e307f2e02a3756d291406bf61ce5993282",
+    "nativeReviewProposalSha256": "28a0d881ffc2ddbae68d8f50d8a6d03df44c150caa1936b990ba3b6476e178cb"
+  },
+  "selectedStoreDesign": "One-shot immutable registered origin; conditional whole-COP-namespace expiration covering receipts/revocations and both FK cascades. A protected store-owned execution channel must serialize the original fixed transaction with the Root-owned resolver/sealer. Existing/unknown origin is probe-only. First-creator/application checks alone are not accepted non-bypassable enforcement.",
+  "internalV2": {
+    "versionBump": "sim-driver-retention-work-v2 PROPOSED; internal TypeScript source contract only, not accepted native ABI or REST/browser field",
+    "typescript": [
+      "interface RetentionRecordRef { readonly recordId: string; readonly recordDigest: string; }",
+      "interface RetentionOriginV2 {",
+      "  readonly operationId: string;",
+      "  readonly operationRef: RetentionRecordRef;",
+      "  readonly leaseRef: RetentionRecordRef;",
+      "  readonly permitRef: RetentionRecordRef;",
+      "  readonly storeBindingRef: RetentionRecordRef;",
+      "  readonly bodyDigest: string;",
+      "  readonly schemaDigest: string;",
+      "}",
+      "interface DriverRetentionOperationContextV2 {",
+      "  readonly contractVersion: 'sim-driver-retention-work-v2';",
+      "  readonly owner: 'sim_driver_measurements';",
+      "  readonly cutoff: string;",
+      "  readonly origin: RetentionOriginV2;",
+      "}",
+      "interface DriverRetentionConsumerV2 {",
+      "  readonly owner: 'sim_driver_measurements';",
+      "  readonly registeredOrigin: RetentionOriginV2;",
+      "  execute(work: (operation: DriverRetentionOperationContextV2) => Promise<void>): Promise<DriverRetentionDispatchV2>;",
+      "}",
+      "type StoreOriginResolution =",
+      "  | { readonly origin: RetentionOriginV2; readonly state: 'origin-commit-known' | 'origin-no-effects-closed'; readonly sqlOutcomeRef: RetentionRecordRef; readonly effectQuiescenceRef: RetentionRecordRef; }",
+      "  | { readonly origin: RetentionOriginV2; readonly state: 'pending'; readonly reason: 'origin-unresolved' | 'origin-busy' | 'store-unavailable' | 'continuity-unresolved'; readonly sqlOutcomeRef: null; readonly effectQuiescenceRef: null; };",
+      "interface DriverRetentionDispatchV2 { readonly kind: 'origin-work' | 'origin-probe-only'; readonly origin: RetentionOriginV2; readonly resolution: StoreOriginResolution; }",
+      "interface DriverRetentionStoreOutcomePort {",
+      "  resolveOrigin(origin: RetentionOriginV2): Promise<StoreOriginResolution>;",
+      "}"
+    ],
+    "contextValidation": "Exact own-data nested keys, UUID/reference/digest shapes, canonical UTC millisecond cutoff, no accessors/proxies/unknown fields; snapshot and freeze the full origin as well as owner/cutoff. The V2 consumer constructor must also snapshot the exact owner/registeredOrigin/execute keys; current V1 owner/execute-only parsing is not sufficient. Compare cutoff/body/schema/permit to the independently resolved registered operation. No WeakMap object identity, cutoff-to-origin map, implicit latest operation or caller success capability.",
+    "resolutionAuthority": "The outcome port is STORE-owned. Its opaque outcome/quiescence references must be independently resolved against actual durable store facts by the accepted owner consumer. A returned object, callback Promise<void>, SQL ACK or record digest alone is not native authority.",
+    "oneShotComposition": "The first source composition binds exactly one independently registeredOrigin. Context and result origins must equal that immutable binding. A duplicate run uses origin probing only; it cannot mint another operation, permit or cutoff. No trusted root-owned periodic operation source exists in this draft.",
+    "dispatchDistinction": "V2 lifecycle must return/retain the explicit local dispatch result, rather than collapse it to arbitrary fulfilled Promise<void>. origin-work requires exactly one actual callback and waits for its real work; origin-probe-only requires zero work callbacks and an exact-origin probe. Independently verified terminal refs can classify safe no-new-work; pending stays explicit unresolved, and absent/malformed/foreign dispatch or thrown consumer result is failure. No local result grants or settles work.",
+    "sourceSeams": [
+      "driver-retention-lifecycle.ts: replace the internal two-key context/parser with explicit v2 origin validation/snapshot and typed runOnce/dispatch result; preserve once-per-dispatch, single-flight, actual-work wait and safe fixed errors. An arbitrary successful zero-callback void result is not a valid probe.",
+      "driver-measurement-store.ts: cleanup accepts the v2 context, resolves the original immutable binding, registers prepared origin, enters the one original transaction only after its confirmed first creation, and exposes the separate store-owned origin resolver.",
+      "driver-maintenance-cli.ts and application composition use the same one-shot registeredOrigin plus accepted store-owned outcome/consumer binding. Distinguish probe-only, pending and independently known cleanup; never print cleanup completed for arbitrary fulfilled runOnce/void. Default production remains UNBOUND until real bindings are accepted."
+    ]
+  },
+  "completeEffectClosure": {
+    "selectedPolicy": "Minimum fixed COP store-wide expiration/no-retain decision covering all four effects, ordered before the immutable permit. Its acceptance is pending. Do not claim dynamic per-row retain protection that this SQL does not implement.",
+    "directEffects": [
+      "public.driver_measurement_receipts: literal COP namespace and expires_at <= original cutoff",
+      "public.driver_measurement_revocations: literal COP namespace and expires_at <= the same cutoff"
+    ],
+    "cascadeEffects": [
+      "public.driver_measurement_intervals through its receipt foreign key ON DELETE CASCADE",
+      "public.driver_measurement_eta through its receipt foreign key ON DELETE CASCADE"
+    ],
+    "datasetMeaning": "Receipts/revocations have no routing dataset predicate and receipt cascades cover child rows with any dataset value. The accepted dataset/store binding must therefore describe the complete measurement namespace/incarnation including historical routing dataset vintages, not falsely restrict authority to the current map dataset.",
+    "excluded": "Permanent account fences, erasure ledger/checkpoints, unrelated owners and SIM/IZS data. Actual installed schema/trigger closure is unverified here.",
+    "retainOrUnresolved": "If a protected/retain subset or narrower dataset scope exists, this chosen all-scope plan stays denied; it cannot infer exclusion from source CHECK constraints or counters. A selected-set plan would be a different owner-reviewed contract, not this minimum."
+  },
+  "selectedNativeTransport": {
+    "variant": "In-process C/C++ Node-API addon; AF_UNIX SOCK_SEQPACKET to a fixed root-owned native receiver on the same Linux kernel",
+    "runtimeBaselineProposed": "Node24.21.0; Linux6.12+ with verified SO_PASSCRED, SO_PASSPIDFD and pidfs identity; unsupported features deny, no STREAM/SO_PEERCRED-only fallback",
+    "mechanics": {
+      "sourceProtocolChange": "Select SEQPACKET carrier for this distinct retention proposal. Do not repurpose V5 method labels/schema/ACK or imply draft STREAM carrier was implemented.",
+      "frame": "One SOCK_SEQPACKET packet is exactly one bounded 1..16384-byte UTF8 JSON envelope. No redundant 4-byte stream length prefix in this selected source revision. Reject truncation, malformed UTF8, duplicates, unknown ancillary data and unexpected FDs.",
+      "receive": "Enable SO_PASSCRED and SO_PASSPIDFD before messages on both sides; accept exactly one SCM_CREDENTIALS and one nonnegative kernel-generated SCM_PIDFD; recvmsg with MSG_CMSG_CLOEXEC; reject MSG_TRUNC/MSG_CTRUNC and all unexpected ancillary data",
+      "fdCleanup": "Never accept SCM_RIGHTS as a runtime identity or application capability. Close every received unexpected FD and each temporary per-message pidfd, even if an earlier close fails; do not stop cleanup at first error. Keep only independently enrolled registry pidfds.",
+      "nodeNativeBoundary": "Native channel object owns FDs and does not expose/accept a caller-selected fd/path/UID/PID/verified flag; typed JS codec receives authenticated response bytes only",
+      "nodeNativeApiProposed": [
+        "openFixedRetentionChannel(): NativeRetentionChannel",
+        "NativeRetentionChannel.exchange(frame: Uint8Array): Promise<Uint8Array>",
+        "NativeRetentionChannel.close(): Promise<void>"
+      ],
+      "timeouts": "Bound connection/queue/packet waits by monotonic deadlines and bounded queue. Deadline closes only local I/O; never infer cancel/abort/drain or silently replay a destructive call."
+    },
+    "peerAndCustody": {
+      "rootRegistration": "Independent root launcher enrolls the actual Node process pidfd, accepted UID/GID and namespaces/cgroup, image/source/bootstrap/SDK pins, exact owner/store/dataset and runtime-generation in protected registry. Caller headers/JSON/stdin cannot enroll or select any of these.",
+      "perMessageMatch": "Check received pidfd is pidfs; compare fstat(st_dev,st_ino) with the root-held registered process pidfd; credentials UID/GID must match their accepted receiver-namespace mapping. Numeric PID is diagnostic, never the process-incarnation key. Per-message pidfd comparison prevents accepted socket FD transfer to a different process from inheriting its sender identity.",
+      "pidfsBasis": "This comparator is inferred from pinned Linux6.12 pidfs source using per-process inode and stashed pid path. Its actual target-kernel behavior remains an acceptance test, not an executed result.",
+      "serverToNode": "Native addon verifies per-response credentials and pidfs identity against a fixed root-owned, app-nonwritable bootstrap record. Connect-time SO_PEERPIDFD may retain server incarnation; every response SCM_PIDFD must match it and the root-selected record. UID0 or pathname permissions alone are not a server attestation.",
+      "privilegeBoundary": "Host root is trusted. Enrolled Node peers must have no credential-forgery capabilities (CAP_SYS_ADMIN/CAP_SETUID/CAP_SETGID in relevant namespaces), no ptrace/host-root/Docker-socket authority, and accepted namespace/custody isolation. SDK install proves none of this.",
+      "sameProcessExecLimit": "pidfd represents process identity and survives same-process exec. CLOEXEC is hygiene, not sufficient execution custody. Root enrollment must accept the actual fixed-launch/no unauthorized re-exec custody policy and source generation mechanism before active admit/permit. This proposal has not implemented or verified such a policy; it does not market pidfd as executable attestation.",
+      "noCommitLivenessRequirement": "Root current-generation decision is needed at admission/permit. An immutable accepted permit may later settle original effects after peer death/exec/revoke; do not require executable/process liveness throughout external SQL COMMIT."
+    },
+    "officialPrimarySources": [
+      {
+        "claim": "Node-API supports native addon and thread-safe callback to Node; choose C Node-API not directV8/libuv ABI",
+        "url": "https://nodejs.org/download/release/v24.21.0/docs/api/n-api.html"
+      },
+      {
+        "claim": "SO_PASSCRED delivers sending-process credentials per message; SO_PEERCRED is connect-time; privileged senders can supply foreign credentials",
+        "url": "https://man7.org/linux/man-pages/man7/unix.7.html"
+      },
+      {
+        "claim": "Linux6.6 kernel SCM_PIDFD receiver and per-message credentials implementation; SCM_PIDFD is a kernel-produced read-only ancillary item",
+        "url": "https://github.com/torvalds/linux/blob/v6.6/include/net/scm.h"
+      },
+      {
+        "claim": "SCM_CREDENTIALS PID capability checks and task_tgid sender semantics",
+        "url": "https://github.com/torvalds/linux/blob/v6.6/net/core/scm.c"
+      },
+      {
+        "claim": "Linux6.12 pidfs inode/path reuse gives proposed pidfd process-incarnation comparator; inference requires target acceptance",
+        "url": "https://github.com/torvalds/linux/blob/v6.12/fs/pidfs.c"
+      },
+      {
+        "claim": "pidfs filesystem magic for rejecting other FD kinds",
+        "url": "https://github.com/torvalds/linux/blob/v6.12/include/uapi/linux/magic.h"
+      },
+      {
+        "claim": "recvmsg truncation/control flags and close-on-exec handling",
+        "url": "https://man7.org/linux/man-pages/man2/recvmsg.2.html"
+      },
+      {
+        "claim": "exec preserves process identity/PID; CLOEXEC does not prove noexec custody",
+        "url": "https://man7.org/linux/man-pages/man2/execve.2.html"
+      }
+    ],
+    "targetKernelTested": false,
+    "nativeAddonOrProducerImplemented": false
+  },
+  "fiveMethodNames": [
+    "retention.admit",
+    "retention.commitPermit",
+    "retention.noteUnknown",
+    "retention.recordOutcome",
+    "retention.inspect"
+  ],
+  "mandatoryDraftChangesBeforeSourceAbiAcceptance": [
+    "Use explicit internal V2 context with full immutable origin snapshot; supersedes the native subproposal two-key execute example. No WeakMap or cutoff-only identity map.",
+    "Use distinct proposed cop-driver-retention-candidate-v2 wire/schema pins for the revised outcome semantics; do not mutate or claim the frozen V1/V5 draft accepted.",
+    "recordOutcome carries sqlOutcomeRef and effectQuiescenceRef, not a claim that synchronous pg release or client/socket removal proves server settlement.",
+    "Expose origin-commit-known, origin-no-effects-closed or pending. A durable resolver seal is no-effects closure, not evidence that SQL ROLLBACK was acknowledged.",
+    "Execution and probe are explicit V2 dispatch kinds; a fulfilled Promise<void> cannot classify either known terminal or safe no-new-work.",
+    "The first prospective cleanup requires confirmed first creation of the prepared origin plus the exact immutable accepted permit. Existing or uncertain origins only probe, never another destructive callback.",
+    "One-shot fixed Root delivery only: init/runOnce/close, no periodic start or SDK-created operation/cutoff. Another cleanup needs a separately registered and delivered operation. Current Root delivery remains unimplemented.",
+    "Packet framing supersedes the native input 4-byte prefix; one bounded JSON envelope per packet. Local broker runs on SDA kernel; remote continuity anchor is a separately authenticated/current-state leg, never forwarded UID as kernel identity proof.",
+    "Actual Root-controlled SQL connection must run in the protected producer. The five grant/inspection methods do not implicitly define a Node-to-Root execution path: specify that private fixed-owner execution/delivery mechanism explicitly, without accepting app-selected backend/XID or misusing recordOutcome as execute."
+  ],
+  "placementQualification": {
+    "proposedVm": "cop-safety-anchor.home.cz on proxmox; 1vCPU/1GiB/16GiB sizing only",
+    "proposalSha256": "db06bfbd2a177888ba19d093c9c006619a8cd1729f1243114fe95f99b962eebb",
+    "capacitySupplementSha256": "afb6901ba102736079e5f54cf12121e97f43b99875c6b5911b1acb17687ed417",
+    "diskCapacityObserved": "Owner read-only snapshot only; not rerun by COP",
+    "memoryAdmissionVmidAndBaseImageAccepted": false,
+    "createdOrAllocated": false,
+    "continuity": "Separate app/PBS restore cohort and protected monotonic recovery remain unaccepted. High-water alone does not reconstruct missing journal/fence suffix: complete current history or HOLD; no automatic zero/reset/re-enroll.",
+    "wholePhysicalClusterSurvivalProven": false
+  },
+  "nextSourceWork": {
+    "sim": "Specify concrete protected store registrar/fixed-executor/resolver ownership and V2 origin interface, conditional whole-scope protection/barrier and immutable original transaction claim. Implement source and owned isolated tests only after this source mechanism is jointly reviewed; no migration or grants applied to production.",
+    "infra": "Publish concrete V2 request/response/schema and fixed native Node-API/SEQPACKET/root receiver source plan, fixed Root one-shot operation delivery and custody/registration boundaries. Exact binary, peer/kernel and runtime acceptance remain later gates.",
+    "cop": "Concrete SQL/role candidate and owned PG9+1 evidence produced, pins/source read back and published separately. Review resulting actual SIM/infra V2 consumer/producer composition; no fixture function, local JSON observation or passed SQL test is actual Root authority."
+  },
+  "jointOwnerAgreement": "COP/SIM agree on conditional fixed whole-scope source minimum and in-process local SEQPACKET. No universal no-retain policy, ABI, protected executor or runtime authority has been accepted.",
+  "actual": {
+    "testsRunForThisDesign": 0,
+    "sqlOrMigrationRun": false,
+    "nativeSdkImplemented": false,
+    "producerAccepted": false,
+    "fourReferencesAccepted": false,
+    "storeAccepted": false,
+    "rootDeliveryImplemented": false,
+    "anchorCreated": false,
+    "restoreAccepted": false,
+    "productionChanged": false,
+    "realAccountDeleted": false
+  },
+  "protectedExecutionChannelCandidate": {
+    "status": "CONCRETE_MECHANICAL_SQL_FIXTURE_SOURCE_TESTED_ACTUAL_ROOT_CHANNEL_UNIMPLEMENTED",
+    "proposal": "A Root-controlled origin SQL connection obtains its actual original xid8 directly. A separate Root-only registrar/control connection durably claims that exact immutable original transaction before effects. The fixed executor and sealer serialize on the origin row; stored cutoff, original permit/body/schema/store binding and current transaction must match. Two DELETE/FK cascades and marker share the origin transaction. New transaction after rollback cannot reuse claim; a durable seal blocks a late original before gate.",
+    "roleBoundary": "Root-controlled original SQL connection plus separate Root-only registrar/control connection. Runtime cannot directly DELETE any protected effect table or DML the origin journal. Fixed owner functions preserve separately guarded legitimate revoke/erasure; only the fixed expiration executor may create its committed marker. Root-owned seal cannot be reset.",
+    "unresolved": "Actual Root-controlled origin connection/delivery/execution protocol and producer custody remain undefined and unaccepted. No app-selected backend/XID may stand in for this channel. Store incarnation/restore, prepared-transaction exclusion, limited roles and extra control connection budget require source and actual acceptance separately.",
+    "firstCreatorInputQualification": "Input proposal 5dbc6f42 is preserved as first-creator source design. It is not upgraded into database-enforced transaction custody by this response.",
+    "terminalQualification": "A durable terminal seal can prove closure only if every original execution path cannot pass the same atomic gate thereafter. Marker absence, backend absence, timeout, new runtime or application if alone cannot establish it.",
+    "concreteFinding": "Existing source schema declares runtime DELETE on all four effect tables and cleanup/revoke issue direct DELETE. Removing only journal DML leaves a bypass; candidate must remove direct DELETE and route legitimate operations through reviewed bounded owner functions.",
+    "mechanicalCandidateReview": "account-safety-driver-sql-candidate-review-20261014.json",
+    "fixtureResults": "9/9 primary owned PG18.6; separate 1/1 outer-control transaction qualification; no native/producer/policy/restore acceptance"
+  },
+  "preservedFirstCreatorInput": {
+    "applicationJournalProposal": {
+      "location": "Actual sim_driver_measurements application database. Never cop_account_safety_guard root metadata database.",
+      "newTableProposed": "driver_retention_origins",
+      "immutableColumns": [
+        "operation_id uuid primary key",
+        "registered_operation_record_id and registered_operation_record_digest",
+        "original_lease_record_id/digest and original_permit_record_id/digest",
+        "store_binding_record_id/digest resolving the exact store/dataset incarnation, epoch, policy/config/runtime and four accepted typed references",
+        "body_digest and schema_digest",
+        "fixed table_plan_id = driver-retention-expiration-with-cascades-v1 PROPOSED",
+        "canonical_cutoff text plus corresponding timestamptz value"
+      ],
+      "mutableState": "prepared -> committed OR prepared -> sealed_no_effect; terminal states immutable, no reset/replacement or changed cutoff/permit for the same operation ID.",
+      "ownership": "Migration-owned immutable binding/state guards and narrow fixed-plan registrar/executor/resolver routines. No general runtime ability to forge committed/sealed rows or delete the ledger. Existing ordinary measurement/revocation privileges are not changed by this proposal.",
+      "committedMarker": "Written only by the fixed expiration executor after both DELETE statements in the same original transaction. It binds the exact origin/body/schema/permit and complete table plan; no row count or billing counter substitutes for it.",
+      "sealedMarker": "Written only by the fixed origin resolver after taking the same origin row lock and matching the complete immutable binding. It permanently forbids that origin's future destructive entry.",
+      "history": "Unresolved or still-referenced origin evidence cannot be removed by the existing expiration plan. This proposal grants no new retention period or automatic evidence purge.",
+      "migrationExecuted": false
+    },
+    "firstExecutionOrder": [
+      "Accepted owner admission and immutable origin permit must already exist durably before SQL handoff; no local flag or prepared row issues that permit.",
+      "Store-owned registrar inserts the exact prepared origin in a short separate durable transaction before destructive BEGIN. Only the worker with positively acknowledged first creation may continue once in this invocation. Existing rows, conflicts, ambiguous insert/registration ACK or process recovery go only to resolveOrigin, never destructive retry.",
+      "Original worker begins its one transaction, locks the exact prepared origin row with SELECT FOR UPDATE and rechecks all origin/body/schema/cutoff/permit fields plus open state before any DELETE. A sealed or terminal row denies new effects, including a worker paused before BEGIN or before this lock.",
+      "Under that lock, run the two fixed expiration DELETE statements with the same original cutoff; receipt FK cascades delete intervals and ETA in this transaction. Write the committed marker after those effects and COMMIT the same transaction.",
+      "Track actual command/transaction-phase observations separately. Never reissue destructive work or COMMIT on unknown. Return only fixed safe lifecycle errors; the consumer retains the original lease/permit pending until independently resolved outcome and exact-origin effect quiescence.",
+      "On ambiguous SQL/rollback/connection state request client.release(true) once rather than making the client reusable. Local disposal is not a transaction outcome or independent drain."
+    ],
+    "resolverOrder": [
+      "Use the accepted current application-store incarnation/continuity and fresh authoritative primary view; independently resolve the original operation and exact stored binding. Replica/restore/stale or missing-origin evidence stays pending.",
+      "Begin a resolver transaction and take the same origin row lock. Timeout/busy/unavailable stays pending. Never treat idle backend, missing active transaction, row count or absent committed marker as abort.",
+      "If the committed marker is present and exact, the original four-effect transaction committed. Its terminal state bars later work. Publish/resolve the commit and exact-origin effect-quiescence evidence only after durable fresh readback.",
+      "If the exact existing origin remains prepared under the acquired lock with no committed marker, atomically CAS it to sealed_no_effect and commit. This serialization resolves the origin, and the same mandatory entry check rejects a delayed worker. It is no-effects closure, not a claim that a PostgreSQL ROLLBACK command was received.",
+      "If resolver COMMIT acknowledgement is lost, keep pending and probe the same original row again; no new operation, permit, cutoff or destructive work. A terminal marker's durable readback can resolve that uncertainty.",
+      "Missing original row remains unknown: preparation may still be in flight, evidence may be lost or continuity may be wrong. Absence is never the terminal no-transaction proof.",
+      "Quiescence coverage is this exact origin's fixed effect closure: no active origin transaction can pass the common lock and no later original work can enter after the durable terminal seal. It is not proof that a physical backend/session is gone and not owner-wide drain/replay coverage."
+    ],
+    "sqlObservations": {
+      "commitAck": "Original transaction result must actually carry COMMIT, with corresponding completed protocol/idle observation. A successful Promise alone is insufficient; transaction COMMIT can report a rollback result. Independently resolved durable marker remains the accepted outcome basis.",
+      "knownRollbackObservation": "Received original ROLLBACK completion before any COMMIT attempt is a local known-rollback observation; pair it with the exact origin seal/readback for stable no-effect closure. A later ROLLBACK ACK after attempted/lost COMMIT does not prove that original COMMIT failed.",
+      "notStartedObservation": "A local failure before BEGIN is not independent no-transaction evidence. Resolve/seal the durable original row, or remain pending if the row/binding is unresolved.",
+      "unknown": "Lost COMMIT/ROLLBACK acknowledgement, timeout, disconnect or process death preserves the original pending and permits only origin probing. No compensating assumption, admission restart or blind destructive retry."
+    },
+    "qualification": "Preserved read-only proposal 5dbc6f42, not accepted non-bypassable enforcement. Selected candidate must close direct table DELETE and bind the actual Root-controlled original transaction."
+  }
+}

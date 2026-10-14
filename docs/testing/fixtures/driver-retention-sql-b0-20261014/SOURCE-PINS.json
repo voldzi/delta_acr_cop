@@ -1,0 +1,17 @@
+{
+  "actualAuthority": false,
+  "nativeRpcAccepted": false,
+  "priorProposalPreservedSha256": "5dbc6f42d6d92b1fea8f0daf7cab95e307f2e02a3756d291406bf61ce5993282",
+  "productionAuthorization": false,
+  "sha256": {
+    "README.md": "1ab37cb91d5d099b5f23c3d7aa934d1479186cf79080eee7feae1d44593b19e7",
+    "SOURCE-PATCH.patch": "31a73bac86febf7eb103469520e58ad8a7963a6353c3b39c1af2cf17b3200a25",
+    "candidate.sql": "40a486bc72046291ad2287a489d3688a1f2d2bbbb53f4d7202c6192de91af8cf",
+    "owned-run-attempt-1.log": "3878b2eb0320df3f3cce7d5104d21302769d7c30b7bdafa2ae932c2eeead3690",
+    "owned-run-attempt-2.log": "5dae45f9affb5b583a551ed06e7ca25496c9bb9543d67d0bdc1a5e0935c45033",
+    "proof-attempt-1.json": "7c57ce830d094f5cbcd4914fc7df89d1bed35004f9bfc844a307013674670fe1",
+    "proof.json": "5e65ff2cbf148ef4957c60325a72dc9ee77e0aba004cd56c7f0a3ace9ec68006",
+    "test_owned_pg.py": "17f228af8fed4735bbec52259b212ddd98302db4dd7e85cc92385c85d186f72e"
+  },
+  "status": "FROZEN_OWNED_SQL_SOURCE_CANDIDATE_NOT_INSTALLED"
+}
