@@ -100,8 +100,10 @@ only with a non-bypassable execution gate covering every original path; metadata
 or an application if alone cannot establish that. Marker absence is not abort.
 The existing direct DELETE privilege on all four tables is a concrete bypass: the
 source candidate must close it and preserve legitimate revoke/erasure through
-bounded owner functions. Root-controlled SQL connections and one immutable xid8
-claim are being reviewed; they are not an accepted producer or runtime channel.
+bounded owner functions. The SQL fixture reviews the immutable xid8 claim;
+the actual Root-controlled origin/control producer and operation-delivery patch
+are not implemented or tested. Infrastructure has received these source inputs
+for later review. Receipt of inputs is not an active execution channel.
 Exact-origin effect quiescence is distinct from a synchronous connection release
 and from complete owner-wide drain/replay.
 
