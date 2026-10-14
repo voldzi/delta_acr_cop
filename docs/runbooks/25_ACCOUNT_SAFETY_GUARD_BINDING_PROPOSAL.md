@@ -49,6 +49,29 @@ helper implementation, permissions, tests and accepted activation/rollback image
 set remain outstanding. The legacy helper SHA starts 49ca96be and cannot claim
 these checks.
 
+COP's bounded production file readback on 2026-10-14 confirmed that
+`/srv/cop/scripts/cop-api-runtime.py` matches exact source SHA-256
+`49ca96be6982704d6e5ef16a0c722f59eebc40e310a28e29564e8c75645c89cb`.
+The observed file is uid1000/gid1000/mode0644. Byte equality does not establish
+root-controlled custody, an independent latch or native account authority.
+
+The separate frozen 16-case synthetic deployment model checks a pending
+operation UUID and membership in approved image/source pairs. It does not prove
+an immutable target: with two approved guarded pairs, the same UUID can select
+another target. Its original receipt remains unchanged and cannot be cited as
+retarget rejection evidence. The actual native patch must require an independently
+accepted immutable intent bound to the exact operation, target release, image,
+source, profile, application store and registered body. Recheck this same intent
+before exposure/restore, pointer commit and pending cleanup in every activate,
+recover and rollback branch. A mismatch stays pending and performs no new effect;
+it must not select another approved pair or mint a replacement permit. Add the
+small two-target regression against the versioned native source, rather than
+retrospectively upgrading the frozen model's coverage. This requirement changes
+no production helper and creates no authority or installation permission.
+Legitimate rollback needs its own exact action binding to the original pending
+operation/target and the independently accepted previous destination. Preserve
+the original pending target; an approved-pair list cannot choose that destination.
+
 Application configuration proposals (all disabled/empty by default):
 
 - COP_ACCOUNT_SAFETY_GUARD_REQUIRED: retained after first acceptance;
