@@ -264,6 +264,20 @@ production acceptance was established. The v3 state machine, its epoch/fences
 and earlier v4 source remain unchanged. See
 [the separate v5 boundary evidence](../testing/account-safety-boundary-v5-review-20261014.json).
 
+SIM subsequently published the V5 Node companion at source `6e73a303`, with
+its own exact-source **88/88 offline PASS** receipt at documentation HEAD
+`3691cea7`. COP independently reviewed the four pinned client/helper/bridge/
+runner files before and after review, and rechecked their hashes on the clean
+SIM checkout. No concrete P1/P2 finding remained. The review checked lexical
+limits before lossy parsing, descriptor/proxy-safe canonicalization, response
+lease/scope/CAS/correlation relationships, and preservation of in-flight unknown
+until the injected exchange promise actually settles. There is no inferred
+abort, settlement or fallback. These files remain scripts only, with no
+application entrypoint import or positive runtime verifier. COP did not rerun
+or add SIM's 88 cases to its application count. This closes the selected source
+review; actual transport, identity, owner evidence, anchor, settlement and restore
+acceptance remain open. See [the companion source review](../testing/account-safety-sim-v5-companion-review-20261014.json).
+
 ## Verification / release
 
 Latest candidate verification on 2026-10-14 used clean documentation HEAD

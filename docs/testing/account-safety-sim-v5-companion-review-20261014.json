@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-10-14 11:39:39 UTC",
+  "scope": "independent_source_review_only",
+  "copApplicationSource": "898cd5132f513259b226d5beff5c3876156b56e7",
+  "simCompanionSource": "6e73a303e6c6a4fd126b0dc381b6b36f1cc4c2bf",
+  "simDocumentationHead": "3691cea7cc5b1c01e5b06aea87581a02acd86d51",
+  "sourcePins": {
+    "scripts/lib/dormant-v5-fixture-client.mts": "927fc8dcdbacc52727934405e7c472a22c46715e7235faa2a30a7d7ced3c242d",
+    "scripts/lib/dormant-fixture-json.mts": "2e56df7c563f62ab0bfd14f90503249f2704cf4693d63d3ec9b7153b5dafa89d",
+    "scripts/dormant-fixture-python-bridge.py": "cb40d41f76221a3b311a9ecaeea07aa91eee6926a3b199312b8512d30f5f47fc",
+    "scripts/test-dormant-fixture-companion.mts": "95c9f1d1452b2d27812881c76c2d8aa928ab653320dfed1edb8d1312ae031b65"
+  },
+  "pinsUnchangedBeforeAfterDelegatedReview": true,
+  "rootFinalPinReadback": "PASS",
+  "simCheckoutCleanAtReadback": true,
+  "review": {
+    "concreteP1P2Findings": [],
+    "duplicateFloatAndBoundsCheckedBeforeLossyParsing": true,
+    "canonicalizerDoesNotInvokeAccessorsToJsonOrProxyTraps": true,
+    "permitLeaseAndDrainScopeRelationsChecked": true,
+    "casAckPendingAndCorrelationChecked": true,
+    "preDispatchAbortDoesNotExchange": true,
+    "inFlightUnknownKeepsCapacityUntilActualPromiseSettlement": true,
+    "lateReplyDoesNotTurnUnknownIntoSuccess": true,
+    "noInferredAbortSettlementOrFallback": true,
+    "scriptsOnlyNoApplicationEntrypointImport": true,
+    "bridgeUsesPinnedPureCodecHelpers": true,
+    "positiveRuntimeVerifierAbsent": true
+  },
+  "simOwnedTestEvidence": {
+    "path": "docs/archive/2026-10-14_DORMANT_V5_CODEC_CONFORMANCE.json",
+    "sha256": "7a49538a97a70e7dffc6b518f20d5e88ebf1ff98b9a76105e642eef4e0b5778a",
+    "passed": 88,
+    "failed": 0,
+    "scope": "schemas_pure_python_helpers_and_in_memory_client",
+    "rerunByCop": false,
+    "addedToCopApplicationTestCount": false
+  },
+  "actualNativeTransportAccepted": false,
+  "actualIdentityOrOwnerEvidenceAccepted": false,
+  "actualIndependentAnchorAccepted": false,
+  "actualProviderSettlementAccepted": false,
+  "actualRestoreAccepted": false,
+  "acceptedWire": false,
+  "productionReady": false,
+  "applicationWiringChanged": false,
+  "productionChanged": false,
+  "realAccountDeleted": false
+}
