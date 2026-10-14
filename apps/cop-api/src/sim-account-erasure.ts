@@ -31,6 +31,12 @@ export interface SimDriverErasureInventory {
 export interface SimMeasurementsErasureOptions extends SimAccountErasureOptions {
   inventory?: (actor: AuthenticatedActor, context: { operationId: string; coverageAnchorAt: string; signal: AbortSignal }) => Promise<SimDriverErasureInventory | null>;
 }
+export interface SimMeasurementsErasureAdapter extends AccountErasureAdapter {
+  /** Fresh GET only. The local composition may use this after its completed
+   * checkpoint; it neither reconstructs coverage nor admits a new operation. */
+  verifiedCompletedOperationProof(actor: AuthenticatedActor,
+    context: { operationId: string; signal: AbortSignal }): Promise<AccountErasureProof>;
+}
 const VERSION = "sim-account-erasure-v1", COST = "aggregate-costs-current-month-v1";
 const ROUTER = "/api/v1/ai-router/cop/users/me/erasure-operations", DRIVER = "/api/v1/internal/driver-measurements/v1/account-erasure-operations";
 const HEX = /^[0-9a-f]{64}$/u, UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -170,7 +176,7 @@ function measurementProof(status: number, input: unknown, op: string, size: numb
   const receipt = driverReceipt.parse(input);
   return status === 200 && receipt.operationId === op && receipt.contributorCount === size && receipt.status === "completed" && receipt.remainingBatchCount === 0 &&
     receipt.databaseZeroVerified && receipt.derivedReportAcknowledged && receipt.publicationFenceVerified && receipt.replayReady && receipt.retentionReviewed &&
-    receipt.reportProtection !== "unverified" && receipt.pendingReason === null ? { status: "completed", proofId: hash(["cop-measurements-online-erasure-v1", identity, receipt]) } : pending();
+    receipt.reportProtection !== "unverified" && receipt.pendingReason === null ? { status: "completed", proofId: hash(["cop-measurements-completed-operation-proof-v2", identity, receipt]) } : pending();
 }
 export function createSimRouterAccountErasureAdapter(options: SimAccountErasureOptions): AccountErasureAdapter {
   const client = new Client(options, "ai_router");
@@ -227,10 +233,22 @@ async function manifest(options: SimMeasurementsErasureOptions, client: Client, 
   if (contributors.length < 9 || contributors.length > 40 || new Set(contributors.map(v => JSON.stringify(v))).size !== contributors.length) throw new Error("SIM_CONTRIBUTOR_INVENTORY_UNPROVEN");
   return { version: inventory.version, anchorAt, existing: previous.status !== 404, body: { contractVersion: VERSION, operationId: op, contributors, attestation: "cop-account-erasure-contributors-reviewed-v1" } };
 }
-export function createSimMeasurementsAccountErasureAdapter(options: SimMeasurementsErasureOptions): AccountErasureAdapter {
+export function createSimMeasurementsAccountErasureAdapter(options: SimMeasurementsErasureOptions): SimMeasurementsErasureAdapter {
   const bound = { ...options }, client = new Client(bound, "sim_measurements");
   return {
     id: "sim_measurements",
+    async verifiedCompletedOperationProof(actor, context) {
+      requireActor(actor, bound.issuer); const op = requireOperation(context.operationId, true), signal = client.signal(context.signal);
+      try {
+        if (!await client.authority(signal)) return pending();
+        const identity = await client.identity(actor, signal); if (!identity) return pending();
+        const response = await client.request("/" + op, signal, actor, op);
+        if (response.status === 404) return pending();
+        const receipt = driverReceipt.parse(response.value);
+        if (!await client.authority(signal) || await client.identity(actor, signal) !== identity) return pending();
+        return measurementProof(response.status, receipt, op, receipt.contributorCount, hash([bound.issuer, client.routerId(actor), op]));
+      } catch { return pending(); }
+    },
     async ready() { if (!bound.inventory || !bound.reviewExistingIdentity) return false; try { return await client.capability(client.signal()); } catch { return false; } },
     async readyForAcceptedOperation(actor, context) {
       requireActor(actor, bound.issuer); const op = requireOperation(context.operationId, true), signal = client.signal(context.signal);
@@ -267,7 +285,7 @@ export function createSimMeasurementsAccountErasureAdapter(options: SimMeasureme
         const response = await client.request("", signal, actor, op, snapshot.body);
         if (!await client.authority(signal)) return pending();
         const receipt = driverReceipt.parse(response.value); if (snapshot.existing && receipt.acceptedAt !== snapshot.anchorAt) return pending();
-        return measurementProof(response.status, receipt, op, snapshot.body.contributors.length, hash([bound.issuer, client.routerId(actor), snapshot.body]));
+        return measurementProof(response.status, receipt, op, snapshot.body.contributors.length, hash([bound.issuer, client.routerId(actor), op]));
       } catch { return pending(); }
     }
   };

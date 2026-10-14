@@ -2,6 +2,29 @@
 
 Status: not implemented in the native deployment helper; activation blocker.
 
+On 2026-10-14, the human explicitly approved and the infrastructure owner
+created only the empty `cop_account_safety_guard` root metadata database on
+the existing PostgreSQL/Patroni primary, using migration SHA-256
+`a29369e48a1380bb12ce3b40b9254d924e0d98a3b90f7cdcdc0fb7e9ba27aaba`.
+Actual postconditions verified nine empty tables, seven restricted NOLOGIN
+roles, exact object/column/function grants, no new membership or LOGIN, and
+unchanged existing role attributes/membership. The first attempt stopped after
+creating the closed database; a pinned continuation completed the same object
+without repeating creation. No identity was enrolled, key/service/socket/mount
+created or application pointed at this database.
+
+This database is the independent root metadata registry. It is **not** the
+application's `AccountSafetyGuardStore`: the permanent per-principal COP fence
+must stay in the actual mobility store and the same transaction as its writers.
+Do not change `COP_DATABASE_URL` to the empty root metadata database or infer
+readiness from its existence/emptiness. Source-pin and receipt review are in
+[the bounded foundation evidence](../testing/account-erasure-foundation-20261014.json).
+Native transport, independent continuity, actual owner evidence and application
+binding remain unaccepted. The infrastructure owner also identified an existing
+local administrator `trust` authentication boundary; it was not changed under
+the database-only approval and requires a separately scoped decision before
+this becomes a trusted runtime authority.
+
 Before accepting the first account deletion, infrastructure must bind a stable
 UUID in the actual guard database to a root-owned runtime profile and exact API
 image/source revision. The application cannot provision or approve this identity.

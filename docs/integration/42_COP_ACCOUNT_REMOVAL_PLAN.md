@@ -68,9 +68,10 @@ in capabilities until acceptance of the exact live form and backend.
    authenticated synthetic-account acceptance, then integrate Jízda's second row.
 
 The current source implements the additive deletion/preflight/receipt endpoints
-and schemas in the binding OpenAPI. The canonical account-management page,
-any SDK launch helper and production activation remain pending actual owner
-adapters and acceptance. This plan does not create a fake successful DELETE or
+and schemas in the binding OpenAPI. The canonical account-management page is
+implemented in the source candidate, including authenticated account readback
+before confirmation; its production availability and any SDK launch helper
+remain pending actual owner adapters and acceptance. This plan does not create a fake successful DELETE or
 a support-only deletion endpoint.
 
 ## Required owner adapters and proof
@@ -80,7 +81,7 @@ These are distinct from unlink's app-specific operations:
 
 | Owner | Work and completion proof |
 | --- | --- |
-| COP web sessions / Keycloak | Fence account and revoke all its sessions/tickets/refresh grants; verify old access/refresh/bootstrap are denied. Never revoke another account. Accepted credential/admin permissions required. |
+| COP web sessions / Keycloak | Fence COP/Jízda access and revoke COP sessions/tickets/client grants; verify old COP access/refresh/bootstrap are denied. Preserve the shared realm identity, global SSO, SIM sessions/roles/access. Never delete the Keycloak user or revoke another account. Accepted narrowly scoped authority is required; ADR0053 supersedes earlier whole-identity wording. |
 | COP profiles / invitations / preferences | Remove user profile/contact/preferences/invites and pending identity mappings; verify persistent SQL/JSON stores, not only RAM. |
 | COP/Messaging native devices / push | Remove credentials/subscriptions/pushers for the whole account and all installations; stale tickets/queue handoffs cannot restore them. Unlink's smaller scope is unchanged. |
 | Matrix/Synapse | Enumerate current and left rooms, all own events (paginate beyond 1,000), redact own UGC, delete owned uploads/media and personal metadata; verify jobs across restart/failure. `deactivate(erase=true)` alone is insufficient. Revoke credentials only after required owner work is tracked. Other people's identities/state are preserved. Actual federation/remote-copy limits must be stated. |

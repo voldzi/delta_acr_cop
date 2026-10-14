@@ -139,12 +139,51 @@ requires its own actual existing SIM receipt, current protected authority,
 identity and immutable manifest/first acceptedAt. Missing or foreign operations
 never receive the disabled-only resume exception. Controller capability and
 new preflight never call accepted-operation readiness.
+The controller now first checks ordinary readiness for a durable confirmed job:
+enabled intake must allow its first provider handoff even though the provider
+operation does not exist yet. Only a false ordinary readiness result invokes
+the own-existing-operation resume check. An exception/timeout remains
+unavailable, not an alternative admission. Two actual COP controller/adapter
+HTTP tests cover the first Router and Driver handoff against an explicitly
+synthetic provider; the earlier ten actual-SIM-handler pair cases did not test
+this controller ordering.
 COP strict adapters use dedicated server-only erasure origins
 and credentials, actual existing-alias review and complete retained/outbox/key
 inventory; no normal Router token fallback or guessed retained-day completeness.
 Exact existing Router aliases, all retained measurement days/key versions,
 scoped readiness and actor preflight must be accepted; health is insufficient.
 No OpenAI call is needed for erasure tests.
+The actual `sim_measurements` owner now also includes COP's local consent store.
+New consent rows receive the server-verified issuer; historic null-issuer rows
+are never adopted from the current login. Local consent mutation, batch
+admission, ordinary cleanup and the permanent consent fence share one subject
+lock. The fence compares the actual local preflight version under that lock;
+a changed row cannot authorize handoff with stale evidence. Cleanup snapshots
+are rechecked before the provider call, and admitted local calls are awaited.
+This does not prove external SIM drain/commit. The normal cleanup worker waits
+for the actual global account guard initialization before its first sweep.
+The erasure-only store initializes and closes even when ordinary measurement
+intake/cleanup flags are off; it enables neither collection nor a new worker.
+
+The application database migration adds nullable
+`cop_driver_measurement_consents.owner_issuer` and the private
+`cop_driver_consent_erasure_fences` table. It changes no root metadata tables,
+grants or secrets. Actual production schema permissions/history still require
+acceptance. A pending operation retains the consent and minimal day inventory.
+After the actual completed SIM proof, one local transaction verifies absence,
+deletes the consent and clears all stored day dates. Completed retries compare
+a fresh authenticated GET-only SIM proof and fresh local absence with the
+durable checkpoint; they never reconstruct or POST a smaller contributors
+manifest. The internal proof is now
+`cop-measurements-completed-operation-proof-v2`, bound to issuer, existing
+opaque alias, operation and immutable completed receipt; normal erase still
+verifies full canonical contributor coverage before issuing it. Public OpenAPI
+and mobile contract shapes did not change. This source feature remains
+unactivated; no production job/configuration was migrated.
+The remaining keyed fence, issuer, operation and proof/inventory digests are
+technical pseudonymous protection, not anonymous data or account content.
+Production continuity/retention acceptance is still required; no automatic
+expiry for pending work or permanent fences was invented.
 Messaging published source
 [`ee3b464`](https://github.com/voldzi/csm_messaging/tree/ee3b4641962bf1a72e3709074d1ccc8a69e0ac44)
 adds strict whole-owner v2, targeted mobility effects and actor namespace scope.
@@ -175,6 +214,16 @@ prove all account writers fenced. No production authentication change was made.
 Human-confirmed Proxmox off-server/X5 backup coverage is
 accepted, but is not account erasure/replay acceptance. Do not ask again for a
 backup-point identifier to repeat that confirmation. See [runbook25](../runbooks/25_ACCOUNT_SAFETY_GUARD_BINDING_PROPOSAL.md).
+The human separately approved only the empty root metadata database and seven
+restricted NOLOGIN roles. Infrastructure completed that exact migration on
+2026-10-14 at08:26:39UTC and verified all nine tables empty, exact restricted
+grants, no new LOGIN/member mapping and preserved existing role attributes.
+COP independently reviewed the pinned execution receipt and exact SQL source;
+it did not rerun the mutation. No enrollment, native service, credentials,
+application binding, activation or restore acceptance follows from this step.
+The actual COP per-principal fence stays in the existing shared mobility
+transaction; the metadata database is not substituted as its store. See
+[the separate foundation receipt](../testing/account-erasure-foundation-20261014.json).
 Keycloak's discovered shared realm has been resolved by the explicit COP-only
 human policy above; its narrowly scoped authority still requires acceptance.
 
@@ -233,6 +282,17 @@ OpenAPI, native SDK and production were unchanged by this follow-up. This is
 not a real-browser login or real-account deletion acceptance. Exact source file
 hashes and commands are in
 [testing/account-erasure-web-identity-20261014.json](../testing/account-erasure-web-identity-20261014.json).
+
+The subsequent local-consent/controller follow-up passed 99 focused cases,
+including four actual PostgreSQL18.3 cases and strict COP-SIM HTTP regression,
+with no skips. Its own Unix-only cluster was stopped and the previous cluster
+was not used. Root separately reran 72 controller/web cases with no skips,
+reviewed the exact source/test receipt pins and passed API typecheck/build.
+These gates overlap earlier counts; they are not a new full-suite run and
+cannot relabel the original2,393-case or ten-handler-pair evidence. No real
+provider, native authority, human account or production deletion was tested.
+Exact source, SQL/lifecycle and verification boundaries are in
+[testing/account-erasure-consent-followup-20261014.json](../testing/account-erasure-consent-followup-20261014.json).
 
 The X5 build-only source option now supports a separately provisioned, clean
 root-owned read-only detached COP checkout with an explicit exact source pin.

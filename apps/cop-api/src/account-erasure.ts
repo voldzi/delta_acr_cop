@@ -367,11 +367,16 @@ export class AccountErasureService {
         else {
           try {
             const readinessSignal = timedSignal(workerSignal, this.timeoutMs);
-            const ready = adapter.readyForAcceptedOperation
-              ? adapter.readyForAcceptedOperation(actor, { accountKey, operationId: claimed.job.operationId,
-                requestedAt: claimed.job.requestedAt, signal: readinessSignal })
-              : adapter.ready();
-            if (!(await bounded(ready, readinessSignal))) { reason = "adapter_unavailable"; unavailable = true; }
+            // Enabled intake authorizes the first provider handoff for this
+            // durable COP job. Only a disabled/unready provider needs its own
+            // existing-operation proof; requiring that before first handoff
+            // would leave every new job permanently stuck at provider404.
+            let ready = await bounded(adapter.ready(), readinessSignal);
+            if (!ready && adapter.readyForAcceptedOperation)
+              ready = await bounded(adapter.readyForAcceptedOperation(actor, { accountKey,
+                operationId: claimed.job.operationId, requestedAt: claimed.job.requestedAt,
+                signal: readinessSignal }), readinessSignal);
+            if (!ready) { reason = "adapter_unavailable"; unavailable = true; }
             else {
               await this.renew(key, token);
               const signal = timedSignal(workerSignal, this.timeoutMs);

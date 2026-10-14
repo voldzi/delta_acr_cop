@@ -1,0 +1,137 @@
+{
+  "scope": "COP local consent + existing strict SIM measurement composition; source only",
+  "createdAt": "2026-10-14T08:53:17.116129+00:00",
+  "sourceRevisionBeforeChanges": "0fd3109983d2d527ceb182bda10a9b2883206aff",
+  "sourceFiles": [
+    {
+      "path": "apps/cop-api/src/driver-measurement-consent-store.ts",
+      "sha256": "e0c368cee3eee5a6d1a5f56a0419ace4cc949a05733aeb2a3bffb6d7777be6be"
+    },
+    {
+      "path": "apps/cop-api/src/cop-driver-consent-erasure.ts",
+      "sha256": "b3db56b6a67a401d76544ede3df32707be8d7b20005e84d5955483db4a15d690"
+    },
+    {
+      "path": "apps/cop-api/src/cop-driver-consent-erasure.test.ts",
+      "sha256": "42ac5aeb5af1bd5457a0dcbd7997139ec03fabe95c25bd34d83884df35b8a008"
+    },
+    {
+      "path": "apps/cop-api/src/cop-driver-consent-erasure.postgres.test.ts",
+      "sha256": "088cc14a5c35337a9405125fa7c36e7be6463bb53bc4b3159524b0604335ec2b"
+    },
+    {
+      "path": "apps/cop-api/src/cop-driver-consent-erasure-http.test.ts",
+      "sha256": "d958f8a1245e01326334dd0b8eb62427bcaf7dbc291aad6fb382dc93a2962c9c"
+    },
+    {
+      "path": "apps/cop-api/src/routes/driver-measurement-routes.ts",
+      "sha256": "9d4580692a299429b5aa74d52d0f444dcc67c368a22074c45c2e71dab525181b"
+    },
+    {
+      "path": "apps/cop-api/src/sim-account-erasure.ts",
+      "sha256": "d9e20c5fbbbf25eb75182a328f26055d15a159279f55daffe787af20c27f676a"
+    },
+    {
+      "path": "apps/cop-api/src/server.ts",
+      "sha256": "b9e8a5b54c565fdd7c54c1288ac51661793b55a237ffe98a9f207b2a425c2e58"
+    }
+  ],
+  "testGate": {
+    "path": "/private/tmp/cop-driver-consent-erasure-final-ordering-gate-20261014.log",
+    "sha256": "4fe7069bf9b05010242a5b6f0f52769b3b4e959bc6885b5aa8a7ee4374f71e13",
+    "exitCode": 0,
+    "files": 6,
+    "passed": 99,
+    "skipped": 0,
+    "realPostgreSQLCases": 4
+  },
+  "typecheckAndScopedEslint": {
+    "exitCode": 0,
+    "errors": 0
+  },
+  "diffCheck": {
+    "exitCode": 0
+  },
+  "cluster": {
+    "root": "/private/tmp/cop-driver-consent-pg18-20261014.r_ycizto",
+    "socket": "/private/tmp/cop-driver-consent-pg18-20261014.r_ycizto/socket",
+    "port": 56567,
+    "listenAddresses": "",
+    "database": "cop_driver_consent_test",
+    "user": "cop_driver_test",
+    "version": "PostgreSQL18.3",
+    "production": false,
+    "exitCode": 0,
+    "testLog": "/private/tmp/cop-driver-consent-erasure-final-ordering-gate-20261014.log",
+    "stopExitCode": 0,
+    "postmasterPidAbsent": true,
+    "metadataSha256": "0e2a6335c3b8c609bb29afc7c1ec20bda5345465be77775f7891e56160e887ba",
+    "originalClusterUsed": false,
+    "tcpEnabled": false,
+    "stopped": true
+  },
+  "sqlChange": {
+    "database": "existing COP application DB; no root cop_guard DB changes",
+    "addColumn": "cop_driver_measurement_consents.owner_issuer text nullable; historical rows remain NULL",
+    "newTable": "cop_driver_consent_erasure_fences(subject_hash, owner_issuer, operation_id, inventory_version, pending_days, completed, remote_proof_id)",
+    "writerSerialization": "all relevant producers and erase use advisory xact lock (18101401, hashtext(subjectId)); existing row locks retained",
+    "newGrantsOrSecrets": false
+  },
+  "lifecycle": {
+    "pending": "retain consent and minimal date inventory while SIM proof is pending; no automatic expiry is invented",
+    "completed": "verify real SIM completed proof; atomically delete consent and clear pending_days; keep only keyed fence + issuer/op/inventory digest/completed proof ID",
+    "retry": "fresh GET-only verified native/identity/operation proof compared to stored proof and fresh local absence; no reconstructed contributors or POST after local completion",
+    "technicalFencePolicy": "no automatic deletion; infrastructure restore/continuity and policy acceptance remain separate; retained metadata is not called anonymous",
+    "startup": "Actual AccountErasureService.init is awaited before normal cleanup worker scheduling; unavailable store binding blocks startup. Erasure-only consent pool has its matching single close hook."
+  },
+  "proofChange": "Internal completed measurement proof v2 binds issuer + existing opaque Router alias + operation ID + strict immutable completed receipt. Normal erase still verifies full canonical contributor coverage before proof.",
+  "unverified": [
+    "actual native identity/retained outbox/key version review",
+    "production historical null-issuer provenance",
+    "real SIM/provider drain/commit/restore acceptance",
+    "production deployment and actual account deletion"
+  ],
+  "productionMutation": false,
+  "externalProviderCalls": 0,
+  "actualUserDeletion": false,
+  "notes": [
+    "Initial PG suite refused a tempfile underscore before SQL tests; dedicated socket validation was corrected. Actual final four SQL cases passed.",
+    "Owned private PG18.3 cluster stopped with stopExitCode0 and absent postmaster.pid; previous native cluster was never started or modified.",
+    "Documentation is owned by parent; these facts are ready to incorporate without broadening scope.",
+    "Final99 gate includes requested actual global-init ordering and startup refusal case; it supersedes the earlier98 source manifest for server/routes/order test changes. Root92 controller gate overlaps; counts must not be summed."
+  ],
+  "rootReview": {
+    "sourceAndReceiptPins": "PASS",
+    "apiTypecheckAndBuild": "PASS",
+    "controllerAndWebGate": {
+      "passed": 72,
+      "failed": 0,
+      "skipped": 0,
+      "reportSha256": "c0a62083af1b2d09716ab3c38e35f8d1f198de5590fb77302cf9a08982cf9497"
+    },
+    "fullSuiteRerunAfterThisFollowup": false,
+    "productionChanged": false
+  },
+  "rootControllerFirstHandoffCorrection": {
+    "enabledIntake": "ordinary_ready_before_first_handoff",
+    "disabledIntake": "own_existing_operation_authority_only_after_durable_confirmed_COP_job",
+    "throwingProbe": "unavailable_no_resume_bypass",
+    "actualCopControllerAndAdapterHttpCases": 2,
+    "simHandlerForTheseTwoCases": "synthetic",
+    "otherOwnerAuthority": "synthetic",
+    "files": [
+      {
+        "path": "apps/cop-api/src/account-erasure.ts",
+        "sha256": "597d79d34e23f279bc527b2870a954198fc5b4f59f16dd409be9a3401704bdb7"
+      },
+      {
+        "path": "apps/cop-api/src/account-erasure-preflight.test.ts",
+        "sha256": "dae87c894d24b5e0ee4c21766681f7f68970794b37546a93ffc3cbd19dfbd0b3"
+      },
+      {
+        "path": "apps/cop-api/src/sim-account-erasure.test.ts",
+        "sha256": "b6a6ea109df1ca6d9eaac01f8fe35188c0a017214cea79d0462ef8d9f93416c5"
+      }
+    ]
+  }
+}

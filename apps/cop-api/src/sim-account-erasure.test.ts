@@ -1,10 +1,12 @@
 import { createHmac } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSimMeasurementsAccountErasureAdapter, createSimRouterAccountErasureAdapter, type SimMeasurementsErasureOptions } from "./sim-account-erasure.js";
 import { opaqueUserId } from "./ai-router-chat.js";
 import { contributorIdDay } from "./driver-measurement-contract.js";
 import type { AuthenticatedActor } from "./security.js";
+import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureService, type AccountErasureAdapter } from "./account-erasure.js";
+import { MemoryMobilityStore } from "./mobility-store.js";
 const issuer = "https://synthetic-erasure.test/realms/cop", a = "af004565-6cbe-46c3-9ab1-cd9f9884de19", b = "bf004565-6cbe-46c3-9ab1-cd9f9884de19", op = "df004565-6cbe-46c3-9ab1-cd9f9884de19";
 const actorSecret = "synthetic-signing-secret-".repeat(3), userIdSecret = "synthetic-existing-router-secret-".repeat(3), dailySecret = "synthetic-existing-driver-secret-".repeat(3);
 const actor = (subjectId = a): AuthenticatedActor => ({ authMode: "oidc", issuer, subjectId, username: "not-forwarded", displayName: "not-forwarded", email: "not-forwarded@example.test" });
@@ -58,6 +60,32 @@ async function fixture(reply?: (request: Request) => { status?: number; body?: u
   return { options, requests, anchor, routerOwned, setEnabled: (value: boolean) => { enabled = value; }, setPending: (value: boolean) => { pending = value; }, setNow: (value: string) => { now = new Date(value); } };
 }
 describe("SIM COP-only erasure adapters", () => {
+  it.each(["router", "driver"] as const)("controller starts the first %s HTTP operation while provider intake is enabled", async kind => {
+    const f = await fixture(), selected = kind === "router" ? createSimRouterAccountErasureAdapter(f.options) : createSimMeasurementsAccountErasureAdapter(f.options);
+    const existingOnly = vi.spyOn(selected, "readyForAcceptedOperation");
+    // Other owners and native/inventory authority are explicitly synthetic.
+    // This exercises the actual controller + actual COP SIM adapter + HTTP;
+    // it does not establish production cleanup or an actual SIM handler.
+    const adapters: AccountErasureAdapter[] = ACCOUNT_ERASURE_ADAPTER_IDS.map(id => id === selected.id ? selected : ({
+      id, ready: async () => true, preflight: async () => ({ ready: true, version: "synthetic_other_owner_v1" }),
+      erase: async () => ({ status: "completed", proofId: "synthetic_other_owner_proof_v1" })
+    }));
+    const service = new AccountErasureService({ store: new MemoryMobilityStore(), issuer,
+      identitySecret: "synthetic-controller-erasure-secret-".repeat(2), allowUnboundSyntheticStore: true,
+      accepted: true, requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS, adapters, now: f.options.now });
+    const owner = { ...actor(), authTime: Math.floor(f.options.now!().getTime() / 1000) };
+    expect(f.routerOwned.size).toBe(0); expect(f.anchor.size).toBe(0);
+    const plan = await service.preflight(owner, op);
+    expect(plan.response.canConfirm).toBe(true);
+    const receipt = await service.request(owner, op, { confirmAccountDeletion: true }, { planId: plan.response.planId!, capability: plan.capability! });
+    expect(receipt.accountDeleted).toBe(true);
+    expect(existingOnly).not.toHaveBeenCalled();
+    const handoffs = f.requests.filter(r => r.method === "POST" && !r.path.endsWith("/preflight"));
+    expect(handoffs).toHaveLength(1);
+    expect(handoffs[0]!.claim?.sub).toBe(a); expect(handoffs[0]!.claim?.operationId).toBe(op);
+    await expect(service.assertAllowed(owner)).rejects.toMatchObject({ status: 403 });
+    await service.assertAllowed({ ...owner, subjectId: b });
+  });
   it("defaults unavailable without actual native and issuer/legacy provenance authority", async () => {
     const f = await fixture();
     expect(await createSimRouterAccountErasureAdapter({ ...f.options, verifyConfiguredOwner: undefined }).ready()).toBe(false);

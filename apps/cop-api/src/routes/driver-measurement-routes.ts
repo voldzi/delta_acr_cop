@@ -28,6 +28,9 @@ export interface DriverMeasurementRoutesConfig {
   secret: string;
   store?: DriverMeasurementConsentStore;
   source?: DriverMeasurementSource;
+  /** Actual configured global guard initialization, awaited before any normal
+   * cleanup worker handoff. No readiness boolean or client-selected gate. */
+  beforeCleanupWorkers?: () => Promise<void>;
   now: () => Date;
 }
 
@@ -47,7 +50,7 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
   let cleanupJob: Promise<void> | undefined;
   let cleanupCursor = 0;
   async function flush(): Promise<void> {
-    if (!store || !source) return;
+    if (!store?.withPendingDeletion || !source) return;
     const records = await store.pending();
     if (!records.length) return;
     let attempts = 0;
@@ -57,8 +60,10 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
         if (attempts >= 4) break;
         attempts += 1;
         try {
-          await source.delete(contributorIdDay(secret, record.subjectId, day));
-          await store.markDeleted(record.subjectId, day);
+          // A stale pending() snapshot grants no provider authority. The exact
+          // consent store serializes this handoff with whole-account fencing.
+          await store.withPendingDeletion(record.subjectId, day,
+            () => source.delete(contributorIdDay(secret, record.subjectId, day)));
         } catch { continue; }
       }
     }
@@ -72,6 +77,7 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
   if (runtimeEnabled) {
     app.addHook("onReady", async () => {
       await store!.init(secret);
+      await config.beforeCleanupWorkers?.();
       scheduleCleanup();
       retryTimer = setInterval(scheduleCleanup, 60_000);
       retryTimer.unref?.();
@@ -164,7 +170,7 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
         correlationIdFrom(request.headers["x-correlation-id"]));
     }
     try {
-      const consent = await store!.grant(subjectId, now());
+      const consent = await store!.grant(subjectId, now(), { issuer: principal.issuer!, subjectId });
       if (!consent) return sendError(reply, 409, "DRIVER_MEASUREMENTS_REGRANT_BLOCKED",
         "Opětovný souhlas je možný až po dokončení smazání a v dalším UTC dni.",
         correlationIdFrom(request.headers["x-correlation-id"]));
@@ -179,7 +185,7 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
     if (request.body !== undefined) return sendError(reply, 400, "DRIVER_MEASUREMENTS_INVALID_REVOKE",
       "Odvolání souhlasu nemá tělo.", correlationIdFrom(request.headers["x-correlation-id"]));
     try {
-      await store!.revoke(subjectId, now());
+      await store!.revoke(subjectId, now(), { issuer: principal.issuer!, subjectId });
       const consent = await store!.get(subjectId);
       scheduleCleanup();
       return reply.code(consent.pendingDays.length ? 202 : 200).send({
@@ -207,7 +213,7 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
         return { invalid: false as const, receipt: {
           ...receipt, contractVersion: DRIVER_MEASUREMENT_MOBILE_VERSION, batchId: batch.batchId
         } };
-      });
+      }, { issuer: principal.issuer!, subjectId });
       if (!result) return sendError(reply, 403, "DRIVER_MEASUREMENTS_CONSENT_REQUIRED",
         "Měření dopravy vyžaduje platný souhlas.", correlationIdFrom(request.headers["x-correlation-id"]));
       if (result.invalid) return sendError(reply, 400, "DRIVER_MEASUREMENTS_INVALID_BATCH",

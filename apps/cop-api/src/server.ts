@@ -17,8 +17,9 @@ import { withVerifiedCommunityActor, withoutVerifiedCommunityActor } from "./com
 import { ContentErasureStoreError } from "./content-erasure.js";
 import { installCopStateProjectionOwner, runWithProjectionActor, runWithProjectionHydration, runWithVerifiedProjectionOwner, type CopStateProjectionOwner } from "./cop-state-erasure.js";
 import { createMessagingAccountErasureAdapter, createMessagingMobilityProviderEffects, type MessagingAccountErasureOptions } from "./messaging-account-erasure.js";
-import { createSimRouterAccountErasureAdapter, createSimMeasurementsAccountErasureAdapter,
+import { createSimRouterAccountErasureAdapter,
   type SimAccountErasureOptions, type SimMeasurementsErasureOptions } from "./sim-account-erasure.js";
+import { createCOPDriverMeasurementsErasureAdapter } from "./cop-driver-consent-erasure.js";
 import { createCommunityProjectionEraser, boundedProjectionJSON, canonicalProjectionReference, projectionPayloadMatch, projectionReferences,
   type ProjectionStateOwner, type ProjectionRemoteOwner, type ResourceProjectionStore } from "./resource-projection-erasure.js";
 import { runtimeAssessment, type RuntimeOwner, type RuntimeOwnerAssessment } from "./runtime-owner-erasure.js";
@@ -937,9 +938,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   if (driverMeasurementRuntimeEnabled && !options.driverMeasurementConsentStore && !process.env.COP_DATABASE_URL) {
     throw new Error("Driver measurement COP adapter requires COP_DATABASE_URL.");
   }
-  const driverMeasurementStore = driverMeasurementRuntimeEnabled
+  const driverConsentErasureConfigured = !!process.env.COP_ACCOUNT_ERASURE_SECRET?.trim() && driverMeasurementSecret.length >= 32;
+  const driverMeasurementStore = driverMeasurementRuntimeEnabled || driverConsentErasureConfigured
     ? options.driverMeasurementConsentStore ?? createDriverMeasurementConsentStoreFromEnv()
     : undefined;
+  if (driverMeasurementStore && !driverMeasurementRuntimeEnabled)
+    app.addHook("onClose", async () => { await driverMeasurementStore.close(); });
   const driverMeasurementSource = driverMeasurementRuntimeEnabled
     ? options.driverMeasurementSource ?? new HttpDriverMeasurementSource(
       process.env.COP_DRIVER_MEASUREMENTS_SIM_URL ?? "",
@@ -1375,10 +1379,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       createSimRouterAccountErasureAdapter({ issuer, baseUrl: process.env.COP_SIM_ERASURE_ROUTER_URL ?? "", token: process.env.COP_SIM_ERASURE_ROUTER_TOKEN ?? "",
         actorSecret: process.env.COP_SIM_ERASURE_ACTOR_SECRET ?? "", userIdSecret: process.env.COP_AI_CHAT_ROUTER_USER_ID_SECRET ?? "", now,
         verifyConfiguredOwner: options.simErasureOwnerVerifier, reviewExistingIdentity: options.simErasureIdentityReview }),
-      createSimMeasurementsAccountErasureAdapter({ issuer, baseUrl: process.env.COP_SIM_ERASURE_DRIVER_URL ?? "", token: process.env.COP_SIM_ERASURE_DRIVER_TOKEN ?? "",
+      createCOPDriverMeasurementsErasureAdapter({ issuer, baseUrl: process.env.COP_SIM_ERASURE_DRIVER_URL ?? "", token: process.env.COP_SIM_ERASURE_DRIVER_TOKEN ?? "",
         actorSecret: process.env.COP_SIM_ERASURE_ACTOR_SECRET ?? "", userIdSecret: process.env.COP_AI_CHAT_ROUTER_USER_ID_SECRET ?? "", now,
         verifyConfiguredOwner: options.simErasureOwnerVerifier, reviewExistingIdentity: options.simErasureIdentityReview,
-        inventory: options.simMeasurementErasureInventory }),
+        inventory: options.simMeasurementErasureInventory }, driverMeasurementStore),
       contentErasure.adapter,
       createVoiceLiveKitErasureAdapter({ issuer, stores: [voiceCallStore], now,
         provider: process.env.COP_LIVEKIT_ADMIN_URL && process.env.COP_LIVEKIT_API_KEY && process.env.COP_LIVEKIT_API_SECRET
@@ -1438,6 +1442,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     pilotSubjectIds: process.env.COP_DRIVER_MEASUREMENTS_PILOT_SUBJECT_IDS,
     oidcClientId: process.env.COP_DRIVER_MEASUREMENTS_OIDC_CLIENT_ID?.trim() || "csm-mobile",
     cleanupOidcClientIds: process.env.COP_DRIVER_MEASUREMENTS_CLEANUP_OIDC_CLIENT_IDS,
+    beforeCleanupWorkers: async () => { if (accountErasure) await accountErasure.init(); },
     oidcIssuer: process.env.COP_OIDC_ISSUER?.trim().replace(/\/$/u, ""),
     secret: driverMeasurementSecret,
     store: driverMeasurementStore,
@@ -1590,6 +1595,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     if (jizdaAppLink) await jizdaAppLink.init();
     if (accountErasure) await accountErasure.init();
+    // Consent metadata must remain available to erasure even with both normal
+    // measurement flags off. This creates no intake and never substitutes RAM.
+    if (driverMeasurementStore && !driverMeasurementRuntimeEnabled) await driverMeasurementStore.init(driverMeasurementSecret);
     if (accountErasure) {
       // Read the actual persistent frontier before hydration, asynchronous
       // producer startup or any request can replace controlled collections.

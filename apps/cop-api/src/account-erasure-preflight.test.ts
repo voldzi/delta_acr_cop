@@ -118,7 +118,7 @@ describe("actor-aware erasure preflight and independent receipt", () => {
     expect((await f.service.preflight(other, "54b48135-0f3d-4a69-80e3-f076e17b1509")).response.canConfirm).toBe(false);
     adapter.erase = vi.fn(async () => ({ status: "completed" as const, proofId: "accepted_existing_provider_proof" }));
     await f.service.resumePending();
-    expect(adapter.readyForAcceptedOperation).toHaveBeenCalledTimes(2);
+    expect(adapter.readyForAcceptedOperation).toHaveBeenCalledTimes(1);
     expect(adapter.erase).toHaveBeenCalledTimes(1);
     expect((await f.service.readWithCapability(operation, plan.capability!)).accountDeleted).toBe(true);
     await f.service.assertAllowed(other);
@@ -127,11 +127,36 @@ describe("actor-aware erasure preflight and independent receipt", () => {
     const f = fixture(), adapter = f.adapters.find(value => value.id === "ai_router")!;
     adapter.erase = vi.fn(async () => ({ status: "pending" as const, remaining: "cleanup_pending" as const }));
     const started = await start(f);
+    adapter.ready = async () => false;
     adapter.erase = vi.fn(async () => ({ status: "completed" as const, proofId: "must_not_be_used_proof" }));
     adapter.readyForAcceptedOperation = async () => false;
     await f.service.resumePending();
     expect(adapter.erase).not.toHaveBeenCalled();
     expect(await f.service.readWithCapability(operation, started.capability)).toMatchObject({ accountDeleted: false, remaining: ["keycloak", "ai_router"] });
+  });
+  it("creates the first provider operation while intake is enabled without requiring an existing receipt", async () => {
+    const f = fixture(), adapter = f.adapters.find(value => value.id === "sim_measurements")!;
+    adapter.readyForAcceptedOperation = vi.fn(async () => false); // provider404 before first handoff
+    adapter.erase = vi.fn(async (actor, context) => {
+      expect(await f.service.operationFenceConfirmed(actor, context)).toBe(true);
+      return { status: "completed" as const, proofId: "first_actual_handoff_fixture" };
+    });
+    const started = await start(f);
+    expect(adapter.readyForAcceptedOperation).not.toHaveBeenCalled();
+    expect(adapter.erase).toHaveBeenCalledTimes(1);
+    expect(started.receipt.accountDeleted).toBe(true);
+  });
+  it("does not substitute accepted-operation readiness for a throwing ordinary authority probe", async () => {
+    const f = fixture(), adapter = f.adapters.find(value => value.id === "ai_router")!;
+    adapter.erase = vi.fn(async () => ({ status: "pending" as const, remaining: "cleanup_pending" as const }));
+    const started = await start(f);
+    adapter.ready = async () => { throw new Error("synthetic authority unavailable"); };
+    adapter.readyForAcceptedOperation = vi.fn(async () => true);
+    adapter.erase = vi.fn(async () => ({ status: "completed" as const, proofId: "must_not_complete_fixture" }));
+    await f.service.resumePending();
+    expect(adapter.readyForAcceptedOperation).not.toHaveBeenCalled();
+    expect(adapter.erase).not.toHaveBeenCalled();
+    expect((await f.service.readWithCapability(operation, started.capability)).accountDeleted).toBe(false);
   });
   it("rotates beyond persistently pending jobs instead of starving later jobs", async () => {
     const f = fixture(); f.adapters[7]!.erase = vi.fn(async () => ({ status: "pending" as const, remaining: "cleanup_pending" as const }));
