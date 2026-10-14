@@ -1,0 +1,149 @@
+{
+  "date": "2026-10-14",
+  "scope": "legacy BFF refresh compatibility with unknown historical ownership retained",
+  "baseHead": "525457a23375824027214423272a6ff2fa506c9a",
+  "candidate": "uncommitted source snapshot; final source commit assigned by root after review",
+  "productionChanged": false,
+  "envChanged": false,
+  "realAccountsUsed": false,
+  "realProvidersCalled": false,
+  "schemaOrPublicApiChangedByThisCorrection": false,
+  "sourceSha256": {
+    "apps/cop-api/src/server.ts": "ae71e5a0c57e1c71445f7d153f1dc62f160051371beae2581b4f75c0061eac03",
+    "apps/cop-api/src/web-session-store.ts": "5de55526c5779395b0c4edf3d1c7df5a4a4b11ca8340017351a5b39ce331cb66",
+    "apps/cop-api/src/legacy-web-session-refresh.test.ts": "3e251f2c76e111563b1df96f4b46bcd3478b20d37f25a65eed964271d1008332",
+    "apps/cop-api/src/legacy-web-session-refresh.postgres.test.ts": "a2a248cfe42b7b669627fa8ff3846fd0dd8d76a924ae98b5f822ac026622be64",
+    "apps/cop-api/src/web-session-store.test.ts": "9ec5b8a4bd7ce86cbdb0a8d8b91c6f7bce8a59d234b05007f22dd588c990ddbd",
+    "apps/cop-api/src/web-session-bff.test.ts": "347350a93e38f3b54323839d4b1b9997738cc20d8bad80a4cfc40ede221101de",
+    "apps/cop-api/src/account-erasure-composition.test.ts": "708294027fe9ba33df35ae2bb91768a6372e9bbd956676fcbd9878856d0fdf29",
+    "apps/cop-api/src/account-erasure-http.test.ts": "9d0371777b9abae2d1bfb571ddc93f8aae848932fb6fb4fe5f2eb8eb9e92d2dd",
+    "apps/cop-api/src/account-erasure.test.ts": "29895a4d33a9d97319b8785dfde4f556f5b4e81343aee7fcf17661a81b41ff1a",
+    "docs/integration/43_ACCOUNT_SAFETY_COMPLETION.md": "8a461760d90926177a10b3b2265958ecb1284ea1c6433ab5232cd15f9bace094"
+  },
+  "tests": {
+    "files": 7,
+    "passed": 44,
+    "failed": 0,
+    "skipped": 0,
+    "actualPostgresCases": 5,
+    "command": [
+      "/Users/voldzi/.local/share/mise/installs/node/24.21.0/bin/node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "apps/cop-api/src/legacy-web-session-refresh.test.ts",
+      "apps/cop-api/src/legacy-web-session-refresh.postgres.test.ts",
+      "apps/cop-api/src/web-session-store.test.ts",
+      "apps/cop-api/src/web-session-bff.test.ts",
+      "apps/cop-api/src/account-erasure-composition.test.ts",
+      "apps/cop-api/src/account-erasure-http.test.ts",
+      "apps/cop-api/src/account-erasure.test.ts",
+      "--maxWorkers=2"
+    ],
+    "transport": "private PostgreSQL Unix socket and synthetic localhost HTTP only",
+    "rawSha256": "24e1acc9b4b60b70498a6a856a81857b660ebdbebcfa82fb1e86760885a0ef59"
+  },
+  "actualPg": {
+    "version": "postgres (PostgreSQL) 18.3 (Homebrew)",
+    "cluster": "/private/tmp/cop-legacy-bff-pg18-20261014.m64wvoc4",
+    "unixOnly": true,
+    "oldClusterUsed": false,
+    "stopExit": 0,
+    "stopped": true,
+    "removed": true,
+    "logSha256": "9d131cc727855fc3624e2272a14a808085fff2ca85b47cbe4e344512c11dbccf"
+  },
+  "validations": [
+    {
+      "command": [
+        "/Users/voldzi/.local/share/mise/installs/node/24.21.0/bin/node",
+        "node_modules/typescript/bin/tsc",
+        "-b",
+        "apps/cop-api/tsconfig.json",
+        "--pretty",
+        "false"
+      ],
+      "exitCode": 0,
+      "raw": "/private/tmp/cop-legacy-bff-validation-0-20261014.txt",
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "/Users/voldzi/.local/share/mise/installs/node/24.21.0/bin/node",
+        "node_modules/typescript/bin/tsc",
+        "--noEmit",
+        "-p",
+        "apps/cop-api/tsconfig.json",
+        "--pretty",
+        "false"
+      ],
+      "exitCode": 0,
+      "raw": "/private/tmp/cop-legacy-bff-validation-1-20261014.txt",
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "/Users/voldzi/.local/share/mise/installs/node/24.21.0/bin/node",
+        "node_modules/eslint/bin/eslint.js",
+        "apps/cop-api/src/server.ts",
+        "apps/cop-api/src/web-session-store.ts",
+        "apps/cop-api/src/legacy-web-session-refresh.test.ts",
+        "apps/cop-api/src/legacy-web-session-refresh.postgres.test.ts"
+      ],
+      "exitCode": 0,
+      "raw": "/private/tmp/cop-legacy-bff-validation-2-20261014.txt",
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "raw": "/private/tmp/cop-legacy-bff-validation-3-20261014.txt",
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "scripts/validate-skeleton.sh"
+      ],
+      "exitCode": 0,
+      "raw": "/private/tmp/cop-legacy-bff-validation-4-20261014.txt",
+      "rawSha256": "c6a3c6904a5a068dd23fda8a14a5510671c67b6cb43b337e56409acf41aa7fc1"
+    }
+  ],
+  "earlierAttempts": [
+    {
+      "scope": "initial BFF test fixture omitted required client ID",
+      "passed": 5,
+      "failed": 1,
+      "resolution": "fixture corrected; final exact gate above supersedes its outcome"
+    },
+    {
+      "scope": "default-sandbox private initdb",
+      "result": "failed on shmget Operation not permitted; no server started, owned directories removed",
+      "raw": "/private/tmp/cop-legacy-bff-pg-sandbox-initdb-20261014.txt",
+      "rawSha256": "d1f336a1bfd9ff5ff0da1900cec99f9c1b8130a062a4222203d27a04bf0d4654"
+    }
+  ],
+  "propertiesVerified": [
+    "same-subject refresh",
+    "known issuer mismatch denied",
+    "absent issuer and SQL NULL owner remain unknown",
+    "session ID, original lifetime and cookie retained",
+    "unknown erasure preflight remains false",
+    "revoked or missing rows not recreated",
+    "any-fence check after legacy admission lock",
+    "control row FOR UPDATE NOWAIT succeeds while refresh waits on legacy lock",
+    "expiry during lock wait returns null and leaves encrypted payload byte-identical",
+    "signed-actor global guard and 503 token preservation regressions",
+    "additive backup_restore composition preserved"
+  ],
+  "limitations": [
+    "no whole-suite rerun or addition to historical full-suite count",
+    "no real login or physical device acceptance",
+    "no actual Root/native/provider/backup authority acceptance",
+    "no production deployment or activation"
+  ]
+}

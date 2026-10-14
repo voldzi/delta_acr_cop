@@ -118,6 +118,14 @@ Queued writes and ownership created after initial preflight cannot slip through.
   service identity, false acknowledgement or generation change cannot complete.
   It runs last; no global user DELETE/logout is permitted by the selected policy.
 
+The server-only `backupRestoreErasureAdapter` option adds only the
+`backup_restore` owner to the actual local adapter composition. Its literal
+owner ID is checked at runtime; combining it with a full adapter override or a
+prebuilt erasure service is rejected instead of silently ignoring it. Existing
+standalone overrides remain available for isolated tests. This source seam
+does not implement or bind a restore authority, add an environment acceptance
+flag, change local transaction fences or activate production erasure.
+
 ## Actual external/production gates
 
 SIM's initial published implementation was
@@ -389,6 +397,38 @@ passed. It changes only the API build context/revision label, preserves current
 operational helpers/locks/health baseline, and does not reset `/srv/cop`. This
 source option has not built a production image or changed the accepted script.
 See [runbook24](../runbooks/24_COP_API_RUNTIME_PROFILE.md).
+
+### Dormant BFF compatibility for existing sessions
+
+The legacy web session format from accepted source `b13fbdc` contains no issuer.
+Ordinary refresh now requires the same verified subject and requires issuer
+equality only for a previously known issuer. It rotates credentials in the
+existing row without adopting historical ownership: absent profile issuer and
+SQL `owner_hash=NULL` stay unknown; cookie, session ID and original lifetime
+remain unchanged. Such history still blocks erasure preflight until its legacy
+session expires or is revoked. A new login records its own verified issuer;
+it does not adopt the older row. Known ownership mismatches, any legacy fence, revoked
+or missing rows remain rejected; the signed-actor global guard is unchanged.
+PostgreSQL uses owner → legacy → row lock ordering, with the any-fence recheck
+after acquiring the legacy lock. No new schema, configuration or public API is
+introduced by this compatibility correction.
+
+The focused combined gate passed **44/44** cases in seven files, including five
+actual PostgreSQL18.3 cases seeded with the old encrypted payload and old table
+without `owner_hash`. It checks migration, NULL preservation, restart, identity
+mismatch, concurrent revoke and a real advisory-lock wait with a successful
+control `FOR UPDATE NOWAIT` before fence recheck. A session that expires while
+waiting is rejected after the lock without changing its encrypted credentials.
+Existing account controller, BFF outage and additive restore composition
+regressions are included. API
+typecheck/build and scoped ESLint passed. The first sandbox initdb attempt
+failed on shared-memory EPERM; the separately authorized isolated Unix-only
+cluster completed and was stopped and removed with its fixtures. The prior
+cluster and production were not used. These cases overlap earlier gates and
+must not be added to old full-suite counts. No real login, provider, native
+authority, physical device or production acceptance is inferred. Exact source
+pins and commands are in
+[testing/account-erasure-legacy-bff-refresh-20261014.json](../testing/account-erasure-legacy-bff-refresh-20261014.json).
 
 Deploy reviewed immutable source with intakefalse first. Activate only after
 actual two-synthetic-account owner/readback/restore acceptance and native binding

@@ -380,6 +380,8 @@ import {
 export interface BuildServerOptions {
   accountErasure?: AccountErasureService;
   accountErasureAdapters?: readonly AccountErasureAdapter[];
+  /** Add only the restore owner; preserve the actual local adapter composition. */
+  backupRestoreErasureAdapter?: AccountErasureAdapter & { readonly id: "backup_restore" };
   contentErasureProjections?: CommunityProjectionEraser & { ready(): Promise<boolean> };
   /** Actual configured provider/stream copies; never a boolean acceptance label. */
   contentRemoteProjectionOwner?: ProjectionRemoteOwner;
@@ -851,6 +853,15 @@ const floodDemoBbox = {
 };
 
 export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
+  const backupRestoreErasureAdapter = options.backupRestoreErasureAdapter;
+  if (backupRestoreErasureAdapter !== undefined) {
+    if (backupRestoreErasureAdapter?.id !== "backup_restore") {
+      throw new Error("The additive restore adapter must own backup_restore.");
+    }
+    if (options.accountErasureAdapters !== undefined || options.accountErasure !== undefined) {
+      throw new Error("The additive restore adapter cannot be combined with a full account erasure override.");
+    }
+  }
   const serviceAuthPolicy = new ServiceAuthPolicy(process.env.COP_SERVICE_AUTH_BINDINGS);
   const maxCommunityAttachmentBytes = readPositiveInteger(process.env.COP_MEDIA_MAX_ATTACHMENT_BYTES, 25 * 1024 * 1024);
   const app = Fastify({
@@ -1396,7 +1407,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         ? [createKeycloakAccountErasureAdapter({ issuer, clientId: process.env.COP_KEYCLOAK_ERASURE_CLIENT_ID,
           clientSecret: process.env.COP_KEYCLOAK_ERASURE_CLIENT_SECRET,
           authorityAccepted: process.env.COP_KEYCLOAK_COP_SCOPE_AUTHORITY_ACCEPTED === "true",
-          assertCopAccessFenced: async (actor, context) => accountErasure?.operationFenceConfirmed(actor, context) ?? false }, accountSafetyStore)] : [])
+          assertCopAccessFenced: async (actor, context) => accountErasure?.operationFenceConfirmed(actor, context) ?? false }, accountSafetyStore)] : []),
+      ...(backupRestoreErasureAdapter ? [backupRestoreErasureAdapter] : [])
     ];
     accountErasure = new AccountErasureService({ store: accountSafetyStore, identitySecret: erasureSecret, expectedGuardStoreId: erasureStoreId,
       issuer, requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS, adapters: options.accountErasureAdapters ?? localAdapters,
@@ -1891,7 +1903,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     let refreshedSession: WebSessionRecord | null;
     try {
       const refreshed = await refreshBffTokens(session.refreshToken);
-      if (refreshed.profile.issuer !== session.profile.issuer || refreshed.profile.subjectId !== session.profile.subjectId)
+      if (refreshed.profile.subjectId !== session.profile.subjectId ||
+        (session.profile.issuer !== undefined && refreshed.profile.issuer !== session.profile.issuer))
         throw new Error("OIDC refresh changed the session actor.");
       // Persist verified rotated credentials before probing the erasure guard.
       // update checks the owner/fence atomically and never creates a missing row.

@@ -108,8 +108,17 @@ export class InMemoryWebSessionStore implements WebSessionStore {
     this.assertWritable(input.profile);
     const previous = this.values.get(sessionId);
     if (!previous || previous.expiresAt <= new Date()) return null;
-    if (this.owner(previous.profile) !== this.owner(input.profile) || previous.profile.subjectId !== input.profile.subjectId) return null;
-    const record = { ...previous, ...input };
+    if (previous.profile.subjectId !== input.profile.subjectId) return null;
+    if (previous.profile.issuer !== undefined && this.owner(previous.profile) !== this.owner(input.profile)) return null;
+    let rotated = input;
+    if (previous.profile.issuer === undefined) {
+      // A verified new token rotates current credentials; it does not attest
+      // the historical ownership of this legacy session or extend its lifetime.
+      if (this.fences.size) throw new Error("WEB_SESSION_ACCOUNT_ERASURE_FENCED");
+      const profile = { ...input.profile }; delete profile.issuer;
+      rotated = { ...input, profile };
+    }
+    const record = { ...previous, ...rotated };
     this.values.set(sessionId, record);
     return record;
   }
@@ -218,16 +227,37 @@ export class PostgresWebSessionStore implements WebSessionStore {
   async update(sessionId: string, input: WebSessionTokens): Promise<WebSessionRecord | null> {
     const owner = this.owner(input.profile);
     return this.transaction(owner, async client => {
+      // Probe without a row lock, then use owner -> legacy ordering for a
+      // candidate unknown row. This agrees with revokeActor and legacy writes;
+      // taking a row lock first could deadlock with a legacy writer.
+      const candidate = await client.query<{ owner_hash: string | null }>(
+        "SELECT owner_hash FROM cop_web_sessions WHERE session_id=$1 AND session_expires_at > now()", [sessionId]);
+      if (!candidate.rows[0]) return null;
+      const legacyLock = candidate.rows[0].owner_hash === null;
+      if (legacyLock) await client.query("SELECT pg_advisory_xact_lock(18101203, hashtext($1))", ["legacy-owner"]);
       const result = await client.query<WebSessionRow & { owner_hash: string | null }>(
         `SELECT session_id, owner_hash, token_payload, access_expires_at, session_expires_at, created_at
          FROM cop_web_sessions WHERE session_id=$1 AND session_expires_at > now() FOR UPDATE`, [sessionId]);
       const row = result.rows[0];
-      if (!row || row.owner_hash !== (owner ?? null)) return null;
+      if (!row) return null;
+      // SQL now() is the transaction start time, so recheck after lock waits.
+      const expiresAt = requiredDate(row.session_expires_at, "session_expires_at");
+      if (expiresAt <= new Date()) return null;
       const previous = this.decrypt(row.token_payload);
-      if (previous.profile.subjectId !== input.profile.subjectId || previous.profile.issuer !== input.profile.issuer) return null;
+      if (previous.profile.subjectId !== input.profile.subjectId) return null;
+      let rotated = input;
+      if (previous.profile.issuer === undefined) {
+        if (row.owner_hash !== null || !legacyLock) return null;
+        // The any-fence check must happen after the legacy lock: a different
+        // account's concurrently accepted fence must not be missed here.
+        const fenced = await client.query("SELECT 1 FROM cop_web_session_erasure_fences LIMIT 1");
+        if (fenced.rows.length) throw new Error("WEB_SESSION_ACCOUNT_ERASURE_FENCED");
+        const profile = { ...input.profile }; delete profile.issuer;
+        rotated = { ...input, profile };
+      } else if (row.owner_hash !== (owner ?? null) || previous.profile.issuer !== input.profile.issuer) return null;
       await client.query("UPDATE cop_web_sessions SET token_payload=$2, access_expires_at=$3, updated_at=now() WHERE session_id=$1",
-        [sessionId, this.encrypt(input), input.accessTokenExpiresAt]);
-      return { ...input, createdAt: requiredDate(row.created_at, "created_at"), expiresAt: requiredDate(row.session_expires_at, "session_expires_at"), sessionId };
+        [sessionId, this.encrypt(rotated), input.accessTokenExpiresAt]);
+      return { ...rotated, createdAt: requiredDate(row.created_at, "created_at"), expiresAt, sessionId };
     });
   }
   private encrypt(value: WebSessionTokens): string {
