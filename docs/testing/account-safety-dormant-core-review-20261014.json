@@ -1,0 +1,240 @@
+{
+  "scope": "independent source review and actual own SQLite/flock synthetic core fixtures only",
+  "date": "2026-10-14",
+  "sourcePins": {
+    "core.py": "b180c23d68cab41d966bca52d08a28fc71ca7fc162c500017f439c91a9401256",
+    "test_core.py": "e0871377d5e74f18c5f03d8bc3186f394a6d8ad3976f93188a3bd1e991db3346"
+  },
+  "fixedSourceDefect": {
+    "problem": "principal drain omitted earlier pending owner-wide leases of the same owner",
+    "fix": "include same-owner owner-wide pending leases in principal drain",
+    "regression": "test47 covers original permit, principal fence, unknown, next grant generation and exact origin terminal settlement"
+  },
+  "copRootExecution": {
+    "tests": 47,
+    "passed": true,
+    "executedPlatform": "darwin",
+    "seconds": 0.989,
+    "ownedChildCount": 6,
+    "ownedChildrenExited": true,
+    "cleanup": {
+      "remainingOwnedFixtures": 0
+    },
+    "cleanupErrorClass": null,
+    "originalReportSha256": "6e8e461e25b5f3d985fb9bbe46e100e908a56c2224875f1b7107ee02bfea75a3",
+    "command": "python3 -I -B test_core.py --run --core-sha256 b180c23d68cab41d966bca52d08a28fc71ca7fc162c500017f439c91a9401256 --test-sha256 e0871377d5e74f18c5f03d8bc3186f394a6d8ad3976f93188a3bd1e991db3346"
+  },
+  "sourceScope": "COP local same-transaction guards remain local authority; future native control applies to concrete SIM cross-database handoff/commit/drain and continuity/restore",
+  "wireContractAccepted": false,
+  "nativeTransportImplemented": false,
+  "cases": [
+    {
+      "case": "test_01_actual_readiness_and_admission_unresolved",
+      "passed": true
+    },
+    {
+      "case": "test_02_registered_fixture_admission_is_durable",
+      "passed": true
+    },
+    {
+      "case": "test_03_admin_object_required_not_boolean",
+      "passed": true
+    },
+    {
+      "case": "test_04_revoked_grant_denies_admission",
+      "passed": true
+    },
+    {
+      "case": "test_05_revoke_denies_new_begin_commit",
+      "passed": true
+    },
+    {
+      "case": "test_06_grant_retry_immutable_not_new_authority",
+      "passed": true
+    },
+    {
+      "case": "test_07_generation_cannot_skip_reset_bool_or_float",
+      "passed": true
+    },
+    {
+      "case": "test_08_new_generation_never_resets_fence_or_old_pending",
+      "passed": true
+    },
+    {
+      "case": "test_09_owner_wide_fence_blocks_other_principal_all_lanes",
+      "passed": true
+    },
+    {
+      "case": "test_10_other_owner_not_globally_blocked",
+      "passed": true
+    },
+    {
+      "case": "test_11_principal_fence_crosses_both_cop_owners",
+      "passed": true
+    },
+    {
+      "case": "test_12_same_principal_new_handle_new_login_stays_fenced",
+      "passed": true
+    },
+    {
+      "case": "test_13_fence_before_permit_denies_commit",
+      "passed": true
+    },
+    {
+      "case": "test_14_permit_before_fence_keeps_pending_until_origin_terminal",
+      "passed": true
+    },
+    {
+      "case": "test_15_late_settlement_survives_revoke_and_new_generation",
+      "passed": true
+    },
+    {
+      "case": "test_16_wrong_owner_cannot_settle_origin_lease",
+      "passed": true
+    },
+    {
+      "case": "test_17_other_actor_lane_observation_cannot_settle",
+      "passed": true
+    },
+    {
+      "case": "test_18_new_grant_does_not_forge_old_settlement",
+      "passed": true
+    },
+    {
+      "case": "test_19_naked_terminal_boolean_or_unknown_not_accepted",
+      "passed": true
+    },
+    {
+      "case": "test_20_expiry_death_exec_disconnect_keep_pending",
+      "passed": true
+    },
+    {
+      "case": "test_21_immutable_operation_body_actor_lane_grant",
+      "passed": true
+    },
+    {
+      "case": "test_22_exact_admission_retry_historical_cannot_commit",
+      "passed": true
+    },
+    {
+      "case": "test_23_changed_admission_refs_or_cas_retry_denied",
+      "passed": true
+    },
+    {
+      "case": "test_24_four_independent_refs_not_naked_boolean",
+      "passed": true
+    },
+    {
+      "case": "test_25_retention_protection_unresolved_denied",
+      "passed": true
+    },
+    {
+      "case": "test_26_expired_refs_deny_admit_and_precommit",
+      "passed": true
+    },
+    {
+      "case": "test_27_owner_wide_n_plus_one_rejects_old_cas",
+      "passed": true
+    },
+    {
+      "case": "test_28_other_actor_pending_blocks_owner_checkpoint",
+      "passed": true
+    },
+    {
+      "case": "test_29_completed_fence_cannot_be_omitted",
+      "passed": true
+    },
+    {
+      "case": "test_30_new_grant_does_not_reset_checkpoint_namespace",
+      "passed": true
+    },
+    {
+      "case": "test_31_terminal_retry_immutable_historical_after_expiry",
+      "passed": true
+    },
+    {
+      "case": "test_32_append_only_records_and_journal",
+      "passed": true
+    },
+    {
+      "case": "test_33_database_rollback_quarantined",
+      "passed": true
+    },
+    {
+      "case": "test_34_record_tamper_with_restored_trigger_quarantined",
+      "passed": true
+    },
+    {
+      "case": "test_35_absent_store_and_readonly_reopen_no_bootstrap_or_cleanup",
+      "passed": true
+    },
+    {
+      "case": "test_36_real_two_process_exact_admission_one_new_one_historical",
+      "passed": true
+    },
+    {
+      "case": "test_37_real_grant_fence_admit_same_cas_single_order_winner",
+      "passed": true
+    },
+    {
+      "case": "test_38_actual_owned_crash_after_commit_before_anchor_quarantined",
+      "passed": true
+    },
+    {
+      "case": "test_39_policy_allowed_read_survives_retain_and_protection",
+      "passed": true
+    },
+    {
+      "case": "test_40_destructive_cleanup_denied_for_retain_or_protected",
+      "passed": true
+    },
+    {
+      "case": "test_41_cop_fences_leave_synthetic_unrelated_sim_izs_access_markers",
+      "passed": true
+    },
+    {
+      "case": "test_42_explicit_owner_operation_has_no_actor_authority_substitute",
+      "passed": true
+    },
+    {
+      "case": "test_43_actor_a_pending_blocks_ownerwide_b_aggregate",
+      "passed": true
+    },
+    {
+      "case": "test_44_principal_fence_requires_current_ownerwide_coverage_before_aggregate",
+      "passed": true
+    },
+    {
+      "case": "test_45_ownerwide_pending_blocks_actor_interleave_and_unknown_stays_closed",
+      "passed": true
+    },
+    {
+      "case": "test_46_ownerwide_permit_rechecks_n_plus_one_and_owner_fence",
+      "passed": true
+    },
+    {
+      "case": "test_47_ownerwide_pending_counts_in_affected_principal_drain",
+      "passed": true
+    }
+  ],
+  "notPerformed": [
+    "application imports or wiring",
+    "real identity, retention, report or schema resolution",
+    "independent production anchor",
+    "actual provider or DB/effect terminal evidence",
+    "actual SIM/IZS login preservation",
+    "production enrollment, deployment or activation",
+    "real user deletion or restore"
+  ],
+  "productionAuthorization": false,
+  "actualProducer": false,
+  "actualAdmission": false,
+  "actualIdentity": false,
+  "actualOwnerEvidence": false,
+  "actualIndependentAnchor": false,
+  "actualProvider": false,
+  "actualSimPreservation": false,
+  "actualRestore": false,
+  "ownerWideReplayComplete": false,
+  "kernelDatabaseAtomicityClaim": false
+}

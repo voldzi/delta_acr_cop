@@ -235,6 +235,20 @@ transaction; the metadata database is not substituted as its store. See
 Keycloak's discovered shared realm has been resolved by the explicit COP-only
 human policy above; its narrowly scoped authority still requires acceptance.
 
+Infrastructure also prepared an offline SQLite/flock state machine for durable
+grant/revoke, admission, permit, fence and terminal order. COP independently
+reviewed the source and ran the exact pinned corrected fixture: **47/47 PASS**,
+all six owned children exited and zero owned fixtures remained. The review found
+and the owner fixed a principal drain that omitted pending owner-wide work;
+the regression preserves pending across unknown outcome and a new runtime
+generation until the original terminal evidence. This remains an explicitly
+synthetic source gate: actual owner evidence, independent anchor, native
+transport, provider settlement, SIM login preservation and restore were not
+verified, and every actual/production authorization flag is false. It supplies
+no positive application callback or production wire ABI. Existing COP local
+transaction guards remain its local authority. Exact scope and pins are in
+[the separate dormant-core review evidence](../testing/account-safety-dormant-core-review-20261014.json).
+
 ## Verification / release
 
 Latest candidate verification on 2026-10-14 used clean documentation HEAD
