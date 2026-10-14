@@ -190,6 +190,21 @@ The first published source/test boundary is
 [testing/account-erasure-20261014.json](../testing/account-erasure-20261014.json);
 the subsequent compatibility/resume and X5 build-only corrections are recorded
 in [testing/account-erasure-resume-20261014.json](../testing/account-erasure-resume-20261014.json).
+The technical COP–SIM loopback pair was also independently run by COP with
+actual COP adapters from `a0c6fd683ab51fa677c485e22c9f9e83621a188b`
+and actual SIM Express handlers from compatibility source
+`7bd5a6381006810c7a4bf3ffa51d13e3b63a61ed`: **10/10 PASS**. It covers
+200/202,401/503, complete historical retained/outbox days with two key
+versions, pending publication and accepted-only feature-off resume; unknown or
+foreign operations stay blocked. Store, identity/continuity authority and
+publication dependencies are explicitly synthetic. No PostgreSQL, physical
+phone, actual Root proof, provider or production acceptance is inferred from
+this runner. External/model/matcher calls were zero. Exact handler/adapter
+hashes and the separate technical acceptance boundary are in
+[testing/account-erasure-cop-sim-http-20261014.json](../testing/account-erasure-cop-sim-http-20261014.json).
+Do not add these cases to the full unit suite count or relabel the earlier e2
+verification as this corrected pair.
+
 Provider mocks do not establish actual provider permissions, root resolver
 coverage or production account removal. Actual shared SIM login/refresh after
 scoped revoke, physical whole-account use, native restore quarantine and

@@ -137,6 +137,7 @@ local feature choice nor the disabled historical unlink source deletes the accou
 - [43 — Dokončování mazání celého účtu, aktuální testy a oddělený stav produkce](integration/43_ACCOUNT_SAFETY_COMPLETION.md)
 - [Strojová evidence mazání účtu 2026-10-14](testing/account-erasure-20261014.json) — místní testy databází/HTTP; produkční aktivace zatím neověřená.
 - [Navazující evidence kompatibility SIM, pokračování mazání a sestavení na X5](testing/account-erasure-resume-20261014.json) — nezaměňovat se společnou produkční akceptací.
+- [Skutečné HTTP COP adaptéry ↔ SIM handlery, 10 syntetických scénářů](testing/account-erasure-cop-sim-http-20261014.json) — technická kompatibilita, nikoli produkční výmaz či ověření obnovy.
 
 Source gates from 13 October are archived in
 `docs/archive/2026-10-13_ACCOUNT_SAFETY_SOURCE_GATES.md`; they do not establish

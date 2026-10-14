@@ -1,0 +1,79 @@
+{
+  "scope": "synthetic_loopback_HTTP_only",
+  "copRevision": "a0c6fd683ab51fa677c485e22c9f9e83621a188b",
+  "copSourceSha256": {
+    "apps/cop-api/src/sim-account-erasure.ts": "75e4bfde21c8e3ece5f6853e44c13c6158ba8c5504cee6bb14467201e04dfe2d",
+    "apps/cop-api/src/ai-router-chat.ts": "a2357095540f118c1c77208e2ae4abd767178558969e00b1af7277efdba14e57",
+    "apps/cop-api/src/driver-measurement-contract.ts": "d0d5c9275c8cb04ae97c3199508509a4e2dd6e08738eb226aa1acdf46b4b40c0"
+  },
+  "simSourceSha256": {
+    "apps/ai-router-api/src/app.ts": "e298137791c2240aab3f2d0996fbb1ed6d1b0e9e91b881520f47e676bd5dce37",
+    "apps/ai-router-api/src/account-erasure.ts": "0d59e2009749dc973b76f9fa3b15da1afe28c2eaeb5589b3ce32f2fa93c39d7a",
+    "apps/situation-data-api/src/driver-measurements.ts": "bf128290ecaca8250e763f2347b0733a66296c39ff8dd0411c82c5b1879d7652",
+    "apps/situation-data-api/src/driver-account-erasure.ts": "25e6c9731452150c4424b3bc60a0679d03b99044e824813d19a92674d342ca23"
+  },
+  "driverFixtureClock": "2026-10-14T12:00:00.000Z",
+  "actualSimExpressHandlers": true,
+  "syntheticStoresAndAuthority": true,
+  "cases": [
+    {
+      "name": "actual handler 401, exact cache header and safe correlation IDs",
+      "result": "PASS"
+    },
+    {
+      "name": "default missing configured-owner authority is not ready",
+      "result": "PASS"
+    },
+    {
+      "name": "COP Router adapter: actual capability/preflight/start/status 200",
+      "result": "PASS"
+    },
+    {
+      "name": "COP driver adapter: actual canonical actor, coverage/preflight/start/status 200",
+      "result": "PASS"
+    },
+    {
+      "name": "full historical retained/outbox inventory and two key versions are never truncated",
+      "result": "PASS"
+    },
+    {
+      "name": "actual Router 202 remains pending, never whole completion",
+      "result": "PASS"
+    },
+    {
+      "name": "actual driver publication 202 remains pending",
+      "result": "PASS"
+    },
+    {
+      "name": "401/wrong dedicated token and 503 outage never complete or fallback",
+      "result": "PASS"
+    },
+    {
+      "name": "reviewed corrected COP resumes only accepted operations with the feature off",
+      "result": "PASS"
+    },
+    {
+      "name": "feature off cannot create unknown or foreign operations",
+      "result": "PASS"
+    }
+  ],
+  "requestStatusCounts": {
+    "200": 42,
+    "202": 8,
+    "401": 4,
+    "404": 13,
+    "503": 4
+  },
+  "forbiddenNetworkCalls": 0,
+  "matcherCalls": 0,
+  "providerCalls": 0,
+  "syntheticHttpAcceptance": true,
+  "productionAcceptance": false,
+  "productionAuthorization": false,
+  "actualRootProof": false,
+  "actualPostgresTest": false,
+  "blockers": [],
+  "simRuntimeSourceRevision": "7bd5a6381006810c7a4bf3ffa51d13e3b63a61ed",
+  "independentlyRunBy": "COP root",
+  "date": "2026-10-14"
+}
