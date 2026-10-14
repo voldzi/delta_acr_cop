@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "verifiedAtUtc": "2026-10-14T13:10:42Z",
+  "scope": "actual_owned_isolated_postgresql_authentication_only",
+  "executor": "/root/account_erasure_final_review",
+  "rootReview": "proof/raw/source/HBA pins and observed command results verified; tests not rerun",
+  "proofSha256": "fd8c040e1cd90e22deb30dc43012068158a042253574b39baeea8b3d19c6a5ec",
+  "sourceSha256": "2fadb7153cbcc4589937ea07eb11e489a3b3bb3836a0c01853a98ff040767896",
+  "rawSha256": "db100d4132239bd5b07bd16581cce22890c84e2e6ee2eb444bfa571ca016145f",
+  "candidateSha256": "2afeb5e0399a97bcd0f6c2a58608795e368318b3126a70543f67e139d206bac3",
+  "imageId": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+  "actualVersion": "postgres (PostgreSQL) 18.6",
+  "cases": [
+    {
+      "name": "OS postgres to DB postgres proves peer identity",
+      "passed": true,
+      "exitCode": 0,
+      "stdout": "postgres|postgres|peer:postgres\n",
+      "stderr": ""
+    },
+    {
+      "name": "OS root cannot claim DB postgres or fall through to trust",
+      "passed": true,
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "psql: error: connection to server on socket \"/work/socket/.s.PGSQL.5432\" failed: FATAL:  Peer authentication failed for user \"postgres\"\n"
+    },
+    {
+      "name": "OS nobody cannot claim DB postgres or fall through to trust",
+      "passed": true,
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "psql: error: connection to server on socket \"/work/socket/.s.PGSQL.5432\" failed: FATAL:  Peer authentication failed for user \"postgres\"\n"
+    },
+    {
+      "name": "OS postgres physical replication IDENTIFY_SYSTEM",
+      "passed": true,
+      "exitCode": 0,
+      "stdout": "7696508901084753960|1|0/1768B20|\n",
+      "stderr": ""
+    },
+    {
+      "name": "OS root physical replication denied without trust fallback",
+      "passed": true,
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "psql: error: connection to server on socket \"/work/socket/.s.PGSQL.5432\" failed: FATAL:  Peer authentication failed for user \"postgres\"\n"
+    },
+    {
+      "name": "ordinary synthetic LOGIN retains original local trust",
+      "passed": true,
+      "exitCode": 0,
+      "stdout": "cop_synthetic_local_login|\n",
+      "stderr": ""
+    },
+    {
+      "name": "first food reject preserved for OS root",
+      "passed": true,
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "psql: error: connection to server on socket \"/work/socket/.s.PGSQL.5432\" failed: FATAL:  pg_hba.conf rejects connection for host \"[local]\", user \"food_knowledge_collector\", database \"postgres\", no encryption\n"
+    },
+    {
+      "name": "first food reject preserved for OS postgres",
+      "passed": true,
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "psql: error: connection to server on socket \"/work/socket/.s.PGSQL.5432\" failed: FATAL:  pg_hba.conf rejects connection for host \"[local]\", user \"food_knowledge_collector\", database \"postgres\", no encryption\n"
+    }
+  ],
+  "passed": 8,
+  "failed": 0,
+  "hbaParserRows": [
+    "1|local|all|food_knowledge_collector|reject|",
+    "2|local|all|postgres|peer|",
+    "3|local|all|all|trust|",
+    "4|local|replication|postgres|peer|",
+    "5|local|replication|all|trust|"
+  ],
+  "isolation": {
+    "imageMatched": true,
+    "network": "none",
+    "portBindings": {},
+    "mounts": [],
+    "tmpfs": {
+      "/tmp": "rw,nosuid,nodev,size=16m,mode=1777",
+      "/var/lib/postgresql": "rw,nosuid,nodev,size=256m,mode=1777",
+      "/work": "rw,nosuid,nodev,size=32m,mode=1777"
+    },
+    "readonlyRootfs": true
+  },
+  "cleanup": {
+    "postgresStopExit": 0,
+    "containerStopExit": 0,
+    "containerRemoveExit": 0,
+    "containerAbsent": true
+  },
+  "dockerVolumes": {
+    "before": 28,
+    "after": 28,
+    "new": 0,
+    "removedExisting": 0
+  },
+  "dockerContextUnchanged": true,
+  "pullBuildInstall": false,
+  "evidenceDirectory": "/private/tmp/cop-narrow-peer-auth-20261014.0ijgycwz",
+  "loggingQualification": "Isolated container uses the existing default json-file driver; only synthetic test/process data was used. No claim that Docker logging was disabled.",
+  "productionHbaApplied": false,
+  "productionPatroniVerified": false,
+  "productionCallerMappingAccepted": false,
+  "productionTcpAuthenticationVerified": false,
+  "newLoginOrGrants": false,
+  "actualNativeAuthorityAccepted": false,
+  "actualRestoreAccepted": false,
+  "limitations": [
+    "Synthetic isolated Linux Alpine PostgreSQL18.6 only, not production OS/Patroni configuration.",
+    "No A2 apply or production HBA/authentication, caller mapping, network auth, authority or restore acceptance.",
+    "No role activation or B2 technical LOGIN provisioning."
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "recordType": "cop-independent-native-deployment-candidate-source-review",
+  "date": "2026-10-14",
+  "candidateRevision": 2,
+  "reviewerTask": "/root/cop_native_binding_seams",
+  "status": "SOURCE_ONLY_REVIEW_NOT_RUNTIME_ACCEPTANCE",
+  "artifactDirectory": "/Users/voldzi/Documents/Codex/2026-07-19/upgrade-proxmox-clusteru-c-lem-je-2/reports/cop-account-safety-20261014/native-deployment-guard-candidate",
+  "sourcePins": {
+    "baseline/cop-api-runtime.py": "49ca96be6982704d6e5ef16a0c722f59eebc40e310a28e29564e8c75645c89cb",
+    "cop-api-runtime.py": "dbdcd64af518d0c238830df74fd6b9ac74f4bd6f602668c5b9e91f55deacd064",
+    "test_candidate.py": "6d1702c2f0640c450da4a591694f5d606a9b1d034aba7ba8f32f91cf8a357f35",
+    "fixture_support.py": "c541d986dce22136bedfe6c261b031451db1ab460b4b96905feb1f8066085482",
+    "TEST-RESULTS-19.json": "97cbc588e170efa10e76914068db72a41aeaa9651cdc3106c220efab50a703cb",
+    "SOURCE-REVIEW.json": "253d9544e123d88ad81edc0351b5d5b309e1734c0ed8f3af067289e315ddea95",
+    "SOURCE-PINS.json": "cf614c63df8f0fae28f8cdeaebcec680e92862c807cd6fec8a8cc4e2a77f54cd",
+    "CONTRACT.md": "5881b48d409aabbd95137c13fd313de936214bbb1c0c2ef87feb16bfa47e4203",
+    "INERT-MANIFEST.json": "924c9b45df514aac3ad5ee326c2188a96c592883214d0ab5d16379d228a70e95"
+  },
+  "pinVerification": {
+    "reviewedPinsMatchBeforeAndAfterSourceReview": true,
+    "exactPinsReverifiedBeforeDocumentation": true,
+    "copCheckoutBaselineMatches49ca": true,
+    "historical16ResultNotReassignedToRevision2": true
+  },
+  "reviewScope": {
+    "method": "Read-only baseline delta and selected new seams, activation/adoption, recovery/rollback, pointer commit, pending cleanup, completed readback and corresponding test source",
+    "candidateImportedOrExecuted": false,
+    "testsRunByReviewer": false,
+    "productionReadOrMutationByReviewer": false
+  },
+  "findings": {
+    "concreteP1P2": [],
+    "qualification": "No concrete P1/P2 defect found in the inspected change; this does not establish actual authority or runtime acceptance."
+  },
+  "reviewedProperties": [
+    "Detached callback context and unchanged original/input checks; only literal True accepts, never False, None, integer or truthy object.",
+    "Origin operation, new target, previous pointer and exact action destination are checked before and after dependency calls; another approved pair is not interchangeable.",
+    "In-pending rollback preserves the original operation/new target/previous and binds its destination to that exact previous; it does not retarget the original pending operation.",
+    "Opaque registeredBodyDigest is not computed from localProjectionDigest; mutable health/CID progress is excluded from the immutable public projection.",
+    "Explicit release collision checks and exclusive mkdir preserve existing release history.",
+    "Pointer commit and pending unlink require the exact completed binding; pointer and active readback check the destination tuple/full public projection.",
+    "Unknown preserves pending/completed reconciliation evidence and creates no application permit or inferred settlement.",
+    "Existing X5/profile/image/source/Compose/health/peer/CAS controls remain; default dependency denies and mutating main rejects before cop-storage import, with no CLI/env positive override."
+  ],
+  "authorTestEvidence": {
+    "receipt": "TEST-RESULTS-19.json",
+    "passed": 19,
+    "failed": 0,
+    "errors": 0,
+    "exitCode": 0,
+    "scope": "Author run of dedicated synthetic files/FakeDocker only; read as evidence, not rerun by this reviewer."
+  },
+  "actualAcceptance": {
+    "authority": false,
+    "rootCustody": false,
+    "installed": false,
+    "nativeIssuer": false,
+    "guardStoreAccepted": false,
+    "replayAccepted": false,
+    "restoreAccepted": false,
+    "productionAuthorizedByThisReview": false
+  },
+  "remainingBoundary": "Actual root registry/resolver/latch and custody, application store/config/continuity/replay binding and installation remain unaccepted. Local equality, completed readback and the literal True dependency seam are not their proof."
+}

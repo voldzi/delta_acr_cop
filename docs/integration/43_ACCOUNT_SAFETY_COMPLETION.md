@@ -286,6 +286,29 @@ or add SIM's 88 cases to its application count. This closes the selected source
 review; actual transport, identity, owner evidence, anchor, settlement and restore
 acceptance remain open. See [the companion source review](../testing/account-safety-sim-v5-companion-review-20261014.json).
 
+## Isolated administrator authentication follow-up
+
+COP ran **8/8 actual isolated authentication cases** on an already available
+PostgreSQL18.6 Linux Alpine image, with only an owned container and tmpfs data.
+The narrow candidate inserts `local all postgres peer` and
+`local replication postgres peer` before the existing corresponding trust rows.
+OS postgres could authenticate as DB postgres with verified `peer:postgres`;
+OS root and nobody were denied without falling through to trust. Physical
+`IDENTIFY_SYSTEM` succeeded for postgres and was denied for root. A synthetic
+ordinary LOGIN retained trust, and the first FoodKnowledgeCollector reject
+remained effective for both tested OS users. The root reviewed proof, raw command
+results and all three source/HBA/raw pins without rerunning the cases.
+
+The container and its temporary database were stopped and removed. No host
+ports, bind mounts, persistent volumes, network, pull/build/install or production
+changes were used; existing Docker volumes remained28 before and after. The
+container used the default logging driver with synthetic data only. This closes
+only the isolated behavior check. Actual production caller compatibility,
+Patroni/config owner binding, TCP authentication, fresh DCS comparison and a
+separate human authorization remain required before any HBA application.
+No technical LOGIN, grant, key, deployment or activation follows from these tests.
+See [the bounded authentication evidence](../testing/account-safety-narrow-peer-auth-20261014.json).
+
 ## Verification / release
 
 SIM's Driver retention follow-up is source `25de85ab`, with documentation and

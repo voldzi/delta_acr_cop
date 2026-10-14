@@ -1,6 +1,7 @@
 # Account safety runtime guard binding — proposal only
 
-Status: not implemented in the native deployment helper; activation blocker.
+Status: source-only candidate reviewed; not installed or authority-bound in the
+production native deployment helper; activation blocker.
 
 On 2026-10-14, the human explicitly approved and the infrastructure owner
 created only the empty `cop_account_safety_guard` root metadata database on
@@ -71,6 +72,19 @@ no production helper and creates no authority or installation permission.
 Legitimate rollback needs its own exact action binding to the original pending
 operation/target and the independently accepted previous destination. Preserve
 the original pending target; an approved-pair list cannot choose that destination.
+
+The separate native source candidate revision 2 (`dbdcd64a…acd064`) was
+independently reviewed against exact baseline `49ca96be…45c89cb`; the pinned
+source review is `253d9544…ddea95`. The qualification and exact pins are in
+[the independent source-only review](../testing/account-safety-native-candidate-review-20261014.json).
+No concrete P1/P2 defect was found in the inspected change. The **19/19** result
+is the author's dedicated synthetic-file/FakeDocker run, not a reviewer rerun.
+The candidate preserves the original pending operation/new target/previous
+during an exactly bound rollback, checks completed pointer readback and keeps
+unknown evidence. Its default authority denies; mutating CLI commands stop
+before `cop-storage.py` import. Actual authority, custody, installation and
+store/replay/restore acceptance remain unverified; this source review grants no
+production permission.
 
 Application configuration proposals (all disabled/empty by default):
 
