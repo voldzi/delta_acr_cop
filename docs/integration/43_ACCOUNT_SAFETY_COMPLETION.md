@@ -288,6 +288,27 @@ acceptance remain open. See [the companion source review](../testing/account-saf
 
 ## Verification / release
 
+SIM's Driver retention follow-up is source `25de85ab`, with documentation and
+evidence published at `57302f4b`. COP independently reviewed all seven pinned
+implementation/test files and the 37 focused test cases, then verified the
+unchanged pins and clean SIM checkout. No concrete P1/P2 finding remained.
+Construction dispatches no cleanup; the explicit lifecycle uses one immutable
+cutoff and transaction, and close awaits actual local cleanup/COMMIT/release
+even if its injected consumer resolves or rejects early. Permanent erasure
+ledger/fences remain untouched. The fixed standalone path has no PG/env fallback.
+
+The production lifecycle factory and standalone path reject UNBOUND before
+pool/secrets/SQL. Ordinary measurement route registration may still read its
+existing intake settings and create a lazy pool; unbound retention start refuses
+before store.init SQL. The application catches this refusal and preserves
+unrelated Search/Feature registration. This is a source claim, not live API
+acceptance. SIM's 37 focused cases are included in its 628 workspace passes;
+six older opt-in PostgreSQL cases were skipped. COP did not rerun or add these
+counts to its own tests. The local owner/cutoff callback is not a native/replay
+proof. Actual PostgreSQL retention, maintenance authority and restore remain
+unverified, and the image remains nondeployable even with intake flags off.
+See [the bounded retention source review](../testing/account-safety-sim-retention-review-20261014.json).
+
 Full-suite baseline verification on 2026-10-14 used clean documentation HEAD
 `4a1154146b1cd99daedb7e18956fd1c65fc2021b`, with unchanged application
 implementation `898cd5132f513259b226d5beff5c3876156b56e7`:

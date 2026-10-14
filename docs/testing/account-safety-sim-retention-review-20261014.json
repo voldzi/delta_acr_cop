@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-10-14 12:52:24 UTC",
+  "scope": "independent_source_review_only",
+  "simSource": "25de85abf2ab00ad125c9482f1ddb70bb81cfce2",
+  "simTree": "3342da69817b4f26d1dd5065aca7ba68c239e7a4",
+  "simDocumentationHead": "57302f4b8442774faafcffe81da9ce4eea7552c5",
+  "ownerReceiptSha256": "447039b47a3e9eb33ef7ed73f762ff29191864a3427a8bff64b082fd1926484d",
+  "sourcePins": {
+    "apps/situation-data-api/src/app.ts": "82f8b8ae4b6a5510b468d682ee88a79075c23ae19b1ddabfe9c9e709f4631adb",
+    "apps/situation-data-api/src/driver-measurements.ts": "9083e6902f70f6f02d43c691bea5961126aa29b0649ddc0942e4cbd198b135b0",
+    "apps/situation-data-api/src/driver-measurement-store.ts": "cc7d103d28c9ff8b0b02b8e8d40db0fc0303a0f9cf5c219a4dfe796ea019c912",
+    "scripts/driver-measurements-maintenance.mjs": "a0a3d5ee3a958e2858ea86449bc9d5d59cfd3de5100b2b5858c42def9e5ce42a",
+    "apps/situation-data-api/src/driver-retention-lifecycle.ts": "bc3f261916458a716121ed7b37d84800ba1fc904869834831325fe48aa161c93",
+    "apps/situation-data-api/src/driver-maintenance-cli.ts": "0712a41c77fdeca2d054f519d25c9eaa1e29d2a2276b85867fda44f00ef40f6b",
+    "apps/situation-data-api/test/driver-retention-lifecycle.test.ts": "9c9fed6767391b969da02b8f754386757993286b0f0f2a2f811255bca8e00598"
+  },
+  "sourcePinsUnchangedBeforeAfterReview": true,
+  "rootFinalPinReadback": "PASS",
+  "concreteP1P2Findings": [],
+  "reviewedProperties": [
+    "constructor does not dispatch SQL or timer",
+    "one immutable cutoff and one transaction for both deletes",
+    "permanent ledger and fences are untouched",
+    "overlap and duplicate or late work callbacks cannot create additional cleanup",
+    "close awaits actual local cleanup COMMIT/release before pool.end",
+    "early consumer resolution or rejection does not bypass local work settlement",
+    "fixed standalone compiled entrypoint has no PG/env fallback"
+  ],
+  "unboundQualification": {
+    "productionLifecycleFactoryAndStandalone": "UNBOUND before pool secrets or SQL",
+    "ordinaryMeasurementRegistration": "may read existing intake settings and create lazy pool",
+    "retentionStartOrRun": "UNBOUND before store.init SQL",
+    "unrelatedApi": "createApp catches retention refusal and retains Search/Feature registration; source-level only"
+  },
+  "ownerReportedTests": {
+    "focusedPassed": 37,
+    "workspacePassed": 628,
+    "workspaceFailed": 0,
+    "workspaceSkipped": 6,
+    "focusedAlreadyIncludedInWorkspace": true,
+    "postgresRetentionConnections": 0,
+    "rerunByCop": false
+  },
+  "actualNativeOrReplayAuthorityAccepted": false,
+  "actualPostgresRetentionVerified": false,
+  "actualRestoreAccepted": false,
+  "imageDeployable": false,
+  "productionChanged": false,
+  "realAccountDeleted": false
+}
