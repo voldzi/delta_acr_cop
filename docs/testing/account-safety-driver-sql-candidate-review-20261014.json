@@ -64,5 +64,50 @@
     "productionChanged": false,
     "realAccountDeleted": false
   },
-  "coordinatedRoleTransitionReview": "account-safety-driver-role-transition-review-20261014.json"
+  "coordinatedRoleTransitionReview": "account-safety-driver-role-transition-review-20261014.json",
+  "simActualSchemaCandidate": {
+    "publishedSource": "79acd91795902081558d95431a88d73fa81c5b6e",
+    "tree": "e02330b6bc9db1fea293df933b0e36f44504013a",
+    "sourcePins": {
+      "deploy/driver-measurements/schema.sql": "6dd60a3acf28d63575198c8526c368df19bbd543f4063d4985fb55f308da02d0",
+      "deploy/driver-measurements/002_account_erasure.sql": "f13db2106a1fe1a02d0d1a26afa8ad7d7c045172ba4419749719ed0f166e16ad",
+      "scripts/fixtures/driver-retention-real-schema/expiry-source.sql": "1561825849c8990526af26eae3866ee2100072db72bed638997a2eec7a8afb7a",
+      "scripts/test-driver-expiry-real-schema.mts": "61ff2bfe5b3510fa0c8d4a2be61bc8cea83fb798695d35713b0681634f5e2b6f"
+    },
+    "proofPath": "docs/archive/2026-10-14_DRIVER_EXPIRY_REAL_SCHEMA.json",
+    "proofSha256": "8dac0d99b4add01446b05e8fdc6cd752f5d754328754fc46fe5848b954841396",
+    "rootReview": "Read full candidate SQL, harness and unchanged schema/002; verified all four current source pins and proof. No rerun or production inspection.",
+    "authorEvidence": {
+      "postgresVersion": "18.3",
+      "passed": 11,
+      "providerCalls": 0,
+      "unixOnlyOwnedClusterRemoved": true,
+      "countsNotAddedToCopFixtureOrExistingSuites": true
+    },
+    "verifiedSourceScope": [
+      "Actual unchanged receipt FK cascades, table owners and receipt guard; exact permanent state/operations/fences preserved in fixture.",
+      "Same origin xid8/backend/start and executor/sealer row lock; effects+marker share origin transaction.",
+      "Fixed receipts/revocations cutoff spans historical routing datasets; origin table has no contributor/account/day/GPS columns.",
+      "Runtime fixture UPDATE only receipt; raw DELETE/TRUNCATE/marker/role bypass denied. This is not the live grant profile.",
+      "Inner control JSON after ROLLBACK is not durable terminal. Actual control COMMIT and fresh exact-origin readback required."
+    ],
+    "evidenceQualification": "sourceUnchangedDuringRun covers the three SQL inputs. Harness hash was captured at completion, not independently attested before/after during the author run. Root current hashes match all four proof pins.",
+    "unresolved": "Actual Root connection/execution custody and delivery; native ABI/producer; accepted whole-scope policy and stable protection generation; coordinated revoke+erase+provisioning transition; store continuity and actual restore.",
+    "actual": {
+      "productionChanged": false,
+      "nativeAuthority": false,
+      "rootConnectionCustody": false,
+      "nativeTransport": false,
+      "wholeScopePolicyAccepted": false,
+      "actualWriterIntegration": false,
+      "restoreAccepted": false,
+      "deploymentAccepted": false
+    },
+    "independentPeerReview": {
+      "result": "No concrete P1/P2 found within mechanical source scope.",
+      "sourcePinsBeforeAfterMatched": 5,
+      "testRerun": false,
+      "productionOrRestoreAcceptance": false
+    }
+  }
 }

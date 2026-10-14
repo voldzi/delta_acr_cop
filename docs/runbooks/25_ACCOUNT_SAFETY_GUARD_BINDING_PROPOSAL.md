@@ -151,6 +151,26 @@ journal hash needs privacy/retention acceptance. Actual Root connection/custody,
 SDK/native producer/delivery, policy/schema/refs, continuity and restore remain
 unaccepted. SIM source and production were not changed by this fixture work.
 
+### SIM compatibility with actual schema sources
+
+SIM published `79acd91795902081558d95431a88d73fa81c5b6e` with the fixed expiry
+candidate over unchanged `schema.sql` plus migration002. Its owned Unix-only
+PostgreSQL18.3 run passed **11/11** cases with zero provider calls and removed
+its cluster. COP read the complete SQL/harness/schema sources and verified all
+four current pins and the proof digest; no cases were rerun or added to earlier
+COP/SIM totals. The [bounded review](../testing/account-safety-driver-sql-candidate-review-20261014.json)
+records the inputs and qualifications.
+
+The fixture preserves actual FK cascades, original table ownership/receipt
+guard and exact permanent erasure evidence. Its expiry origin has no contributor,
+account/day, manifest or GPS columns. The author's during-run unchanged-source
+check covers the three SQL inputs; the harness hash was captured at completion.
+This establishes compatibility with those schema sources, not the installed
+production schema. It implements no live writer/provisioning transition, native
+Root connection/delivery, accepted policy, store continuity or actual restore.
+Do not install it while those gates remain unresolved or remove existing
+physical cleanup without an accepted replacement.
+
 ### Coordinated measurement privilege transition
 
 The [source boundary review](../testing/account-safety-driver-role-transition-review-20261014.json)
