@@ -249,6 +249,21 @@ no positive application callback or production wire ABI. Existing COP local
 transaction guards remain its local authority. Exact scope and pins are in
 [the separate dormant-core review evidence](../testing/account-safety-dormant-core-review-20261014.json).
 
+A separate v5 byte/DTO candidate fixes the v4 schema URI references, permits
+only a narrow new-generation own-origin current/settlement/drain channel, and
+checks response permit/lease and drain/scope relations. COP independently
+reviewed the exact unchanged source pins and executed **34/34 offline cases**,
+with zero remaining owned fixtures. Existing COP Node24.21/AJV2020 8.20 also
+compiled both candidate schemas and structurally validated four emitted
+synthetic request/response pairs (eight DTO validations). The original failed
+v4 compilation receipt is retained. Structural JSON Schema does not establish
+lexical numbers/duplicates, cross-field relations or digest/actor authority;
+Node consumer conformance and actual transport remain separate. No native
+Linux producer, actual ownership/anchor/provider, application import/wiring or
+production acceptance was established. The v3 state machine, its epoch/fences
+and earlier v4 source remain unchanged. See
+[the separate v5 boundary evidence](../testing/account-safety-boundary-v5-review-20261014.json).
+
 ## Verification / release
 
 Latest candidate verification on 2026-10-14 used clean documentation HEAD

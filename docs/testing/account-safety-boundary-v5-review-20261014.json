@@ -1,0 +1,268 @@
+{
+  "scope": "independent source review, own offline Python/SQLite fixtures and structural AJV validation only",
+  "date": "2026-10-14",
+  "protocol": "cop-dormant-boundary-fixture-v5",
+  "sourcePins": {
+    "boundary.py": "f0bffe6f0f6d3b26570050c2a0bcb59d27923e3a347f8967b9aba76240a859dd",
+    "test_boundary.py": "407fbfb21a0f9108e2429e47c81e5f5358c16572e65b1ad0951e7c96f9f8570d",
+    "frozenCoreV3": "b180c23d68cab41d966bca52d08a28fc71ca7fc162c500017f439c91a9401256",
+    "SOURCE-PINS.json": "90814725db2f78232d401fbdf83f6f5d99a16a146b67e648adfb76d4d018523f",
+    "request.schema.json": "9cc8241cb5218ce0128d6ebe3fa66ead972b4eaf474145a4458d96879dcd1a50",
+    "result.schema.json": "1f3153bc01ff1c9099a96ee1685655147320c0b7aaf2bf4f7e7fdf944511fcd6",
+    "SCHEMA-FIXTURE-FRAMES.json": "c8163064b00f3f5f25a639dd7646938dff41538622092fd505b0f53a886023eb"
+  },
+  "sourceCorrections": [
+    "Canonical absolute schema references compile in existing COP AJV",
+    "New runtime generation has only current/unknown/settle/drain for exact own origin; admit/begin_commit denied",
+    "Result permit lease must match original request lease",
+    "Result drain scope must match original operation scope"
+  ],
+  "sourceReview": "Selected independent before/after review found no new P1/P2; prior v4 and v3 bytes unchanged",
+  "copRootPythonExecution": {
+    "tests": 34,
+    "passed": true,
+    "seconds": 0.481,
+    "executedPlatform": "darwin",
+    "cleanup": {
+      "remainingOwnedFixtures": 0
+    },
+    "cleanupErrorClass": null,
+    "originalReceiptSha256": "91cc4db60080904ba09d46108146597ca62fbd44864e4a5f3a25a127633ebd96",
+    "cases": [
+      {
+        "case": "test_01_exact_current_codec_no_private_principal_or_grant_selector",
+        "passed": true
+      },
+      {
+        "case": "test_02_actual_path_default_deny_even_valid_frame",
+        "passed": true
+      },
+      {
+        "case": "test_03_all_admin_methods_denied",
+        "passed": true
+      },
+      {
+        "case": "test_04_owner_uid_image_store_admin_selectors_denied",
+        "passed": true
+      },
+      {
+        "case": "test_05_exact_nested_method_fields",
+        "passed": true
+      },
+      {
+        "case": "test_06_duplicates_at_nested_level_rejected",
+        "passed": true
+      },
+      {
+        "case": "test_07_utf8_surrogate_depth_size_rejected",
+        "passed": true
+      },
+      {
+        "case": "test_08_float_exponent_nan_infinity_all_rejected",
+        "passed": true
+      },
+      {
+        "case": "test_09_bool_or_negative_counter_rejected",
+        "passed": true
+      },
+      {
+        "case": "test_10_lease_historical_exact_bool",
+        "passed": true
+      },
+      {
+        "case": "test_11_wrong_uuid_digest_protocol_rejected",
+        "passed": true
+      },
+      {
+        "case": "test_12_frame_digest_canonical_whitespace_insensitive_not_lease_digest",
+        "passed": true
+      },
+      {
+        "case": "test_13_correlation_changes_with_requestid",
+        "passed": true
+      },
+      {
+        "case": "test_14_wrong_fixed_binding_rejected_before_mutation",
+        "passed": true
+      },
+      {
+        "case": "test_15_body_schema_code_swaps_rejected",
+        "passed": true
+      },
+      {
+        "case": "test_16_cas_scope_ref_swap_rejected",
+        "passed": true
+      },
+      {
+        "case": "test_17_missing_registration_or_wrong_observation_denied",
+        "passed": true
+      },
+      {
+        "case": "test_18_registry_cannot_use_unverified_module_or_boolean_admin",
+        "passed": true
+      },
+      {
+        "case": "test_19_ambiguous_runtime_registration_denied",
+        "passed": true
+      },
+      {
+        "case": "test_20_current_snapshot_not_commit_authority",
+        "passed": true
+      },
+      {
+        "case": "test_21_admit_then_commit_fixed_result_bindings",
+        "passed": true
+      },
+      {
+        "case": "test_22_historical_marker_not_authority_requires_fresh_server_decision",
+        "passed": true
+      },
+      {
+        "case": "test_23_revoked_registration_denies_new_admission",
+        "passed": true
+      },
+      {
+        "case": "test_24_origin_settlement_via_new_registered_generation",
+        "passed": true
+      },
+      {
+        "case": "test_25_unknown_disconnect_never_drains",
+        "passed": true
+      },
+      {
+        "case": "test_26_caller_terminal_unknown_or_wrongkind_denied",
+        "passed": true
+      },
+      {
+        "case": "test_27_fd_close_attempts_continue_after_error_synthetic_only",
+        "passed": true
+      },
+      {
+        "case": "test_28_native_macos_rejected_without_linux_calls",
+        "passed": true
+      },
+      {
+        "case": "test_29_typed_result_rejects_extra_private_fields_or_success_unknown",
+        "passed": true
+      },
+      {
+        "case": "test_30_error_dto_fixedsafe_and_bound",
+        "passed": true
+      },
+      {
+        "case": "test_31_n_plus_one_case_and_unknown_do_not_release_state",
+        "passed": true
+      },
+      {
+        "case": "test_32_all_results_false_and_dto_is_not_v1_abi",
+        "passed": true
+      },
+      {
+        "case": "test_33_origin_current_fixed_scope_denies_foreign_and_newwork",
+        "passed": true
+      },
+      {
+        "case": "test_34_result_lease_and_operation_scope_relations",
+        "passed": true
+      }
+    ]
+  },
+  "copNodeSchemaExecution": {
+    "nodeVersion": "v24.21.0",
+    "ajvVersion": "8.20.0",
+    "formatsVersion": "3.0.1",
+    "strict": true,
+    "compilationResults": [
+      {
+        "schema": "request.schema.json",
+        "status": "PASS",
+        "validatorFunctionCreated": true
+      },
+      {
+        "schema": "result.schema.json",
+        "status": "PASS",
+        "validatorFunctionCreated": true
+      }
+    ],
+    "pairResults": [
+      {
+        "index": 0,
+        "case": "registered-new-generation-origin-current",
+        "method": "current",
+        "requestValid": true,
+        "resultValid": true,
+        "requestErrors": null,
+        "resultErrors": null
+      },
+      {
+        "index": 1,
+        "case": "registered-new-generation-origin-settle",
+        "method": "settle",
+        "requestValid": true,
+        "resultValid": true,
+        "requestErrors": null,
+        "resultErrors": null
+      },
+      {
+        "index": 2,
+        "case": "registered-new-generation-origin-current",
+        "method": "current",
+        "requestValid": true,
+        "resultValid": true,
+        "requestErrors": null,
+        "resultErrors": null
+      },
+      {
+        "index": 3,
+        "case": "registered-new-generation-origin-drain",
+        "method": "drain",
+        "requestValid": true,
+        "resultValid": true,
+        "requestErrors": null,
+        "resultErrors": null
+      }
+    ],
+    "schemaValidationsPassed": 8,
+    "originalReceiptSha256": "26be242a23b0486c0e19fcbf2f176eec89dce195ca88c3a79706d3b62818561b",
+    "knownSchemaLimitationsNotValidated": [
+      "Parsed JSON Schema integer cannot distinguish raw lexical1.0/1e0 from integer1",
+      "Parsed objects cannot demonstrate rejection of duplicate JSON keys or UTF8/canonical byte framing",
+      "CAS scopeRef==operationId requires a separate cross-field check",
+      "ack and historical relation requires a separate cross-field check",
+      "pending count and state relation requires a separate cross-field check",
+      "Response permit lease must match original request lease; structural schemas alone do not prove this",
+      "Response drain scope must match request operation scope; structural schemas alone do not prove this",
+      "Request/response correlation and digest preimages require separate semantic verification"
+    ],
+    "failedV4ReceiptPreserved": true,
+    "failedV4ReceiptSha256": "2582a8ff1ab71fb7b6190c95ae36f70d04faa5d027627eb15718fb1d622cb023"
+  },
+  "acceptedWire": false,
+  "nativeLinuxExecuted": false,
+  "nodeTransportImplemented": false,
+  "actualApplicationWiring": false,
+  "scopePreservation": "Existing local COP same-transaction guards remain local authority; no new store or authority epoch/reset",
+  "notPerformed": [
+    "application imports or deployment",
+    "real private identity or owner record resolution",
+    "Linux socket or per-message kernel proof",
+    "actual Node transport",
+    "independent root anchor or enrollment",
+    "actual DB/provider/outbox/effect settlement",
+    "actual shared SIM/IZS login preservation",
+    "real user removal or actual restore"
+  ],
+  "flags": {
+    "actualAdmission": false,
+    "actualIdentity": false,
+    "actualIndependentAnchor": false,
+    "actualOwnerEvidence": false,
+    "actualProducer": false,
+    "actualProvider": false,
+    "actualRestore": false,
+    "actualSimPreservation": false,
+    "kernelDatabaseAtomicityClaim": false,
+    "ownerWideReplayComplete": false,
+    "productionAuthorization": false
+  }
+}
