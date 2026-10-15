@@ -10,6 +10,31 @@ activated. No real account was deleted.
 Earlier imports and vehicle-subset gates are [archived](../archive/2026-10-13_ACCOUNT_SAFETY_SOURCE_GATES.md);
 they do not establish this candidate or live erasure.
 
+### 15 October: implemented Root SQL executor component
+
+COP added the real Root-only original-operation executor and signed result
+records in [scripts/account-safety](../../scripts/account-safety/README.md).
+It uses SIM's published `6df9d353` schema003, actual original PostgreSQL
+transaction identity, a durable one-shot dispatch and committed exact-origin
+resolution. Revoke preserves its actual scalar count before COMMIT and can
+recover that observation without repeating DELETE. Private body/identities/GPS
+are not journaled. A missing scalar cannot become a fabricated zero.
+
+The separate gates passed **8/8 actual PostgreSQL18.3**, **7/7 codec/signature**,
+and **10/10 disposable Linux Root-file/signature/verifier unit cases**.
+The SQL gate uses synthetic admission, and the Root verifier unit gate uses
+synthetic metadata observations: neither proves independently enrolled current
+production authority. Scope, source pins and failed initial fixture
+qualification are in [the separate receipt](../testing/account-safety-root-producer-20261015.json).
+
+This closes the executor-source gap only. Actual app delivery, Root permit and
+current-frontier/inventory producers, full owner drain and journal/replay,
+production `index.ts` bindings and Root installation/enrollment remain missing.
+These are not missing general user permission. No production erasure activation,
+actual restore acceptance or real account deletion is claimed. SIM must not
+remove live direct privileges or deploy schema003 before the complete coordinated
+writer/cleanup transition. Existing accepted production remains active.
+
 ## Authority and scope
 
 The human requested completion with SIM and deployment after verification on

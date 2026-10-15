@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "scope": "root_original_sql_executor_source_component_only",
+  "checkedAtUtc": "2026-10-15T05:44:38.700580+00:00",
+  "simSource": "6df9d35301e6e92e54cc1e8af46354b0fefbecb7",
+  "sourcePins": {
+    "scripts/account-safety/driver-origin-producer.mjs": "721ed7526fdde4ab9428fe6203e93e5a12bf0dbe01a2ae17fabfab4c21d0dbf8",
+    "scripts/account-safety/root-driver-runtime.mjs": "4d82f9570473e681920061b2b4ba6164ceab23f7dd5429a5b6044ae205981df3",
+    "scripts/account-safety/root-files.test.mjs": "e7682164c5ef086a29f994d6624294320d0e57811889ccbb9bd10bfc9b10ff7c",
+    "scripts/account-safety/root-outcome-records.mjs": "52ae91e6f0a0a9ce0c36bf29a472337e1b8b26e973dcf3d1289e00112c346845",
+    "scripts/account-safety/root-publication.mjs": "aec35c9e46664ce9c3f879b8f6a0f806eb47e36ca68b09f812264a38aca6bc5c",
+    "scripts/account-safety/root-records.mjs": "a8df7110eb77864ff9cbc7aa77ce39e724e091d70fd62b0a659de7a386732d88",
+    "scripts/account-safety/root-records.test.mjs": "5a75e1b4bb2504820a730db60fb49781b24d588524459da64efbd4182747a2ae",
+    "scripts/account-safety/test-driver-origin-postgres.mjs": "849aee62fed2384fb44dbd8daaa0ce6e1b24c6d9298cc91c41f7a40bc99e14a9"
+  },
+  "gates": {
+    "postgres": {
+      "contractVersion": "cop-root-producer-sql-test-v1",
+      "passed": 8,
+      "cases": [
+        {
+          "case": "producer executes actual original transaction and commits marker",
+          "passed": true
+        },
+        {
+          "case": "same dispatch is probe-only and cannot delete later expired rows",
+          "passed": true
+        },
+        {
+          "case": "lost executor commit acknowledgement resolves existing commit without repeat",
+          "passed": true
+        },
+        {
+          "case": "lost registration commit acknowledgement seals original without effects",
+          "passed": true
+        },
+        {
+          "case": "inner seal result with lost outer acknowledgement remains pending",
+          "passed": true
+        },
+        {
+          "case": "payload mismatch cannot execute or create a target origin",
+          "passed": true
+        },
+        {
+          "case": "revoke persists exact scalar before COMMIT and recovers it without another DELETE",
+          "passed": true
+        },
+        {
+          "case": "failed durable scalar storage rolls back original revoke instead of committing effects",
+          "passed": true
+        }
+      ],
+      "inputs": {
+        "deploy/driver-measurements/schema.sql": "6dd60a3acf28d63575198c8526c368df19bbd543f4063d4985fb55f308da02d0",
+        "deploy/driver-measurements/002_account_erasure.sql": "f13db2106a1fe1a02d0d1a26afa8ad7d7c045172ba4419749719ed0f166e16ad",
+        "deploy/driver-measurements/003_guarded_operations.sql": "e3513a983a3b6d1bd52d46851c734dd1c3b208e2e2f6430a6f9eddd38b10d3b5"
+      },
+      "codePins": {
+        "driver-origin-producer.mjs": "721ed7526fdde4ab9428fe6203e93e5a12bf0dbe01a2ae17fabfab4c21d0dbf8",
+        "root-records.mjs": "a8df7110eb77864ff9cbc7aa77ce39e724e091d70fd62b0a659de7a386732d88",
+        "root-driver-runtime.mjs": "4d82f9570473e681920061b2b4ba6164ceab23f7dd5429a5b6044ae205981df3",
+        "root-publication.mjs": "aec35c9e46664ce9c3f879b8f6a0f806eb47e36ca68b09f812264a38aca6bc5c",
+        "root-outcome-records.mjs": "52ae91e6f0a0a9ce0c36bf29a472337e1b8b26e973dcf3d1289e00112c346845",
+        "test-driver-origin-postgres.mjs": "849aee62fed2384fb44dbd8daaa0ce6e1b24c6d9298cc91c41f7a40bc99e14a9"
+      },
+      "postgresVersion": "18.3",
+      "ownedClusterRemoved": true,
+      "tcp": false,
+      "sourceUnchangedDuringRun": true,
+      "actualRootAuthority": false,
+      "actualNativeDelivery": false,
+      "actualRestore": false,
+      "productionChanged": false,
+      "ackQualification": "Controller deliberately discarded ACK; not network packet loss."
+    },
+    "codec": {
+      "node": "24.21.0",
+      "passed": 7,
+      "failed": 0
+    },
+    "rootFilesAndSignatures": {
+      "node": "24.20.0",
+      "passed": 10,
+      "failed": 0,
+      "disposableLinuxContainer": true,
+      "network": false,
+      "hostMounts": false,
+      "metadataObservations": "synthetic_unit_fixture",
+      "actualEd25519": true
+    }
+  },
+  "logSha256": {
+    "producer-pg": "97ad7fedf4bc3bf2d7f472a6fff75367756bbeedeb9990e19a011d2c3e731e76",
+    "records": "ef8ecf47641eb431ffc78c1ddd8b7e20eb75178d724ee4a7f1f086af16515736",
+    "files": "7c8577eed917bf47640bd44c4355662382edde0c5b289c9d694bd8d0839097e4"
+  },
+  "checks": {
+    "skeleton": "PASS",
+    "scopedEslint": "PASS"
+  },
+  "initialFailedFixture": "Container PID1 comm is MainThread under Node24; replaced fragile process-name check with required owned tmpfs mount checks. No operation ran in that failed attempt.",
+  "rootAuthorityEnrolled": false,
+  "actualNativeDelivery": false,
+  "actualRestore": false,
+  "applicationEntrypointWired": false,
+  "productionChanged": false,
+  "accountErasureActivated": false,
+  "realAccountDeleted": false
+}

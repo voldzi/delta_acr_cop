@@ -135,6 +135,7 @@ removal gates: [plan 42](integration/42_COP_ACCOUNT_REMOVAL_PLAN.md). Neither a
 local feature choice nor the disabled historical unlink source deletes the account.
 
 - [43 — Dokončování mazání celého účtu, aktuální testy a oddělený stav produkce](integration/43_ACCOUNT_SAFETY_COMPLETION.md)
+- [Root vykonavatel původní mazací operace — soukromý kontrakt, skutečné testy a zbývající napojení](../scripts/account-safety/README.md)
 - [Strojová evidence mazání účtu 2026-10-14](testing/account-erasure-20261014.json) — místní testy databází/HTTP; produkční aktivace zatím neověřená.
 - [Navazující evidence kompatibility SIM, pokračování mazání a sestavení na X5](testing/account-erasure-resume-20261014.json) — nezaměňovat se společnou produkční akceptací.
 - [Skutečné HTTP COP adaptéry ↔ SIM handlery, 10 syntetických scénářů](testing/account-erasure-cop-sim-http-20261014.json) — technická kompatibilita, nikoli produkční výmaz či ověření obnovy.
