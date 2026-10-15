@@ -1,0 +1,41 @@
+{
+  "status": "LEGACY_DEFECT_REPRODUCED_NOT_ACCEPTANCE",
+  "contractVersion": "cop-driver-eta-legacy-reproduction-v1",
+  "simDeployCommit": "6c6d9f22470891227a1a00fb83012c60cfce429c",
+  "executingRunnerSha256": "5e529fffd7d65cece54698c4617802ab3196deb4617c6b0c3f0731b721cb85b3",
+  "sourcePins": {
+    "schema.sql": "6dd60a3acf28d63575198c8526c368df19bbd543f4063d4985fb55f308da02d0",
+    "002_account_erasure.sql": "f13db2106a1fe1a02d0d1a26afa8ad7d7c045172ba4419749719ed0f166e16ad",
+    "003_guarded_operations.sql": "e3513a983a3b6d1bd52d46851c734dd1c3b208e2e2f6430a6f9eddd38b10d3b5",
+    "004_read_admission_facts.sql": "791545b9df91e65bb555c68a44dadd73a847ca64fde0c31a9036f9f555ba1d2d",
+    "005_root_checkpoint.sql": "77faac125f6133a774e6d9e900c2dcbfc3b86419d3179bfb4d5bcf64eb3bb3cb",
+    "006_inventory_candidates.sql": "bd69ca4e58746c852b49bf0ad1f59465a64fc781a59c4c9fe88073199080efe0"
+  },
+  "observed": {
+    "oldFkAcceptedMismatch": true,
+    "ownReceiptsRemaining": 0,
+    "ownEtaRemaining": 1,
+    "ledgerDatabaseZeroVerified": true,
+    "ledgerRemainingBatchCount": 0,
+    "otherReceiptsPreserved": 2,
+    "otherEtaPreserved": 1
+  },
+  "actualPostgres": "18.3",
+  "actualOriginalTransaction": true,
+  "sqlRolesRestricted": true,
+  "rootAuthority": false,
+  "rootAdmission": false,
+  "nativeTransport": false,
+  "identityAttributionSynthetic": true,
+  "productionChanged": false,
+  "realAccounts": false,
+  "providerCalls": 0,
+  "forward007Applied": false,
+  "wholeAccountComplete": false,
+  "restoreAccepted": false,
+  "cleanup": {
+    "ownedClusterRemoved": true,
+    "tcp": false,
+    "globalPrune": false
+  }
+}
