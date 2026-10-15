@@ -157,7 +157,7 @@ export async function inspectRootDriverContext(operationId, registration, curren
   } finally { try { await client.end().catch(() => undefined); } finally { clearTimeout(watchdog); } }
 }
 
-export async function executeRootDriver(mode, operationId, body, registration) {
+export async function executeRootDriver(mode, operationId, body, registration, kernelPeer) {
   requireGuard(process.getuid?.() === 0 && process.geteuid?.() === 0, 'ROOT_EXECUTION_REQUIRED');
   requireGuard(['execute', 'probe'].includes(mode) && uuid(operationId) &&
     (mode === 'probe' ? body === null : typeof body === 'string' && Buffer.byteLength(body) <= 16_384), 'GUARD_USAGE');
@@ -165,35 +165,70 @@ export async function executeRootDriver(mode, operationId, body, registration) {
   // installation. No app CWD, NODE_PATH or application-selected module path.
   requireRootCodeTree('/opt/cop-account-safety');
   readRootFile('/opt/cop-account-safety/package.json');
+  requireGuard(exact(kernelPeer, ['device', 'inode', 'uid', 'gid']) && /^[0-9]{1,20}$/.test(kernelPeer.device) &&
+    /^[0-9]{1,20}$/.test(kernelPeer.inode) && kernelPeer.inode !== '0' && Number.isSafeInteger(kernelPeer.uid) && kernelPeer.uid >= 0 &&
+    Number.isSafeInteger(kernelPeer.gid) && kernelPeer.gid >= 0, 'GUARD_EXECUTION_PEER_REQUIRED');
+  const initialKeys = canonicalJson(readRootFile(join(ETC, 'public', 'verification-keys.json')));
+  const original = verifyRootRecord(readRootFile(join(STATE, 'operations', operationId + '.json'), { secret: true }),
+    initialKeys, 'driver-origin-permit', { historical: true }), originalOperation = validateOperation(original.payload.operation);
+  requireGuard(originalOperation.operationId === operationId, 'GUARD_EXECUTION_ORIGINAL');
+  const common = await import(pathToFileURL('/opt/cop-account-safety/root-owner-authority.mjs').href);
+  const lease = await common.requireCurrentOwner('sim_driver_measurements', kernelPeer,
+    originalOperation.kind === 'expire' ? 'retention' : originalOperation.kind === 'ack' ? 'publication' : 'mutation');
   const require = createRequire('/opt/cop-account-safety/package.json');
   const { Client } = require('pg');
-  const clients = [new Client(connectionProfile('registry-probe', 'cop_account_safety_guard')),
-    new Client(connectionProfile('driver-control', 'sim_driver_measurements', 'sim_driver_guard_control')),
-    new Client(connectionProfile('driver-executor', 'sim_driver_measurements', 'sim_driver_guard_exec'))];
+  const clients = []; let result, authority, failed = false;
+  const hold = () => { failed = true; common.holdOwnerLease(lease); };
+  const endKnown = async state => {
+    if (!state.connected && !state.connecting) return;
+    state.ending = true; let timer;
+    try {
+      await Promise.race([state.client.end(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('GUARD_SQL_END_UNKNOWN')), 15000); })]);
+      requireGuard(state.ended, 'GUARD_SQL_END_UNKNOWN');
+    } catch { hold(); throw new Error('GUARD_SQL_END_UNKNOWN'); }
+    finally { clearTimeout(timer); }
+  };
   // Idle errors must not print raw provider diagnostics through EventEmitter.
   // Actual query failures still reject and keep their original unknown state.
-  for (const client of clients) client.on('error', () => {});
   try {
-    for (const client of clients) await client.connect();
-    const authority = new RootDriverAuthority(clients[0], operationId, registration);
-    if (registration) requireGuard(registration.runtimeBindingId === authority.permit.runtimeBindingId &&
-      registration.datasetBindingId === authority.permit.datasetBindingId && registration.guardStoreId === authority.permit.guardStoreId &&
-      registration.continuityEpoch === authority.permit.continuityEpoch, 'GUARD_CLIENT_BINDING');
-    const producer = new DriverOriginProducer({ control: clients[1], executor: clients[2],
+    for (const profile of [['registry-probe', 'cop_account_safety_guard', 'cop_guard_root_reader'],
+      ['driver-control', 'sim_driver_measurements', 'sim_driver_guard_control'], ['driver-executor', 'sim_driver_measurements', 'sim_driver_guard_exec']]) {
+      const client = new Client(connectionProfile(...profile)), state = { client, connected: false, connecting: false, ending: false, ended: false };
+      client.on('error', hold); client.on('end', () => { state.ended = true; if (!state.ending) hold(); }); clients.push(state);
+    }
+    requireGuard(canonical(initialKeys) === canonical(lease.keys) && registration && canonical(registration) === canonical(lease.registration) &&
+      ['guardStoreId', 'continuityEpoch', 'datasetBindingId'].every(k => original.payload[k] === lease[k]) && originalOperation.storeIncarnation === lease.storeIncarnation,
+    'GUARD_EXECUTION_OWNER_BINDING');
+    for (const state of clients) { state.connecting = true; await state.client.connect(); state.connecting = false; state.connected = true; }
+    authority = new RootDriverAuthority(clients[0].client, operationId);
+    requireGuard(authority.permitRecord.digest === original.digest, 'GUARD_EXECUTION_ORIGINAL_CHANGED');
+    if (mode === 'execute') {
+      const digest = await clients[1].client.query("SELECT encode(sha256(convert_to($1::jsonb::text,'UTF8')),'hex') AS value", [body]);
+      requireGuard(digest.rows.length === 1 && digest.rows[0].value === originalOperation.bodyDigest, 'GUARD_EXECUTION_BODY');
+    }
+    const producer = new DriverOriginProducer({ control: clients[1].client, executor: clients[2].client,
       dispatch: new RootDispatchFiles(join(STATE, 'dispatches')), validateCurrent: async (operation, mode, transientBody) => {
+        await lease.assertCurrent();
+        if (mode === 'work') requireGuard(authority.permit.runtimeBindingId === lease.runtimeBindingId &&
+          authority.permit.policyGeneration === lease.policyGeneration && authority.permit.frontierSequence === lease.frontierSequence &&
+          authority.permit.frontierDigest === lease.frontierDigest, 'GUARD_EXECUTION_FRESH_WORK_BINDING');
         await authority.validate(operation, mode);
         if (mode === 'work' && operation.kind === 'ack')
-          await validateRootPublication(clients[1], transientBody, operation, authority.keys, authority.permit);
+          await validateRootPublication(clients[1].client, transientBody, operation, authority.keys, authority.permit);
       } });
-    let result;
     if (mode === 'probe') result = await producer.probe(authority.operation);
     else result = await producer.runOnce(authority.operation, body);
-    if (result.state !== 'pending') {
-      await authority.validate(authority.operation, 'probe');
-      result = publishRootOutcome(authority.operation, result, authority.permitRecord, authority.keys);
-    }
+    if (result.state === 'pending') hold();
+    else { await lease.assertCurrent(); await authority.validate(authority.operation, 'probe'); }
+    const closures = await Promise.allSettled(clients.map(endKnown));
+    requireGuard(closures.every(r => r.status === 'fulfilled') && !failed, 'GUARD_EXECUTION_SQL_UNSETTLED');
+    await lease.assertCurrent();
+    result = publishRootOutcome(authority.operation, result, authority.permitRecord, lease.keys);
     return result;
-  } finally { for (const client of clients) try { await client.end(); } catch { /* Unknown stays unknown. */ } }
+  } finally {
+    await Promise.allSettled(clients.filter(s => !s.ended).map(endKnown));
+    await lease.close();
+  }
 }
 export async function main(args = process.argv.slice(2)) {
   requireGuard(process.getuid?.() === 0 && process.geteuid?.() === 0, 'ROOT_EXECUTION_REQUIRED');

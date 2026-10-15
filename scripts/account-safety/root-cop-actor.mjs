@@ -50,6 +50,22 @@ async function readOnlyDatabase(profile, name, user, work) {
     await client.query('BEGIN READ ONLY');
     try {
       await client.query("SET LOCAL statement_timeout='3000ms'"); await client.query("SET LOCAL lock_timeout='1000ms'");
+      if (profile === 'cop-consent-reader') {
+        const actual = await client.query(`SELECT current_user AS current_role,session_user AS session_role,
+          count(c.oid)::integer AS tables,coalesce(bool_and(c.relkind='r' AND NOT c.relrowsecurity AND NOT c.relforcerowsecurity
+            AND c.relowner<>r.oid AND NOT has_table_privilege(current_user,c.oid,'INSERT') AND NOT has_table_privilege(current_user,c.oid,'UPDATE')
+            AND NOT has_table_privilege(current_user,c.oid,'DELETE') AND NOT has_table_privilege(current_user,c.oid,'TRUNCATE')
+            AND NOT has_any_column_privilege(current_user,c.oid,'INSERT') AND NOT has_any_column_privilege(current_user,c.oid,'UPDATE')
+            AND NOT has_any_column_privilege(current_user,c.oid,'REFERENCES')),false) AS surface,
+          coalesce(bool_and(NOT r.rolsuper AND NOT r.rolinherit AND NOT r.rolbypassrls AND NOT r.rolcreaterole AND NOT r.rolcreatedb AND NOT r.rolreplication),false) AS restricted,
+          (SELECT count(*)::integer FROM pg_catalog.pg_auth_members m WHERE m.member=(SELECT oid FROM pg_catalog.pg_roles WHERE rolname=current_user)) AS memberships
+          FROM pg_catalog.pg_roles r LEFT JOIN pg_catalog.pg_class c ON c.oid IN
+          (to_regclass('public.cop_driver_measurement_config'),to_regclass('public.cop_driver_measurement_consents'),to_regclass('public.cop_driver_consent_erasure_fences'))
+          WHERE r.rolname=current_user`);
+        const a = actual.rows[0];
+        requireGuard(actual.rows.length === 1 && a.current_role === user && a.session_role === user && a.tables === 3 && a.surface === true &&
+          a.restricted === true && a.memberships === 0, 'GUARD_COP_CONSENT_READ_SURFACE');
+      }
       const value = await work(client); await client.query('COMMIT'); return value;
     } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
   });

@@ -6,9 +6,11 @@ erasure/restore authority. No production activation follows from these files.
 
 ## Fixed entry point
 
-`root-driver-runtime.mjs --run --operation <uuid>` accepts one transient UTF-8
-body on standard input, at most 16,384 bytes. `--probe --operation <uuid>` only
-resolves the original operation. Both require real/effective UID0. Callers
+`executeRootDriver` is invoked by the fixed Root broker with its actual native
+receiver peer. It accepts one transient UTF-8 body, at most16,384bytes, or probes
+the original operation. It requires real/effective UID0 plus the current common
+owner's exclusive lease. The former direct CLI has no authenticated receiver
+peer and now remains unavailable; it cannot bypass the common guard. Callers
 cannot select a database, SQL, XID, backend PID, credentials or file path.
 Nothing is installed setuid; there is no application subprocess-to-Root bridge.
 There is no periodic scheduler or implicit retry of effects.
@@ -272,8 +274,27 @@ or guard-function execution. It grants exact metadata SELECT, an explicit
 SELECT-only receipt RLS policy and the two PostgreSQL control facts functions.
 Unexpected schema/roles, PUBLIC database access or effective column writes stop
 the migration. It does not repair global authentication or activate credentials.
-The source is frozen for the separate SIM common-authority test; no production
-application of this migration is claimed.
+SIM common authority used these exact SQL002 bytes in its separate 22-case
+TLS/PostgreSQL gate. No production application of this migration is claimed.
+
+[`003-cop-consent-reader.sql`](003-cop-consent-reader.sql) is the separate
+NOLOGIN candidate for database `cop`, after the reviewed consent schema exists.
+It grants only the ten columns needed for exact issuer/pending-day/fence/secret
+fingerprint readback. It refuses unreviewed RLS that could hide rows, effective
+PUBLIC column writes or executable user-defined definer functions. It changes
+no existing PUBLIC grants or other applications. Actual Root actor reads also
+recheck the fixed role, absence of memberships/writes and the live non-RLS table
+surface before treating an empty result as an inventory.
+
+Both supplementary candidates passed a separate
+[nine-case actual PostgreSQL ACL run](../../docs/testing/account-safety-root-reader-profiles-20261015.json).
+The subsequent [exact production read-surface query gate](../../docs/testing/account-safety-root-reader-surface-20261015.json)
+also executes the actual source SQL, rejects later PUBLIC column writes and
+RLS enablement, and preserves the original nine-case receipt.
+Restricted disposable LOGIN wrappers prove denied escalation; a superuser's
+`SET ROLE` cannot prove that property. The profile roles themselves stay NOLOGIN
+in this gate. It does not establish production credentials, TLS, nonempty receipt
+coverage or the complete Root actor/owner composition.
 
 Root request evidence and identity joins live only beneath Root 0700
 `/run/cop-account-safety/private`, on explicit volatile storage. Subdirectories
@@ -290,3 +311,34 @@ the current broker cohort. Its signed five-second host records are factual
 observations, not enrollment or policy acceptance. Actual source-proof JWS,
 linked replay/checkpoint acceptance and independently accepted owner policy
 remain required. These components are still under joint integration testing.
+
+## Actual native writer integration — 15 October
+
+The separately frozen [new four-group receipt](../../docs/testing/account-safety-native-writer-20261015.json)
+uses the actual fixed Root broker, native receiver credentials, child pidfs,
+Ed25519/JWS, PostgreSQL18.6 over verified TLS and SIM common authority484289.
+The writer holds the same exclusive two-argument metadata904214 barrier that
+publication consumers hold shared. It validates the actual native receiver peer,
+exact registration/current owner, original body digest and all target session
+END acknowledgements before signing terminal records. Missing peer/wrong body
+cannot create an origin or mutate the target.
+
+The test executes an **expire/retention original**, not a complete account
+erasure/revoke/ack. A held native publication callback prevents effects. Repeating
+the same committed original leaves later inserted expired rows untouched. A
+durable dispatch without SQL registration resolves only that original and
+never starts DELETE.
+
+The final actual TLS proxy observes the executor COMMIT acknowledgement and two
+resolver JSON/readback COMMIT acknowledgements, forwards the original Postgres
+Terminate, observes backend END, then withholds frontend TLS close/FIN. The native
+client returns pending after five seconds while the common barrier is still busy.
+At15.15seconds the actual END watchdog retains global HOLD and the metadata lock;
+no terminal signed records are published. No HOLD reset/TTL unlock occurs.
+
+This is Linux ARM64/musl/Node24.20.0 evidence with an owned UID0 child. Container
+identity, enrollment, accepted owner policies and host observation are explicitly
+synthetic; production isolation/custody, whole-account erasure and restore are
+not accepted. All owned containers and staged private context were removed.
+Do not add these four groups to historical test totals or reassign older receipts
+to the new wrapper. The separate runtime CLI stays deliberately unavailable.

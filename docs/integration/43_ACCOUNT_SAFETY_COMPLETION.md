@@ -58,6 +58,39 @@ interactive sudo; direct Root SSH is unavailable. This access limitation is
 separate from the remaining implementation. No real account was deleted and no
 OpenAI request was made by these tests.
 
+### Subsequent actual native writer and SQL reader gates
+
+The actual fixed COP Root executor now obtains SIM's exclusive metadata lease
+using the **native receiver's actual kernel peer**. It checks the exact
+registration, body digest and current owner binding, awaits every real database
+session END and rechecks authority before publishing signed terminal evidence.
+Unknown target END retains process HOLD and the real barrier.
+
+A new [four-group actual Linux/TLS/PostgreSQL run](../testing/account-safety-native-writer-20261015.json)
+passed. It covers a native shared publication lease versus retention writer,
+original-only retry, missing peer/body mismatch, dispatch-before-registration
+recovery and actual withheld TLS END. The final case observed executor COMMIT,
+two committed resolver readbacks, Terminate/backend END, then HOLD at15.151s;
+no terminal signed outcome was emitted. The original common22 and platform52
+receipts remain frozen. Scope is **expire/retention**, not full account erasure,
+revoke or ack. The UID0 child, native credentials, crypto and SQL are actual;
+container/host observations, enrollment and accepted owner policy are synthetic.
+Owned test containers and context were removed; teardown is not HOLD recovery.
+
+The separate supplementary reader migrations passed
+[nine actual ACL cases](../testing/account-safety-root-reader-profiles-20261015.json).
+A [subsequent source-query run](../testing/account-safety-root-reader-surface-20261015.json)
+executes the exact production COP consent read-surface query and rejects later
+PUBLIC column write/RLS changes. The two profile roles remain NOLOGIN in those
+local tests. Neither migration was applied to production.
+
+The human has now agreed to execute the exact Root installation procedure after
+joint tests. No password is requested. This resolves the operator-access
+question only: the final installer, accepted owner/proof/permit producers,
+remaining COP production owner bindings and pre-exposure restore/startup
+enforcement still require implementation and verification. Production remains
+on the same accepted image; no real account has been deleted.
+
 ### 15 October: implemented Root SQL executor component
 
 COP added the real Root-only original-operation executor and signed result

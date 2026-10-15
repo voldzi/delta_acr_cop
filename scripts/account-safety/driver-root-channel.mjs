@@ -171,7 +171,7 @@ async function servePacket(native, item) {
         const permit = verifyRootRecord(readRootFile(join(STATE, 'operations', request.operation.operationId + '.json'), { secret: true }),
           readPublicVerificationKeys(), 'driver-origin-permit', { historical: true });
         requireGuard(permit.payload.operation.kind === request.operation.kind, 'GUARD_CHANNEL_OPERATION');
-        const result = await executeRootDriver(request.action, request.operation.operationId, request.body, registration);
+        const result = await executeRootDriver(request.action, request.operation.operationId, request.body, registration, item.peer);
         const records = result.state === 'pending' ? [] : ['sqlOutcomeRef', 'effectQuiescenceRef'].map(field =>
           readRootFile(join(STATE, 'outcomes', result[field].recordId + '.json'), { secret: true }).toString('utf8'));
         const reply = Buffer.from(canonical({ contractVersion: REPLY, requestId: request.requestId,

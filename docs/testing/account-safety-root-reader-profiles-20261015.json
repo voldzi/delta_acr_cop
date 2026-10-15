@@ -1,0 +1,64 @@
+{
+  "contractVersion": "cop-root-readers-sql-receipt-v1",
+  "date": "2026-10-15",
+  "sourceBaseCommit": "6fbb977a1e006a696de042eff40c15f55f9de19c",
+  "harnessSha256": "33986c004fdd2d9e1747b29e7c3f19f2b8d86d75bbce053cace73bd55b1951b9",
+  "logSha256": "71afb6072fbeaf34df996797da378589f25abbd88da1e6b8f4c8b1dd7d745050",
+  "result": {
+    "contractVersion": "cop-root-readers-sql-fixture-v1",
+    "checks": [
+      {
+        "name": "guard reader supplements actual foundation with NOLOGIN, no membership and SELECT-only RLS",
+        "passed": true
+      },
+      {
+        "name": "actual SET ROLE reads all nine metadata tables and pg control facts without RLS bypass",
+        "passed": true
+      },
+      {
+        "name": "metadata writes and escalation are denied by actual ACLs, not only a default read-only setting",
+        "passed": true
+      },
+      {
+        "name": "one-shot metadata rerun and wrong target database do not alter authority",
+        "passed": true
+      },
+      {
+        "name": "inherited PUBLIC column UPDATE prevents metadata reader installation atomically",
+        "passed": true
+      },
+      {
+        "name": "PUBLIC database TEMP is refused without changing the database ACL",
+        "passed": true
+      },
+      {
+        "name": "consent reader refuses an old schema without adopting its missing issuer",
+        "passed": true
+      },
+      {
+        "name": "inherited PUBLIC definer function and column write each prevent consent reader installation",
+        "passed": true
+      },
+      {
+        "name": "consent reader reads only approved columns and cannot mutate or read other account data",
+        "passed": true
+      }
+    ],
+    "sourcePins": [
+      "a29369e48a1380bb12ce3b40b9254d924e0d98a3b90f7cdcdc0fb7e9ba27aaba",
+      "9a08e4174f25a64cf9c1897d5df1c9b772d7ab072c5bb8cffc5a8f0e7939476a",
+      "36dd2a4219416fcc76255e5ce063107f36cf1d30ee6d1024b2c603aa43a2a5b3"
+    ],
+    "actualPostgres": "18.3",
+    "actualAclAndRlsPolicy": true,
+    "nonemptyOwnerReceiptReadback": false,
+    "syntheticAccountsOnly": true,
+    "fixtureLoginWrappers": true,
+    "productionLoginActivated": false,
+    "profileRolesRemainNOLOGIN": true,
+    "productionChanged": false,
+    "fixtureRemoved": true,
+    "tcp": false
+  },
+  "qualification": "Actual isolated PostgreSQL ACL/RLS policy checks with restricted disposable LOGIN wrappers; not production credential activation, TLS, owner common or nonempty receipt readback."
+}
