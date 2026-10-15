@@ -140,6 +140,7 @@ local feature choice nor the disabled historical unlink source deletes the accou
 - [Ověření ochranného přenosu na produkční platformě — 52 testů](testing/account-safety-target-platform-20261015.json): skutečný Linux/pidfs/podpisy; databázové podklady v klientských testech jsou syntetické, produkční aktivaci nedokládá.
 - [Společné ověření původní operace přes skutečný chráněný přenos — 4 skupiny](testing/account-safety-native-writer-20261015.json): skutečné TLS/SQL/peer a ztracené END; pouze expire/retence, syntetické přijetí politik, bez produkční aktivace.
 - [Omezené čtecí role a přesný produkční SQL dotaz](testing/account-safety-root-reader-surface-20261015.json): izolované ACL/RLS kontroly; role nejsou aktivované v produkci.
+- [Skutečný serverový producent retenčních operací — 5 skupin](testing/account-safety-retention-producer-20261015.json): pevná původní operace, bezpečné ukončení před zápisem a skutečný rozepsaný zápis; bez produkční aktivace a ověření obnovy.
 - [Strojová evidence mazání účtu 2026-10-14](testing/account-erasure-20261014.json) — místní testy databází/HTTP; produkční aktivace zatím neověřená.
 - [Navazující evidence kompatibility SIM, pokračování mazání a sestavení na X5](testing/account-erasure-resume-20261014.json) — nezaměňovat se společnou produkční akceptací.
 - [Skutečné HTTP COP adaptéry ↔ SIM handlery, 10 syntetických scénářů](testing/account-erasure-cop-sim-http-20261014.json) — technická kompatibilita, nikoli produkční výmaz či ověření obnovy.

@@ -91,6 +91,32 @@ remaining COP production owner bindings and pre-exposure restore/startup
 enforcement still require implementation and verification. Production remains
 on the same accepted image; no real account has been deleted.
 
+### Subsequent actual retention producer — five groups
+
+Root now derives the immutable expiry original and current context itself; the
+broker no longer reads a pre-created retention delivery file. It checks actual
+current authority, exact receiver peer and independently accepted `no_report`,
+uses the PostgreSQL JSONB digest, stores only opaque original bindings, and
+never renews an unknown UUID/cutoff. Historical originals are first reconciled
+under the held actual lease with committed resolution and confirmed SQL END.
+
+The [new five-group receipt](../testing/account-safety-retention-producer-20261015.json)
+passed against immutable SIM6c6d9f2/commonb592. Actual native delivery, Root
+minting, fixed expiry, no-repeat, source expiry and a real uncommitted DELETE
+were exercised. A safe delayed claim was sealed before effects and its later
+execute was denied. A genuinely row-locked uncommitted operation instead kept
+HOLD and the exact pointer/UUID/cutoff through native/query timeouts. The
+[initial failed fixture assumption](../testing/account-safety-retention-producer-initial-failure-20261015.json)
+is retained separately; no SQL or authority rule was relaxed to obtain PASS.
+
+The fixed executor's provisional result/source proves the uncommitted marker
+path; no direct private SELECT grant was added to the executor. Host/container
+observations and accepted owner enrollment are still synthetic; no whole-account
+operation, production activation or restore was accepted. Owned containers and
+private staged source were removed. These five groups do not upgrade earlier
+receipts or prove the still-missing revoke/erase/ack context producer and complete
+COP owner composition.
+
 ### 15 October: implemented Root SQL executor component
 
 COP added the real Root-only original-operation executor and signed result

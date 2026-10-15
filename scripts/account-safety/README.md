@@ -192,7 +192,7 @@ Do not deploy migration003 alone: the live revoke/erase/ack and retention paths
 must all use the guarded executor before direct DELETE grants are removed.
 The transport, original executor, COP journal/continuity and driver read client
 above are implemented source. Authenticated per-request operation-context
-delivery, independent permit/read-delivery and owner-inventory producers,
+delivery for revoke/erase/ack, destructive permit and owner-inventory producers,
 complete current-frontier/runtime enrollment, installation and
 enrollment, complete owner-wide drain across runtime upgrades,
 quarantine/replay before restore exposure and remaining owner production entry
@@ -299,7 +299,9 @@ coverage or the complete Root actor/owner composition.
 Root request evidence and identity joins live only beneath Root 0700
 `/run/cop-account-safety/private`, on explicit volatile storage. Subdirectories
 include `owner-authority`, `read-evidence`, `read-permits`, `ai-read-permits`,
-`request-contexts`, `maintenance-deliveries` and `runtime-observations`.
+`request-contexts` and `runtime-observations`. Retention no longer reads a
+pre-created `maintenance-deliveries` file; its context is issued in RAM by the
+fixed Root producer.
 Apps mount only the public bootstrap and socket file, never the whole private
 tree. Durable original operation/effect/fence evidence stays separately under
 the protected state directory on X5; no internal-disk fallback is allowed.
@@ -342,3 +344,41 @@ synthetic; production isolation/custody, whole-account erasure and restore are
 not accepted. All owned containers and staged private context were removed.
 Do not add these four groups to historical test totals or reassign older receipts
 to the new wrapper. The separate runtime CLI stays deliberately unavailable.
+
+## Actual Root retention original producer
+
+`root-driver-retention-producer.mjs` now supplies the existing retention broker
+entry point directly. It obtains the actual exclusive current-owner lease from
+the receiver peer, accepts only the independently reviewed `no_report` policy,
+computes the fixed body digest through actual PostgreSQL and chooses a server UTC
+cutoff. No HTTP input selects a cutoff, Root UUID or positive authority. The
+Root-owned `maintenance-active/driver.json` points at the immutable signed
+operation and its four typed evidence records. It contains only opaque IDs,
+bindings and digests; no contributor/body/account inventory.
+
+A still-current original retains exactly its UUID and cutoff. After original
+source/permit/runtime expiry, Root first reconciles that same historical
+registration and performs two actual committed resolver observations. Only a
+known terminal original and confirmed END of every real SQL connection permit
+a new Root original. Missing/foreign namespace, unknown outcome/query/END or
+changed authority denies or retains HOLD; none can renew an unknown operation.
+The signed five-second context is returned only after the real lease closes.
+
+The separate [five-group actual Linux/PostgreSQL/TLS/native receipt](../../docs/testing/account-safety-retention-producer-20261015.json)
+uses immutable SIM6c6d9f2/commonb592 with its stricter current-target checks. It
+exercises actual Root minting/delivery/expiry, same-original no-repeat, historical
+reconciliation, safe sealing before effects with rejected delayed execution,
+and an actual uncommitted DELETE/marker retaining its row lock. The last case
+keeps the pointer/UUID/cutoff unchanged through the five-second native timeout,
+then requires global HOLD at the real ten-second query deadline. The executor
+role gains no extra SELECT permission: provisional marker evidence comes from
+the actual fixed SQL result/source, not a direct same-transaction private SELECT.
+
+An [initial failed fixture is qualified separately](../../docs/testing/account-safety-retention-producer-initial-failure-20261015.json):
+it incorrectly treated every claimed in-progress transaction as unsealable,
+even before effects acquired the origin row. The SQL and producer were not
+weakened. Historical signed state, accepted enrollment and host/container
+observations in both runs are synthetic. No real account, complete erasure,
+production installation, new authority enrollment or restore was accepted. All
+owned contexts/containers were removed. Existing native4/common22/lineage8
+receipts keep their own original source pins and scope.

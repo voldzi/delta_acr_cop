@@ -1,0 +1,17 @@
+{
+  "status": "FAIL_NOT_ACCEPTANCE",
+  "contractVersion": "cop-root-retention-producer-failed-fixture-v1",
+  "date": "2026-10-15",
+  "runnerSha256": "cd2c7b8be5a677a91289796bad755f8ec487b8154b91853e0427fcc39ec2350d",
+  "fixtureSha256": "b8de51d4f4166ba090edde2c814e79d5ab8296679ba6c35b31f5cb74902d16da",
+  "producerSha256": "a9d4744f1c12473ad261dfbb576416cbf3fca33e32d263ff1a5a4019b32666bc",
+  "simDeployCommit": "01bdaaf9f7b40cfaf355e47d09887de7df369828",
+  "passedGroupsBeforeFailure": 3,
+  "failedGroup": "claimed in-progress XID without execute_origin",
+  "qualification": "Fixture incorrectly required HOLD for a safely sealable delayed claim. Actual SQL sealed it before effects, preventing later execute. No SQL, executor or authority assertion was weakened. Follow-up tests both safe delayed-claim sealing and actual uncommitted DELETE/marker with the original row lock held.",
+  "productionChanged": false,
+  "realAccounts": false,
+  "passReceiptCreated": false,
+  "ownedContainersAbsentVerified": true,
+  "ownedPrivateContextRemoved": true
+}
