@@ -139,7 +139,45 @@ whole-account deletion, production or restore was exercised. The mutating
 wrapper must still bind the original anchor/body from the actual ledger and
 obtain independent actual current-owner authority. Owned fixtures were removed.
 
-### 15 October: implemented Root SQL executor component
+### Subsequent independent mutation-intent preparation — fourteen groups
+
+The fixed Root-only `root-driver-mutation-intent.mjs` verifies the actual service
+credential and canonical signed actor with the same pinned SIM parsers. Actual
+restricted TLS readback supplies the first accepted ledger time, or the database
+observation time for a new operation. The independently checked signed journal,
+historical contributor-key inventory and exact manifest bind the same account.
+Changing an existing request is denied. The private five-second intent binds
+the receiver peer, registration, request digest, business operation, actor/request
+hashes and manifest/journal references; its lifetime cannot outlive the signed
+actor. Principals, credentials and daily identities stay in RAM. The transient
+body deliberately contains neither a checkpoint nor publication authority.
+
+The [separate actual fourteen-group fixture](../testing/account-safety-root-driver-mutation-intent-20261015.json)
+includes the previous nine actor checks and five new preparation groups; these
+counts must not be added together. New checks cover two accounts, service and
+signature failures, expired actor and foreign manifest, minimized private signed
+records, an actual synthetic existing ledger preserving its original anchor,
+changed-request denial, and actual per-day consent withdrawal preparation.
+PostgreSQL/TLS, restricted profiles, signatures and normal session END are real.
+The fixture creates no original-operation row and performs no guarded business
+mutation through this new component. Existing ledger/journal setup is synthetic.
+
+This intent is a necessary identity condition only. It cannot authorize a write,
+refresh a checkpoint, adopt a policy or replace the actual held common context.
+The request lifecycle, scoped cleanup reads, original-operation producer and
+ERASE-to-ACK binding still need shared integration. No native HTTP actor endpoint,
+lost-END fault, production enrollment, real account erasure or restore was
+accepted. All owned fixture containers and private context were removed.
+
+The separate [legacy ETA reproduction](../testing/account-safety-driver-eta-legacy-reproduction-20261015.json)
+confirms a real defect in the old two-column batch foreign key: a mismatched ETA
+contributor can survive while the old ledger reports zero batches. This is
+defect evidence, not an acceptance pass. SIM's forward migration007 checks old
+data before adding the exact contributor-bound foreign key; installation must
+abort on an existing mismatch. Its new schema fingerprint requires independent
+acceptance, not automatic policy adoption.
+
+### Earlier Root SQL executor component
 
 COP added the real Root-only original-operation executor and signed result
 records in [scripts/account-safety](../../scripts/account-safety/README.md).
