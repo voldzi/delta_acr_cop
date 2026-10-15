@@ -75,3 +75,4 @@ published paths are preserved for integration references.
 - [0051: Erasure preflight and receipt tracking](0051_ERASURE_PREFLIGHT_AND_RECEIPT_TRACKING.md): source candidate, independent read-only tracking and explicit runtime binding blocker.
 
 - [0053: COP/Jizda erasure preserves shared identity and SIM](0053_COP_ERASURE_PRESERVES_SHARED_SIM_IDENTITY.md)
+- [0054: Independent pseudonymous erasure journal](0054_INDEPENDENT_PSEUDONYMOUS_ERASURE_JOURNAL.md): original fence recovery, expiring admission and private Root delivery; source/tests before production enrollment.

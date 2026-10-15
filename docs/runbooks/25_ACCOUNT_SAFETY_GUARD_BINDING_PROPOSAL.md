@@ -12,6 +12,19 @@ current-frontier and permit/inventory producers, read admission, per-request
 delivery, full owner drain/replay and target installation remain unaccepted.
 This update neither installs a service nor approves Root authority.
 
+The subsequent15October implementation adds the actual independent COP
+journal-before-fence, minimized pseudonymous recovery metadata, a fixed paginated
+continuity client, an expiring RAM barrier and the driver read client/broker.
+See [ADR0054](../adr/0054_INDEPENDENT_PSEUDONYMOUS_ERASURE_JOURNAL.md) and
+[the current minimized SQL evidence](../testing/account-safety-fence-journal-minimized-20261015.json).
+SIM's actual read-only SQL/Root reader is published at
+`f85d2bbc294845edf412a8a18f9e3138fcc25968`. Its14PG facts and15LinuxRoot/TLS
+cases are a different gate, not a combined production test. Actual Root
+enrollment, per-request destructive/retention delivery, complete owner replay,
+native deployment latch and installation remain required. The production SSH
+account currently has no noninteractive sudo authorization; no Root service or
+new LOGIN/grant was installed by these source checks.
+
 On 2026-10-14, the human explicitly approved and the infrastructure owner
 created only the empty `cop_account_safety_guard` root metadata database on
 the existing PostgreSQL/Patroni primary, using migration SHA-256

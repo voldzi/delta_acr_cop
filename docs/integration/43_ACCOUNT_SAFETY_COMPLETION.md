@@ -541,3 +541,29 @@ actual two-synthetic-account owner/readback/restore acceptance and native bindin
 of exact source/image/store. After first accepted deletion preserve keys/fences/
 checkpoints through rollback. Never run an old unguarded binary or expose restored
 services before replay. No actual account erasure/production activation is claimed.
+
+### 15October — implemented independent journal and private consumers
+
+[ADR0054](../adr/0054_INDEPENDENT_PSEUDONYMOUS_ERASURE_JOURNAL.md) defines the
+actual journal-before-local-fence path and version4 controller. It restores the
+fence before admission, checks continuity on writes/workers/receipts, expires RAM
+admission and rejects foreign/stale replay. Permanent manifests contain no
+recoverable principal. A lost local pending identity needs a fresh matching
+signed actor or verified restore inventory; background workers cannot invent it.
+
+Actual Root journal:8Linux/PostgreSQL18.6/Ed25519 cases. COP controller and
+loopback regression:54cases. Signature/consumer tests:13cases. Alpine/muslNode24.20
+transport:7kernel,4original-operation client,3driver-read client and4continuity
+client cases. Channel SQL/owner facts are synthetic; overlapping scopes are not
+added to historical suites. Exact pins and limitations:
+[continuity evidence](../testing/account-safety-continuity-source-20261015.json),
+[minimized journal receipt](../testing/account-safety-fence-journal-minimized-20261015.json).
+
+SIM publishes its actual read-only facts/Root reader at
+`f85d2bbc294845edf412a8a18f9e3138fcc25968`. COP's fixed read client/broker verifies
+native identity, signature, request/reference/checkpoint/runtime bindings and
+private Root delivery. The application never selects a Root permit.
+Independent on-demand permit/context production, complete owner wiring, restore
+quarantine, deployment latch and target installation remain unfinished. The
+production SSH account cannot run sudo noninteractively. No production service,
+new LOGIN/grant, image/flag or real account was changed by these checks.

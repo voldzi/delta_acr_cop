@@ -19,6 +19,8 @@ const request = async bytes => {
 };
 const descriptors = () => readdirSync('/proc/self/fd').length;
 test('actual SEQPACKET peer messages match the actual client pidfs identity', async () => {
+  assert.deepEqual(native.selfIdentity(), native.inspectProcess(process.pid));
+  assert.throws(() => native.selfIdentity(1), /COP_ROOT_NATIVE_ARGUMENT/);
   const incoming = native.receive(listener), promise = request(Buffer.from('{"fixture":1}\n'));
   const item = await incoming;
   assert.equal(item.peer.device, childIdentity.device); assert.equal(item.peer.inode, childIdentity.inode);
@@ -35,6 +37,15 @@ test('another listener and forged JavaScript connection objects are rejected', (
     assert.throws(() => native.close(value), /COP_ROOT_NATIVE_ARGUMENT/);
   }
   for (const value of [0, 1.5, '1', -1]) assert.throws(() => native.inspectProcess(value), /COP_ROOT_NATIVE_ARGUMENT/);
+});
+test('non-Root process can obtain only its own pidfs identity', async () => {
+  const probe = spawn(process.execPath, ['--input-type=commonjs', '-e', `
+    const n=require('/tmp/cop-root-seqpacket.node');
+    const p=n.selfIdentity();
+    if(!/^[0-9]+$/.test(p.device)||!/^[0-9]+$/.test(p.inode)||Object.keys(p).sort().join(',')!=='device,inode') process.exit(2);
+    try{n.inspectProcess(process.pid);process.exit(3)}catch(e){if(e.code!=='COP_ROOT_NATIVE_ARGUMENT')process.exit(4)}
+  `], { uid: 1000, gid: 1000, stdio: ['ignore', 'ignore', 'inherit'] });
+  const [code] = await once(probe, 'exit'); assert.equal(code, 0);
 });
 test('empty or oversized application packets never enter the server', async () => {
   for (const bytes of [Buffer.alloc(0), Buffer.alloc(16385)])

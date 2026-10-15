@@ -26,7 +26,7 @@ const SQL = `SELECT row_to_json(i) AS identity,row_to_json(p) AS policy,row_to_j
  JOIN cop_guard.accepted_runtime_proofs a ON a.proof_id=$3::uuid AND a.binding_id=b.binding_id
  WHERE i.singleton AND d.owner_id='sim_driver_measurements' AND b.owner_id=d.owner_id`;
 
-function connectionProfile(name, expectedDatabase, fixedUser) {
+export function connectionProfile(name, expectedDatabase, fixedUser) {
   const p = canonicalJson(readRootFile(join(ETC, 'root', name + '.json'), { secret: true }));
   requireGuard(exact(p, ['contractVersion', 'host', 'port', 'database', 'user', 'password', 'serverName', 'caFile']) &&
     p.contractVersion === 'cop-root-postgres-profile-v1' && p.database === expectedDatabase &&
@@ -40,7 +40,7 @@ function connectionProfile(name, expectedDatabase, fixedUser) {
   return { host: p.host, port: p.port, database: p.database, user: p.user, password: p.password,
     ssl: { ca, rejectUnauthorized: true, servername: p.serverName,
       checkServerIdentity: (_host, certificate) => checkServerIdentity(p.serverName, certificate) },
-    connectionTimeoutMillis: 5000, statement_timeout: 10_000, application_name: 'cop-root-driver-origin-v1' };
+    connectionTimeoutMillis: 5000, query_timeout: 10_000, statement_timeout: 10_000, application_name: 'cop-root-driver-origin-v1' };
 }
 function sharedContext(p, op, permit) {
   return p.guardStoreId === permit.guardStoreId && p.continuityEpoch === permit.continuityEpoch &&

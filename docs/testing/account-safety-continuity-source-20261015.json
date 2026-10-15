@@ -1,0 +1,110 @@
+{
+  "contractVersion": "cop-continuity-source-evidence-v1",
+  "createdAtUTC": "2026-10-15T07:28:40.816892+00:00",
+  "predecessorRevision": "f3c05e3ae1ca3081d2f5551bc03da233c0c3a473",
+  "sourcePins": {
+    "apps/cop-api/src/account-erasure.ts": "5979409c1ddfad2ac6ded1141de1a04fc6b66b0c3866e22b27f343bd75367e6c",
+    "apps/cop-api/src/account-erasure-continuity.ts": "c9699b78f0f8ce8a845af156d5b384c9c8d01a1ecaaab82b0258be60032679b3",
+    "apps/cop-api/src/account-erasure-continuity-production.ts": "1edd46789d5358e832dd16eea86dfd82f2b5c04369f71aaaff4835908e7afd2d",
+    "apps/cop-api/src/account-erasure-continuity.test.ts": "457ff069e01ab297561c2b367b0dbbbc3893e365493d506e620c375918d9065a",
+    "apps/cop-api/src/index.ts": "89dfaa7b0ea8d814dca27edaa11f97492ee4878347da22d3891780b52364625b",
+    "apps/cop-api/src/server.ts": "ef7619a08744e88f88b0d1401d2bf6477a5aa17d091de1080f9ece1ec5cf2c05",
+    "scripts/account-safety/cop-root-continuity.mjs": "ae2ca7e2b7f64e0b015f25c53505e6f7a888be960471e580c6fbdccbb642427a",
+    "scripts/account-safety/cop-root-continuity.test.mjs": "7d7774c7188e67cc0110b1e9bbd65201e3a9eab48c6566c7eaf0d138562c3a57",
+    "scripts/account-safety/driver-origin-producer.mjs": "5eb25d917d5fd9de7a2658e9ac54a355fd9a9539f3aee988f62b066bcb5fa59c",
+    "scripts/account-safety/driver-root-channel.mjs": "f1684c8015edc99be31daf8a15f1af2b5f0a91a57026befb90a684c968b1a6bc",
+    "scripts/account-safety/driver-root-channel.test.mjs": "f312c68ae20a7301c644b17e40bfc069a959325874a67088cd5ca23fe98b8870",
+    "scripts/account-safety/driver-root-inspect.mjs": "44238e2de1722610de9d9cd899a9681b847b5d05864fa15e8e2b76800d954c74",
+    "scripts/account-safety/driver-root-inspect.test.mjs": "67538ebb0cfde558b75df9b09cecf2603dae54c576f088b731e7180aec90da83",
+    "scripts/account-safety/root-channel-records.test.mjs": "3a165ea0e9d8d22e5521dd9dd0447e4497b18dc75ba7f5b9b138b7190bb5576a",
+    "scripts/account-safety/root-driver-runtime.mjs": "26a72f8e3e918ef0fb958a1ecd8a0204be0457a6b135f269ed38278fd056a66d",
+    "scripts/account-safety/root-fence-journal.mjs": "0065be8dfb30ff9d3afe88e3cf16f592b83a0c6c213e0eea977cf46a226aca3d",
+    "scripts/account-safety/root-files.test.mjs": "0ddc40224095d1dd967c893b75d3e40dfaac02fb9b837e49893166cc9e79586c",
+    "scripts/account-safety/root-native.mjs": "0085e026f6a595afd385959dac5af3374875a9a3ed5581a53f895edb87d85d7a",
+    "scripts/account-safety/root-outcome-records.mjs": "bb9423b25ec2b8a5bc9324d3f3eb31c17fbdc06bc6a6b6d53897c3c40ebafc74",
+    "scripts/account-safety/root-publication.mjs": "aec35c9e46664ce9c3f879b8f6a0f806eb47e36ca68b09f812264a38aca6bc5c",
+    "scripts/account-safety/root-record-issuer.mjs": "9970ccf9898646d1579c484737c4833a9bc8fa21dd78503204d3afa9e10e802d",
+    "scripts/account-safety/root-records.mjs": "ad203b1a1858bea7f8f799a6147720d1d0d6df790bfc1d4c866a12c45d6bb7fd",
+    "scripts/account-safety/root-records.test.mjs": "5a75e1b4bb2504820a730db60fb49781b24d588524459da64efbd4182747a2ae",
+    "scripts/account-safety/root-seqpacket-child.mjs": "aa1484163bb2ecede5b9e3aa59af0c275d495f571770a9cfecd4fdcc5f372dff",
+    "scripts/account-safety/root-seqpacket.c": "156421697216b3da730343effbd7cd5d177c1a2c64233f9480fe5ebd4b082c4f",
+    "scripts/account-safety/root-seqpacket.test.mjs": "bef5de38d873c124a5f821a06a2eddd94d8a24412664049373291ac4920ea88a",
+    "scripts/account-safety/run-fence-journal-linux.mjs": "5cf8682b172042511d5ac28dd6eae4112eb9fa0d4e638ce52237dd29229d1aae",
+    "scripts/account-safety/test-driver-origin-postgres.mjs": "841870d4beefb934545bd19ad764e4417f4b2d106b3f0c28a6632429b7aaa361",
+    "scripts/account-safety/test-fence-journal-linux.mjs": "2835aff738915cca8872fb628b5c150b9b5f04a823544e530cd89e8af805cdd9"
+  },
+  "gates": {
+    "controllerAndLoopback": {
+      "files": 5,
+      "passed": 54,
+      "failed": 0,
+      "syntheticOwners": true
+    },
+    "codecAndRecordConsumers": {
+      "passed": 13,
+      "failed": 0,
+      "actualEd25519": true,
+      "syntheticFacts": true
+    },
+    "journal": {
+      "receipt": "account-safety-fence-journal-minimized-20261015.json",
+      "passed": 8,
+      "actualPostgres": "18.6",
+      "syntheticEnrollment": true
+    },
+    "muslNative": {
+      "node": "24.20.0",
+      "compiler": "Alpine GCC 15.2.0",
+      "kernel": "7.0.14-linuxkit",
+      "architecture": "arm64",
+      "binarySha256": "cb71d620ec3b6f9e157a03d1038fb028870cc2cfb3631c4d40f81918c2bb5028",
+      "kernelCases": 7,
+      "originalOperationClientCases": 4,
+      "driverReadClientCases": 3,
+      "copContinuityClientCases": 4,
+      "actualNativeAndCrypto": true,
+      "sqlFactsInChannelTests": "synthetic",
+      "networkDuringPackageInstall": true,
+      "networkRoutesDuringTests": false,
+      "hostMounts": false,
+      "productionData": false,
+      "ownedContainerRemoved": true
+    },
+    "typecheck": "pass",
+    "scopedEslint": "pass",
+    "skeleton": "pass"
+  },
+  "actualProduction": {
+    "changed": false,
+    "accountDeleted": false,
+    "rootInstalled": false,
+    "rootEnrolled": false,
+    "completeOwnerComposition": false,
+    "restoreAccepted": false
+  },
+  "productionReadback": {
+    "host": "docker.home.cz",
+    "architecture": "x86_64",
+    "kernel": "7.0.0-38-generic",
+    "hostNode": "22.23.3",
+    "apiImage": "sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f",
+    "apiStatus": "running",
+    "apiRestartCount": 2,
+    "sshUid": 1000,
+    "noninteractiveSudo": "interactive authentication required"
+  },
+  "remaining": [
+    "independent permit/delivery and owner-inventory publishers",
+    "per-request operation and retention context",
+    "complete owner entrypoint bindings and actual restore quarantine/replay",
+    "native deployment latch and target-specific binaries",
+    "privileged installation, credentials/grants, actual enrollment",
+    "two synthetic account joint production acceptance before activation"
+  ],
+  "limitations": [
+    "Counts are separate gates and overlap historical suites; no combined full-suite claim.",
+    "Native tests run on local ARM64 musl, not production x86_64.",
+    "Root journal does not itself establish provider ownership or owner-wide replay.",
+    "No real user account deleted and no production flag changed."
+  ]
+}

@@ -151,16 +151,50 @@ execute that only resolves prior work. A changed body cannot borrow an older
 successful receipt. An explicit probe carries no body. Use one client instance
 per process; its bounded in-memory input-digest map stores no body.
 
+## Independent COP fence journal and read client
+
+`root-fence-journal.mjs`, `root-record-issuer.mjs` and
+`cop-root-continuity.mjs` now implement an actual separate SQL journal,
+Root-signed durable manifests, immutable original-operation readback, paginated
+private delivery and the production fixed client. COP's controller integrates
+replay before admission, rejects version/store/configuration conflicts, expires
+the RAM barrier and checks current continuity for workers/receipts/writes.
+The permanent journal contains only pseudonymous metadata, **no recoverable
+principal**. See [ADR0054](../../docs/adr/0054_INDEPENDENT_PSEUDONYMOUS_ERASURE_JOURNAL.md)
+for the identity recovery limitation and exact activation boundaries.
+
+The real isolated PostgreSQL18.6/Root/Ed25519 journal gate passed8/8. An earlier
+encrypted-principal prototype is retained only as historical test evidence;
+the current minimized gate has its own frozen receipt.
+
+`driver-root-inspect.mjs` adds a fixed read client and broker routing to SIM's
+Root reader. The broker finds a private signed `driver-read-delivery` by actual
+peer and typed request digest, checks its permit digest, and invokes the actual
+SIM reader. The application never supplies a Root UUID. Root must independently
+produce that delivery and permit; absent evidence stays unavailable. The client
+checks actual native traffic, the signed record, request/checkpoint/runtime/facts
+and its own pidfs identity. `selfIdentity()` is unprivileged and takes no PID;
+arbitrary process inspection remains Root-only.
+
+The new Alpine/musl gate passed7native,4original client,3read client and4COP
+continuity cases. Unlike earlier glibc-only evidence, this binary matches the
+test consumers' libc/architecture; it is still ARM64workstation evidence, not
+the x86_64production binary. Source compilation used a newly owned temporary
+container; packages were fetched before disconnecting that container, and test
+execution had no network routes, host mounts or production data. No binary is
+committed or substituted for the target build.
+
 ## Remaining implementation and deployment
 
 Do not deploy migration003 alone: the live revoke/erase/ack and retention paths
 must all use the guarded executor before direct DELETE grants are removed.
-The transport and executor above are implemented source. Authenticated
-per-request operation-context delivery and scoped read-admission ports, accepted
-Root producer of permits/current frontiers/owner inventory, installation and
+The transport, original executor, COP journal/continuity and driver read client
+above are implemented source. Authenticated per-request operation-context
+delivery, independent permit/read-delivery and owner-inventory producers,
+complete current-frontier/runtime enrollment, installation and
 enrollment, complete owner-wide drain across runtime upgrades,
-Root journal before the COP fence, quarantine/replay before restore exposure,
-and production entry point bindings are still missing. The empty Root metadata
+quarantine/replay before restore exposure and remaining owner production entry
+point bindings are still missing. The empty Root metadata
 database does not implement them. These are implementation/deployment gates,
 not a request for another general user approval.
 

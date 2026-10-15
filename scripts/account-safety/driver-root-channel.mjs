@@ -1,12 +1,14 @@
-import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { readFileSync } from 'node:fs';
-import { canonical, canonicalJson, exact, hex, uuid, sha256, requireGuard, requireRootCodeTree, readRootFile,
+import { canonical, canonicalJson, exact, hex, uuid, sha256, requireGuard, readRootFile,
   readPublicVerificationKeys, verifyRootRecord } from './root-records.mjs';
 import { validateRevokeEffect } from './driver-origin-producer.mjs';
 import { executeRootDriver } from './root-driver-runtime.mjs';
+import { nativeModule } from './root-native.mjs';
+import { serveContinuityRequest } from './cop-root-continuity.mjs';
+import { serveDriverInspect } from './driver-root-inspect.mjs';
 
 const VERSION = 'cop-root-driver-message-v1', REPLY = 'cop-root-driver-reply-v1';
 const STATE = '/var/lib/cop-account-safety';
@@ -17,11 +19,6 @@ const isRef = value => exact(value, ['recordId', 'digest']) && uuid(value.record
 function operationRef(op) {
   requireGuard(exact(op, ['operationId', 'kind']) && uuid(op.operationId) && kinds.includes(op.kind), 'GUARD_CHANNEL_OPERATION');
   return { operationId: op.operationId, kind: op.kind };
-}
-function nativeModule() {
-  requireRootCodeTree('/opt/cop-account-safety');
-  const require = createRequire('/opt/cop-account-safety/package.json');
-  return require('/opt/cop-account-safety/native/root-seqpacket.node');
 }
 export function validateDriverReply(bytes, request, keys) {
   const reply = canonicalJson(bytes, 16_384);
@@ -127,6 +124,14 @@ export async function main() {
       let item;
       try { item = await native.receive(listener); } catch { continue; }
       try {
+        if (canonicalJson(item.packet, 16_384).contractVersion === 'cop-root-continuity-message-v1') {
+          await native.reply(item.connection, await serveContinuityRequest(item.packet, item.peer));
+          continue;
+        }
+        if (canonicalJson(item.packet, 16_384).contractVersion === 'cop-root-driver-inspect-message-v1') {
+          await native.reply(item.connection, await serveDriverInspect(item.packet, item.peer));
+          continue;
+        }
         const request = decodeRequest(item.packet), registration = readClientRegistration(item.peer);
         const permit = verifyRootRecord(readRootFile(join(STATE, 'operations', request.operation.operationId + '.json'), { secret: true }),
           readPublicVerificationKeys(), 'driver-origin-permit', { historical: true });

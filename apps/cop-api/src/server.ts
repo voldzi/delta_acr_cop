@@ -2,6 +2,7 @@ import { COMMUNICATION_SAFETY_CONFIG_KEY, CommunicationSafetyService, Communicat
 import { JizdaAppLinkService, disconnectJizdaMessaging, registerJizdaAppLinkRoutes } from "./jizda-app-link.js";
 import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureError, AccountErasureService, type AccountErasureAdapter } from "./account-erasure.js";
 import { registerAccountErasureRoutes } from "./account-erasure-routes.js";
+import type { AccountErasureContinuity } from "./account-erasure-continuity.js";
 import { isAccountErasureReceiptRead } from "./account-erasure-transport.js";
 import { createCOPSessionsProfilesErasureAdapter } from "./cop-sessions-profiles-erasure.js";
 import { createCOPDevicesErasureAdapter } from "./cop-devices-erasure.js";
@@ -379,6 +380,7 @@ import {
 
 export interface BuildServerOptions {
   accountErasure?: AccountErasureService;
+  accountErasureContinuity?: AccountErasureContinuity;
   accountErasureAdapters?: readonly AccountErasureAdapter[];
   /** Add only the restore owner; preserve the actual local adapter composition. */
   backupRestoreErasureAdapter?: AccountErasureAdapter & { readonly id: "backup_restore" };
@@ -1412,6 +1414,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     ];
     accountErasure = new AccountErasureService({ store: accountSafetyStore, identitySecret: erasureSecret, expectedGuardStoreId: erasureStoreId,
       issuer, requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS, adapters: options.accountErasureAdapters ?? localAdapters,
+      continuity: options.accountErasureContinuity, continuityRequired: erasureEnabled || process.env.COP_ACCOUNT_SAFETY_GUARD_REQUIRED === "true",
       admissionGuard: contentErasure.admissionGuard, accepted: erasureEnabled, now });
   }
   registerAccountErasureRoutes(app, accountErasure);

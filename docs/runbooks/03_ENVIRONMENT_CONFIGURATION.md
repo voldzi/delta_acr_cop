@@ -1010,3 +1010,19 @@ probe, including response bodies, and require the configured model to be
 present. An unavailable embedding service must be restored at its real
 endpoint; increasing timeouts or using a generative/OpenAI endpoint does not
 restore embeddings.
+
+## Account-safety continuity implementation
+
+`COP_ACCOUNT_ERASURE_ENABLED=true` or the retained
+`COP_ACCOUNT_SAFETY_GUARD_REQUIRED=true` requires the fixed protected module at
+`/opt/cop-account-safety`, Root-controlled public verification/bootstrap mounts
+and the independently accepted private service. The production entry point
+loads it without caller-selected transport, credential or verifier. Missing
+installation fails closed. These flags do not provision or approve authority.
+
+The continuity controller uses private configuration version4. It never silently
+migrates a legacy version3 store or opens it after the independent journal is
+removed. Keep `GUARD_REQUIRED`, existing identity secret, store binding and
+fences after first acceptance even when new deletion intake is disabled.
+No new public endpoint or direct OpenAI/provider fallback is introduced.
+See [ADR0054](../adr/0054_INDEPENDENT_PSEUDONYMOUS_ERASURE_JOURNAL.md).

@@ -1,0 +1,86 @@
+{
+  "contractVersion": "cop-fence-journal-linux-receipt-v1",
+  "startedAt": "2026-10-15T07:17:21.773Z",
+  "completedAt": "2026-10-15T07:17:24.329Z",
+  "sourcePins": {
+    "root-records.mjs": "ad203b1a1858bea7f8f799a6147720d1d0d6df790bfc1d4c866a12c45d6bb7fd",
+    "root-record-issuer.mjs": "9970ccf9898646d1579c484737c4833a9bc8fa21dd78503204d3afa9e10e802d",
+    "root-fence-journal.mjs": "0065be8dfb30ff9d3afe88e3cf16f592b83a0c6c213e0eea977cf46a226aca3d",
+    "harness": "2835aff738915cca8872fb628b5c150b9b5f04a823544e530cd89e8af805cdd9"
+  },
+  "foundationSha256": "a29369e48a1380bb12ce3b40b9254d924e0d98a3b90f7cdcdc0fb7e9ba27aaba",
+  "packages": {
+    "pg": "8.23.1",
+    "pg-connection-string": "2.14.1",
+    "pg-pool": "3.14.0",
+    "pg-protocol": "1.16.1",
+    "pg-types": "2.2.0",
+    "pgpass": "1.0.5",
+    "pg-cloudflare": "1.4.1",
+    "pg-int8": "1.0.1",
+    "postgres-array": "2.0.0",
+    "postgres-bytea": "1.0.1",
+    "postgres-date": "1.0.7",
+    "postgres-interval": "1.2.0",
+    "split2": "4.2.0",
+    "xtend": "4.0.2"
+  },
+  "result": {
+    "contractVersion": "cop-fence-journal-fixture-v1",
+    "postgres": "18.6",
+    "actualRootFiles": true,
+    "actualEd25519": true,
+    "actualPostgres": true,
+    "syntheticEnrollment": true,
+    "productionAcceptance": false,
+    "checks": [
+      {
+        "name": "empty actual Root journal matches signed actual cluster and boot",
+        "passed": true
+      },
+      {
+        "name": "Root manifest is durable and signed before actual narrow-role INSERT and fresh readback",
+        "passed": true
+      },
+      {
+        "name": "repeat returns immutable original job, not replacement timestamp or ciphertext",
+        "passed": true
+      },
+      {
+        "name": "discarded actual outer COMMIT acknowledgement recovers original journal entry without replacement",
+        "passed": true
+      },
+      {
+        "name": "foreign-account reuse of an operation cannot borrow its Root manifest",
+        "passed": true
+      },
+      {
+        "name": "older restored SQL frontier is rejected against independent Root frontier",
+        "passed": true
+      },
+      {
+        "name": "same-sequence digest fork is rejected rather than signed as a new frontier",
+        "passed": true
+      },
+      {
+        "name": "tampered pseudonymous manifest fails actual signature verification",
+        "passed": true
+      }
+    ]
+  },
+  "images": {
+    "nodeImage": "sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf",
+    "pgImage": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873"
+  },
+  "isolation": {
+    "externalNetwork": false,
+    "hostMounts": false,
+    "publicPorts": false,
+    "imagePull": false,
+    "imageBuild": false
+  },
+  "productionChanged": false,
+  "productionRootEnrollment": false,
+  "nativeChannelVerified": false,
+  "realAccountDeleted": false
+}

@@ -276,6 +276,19 @@ static napi_value inspect_pid(napi_env env,napi_callback_info info) {
   napi_create_string_utf8(env,"gid",NAPI_AUTO_LENGTH,&key); napi_delete_property(env,result,key,&deleted);
   return result;
 }
+/* Unprivileged callers may inspect only their own pidfs identity. UID numbers
+ * are intentionally absent: the Root receiver observes them in its namespace. */
+static napi_value self_identity(napi_env env,napi_callback_info info) {
+  napi_value args[1]; size_t count=1; napi_get_cb_info(env,info,&count,args,NULL,NULL);
+  if(count!=0) return error(env,"COP_ROOT_NATIVE_ARGUMENT");
+  int fd=(int)syscall(SYS_pidfd_open,getpid(),0); Peer peer={0};
+  int ok=fd>=0 && identity(fd,&peer); if(fd>=0) close(fd);
+  if(!ok) return error(env,"COP_ROOT_NATIVE_UNAVAILABLE");
+  napi_value result=peer_value(env,&peer),key; bool deleted;
+  napi_create_string_utf8(env,"uid",NAPI_AUTO_LENGTH,&key); napi_delete_property(env,result,key,&deleted);
+  napi_create_string_utf8(env,"gid",NAPI_AUTO_LENGTH,&key); napi_delete_property(env,result,key,&deleted);
+  return result;
+}
 static napi_value listen_js(napi_env env,napi_callback_info info) {
   napi_value args[1]; size_t count=1; napi_get_cb_info(env,info,&count,args,NULL,NULL);
   if(count!=0 || !root() || !custody_directory("/run/cop-account-safety/public")) return error(env,"COP_ROOT_NATIVE_ARGUMENT");
@@ -295,6 +308,7 @@ NAPI_MODULE_INIT() {
   napi_property_descriptor methods[]={
     {"exchange",NULL,exchange,NULL,NULL,NULL,napi_default,NULL}, {"listen",NULL,listen_js,NULL,NULL,NULL,napi_default,NULL},
     {"receive",NULL,receive_packet,NULL,NULL,NULL,napi_default,NULL}, {"reply",NULL,reply,NULL,NULL,NULL,napi_default,NULL},
-    {"close",NULL,close_js,NULL,NULL,NULL,napi_default,NULL}, {"inspectProcess",NULL,inspect_pid,NULL,NULL,NULL,napi_default,NULL}};
+    {"close",NULL,close_js,NULL,NULL,NULL,napi_default,NULL}, {"inspectProcess",NULL,inspect_pid,NULL,NULL,NULL,napi_default,NULL},
+    {"selfIdentity",NULL,self_identity,NULL,NULL,NULL,napi_default,NULL}};
   napi_define_properties(env,exports,sizeof(methods)/sizeof(methods[0]),methods); return exports;
 }
