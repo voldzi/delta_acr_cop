@@ -117,6 +117,28 @@ private staged source were removed. These five groups do not upgrade earlier
 receipts or prove the still-missing revoke/erase/ack context producer and complete
 COP owner composition.
 
+### Subsequent Root actor composition — nine groups
+
+The [separate nine-group Root actor gate](../testing/account-safety-root-cop-actor-20261015.json)
+passed with actual restricted TLS SQL profiles, signed journal and two synthetic
+users. It proves alias/issuer/operation separation, no self-deadlock under an
+already-held904214 barrier, historical retained-hash/outbox coverage and exact
+manifest preservation via permanent fences after receipt/outbox cleanup.
+RLS, inherited column writes, cross-user signatures and invalid daily-consent
+ledger/fence state remain denied.
+
+The helper now reads two matching journal observations in READ COMMITTED/READ
+ONLY without taking another writer lock or refreshing the frontier. It awaits
+actual SQL END. The hypothesized shrinkage after correct fenced cleanup was
+ruled out; exact contributor validation was not relaxed.
+
+This is a necessary actor component, not full authorization: calls are direct
+in Root, source journal setup uses a synthetic administrator, COP consent layout
+is synthetic, and no native actor endpoint, HTTP login/current-owner enrollment,
+whole-account deletion, production or restore was exercised. The mutating
+wrapper must still bind the original anchor/body from the actual ledger and
+obtain independent actual current-owner authority. Owned fixtures were removed.
+
 ### 15 October: implemented Root SQL executor component
 
 COP added the real Root-only original-operation executor and signed result

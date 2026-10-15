@@ -41,13 +41,22 @@ function registeredPeer(peer, keys) {
 }
 async function database(profile, name, user, work) {
   const require = createRequire('/opt/cop-account-safety/package.json'), { Client } = require('pg');
-  const client = new Client(connectionProfile(profile, name, user)); client.on('error', () => undefined);
+  const client = new Client(connectionProfile(profile, name, user));
+  let failed = false, ended = false, closing = false;
+  client.on('error', () => { failed = true; }); client.on('end', () => { ended = true; if (!closing) failed = true; });
   try { await client.connect(); return await work(client); }
-  finally { await client.end().catch(() => undefined); }
+  finally {
+    closing = true; let timer;
+    try {
+      await Promise.race([client.end(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('GUARD_COP_DATABASE_END_UNKNOWN')), 15000); })]);
+      requireGuard(ended && !failed, 'GUARD_COP_DATABASE_END_UNKNOWN');
+    } catch { throw new Error('GUARD_COP_DATABASE_END_UNKNOWN'); }
+    finally { clearTimeout(timer); }
+  }
 }
 async function readOnlyDatabase(profile, name, user, work) {
   return database(profile, name, user, async client => {
-    await client.query('BEGIN READ ONLY');
+    await client.query('BEGIN ISOLATION LEVEL READ COMMITTED READ ONLY');
     try {
       await client.query("SET LOCAL statement_timeout='3000ms'"); await client.query("SET LOCAL lock_timeout='1000ms'");
       if (profile === 'cop-consent-reader') {
@@ -79,9 +88,16 @@ export async function assertCopJournalActor(peer, actor, businessOperationId) {
   const p = identity(), keys = readPublicVerificationKeys(), registration = registeredPeer(peer, keys);
   const accountKey = actorIdentity(actor, p);
   requireGuard(businessOperationId === actor.operationId, 'GUARD_COP_BUSINESS_OPERATION');
-  const result = await database('registry-probe', 'cop_account_safety_guard', 'cop_guard_root_reader', async client => {
+  const result = await readOnlyDatabase('registry-probe', 'cop_account_safety_guard', 'cop_guard_root_reader', async client => {
     const journal = new RootFenceJournal(client, keys, { ...p, guardStoreId: registration.guardStoreId, continuityEpoch: registration.continuityEpoch });
-    const replay = await journal.snapshot(), entry = replay.entries.find(e => e.accountKey === accountKey);
+    // Root's caller may already hold the actual exclusive owner session.
+    // snapshot() would acquire 904214 on ANOTHER connection and self-deadlock.
+    // Immutable signed manifests and two actual observations need no writer
+    // lock or frontier refresh. A concurrent append between reads is denied.
+    const first = await journal.observe(), replay = await journal.observe();
+    requireGuard(canonical({ entries: first.entries, frontier: first.frontier }) ===
+      canonical({ entries: replay.entries, frontier: replay.frontier }), 'GUARD_COP_JOURNAL_CHANGED');
+    const entry = replay.entries.find(e => e.accountKey === accountKey);
     requireGuard(entry?.job.operationId === businessOperationId, 'GUARD_COP_JOURNAL_ACTOR');
     const rows = await client.query('SELECT sequence::text,entry_digest,coverage_manifest_ref FROM cop_guard.fence_journal WHERE fence_operation_id=$1::uuid', [businessOperationId]);
     requireGuard(rows.rows.length === 1, 'GUARD_COP_JOURNAL_ACTOR');

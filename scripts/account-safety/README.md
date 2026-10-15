@@ -382,3 +382,33 @@ observations in both runs are synthetic. No real account, complete erasure,
 production installation, new authority enrollment or restore was accepted. All
 owned contexts/containers were removed. Existing native4/common22/lineage8
 receipts keep their own original source pins and scope.
+
+## Actual Root actor component — nine groups
+
+`root-cop-actor.mjs` now uses two real `RootFenceJournal.observe()` reads inside
+an explicit READ COMMITTED/READ ONLY transaction. It compares the complete
+signed entries/frontier without acquiring another904214 lock or refreshing
+authority. This avoids self-deadlock when the caller already holds the actual
+owner barrier. Every database helper awaits real END and rejects failed/early
+END rather than swallowing it. It never grants current-owner authority.
+
+The separate [nine-group receipt](../../docs/testing/account-safety-root-cop-actor-20261015.json)
+executes the actual Root helpers/private profiles, restricted TLS SQL readers,
+signed pseudonymous journal and two synthetic users. It verifies alias/issuer/
+operation isolation, a real already-held904214 barrier, actual SQL006 retained
+hash membership and historical keys/outbox coverage, exact manifest preservation
+after receipt/outbox cleanup via permanent fences, live RLS/column-write denial,
+signed daily withdrawal and ledger/fence/secret rejection.
+
+The suspected current-inventory shrinkage after erase was **not reproduced in
+the correct fenced flow**: SQL006 also recovers permanent contributor fences.
+Exact manifest validation is unchanged; no superset allowance was introduced.
+The immutable original anchor is supplied by this component's Root caller;
+the future mutating wrapper must derive it from the actual operation ledger.
+
+These are direct Root helper calls with actual child pidfs, not a native actor
+endpoint or HTTP authorization. Journal setup uses a synthetic administrator;
+COP consent tables use an explicit synthetic layout and the actual SQL003 reader
+role. No current metadata/enrollment, full erasure, production or restore
+authority is accepted. Unknown-END fault injection belongs to its separate
+executor gate, not these nine groups. All owned containers/context were removed.
