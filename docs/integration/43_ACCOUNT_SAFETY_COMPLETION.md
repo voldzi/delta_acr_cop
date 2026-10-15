@@ -23,6 +23,10 @@ warnings. Public analytics guards passed. Two old session-erasure expectations
 were corrected to match the already-reviewed legacy token-refresh behavior:
 refresh preserves unknown issuer and original lifetime, rather than adopting an
 owner or rejecting the refresh. Runtime session behavior was not changed here.
+The full lint command still reports67 unused declarations in unchanged,
+byte-pinned historical Linux fixture harnesses. Targeted lint of the changed
+runtime/test files passes; those historical proof sources were not edited just
+to suppress the diagnostics. This is not a clean full-lint release claim.
 
 Read-only production check: COP still runs the same a06 image, erasure/retained
 guard are off, Messaging's required capability URL returns404, and dedicated
@@ -34,6 +38,10 @@ cannot yet be inspected: SSH to `comm.home.cz` denies the available account/key.
 `scripts/account-safety/inspect-synapse-readonly.sh` is a prepared metadata-only
 diagnostic for the actual Synapse host; shell syntax checked, not run there.
 It reads no message/user rows or credential values, and changes no service/DB.
+The existing voice media credentials are configured, but an actual read-only
+LiveKit admin probe at the existing public media origin returns404. A verified
+server-side admin origin is still required; no public route or new port was
+opened to work around it.
 
 Source work: 2026-10-14. Production still runs accepted image
 `sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f`,
