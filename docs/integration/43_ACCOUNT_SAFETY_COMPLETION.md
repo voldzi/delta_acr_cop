@@ -34,14 +34,31 @@ SIM/Keycloak/LiveKit-admin erasure configuration is absent. No production value
 was printed. The published Messaging candidate was recovered separately at
 `ee3b4641962bf1a72e3709074d1ccc8a69e0ac44`; its native private-owner authority is
 not an implemented provider cleanup executor. Production Synapse image/schema
-cannot yet be inspected: SSH to `comm.home.cz` denies the available account/key.
+was subsequently inspected through the user-supplied `comm-codex` SSH alias.
 `scripts/account-safety/inspect-synapse-readonly.sh` is a prepared metadata-only
-diagnostic for the actual Synapse host; shell syntax checked, not run there.
+diagnostic for the actual Synapse host; it ran successfully on15October:
+Synapse1.156.0, PostgreSQL18.6, connected role without superuser/CREATEROLE/BYPASSRLS.
 It reads no message/user rows or credential values, and changes no service/DB.
 The existing voice media credentials are configured, but an actual read-only
 LiveKit admin probe at the existing public media origin returns404. A verified
 server-side admin origin is still required; no public route or new port was
 opened to work around it.
+
+Subsequent Messaging work fixed a real provider mismatch: native deactivation
+retains external-login bindings. Exact-user PUT and repeated GET now clear and
+verify those bindings. The source passed169 Messaging tests and a disposable
+actual Synapse1.156.0 API test with two synthetic accounts: A's binding was
+removed while B stayed active with its binding. That test had no network,
+production credentials or persistent volumes. It is not whole-account or
+production acceptance. The comm access blocker is resolved; private owner
+completion, namespace/restore acceptance and deployment remain open.
+
+Two further composition proposals were rejected before application: a backup
+owner completed only from journal replay without proof of restricted backup
+access/expiry and full restore rehearsal; and shared stream event cleanup
+without independently proven ownership of every changed item. Neither proposal
+was applied or retried through another execution path. Both owners remain
+unaccepted; no missing adapter was converted into a positive proof.
 
 Source work: 2026-10-14. Production still runs accepted image
 `sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f`,
