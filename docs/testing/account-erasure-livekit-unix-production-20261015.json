@@ -1,0 +1,27 @@
+{
+  "contractVersion": "cop-livekit-erasure-v1",
+  "messagingSourceRevision": "cc26a2016287e4ced4a5f02a8496caae930db993",
+  "linuxTestRevision": "b9db73459656c50d3a99fc87315f1d9be05de449",
+  "linuxTestsPassed": 195,
+  "messagingImage": "sha256:ac2c31d721d3da5d98dcb0e6494d3025845bc232c67832ec722f7a1d7f4659a8",
+  "proxyImage": "sha256:05909abc87ca68db1810e6180ddfc655438688ace86cde5a1443a053d651d517",
+  "deploymentOverlay": "/srv/csm-messaging/docker-compose.livekit-erasure-unix-cc26a20.json",
+  "apiReadiness": "ok",
+  "authorizedFixedRoomProbe": 200,
+  "unauthorizedProbe": 401,
+  "invalidGrantProbe": 503,
+  "proxyStoppedAuthorizedProbe": 503,
+  "proxyRestartedAuthorizedProbe": 200,
+  "operatorConfigurationPreserved": true,
+  "existingProviderContainerIdsUnchanged": true,
+  "newPublicPorts": 0,
+  "realAccountDeleted": false,
+  "roomCreated": false,
+  "wholeAccountErasureEnabled": false,
+  "copRuntimeChanged": false,
+  "limitations": [
+    "Fixed-room readiness is not real participant removal acceptance",
+    "Physical iPhone push and audio not retested",
+    "Messaging whole-owner, private-state composition, Keycloak, enrollment and restore remain separate gates"
+  ]
+}

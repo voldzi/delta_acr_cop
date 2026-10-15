@@ -452,10 +452,28 @@ remain in force. Another participant/room cannot be selected by this request.
 Nine COP transport tests verify real SDK JWT signatures and expiry/grants,
 independent A/B identity, exact account/operation headers, cancellation, invalid
 responses,401/409/429/503 and absence of a direct fallback. The existing three
-native LiveKit tests and twelve device/voice tests also pass. Messaging's five
-actual HTTP tests pass. This source is not yet the production voice adapter;
-its concrete same-host provider path still needs a live fixed-room readiness
-probe before transport activation. Whole-account deletion remains disabled.
+native LiveKit tests and twelve device/voice tests also pass. Messaging's six
+HTTP tests include actual Unix socket transport. Its complete195-test Linux
+suite passed after correcting one macOS-specific fixture path; the initial
+194/195 run is not passing evidence.
+
+Messaging runtime source `cc26a2016287e4ced4a5f02a8496caae930db993` is now
+deployed on comm with an explicit protected Unix socket and credential-free
+fixed-loopback sidecar. Existing provider container IDs, operator configuration,
+APNs settings and port bindings stayed unchanged. The ordinary API readiness
+passed. A real SDK30-second room-list grant signed inside the existing COP
+container crossed HTTPS Messaging and the private socket to the actual LiveKit:
+the fixed nonexistent-room probe returned200/ready=true, an unauthorized caller
+401, an invalid grant503. Stopping only the new sidecar changed the authorized
+probe to503; restarting it restored200 without restarting COP/API/LiveKit.
+No room was created, real account erased, long-lived secret copied or public
+port added. Six additional isolated Linux sidecar checks cover locks, restart
+and unsafe filesystem objects; fixtures were removed.
+
+The production COP image and its voice adapter configuration have not yet been
+changed. Whole-account deletion remains disabled; this concrete transport
+acceptance does not replace Messaging whole-owner/private-state composition,
+Keycloak authority, independent enrollment or actual restore acceptance.
 
 ### Shared PostgreSQL stream owner, 15 October 2026
 

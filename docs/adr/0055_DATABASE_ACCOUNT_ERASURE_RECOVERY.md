@@ -34,9 +34,13 @@ API. Messaging accepts only fixed room-list/probe/presence/remove-self actions;
 mutating requests require its real persisted account/operation fence and bound
 scope version. It never receives the long-lived LiveKit signing secret, selects
 another participant, deletes a room or forwards an arbitrary RPC. The internal
-hop is explicitly limited to the container's actual kernel default gateway on
-port7880, additionally pinned to the reviewed comm bridge gateway172.18.0.1.
-A topology change fails closed instead of following another router. This trusts the already existing same-host communication boundary;
+hop is selected explicitly, without fallback: either the actual kernel default
+gateway pinned to the reviewed comm bridge172.18.0.1:7880, or the protected
+UID1000/mode0600 Unix socket in its mode0700 directory. The gateway path timed
+out on comm. The verified Unix mode uses a constrained credential-free sidecar
+whose fixed destination is the existing127.0.0.1:7880 listener. It opens no TCP
+listener or public port and changes no firewall. A topology or socket protection
+change fails closed. This trusts the existing same-host communication boundary;
 there is no HTTP fallback in COP's direct HTTPS provider and no new public admin
 port. Unknown transport or unavailable scope fails closed. Selecting both
 transports is a configuration error. This relay does not establish whole-account
