@@ -3,6 +3,8 @@ import pg, { type Client as PgClient, type Pool as PgPool, type PoolConfig } fro
 import { createCopPgPool } from "./cop-pg-pool.js";
 import { resolveCopSessionDatabaseUrl } from "./cop-session-database.js";
 import type { CopStreamMessage } from "./cop-stream.js";
+import { PostgresStreamProjectionErasure, recordStreamProjectionOwners, streamProjectionOwnershipSql } from "./cop-stream-projection-erasure.js";
+import { assertProjectionPayloadAllowed, projectionTransaction, resourceProjectionFenceTableSql, type ResourceProjectionStore } from "./resource-projection-erasure.js";
 
 const { Client } = pg;
 const defaultChannel = "cop_stream_events";
@@ -31,6 +33,7 @@ export interface CopStreamBus {
     closed: boolean;
   };
   init(): Promise<void>;
+  projectionErasureStore?(): ResourceProjectionStore | undefined;
   publish(message: CopStreamMessage): Promise<void>;
   subscribe(subscriber: (message: CopStreamMessage) => void): () => void;
 }
@@ -109,12 +112,14 @@ export class PostgresCopStreamBus implements CopStreamBus {
   private closed = false;
   private localDeliveriesTotal = 0;
   private readonly pool: PgPool;
+  private readonly projectionGuard: boolean;
+  private readonly projectionOwner: PostgresStreamProjectionErasure;
   private poolReady = false;
   private publishedMessagesTotal = 0;
   private receivedMessagesTotal = 0;
   private readonly subscribers = new Set<(message: CopStreamMessage) => void>();
 
-  constructor(config: PoolConfig, options: { channel?: string; instanceId?: string } = {}) {
+  constructor(config: PoolConfig, options: { channel?: string; instanceId?: string; projectionGuard?: boolean } = {}) {
     this.clientConfig = {
       ...config,
       application_name: config.application_name ?? "cop-api:stream-listener",
@@ -123,6 +128,8 @@ export class PostgresCopStreamBus implements CopStreamBus {
     this.channel = normalizePostgresChannel(options.channel ?? defaultChannel);
     this.instanceId = options.instanceId?.trim() || randomUUID();
     this.pool = createCopPgPool("stream", config);
+    this.projectionGuard = options.projectionGuard === true;
+    this.projectionOwner = new PostgresStreamProjectionErasure(this.pool, () => this.projectionGuard && this.metrics.ready);
     this.pool.on("error", () => {
       this.lastError = "STREAM_POOL_UNAVAILABLE";
       this.poolReady = false;
@@ -168,6 +175,7 @@ export class PostgresCopStreamBus implements CopStreamBus {
     }
     try {
       await this.pool.query(createStreamBusEventsSql);
+      if (this.projectionGuard) await this.pool.query(resourceProjectionFenceTableSql + streamProjectionOwnershipSql);
       this.poolReady = true;
     } catch {
       this.poolReady = false;
@@ -297,6 +305,26 @@ export class PostgresCopStreamBus implements CopStreamBus {
       message,
       originId: this.instanceId
     };
+    if (this.projectionGuard) {
+      // Admission, actual source ownership, persistence and synchronous local
+      // delivery share the erasure barrier. A database failure never emits a
+      // local-only copy in this mode.
+      try {
+        await projectionTransaction(this.pool, async client => {
+          await assertProjectionPayloadAllowed(client, message);
+          await client.query("INSERT INTO cop_stream_bus_events(event_id,origin_id,payload) VALUES($1,$2,$3::jsonb)",
+            [eventId, this.instanceId, JSON.stringify(envelope)]);
+          await recordStreamProjectionOwners(client, eventId, message);
+          await client.query("SELECT pg_notify($1,$2)", [this.channel, eventId]);
+          this.emit(message);
+        });
+        this.markPoolAvailable();
+      } catch {
+        this.lastError = "STREAM_PUBLISH_UNAVAILABLE"; this.poolReady = false;
+        throw new Error(this.lastError);
+      }
+      return;
+    }
     try {
       await this.pool.query(
         `INSERT INTO cop_stream_bus_events (event_id, origin_id, payload)
@@ -319,8 +347,26 @@ export class PostgresCopStreamBus implements CopStreamBus {
     };
   }
 
+  projectionErasureStore(): ResourceProjectionStore | undefined {
+    return this.projectionGuard ? this.projectionOwner : undefined;
+  }
+
   private async handleNotification(eventId: string): Promise<void> {
     try {
+      if (this.projectionGuard) {
+        await projectionTransaction(this.pool, async client => {
+          const result = await client.query<StreamBusEventRow>("SELECT origin_id,payload FROM cop_stream_bus_events WHERE event_id=$1", [eventId]);
+          const row = result.rows[0];
+          if (!row || row.origin_id === this.instanceId) return;
+          const envelope = parseEnvelope(row.payload);
+          if (!envelope || envelope.originId === this.instanceId) return;
+          await assertProjectionPayloadAllowed(client, envelope.message);
+          this.receivedMessagesTotal += 1;
+          this.lastReceivedAt = envelope.message.serverTimestamp;
+          this.emit(envelope.message);
+        });
+        this.markPoolAvailable(); return;
+      }
       const result = await this.pool.query<StreamBusEventRow>(
         `SELECT origin_id, payload
          FROM cop_stream_bus_events
@@ -372,7 +418,8 @@ export function createCopStreamBusFromEnv(env: Record<string, string | undefined
       },
       {
         channel: env.COP_STREAM_BUS_CHANNEL,
-        instanceId: env.COP_STREAM_BUS_INSTANCE_ID
+        instanceId: env.COP_STREAM_BUS_INSTANCE_ID,
+        projectionGuard: !!env.COP_ACCOUNT_ERASURE_SECRET?.trim()
       }
     );
   }

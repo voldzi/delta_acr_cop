@@ -1226,7 +1226,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   let localProjectionEraser: ReturnType<typeof createCommunityProjectionEraser> | undefined;
   let aiRetainedProjectionOwner: (ProjectionStateOwner & { init(): Promise<void> }) | undefined;
   let providerCopiesProjectionOwner: ProviderCopiesOwner | undefined;
-  const projectionStores = [trackHistoryStore, federationRuntimeStore, safetyNotificationStore].filter(Boolean) as ResourceProjectionStore[];
+  const streamProjectionStore = streamBus.projectionErasureStore?.();
+  const projectionStores = [trackHistoryStore, federationRuntimeStore, safetyNotificationStore, streamProjectionStore].filter(Boolean) as ResourceProjectionStore[];
   const loadActualProjectionFences = async () => {
     const frontiers = [];
     for (const store of projectionStores) {
@@ -1621,6 +1622,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     }
     if (jizdaAppLink) await jizdaAppLink.init();
     if (accountErasure) await accountErasure.init();
+    // The guarded persistent bus must create/read its real fence tables before
+    // projection frontiers are loaded into state during first enrollment.
+    await initializeStreamBus();
     // Consent metadata must remain available to erasure even with both normal
     // measurement flags off. This creates no intake and never substitutes RAM.
     if (driverMeasurementStore && !driverMeasurementRuntimeEnabled) await driverMeasurementStore.init(driverMeasurementSecret);
@@ -1652,7 +1656,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       await stateProjectionOwner.init();
       localProjectionEraser = createCommunityProjectionEraser({ stores: projectionStores, state: stateProjectionOwner,
         producerFenceInstalled: () => stateProjectionOwner?.usesState(state) === true && stateProjectionOwner.producerBindingInstalled(),
-        remoteRequired: streamBus.name !== "memory" || [...state.federatedNodes.values()].some(node => node.nodeId !== "node_central_cop"),
+        remoteRequired: (streamBus.name !== "memory" && !streamProjectionStore) || [...state.federatedNodes.values()].some(node => node.nodeId !== "node_central_cop"),
         remote: options.contentRemoteProjectionOwner });
     }
     if (communicationSafety) await communicationSafety.init();
@@ -1665,7 +1669,6 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       }
     }
     if (webSessionStore) await webSessionStore.init();
-    await initializeStreamBus();
     await initializeFederationRuntimeStore();
     await initializeUserProfileStore();
     await initializeMobileDeviceStore();

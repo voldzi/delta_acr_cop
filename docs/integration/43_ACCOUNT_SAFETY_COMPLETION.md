@@ -436,6 +436,43 @@ flag, change local transaction fences or activate production erasure.
 
 ## Actual external/production gates
 
+### Shared PostgreSQL stream owner, 15 October 2026
+
+The COP stream now has an implemented local database owner when the actual
+account-erasure secret is configured. Publication records each community report
+change against the real authenticated `cop_community_erasure_ownership` row in
+`cop_stream_bus_projection_ownership`; a JSON subject or a matching identifier
+does not establish ownership. The same shared transaction lock covers source
+readback, persistence and local delivery, and notification consumers take this
+barrier before reading or delivering retained envelopes. Guarded publication
+fails without a local delivery fallback on database/ownership failure. The
+ordinary unguarded deployment retains its previous behavior.
+
+Erasure first checks the exact source-generated durable projection manifest
+and account/operation fence for **every** requested resource, before installing
+stream fences or modifying rows. Only a matching separately bound change can
+be removed. Mixed envelopes preserve other changes, their order, sequence and
+timestamps; remaining ownership indexes are adjusted in the same transaction.
+Old envelopes without publication bindings, foreign sources, unexpected owner
+text or unexplained references remain intact and pending. This deliberately
+does not adopt historical ownership based on text searches. Bounded scans are
+limited to 10,000 resources/envelopes and fail closed beyond that limit.
+
+The real bus owner participates in projection readiness, preflight and startup
+frontier hydration. It covers this PostgreSQL bus only; configured remote edge
+subscribers still require their own erasure owner. This does not implement
+private Synapse cleanup, LiveKit administration or backup/restore acceptance.
+There is no whole-account production activation in this source change.
+
+Verification: 13 actual PostgreSQL projection tests passed, including two real
+queued advisory-lock races (publish before erasure and erasure before publish),
+mixed A/B envelopes, forged foreign manifests, unbound historical rows and no
+local fallback. Six stream transform tests and the 17 existing stream lifecycle
+tests passed. The full COP regression passed 2,414 tests, with 86 optional tests
+skipped in that run; the six new PostgreSQL tests were run separately on a fresh
+owned PostgreSQL18 cluster and are included in the 13 above. Production data,
+runtime and activation flags were not changed by these tests.
+
 SIM's initial published implementation was
 [`68e96e7`](https://github.com/voldzi/delta_acr_sim/tree/68e96e7ec19cbbd99b08c0eac865016082521186).
 Its subsequent tested application source is

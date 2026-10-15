@@ -18,6 +18,15 @@ resumable jobs, explicit pending receipts and provider-specific cleanup proofs.
 A missing owner must still prevent full completion. No fake positive verifier
 or capability label replaces a provider's actual checks.
 
+The shared PostgreSQL stream records per-change ownership from the actual source
+ledger at publication. Erasure requires both that separate binding and the
+source-generated account/operation manifest. Shared envelopes preserve all
+other changes and their provenance. Publisher and notification delivery use the
+same database barrier as erasure; guarded SQL failures cannot deliver a local
+fallback. Existing unbound rows remain unresolved instead of being assigned to
+an account from a payload string. The guard follows configured erasure state
+even while new erasure intake is disabled, including during rollback.
+
 ## Independent evidence
 
 Migration `scripts/account-safety/010_database_safety_v2.sql` creates only the
