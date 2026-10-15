@@ -497,3 +497,37 @@ production enrollment, whole-account deletion, drain or restore acceptance.
 No v2 Root handler, signature producer or production loader is activated by this
 candidate. The actual Root signer remains subject to the specific automatic
 approval gate reported to the operator; this client does not bypass that gate.
+
+## Explicit v2 necessary identity preparation
+
+The operator subsequently approved the specific protected signature source and
+isolated tests. This approval introduces no production credentials, permissions,
+installation or activation. SIM is verifying the dedicated scoped signer
+separately. The nonprivileged client receipt above does not become signer proof.
+
+`root-driver-mutation-intent-v2.mjs` uses the distinct signed kind
+`cop-driver-mutation-intent-v2`; the v1 source/receipts remain unchanged. It reads
+the fixed historical business-original registry before choosing the exact
+manifest time. A present ledger binding requires an actual ledger with exactly
+the bound creation timestamp; there is no clock tolerance. Its additional erase
+fields are the manifest digest, canonical transient-body digest and original
+anchor reference. These remain necessary identity facts, never owner admission.
+
+A private previous-intent reference permits finishing initial preparation after
+the original anchor is created. The exact raw scope, receiver peer, registration,
+body and original time must match. The final signed expiry is bounded by both
+the original signed intent expiry and the actor claim expiry, with an actual
+post-signature check before storage. It cannot become another five seconds of
+authorization. Ordinary HTTP cannot choose this private previous reference.
+
+The [new twenty-group actual fixture](../../docs/testing/account-safety-root-driver-mutation-intent-v2-20261015.json)
+contains fourteen previous component groups plus six v2 groups. It verifies
+uninitialized-directory denial, actual legacy ledger time, canonical body
+binding, actual Root file/signature reading, no expiry renewal, exact creation
+time matching (a one-millisecond mismatch is denied), missing-ledger denial and
+daily withdrawal preparation. The A/B/original/outcome records in this fixture
+are **synthetic signed history**, not proof that the new original producer
+committed a deletion. Actual TLS SQL, Root custody, identity helpers and crypto
+run; current metadata/enrollment, a business-origin execution, native delivery,
+whole-account deletion, production and restore remain unaccepted. All owned
+containers and private context were removed. No previous receipt is reassigned.
