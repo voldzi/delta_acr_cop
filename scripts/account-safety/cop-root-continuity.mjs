@@ -62,7 +62,8 @@ export async function serveContinuityRequest(bytes, peer) {
     const record = issueRootRecord('cop-continuity-reply', { requestId: request.requestId, action: request.action,
       inputDigest: sha256(canonical(request.input)),
       applicationStoreId: registration.applicationStoreId, configurationFingerprint: registration.configurationFingerprint,
-      guardStoreId: registration.guardStoreId, continuityEpoch: registration.continuityEpoch, result }, { lifetimeMs: 5000 });
+      guardStoreId: registration.guardStoreId, continuityEpoch: registration.continuityEpoch, result },
+    { lifetimeMs: 5000, expectedKeyringDigest: sha256(canonical(keys) + '\n') });
     requireGuard(record.bytes.length <= 16_384, 'GUARD_CONTINUITY_SIZE'); return record.bytes;
   } finally { try { await client.end().catch(() => undefined); } finally { clearTimeout(watchdog); } }
 }
@@ -86,7 +87,9 @@ export function createProductionAccountErasureContinuity() {
   const call = async (action, input) => {
     const request = { contractVersion: VERSION, requestId: randomUUID(), action, input };
     const bytes = Buffer.from(canonical(request) + '\n'); requireGuard(bytes.length <= 16_384, 'GUARD_CONTINUITY_SIZE');
-    const p = validateContinuityReply(await native.exchange(bytes), request, readPublicVerificationKeys());
+    const keys = readPublicVerificationKeys(), reply = await native.exchange(bytes);
+    requireGuard(canonical(readPublicVerificationKeys()) === canonical(keys), 'GUARD_KEYRING_CHANGED');
+    const p = validateContinuityReply(reply, request, keys);
     requireGuard(p.inputDigest === sha256(canonical(input)), 'GUARD_CONTINUITY_REPLY_BINDING');
     const current = canonical([p.applicationStoreId, p.configurationFingerprint, p.guardStoreId, p.continuityEpoch]);
     requireGuard(binding === undefined || binding === current, 'GUARD_CONTINUITY_BINDING_CHANGED'); binding = current;

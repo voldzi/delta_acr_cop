@@ -3,12 +3,52 @@
 Source work: 2026-10-14. Production still runs accepted image
 `sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f`,
 application source `b13fbdc71f3d9821f8b857c3f73255a75c46fa76`.
-Read-only SSH and runtime validation succeeded: healthy, zero restarts, profile
+Read-only SSH and runtime validation succeeded. Latest 15 October readback:
+running, restart count 2, same image/source, profile
 `206c4507-5e00-458e-b0ee-4061309aa7a8`, generation
 `7a351c5cb66e45cdbb845a76206fc282`. This source work is not yet deployed or
 activated. No real account was deleted.
 Earlier imports and vehicle-subset gates are [archived](../archive/2026-10-13_ACCOUNT_SAFETY_SOURCE_GATES.md);
 they do not establish this candidate or live erasure.
+
+## Latest implementation and verification — 15 October
+
+The candidate now includes signed per-day consent withdrawal, isolated request
+context, a retained publication lease client/broker, fixed AI checkpoint
+admission, a maintenance consumer that probes the original SQL outcome, strict
+compact JWS, and host observation of the actual executed Node script/pidfs.
+The native peer handle survives the reply and observes actual process exit;
+neither exit nor a five-second expiry is interpreted as SQL/publication drain.
+Concurrent mutation calls are queued rather than dropped before their first
+execute packet. The bounded Root broker can receive control/release packets
+while another request waits for a database barrier.
+
+Permanent fence manifests remain principal-free as specified in
+[ADR0054](../adr/0054_INDEPENDENT_PSEUDONYMOUS_ERASURE_JOURNAL.md).
+Per-request evidence, permits and identity joins use Root-private volatile
+directories. Historical contributor days are determined by Root-derived hash
+candidates matched against actual retained rows, including receipts with no
+accepted interval; upload time is never substituted for the measurement day.
+This last Root actor/owner composition still requires its joint SQL test.
+
+Actual target-platform verification: **52/52 in ten separate suites**, Linux
+amd64/kernel 7.0.0-38, musl/Node 24.21.0, actual kernel credentials/pidfs, Root file
+custody and Ed25519. Application SQL/owner observations in the native client
+fixtures are explicitly synthetic. Additional distinct local runs passed 19 pure
+identity/crypto cases, 37 controller/revocation cases and 100 HTTP/SIM-adapter cases.
+Typecheck, scoped lint and skeleton passed. Counts overlap earlier historical
+suites and are not added to them. See the immutable
+[target-platform receipt](../testing/account-safety-target-platform-20261015.json).
+The disposable target test container was removed; source/logs stay on X5 staging.
+
+**Not deployed/activated:** actual shared Root owner/permit/maintenance producer,
+remaining COP production owner adapters, protected installation and scoped DB
+profiles, source-proof/checkpoint enrollment and native deploy/restore latch
+still need their joint verification. Source ABI declarations and component
+tests are not positive production authority. The current SSH account needs
+interactive sudo; direct Root SSH is unavailable. This access limitation is
+separate from the remaining implementation. No real account was deleted and no
+OpenAI request was made by these tests.
 
 ### 15 October: implemented Root SQL executor component
 
@@ -100,8 +140,8 @@ The browser stores only its operation UUID in session storage, never a principal
 or capability in URLs/storage. Exact receipt GET remains readable after login
 removal. Its30-day technical validity is not a personal-data retention policy.
 
-The controller uses scope-bound configuration version3; old version2 is not
-adopted. Preflight and receipt require `deletionScope=
+The current continuity candidate requires scope-bound configuration version4;
+older versions are not silently adopted. Preflight and receipt require `deletionScope=
 cop_jizda_preserve_shared_identity_sim` in the new browser. The new
 `COP_KEYCLOAK_COP_SCOPE_AUTHORITY_ACCEPTED` defaults false and never reuses old
 identity-delete acceptance. See [ADR0053](../adr/0053_COP_ERASURE_PRESERVES_SHARED_SIM_IDENTITY.md).

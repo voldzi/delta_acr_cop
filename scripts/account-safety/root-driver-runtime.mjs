@@ -125,6 +125,38 @@ export class RootDriverAuthority {
   }
 }
 
+/** Read-only context admission for a protected Root-delivered original. It does
+ * not register, claim, execute, resolve or seal an origin. Current source proof
+ * is checked separately from the immutable historical original permit. */
+export async function inspectRootDriverContext(operationId, registration, currentSourceProofId, frontier) {
+  requireGuard(process.getuid?.() === 0 && process.geteuid?.() === 0 && uuid(currentSourceProofId) &&
+    exact(frontier, ['sequence', 'digest']) && Number.isSafeInteger(frontier.sequence) && frontier.sequence >= 0 && hex(frontier.digest), 'ROOT_CONTEXT_REQUIRED');
+  requireRootCodeTree('/opt/cop-account-safety');
+  const require = createRequire('/opt/cop-account-safety/package.json'), { Client } = require('pg');
+  const client = new Client(connectionProfile('registry-probe', 'cop_account_safety_guard', 'cop_guard_root_reader'));
+  client.on('error', () => undefined);
+  const watchdog = setTimeout(() => client.connection?.stream?.destroy(), 15_000);
+  try {
+    await client.connect();
+    const authority = new RootDriverAuthority(client, operationId, registration), p = authority.permit;
+    requireGuard(registration.runtimeBindingId === p.runtimeBindingId && registration.datasetBindingId === p.datasetBindingId &&
+      registration.guardStoreId === p.guardStoreId && registration.continuityEpoch === p.continuityEpoch, 'GUARD_CONTEXT_RUNTIME');
+    await authority.validate(authority.operation, 'probe');
+    const response = await client.query(SQL, [p.datasetBindingId, p.runtimeBindingId, currentSourceProofId]);
+    requireGuard(response.rows.length === 1, 'GUARD_CONTEXT_CURRENT_PROOF');
+    const r = response.rows[0];
+    requireGuard(r.proof_current === true && r.proof.proof_id === currentSourceProofId && r.proof.binding_id === p.runtimeBindingId &&
+      String(r.proof.frontier_sequence) === String(frontier.sequence) && r.proof.frontier_digest === frontier.digest &&
+      r.frontier_sequence === String(frontier.sequence) && r.frontier_digest === frontier.digest &&
+      String(r.policy.policy_generation) === String(r.runtime.policy_generation) && r.runtime.image_id === registration.imageId &&
+      r.runtime.source_revision === registration.sourceRevision, 'GUARD_CONTEXT_CURRENT_PROOF');
+    await authority.validate(authority.operation, 'probe');
+    requireGuard(canonical(canonicalJson(readRootFile('/etc/cop-account-safety/public/verification-keys.json'))) === canonical(authority.keys), 'GUARD_KEYRING_CHANGED');
+    return { operation: authority.operation, originalPermitRef: { recordId: p.recordId, digest: authority.permitRecord.digest },
+      expiresAt: Math.min(Date.parse(r.proof.valid_until), Date.parse(registration.expiresAt)), keys: authority.keys };
+  } finally { try { await client.end().catch(() => undefined); } finally { clearTimeout(watchdog); } }
+}
+
 export async function executeRootDriver(mode, operationId, body, registration) {
   requireGuard(process.getuid?.() === 0 && process.geteuid?.() === 0, 'ROOT_EXECUTION_REQUIRED');
   requireGuard(['execute', 'probe'].includes(mode) && uuid(operationId) &&
@@ -158,7 +190,7 @@ export async function executeRootDriver(mode, operationId, body, registration) {
     else result = await producer.runOnce(authority.operation, body);
     if (result.state !== 'pending') {
       await authority.validate(authority.operation, 'probe');
-      result = publishRootOutcome(authority.operation, result, authority.permitRecord);
+      result = publishRootOutcome(authority.operation, result, authority.permitRecord, authority.keys);
     }
     return result;
   } finally { for (const client of clients) try { await client.end(); } catch { /* Unknown stays unknown. */ } }

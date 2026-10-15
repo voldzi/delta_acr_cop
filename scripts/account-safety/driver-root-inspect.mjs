@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { canonical, canonicalJson, exact, hex, uuid, sha256, requireGuard, readRootFile,
+import { canonical, canonicalJson, exact, hex, uuid, sha256, requireGuard,
   readPublicVerificationKeys, verifyRootRecord, requireRootCodeTree } from './root-records.mjs';
 import { nativeModule } from './root-native.mjs';
 import { readClientRegistration } from './driver-root-channel.mjs';
@@ -21,23 +20,17 @@ export async function serveDriverInspect(bytes, peer) {
   requireGuard(exact(r, ['contractVersion', 'requestId', 'action', 'request']) && r.contractVersion === VERSION &&
     uuid(r.requestId) && r.action === 'inspect', 'GUARD_READ_WIRE');
   const request = validateDriverReadRequest(r.request), keys = readPublicVerificationKeys();
-  const registration = readClientRegistration(peer, keys), digest = sha256(canonical(request));
-  // Internal Root-delivered selector: neither the browser nor application
-  // supplies a Root permit UUID, pathname, source proof or database identity.
-  const delivery = verifyRootRecord(readRootFile(join('/var/lib/cop-account-safety/read-deliveries',
-    peer.device + '-' + peer.inode + '-' + digest + '.json'), { secret: true }), keys, 'driver-read-delivery');
-  const d = delivery.payload;
-  requireGuard(exact(d, ['contractVersion', 'kind', 'recordId', 'issuedAt', 'expiresAt', 'requestDigest', 'peer',
-    'runtimeBindingId', 'datasetBindingId', 'guardStoreId', 'continuityEpoch', 'readPermitRef']) &&
-    d.requestDigest === digest && canonical(d.peer) === canonical(peer) && ref(d.readPermitRef) &&
-    ['runtimeBindingId', 'datasetBindingId', 'guardStoreId', 'continuityEpoch'].every(k => d[k] === registration[k]), 'GUARD_READ_DELIVERY');
-  const permit = verifyRootRecord(readRootFile(join('/var/lib/cop-account-safety/read-permits', d.readPermitRef.recordId + '.json'), { secret: true }), keys, 'driver-read-permit');
-  requireGuard(permit.digest === d.readPermitRef.digest && permit.payload.requestDigest === digest, 'GUARD_READ_DELIVERY');
+  const registration = readClientRegistration(peer, keys);
+  // The protected owner creates this request's evidence and permit from actual
+  // current owner/SQL facts. No HTTP-selected UUID or pre-created delivery file
+  // stands in for the missing producer.
   requireRootCodeTree('/opt/cop-account-safety');
-  const module = await import(pathToFileURL('/opt/cop-account-safety/root-read-admission.mjs').href);
-  const inspected = await module.inspectRootDriver(d.readPermitRef.recordId, request, peer);
-  return Buffer.from(canonical({ contractVersion: REPLY, requestId: r.requestId, readPermitId: d.readPermitRef.recordId,
-    admission: inspected.admission, record: inspected.record }) + '\n');
+  const module = await import(pathToFileURL('/opt/cop-account-safety/root-owner-read.mjs').href);
+  const inspected = await module.inspectRootDriverOwner(peer, request);
+  requireGuard(exact(inspected, ['admission', 'record', 'readPermitId']) && uuid(inspected.readPermitId) &&
+    canonical(readPublicVerificationKeys()) === canonical(keys) && canonical(readClientRegistration(peer, keys)) === canonical(registration), 'GUARD_READ_OWNER_CHANGED');
+  const reply = Buffer.from(canonical({ contractVersion: REPLY, requestId: r.requestId, ...inspected }) + '\n');
+  validateDriverInspectReply(reply, r, keys, peer); return reply;
 }
 export function validateDriverInspectReply(bytes, request, keys, peer) {
   const reply = canonicalJson(bytes, 16_384);
@@ -70,7 +63,9 @@ export function createProductionDriverReadAdmissionPort() {
     try {
       const request = { contractVersion: VERSION, requestId: randomUUID(), action: 'inspect', request: validateDriverReadRequest(input) };
       const peer = native.selfIdentity();
-      return validateDriverInspectReply(await native.exchange(Buffer.from(canonical(request) + '\n')), request, readPublicVerificationKeys(), peer);
+      const keys = readPublicVerificationKeys(), reply = await native.exchange(Buffer.from(canonical(request) + '\n'));
+      requireGuard(canonical(readPublicVerificationKeys()) === canonical(keys), 'GUARD_KEYRING_CHANGED');
+      return validateDriverInspectReply(reply, request, keys, peer);
     } catch { return undefined; }
   } });
 }

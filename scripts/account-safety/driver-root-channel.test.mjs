@@ -52,6 +52,15 @@ test('same-input repeat is correlated, changed input is denied before transport'
   server = serve(); assert.equal((await port.execute(job)).state, 'origin-commit-known'); await server;
   assert.equal((await port.execute({ ...job, body: { ...job.body, contributorHash: '2'.repeat(64) } })).reason, 'authority-unavailable');
 });
+test('concurrent original executes both reach Root instead of a premature busy/probe path', async () => {
+  const jobs = [request(), request()], observed = [];
+  const server = (async () => { for (let i = 0; i < 2; i++) observed.push(await serve()); })();
+  const results = await Promise.all(jobs.map(job => port.execute(job)));
+  await server;
+  assert.deepEqual(observed.map(value => value.action), ['execute', 'execute']);
+  assert.deepEqual(observed.map(value => value.operation.operationId), jobs.map(value => value.operation.operationId));
+  assert.ok(results.every(value => value.state === 'origin-commit-known'));
+});
 test('altered signature, original operation or scalar never becomes a terminal app result', async () => {
   for (const transform of [
     value => { const record = JSON.parse(value.records[0]); record.payload.bodyDigest = 'd'.repeat(64); value.records[0] = canonical(record) + '\n'; return value; },

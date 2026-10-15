@@ -63,7 +63,9 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
           // A stale pending() snapshot grants no provider authority. The exact
           // consent store serializes this handoff with whole-account fencing.
           await store.withPendingDeletion(record.subjectId, day,
-            () => source.delete(contributorIdDay(secret, record.subjectId, day)));
+            () => source.delete(contributorIdDay(secret, record.subjectId, day), {
+              subjectId: record.subjectId, contributorDay: day, actorSource: "consent_ledger"
+            }));
         } catch { continue; }
       }
     }

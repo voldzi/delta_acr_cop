@@ -1,5 +1,18 @@
-import { DRIVER_MEASUREMENT_SIM_VERSION } from "./driver-measurement-contract.js";
+import { contributorIdDay as deriveContributorIdDay, DRIVER_MEASUREMENT_SIM_VERSION } from "./driver-measurement-contract.js";
 import { z } from "zod";
+import { createHmac } from "node:crypto";
+
+export interface DriverRevocationIdentity {
+  subjectId: string;
+  contributorDay: string;
+  actorSource: "verified_session" | "consent_ledger";
+}
+export interface DriverRevocationSigning {
+  issuer: string;
+  actorSecret: string;
+  contributorSecret: string;
+  now?: () => Date;
+}
 
 export interface SimDriverReceipt {
   contractVersion: string;
@@ -21,22 +34,31 @@ export class DriverMeasurementSourceError extends Error {
 
 export interface DriverMeasurementSource {
   send(batch: Record<string, unknown>): Promise<SimDriverReceipt>;
-  delete(contributorIdDay: string): Promise<void>;
+  delete(contributorIdDay: string, identity?: DriverRevocationIdentity): Promise<void>;
 }
 
 export class HttpDriverMeasurementSource implements DriverMeasurementSource {
   private readonly root: string;
-  constructor(baseUrl: string, private readonly token: string, private readonly timeoutMs = 10_000) {
+  private readonly revocation?: DriverRevocationSigning;
+  constructor(baseUrl: string, private readonly token: string, private readonly timeoutMs = 10_000, revocation?: DriverRevocationSigning) {
     if (!baseUrl || !token || !/^https?:\/\//.test(baseUrl)) throw new Error("Driver measurement SIM connection is incomplete.");
     this.root = baseUrl.replace(/\/$/, "");
+    if (revocation !== undefined) {
+      try {
+        const issuer = new URL(revocation.issuer);
+        if (issuer.protocol !== "https:" || issuer.username || issuer.password || issuer.search || issuer.hash ||
+          revocation.actorSecret.length < 32 || revocation.contributorSecret.length < 32) throw new Error();
+      } catch { throw new Error("Driver revocation signing is incomplete."); }
+      this.revocation = { ...revocation };
+    }
   }
-  private async request(path: string, method: "POST" | "DELETE", body: unknown): Promise<Response> {
+  private async request(path: string, method: "POST" | "DELETE", body: unknown, actorHeaders: Record<string, string> = {}): Promise<Response> {
     let response: Response;
     try {
       response = await fetch(`${this.root}${path}`, {
         method,
         redirect: "error",
-        headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json", ...actorHeaders },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(this.timeoutMs)
       });
@@ -67,8 +89,23 @@ export class HttpDriverMeasurementSource implements DriverMeasurementSource {
     if (!parsed.success || parsed.data.batchId !== batch.batchId) throw new DriverMeasurementSourceError(503);
     return parsed.data;
   }
-  async delete(contributorIdDay: string): Promise<void> {
-    const response = await this.request("/contributions", "DELETE", { contractVersion: DRIVER_MEASUREMENT_SIM_VERSION, contributorIdDay });
+  async delete(contributorIdDay: string, identity?: DriverRevocationIdentity): Promise<void> {
+    const actorHeaders: Record<string, string> = {};
+    if (this.revocation) {
+      if (!identity || !identity.subjectId || Buffer.byteLength(identity.subjectId) > 512 || /[\u0000-\u001f\u007f-\u009f]/u.test(identity.subjectId) ||
+        !["verified_session", "consent_ledger"].includes(identity.actorSource) || !z.iso.date().safeParse(identity.contributorDay).success ||
+        !/^[A-Za-z0-9_-]{32,128}$/u.test(contributorIdDay) ||
+        contributorIdDay !== deriveContributorIdDay(this.revocation.contributorSecret, identity.subjectId, identity.contributorDay))
+        throw new DriverMeasurementSourceError(503);
+      const iat = Math.floor((this.revocation.now?.() ?? new Date()).getTime() / 1000);
+      if (!Number.isSafeInteger(iat) || iat < 0) throw new DriverMeasurementSourceError(503);
+      const claim = { iss: this.revocation.issuer, sub: identity.subjectId, aud: "sim-driver-revocation", iat, exp: iat + 60,
+        contributorDay: identity.contributorDay, contributorIdDay, actorSource: identity.actorSource };
+      const encoded = Buffer.from(JSON.stringify(claim)).toString("base64url");
+      actorHeaders["x-cop-actor"] = encoded;
+      actorHeaders["x-cop-actor-signature"] = createHmac("sha256", this.revocation.actorSecret).update(encoded).digest("hex");
+    }
+    const response = await this.request("/contributions", "DELETE", { contractVersion: DRIVER_MEASUREMENT_SIM_VERSION, contributorIdDay }, actorHeaders);
     if (response.status !== 200) {
       await response.body?.cancel().catch(() => undefined);
       throw new DriverMeasurementSourceError(503);

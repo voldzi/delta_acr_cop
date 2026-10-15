@@ -145,7 +145,8 @@ export class RootFenceJournal {
         Date.parse(current.expiresAt) - Date.now() > 10_000) return;
     const record = issueRootRecord('current-frontier', { guardStoreId: this.registration.guardStoreId,
       continuityEpoch: this.registration.continuityEpoch, ...frontier,
-      machineBootId: readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim(), clusterId: r.cluster_id, timelineId: r.timeline_id });
+      machineBootId: readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim(), clusterId: r.cluster_id, timelineId: r.timeline_id },
+    { expectedKeyringDigest: sha256(canonical(this.keys) + '\n') });
     storeRootRecord(join(STATE, 'authority', 'current-frontier.json'), record.bytes, { replace: true });
   }
   async snapshot() {
@@ -167,7 +168,7 @@ export class RootFenceJournal {
         if (error.code !== 'ENOENT') throw error;
         const issued = issueRootRecord('cop-fence-manifest', { guardStoreId: this.registration.guardStoreId,
           continuityEpoch: this.registration.continuityEpoch, policyGeneration: Number(observed.r.policy.policy_generation), entry: candidate },
-        { recordId: candidate.job.operationId });
+        { recordId: candidate.job.operationId, expectedKeyringDigest: sha256(canonical(this.keys) + '\n') });
         storeRootRecord(path, issued.bytes); record = { payload: issued.payload, digest: issued.digest };
       }
       validateFenceEntry(record.payload.entry, this.registration);

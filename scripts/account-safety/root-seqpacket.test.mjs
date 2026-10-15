@@ -91,6 +91,30 @@ test('repeated valid exchanges release both per-message pidfds and connection ha
   }
   assert.equal(descriptors(), before);
 });
+test('a retained kernel peer survives reply and reports actual process exit', async () => {
+  const before = descriptors();
+  const peerChild = fork(new URL('root-seqpacket-child.mjs', import.meta.url), [], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
+  await once(peerChild, 'message');
+  let retained;
+  try {
+    const incoming = native.receive(listener), answer = once(peerChild, 'message');
+    peerChild.send({ hex: Buffer.from('lease').toString('hex') });
+    const item = await incoming;
+    retained = native.retainPeer(item.connection);
+    assert.equal(native.peerAlive(retained), true);
+    await native.reply(item.connection, Buffer.from('held'));
+    assert.equal((await answer)[0].ok, true);
+    assert.equal(native.peerAlive(retained), true);
+    assert.throws(() => native.retainPeer(item.connection), /COP_ROOT_NATIVE_ARGUMENT/);
+    assert.throws(() => native.peerAlive(item.connection), /COP_ROOT_NATIVE_ARGUMENT/);
+    const exited = once(peerChild, 'exit'); peerChild.kill('SIGTERM'); await exited;
+    assert.equal(native.peerAlive(retained), false);
+  } finally {
+    if (retained) native.close(retained);
+    if (peerChild.exitCode === null && peerChild.signalCode === null) { const exited = once(peerChild, 'exit'); peerChild.kill(); await exited; }
+  }
+  assert.equal(descriptors(), before);
+});
 after(async () => {
   native.close(listener);
   const exited = once(child, 'exit'); child.kill('SIGTERM'); await exited;

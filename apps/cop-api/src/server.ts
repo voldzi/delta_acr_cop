@@ -960,7 +960,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const driverMeasurementSource = driverMeasurementRuntimeEnabled
     ? options.driverMeasurementSource ?? new HttpDriverMeasurementSource(
       process.env.COP_DRIVER_MEASUREMENTS_SIM_URL ?? "",
-      process.env.COP_DRIVER_MEASUREMENTS_SIM_TOKEN ?? ""
+      process.env.COP_DRIVER_MEASUREMENTS_SIM_TOKEN ?? "", 10_000,
+      process.env.COP_SIM_ERASURE_ACTOR_SECRET ? { issuer: process.env.COP_OIDC_ISSUER ?? "",
+        actorSecret: process.env.COP_SIM_ERASURE_ACTOR_SECRET, contributorSecret: driverMeasurementSecret, now } : undefined
     )
     : undefined;
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();

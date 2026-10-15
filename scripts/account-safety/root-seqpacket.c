@@ -264,6 +264,27 @@ static napi_value close_js(napi_env env,napi_callback_info info) {
   if(!root() || count!=1 || !h || h->busy) return error(env,"COP_ROOT_NATIVE_ARGUMENT");
   close_handle(h); napi_value result; napi_get_undefined(env,&result); return result;
 }
+/* Retain the actual SCM_PIDFD before reply closes its connection. A lease can
+ * observe process death without accepting a PID from application JSON. */
+static napi_value retain_peer(napi_env env,napi_callback_info info) {
+  napi_value arg; size_t count=1; napi_get_cb_info(env,info,&count,&arg,NULL,NULL);
+  Handle *h=count==1?get_handle(env,arg):NULL;
+  if(!root() || count!=1 || !h || h->listener!=0 || h->busy || h->fd<0 || h->pidfd<0)
+    return error(env,"COP_ROOT_NATIVE_ARGUMENT");
+  int fd=fcntl(h->pidfd,F_DUPFD_CLOEXEC,0);
+  if(fd<0) return error(env,"COP_ROOT_NATIVE_UNAVAILABLE");
+  return external(env,-1,fd,-1,2);
+}
+static napi_value peer_alive(napi_env env,napi_callback_info info) {
+  napi_value arg; size_t count=1; napi_get_cb_info(env,info,&count,&arg,NULL,NULL);
+  Handle *h=count==1?get_handle(env,arg):NULL;
+  if(!root() || count!=1 || !h || h->listener!=2 || h->busy || h->pidfd<0)
+    return error(env,"COP_ROOT_NATIVE_ARGUMENT");
+  struct pollfd p={h->pidfd,POLLIN,0}; int status;
+  do status=poll(&p,1,0); while(status<0 && errno==EINTR);
+  if(status<0 || (status>0 && !(p.revents&POLLIN))) return error(env,"COP_ROOT_NATIVE_UNAVAILABLE");
+  napi_value result; napi_get_boolean(env,status==0,&result); return result;
+}
 static napi_value inspect_pid(napi_env env,napi_callback_info info) {
   napi_value arg; size_t count=1; uint32_t pid=0; double number=0; napi_get_cb_info(env,info,&count,&arg,NULL,NULL);
   if(!root() || count!=1 || napi_get_value_uint32(env,arg,&pid)!=napi_ok ||
@@ -309,6 +330,8 @@ NAPI_MODULE_INIT() {
     {"exchange",NULL,exchange,NULL,NULL,NULL,napi_default,NULL}, {"listen",NULL,listen_js,NULL,NULL,NULL,napi_default,NULL},
     {"receive",NULL,receive_packet,NULL,NULL,NULL,napi_default,NULL}, {"reply",NULL,reply,NULL,NULL,NULL,napi_default,NULL},
     {"close",NULL,close_js,NULL,NULL,NULL,napi_default,NULL}, {"inspectProcess",NULL,inspect_pid,NULL,NULL,NULL,napi_default,NULL},
-    {"selfIdentity",NULL,self_identity,NULL,NULL,NULL,napi_default,NULL}};
+    {"selfIdentity",NULL,self_identity,NULL,NULL,NULL,napi_default,NULL},
+    {"retainPeer",NULL,retain_peer,NULL,NULL,NULL,napi_default,NULL},
+    {"peerAlive",NULL,peer_alive,NULL,NULL,NULL,napi_default,NULL}};
   napi_define_properties(env,exports,sizeof(methods)/sizeof(methods[0]),methods); return exports;
 }

@@ -9,6 +9,10 @@ import { executeRootDriver } from './root-driver-runtime.mjs';
 import { nativeModule } from './root-native.mjs';
 import { serveContinuityRequest } from './cop-root-continuity.mjs';
 import { serveDriverInspect } from './driver-root-inspect.mjs';
+import { serveAiInspect } from './ai-root-inspect.mjs';
+import { serveDriverContext } from './root-driver-context-delivery.mjs';
+import { serveDriverRetention } from './root-driver-retention-delivery.mjs';
+import { servePublicationLease } from './root-publication-leases.mjs';
 
 const VERSION = 'cop-root-driver-message-v1', REPLY = 'cop-root-driver-reply-v1';
 const STATE = '/var/lib/cop-account-safety';
@@ -58,22 +62,29 @@ export function validateDriverReply(bytes, request, keys) {
 export function createProductionDriverRootPort() {
   let native;
   try { native = nativeModule(); } catch { /* An absent installation is unavailable. */ }
-  let busy = false;
+  // Serialize locally without dropping an accepted original before transport.
+  // A busy return used to make the caller switch to probe even though its
+  // first execute packet had never reached Root.
+  let tail = Promise.resolve();
   const bindings = new Map();
   const pending = (op, reason) => Object.freeze({ contractVersion: 'cop-driver-origin-result-v1', operationId: op.operationId, state: 'pending', reason });
-  const call = async (action, operation, body) => {
+  const call = (action, operation, body) => {
     const op = operationRef(operation);
-    if (!native) return pending(op, 'transport-unavailable');
-    if (busy) return pending(op, 'origin-busy');
-    busy = true;
-    try {
+    const run = async () => {
+      if (!native) return pending(op, 'transport-unavailable');
+      try {
       const request = { contractVersion: VERSION, requestId: randomUUID(), action, operation: op, body };
       const bytes = Buffer.from(canonical(request) + '\n');
       requireGuard(bytes.length <= 16_384, 'GUARD_CHANNEL_SIZE');
       const keys = readPublicVerificationKeys();
-      return validateDriverReply(await native.exchange(bytes), request, keys);
-    } catch { return pending(op, 'transport-unavailable'); }
-    finally { busy = false; }
+      const reply = await native.exchange(bytes);
+      requireGuard(canonical(readPublicVerificationKeys()) === canonical(keys), 'GUARD_KEYRING_CHANGED');
+      return validateDriverReply(reply, request, keys);
+      } catch { return pending(op, 'transport-unavailable'); }
+    };
+    const result = tail.then(run);
+    tail = result.then(() => undefined, () => undefined);
+    return result;
   };
   return Object.freeze({
     async execute(request) {
@@ -81,17 +92,31 @@ export function createProductionDriverRootPort() {
       const op = operationRef(request.operation), binding = sha256(canonical(request));
       // Same-process repeats preserve the original input as well as Root's
       // durable guard. A restart still reaches Root's exact original dispatch.
-      if (bindings.has(op.operationId) && bindings.get(op.operationId) !== binding) return pending(op, 'authority-unavailable');
+      if (bindings.has(op.operationId) && bindings.get(op.operationId).digest !== binding) return pending(op, 'authority-unavailable');
       if (!bindings.has(op.operationId)) {
-        if (bindings.size >= 4096) return pending(op, 'origin-busy');
+        if (bindings.size >= 4096) {
+          let completed;
+          for (const [id, value] of bindings) if (!value.pending) { completed = id; break; }
+          if (!completed) return pending(op, 'origin-busy');
+          bindings.delete(completed);
+        }
         // Keep only a digest, never a contributor body, in the client journal.
-        bindings.set(op.operationId, binding);
+        bindings.set(op.operationId, { digest: binding, pending: true });
       }
       // Root checks the original PostgreSQL body digest on every execute, even
       // when it then resolves a previous attempt without repeating any effects.
-      return call('execute', op, canonical(request.body));
+      const result = await call('execute', op, canonical(request.body));
+      // Retain recent exact-input checks while allowing successful periodic
+      // maintenance to evict only known-completed entries. Root retains the
+      // permanent original-body guard; ambiguous inputs are never evicted.
+      bindings.set(op.operationId, { digest: binding, pending: result.state === 'pending' });
+      return result;
     },
-    async probe(op) { return call('probe', op, null); },
+    async probe(op) {
+      const result = await call('probe', op, null);
+      if (result.state !== 'pending' && bindings.has(op.operationId)) bindings.get(op.operationId).pending = false;
+      return result;
+    },
   });
 }
 
@@ -116,21 +141,31 @@ function decodeRequest(bytes) {
     (r.action === 'probe' ? r.body === null : typeof r.body === 'string' && Buffer.byteLength(r.body) <= 16_384), 'GUARD_CHANNEL_REQUEST');
   operationRef(r.operation); return r;
 }
-export async function main() {
-  requireGuard(process.getuid?.() === 0 && process.geteuid?.() === 0, 'ROOT_EXECUTION_REQUIRED');
-  const native = nativeModule(), listener = native.listen();
+async function servePacket(native, item) {
   try {
-    for (;;) {
-      let item;
-      try { item = await native.receive(listener); } catch { continue; }
-      try {
+        if (canonicalJson(item.packet, 16_384).contractVersion === 'cop-root-driver-publication-message-v1') {
+          await native.reply(item.connection, await servePublicationLease(item.packet, item.peer, native, item.connection));
+          return;
+        }
         if (canonicalJson(item.packet, 16_384).contractVersion === 'cop-root-continuity-message-v1') {
           await native.reply(item.connection, await serveContinuityRequest(item.packet, item.peer));
-          continue;
+          return;
         }
         if (canonicalJson(item.packet, 16_384).contractVersion === 'cop-root-driver-inspect-message-v1') {
           await native.reply(item.connection, await serveDriverInspect(item.packet, item.peer));
-          continue;
+          return;
+        }
+        if (canonicalJson(item.packet, 16_384).contractVersion === 'cop-root-ai-inspect-message-v1') {
+          await native.reply(item.connection, await serveAiInspect(item.packet, item.peer));
+          return;
+        }
+        if (canonicalJson(item.packet, 16_384).contractVersion === 'cop-root-driver-context-message-v1') {
+          await native.reply(item.connection, await serveDriverContext(item.packet, item.peer));
+          return;
+        }
+        if (canonicalJson(item.packet, 16_384).contractVersion === 'cop-root-driver-retention-message-v1') {
+          await native.reply(item.connection, await serveDriverRetention(item.packet, item.peer));
+          return;
         }
         const request = decodeRequest(item.packet), registration = readClientRegistration(item.peer);
         const permit = verifyRootRecord(readRootFile(join(STATE, 'operations', request.operation.operationId + '.json'), { secret: true }),
@@ -143,7 +178,22 @@ export async function main() {
           operationId: request.operation.operationId, result, records }) + '\n');
         requireGuard(reply.length <= 16_384, 'GUARD_CHANNEL_SIZE');
         await native.reply(item.connection, reply);
-      } catch { try { native.close(item.connection); } catch { /* Closing a channel is never SQL settlement. */ } }
+  } catch { try { native.close(item.connection); } catch { /* Closing a channel is never SQL settlement. */ } }
+}
+export async function main() {
+  requireGuard(process.getuid?.() === 0 && process.geteuid?.() === 0, 'ROOT_EXECUTION_REQUIRED');
+  const native = nativeModule(), listener = native.listen(), active = new Set();
+  try {
+    for (;;) {
+      // Keep receiving release/control packets while another request waits for
+      // an exclusive database barrier. Bound resources; never infer SQL
+      // settlement from a disconnected socket or a rejected extra request.
+      let item;
+      try { item = await native.receive(listener); } catch { continue; }
+      if (active.size >= 32) { native.close(item.connection); continue; }
+      const task = servePacket(native, item);
+      active.add(task);
+      void task.finally(() => active.delete(task));
     }
   } finally { native.close(listener); }
 }

@@ -202,3 +202,72 @@ Production still uses the previously accepted COP image; no real account was
 deleted. Never wire a positive test callback into an application, activate the
 feature using an environment bit, reuse an old image's attestation, or label
 this component as completion of the eleven-owner account operation.
+## Current 15 October additions
+
+The latest component evidence is
+[52 target-platform checks](../../docs/testing/account-safety-target-platform-20261015.json).
+This is not Root enrollment, complete owner composition or production activation.
+
+## Fixed production entry points
+
+- `createProductionAiCheckpointAdmissionPort()` verifies the typed AI snapshot,
+  actual signed reply, peer, policy, financial facts and source references.
+- `createProductionDriverRequestScope()` supplies per-request ALS for only
+  signed consent withdrawal and account erasure. GPS batches/free context never
+  enter the Root packet. Invalid input preserves HTTP401/400 ordering.
+- `createProductionDriverPublicationPort().withLease({kind}, work)` waits for
+  accepted actual SQL and HTTP completion. Expiry denies publication but does
+  not release the held Root metadata lock. Unknown release remains an error/HOLD.
+- `createProductionDriverRetentionConsumer()` invokes the callback once with
+  Root's original operation/cutoff and then probes that exact SQL outcome. A
+  resolved callback or a future cutoff cannot establish completed retention.
+- Root read dispatch invokes SIM's fixed `root-owner-read.mjs` producer; no
+  pre-created delivery file or application-selected Root UUID substitutes for it.
+
+Root-only `retainPeer(connection)` retains the actual delivered SCM_PIDFD;
+`peerAlive(handle)` observes kernel exit. It does not establish target SQL
+quiescence. The broker handles at most 32 concurrent requests so a waiting writer
+does not prevent receiving a lease release.
+
+## Private identity profiles and volatile state
+
+All profiles below are fixed Root-owned 0600 ordinary files under
+`/etc/cop-account-safety/root`. Values are never passed by HTTP, printed or stored
+in Git. A JSON profile is canonical with a final newline.
+
+`cop-identity.json` has exactly `contractVersion=cop-root-cop-identity-v1`,
+`issuer`, `identitySecret`, `routerUserIdSecret`, `applicationStoreId`,
+`protectedConfigId`, `configurationFingerprint`. The fingerprint must match
+the actual identity-secret derivation and independent journal binding.
+
+`driver-identity.json` has exactly
+`contractVersion=cop-root-driver-identity-v1`, `serviceToken`, `actorSecret`,
+`issuer`, `hashSecret`. `driver-contributor-keys.json` has exactly
+`contractVersion=cop-root-driver-contributor-keys-v1`, `currentVersion`, `keys`;
+each key is `{version,secret}`. Independently accepted
+`/var/lib/cop-account-safety/authority/driver-key-history.json` binds each actual
+version/fingerprint and proven first/last issuance days to guard/epoch/config.
+Absent history or more than 4096 candidate hashes denies inventory; nothing is
+truncated. No date is inferred from receipt upload time.
+
+Fixed TLS connection profiles use the existing `cop-root-postgres-profile-v1`:
+`cop-consent-reader` targets database `cop`, user `cop_guard_consent_reader`;
+`driver-inventory` targets `sim_driver_measurements`, user
+`sim_driver_guard_control` and SIM's bounded read-only candidate function.
+These roles/credentials have not been provisioned by component source work.
+
+Root request evidence and identity joins live only beneath Root 0700
+`/run/cop-account-safety/private`, on explicit volatile storage. Subdirectories
+include `owner-authority`, `read-evidence`, `read-permits`, `ai-read-permits`,
+`request-contexts`, `maintenance-deliveries` and `runtime-observations`.
+Apps mount only the public bootstrap and socket file, never the whole private
+tree. Durable original operation/effect/fence evidence stays separately under
+the protected state directory on X5; no internal-disk fallback is allowed.
+
+Host `root-runtime-watch.mjs --watch` observes three fixed containers using
+Docker GET only and actual `/proc`/pidfs/executable facts. It rejects eval/print,
+unreviewed Node flags/options, wrong entry/source/mounts or a consumer older than
+the current broker cohort. Its signed five-second host records are factual
+observations, not enrollment or policy acceptance. Actual source-proof JWS,
+linked replay/checkpoint acceptance and independently accepted owner policy
+remain required. These components are still under joint integration testing.

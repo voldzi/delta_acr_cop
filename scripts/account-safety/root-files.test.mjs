@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { test, after } from 'node:test';
 import { randomUUID, generateKeyPairSync, sign } from 'node:crypto';
 import { mkdirSync, writeFileSync, chmodSync, linkSync, symlinkSync, rmSync, readFileSync } from 'node:fs';
-import { canonical, readRootFile, requireRootDirectory, requireRootCodeTree, verifyRootRecord } from './root-records.mjs';
+import { canonical, readRootFile, requireRootDirectory, requireRootCodeTree, verifyRootRecord, sha256 } from './root-records.mjs';
+import { issueRootRecord, issueRootJws } from './root-record-issuer.mjs';
+import { verifyRootJws } from './root-jws.mjs';
 import { RootDispatchFiles } from './driver-origin-producer.mjs';
 import { publishRootOutcome } from './root-outcome-records.mjs';
 import { RootDriverAuthority } from './root-driver-runtime.mjs';
@@ -96,6 +98,34 @@ test('Root outcome writes and actually signs two separately typed original-opera
   assert.throws(() => publishRootOutcome(op, { operationId: randomUUID(), state: 'origin-commit-known' }, permit), /GUARD_OUTCOME_UNRESOLVED/);
   assert.throws(() => publishRootOutcome(op, { operationId: op.operationId, state: 'origin-no-effects-closed',
     revokeEffect: { deletedBatchCount: 0 } }, permit), /GUARD_REVOKE_EFFECT/);
+});
+test('issuer and outcome publication retain the verified trust snapshot across keyring or signer replacement', () => {
+  const keyringPath = '/etc/cop-account-safety/public/verification-keys.json', signerPath = '/var/lib/cop-account-safety/authority/signing-key.pkcs8';
+  const originalKeys = readFileSync(keyringPath), originalSigner = readFileSync(signerPath), digest = sha256(originalKeys);
+  assert.ok(issueRootRecord('owned-rotation-test', {}, { expectedKeyringDigest: digest }));
+  const replacement = generateKeyPairSync('ed25519');
+  const changedKeys = { contractVersion: 'cop-root-verification-keys-v1', keys: [{ ...replacement.publicKey.export({ format: 'jwk' }), kid: 'replacement-root-fixture' }] };
+  try {
+    writeFileSync(keyringPath, canonical(changedKeys) + '\n');
+    assert.throws(() => issueRootRecord('owned-rotation-test', {}, { expectedKeyringDigest: digest }), /GUARD_KEYRING_CHANGED/);
+    const op = { operationId: randomUUID(), permitId: randomUUID(), storeIncarnation: randomUUID(), kind: 'erase',
+      bodyDigest: 'a'.repeat(64), schemaDigest: 'b'.repeat(64) };
+    assert.throws(() => publishRootOutcome(op, { operationId: op.operationId, state: 'origin-commit-known' },
+      { digest: 'c'.repeat(64) }, fixtureKeys), /GUARD_KEYRING_CHANGED/);
+    writeFileSync(keyringPath, originalKeys);
+    writeFileSync(signerPath, replacement.privateKey.export({ type: 'pkcs8', format: 'pem' }));
+    assert.throws(() => issueRootRecord('owned-rotation-test', {}, { expectedKeyringDigest: digest }), /GUARD_SIGNING_KEY/);
+  } finally { writeFileSync(keyringPath, originalKeys); writeFileSync(signerPath, originalSigner); }
+  assert.ok(issueRootRecord('owned-rotation-test', {}, { expectedKeyringDigest: digest }));
+});
+test('fixed Root signer emits real compact JWS using the verified keyring snapshot', () => {
+  const digest = sha256(readFileSync('/etc/cop-account-safety/public/verification-keys.json'));
+  const issued = issueRootJws('runtime-proof', { bindingId: randomUUID(), frontierDigest: 'a'.repeat(64) },
+    { lifetimeMs: 5000, expectedKeyringDigest: digest });
+  const verified = verifyRootJws(issued.bytes, fixtureKeys, 'runtime-proof');
+  assert.equal(verified.digest, issued.digest); assert.deepEqual(verified.payload, issued.payload);
+  assert.equal(issued.bytes.toString().trim().split('.').length, 3);
+  assert.throws(() => issueRootJws('runtime-proof', {}, { expectedKeyringDigest: 'b'.repeat(64) }), /GUARD_KEYRING_CHANGED/);
 });
 function authorityFixture() {
   const state = '/var/lib/cop-account-safety', now = Date.now();
