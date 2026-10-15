@@ -1,5 +1,15 @@
 # Operations
 
+The account-erasure completion candidate uses the explicit `database_v2` option
+in [ADR0055](adr/0055_DATABASE_ACCOUNT_ERASURE_RECOVERY.md). Configure independent
+`COP_ACCOUNT_SAFETY_GUARD_DATABASE_URL`, guard/store/incarnation IDs and verified
+PostgreSQL TLS only after reviewed enrollment. Runtime cannot enroll a dataset.
+Startup replays journaled fences and verifies actual local jobs before it can
+advance the replay cursor. Restore must stop affected services and keep traffic
+closed until COP and SIM replay and cleanup checks pass. Old images without this
+gate are not rollback candidates after activation. This option is not deployed
+or accepted merely because the schema or a container is healthy.
+
 The isolated COP code health audit, release gates and deployment boundaries
 are recorded in [runbook 20](runbooks/20_COP_CODE_HEALTH.md). Its candidate tests
 do not activate AI, public analytics or a production service. Existing X5

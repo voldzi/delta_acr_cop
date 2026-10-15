@@ -41,7 +41,9 @@ describe("actual COP session/profile erasure", () => {
   it("never adopts unattributable legacy sessions and remains pending until expiry", async () => {
     const sessions = new InMemoryWebSessionStore();
     const legacy = await sessions.create(tokens({ subjectId: owner.subjectId }), expiry());
-    expect(await sessions.update(legacy.sessionId, tokens())).toBeNull();
+    const refreshed = await sessions.update(legacy.sessionId, tokens());
+    expect(refreshed?.profile.issuer).toBeUndefined();
+    expect(refreshed?.expiresAt).toEqual(legacy.expiresAt);
     expect(await sessions.revokeActor(owner)).toEqual({ complete: false });
     expect(await sessions.get(legacy.sessionId)).not.toBeNull();
     await sessions.revoke(legacy.sessionId);

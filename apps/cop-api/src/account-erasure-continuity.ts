@@ -26,6 +26,7 @@ export interface AccountErasureReplay {
  * peer/signatures, current independent journal and runtime/store binding.
  * An application boolean or synthetic callback is not a production authority. */
 export interface AccountErasureContinuity {
+  close?(): Promise<void>;
   snapshot(): Promise<AccountErasureReplay>;
   assertCurrent(frontier: AccountErasureFrontier): Promise<{ validUntil: string }>;
   /** Commits independent Root journal before the local fence transaction.

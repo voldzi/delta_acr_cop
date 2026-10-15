@@ -1390,14 +1390,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       createCOPSessionsProfilesErasureAdapter({ issuer, sessions: webSessionStore, profiles: [userProfileStore, userProfileFallbackStore] }),
       createCOPDevicesErasureAdapter({ issuer, stores: [mobileDeviceStore, mobileDeviceFallbackStore] }),
       createMessagingAccountErasureAdapter({ issuer, config: messagingProvider.config, verifyConfiguredOwner: options.messagingErasureOwnerVerifier,
+        authorityMode: process.env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE === "database_v2" ? "database_v2" : "native_v1",
         verifyActorScope: options.messagingErasureActorScopeVerifier }),
       createSimRouterAccountErasureAdapter({ issuer, baseUrl: process.env.COP_SIM_ERASURE_ROUTER_URL ?? "", token: process.env.COP_SIM_ERASURE_ROUTER_TOKEN ?? "",
+        authorityMode: process.env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE === "database_v2" ? "database_v2" : "native_v1",
         actorSecret: process.env.COP_SIM_ERASURE_ACTOR_SECRET ?? "", userIdSecret: process.env.COP_AI_CHAT_ROUTER_USER_ID_SECRET ?? "", now,
         verifyConfiguredOwner: options.simErasureOwnerVerifier, reviewExistingIdentity: options.simErasureIdentityReview }),
       createCOPDriverMeasurementsErasureAdapter({ issuer, baseUrl: process.env.COP_SIM_ERASURE_DRIVER_URL ?? "", token: process.env.COP_SIM_ERASURE_DRIVER_TOKEN ?? "",
+        authorityMode: process.env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE === "database_v2" ? "database_v2" : "native_v1",
         actorSecret: process.env.COP_SIM_ERASURE_ACTOR_SECRET ?? "", userIdSecret: process.env.COP_AI_CHAT_ROUTER_USER_ID_SECRET ?? "", now,
         verifyConfiguredOwner: options.simErasureOwnerVerifier, reviewExistingIdentity: options.simErasureIdentityReview,
-        inventory: options.simMeasurementErasureInventory }, driverMeasurementStore),
+        inventory: options.simMeasurementErasureInventory ?? (process.env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE === "database_v2" && driverMeasurementStore?.accountErasureInventory
+          ? async (actor, context) => {
+            context.signal.throwIfAborted();
+            if (actor.authMode !== "oidc" || actor.issuer !== issuer || !actor.subjectId) return null;
+            return driverMeasurementStore.accountErasureInventory!({ issuer: actor.issuer, subjectId: actor.subjectId });
+          } : undefined) }, driverMeasurementStore),
       contentErasure.adapter,
       createVoiceLiveKitErasureAdapter({ issuer, stores: [voiceCallStore], now,
         provider: process.env.COP_LIVEKIT_ADMIN_URL && process.env.COP_LIVEKIT_API_KEY && process.env.COP_LIVEKIT_API_SECRET
@@ -1405,6 +1413,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             apiKey: process.env.COP_LIVEKIT_API_KEY, apiSecret: process.env.COP_LIVEKIT_API_SECRET }) : undefined }),
       ...(mobilityService ? [new MobilityAccountErasureAdapter({ issuer, service: mobilityService, outbox: mobilityOutbox,
         providerEffects: createMessagingMobilityProviderEffects({ issuer, config: messagingProvider.config, verifyConfiguredOwner: options.messagingErasureOwnerVerifier,
+          authorityMode: process.env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE === "database_v2" ? "database_v2" : "native_v1",
           verifyActorScope: options.messagingErasureActorScopeVerifier }) })] : []),
       ...(communicationSafety ? [communicationSafety.accountErasureAdapter()] : []),
       ...(process.env.COP_KEYCLOAK_ERASURE_CLIENT_ID && process.env.COP_KEYCLOAK_ERASURE_CLIENT_SECRET

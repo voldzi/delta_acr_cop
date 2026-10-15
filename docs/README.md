@@ -137,6 +137,7 @@ local feature choice nor the disabled historical unlink source deletes the accou
 - [43 — Dokončování mazání celého účtu, aktuální testy a oddělený stav produkce](integration/43_ACCOUNT_SAFETY_COMPLETION.md)
 - [Root vykonavatel původní mazací operace — soukromý kontrakt, skutečné testy a zbývající napojení](../scripts/account-safety/README.md)
 - [ADR0054 — nezávislá minimální evidence mazání a obnova ochrany](adr/0054_INDEPENDENT_PSEUDONYMOUS_ERASURE_JOURNAL.md): implementace a izolované testy; produkční zapojení vlastníků a chráněné služby dosud nepřijato.
+- [ADR0055 — databázová evidence a obnova mazání](adr/0055_DATABASE_ACCOUNT_ERASURE_RECOVERY.md): aktuální cesta dokončení; výslovný režim, skutečné databázové blokace a přehrání před spuštěním. Dosud nenasazeno.
 - [Ověření ochranného přenosu na produkční platformě — 52 testů](testing/account-safety-target-platform-20261015.json): skutečný Linux/pidfs/podpisy; databázové podklady v klientských testech jsou syntetické, produkční aktivaci nedokládá.
 - [Společné ověření původní operace přes skutečný chráněný přenos — 4 skupiny](testing/account-safety-native-writer-20261015.json): skutečné TLS/SQL/peer a ztracené END; pouze expire/retence, syntetické přijetí politik, bez produkční aktivace.
 - [Omezené čtecí role a přesný produkční SQL dotaz](testing/account-safety-root-reader-surface-20261015.json): izolované ACL/RLS kontroly; role nejsou aktivované v produkci.

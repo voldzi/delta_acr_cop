@@ -1,0 +1,78 @@
+{
+  "status": "PARTIAL_COP_SIM_HTTP_POSTGRESQL_GATE_NOT_WHOLE_ACCOUNT_ACCEPTANCE",
+  "date": "2026-10-15",
+  "copBaseRevision": "5df26bbfc69cd98d4ea508f7d66b7bd1b1e916f1",
+  "passed": 9,
+  "failed": 0,
+  "tests": [
+    {
+      "name": "actual PostgreSQL independent deletion journal v2 commits immutable exact-account evidence, serializes two clients and recovers the original operation",
+      "status": "passed"
+    },
+    {
+      "name": "actual PostgreSQL independent deletion journal v2 returns evidence for replay, but never approves a restored application without actual local fences",
+      "status": "passed"
+    },
+    {
+      "name": "actual PostgreSQL independent deletion journal v2 rejects foreign incarnation, unknown enrollment and mismatched current head",
+      "status": "passed"
+    },
+    {
+      "name": "actual PostgreSQL independent deletion journal v2 does not permit runtime rewrite, deletion, truncate or replay approval",
+      "status": "passed"
+    },
+    {
+      "name": "actual PostgreSQL independent deletion journal v2 snapshots queued input and refuses free context or recoverable identity in permanent evidence",
+      "status": "passed"
+    },
+    {
+      "name": "actual PostgreSQL independent deletion journal v2 replays durable controller jobs after a local restore before admitting account A, while B stays available",
+      "status": "passed"
+    },
+    {
+      "name": "actual PostgreSQL independent deletion journal v2 reads explicitly enrolled identity review and denies a new alias, foreign issuer or changed key",
+      "status": "passed"
+    },
+    {
+      "name": "actual PostgreSQL independent deletion journal v2 derives the driver key inventory from actual immutable startup fingerprint and exact-owner consent",
+      "status": "passed"
+    },
+    {
+      "name": "actual PostgreSQL independent deletion journal v2 runs COP's actual controller and adapters through the actual SIM HTTP/PG owners without positive authority callbacks",
+      "status": "passed"
+    }
+  ],
+  "sourceSha256": {
+    "apps/cop-api/src/account-erasure-continuity-postgres.ts": "f4979d6607a2bcdad4bc56deed55fa15499af502d9118df7a78f8b5b092426d8",
+    "apps/cop-api/src/account-erasure-continuity-postgres.test.ts": "cbeb2c5d48ceea120bdf291152e95aa88f4d614ba91fbe79e4b7c56220bd7c8f",
+    "apps/cop-api/src/account-erasure-continuity-production.ts": "3d915abdb659db67d89e7d5a2a28f6e67e5f8835c3882c2db37e44849402edaf",
+    "apps/cop-api/src/driver-measurement-consent-store.ts": "bd002ca9919e39e3ef208ad7b6c08a88517c7dbbe3ed9a887f3fd87f419880b2",
+    "apps/cop-api/src/sim-account-erasure.ts": "d603fc9f9afd89c77f442d2bc5a6011365bff9ac043df0c1a4749d744a6bf62b",
+    "apps/cop-api/src/messaging-account-erasure.ts": "b13fd9fe9e4b36f31ff09f8f9b07c97168770b6633624e9761fbd061bd8639c8",
+    "apps/cop-api/src/server.ts": "7d8222f127199ef948a9155bdd9c17b0c3790e9f40344061411316aba38fbeec",
+    "scripts/account-safety/010_database_safety_v2.sql": "03247e41e3af241af1a29a3899473f0eff2ad480dab304c549f2fc484b7c2674"
+  },
+  "simSourceSha256": {
+    "deploy/account-safety/database-erasure-guard.mjs": "bf67670902450009e012e3813ff4f5b556f0668eadcfddfd194200cfedb8d86f",
+    "deploy/driver-measurements/008_eta_contributor_binding_database_v2.sql": "4a156baee81ded14d01b9ce261cca82a4f835905d32f91418fc8f67038b3f185"
+  },
+  "evidence": [
+    "Actual restricted PostgreSQL guard role; append-only evidence and cursor-only update",
+    "Actual COP RS256 authentication and HTTP preflight/confirm handlers",
+    "Actual COP controller and SIM HTTP handlers against PostgreSQL COP/guard/Driver/Router databases",
+    "Actual admitted batch held before commit; pg_blocking_pids observed deletion waiting on its exact backend, then commit and zero readback",
+    "Foreign ETA contributor denied with SQLSTATE23503; other driver receipt and ETA preserved",
+    "COP key deleted, SIM namespace key preserved; no provider/model calls",
+    "Old actor JWT denied403; second actor preferences200 and foreign receipt404",
+    "Missing local fences block admission; controller replay restores account fence after local rollback"
+  ],
+  "limits": [
+    "Other nine owners have synthetic ready/preflight=true and pending effects in this test. These positive fixtures are not actual owner readiness or production canConfirm authority.",
+    "Other nine owner effects intentionally pending; HTTP202/accountDeleted=false",
+    "Synthetic OIDC issuer, explicit synthetic alias enrollment and opaque key ciphertext; no real account",
+    "No live OpenAI request or actual Synapse/Matrix/LiveKit/Keycloak owner acceptance",
+    "Not production deployment, production restore or complete account deletion acceptance"
+  ],
+  "initialFailure": "Synthetic Router seed initially used HMAC instead of actual BudgetStore SHA256 derivation; seed corrected before this passing report",
+  "productionChanged": false
+}

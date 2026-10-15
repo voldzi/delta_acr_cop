@@ -1,0 +1,83 @@
+# ADR 0055 — Database-backed account erasure and recovery
+
+Date: 2026-10-15. Status: implementation in progress, not deployed.
+
+## Decision and trust boundary
+
+For the production completion candidate use explicit `database_v2` authority.
+This replaces the **uninstalled** native process/signature implementation of
+ADR0054 for this mode. The application operators, reviewed application code and
+database administrators are trusted. We do not try to defend an account from
+an intentionally malicious backend by introducing a privileged signing broker.
+The old source and evidence remain available; their tests are not evidence for
+this alternative. The default stays `native_v1`; no failed check falls back.
+
+Preserve verified OIDC identity, COP/Jízda scope, shared SIM access, immutable
+operation/body binding, durable admission fences, transactional writer locks,
+resumable jobs, explicit pending receipts and provider-specific cleanup proofs.
+A missing owner must still prevent full completion. No fake positive verifier
+or capability label replaces a provider's actual checks.
+
+## Independent evidence
+
+Migration `scripts/account-safety/010_database_safety_v2.sql` creates only the
+`cop_safety_v2` schema in `cop_account_safety_guard`. It leaves the earlier
+`cop_guard` tables intact. An administrator explicitly enrolls the guard ID,
+application store ID, configuration fingerprint, incarnation and initial replay
+binding. The application does not enroll itself or change those bindings.
+
+COP appends the exact pseudonymous fence before committing its local job. The
+runtime can insert but cannot rewrite/delete/truncate this evidence. Sequence,
+previous digest, operation and account are immutable. Snapshot verifies the
+complete canonical hash chain and its column/payload bindings. A lost commit
+acknowledgement is retried using the same account and operation, preserving the
+original request date. Another account/operation pairing is rejected.
+
+The journal stores no recoverable principal, user content, location or key.
+Its account MAC and operation linkage are pseudonymous, not anonymous. It has no
+automatic expiry. SIM maintains its own independent per-owner tombstones with
+only the final identifiers required to replay its transactional deletion.
+
+## Startup and restore
+
+Before admitting traffic the controller reads the independent journal, installs
+all local fences in its actual transaction store, and verifies the resulting
+local jobs and configuration by SQL readback. Only then may it advance the
+replay cursor. Runtime UPDATE rights cover that cursor only. Ordinary restart
+does not require a new enrollment. Missing/foreign binding, an absent journal
+prefix, an unmatched local job or a database outage deny admission.
+
+Stop COP and the affected SIM services **before** restoring application data;
+keep external exposure closed. Do not restore the independent guard database
+from the application snapshot. Explicitly enroll a changed incarnation or
+restore generation. Start in isolation, replay COP and SIM tombstones, verify
+fences, zero counts and pending operations, then open traffic. An older image
+that does not perform this startup gate is not an allowed rollback image.
+This procedure and its real restore test are release requirements; the SQL
+schema by itself does not enforce hypervisor or operator actions.
+
+If local pending identity is lost, COP restores a fence and a pending job. It
+does not guess a principal or claim completion. SIM can replay an already
+accepted manifest independently. A pending COP job without recoverable identity
+still needs verified ownership recovery before its remaining local cleanup.
+
+## Current evidence and remaining release gates
+
+Nine actual PostgreSQL tests cover concurrent/idempotent append, account and
+operation conflicts, immutable permissions, incarnation mismatch, caller-input
+snapshotting, SQL replay readback and controller recovery after local rollback.
+Provider effects in the controller recovery case are deliberately pending.
+The joint case exercises the authenticated COP HTTP handlers, controller,
+actual COP/SIM adapters and real SIM HTTP/PostgreSQL services. It verifies local
+consent cleanup, measurement deletion, key deletion, preserved SIM namespace,
+fenced old bearer and unaffected second actor. Other owners deliberately stay
+pending, so the response remains202 and accountDeleted=false. A first run failed
+because its synthetic Router seed used the wrong hash algorithm; the fixture
+was corrected to BudgetStore's actual SHA256 derivation before the passing run.
+
+These tests do **not** establish end-to-end COP/SIM/Matrix/LiveKit completion,
+production enrollment, production restore acceptance or deployment.
+
+Remaining: actual production owner composition, shared HTTP/database acceptance,
+scoped Keycloak authority, reviewed least-privilege provisioning, deployment and
+isolated restore acceptance before enabling account deletion.

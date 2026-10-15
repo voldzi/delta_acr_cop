@@ -60,6 +60,32 @@ async function fixture(reply?: (request: Request) => { status?: number; body?: u
   return { options, requests, anchor, routerOwned, setEnabled: (value: boolean) => { enabled = value; }, setPending: (value: boolean) => { pending = value; }, setNow: (value: string) => { now = new Date(value); } };
 }
 describe("SIM COP-only erasure adapters", () => {
+  it("explicit database mode verifies fresh authenticated typed SIM checks without a native positive callback", async () => {
+    const f = await fixture();
+    const options = { ...f.options, authorityMode: "database_v2" as const, verifyConfiguredOwner: undefined };
+    const adapter = createSimRouterAccountErasureAdapter(options);
+    expect(await adapter.ready()).toBe(true);
+    expect(await adapter.preflight!(actor(), context())).toMatchObject({ ready: true });
+    expect((await adapter.erase(actor(), context())).status).toBe("completed");
+    expect(f.requests.filter(r => r.path.endsWith("/capability")).length).toBeGreaterThan(1);
+    expect(f.requests.every(r => r.headers.authorization === "Bearer " + options.token)).toBe(true);
+    f.setEnabled(false);
+    expect(await adapter.ready()).toBe(false);
+    // Existing accepted operation can still settle; disabling intake is not
+    // permission to resurrect old data or to fall back to another authority.
+    expect((await adapter.erase(actor(), context())).status).toBe("completed");
+  });
+  it("database mode denies contradictory restore checks and never falls back to a supplied native verifier", async () => {
+    const f = await fixture(r => r.path.endsWith("capability") ? { body: { contractVersion: "sim-account-erasure-v1", owner: "ai_router", scope: "cop_router_primary_database", enabled: true, ready: true,
+      checkedAt: "2026-10-14T12:00:00.000Z", blockers: [], mutates: false, providerCalls: false, wholeAccountComplete: false,
+      checks: { ...serviceChecks, restoreCheckpointCurrent: false }, costPolicy: "aggregate-costs-current-month-v1" } } : undefined);
+    const native = vi.fn(async () => true);
+    const adapter = createSimRouterAccountErasureAdapter({ ...f.options, authorityMode: "database_v2", verifyConfiguredOwner: native });
+    expect(await adapter.ready()).toBe(false);
+    expect((await adapter.erase(actor(), context())).status).toBe("pending");
+    expect(native).not.toHaveBeenCalled();
+    expect(f.requests.every(r => r.method === "GET")).toBe(true);
+  });
   it.each(["router", "driver"] as const)("controller starts the first %s HTTP operation while provider intake is enabled", async kind => {
     const f = await fixture(), selected = kind === "router" ? createSimRouterAccountErasureAdapter(f.options) : createSimMeasurementsAccountErasureAdapter(f.options);
     const existingOnly = vi.spyOn(selected, "readyForAcceptedOperation");

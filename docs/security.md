@@ -1,5 +1,13 @@
 # Security
 
+The explicit account-safety database alternative is described in
+[ADR0055](adr/0055_DATABASE_ACCOUNT_ERASURE_RECOVERY.md). It trusts reviewed
+backend code and database administrators, uses separate append-only pseudonymous
+erasure evidence, and denies unknown enrollment, mismatched incarnation, missing
+local replay or database failure. It never falls back from native checks or from
+an unavailable guard. It does not claim protection from a malicious privileged
+operator or silently restore the guard database with application snapshots.
+
 The 2026-10-07 code audit hardens canonical publication rights, bounded upstream
 reads, credential redirects, request logging and public body limits. See
 [ADR 0039](adr/0039_CANONICAL_PUBLICATION_BOUNDARY.md) and the

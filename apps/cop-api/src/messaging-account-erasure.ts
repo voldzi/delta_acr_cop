@@ -15,6 +15,7 @@ export interface MessagingActorScopeProof {
 export interface MessagingAccountErasureOptions {
   config: MessagingProviderConfig;
   issuer: string;
+  authorityMode?: "native_v1" | "database_v2";
   /** Server-only authority port, backed by actual accepted native/provider/store/
    * restore binding for this origin and scope. An env flag or runtime label is
    * insufficient. The published owner contract has no global whole-owner cap.
@@ -96,12 +97,36 @@ class Transport {
     return signal ? AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs);
   }
   async authority(scope: MessagingErasureOwnerScope, signal: AbortSignal): Promise<boolean> {
+    if (this.options.authorityMode === "database_v2") {
+      if (!this.enabled || !this.url || signal.aborted) return false;
+      try {
+        const result = await this.call("/api/v1/communication/mobility-effects-erasure/capabilities", signal);
+        const value = result.value;
+        // Global authenticated feature availability never attests a particular
+        // user's exclusive namespace. actorScope/preflight must do that next.
+        return result.status === 200 && exact(value, ["contractVersion", "localMetadataErasure", "wholeAccountErasure", "externalCopiesErased"]) &&
+          value.contractVersion === EFFECTS && value.localMetadataErasure === true && value.wholeAccountErasure === false && value.externalCopiesErased === false;
+      } catch { return false; }
+    }
     if (!this.enabled || !this.url || !this.options.verifyConfiguredOwner || signal.aborted) return false;
     try {
       return await abortable(this.options.verifyConfiguredOwner(scope, { origin: this.url.origin, signal }), signal) === true;
     } catch { return false; }
   }
   async actorScope(actor: AuthenticatedActor, scope: MessagingErasureOwnerScope, signal: AbortSignal, operationId?: string): Promise<MessagingActorScopeProof | null> {
+    if (this.options.authorityMode === "database_v2") {
+      if (!this.url || signal.aborted) return null;
+      requireActor(actor, this.options.issuer);
+      try {
+        const result = await this.call("/api/v1/communication/account-erasure/preflight", signal, actor, {});
+        const value = result.value;
+        if (result.status !== 200 || !exact(value, ["contractVersion", "wholeAccountReady", "localContentProviderReady", "remaining", "version", ...scopeFields]) ||
+          value.contractVersion !== READINESS || value.wholeAccountReady !== true || value.localContentProviderReady !== true ||
+          !reasons(value.remaining, preflightReasons, true) || typeof value.version !== "string" || !HEX.test(value.version) || !scopeProof(value)) return null;
+        return { appScope: "cop_jizda_exclusive", scopeVersion: value.scopeVersion as string, exclusiveBindingProven: true, simNamespacePreserved: true,
+          scopeCoverage: ["matrix", "notifications", "conversations", "devices", "policy_metadata"] };
+      } catch { return null; }
+    }
     if (!this.url || !this.options.verifyActorScope || signal.aborted) return null;
     requireActor(actor, this.options.issuer);
     try { const proof = await abortable(this.options.verifyActorScope(actor, { scope, origin: this.url.origin, signal, ...(operationId ? { operationId } : {}) }), signal);
@@ -175,7 +200,7 @@ export function createMessagingAccountErasureAdapter(options: MessagingAccountEr
   const bound = { ...options, config: { ...options.config } }, transport = new Transport(bound);
   return {
     id: "messaging_matrix",
-    async ready() { return !!bound.verifyActorScope && transport.authority("whole_owner", transport.bounded()); },
+    async ready() { return (bound.authorityMode === "database_v2" || !!bound.verifyActorScope) && transport.authority("whole_owner", transport.bounded()); },
     async preflight(actor, { signal }) {
       requireActor(actor, bound.issuer);
       const bounded = transport.bounded(signal);
@@ -200,7 +225,7 @@ export function createMessagingAccountErasureAdapter(options: MessagingAccountEr
 export function createMessagingMobilityProviderEffects(options: MessagingAccountErasureOptions): MobilityProviderEffects {
   const bound = { ...options, config: { ...options.config } }, transport = new Transport(bound);
   async function sourceReady(signal: AbortSignal): Promise<boolean> {
-    if (!bound.verifyActorScope || !await transport.authority("mobility_effects", signal)) return false;
+    if (bound.authorityMode !== "database_v2" && !bound.verifyActorScope || !await transport.authority("mobility_effects", signal)) return false;
     try { const { status, value } = await transport.call("/api/v1/communication/mobility-effects-erasure/capabilities", signal);
       return status === 200 && exact(value, ["contractVersion", "localMetadataErasure", "wholeAccountErasure", "externalCopiesErased"]) &&
         value.contractVersion === EFFECTS && value.localMetadataErasure === true && value.wholeAccountErasure === false && value.externalCopiesErased === false;

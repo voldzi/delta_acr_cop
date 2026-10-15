@@ -43,6 +43,25 @@ async function fixture(responder?: (request: Request) => { status?: number; body
 }
 
 describe("Messaging whole and exact mobility owner adapters", () => {
+  it("database mode verifies actual authenticated feature and exclusive actor scope without native callbacks", async () => {
+    const f = await fixture();
+    const adapter = createMessagingAccountErasureAdapter({ ...f.options, authorityMode: "database_v2",
+      verifyConfiguredOwner: undefined, verifyActorScope: undefined });
+    expect(await adapter.ready()).toBe(true);
+    expect(await adapter.preflight!(actor(a), context())).toMatchObject({ ready: true });
+    expect((await adapter.erase(actor(a), context())).status).toBe("completed");
+    expect(f.requests.some(r => r.path.endsWith("/capabilities"))).toBe(true);
+    expect(f.requests.filter(r => r.path.endsWith("/preflight")).every(r => r.headers["x-csm-user-id"] === a)).toBe(true);
+    expect(f.requests.every(r => r.headers.authorization === "Bearer " + f.options.config.token)).toBe(true);
+  });
+  it("database mode refuses unknown/shared namespace before the destructive owner request", async () => {
+    const f = await fixture(r => ({ body: r.path.endsWith("capabilities") ? capabilities() : { ...readiness(), exclusiveBindingProven: false } }));
+    const native = vi.fn(async () => true);
+    const adapter = createMessagingAccountErasureAdapter({ ...f.options, authorityMode: "database_v2", verifyConfiguredOwner: native, verifyActorScope: undefined });
+    expect(await adapter.preflight!(actor(a), context())).toMatchObject({ ready: false });
+    expect((await adapter.erase(actor(a), context())).status).toBe("pending");
+    expect(f.requests.some(r => r.path.endsWith("owner-v2"))).toBe(false); expect(native).not.toHaveBeenCalled();
+  });
   it("has no fabricated actor/global whole cap and requires actual configured-owner verifier", async () => {
     const f = await fixture(), absent = { ...f.options, verifyConfiguredOwner: undefined };
     expect(await createMessagingAccountErasureAdapter(absent).ready()).toBe(false);

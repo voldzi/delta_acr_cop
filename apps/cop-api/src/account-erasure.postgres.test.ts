@@ -40,7 +40,9 @@ describe.skipIf(!connectionString)("real PostgreSQL account erasure boundaries",
       const one = await first.create(tokens(), expiry), two = await first.create(tokens(other), expiry);
       const anotherIssuer = await first.create(tokens({ ...owner, issuer: "https://other.test" }), expiry);
       const legacy = await first.create(tokens({ subjectId: "unattributable-legacy" }), expiry);
-      expect(await second.update(legacy.sessionId, tokens({ issuer, subjectId: "unattributable-legacy" }))).toBeNull();
+      const refreshedLegacy = await second.update(legacy.sessionId, tokens({ issuer, subjectId: "unattributable-legacy" }));
+      expect(refreshedLegacy?.profile.issuer).toBeUndefined();
+      expect(refreshedLegacy?.expiresAt).toEqual(legacy.expiresAt);
       expect(await second.revokeActor(owner)).toEqual({ complete: false });
       expect(await first.get(one.sessionId)).toBeNull(); expect(await first.get(two.sessionId)).not.toBeNull();
       expect(await first.get(anotherIssuer.sessionId)).not.toBeNull();

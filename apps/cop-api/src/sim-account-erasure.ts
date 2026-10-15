@@ -9,6 +9,9 @@ import type { AuthenticatedActor } from "./security.js";
 export type SimErasureOwner = "ai_router" | "sim_measurements";
 export interface SimAccountErasureOptions {
   baseUrl: string; token: string; issuer: string; actorSecret: string; userIdSecret: string;
+  /** ADR0055: trust the authenticated configured SIM, whose own readiness must
+   * verify its actual independent guard and target DB. Never an error fallback. */
+  authorityMode?: "native_v1" | "database_v2";
   timeoutMs?: number; now?: () => Date;
   /** Live protected native/runtime/store/restore authority for this exact source.
    * No env boolean, historical health or process generation substitutes for it.
@@ -106,6 +109,13 @@ class Client {
   now(): Date { return this.options.now?.() ?? new Date(); }
   signal(source?: AbortSignal): AbortSignal { const timeout = AbortSignal.timeout(Math.max(1, Math.min(10_000, Math.trunc(this.options.timeoutMs ?? 10_000)))); return source ? AbortSignal.any([source, timeout]) : timeout; }
   async authority(signal: AbortSignal): Promise<boolean> {
+    if (this.options.authorityMode === "database_v2") {
+      if (!this.root || signal.aborted) return false;
+      try {
+        const result = await this.request("/capability", signal), value = this.validateProbe(result.value);
+        return result.status === 200 && this.resumeProbe(value, true);
+      } catch { return false; }
+    }
     if (!this.root || !this.options.verifyConfiguredOwner || signal.aborted) return false;
     try { return await bounded(this.options.verifyConfiguredOwner(this.owner, { origin: this.root.origin, signal }), signal) === true; } catch { return false; }
   }

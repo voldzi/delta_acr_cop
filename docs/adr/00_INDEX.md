@@ -1,5 +1,7 @@
 # ADR Index
 
+- [0055 Database-backed account erasure and recovery](0055_DATABASE_ACCOUNT_ERASURE_RECOVERY.md)
+
 - [0000 ADR Template](0000_ADR_TEMPLATE.md)
 - [0001 Documentation First Approach](0001_DOCUMENTATION_FIRST_APPROACH.md)
 - [0002 Separate COP and SIM Projects](0002_SEPARATE_COP_AND_SIM_PROJECTS.md)

@@ -3,6 +3,10 @@
 Status: implemented source and isolated tests; production enrollment and complete
 owner composition are not accepted. Date: 2026-10-15.
 
+The production completion candidate now uses the explicit database alternative
+in [ADR0055](0055_DATABASE_ACCOUNT_ERASURE_RECOVERY.md). The native mode below is
+preserved but is not the implementation path for that candidate.
+
 ## Decision
 
 Commit the independent Root journal before committing a new local COP fence.

@@ -1,5 +1,40 @@
 # 43. Whole COP account removal — current completion evidence
 
+## Active implementation decision — 15 October
+
+The completion path is now the explicit database alternative in
+[ADR0055](../adr/0055_DATABASE_ACCOUNT_ERASURE_RECOVERY.md). The native signature
+candidate described below remains preserved source/evidence, not a remaining
+installation prerequisite for `database_v2`. Nine actual PostgreSQL cases cover
+the new independent journal, key inventory, identity review and controller
+replay. The joint case uses actual COP HTTP and SIM HTTP/database owners,
+including observed batch/delete blocking, foreign ETA rejection and B-row
+preservation. Other owners use explicit synthetic readiness/preflight fixtures
+and pending effects; these are not production readiness or permission to confirm
+a real account. The actual result remains HTTP202/accountDeleted=false.
+See [the scoped receipt](../testing/account-safety-database-v2-joint-20261015.json).
+Whole-flow acceptance,
+production composition, restore acceptance and deployment are still outstanding.
+
+Current checks: typecheck/build/skeleton/schema validation passed; full normal
+regression2393passed/80optional-skipped; actual independent/joint PG gate9passed;
+actual session/profile PG gate4passed. OpenAPI validation passed with24 existing
+warnings. Public analytics guards passed. Two old session-erasure expectations
+were corrected to match the already-reviewed legacy token-refresh behavior:
+refresh preserves unknown issuer and original lifetime, rather than adopting an
+owner or rejecting the refresh. Runtime session behavior was not changed here.
+
+Read-only production check: COP still runs the same a06 image, erasure/retained
+guard are off, Messaging's required capability URL returns404, and dedicated
+SIM/Keycloak/LiveKit-admin erasure configuration is absent. No production value
+was printed. The published Messaging candidate was recovered separately at
+`ee3b4641962bf1a72e3709074d1ccc8a69e0ac44`; its native private-owner authority is
+not an implemented provider cleanup executor. Production Synapse image/schema
+cannot yet be inspected: SSH to `comm.home.cz` denies the available account/key.
+`scripts/account-safety/inspect-synapse-readonly.sh` is a prepared metadata-only
+diagnostic for the actual Synapse host; shell syntax checked, not run there.
+It reads no message/user rows or credential values, and changes no service/DB.
+
 Source work: 2026-10-14. Production still runs accepted image
 `sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f`,
 application source `b13fbdc71f3d9821f8b857c3f73255a75c46fa76`.

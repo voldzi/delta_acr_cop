@@ -3,6 +3,7 @@ import pg, { type Pool as PgPool, type PoolConfig } from "pg";
 import { createCopPgPool } from "./cop-pg-pool.js";
 import { readCopDatabasePoolMode, resolveCopSessionDatabaseUrl } from "./cop-session-database.js";
 import { deletionDays, type DriverConsent } from "./driver-measurement-contract.js";
+import type { SimDriverErasureInventory } from "./sim-account-erasure.js";
 
 export interface DriverConsentOwner { issuer: string; subjectId: string }
 export interface DriverConsentErasureAssessment { ready: boolean; version: string; present: boolean; pendingDays: string[] }
@@ -34,6 +35,7 @@ export interface DriverMeasurementConsentStore {
   withPendingDeletion?(subjectId: string, day: string, operation: () => Promise<void>): Promise<boolean>;
   withActive<T>(subjectId: string, operation: (consent: DriverConsent) => Promise<T>, owner?: DriverConsentOwner): Promise<T | null>;
   erasureReady?(): Promise<boolean>;
+  accountErasureInventory?(owner: DriverConsentOwner): Promise<SimDriverErasureInventory | null>;
   preflightActorErasure?(owner: DriverConsentOwner): Promise<DriverConsentErasureAssessment>;
   erasureCheckpoint?(owner: DriverConsentOwner, operationId: string): Promise<DriverConsentErasureCheckpoint | null>;
   fenceActorErasure?(owner: DriverConsentOwner, operationId: string, inventoryVersion: string, expectedLocalVersion: string): Promise<boolean>;
@@ -214,6 +216,20 @@ export class PostgresDriverMeasurementConsentStore implements DriverMeasurementC
     this.secret = secret;
   }
   async close(): Promise<void> { await this.pool.end(); }
+  /** Server-only key inventory. The original config row refuses secret rotation
+   * from first use. Unknown legacy provenance or a changed fingerprint denies;
+   * no historical key/version is guessed. Keys never enter an HTTP response. */
+  async accountErasureInventory(owner: DriverConsentOwner): Promise<SimDriverErasureInventory | null> {
+    requireOwner(owner);
+    if (this.secret.length < 32) return null;
+    const fingerprint = createHash("sha256").update("cop-driver-secret-v1\0").update(this.secret).digest("hex");
+    const saved = (await this.pool.query<{ secret_fingerprint: string }>("SELECT secret_fingerprint FROM cop_driver_measurement_config WHERE id=true")).rows[0];
+    if (saved?.secret_fingerprint !== fingerprint) return null;
+    const assessment = await this.preflightActorErasure(owner);
+    if (!assessment.ready) return null;
+    return { version: version([fingerprint, assessment.version]), retainedComplete: true, outboxComplete: true, keyVersionsComplete: true,
+      retainedDays: [], outboxDays: assessment.pendingDays, keys: [{ version: fingerprint, secret: this.secret }] };
+  }
   async get(subjectId: string): Promise<DriverConsent> {
     const result = await this.pool.query<ConsentRow>(
       "SELECT granted_at, revoked_at, last_revoked_day, pending_days FROM cop_driver_measurement_consents WHERE subject_id=$1", [subjectId]);
