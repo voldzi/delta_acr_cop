@@ -53,40 +53,48 @@ export function validateDriverBusinessAnchor(bytes,keys,binding,request,permitBy
 }
 /** Fixed private filesystem only. Absence before first acceptance is explicit;
  * a bad/foreign/partial record always fails closed, never becomes absence. */
-export function readDriverBusinessOriginal(binding,request){
-  requireGuard(process.getuid?.()===0&&process.geteuid?.()===0,'ROOT_EXECUTION_REQUIRED');requireRootCodeTree('/opt/cop-account-safety');
-  for(const directory of ['business-anchors','business-ledger-bindings'])requireRootDirectory(join(STATE,directory),{secret:true});
-  const key=driverBusinessOriginalKey(binding,request),keys=readPublicVerificationKeys();
-  const read=path=>readRootFile(path,{secret:true});
-  let bytes;
-  try{bytes=read(join(STATE,'business-anchors',key+'.json'));}
-  catch(error){if(error.code==='ENOENT')return;throw error;}
-  const envelope=verifyRootRecord(bytes,keys,'driver-business-anchor',{historical:true});
-  requireGuard(originRef(envelope.payload.initialOriginRef),'GUARD_BUSINESS_ORIGIN_REF');
-  const anchor=validateDriverBusinessAnchor(bytes,keys,binding,request,
-    read(join(STATE,'operations',envelope.payload.initialOriginRef.operationId+'.json')));
-  let ledgerBytes;
-  try{ledgerBytes=read(join(STATE,'business-ledger-bindings',key+'.json'));}
-  catch(error){if(error.code==='ENOENT'){
-    requireGuard(canonical(readPublicVerificationKeys())===canonical(keys),'GUARD_KEYRING_CHANGED');return anchor;
-  }throw error;}
-  const ledger=verifyRootRecord(ledgerBytes,keys,'driver-business-ledger-binding',{historical:true}),p=ledger.payload;
+export function validateDriverBusinessLedger(bundle,keys,binding,request){
+  requireGuard(exact(bundle,['anchor','initialPermit','ledger','committedPermit','sqlOutcome','effectQuiescence']),'GUARD_BUSINESS_LEDGER_BYTES');
+  const anchor=validateDriverBusinessAnchor(bundle.anchor,keys,binding,request,bundle.initialPermit);
+  const ledger=verifyRootRecord(bundle.ledger,keys,'driver-business-ledger-binding',{historical:true}),p=ledger.payload;
   requireGuard(exact(p,[...BASE,...BINDING,...BUSINESS,'anchorRef','committedOriginRef','baseBodyDigest','ledgerCreatedAtUTC',
     'observedLedgerDigest','observedAtUTC','sqlOutcomeRef','effectQuiescenceRef'])&&same(p,binding,BINDING)&&same(p,request,BUSINESS)&&
     ref(p.anchorRef)&&canonical(p.anchorRef)===canonical(anchor.reference)&&originRef(p.committedOriginRef)&&hex(p.baseBodyDigest)&&
     stamp(p.ledgerCreatedAtUTC)&&stamp(p.observedAtUTC)&&Date.parse(p.ledgerCreatedAtUTC)<=Date.parse(p.observedAtUTC)&&
     Date.parse(p.observedAtUTC)<=Date.parse(p.issuedAt)&&hex(p.observedLedgerDigest)&&ref(p.sqlOutcomeRef)&&ref(p.effectQuiescenceRef)&&
     p.sqlOutcomeRef.recordId!==p.effectQuiescenceRef.recordId,'GUARD_BUSINESS_LEDGER_BINDING');
-  const original=permit(read,keys,p.committedOriginRef,binding),op=original.payload.operation;
-  requireGuard(op.bodyDigest===p.baseBodyDigest,'GUARD_BUSINESS_LEDGER_BODY');
+  const original=permit(()=>bundle.committedPermit,keys,p.committedOriginRef,binding),op=original.payload.operation;
+  requireGuard(op.bodyDigest===p.baseBodyDigest&&p.baseBodyDigest===anchor.initialBodyDigest,'GUARD_BUSINESS_LEDGER_BODY');
   for(const [field,kind]of [['sqlOutcomeRef','driver-sql-outcome'],['effectQuiescenceRef','driver-effect-quiescence']]){
-    const r=verifyRootRecord(read(join(STATE,'outcomes',p[field].recordId+'.json')),keys,kind,{historical:true}),v=r.payload;
+    const r=verifyRootRecord(field==='sqlOutcomeRef'?bundle.sqlOutcome:bundle.effectQuiescence,keys,kind,{historical:true}),v=r.payload;
     requireGuard(exact(v,[...BASE,'originId','originalPermitId','originalPermitDigest','storeIncarnation','bodyDigest','schemaDigest','originKind','originState'])&&
       r.digest===p[field].digest&&v.recordId===p[field].recordId&&v.originId===op.operationId&&v.originKind==='erase'&&
       v.originState==='origin-commit-known'&&v.originalPermitId===op.permitId&&v.originalPermitDigest===original.digest&&
       v.storeIncarnation===binding.storeIncarnation&&v.bodyDigest===op.bodyDigest&&v.schemaDigest===op.schemaDigest,'GUARD_BUSINESS_LEDGER_OUTCOME');
   }
-  requireGuard(canonical(readPublicVerificationKeys())===canonical(keys),'GUARD_KEYRING_CHANGED');
   return freeze({...anchor,ledgerBindingRef:{recordId:p.recordId,digest:ledger.digest},ledgerCreatedAtUTC:p.ledgerCreatedAtUTC,
     committedOriginRef:p.committedOriginRef,baseBodyDigest:p.baseBodyDigest,observedLedgerDigest:p.observedLedgerDigest});
+}
+export function readDriverBusinessOriginal(binding,request){
+  requireGuard(process.getuid?.()===0&&process.geteuid?.()===0,'ROOT_EXECUTION_REQUIRED');requireRootCodeTree('/opt/cop-account-safety');
+  for(const directory of ['business-anchors','business-ledger-bindings'])requireRootDirectory(join(STATE,directory),{secret:true});
+  const key=driverBusinessOriginalKey(binding,request),keys=readPublicVerificationKeys(),read=path=>readRootFile(path,{secret:true});
+  let bytes;
+  try{bytes=read(join(STATE,'business-anchors',key+'.json'));}catch(error){if(error.code==='ENOENT')return;throw error;}
+  const envelope=verifyRootRecord(bytes,keys,'driver-business-anchor',{historical:true});
+  requireGuard(originRef(envelope.payload.initialOriginRef),'GUARD_BUSINESS_ORIGIN_REF');
+  const initialPermit=read(join(STATE,'operations',envelope.payload.initialOriginRef.operationId+'.json'));
+  const anchor=validateDriverBusinessAnchor(bytes,keys,binding,request,initialPermit);
+  let ledgerBytes;
+  try{ledgerBytes=read(join(STATE,'business-ledger-bindings',key+'.json'));}
+  catch(error){if(error.code==='ENOENT'){
+    requireGuard(canonical(readPublicVerificationKeys())===canonical(keys),'GUARD_KEYRING_CHANGED');return anchor;
+  }throw error;}
+  const p=verifyRootRecord(ledgerBytes,keys,'driver-business-ledger-binding',{historical:true}).payload;
+  requireGuard(originRef(p.committedOriginRef)&&ref(p.sqlOutcomeRef)&&ref(p.effectQuiescenceRef),'GUARD_BUSINESS_LEDGER_REFERENCE');
+  const result=validateDriverBusinessLedger({anchor:bytes,initialPermit,ledger:ledgerBytes,
+    committedPermit:read(join(STATE,'operations',p.committedOriginRef.operationId+'.json')),
+    sqlOutcome:read(join(STATE,'outcomes',p.sqlOutcomeRef.recordId+'.json')),
+    effectQuiescence:read(join(STATE,'outcomes',p.effectQuiescenceRef.recordId+'.json'))},keys,binding,request);
+  requireGuard(canonical(readPublicVerificationKeys())===canonical(keys),'GUARD_KEYRING_CHANGED');return result;
 }

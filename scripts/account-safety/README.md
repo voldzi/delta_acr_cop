@@ -455,7 +455,12 @@ as if it were the post-ACK ledger. Current state still requires fresh actual SQL
 and current owner/origin checks. No writer for these records exists in this
 candidate; a synthetic signed record is never production acceptance.
 
-Six pure tests use actual Ed25519 signatures but synthetic trusted keys and
-records. They cover original references, foreign account/request/store, body and
-kind substitution, unknown fields and tampering. They do not exercise the Root
+Nine pure tests use actual Ed25519 signatures but synthetic trusted keys and
+records. Six cover the anchor; three additionally cover the ledger binding.
+They cover original references, foreign account/request/store, body and
+kind substitution, unknown fields, tampering and missing known-commit evidence.
+Joint review found that checking B only against its own committed permit could
+accept a different signed ERASE body. The reader now also requires its PostgreSQL
+body digest to equal A's original body digest. No changed checkpoint/body is
+silently accepted by this candidate. They do not exercise the Root
 filesystem, SQL, actual production identity, cleanup, restore or enrollment.

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {generateKeyPairSync,randomUUID,sign} from 'node:crypto';
 import {canonical,sha256} from './root-records.mjs';
-import {driverBusinessOriginalKey,validateDriverBusinessAnchor} from './root-driver-business-original.mjs';
+import {driverBusinessOriginalKey,validateDriverBusinessAnchor,validateDriverBusinessLedger} from './root-driver-business-original.mjs';
 const pair=generateKeyPairSync('ed25519'),pub=pair.publicKey.export({format:'jwk'});
 const keys={contractVersion:'cop-root-verification-keys-v1',keys:[{kid:'synthetic-business-test',kty:'OKP',crv:'Ed25519',x:pub.x}]};
 const ref=()=>({recordId:randomUUID(),digest:'a'.repeat(64)});
@@ -61,4 +61,35 @@ test('missing evidence extra anchor fields and impossible original time deny',()
 test('tampered bytes and mismatched original reference never validate',()=>{
   const s=setup();assert.throws(()=>validateDriverBusinessAnchor(Buffer.from(s.anchor.bytes.toString().replace(request.actorHash,'f'.repeat(64))),keys,binding,request,s.permit.bytes));
   const other=setup();assert.throws(()=>validateDriverBusinessAnchor(s.anchor.bytes,keys,binding,request,other.permit.bytes));
+});
+function ledger(s,committed=s.permit,changes={}){
+  const op=committed.payload.operation,facts={originId:op.operationId,originalPermitId:op.permitId,originalPermitDigest:committed.digest,
+    storeIncarnation:op.storeIncarnation,bodyDigest:op.bodyDigest,schemaDigest:op.schemaDigest,originKind:'erase',originState:'origin-commit-known'};
+  const sql=record('driver-sql-outcome',facts),end=record('driver-effect-quiescence',facts);
+  const p={...binding,...request,anchorRef:{recordId:s.anchor.payload.recordId,digest:s.anchor.digest},
+    committedOriginRef:{operationId:op.operationId,permitRef:{recordId:op.permitId,digest:committed.digest}},baseBodyDigest:op.bodyDigest,
+    ledgerCreatedAtUTC:new Date(Date.now()-500).toISOString(),observedLedgerDigest:'b'.repeat(64),observedAtUTC:new Date().toISOString(),
+    sqlOutcomeRef:{recordId:sql.payload.recordId,digest:sql.digest},effectQuiescenceRef:{recordId:end.payload.recordId,digest:end.digest},...changes};
+  return {anchor:s.anchor.bytes,initialPermit:s.permit.bytes,ledger:record('driver-business-ledger-binding',p).bytes,
+    committedPermit:committed.bytes,sqlOutcome:sql.bytes,effectQuiescence:end.bytes};
+}
+test('signed ledger binding preserves original anchor while pinning exact committed body',()=>{
+  const s=setup(),v=validateDriverBusinessLedger(ledger(s),keys,binding,request);
+  assert.equal(v.reference.digest,s.anchor.digest);assert.equal(v.baseBodyDigest,s.anchorFacts.initialBodyDigest);
+  assert.notEqual(v.ledgerCreatedAtUTC,v.originalAcceptedAtUTC);
+});
+test('another valid signed ERASE body in the same store cannot bind the original anchor',()=>{
+  const s=setup(),operationId=randomUUID(),permitId=randomUUID();
+  const other=record('driver-origin-permit',{...s.permitFacts,recordId:permitId,
+    operation:{...s.permitFacts.operation,operationId,permitId,bodyDigest:'f'.repeat(64)}});
+  assert.throws(()=>validateDriverBusinessLedger(ledger(s,other),keys,binding,request),{message:'GUARD_BUSINESS_LEDGER_BODY'});
+});
+test('foreign anchor and unknown commit or quiescence evidence cannot validate a ledger binding',()=>{
+  const s=setup(),other=setup();
+  assert.throws(()=>validateDriverBusinessLedger(ledger(s,s.permit,{anchorRef:{recordId:other.anchor.payload.recordId,digest:other.anchor.digest}}),keys,binding,request));
+  const bundle=ledger(s),known=JSON.parse(bundle.sqlOutcome.toString()).payload;
+  const bad=record('driver-sql-outcome',{...known,originState:'origin-no-effects-closed'});
+  const p=JSON.parse(bundle.ledger.toString()).payload;
+  const changed=record('driver-business-ledger-binding',{...p,sqlOutcomeRef:{recordId:bad.payload.recordId,digest:bad.digest}});
+  assert.throws(()=>validateDriverBusinessLedger({...bundle,ledger:changed.bytes,sqlOutcome:bad.bytes},keys,binding,request));
 });
