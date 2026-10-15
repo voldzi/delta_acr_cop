@@ -169,6 +169,16 @@ ERASE-to-ACK binding still need shared integration. No native HTTP actor endpoin
 lost-END fault, production enrollment, real account erasure or restore was
 accepted. All owned fixture containers and private context were removed.
 
+Joint source review found a boundary defect in the first candidate: relative
+signer TTL could exceed the actor's absolute expiry when signing I/O was delayed.
+The subsequent implementation passes the absolute deadline and checks the actual
+signed issuance/expiry before storing the record. Seven pure clock cases cover
+the one-millisecond overshoot, expired/future/noncanonical clocks and the exact
+deadline. A [new fourteen-group actual fixture](../testing/account-safety-root-driver-mutation-intent-deadline-20261015.json)
+passed on the corrected source. The first receipt remains frozen on its original
+source; the rerun is not fourteen additional independent scenarios. Neither run
+claims a delayed-signer fault injection or unknown SQL END acceptance.
+
 The separate [legacy ETA reproduction](../testing/account-safety-driver-eta-legacy-reproduction-20261015.json)
 confirms a real defect in the old two-column batch foreign key: a mismatched ETA
 contributor can survive while the old ledger reports zero batches. This is

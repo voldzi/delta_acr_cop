@@ -27,7 +27,7 @@ async function readFile(path,encoding){
     return encoding?result.stdout.toString(encoding):result.stdout;
   }return readLocalFile(path,encoding);
 }
-const receiptPath = join(cop, 'docs/testing/account-safety-root-driver-mutation-intent-20261015.json');
+const receiptPath = join(cop, 'docs/testing/account-safety-root-driver-mutation-intent-deadline-20261015.json');
 assert.ok(!existsSync(receiptPath), 'Never overwrite previous evidence.');
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const selfPath = fileURLToPath(import.meta.url), selfPin = hash(await readFile(selfPath));
@@ -95,7 +95,7 @@ for (const name of ['root-owner-authority.mjs', 'root-owner-authority-protocol.m
     assert.ok(inputs.has(name));
 for (const [name, pin] of Object.entries({
     'root-cop-actor.mjs':'9a2773dd34adf00c76b5f7d734389ec88119b20d885c870c66fd1247752f75f9',
-    'root-driver-mutation-intent.mjs':'cbe9135104592435541eac32c33d935e95e561ad338ed7ddc0faa3390f05e389',
+    'root-driver-mutation-intent.mjs':'f474bb845bc833c82d954b387f12c917b35f8537e201e58e59f22bafaa5ecdf2',
     'root-driver-retention-producer.mjs':'a9d4744f1c12473ad261dfbb576416cbf3fca33e32d263ff1a5a4019b32666bc',
     'root-driver-retention-delivery.mjs':'473b6005b5940d10fe3b62e10950e0d93573208766d6fb4d15ce20ed43c3d05d',
     'root-driver-runtime.mjs':'843a1755c4b8f821faf320e167e8bb44ff5a1b37244b6dbe524b693f367b400a',

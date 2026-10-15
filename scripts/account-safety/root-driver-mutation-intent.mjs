@@ -16,6 +16,7 @@ import { parseDriverErasureRequest, verifyDriverErasureActor, prepareDriverErasu
   driverErasureHash, validateDriverErasureCoverage } from './driver-account-erasure.js';
 import { validateDriverReadFacts } from './read-admission-facts.mjs';
 import { verifyDriverRevocationActor } from './driver-revocation-actor.js';
+import { mutationIntentDeadline } from './mutation-intent-deadline.mjs';
 
 const PRIVATE='/run/cop-account-safety/private/owner-authority/';
 const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
@@ -45,10 +46,14 @@ async function factsFor(request){
     catch{throw new Error('GUARD_MUTATION_INTENT_END_UNKNOWN');}finally{clearTimeout(timer);}
   }
 }
-function record(kind,facts,keys,lifetimeMs=5000){
+function record(kind,facts,keys,claimExpiryMs){
   requireGuard(canonical(readPublicVerificationKeys())===canonical(keys),'GUARD_KEYRING_CHANGED');
+  // Absolute claim expiry survives key/signature I/O delays. The margin is
+  // availability only; the actual signed timestamps below are decisive.
+  const lifetimeMs=Math.min(5000,claimExpiryMs-Date.now()-100);
   requireGuard(Number.isSafeInteger(lifetimeMs)&&lifetimeMs>0&&lifetimeMs<=5000,'GUARD_MUTATION_INTENT_EXPIRED');
   const r=issueRootRecord(kind,facts,{lifetimeMs,expectedKeyringDigest:sha256(canonical(keys)+'\n')});
+  mutationIntentDeadline(r.payload,claimExpiryMs,Date.now());
   storeRootRecord(PRIVATE+r.payload.recordId+'.json',r.bytes);return Object.freeze({recordId:r.payload.recordId,digest:r.digest});
 }
 function freeze(v){if(v&&typeof v==='object'){for(const child of Object.values(v))freeze(child);Object.freeze(v);}return v;}
@@ -66,7 +71,7 @@ export async function prepareRootDriverMutationIntent(peer,input){
     const body={contractVersion:'sim-driver-guarded-db-v1',contributorHash:r.payload.contributorHash};
     const signed=verifyDriverRevocationActor(scope.actor,scope.actorSignature,p.actorSecret,p.issuer,scope.body.contributorIdDay,Date.now());
     const reference=record('cop-driver-mutation-intent',{...binding,peer,scopeDigest,actionKind:'revoke',identityIntentRef:intentRef,
-      contributorHash:r.payload.contributorHash,consentRevokedAt:r.payload.consentRevokedAt},keys,Math.min(5000,signed.exp*1000-Date.now()));
+      contributorHash:r.payload.contributorHash,consentRevokedAt:r.payload.consentRevokedAt},keys,signed.exp*1000);
     return freeze({actionKind:'revoke',scopeDigest,reference,body});
   }
   const request=parseDriverErasureRequest(scope.body);
@@ -87,7 +92,7 @@ export async function prepareRootDriverMutationIntent(peer,input){
   requireGuard(canonical(readClientRegistration(peer,keys))===canonical(registration),'GUARD_MUTATION_REGISTRATION_CHANGED');
   const reference=record('cop-driver-mutation-intent',{...binding,peer,scopeDigest,actionKind:'erase',businessOperationId:request.operationId,
     operationHash,actorHash:prepared.actorHash,requestHash:prepared.requestHash,contributorCount:prepared.contributors.length,
-    manifestRef,journalRef:manifest.payload.journalRef,originalAcceptedAt},keys,Math.min(5000,signed.exp*1000-Date.now()));
+    manifestRef,journalRef:manifest.payload.journalRef,originalAcceptedAt},keys,signed.exp*1000);
   // The actual held owner policy supplies checkpointHash later. Target SQL
   // booleans/fingerprints above cannot approve/adopt a checkpoint or policy.
   const body={contractVersion:'sim-driver-guarded-db-v1',operationHash,actorHash:prepared.actorHash,
