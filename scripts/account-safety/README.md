@@ -412,3 +412,50 @@ COP consent tables use an explicit synthetic layout and the actual SQL003 reader
 role. No current metadata/enrollment, full erasure, production or restore
 authority is accepted. Unknown-END fault injection belongs to its separate
 executor gate, not these nine groups. All owned containers/context were removed.
+
+## Mutation lifecycle and historical anchor: codec/reader candidate
+
+`driver-mutation-message.mjs` defines the private v2 `begin`, `current` and `end`
+packet shapes. Only `begin` carries a typed withdrawal/erasure HTTP scope. Its
+application UUID correlates a request and cannot select a Root original. Later
+packets carry an opaque Root record reference. Six pure boundary tests reject
+GPS intake, extra authority flags, foreign versions, malformed references and
+noncanonical packets. **No v2 broker or lifecycle is wired by this codec.**
+
+The current independent identity preparation remains the separately tested
+`root-driver-mutation-intent.mjs`. Its original fourteen-group receipt remains
+frozen; the subsequent corrected-deadline fourteen-group receipt is separate.
+Neither supplies current owner authority, a mutation lease or a dispatch permit.
+
+`root-driver-business-original.mjs` is a **read-only candidate**, not a producer
+or live restore authority. It defines two private historical record shapes:
+
+- `business-anchors/<key>.json`: immutable `driver-business-anchor`. It binds
+  guard/epoch/dataset/store, business and actor hashes, request/manifest digests,
+  contributor count, original acceptance time, initial origin/permit reference,
+  checkpoint, PostgreSQL JSONB body digest and canonical base-body digest.
+- `business-ledger-bindings/<key>.json`: immutable
+  `driver-business-ledger-binding`. It additionally binds the anchor, actual
+  committed origin/permit, exact ledger creation time, initial observed ledger
+  digest and signed known-commit/quiescence references.
+
+The opaque filename is the canonical SHA256 of the four store bindings plus
+operation/actor hashes. It deliberately excludes the request hash: changing
+the request must conflict with the existing original. Both directories require
+Root custody; missing directories do not become an empty initialized registry.
+No principal, contributor-day list, raw request or reversible identity is stored.
+These are pseudonymous safety records, with no new automatic deletion policy.
+
+Signatures, exact original permit references and original body/store/kind must
+all match. Historical validation cannot grant a live lease. The exact initial
+ledger time can differ from preflight observation time only through an actual
+committed-origin binding; no clock tolerance is defined. ACK legitimately changes
+the current ledger digest, so the initial binding's digest must not be compared
+as if it were the post-ACK ledger. Current state still requires fresh actual SQL
+and current owner/origin checks. No writer for these records exists in this
+candidate; a synthetic signed record is never production acceptance.
+
+Six pure tests use actual Ed25519 signatures but synthetic trusted keys and
+records. They cover original references, foreign account/request/store, body and
+kind substitution, unknown fields and tampering. They do not exercise the Root
+filesystem, SQL, actual production identity, cleanup, restore or enrollment.
