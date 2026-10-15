@@ -40,6 +40,16 @@ only the final identifiers required to replay its transactional deletion.
 
 ## Startup and restore
 
+Production transport: the independent guard uses verified TLS to
+`haproxy.home.cz:5000` with the already deployed PostgreSQL CA at
+`/etc/vcode-cop-pgbouncer/postgres-ca.crt`. When the business database uses the
+protected Unix transaction pool, readback uses the existing verified
+`COP_STREAM_BUS_DATABASE_URL` session route to the same database. The factory
+does not change the business route or try TLS on the local Unix socket. It
+rejects another database, missing session route, arbitrary endpoint/query
+overrides and TLS downgrade. URI SSL fields are validated before removal so
+they cannot override the explicit actual-CA `rejectUnauthorized=true` config.
+
 Before admitting traffic the controller reads the independent journal, installs
 all local fences in its actual transaction store, and verifies the resulting
 local jobs and configuration by SQL readback. Only then may it advance the

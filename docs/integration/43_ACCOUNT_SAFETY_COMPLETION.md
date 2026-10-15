@@ -16,6 +16,29 @@ See [the scoped receipt](../testing/account-safety-database-v2-joint-20261015.js
 Whole-flow acceptance,
 production composition, restore acceptance and deployment are still outstanding.
 
+### Verified production transport follow-up
+
+The production continuity loader now preserves the actual protected Unix
+business route and reads the same COP store via the already configured verified
+TCP session route. Both remote connections require the existing PostgreSQL CA,
+exact HAProxy endpoint and `verify-full` semantics; arbitrary overrides,
+credential-encoding ambiguity and downgrade are rejected. The real production
+read-only session probe succeeded as `cop_app`: the actual mobility store exists
+and is readable. The public CA PEM SHA256 is
+`7a3f9d9373cd63361148230e6c2804c6fb76dc204e18d5039aad7c7838d7a14a`.
+SIM independently verified the actual HAProxy certificate with that CA and
+hostname. An earlier ad-hoc Node TLS-only probe printed successful authorization
+but exited139 during shutdown; it is not a clean process-acceptance result.
+The later actual SQL client probe exited0. Production remained healthy; no
+new crash-file metadata was found in the inspected `/var/crash` path.
+
+Current targeted transport/parser tests75 pass, typecheck and scoped lint pass,
+full normal COP regression2408 passes/80 optional skips, skeleton passes. These
+are distinct from the earlier9 actual PG journal/joint tests; those were not
+rerun or upgraded into whole-flow acceptance. Full lint still has the historical
+fixture diagnostics described below. Dedicated production guard enrollment and
+the unresolved owner boundaries remain required before activation.
+
 Current checks: typecheck/build/skeleton/schema validation passed; full normal
 regression2393passed/80optional-skipped; actual independent/joint PG gate9passed;
 actual session/profile PG gate4passed. OpenAPI validation passed with24 existing
