@@ -484,6 +484,18 @@ changed. Whole-account deletion remains disabled; this concrete transport
 acceptance does not replace Messaging whole-owner/private-state composition,
 Keycloak authority, independent enrollment or actual restore acceptance.
 
+Messaging's subsequent source revision `8012490be6c9dc8a6ce376015e627e4a2937b482`
+binds the real four-domain Synapse private receipt into aggregate completion
+and retries. Missing installed capability prevents the first fence; a pending202
+prevents mapping removal and completion. It uses the actual`cop_` identity-store
+namespace. A source-only federation bug was also corrected: remote cross-signing
+rows without local user records remain valid, while unknown local users are
+refused. The exact server name is an immutable administrator enrollment input.
+The source passed200 local application tests,22 overlapping focused cases,
+production compile with warnings-as-errors and nine real isolated Synapse1.156/
+PostgreSQL18.6 tests. These checks do not install the provider or complete the
+still missing database-mode aggregate/restore authority.
+
 ### Shared PostgreSQL stream owner, 15 October 2026
 
 The COP stream now has an implemented local database owner when the actual
