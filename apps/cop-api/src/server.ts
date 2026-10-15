@@ -7,6 +7,7 @@ import { isAccountErasureReceiptRead } from "./account-erasure-transport.js";
 import { createCOPSessionsProfilesErasureAdapter } from "./cop-sessions-profiles-erasure.js";
 import { createCOPDevicesErasureAdapter } from "./cop-devices-erasure.js";
 import { createVoiceLiveKitErasureAdapter, LiveKitVoiceErasureProvider } from "./voice-livekit-erasure.js";
+import { MessagingLiveKitErasureProvider } from "./voice-livekit-erasure-relay.js";
 import { createKeycloakAccountErasureAdapter } from "./keycloak-account-erasure.js";
 import { MobilityAccountErasureAdapter } from "./mobility-account-erasure.js";
 import { SharedMobilityService } from "./mobility-invitations.js";
@@ -1387,6 +1388,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       },
       usesAdmissionGuard: guard => accountErasure?.usesAdmissionGuard(guard) === true
     });
+    if (process.env.COP_LIVEKIT_ERASURE_RELAY_URL && process.env.COP_LIVEKIT_ADMIN_URL)
+      throw new Error("Select exactly one explicit LiveKit erasure transport.");
     const localAdapters: AccountErasureAdapter[] = [
       createCOPSessionsProfilesErasureAdapter({ issuer, sessions: webSessionStore, profiles: [userProfileStore, userProfileFallbackStore] }),
       createCOPDevicesErasureAdapter({ issuer, stores: [mobileDeviceStore, mobileDeviceFallbackStore] }),
@@ -1409,7 +1412,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           } : undefined) }, driverMeasurementStore),
       contentErasure.adapter,
       createVoiceLiveKitErasureAdapter({ issuer, stores: [voiceCallStore], now,
-        provider: process.env.COP_LIVEKIT_ADMIN_URL && process.env.COP_LIVEKIT_API_KEY && process.env.COP_LIVEKIT_API_SECRET
+        provider: process.env.COP_LIVEKIT_ERASURE_RELAY_URL
+          ? new MessagingLiveKitErasureProvider({ baseUrl: process.env.COP_LIVEKIT_ERASURE_RELAY_URL, serviceToken: messagingProvider.config.token ?? "", issuer,
+            apiKey: process.env.COP_LIVEKIT_API_KEY ?? "", apiSecret: process.env.COP_LIVEKIT_API_SECRET ?? "" })
+          : process.env.COP_LIVEKIT_ADMIN_URL && process.env.COP_LIVEKIT_API_KEY && process.env.COP_LIVEKIT_API_SECRET
           ? new LiveKitVoiceErasureProvider({ adminUrl: process.env.COP_LIVEKIT_ADMIN_URL,
             apiKey: process.env.COP_LIVEKIT_API_KEY, apiSecret: process.env.COP_LIVEKIT_API_SECRET }) : undefined }),
       ...(mobilityService ? [new MobilityAccountErasureAdapter({ issuer, service: mobilityService, outbox: mobilityOutbox,

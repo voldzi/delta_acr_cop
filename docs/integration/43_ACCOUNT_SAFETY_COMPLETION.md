@@ -436,6 +436,27 @@ flag, change local transaction fences or activate production erasure.
 
 ## Actual external/production gates
 
+### Explicit voice erasure transport — source candidate
+
+`COP_LIVEKIT_ERASURE_RELAY_URL` selects the new `cop-livekit-erasure-v1` adapter
+through the existing HTTPS Messaging API. It is mutually exclusive with the
+direct `COP_LIVEKIT_ADMIN_URL`; neither is an automatic fallback. COP signs a
+new30-second LiveKit SDK grant per request and reuses only its existing
+server-side Messaging token. The signing secret is not sent to Messaging. The
+actual global account/operation context travels from the erasure adapter, never
+from browser parameters. Messaging separately verifies the real persisted
+fence and limits the provider operation to that owner in canonical COP rooms.
+The existing media-grant expiry wait and repeated participant absence checks
+remain in force. Another participant/room cannot be selected by this request.
+
+Nine COP transport tests verify real SDK JWT signatures and expiry/grants,
+independent A/B identity, exact account/operation headers, cancellation, invalid
+responses,401/409/429/503 and absence of a direct fallback. The existing three
+native LiveKit tests and twelve device/voice tests also pass. Messaging's five
+actual HTTP tests pass. This source is not yet the production voice adapter;
+its concrete same-host provider path still needs a live fixed-room readiness
+probe before transport activation. Whole-account deletion remains disabled.
+
 ### Shared PostgreSQL stream owner, 15 October 2026
 
 The COP stream now has an implemented local database owner when the actual

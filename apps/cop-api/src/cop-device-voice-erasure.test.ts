@@ -118,7 +118,7 @@ describe("COP voice / LiveKit erasure boundary", () => {
     expect(await adapter.ready()).toBe(true);
     expect((await adapter.preflight!(actor, context)).ready).toBe(true);
     expect(await adapter.erase(actor, context)).toEqual({ status: "pending", remaining: "cleanup_pending" });
-    expect(provider.removeAndVerify).toHaveBeenCalledWith(owner.subjectId, [`cop-call-${call.callId}`], context.signal);
+    expect(provider.removeAndVerify).toHaveBeenCalledWith(owner.subjectId, [`cop-call-${call.callId}`], context.signal, { issuer: owner.issuer, operationId: context.operationId });
     expect(await store.get(call.callId)).not.toBeNull();
     await expect(store.recordMediaGrant(owner, call.callId, "2026-10-14T00:10:00.000Z", now)).rejects.toMatchObject({ code: "ACCOUNT_REVOKED" });
     await expect(store.create(callInput("actor-b", [owner.subjectId]))).rejects.toMatchObject({ code: "ACCOUNT_REVOKED" });

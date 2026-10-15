@@ -27,6 +27,21 @@ fallback. Existing unbound rows remain unresolved instead of being assigned to
 an account from a payload string. The guard follows configured erasure state
 even while new erasure intake is disabled, including during rollback.
 
+For a same-host LiveKit deployment, an explicit Messaging relay can replace the
+direct HTTPS admin transport. COP signs a new thirty-second standard LiveKit
+grant for each bounded request and sends it over the existing HTTPS service
+API. Messaging accepts only fixed room-list/probe/presence/remove-self actions;
+mutating requests require its real persisted account/operation fence and bound
+scope version. It never receives the long-lived LiveKit signing secret, selects
+another participant, deletes a room or forwards an arbitrary RPC. The internal
+hop is explicitly limited to the container's actual kernel default gateway on
+port7880, additionally pinned to the reviewed comm bridge gateway172.18.0.1.
+A topology change fails closed instead of following another router. This trusts the already existing same-host communication boundary;
+there is no HTTP fallback in COP's direct HTTPS provider and no new public admin
+port. Unknown transport or unavailable scope fails closed. Selecting both
+transports is a configuration error. This relay does not establish whole-account
+readiness or replace private Synapse cleanup and restore acceptance.
+
 ## Independent evidence
 
 Migration `scripts/account-safety/010_database_safety_v2.sql` creates only the

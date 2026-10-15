@@ -7,12 +7,17 @@ import type { VoiceCallStore } from "./voice-call-store.js";
 export interface VoiceErasureProvider {
   ready(signal: AbortSignal): Promise<boolean>;
   /** Remove only the exact actor in explicit COP call rooms and verify absence. */
-  removeAndVerify(subjectId: string, rooms: readonly string[], signal: AbortSignal): Promise<boolean>;
+  removeAndVerify(subjectId: string, rooms: readonly string[], signal: AbortSignal, context?: { issuer: string; operationId: string }): Promise<boolean>;
+}
+export interface LiveKitErasureClient {
+  listRooms(names?: string[]): Promise<Array<{ name: string }>>;
+  listParticipants(room: string): Promise<Array<{ identity: string }>>;
+  removeParticipant(room: string, subjectId: string): Promise<unknown>;
 }
 
 /** Uses existing deployment-owned LiveKit credentials, never browser inputs. */
 export class LiveKitVoiceErasureProvider implements VoiceErasureProvider {
-  private readonly client: Pick<RoomServiceClient, "listRooms" | "listParticipants" | "removeParticipant">;
+  private readonly client: LiveKitErasureClient;
   constructor(options: { adminUrl: string; apiKey: string; apiSecret: string }) {
     const url = new URL(options.adminUrl);
     if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || !options.apiKey || !options.apiSecret) throw new Error("Trusted HTTPS LiveKit admin URL and existing credentials required");
@@ -26,11 +31,16 @@ export class LiveKitVoiceErasureProvider implements VoiceErasureProvider {
     return true;
   }
   async removeAndVerify(subjectId: string, rooms: readonly string[], signal: AbortSignal): Promise<boolean> {
+    return removeAndVerifyLiveKitParticipant(this.client, subjectId, rooms, signal);
+  }
+}
+
+export async function removeAndVerifyLiveKitParticipant(client: LiveKitErasureClient, subjectId: string, rooms: readonly string[], signal: AbortSignal): Promise<boolean> {
     if (rooms.some(name => !/^cop-call-[a-f0-9-]{36}$/u.test(name))) throw new Error("Unproven COP room");
     signal.throwIfAborted();
     // Cover active rooms whose local memory record was lost on an old restart.
     // RoomService listRooms has no pagination; refuse an excessive inventory.
-    const inventory = await this.client.listRooms();
+    const inventory = await client.listRooms();
     signal.throwIfAborted();
     if (inventory.length > 10_000) throw new Error("LiveKit inventory exceeds verified bound");
     if (inventory.some(room => room.name.startsWith("cop-call-") && !/^cop-call-[a-f0-9-]{36}$/u.test(room.name))) throw new Error("Unknown legacy COP room");
@@ -40,30 +50,29 @@ export class LiveKitVoiceErasureProvider implements VoiceErasureProvider {
     const names = [...new Set(discovered)].sort();
     for (const name of names) {
       signal.throwIfAborted();
-      const active = await this.client.listRooms([name]);
+      const active = await client.listRooms([name]);
       signal.throwIfAborted();
       if (!active.some(room => room.name === name)) continue;
-      const participants = await this.client.listParticipants(name);
+      const participants = await client.listParticipants(name);
       signal.throwIfAborted();
       if (participants.some(participant => participant.identity === subjectId)) {
-        await this.client.removeParticipant(name, subjectId);
+        await client.removeParticipant(name, subjectId);
         signal.throwIfAborted();
       }
       // A disappearing room is success only after a fresh explicit-room inventory.
-      const currentRooms = await this.client.listRooms([name]);
+      const currentRooms = await client.listRooms([name]);
       signal.throwIfAborted();
       if (currentRooms.some(room => room.name === name)) {
-        const remaining = await this.client.listParticipants(name);
+        const remaining = await client.listParticipants(name);
         signal.throwIfAborted();
         if (remaining.some(participant => participant.identity === subjectId)) return false;
       }
     }
     signal.throwIfAborted();
-    const finalInventory = await this.client.listRooms();
+    const finalInventory = await client.listRooms();
     signal.throwIfAborted();
     if (finalInventory.length > 10_000 || finalInventory.some(room => room.name.startsWith("cop-call-") && (!/^cop-call-[a-f0-9-]{36}$/u.test(room.name) || !names.includes(room.name)))) return false;
     return true;
-  }
 }
 
 export function createVoiceLiveKitErasureAdapter(options: {
@@ -109,12 +118,12 @@ export function createVoiceLiveKitErasureAdapter(options: {
       }
       context.signal.throwIfAborted();
       if (options.provider) {
-        if (!await options.provider.removeAndVerify(owner.subjectId, rooms, context.signal)) return { status: "pending", remaining: "cleanup_pending" };
+        if (!await options.provider.removeAndVerify(owner.subjectId, rooms, context.signal, { issuer: owner.issuer, operationId: context.operationId })) return { status: "pending", remaining: "cleanup_pending" };
         context.signal.throwIfAborted();
         // Active participant removal does not revoke unused JWTs. Wait for their
         // maximum proven lifetime before final removal and local history cleanup.
         if (notBefore.some(value => Date.parse(value) > (options.now?.() ?? new Date()).getTime())) return { status: "pending", remaining: "cleanup_pending" };
-        if (!await options.provider.removeAndVerify(owner.subjectId, rooms, context.signal)) return { status: "pending", remaining: "cleanup_pending" };
+        if (!await options.provider.removeAndVerify(owner.subjectId, rooms, context.signal, { issuer: owner.issuer, operationId: context.operationId })) return { status: "pending", remaining: "cleanup_pending" };
       } else if (!options.mediaNeverEnabled) return { status: "pending", remaining: "cleanup_pending" };
       let complete = true;
       for (const store of options.stores) {
