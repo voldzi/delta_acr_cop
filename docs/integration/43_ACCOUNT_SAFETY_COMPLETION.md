@@ -35,6 +35,29 @@ actual restore acceptance or real account deletion is claimed. SIM must not
 remove live direct privileges or deploy schema003 before the complete coordinated
 writer/cleanup transition. Existing accepted production remains active.
 
+The follow-up implements the native SEQPACKET Node-API carrier, fixed client and
+Root broker. Separate gates passed **6/6 actual local Linux native** and
+**4/4 fixed client/signature** cases; Root file/registration units now pass
+**11/11**. The native gate uses two local processes; the client gate deliberately
+supplies synthetic SQL terminal evidence, not production authorization. Body
+drift is additionally rejected for an existing committed origin. Exact current
+pins and limits are in [the channel receipt](../testing/account-safety-root-channel-20261015.json).
+The original executor receipt remains frozen at its original source.
+
+SIM subsequently published the actual opt-in store/lifecycle/route implementation
+at `0f56fc0a852a5f30fddb133d03fe96fcfaaf5a17`. Its owner reports571 application
+tests passed, six opt-in PostgreSQL skips, plus typecheck/build/skeleton/OpenAPI.
+These are not added to COP counts or represented as a COP rerun. Read admission,
+authenticated per-request context, actual Root enrollment/producer/replay and
+COP's remaining owner bindings still require implementation and acceptance.
+
+A bounded production host probe on15October verified kernel7.0.0-38, available
+Node/compiler and SSH UID1000. `sudo -n true` requires interactive authentication.
+This is an installation-access limitation, not the sole completion blocker:
+unfinished authority/integration must not be presented as ready merely because
+an operator could install files. No roles, keys or service were created and no
+production helper/configuration changed by the channel work.
+
 ## Authority and scope
 
 The human requested completion with SIM and deployment after verification on

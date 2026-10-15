@@ -94,10 +94,10 @@ not a network packet-loss test. Admission in this SQL harness is explicitly
 synthetic; it does not establish actual deployed Root authority.
 
 Node24.21 codec/signature tests: **7/7**. Disposable local Linux Node24.20
-container, no network/host mounts: **10/10** for real Root file custody,
+container, no network/host mounts: **11/11** for real Root file custody,
 durable records and actual Ed25519 outcomes. Root verifier unit cases use
 explicitly synthetic metadata rows and signed test evidence. Actual production
-metadata/enrollment/anchor, Linux native delivery and restore are unverified.
+metadata/enrollment/anchor, target installation and restore are unverified.
 These counts are separate and are not added to earlier COP/SIM suites.
 
 Run codec tests with `node --test scripts/account-safety/root-records.test.mjs`.
@@ -107,12 +107,58 @@ checkout, SQL hashes, PostgreSQL18.3 binary and owned Unix-only fixture are
 fixed. The Root-files test must run only in its dedicated disposable Linux
 container with three owned tmpfs mounts; it refuses an ordinary host run.
 
+## Implemented private process channel
+
+`root-seqpacket.c` implements an in-process Node-API addon: AF_UNIX
+SOCK_SEQPACKET at the fixed `/run/cop-account-safety/driver.sock`, one bounded
+packet per message, without a length prefix or STREAM fallback. Both receivers
+require kernel SCM_CREDENTIALS and SCM_PIDFD on every packet. pidfs device/inode
+identity is used instead of comparing PID numbers across namespaces. Unsupported
+kernels fail closed. All descriptors, including unexpected SCM_RIGHTS and
+truncated/oversized inputs, are closed on rejected paths. Native handle objects
+carry a Node-API type tag; arbitrary JavaScript objects cannot become handles.
+
+The Root server publishes its own actual pidfs identity into a fixed Root-owned
+binary bootstrap. The client verifies a fixed Root greeting against that
+identity before sending its transient request, and verifies the reply peer
+again. This bootstrap is not an image/source attestation. The Root installation
+must independently protect the code, public key/bootstrap and exact bind mounts;
+container UID0 ownership by itself is not independent host Root custody.
+
+`driver-root-channel.mjs` implements a Root-only broker and fixed
+`createProductionDriverRootPort()` client with `execute({operation,body})` and
+`probe(operation)`. Module/keyring/socket paths cannot be caller-selected.
+The broker requires a current signed `driver-client-registration`, exact actual
+peer/boot/runtime/dataset binding and original permit; it then calls the real
+Root SQL factory. The client checks correlation plus two actual Ed25519 result
+records, including original kind/store/body/schema/permit, state and scalar.
+A wire error becomes pending, never a positive result or a fresh destructive
+operation. The broker does not issue its own accepted peer registrations,
+permits or evidence. The operation UUID is Root-delivered internal context,
+never an ordinary HTTP parameter. Probe can seal and cannot be used by a GET.
+
+The final standalone Linux Node24.20/kernel7.0.14 native gate passed **6/6**:
+actual two-process traffic, actual pidfs comparison, pre-body peer rejection,
+wrong handle/size rejection, repeated descriptor cleanup, SCM_RIGHTS and wire
+truncation. The fixed client/signature gate passed **4/4** over actual native
+traffic with deliberately synthetic SQL terminal evidence. These are local
+Linux gates, not target-host/cross-container namespace/production acceptance.
+The addon was built for glibc in the test fixture; Alpine consumers need their
+own matching musl/architecture build. No native binary is committed.
+
+The previous dispatch's original PostgreSQL body digest is checked even for an
+execute that only resolves prior work. A changed body cannot borrow an older
+successful receipt. An explicit probe carries no body. Use one client instance
+per process; its bounded in-memory input-digest map stores no body.
+
 ## Remaining implementation and deployment
 
 Do not deploy migration003 alone: the live revoke/erase/ack and retention paths
 must all use the guarded executor before direct DELETE grants are removed.
-The application delivery channel, accepted Root producer of permits/current
-frontiers/owner inventory, installation/enrollment, complete owner-wide drain,
+The transport and executor above are implemented source. Authenticated
+per-request operation-context delivery and scoped read-admission ports, accepted
+Root producer of permits/current frontiers/owner inventory, installation and
+enrollment, complete owner-wide drain across runtime upgrades,
 Root journal before the COP fence, quarantine/replay before restore exposure,
 and production entry point bindings are still missing. The empty Root metadata
 database does not implement them. These are implementation/deployment gates,

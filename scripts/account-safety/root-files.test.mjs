@@ -6,6 +6,7 @@ import { canonical, readRootFile, requireRootDirectory, requireRootCodeTree, ver
 import { RootDispatchFiles } from './driver-origin-producer.mjs';
 import { publishRootOutcome } from './root-outcome-records.mjs';
 import { RootDriverAuthority } from './root-driver-runtime.mjs';
+import { readClientRegistration } from './driver-root-channel.mjs';
 
 // Must be run in the dedicated disposable Linux container. No host bind mounts.
 assert.equal(process.env.COP_OWNED_ROOT_FIXTURE, '1');
@@ -172,5 +173,21 @@ test('Root permit cannot be replaced or retargeted between admission and SQL', a
   await assert.rejects(f.authority.validate({ ...f.operation, storeIncarnation: randomUUID() }, 'work'), /GUARD_PERMIT_BINDING/);
   f.save(f.permitPath, { ...f.permit, frontierDigest: 'd'.repeat(64) });
   await assert.rejects(f.authority.validate(f.operation, 'probe'), /GUARD_PERMIT_CHANGED/); assert.equal(f.calls(), 0);
+});
+test('Root client registration binds the actual peer identity and machine boot', () => {
+  const directory = '/var/lib/cop-account-safety/clients'; mkdirSync(directory, { mode: 0o700 });
+  const peer = { device: '123', inode: '456', uid: 1000, gid: 1000 }, now = Date.now();
+  const payload = { contractVersion: 'cop-root-record-v1', kind: 'driver-client-registration', recordId: randomUUID(),
+    issuedAt: new Date(now - 1000).toISOString(), expiresAt: new Date(now + 10_000).toISOString(), peer,
+    runtimeBindingId: randomUUID(), datasetBindingId: randomUUID(), guardStoreId: randomUUID(), continuityEpoch: randomUUID(),
+    imageId: 'sha256:' + 'a'.repeat(64), sourceRevision: 'b'.repeat(40),
+    machineBootId: readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim() };
+  const path = directory + '/123-456.json';
+  const save = p => writeFileSync(path, canonical({ keyId: fixtureKeys.keys[0].kid, payload: p,
+    signature: sign(null, Buffer.from(canonical(p)), fixturePair.privateKey).toString('base64url') }) + '\n', { mode: 0o600 });
+  save(payload); assert.equal(readClientRegistration(peer).runtimeBindingId, payload.runtimeBindingId);
+  assert.throws(() => readClientRegistration({ ...peer, uid: 0 }), /GUARD_CLIENT_REGISTRATION/);
+  save({ ...payload, machineBootId: randomUUID() }); assert.throws(() => readClientRegistration(peer), /GUARD_CLIENT_REGISTRATION/);
+  save({ ...payload, expiresAt: new Date(now - 1).toISOString() }); assert.throws(() => readClientRegistration(peer), /GUARD_RECORD_EXPIRED/);
 });
 after(() => rmSync(directory, { recursive: true, force: true }));

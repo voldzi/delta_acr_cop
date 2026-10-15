@@ -54,9 +54,9 @@ function sharedContext(p, op, permit) {
  * signer/enroller must produce these records from accepted owner evidence;
  * this verifier cannot create or silently refresh them. */
 export class RootDriverAuthority {
-  constructor(metadata, operationId) {
+  constructor(metadata, operationId, registration) {
     requireGuard(process.getuid?.() === 0 && process.geteuid?.() === 0 && uuid(operationId), 'ROOT_EXECUTION_REQUIRED');
-    this.metadata = metadata; this.operationId = operationId;
+    this.metadata = metadata; this.operationId = operationId; this.registration = registration;
     this.keys = canonicalJson(readRootFile(join(ETC, 'public', 'verification-keys.json')));
     const record = verifyRootRecord(readRootFile(join(STATE, 'operations', operationId + '.json'), { secret: true }),
       this.keys, 'driver-origin-permit', { historical: true });
@@ -90,6 +90,9 @@ export class RootDriverAuthority {
     const response = await this.metadata.query(SQL, [this.permit.datasetBindingId, this.permit.runtimeBindingId, this.permit.sourceProofId]);
     requireGuard(response.rows.length === 1, 'GUARD_REGISTRY_UNAVAILABLE');
     const r = response.rows[0];
+    if (this.registration) requireGuard(r.runtime.image_id === this.registration.imageId &&
+      r.runtime.source_revision === this.registration.sourceRevision && Date.parse(this.registration.expiresAt) > Date.now() &&
+      this.registration.machineBootId === anchor.payload.machineBootId, 'GUARD_CLIENT_BINDING');
     requireGuard(r.identity.application_id === 'cop' && r.identity.guard_contract_version === 'cop-account-safety-runtime-v1' &&
       r.identity.stream_scope_id === 'cop-global-fences-v1' && r.policy.policy_id === 'cop-jizda-only-sim-preserved-v1' &&
       r.dataset.projection_contract_id === 'cop-sim-driver-projection-v1' &&
@@ -122,9 +125,10 @@ export class RootDriverAuthority {
   }
 }
 
-export async function main(args = process.argv.slice(2)) {
+export async function executeRootDriver(mode, operationId, body, registration) {
   requireGuard(process.getuid?.() === 0 && process.geteuid?.() === 0, 'ROOT_EXECUTION_REQUIRED');
-  requireGuard(args.length === 3 && ['--run', '--probe'].includes(args[0]) && args[1] === '--operation' && uuid(args[2]), 'GUARD_USAGE');
+  requireGuard(['execute', 'probe'].includes(mode) && uuid(operationId) &&
+    (mode === 'probe' ? body === null : typeof body === 'string' && Buffer.byteLength(body) <= 16_384), 'GUARD_USAGE');
   // The dependency tree is installed read-only by the same accepted Root
   // installation. No app CWD, NODE_PATH or application-selected module path.
   requireRootCodeTree('/opt/cop-account-safety');
@@ -134,9 +138,15 @@ export async function main(args = process.argv.slice(2)) {
   const clients = [new Client(connectionProfile('registry-probe', 'cop_account_safety_guard')),
     new Client(connectionProfile('driver-control', 'sim_driver_measurements', 'sim_driver_guard_control')),
     new Client(connectionProfile('driver-executor', 'sim_driver_measurements', 'sim_driver_guard_exec'))];
+  // Idle errors must not print raw provider diagnostics through EventEmitter.
+  // Actual query failures still reject and keep their original unknown state.
+  for (const client of clients) client.on('error', () => {});
   try {
     for (const client of clients) await client.connect();
-    const authority = new RootDriverAuthority(clients[0], args[2]);
+    const authority = new RootDriverAuthority(clients[0], operationId, registration);
+    if (registration) requireGuard(registration.runtimeBindingId === authority.permit.runtimeBindingId &&
+      registration.datasetBindingId === authority.permit.datasetBindingId && registration.guardStoreId === authority.permit.guardStoreId &&
+      registration.continuityEpoch === authority.permit.continuityEpoch, 'GUARD_CLIENT_BINDING');
     const producer = new DriverOriginProducer({ control: clients[1], executor: clients[2],
       dispatch: new RootDispatchFiles(join(STATE, 'dispatches')), validateCurrent: async (operation, mode, transientBody) => {
         await authority.validate(operation, mode);
@@ -144,19 +154,25 @@ export async function main(args = process.argv.slice(2)) {
           await validateRootPublication(clients[1], transientBody, operation, authority.keys, authority.permit);
       } });
     let result;
-    if (args[0] === '--probe') result = await producer.probe(authority.operation);
-    else {
-      const chunks = []; let size = 0;
-      for await (const chunk of process.stdin) { size += chunk.length; requireGuard(size <= 16_384, 'GUARD_PAYLOAD_SIZE'); chunks.push(chunk); }
-      const body = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
-      result = await producer.runOnce(authority.operation, body);
-    }
+    if (mode === 'probe') result = await producer.probe(authority.operation);
+    else result = await producer.runOnce(authority.operation, body);
     if (result.state !== 'pending') {
       await authority.validate(authority.operation, 'probe');
       result = publishRootOutcome(authority.operation, result, authority.permitRecord);
     }
-    process.stdout.write(canonical(result) + '\n');
+    return result;
   } finally { for (const client of clients) try { await client.end(); } catch { /* Unknown stays unknown. */ } }
+}
+export async function main(args = process.argv.slice(2)) {
+  requireGuard(process.getuid?.() === 0 && process.geteuid?.() === 0, 'ROOT_EXECUTION_REQUIRED');
+  requireGuard(args.length === 3 && ['--run', '--probe'].includes(args[0]) && args[1] === '--operation' && uuid(args[2]), 'GUARD_USAGE');
+  let body = null;
+  if (args[0] === '--run') {
+    const chunks = []; let size = 0;
+    for await (const chunk of process.stdin) { size += chunk.length; requireGuard(size <= 16_384, 'GUARD_PAYLOAD_SIZE'); chunks.push(chunk); }
+    body = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
+  }
+  process.stdout.write(canonical(await executeRootDriver(args[0] === '--run' ? 'execute' : 'probe', args[2], body)) + '\n');
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch(() => { process.stderr.write('COP_ROOT_DRIVER_UNAVAILABLE\n'); process.exitCode = 1; });

@@ -3,6 +3,15 @@
 Status: source-only candidate reviewed; not installed or authority-bound in the
 production native deployment helper; activation blocker.
 
+15October source update: the real original SQL executor, signed outcome
+publisher and private Node-API/SEQPACKET broker/client are now implemented in
+[scripts/account-safety](../../scripts/account-safety/README.md), with bounded
+actual local Linux and PostgreSQL tests. Older descriptions below of an absent
+producer/transport record their earlier review boundary. Actual Root enrollment,
+current-frontier and permit/inventory producers, read admission, per-request
+delivery, full owner drain/replay and target installation remain unaccepted.
+This update neither installs a service nor approves Root authority.
+
 On 2026-10-14, the human explicitly approved and the infrastructure owner
 created only the empty `cop_account_safety_guard` root metadata database on
 the existing PostgreSQL/Patroni primary, using migration SHA-256

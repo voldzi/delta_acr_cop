@@ -96,17 +96,18 @@ export class DriverOriginProducer {
     requireGuard(typeof transientBody === 'string' && Buffer.byteLength(transientBody) <= 16_384, 'GUARD_PAYLOAD_SIZE');
     if (this.#running) return pending('origin-busy');
     this.#running = true;
-    let admitted = false;
+    let admitted = false, bodyVerified = false;
     try {
       // A previous attempted dispatch can only resolve this same origin. The
       // fresh permit check applies only to new work; historical resolution is
       // still admitted through the current protected Root binding.
       await this.#validateCurrent(op, 'probe');
       admitted = true;
+      const digest = await value(this.#control, fixed.digest, [transientBody]);
+      if (digest !== op.bodyDigest) return pending('authority-unavailable');
+      bodyVerified = true;
       if (await this.#dispatch.exists(op)) return await this.#resolve(op);
       await this.#validateCurrent(op, 'work', transientBody);
-      const digest = await value(this.#control, fixed.digest, [transientBody]);
-      requireGuard(digest === op.bodyDigest, 'GUARD_PAYLOAD_DIGEST');
       if (!await this.#dispatch.claim(op)) return await this.#resolve(op);
       await this.#control.query('BEGIN');
       const registered = await value(this.#control, fixed.register,
@@ -136,7 +137,7 @@ export class DriverOriginProducer {
       await this.#executor.query('COMMIT');
       return await this.#resolve(op);
     } catch {
-      if (!admitted) return pending('authority-unavailable');
+      if (!admitted || !bodyVerified) return pending('authority-unavailable');
       await rollback(this.#executor); await rollback(this.#control);
       // No new UUID, refreshed cutoff, replacement permit or second DELETE.
       return await this.#resolve(op);

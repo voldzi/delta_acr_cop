@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "scope": "root_original_executor_native_channel_and_fixed_client_source_only",
+  "checkedAtUtc": "2026-10-15T06:12:54.670809+00:00",
+  "copPredecessor": "1c296cc",
+  "simSqlSource": "6df9d35301e6e92e54cc1e8af46354b0fefbecb7",
+  "simApplicationSource": "0f56fc0a852a5f30fddb133d03fe96fcfaaf5a17",
+  "sourcePins": {
+    "scripts/account-safety/driver-origin-producer.mjs": "5eb25d917d5fd9de7a2658e9ac54a355fd9a9539f3aee988f62b066bcb5fa59c",
+    "scripts/account-safety/driver-root-channel.d.mts": "ba1e5778fb38c8f551ddf655c1a12e98c3753ea26e880886de8c0716b5e4504b",
+    "scripts/account-safety/driver-root-channel.mjs": "34e9d02af2250531b3638afac0e9d5c02e93d85284585ec5ce2f47639e591054",
+    "scripts/account-safety/driver-root-channel.test.mjs": "f312c68ae20a7301c644b17e40bfc069a959325874a67088cd5ca23fe98b8870",
+    "scripts/account-safety/root-driver-runtime.mjs": "8c87aa0646d685ffdb951e63d0c29da4c5608c8cbf71f1616e4e845089ad18de",
+    "scripts/account-safety/root-files.test.mjs": "0ddc40224095d1dd967c893b75d3e40dfaac02fb9b837e49893166cc9e79586c",
+    "scripts/account-safety/root-outcome-records.mjs": "bb9423b25ec2b8a5bc9324d3f3eb31c17fbdc06bc6a6b6d53897c3c40ebafc74",
+    "scripts/account-safety/root-publication.mjs": "aec35c9e46664ce9c3f879b8f6a0f806eb47e36ca68b09f812264a38aca6bc5c",
+    "scripts/account-safety/root-records.mjs": "ad203b1a1858bea7f8f799a6147720d1d0d6df790bfc1d4c866a12c45d6bb7fd",
+    "scripts/account-safety/root-records.test.mjs": "5a75e1b4bb2504820a730db60fb49781b24d588524459da64efbd4182747a2ae",
+    "scripts/account-safety/root-seqpacket-child.mjs": "aa1484163bb2ecede5b9e3aa59af0c275d495f571770a9cfecd4fdcc5f372dff",
+    "scripts/account-safety/root-seqpacket.c": "0b485822cdc0d85640760a72c4b9e408d519634778e97361a3efacf28871144c",
+    "scripts/account-safety/root-seqpacket.test.mjs": "6d822fd61f5ba4f056f2c06b2a5f23fe794671595c35a24ea609aa6de9cdddd3",
+    "scripts/account-safety/test-driver-origin-postgres.mjs": "841870d4beefb934545bd19ad764e4417f4b2d106b3f0c28a6632429b7aaa361"
+  },
+  "gates": {
+    "postgres": {
+      "contractVersion": "cop-root-producer-sql-test-v1",
+      "passed": 8,
+      "cases": [
+        {
+          "case": "producer executes actual original transaction and commits marker",
+          "passed": true
+        },
+        {
+          "case": "same dispatch is probe-only and cannot delete later expired rows",
+          "passed": true
+        },
+        {
+          "case": "lost executor commit acknowledgement resolves existing commit without repeat",
+          "passed": true
+        },
+        {
+          "case": "lost registration commit acknowledgement seals original without effects",
+          "passed": true
+        },
+        {
+          "case": "inner seal result with lost outer acknowledgement remains pending",
+          "passed": true
+        },
+        {
+          "case": "payload mismatch cannot execute or create a target origin",
+          "passed": true
+        },
+        {
+          "case": "revoke persists exact scalar before COMMIT and recovers it without another DELETE",
+          "passed": true
+        },
+        {
+          "case": "failed durable scalar storage rolls back original revoke instead of committing effects",
+          "passed": true
+        }
+      ],
+      "inputs": {
+        "deploy/driver-measurements/schema.sql": "6dd60a3acf28d63575198c8526c368df19bbd543f4063d4985fb55f308da02d0",
+        "deploy/driver-measurements/002_account_erasure.sql": "f13db2106a1fe1a02d0d1a26afa8ad7d7c045172ba4419749719ed0f166e16ad",
+        "deploy/driver-measurements/003_guarded_operations.sql": "e3513a983a3b6d1bd52d46851c734dd1c3b208e2e2f6430a6f9eddd38b10d3b5"
+      },
+      "codePins": {
+        "driver-origin-producer.mjs": "5eb25d917d5fd9de7a2658e9ac54a355fd9a9539f3aee988f62b066bcb5fa59c",
+        "root-records.mjs": "ad203b1a1858bea7f8f799a6147720d1d0d6df790bfc1d4c866a12c45d6bb7fd",
+        "root-driver-runtime.mjs": "8c87aa0646d685ffdb951e63d0c29da4c5608c8cbf71f1616e4e845089ad18de",
+        "root-publication.mjs": "aec35c9e46664ce9c3f879b8f6a0f806eb47e36ca68b09f812264a38aca6bc5c",
+        "root-outcome-records.mjs": "bb9423b25ec2b8a5bc9324d3f3eb31c17fbdc06bc6a6b6d53897c3c40ebafc74",
+        "test-driver-origin-postgres.mjs": "841870d4beefb934545bd19ad764e4417f4b2d106b3f0c28a6632429b7aaa361"
+      },
+      "postgresVersion": "18.3",
+      "ownedClusterRemoved": true,
+      "tcp": false,
+      "sourceUnchangedDuringRun": true,
+      "actualRootAuthority": false,
+      "actualNativeDelivery": false,
+      "actualRestore": false,
+      "productionChanged": false,
+      "ackQualification": "Controller deliberately discarded ACK; not network packet loss."
+    },
+    "codec": {
+      "passed": 7,
+      "failed": 0,
+      "node": "24.21.0"
+    },
+    "rootFilesAndRegistration": {
+      "passed": 11,
+      "failed": 0,
+      "node": "24.20.0",
+      "actualRootCustodyAndEd25519": true,
+      "metadataRows": "synthetic_unit_fixture",
+      "network": false,
+      "hostMounts": false
+    },
+    "native": {
+      "passed": 6,
+      "failed": 0,
+      "kernel": "7.0.14-linuxkit",
+      "node": "24.20.0",
+      "compiler": "gcc 13.3.0",
+      "compilerFlags": "-std=c11 -shared -fPIC -O2 -Wall -Wextra -Werror",
+      "binarySha256": "5deb7f88849e975cf8f4385519996ca2351a08a2eadc08f1fb441d00ba67c700",
+      "libc": "glibc",
+      "architecture": "amd64",
+      "actualTwoProcesses": true,
+      "actualScmCredentialsAndPidfd": true,
+      "actualDescriptorCleanup": true,
+      "crossContainerNamespaces": false,
+      "targetHostTest": false
+    },
+    "fixedClient": {
+      "passed": 4,
+      "failed": 0,
+      "actualFixedNativeModuleAndSocket": true,
+      "actualEd25519Results": true,
+      "sqlTerminalEvidence": "synthetic_fixture",
+      "actualRootAuthority": false
+    }
+  },
+  "logSha256": {
+    "producer-pg": "e9159f98433357dd79ed6c4c638ffc728304d5b78d914d30b9f3658a91f78f7c",
+    "records": "c0b6785a875aa64e7b907b6cce645f229679c10c9d179dd67dd10167db29442b",
+    "files": "051334f217e71adada74071fb91e798c40eefa66351c8c9eec3678f47dbb19d4",
+    "native-final": "041faa8131f61bd216791da276e91b04dd15b4b242eddc6cd9473f95698bf20f"
+  },
+  "initialFailedCases": [
+    "Native forged null handle produced generic NAPI TypeError; fixed type guard before tagging API.",
+    "Client fixture omitted result contractVersion and tried mutating frozen output; fixed fixture, source client correctly rejected it."
+  ],
+  "simTestReport": {
+    "reportedBy": "SIM owner",
+    "passed": 571,
+    "skipped": 6,
+    "rerunByCop": false,
+    "addedToCopCounts": false
+  },
+  "remaining": [
+    "scoped_read_admission_port",
+    "authenticated_per_request_root_context_publisher",
+    "root_permit_frontier_and_owner_inventory_producers",
+    "full_owner_drain_across_generations",
+    "root_journal_before_cop_fence",
+    "restore_quarantine_and_replay",
+    "cop_remaining_owner_entrypoint_bindings",
+    "native_build_for_actual_consumers",
+    "root_installation_and_enrollment",
+    "joint_production_acceptance"
+  ],
+  "productionProbe": {
+    "sshUid": 1000,
+    "kernel": "7.0.0-38-generic",
+    "nodeAvailable": true,
+    "compilerAvailable": true,
+    "sudoNonInteractive": false,
+    "notSoleBlocker": true
+  },
+  "actualRootAuthorityEnrolled": false,
+  "actualOwnerInventoryAccepted": false,
+  "actualRestore": false,
+  "productionChanged": false,
+  "accountErasureActivated": false,
+  "realAccountDeleted": false,
+  "checks": {
+    "scopedEslint": "PASS",
+    "skeleton": "PASS",
+    "gitDiffCheck": "PASS"
+  },
+  "cleanup": {
+    "ownedCompilerContainerRemoved": true,
+    "ownedStoppedFailedPostgresFixturesRemoved": 2,
+    "globalPrune": false,
+    "volumesRemoved": false
+  }
+}

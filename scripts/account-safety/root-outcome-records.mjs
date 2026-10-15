@@ -26,7 +26,7 @@ export function publishRootOutcome(operation, resolution, permitRecord) {
       expiresAt: new Date(now.getTime() + 300_000).toISOString(), originId: operation.operationId,
       originalPermitId: operation.permitId, originalPermitDigest: permitRecord.digest,
       storeIncarnation: operation.storeIncarnation, bodyDigest: operation.bodyDigest, schemaDigest: operation.schemaDigest,
-      originState: resolution.state, ...(revokeEffect ? { revokeEffect } : {}) };
+      originKind: operation.kind, originState: resolution.state, ...(revokeEffect ? { revokeEffect } : {}) };
     const bytes = Buffer.from(canonical({ keyId: matches[0].kid, payload,
       signature: sign(null, Buffer.from(canonical(payload)), key).toString('base64url') }) + '\n');
     const fd = openSync(join(directory, recordId + '.json'), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);

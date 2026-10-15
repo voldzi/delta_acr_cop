@@ -36,8 +36,7 @@ export function canonicalJson(bytes, max = 65_536) {
   requireGuard(text === canonical(value) + '\n', 'GUARD_RECORD_CANONICAL');
   return value;
 }
-export function requireRootDirectory(path, { secret = false } = {}) {
-  requireGuard(process.getuid?.() === 0 && process.geteuid?.() === 0, 'ROOT_EXECUTION_REQUIRED');
+function checkRootDirectory(path, { secret = false } = {}) {
   requireGuard(isAbsolute(path) && resolve(path) === path, 'GUARD_PATH');
   for (let parent = path;; parent = dirname(parent)) {
     const item = lstatSync(parent);
@@ -46,10 +45,14 @@ export function requireRootDirectory(path, { secret = false } = {}) {
     if (parent === '/') break;
   }
 }
+export function requireRootDirectory(path, options) {
+  requireGuard(process.getuid?.() === 0 && process.geteuid?.() === 0, 'ROOT_EXECUTION_REQUIRED');
+  checkRootDirectory(path, options);
+}
 /** The fixed installation uses ordinary files, never application-owned pnpm
  * links. Check the complete dependency tree before importing privileged code. */
 export function requireRootCodeTree(path, maxEntries = 20_000) {
-  requireRootDirectory(path);
+  checkRootDirectory(path);
   let count = 0;
   const visit = directory => {
     for (const name of readdirSync(directory)) {
@@ -62,9 +65,9 @@ export function requireRootCodeTree(path, maxEntries = 20_000) {
   };
   visit(path);
 }
-export function readRootFile(path, { secret = false, max = 65_536 } = {}) {
+function readProtectedFile(path, { secret = false, max = 65_536 } = {}) {
   requireGuard(isAbsolute(path) && resolve(path) === path, 'GUARD_PATH');
-  requireRootDirectory(dirname(path));
+  checkRootDirectory(dirname(path));
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = fstatSync(fd, { bigint: true });
@@ -76,6 +79,15 @@ export function readRootFile(path, { secret = false, max = 65_536 } = {}) {
     requireGuard(BigInt(count) === before.size && ['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs'].every(k => before[k] === after[k]), 'GUARD_FILE_CHANGED');
     return bytes.subarray(0, count);
   } finally { closeSync(fd); }
+}
+export function readRootFile(path, options) {
+  requireGuard(process.getuid?.() === 0 && process.geteuid?.() === 0, 'ROOT_EXECUTION_REQUIRED');
+  return readProtectedFile(path, options);
+}
+/** Public verification material only, at a fixed Root-owned path. This does
+ * not grant an unprivileged consumer access to private records or a signer. */
+export function readPublicVerificationKeys() {
+  return canonicalJson(readProtectedFile('/etc/cop-account-safety/public/verification-keys.json'));
 }
 export function verifyRootRecord(bytes, keys, expectedKind, { now = Date.now(), historical = false } = {}) {
   const record = canonicalJson(bytes);

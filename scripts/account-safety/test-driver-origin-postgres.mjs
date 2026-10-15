@@ -85,6 +85,8 @@ try {
   await check('same dispatch is probe-only and cannot delete later expired rows', async () => {
     const op = operation(), p = producer(); assert.equal((await p.runOnce(op, body)).state, 'origin-commit-known');
     await seed(); assert.equal((await p.runOnce(op, body)).state, 'origin-commit-known'); assert.equal(await count(), 1);
+    assert.equal((await p.runOnce(op, '{"wrong":true}')).state, 'pending'); assert.equal(await count(), 1);
+    assert.equal((await p.probe(op)).state, 'origin-commit-known');
   });
   await check('lost executor commit acknowledgement resolves existing commit without repeat', async () => {
     const op = operation(); let swallowed = false, calls = 0;
