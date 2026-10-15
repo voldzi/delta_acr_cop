@@ -1,0 +1,112 @@
+/** Actual native transport; SYNTHETIC signed Root replies. No owner/SQL proof. */
+import assert from 'node:assert/strict';
+import {test,after} from 'node:test';
+import {generateKeyPairSync,randomUUID,sign} from 'node:crypto';
+import {createRequire} from 'node:module';
+import {existsSync,mkdirSync,writeFileSync,unlinkSync} from 'node:fs';
+import {canonical,canonicalJson,sha256} from './root-records.mjs';
+import {decodeDriverMutationMessage} from './driver-mutation-message.mjs';
+import {createProductionDriverMutationRequestScope,exchangeDriverMutationInvocation} from './driver-mutation-scope-client.mjs';
+assert.equal(process.env.COP_OWNED_NATIVE_FIXTURE,'1');assert.equal(process.platform,'linux');assert.equal(process.getuid(),0);
+assert.ok(existsSync('/.dockerenv'));assert.equal(process.cwd(),'/tmp');
+const require=createRequire(import.meta.url),native=require('/opt/cop-account-safety/native/root-seqpacket.node');
+const etc='/etc/cop-account-safety/public';mkdirSync(etc,{recursive:true,mode:0o755});mkdirSync('/run/cop-account-safety/public',{recursive:true,mode:0o755});
+assert.equal(existsSync(etc+'/verification-keys.json'),false);
+const pair=generateKeyPairSync('ed25519'),keys={contractVersion:'cop-root-verification-keys-v1',keys:[{...pair.publicKey.export({format:'jwk'}),kid:'synthetic-mutation-client'}]};
+writeFileSync(etc+'/verification-keys.json',canonical(keys)+'\n',{mode:0o644,flag:'wx'});
+const listener=native.listen(),port=createProductionDriverMutationRequestScope(),scopes=new Map();let received=0;
+const ref=()=>({recordId:randomUUID(),digest:'a'.repeat(64)});
+const scope=id=>({method:'DELETE',path:'/api/v1/internal/driver-measurements/v1/contributions',authorization:'Bearer '+'synthetic-token'.repeat(4),
+  actor:'A'.repeat(64),actorSignature:'a'.repeat(64),body:{contractVersion:'sim-driver-measurements-v1',contributorIdDay:id.repeat(43)}});
+const deferred=()=>{let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};};
+const delay=()=>new Promise(r=>setTimeout(r,30));
+function signed(kind,facts){const now=Date.now(),payload={contractVersion:'cop-root-record-v1',kind,recordId:randomUUID(),issuedAt:new Date(now).toISOString(),expiresAt:new Date(now+4000).toISOString(),...facts};
+  return Buffer.from(canonical({keyId:keys.keys[0].kid,payload,signature:sign(null,Buffer.from(canonical(payload)),pair.privateKey).toString('base64url')})+'\n');}
+async function receive(){const item=await native.receive(listener);received++;return {...item,request:canonicalJson(item.packet)};}
+async function reply(item,mutate=()=>{}){
+  const r=decodeDriverMutationMessage(item.packet);let state=scopes.get(r.scopeId);
+  if(r.action==='begin'){
+    assert.equal(state,undefined);state={scope:r.scope,scopeRef:ref(),operationId:randomUUID(),
+      guardStoreId:randomUUID(),continuityEpoch:randomUUID(),datasetBindingId:randomUUID(),runtimeBindingId:randomUUID(),
+      currentSourceProofId:randomUUID(),storeIncarnation:randomUUID(),frontierSequence:0,frontierDigest:'f'.repeat(64)};scopes.set(r.scopeId,state);
+  }else assert.deepEqual(r.scopeRef,state.scopeRef);
+  const binding=Object.fromEntries(['guardStoreId','continuityEpoch','datasetBindingId','runtimeBindingId','currentSourceProofId','storeIncarnation','frontierSequence','frontierDigest'].map(k=>[k,state[k]]));
+  let kind,facts;
+  if(r.action==='current'){
+    kind='driver-request-context';facts={requestId:r.requestId,requestDigest:sha256(canonical({kind:r.kind,scope:state.scope})),actionKind:r.kind,
+      peer:item.peer,...binding,operation:{operationId:state.operationId,kind:r.kind},originalPermitRef:ref(),mutationScopeRef:state.scopeRef};
+  }else{kind='driver-mutation-lifecycle-reply';facts={requestId:r.requestId,requestDigest:sha256(canonical(r)),scopeId:r.scopeId,action:r.action,
+    state:r.action==='begin'?'held':'closed',mutationScopeRef:state.scopeRef,peer:item.peer,...binding};}
+  mutate(facts);await native.reply(item.connection,signed(kind,facts));return state;
+}
+test('actual begin/current/end preserves the opaque scope and request binding',async()=>{
+  const abort=new AbortController(),observed=[];
+  const server=(async()=>{for(let i=0;i<3;i++){const item=await receive();observed.push(item.request.action);await reply(item);}})();
+  const value=await port.run(scope('A'),()=>port.context.current('revoke'),abort.signal);assert.ok(value?.mutationScopeRef);
+  abort.abort();await port.drain();await server;assert.deepEqual(observed,['begin','current','end']);
+});
+test('HTTP settlement during actual pending begin waits for its reply then ends without current',async()=>{
+  const abort=new AbortController(),started=deferred(),release=deferred(),actions=[];
+  const server=(async()=>{const begin=await receive();actions.push(begin.request.action);started.resolve();await release.promise;await reply(begin);
+    const end=await receive();actions.push(end.request.action);await reply(end);})();
+  const value=port.run(scope('B'),()=>port.context.current('revoke'),abort.signal);
+  await started.promise;abort.abort();release.resolve();assert.equal(await value,undefined);await port.drain();await server;
+  assert.deepEqual(actions,['begin','end']);
+});
+test('two actual concurrent ALS scopes keep users original refs and settlement separate',async()=>{
+  const controllers=[new AbortController(),new AbortController()],seen=[];
+  const server=(async()=>{for(let i=0;i<6;i++){const item=await receive();seen.push(item.request);await reply(item);}})();
+  const values=await Promise.all(controllers.map((c,i)=>port.run(scope(['C','D'][i]),()=>port.context.current('revoke'),c.signal)));
+  assert.notEqual(values[0].operation.operationId,values[1].operation.operationId);assert.notDeepEqual(values[0].mutationScopeRef,values[1].mutationScopeRef);
+  controllers.forEach(c=>c.abort());await port.drain();await server;
+  assert.equal(new Set(seen.map(r=>r.scopeId)).size,2);assert.equal(seen.filter(r=>r.action==='end').length,2);
+});
+test('settlement blocks new packets synchronously and waits actual outstanding native exchange before end',async()=>{
+  const abort=new AbortController(),sent=deferred(),release=deferred();let ended=false;
+  const server=(async()=>{
+    for(let i=0;i<2;i++)await reply(await receive());
+    const packet=await receive();assert.equal(packet.request.contractVersion,'cop-root-driver-message-v2');sent.resolve();
+    await release.promise;await native.reply(packet.connection,Buffer.from('{"syntheticTransportOnly":true}\n'));
+    const end=await receive();assert.equal(end.request.action,'end');ended=true;await reply(end);
+  })();
+  let flight;
+  await port.run(scope('E'),async()=>{
+    const context=await port.context.current('revoke');
+    const packet={contractVersion:'cop-root-driver-message-v2',requestId:randomUUID(),action:'execute',operation:context.operation,
+      body:'{}',mutationScopeRef:context.mutationScopeRef};flight=exchangeDriverMutationInvocation(packet);
+    await sent.promise;abort.abort();assert.equal(await port.context.current('revoke'),undefined);
+    await assert.rejects(exchangeDriverMutationInvocation(packet));
+  },abort.signal);
+  await delay();assert.equal(ended,false);release.resolve();await flight;await port.drain();await server;
+});
+test('invalid begin binding stays unavailable with no ordinary v1 fallback',async()=>{
+  const abort=new AbortController(),before=received;
+  const server=(async()=>{const item=await receive();await reply(item,p=>{p.requestDigest='0'.repeat(64);});})();
+  const result=await port.run(scope('F'),()=>port.context.current('revoke'),abort.signal);await server;assert.equal(result,undefined);
+  abort.abort();await port.drain();assert.equal(received,before+1);
+});
+test('caller mutation after queueing cannot replace actual native scope body or origin',async()=>{
+  const abort=new AbortController();let expected;
+  const server=(async()=>{
+    for(let i=0;i<2;i++)await reply(await receive());
+    const item=await receive();assert.deepEqual(item.request,expected);
+    await native.reply(item.connection,Buffer.from('{"syntheticTransportOnly":true}\n'));await reply(await receive());
+  })();
+  await port.run(scope('H'),async()=>{
+    const context=await port.context.current('revoke');
+    const packet={contractVersion:'cop-root-driver-message-v2',requestId:randomUUID(),action:'execute',operation:{...context.operation},
+      body:'{"original":true}',mutationScopeRef:{...context.mutationScopeRef}};
+    expected=structuredClone(packet);const pending=exchangeDriverMutationInvocation(packet);
+    packet.mutationScopeRef.recordId=randomUUID();packet.operation.operationId=randomUUID();packet.body='{"changed":true}';
+    await pending;abort.abort();
+  },abort.signal);await port.drain();await server;
+});
+test('missing settled signal already settled wrong kind and GPS never open a native scope',async()=>{
+  const before=received,abort=new AbortController();abort.abort();
+  assert.equal(await port.run(scope('G'),()=>port.context.current('revoke')),undefined);
+  assert.equal(await port.run(scope('G'),()=>port.context.current('revoke'),abort.signal),undefined);
+  const live=new AbortController();assert.equal(await port.run(scope('G'),()=>port.context.current('erase'),live.signal),undefined);
+  assert.equal(await port.run({...scope('G'),method:'POST',path:'/api/v1/internal/driver-measurements/v1/batches',body:{points:[[50,14]]}},()=>port.context.current('erase'),live.signal),undefined);
+  live.abort();await port.drain();assert.equal(received,before);
+});
+after(async()=>{await port.drain();native.close(listener);unlinkSync(etc+'/verification-keys.json');});

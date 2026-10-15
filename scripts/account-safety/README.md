@@ -464,3 +464,36 @@ accept a different signed ERASE body. The reader now also requires its PostgreSQ
 body digest to equal A's original body digest. No changed checkpoint/body is
 silently accepted by this candidate. They do not exercise the Root
 filesystem, SQL, actual production identity, cleanup, restore or enrollment.
+
+### Nonprivileged v2 request-scope client
+
+`driver-mutation-scope-client.mjs` supplies the separate
+`createProductionDriverMutationRequestScope()` candidate. Its required third
+`run(scope, work, settled)` argument is an `AbortSignal` fired by actual HTTP
+finish/close. Local closure is synchronous; already-started native exchanges
+drain before requesting Root `end`. A begin response arriving after HTTP closure
+is retained only to request that end, never to admit another operation. Invalid
+bindings, missing settlement and GPS intake have no ordinary-v1 fallback.
+
+The fixed exchange helper owns a canonical packet snapshot before scheduling.
+Joint review found that an earlier candidate retained the caller's mutable
+packet until a microtask; a later ref/body/origin mutation could change the
+actual message. The active source fixes this and the receiver checks the actual
+packet in its regression. The initial six-case receipt stays frozen, with its
+exact initial client/test/runner bytes under
+`docs/archive/2026-10-15_MUTATION_SCOPE_CLIENT_INITIAL/`; those text files are
+historical evidence and must never enter an installation.
+
+The [corrected seven-case native client receipt](../../docs/testing/account-safety-mutation-scope-native-client-snapshot-20261015.json)
+uses actual offline Linux ARM64 native packets, kernel peer identity and Ed25519.
+Root replies and operation facts are explicitly synthetic; the fixture runs in
+one owned container without SQL, host mounts, real accounts or external network.
+It covers actual begin/current/end, settlement while begin is in flight, two
+concurrent scopes, settlement while an exchange is pending, invalid bindings,
+packet snapshotting and refusal of unbound/GPS input. Its container and private
+context were removed. These are client tests, not actual Root owner/signer,
+production enrollment, whole-account deletion, drain or restore acceptance.
+
+No v2 Root handler, signature producer or production loader is activated by this
+candidate. The actual Root signer remains subject to the specific automatic
+approval gate reported to the operator; this client does not bypass that gate.

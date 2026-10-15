@@ -1,0 +1,48 @@
+{
+  "status": "NATIVE_CLIENT_SYNTHETIC_ROOT_REPLIES_ONLY",
+  "startedAt": "2026-10-15T12:34:33.577Z",
+  "completedAt": "2026-10-15T12:34:33.993Z",
+  "passed": 6,
+  "executingRunnerSha256": "4ec3aea332210dbc4902ef247cb76ad791bfe519cfb39a57aafa60938f72200c",
+  "sourcePins": {
+    "root-records.mjs": "ad203b1a1858bea7f8f799a6147720d1d0d6df790bfc1d4c866a12c45d6bb7fd",
+    "root-native.mjs": "0085e026f6a595afd385959dac5af3374875a9a3ed5581a53f895edb87d85d7a",
+    "driver-root-context.mjs": "639509bc8c9dac4d29591a7d235f1f0eb9cb89114efa0f19ad1442852abd37b6",
+    "driver-mutation-message.mjs": "bf5e3695748243a1a9be84ec2c411f3eeb8e8bc3af1e45e024bbd4a2744ed211",
+    "driver-mutation-scope-client.mjs": "3ed3ee61a9cf8dd6985bd678a11c4e15e466ee120d94308963b323230f0abec8",
+    "driver-mutation-scope-client.test.mjs": "bef9136d189d9481b3b42ad67d8b6ffb5631f65103ea6556edf412a6d774c095"
+  },
+  "nativeAddonSha256": "283f528f6ffce67c46e180a8a7ddcf215c1588dd579cbf36ca507b8896802d20",
+  "image": "sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf",
+  "architecture": "linux-arm64-musl",
+  "testOutput": "TAP version 13\n# Subtest: actual begin/current/end preserves the opaque scope and request binding\nok 1 - actual begin/current/end preserves the opaque scope and request binding\n  ---\n  duration_ms: 8.993625\n  type: 'test'\n  ...\n# Subtest: HTTP settlement during actual pending begin waits for its reply then ends without current\nok 2 - HTTP settlement during actual pending begin waits for its reply then ends without current\n  ---\n  duration_ms: 2.567666\n  type: 'test'\n  ...\n# Subtest: two actual concurrent ALS scopes keep users original refs and settlement separate\nok 3 - two actual concurrent ALS scopes keep users original refs and settlement separate\n  ---\n  duration_ms: 6.008625\n  type: 'test'\n  ...\n# Subtest: settlement blocks new packets synchronously and waits actual outstanding native exchange before end\nok 4 - settlement blocks new packets synchronously and waits actual outstanding native exchange before end\n  ---\n  duration_ms: 54.375583\n  type: 'test'\n  ...\n# Subtest: invalid begin binding stays unavailable with no ordinary v1 fallback\nok 5 - invalid begin binding stays unavailable with no ordinary v1 fallback\n  ---\n  duration_ms: 1.059875\n  type: 'test'\n  ...\n# Subtest: missing settled signal already settled wrong kind and GPS never open a native scope\nok 6 - missing settled signal already settled wrong kind and GPS never open a native scope\n  ---\n  duration_ms: 0.698292\n  type: 'test'\n  ...\n1..6\n# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 118.48675\n",
+  "actual": {
+    "nativePackets": true,
+    "kernelPeer": true,
+    "pidfs": true,
+    "ed25519": true,
+    "httpSettledSignal": true,
+    "twoConcurrentScopes": true,
+    "ownerAuthority": false,
+    "rootMutationSigner": false,
+    "sql": false,
+    "enrollment": false,
+    "productionChanged": false,
+    "restore": false,
+    "realAccounts": false,
+    "externalProviderCalls": false
+  },
+  "isolation": {
+    "externalNetwork": false,
+    "hostBindMounts": false,
+    "volumes": false,
+    "publicPorts": false,
+    "imagePull": false,
+    "imageBuild": false
+  },
+  "cleanup": {
+    "ownedContainerRemoved": true,
+    "privateContextRemoved": true,
+    "globalPrune": false
+  }
+}

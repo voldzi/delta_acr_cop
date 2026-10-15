@@ -1,0 +1,114 @@
+/** Nonprivileged fixed v2 client. HTTP settlement closes local admission;
+ * neither it nor native EOF proves Root SQL drain or releases a Root lease.
+ * No v2 Root broker/signer is installed or synthesized by this module.
+ */
+import {AsyncLocalStorage} from 'node:async_hooks';
+import {randomUUID} from 'node:crypto';
+import {canonical,canonicalJson,exact,hex,uuid,sha256,requireGuard,readPublicVerificationKeys,verifyRootRecord} from './root-records.mjs';
+import {nativeModule} from './root-native.mjs';
+import {driverContextScope} from './driver-root-context.mjs';
+import {DRIVER_MUTATION_MESSAGE,decodeDriverMutationMessage} from './driver-mutation-message.mjs';
+
+const storage=new AsyncLocalStorage(),closers=new Set();let carrier;
+const native=()=>carrier??=nativeModule();
+const ref=v=>exact(v,['recordId','digest'])&&uuid(v.recordId)&&hex(v.digest);
+const BASE=['contractVersion','kind','recordId','issuedAt','expiresAt'];
+const BINDING=['guardStoreId','continuityEpoch','datasetBindingId','runtimeBindingId','currentSourceProofId','storeIncarnation','frontierSequence','frontierDigest'];
+function bound(p,peer){
+  requireGuard(exact(p.peer,['device','inode','uid','gid'])&&p.peer.device===peer.device&&p.peer.inode===peer.inode&&
+    Number.isSafeInteger(p.peer.uid)&&p.peer.uid>=0&&Number.isSafeInteger(p.peer.gid)&&p.peer.gid>=0&&
+    BINDING.slice(0,6).every(k=>uuid(p[k]))&&Number.isSafeInteger(p.frontierSequence)&&p.frontierSequence>=0&&hex(p.frontierDigest)&&
+    Date.parse(p.expiresAt)-Date.parse(p.issuedAt)<=5000,'GUARD_MUTATION_REPLY_BINDING');
+}
+export function validateMutationLifecycleReply(bytes,request,keys,peer){
+  const r=verifyRootRecord(bytes,keys,'driver-mutation-lifecycle-reply'),p=r.payload;
+  requireGuard(exact(p,[...BASE,'requestId','requestDigest','scopeId','action','state','mutationScopeRef','peer',...BINDING])&&
+    p.requestId===request.requestId&&p.requestDigest===sha256(canonical(request))&&p.scopeId===request.scopeId&&
+    p.action===request.action&&p.state===(request.action==='begin'?'held':'closed')&&ref(p.mutationScopeRef)&&
+    (request.action==='begin'||canonical(p.mutationScopeRef)===canonical(request.scopeRef)),'GUARD_MUTATION_LIFECYCLE_REPLY');
+  bound(p,peer);return Object.freeze({...p.mutationScopeRef});
+}
+export function validateMutationContextReply(bytes,request,scope,keys,peer){
+  const r=verifyRootRecord(bytes,keys,'driver-request-context'),p=r.payload;
+  const optional=p.publicationContext===undefined?[]:['publicationContext'];
+  requireGuard(exact(p,[...BASE,'requestId','requestDigest','actionKind','peer',...BINDING,'operation','originalPermitRef','mutationScopeRef',...optional])&&
+    p.requestId===request.requestId&&p.requestDigest===sha256(canonical({kind:request.kind,scope}))&&p.actionKind===request.kind&&
+    exact(p.operation,['operationId','kind'])&&uuid(p.operation.operationId)&&p.operation.kind===request.kind&&ref(p.originalPermitRef)&&
+    ref(p.mutationScopeRef)&&canonical(p.mutationScopeRef)===canonical(request.scopeRef),'GUARD_MUTATION_CONTEXT_REPLY');
+  bound(p,peer);
+  if(p.publicationContext!==undefined){
+    const c=p.publicationContext;
+    requireGuard(request.kind==='ack'&&exact(c,['contractVersion','recordId','recordDigest','storeIncarnation','operationDigest','readbackDigest','reportProtection','observedAtUTC'])&&
+      c.contractVersion==='cop-driver-publication-context-v1'&&uuid(c.recordId)&&c.storeIncarnation===p.storeIncarnation&&
+      ['recordDigest','operationDigest','readbackDigest'].every(k=>hex(c[k]))&&['no_report','enforced_single_writer','shared_generation_fence'].includes(c.reportProtection)&&
+      typeof c.observedAtUTC==='string'&&Number.isFinite(Date.parse(c.observedAtUTC))&&new Date(c.observedAtUTC).toISOString()===c.observedAtUTC&&
+      Date.parse(c.observedAtUTC)<=Date.parse(p.issuedAt),'GUARD_MUTATION_PUBLICATION');
+  }
+  return Object.freeze({operation:Object.freeze({...p.operation}),mutationScopeRef:Object.freeze({...p.mutationScopeRef}),
+    ...(p.publicationContext===undefined?{}:{publicationContext:Object.freeze({...p.publicationContext})})});
+}
+async function exchange(packet){
+  const bytes=Buffer.from(canonical(packet)+'\n');requireGuard(bytes.length<=16384,'GUARD_MUTATION_MESSAGE_SIZE');
+  const keys=readPublicVerificationKeys(),reply=await native().exchange(bytes);
+  requireGuard(canonical(readPublicVerificationKeys())===canonical(keys),'GUARD_KEYRING_CHANGED');return {reply,keys};
+}
+function flight(entry,work){
+  requireGuard(!entry.closed,'GUARD_MUTATION_HTTP_SETTLED');
+  const promise=Promise.resolve().then(()=>{requireGuard(!entry.closed,'GUARD_MUTATION_HTTP_SETTLED');return work();});
+  entry.flights.add(promise);void promise.then(()=>entry.flights.delete(promise),()=>entry.flights.delete(promise));return promise;
+}
+function begin(entry){
+  if(!entry.beginning)entry.beginning=flight(entry,async()=>{
+    const request={contractVersion:DRIVER_MUTATION_MESSAGE,requestId:randomUUID(),scopeId:entry.scopeId,action:'begin',scope:entry.scope};
+    decodeDriverMutationMessage(Buffer.from(canonical(request)+'\n'));
+    const {reply,keys}=await exchange(request);
+    // Retain a valid reference even after HTTP settlement so Root can be asked
+    // to drain its original. Do not admit another current/execute afterwards.
+    entry.scopeRef=validateMutationLifecycleReply(reply,request,keys,native().selfIdentity());return entry.scopeRef;
+  });
+  return entry.beginning;
+}
+function settle(entry){
+  if(entry.closed)return;entry.closed=true;
+  const closing=(async()=>{
+    while(entry.flights.size)await Promise.allSettled([...entry.flights]);
+    if(!entry.scopeRef)return;
+    const request={contractVersion:DRIVER_MUTATION_MESSAGE,requestId:randomUUID(),scopeId:entry.scopeId,action:'end',scopeRef:entry.scopeRef};
+    const {reply,keys}=await exchange(request);validateMutationLifecycleReply(reply,request,keys,native().selfIdentity());
+  })();
+  closers.add(closing);void closing.then(()=>closers.delete(closing),()=>{
+    closers.delete(closing);console.warn(JSON.stringify({event:'driver_mutation_scope_close_unavailable',code:'MUTATION_SCOPE_CLOSE_UNAVAILABLE'}));
+  });
+}
+/** Fixed execution/read clients use this inside the same invocation. This
+ * merely tracks transport; only actual Root can authorize the selected scope. */
+export async function exchangeDriverMutationInvocation(packet){
+  // Snapshot before scheduling: the caller must not change a checked scope,
+  // body or original in the microtask before native exchange serializes it.
+  const owned=canonicalJson(Buffer.from(canonical(packet)+'\n'),16384);
+  const entry=storage.getStore();
+  requireGuard(entry&&!entry.closed&&entry.scopeRef&&ref(owned.mutationScopeRef)&&
+    canonical(owned.mutationScopeRef)===canonical(entry.scopeRef)&&
+    ['cop-root-driver-message-v2','cop-root-driver-inspect-message-v2'].includes(owned.contractVersion),'GUARD_MUTATION_INVOCATION');
+  return flight(entry,()=>exchange(owned));
+}
+export function createProductionDriverMutationRequestScope(){
+  return Object.freeze({context:Object.freeze({async current(kind){
+    try{
+      const entry=storage.getStore();
+      if(!entry||entry.closed||!['revoke','erase','ack'].includes(kind)||(kind==='revoke')!==(entry.scope.method==='DELETE'))return;
+      const scopeRef=await begin(entry);
+      return await flight(entry,async()=>{
+        const request={contractVersion:DRIVER_MUTATION_MESSAGE,requestId:randomUUID(),scopeId:entry.scopeId,action:'current',scopeRef,kind};
+        const {reply,keys}=await exchange(request),context=validateMutationContextReply(reply,request,entry.scope,keys,native().selfIdentity());
+        requireGuard(!entry.closed,'GUARD_MUTATION_HTTP_SETTLED');return context;
+      });
+    }catch{return;}
+  }}),run(input,work,settled){
+    requireGuard(typeof work==='function','GUARD_MUTATION_CALLBACK');
+    let scope;try{scope=driverContextScope(input);}catch{/* Existing HTTP handlers own401/400. */}
+    if(!scope||!(settled instanceof AbortSignal)||settled.aborted)return storage.run(undefined,work);
+    const entry={scope,scopeId:randomUUID(),scopeRef:undefined,beginning:undefined,closed:false,flights:new Set()};
+    settled.addEventListener('abort',()=>settle(entry),{once:true});return storage.run(entry,work);
+  },async drain(){await Promise.allSettled([...closers]);}});
+}
