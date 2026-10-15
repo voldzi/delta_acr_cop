@@ -436,6 +436,15 @@ flag, change local transaction fences or activate production erasure.
 
 ## Actual external/production gates
 
+The operator completed the exact pinned SIM read-only Root entrypoint on
+15October. It found zero report files/active exporters and the one exact legacy
+cleanup cron line still active. The actual inventory/producer digests are
+recorded in [bounded read-only evidence](../testing/account-erasure-sim-root-readonly-20261015.json)
+and were passed to the authorized SIM thread for its concrete installation.
+This is not schema migration or production enrollment. Installation must stop
+the affected producers and repeat inventory; zero files cannot authorize a
+`no_report` shortcut or silently adopt a changed producer.
+
 ### Explicit voice erasure transport — source candidate
 
 `COP_LIVEKIT_ERASURE_RELAY_URL` selects the new `cop-livekit-erasure-v1` adapter
