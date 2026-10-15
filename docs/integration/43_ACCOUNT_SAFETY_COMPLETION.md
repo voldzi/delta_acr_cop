@@ -493,8 +493,26 @@ rows without local user records remain valid, while unknown local users are
 refused. The exact server name is an immutable administrator enrollment input.
 The source passed200 local application tests,22 overlapping focused cases,
 production compile with warnings-as-errors and nine real isolated Synapse1.156/
-PostgreSQL18.6 tests. These checks do not install the provider or complete the
-still missing database-mode aggregate/restore authority.
+PostgreSQL18.6 tests. The later production installation is recorded below; tests
+alone do not complete database-mode aggregate/restore authority.
+
+The actual four-domain provider schema/module is now installed on comm using
+only the existing restricted Synapse role. No database privilege or provider
+version changed; the original secrets-bearing configuration stayed byte-identical.
+Runtime source`b8e2cc5` uses a separate public module configuration. Actual
+private capability returned200/ready=true for precisely those four domains.
+Messaging source`8012490` is deployed with its explicit pinned private-service
+transport; the actual bounded client returned ready. All ordinary readiness
+checks passed, other provider IDs stayed unchanged during API update, and the
+real COP LiveKit probe still returned200/401/503 for valid/unauthorized/invalid
+grant cases. An initial provider update correctly rolled back because a valid
+receipt was preceded by CLI log lines; this was diagnosed read-only and its
+parser corrected before successful repetition. No real account was deleted.
+Exact images, overlays and limitations are in
+[production private-provider evidence](../testing/account-erasure-private-provider-production-20261015.json).
+COP's runtime and whole-account activation remain unchanged/disabled. The
+database-mode aggregate/namespace/restore composition and scoped Keycloak
+authority are still required; this scoped provider result is not whole-account GO.
 
 ### Shared PostgreSQL stream owner, 15 October 2026
 
