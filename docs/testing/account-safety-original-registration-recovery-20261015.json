@@ -1,0 +1,84 @@
+{
+  "contractVersion": "cop-original-registration-reconciliation-receipt-v1",
+  "date": "2026-10-15",
+  "logSha256": "3064cec15656be0f5c46d94772b13ed52960ebab5fc200c96fc7bac0f8b52158",
+  "result": {
+    "contractVersion": "cop-root-producer-sql-test-v1",
+    "passed": 12,
+    "cases": [
+      {
+        "case": "producer executes actual original transaction and commits marker",
+        "passed": true
+      },
+      {
+        "case": "same dispatch is probe-only and cannot delete later expired rows",
+        "passed": true
+      },
+      {
+        "case": "crash after durable dispatch but before SQL registration closes only the same original without effects",
+        "passed": true
+      },
+      {
+        "case": "probing a delivered but never executed original does not authorize a later DELETE",
+        "passed": true
+      },
+      {
+        "case": "an in-flight original registrar is awaited instead of interpreting its invisible row as no effects",
+        "passed": true
+      },
+      {
+        "case": "reconciliation cannot retarget an existing original registration to another body",
+        "passed": true
+      },
+      {
+        "case": "lost executor commit acknowledgement resolves existing commit without repeat",
+        "passed": true
+      },
+      {
+        "case": "lost registration commit acknowledgement seals original without effects",
+        "passed": true
+      },
+      {
+        "case": "inner seal result with lost outer acknowledgement remains pending",
+        "passed": true
+      },
+      {
+        "case": "payload mismatch cannot execute or create a target origin",
+        "passed": true
+      },
+      {
+        "case": "revoke persists exact scalar before COMMIT and recovers it without another DELETE",
+        "passed": true
+      },
+      {
+        "case": "failed durable scalar storage rolls back original revoke instead of committing effects",
+        "passed": true
+      }
+    ],
+    "inputs": {
+      "deploy/driver-measurements/schema.sql": "6dd60a3acf28d63575198c8526c368df19bbd543f4063d4985fb55f308da02d0",
+      "deploy/driver-measurements/002_account_erasure.sql": "f13db2106a1fe1a02d0d1a26afa8ad7d7c045172ba4419749719ed0f166e16ad",
+      "deploy/driver-measurements/003_guarded_operations.sql": "e3513a983a3b6d1bd52d46851c734dd1c3b208e2e2f6430a6f9eddd38b10d3b5"
+    },
+    "codePins": {
+      "driver-origin-producer.mjs": "d5d4ded08966d9f41941f110dffdb743cb340397bc58e2e2290cddf845df04ee",
+      "root-records.mjs": "ad203b1a1858bea7f8f799a6147720d1d0d6df790bfc1d4c866a12c45d6bb7fd",
+      "root-driver-runtime.mjs": "d96debb5229a524926608140322bbaf8a5ba512249890d9e304e3ef9d5e44c7b",
+      "root-publication.mjs": "aec35c9e46664ce9c3f879b8f6a0f806eb47e36ca68b09f812264a38aca6bc5c",
+      "root-outcome-records.mjs": "37234a9c2fdbc8a5fff26a68948b5d7d53ed3d341835fd6dbfbe271d569b327b",
+      "test-driver-origin-postgres.mjs": "e906636455064a189bc1320d2c2bd53ad18dec88b1719b01b3d7dfa7aa7545d1"
+    },
+    "postgresVersion": "18.3",
+    "ownedClusterRemoved": true,
+    "tcp": false,
+    "sourceUnchangedDuringRun": true,
+    "actualRootAuthority": false,
+    "actualNativeDelivery": false,
+    "actualRestore": false,
+    "productionChanged": false,
+    "ackQualification": "Controller deliberately discarded ACK; not network packet loss."
+  },
+  "syntheticAdmission": true,
+  "actualPostgres": true,
+  "productionDeployment": false
+}

@@ -88,6 +88,44 @@ try {
     assert.equal((await p.runOnce(op, '{"wrong":true}')).state, 'pending'); assert.equal(await count(), 1);
     assert.equal((await p.probe(op)).state, 'origin-commit-known');
   });
+  await check('crash after durable dispatch but before SQL registration closes only the same original without effects', async () => {
+    const op = operation(), d = dispatch(); await d.claim(op);
+    let effects = 0;
+    const wrapped = { async query(sql, args) { if (sql.includes('execute_origin')) effects++; return executor.query(sql, args); } };
+    const p = producer(control, wrapped, d);
+    assert.equal((await p.runOnce(op, body)).state, 'origin-no-effects-closed');
+    assert.equal(await count(), 1); assert.equal(effects, 0);
+    assert.equal((await p.runOnce(op, body)).state, 'origin-no-effects-closed');
+    assert.equal(await count(), 1); assert.equal(effects, 0);
+  });
+  await check('probing a delivered but never executed original does not authorize a later DELETE', async () => {
+    const op = operation(), p = producer();
+    assert.equal((await p.probe(op)).state, 'origin-no-effects-closed'); assert.equal(await count(), 1);
+    assert.equal((await p.runOnce(op, body)).state, 'origin-no-effects-closed'); assert.equal(await count(), 1);
+  });
+  await check('an in-flight original registrar is awaited instead of interpreting its invisible row as no effects', async () => {
+    const op = operation(), registrar = await client('sim_driver_guard_control');
+    await registrar.query('BEGIN');
+    await registrar.query('SELECT sim_driver_guard_source.register_origin($1,$2,$3,$4,$5,$6,$7)',
+      [op.operationId, store, op.permitId, op.kind, op.bodyDigest, op.schemaDigest, op.cutoff]);
+    let settled = false;
+    const resolving = producer().probe(op).then(result => { settled = true; return result; });
+    let locked = false;
+    for (let i = 0; i < 100 && !locked; i++) {
+      locked = await value(admin, "SELECT coalesce(wait_event_type='Lock',false) AS value FROM pg_stat_activity WHERE pid=$1", [control.processID]);
+      if (!locked) await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.equal(locked, true); assert.equal(settled, false); assert.equal(await count(), 1);
+    await registrar.query('COMMIT');
+    assert.equal((await resolving).state, 'origin-no-effects-closed'); assert.equal(await count(), 1);
+  });
+  await check('reconciliation cannot retarget an existing original registration to another body', async () => {
+    const op = operation();
+    await control.query('SELECT sim_driver_guard_source.register_origin($1,$2,$3,$4,$5,$6,$7)',
+      [op.operationId, store, op.permitId, op.kind, 'e'.repeat(64), op.schemaDigest, op.cutoff]);
+    assert.equal((await producer().probe(op)).state, 'pending'); assert.equal(await count(), 1);
+    assert.equal(await value(admin, 'SELECT body_digest AS value FROM sim_driver_guard_source.origins WHERE operation_id=$1', [op.operationId]), 'e'.repeat(64));
+  });
   await check('lost executor commit acknowledgement resolves existing commit without repeat', async () => {
     const op = operation(); let swallowed = false, calls = 0;
     const wrapped = { async query(sql, args) { if (sql.includes('execute_origin')) calls++; const result = await executor.query(sql, args);

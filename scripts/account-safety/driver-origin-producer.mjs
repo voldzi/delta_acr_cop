@@ -72,6 +72,18 @@ export class DriverOriginProducer {
     this.#control = control; this.#executor = executor; this.#dispatch = dispatch; this.#validateCurrent = validateCurrent;
   }
   async #resolve(op) {
+    // Root can crash after its durable one-shot dispatch claim but before the
+    // original registration reaches COMMIT. Reconcile ONLY the exact immutable
+    // metadata tuple. ON CONFLICT/FOR UPDATE in register_origin waits for any
+    // original registrar/claim; it cannot run business effects or claim a new
+    // executor. A subsequent resolver still checks the actual original XID.
+    try {
+      await this.#control.query('BEGIN');
+      const registered = await value(this.#control, fixed.register,
+        [op.operationId, op.storeIncarnation, op.permitId, op.kind, op.bodyDigest, op.schemaDigest, op.cutoff]);
+      requireGuard(registered?.operationId === op.operationId, 'GUARD_REGISTRATION_RESPONSE');
+      await this.#control.query('COMMIT');
+    } catch { await rollback(this.#control); return pending('store-unavailable'); }
     const resolved = await resolveOriginal(this.#control, op.operationId);
     if (resolved.state !== 'origin-commit-known' || op.kind !== 'revoke') return resolved;
     try {

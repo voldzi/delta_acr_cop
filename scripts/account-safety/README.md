@@ -208,6 +208,15 @@ The latest component evidence is
 [52 target-platform checks](../../docs/testing/account-safety-target-platform-20261015.json).
 This is not Root enrollment, complete owner composition or production activation.
 
+The subsequent original-registration recovery change has a separate
+[12-case actual PostgreSQL receipt](../../docs/testing/account-safety-original-registration-recovery-20261015.json).
+If Root crashes after its durable dispatch claim but before SQL registration,
+resolution first reconciles only the same immutable registration tuple, commits
+it and obtains two committed resolver observations. It never claims a new
+executor or repeats DELETE. A real uncommitted registrar blocks reconciliation;
+a conflicting body remains unavailable. A probe may close a never-executed
+original; that closed original can never later authorize execution.
+
 ## Fixed production entry points
 
 - `createProductionAiCheckpointAdmissionPort()` verifies the typed AI snapshot,
@@ -255,6 +264,16 @@ Fixed TLS connection profiles use the existing `cop-root-postgres-profile-v1`:
 `driver-inventory` targets `sim_driver_measurements`, user
 `sim_driver_guard_control` and SIM's bounded read-only candidate function.
 These roles/credentials have not been provisioned by component source work.
+
+[`002-root-reader.sql`](002-root-reader.sql) is a one-shot supplementary
+metadata-reader candidate for the existing closed guard database. It starts
+NOLOGIN with no password, membership, DML, schema creation, database CREATE/TEMP
+or guard-function execution. It grants exact metadata SELECT, an explicit
+SELECT-only receipt RLS policy and the two PostgreSQL control facts functions.
+Unexpected schema/roles, PUBLIC database access or effective column writes stop
+the migration. It does not repair global authentication or activate credentials.
+The source is frozen for the separate SIM common-authority test; no production
+application of this migration is claimed.
 
 Root request evidence and identity joins live only beneath Root 0700
 `/run/cop-account-safety/private`, on explicit volatile storage. Subdirectories

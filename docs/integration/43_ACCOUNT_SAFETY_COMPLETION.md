@@ -41,6 +41,14 @@ suites and are not added to them. See the immutable
 [target-platform receipt](../testing/account-safety-target-platform-20261015.json).
 The disposable target test container was removed; source/logs stay on X5 staging.
 
+A subsequent separate **12/12 actual PostgreSQL18.3** run verifies recovery of
+the original registration after a Root dispatch-file write/crash, blocking on
+the real in-flight registrar and rejection of body retargeting. Reconciliation
+changes only original metadata, never claims an executor or repeats DELETE.
+See [its separate frozen receipt](../testing/account-safety-original-registration-recovery-20261015.json).
+Admission in that SQL fixture is synthetic. A second owned ARM64 container also
+passed8native kernel cases for SIM's actual self-process gate; it was removed.
+
 **Not deployed/activated:** actual shared Root owner/permit/maintenance producer,
 remaining COP production owner adapters, protected installation and scoped DB
 profiles, source-proof/checkpoint enrollment and native deploy/restore latch
