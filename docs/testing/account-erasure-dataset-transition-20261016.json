@@ -1,0 +1,30 @@
+{
+  "contractVersion": "cop-account-erasure-dataset-transition-evidence-v1",
+  "date": "2026-10-16",
+  "scope": "actual_owned_PostgreSQL18_admin_transition_and_controller_replay_with_synthetic_domain_owners",
+  "sourceSha256": {
+    "apps/cop-api/src/account-erasure-dataset-transition.ts": "a6344408f8ca2e06d7f2a6cc8d756c15ec261d0a39bde4332ff7f6f35f1cfe44",
+    "apps/cop-api/src/account-erasure-continuity-postgres.test.ts": "7afc1b96d9aa8dc426f09b3fc807491c44339220181727c3593c9559532e2281",
+    "scripts/test-account-erasure-dataset-restore.mjs": "3ec2e2c6d51aa0c105fdc82e3050e129eff2df3f138d928d73851883f2f86031"
+  },
+  "checks": {
+    "apiBuild": "passed",
+    "actualPostgresqlTestsPassed": 9,
+    "optionalJointSimTestSkipped": 1,
+    "actualTransitionReplacedManualFixtureUpdates": true,
+    "invalidGenerationRejected": true,
+    "exactCommittedRetryPassedBeforeControllerReplay": true,
+    "oldControllerAfterTransitionDenied": true,
+    "freshControllerResetsTerminalOwnerCheckpoints": true,
+    "originalIndependentJournalUnchanged": true,
+    "ownedFixtureRemoved": true
+  },
+  "limits": [
+    "The caller must actually quarantine every affected owner before restoring or changing the binding; this database stage cannot attest hypervisor actions.",
+    "Provider effects in this run are explicit synthetic fixtures, not actual Synapse, Keycloak or storage cleanup.",
+    "No production Root wrapper, backup expiry, whole-account restore or production activation is established."
+  ],
+  "productionContacted": false,
+  "productionChanged": false,
+  "wholeAccountReady": false
+}

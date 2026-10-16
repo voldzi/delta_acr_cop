@@ -12,6 +12,7 @@ import { createCOPDriverMeasurementsErasureAdapter } from "./cop-driver-consent-
 import { buildServer } from "./server.js";
 import { clearJwksCacheForTests } from "./security.js";
 import { PostgresAccountErasureContinuity } from "./account-erasure-continuity-postgres.js";
+import { transitionAccountErasureDataset } from "./account-erasure-dataset-transition.js";
 import type { AccountErasureFenceEntry } from "./account-erasure-continuity.js";
 
 const url = process.env.COP_SAFETY_V2_TEST_DATABASE_URL;
@@ -186,9 +187,17 @@ describe.skipIf(!url || !local)("actual PostgreSQL independent deletion journal 
       // Deliberately perform the operator's binding change in the owned fixture.
       // Provider effects remain synthetic; this is not production restore approval.
       const nextIncarnation = randomUUID();
-      await target.query("UPDATE cop_mobility_v1 SET value=$1 WHERE key='account-safety:store-identity-v1'",
-        [{ storeId: binding.applicationStoreId, incarnationId: nextIncarnation }]);
-      await admin.query("UPDATE cop_safety_v2.dataset_replays SET incarnation_id=$1,restore_generation=2,accepted_at=clock_timestamp() WHERE owner='cop'", [nextIncarnation]);
+      const transition = { ...binding, previous: { incarnationId: binding.incarnationId, restoreGeneration: 1 },
+        restoredLocal: { incarnationId: binding.incarnationId, restoreGeneration: 1 },
+        next: { incarnationId: nextIncarnation, restoreGeneration: 2 } };
+      await expect(transitionAccountErasureDataset(admin, target, { ...transition, next: { ...transition.next, restoreGeneration: 1 } }))
+        .rejects.toThrow("RESTORE_TRANSITION_UNPROVEN");
+      const transitionResult = await transitionAccountErasureDataset(admin, target, transition);
+      expect(transitionResult).toMatchObject({ status: "replay_required", datasetBinding: transition.next, journalSequence: original.length });
+      // Retry the real committed transition before controller replay. Local
+      // configuration deliberately still has the old generation.
+      expect(await transitionAccountErasureDataset(admin, target, transition)).toEqual(transitionResult);
+      await expect(ordinary.assertAllowed(owner)).rejects.toMatchObject({ status: 503 });
       const restored = new AccountErasureService({ ...options, continuity: client(nextIncarnation) });
       await restored.init();
       await restored.resumePending();

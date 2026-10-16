@@ -1,5 +1,27 @@
 # 43. Whole COP account removal — current completion evidence
 
+## Actual administrator dataset transition — 16 October
+
+The internal `transitionAccountErasureDataset` source replaces hand-written SQL
+in the actual PostgreSQL controller recovery test. It validates both real
+administrator connections, exact enrolled store/configuration, the complete
+independent journal and expected local/guard bindings. It accepts only the next
+generation and a distinct incarnation, serializes both stores, commits the
+independent transition before the business marker and returns `replay_required`.
+It resets the replay cursor, not the immutable erasure journal. An exact retry
+before controller replay is safe; a stale running controller is denied.
+The old local configuration deliberately remains until actual controller replay
+resets all copied owner checkpoints and checks the original sealed actor.
+
+The caller must quarantine all affected services before restore/transition and
+keep them unavailable until fresh owner acceptance. This function does not
+attest that operational step or backup expiry and is not a public route.
+The actual9 PostgreSQL cases passed again (one optional joint SIM case skipped),
+including use of this real transition, invalid-generation denial, exact retry,
+stale-controller denial and unchanged journal. API build, targeted lint and
+skeleton validation passed. Providers in this run are synthetic. See
+[the transition receipt](../testing/account-erasure-dataset-transition-20261016.json).
+
 ## Actual Keycloak provider and backup observations — 16 October
 
 The exact cached production Keycloak26.8.0 image was exercised in an isolated
