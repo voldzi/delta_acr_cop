@@ -1,4 +1,87 @@
-# Account safety runtime guard binding — proposal only
+# Account safety runtime guard binding
+
+## Current database_v2 first-enrollment helper — 16 October 2026
+
+The current completion path is **database_v2**, as selected in
+[ADR0055](../adr/0055_DATABASE_ACCOUNT_ERASURE_RECOVERY.md). The native sections
+below are historical source qualifications, not prerequisites to revive or
+evidence for database_v2. This helper is source-only; it has not been applied to
+COP production and does not establish whole-account acceptance.
+
+`scripts/account-safety/provision-database-v2.mjs` supports only an explicit
+administrator's **first empty enrollment** and exact retries of that same,
+still-empty enrollment. It is not an upgrade, restore enrollment, history reset
+or runtime auto-enrollment tool. Any job, fence or progressed replay cursor is
+rejected without repairing or deleting it. It leaves `cop_guard`, SIM's separate
+guard schema, existing roles, business connection configuration, public ports,
+network and authentication rules unchanged.
+
+The administrator must provide a private mode0600, non-symlink manifest with
+contract `cop-database-safety-provision-v1`, `firstEnrollment=true`, explicitly
+reviewed `applicationStoreId`, `incarnationId`, separate logical `guardStoreId`,
+`restoreGeneration=1`, initial chain digest, PostgreSQL CA digest and the
+`cop-existing-router-identity-v1` binding. Its evidence digest must agree with
+the outer `identityEvidenceDigest`; its issuer and domain-separated fingerprint
+must match the existing Router identity key. An evidence digest is a reference
+to a real alias/key-history review, not a randomly generated substitute for one.
+The initial digest is only a new chain seed, not evidence of historical replay.
+
+Only the following roles are created, in the existing independent
+`cop_account_safety_guard` database:
+
+- `cop_safety_v2_owner`: NOLOGIN, no superuser/role/database/replication/bypass
+  rights; owns only the new `cop_safety_v2` objects.
+- `cop_safety_v2_runtime`: LOGIN, connection limit8, no memberships or elevated
+  attributes. It can connect, use the new schema, SELECT its three tables,
+  INSERT fences, execute the append trigger function and UPDATE only
+  `dataset_replays.replay_sequence,replay_digest`. It cannot change configuration,
+  identity/incarnation/generation, delete/truncate history, create objects or
+  read other applications' guarded data. Unexpected effective access, including
+  via PUBLIC, is refused rather than globally revoked.
+
+Before an administrator password is requested, the coordinating installer must
+run the credential-free `--dependency-check` under a fixed Node24 environment.
+It requires the declared and resolved `pg 8.23.1` packaged from COP's dependency
+closure; no runtime installation or `NODE_PATH`/`NODE_OPTIONS` injection is
+accepted. The only credential-bearing CLI forms are `--check --manifest <path>`
+and `--apply --manifest <path>`, invoked by the reviewed Root coordinator with
+the password supplied only in process memory. Do not place it in argv or a
+third secret JSON. Production uses only `haproxy.home.cz:5000` and the existing
+pinned PostgreSQL CA with actual hostname verification. The business database's
+existing Unix route is not rewritten.
+
+Apply holds the actual mobility advisory lock and a SHARE ROW EXCLUSIVE lock on
+`cop_mobility_v1`, then rechecks both metadata keys and the absence of jobs. It
+holds the independent guard transaction lock before creating/verifying the exact
+SQL010 schema, functions, constraints, triggers and least privileges. Existing
+`COP_SIM_ERASURE_ACTOR_SECRET` and `COP_AI_CHAT_ROUTER_USER_ID_SECRET` are
+preserved byte-for-byte. A new `COP_ACCOUNT_ERASURE_SECRET` is permitted only
+when exactly absent, explicitly allowed by the manifest and confirmed against
+the locked empty metadata. Existing keys are never rotated by this helper.
+
+New credentials and the exact bindings are atomically persisted only to the
+existing private `/srv/cop/.env`, before the independent guard commit; business
+metadata is committed afterward while its locks remain held. Known interruptions
+at these boundaries can retry only the exact original manifest and credentials.
+Unknown or changed partial state is refused. No activation flag, authority mode
+or running container is changed. A `complete_disabled` result is a bootstrap
+receipt, not a claim that erasure or restore acceptance is complete.
+
+The isolated PostgreSQL test harness is
+`scripts/test-account-safety-database-provision.mjs`; its immutable execution
+receipt is [the 16 October test evidence](../archive/2026-10-16_COP_GUARD_ADMIN_PROVISION_TESTS.json).
+The final run passed **28/28** cases. It uses a newly owned local PostgreSQL18 cluster and synthetic data, not
+production. Its constructed interrupted durable states do not simulate network
+packet loss or a production restore. Standard PostgreSQL credential-log checks
+do not constitute testing of an absent third-party audit extension.
+
+For return before activation, keep erasure disabled and the already accepted
+compatible application path. Do not delete the new independent evidence, reset
+identities or reinstall an old writer after acceptance. Any later changed
+incarnation, restore generation or nonempty history requires its separately
+reviewed restore/upgrade procedure and real replay/readback before exposure.
+
+## Historical native source proposal and qualifications
 
 Status: source-only candidate reviewed; not installed or authority-bound in the
 production native deployment helper; activation blocker.

@@ -1,0 +1,92 @@
+{
+  "contractVersion": "cop-guard-admin-provision-source-evidence-v1",
+  "recordedAtUTC": "2026-10-16T06:51:32.000Z",
+  "baselineRevision": "9dc73dc0b56d0a3f95e700691f9450ddf3a62786",
+  "scope": "source_only_first_empty_administrator_enrollment_and_owned_local_postgres_tests",
+  "sourceSha256": {
+    "scripts/account-safety/provision-database-v2.mjs": "9c1eaf88e88b328ab4d6fc2e50a066a768fea095978ad6b6a1dfa862338144e9",
+    "scripts/test-account-safety-database-provision.mjs": "3ccc8f29b427f4a40918ba87d560fd17feceefd557c9d3326fc2e2ca3ab3acd7",
+    "scripts/account-safety/010_database_safety_v2.sql": "03247e41e3af241af1a29a3899473f0eff2ad480dab304c549f2fc484b7c2674"
+  },
+  "runtime": {
+    "node": "24.21.0",
+    "postgresql": "18.3 Homebrew",
+    "pg": "8.23.1",
+    "fixture": "fresh_private_local_cluster_loopback_and_private_unix_socket",
+    "clusterName": "cop_guard_installer_test",
+    "fixtureRemovedAfterRun": true
+  },
+  "execution": {
+    "command": "node scripts/test-account-safety-database-provision.mjs",
+    "exitCode": 0,
+    "passed": 28,
+    "failed": false,
+    "cases": [
+      "check_is_read_only_and_secret_absent",
+      "rejects_missing_explicit_generation_permission",
+      "rejects_unreviewed_identity_and_unknown_manifest_fields",
+      "rejects_enabled_flags_without_mutation",
+      "rejects_nonprivate_manifest_without_database_change",
+      "rejects_symlink_manifest_without_database_or_secret_write",
+      "first_enrollment_locks_real_business_table",
+      "check_and_apply_retry_preserve_exact_credentials_and_bindings",
+      "rejects_changed_store_incarnation_guard_generation_and_head",
+      "rejects_changed_router_key_and_erasure_secret",
+      "rejects_unreviewed_additional_runtime_privilege",
+      "tampered_guard_function_refused_without_repair",
+      "missing_immutable_trigger_refused_without_repair",
+      "runtime_can_read_append_and_advance_cursor_only",
+      "foreign_runtime_cannot_read_cop_guard",
+      "progressed_state_refused_without_reset_or_reenrollment",
+      "existing_jobs_block_first_enrollment",
+      "partial_business_identity_refused_without_adoption",
+      "metadata_rechecked_after_waiting_for_business_lock",
+      "partial_guard_schema_refused_without_adoption",
+      "unrelated_existing_runtime_role_refused",
+      "nonloopback_nonowned_root_and_unprivileged_admin_rejected",
+      "existing_erasure_secret_is_preserved_on_first_enrollment",
+      "effective_public_foreign_access_refused_without_changing_grant",
+      "known_env_only_interruption_reuses_credentials_and_refuses_retarget",
+      "known_guard_commit_before_business_reuses_exact_binding",
+      "duration_and_sample_logging_do_not_capture_credentials",
+      "audit_setting_placeholder_refused_without_mutation"
+    ]
+  },
+  "additionalChecks": {
+    "credentialFreeDependencyCheck": "passed_without_database_or_configuration_contact",
+    "nodeSyntax": "passed_both_new_files",
+    "targetedEslint": "passed_both_new_files",
+    "prettier": "formatted_before_final_postgres_run",
+    "skeleton": "passed",
+    "gitDiffCheck": "passed",
+    "openapi": "valid_with_24_warnings_unchanged_contract",
+    "jsonSchemas": "11_passed_after_repeating_with_local_ipc_permission",
+    "fullApplicationTestBuild": "not_rerun_for_standalone_administrator_helper"
+  },
+  "acceptedSourceBehavior": {
+    "ownerRole": "cop_safety_v2_owner",
+    "runtimeRole": "cop_safety_v2_runtime",
+    "schema": "cop_safety_v2",
+    "database": "existing_cop_account_safety_guard",
+    "businessMetadata": "exact_locked_empty_triple_or_same_unprogressed_enrollment",
+    "existingActorAndRouterIdentityKey": "preserved",
+    "newErasureSecret": "only_exact_absence_explicit_manifest_permission_and_locked_empty_metadata",
+    "roleAdoptionOrPrivilegeRepair": false,
+    "progressedHistoryReset": false,
+    "runtimeAutoEnrollment": false
+  },
+  "qualifications": [
+    "The two interrupted durable states were deliberately constructed in the owned fixture; no network packet-loss or production restore experiment was performed.",
+    "Core PostgreSQL duration and sampling logs were enabled. Actual generated credentials and the SCRAM verifier were absent from the private test log.",
+    "No pgaudit extension was installed. An unresolved pgaudit setting was tested and refused; this is not an audit-extension integration test.",
+    "The manifest evidence digest refers to a separately reviewed historical identity binding. Matching syntax or fingerprints cannot establish that history by itself.",
+    "A complete_disabled receipt verifies only the first enrollment, not providers, backup restore, runtime exposure or whole-account deletion.",
+    "The current bootstrap is not a general restore/upgrade/re-enrollment tool. Nonempty accepted history requires a separately reviewed procedure."
+  ],
+  "productionChanged": false,
+  "productionContactedByTests": false,
+  "providerCalled": false,
+  "realAccountDeleted": false,
+  "activationFlagsChanged": false,
+  "wholeAccountComplete": false
+}
