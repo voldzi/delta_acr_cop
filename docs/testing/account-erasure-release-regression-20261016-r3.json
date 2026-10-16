@@ -1,0 +1,41 @@
+{
+  "contractVersion": "cop-account-erasure-release-regression-v1",
+  "observedAt": "2026-10-16T16:46:18.470351+00:00",
+  "sourceRevision": "4618cf3e818bfb514e026ffd749089ecd75f916d",
+  "sourceWorkingTreeDirty": true,
+  "unitTests": {
+    "passedFiles": 246,
+    "skippedFiles": 25,
+    "passed": 2526,
+    "skipped": 105,
+    "logSha256": "0cb06b05ec7a4ca2bad524b18d1626186c5fea6489666c6652134d5c4ef0210d"
+  },
+  "typeCheckPassed": true,
+  "eslintPassed": true,
+  "lintLogSha256": "dbfb765eeaae7e67a90f35fdd1e319fc7ed5f3014f4e41cb123ffef5b421fed0",
+  "skeletonPassed": true,
+  "jsonSchemasValidated": 11,
+  "openapiValid": true,
+  "openapiExistingWarnings": 24,
+  "productionBuildPassed": true,
+  "productionBuildProjectCount": 16,
+  "buildLogSha256": "1187632195dc918cdb916016dc43d499b3802c3a6505c0f5484ca2269f7aa41a",
+  "compiledApiClosureSha256": "41fdb81bf99b5201208c64da4329508c1663b0535dfa5749fc78ec99416f5451",
+  "runtimeResourceClosureSha256": "d05ff9e973e6e9ab3a1d718c324cbdf6fc8fa733aba4632ce0163f3117903584",
+  "compiledWorkspaceClosureSha256": "6d820186c7cae2caf9aa58c1c8bd4e4da6375138dea268ddacf413283ff8c500",
+  "peerBindingBoundaryIncluded": true,
+  "wholeAccountAccepted": false,
+  "productionChanged": false,
+  "realAccountsDeleted": false,
+  "physicalDeviceAcceptance": false,
+  "sourceChangesAfterThisReceiptRequireRevalidation": true,
+  "separateMessagingComponent": {
+    "localTestPassed": 228,
+    "localTestSkipped": 35,
+    "logSha256": "621366c1782cb7f9aa8f87969592ca605b4f2b39398098d56649c3a2db1eab68",
+    "productionCompilePassed": false,
+    "productionCompileFinding": "three compile-time test-only fixture branches in database_erasure_guard.ex; correction pending",
+    "nativeHttpAcceptance": false,
+    "wholeAccountAccepted": false
+  }
+}

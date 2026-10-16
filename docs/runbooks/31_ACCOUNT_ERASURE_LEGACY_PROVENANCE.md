@@ -349,7 +349,7 @@ identita a přístup se tímto krokem nemění.
 Vlastní nová PostGIS17.5 fixture a skutečně paused syntetický Docker writer;
 žádná sdílená whole fixture, produkce ani build dist nebyly změněny. Podrobný
 redigovaný výsledek: `docs/testing/account-erasure-legacy-provenance-20261016.json`.
-Aktuálně prošlo 44 operátorských PG a 16 runtime/interop/conformance testů (60 celkem).
+Aktuálně prošlo 53 operátorských PG a 16 runtime/interop/conformance testů (69 celkem).
 Testy pokrývají full-row/witness CAS, časové hranice, přesný důkaz a digest
 plánu, všechny pairing/voice identity, device/mesh, B i provozní role, jobs,
 leases, změnu generace, actual unpause odmítnutí, signed sessions včetně dnešního expiry/historického podpisu, špatných klíčů/claims/časů,
@@ -359,3 +359,37 @@ post-enrollment receipt včetně negativních mutací, čerstvého kandidáta s 
 původně podepsanými A/B relacemi a composite lab confirmation hranice. Jde o komponentové důkazy; produkční Root evidence bundle a původní podpisy aktuálních relací (v čtecím snapshotu osm),
 finální host custody, společný whole test a následné nasazení jsou samostatné
 povinné kroky.
+
+
+## Pád po SQL COMMIT před uložením Root receipt
+
+Příprava vytvoří jedinou technickou tabulku
+`cop_legacy_erasure_enrollment_receipts` vlastněnou stávajícím DB administrátorem,
+bez oprávnění aplikačních rolí. Původní raw receipt se uloží jako přesný JSON text
+s otisky plánu/zdroje/bindingu ve **stejné transakci** jako zařazení provenance.
+Neobsahuje tokeny, ciphertext ani obsah. Katalog, ACL, sloupce, PK a počet řádků
+mají přesnou kontrolu; nejde o obecný auditní archiv.
+
+Po pádu lze za stejného Root review a paused CID/PID/profile pouze načíst tento
+původní výsledek a znovu skutečně ověřit všechny post-state otisky. Funkce
+`recoverDurableLegacyErasureReceipt` nikdy neopakuje apply, šifrování ani JWKS
+ověřování a nevymýšlí výsledek z nově přečtených řádků. Chybějící nebo změněný
+SQL důkaz zůstane pending a writer paused. Po ověřeném uložení do Root0600
+host receipt se přes `acknowledgeDurableLegacyErasureReceipt` znovu provede
+readback a smaže se pouze přesný technický transfer řádek. Teprve potom se
+writer unpause. Prokázaná prázdná tabulka po dřívějším přenosu je idempotentní;
+provozní řádky se tím nemažou. Test skutečně zahodí původní návratovou hodnotu
+po COMMIT, odstraní fixture JWKS a doloží recovery bez změny ciphertextu.
+
+
+Po dokončeném Root readbacku a skutečném purge transferu se do host receipt
+uloží také přesný `durableReceiptTransfer` před unpause. Pozdější opakování
+nesmí vyžadovat staré full-row bajty profilu či relace, které běžný provoz mění.
+`verifyCompletedLegacyErasureProvenance` vyžaduje tento původní kompletní Root
+důkaz, skutečně prázdný transfer store a ověří aktuální stabilní ownership,
+schéma i binding všech současných řádků. U relací kontroluje současný issuer,
+subject a HMAC s původním klíčem v RAM; žádné nové historické JWT tvrzení,
+reencryption nebo nahrazení původního receipt nevzniká. Chybné/vymazané ownership
+údaje nebo nové nezařazené řádky blokují. Neúplná paused recovery nadále používá
+přesný původní full-row CAS. Před zapnutím se vždy ještě provede skutečná aktuální
+serverová owner-readiness; historická migrace ji nenahrazuje.

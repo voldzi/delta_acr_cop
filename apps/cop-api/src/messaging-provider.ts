@@ -1,9 +1,11 @@
 import { validateIdentityLookup, type MessagingMatrixIdentityLookupResult } from "./messaging-identity-lookup.js";
 import type { AuthenticatedActor } from "./security.js";
+import type { MessagingPeerBindings } from "./messaging-peer-bindings.js";
 
 export type MessagingIntegrationRuntimeStatus = "degraded" | "disabled" | "online";
 
 export interface MessagingProviderConfig {
+  authorityMode?: "database_v2" | "native_v1";
   baseUrl: string;
   cacheTtlMs: number;
   enabled: boolean;
@@ -326,13 +328,15 @@ export interface MessagingProvider {
   createConversation(
     actor: AuthenticatedActor,
     requestNow: Date,
-    input: MessagingConversationCreateRequest
+    input: MessagingConversationCreateRequest,
+    peerBindings?: MessagingPeerBindings
   ): Promise<MessagingConversationCreateResponse>;
   addConversationMembers(
     actor: AuthenticatedActor,
     requestNow: Date,
     conversationId: string,
-    members: MessagingConversationMember[]
+    members: MessagingConversationMember[],
+    peerBindings?: MessagingPeerBindings
   ): Promise<MessagingConversationMemberSyncResponse>;
   bindMatrixRoom(
     actor: AuthenticatedActor,
@@ -346,7 +350,8 @@ export interface MessagingProvider {
   resolveMatrixIdentities(
     actor: AuthenticatedActor,
     requestNow: Date,
-    userIds: string[]
+    userIds: string[],
+    peerBindings?: MessagingPeerBindings
   ): Promise<MessagingMatrixIdentityResolution>;
   registerWebPushDevice(
     actor: AuthenticatedActor,
@@ -470,6 +475,7 @@ export function createMessagingProviderFromEnv(
     optionalTrimmedString(env.COP_CSM_MESSAGING_PUBLIC_URL);
   const webPushVapidPublicKey = optionalTrimmedString(env.COP_WEB_PUSH_VAPID_PUBLIC_KEY);
   return new CsmMessagingProvider({
+    authorityMode: env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE === "database_v2" ? "database_v2" : "native_v1",
     baseUrl: trimTrailingSlash(env.COP_CSM_MESSAGING_BASE_URL ?? defaultConfig.baseUrl),
     cacheTtlMs: readInteger(env.COP_CSM_MESSAGING_CACHE_TTL_MS, defaultConfig.cacheTtlMs, 1000, 300000),
     enabled: readBoolean(env.COP_CSM_MESSAGING_ENABLED, defaultConfig.enabled),
@@ -869,10 +875,19 @@ export class CsmMessagingProvider implements MessagingProvider {
     };
   }
 
+  private withPeerBindings(input: object, peerBindings?: MessagingPeerBindings): Record<string, unknown> {
+    const body: Record<string, unknown> = { ...input };
+    // Extra properties on a runtime object are never a private attestation.
+    delete body.peerBindings;
+    if (this.config.authorityMode === "database_v2" && peerBindings) body.peerBindings = peerBindings;
+    return body;
+  }
+
   async createConversation(
     actor: AuthenticatedActor,
     requestNow: Date,
-    input: MessagingConversationCreateRequest
+    input: MessagingConversationCreateRequest,
+    peerBindings?: MessagingPeerBindings
   ): Promise<MessagingConversationCreateResponse> {
     if (!this.config.enabled) {
       return disabledConversationCreate();
@@ -883,7 +898,7 @@ export class CsmMessagingProvider implements MessagingProvider {
         this.config,
         requestNow,
         {
-          body: JSON.stringify(input),
+          body: JSON.stringify(this.withPeerBindings(input, peerBindings)),
           headers: {
             ...actorHeaders(actor),
             "Content-Type": "application/json"
@@ -935,7 +950,8 @@ export class CsmMessagingProvider implements MessagingProvider {
   async resolveMatrixIdentities(
     actor: AuthenticatedActor,
     requestNow: Date,
-    userIds: string[]
+    userIds: string[],
+    peerBindings?: MessagingPeerBindings
   ): Promise<MessagingMatrixIdentityResolution> {
     if (!this.config.enabled) {
       return disabledIdentityResolution();
@@ -946,7 +962,7 @@ export class CsmMessagingProvider implements MessagingProvider {
         this.config,
         requestNow,
         {
-          body: JSON.stringify({ userIds }),
+          body: JSON.stringify(this.withPeerBindings({ userIds }, peerBindings)),
           headers: {
             ...actorHeaders(actor),
             "Content-Type": "application/json"
@@ -983,7 +999,8 @@ export class CsmMessagingProvider implements MessagingProvider {
     actor: AuthenticatedActor,
     requestNow: Date,
     conversationId: string,
-    members: MessagingConversationMember[]
+    members: MessagingConversationMember[],
+    peerBindings?: MessagingPeerBindings
   ): Promise<MessagingConversationMemberSyncResponse> {
     if (!this.config.enabled) {
       return disabledConversationMemberSync();
@@ -994,7 +1011,7 @@ export class CsmMessagingProvider implements MessagingProvider {
         this.config,
         requestNow,
         {
-          body: JSON.stringify({ members }),
+          body: JSON.stringify(this.withPeerBindings({ members }, peerBindings)),
           headers: {
             ...actorHeaders(actor),
             "Content-Type": "application/json"

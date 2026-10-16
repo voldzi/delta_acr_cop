@@ -73,4 +73,65 @@ class ServerLocalTests(unittest.TestCase):
   self.assertIn("manifest.get('ownerLabel')!=server_local.CASE_OWNER",source)
   self.assertIn("manifest.get('serverLocal',{}).get('sourceProof')!=PUBLIC_SOURCE_PROOF",source)
 
+ def test_server_four_actor_private_version_cannot_overwrite_whole_manifest_contract(self):
+  source=(HERE.parent/'test-account-erasure-whole-joint.py').read_text()
+  body=source.split('def prepare_server_local_keycloak(',1)[1].split('def export_server_private_bootstraps(',1)[0]
+  self.assertIn("manifest.update({key:value for key,value in seeded.items() if key!='contractVersion'})",body)
+  self.assertIn("set(seeded.get('actors',{}))!={'a','b','c','d'}",body)
+  self.assertIn("observed.get('actorCount')!=4",body)
+ def v4_profile(self):
+  import hashlib
+  paths=m.expected_v4_runtime_source_paths()
+  sources={value['sourcePath']:hashlib.sha256(value['sourcePath'].encode()).hexdigest() for value in paths.values()}
+  return {**m.NEW_MESSAGING_PROFILE,'images':{'pg':m.PG_IMAGE,'synapse':'sha256:'+'1'*64,'messaging':'sha256:'+'2'*64},'runtimeSourcePaths':paths,'sourceSha256':sources}
+ def test_v4_profile_accepts_only_exact_normative_discriminator_module_and_21_fixture_paths(self):
+  import copy
+  profile=self.v4_profile();self.assertEqual(len(profile['runtimeSourcePaths']),21);self.assertEqual(m.verify_v4_messaging_profile(profile),profile)
+  edits=[lambda p:p.update(contractVersion='messaging-joint-credential-first-use-profile-v1'),lambda p:p.update(contractVersion='messaging-approved-joint-full-v2-freeze-v1'),
+   lambda p:p.update(profileDiscriminator='full-v2-credential-first-creation-v1'),lambda p:p.update(providerModuleEntrypoint='cop_account_erasure_full_v2.AccountErasure'),
+   lambda p:p['runtimeSourcePaths']['provider'].update(runtimePath='/opt/cop-private/cop_account_erasure_full_v2_credential_candidate.py'),
+   lambda p:p['runtimeSourcePaths']['policyApi'].update(component='synapse'),lambda p:p['runtimeSourcePaths'].pop('sql008'),
+   lambda p:p['runtimeSourcePaths'].update(unreviewed={'component':'synapse','sourcePath':'secret','runtimePath':'/data/secret'}),lambda p:p['sourceSha256'].pop('deploy/synapse/cop_unused_native_creation.py')]
+  for edit in edits:
+   changed=copy.deepcopy(profile);edit(changed)
+   with self.assertRaisesRegex(RuntimeError,'SOURCE_PROFILE_REJECTED|RUNTIME_MAP_REJECTED|SOURCE_INCOMPLETE'):m.verify_v4_messaging_profile(changed)
+ def test_v4_public_archive_verifies_all_actual_member_bytes_before_runtime_use(self):
+  import hashlib,io,tarfile
+  with tempfile.TemporaryDirectory() as directory:
+   root=pathlib.Path(directory).resolve();public=root/'public-fixture';public.mkdir();profile=self.v4_profile()
+   archive=public/'source.tar.gz'
+   with tarfile.open(archive,'w:gz') as tar:
+    for name in profile['sourceSha256']:
+     raw=name.encode();info=tarfile.TarInfo(name);info.size=len(raw);tar.addfile(info,io.BytesIO(raw))
+   path=public/'profile.json';path.write_text(json.dumps(profile))
+   proof={'profilePath':'public-fixture/profile.json','profileSha256':m.digest_file(path),'archivePath':'public-fixture/source.tar.gz','archiveSha256':m.digest_file(archive),'ownerLabel':m.HOLDER_OWNER}
+   self.assertEqual(m.verify_messaging_source_paths(root,proof),profile)
+   archive.write_bytes(b'changed')
+   with self.assertRaisesRegex(RuntimeError,'SOURCE_BYTES_CHANGED'):m.verify_messaging_source_paths(root,proof)
+ def test_v4_actual_runtime_checks_both_canonical_copies_and_exact_data_aliases_without_touching_providers(self):
+  import copy,shlex
+  profile=self.v4_profile();holder='3'*64
+  manifest={'sharedHolder':m.HOLDER_NAME,'sharedHolderId':holder,'sharedHolderOwner':m.HOLDER_OWNER}
+  def container(component):
+   return {'Id':holder if component=='pg' else ('4' if component=='synapse' else '5')*64,'Image':profile['images'][component],
+    'Config':{'Labels':{'cop.test.owner':m.HOLDER_OWNER}},'State':{'Running':True,'Paused':False},
+    'HostConfig':{'NetworkMode':'none' if component=='pg' else 'container:'+holder,'PortBindings':{},'Binds':None,'LogConfig':{'Type':'none'},'ReadonlyRootfs':True}}
+  def execute(command,**_kwargs):
+   args=shlex.split(command)
+   component=args[2].removeprefix(m.HOLDER_OWNER+'-')
+   if args[:2]==['docker','inspect']:return SimpleNamespace(stdout=json.dumps([container(component)]),returncode=0)
+   files={('/data/source' if component=='synapse' else '/fixture/project')+'/'+path:digest for path,digest in profile['sourceSha256'].items()}
+   files.update({value['runtimePath']:profile['sourceSha256'][value['sourcePath']] for value in profile['runtimeSourcePaths'].values() if value['component']==component})
+   self.assertNotIn('/opt/cop-private/',command)
+   self.assertTrue(all(shlex.quote(path) in command for path in files))
+   return SimpleNamespace(stdout='\n'.join(digest+'  '+path for path,digest in files.items()),returncode=0)
+  proof={'messagingSource':{'profileSha256':'a'*64,'archiveSha256':'b'*64}}
+  with mock.patch.object(coordinator,'SERVER_LOCAL',True),mock.patch.object(coordinator,'PUBLIC_SOURCE_PROOF',proof),mock.patch.object(coordinator.server_local,'verify_messaging_source_paths',return_value=profile),mock.patch.object(coordinator,'remote',side_effect=execute):
+   result=coordinator.verify_full_messaging_source(manifest)
+  self.assertEqual(result['messagingProfile'],m.NEW_MESSAGING_PROFILE);self.assertEqual(result['messagingSource']['providerSha256'],profile['sourceSha256']['deploy/synapse/cop_account_erasure_full_v2_credential_candidate.py'])
+  self.assertEqual(set(result['components']),{'synapse','messaging'})
+  source=(HERE.parent/'test-account-erasure-whole-joint.py').read_text()
+  self.assertIn("profile_sha = '1cbeaad91663bf740a58bd8bbce54d15d9e592f30dd3d3b37d3dfa602cb1ae6b'",source)
+  self.assertIn("archive_sha = '0aed0b1bfa86777c68e092910fa2b71b636467e7a7e8f4accc5c8545c31fe189'",source)
+
 if __name__=='__main__':unittest.main()

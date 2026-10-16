@@ -63,6 +63,33 @@ reserved accounts with a missing mapping stay pending. This candidate and its
 novice/restore/concurrency acceptance remain unfinished. The two fully seeded
 negative cases do not establish coverage for novice accounts.
 
+## Preserving first-contact chat during the guard migration
+
+The first-use guard also covers normal peer provisioning. Existing callers send
+peer identifiers; those identifiers do not attest another person's issuer.
+Replacing that flow with existing-mapping-only lookup would prevent contacting
+a COP account which had not yet initialized chat.
+
+The coordinated source fix adds the private `cop-verified-peer-bindings-v1`
+packet to the existing COP-to-Messaging transport in `database_v2` only. COP
+uses only the ready canonical PostgreSQL profile, exact target subject and
+signature-verified or explicitly enrolled issuer. It never uses the RAM fallback,
+a browser-supplied packet, or the caller's issuer as evidence for a target.
+Packets contain the actor binding, source, thirty-second validity and verified
+peer subject/issuer pairs; no message content, display name or credential.
+Messaging must validate the authenticated server transport, finite packet shape,
+actor, target set and time before the first-use reservation/native create-only
+path. Unknown peers remain unavailable; existing verified identities can still
+be used. `native_v1` retains its current payload and behavior. This private
+packet is neither a new public endpoint nor a new browser request field.
+
+This component and its actual first-contact regression test must pass before
+the final whole fixture and production activation. The previous `4618cf3` runtime
+closure does not include this subsequent fix and will not be relabeled. The
+subsequent full COP test run passed2526 tests (105 opt-in tests skipped); all16
+projects built. The separate canonical Messaging test run passed228 tests with35
+explicitly skipped. These results still do not establish whole acceptance.
+
 ## Implemented boundaries
 
 - The API entrypoint binds actual database continuity, media settlement and the
@@ -91,7 +118,7 @@ negative cases do not establish coverage for novice accounts.
 
 | Check | Observed result | Limit |
 | --- | --- | --- |
-| COP unit/regression suite |2508 passed across245 files;105 skipped in25 files | Opt-in database/provider cases are not counted as executed. |
+| COP unit/regression suite |2526 passed across246 files;105 skipped in25 files | Opt-in database/provider cases are not counted as executed. |
 | Full type check, ESLint, skeleton,11 JSON schemas, public analytics guards | Passed after the current runtime fixes | Final release checks must include any subsequent installer changes. |
 | Production build | Passed for all16 projects; current API closure frozen | Final immutable release build remains required. |
 | Binding OpenAPI | Valid;24 existing warnings, no new warnings | Does not establish provider readiness. |
@@ -102,7 +129,7 @@ negative cases do not establish coverage for novice accounts.
 | Edge implementation |29 component tests passed | Guarded production Edge not deployed. |
 | Runtime configuration gate |72 offline faults and2 Compose-client tests passed | Root production proof still required. |
 | Narrow business schema preparation |12 actual PostgreSQL cases passed | No production DDL or ownership backfill performed. |
-| Legacy provenance and original signed BFF sessions |60 component checks passed, including actual PostgreSQL and production AES/HMAC interoperability | Production historical evidence and enrollment remain pending. |
+| Legacy provenance and original signed BFF sessions |69 component checks passed, including actual PostgreSQL and production AES/HMAC interoperability | Production historical evidence and enrollment remain pending. |
 | Read-only owner readiness |42 focused controller/route checks and4 aggregate-cache checks passed | Does not enable deletion intake. |
 
 ## Production observations and remaining gates
@@ -147,7 +174,7 @@ rejection has been bypassed through another actor, path or tool.
 - [Final Root installation](../runbooks/28_ACCOUNT_ERASURE_ROOT_INSTALL.md)
 - [COP Edge cleanup](../runbooks/29_COP_EDGE_ACCOUNT_ERASURE.md)
 - [Whole two-user fixture](../runbooks/30_ACCOUNT_ERASURE_WHOLE_FIXTURE.md)
-- [Current regression receipt](../testing/account-erasure-release-regression-20261016.json)
+- [Current regression receipt](../testing/account-erasure-release-regression-20261016-r3.json)
 - [Actual old API/media pause receipt](../testing/account-erasure-old-api-media-pause-20261016.json)
 - [Actual LiveKit expiry receipt](../testing/account-erasure-livekit-token-expiry-20261016.json)
 - [Superseded checkpoints and their original receipts](../archive/2026-10-16_ACCOUNT_SAFETY_COMPLETION_HISTORY.md)

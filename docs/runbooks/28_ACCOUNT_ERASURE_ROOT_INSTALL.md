@@ -243,9 +243,14 @@ cannot replace these byte comparisons. No test rebuild is required solely for
 unrelated docs. Historical partial runs and their source pins are not the final acceptance
 receipt. Use only the successful full-provider/crash/retry/restore run and its
 actual matching candidate closure bytes. The Root validator also requires
-`initialNormal202Verified`, `controlledMainCrashVerified` and
-`retryNormal202Verified` to be true and its exact seven-field `messagingSource`
-to equal the reviewed v3 scope/profile/archive/provider/client/helper/SQL pins
+the public `confirmationEvidence` original-operation/date/hash chain and exact
+candidate source closures. It accepts either an actual initial202, or the
+explicit initial503 → independently observed accepted202 recovery → actual
+main-process crash → fresh accepted202 retry sequence. It recomputes the initial
+bytes digest and validates chronology and different process identity; all five
+published confirmation flags must equal that verified chain. A503 is never
+rewritten as a successful initial202. Its exact seven-field `messagingSource`
+must equal the reviewed scope/profile/archive/provider/client/helper/SQL pins
 exported in `EXPECTED_MESSAGING_SOURCE`. Pinning that source does not assert
 that a whole run has passed.
 
@@ -706,8 +711,7 @@ actual readback must use the same paused writer and unchanged candidate; no
 automatic row rehash or history approval is permitted. The existing unpause
 occurs only after that readback. The fixed completion flow implements this
 sequence through `LEGACY_FRESH_HOST_STAGE_PROGRAM`; its pure candidate/TTY
-fault checks pass, while the new generator still requires its actual isolated
-integration evidence. A static pre-staged row plan cannot substitute for this
+fault checks and the actual isolated PostgreSQL generator tests pass. A static pre-staged row plan cannot substitute for this
 stage or its actual production checks.
 
 The media stage retains its separately tested pause/closure/unpause sequence,
@@ -721,7 +725,8 @@ The private legacy host receipt retains `sqlEnrollmentReceipt` as the unchanged
 raw SQL apply result. Host custody fields and `provenanceComplete=true` belong
 to the outer wrapper. Recovery passes only the original nested SQL object to
 the strict verifier; it never reconstructs a receipt by rewriting completion
-flags. A missing original raw receipt remains unproven.
+flags. A missing Root receipt selects only the bounded read-only same-transaction
+SQL receipt recovery described below; absent or changed SQL proof remains unproven.
 
 The fresh stage writes `legacy-provenance-candidate.json` privately and, only
 after the exact terminal confirmation, `legacy-provenance-review.json`. The
@@ -730,8 +735,8 @@ paused-process witness. A restart or changed candidate invalidates it. A crash
 during publication can only complete that same previously confirmed candidate;
 it cannot silently generate or approve a replacement. Once the final plan hash
 is recorded, a row-CAS failure remains pending and never causes automatic
-regeneration. The original raw SQL receipt is persisted after actual readback
-and before unpause.
+regeneration. The original raw SQL receipt is persisted privately immediately
+after apply returns, before separate readback and before unpause.
 
 After SQL apply returns, the unchanged original receipt is immediately stored
 as private `pending_readback` evidence before invoking the separate verifier.
@@ -758,5 +763,59 @@ verification preserves the encrypted session bytes. An additional active
 unowned session is rejected while the original ciphertext remains unchanged
 (`enroll-legacy-erasure-provenance.test.mjs`, test "verifies unchanged
 signed-session ciphertext by digest and blocks any additional active unowned
-session"). This is included in the60 isolated legacy tests; no extra production
+session"). This is included in the69 isolated legacy tests; no extra production
 read or account change is represented by that test.
+
+
+### Commit before Root receipt publication
+
+The first-enrollment schema prepares one temporary Root-only technical table,
+`cop_legacy_erasure_enrollment_receipts`. The existing PostgreSQL administrator
+owns it; runtime roles receive no grants. The exact original receipt JSON text,
+plan/source/binding hashes and receipt hash commit in the **same business
+transaction** as provenance changes. No tokens, ciphertext or content are
+stored in this transfer row. Exact catalogue/ACL/PK checks reject drift and any
+foreign or extra transfer row.
+
+If that transaction commits but the Root file write is lost, the same confirmed
+Root candidate/review, exact paused process/profile and source bindings permit
+only `recoverDurableLegacyErasureReceipt`: SELECT the committed original receipt,
+then run the existing actual full-poststate verifier. It performs no DDL,
+enrollment, session encryption, JWKS refetch or new ownership inference. Missing,
+corrupt, foreign-source or changed-poststate proof leaves the writer paused and
+intake off. The original recovered raw object is first saved as private pending
+evidence, then promoted only after real verifier and host custody success.
+
+Only after the complete Root0600 receipt has actual custody does the fixed
+acknowledgement helper verify it again and delete that exact technical SQL
+transfer row by digest CAS. An already-transferred empty table is idempotent;
+user rows and other-account data are unchanged. This transfer purge is required
+before unpause. The actual PostgreSQL tests cover commit-before-file loss,
+missing/corrupt proof, runtime ACL denial, failed-enrollment rollback and exact
+purge without reencrypting the session. This is a bounded recovery of an
+already committed operation, not permission to reapply or refresh the plan.
+
+
+### Resume after completed enrollment and normal application writes
+
+The original complete Root receipt remains immutable historical enrollment
+proof. After actual host custody and exact SQL-transfer purge, the fixed
+installer persists that real transfer receipt before unpause. On later retries,
+normal profile updates and BFF token refresh can change full-row bytes; those
+changes do not revoke already proved ownership. The completed-only factory
+requires the original Root-complete receipt, exact source/plan/paused-process
+witness, actual empty transfer table, current schema and guard/local binding.
+It checks every current row's stable ownership; current session issuer/subject
+and HMAC are verified using the unchanged existing key in RAM. It performs no
+JWT refetch, enrollment, encryption or new post-state hash publication. The
+historical full-row receipt is neither replaced nor relabelled.
+
+Unknown/new unowned rows, foreign issuer, wrong session ownership or unverified
+transfer still block. Original pending/unknown-commit recovery retains the
+strict original full-poststate CAS. This completed readback only permits the
+normal next deployment stage; fresh real runtime owner-readiness remains
+mandatory before enable. A failed completed readback can be retried only under
+the same Root custody and normal health/source/profile controls. The actual PG
+test unpauses the synthetic writer, updates a profile and refreshes encrypted
+session bytes, pauses it again and demonstrates both distinct verification
+paths while preserving B and all new ciphertext bytes.

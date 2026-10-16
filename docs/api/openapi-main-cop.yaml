@@ -3673,6 +3673,13 @@ paths:
         Atomically creates or reuses canonical conversation metadata and ensures its encrypted
         Matrix room server-side before returning success. Plaintext message fields are rejected;
         real messages go directly through Matrix SDK.
+
+
+        In database_v2, COP may attach a short-lived private peer-binding attestation derived only
+        from each target's canonical PostgreSQL profile and verified issuer. This attestation is not
+        a public request field; caller-supplied peerBindings are never trusted. A missing target
+        witness cannot provision a new Matrix identity. Existing verified mappings and native_v1
+        behavior remain supported.
       operationId: createMessagingConversation
       requestBody:
         required: true
@@ -3706,6 +3713,13 @@ paths:
       description: >
         Metadata-only bridge used after COP community group membership changes. It forwards member
         identifiers/display metadata only and rejects plaintext message fields.
+
+
+        In database_v2, COP may attach a short-lived private peer-binding attestation derived only
+        from each target's canonical PostgreSQL profile and verified issuer. This attestation is not
+        a public request field; caller-supplied peerBindings are never trusted. A missing target
+        witness cannot provision a new Matrix identity. Existing verified mappings and native_v1
+        behavior remain supported.
       operationId: syncMessagingConversationMembers
       parameters:
         - name: conversationId
@@ -3781,6 +3795,13 @@ paths:
       description: >
         Server-side identity resolution used only for Matrix room invitations. The response never
         contains passwords, service tokens or Matrix access tokens for other users.
+
+
+        In database_v2, COP may attach a short-lived private peer-binding attestation derived only
+        from each target's canonical PostgreSQL profile and verified issuer. This attestation is not
+        a public request field; caller-supplied peerBindings are never trusted. A missing target
+        witness cannot provision a new Matrix identity. Existing verified mappings and native_v1
+        behavior remain supported.
       operationId: resolveMessagingMatrixIdentities
       requestBody:
         required: true

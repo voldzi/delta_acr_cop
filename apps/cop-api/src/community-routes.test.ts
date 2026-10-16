@@ -1755,7 +1755,8 @@ describe("community report routes", () => {
       expect.objectContaining({ subjectId: "lab" }),
       new Date("2026-05-20T12:00:00Z"),
       "conv_1",
-      [{ displayName: "COP AI Assistant", role: "bot", userId: "cop.ai.agent" }]
+      [{ displayName: "COP AI Assistant", role: "bot", userId: "cop.ai.agent" }],
+      undefined // Lab/service identity is not an attested OIDC peer.
     );
     expect(fetchMatrixBootstrap).toHaveBeenCalledWith(
       expect.objectContaining({ subjectId: "cop.ai.agent" }),

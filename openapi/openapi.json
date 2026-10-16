@@ -5130,7 +5130,7 @@
           "Messaging"
         ],
         "summary": "Create or reuse a canonical CSM Messaging conversation.",
-        "description": "Atomically creates or reuses canonical conversation metadata and ensures its encrypted Matrix room server-side before returning success. Plaintext message fields are rejected; real messages go directly through Matrix SDK.\n",
+        "description": "Atomically creates or reuses canonical conversation metadata and ensures its encrypted Matrix room server-side before returning success. Plaintext message fields are rejected; real messages go directly through Matrix SDK.\n\nIn database_v2, COP may attach a short-lived private peer-binding attestation derived only from each target's canonical PostgreSQL profile and verified issuer. This attestation is not a public request field; caller-supplied peerBindings are never trusted. A missing target witness cannot provision a new Matrix identity. Existing verified mappings and native_v1 behavior remain supported.\n",
         "operationId": "createMessagingConversation",
         "requestBody": {
           "required": true,
@@ -5178,7 +5178,7 @@
           "Messaging"
         ],
         "summary": "Synchronize safe conversation members with CSM Messaging.",
-        "description": "Metadata-only bridge used after COP community group membership changes. It forwards member identifiers/display metadata only and rejects plaintext message fields.\n",
+        "description": "Metadata-only bridge used after COP community group membership changes. It forwards member identifiers/display metadata only and rejects plaintext message fields.\n\nIn database_v2, COP may attach a short-lived private peer-binding attestation derived only from each target's canonical PostgreSQL profile and verified issuer. This attestation is not a public request field; caller-supplied peerBindings are never trusted. A missing target witness cannot provision a new Matrix identity. Existing verified mappings and native_v1 behavior remain supported.\n",
         "operationId": "syncMessagingConversationMembers",
         "parameters": [
           {
@@ -5288,7 +5288,7 @@
           "Messaging"
         ],
         "summary": "Resolve COP/CSM users to Matrix user IDs through the Messaging provider.",
-        "description": "Server-side identity resolution used only for Matrix room invitations. The response never contains passwords, service tokens or Matrix access tokens for other users.\n",
+        "description": "Server-side identity resolution used only for Matrix room invitations. The response never contains passwords, service tokens or Matrix access tokens for other users.\n\nIn database_v2, COP may attach a short-lived private peer-binding attestation derived only from each target's canonical PostgreSQL profile and verified issuer. This attestation is not a public request field; caller-supplied peerBindings are never trusted. A missing target witness cannot provision a new Matrix identity. Existing verified mappings and native_v1 behavior remain supported.\n",
         "operationId": "resolveMessagingMatrixIdentities",
         "requestBody": {
           "required": true,

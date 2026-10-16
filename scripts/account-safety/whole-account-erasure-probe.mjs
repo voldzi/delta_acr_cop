@@ -1,4 +1,5 @@
 import { publicConfirmationRecoveryEvidence, verifyConfirmationRecovery } from "./confirmation-evidence.mjs";
+import { prepareAdditionalActors, verifyAdditionalActorsPreserved, eraseNoviceAfterPrimaryRestore, readAdditionalActors, publicControlBSnapshot, publicAdditionalActorsEvidence, validateAdditionalActorsEvidence, WHOLE_PHASE_LIMITS } from "./additional-actors.mjs";
 /** Whole acceptance entrypoint inside the owned shared provider namespace.
  * Real buildServer composition only. Fixture exports may seed/inspect/restore
  * real test providers; they cannot replace COP adapters or readiness methods. */
@@ -44,7 +45,8 @@ for (const [key, name] of [["guardRuntimeUrl", "cop_account_safety_guard"], ["gu
     ["cop_whole_app", "cop_whole_guard_runtime"].includes(url.username), "WHOLE_OWNED_DATABASE_REQUIRED");
 }
 const nativeFetch = globalThis.fetch, providerCalls = [];
-let initialProviderOutageArmed = false, initialProviderOutageIntercepted = false;
+let initialProviderOutageArmed = false, initialProviderOutageIntercepted = false, peerRequestCapture;
+const requireAdditionalActors = manifest.serverLocal?.contractVersion === "cop-whole-server-local-v1";
 // Only the fixture TLS transport changes. Every JWT, JWKS and provider response
 // is issued by the actual shared Keycloak. This does not test production TLS.
 globalThis.fetch = async (input, options) => {
@@ -61,6 +63,12 @@ globalThis.fetch = async (input, options) => {
   }
   need(url.hostname === "127.0.0.1", "WHOLE_EXTERNAL_NETWORK_REJECTED");
   providerCalls.push({ provider: "owned_namespace", method: options?.method ?? "GET", port: url.port, path: url.pathname });
+  if (peerRequestCapture && url.origin === "http://127.0.0.1:4000" && url.pathname === "/api/v1/conversations" && options?.method === "POST") {
+    need(typeof options.body === "string" && options.body.length <= 16384, "WHOLE_NEW_PEER_REQUEST_BODY_UNPROVEN");
+    const body = JSON.parse(options.body), headers = new Headers(options.headers);
+    peerRequestCapture.push({ checkedAt: new Date().toISOString(), actorUserId: headers.get("x-csm-user-id"), issuer: headers.get("x-csm-oidc-issuer"),
+      targetUserIds: body.members?.map(member => member.userId), peerBindings: body.peerBindings });
+  }
   if (initialProviderOutageArmed && !initialProviderOutageIntercepted && url.origin === "http://127.0.0.1:4000" &&
     url.pathname === "/api/v1/communication/account-erasure/owner-v2" && options?.method === "POST") {
     need(manifest.serverLocal?.contractVersion === "cop-whole-server-local-v1" && manifest.integration.expectedInitialOutage503 === true,
@@ -204,15 +212,16 @@ function erased(before, after) {
   }
 }
 let lastReceipt;
-async function waitDeleted(headers, capability) {
-  const deadline = Date.now() + 4_200_000;
+async function waitDeleted(headers, capability, awaitedOperationId = operationId, maxWaitMs = WHOLE_PHASE_LIMITS.onlineWaitMs) {
+  const deadline = Date.now() + maxWaitMs;
   while (Date.now() < deadline) {
-    const response = await app.inject({ url: path + (capability ? "/receipts/" : "/") + operationId, headers: capability ? { "x-cop-erasure-receipt-capability": capability } : headers });
+    const response = await app.inject({ url: path + (capability ? "/receipts/" : "/") + awaitedOperationId, headers: capability ? { "x-cop-erasure-receipt-capability": capability } : headers });
     need(response.statusCode === 200, "WHOLE_DURABLE_RECEIPT_UNAVAILABLE");
-    const value = response.json(); lastReceipt = value;
+    const value = response.json(); if (awaitedOperationId === operationId) lastReceipt = value;
     if (value.accountDeleted === true) {
-      need(value.status === "deleted" && value.remaining.length === 0 && value.operationId === operationId, "WHOLE_FALSE_FINAL_RECEIPT"); return value;
+      need(value.status === "deleted" && value.remaining.length === 0 && value.operationId === awaitedOperationId, "WHOLE_FALSE_FINAL_RECEIPT"); return value;
     }
+    need(manifest.leaseExpiresAt * 1000 > Date.now(), "WHOLE_FIXTURE_LEASE_EXPIRED_DURING_DELETION");
     need(value.accountDeleted === false && value.status === "deleting", "WHOLE_PENDING_MISREPORTED");
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
@@ -243,7 +252,15 @@ try {
     headerA = { authorization: "Bearer " + a.access_token }, headerB = { authorization: "Bearer " + b.access_token };
   const context = { manifest, environment: process.env, app, operationId, nativeFetch, headersA: headerA, headersB: headerB };
   const seeded = continuation?.seeded ?? {};
+  const additionalPreservation = {};
   if (!continuation) {
+    if (requireAdditionalActors) {
+      testStage = "actual_novice_preview_and_first_contact";
+      seeded.additional = await prepareAdditionalActors(context, { login: token, observePeerRequest: async action => {
+        need(!peerRequestCapture, "WHOLE_PEER_CAPTURE_ALREADY_ACTIVE"); const captured = []; peerRequestCapture = captured;
+        try { await action(); return captured; } finally { peerRequestCapture = undefined; }
+      } });
+    }
     testStage = "seed_actual_cop_owners";
     seeded.local = await localFixture.seedCopLocalOwners(context);
     testStage = "verify_actual_sim_messaging_seed";
@@ -343,7 +360,9 @@ try {
   headerB.authorization = "Bearer " + freshB.access_token;
   need((await app.inject({ url: "/api/v1/me/preferences", headers: headerB })).statusCode === 200, "WHOLE_B_BEARER_DAMAGED");
   testStage = "verify_actual_online_readback";
-  erased(before, await readWhole());
+  const onlineSnapshot = await readWhole(); erased(before, onlineSnapshot);
+  if (requireAdditionalActors) { const additional = await verifyAdditionalActorsPreserved(context, seeded.additional);
+    additionalPreservation.online = { checkedAt: new Date().toISOString(), controlB: publicControlBSnapshot(onlineSnapshot, expectedIds), peerD: additional.d }; }
   const sim = await token(manifest.actors.a, "csm-sim-web", manifest.actors.a.sim.refresh_token);
   const userinfo = await fetch(issuer + "/protocol/openid-connect/userinfo", { headers: { authorization: "Bearer " + sim.access_token }, signal: AbortSignal.timeout(10000) });
   need(userinfo.status === 200 && (await userinfo.json()).sub === manifest.actors.a.subjectId, "WHOLE_SIM_SHARED_IDENTITY_DAMAGED");
@@ -356,7 +375,7 @@ try {
   process.stdout.write(JSON.stringify({ phase: "actual_online_whole_deletion_verified", actualOwnerCount: expectedIds.length,
     wholeAccountAccepted: false, productionChanged: false }) + "\n");
   testStage = "wait_actual_operator_restore";
-  const operatorDeadline = Date.now() + 1800000;
+  const operatorDeadline = Date.now() + WHOLE_PHASE_LIMITS.operatorRestoreWaitMs;
   let restored;
   while (Date.now() < operatorDeadline) {
     try { restored = JSON.parse(readFileSync("/dev/shm/cop-whole/operator-restore-ack.json", "utf8")); break; }
@@ -378,13 +397,46 @@ try {
   need(recovered.statusCode === 200 && recovered.json().accountDeleted === false, "WHOLE_COPIED_COMPLETION_NOT_RESET");
   // Capabilities created after the restored snapshot may be absent. The
   // existing authenticated receipt path remains bound to the original actor.
-  await waitDeleted({ authorization: "Bearer " + freshA.access_token });
-  erased(before, await readWhole());
+  await waitDeleted({ authorization: "Bearer " + freshA.access_token }, undefined, operationId, WHOLE_PHASE_LIMITS.postRestoreWaitMs);
+  const restoredSnapshot = await readWhole(); erased(before, restoredSnapshot);
+  if (requireAdditionalActors) { const additional = await verifyAdditionalActorsPreserved({ ...context, app }, seeded.additional);
+    additionalPreservation.restored = { checkedAt: new Date().toISOString(), controlB: publicControlBSnapshot(restoredSnapshot, expectedIds), peerD: additional.d }; }
   need((await app.inject({ url: "/api/v1/me/preferences", headers: { authorization: "Bearer " + freshA.access_token } })).statusCode === 403,
     "WHOLE_RESTORED_A_NOT_FENCED");
   const restoredB = await token(manifest.actors.b);
   headerB.authorization = "Bearer " + restoredB.access_token;
   need((await app.inject({ url: "/api/v1/me/preferences", headers: headerB })).statusCode === 200, "WHOLE_RESTORED_B_DAMAGED");
+  let additionalActorsEvidence;
+  if (requireAdditionalActors) {
+    testStage = "actual_novice_deletion_after_primary_restore";
+    const noviceDeletion = await eraseNoviceAfterPrimaryRestore({ ...context, app }, seeded.additional, { primaryRestoreVerified: true,
+      login: token, waitDeleted, writeCheckpoint: value => writeFileSync("/dev/shm/cop-whole/novice-confirmed-operation-checkpoint.json",
+        JSON.stringify(value), { mode: 0o600, flag: "wx" }), phase: value => process.stdout.write(JSON.stringify(value) + "\n"), verifySimIdentity: async actor => {
+        const value = await token(actor, "csm-sim-web", actor.sim.refresh_token), response = await fetch(issuer + "/protocol/openid-connect/userinfo", {
+          headers: { authorization: "Bearer " + value.access_token }, signal: AbortSignal.timeout(10000) });
+        const info = await response.json(); need(response.status === 200 && info.sub === actor.subjectId, "WHOLE_NOVICE_SIM_SHARED_IDENTITY_DAMAGED");
+        return { status: response.status, subjectId: info.sub };
+      }, readOwnerCompletion: async (noviceOperationId, requestedAt, subjectId) => {
+        const accountKey = createHmac("sha256", env.COP_ACCOUNT_ERASURE_SECRET).update("cop-account-erasure-identity-v1\0").update(JSON.stringify([issuer, subjectId])).digest("hex"),
+          target = pool(database.guardTargetReadUrl), guard = pool(database.guardRuntimeUrl);
+        const local = (await target.query("SELECT value->>'operationId' operation_id,value->>'requestedAt' requested_at,value->'required' required,value->'checkpoints' checkpoints FROM cop_mobility_v1 WHERE key=$1", ["account-erasure:job:" + accountKey])).rows[0],
+          independent = (await guard.query("SELECT entry->'job'->>'operationId' operation_id,entry->'job'->>'requestedAt' requested_at,entry->'job'->'checkpoints' checkpoints FROM cop_safety_v2.fences WHERE account_key=$1", [accountKey])).rows[0];
+        need(local?.operation_id === noviceOperationId && independent?.operation_id === noviceOperationId && local.requested_at === requestedAt && independent.requested_at === requestedAt &&
+          [...(local.required ?? [])].sort().join() === expectedIds.join() && Object.keys(local.checkpoints ?? {}).sort().join() === expectedIds.join() && Object.keys(independent.checkpoints ?? {}).sort().join() === expectedIds.join() &&
+          expectedIds.every(owner => local.checkpoints[owner]?.status === "completed" && typeof local.checkpoints[owner]?.proofId === "string" && local.checkpoints[owner].proofId.length > 0 && independent.checkpoints?.[owner]?.status === "completed"),
+          "WHOLE_NOVICE_ACTUAL_OWNER_JOURNAL_UNPROVEN");
+        return { operationId: noviceOperationId, requestedAt, completedOwners: expectedIds, journalDigest: stateDigest([local, independent]) };
+      } });
+    const finalB = await token(manifest.actors.b); headerB.authorization = "Bearer " + finalB.access_token;
+    need((await app.inject({ url: "/api/v1/me/preferences", headers: headerB })).statusCode === 200, "WHOLE_B_DAMAGED_AFTER_NOVICE");
+    const finalSnapshot = await readWhole(); erased(before, finalSnapshot);
+    const additional = await readAdditionalActors({ ...context, app });
+    additionalPreservation.afterNovice = { checkedAt: new Date().toISOString(), controlB: publicControlBSnapshot(finalSnapshot, expectedIds), peerD: additional.d };
+    additionalActorsEvidence = publicAdditionalActorsEvidence({ manifest, testedSource: manifest.testedSource,
+      helperSha256: createHash("sha256").update(readFileSync("/dev/shm/cop-whole/additional-actors.mjs")).digest("hex"),
+      primaryOperationId: operationId, primaryRequestedAt: lastReceipt.requestedAt, checkpoint: seeded.additional,
+      controlBBefore: publicControlBSnapshot(before, expectedIds), preservation: additionalPreservation, noviceDeletion });
+  }
   need(providerCalls.some(call => call.provider === "keycloak" && call.method === "DELETE"), "WHOLE_REAL_KEYCLOAK_REVOKE_NOT_OBSERVED");
   assert(providerCalls.length > 0);
   const crashEvidence = existsSync("/dev/shm/cop-whole/main-crash-verified-checkpoint.json")
@@ -413,9 +465,11 @@ try {
     need(confirmationEvidence !== undefined && (confirmation.initialNormal202Verified || confirmation.initialHttpStatus === 503 && confirmation.recoveryAccepted202Verified &&
       manifest.integration.expectedInitialOutage503 === true) && confirmation.controlledMainCrashVerified && confirmation.retryNormal202Verified,
       "WHOLE_REQUIRED_ACTUAL_CRASH_RETRY_UNPROVEN");
+  if (requireAdditionalActors) validateAdditionalActorsEvidence(additionalActorsEvidence, {
+    whole: { ...manifest.testedSource, confirmationEvidence }, expectedOwners: expectedIds, helperSha256: additionalActorsEvidence.helperSha256 });
   process.stdout.write(JSON.stringify({ phase: "whole_account_acceptance_complete", contractVersion: "cop-whole-erasure-acceptance-v1",
     actualOwners: expectedIds, startCrashRecoveryScenario: Boolean(continuation), ...confirmation, confirmationEvidence,
-    providerCallMetadataDigest: stateDigest(providerCalls), twoRealKeycloakActors: true,
+    providerCallMetadataDigest: stateDigest(providerCalls), twoRealKeycloakActors: true, additionalActorsEvidence,
     sourceRevision: manifest.testedSource.sourceRevision, sourceWorkingTreeDirty: manifest.testedSource.sourceWorkingTreeDirty, compiledApiClosureSha256: manifest.testedSource.compiledApiClosureSha256, runtimeResourceClosureSha256: manifest.testedSource.runtimeResourceClosureSha256, compiledWorkspaceClosureSha256: manifest.testedSource.compiledWorkspaceClosureSha256, nodeBaseImageId: manifest.testedSource.nodeBaseImageId, productionTlsVerified: false, productionChanged: false, wholeAccountAccepted: true }) + "\n");
 } catch (error) {
   const code = typeof error.message === "string" && /^[A-Za-z0-9_]{1,512}$/u.test(error.message) ? error.message : "WHOLE_ACTUAL_PROVIDER_TEST_FAILED";

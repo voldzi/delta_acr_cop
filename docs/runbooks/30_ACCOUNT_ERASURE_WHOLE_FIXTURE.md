@@ -46,6 +46,15 @@ pod `public-fixture/` tohoto source packu a jejich skutečné bytes musí sedět
 Chybějící finální Messaging scope/provider/source piny znamenají nepřipravenost,
 nikoli možnost použít dřívější negativní profil.
 
+Nový vnější whole profil má `contractVersion: cop-sim-whole-erasure-profile-v4`,
+`profileDiscriminator: full-server-credential-first-use-v4` a modul
+`cop_account_erasure_full_v2_credential_candidate.AccountErasure`. Ověřovač přijme
+jen přesnou mapu 21 `runtimeSourcePaths` (`component`, `sourcePath`, `runtimePath`),
+provede čtení celých kanonických kopií a pevných aliasů. Testovací Synapse používá
+`/data`, Messaging `/fixture/project`; produkční `/opt/cop-private` cesty ani
+odlišný komponentový profil tyto whole údaje nenahrazují. Starý v3 postup zůstává
+pouze v původní historické větvi.
+
 Kontrola požaduje skutečný samostatný X5 filesystem, nejméně 4 GiB volného místa,
 5 GiB `MemAvailable`, 2 CPU a 256 MiB volného host tmpfs. Neprovádí prune,
 restart jiných aplikací, změny sdíleného builderu ani úklid negativních případů.
@@ -53,9 +62,12 @@ Nedostatek kapacity se řeší samostatným konkrétním návrhem.
 
 Každá akce používá stejné argumenty `--server-local`, `--source-proof` a
 `--source-proof-sha256`. Manifest nikdy neleží na Macu. `--prepare-holder`
-vytvoří pouze přesný nový prázdný PG18 holder. `--prepare-keycloak` vytvoří dvě
-nové skutečné identity; `--export-sim-bootstrap` odvodí oba bootstrapy přímo v
-carrieru z aktuálních COP helperů a devíti skutečných UTC dnů. Main SIM/Messaging
+vytvoří pouze přesný nový prázdný PG18 holder. `--prepare-keycloak` vytvoří čtyři
+nové skutečné identity A/B/C/D. Ověří skutečné podpisy dvanácti klientských tokenů,
+issuer, subject, azp, platnost, userinfo i veřejné klienty. `--export-sim-bootstrap`
+odvodí oba bootstrapy přímo v carrieru z aktuálních COP helperů. SIM dostává jen
+A/B a devět skutečných UTC dnů; Messaging navíc přesné `additionalActors` C
+(`novice`) a D (`peer`). Staré bootstrapy ani negativní případy se nerozšiřují. Main SIM/Messaging
 čte pouze tyto schválené serverové reference:
 
 - `/dev/shm/cop-whole/bootstrap/messaging.json`;
@@ -67,6 +79,44 @@ Další akce zůstávají `--prepare-cop-database`, `--prepare-cop-postgis`,
 source proof. Skutečné čtecí mosty 4321–4323 nepředstírají odstranění a nevydávají
 pozitivní mazací účtenku. Bind musí ověřit neprázdné A/B readbacky a skutečné
 provider image, owner, namespace, logování a runtime bytes.
+
+## Nový příjemce a účet bez historie
+
+Před hlavním A/B seedem projde C skutečným PKCE přihlášením a čistým COP
+preflightem. Čtecí most musí prokázat, že nevznikl žádný Matrix mapping, usage
+záznam ani odstranitelný Matrix obsah; jeho otisk se nezmění. C ani D nejsou
+předem vytvořeni v Matrixu. D skutečně načte svůj profil přes COP s vlastním
+ověřeným JWT. A pak vytvoří první kontakt s D přes existující COP endpoint.
+Probe v RAM pozoruje skutečný odchozí požadavek, přesnou serverovou peer atestaci
+a skutečné provider readbacky. Odpověď poskytovatele se nenahrazuje.
+
+GET čtecího mostu 4323 má navíc `additionalActors.c/d` s přesnými čtyřmi poli
+`matrixMappingCount`, `communicationUsageCount`, `matrixRemovableCount`,
+`fingerprint`. D otisk původního mappingu, usage a dokladu vytvoření musí zůstat
+stejný přes odstranění A, obnovení a odstranění C. Neobsahuje aktuální generaci
+ani přístupová tajemství.
+
+Úplné odstranění novice C začíná až po dokončené obnově a replay A. Použije
+nové skutečné PKCE přihlášení a vlastní operaci; nepřepisuje původní A datum ani
+důkazy pádu. Její capability/checkpoint zůstávají pouze v serverovém tmpfs.
+Závěr vyžaduje skutečné 202, konečnou účtenku, ověřenou absenci odstranitelného
+Matrix stavu, zachovaný přístup SIM i B/D. C se už z původního dumpu neobnovuje;
+v důkazu je výslovně `noviceRestoreTested:false`.
+
+Veřejný `additionalActorsEvidence` má konečné schéma svázané s přesnými čtyřmi
+syntetickými identitami, rolemi, source closure a SHA-256 stejného helperu v
+release plánu. Obsahuje skutečná HTTP pozorování, typovaný odchozí peer packet,
+C operaci a veřejnou konečnou účtenku, časy a readbacky B/D ve třech fázích.
+C kontrola čte pouze potřebná pole dokončené lokální a nezávislé evidence,
+ověří všech jedenáct ownerů a zveřejní jen jejich názvy a otisk. Neexportuje
+privátní job, sealedPrincipal, token, snapshot ani receipt capability. Root
+ověřuje konkrétní návaznost a chronologii; samotné pozitivní příznaky nestačí.
+
+Pouze nový server-local případ má pětihodinový lease. Fáze jsou omezené na
+70 minut online A, 30 minut čekání na operátorskou obnovu, 70 minut replay A
+a 70 minut novice C; zbývá 60 minut rezervy. C má vlastní skutečnou nejméně
+3690sekundovou hlasovou ochranu. Žádné hodiny, TTL ani čekací lhůty se nezkracují.
+Historické Mac větve mají původní tříhodinový lease.
 
 ## Skutečný výpadek, pád a opakování
 
@@ -117,6 +167,6 @@ Nový dataset je nedostupný do aktuálního replay a owner readbacků. Žádný
 statický catalog JSON nebo ruční pozitivní ack nenahrazuje obnovu. Závěrečný
 `wholeAccountAccepted:true` vyžaduje současně skutečné online mazání, izolaci B,
 pravdivé HTTP503/recovery202/crash/retry důkazy, obnovení všech vlastníků a nový
-replay/readback. Zálohy poskytovatele zůstávají do řízené expirace; netvrdí se
+replay/readback, první kontakt s D a následné samostatné odstranění novice C. Zálohy poskytovatele zůstávají do řízené expirace; netvrdí se
 fyzické smazání Proxmox/PBS kopií. Obnova je v karanténě a důvěřuje správci dle
 ADR0055. Produkční zapnutí má navíc vlastní Root, source/image a health gate.

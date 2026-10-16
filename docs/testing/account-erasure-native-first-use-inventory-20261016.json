@@ -1,0 +1,73 @@
+{
+  "contractVersion": "cop-native-first-use-inventory-independent-component-evidence-v1",
+  "observedAt": "2026-10-16T16:20:30.342731+00:00",
+  "minimalPgPredicateProof": {
+    "contractVersion": "cop-native-first-use-independent-component-proof-v1",
+    "testsPassed": 12,
+    "cases": [
+      "actual_queries_empty_component_scope_never_claims_writer_closure",
+      "read_committed_transaction_denied",
+      "nonadmin_database_role_denied",
+      "known_native_account_and_credential_reference_without_exporting_credential",
+      "unknown_credential_cache_owner_blocks_without_raw_keys",
+      "unknown_secondary_native_reference_blocks_ignored_users_ignored_user_id",
+      "unknown_secondary_native_reference_blocks_users_who_share_private_rooms_other_user_id",
+      "unknown_secondary_native_reference_blocks_access_tokens_puppets_user_id",
+      "unknown_secondary_native_reference_blocks_user_filters_full_user_id",
+      "actual_share_lock_blocks_concurrent_native_writer",
+      "wrong_native_schema_denied",
+      "wrong_native_version_denied"
+    ],
+    "nativeQuerySha256": "b90c397bd0cc8cc51c905125c37f3c7c50209c281c18175dd3952718125b176a",
+    "providerSourceSha256": "b38fce45e15e4402837afab9797d9f61abfe3d6e48f737d072d0048d03534697",
+    "actualPostgres": true,
+    "fullSynapse94Schema": false,
+    "nativeHttpTested": false,
+    "writerClosureVerified": false,
+    "baselineEnrolled": false,
+    "productionChanged": false,
+    "ownedClusterRemoved": true
+  },
+  "actualExportedSchemaQueryProof": {
+    "contractVersion": "cop-native-first-use-fullschema-query-proof-v1",
+    "passed": true,
+    "testsPassed": 4,
+    "cases": [
+      "actual_full_exported_native94_schema_restored_without_source_rows",
+      "all_actual_query_owner_tables_columns_and_cache_predicates_execute_on_native94",
+      "actual_native_users_shape_principal_inventory_no_secret_export",
+      "actual_native_table_share_lock_blocks_concurrent_writer"
+    ],
+    "sourceSchemaSha256": "00bd048810b06cc8224242fb8289021472f8b4bf37352fe512e66d8fc99b656f",
+    "nativeQuerySha256": "b90c397bd0cc8cc51c905125c37f3c7c50209c281c18175dd3952718125b176a",
+    "providerSourceSha256": "b38fce45e15e4402837afab9797d9f61abfe3d6e48f737d072d0048d03534697",
+    "actualPostgres": true,
+    "fullExportedNative94Schema": true,
+    "sourceRowsCopied": false,
+    "nativeHttpTested": false,
+    "writerClosureVerified": false,
+    "baselineEnrolled": false,
+    "productionChanged": false,
+    "wholeFixtureChanged": false,
+    "ownedClusterRemoved": true
+  },
+  "sourceOnlyTests": {
+    "minimalPredicateScriptSha256": "446c0ea9bcb62297e783c1c02a45fcd1b5e0701395ce74153792d16a4ce3cea3",
+    "fullExportedSchemaScriptSha256": "4eb9bf555b23cf2f38d1b75395c3b8775768d26f26e598d0fbfba478666468fe"
+  },
+  "sourceSchemaOrigin": {
+    "isolatedPgContainerId": "8b3f25a792bf75b58edfca4519c4671a2b1db165a8c0d22285505dc892c7b30e",
+    "fixtureOwner": "cop-messaging-joint-d2630fa78b21",
+    "schemaOnly": true,
+    "rowsExported": false,
+    "privateMode": "0600",
+    "sourcePgVersion": "18.6",
+    "localOwnedTestPgVersion": "18.3"
+  },
+  "baselineEnrolled": false,
+  "closedWriterNamespaceProven": false,
+  "nativeHttpAcceptance": false,
+  "productionApproved": false,
+  "productionChanged": false,
+  "wholeFixtureChanged": false
+}

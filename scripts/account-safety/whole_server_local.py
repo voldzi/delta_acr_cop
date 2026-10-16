@@ -31,6 +31,7 @@ SOURCE_FILES = [
  'scripts/account-safety/whole-cop-local-fixture.mjs', 'scripts/account-safety/whole-sim-messaging-fixture.mjs',
  'scripts/account-safety/whole-media-edge-fixture.mjs', 'scripts/account-safety/whole-main-crash.mjs',
  'scripts/account-safety/whole-confirmation-retry.mjs', 'scripts/account-safety/whole-confirmation-evidence.mjs',
+ 'scripts/account-safety/whole-additional-actors.mjs',
  'scripts/account-safety/prepare-whole-aux-providers.py','scripts/account-safety/configure-whole-edge-oidc.py',
  'scripts/account-safety/prepare-livekit-whole-fixture.py','scripts/account-safety/prepare-media-whole-fixture.py',
  'scripts/account-safety/prepare-edge-whole-fixture.py','scripts/account-safety/media-whole-probe.mjs',
@@ -86,6 +87,51 @@ def verify_source_proof(root, path, expected_sha):
  verify_messaging_source_paths(root,proof['messagingSource'])
  return proof
 
+NEW_MESSAGING_PROFILE = {
+ 'contractVersion':'cop-sim-whole-erasure-profile-v4',
+ 'profileDiscriminator':'full-server-credential-first-use-v4',
+ 'providerModuleEntrypoint':'cop_account_erasure_full_v2_credential_candidate.AccountErasure'}
+
+def expected_v4_runtime_source_paths():
+ synapse={
+  'provider':'deploy/synapse/cop_account_erasure_full_v2_credential_candidate.py',
+  'providerScope':'deploy/synapse/approved-account-scope-full-v2-credential-candidate.json',
+  'ownerStreamHelper':'deploy/synapse/cop_owner_stream_erasure.py',
+  'credentialHelper':'deploy/synapse/cop_credential_stream_erasure.py',
+  'creationHelper':'deploy/synapse/cop_unused_native_creation.py',
+  'creationContract':'deploy/synapse/cop_unused_creation_contract.py',
+  'sql005':'deploy/synapse/005_reviewed_owner_stream_cleanup.sql',
+  'sql006':'deploy/synapse/006_credential_stream_origin_witness.sql',
+  'sql007':'deploy/synapse/007_credential_stream_restore_lineage.sql',
+  'sql008':'deploy/synapse/008_native_first_creation.sql'}
+ messaging={
+  'client':'lib/csm_messaging/synapse_erasure_client.ex',
+  'databaseGuard':'lib/csm_messaging/database_erasure_guard.ex',
+  'wholeOwner':'lib/csm_messaging/whole_account_erasure_owner.ex',
+  'usageGuard':'lib/csm_messaging/communication_usage_guard.ex',
+  'usageSql':'deploy/account-safety/006_communication_usage.sql',
+  'policyApi':'deploy/account-safety/proposed-retention-policy-full-v2-credential-v1.json',
+  'scopeApi':'deploy/synapse/approved-account-scope-full-v2-credential-candidate.json'}
+ result={key:{'component':'synapse','sourcePath':path,'runtimePath':'/data/'+path.rsplit('/',1)[1]} for key,path in synapse.items()}
+ result['policy']={'component':'synapse','sourcePath':messaging['policyApi'],'runtimePath':'/data/source/'+messaging['policyApi']}
+ result.update({key:{'component':'messaging','sourcePath':path,'runtimePath':'/fixture/project/'+path} for key,path in messaging.items()})
+ for key,kind,alias in [('fixtureBootstrap','synapse','synapse'),('fixtureReadback','readback','readback'),('fixtureBridge','owner_bridge','owner-bridge')]:
+  result[key]={'component':'synapse','sourcePath':'test/provider/messaging_approved_joint_credential_v4_'+kind+'.py','runtimePath':'/data/joint-'+alias+'-credential-v4.py'}
+ need(len(result)==21, 'WHOLE_NEW_MESSAGING_RUNTIME_MAP_INCOMPLETE')
+ return result
+
+def verify_v4_messaging_profile(profile):
+ need(isinstance(profile,dict) and all(profile.get(key)==value for key,value in NEW_MESSAGING_PROFILE.items()) and
+  isinstance(profile.get('sourceSha256'),dict) and bool(profile['sourceSha256']) and
+  all(isinstance(name,str) and not pathlib.PurePosixPath(name).is_absolute() and '..' not in pathlib.PurePosixPath(name).parts and
+   re.fullmatch(r'[A-Za-z0-9_./-]{1,250}',name) and re.fullmatch('[0-9a-f]{64}',str(value)) for name,value in profile['sourceSha256'].items()) and
+  profile.get('images',{}).get('pg')==PG_IMAGE and all(re.fullmatch('sha256:[a-f0-9]{64}',str(profile.get('images',{}).get(component,''))) for component in ['synapse','messaging']),
+  'WHOLE_NEW_MESSAGING_SOURCE_PROFILE_REJECTED')
+ expected=expected_v4_runtime_source_paths()
+ need(profile.get('runtimeSourcePaths')==expected, 'WHOLE_NEW_MESSAGING_RUNTIME_MAP_REJECTED')
+ need(all(value['sourcePath'] in profile['sourceSha256'] for value in expected.values()), 'WHOLE_NEW_MESSAGING_SOURCE_INCOMPLETE')
+ return profile
+
 def verify_messaging_source_paths(root, proof):
  root=pathlib.Path(root).resolve()
  need(isinstance(proof,dict) and set(proof)=={'profilePath','profileSha256','archivePath','archiveSha256','ownerLabel'} and proof['ownerLabel']==HOLDER_OWNER,
@@ -95,12 +141,7 @@ def verify_messaging_source_paths(root, proof):
   need(path.is_relative_to(root/'public-fixture') and path.resolve()==path and not path.is_symlink() and
    re.fullmatch('[0-9a-f]{64}',str(proof[name+'Sha256'])) and digest_file(path)==proof[name+'Sha256'], 'WHOLE_NEW_MESSAGING_SOURCE_BYTES_CHANGED')
  profile=json.loads((root/proof['profilePath']).read_text())
- need(profile.get('contractVersion')=='messaging-approved-joint-full-v2-freeze-v1' and isinstance(profile.get('sourceSha256'),dict) and
-  all(re.fullmatch('[0-9a-f]{64}',str(value)) for value in profile['sourceSha256'].values()) and
-  profile.get('images',{}).get('pg')==PG_IMAGE, 'WHOLE_NEW_MESSAGING_SOURCE_PROFILE_REJECTED')
- for name in ['deploy/synapse/cop_account_erasure_full_v2.py','deploy/synapse/approved-account-scope-full-v2.json',
-  'deploy/synapse/cop_owner_stream_erasure.py','deploy/synapse/005_reviewed_owner_stream_cleanup.sql','lib/csm_messaging/synapse_erasure_client.ex']:
-  need(name in profile['sourceSha256'], 'WHOLE_NEW_MESSAGING_SOURCE_INCOMPLETE')
+ verify_v4_messaging_profile(profile)
  with tarfile.open(root/proof['archivePath'],'r:gz') as archive:
   members=archive.getmembers();files=[value for value in members if value.isfile()]
   need(len(files)==len(profile['sourceSha256']) and len({value.name for value in files})==len(files) and all(value.isfile() or value.isdir() for value in members), 'WHOLE_NEW_PUBLIC_ARCHIVE_MEMBERS_REJECTED')

@@ -264,6 +264,7 @@ import { registerCommunityGroupRoutes, registerCommunityReportRoutes } from "./r
 import { registerDriverMeasurementRoutes } from "./routes/driver-measurement-routes.js";
 import { registerHealthRoutes } from "./routes/health-routes.js";
 import { registerMessagingRoutes } from "./routes/messaging-routes.js";
+import { deriveMessagingPeerBindings } from "./messaging-peer-bindings.js";
 import { registerMobileRoutes } from "./routes/mobile-routes.js";
 import { registerRadioRoutes } from "./routes/radio-routes.js";
 import { registerRoutingRoutes } from "./routes/routing-routes.js";
@@ -3895,6 +3896,12 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     return state.sources.get(missionArenaSource.sourceSystem.sourceSystemId) ?? missionArenaSource.sourceSystem;
   }
 
+  async function messagingPeerBindings(actor: AuthenticatedActor, targets: readonly string[]) {
+    return deriveMessagingPeerBindings({ actor, targets, store: userProfileStore, now,
+      authorityMode: process.env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE, configuredIssuer: process.env.COP_OIDC_ISSUER,
+      ready: ensureUserProfileStoreReady, unavailable: markUserProfileStoreDegraded });
+  }
+
   async function readUserProfile(actor: AuthenticatedActor): Promise<UserProfileRecord | null> {
     return readUserProfileBySubject(actor.subjectId);
   }
@@ -4563,7 +4570,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           role: "bot",
           userId: config.userId
         }
-      ]);
+      ], await messagingPeerBindings(actor, [config.userId]));
       warnings.push(...sync.warnings);
       if (!sync.conversation) {
         status = "member_sync_failed";
@@ -5687,7 +5694,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
-      const result = await messagingProvider.addConversationMembers(actor, now(), params.conversationId, members);
+      const result = await messagingProvider.addConversationMembers(actor, now(), params.conversationId, members,
+        await messagingPeerBindings(actor, members.map(member => member.userId)));
       return reply.code(result.conversation ? 200 : 502).send(result);
     },
     bindMatrixRoom: async (request, reply) => {
@@ -6093,7 +6101,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         );
       }
       const requestNow = now();
-      const created = await messagingProvider.createConversation(actor, requestNow, conversationRequest);
+      const created = await messagingProvider.createConversation(actor, requestNow, conversationRequest,
+        await messagingPeerBindings(actor, (conversationRequest.members ?? []).map(member => member.userId)));
       if (!created.conversation) {
         return reply.code(502).send(created);
       }
@@ -6237,7 +6246,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
           correlationIdFrom(request.headers["x-correlation-id"])
         );
       }
-      return messagingProvider.resolveMatrixIdentities(actor, now(), userIds);
+      return messagingProvider.resolveMatrixIdentities(actor, now(), userIds, await messagingPeerBindings(actor, userIds));
     },
     status: async () => messagingProvider.fetchStatus(now()),
     webPushConfig: async () => messagingProvider.fetchWebPushConfig(now())

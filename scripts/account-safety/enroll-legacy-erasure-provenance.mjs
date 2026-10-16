@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import { hostname } from 'node:os';
 import { parseEnvironment } from './provision-database-v2.mjs';
 import { loadOperatorEnvironment } from './operator-profile-environment.mjs';
+import {legacyReceiptTable,legacyReceiptSchema,legacyReceiptCatalog,prepareLegacyReceiptStore,storeLegacyReceipt,readLegacyReceipt,purgeLegacyReceipt} from './legacy-enrollment-receipt.mjs';
 const need=(v,c='LEGACY_PROVENANCE_UNPROVEN')=>{if(!v)throw Error(c);};
 const sha=v=>createHash('sha256').update(v).digest('hex'),hash=v=>sha(JSON.stringify(v));
 const canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonical(v[k])])):v;
@@ -152,7 +153,7 @@ function prerequisiteSql(){
  const columns=Object.entries(provenanceColumnSpecs).flatMap(([t,cs])=>cs.map(c=>'ALTER TABLE '+t+' ADD COLUMN IF NOT EXISTS '+c[0]+' '+(c[1]==='text'?'text':'boolean NOT NULL DEFAULT false')));
  need(statements.length===12&&statements.slice(0,8).every((v,i)=>v===columns[i])&&same(statements.slice(8,11).map(v=>/^CREATE TABLE IF NOT EXISTS (cop_[a-z_]+) \(/u.exec(v)?.[1]),Object.keys(prerequisiteTables))&&statements[11]==='CREATE INDEX IF NOT EXISTS cop_web_sessions_owner_idx ON cop_web_sessions(owner_hash) WHERE owner_hash IS NOT NULL','LEGACY_PREP_SCHEMA_SCOPE');
  const qualified=statements.map(v=>v.replace(/ALTER TABLE (cop_[a-z_]+)/u,'ALTER TABLE public.$1').replace(/CREATE TABLE IF NOT EXISTS (cop_[a-z_]+)/u,'CREATE TABLE IF NOT EXISTS public.$1').replace(/\bON (cop_[a-z_]+)/u,'ON public.$1'));
- return {sql:qualified.map(v=>v+';').join('\n'),digest:hash([a,b])};
+ return {sql:qualified.map(v=>v+';').join('\n'),digest:hash([a,b,legacyReceiptSchema])};
 }
 export function legacyErasureSchemaDdlSha256(){return prerequisiteSql().digest;}
 function validatePreparationPlan(plan,reviewedPlanSha256,issuer){
@@ -189,10 +190,10 @@ async function prepareLegacy({mode,business,guard,plan,reviewedPlanSha256,issuer
   const base=[...new Set(tables)].filter(v=>!Object.hasOwn(prerequisiteTables,v));await catalog(b,base,owner);await b.query('LOCK TABLE '+base.sort().map(v=>'public.'+v).join(',')+' IN SHARE ROW EXCLUSIVE MODE');
   await g.query('BEGIN');gt=true;await g.query("SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='30s'");await g.query('SELECT pg_advisory_xact_lock(1932540802,2)');
   const beforeBinding=await binding(g,b,plan.binding,new Set(Object.keys(prerequisiteTables))),before=await prerequisiteCatalog(b,owner);
-  need((await b.query('SELECT rolsuper FROM pg_roles WHERE rolname=session_user')).rows[0]?.rolsuper===true,'LEGACY_ROOT_DATABASE_ADMIN_REQUIRED');await b.query('SET LOCAL ROLE "'+owner+'"');
-  if(mode==='apply')await b.query(ddl.sql);const after=await prerequisiteCatalog(b,owner),ready=after.missingColumns.length===0&&after.missingTables.length===0&&!after.missingIndex;
+  need((await b.query('SELECT rolsuper FROM pg_roles WHERE rolname=session_user')).rows[0]?.rolsuper===true,'LEGACY_ROOT_DATABASE_ADMIN_REQUIRED');const durableBefore=await prepareLegacyReceiptStore(b,mode);await b.query('SET LOCAL ROLE "'+owner+'"');
+  if(mode==='apply')await b.query(ddl.sql);const after=await prerequisiteCatalog(b,owner);await b.query('RESET ROLE');const durableAfter=await legacyReceiptCatalog(b),ready=after.missingColumns.length===0&&after.missingTables.length===0&&!after.missingIndex&&durableAfter.ready;
   need(beforeBinding===await binding(g,b,plan.binding,mode==='check'?new Set(Object.keys(prerequisiteTables)):new Set()),'LEGACY_BINDING_MOVED');need(writerBefore===writerWitness(plan,reviewedPlanSha256,currentWitness()),'LEGACY_WRITER_MOVED');
-  const result={contractVersion:'cop-legacy-erasure-schema-preparation-v1',mode,schemaReady:ready,missingColumns:after.missingColumns,missingTables:after.missingTables,missingIndex:after.missingIndex,addedColumns:mode==='apply'?before.missingColumns:[],createdTables:mode==='apply'?before.missingTables:[],existingRowsReattributed:false,metadataFingerprintInserted:false,firstEnrollmentConfirmed:ready,bindingSha256:beforeBinding,catalogSha256:after.digest,exportedDdlSha256:ddl.digest,hostWriterWitnessSha256:writerBefore,hostPostReadbackRequired:true,provenanceComplete:false};
+  const result={contractVersion:'cop-legacy-erasure-schema-preparation-v1',mode,schemaReady:ready,missingColumns:after.missingColumns,missingTables:[...after.missingTables,...(durableAfter.missing?[legacyReceiptTable]:[])],missingIndex:after.missingIndex,addedColumns:mode==='apply'?before.missingColumns:[],createdTables:mode==='apply'?[...before.missingTables,...(durableBefore.created?[legacyReceiptTable]:[])]:[],existingRowsReattributed:false,metadataFingerprintInserted:false,firstEnrollmentConfirmed:ready,bindingSha256:beforeBinding,catalogSha256:after.digest,exportedDdlSha256:ddl.digest,hostWriterWitnessSha256:writerBefore,hostPostReadbackRequired:true,provenanceComplete:false};
   await b.query('COMMIT');bt=false;await g.query('COMMIT');gt=false;return result;
  }catch(error){if(bt)await b.query('ROLLBACK').catch(()=>{});if(gt)await g.query('ROLLBACK').catch(()=>{});throw Error(/^LEGACY_[A-Z_]+$/u.test(error?.message??'')?error.message:'LEGACY_PREP_UNPROVEN');}finally{b.release();g.release();}
 }
@@ -219,7 +220,7 @@ function validateProvenanceReceipt(receipt,plan,reviewedPlanSha256,writerBefore)
  need(Array.isArray(receipt.postState)&&receipt.postState.length===plan.rows.length&&receipt.postStateSha256===hash(receipt.postState),'LEGACY_RECEIPT_POST_STATE_INVALID');
  for(let i=0;i<plan.rows.length;i++){const r=plan.rows[i],s=specs[r.kind],v=receipt.postState[i],lab=plan.evidence.find(e=>e.id===r.evidenceId).authentication==='hardcoded_lab';need(fixedKeys(v,['kind','key','fullRowSha256','ownershipSha256','nonAccountMarkerSha256'])&&v.kind===r.kind&&same(v.key,r.key)&&hex.test(v.fullRowSha256??'')&&(s.ledger?hex.test(v.ownershipSha256??''):v.ownershipSha256===null)&&(lab?hex.test(v.nonAccountMarkerSha256??''):v.nonAccountMarkerSha256===null),'LEGACY_RECEIPT_POST_STATE_INVALID');}
 }
-async function verifyReceipt({business,guard,plan,reviewedPlanSha256,issuer,fixture=false,hostWriterWitness,receipt}){
+async function verifyReceipt({business,guard,plan,reviewedPlanSha256,issuer,fixture=false,hostWriterWitness,receipt,completed=false,sessionInputs}){
  validate(plan,reviewedPlanSha256,issuer);const currentWitness=()=>fixture?{...pausedWriter(plan.writer,true),reviewedPlanSha256}:hostWriterWitness,writerBefore=writerWitness(plan,reviewedPlanSha256,currentWitness());validateProvenanceReceipt(receipt,plan,reviewedPlanSha256,writerBefore);
  const b=await business.connect(),g=await guard.connect();let bt=false,gt=false;
  try{
@@ -228,10 +229,39 @@ async function verifyReceipt({business,guard,plan,reviewedPlanSha256,issuer,fixt
   const owner=(await b.query("SELECT pg_get_userbyid(relowner) owner FROM pg_class WHERE oid='public.cop_mobility_v1'::regclass")).rows[0]?.owner;need(/^[A-Za-z_][A-Za-z0-9_]{0,62}$/u.test(owner??''),'LEGACY_OWNER_UNPROVEN');const role=(await b.query('SELECT rolsuper,rolcreatedb,rolcreaterole,rolbypassrls FROM pg_roles WHERE rolname=$1',[owner])).rows[0];need(role&&!role.rolsuper&&!role.rolcreatedb&&!role.rolcreaterole&&!role.rolbypassrls,'LEGACY_APP_ROLE_UNPROVEN');
   await catalog(b,[...new Set(tables)],owner);await provenanceColumns(b);if(receipt.nonAccountRows>0)await legacyLedgerCatalog(b,owner);const actualBinding=await binding(g,b,plan.binding,new Set(),true);need(actualBinding===receipt.bindingSha256,'LEGACY_RECEIPT_BINDING_CHANGED');
   if(plan.rows.some(r=>r.kind==='session')){const metadata=(await b.query('SELECT id,key_fingerprint FROM cop_web_session_erasure_metadata ORDER BY id')).rows;need(metadata.length<=1&&metadata.every(v=>v.id===1&&v.key_fingerprint===plan.signedSessionPolicy.encryptionKeyFingerprint),'LEGACY_SESSION_EXISTING_KEY_BINDING_CHANGED');}
-  const postState=await provenancePostState(b,plan);need(same(postState,receipt.postState)&&hash(postState)===receipt.postStateSha256,'LEGACY_RECEIPT_ACTUAL_STATE_CHANGED');const activeCount=(await b.query('SELECT count(*)::int n FROM cop_web_sessions WHERE owner_hash IS NULL AND session_expires_at>now()')).rows[0].n;need(activeCount===0,'LEGACY_RECEIPT_ACTIVE_SESSION_UNPROVEN');need(writerBefore===writerWitness(plan,reviewedPlanSha256,currentWitness()),'LEGACY_WRITER_MOVED');
-  await b.query('COMMIT');bt=false;await g.query('COMMIT');gt=false;return {contractVersion:'cop-legacy-erasure-provenance-receipt-readback-v1',verified:true,readOnly:true,planSha256:reviewedPlanSha256,sourceHelperSha256:receipt.sourceHelperSha256,bindingSha256:actualBinding,postStateSha256:receipt.postStateSha256,checkedRows:postState.length,legacySessions:{activeCount},hostWriterWitnessSha256:writerBefore,hostPostReadbackRequired:true,provenanceComplete:false,wholeAccountComplete:false};
+  const stable=completed?await currentStableOwnership(b,plan,issuer,sessionInputs):null,postState=completed?receipt.postState:await provenancePostState(b,plan);if(!completed)need(same(postState,receipt.postState)&&hash(postState)===receipt.postStateSha256,'LEGACY_RECEIPT_ACTUAL_STATE_CHANGED');if(completed)need((await legacyReceiptCatalog(b)).count===0,'LEGACY_COMPLETED_TRANSFER_NOT_PURGED');const activeCount=(await b.query('SELECT count(*)::int n FROM cop_web_sessions WHERE owner_hash IS NULL AND session_expires_at>now()')).rows[0].n;need(activeCount===0,'LEGACY_RECEIPT_ACTIVE_SESSION_UNPROVEN');need(writerBefore===writerWitness(plan,reviewedPlanSha256,currentWitness()),'LEGACY_WRITER_MOVED');
+  await b.query('COMMIT');bt=false;await g.query('COMMIT');gt=false;return {contractVersion:completed?'cop-legacy-completed-provenance-readback-v1':'cop-legacy-erasure-provenance-receipt-readback-v1',...(completed?{currentStableOwnershipVerified:true,currentRows:stable.rowCount,fullPostStateCasUsed:false,requiresCurrentOwnerReadiness:true}:{}),verified:true,readOnly:true,planSha256:reviewedPlanSha256,sourceHelperSha256:receipt.sourceHelperSha256,bindingSha256:actualBinding,postStateSha256:receipt.postStateSha256,checkedRows:postState.length,legacySessions:{activeCount},hostWriterWitnessSha256:writerBefore,hostPostReadbackRequired:true,provenanceComplete:false,wholeAccountComplete:false};
  }catch(error){if(bt)await b.query('ROLLBACK').catch(()=>{});if(gt)await g.query('ROLLBACK').catch(()=>{});throw Error(/^LEGACY_[A-Z_]+$/u.test(error?.message??'')?error.message:'LEGACY_RECEIPT_UNPROVEN');}finally{b.release();g.release();}
 }
+
+/** Completed enrollment is a historical proof. Mutable profile/session bytes may
+ * legitimately change after unpause; recheck their current ownership instead.
+ * Pending/unknown-commit recovery continues to require the original full CAS. */
+async function currentStableOwnership(b,plan,issuer,sessionInputs){
+ const inventory=await inventoryRows(b);need(inventory.missingTables.length===0,'LEGACY_COMPLETED_SCHEMA_MISSING');
+ for(const r of inventory.rows){
+  const spec=specs[r.kind],params=spec.keys.map(k=>r.key[k]),where=spec.keys.map((k,i)=>k+'=$'+(i+1)).join(' AND '),subjects=r.originalSubjects;
+  if(r.kind==='session'){
+   need(sessionInputs,'LEGACY_COMPLETED_SESSION_KEY_REQUIRED');const rows=(await b.query('SELECT token_payload,owner_hash FROM cop_web_sessions WHERE '+where,params)).rows;need(rows.length===1&&hex.test(rows[0].owner_hash??''),'LEGACY_COMPLETED_SESSION_OWNER_UNPROVEN');
+   const payload=decryptSession(rows[0].token_payload,sessionInputs.key),subject=payload?.profile?.subjectId;need(uuid.test(subject??'')&&payload.profile.issuer===issuer&&rows[0].owner_hash===createHmac('sha256',sessionInputs.key).update('cop-web-session-owner-v1\0').update(JSON.stringify([issuer,subject])).digest('hex'),'LEGACY_COMPLETED_SESSION_OWNER_UNPROVEN');continue;
+  }
+  const lab=Array.isArray(subjects)&&subjects.length===1&&subjects[0]==='lab';
+  if(lab&&!spec.ledger){need(r.disposition==='nonaccount_lab_preserve','LEGACY_COMPLETED_NONACCOUNT_UNPROVEN');continue;}
+  need(Array.isArray(subjects)&&subjects.length>0&&(lab||subjects.every(v=>uuid.test(v))),'LEGACY_COMPLETED_SUBJECT_UNPROVEN');
+  if(spec.ledger){
+   const rowKey=params.join(':'),owners=(await b.query('SELECT subject_id,issuer FROM cop_community_erasure_ownership WHERE kind=$1 AND row_key=$2',[spec.ledger,rowKey])).rows;
+   if(lab){const markers=(await b.query('SELECT row_sha256,ownership_sha256,writer_kind FROM cop_legacy_nonaccount_provenance WHERE kind=$1 AND row_key=$2',[spec.ledger,rowKey])).rows;need(markers.length===1&&markers[0].writer_kind==='hardcoded_lab'&&markers[0].row_sha256===r.physicalBeforeSchemaRowSha256&&markers[0].ownership_sha256===r.ownershipBeforeSha256,'LEGACY_COMPLETED_LAB_MARKER_CHANGED');}
+   else need(owners.length===1&&owners[0].subject_id===subjects[0]&&owners[0].issuer===issuer,'LEGACY_COMPLETED_OWNERSHIP_UNPROVEN');
+  }else if(r.kind==='pairing'){
+   const rows=(await b.query("SELECT created_by_subject_id,created_by_owner_issuer,claimed_by_subject_id,claimed_by_owner_issuer,device_payload->>'subjectId' payload_subject,device_payload->>'ownerIssuer' payload_issuer FROM cop_mobile_pairing_sessions WHERE "+where,params)).rows,v=rows[0];need(rows.length===1&&v.created_by_owner_issuer===issuer&&(v.claimed_by_subject_id===null?v.claimed_by_owner_issuer===null:v.claimed_by_owner_issuer===issuer)&&(v.payload_subject===null||uuid.test(v.payload_subject)&&v.payload_issuer===issuer),'LEGACY_COMPLETED_PAIRING_OWNER_UNPROVEN');
+  }else{const rows=(await b.query('SELECT '+spec.issuer+' issuer FROM public.'+spec.table+' WHERE '+where,params)).rows;need(rows.length===1&&rows[0].issuer===issuer,'LEGACY_COMPLETED_OWNERSHIP_UNPROVEN');}
+ }
+ return {rowCount:inventory.rowCount};
+}
+export function completedLegacyRootReceipt(wrapper,reviewedPlanSha256){
+ const raw=wrapper?.sqlEnrollmentReceipt,transfer=wrapper?.durableReceiptTransfer;need(wrapper?.provenanceComplete===true&&wrapper.hostCustodyConfirmed===true&&wrapper.postReadback?.verified===true&&wrapper.rootReview?.candidateSha256===reviewedPlanSha256&&raw&&raw.planSha256===reviewedPlanSha256&&transfer?.contractVersion==='cop-legacy-durable-receipt-transfer-v1'&&transfer.verified===true&&transfer.purged===true&&transfer.userRowsChanged===false&&transfer.receiptSha256===hash(raw),'LEGACY_COMPLETED_ROOT_CUSTODY_UNPROVEN');return raw;
+}
+async function verifyCompletedReceipt(options){return verifyReceipt({...options,completed:true});}
 
 async function enroll({mode,business,guard,plan,reviewedPlanSha256,issuer,fixture=false,hostWriterWitness,sessionInputs}){
  need(['check','apply'].includes(mode),'LEGACY_FIXED_MODE');const evidence=validate(plan,reviewedPlanSha256,issuer);
@@ -244,7 +274,7 @@ async function enroll({mode,business,guard,plan,reviewedPlanSha256,issuer,fixtur
   const role=(await b.query('SELECT rolsuper,rolcreatedb,rolcreaterole,rolbypassrls FROM pg_roles WHERE rolname=$1',[owner])).rows[0];need(role&&!role.rolsuper&&!role.rolcreatedb&&!role.rolcreaterole&&!role.rolbypassrls,'LEGACY_APP_ROLE_UNPROVEN');
   await catalog(b,[...new Set(tables)],owner);await provenanceColumns(b);await b.query('LOCK TABLE '+[...new Set(tables)].sort().map(v=>'public.'+v).join(',')+' IN SHARE ROW EXCLUSIVE MODE');
   await g.query('BEGIN');gt=true;await g.query("SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='30s'");await g.query('SELECT pg_advisory_xact_lock(1932540802,2)');const before=await binding(g,b,plan.binding);
-  need((await b.query('SELECT rolsuper FROM pg_roles WHERE rolname=session_user')).rows[0]?.rolsuper===true,'LEGACY_ROOT_DATABASE_ADMIN_REQUIRED');await b.query('SET LOCAL ROLE "'+owner+'"');
+  need((await b.query('SELECT rolsuper FROM pg_roles WHERE rolname=session_user')).rows[0]?.rolsuper===true,'LEGACY_ROOT_DATABASE_ADMIN_REQUIRED');const durable=await legacyReceiptCatalog(b);need(durable.ready&&durable.count===0,'LEGACY_DURABLE_STORE_NOT_EMPTY');await b.query('SET LOCAL ROLE "'+owner+'"');
   if(plan.rows.some(r=>r.kind==='session')){
    need(sessionInputs,'LEGACY_SESSION_PROOF_INPUTS_REQUIRED');
    await b.query("SELECT pg_advisory_xact_lock(18101203,hashtext('owner-key-configuration'))");
@@ -304,12 +334,25 @@ async function enroll({mode,business,guard,plan,reviewedPlanSha256,issuer,fixtur
   const sessionPlan=(await b.query('SELECT count(*)::int n FROM cop_web_sessions WHERE owner_hash IS NULL AND session_expires_at>now()')).rows[0].n;
   const postState=mode==='apply'?await provenancePostState(b,plan):[];
   const result={contractVersion:'cop-legacy-erasure-provenance-enrollment-v1',sourceHelperSha256:sha(readFileSync(new URL(import.meta.url))),postState,postStateSha256:hash(postState),mode,planSha256:reviewedPlanSha256,bindingSha256:before,checkedRows:checks.length,appliedRows:mode==='apply'?checks.length:0,oidcRows:checks.filter(v=>v.e.authentication==='verified_oidc_sub').length,nonAccountRows:checks.filter(v=>v.e.authentication==='hardcoded_lab').length,firstEnrollmentConfirmed:true,hostWriterWitnessSha256:writerBefore,hostPostReadbackRequired:true,provenanceComplete:false,legacySessions:{activeCount:sessionPlan,action:sessionPlan?'original_signed_token_provenance_required':'none',enrolled:checks.filter(v=>v.r.kind==='session').length,applied:mode==='apply'&&checks.some(v=>v.r.kind==='session')},signedSessionProofDigests:checks.filter(v=>v.sessionEvidence).map(v=>v.sessionEvidence.proofDigest),wholeAccountComplete:false};
+  if(mode==='apply'){await b.query('RESET ROLE');await storeLegacyReceipt(b,result);}
   await b.query('COMMIT');bt=false;await g.query('COMMIT');gt=false;return result;
  }catch(error){if(bt)await b.query('ROLLBACK').catch(()=>{});if(gt)await g.query('ROLLBACK').catch(()=>{});throw Error(/^LEGACY_[A-Z_]+$/u.test(error?.message??'')?error.message:'LEGACY_PROVENANCE_UNPROVEN');}
  finally{b.release();g.release();}
 }
 
 const policyAttestation={contractVersion:'cop-historical-issuer-operator-attestation-v1',reference:'call_0ec214d3623f442da730ce7a86fbdbe6',claim:'all_real_COP_Jizda_accounts_only_current_Keycloak_realm_cop'};
+/** Recover only the original SQL receipt committed with provenance. No source
+ * claim can manufacture it, and the existing verifier proves every post-state. */
+async function recoverDurable(options){
+ const b=await options.business.connect();let tx=false,found;
+ try{await b.query('BEGIN READ ONLY');tx=true;await b.query("SET LOCAL statement_timeout='30s';SET LOCAL search_path=pg_catalog,public");found=await readLegacyReceipt(b,options.reviewedPlanSha256,sha(readFileSync(new URL(import.meta.url))));need(found,'LEGACY_DURABLE_RECEIPT_MISSING');await b.query('COMMIT');tx=false;}finally{if(tx)await b.query('ROLLBACK').catch(()=>{});b.release();}
+ const readback=await verifyReceipt({...options,receipt:found.receipt});need(readback.verified&&readback.readOnly,'LEGACY_DURABLE_RECOVERY_READBACK_FAILED');return {contractVersion:'cop-legacy-durable-receipt-recovery-v1',receipt:found.receipt,receiptSha256:found.receiptSha256,readback,readOnly:true,reapplied:false,wholeAccountComplete:false};
+}
+async function acknowledgeDurable(options){
+ const readback=await verifyReceipt(options);need(readback.verified&&readback.readOnly,'LEGACY_DURABLE_TRANSFER_READBACK_FAILED');const b=await options.business.connect();let tx=false;
+ try{await b.query('BEGIN');tx=true;await b.query("SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='30s';SET LOCAL search_path=pg_catalog,public");await b.query("SELECT pg_advisory_xact_lock(hashtextextended('cop-content-writers-v1',731032))");const result=await purgeLegacyReceipt(b,options.receipt);await b.query('COMMIT');tx=false;return {contractVersion:'cop-legacy-durable-receipt-transfer-v1',...result,verified:true,receiptSha256:sha(JSON.stringify(options.receipt)),userRowsChanged:false,wholeAccountComplete:false};}finally{if(tx)await b.query('ROLLBACK').catch(()=>{});b.release();}
+}
+
 function validateCandidatePolicy(p,reviewedPolicySha256,issuer){
  need(fixedKeys(p,['contractVersion','planId','binding','writer','issuer','evidence','historicalIssuerAttestation',...(Object.hasOwn(p??{},'signedSessionPolicy')?['signedSessionPolicy']:[])])&&p.contractVersion==='cop-legacy-erasure-provenance-policy-v1'&&uuid.test(p.planId??'')&&hex.test(reviewedPolicySha256??'')&&hash(p)===reviewedPolicySha256,'LEGACY_POLICY_NOT_REVIEWED');
  need(p.issuer===issuer&&/^https:\/\//u.test(issuer)&&!/[?#@]/u.test(issuer)&&same(p.historicalIssuerAttestation,policyAttestation),'LEGACY_POLICY_HISTORICAL_ATTESTATION_UNPROVEN');
@@ -378,19 +421,22 @@ async function productionRun({mode,password,reviewedPlanSha256,reviewedPolicySha
  const{databaseContinuityEndpoints}=await import('../../apps/cop-api/dist/account-erasure-continuity-production.js'),routes=databaseContinuityEndpoints(env),{Pool}=createRequire(new URL('../../apps/cop-api/package.json',import.meta.url))('pg'),pools=[];
  const pool=(route,db)=>{const u=new URL(route);need(u.hostname==='haproxy.home.cz'&&u.port==='5000'&&u.pathname==='/'+db&&!u.hash&&[...u.searchParams.keys()].every(k=>k==='application_name')&&typeof password==='string'&&password&&!/[\r\n\0]/u.test(password),'LEGACY_DATABASE_ROUTE');const p=new Pool({host:u.hostname,port:5000,database:db,user:'postgres',password,ssl:{ca:ca.toString(),rejectUnauthorized:true,servername:'haproxy.home.cz'},max:1,connectionTimeoutMillis:3000,query_timeout:35000,application_name:'cop-explicit-legacy-provenance'});p.on('error',()=>{});pools.push(p);return p;};
  const issuer=env.COP_OIDC_ISSUER?.replace(/\/$/u,'');let sessionInputs;
- try{if(run===prepareLegacy)validatePreparationPlan(plan,reviewedPlanSha256,issuer);else if(run===createCandidate)validateCandidatePolicy(plan,reviewedPolicySha256,issuer);else validate(plan,reviewedPlanSha256,issuer);if((run===enroll&&plan.rows.some(r=>r.kind==='session'))||(run===createCandidate&&plan.signedSessionPolicy))sessionInputs=await loadSignedSessionInputs({plan,secret:env.COP_WEB_SESSION_SECRET,issuer,clientId:env.COP_OIDC_CLIENT_ID?.trim(),jwksUri:issuer+'/protocol/openid-connect/certs'});return await run({mode,business:pool(routes.targetUrl,'cop'),guard:pool(routes.guardUrl,'cop_account_safety_guard'),plan,reviewedPlanSha256,reviewedPolicySha256,hostWriterWitness,issuer,sessionInputs,receipt});}finally{sessionInputs?.key.fill(0);await Promise.all(pools.map(v=>v.end()));}
+ try{if(run===prepareLegacy)validatePreparationPlan(plan,reviewedPlanSha256,issuer);else if(run===createCandidate)validateCandidatePolicy(plan,reviewedPolicySha256,issuer);else validate(plan,reviewedPlanSha256,issuer);if((run===enroll&&plan.rows.some(r=>r.kind==='session'))||(run===createCandidate&&plan.signedSessionPolicy))sessionInputs=await loadSignedSessionInputs({plan,secret:env.COP_WEB_SESSION_SECRET,issuer,clientId:env.COP_OIDC_CLIENT_ID?.trim(),jwksUri:issuer+'/protocol/openid-connect/certs'});if(run===verifyCompletedReceipt){const key=sessionKey(env.COP_WEB_SESSION_SECRET);need(!plan.signedSessionPolicy||sessionKeyFingerprint(key)===plan.signedSessionPolicy.encryptionKeyFingerprint,'LEGACY_SESSION_KEY_FINGERPRINT_CHANGED');sessionInputs={key};}return await run({mode,business:pool(routes.targetUrl,'cop'),guard:pool(routes.guardUrl,'cop_account_safety_guard'),plan,reviewedPlanSha256,reviewedPolicySha256,hostWriterWitness,issuer,sessionInputs,receipt});}finally{sessionInputs?.key.fill(0);await Promise.all(pools.map(v=>v.end()));}
 }
 export async function generateLegacyErasureProvenanceCandidate(options){return productionRun(options,createCandidate);}
 export async function enrollLegacyErasureProvenance(options){return productionRun(options,enroll);}
 export async function prepareLegacyErasureSchema(options){return productionRun(options,prepareLegacy);}
 export async function verifyLegacyErasureProvenanceReceipt(options){return productionRun(options,verifyReceipt);}
+export async function verifyCompletedLegacyErasureProvenance(options){const wrapper=JSON.parse(privateFile('/srv/cop/runtime/account-erasure-install/legacy-provenance-receipt.json',0));return productionRun({...options,receipt:completedLegacyRootReceipt(wrapper,options?.reviewedPlanSha256)},verifyCompletedReceipt);}
+export async function recoverDurableLegacyErasureReceipt(options){return productionRun(options,recoverDurable);}
+export async function acknowledgeDurableLegacyErasureReceipt(options){const wrapper=JSON.parse(privateFile('/srv/cop/runtime/account-erasure-install/legacy-provenance-receipt.json',0));need(wrapper?.provenanceComplete===true&&wrapper.hostCustodyConfirmed===true&&wrapper.postReadback?.verified===true&&wrapper.rootReview?.candidateSha256===options?.reviewedPlanSha256&&wrapper.sqlEnrollmentReceipt,'LEGACY_DURABLE_ROOT_CUSTODY_UNPROVEN');return productionRun({...options,receipt:wrapper.sqlEnrollmentReceipt},acknowledgeDurable);}
 /** Actual host-side inspection for the uniquely labelled local fixture only. */
 export function inspectLegacyProvenanceWriterFixture({writer,reviewedPlanSha256}){
  need(hex.test(writer?.containerId??'')&&/^sha256:[a-f0-9]{64}$/u.test(writer?.imageId??'')&&hex.test(reviewedPlanSha256??''),'LEGACY_FIXTURE_WRITER_SCOPE');
  return {...pausedWriter(writer,true),reviewedPlanSha256};
 }
 /** Only the uniquely owned local fixture can use this import-only seam. */
-async function fixtureRun(options,run){for(const[k,db]of[['business','cop_legacy_provenance_test'],['guard','cop_legacy_provenance_guard_test']]){const u=new URL(options[k].options.connectionString);need(u.hostname==='127.0.0.1'&&u.pathname==='/'+db&&u.username==='cop_legacy_provenance_test_admin'&&!u.hash&&!u.search&&Number(u.port)>=1024,'LEGACY_FIXTURE_ONLY');need((await options[k].query('SHOW cluster_name')).rows[0]?.cluster_name==='cop_legacy_erasure_provenance_test','LEGACY_FIXTURE_CLUSTER');}let sessionInputs;try{if(run===prepareLegacy)validatePreparationPlan(options.plan,options.reviewedPlanSha256,options.issuer);else if(run===createCandidate)validateCandidatePolicy(options.plan,options.reviewedPolicySha256,options.issuer);else validate(options.plan,options.reviewedPlanSha256,options.issuer);if((run===enroll&&options.plan.rows.some(r=>r.kind==='session'))||(run===createCandidate&&options.plan.signedSessionPolicy))sessionInputs=await loadSignedSessionInputs({plan:options.plan,secret:options.sessionSecret,issuer:options.issuer,clientId:'cop-web',jwksUri:options.plan.signedSessionPolicy.jwksUri,fixture:true});options={...options,sessionInputs};if(options.hostWriterWitness){
+async function fixtureRun(options,run){for(const[k,db]of[['business','cop_legacy_provenance_test'],['guard','cop_legacy_provenance_guard_test']]){const u=new URL(options[k].options.connectionString);need(u.hostname==='127.0.0.1'&&u.pathname==='/'+db&&u.username==='cop_legacy_provenance_test_admin'&&!u.hash&&!u.search&&Number(u.port)>=1024,'LEGACY_FIXTURE_ONLY');need((await options[k].query('SHOW cluster_name')).rows[0]?.cluster_name==='cop_legacy_erasure_provenance_test','LEGACY_FIXTURE_CLUSTER');}let sessionInputs;try{if(run===prepareLegacy)validatePreparationPlan(options.plan,options.reviewedPlanSha256,options.issuer);else if(run===createCandidate)validateCandidatePolicy(options.plan,options.reviewedPolicySha256,options.issuer);else validate(options.plan,options.reviewedPlanSha256,options.issuer);if((run===enroll&&options.plan.rows.some(r=>r.kind==='session'))||(run===createCandidate&&options.plan.signedSessionPolicy))sessionInputs=await loadSignedSessionInputs({plan:options.plan,secret:options.sessionSecret,issuer:options.issuer,clientId:'cop-web',jwksUri:options.plan.signedSessionPolicy.jwksUri,fixture:true});if(run===verifyCompletedReceipt){const key=sessionKey(options.sessionSecret);need(!options.plan.signedSessionPolicy||sessionKeyFingerprint(key)===options.plan.signedSessionPolicy.encryptionKeyFingerprint,'LEGACY_SESSION_KEY_FINGERPRINT_CHANGED');sessionInputs={key};}options={...options,sessionInputs};if(options.hostWriterWitness){
  const before=run===createCandidate?fixturePolicyWitness(options.plan,options.reviewedPolicySha256):inspectLegacyProvenanceWriterFixture({writer:options.plan.writer,reviewedPlanSha256:options.reviewedPlanSha256});
  need((run===createCandidate?policyWriterWitness(options.plan,options.reviewedPolicySha256,options.hostWriterWitness):writerWitness(options.plan,options.reviewedPlanSha256,options.hostWriterWitness))===hash(before),'LEGACY_HOST_WRITER_WITNESS_UNBOUND');
  const result=await run({...options,fixture:false});
@@ -402,6 +448,9 @@ export async function generateLegacyErasureProvenanceCandidateFixture(options){r
 export async function enrollLegacyErasureProvenanceFixture(options){return fixtureRun(options,enroll);}
 export async function prepareLegacyErasureSchemaFixture(options){return fixtureRun(options,prepareLegacy);}
 export async function verifyLegacyErasureProvenanceReceiptFixture(options){return fixtureRun(options,verifyReceipt);}
+export async function verifyCompletedLegacyErasureProvenanceFixture(options){return fixtureRun({...options,receipt:completedLegacyRootReceipt(options.rootReceipt,options.reviewedPlanSha256)},verifyCompletedReceipt);}
+export async function recoverDurableLegacyErasureReceiptFixture(options){return fixtureRun(options,recoverDurable);}
+export async function acknowledgeDurableLegacyErasureReceiptFixture(options){return fixtureRun(options,acknowledgeDurable);}
 
 /** Read-only facts, deliberately NOT an applicable enrollment plan. No current
  * login, email matching or unverified history is promoted to authority. */

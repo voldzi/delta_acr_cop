@@ -213,14 +213,15 @@ def prepare_server_local_keycloak(manifest, path):
     if observed.get('actualKeycloakSeedVerified') is not True:
         raise RuntimeError('WHOLE_ACTUAL_SERVER_KEYCLOAK_SEED_UNPROVEN')
     seeded=json.loads(remote('docker exec --user 0:0 '+carrier+' cat /dev/shm/cop-whole/keycloak-private.json').stdout)
-    if seeded.get('issuer')!=ISSUER or seeded['actors']['a']['subjectId']==seeded['actors']['b']['subjectId']:
+    actor_refs={key:seeded.get('actors',{}).get(key,{}).get('subjectId') for key in ['a','b','c','d']}
+    if seeded.get('issuer')!=ISSUER or set(seeded.get('actors',{}))!={'a','b','c','d'} or any(not isinstance(value,str) or not re.fullmatch(r'[0-9a-f-]{36}',value) for value in actor_refs.values()) or len(set(actor_refs.values()))!=4 or observed.get('actorCount')!=4 or seeded.get('actualSeedProof',{}).get('signedClientTokenCount')!=12:
         raise RuntimeError('WHOLE_ACTUAL_SERVER_KEYCLOAK_IDENTITY_FAILED')
-    manifest.update(seeded)
+    manifest.update({key:value for key,value in seeded.items() if key!='contractVersion'})
     manifest['keycloak']['sourceSha256']=hashlib.sha256(source['options']['seedSource'].encode()).hexdigest()
     check_owned(kc,owner);check_owned(carrier,owner)
     write_private(path,manifest)
     print(json.dumps({'phase':'actual_server_keycloak_shared_fixture_prepared','manifestPath':str(path),'carrier':carrier,
-        'issuer':ISSUER,'subjects':observed['subjects'],'serverOnly':True,'productionChanged':False,'wholeAccountAccepted':False}),flush=True)
+        'issuer':ISSUER,'subjects':observed['subjects'],'additionalActors':observed['additionalActors'],'actorCount':observed['actorCount'],'serverOnly':True,'productionChanged':False,'wholeAccountAccepted':False}),flush=True)
 
 
 def export_server_private_bootstraps(manifest,path):
@@ -246,7 +247,7 @@ writeFileSync(root+'/package.json','{"type":"module"}',{mode:384,flag:'wx'});sym
         manifest[field]={'path':str(target),'sha256':hashlib.sha256(target.read_bytes()).hexdigest(),'carrierRef':{'container':carrier,'path':refs[key+'Ref']},'serverOnly':True}
     replace_private(path,manifest)
     print(json.dumps({'phase':'actual_server_private_bootstraps_prepared','carrier':carrier,'messagingRef':refs['messagingRef'],'simRef':refs['simRef'],
-        'contributorDaysPerActor':9,'serverOnly':True,'secretsPrinted':False,'productionChanged':False}),flush=True)
+        'contributorDaysPerActor':9,'primaryActorCount':2,'additionalActorCount':2,'serverOnly':True,'secretsPrinted':False,'productionChanged':False}),flush=True)
 
 
 def prepare(args):
@@ -276,7 +277,7 @@ def prepare(args):
     else:
         owner = PREFIX + uuid.uuid4().hex[:12]
     manifest = {'contractVersion': 'cop-account-erasure-whole-fixture-v1', '_manifestPath': str(path),
-        'ownerLabel': owner, 'createdAt': int(time.time()), 'leaseExpiresAt': int(time.time()) + 10800,
+        'ownerLabel': owner, 'createdAt': int(time.time()), 'leaseExpiresAt': int(time.time()) + (18000 if SERVER_LOCAL else 10800),
         'host': 'docker.home.cz', 'sharedHolder': args.holder, 'sharedHolderOwner': args.holder_owner,
         'issuer': ISSUER, 'keycloak': {'container': owner + '-kc', 'probeContainer': owner + '-node',
             'optimizedImageTag': owner + '-kc-image', 'baseImageId': KC_IMAGE, 'nodeImageId': NODE_IMAGE},
@@ -526,6 +527,7 @@ def prepare_whole_source(manifest, path):
     files['media-upload-closure.sql']=base64.b64encode((ROOT/'scripts/account-safety/011_media_upload_closure.sql').read_bytes()).decode()
     files['cop-local-fixture.mjs']=base64.b64encode((ROOT/'scripts/account-safety/whole-cop-local-fixture.mjs').read_bytes()).decode()
     files['probe.mjs']=base64.b64encode((ROOT/'scripts/account-safety/whole-account-erasure-probe.mjs').read_bytes()).decode()
+    files['additional-actors.mjs']=base64.b64encode((ROOT/'scripts/account-safety/whole-additional-actors.mjs').read_bytes()).decode()
     files['confirmation-evidence.mjs']=base64.b64encode((ROOT/'scripts/account-safety/whole-confirmation-evidence.mjs').read_bytes()).decode()
     files['integration-fixture.mjs']=base64.b64encode(module.read_bytes()).decode()
     bootstrap=r"""
@@ -626,7 +628,7 @@ def run_whole(manifest, path):
                 elif phase=='whole_inject_provider_outage_required':
                     pause_actual_messaging_outage(manifest,value.get('operationId'))
                     injected_outage_operation=value['operationId']
-                elif phase in ['actual_confirmation_http_observed','whole_original_operation_continuation_verified','whole_fixture_preflight_diagnostic','whole_actual_deletion_pending','actual_online_whole_deletion_verified','whole_account_acceptance_complete','whole_account_acceptance_failed']:
+                elif phase in ['actual_confirmation_http_observed','whole_original_operation_continuation_verified','whole_fixture_preflight_diagnostic','whole_actual_deletion_pending','whole_novice_actual_deletion_pending','actual_online_whole_deletion_verified','whole_account_acceptance_complete','whole_account_acceptance_failed']:
                     records.append(value)
                     if phase!='whole_account_acceptance_complete':print(json.dumps(value),flush=True)
                     if SERVER_LOCAL and phase=='actual_confirmation_http_observed' and manifest['integration'].get('expectedInitialOutage503') is True:
@@ -664,7 +666,9 @@ def run_whole(manifest, path):
     final_source=verify_full_messaging_source(manifest)
     if provider_source != final_source:
         raise RuntimeError('WHOLE_FULL_V2_RUNTIME_SOURCE_CHANGED_DURING_TEST')
-    if final_source is not None:records[-1]['messagingSource']=final_source['messagingSource']
+    if final_source is not None:
+        records[-1]['messagingSource']=final_source['messagingSource']
+        if 'messagingProfile' in final_source:records[-1]['messagingProfile']=final_source['messagingProfile']
     print(json.dumps(records[-1]),flush=True)
 
 
@@ -753,7 +757,7 @@ console.log(JSON.stringify({postgresVersion:Number(observed.version),postgisVers
         raise RuntimeError('ACTUAL_COP_POSTGIS_FIXTURE_PREPARE_FAILED')
     actual=json.loads(execution.stdout.strip().splitlines()[-1])
     manifest['postgis'].update(actual)
-    manifest['leaseExpiresAt']=int(time.time())+10800
+    manifest['leaseExpiresAt']=int(time.time())+(18000 if SERVER_LOCAL else 10800)
     manifest['database']['businessRuntimeUrl']='postgresql://cop_whole_app@127.0.0.1:5433/cop_erasure_test'
     manifest['database']['guardTargetReadUrl']='postgresql://cop_whole_guard_runtime@127.0.0.1:5433/cop_erasure_test'
     manifest['database']['businessAdminUrl']='postgresql://cop_whole_postgis_admin@127.0.0.1:5433/cop_erasure_test'
@@ -872,7 +876,51 @@ import{readFileSync}from'node:fs';const f=JSON.parse(readFileSync(0,'utf8')),bas
     print(observed.stdout.strip(),flush=True)
 
 
+def verify_server_v4_messaging_runtime(manifest):
+    proof=PUBLIC_SOURCE_PROOF['messagingSource']
+    profile=server_local.verify_messaging_source_paths(ROOT,proof)
+    owner=server_local.HOLDER_OWNER
+    if manifest.get('sharedHolderOwner')!=owner:
+        raise RuntimeError('WHOLE_NEW_MESSAGING_RUNTIME_OWNER_REJECTED')
+    holder=json.loads(remote('docker inspect '+shlex.quote(manifest['sharedHolder'])).stdout)[0]
+    if holder['Id']!=manifest.get('sharedHolderId') or holder['Config']['Labels'].get('cop.test.owner')!=owner or holder['Image']!=profile['images']['pg'] or holder['HostConfig']['NetworkMode']!='none' or holder['State']['Running'] is not True or holder['HostConfig'].get('PortBindings') or holder['HostConfig'].get('Binds'):
+        raise RuntimeError('WHOLE_NEW_MESSAGING_HOLDER_BINDING_REJECTED')
+    components={}
+    for component,prefix in [('synapse','/data/source'),('messaging','/fixture/project')]:
+        name=owner+'-'+component
+        state=json.loads(remote('docker inspect '+shlex.quote(name)).stdout)[0]
+        if state['Config']['Labels'].get('cop.test.owner')!=owner or state['Image']!=profile['images'][component] or state['State']['Running'] is not True or state['State'].get('Paused') or state['HostConfig']['NetworkMode']!='container:'+holder['Id'] or state['HostConfig'].get('PortBindings') or state['HostConfig'].get('Binds') or state['HostConfig'].get('LogConfig',{}).get('Type')!='none' or state['HostConfig'].get('ReadonlyRootfs') is not True:
+            raise RuntimeError('WHOLE_NEW_MESSAGING_RUNTIME_BINDING_REJECTED')
+        # Verify the entire canonical source copy plus every finite runtime alias.
+        # Production /opt paths are never silently substituted for these fixtures.
+        files={prefix+'/'+path:digest for path,digest in profile['sourceSha256'].items()}
+        for binding in profile['runtimeSourcePaths'].values():
+            if binding['component']==component:
+                files[binding['runtimePath']]=profile['sourceSha256'][binding['sourcePath']]
+        script='set -e\n'+'\n'.join('test -f '+shlex.quote(path)+' && test ! -L '+shlex.quote(path) for path in files)+'\nsha256sum '+' '.join(shlex.quote(path) for path in files)
+        checked=remote('docker exec '+shlex.quote(name)+' /bin/sh -c '+shlex.quote(script),check=False,timeout=30)
+        if checked.returncode:
+            raise RuntimeError('WHOLE_NEW_MESSAGING_ACTUAL_SOURCE_UNPROVEN')
+        actual={}
+        for line in checked.stdout.splitlines():
+            match=re.fullmatch(r'([a-f0-9]{64})  (/[A-Za-z0-9_./-]+)',line)
+            if not match or match.group(2) in actual:
+                raise RuntimeError('WHOLE_NEW_MESSAGING_ACTUAL_SOURCE_READBACK_INVALID')
+            actual[match.group(2)]=match.group(1)
+        if actual!=files:
+            raise RuntimeError('WHOLE_NEW_MESSAGING_ACTUAL_SOURCE_MISMATCH')
+        components[component]={'containerId':state['Id'],'imageId':state['Image'],'verifiedFileCount':len(files)}
+    hashes=profile['sourceSha256'];runtime=profile['runtimeSourcePaths']
+    public={'scopeSha256':hashes[runtime['providerScope']['sourcePath']],'profileSha256':proof['profileSha256'],'sourceArchiveSha256':proof['archiveSha256'],
+        'providerSha256':hashes[runtime['provider']['sourcePath']],'clientSha256':hashes[runtime['client']['sourcePath']],
+        'helperSha256':hashes[runtime['ownerStreamHelper']['sourcePath']],'sql005Sha256':hashes[runtime['sql005']['sourcePath']]}
+    return {'contractVersion':'cop-whole-v4-provider-source-v1','messagingSource':public,'messagingProfile':dict(server_local.NEW_MESSAGING_PROFILE),
+        'sourceFileCount':len(hashes),'runtimeSourceBytesVerified':True,'components':components}
+
+
 def verify_full_messaging_source(manifest):
+    if SERVER_LOCAL:
+        return verify_server_v4_messaging_runtime(manifest)
     if SERVER_LOCAL:
         proof=PUBLIC_SOURCE_PROOF['messagingSource']
         server_local.verify_messaging_source_paths(ROOT,proof)
@@ -958,7 +1006,7 @@ const f=JSON.parse(readFileSync(0,'utf8'));for(const[owner,binding]of Object.ent
     manifest['integration']['missingComponents']=[]
     manifest['integration']['ready']=True
     # Renew only the lifetime of these still-running, exact owned fixtures.
-    manifest['leaseExpiresAt']=int(time.time())+10800
+    manifest['leaseExpiresAt']=int(time.time())+(18000 if SERVER_LOCAL else 10800)
     replace_private(path,manifest)
     print(json.dumps({'phase':'actual_whole_readbacks_bound','ownerCount':3,'productionChanged':False,'wholeAccountAccepted':False}))
 

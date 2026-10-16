@@ -1,12 +1,12 @@
 {
   "contractVersion": "cop-account-erasure-legacy-provenance-component-evidence-v1",
-  "observedAt": "2026-10-16T15:20:52.830283+00:00",
+  "observedAt": "2026-10-16T16:20:30.340667+00:00",
   "scope": "source_owned_isolated_component_tests_and_production_readonly_inventory",
   "runtimeSourceFrozen": true,
   "postgresVersion": "17.5 (Debian 17.5-1.pgdg110+1)",
   "fixtureOwnerLabel": "cop.test.owner=legacy-erasure-provenance",
   "operatorPgTests": {
-    "passed": 44,
+    "passed": 53,
     "failed": 0,
     "skipped": 0
   },
@@ -25,7 +25,7 @@
     "failed": 0,
     "skipped": 0
   },
-  "totalPassed": 60,
+  "totalPassed": 69,
   "actualDockerPauseUnpauseGateTested": true,
   "actualHostSqlWitnessSplitTested": true,
   "oldSchemaToNullablePreparationToFreshEnrollmentTested": true,
@@ -49,12 +49,13 @@
     "apps/cop-api/src/legacy-nonaccount-provenance.postgres.test.ts": "477b7de02f736055ddd34079c138dce138d232be97bc8515c34b4b41194216c8",
     "apps/cop-api/src/legacy-erasure-schema.ts": "143c16a766118fe54d9c88dc9a77a40baef606b54eb22c82c1d6c34aabf01834",
     "apps/cop-api/src/legacy-erasure-schema.test.ts": "fd954290b84ac0c3e1a7bdf0397e2d9c46002ea01da9f1dd4281fe1fd920e054",
-    "scripts/account-safety/enroll-legacy-erasure-provenance.mjs": "efed852e8b58ddf66263195bc39a1d742a913f1819d40370a5ecfa48ad2e0ebd",
-    "scripts/account-safety/enroll-legacy-erasure-provenance.test.mjs": "20ea3d5afd5663d7a25231b6eb9c1d781c3d95f49dc654f27999d1179afb1329",
+    "scripts/account-safety/enroll-legacy-erasure-provenance.mjs": "b63563e49fc9ed8f92edf662f73aa5369481f590ffb96adf32837fc2e7e8c81d",
+    "scripts/account-safety/enroll-legacy-erasure-provenance.test.mjs": "66da48b90631b049ab588e74debbb8a6526b0f5b7059376088e7e4700c6982af",
     "scripts/account-safety/run-legacy-provenance-probe.py": "5f102378975c2df9656b1a21ad9b5e548f10dfbd2f69d78f3b6fdfa3963df385",
     "apps/cop-api/src/legacy-signed-session-runtime.postgres.test.ts": "12777ad35489e0d27ad5c3525da6277b19b2d44435aebf86cc6d4e0e1529fae3",
     "scripts/account-safety/prepare-business-erasure-schema.mjs": "b0c6374d6efd87ed0056739d6b7945ebabfcc6aedfb5572d6ace8fc9131be916",
-    "scripts/account-safety/operator-profile-environment.mjs": "3f6b6db04a722d16d1ec24c75453c5f650dd15625406a8220baa1da5030b75b7"
+    "scripts/account-safety/operator-profile-environment.mjs": "c0980d36e2efc3943e99d927e7f96c3c6f5829a62a1a29a86f2a27a21a39206c",
+    "scripts/account-safety/legacy-enrollment-receipt.mjs": "d64a667281d6afcef62594ddd99911d402b83de31ecbf87ee4315150a605b666"
   },
   "remaining": [
     "Root-reviewed historical auth/writer evidence and exact production manifest including signedSessionPolicy",
@@ -100,10 +101,28 @@
   "productionProposedInventoryReadOnly": {
     "date": "2026-10-16",
     "rowCount": 182,
-    "countsByKind": {"report": 9, "group": 10, "membership": 15, "confirmation": 2, "profile": 11, "device": 12, "pairing": 4, "session": 8, "voice": 111},
-    "observedCountsByDisposition": {"oidc_history_unverified": 159, "hardcoded_lab_history_unverified": 9, "nonaccount_lab_preserve": 6, "original_signed_token_proof_required": 8},
+    "countsByKind": {
+      "report": 9,
+      "group": 10,
+      "membership": 15,
+      "confirmation": 2,
+      "profile": 11,
+      "device": 12,
+      "pairing": 4,
+      "session": 8,
+      "voice": 111
+    },
+    "observedCountsByDisposition": {
+      "oidc_history_unverified": 159,
+      "hardcoded_lab_history_unverified": 9,
+      "nonaccount_lab_preserve": 6,
+      "original_signed_token_proof_required": 8
+    },
     "dispositionVersionNote": "Observed before explicit confirmation support; the two exact-lab confirmations were then classified as preserve. No automatic reclassification was applied to production.",
-    "timeRange": {"first": "2026-05-19T21:11:07.691954+00:00", "last": "2026-10-16T14:58:19.712963+00:00"},
+    "timeRange": {
+      "first": "2026-05-19T21:11:07.691954+00:00",
+      "last": "2026-10-16T14:58:19.712963+00:00"
+    },
     "runtimeRevision": "b13fbdc71f3d9821f8b857c3f73255a75c46fa76",
     "runtimeImageId": "sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f",
     "runtimeContainerId": "b4e1c9d7bf45efdab931d0c24bed056f4a65341ed7fc77348d6735a940503ddc",
@@ -123,9 +142,56 @@
     "productionChanged": false,
     "carrierRemoved": true
   },
-  "actualLabConfirmationSourceAndShape": {"confirmationCount": 2, "exactLabOnly": 2, "uuidOnly": 0, "mixedOrOther": 0, "historicalWriter": "authenticated_hardcoded_lab_subject", "compositeKey": "report_id:subject_id", "oidcIssuerInvented": false},
-  "freshCandidateTests": {"actualOriginalSignedSessions": 8, "rootReviewedPolicyRequired": true, "actualPausedWriterWitness": true, "readOnlyGeneration": true, "unresolvedRejectsCandidate": true, "noAutomaticRowHashRefresh": true, "noCurrentLoginOrEmailOwnershipInference": true},
+  "actualLabConfirmationSourceAndShape": {
+    "confirmationCount": 2,
+    "exactLabOnly": 2,
+    "uuidOnly": 0,
+    "mixedOrOther": 0,
+    "historicalWriter": "authenticated_hardcoded_lab_subject",
+    "compositeKey": "report_id:subject_id",
+    "oidcIssuerInvented": false
+  },
+  "freshCandidateTests": {
+    "actualOriginalSignedSessions": 8,
+    "rootReviewedPolicyRequired": true,
+    "actualPausedWriterWitness": true,
+    "readOnlyGeneration": true,
+    "unresolvedRejectsCandidate": true,
+    "noAutomaticRowHashRefresh": true,
+    "noCurrentLoginOrEmailOwnershipInference": true
+  },
   "productionFactoriesUseExistingReadOnlyProfileTransport": true,
-  "sharedProfileEnvironmentTests": {"passed": 5, "failed": 0},
-  "sourceLint": "passed"
+  "sharedProfileEnvironmentTests": {
+    "passed": 5,
+    "failed": 0
+  },
+  "sourceLint": "passed",
+  "sameTransactionDurableReceiptRecovery": {
+    "actualPostgresPassed": true,
+    "rootOnlyTable": "cop_legacy_erasure_enrollment_receipts",
+    "runtimeRoleReadDenied": true,
+    "sameTransactionOriginalReceipt": true,
+    "commitBeforeRootFileLossRecoveredReadOnly": true,
+    "ciphertextBytePreserved": true,
+    "reapplied": false,
+    "jwksRefetchedForRecovery": false,
+    "missingOrCorruptProofDenied": true,
+    "actualPostStateChangeDenied": true,
+    "failedEnrollmentReceiptRolledBack": true,
+    "exactTransferredReceiptPurged": true,
+    "userRowsChangedByPurge": false,
+    "actualSchemaAbsencePreparedAndReported": true
+  },
+  "completedEnrollmentResume": {
+    "actualUnpauseMutableProfileAndSessionRefresh": true,
+    "historicalRootReceiptUnchanged": true,
+    "currentStableOwnershipVerified": true,
+    "pendingFullRowCasPreserved": true,
+    "foreignIssuerAndWrongSessionOwnerDenied": true,
+    "newUnownedRowsDenied": true,
+    "actualTransferPurgeRequired": true,
+    "reencryptionDuringReadback": false,
+    "jwksRefetched": false,
+    "freshRuntimeOwnerReadinessStillRequired": true
+  }
 }

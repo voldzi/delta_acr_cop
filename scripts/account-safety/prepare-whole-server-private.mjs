@@ -28,6 +28,18 @@ function writePrivate(path, value) {
   const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
   try { writeFileSync(fd, typeof value === "string" ? value : JSON.stringify(value)); fsyncSync(fd); } finally { closeSync(fd); }
 }
+const ACTOR_KEYS = ["a", "b", "c", "d"], actorUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+export function serverPrivateActorReferences(actual) {
+  need(actual?.contractVersion === "cop-whole-server-keycloak-private-v2" && actual.actors &&
+    Object.keys(actual.actors).sort().join() === ACTOR_KEYS.join() &&
+    ACTOR_KEYS.every(key => actorUuid.test(actual.actors[key]?.subjectId)) &&
+    new Set(ACTOR_KEYS.map(key => actual.actors[key].subjectId)).size === 4 &&
+    actual.actualSeedProof?.signedActorCount === 4 && actual.actualSeedProof?.signedClientTokenCount === 12 &&
+    actual.actualSeedProof?.clientIds?.join() === "cop-web,csm-mobile,csm-sim-web" &&
+    actual.actualSeedProof?.signatureAndUserinfoVerified === true, "WHOLE_FOUR_ACTUAL_KEYCLOAK_ACTORS_UNPROVEN");
+  return { subjects: Object.fromEntries(["a", "b"].map(key => [key, actual.actors[key].subjectId])),
+    additionalActors: { c: { subjectId: actual.actors.c.subjectId, role: "novice" }, d: { subjectId: actual.actors.d.subjectId, role: "peer" } }, actorCount: 4 };
+}
 export function preparePrivateKeycloakSeedSource(original) {
   const marker = "const calls = [];";
   need(original.split(marker).length === 2, "WHOLE_KC_SEED_BOUNDARY_CHANGED");
@@ -40,16 +52,33 @@ export function preparePrivateKeycloakSeedSource(original) {
   replace("'synthetic-bootstrap-not-production'", "privateFixture.adminPassword");
   replace("'synthetic-user-not-production'", "privateFixture.userPassword", 2);
   replace("publicClient: !worker, standardFlowEnabled", "publicClient: !worker, ...(worker ? {} : { defaultClientScopes: ['basic','profile','email','roles'] }), standardFlowEnabled");
+  replace("const a = await user('fixture-owner-a'), b = await user('fixture-owner-b');",
+    "const a = await user('fixture-owner-a'), b = await user('fixture-owner-b'), c = await user('fixture-novice-c'), d = await user('fixture-peer-d');");
+  replace("for (const owner of [a, b]) for (const id of Object.keys(clients))", "for (const owner of [a, b, c, d]) for (const id of Object.keys(clients))");
+  replace("actual two-user profiles COP roles offline grants and independent SIM tokens seeded", "actual four-user profiles COP roles offline grants and independent SIM tokens seeded");
   need(!source.includes("console.log") && !source.includes("console.error"), "WHOLE_KC_SEED_UNEXPECTED_OUTPUT");
   return `import { readFileSync, writeFileSync } from 'node:fs';
+import { createPublicKey, verify as verifySignature } from 'node:crypto';
 const privateFixture=JSON.parse(readFileSync('${credentialPath}','utf8'));
 ${source}
-for(const owner of [a,b]){
- const claims=JSON.parse(Buffer.from(offline[owner.id+'cop-web'].access_token.split('.')[1],'base64url'));
- assert.equal(claims.iss,issuer);assert.equal(claims.sub,owner.id);
- assert.equal((await response('/realms/'+realm+'/protocol/openid-connect/userinfo','GET',undefined,offline[owner.id+'cop-web'].access_token)).value.sub,owner.id);
+const actualJwks=await response('/realms/'+realm+'/protocol/openid-connect/certs');
+assert.equal(actualJwks.status,200);assert(Array.isArray(actualJwks.value.keys));
+let signedClientTokenCount=0;
+for(const owner of [a,b,c,d]) for(const clientId of Object.keys(clients)) {
+ const access=offline[owner.id+clientId].access_token,segments=access.split('.');assert.equal(segments.length,3);
+ const header=JSON.parse(Buffer.from(segments[0],'base64url')),claims=JSON.parse(Buffer.from(segments[1],'base64url'));
+ const keys=actualJwks.value.keys.filter(key=>key.kid===header.kid&&key.kty==='RSA');assert.equal(keys.length,1);assert.equal(header.alg,'RS256');
+ assert(verifySignature('RSA-SHA256',Buffer.from(segments[0]+'.'+segments[1]),createPublicKey({key:keys[0],format:'jwk'}),Buffer.from(segments[2],'base64url')));
+ assert.equal(claims.iss,issuer);assert.equal(claims.sub,owner.id);assert.equal(claims.azp,clientId);assert(claims.exp>Math.floor(Date.now()/1000));
+ const info=await response('/realms/'+realm+'/protocol/openid-connect/userinfo','GET',undefined,access);assert.equal(info.status,200);assert.equal(info.value.sub,owner.id);
+ const actualClient=(await manage(base+'clients/'+clients[clientId].id)).value;
+ assert.equal(actualClient.clientId,clientId);assert.equal(actualClient.publicClient,true);assert.notEqual(actualClient.serviceAccountsEnabled,true);
+ signedClientTokenCount++;
 }
-const privateSeed={issuer,realm,actors:{a:{subjectId:a.id,username:a.username,password:privateFixture.userPassword,cop:offline[a.id+'cop-web'],sim:offline[a.id+'csm-sim-web']},b:{subjectId:b.id,username:b.username,password:privateFixture.userPassword,cop:offline[b.id+'cop-web'],sim:offline[b.id+'csm-sim-web']}},erasureClient:{id:ERASURE_CLIENT_ID,secret:provisionSecret,clientUuid:provisioned.clientUuid,serviceUuid:provisioned.serviceUuid},clientUuids:Object.fromEntries(Object.entries(clients).map(([key,value])=>[key,value.id])),actualSeedChecks:checks};
+assert.equal(signedClientTokenCount,12);
+checks.push('actual four-user twelve-client-token RS256 issuer subject azp userinfo and public-client checks passed');
+const privateActors=Object.fromEntries(Object.entries({a,b,c,d}).map(([key,owner])=>[key,{subjectId:owner.id,username:owner.username,password:privateFixture.userPassword,cop:offline[owner.id+'cop-web'],sim:offline[owner.id+'csm-sim-web']} ]));
+const privateSeed={contractVersion:'cop-whole-server-keycloak-private-v2',issuer,realm,actors:privateActors,actualSeedProof:{signedActorCount:4,signedClientTokenCount,clientIds:Object.keys(clients),signatureAndUserinfoVerified:true},erasureClient:{id:ERASURE_CLIENT_ID,secret:provisionSecret,clientUuid:provisioned.clientUuid,serviceUuid:provisioned.serviceUuid},clientUuids:Object.fromEntries(Object.entries(clients).map(([key,value])=>[key,value.id])),actualSeedChecks:checks};
 writeFileSync('${ROOT}/keycloak-private.json',JSON.stringify(privateSeed),{mode:384,flag:'wx'});
 `;
 }
@@ -72,14 +101,15 @@ export async function prepareServerPrivateFixture(action, options = {}) {
     writePrivate(sourceDir + "/seed.mjs", preparePrivateKeycloakSeedSource(options.seedSource));
     await import(pathToFileURL(sourceDir + "/seed.mjs").href);
     const actual = readPrivate(ROOT + "/keycloak-private.json");
-    need(actual.issuer === "https://cop-erasure-keycloak.invalid/realms/cop-erasure-whole" && actual.actors.a.subjectId !== actual.actors.b.subjectId &&
+    const references = serverPrivateActorReferences(actual);
+    need(actual.issuer === "https://cop-erasure-keycloak.invalid/realms/cop-erasure-whole" &&
       actual.actualSeedChecks.length > 0, "WHOLE_ACTUAL_KEYCLOAK_SEED_NOT_PROVEN");
     return { contractVersion: "cop-whole-server-keycloak-reference-v1", issuer: actual.issuer,
-      subjects: { a: actual.actors.a.subjectId, b: actual.actors.b.subjectId }, privateSeedRef: ROOT + "/keycloak-private.json",
+      ...references, privateSeedRef: ROOT + "/keycloak-private.json",
       serverOnly: true, actualKeycloakSeedVerified: true, productionChanged: false, wholeAccountAccepted: false };
   }
   if (action === "export-bootstraps") {
-    const actual = readPrivate(ROOT + "/keycloak-private.json"), subjects = Object.fromEntries(["a", "b"].map(key => [key, actual.actors[key].subjectId]));
+    const actual = readPrivate(ROOT + "/keycloak-private.json"), { subjects, additionalActors, actorCount } = serverPrivateActorReferences(actual);
     const { opaqueUserId } = await import(pathToFileURL(ROOT + "/apps/cop-api/dist/ai-router-chat.js").href),
       { contributorIdDay } = await import(pathToFileURL(ROOT + "/apps/cop-api/dist/driver-measurement-contract.js").href);
     const today = new Date().toISOString().slice(0,10), actors = Object.fromEntries(["a", "b"].map(key => [key, {
@@ -88,13 +118,13 @@ export async function prepareServerPrivateFixture(action, options = {}) {
         return { contributorIdDay: contributorIdDay(privateFixture.root,subjects[key],contributorDay),contributorDay }; }) }]));
     mkdirSync(ROOT + "/bootstrap", { mode: 0o700 });
     const messagingRef = ROOT + "/bootstrap/messaging.json", simRef = ROOT + "/bootstrap/sim.json";
-    writePrivate(messagingRef, { contractVersion: "cop-messaging-joint-bootstrap-v1", issuer: actual.issuer, subjects,
+    writePrivate(messagingRef, { contractVersion: "cop-messaging-joint-bootstrap-v1", issuer: actual.issuer, subjects, additionalActors,
       clientIds: ["cop-web","csm-mobile","csm-sim-web"], serviceToken: privateFixture.copServiceToken, root: privateFixture.root });
     writePrivate(simRef, { contractVersion: "cop-sim-whole-erasure-fixture-v1", issuer: actual.issuer, actors,
       environment: { copServiceToken: privateFixture.copServiceToken,driverHashSecret:privateFixture.root,driverActorSecret:privateFixture.root,
         routerHashSecret:privateFixture.routerHashSecret,routerActorSecret:privateFixture.root,routerEncryptionKey:privateFixture.routerEncryptionKey,
         routerSimToken:privateFixture.routerSimToken,routerAdminToken:privateFixture.routerAdminToken } });
-    return { contractVersion: "cop-whole-server-bootstrap-references-v1", issuer: actual.issuer, subjects,
+    return { contractVersion: "cop-whole-server-bootstrap-references-v1", issuer: actual.issuer, subjects, additionalActors, actorCount,
       messagingRef, simRef, contributorDaysPerActor: 9, serverOnly: true, productionChanged: false, wholeAccountAccepted: false };
   }
   throw Error("WHOLE_SERVER_PRIVATE_ACTION_REJECTED");
