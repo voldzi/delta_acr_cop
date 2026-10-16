@@ -31,6 +31,7 @@ export interface DatabaseContinuityBinding { guardStoreId: string; applicationSt
  * The independent DB must not be restored together with the application DB.
  * Runtime has no enrollment/replay-acceptance/update/delete permissions. */
 export class PostgresAccountErasureContinuity implements AccountErasureContinuity {
+  readonly requiresDatasetBinding = true as const;
   private boot?: { binding: string; frontier: AccountErasureFrontier };
   private observed?: { frontier: AccountErasureFrontier; entries: AccountErasureFenceEntry[] };
   private localVerified?: string;
@@ -120,18 +121,20 @@ export class PostgresAccountErasureContinuity implements AccountErasureContinuit
           row.digest === databaseFenceDigest(Number(row.sequence), row.previous_digest, row.entry));
         frontier = { sequence: Number(row.sequence), digest: row.digest }; entries.push(row.entry);
       }
-      return { key, frontier, entries, accepted: { sequence: Number(replay.replay_sequence), digest: replay.replay_digest } };
+      return { key, frontier, entries, accepted: { sequence: Number(replay.replay_sequence), digest: replay.replay_digest },
+        datasetBinding: { incarnationId: replay.incarnation_id, restoreGeneration: Number(replay.restore_generation) } };
     });
     // Do not cache enrollment until the actual outer read transaction committed.
     this.boot ??= { binding: observed.key, frontier: observed.accepted };
     this.observed = { frontier: observed.frontier, entries: observed.entries };
     return { contractVersion: "cop-erasure-replay-v1", applicationStoreId: this.expected.applicationStoreId,
-      configurationFingerprint: this.expected.configurationFingerprint, frontier: observed.frontier, entries: observed.entries };
+      configurationFingerprint: this.expected.configurationFingerprint, frontier: observed.frontier, entries: observed.entries,
+      datasetBinding: observed.datasetBinding };
   }
   async assertCurrent(frontier: AccountErasureFrontier): Promise<{ validUntil: string }> {
     need(this.boot);
     await this.transaction(this.localVerified !== frontier.digest, async client => {
-      const { config } = await this.binding(client), head = await this.head(client, config);
+      const { config, replay } = await this.binding(client), head = await this.head(client, config);
       need(frontier.sequence === head.sequence && frontier.digest === head.digest);
       if (this.localVerified !== head.digest) {
         need(this.observed && canonical(this.observed.frontier) === canonical(head));
@@ -143,9 +146,11 @@ export class PostgresAccountErasureContinuity implements AccountErasureContinuit
           const saved = entries.get(row.key);
           need(saved && saved.job.operationId === row.operation_id && saved.job.requestedAt === row.requested_at && canonical(saved.job.required) === canonical(row.required));
         }
-        const local = (await this.target.query<{ value: { fingerprint?: string; storeId?: string; version?: number } }>(
+        const local = (await this.target.query<{ value: { fingerprint?: string; storeId?: string; version?: number;
+          datasetBinding?: { incarnationId?: string; restoreGeneration?: number } } }>(
           "SELECT value FROM cop_mobility_v1 WHERE key='account-erasure:configuration-v1'")).rows[0]?.value;
-        need(local?.fingerprint === this.expected.configurationFingerprint && local.storeId === this.expected.applicationStoreId && local.version === 4);
+        need(local?.fingerprint === this.expected.configurationFingerprint && local.storeId === this.expected.applicationStoreId && local.version === 4 &&
+          local.datasetBinding?.incarnationId === replay.incarnation_id && local.datasetBinding.restoreGeneration === Number(replay.restore_generation));
         await client.query("UPDATE cop_safety_v2.dataset_replays SET replay_sequence=$1,replay_digest=$2 WHERE owner='cop'", [head.sequence, head.digest]);
       }
     });

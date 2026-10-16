@@ -67,6 +67,16 @@ Unknown or changed partial state is refused. No activation flag, authority mode
 or running container is changed. A `complete_disabled` result is a bootstrap
 receipt, not a claim that erasure or restore acceptance is complete.
 
+The initial local version4 configuration includes `datasetBinding` with this
+manifest's incarnation and restore generation. Runtime SQL readback requires
+that same independently enrolled binding. A normal restart preserves its
+completion state. After any affected owner restore, an explicit new global COP
+incarnation/higher generation must invalidate old completion checkpoints and
+force every real owner to be checked again before exposure; this first-empty
+helper cannot perform that nonempty restore transition. See ADR0055. The
+original 28-case helper receipt below is frozen; the later dataset-binding
+source qualification is recorded separately.
+
 The isolated PostgreSQL test harness is
 `scripts/test-account-safety-database-provision.mjs`; its immutable execution
 receipt is [the 16 October test evidence](../archive/2026-10-16_COP_GUARD_ADMIN_PROVISION_TESTS.json).

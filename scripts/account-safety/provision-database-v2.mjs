@@ -457,6 +457,7 @@ function expectedConfig(manifest, secret) {
     version: 4,
     deletionScope: "cop_jizda_preserve_shared_identity_sim",
     storeId: manifest.applicationStoreId,
+    datasetBinding: { incarnationId: manifest.incarnationId, restoreGeneration: manifest.restoreGeneration },
     accepted: false
   };
 }

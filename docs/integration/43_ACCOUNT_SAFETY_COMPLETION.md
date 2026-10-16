@@ -1,5 +1,25 @@
 # 43. Whole COP account removal — current completion evidence
 
+## Source repair — restored completion checkpoints, 16 October
+
+The actual database continuity snapshot now binds the administrator-enrolled
+incarnation/restore generation to local configuration and SQL readback. A normal
+restart preserves completion. An explicit higher generation/new incarnation
+resets copied terminal receipts and all owner checkpoints to pending while
+preserving the immutable operation/date/fence. A still-encrypted actor must
+match that exact account; a lost actor is not guessed. Any affected owner
+restore must also advance this global COP recovery binding before exposure,
+even if the COP database was not restored. See ADR0055 and
+[the scoped test receipt](../testing/account-erasure-dataset-binding-20261016.json).
+
+Current source gates:25 focused controller cases,9 actual PostgreSQL cases
+(1 optional joint SIM case skipped),28 actual first-enrollment helper cases,
+full normal COP regression2429 passed/87 optional skipped, and full build passed
+with the existing web chunk-size warning. Counts overlap and are not added.
+Provider effects in the new PostgreSQL recovery case are explicit synthetic
+fixtures. No physical backup restore, whole-provider acceptance or production
+COP deployment is inferred. The original helper/source evidence remains frozen.
+
 ## Production checkpoint — 16 October
 
 The human executed the reviewed Root SIM installer successfully. Its actual

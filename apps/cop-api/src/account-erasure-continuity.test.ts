@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureService } from "./account-erasure.js";
-import type { AccountErasureContinuity, AccountErasureFenceEntry } from "./account-erasure-continuity.js";
+import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureService, type AccountErasureAdapter, type AccountErasureProof } from "./account-erasure.js";
+import type { AccountErasureContinuity, AccountErasureDatasetBinding, AccountErasureFenceEntry } from "./account-erasure-continuity.js";
 import { MemoryMobilityStore, type MobilityTransaction } from "./mobility-store.js";
 import type { AuthenticatedActor } from "./security.js";
 
@@ -12,13 +12,16 @@ const actor: AuthenticatedActor = { issuer, subjectId: "synthetic-first", authMo
 const fingerprint = createHash("sha256").update("cop-account-erasure-config-v1\0").update(secret).digest("hex");
 // Explicitly synthetic port: these tests exercise the controller, not Root authority.
 class SyntheticJournal implements AccountErasureContinuity {
+  requiresDatasetBinding?: true;
+  datasetBinding?: AccountErasureDatasetBinding;
   entries: AccountErasureFenceEntry[] = [];
   unavailable = false;
   head = { sequence: 0, digest: "0".repeat(64) };
   async snapshot() {
     if (this.unavailable) throw new Error("synthetic outage");
     return structuredClone({ contractVersion: "cop-erasure-replay-v1" as const, applicationStoreId: storeId,
-      configurationFingerprint: fingerprint, frontier: this.head, entries: this.entries });
+      configurationFingerprint: fingerprint, frontier: this.head, entries: this.entries,
+      ...(this.datasetBinding !== undefined ? { datasetBinding: this.datasetBinding } : {}) });
   }
   async assertCurrent(frontier: typeof this.head) {
     if (this.unavailable || JSON.stringify(frontier) !== JSON.stringify(this.head)) throw new Error("synthetic stale frontier");
@@ -48,7 +51,8 @@ async function setup() {
   await store.transact([], tx => tx.set("account-safety:store-identity-v1", { storeId }));
   const adapters = ACCOUNT_ERASURE_ADAPTER_IDS.map(id => ({ id, ready: async () => true,
     preflight: async () => ({ ready: true as const, version: "synthetic_preflight" }),
-    erase: vi.fn(async () => ({ status: "completed" as const, proofId: "synthetic_proof" })) }));
+    erase: vi.fn(async (..._args: Parameters<AccountErasureAdapter["erase"]>): Promise<AccountErasureProof> =>
+      ({ status: "completed", proofId: "synthetic_proof" })) }));
   const options = { store, identitySecret: secret, issuer, requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS, adapters,
     accepted: true, expectedGuardStoreId: storeId, continuityRequired: true, continuity: journal, now: () => instant };
   return { store, journal, adapters, options, service: new AccountErasureService(options) };
@@ -124,6 +128,106 @@ describe("independent fence controller recovery", () => {
     await restarted.resumePending();
     expect((await restarted.read(actor, operationId)).accountDeleted).toBe(true);
     adapters.forEach(a => expect(a.erase).toHaveBeenCalledTimes(1));
+  });
+  it("requires actual dataset identity from a database-mode continuity port", async () => {
+    const { journal, service, store } = await setup();
+    journal.requiresDatasetBinding = true;
+    await expect(service.init()).rejects.toMatchObject({ code: "ERASURE_REPLAY_UNPROVEN" });
+    expect(await store.transact([], tx => tx.get("account-erasure:configuration-v1"))).toBeUndefined();
+  });
+  it("keeps same-dataset restart idempotent but invalidates all copied completion after an enrolled restore", async () => {
+    const { options, journal, service, adapters, store } = await setup();
+    journal.requiresDatasetBinding = true;
+    journal.datasetBinding = { incarnationId: "10000000-0000-4000-8000-000000000001", restoreGeneration: 1 };
+    expect((await start(service)).accountDeleted).toBe(true);
+    const restarted = new AccountErasureService(options);
+    await restarted.resumePending();
+    expect((await restarted.read(actor, operationId)).accountDeleted).toBe(true);
+    adapters.forEach(a => expect(a.erase).toHaveBeenCalledTimes(1));
+    journal.datasetBinding = { incarnationId: "20000000-0000-4000-8000-000000000001", restoreGeneration: 2 };
+    const restored = new AccountErasureService(options);
+    await restored.init();
+    await restored.resumePending(); // A completed operation has no retained sealed identity to guess.
+    adapters.forEach(a => expect(a.erase).toHaveBeenCalledTimes(1));
+    const jobs = await store.transact([], tx => tx.scan<Record<string, unknown>>("account-erasure:job:"));
+    expect(jobs[0]!.value).toMatchObject({ operationId, requestedAt: instant.toISOString(), checkpoints: {} });
+    expect(jobs[0]!.value.completedAt).toBeUndefined();
+    expect(jobs[0]!.value.sealedPrincipal).toBeUndefined();
+    const pending = await restored.read(actor, operationId); // Fresh, verified original actor only.
+    expect(pending.accountDeleted).toBe(false);
+    expect(pending.remaining).toEqual([...ACCOUNT_ERASURE_ADAPTER_IDS]);
+    await restored.resumePending();
+    expect((await restored.read(actor, operationId)).accountDeleted).toBe(true);
+    adapters.forEach(a => expect(a.erase).toHaveBeenCalledTimes(2));
+    expect(journal.entries[0]!.job.checkpoints).toEqual({});
+  });
+  it("denies generation rewind, reused incarnation and dropped binding without accepting old completion", async () => {
+    for (const changed of [
+      undefined,
+      { incarnationId: "20000000-0000-4000-8000-000000000001", restoreGeneration: 1 },
+      { incarnationId: "10000000-0000-4000-8000-000000000001", restoreGeneration: 2 },
+      { incarnationId: "20000000-0000-4000-8000-000000000001", restoreGeneration: 0 }
+    ]) {
+      const { options, journal, service, adapters, store } = await setup();
+      journal.requiresDatasetBinding = true;
+      journal.datasetBinding = { incarnationId: "10000000-0000-4000-8000-000000000001", restoreGeneration: 1 };
+      await start(service);
+      const before = await store.transact([], tx => tx.scan("account-erasure:"));
+      journal.datasetBinding = changed;
+      await expect(new AccountErasureService(options).init()).rejects.toMatchObject({ status: 503 });
+      expect(await store.transact([], tx => tx.scan("account-erasure:"))).toEqual(before);
+      adapters.forEach(a => expect(a.erase).toHaveBeenCalledTimes(1));
+    }
+  });
+  it("does not adopt unbound historical completion when switching to dataset-bound authority", async () => {
+    const { service, journal, options, store, adapters } = await setup();
+    await start(service);
+    const before = await store.transact([], tx => tx.scan("account-erasure:"));
+    journal.requiresDatasetBinding = true;
+    journal.datasetBinding = { incarnationId: "10000000-0000-4000-8000-000000000001", restoreGeneration: 1 };
+    await expect(new AccountErasureService(options).init()).rejects.toMatchObject({ code: "ERASURE_DATASET_HISTORY_UNPROVEN" });
+    expect(await store.transact([], tx => tx.scan("account-erasure:"))).toEqual(before);
+    adapters.forEach(a => expect(a.erase).toHaveBeenCalledTimes(1));
+  });
+  it("replays an interrupted original actor after restore without adopting another identity", async () => {
+    const { service, options, journal, adapters } = await setup();
+    journal.requiresDatasetBinding = true;
+    journal.datasetBinding = { incarnationId: "10000000-0000-4000-8000-000000000001", restoreGeneration: 1 };
+    adapters[0]!.erase.mockResolvedValue({ status: "pending", remaining: "cleanup_pending" });
+    expect((await start(service)).accountDeleted).toBe(false);
+    journal.datasetBinding = { incarnationId: "20000000-0000-4000-8000-000000000001", restoreGeneration: 2 };
+    adapters[0]!.erase.mockResolvedValue({ status: "completed", proofId: "fresh_synthetic_proof" });
+    const restored = new AccountErasureService(options);
+    await restored.resumePending();
+    expect((await restored.read(actor, operationId)).accountDeleted).toBe(true);
+    for (const adapter of adapters) for (const call of adapter.erase.mock.calls) {
+      // Effects always use the same verified actor; journal metadata is never
+      // guessed into a new identity or a new deletion operation.
+      expect(call[0]).toMatchObject({ issuer, subjectId: actor.subjectId });
+      expect(call[1]).toMatchObject({ operationId, requestedAt: instant.toISOString() });
+    }
+  });
+  it("rejects a valid encrypted principal copied from another account before restore writes", async () => {
+    const a = await setup(), b = await setup();
+    const other = { ...actor, subjectId: "synthetic-other-owner" };
+    a.journal.requiresDatasetBinding = true;
+    a.journal.datasetBinding = { incarnationId: "10000000-0000-4000-8000-000000000001", restoreGeneration: 1 };
+    a.adapters[0]!.erase.mockResolvedValue({ status: "pending", remaining: "cleanup_pending" });
+    b.adapters[0]!.erase.mockResolvedValue({ status: "pending", remaining: "cleanup_pending" });
+    await start(a.service);
+    const plan = await b.service.preflight(other, operationId);
+    await b.service.request(other, operationId, { confirmAccountDeletion: true }, { planId: plan.response.planId!, capability: plan.capability! });
+    const foreign = await b.store.transact([], tx => tx.scan<{ sealedPrincipal: string }>("account-erasure:job:"));
+    await a.store.transact([], async tx => {
+      const [row] = await tx.scan<Record<string, unknown>>("account-erasure:job:");
+      await tx.set(row!.key, { ...row!.value, sealedPrincipal: foreign[0]!.value.sealedPrincipal });
+    });
+    const before = await a.store.transact([], tx => tx.scan("account-erasure:"));
+    const calls = a.adapters.map(adapter => adapter.erase.mock.calls.length);
+    a.journal.datasetBinding = { incarnationId: "20000000-0000-4000-8000-000000000001", restoreGeneration: 2 };
+    await expect(new AccountErasureService(a.options).init()).rejects.toMatchObject({ code: "ERASURE_PRINCIPAL_INVALID" });
+    expect(await a.store.transact([], tx => tx.scan("account-erasure:"))).toEqual(before);
+    a.adapters.forEach((adapter, index) => expect(adapter.erase).toHaveBeenCalledTimes(calls[index]!));
   });
   it("expires the synchronous RAM guard and cannot guess an identity during background replay", async () => {
     const { options, journal } = await setup(); let now = instant;

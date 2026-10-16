@@ -1,0 +1,54 @@
+{
+  "contractVersion": "cop-dataset-binding-source-acceptance-v1",
+  "date": "2026-10-16",
+  "baseRevision": "de5d565",
+  "scope": "controller completion validity after explicit database dataset recovery enrollment",
+  "sourceSha256": {
+    "apps/cop-api/src/account-erasure.ts": "5ced0dc7bf92898ffccbb84c0eb4638baa2770337f756b625720e87c84537882",
+    "apps/cop-api/src/account-erasure-continuity-postgres.ts": "869d095e99baf0bf400db73dea9d032c27775f9da3aea6e1219875d79c2be7f4",
+    "apps/cop-api/src/account-erasure-continuity.ts": "1607da7d25d7a6dda49e0d0b82f17a5f3efb74b650c4cd9587c4744200a2e457",
+    "apps/cop-api/src/account-erasure-continuity.test.ts": "9793633dba61f211746dde8e639e1b022c615bcda289b110e36fc5439baf26b0",
+    "apps/cop-api/src/account-erasure-continuity-postgres.test.ts": "b4833e2325c805ac088b80e0b0500be2d54f5038cd714137f05cc35ec0c8ec83",
+    "scripts/account-safety/provision-database-v2.mjs": "dc4b6a27020408575d4c157f0c065ce9f23102b66b4663cc3d9c6cc497f177a6",
+    "scripts/test-account-safety-database-provision.mjs": "150537e3d497b75976cf9675cd80a14c6d239069dbe4ca76c8c746f3d4035aaa",
+    "scripts/test-account-erasure-dataset-restore.mjs": "3ec2e2c6d51aa0c105fdc82e3050e129eff2df3f138d928d73851883f2f86031"
+  },
+  "verification": {
+    "focusedControllerPassed": 25,
+    "actualPostgresPassed": 9,
+    "optionalJointSimSkipped": 1,
+    "actualAdministratorHelperPassed": 28,
+    "normalFullSuitePassed": 2429,
+    "normalFullSuiteOptionalSkipped": 87,
+    "fullBuild": "passed_with_existing_web_chunk_size_warning",
+    "targetedEslint": "passed",
+    "schemas": "11_passed",
+    "openapi": "valid_with_24_existing_warnings",
+    "skeleton": "passed",
+    "publicAnalyticsDefaultOffAndPrivatePathGuards": "passed",
+    "countsOverlapAndAreNotSummed": true
+  },
+  "observed": [
+    "same-dataset restart does not repeat completed effects",
+    "explicit higher generation and changed incarnation reset all copied terminal/checkpoint flags",
+    "immutable journal, original operation and request time remain unchanged",
+    "fresh verified original actor recovers a completed operation with lost sealed principal",
+    "interrupted original sealed actor can resume without adopting a new identity",
+    "valid encrypted principal copied from another account is refused before restore writes",
+    "rewind, reused incarnation, malformed or dropped binding and unknown unbound accepted history are refused",
+    "actual SQL readback requires the enrolled dataset binding before cursor advancement"
+  ],
+  "qualifications": [
+    "Provider effects in the new PostgreSQL controller case are explicitly synthetic, not real provider cleanup proofs.",
+    "The actual PostgreSQL test constructs the operator binding change; it is not a physical backup/VM restore or an administrator restore tool.",
+    "The optional joint SIM HTTP fixture was not started by this isolated test harness.",
+    "The earlier frozen 28-case helper receipt refers to its original source; this new run covers the initial datasetBinding field too.",
+    "Initial local verification was blocked by missing generated workspace outputs and an ESM dependency-preflight assumption; those were fixed before the passing run, and all owned fixtures were removed.",
+    "Full lint is not claimed: unchanged frozen historical fixture diagnostics remain separate from the targeted passing ESLint gate."
+  ],
+  "productionContactedByTests": false,
+  "productionChanged": false,
+  "realAccountDeleted": false,
+  "wholeAccountComplete": false,
+  "ownedFixturesRemoved": true
+}

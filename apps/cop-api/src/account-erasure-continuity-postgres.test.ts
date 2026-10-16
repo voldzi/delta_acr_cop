@@ -41,11 +41,11 @@ const entry = (accountKey = "b".repeat(64), operationId: string = randomUUID()):
 });
 let admin: Pool, target: Pool;
 const open: PostgresAccountErasureContinuity[] = [];
-function client() {
+function client(incarnationId = binding.incarnationId) {
   const connection = new URL(url!); connection.username = "cop_safety_v2_test_runtime";
   const reader = new URL(local!); reader.username = "cop_safety_v2_test_runtime";
   const result = new PostgresAccountErasureContinuity(new Pool({ connectionString: connection.href, max: 2 }),
-    new Pool({ connectionString: reader.href, max: 2 }), binding);
+    new Pool({ connectionString: reader.href, max: 2 }), { ...binding, incarnationId });
   open.push(result); return result;
 }
 describe.skipIf(!url || !local)("actual PostgreSQL independent deletion journal v2", () => {
@@ -90,7 +90,8 @@ describe.skipIf(!url || !local)("actual PostgreSQL independent deletion journal 
     await expect(restored.assertCurrent(saved.frontier)).rejects.toMatchObject({ status: 503 });
     expect((await admin.query("SELECT replay_sequence FROM cop_safety_v2.dataset_replays")).rows[0]?.replay_sequence).toBe("0");
     await target.query("INSERT INTO cop_mobility_v1(key,value) VALUES($1,$2),($3,$4)", ["account-erasure:job:" + saved.entry.accountKey, saved.entry.job,
-      "account-erasure:configuration-v1", { fingerprint: binding.configurationFingerprint, storeId: binding.applicationStoreId, version: 4 }]);
+      "account-erasure:configuration-v1", { fingerprint: binding.configurationFingerprint, storeId: binding.applicationStoreId, version: 4,
+        datasetBinding: { incarnationId: binding.incarnationId, restoreGeneration: 1 } }]);
     await restored.assertCurrent(saved.frontier);
     expect((await admin.query("SELECT replay_sequence FROM cop_safety_v2.dataset_replays")).rows[0]?.replay_sequence).toBe("1");
   });
@@ -159,6 +160,49 @@ describe.skipIf(!url || !local)("actual PostgreSQL independent deletion journal 
       [{ ...actor, issuer: "https://foreign.test" }, context, { issuer: identityIssuer, userIdSecret: routerKey }],
       [actor, { ...context, routerUserId: opaqueUserId(routerKey + "changed", actor.subjectId) }, { issuer: identityIssuer, userIdSecret: routerKey + "changed" }]
     ] as const) expect(await a.reviewRouterIdentity(owner, request, config)).toEqual({ reviewed: false });
+  });
+  it("invalidates SQL-persisted terminal receipts after explicit dataset restore enrollment, but not an ordinary restart", async () => {
+    const store = new PostgresMobilityStore({ connectionString: local }, {}, undefined, true);
+    await store.init();
+    const owner = { authMode: "oidc" as const, issuer: identityIssuer, subjectId: "synthetic-restored-owner",
+      username: "", displayName: "", authTime: Math.floor(Date.now() / 1000) };
+    const adapters = ACCOUNT_ERASURE_ADAPTER_IDS.map(id => ({ id, ready: async () => true,
+      preflight: async () => ({ ready: true as const, version: "explicit-synthetic-owner" }),
+      erase: vi.fn(async () => ({ status: "completed" as const, proofId: "explicit-synthetic-owner-proof" })) }));
+    const options = { store, identitySecret: secret, issuer: identityIssuer, adapters,
+      requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS, accepted: true,
+      expectedGuardStoreId: binding.applicationStoreId, continuityRequired: true };
+    const operationId = randomUUID();
+    try {
+      const first = new AccountErasureService({ ...options, continuity: client() });
+      const plan = await first.preflight(owner, operationId);
+      expect((await first.request(owner, operationId, { confirmAccountDeletion: true },
+        { planId: plan.response.planId!, capability: plan.capability! })).accountDeleted).toBe(true);
+      const ordinary = new AccountErasureService({ ...options, continuity: client() });
+      await ordinary.resumePending();
+      expect((await ordinary.read(owner, operationId)).accountDeleted).toBe(true);
+      adapters.forEach(adapter => expect(adapter.erase).toHaveBeenCalledTimes(1));
+      const original = (await admin.query("SELECT sequence,digest,entry FROM cop_safety_v2.fences")).rows;
+      // Deliberately perform the operator's binding change in the owned fixture.
+      // Provider effects remain synthetic; this is not production restore approval.
+      const nextIncarnation = randomUUID();
+      await target.query("UPDATE cop_mobility_v1 SET value=$1 WHERE key='account-safety:store-identity-v1'",
+        [{ storeId: binding.applicationStoreId, incarnationId: nextIncarnation }]);
+      await admin.query("UPDATE cop_safety_v2.dataset_replays SET incarnation_id=$1,restore_generation=2,accepted_at=clock_timestamp() WHERE owner='cop'", [nextIncarnation]);
+      const restored = new AccountErasureService({ ...options, continuity: client(nextIncarnation) });
+      await restored.init();
+      await restored.resumePending();
+      const jobs = (await target.query("SELECT value FROM cop_mobility_v1 WHERE key LIKE 'account-erasure:job:%'")).rows;
+      expect(jobs[0]!.value).toMatchObject({ operationId, checkpoints: {} });
+      expect(jobs[0]!.value.completedAt).toBeUndefined();
+      expect(jobs[0]!.value.sealedPrincipal).toBeUndefined();
+      adapters.forEach(adapter => expect(adapter.erase).toHaveBeenCalledTimes(1));
+      expect((await restored.read(owner, operationId)).accountDeleted).toBe(false);
+      await restored.resumePending();
+      expect((await restored.read(owner, operationId)).accountDeleted).toBe(true);
+      adapters.forEach(adapter => expect(adapter.erase).toHaveBeenCalledTimes(2));
+      expect((await admin.query("SELECT sequence,digest,entry FROM cop_safety_v2.fences")).rows).toEqual(original);
+    } finally { await store.close(); }
   });
   it("derives the driver key inventory from actual immutable startup fingerprint and exact-owner consent", async () => {
     const schema = "inventory_" + randomUUID().replaceAll("-", ""); await target.query(`CREATE SCHEMA ${schema}`);

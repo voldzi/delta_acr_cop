@@ -1,6 +1,8 @@
 import type { AccountErasureAdapterId } from "./account-erasure.js";
 
 export interface AccountErasureFrontier { sequence: number; digest: string }
+/** Administrator-enrolled dataset identity, not a completion/provider proof. */
+export interface AccountErasureDatasetBinding { incarnationId: string; restoreGeneration: number }
 /** Permanent fence metadata only. No recoverable principal, name, email, user
  * text or provider key. The account MAC is pseudonymous, not anonymous. */
 export interface AccountErasureFenceEntry {
@@ -21,11 +23,13 @@ export interface AccountErasureReplay {
   configurationFingerprint: string;
   frontier: AccountErasureFrontier;
   entries: AccountErasureFenceEntry[];
+  datasetBinding?: AccountErasureDatasetBinding;
 }
 /** Server-only production port. Implementations must check the actual protected
  * peer/signatures, current independent journal and runtime/store binding.
  * An application boolean or synthetic callback is not a production authority. */
 export interface AccountErasureContinuity {
+  readonly requiresDatasetBinding?: true;
   close?(): Promise<void>;
   snapshot(): Promise<AccountErasureReplay>;
   assertCurrent(frontier: AccountErasureFrontier): Promise<{ validUntil: string }>;

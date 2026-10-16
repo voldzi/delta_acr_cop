@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import type { MobilityStore, MobilityTransaction } from "./mobility-store.js";
 import type { AuthenticatedActor } from "./security.js";
-import type { AccountErasureContinuity, AccountErasureFenceEntry, AccountErasureFrontier } from "./account-erasure-continuity.js";
+import type { AccountErasureContinuity, AccountErasureDatasetBinding, AccountErasureFenceEntry, AccountErasureFrontier } from "./account-erasure-continuity.js";
 
 export const ACCOUNT_ERASURE_ADAPTER_IDS = [
   "keycloak", "cop_sessions_profiles", "cop_devices", "messaging_matrix", "voice_livekit",
@@ -163,6 +163,10 @@ export class AccountErasureService {
         replay.frontier.sequence < 0 || !/^[0-9a-f]{64}$/u.test(replay.frontier.digest) || !Array.isArray(replay.entries) ||
         replay.entries.length > 100_000)) throw new AccountErasureError(503, "ERASURE_REPLAY_UNPROVEN");
       const seen = new Set<string>();
+      const dataset = replay?.datasetBinding === undefined ? undefined : structuredClone(replay.datasetBinding);
+      if ((this.options.continuity?.requiresDatasetBinding && dataset === undefined) ||
+        (dataset !== undefined && !validDatasetBinding(dataset)))
+        throw new AccountErasureError(503, "ERASURE_REPLAY_UNPROVEN");
       for (const entry of replay?.entries ?? []) {
         this.validateReplayEntry(entry);
         if (seen.has(entry.accountKey)) throw new AccountErasureError(503, "ERASURE_REPLAY_UNPROVEN");
@@ -170,7 +174,8 @@ export class AccountErasureService {
       }
       await this.options.store.transact([CONFIG], async tx => {
       const fingerprint = this.configurationFingerprint();
-      const saved = await tx.get<{ fingerprint: string; storeId?: string; issuerFingerprint?: string; version?: number; accepted?: boolean; deletionScope?: string }>(CONFIG);
+      const saved = await tx.get<{ fingerprint: string; storeId?: string; issuerFingerprint?: string; version?: number; accepted?: boolean;
+        deletionScope?: string; datasetBinding?: AccountErasureDatasetBinding }>(CONFIG);
       if (this.options.expectedGuardStoreId && (await tx.get<{ storeId: string }>("account-safety:store-identity-v1"))?.storeId !== this.options.expectedGuardStoreId) throw new AccountErasureError(503, "ERASURE_STORE_ID_MISMATCH");
       if (saved?.accepted && !this.options.expectedGuardStoreId && !this.options.allowUnboundSyntheticStore) throw new AccountErasureError(503, "ERASURE_GUARD_BINDING_REQUIRED");
       if (saved && saved.fingerprint !== fingerprint) throw new AccountErasureError(503, "ERASURE_CONFIGURATION_CHANGED");
@@ -178,13 +183,38 @@ export class AccountErasureService {
       const version = required ? 4 : 3;
       if (saved && (saved.version !== version || saved.deletionScope !== ACCOUNT_ERASURE_SCOPE || !saved.storeId || saved.issuerFingerprint !== issuerFingerprint)) throw new AccountErasureError(503, "ERASURE_CONFIGURATION_UNSUPPORTED");
       if (saved && this.options.expectedGuardStoreId && saved.storeId !== this.options.expectedGuardStoreId) throw new AccountErasureError(503, "ERASURE_STORE_ID_MISMATCH");
-      if (!saved) await tx.set(CONFIG, { fingerprint, issuerFingerprint, version, deletionScope: ACCOUNT_ERASURE_SCOPE, storeId: this.options.expectedGuardStoreId ?? randomUUID(), accepted: false });
+      const jobs = await tx.scan<Job>(PREFIX);
+      const hadDataset = !!saved && Object.hasOwn(saved, "datasetBinding");
+      if (hadDataset && (dataset === undefined || !validDatasetBinding(saved!.datasetBinding!)))
+        throw new AccountErasureError(503, "ERASURE_REPLAY_UNPROVEN");
+      if (dataset && !hadDataset && (saved?.accepted || jobs.length))
+        throw new AccountErasureError(503, "ERASURE_DATASET_HISTORY_UNPROVEN");
+      const restored = !!(dataset && saved?.datasetBinding && (
+        dataset.incarnationId !== saved.datasetBinding.incarnationId || dataset.restoreGeneration !== saved.datasetBinding.restoreGeneration));
+      if (restored && (dataset!.restoreGeneration <= saved!.datasetBinding!.restoreGeneration ||
+        dataset!.incarnationId === saved!.datasetBinding!.incarnationId))
+        throw new AccountErasureError(503, "ERASURE_DATASET_HISTORY_UNPROVEN");
+      if (!saved) await tx.set(CONFIG, { fingerprint, issuerFingerprint, version, deletionScope: ACCOUNT_ERASURE_SCOPE,
+        storeId: this.options.expectedGuardStoreId ?? randomUUID(), accepted: false, ...(dataset ? { datasetBinding: dataset } : {}) });
+      else if (dataset) await tx.set(CONFIG, { ...saved, datasetBinding: dataset });
       for (const entry of replay?.entries ?? []) {
         const key = PREFIX + entry.accountKey, existing = await tx.get<Job>(key);
         if (existing) {
           this.validateBoundary(existing);
           if (existing.operationId !== entry.job.operationId || existing.requestedAt !== entry.job.requestedAt)
             throw new AccountErasureError(503, "ERASURE_REPLAY_CONFLICT");
+          if (restored) {
+            // A receipt/checkpoint copied from the restored dataset cannot prove
+            // that its provider effects still hold. Keep the original operation
+            // and date, but require every owner to perform current readback again.
+            let sealedPrincipal: string | undefined;
+            if (existing.sealedPrincipal) {
+              if (this.accountKey(this.open(existing.sealedPrincipal)) !== entry.accountKey)
+                throw new AccountErasureError(503, "ERASURE_PRINCIPAL_INVALID");
+              sealedPrincipal = existing.sealedPrincipal;
+            }
+            await tx.set(key, { ...entry.job, ...(sealedPrincipal ? { sealedPrincipal } : {}) });
+          }
         } else await tx.set(key, entry.job);
       }
       if (replay?.entries.length) {
@@ -554,6 +584,12 @@ function validateOperation(operation: string) {
 }
 function validUntil(value: string, now: number): boolean {
   return typeof value === "string" && Number.isFinite(Date.parse(value)) && Date.parse(value) > now;
+}
+function validDatasetBinding(value: AccountErasureDatasetBinding): boolean {
+  return value !== null && typeof value === "object" && !Array.isArray(value) &&
+    Object.keys(value).sort().join(",") === "incarnationId,restoreGeneration" &&
+    typeof value.incarnationId === "string" && UUID.test(value.incarnationId) &&
+    Number.isSafeInteger(value.restoreGeneration) && value.restoreGeneration > 0;
 }
 function validateProof(value: AccountErasureProof) {
   if (!value || typeof value !== "object" || (value.status === "completed"

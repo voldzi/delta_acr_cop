@@ -63,7 +63,7 @@ const canonical = (value) =>
 async function command(binary, args) {
   // Never inherit ambient database, credentials, NODE_OPTIONS or shell hooks.
   return run(join(BIN, binary), args, {
-    env: { PATH: BIN + ":/usr/bin:/bin", HOME: root, LC_ALL: "C" },
+    env: { PATH: BIN + ":/usr/bin:/bin", HOME: process.env.HOME, LC_ALL: "C" },
     maxBuffer: 1024 * 1024,
     timeout: 30000
   });

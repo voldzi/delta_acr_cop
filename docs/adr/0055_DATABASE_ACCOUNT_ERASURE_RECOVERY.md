@@ -99,6 +99,39 @@ does not guess a principal or claim completion. SIM can replay an already
 accepted manifest independently. A pending COP job without recoverable identity
 still needs verified ownership recovery before its remaining local cleanup.
 
+### Dataset binding and copied completion checkpoints — 16 October
+
+The database continuity snapshot now includes the actual administrator-enrolled
+incarnation and restore generation. COP records that binding in its private
+version4 configuration and verifies it by SQL readback before advancing replay.
+The first-empty installer writes the initial binding explicitly. An empty,
+unaccepted store may record the already verified database binding; existing
+accepted history without a binding is quarantined, not silently adopted.
+
+Ordinary restart in the same binding preserves completed checkpoints. An
+explicitly enrolled higher generation with a new incarnation invalidates every
+copied completion checkpoint and terminal timestamp, preserving the original
+account MAC, operation, requested date and permanent fence. A still-present
+encrypted principal must decrypt and match that exact account MAC; otherwise
+fresh verified ownership or the separately verified restore inventory is
+required. No identity is guessed from journal metadata. Reused incarnation,
+generation rewind, missing or malformed bindings fail closed before import.
+
+This global COP recovery binding must advance after **any** affected owner
+dataset is restored, including a standalone Messaging/Synapse restore when the
+COP database itself was not restored. Stop/quarantine the affected services,
+perform the explicit administrator bindings, replay and verify every actual
+owner again, then expose traffic. The cursor proves installed fences, not
+provider cleanup. Neither a copied terminal receipt nor an unchanged operation
+UUID proves current provider effects. This source is not an administrator
+restore tool and does not authorize an automatic binding change.
+
+Current tests include actual PostgreSQL-persisted completion/reset and unchanged
+journal readback, plus controller cases for same-binding restart, pending actor
+recovery, copied foreign encrypted identity and invalid bindings. Provider
+effects in the new PostgreSQL controller case are explicitly synthetic. They
+are not a physical backup/restore or whole-provider acceptance.
+
 ## Current evidence and remaining release gates
 
 Nine actual PostgreSQL tests cover concurrent/idempotent append, account and
