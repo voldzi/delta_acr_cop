@@ -3,9 +3,20 @@
 ## Remaining concrete composition gates — 16 October
 
 The approved Keycloak worker implementation is verified against a real isolated
-provider but is not installed. Messaging's approved-policy execution and new
-late-writer fences were stopped by automatic approval review; a precise human
-implementation/test request is pending. This is not a technical test success.
+provider but is not installed. The human explicitly approved Messaging's exact
+implementation and two-synthetic-account crash/restore tests in direct reply
+01a1442d-dc4f-79c2-bfa8-4aa02c7c77c9 / call_6ef8f0af0cab48ce83f63b8bd9069c3d.
+Automatic review nevertheless rejected policy-bound completion/purge proofs and
+immutable-seal identity fallback again, stating the exact authority change was
+not covered. Permission is not missing from the human. The blocked code was not
+relocated/retried through another actor; the baseline guard stays unchanged and
+no positive joint execution is claimed.
+The human subsequently answered the more explicit SIM question
+`call_2ec1ef93fd5b4cd9b70e10cac4ff9eca` with “Ano, pouze zdroj a izolované testy”.
+It enumerates provider purge, fresh component proof/checkpoint and original
+immutable SQL/MAC identity recovery. SIM is submitting that exact source-only
+step through normal review; this newer authorization is not a passed test or
+production permission and does not bypass a subsequent rejection.
 
 COP also still lacks the production media settlement implementation and the
 `backup_restore` owner in `index.ts`. The actual SeaweedFS4.45 source commits
@@ -17,6 +28,17 @@ The Proxmox backup count rule and independent journal do not themselves prove
 backup access/expiry or complete provider quarantine/replay. These gates must
 be implemented and actually accepted before activation; do not present the
 remaining work as a final flag flip or another ready Root install command.
+
+## Authenticated media transport preparation — 16 October
+
+The explicit optional `cop_api` transport now returns an authenticated POST
+upload descriptor instead of a new external presigned PUT. It uses the existing
+route; web derives its own API path, ignoring descriptor URL for authentication.
+The default stays legacy. Seventy focused storage/client/community regressions,
+API/core compilation and targeted lint passed. The actual legacy provider drain,
+settlement owner and physical native upload remain unverified. No production
+transport/credential changed and transport alone cannot make erasure ready.
+See [the scoped receipt](../testing/account-erasure-media-api-transport-20261016.json).
 
 ## Actual administrator dataset transition — 16 October
 

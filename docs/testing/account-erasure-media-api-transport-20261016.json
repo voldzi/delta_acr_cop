@@ -1,0 +1,52 @@
+{
+  "contractVersion": "cop-media-authenticated-api-transport-evidence-v1",
+  "date": "2026-10-16",
+  "sourceSha256": {
+    "apps/cop-api/src/media-storage.ts": "f4473f984b72df7c2595ca707f379a8755b8dd95ed924f3afd8e3a00ee0216a3",
+    "apps/cop-api/src/media-storage.test.ts": "1f8ca32ee183b891f34396b708c45a4a48f136b66c99630c2ead5d761b01cd50",
+    "packages/core/src/cop-data.ts": "fd40e3fc72a3b6032472f5926042b8cb7a88212ba7a030b93c1767d15e9a1a7a",
+    "packages/core/src/cop-data.upload.test.ts": "5886f06e12e2fe4bd47fe0ff084c7de8177ab2c88e098cb79fa037ff057a082f",
+    "openapi/openapi.json": "4203afb65cb34102f7c9940dc8a09ea4cab7b52d6d612e8a9cb799b5269f9e4b",
+    ".env.example": "92eacb4aded687a3af6d29942bf59024dc6345ce25b976d86a65e0f4531b238f",
+    "docker-compose.yml": "86b67f65045b70363973b38f8c6a251cdb8d07f0dff3d610daef53d965fb0dd9"
+  },
+  "change": {
+    "configuration": "COP_MEDIA_UPLOAD_TRANSPORT=presigned|cop_api",
+    "default": "presigned",
+    "newMode": "cop_api",
+    "uploadDescriptor": {
+      "method": "POST",
+      "transport": "cop_api",
+      "normalCOPAuthenticationRequired": true,
+      "externalPresignedPutIssued": false
+    },
+    "existingPostRouteReused": true,
+    "newPublicEndpoint": false,
+    "fixedHttpsCOPPublicOriginRequired": true,
+    "browserUsesOwnConfiguredApiPathNotDescriptorUrl": true
+  },
+  "verification": {
+    "focusedPassed": 70,
+    "focusedFiles": [
+      "apps/cop-api/src/media-storage.test.ts",
+      "packages/core/src/cop-data.upload.test.ts",
+      "apps/cop-api/src/community-routes.test.ts"
+    ],
+    "focusedDurationSeconds": 1.75,
+    "targetedEslint": "passed",
+    "apiBuild": "passed",
+    "coreBuild": "passed",
+    "openapi": "passed_with_24_preexisting_warnings",
+    "yamlCompatibilityExportRegenerated": true,
+    "staticNativeReview": "Current CSMCommunicationKit decodes method as String and falls back from failed direct HTTPS PUT to the existing authenticated POST. No Swift source was modified.",
+    "physicalNativeUploadTested": false
+  },
+  "boundaries": [
+    "This transport does not prove provider settlement or revoke any previously issued S3 signature.",
+    "verifiedErasureReady stays false without the actual independent upload-settlement verifier, even with cop_api transport.",
+    "Legacy credentials and in-flight provider effects require actual coordinated drain and readback before erasure activation.",
+    "Production flags, credentials, provider services and upload transport were not changed."
+  ],
+  "productionDeployed": false,
+  "wholeAccountReady": false
+}

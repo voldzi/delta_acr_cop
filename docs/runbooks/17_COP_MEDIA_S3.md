@@ -112,3 +112,31 @@ do odděleného prostředí s přesnou verzí. Sdílená služba, její konfigur
 credentials i síť zůstaly beze změny. Konkrétní nasazovací plán musí zachovat
 ostatní buckety a jejich klienty. Viz
 [přesná čtecí evidence a zbývající práce](../testing/account-erasure-media-provider-boundary-20261016.json).
+
+## Volitelný upload pouze přes COP API — zdrojová příprava16října
+
+`COP_MEDIA_UPLOAD_TRANSPORT` má výchozí hodnotu `presigned`. Explicitní
+`cop_api` vrací pro původní objekt i opakovaný požadavek `method=POST`,
+`transport=cop_api` a URL stávající přihlášené uploadové cesty COP. Vyžaduje
+pevný HTTPS origin `COP_PUBLIC_URL` bez credentials, query, fragmentu nebo
+základní cesty. Chybná hodnota se nevrátí k externímu PUT.
+
+Tento režim nevytváří a neposílá klientovi nový S3 uploadový podpis. Webový
+klient pro POST odvozuje cestu z vlastní konfigurace API a ID přílohy a použije
+své běžné přihlášení; nepředává uživatelský token na `uploadUrl`. Server
+používá existující ověření účtu, vlastníka, těla a trvalých uploadových záznamů.
+Dřívější pole zůstávají; OpenAPI rozšiřuje enum metody o POST a přidává volitelné
+pole `transport`. Nejde o nový endpoint nebo alternativní autentizaci.
+
+Cílené testy úložiště, XHR klienta a původních komunitních cest prošly70/70;
+API/core build a lint prošly. OpenAPI validace prošla se24 staršími warnings;
+YAML export je regenerovaný. Ve stávajícím nativním zdroji byl pouze čtecí
+kontrolou nalezen fallback z PUT na přihlášený POST; skutečný upload na iPhonu
+ani distribuovaný mobilní build tato kontrola neověřuje.
+
+**Produkce zůstává na původní hodnotě.** Tento režim neruší staré podpisy
+a nedokazuje ukončení starých uploadů. Samotný přepínač nemění
+`verifiedErasureReady`: bez skutečného poskytovatele ověření doběhnutí zůstává
+false. Před aktivací mazání je nutné ověřené uzavření staré cesty, skutečné
+dokončení zápisů a samostatná zkouška obnovených dat. Viz
+[evidence](../testing/account-erasure-media-api-transport-20261016.json).

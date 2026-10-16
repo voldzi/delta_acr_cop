@@ -162,3 +162,13 @@ production enrollment, production restore acceptance or deployment.
 Remaining: actual production owner composition, shared HTTP/database acceptance,
 scoped Keycloak authority, reviewed least-privilege provisioning, deployment and
 isolated restore acceptance before enabling account deletion.
+
+### Media transport source preparation — 16 October
+
+Optional `COP_MEDIA_UPLOAD_TRANSPORT=cop_api` stops issuing new external PUT
+signatures and uses the existing authenticated COP POST upload with normal
+writer ownership/fencing. Default stays legacy. Descriptor POST/transport fields
+are additive in the binding OpenAPI and do not introduce another credential.
+This is not acceptance of legacy credential revocation, provider drain or backup
+restore. Those require real independent evidence; the settlement verifier remains
+mandatory and cannot be replaced by this configuration flag.

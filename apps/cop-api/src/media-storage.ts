@@ -28,7 +28,9 @@ export interface MediaUploadSlot {
   bucket: string;
   expiresAt: string;
   headers: Record<string, string>;
-  method: "PUT";
+  method: "PUT" | "POST";
+  /** COP API upload uses ordinary user authentication, not an object-store grant. */
+  transport?: "cop_api";
   objectKey: string;
   uploadUrl: string;
 }
@@ -65,6 +67,8 @@ interface S3MediaStorageConfig {
   secretAccessKey: string;
   uploadExpiresSeconds: number;
   uploadSettlement?: MediaUploadSettlementVerifier;
+  uploadTransport?: "presigned" | "cop_api";
+  copPublicOrigin?: string;
 }
 
 export function createMediaStorageFromEnv(env: Record<string, string | undefined> = process.env, options: { uploadSettlement?: MediaUploadSettlementVerifier } = {}): MediaStorage | undefined {
@@ -76,6 +80,9 @@ export function createMediaStorageFromEnv(env: Record<string, string | undefined
     throw new Error(`Unsupported COP_MEDIA_STORE value: ${mode}`);
   }
 
+  const uploadTransport = (env.COP_MEDIA_UPLOAD_TRANSPORT ?? "presigned").trim();
+  if (uploadTransport !== "presigned" && uploadTransport !== "cop_api") throw new Error("Invalid COP_MEDIA_UPLOAD_TRANSPORT");
+  const copPublicOrigin = uploadTransport === "cop_api" ? configuredCopOrigin(requiredEnv(env, "COP_PUBLIC_URL")) : undefined;
   const endpoint = requiredEnv(env, "COP_MEDIA_S3_ENDPOINT");
   const publicEndpoint = env.COP_MEDIA_S3_PUBLIC_ENDPOINT?.trim() || endpoint;
   return new S3PresignedMediaStorage({
@@ -86,6 +93,8 @@ export function createMediaStorageFromEnv(env: Record<string, string | undefined
     region: env.COP_MEDIA_S3_REGION?.trim() || "us-east-1",
     secretAccessKey: requiredEnv(env, "COP_MEDIA_S3_SECRET_ACCESS_KEY"),
     uploadExpiresSeconds: readPositiveInteger(env.COP_MEDIA_UPLOAD_EXPIRES_SECONDS, 900),
+    uploadTransport,
+    ...(copPublicOrigin ? { copPublicOrigin } : {}),
     ...(options.uploadSettlement ? { uploadSettlement: options.uploadSettlement } : {})
   });
 }
@@ -111,6 +120,12 @@ export class S3PresignedMediaStorage implements MediaStorage {
   async createUploadSlot(request: MediaUploadRequest, now: Date): Promise<MediaUploadSlot> {
     const objectKey = communityObjectKey(request);
     const expiresAt = new Date(now.getTime() + this.config.uploadExpiresSeconds * 1000).toISOString();
+    if (this.config.uploadTransport === "cop_api") {
+      const origin = configuredCopOrigin(this.config.copPublicOrigin ?? "");
+      return { bucket: this.config.bucket, expiresAt, method: "POST", transport: "cop_api",
+        headers: { "content-type": request.contentType }, objectKey,
+        uploadUrl: new URL(`/api/v1/community/reports/${encodeURIComponent(request.reportId)}/attachments/${encodeURIComponent(request.attachmentId)}/upload`, origin).href };
+    }
     return {
       bucket: this.config.bucket,
       expiresAt,
@@ -463,4 +478,11 @@ function requiredEnv(env: Record<string, string | undefined>, key: string): stri
 function readPositiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+}
+
+function configuredCopOrigin(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.pathname !== "/")
+    throw new Error("COP API media uploads require a fixed HTTPS COP_PUBLIC_URL origin");
+  return url.origin;
 }

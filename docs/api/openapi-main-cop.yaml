@@ -12088,8 +12088,18 @@ components:
               type: string
               enum:
                 - PUT
+                - POST
+              description: PUT for legacy presigned object storage; POST for authenticated COP API upload. POST is
+                not an object-store grant.
             objectKey:
               type: string
+            transport:
+              type: string
+              enum:
+                - cop_api
+              description: Server-selected upload through the existing authenticated COP API POST route. No
+                external presigned PUT is returned. Clients use their normal COP authentication and
+                known API attachment path.
             uploadUrl:
               type: string
               format: uri

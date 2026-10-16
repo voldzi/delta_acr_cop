@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { S3PresignedMediaStorage } from "./media-storage.js";
+import { createMediaStorageFromEnv, S3PresignedMediaStorage } from "./media-storage.js";
 
 describe("S3PresignedMediaStorage", () => {
   afterEach(() => {
@@ -61,6 +61,33 @@ describe("S3PresignedMediaStorage", () => {
     });
     expect(upload.uploadUrl).toContain("https://media.example.test/cop-community-media/community-reports/report-1/attachment-1/Pozar-u-mostu.jpg?");
     expect(upload.uploadUrl).toContain("X-Amz-Signature=");
+  });
+
+  it("issues only a normal authenticated COP POST descriptor in API transport, including retries", async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    const storage = createMediaStorageFromEnv({ COP_MEDIA_STORE: "seaweedfs", COP_MEDIA_S3_ENDPOINT: "http://seaweed.test:8333",
+      COP_MEDIA_S3_PUBLIC_ENDPOINT: "https://foreign-media.example.test", COP_MEDIA_S3_BUCKET: "cop-community-media",
+      COP_MEDIA_S3_ACCESS_KEY_ID: "synthetic-access", COP_MEDIA_S3_SECRET_ACCESS_KEY: "synthetic-secret",
+      COP_MEDIA_UPLOAD_TRANSPORT: "cop_api", COP_PUBLIC_URL: "https://cop.example.test" })!;
+    const request = { attachmentId: "attachment-1", reportId: "report-1", byteSize: 4, contentType: "image/jpeg", fileName: "photo.jpg" };
+    for (const now of [new Date("2026-10-16T00:00:00Z"), new Date("2026-10-16T00:01:00Z")]) {
+      const slot = await storage.createUploadSlot(request, now);
+      expect(slot).toMatchObject({ method: "POST", transport: "cop_api", headers: { "content-type": "image/jpeg" },
+        uploadUrl: "https://cop.example.test/api/v1/community/reports/report-1/attachments/attachment-1/upload" });
+      expect(JSON.stringify(slot)).not.toMatch(/X-Amz|synthetic-access|synthetic-secret|foreign-media/iu);
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    // Transport alone never attests legacy or unknown provider settlement.
+    expect(await storage.verifiedErasureReady!()).toBe(false);
+  });
+
+  it.each(["http://cop.example.test", "https://user:pass@cop.example.test", "https://cop.example.test/path", "https://cop.example.test/?override=1"])("refuses an unsafe API origin %s", origin => {
+    expect(() => createMediaStorageFromEnv({ COP_MEDIA_STORE: "s3", COP_MEDIA_UPLOAD_TRANSPORT: "cop_api", COP_PUBLIC_URL: origin })).toThrow();
+  });
+
+  it("refuses an unknown transport instead of reverting to external presigned uploads", () => {
+    expect(() => createMediaStorageFromEnv({ COP_MEDIA_STORE: "s3", COP_MEDIA_UPLOAD_TRANSPORT: "unknown" })).toThrow("Invalid COP_MEDIA_UPLOAD_TRANSPORT");
   });
 
   it("deletes only the exact verified object in an unversioned bucket and requires 404 readback", async () => {

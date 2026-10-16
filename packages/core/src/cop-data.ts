@@ -1945,7 +1945,8 @@ export interface CommunityAttachmentUploadSlot {
   bucket: string;
   expiresAt: string;
   headers: Record<string, string>;
-  method: "PUT";
+  method: "PUT" | "POST";
+  transport?: "cop_api";
   objectKey: string;
   uploadUrl: string;
 }
@@ -4247,6 +4248,11 @@ export async function uploadCommunityAttachmentFile(
 ): Promise<CommunityReportAttachment> {
   if (!slot.upload || slot.attachment.status === "uploaded") {
     return slot.attachment;
+  }
+  // The authenticated COP transport always derives its path from the fixed
+  // configured API and known IDs. Never send the user's token to uploadUrl.
+  if (slot.upload.transport === "cop_api" || slot.upload.method === "POST") {
+    return uploadCommunityAttachmentViaApi(apiBase, token, reportId, slot.attachment.attachmentId, file, onProgress);
   }
   const uploadSlot = { attachment: slot.attachment, upload: slot.upload };
   const directUpload = directCommunityAttachmentUploadAllowed(uploadSlot.upload.uploadUrl)
