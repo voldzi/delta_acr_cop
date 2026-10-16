@@ -35,14 +35,15 @@ def remote(command, data=None, check=True, timeout=90):
 sources = {
     'keycloak-account-erasure.js': ROOT / 'apps/cop-api/dist/keycloak-account-erasure.js',
     'bounded-upstream.js': ROOT / 'apps/cop-api/dist/bounded-upstream.js',
-    'probe.mjs': ROOT / 'scripts/keycloak/erasure-provider-probe.mjs'
+    'probe.mjs': ROOT / 'scripts/keycloak/erasure-provider-probe.mjs',
+    'provision-erasure-client.mjs': ROOT / 'scripts/keycloak/provision-erasure-client.mjs'
 }
 files = {k: base64.b64encode(p.read_bytes()).decode() for k, p in sources.items()}
 files['package.json'] = base64.b64encode(b'{"type":"module"}').decode()
 bootstrap = """import{readFileSync,writeFileSync,mkdirSync}from'node:fs';
 try{const files=JSON.parse(readFileSync(0,'utf8'));mkdirSync('/tmp/cop-probe',{recursive:true});
 for(const[k,v]of Object.entries(files)){if(!/^[a-z.-]+$/.test(k))throw Error();writeFileSync('/tmp/cop-probe/'+k,Buffer.from(v,'base64'));}
-await import('/tmp/cop-probe/probe.mjs');}catch{console.log(JSON.stringify({error:'isolated_keycloak_probe_failed',stage:globalThis.fixtureStage??'bootstrap'}));process.exitCode=1;}"""
+await import('/tmp/cop-probe/probe.mjs');}catch(error){console.log(JSON.stringify({error:'isolated_keycloak_probe_failed',stage:globalThis.fixtureStage??'bootstrap',roleMetadata:globalThis.fixtureRoleMetadata,sourceFrames:String(error.stack??'').split('\\n').flatMap(x=>x.match(/(?:provision-erasure-client|probe)\\.mjs:[0-9]+:[0-9]+/g)??[])}));process.exitCode=1;}"""
 # Base64 is only source transport for these synthetic fixture files, not encryption.
 node_command = "node --input-type=module -e " + "'" + bootstrap.replace("'", "'\"'\"'") + "'"
 before = remote("docker inspect keycloak --format '{{.Id}}'").stdout.strip()

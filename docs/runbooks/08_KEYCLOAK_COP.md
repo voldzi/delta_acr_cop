@@ -1,5 +1,36 @@
 # 08 Keycloak for COP
 
+## Approved dedicated worker provisioning — 16 October
+
+`scripts/keycloak/provision-erasure-client.mjs` creates only the fixed
+`cop-account-erasure-worker` in the selected administrator transport's realm.
+It first resolves exactly `cop-web`, `csm-mobile` and `realm-management`, verifies
+the stock role definitions, and refuses an existing client with different
+purpose, secret, flow or scope. Browser/direct/implicit flows are disabled,
+`fullScopeAllowed=false`, service tokens last60seconds, and role scope mappings
+contain only the approved four direct management roles. The upstream built-in
+`view-users` expansion also produces `query-users`/`query-groups`; `view-clients`
+includes the already-approved `query-clients`. The actual effective six-role
+set is checked; no `realm-admin` or other client scope is silently adopted.
+
+The Root-only `scripts/keycloak/install-erasure-client.mjs --apply` is a
+**preparation** step for docker.home.cz. It uses a terminal-only administrator
+prompt, keeps admin password/token in RAM, atomically updates the existing
+private COP env without a credential backup, and verifies the new worker's
+actual token subject/issuer/scope/lifetime. Interrupted creation can retry the
+same stored secret. Errors use fixed codes. It preserves disabled intake,
+guard and scoped-authority flags and never restarts services. The reviewed
+Root bundle must supply the exact source hashes and Node24; this source path
+alone is not an installed command. No production account has been created.
+
+Nine actual isolated Keycloak26.8 scenarios passed, including full provisioning,
+retry/wrong-secret refusal, injected realm-admin scope refusal, scoped erasure,
+second-user preservation, repeated/recovered cleanup and retained SIM access.
+The Root env-file application itself was not executed by this provider test;
+COP checkpoints remain explicit in-memory fixtures. See
+[the immutable scoped provisioning receipt](../testing/account-erasure-keycloak-scoped-provision-20261016.json).
+The older seven-case receipt remains unchanged.
+
 ## Scoped account-removal candidate — 16 October 2026
 
 The live container was read-only identified as Keycloak26.8.0, immutable image
@@ -32,9 +63,11 @@ The actual disposable fixture used a separate worker with `view-users`,
 `query-clients`, `view-clients` and `manage-users`, in its reserved synthetic
 realm only. A worker without `manage-users` was actually denied at revocation
 and left all grants unchanged. No production service account, role or secret
-was provisioned. The production authority decision must explicitly address
-this broader stock permission or use a separately tested provider restriction;
-setting `COP_KEYCLOAK_COP_SCOPE_AUTHORITY_ACCEPTED=true` is not that decision.
+was provisioned by that initial test. The human subsequently explicitly
+approved the four stock roles, including the disclosed broader `manage-users`
+authority, and a dedicated worker with its secret only in `/srv/cop/.env`.
+That decision is recorded in the new scoped-provision receipt below; it does
+not itself enable production deletion.
 
 ### Actual provider fixture
 

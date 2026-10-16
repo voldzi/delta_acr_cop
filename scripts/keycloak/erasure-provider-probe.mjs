@@ -1,12 +1,14 @@
 // Reserved, disposable provider only. All local checkpoints are explicit fixtures.
 import assert from 'node:assert/strict';
 import { createKeycloakAccountErasureAdapter } from './keycloak-account-erasure.js';
+import { provisionErasureClient, ERASURE_CLIENT_ID } from './provision-erasure-client.mjs';
 
 const nativeFetch = globalThis.fetch;
 const origin = 'http://127.0.0.1:8080';
 const realm = 'cop-erasure-fixture';
 const issuer = `https://cop-erasure-keycloak.invalid/realms/${realm}`;
 const syntheticSecret = 'synthetic-fixture-worker-not-a-production-secret';
+const provisionSecret='synthetic-only-erasure-client-secret-not-production-v1';
 const checks = [];
 globalThis.fixtureStage = 'provider_startup';
 
@@ -107,7 +109,29 @@ async function worker(clientId, managementRoles) {
   await manage(base + `users/${service.id}/role-mappings/clients/${manager[0].id}`, 'POST', selected);
 }
 await worker('fixture-readonly-worker', ['view-users', 'query-clients', 'view-clients']);
-await worker('fixture-erasure-worker', ['view-users', 'query-clients', 'view-clients', 'manage-users']);
+const provisionRequest=async(path,method='GET',body)=>response(base+path,method,body,admin);
+const management=(await manage(base+'clients?'+new URLSearchParams({clientId:'realm-management',search:'false'}))).value[0];
+globalThis.fixtureRoleMetadata=[];
+for(const name of ['manage-users','query-clients','view-clients','view-users']) {
+ const role=(await manage(base+`clients/${management.id}/roles/${name}`)).value;
+ const children=(await manage(base+`clients/${management.id}/roles/${name}/composites`)).value;
+ globalThis.fixtureRoleMetadata.push({name:role.name,composite:role.composite,clientRole:role.clientRole,
+  correctContainer:role.containerId===management.id,children:children.map(r=>({name:r.name,composite:r.composite,clientRole:r.clientRole,correctContainer:r.containerId===management.id}))});
+}
+globalThis.fixtureStage='exact_worker_provision';
+const provisioned=await provisionErasureClient({request:provisionRequest,secret:provisionSecret});
+assert.equal(provisioned.created,true);
+const retryProvision=await provisionErasureClient({request:provisionRequest,secret:provisionSecret});
+assert.equal(retryProvision.created,false);
+assert.equal(retryProvision.clientUuid,provisioned.clientUuid);
+await assert.rejects(()=>provisionErasureClient({request:provisionRequest,secret:provisionSecret+'x'}));
+const workerToken=await token(ERASURE_CLIENT_ID,{grant_type:'client_credentials'},provisionSecret);
+const claims=JSON.parse(Buffer.from(workerToken.access_token.split('.')[1],'base64url').toString());
+assert.equal(claims.sub,provisioned.serviceUuid);
+assert.deepEqual(claims.resource_access['realm-management'].roles.sort(),['manage-users','query-clients','query-groups','query-users','view-clients','view-users']);
+assert.deepEqual(Object.keys(claims.resource_access),['realm-management']);
+assert(claims.exp-claims.iat<=60);
+checks.push('actual scoped provisioner creates exact four-role worker with fullScopeAllowed false, retries without rotation and rejects wrong secret');
 
 const calls = [];
 // Only fixture transport is rewritten; bodies, methods, authentication and
@@ -132,7 +156,7 @@ const binding2 = { incarnationId: '20000000-0000-4000-8000-000000000001', restor
 const ctx = binding => ({ accountKey: 'a'.repeat(64), operationId: '30000000-0000-4000-8000-000000000001',
   requestedAt: '2026-10-16T00:00:00.000Z', datasetBinding: binding, signal: AbortSignal.timeout(20000) });
 function adapter(clientId) {
-  return createKeycloakAccountErasureAdapter({ issuer, clientId, clientSecret: syntheticSecret,
+  return createKeycloakAccountErasureAdapter({ issuer, clientId, clientSecret: clientId===ERASURE_CLIENT_ID ? provisionSecret : syntheticSecret,
     authorityAccepted: true, assertCopAccessFenced: async value => value.issuer === issuer && value.subjectId === a.id
   }, checkpointStore());
 }
@@ -144,7 +168,7 @@ assert.deepEqual(await providerState(a), beforeA);
 checks.push('actual read-only worker receives revocation denial without changing grants');
 
 globalThis.fixtureStage = 'scoped_real_provider_erase';
-const full = adapter('fixture-erasure-worker');
+const full = adapter(ERASURE_CLIENT_ID);
 assert.equal(await full.ready(), true);
 assert.equal((await full.preflight(actor, ctx(binding1))).ready, true);
 const first = await full.erase(actor, ctx(binding1));
@@ -180,7 +204,13 @@ checks.push('actual retained SIM refresh token still obtains usable userinfo acc
 assert(calls.filter(c => c.method === 'DELETE').every(c =>
   /^\/admin\/realms\/cop-erasure-fixture\/users\/[^/]+\/(consents\/(cop-web|csm-mobile)|role-mappings\/clients\/[^/]+)$/.test(c.path)));
 checks.push('adapter traffic contains no user deletion global logout realm or SIM mutations');
+globalThis.fixtureStage='tampered_worker_scope_rejected';
+const administratorRole=(await manage(base+`clients/${management.id}/roles/realm-admin`)).value;
+await manage(base+`clients/${provisioned.clientUuid}/scope-mappings/clients/${management.id}`,'POST',[administratorRole]);
+await assert.rejects(()=>provisionErasureClient({request:provisionRequest,secret:provisionSecret}));
+assert.deepEqual(await providerState(b),beforeB);
+checks.push('actual unexpected realm-admin scope injection is rejected rather than adopted or repaired silently');
 console.log(JSON.stringify({ scope: 'actual Keycloak26.8 disposable provider; explicit in-memory COP checkpoints',
   passed: checks.length, checks, productionChanged: false, actualProductionAuthorityProvisioned: false,
   actualPostgresCheckpoints: false, productionTlsVerified: false, wholeAccountReady: false,
-  authorityQualification: 'Fixture worker has stock manage-users; this also permits shared-user management and is NOT production scoped authority approval.' }));
+  authorityQualification: 'Human approved four stock management roles, including their exact built-in query role expansion. Fixture verifies fullScopeAllowed false and 60-second service token; no production grant was made.' }));

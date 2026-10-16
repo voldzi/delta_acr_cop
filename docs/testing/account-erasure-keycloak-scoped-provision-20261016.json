@@ -1,0 +1,68 @@
+{
+  "contractVersion": "cop-keycloak-scoped-provision-evidence-v1",
+  "date": "2026-10-16",
+  "humanApproval": {
+    "source": "direct_human_reply_in_COP_thread",
+    "questionCallId": "call_c97291002fd44e7daef20138adb1a7ac",
+    "questionIndex": 1,
+    "answer": "Schvaluji vyhrazen\u00fd slu\u017ebov\u00fd \u00fa\u010det",
+    "approvedDirectRoles": [
+      "manage-users",
+      "query-clients",
+      "view-clients",
+      "view-users"
+    ],
+    "manageUsersBroaderIdentityPowerDisclosed": true,
+    "productionWorkerSecretDestination": "/srv/cop/.env"
+  },
+  "sourceSha256": {
+    "scripts/keycloak/provision-erasure-client.mjs": "3f5cdb9b4602aed3b7908e8242306b90cffd99318cc09adcc7237547c4b8529d",
+    "scripts/keycloak/install-erasure-client.mjs": "7e7015547e8d9e9eb304a5084ff26f9bbbe16796f82cbf6010a26ede6d554ab1",
+    "scripts/keycloak/erasure-provider-probe.mjs": "b3ca6ce9ec1f7a3f6eaf61bef1e6a81e693a6e86b724df142d395622d752fef9",
+    "scripts/keycloak/run-erasure-provider-probe.py": "b410474571eaf864c52ffe6141241c769863c8bbe4aeb2dd1df9be672fb40649",
+    "apps/cop-api/src/keycloak-account-erasure.ts": "d692ab142ca802602b182305e24e8268b0582ba86fb9f093151f9c7ab79ea4db"
+  },
+  "actualFixture": {
+    "providerVersion": "26.8.0",
+    "providerImageId": "sha256:43ebe9d4e97c2e5483b7637edf474e6adc1bbf4832a7396686cf90259c396d42",
+    "optimizedFixtureImageId": "sha256:802c4ee66b2ad954233ebdbeb97c25b28a158ea03f14ffc1b92f7f6d0f9f2cef",
+    "fixtureDockerfileSha256": "1000a62cd1b3dbe65ded0f3d82090dad4beadcb1d0bc8397e4a43481c41afec1",
+    "passed": 9,
+    "exitCode": 0,
+    "fullScopeAllowed": false,
+    "tokenLifespanSeconds": 60,
+    "tokenSubjectMatchesActualServiceUser": true,
+    "effectiveManagementRoles": [
+      "manage-users",
+      "query-clients",
+      "query-groups",
+      "query-users",
+      "view-clients",
+      "view-users"
+    ],
+    "otherResourceAccessClaims": false,
+    "exactRetryDoesNotRotateSecret": true,
+    "wrongSecretRejected": true,
+    "unexpectedRealmAdminScopeRejected": true,
+    "actualScopedCOPRevocation": true,
+    "otherUserUnchanged": true,
+    "sharedIdentityRetained": true,
+    "actualSIMRefreshStillWorks": true,
+    "ownedContainersAndImagesRemoved": true,
+    "productionKeycloakContainerUnchanged": true
+  },
+  "diagnosticsBeforePassingRun": [
+    "The first implementation incorrectly treated the four built-in direct roles as non-composite. Real provider view-clients includes query-clients; view-users includes query-groups/query-users. The provisioner now verifies that exact upstream tree, rejects other expansion and checks actual token claims.",
+    "The provider service-account UserRepresentation omits serviceAccountClientId. The exact client-scoped service-user endpoint, fixed username and actual service token subject are checked; the field is validated if present."
+  ],
+  "rootInstaller": {
+    "syntaxCheck": "passed",
+    "invalidInvocationFixedErrorWithoutMutation": "passed",
+    "actualRootFilesystemApplyTested": false,
+    "productionAccountProvisioned": false,
+    "productionFlagsEnabled": false
+  },
+  "actualPostgresCheckpoints": false,
+  "productionTlsVerified": false,
+  "wholeAccountReady": false
+}

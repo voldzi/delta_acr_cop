@@ -34,7 +34,7 @@ containers and build images were removed; production Keycloak was unchanged.
 See [the actual provider receipt](../testing/account-erasure-keycloak-provider-20261016.json)
 and [the precise authority qualification](../runbooks/08_KEYCLOAK_COP.md#exact-upstream-permission-boundary).
 The stock `manage-users` fixture permission is broader than per-client grant
-revocation; no production authority is inferred or provisioned.
+revocation; the human has since explicitly approved that disclosed authority. A new exact provisioning implementation passed nine actual provider scenarios; no production account is yet provisioned. See [the new receipt](../testing/account-erasure-keycloak-scoped-provision-20261016.json).
 
 Read-only Proxmox observation confirms enabled daily snapshot jobs for Docker,
 Messaging and the three Patroni VMs, with `keep-last=3`. This is a count rule,
