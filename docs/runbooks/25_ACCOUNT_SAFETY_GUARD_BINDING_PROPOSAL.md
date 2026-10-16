@@ -333,3 +333,15 @@ profile needs its own reviewed budget and exact readiness/witness; do not reuse
 current production main=53 evidence as proof for this alternative configuration.
 
 This document is a concrete infrastructure proposal, not a deployment receipt.
+
+## Read-only managed backup catalog — 16 October2026
+
+The fixed Root inventory collector `scripts/account-safety/inspect-backup-catalog.py`
+queries only VM101/104/108/111/112 metadata through the existing Proxmox API.
+The actual run found three PBS backups each and zero additional VM snapshots.
+It emits no backup volume identifiers, names/descriptions, credentials or content.
+It was passed through SSH stdin, not installed as a scheduled service, and makes
+no retention, permission or restore change. Its JSON is operator evidence only;
+it cannot be treated as a runtime authority or accepted `backup_restore` owner.
+The previously human-confirmed off-server/X5 coverage is not re-requested.
+See [the source-pinned receipt](../testing/account-erasure-backup-catalog-20261016.json).

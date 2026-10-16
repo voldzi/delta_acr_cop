@@ -1,0 +1,66 @@
+{
+  "contractVersion": "cop-backup-catalog-execution-evidence-v1",
+  "date": "2026-10-16",
+  "collector": "scripts/account-safety/inspect-backup-catalog.py",
+  "collectorSha256": "994a26f22d2f9152feae3dcf084de1eb34b456355d44652e37495817b165dfc6",
+  "execution": {
+    "transport": "existing_pinned_Proxmox_Root_SSH_authority",
+    "scriptTransferredViaStdinNotInstalled": true,
+    "observedAt": "2026-10-16T10:23:08Z",
+    "exitCode": 0,
+    "contentsRead": false,
+    "retentionChanged": false,
+    "restorationTested": false
+  },
+  "rows": [
+    {
+      "vmId": 101,
+      "node": "proxmox0",
+      "listedBackupCount": 3,
+      "oldestCreatedAt": "2026-10-13T22:30:07Z",
+      "newestCreatedAt": "2026-10-15T22:30:03Z",
+      "nonCurrentSnapshotCount": 0
+    },
+    {
+      "vmId": 104,
+      "node": "proxmox3",
+      "listedBackupCount": 3,
+      "oldestCreatedAt": "2026-10-14T01:30:23Z",
+      "newestCreatedAt": "2026-10-16T01:30:35Z",
+      "nonCurrentSnapshotCount": 0
+    },
+    {
+      "vmId": 108,
+      "node": "proxmox3",
+      "listedBackupCount": 3,
+      "oldestCreatedAt": "2026-10-14T01:45:49Z",
+      "newestCreatedAt": "2026-10-16T01:46:31Z",
+      "nonCurrentSnapshotCount": 0
+    },
+    {
+      "vmId": 111,
+      "node": "proxmox2",
+      "listedBackupCount": 3,
+      "oldestCreatedAt": "2026-10-14T00:30:56Z",
+      "newestCreatedAt": "2026-10-16T00:30:51Z",
+      "nonCurrentSnapshotCount": 0
+    },
+    {
+      "vmId": 112,
+      "node": "proxmox",
+      "listedBackupCount": 3,
+      "oldestCreatedAt": "2026-10-14T00:00:12Z",
+      "newestCreatedAt": "2026-10-16T00:00:08Z",
+      "nonCurrentSnapshotCount": 0
+    }
+  ],
+  "storage": "pbs-backup",
+  "limits": [
+    "This verifies the configured managed backup catalog and VM snapshot list, not all possible operator-made offline copies, contents, storage access or successful restoration.",
+    "The existing keep-last3 count rule is not a maximum age during failed backups. No retention or backup job was changed.",
+    "The collector is a read-only operator tool. It is not bound into COP index.ts and its JSON cannot establish runtime backup_restore authority or erasure completion.",
+    "The user already confirmed off-server/X5 backup coverage. No recovery point identifier is requested from the user."
+  ],
+  "productionChanged": false,
+  "wholeAccountReady": false
+}

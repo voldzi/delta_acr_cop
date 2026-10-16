@@ -1,5 +1,31 @@
 # 43. Whole COP account removal — current completion evidence
 
+## Final bounded source checkpoint — 16 October
+
+COP source `3539bcf` publishes the optional authenticated media transport.
+Messaging source `4c04e02` records the approved policy/implementation evidence,
+typed client and deliberately unavailable provider draft. Its known incomplete
+scope is explicit; it is not a deployable whole-owner implementation. The
+coordinator independently reran91 purely structural/local Messaging regressions,
+without warnings, against unchanged authority. See
+[the exact review-block record](https://github.com/voldzi/csm_messaging/blob/codex/messaging-erasure-provider-completion/docs/archive/2026-10-16_APPROVED_STAGE_REVIEW_BLOCK.json)
+in the companion checkout, or that file on the published Messaging branch.
+
+The exact Root-only read-only collector
+`scripts/account-safety/inspect-backup-catalog.py` was executed through the
+existing Proxmox SSH authority without installing a script or credential.
+It found three backups for each of the five configured COP-dependency VMs and
+zero additional VM snapshots. This confirms the current catalog, not backup
+contents or a successful restore. It creates no runtime authority and does not
+bind the still-missing `backup_restore` adapter. No backup identifier is required
+from the human. See [the catalog receipt](../testing/account-erasure-backup-catalog-20261016.json).
+
+No new COP/Keycloak/Messaging deployment, service account, privilege, secret,
+network or erasure flag was changed during this source step. The blocked runtime
+implementation, actual joint crash/restore, genuine media settlement and
+production backup/restore composition remain unfinished. Do not issue another
+partial Root command as if one final switch would finish these components.
+
 ## Remaining concrete composition gates — 16 October
 
 The approved Keycloak worker implementation is verified against a real isolated
@@ -14,9 +40,11 @@ no positive joint execution is claimed.
 The human subsequently answered the more explicit SIM question
 `call_2ec1ef93fd5b4cd9b70e10cac4ff9eca` with “Ano, pouze zdroj a izolované testy”.
 It enumerates provider purge, fresh component proof/checkpoint and original
-immutable SQL/MAC identity recovery. SIM is submitting that exact source-only
-step through normal review; this newer authorization is not a passed test or
-production permission and does not bypass a subsequent rejection.
+immutable SQL/MAC identity recovery. SIM submitted that exact source-only step once through normal review and reported
+a further denial of policy-bound completion, purge proofs, replay advancement
+and immutable-seal identity fallback. The blocked patch is not applied; the
+guard remains149264a4 and no positive joint test ran. Neither human authorization
+is missing. No third/fourth identical question or alternate actor/path is used.
 
 COP also still lacks the production media settlement implementation and the
 `backup_restore` owner in `index.ts`. The actual SeaweedFS4.45 source commits
