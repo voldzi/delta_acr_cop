@@ -16,6 +16,15 @@ restore composition, scoped Keycloak authority and full restore acceptance
 remain separate gates. No real account was deleted. Do not activate the COP
 deletion control from these structural checks alone.
 
+The COP Compose definition now forwards the explicit authority mode, independent
+guard URL/ID, incarnation ID and optional LiveKit erasure relay URL. Previously
+these values could exist in `.env` without reaching the API container. Defaults
+remain native authority, no guard URL and disabled intake. A database-mode
+release must also preserve the existing protected PostgreSQL CA mount and
+business/session routes; these environment mappings neither enroll a database
+nor establish provider authority. The relay and direct LiveKit admin origins
+remain mutually exclusive in the actual server.
+
 The first Root attempt stopped in PostgreSQL preflight because the host had
 `pg_wrapper` without an installed PostgreSQL client. No service restart occurred
 in that attempt. The missing client-only package was identified by an actual

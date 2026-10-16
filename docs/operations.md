@@ -342,7 +342,13 @@ web controller at `/account/delete` offers confirmation only after actual
 accepted owner readiness. Deploying that source is not activation.
 The Compose API environment now forwards the documented account, scoped
 Keycloak, dedicated SIM erasure and moderation settings with false/empty
-defaults. This changes candidate Compose hashes/environment metadata and needs
+defaults. The explicit authority mode, independent guard URL/ID, incarnation
+ID and optional HTTPS LiveKit relay URL are forwarded too. `database_v2` must
+be selected deliberately after enrollment; it is not a fallback. Rendering the
+actual Compose configuration with synthetic inputs verifies these mappings and
+the unchanged disabled defaults without contacting a Docker daemon. This does
+not validate production credentials, CA custody or provider readiness.
+This changes candidate Compose hashes/environment metadata and needs
 a fresh exact native image/profile acceptance; it must not be copied into the
 accepted production files as a workaround. No native verifier is supplied by
 these variables. The historical Jízda unlink configuration remains disabled.
