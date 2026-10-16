@@ -1,0 +1,63 @@
+{
+  "contractVersion": "cop-sim-disabled-installation-receipt-v1",
+  "date": "2026-10-16",
+  "sourceRevision": "ca1fd6b6046745e91cca6648e1e5bd3f93fc8422",
+  "scope": "SIM database_v2 preparation; COP whole-account deletion remains disabled",
+  "humanRootApply": {
+    "phase": "complete_disabled",
+    "installerSha256": "5bafdb1aee9954dceea73873dde62bc02d70f976132df98e5dd1ffba1505654a",
+    "inventoryTransitionRecorded": true,
+    "routerActorPreserved": true,
+    "erasureEnabled": false,
+    "wholeAccountComplete": false,
+    "oldImageFallback": false,
+    "owners": {
+      "situation-data-api": {
+        "imageId": "sha256:ff8e60608936d4c97cba01e8d96ad064ce3950c6e2a9a115df88dd75fb8fb23d",
+        "enabled": false,
+        "ready": false,
+        "checks": {
+          "schemaReady": true,
+          "permissionsReady": true,
+          "identityReviewed": true,
+          "restoreCheckpointCurrent": true,
+          "retentionReviewed": true,
+          "publicationFenceVerified": true
+        }
+      },
+      "ai-router-api": {
+        "imageId": "sha256:d4176d79106315d8fe8df1649c7755d1bc2b5189f390fca796a4dbd23778cd2e",
+        "enabled": false,
+        "ready": false,
+        "checks": {
+          "schemaReady": true,
+          "permissionsReady": true,
+          "identityReviewed": true,
+          "restoreCheckpointCurrent": true,
+          "retentionReviewed": true
+        }
+      }
+    }
+  },
+  "independentCopReadback": {
+    "transport": "existing SSH host identity; read-only Docker inspect",
+    "expectedSimImagesMatch": true,
+    "situationDataApiHealthy": true,
+    "aiRouterApiHealthy": true,
+    "copApiHealthy": true,
+    "copImageUnchanged": "sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f"
+  },
+  "limits": {
+    "realAccountDeleted": false,
+    "wholeFlowAccepted": false,
+    "productionRestoreRehearsed": false,
+    "copCandidateDeployed": false,
+    "capabilityDetailsSource": "human Root installer output; separate SIM authenticated readback is recorded by SIM"
+  },
+  "remaining": [
+    "COP independent guard enrollment and production runtime binding",
+    "Messaging database_v2 namespace and restore composition",
+    "scoped Keycloak service authority",
+    "full isolated restore and whole-flow acceptance"
+  ]
+}

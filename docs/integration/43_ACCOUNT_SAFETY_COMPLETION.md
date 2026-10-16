@@ -1,5 +1,28 @@
 # 43. Whole COP account removal — current completion evidence
 
+## Production checkpoint — 16 October
+
+The human executed the reviewed Root SIM installer successfully. Its actual
+result is `complete_disabled`, with the inventory transition recorded and the
+existing Router actor secret preserved. Both SIM owners report all structural
+checks true, but `enabled=false`, `ready=false` and
+`wholeAccountComplete=false`. COP independently read back the expected SDA and
+Router image IDs and healthy container state. COP itself still runs its prior
+accepted image. See [the installation receipt](../testing/account-erasure-sim-disabled-production-20261016.json).
+
+This is a completed SIM preparation deployment, not whole-account activation.
+COP guard enrollment/runtime binding, Messaging database-mode namespace and
+restore composition, scoped Keycloak authority and full restore acceptance
+remain separate gates. No real account was deleted. Do not activate the COP
+deletion control from these structural checks alone.
+
+The first Root attempt stopped in PostgreSQL preflight because the host had
+`pg_wrapper` without an installed PostgreSQL client. No service restart occurred
+in that attempt. The missing client-only package was identified by an actual
+package-manager simulation; the later successful Root apply above supersedes
+that failed attempt. The original reviewed installer stage and its hashes were
+not rewritten during this recovery.
+
 ## Active implementation decision — 15 October
 
 The completion path is now the explicit database alternative in
