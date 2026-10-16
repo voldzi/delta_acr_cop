@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-16",
+  "scope": "COP controller to scoped Keycloak owner recovery binding; source only",
+  "checks": {
+    "focusedControllerAndKeycloakTestsPassed": 34,
+    "relatedControllerCompositionHttpTestsPassed": 82,
+    "countsOverlap": true,
+    "apiBuildPassed": true,
+    "changedFileEslintPassed": true
+  },
+  "boundaries": {
+    "httpProviders": "synthetic",
+    "controllerJournal": "synthetic",
+    "actualKeycloakExercised": false,
+    "productionChanged": false,
+    "wholeRestoreAccepted": false,
+    "erasureEnabled": false
+  },
+  "regressions": [
+    "server-only actual dataset binding cloned per owner",
+    "explicit higher generation/new incarnation rechecks copied scoped COP grants",
+    "same-generation recreated grants remain denied",
+    "rewind, reused incarnation, missing history and changed shared identity denied before mutations",
+    "other account and shared SIM identity/state preserved in fixtures"
+  ],
+  "sourceSha256": {
+    "apps/cop-api/src/account-erasure.ts": "180348d64fdd5b996b8134ad1478fe9cd8914f201b3da092338504c7908df7b1",
+    "apps/cop-api/src/account-erasure-continuity.test.ts": "87b323d83b2458829c523f1b41d29d099b95f0454769efb14ec6122651e73315",
+    "apps/cop-api/src/keycloak-account-erasure.ts": "d692ab142ca802602b182305e24e8268b0582ba86fb9f093151f9c7ab79ea4db",
+    "apps/cop-api/src/keycloak-account-erasure.test.ts": "c8682835af261800110cb5b6fcc61a275a281336b7d2791d3c4c0b48157f57ea"
+  }
+}

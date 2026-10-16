@@ -126,6 +126,16 @@ provider cleanup. Neither a copied terminal receipt nor an unchanged operation
 UUID proves current provider effects. This source is not an administrator
 restore tool and does not authorize an automatic binding change.
 
+The same verified binding is passed server-side to each domain owner; it is
+not accepted from HTTP/client input. A domain's own durable sub-checkpoint
+must not make the controller's replay reset ineffective. The Keycloak owner
+stores this binding with its exact shared-identity/client fingerprints. Only
+an explicitly higher generation with a different incarnation permits a fresh
+assessment/revocation of copied COP grants. Changed shared identity or client
+UUIDs, missing historical binding and ordinary same-generation recreated grants
+still fail closed. Completion is re-read from the provider and bound to the
+new recovery generation; shared identity, SIM grants and global SSO survive.
+
 Current tests include actual PostgreSQL-persisted completion/reset and unchanged
 journal readback, plus controller cases for same-binding restart, pending actor
 recovery, copied foreign encrypted identity and invalid bindings. Provider

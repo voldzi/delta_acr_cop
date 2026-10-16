@@ -14,18 +14,24 @@ export type AccountErasurePreflightReason = "ownership_unresolved" | "choice_req
 export type AccountErasureAssessment = { ready: true; version: string; transactionVersion?: string } | { ready: false; reason: AccountErasurePreflightReason };
 export type AccountErasureProof = { status: "completed"; proofId: string } |
   { status: "pending"; remaining: "cleanup_pending" };
+export interface AccountErasureOperationContext {
+  operationId: string; requestedAt: string; accountKey: string; signal: AbortSignal;
+  /** Actual administrator-enrolled recovery binding, never browser input.
+   * Owners with durable sub-checkpoints must also reverify them after restore. */
+  datasetBinding?: AccountErasureDatasetBinding;
+}
 export interface AccountErasureAdapter {
   readonly id: AccountErasureAdapterId;
   ready(): Promise<boolean>;
   /** Read-only readiness for the exact already-confirmed durable job. Never
    * used by capability/preflight or to authorize a new provider operation. */
-  readyForAcceptedOperation?(actor: AuthenticatedActor, context: { operationId: string; requestedAt: string; accountKey: string; signal: AbortSignal }): Promise<boolean>;
+  readyForAcceptedOperation?(actor: AuthenticatedActor, context: AccountErasureOperationContext): Promise<boolean>;
   /** Read-only, actor-specific impact/provenance assessment. No implicit legacy fallback. */
   preflight?(actor: AuthenticatedActor, context: { signal: AbortSignal; operationId?: string }): Promise<AccountErasureAssessment>;
   /** Read-only local impact under this exact store transaction; no network or nested transactions. */
   preflightWithin?(actor: AuthenticatedActor, context: { transaction: MobilityTransaction; signal: AbortSignal; operationId: string }): Promise<AccountErasureAssessment>;
   /** Idempotent per operationId; cancellation never reverses a revocation fence. */
-  erase(actor: AuthenticatedActor, context: { operationId: string; requestedAt: string; accountKey: string; signal: AbortSignal }): Promise<AccountErasureProof>;
+  erase(actor: AuthenticatedActor, context: AccountErasureOperationContext): Promise<AccountErasureProof>;
 }
 /** Admission locks must be shared with the actual domain writers. */
 export interface AccountErasureAdmissionGuard {
@@ -83,6 +89,7 @@ export class AccountErasureService {
   private cacheLoaded = false;
   private cacheGeneration = 0;
   private continuityFrontier?: AccountErasureFrontier;
+  private datasetBinding?: AccountErasureDatasetBinding;
   private continuityVerifiedUntil = 0;
   private cacheFence(key: string): void {
     if (!this.cachedFenceKeys.has(key)) { this.cachedFenceKeys.add(key); this.cacheGeneration += 1; }
@@ -131,6 +138,7 @@ export class AccountErasureService {
   }
   private invalidateContinuity(): void {
     this.initialized = undefined; this.cacheLoaded = false; this.continuityFrontier = undefined; this.continuityVerifiedUntil = 0;
+    this.datasetBinding = undefined;
   }
   private validateReplayEntry(entry: AccountErasureFenceEntry): void {
     if (!entry || entry.contractVersion !== "cop-erasure-fence-entry-v1" ||
@@ -227,6 +235,7 @@ export class AccountErasureService {
       }
       });
       if (replay) { this.continuityFrontier = replay.frontier; await this.assertContinuityCurrent(); }
+      this.datasetBinding = dataset;
       this.cacheGeneration += 1;
       this.cacheLoaded = true;
     })().catch(error => { this.invalidateContinuity(); throw error instanceof AccountErasureError ? error : new AccountErasureError(503, "ERASURE_STORE_UNAVAILABLE"); });
@@ -497,12 +506,14 @@ export class AccountErasureService {
             if (!ready && adapter.readyForAcceptedOperation)
               ready = await bounded(adapter.readyForAcceptedOperation(actor, { accountKey,
                 operationId: claimed.job.operationId, requestedAt: claimed.job.requestedAt,
+                ...(this.datasetBinding ? { datasetBinding: structuredClone(this.datasetBinding) } : {}),
                 signal: readinessSignal }), readinessSignal);
             if (!ready) { reason = "adapter_unavailable"; unavailable = true; }
             else {
               await this.renew(key, token);
               const signal = timedSignal(workerSignal, this.timeoutMs);
               proof = await bounded(adapter.erase(actor, { accountKey, operationId: claimed.job.operationId,
+                ...(this.datasetBinding ? { datasetBinding: structuredClone(this.datasetBinding) } : {}),
                 requestedAt: claimed.job.requestedAt, signal }), signal);
               validateProof(proof);
             }

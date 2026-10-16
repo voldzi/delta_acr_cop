@@ -3,6 +3,7 @@ import type { AccountErasureAdapter, AccountErasureAssessment } from "./account-
 import { readBoundedBody } from "./bounded-upstream.js";
 import type { MobilityStore } from "./mobility-store.js";
 import type { AuthenticatedActor } from "./security.js";
+import type { AccountErasureDatasetBinding } from "./account-erasure-continuity.js";
 
 export const KEYCLOAK_COP_ERASURE_SCOPE = "cop_jizda_only_preserve_identity_sim" as const;
 const targetClientIds = ["cop-web", "csm-mobile"] as const;
@@ -32,6 +33,7 @@ interface Checkpoint {
   clientsFingerprint: string;
   targets?: Record<TargetClientId, TargetCheckpoint>;
   completed?: true;
+  datasetBinding?: AccountErasureDatasetBinding;
 }
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const pending = () => ({ status: "pending", remaining: "cleanup_pending" } as const);
@@ -179,9 +181,23 @@ export function createKeycloakAccountErasureAdapter(config: KeycloakErasureConfi
         if (previous && (previous.operationId !== context.operationId || previous.scope !== KEYCLOAK_COP_ERASURE_SCOPE)) throw new Error("KEYCLOAK_ERASURE_CONFLICT");
         if (previous && previous.identityFingerprint !== identityFingerprint(current)) throw new Error("KEYCLOAK_IDENTITY_CHANGED");
         if (previous && previous.clientsFingerprint !== clientsFingerprint(current)) throw new Error("KEYCLOAK_COP_CLIENT_CHANGED");
-        if (previous?.completed && current.targets.some(target => !absent(target))) throw new Error("KEYCLOAK_COP_GRANTS_REAPPEARED");
-        const next: Checkpoint = previous ?? { operationId: context.operationId, scope: KEYCLOAK_COP_ERASURE_SCOPE,
+        if (context.datasetBinding && !validDatasetBinding(context.datasetBinding) ||
+          previous?.datasetBinding && !validDatasetBinding(previous.datasetBinding) ||
+          previous && !!previous.datasetBinding !== !!context.datasetBinding)
+          throw new Error("KEYCLOAK_COP_RECOVERY_BINDING_UNPROVEN");
+        const restored = !!(previous?.datasetBinding && context.datasetBinding &&
+          (previous.datasetBinding.incarnationId !== context.datasetBinding.incarnationId ||
+            previous.datasetBinding.restoreGeneration !== context.datasetBinding.restoreGeneration));
+        if (restored && (context.datasetBinding!.restoreGeneration <= previous!.datasetBinding!.restoreGeneration ||
+          context.datasetBinding!.incarnationId === previous!.datasetBinding!.incarnationId))
+          throw new Error("KEYCLOAK_COP_RECOVERY_BINDING_UNPROVEN");
+        if (!restored && previous?.completed && current.targets.some(target => !absent(target))) throw new Error("KEYCLOAK_COP_GRANTS_REAPPEARED");
+        // Only a verified, explicitly advanced global recovery binding permits
+        // reassessment of copied checkpoints. Identity and client UUIDs above
+        // must still match; ordinary restarts never adopt recreated grants.
+        const next: Checkpoint = previous && !restored ? previous : { operationId: context.operationId, scope: KEYCLOAK_COP_ERASURE_SCOPE,
           identityFingerprint: identityFingerprint(current), clientsFingerprint: clientsFingerprint(current),
+          ...(context.datasetBinding ? { datasetBinding: structuredClone(context.datasetBinding) } : {}),
           targets: Object.fromEntries(current.targets.map(target => [target.client.clientId, {
             roleFingerprints: target.roles.map(role => hash(role)), offline: target.offline,
             ...(target.consent ? { consent: target.consent } : {})
@@ -229,8 +245,17 @@ export function createKeycloakAccountErasureAdapter(config: KeycloakErasureConfi
       if (current.targets.some(target => !absent(target)) || !await config.assertCopAccessFenced(actor, context)) return pending();
       signal.throwIfAborted(); context.signal.throwIfAborted();
       await save(key, context.operationId, value => ({ operationId: value.operationId, scope: value.scope,
+        ...(value.datasetBinding ? { datasetBinding: value.datasetBinding } : {}),
         identityFingerprint: value.identityFingerprint, clientsFingerprint: value.clientsFingerprint, completed: true }));
-      return { status: "completed", proofId: hash([KEYCLOAK_COP_ERASURE_SCOPE, context.accountKey, context.operationId, checkpoint.identityFingerprint, checkpoint.clientsFingerprint]) };
+      return { status: "completed", proofId: hash([KEYCLOAK_COP_ERASURE_SCOPE, context.accountKey, context.operationId, checkpoint.identityFingerprint, checkpoint.clientsFingerprint,
+        ...(checkpoint.datasetBinding ? [checkpoint.datasetBinding] : [])]) };
     }
   };
+}
+
+function validDatasetBinding(value: AccountErasureDatasetBinding): boolean {
+  return value !== null && typeof value === "object" && !Array.isArray(value) &&
+    Object.keys(value).sort().join(",") === "incarnationId,restoreGeneration" &&
+    typeof value.incarnationId === "string" && UUID.test(value.incarnationId) &&
+    Number.isSafeInteger(value.restoreGeneration) && value.restoreGeneration > 0;
 }

@@ -1,5 +1,27 @@
 # 43. Whole COP account removal — current completion evidence
 
+## Source repair — Keycloak sub-checkpoint after restore, 16 October
+
+The controller's administrator-verified dataset binding now reaches each
+adapter through an internal server-only context, with a separate clone per
+owner. It is not a browser field or public REST change. The Keycloak owner
+records the binding in its own durable checkpoint. An explicitly higher
+generation/new incarnation re-assesses copied COP grants and repeats scoped
+revocation/readback. This fixes the case where the controller correctly reset
+completion but the provider owner still trusted its old completed checkpoint.
+
+The shared user's original identity fingerprint and the two exact COP client
+UUIDs must still match. Ordinary same-generation recreated grants, changed
+identity/client, a missing old binding, rewind or reused incarnation remain
+blocked before mutation. The shared identity, SIM grants/global SSO and another
+user's state remain outside the mutations. Scoped production authority is
+still required; this repair does not provision it or enable deletion.
+
+The focused controller/Keycloak suite passed34 tests and the API build passed.
+These use synthetic HTTP providers and controller journals, not a running
+Keycloak, production grants or whole backup/restore acceptance. See
+[the scoped receipt](../testing/account-erasure-keycloak-recovery-20261016.json).
+
 ## Source repair — restored completion checkpoints, 16 October
 
 The actual database continuity snapshot now binds the administrator-enrolled

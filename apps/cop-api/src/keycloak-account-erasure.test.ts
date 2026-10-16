@@ -203,6 +203,55 @@ describe("server-owned scoped COP/Jízda Keycloak revocation preserving shared i
     await expect(f.adapter.erase(actor, context())).rejects.toThrow("CLIENT_CHANGED");
     expect(f.calls.filter(call => call.method === "DELETE")).toHaveLength(count); f.preserved();
   });
+  it("rechecks and revokes restored COP grants only after an explicitly advanced dataset binding", async () => {
+    const f = fixture(), user = f.state.get(actor.subjectId)!;
+    const original = { incarnationId: "10000000-0000-4000-8000-000000000001", restoreGeneration: 1 };
+    const restored = { incarnationId: "20000000-0000-4000-8000-000000000001", restoreGeneration: 2 };
+    const beforeB = structuredClone(f.state.get(actorB.subjectId));
+    const initial = await f.adapter.erase(actor, { ...context(), datasetBinding: original });
+    user.consents.set("cop-web", { clientId: "cop-web", createdDate: 10 });
+    user.offline["cop-web"] = ["restored-offline-cop-web"];
+    user.roles["cop-web"] = [role("cop-web")];
+    const deletions = f.calls.filter(call => call.method === "DELETE").length;
+    await expect(f.adapter.erase(actor, { ...context(), datasetBinding: original })).rejects.toThrow("GRANTS_REAPPEARED");
+    expect(f.calls.filter(call => call.method === "DELETE")).toHaveLength(deletions);
+    const result = await f.adapter.erase(actor, { ...context(), datasetBinding: restored });
+    expect(result).toMatchObject({ status: "completed" });
+    expect(result).not.toEqual(initial);
+    expect(f.calls.filter(call => call.method === "DELETE")).toHaveLength(deletions + 2);
+    expect(await f.adapter.erase(actor, { ...context(), datasetBinding: restored })).toEqual(result);
+    expect(f.calls.filter(call => call.method === "DELETE")).toHaveLength(deletions + 2);
+    expect(f.state.get(actorB.subjectId)).toEqual(beforeB);
+    f.preserved();
+  });
+  it("denies missing, rewound or reused recovery binding before touching copied grants", async () => {
+    const original = { incarnationId: "10000000-0000-4000-8000-000000000001", restoreGeneration: 1 };
+    for (const datasetBinding of [undefined,
+      { incarnationId: "20000000-0000-4000-8000-000000000001", restoreGeneration: 1 },
+      { incarnationId: original.incarnationId, restoreGeneration: 2 },
+      { incarnationId: "20000000-0000-4000-8000-000000000001", restoreGeneration: 0 }]) {
+      const f = fixture();
+      await f.adapter.erase(actor, { ...context(), datasetBinding: original });
+      f.state.get(actor.subjectId)!.consents.set("cop-web", { clientId: "cop-web", createdDate: 10 });
+      const count = f.calls.filter(call => call.method === "DELETE").length;
+      await expect(f.adapter.erase(actor, { ...context(), datasetBinding })).rejects.toThrow("RECOVERY_BINDING_UNPROVEN");
+      expect(f.calls.filter(call => call.method === "DELETE")).toHaveLength(count);
+      f.preserved();
+    }
+  });
+  it("does not adopt an unbound historical checkpoint or a replaced shared identity during restore", async () => {
+    const datasetBinding = { incarnationId: "20000000-0000-4000-8000-000000000001", restoreGeneration: 2 };
+    const unbound = fixture();
+    await unbound.adapter.erase(actor, context());
+    await expect(unbound.adapter.erase(actor, { ...context(), datasetBinding })).rejects.toThrow("RECOVERY_BINDING_UNPROVEN");
+    const bound = fixture();
+    await bound.adapter.erase(actor, { ...context(), datasetBinding: { ...datasetBinding, incarnationId: "10000000-0000-4000-8000-000000000001", restoreGeneration: 1 } });
+    bound.state.get(actor.subjectId)!.timestamp++;
+    const count = bound.calls.filter(call => call.method === "DELETE").length;
+    await expect(bound.adapter.erase(actor, { ...context(), datasetBinding })).rejects.toThrow("IDENTITY_CHANGED");
+    expect(bound.calls.filter(call => call.method === "DELETE")).toHaveLength(count);
+    unbound.preserved(); bound.preserved();
+  });
   it("can prove scoped absence while keeping existing shared account, without destructive provider calls", async () => {
     const f = fixture(), user = f.state.get(actor.subjectId)!;
     user.consents.delete("cop-web"); user.consents.delete("csm-mobile");

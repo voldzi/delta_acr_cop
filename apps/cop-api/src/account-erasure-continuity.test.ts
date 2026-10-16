@@ -179,6 +179,22 @@ describe("independent fence controller recovery", () => {
       adapters.forEach(a => expect(a.erase).toHaveBeenCalledTimes(1));
     }
   });
+  it("passes the actual recovery binding to each owner without sharing a mutable object", async () => {
+    const { service, journal, adapters } = await setup();
+    const binding = { incarnationId: "10000000-0000-4000-8000-000000000001", restoreGeneration: 1 };
+    journal.requiresDatasetBinding = true; journal.datasetBinding = structuredClone(binding);
+    const seen: unknown[] = [];
+    adapters[1]!.erase.mockImplementation(async (_actor, context) => {
+      seen.push(structuredClone(context.datasetBinding));
+      context.datasetBinding!.restoreGeneration = 99;
+      return { status: "completed", proofId: "synthetic_proof" };
+    });
+    expect((await start(service)).accountDeleted).toBe(true);
+    expect(seen).toEqual([binding]);
+    for (const adapter of adapters.filter((_, index) => index !== 1))
+      expect(adapter.erase.mock.calls[0]![1].datasetBinding).toEqual(binding);
+    expect(journal.datasetBinding).toEqual(binding);
+  });
   it("does not adopt unbound historical completion when switching to dataset-bound authority", async () => {
     const { service, journal, options, store, adapters } = await setup();
     await start(service);
