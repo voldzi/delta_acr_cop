@@ -89,3 +89,26 @@ vyřazením musí správce doložit:
 5. aktuální zálohu nového centrálního úložiště.
 
 Do splnění všech bodů se starý SeaweedFS ani původní data nemažou.
+
+## Hranice mazání účtu — ověřeno16října2026
+
+Čtecí kontrola potvrdila SeaweedFS4.45, revizi
+`79b87202136cebdaaa7db4d94eaa5915ad381276` a výše uvedený bucket.
+Nečetla objekty ani obsah secrets konfigurace. Současná produkční továrna
+neváže požadovaný `MediaUploadSettlementVerifier`; úplné mazání proto pro média
+není připravené. Backendové PUT mají trvalé záznamy rozpracovaných zápisů,
+ale historické přímé předpodepsané PUT je obcházejí.
+
+Konkrétní [upstream zápis metadat](https://github.com/seaweedfs/seaweedfs/blob/79b87202136cebdaaa7db4d94eaa5915ad381276/weed/s3api/s3api_object_handlers_put.go)
+navíc záměrně používá `context.Background` i po zrušení HTTP požadavku.
+Zrušení spojení, vypršení podpisu ani okamžitá404 proto nejsou důkazem ukončení
+všech zápisů. Oprava musí zavést skutečnou překážku zápisu a vyčkat dokončení
+přijatých operací na poskytovateli, potom odstranit objekt a znovu ověřit stav.
+Žádný přepínač ani stáří záznamu tento důkaz nenahradí.
+
+Na malém produkčním storage serveru nebyl spuštěn další testovací provider;
+v okamžiku kontroly měl přibližně229MiB dostupné RAM. Reprodukční test patří
+do odděleného prostředí s přesnou verzí. Sdílená služba, její konfigurace,
+credentials i síť zůstaly beze změny. Konkrétní nasazovací plán musí zachovat
+ostatní buckety a jejich klienty. Viz
+[přesná čtecí evidence a zbývající práce](../testing/account-erasure-media-provider-boundary-20261016.json).

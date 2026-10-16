@@ -1,0 +1,38 @@
+{
+  "contractVersion": "cop-media-provider-readonly-boundary-v1",
+  "date": "2026-10-16",
+  "productionChanged": false,
+  "provider": {
+    "host": "storage.home.cz",
+    "image": "chrislusf/seaweedfs:4.45",
+    "imageId": "sha256:fc9f76fa993ad69966ffeb2f65d0318fcae39c6f8e20cf68ef7b3a5cb97769e5",
+    "sourceRevision": "79b87202136cebdaaa7db4d94eaa5915ad381276",
+    "reportedVersion": "version 30GB 4.45 79b872021 linux amd64",
+    "bucket": "cop-community-media",
+    "internalEndpoint": "http://storage.home.cz:8333",
+    "historicalPublicEndpoint": "http://docker.home.cz:8334",
+    "presignedExpirySeconds": 900,
+    "configurationContentsRead": false,
+    "objectContentsRead": false,
+    "credentialsPrinted": false
+  },
+  "sourceObservation": {
+    "primarySource": "https://github.com/seaweedfs/seaweedfs/blob/79b87202136cebdaaa7db4d94eaa5915ad381276/weed/s3api/s3api_object_handlers_put.go",
+    "putToFiler": "The final metadata CreateEntry intentionally uses context.Background, independently of an HTTP request cancellation. Bucket policy is checked before reading the body; cancellation, signature expiry and a momentary HEAD404 do not establish settled upload.",
+    "existingCopBehavior": "withOwnedMediaWrite persists a lease before the actual PUT and clears it only after acknowledged completion; unknown outcomes remain pending. External presigned PUT bypasses this API lease.",
+    "missingProductionOwner": "MediaUploadSettlementVerifier is required by verifiedErasureReady; createMediaStorageFromEnv currently receives none in production."
+  },
+  "fixtureDecision": {
+    "providerHostMemAvailableKiB": 234940,
+    "providerHostMemTotalKiB": 633308,
+    "additionalProviderFixtureStarted": false,
+    "reason": "Do not start a second provider on the small production storage host. This is source analysis plus actual version/config metadata, not a reproduced live race."
+  },
+  "remainingImplementation": [
+    "Gate every potentially admitted COP object write at a provider boundary, including legacy presigned requests. The erasure fence must wait for the actual provider commit/drain before DELETE and final readback.",
+    "Preserve existing API and native upload compatibility; signature expiration is not a substitute.",
+    "Use an isolated exact-version provider fixture on a host with adequate memory to exercise delayed body/final commit, erase-vs-upload, crash, retry, restore and second-account preservation.",
+    "Any change or restart of the shared S3 provider requires a concrete coordinated deployment plan; no shared service was modified by this inspection."
+  ],
+  "wholeAccountReady": false
+}

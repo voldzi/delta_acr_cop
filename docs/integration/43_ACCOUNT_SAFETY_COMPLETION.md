@@ -1,5 +1,23 @@
 # 43. Whole COP account removal — current completion evidence
 
+## Remaining concrete composition gates — 16 October
+
+The approved Keycloak worker implementation is verified against a real isolated
+provider but is not installed. Messaging's approved-policy execution and new
+late-writer fences were stopped by automatic approval review; a precise human
+implementation/test request is pending. This is not a technical test success.
+
+COP also still lacks the production media settlement implementation and the
+`backup_restore` owner in `index.ts`. The actual SeaweedFS4.45 source commits
+metadata independently of a cancelled HTTP request. Existing presign expiry
+and HEAD404 cannot replace an actual write gate/drain. The provider was only
+inspected read-only; no shared storage change was made. See
+[the actual media boundary](../testing/account-erasure-media-provider-boundary-20261016.json).
+The Proxmox backup count rule and independent journal do not themselves prove
+backup access/expiry or complete provider quarantine/replay. These gates must
+be implemented and actually accepted before activation; do not present the
+remaining work as a final flag flip or another ready Root install command.
+
 ## Actual administrator dataset transition — 16 October
 
 The internal `transitionAccountErasureDataset` source replaces hand-written SQL
