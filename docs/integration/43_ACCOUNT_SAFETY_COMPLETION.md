@@ -1,5 +1,27 @@
 # 43. Whole COP account removal — current completion evidence
 
+## Actual Keycloak provider and backup observations — 16 October
+
+The exact cached production Keycloak26.8.0 image was exercised in an isolated
+two-synthetic-user fixture. Seven scenarios passed, including real consent/
+offline/direct-role cleanup, second-user preservation, same-generation denial,
+explicit restored-generation cleanup and a retained SIM refresh token obtaining
+working userinfo. COP checkpoints were explicitly in-memory and fixture HTTP
+transport was loopback, not production TLS or whole restore acceptance. Owned
+containers and build images were removed; production Keycloak was unchanged.
+See [the actual provider receipt](../testing/account-erasure-keycloak-provider-20261016.json)
+and [the precise authority qualification](../runbooks/08_KEYCLOAK_COP.md#exact-upstream-permission-boundary).
+The stock `manage-users` fixture permission is broader than per-client grant
+revocation; no production authority is inferred or provisioned.
+
+Read-only Proxmox observation confirms enabled daily snapshot jobs for Docker,
+Messaging and the three Patroni VMs, with `keep-last=3`. This is a count rule,
+not an age cap during failed future backups. It does not establish backup
+contents, effective storage access, expiry or successful restoration. The human
+already confirmed off-server/X5 coverage; no recovery-point identifier is
+requested. No job or retention setting changed. See
+[the nonsecret inventory](../testing/account-erasure-backup-readonly-inventory-20261016.json).
+
 ## Source repair — Keycloak sub-checkpoint after restore, 16 October
 
 The controller's administrator-verified dataset binding now reaches each

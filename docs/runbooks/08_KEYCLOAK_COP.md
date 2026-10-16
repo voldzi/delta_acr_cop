@@ -1,5 +1,72 @@
 # 08 Keycloak for COP
 
+## Scoped account-removal candidate — 16 October 2026
+
+The live container was read-only identified as Keycloak26.8.0, immutable image
+`sha256:43ebe9d4e97c2e5483b7637edf474e6adc1bbf4832a7396686cf90259c396d42`
+from manifest `quay.io/keycloak/keycloak@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc`.
+The actual COP runtime has no Keycloak erasure client/secret, its scoped
+authority switch is false and whole-account intake is false. Do not turn these
+on from source test success alone or reuse an introspection/browser credential.
+
+The source adapter targets only `cop-web` and `csm-mobile`, checks the shared
+identity creation fingerprint and exact internal client UUIDs, revokes each
+target's consent/offline grants and explicit direct non-composite client roles,
+and repeats actual readback. Inherited/composite shared grants remain unresolved.
+The durable account/operation fence is required; shared realm identity, global
+SSO, SIM grants and other users are preserved. An explicit global recovery
+generation/new incarnation revalidates its own copied checkpoints as described
+in ADR0055; ordinary recreated grants still fail closed.
+
+### Exact upstream permission boundary
+
+The stock26.8.0 `revokeConsent` method calls `requireManage(user)`. The same
+user-management check protects user deletion and global logout. A dedicated
+stock worker with `realm-management/manage-users` therefore is **not** a
+Keycloak-enforced per-client-only credential, even though COP's adapter accepts
+only the fixed scoped operations. Do not describe application route limits as
+equivalent provider-side privilege isolation. Source:
+[Keycloak26.8.0 UserResource](https://github.com/keycloak/keycloak/blob/26.8.0/services/src/main/java/org/keycloak/services/resources/admin/UserResource.java).
+
+The actual disposable fixture used a separate worker with `view-users`,
+`query-clients`, `view-clients` and `manage-users`, in its reserved synthetic
+realm only. A worker without `manage-users` was actually denied at revocation
+and left all grants unchanged. No production service account, role or secret
+was provisioned. The production authority decision must explicitly address
+this broader stock permission or use a separately tested provider restriction;
+setting `COP_KEYCLOAK_COP_SCOPE_AUTHORITY_ACCEPTED=true` is not that decision.
+
+### Actual provider fixture
+
+Build the API first, then run the bounded fixture:
+
+```sh
+python3 scripts/keycloak/run-erasure-provider-probe.py --run --host docker.home.cz
+```
+
+Use explicit existing SSH host options when direct LAN routing requires them;
+the runner does not change SSH/VPN/firewall configuration. It uses the cached
+immutable upstream image, makes an owned offline classic build of its dev-file
+configuration, and runs a read-only root with disposable tmpfs. It never commits
+or copies a live production container. Its two synthetic users, offline grants,
+service credentials and realm exist only in that isolated provider. No ports,
+host mounts or persistent volumes are published. Its test driver shares only
+that fixture's loopback network. Owned containers and labeled build images are
+removed individually; no prune or shared-builder change is used.
+
+Seven actual scenarios passed: two-user real state, insufficient privilege,
+scoped A removal/B preservation, retry, restored grants with explicit recovery
+binding, usable retained SIM refresh/userinfo and no global/SIM mutation in
+adapter traffic. COP checkpoints in this fixture are explicitly in-memory and
+HTTPS is rewritten to isolated loopback HTTP. This is not actual PostgreSQL,
+production TLS, production authority or whole restore acceptance. See
+[the provider receipt](../testing/account-erasure-keycloak-provider-20261016.json).
+
+The earlier first-start fixture attempts correctly rejected `--optimized` on an
+unbuilt upstream image; they were fixture setup failures, not provider erasure
+results. The passing runner performs the owned offline build first while
+preserving the read-only runtime root and original production container.
+
 Keycloak bezi:
 
 - interni URL: `http://docker.home.cz:8081`

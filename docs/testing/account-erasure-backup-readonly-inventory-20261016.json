@@ -1,0 +1,96 @@
+{
+  "date": "2026-10-16",
+  "scope": "read-only live Proxmox schedule and COP runtime configuration, no backup contents or secrets",
+  "observedComponentBackupJobs": [
+    {
+      "component": "cop_sim_host",
+      "vmid": 101,
+      "node": "proxmox0",
+      "job": "daily-mirror-proxmox0",
+      "storage": "pbs-backup",
+      "schedule": "00:30",
+      "enabled": true,
+      "mode": "snapshot",
+      "retention": {
+        "keep-last": 3
+      }
+    },
+    {
+      "component": "messaging_host",
+      "vmid": 104,
+      "node": "proxmox3",
+      "job": "daily-mirror-proxmox3",
+      "storage": "pbs-backup",
+      "schedule": "03:30",
+      "enabled": true,
+      "mode": "snapshot",
+      "retention": {
+        "keep-last": 3
+      }
+    },
+    {
+      "component": "patroni1",
+      "vmid": 108,
+      "node": "proxmox3",
+      "job": "daily-mirror-proxmox3",
+      "storage": "pbs-backup",
+      "schedule": "03:30",
+      "enabled": true,
+      "mode": "snapshot",
+      "retention": {
+        "keep-last": 3
+      }
+    },
+    {
+      "component": "patroni2",
+      "vmid": 111,
+      "node": "proxmox2",
+      "job": "daily-mirror-proxmox2",
+      "storage": "pbs-backup",
+      "schedule": "02:30",
+      "enabled": true,
+      "mode": "snapshot",
+      "retention": {
+        "keep-last": 3
+      }
+    },
+    {
+      "component": "patroni3",
+      "vmid": 112,
+      "node": "proxmox",
+      "job": "daily-mirror-proxmox",
+      "storage": "pbs-backup",
+      "schedule": "02:00",
+      "enabled": true,
+      "mode": "snapshot",
+      "retention": {
+        "keep-last": 3
+      }
+    }
+  ],
+  "qualifications": [
+    "The user has already confirmed off-server Proxmox backup coverage including X5. No recovery-point identifier is requested.",
+    "Live schedule/prune configuration is not proof of successful backup contents, restore, age cap or effective storage ACL.",
+    "keep-last=3 bounds count, not maximum age if future backups fail.",
+    "Application database restores and whole Patroni VM restores must not silently roll back the independent guard journal.",
+    "No backup policy, job, VM, role or infrastructure setting was changed."
+  ],
+  "copRuntime": {
+    "imageId": "sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f",
+    "keycloakErasureClientConfigured": false,
+    "keycloakErasureSecretConfigured": false,
+    "keycloakScopedAuthorityAccepted": false,
+    "accountErasureEnabled": false,
+    "accountGuardRequired": false,
+    "dockerSocketMounted": false,
+    "mountDestinations": [
+      "/data/cop-media-conversions",
+      "/run/vcode-cop-pgbouncer",
+      "/data/cop-media-conversions/.cop-storage.json",
+      "/etc/vcode-cop-pgbouncer/postgres-ca.crt"
+    ]
+  },
+  "productionChanged": false,
+  "actualBackupRestoreAccepted": false,
+  "wholeAccountReady": false
+}

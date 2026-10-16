@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-16",
+  "scope": "actual isolated Keycloak26.8.0 provider with two synthetic users; explicit in-memory COP checkpoints",
+  "passed": 7,
+  "checks": [
+    "actual two-user profiles COP roles offline grants and independent SIM tokens seeded",
+    "actual read-only worker receives revocation denial without changing grants",
+    "actual adapter removes A COP grants while preserving shared identity SIM and complete B state",
+    "actual completed retry performs fresh provider reads without repeating removals",
+    "same-generation restored grants denied; explicit new generation rechecks and removes actual COP grants",
+    "actual retained SIM refresh token still obtains usable userinfo access after COP removal",
+    "adapter traffic contains no user deletion global logout realm or SIM mutations"
+  ],
+  "keycloakImage": "sha256:43ebe9d4e97c2e5483b7637edf474e6adc1bbf4832a7396686cf90259c396d42",
+  "sourceManifest": "quay.io/keycloak/keycloak@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc",
+  "fixtureOptimizedImage": "sha256:870db0439b070c3e51024bdfadb4deb33a69b4df2ea3a291eaeede58c1e6399b",
+  "fixtureDockerfileSha256": "f9cd72e365608503343bfa3b597a2b607018e1160eb3783e2717dbfee58d5d3e",
+  "sourceSha256": {
+    "apps/cop-api/src/keycloak-account-erasure.ts": "d692ab142ca802602b182305e24e8268b0582ba86fb9f093151f9c7ab79ea4db",
+    "apps/cop-api/dist/keycloak-account-erasure.js": "262db6f859212bbc329f223a9dc4cc814da596c5e47e3878f3191733aa8b0739",
+    "apps/cop-api/dist/bounded-upstream.js": "1d4b36f1cd25993c2128dfd75d985648ca8cf399f7d0781ca663e38cc7ef871b",
+    "scripts/keycloak/erasure-provider-probe.mjs": "1dd5ec97831848f59c44fb8d5712d3986ae6e73dddbfebfb3f19279db1c1edab",
+    "scripts/keycloak/run-erasure-provider-probe.py": "e03f21d5feeed423169b45961622d4668e0b97293c5f04ca87a6952105ddda42"
+  },
+  "exitCode": 0,
+  "ownedFixturesRemoved": true,
+  "productionKeycloakContainerUnchanged": true,
+  "qualifications": [
+    "The fixture worker has stock manage-users plus view/query roles. This also permits shared-user management and is not approval of production scoped authority.",
+    "Actual production COP still has no erasure worker ID/secret and authority/intake are disabled.",
+    "The two initial fixture-only attempts rejected optimized first start on an unbuilt image. The passing run performs a unique offline build; its images were individually removed.",
+    "COP checkpoint persistence was explicitly in-memory; provider authentication, HTTP effects, offline grants and SIM refresh/userinfo were real.",
+    "Production HTTPS, actual PostgreSQL checkpoint composition and whole backup/restore were not exercised."
+  ],
+  "productionChanged": false,
+  "actualProductionAuthorityProvisioned": false,
+  "actualPostgresCheckpoints": false,
+  "productionTlsVerified": false,
+  "wholeAccountReady": false
+}
