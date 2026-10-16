@@ -1,0 +1,16 @@
+{
+  "contractVersion": "cop-edge-account-erasure-verification-v1",
+  "date": "2026-10-16",
+  "sourceOnly": true,
+  "productionChanged": false,
+  "contract": "cop-edge-account-erasure-v1",
+  "actualWriterBarrier": ["sync", "outbox", "erase", "capabilities", "disk persistence"],
+  "ownership": "verified central envelope producer/source/entity type and ID in COP manifest only",
+  "unknownNestedOrActorMatch": "preserve and pending",
+  "persistentEvidence": ["account hash", "actor pair hash", "subject hash", "operation UUID", "dataset binding", "monotonic resource union", "canonical digest", "completion proof"],
+  "rawActorPersisted": false,
+  "tests": { "newPassed": 13, "existingPassed": 16, "totalPassed": 29, "eslint": "passed", "typescriptBuild": "passed", "realHttp": "passed" },
+  "scenarios": ["verified central A removed and B preserved", "B nested A reference preserved pending", "untrusted source and local outbox cannot prove ownership", "serialized sync and late replay rejection", "multiple manifests monotonic union", "corrupt union digest refuses startup", "wrong identity or operation rejected", "dataset rewind/stolen binding rejected", "higher generation invalidates copied proof", "missing or malformed accepted state fails closed", "owned abandoned snapshots removed only", "strict actual HTTP capabilities and generic correlated errors"],
+  "wholeNamespace": { "actualEdgeRuntime": true, "actualKeycloakServiceAccount": true, "publishedPorts": false, "productionTlsVerified": false, "wholeAccountAccepted": false },
+  "remaining": ["joint whole-controller acceptance", "coordinated production installation and exact configuration readback", "real client acceptance"]
+}

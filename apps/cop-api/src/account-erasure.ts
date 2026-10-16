@@ -37,6 +37,12 @@ export interface AccountErasureAdapter {
 export interface AccountErasureAdmissionGuard {
   run<T>(actor: AuthenticatedActor, signal: AbortSignal, run: () => Promise<T>): Promise<T>;
 }
+export interface AccountErasureOwnerReadiness {
+  contractVersion: "cop-account-erasure-owner-readiness-v1";
+  ready: boolean;
+  checkedAt: string;
+  unavailableReason?: "required_adapters_missing" | "adapter_unavailable";
+}
 export interface AccountErasureReceipt {
   contractVersion: "cop-account-erasure-v1";
   deletionScope: typeof ACCOUNT_ERASURE_SCOPE;
@@ -252,6 +258,57 @@ export class AccountErasureService {
       }
       return { contractVersion: "cop-account-erasure-v1", accountDeletion: true };
     } catch { return { contractVersion: "cop-account-erasure-v1", accountDeletion: false, unavailableReason: "adapter_unavailable" }; }
+  }
+  /** Diagnostic readiness remains independent of permission to accept new erasure.
+   * It never initializes/replays jobs, changes acceptance or publishes a fence. */
+  async ownerReadiness(): Promise<AccountErasureOwnerReadiness> {
+    const result = (ready: boolean, unavailableReason?: AccountErasureOwnerReadiness["unavailableReason"]): AccountErasureOwnerReadiness => ({
+      contractVersion: "cop-account-erasure-owner-readiness-v1", ready, checkedAt: this.now().toISOString(),
+      ...(unavailableReason ? { unavailableReason } : {})
+    });
+    if (this.required.some(id => !this.adapters.get(id)?.preflight)) return result(false, "required_adapters_missing");
+    try {
+      const verify = async () => {
+        const required = this.options.continuityRequired || this.options.continuity !== undefined;
+        if (required && (!this.options.continuity || !this.options.expectedGuardStoreId)) throw new Error();
+        const replay = required ? await bounded(this.options.continuity!.snapshot(), AbortSignal.timeout(this.timeoutMs)) : undefined;
+        if (replay && (replay.contractVersion !== "cop-erasure-replay-v1" || replay.applicationStoreId !== this.options.expectedGuardStoreId ||
+          replay.configurationFingerprint !== this.configurationFingerprint() || !Number.isSafeInteger(replay.frontier?.sequence) ||
+          replay.frontier.sequence < 0 || !/^[0-9a-f]{64}$/u.test(replay.frontier.digest) || !Array.isArray(replay.entries) || replay.entries.length > 100_000)) throw new Error();
+        const dataset = replay?.datasetBinding;
+        if ((this.options.continuity?.requiresDatasetBinding && dataset === undefined) || (dataset !== undefined && !validDatasetBinding(dataset))) throw new Error();
+        const entries = new Map<string, AccountErasureFenceEntry>();
+        for (const entry of replay?.entries ?? []) {
+          this.validateReplayEntry(entry);
+          if (entries.has(entry.accountKey)) throw new Error();
+          entries.set(entry.accountKey, entry);
+        }
+        await this.options.store.transact([], async tx => {
+          const config = await tx.get<{ fingerprint?: string; storeId?: string; issuerFingerprint?: string; version?: number;
+            accepted?: boolean; deletionScope?: string; datasetBinding?: AccountErasureDatasetBinding }>(CONFIG);
+          if (!config || config.fingerprint !== this.configurationFingerprint() || config.version !== (required ? 4 : 3) ||
+            config.deletionScope !== ACCOUNT_ERASURE_SCOPE || typeof config.storeId !== "string" || !config.storeId ||
+            typeof config.accepted !== "boolean" || config.issuerFingerprint !== createHash("sha256").update(this.options.issuer).digest("hex") ||
+            (this.options.expectedGuardStoreId && config.storeId !== this.options.expectedGuardStoreId) ||
+            (!this.options.expectedGuardStoreId && !this.options.allowUnboundSyntheticStore)) throw new Error();
+          if (this.options.expectedGuardStoreId && (await tx.get<{ storeId: string }>("account-safety:store-identity-v1"))?.storeId !== this.options.expectedGuardStoreId) throw new Error();
+          if (dataset ? !config.datasetBinding || config.datasetBinding.incarnationId !== dataset.incarnationId || config.datasetBinding.restoreGeneration !== dataset.restoreGeneration
+            : config.datasetBinding !== undefined) throw new Error();
+          const jobs = await tx.scan<Job>(PREFIX);
+          if (replay && jobs.length !== entries.size) throw new Error();
+          for (const { key, value } of jobs) {
+            this.validateBoundary(value);
+            const entry = entries.get(key.slice(PREFIX.length));
+            if (replay && (!entry || value.operationId !== entry.job.operationId || value.requestedAt !== entry.job.requestedAt)) throw new Error();
+          }
+        });
+        return replay ? JSON.stringify([replay.frontier, replay.datasetBinding, replay.entries]) : "local";
+      };
+      const before = await verify();
+      const readiness = await Promise.all(this.required.map(id => bounded(this.adapters.get(id)!.ready(), AbortSignal.timeout(this.timeoutMs))));
+      if (readiness.some(value => value !== true) || await verify() !== before) return result(false, "adapter_unavailable");
+      return result(true);
+    } catch { return result(false, "adapter_unavailable"); }
   }
   /** Used by the authenticated/BFF guard for every ordinary account operation, even old JWTs. */
   async assertAllowed(actor: AuthenticatedActor): Promise<void> {

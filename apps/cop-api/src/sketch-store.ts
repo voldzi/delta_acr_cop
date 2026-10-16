@@ -880,7 +880,7 @@ function readSslConfig(env: Record<string, string | undefined>): PoolConfig["ssl
       rejectUnauthorized: env.COP_DATABASE_SSL_REJECT_UNAUTHORIZED !== "false"
     };
   }
-  return undefined;
+  return false;
 }
 
 function errorMessage(error: unknown): string {

@@ -96,3 +96,29 @@ skupiny ani lokální edge outbox.
 - Edge runtime je PoC lokální synchronizační proces. Pro produkční
   air-gapped režim bude potřeba doplnit šifrování lokálního úložiště,
   per-device identity, retention a konfliktní UI v klientovi.
+
+## Controlled account-erasure copies
+
+The account-deletion candidate adds authenticated internal endpoints
+`GET /edge/internal/account-erasure/capabilities` and
+`POST /edge/internal/account-erasure`. Both require the existing Edge admin
+bearer, now forwarded only to COP API through the explicitly approved immutable
+configuration transition. `COP_ACCOUNT_ERASURE_EDGE_URL` is the reviewed internal
+origin; the browser does not choose it or receive its credential. No new public
+port or network attachment is needed. See the binding JSON OpenAPI.
+
+The COP server constructs an exact full-account operation, verified actor,
+recovery generation and owned report/group/incident/task/drawing manifest.
+Edge serializes replay, outbox and erasure, persists pseudonymous account/actor
+hashes and exact reference fences, and performs current file readback. Matching
+unknown content remains pending; references do not prove ownership of another
+user's whole event. HTTP202 never completes COP deletion. A changed restore
+generation invalidates copied completion; lower or conflicting generations are
+rejected. Protected fences survive normal restart and are retained while needed
+to prevent restoration from managed backups. They contain no raw subject, name,
+message, OAuth token or encryption key. Shared unaffected data is preserved.
+
+This is source preparation, not a claim of production deployment. Before
+activation, include the actual Edge in whole-provider crash/restore acceptance
+and deploy its guarded version before enabling COP deletion. Do not roll back to
+an image that ignores existing fences; pause intake with the guard still active.

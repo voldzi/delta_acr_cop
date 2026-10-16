@@ -1,0 +1,20 @@
+{
+  "contractVersion": "cop-livekit-join-jwt-expiry-probe-v1",
+  "date": "2026-10-16",
+  "actualProviderValidation": true,
+  "actualSdkJoinGrant": true,
+  "configuredTtlSeconds": 4,
+  "beforeExpiryHttp": 200,
+  "firstAfterNominalExpiryHttp": 200,
+  "afterActualExpiryHttp": 401,
+  "secondsAfterNominalExpiry": 60.186,
+  "realWallClockWait": true,
+  "roomsUnchanged": true,
+  "mediaConnected": false,
+  "participantsConnected": false,
+  "credentialsPrinted": false,
+  "productionChanged": false,
+  "source": "scripts/account-safety/probe-livekit-join-expiry.mjs",
+  "endpoint": "actual owned LiveKit /rtc/validate",
+  "conclusion": "JWT exp alone does not prove provider refusal. Actual provider tolerated about 60 seconds after exp. Erasure must cover provider leeway and margin, with actual post-expiry validation in whole acceptance."
+}

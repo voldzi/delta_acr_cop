@@ -1,0 +1,38 @@
+{
+  "contractVersion": "cop-production-deploy-script-reconciliation-v1",
+  "scope": "read_only_review_of_existing_host_patch",
+  "baseSha256": "58d2e9375905d6a3e90f3c92fc57eb8f92a7d16388585e70efd5ad0b37082cff",
+  "observedHostSha256": "7edf500f5e4eaf788a4c21ee78097c01bad59344faee09aa534c988fa11d271e",
+  "reviewedTargetSha256": "4d428f56225ead88867cbb2c9cce3cfa188f95b553b3e96c645dec96833bc9d9",
+  "reviewedTargetGitBlob": "9e5f8826c21cc566e0d3eb36f801ff6d99bee453",
+  "automaticThreeWayMergeConflict": true,
+  "hostGuardSemanticsPreserved": [
+    "local_docker_daemon_only",
+    "no_saved_docker_context_change",
+    "same_scoped_storage_lock_and_x5_preflight",
+    "snapshot_excludes_environment_secrets",
+    "dedicated_cop_x5_builder_only",
+    "immutable_api_image_and_source",
+    "fresh_root_runtime_attestation_and_active_generation_CAS",
+    "unclean_build_inputs_rejected",
+    "runtime_profile_preserved",
+    "actual_linux_sharp_and_media_storage_guard_probe",
+    "no_dependency_pull_or_whole_stack_restart",
+    "baseline_health_before_and_after",
+    "build_only_does_not_activate"
+  ],
+  "newReviewedTargetFeatures": [
+    "exact_root_account_erasure_configuration_transition",
+    "immutable_edge_image_activation",
+    "aggregate_owner_readiness_health_dependency"
+  ],
+  "hostChangeApplied": false,
+  "productionChanged": false,
+  "requiredBeforeHostUpdate": [
+    "verify_current_host_sha_matches_observed",
+    "archive_exact_host_script_and_patch_on_verified_x5",
+    "publish_reviewed_target_source_revision",
+    "replace_only_reviewed_script_and_verify_exact_target_bytes",
+    "preserve_other_local_files_and_router_attachment"
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "contractVersion": "cop-whole-erasure-negative-acceptance-v1",
+  "observedAt": "2026-10-16T13:31:05.463Z",
+  "sourceRevision": "a1973e6220543584373a0d3ee9c8659137c616c1",
+  "sourceWorkingTreeDirty": true,
+  "testedSource": {
+    "compiledApiClosureSha256": "8316989c698eeb8ca6174964c2f8f42d6982ebad9efbe30bd3515801d8102340",
+    "runtimeResourceClosureSha256": "d05ff9e973e6e9ab3a1d718c324cbdf6fc8fa733aba4632ce0163f3117903584",
+    "compiledWorkspaceClosureSha256": "6d820186c7cae2caf9aa58c1c8bd4e4da6375138dea268ddacf413283ff8c500"
+  },
+  "scope": "actual_owned_synthetic_providers_only",
+  "operationId": "5432f2f7-bd00-4ed3-9533-90b4dcb4d9d1",
+  "requestedAt": "2026-10-16T13:07:20.557Z",
+  "initialNormal202Verified": false,
+  "initialHttpStatusCaptured": false,
+  "retryNormal202Verified": false,
+  "onlineWholeDeletionVerified": false,
+  "restoreAccepted": false,
+  "completedOwners": [
+    "ai_router",
+    "backup_restore",
+    "cop_content_media",
+    "cop_devices",
+    "cop_sessions_profiles",
+    "mobility_dispatch",
+    "moderation_audit",
+    "sim_measurements"
+  ],
+  "pendingOwners": [
+    "messaging_matrix",
+    "voice_livekit"
+  ],
+  "reason": "Messaging provider retained unclassified/unreviewed records and voice relay required an unavailable owner receipt; completion remained blocked.",
+  "controlledCrash": {
+    "signal": "SIGTERM",
+    "exactPidAndStartAndSourceVerified": true,
+    "mainProcessStopped": true,
+    "carrierOrProvidersStopped": false,
+    "gracefulCloseVerified": false,
+    "businessRuntimeConnectionsAfter": 0,
+    "guardRuntimeConnectionsAfter": 0,
+    "independentJournalUnchanged": true,
+    "originalSealedJobAndCompletedProofsPreserved": true,
+    "workerLeaseReset": false
+  },
+  "controlAccount": {
+    "freshKeycloakAuthenticationHttpStatus": 200,
+    "userinfoHttpStatus": 200,
+    "sameSubjectVerified": true,
+    "freshCopHttpProfileVerified": false,
+    "fullFreshOwnerFingerprintsVerified": false
+  },
+  "originalVoiceTokensRenewed": false,
+  "originalOperationOrDateReset": false,
+  "wholeAccountAccepted": false,
+  "productionGo": false,
+  "productionChanged": false
+}

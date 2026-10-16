@@ -4163,14 +4163,23 @@ paths:
       responses:
         "200":
           description: Dependency health status.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DependencyHealth"
         "429":
           $ref: "#/components/responses/TooManyRequests"
-      description: Includes private-dispatch dependency with verified exclusive primary lease state. HTTP
-        200 does not imply that every dependency is ready; inspect status and dependencies.
+      description: "Includes private-dispatch dependency with verified exclusive primary lease state. HTTP
+        200 does not imply that every dependency is ready; inspect status and dependencies. Includes
+        cop-account-erasure-owners: a non-personal aggregate of actual read-only owner checks,
+        independently of deletion intake, shared across concurrent probes and cached for at most 30
+        seconds. Status ok requires fresh checkedAt; disabled or unavailable never authorizes
+        enabling intake. Responses use Cache-Control: no-store."
   /metrics:
     get:
       tags:
@@ -9311,7 +9320,18 @@ paths:
       summary: Availability of separate whole COP account erasure
       description: Source candidate, disabled. Availability requires every real provider adapter and
         accepted retention/restore policy. No browser-supplied identity. A report or app unlink
-        capability does not imply deletion readiness.
+        capability does not imply deletion readiness. Optional includeOwnerReadiness=true performs
+        independent read-only owner checks while intake stays disabled. It never creates a plan,
+        fence or job and does not grant deletion permission. The default response is unchanged.
+      parameters:
+        - in: query
+          name: includeOwnerReadiness
+          required: false
+          schema:
+            type: boolean
+            const: true
+          description: Request independent read-only global owner diagnostics; literal true only. Does not
+            enable deletion intake. Additional diagnostic checks are limited to five per minute.
       responses:
         "200":
           description: Verified caller sees current readiness.
@@ -9324,8 +9344,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountErasureCapabilities"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /api/v1/me/account-deletion/{operationId}:
     get:
       tags:
@@ -9584,6 +9608,109 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /edge/internal/account-erasure/capabilities:
+    get:
+      tags:
+        - Identity
+      operationId: getEdgeAccountErasureCapabilities
+      summary: Verify actual controlled Edge erasure state and writer barrier
+      description: Authenticated COP server only. Reads the actual persisted Edge state under the writer
+        serial barrier. This is not an actor-specific cleanup proof and never authorizes an account
+        deletion.
+      security:
+        - edgeAdminBearer: []
+      x-cop-ai-exposure: forbidden
+      responses:
+        "200":
+          description: Current Edge state and writer barrier verified.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EdgeAccountErasureCapabilities"
+        "401":
+          description: Missing or invalid existing Edge admin credential.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: State storage, writer barrier or readback unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /edge/internal/account-erasure:
+    post:
+      tags:
+        - Identity
+      operationId: eraseEdgeAccountProjections
+      summary: Fence and verify exact controlled Edge copies for an accepted COP account deletion
+      description: Uses the existing internal Edge admin transport without a new public port. COP must
+        verify its actual durable global account/operation fence before phase erase. Unattributable
+        matching content remains pending. Serializes sync, outbox and persistence; future replay
+        cannot restore fenced references. A new enrolled restore generation invalidates copied
+        completion. Does not erase other participants or arbitrary server state.
+      security:
+        - edgeAdminBearer: []
+      x-cop-ai-exposure: forbidden
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EdgeAccountErasureRequest"
+      responses:
+        "200":
+          description: Read-only preflight ready, or actual scoped cleanup completed.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EdgeAccountErasureReceipt"
+        "202":
+          description: Cleanup or ownership unresolved; never completed.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EdgeAccountErasureReceipt"
+        "400":
+          description: Invalid bounded request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid existing Edge admin credential.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Foreign operation, resource, actor or recovery binding.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: State storage, writer barrier or readback unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   securitySchemes:
     bearerAuth:
@@ -9602,6 +9729,12 @@ components:
       name: __Secure-cop_erasure_receipt_v1
       description: Secure HttpOnly SameSite=Strict cookie scoped to /api/v1/me/account-deletion, 30-day
         technical validity. This is not a personal-data retention policy.
+    edgeAdminBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Opaque server credential
+      description: Existing COP Edge administrator token. Server-to-server only, never browser input,
+        request logs, analytics or Git.
   parameters:
     SourceSystemIdHeader:
       name: X-Source-System-Id
@@ -16981,6 +17114,12 @@ components:
                   - disabled
               detail:
                 type: string
+              checkedAt:
+                type: string
+                format: date-time
+                description: "For cop-account-erasure-owners only: completion time of actual read-only owner checks;
+                  absent for disabled or unverified checks. Status ok is usable for deployment for
+                  at most 30 seconds. Does not enable deletion intake."
     ErrorResponse:
       type: object
       required:
@@ -24289,6 +24428,8 @@ components:
           const: cop-account-erasure-v1
         accountDeletion:
           type: boolean
+        ownerReadiness:
+          $ref: "#/components/schemas/AccountErasureOwnerReadiness"
         unavailableReason:
           type: string
           enum:
@@ -24322,6 +24463,52 @@ components:
                   enum:
                     - not_enabled
                     - not_accepted
+                    - required_adapters_missing
+                    - adapter_unavailable
+    AccountErasureOwnerReadiness:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - ready
+        - checkedAt
+      properties:
+        contractVersion:
+          const: cop-account-erasure-owner-readiness-v1
+        ready:
+          type: boolean
+          description: All eleven actual owners and unchanged independent/local continuity were checked. This
+            is not deletion permission.
+        checkedAt:
+          type: string
+          format: date-time
+        unavailableReason:
+          type: string
+          enum:
+            - required_adapters_missing
+            - adapter_unavailable
+      allOf:
+        - if:
+            properties:
+              ready:
+                const: false
+          then:
+            required:
+              - unavailableReason
+            properties:
+              unavailableReason:
+                type: string
+                enum:
+                  - required_adapters_missing
+                  - adapter_unavailable
+          else:
+            not:
+              required:
+                - unavailableReason
+              properties:
+                unavailableReason:
+                  type: string
+                  enum:
                     - required_adapters_missing
                     - adapter_unavailable
     AccountErasureReceipt:
@@ -24589,6 +24776,228 @@ components:
                     confirmBy:
                       type: string
                       format: date-time
+    EdgeAccountErasureRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - phase
+        - scope
+        - accountKey
+        - operationId
+        - actor
+        - datasetBinding
+        - resources
+      properties:
+        contractVersion:
+          type: string
+          const: cop-edge-account-erasure-v1
+        phase:
+          type: string
+          enum:
+            - preflight
+            - erase
+        scope:
+          type: string
+          const: full_account
+        accountKey:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        operationId:
+          type: string
+          format: uuid
+        actor:
+          type: object
+          additionalProperties: false
+          required:
+            - issuer
+            - subjectId
+          properties:
+            issuer:
+              type: string
+              format: uri
+              maxLength: 2048
+            subjectId:
+              type: string
+              minLength: 1
+              maxLength: 512
+        datasetBinding:
+          type: object
+          additionalProperties: false
+          required:
+            - incarnationId
+            - restoreGeneration
+          properties:
+            incarnationId:
+              type: string
+              format: uuid
+            restoreGeneration:
+              type: integer
+              minimum: 1
+        resources:
+          type: object
+          additionalProperties: false
+          required:
+            - reportIds
+            - groupIds
+            - incidentIds
+            - taskIds
+            - drawingIds
+          properties:
+            reportIds:
+              type: array
+              maxItems: 10000
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+            groupIds:
+              type: array
+              maxItems: 10000
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+            incidentIds:
+              type: array
+              maxItems: 10000
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+            taskIds:
+              type: array
+              maxItems: 10000
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+            drawingIds:
+              type: array
+              maxItems: 10000
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+      description: "Only the COP server may construct this body from its authenticated actor, confirmed
+        durable full-account operation and exact owned resource manifests. Actor strings are
+        transient: Edge persists only hashes and exact resource fences. Resources are lowercase
+        UUIDs sorted and deduplicated. No arbitrary context or provider URL."
+    EdgeAccountErasureCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - nodeId
+        - writerFenceInstalled
+        - stateReadbackVerified
+      properties:
+        contractVersion:
+          const: cop-edge-account-erasure-v1
+          type: string
+        nodeId:
+          type: string
+          minLength: 1
+        writerFenceInstalled:
+          const: true
+          type: boolean
+        stateReadbackVerified:
+          const: true
+          type: boolean
+    EdgeAccountErasureReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - nodeId
+        - accountKey
+        - operationId
+        - datasetBinding
+        - resourcesDigest
+        - state
+      properties:
+        contractVersion:
+          const: cop-edge-account-erasure-v1
+          type: string
+        nodeId:
+          type: string
+          minLength: 1
+        accountKey:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        operationId:
+          type: string
+          format: uuid
+        datasetBinding:
+          type: object
+          additionalProperties: false
+          required:
+            - incarnationId
+            - restoreGeneration
+          properties:
+            incarnationId:
+              type: string
+              format: uuid
+            restoreGeneration:
+              type: integer
+              minimum: 1
+        resourcesDigest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        state:
+          type: string
+          enum:
+            - ready
+            - pending
+            - completed
+        reason:
+          type: string
+          enum:
+            - ownership_unresolved
+            - cleanup_pending
+        proofId:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+      description: SHA256 resourcesDigest is over JSON with keys
+        reportIds,groupIds,incidentIds,taskIds,drawingIds in that order. Completed means current
+        durable scoped fence plus actual filtered state/readback, not a stored historical label.
+        HTTP202 is always pending; it never completes COP deletion.
+      oneOf:
+        - type: object
+          properties:
+            state:
+              type: string
+              const: completed
+            proofId:
+              type: string
+              pattern: ^[a-f0-9]{64}$
+            reason: false
+          required:
+            - state
+            - proofId
+        - type: object
+          properties:
+            state:
+              type: string
+              const: pending
+            reason:
+              type: string
+              enum:
+                - ownership_unresolved
+                - cleanup_pending
+            proofId: false
+          required:
+            - state
+            - reason
+        - type: object
+          properties:
+            state:
+              type: string
+              const: ready
+            reason: false
+            proofId: false
+          required:
+            - state
 x-cop-mobility-invitation-notifications:
   contractVersion: cop-mobility-invitation-notification-v1
   transport: APNs alert via CSM Messaging

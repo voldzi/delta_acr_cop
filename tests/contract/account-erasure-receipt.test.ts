@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { createAjv } from "../../packages/ingest-contracts/src/index.js";
 const openapi=JSON.parse(readFileSync(new URL("../../openapi/openapi.json",import.meta.url),"utf8"));
 const components={schemas:{AccountErasureReceipt:openapi.components.schemas.AccountErasureReceipt,
-  AccountErasureRequest:openapi.components.schemas.AccountErasureRequest,AccountErasureCapabilities:openapi.components.schemas.AccountErasureCapabilities, AccountErasurePreflight:openapi.components.schemas.AccountErasurePreflight}};
+  AccountErasureRequest:openapi.components.schemas.AccountErasureRequest,AccountErasureCapabilities:openapi.components.schemas.AccountErasureCapabilities, AccountErasurePreflight:openapi.components.schemas.AccountErasurePreflight,
+  AccountErasureOwnerReadiness:openapi.components.schemas.AccountErasureOwnerReadiness}};
 const compile=(schema:Record<string,unknown>)=>createAjv().compile({...schema,components});
 const pending={contractVersion:"cop-account-erasure-v1",deletionScope:"cop_jizda_preserve_shared_identity_sim",operationId:"24c37f84-62d6-4b65-9c62-f2dcb17c349d",
   status:"deleting",requestedAt:"2026-10-11T00:00:00Z",accountDeleted:false,revocationEnforced:true,
@@ -36,6 +37,12 @@ describe("whole COP erasure binding contract",()=>{
     expect(validate({contractVersion:"cop-account-erasure-v1",accountDeletion:true})).toBe(true);
     expect(validate({contractVersion:"cop-account-erasure-v1",accountDeletion:false})).toBe(false);
     expect(validate({contractVersion:"cop-account-erasure-v1",accountDeletion:true,unavailableReason:"not_enabled"})).toBe(false);
+    const ownerReadiness={contractVersion:"cop-account-erasure-owner-readiness-v1",ready:true,checkedAt:"2026-10-16T12:00:00Z"};
+    const disabled={contractVersion:"cop-account-erasure-v1",accountDeletion:false,unavailableReason:"not_accepted",ownerReadiness};
+    expect(validate(disabled)).toBe(true);
+    for(const bad of [{...ownerReadiness,unavailableReason:"adapter_unavailable"},{...ownerReadiness,ready:false},
+      {...ownerReadiness,checkedAt:"unknown"},{...ownerReadiness,accountId:"not-public"}])expect(validate({...disabled,ownerReadiness:bad})).toBe(false);
+    expect(validate({...disabled,ownerReadiness:{...ownerReadiness,ready:false,unavailableReason:"adapter_unavailable"}})).toBe(true);
   });
 });
 

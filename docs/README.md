@@ -162,6 +162,8 @@ proposal are preserved in `docs/archive/2026-10-11_ACCOUNT_SAFETY_*` and
 current provisioning or production activation instructions.
 
 Account erasure preflight/tracking: [ADR 0051](adr/0051_ERASURE_PREFLIGHT_AND_RECEIPT_TRACKING.md); infrastructure activation blocker: [runbook 25](runbooks/25_ACCOUNT_SAFETY_GUARD_BINDING_PROPOSAL.md).
+Database-mode restore owner and the exact quarantine procedure: [runbook 26](runbooks/26_ACCOUNT_ERASURE_BACKUP_RESTORE.md). This verifies restoration suppression, not physical deletion of PBS copies.
+
 
 Approved shared-vehicle deletion/ownership policy:
 [ADR 0052](adr/0052_APPROVED_SHARED_VEHICLE_ERASURE_POLICY.md). Own contributions
@@ -171,3 +173,13 @@ is not the complete `mobility_dispatch` adapter and does not activate account
 deletion or authorize a production deployment.
 
 - [ADR0053: COP/Jizda removal preserves shared identity and SIM](adr/0053_COP_ERASURE_PRESERVES_SHARED_SIM_IDENTITY.md)
+
+Account-erasure deployment configuration transition: [runbook 27](runbooks/27_ACCOUNT_ERASURE_CONFIG_TRANSITION.md).
+
+Root account-erasure preflight, credential preparation and proof production: [runbook 28](runbooks/28_ACCOUNT_ERASURE_ROOT_INSTALL.md).
+
+Controlled COP Edge copies, strict owner manifests and persisted writer fences: [runbook 29](runbooks/29_COP_EDGE_ACCOUNT_ERASURE.md).
+
+Actual two-user, all-provider deletion and isolated restore fixture: [runbook 30](runbooks/30_ACCOUNT_ERASURE_WHOLE_FIXTURE.md).
+
+Reviewed historical provenance and bounded schema preparation: [runbook 31](runbooks/31_ACCOUNT_ERASURE_LEGACY_PROVENANCE.md).

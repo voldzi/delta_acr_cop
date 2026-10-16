@@ -1,0 +1,33 @@
+{
+  "contractVersion": "cop-backup-restore-owner-evidence-v1",
+  "date": "2026-10-16",
+  "scope": "actual_owned_PostgreSQL18_independent_journal_business_pg_dump_restore_and_adapter",
+  "sourceSha256": {
+    "apps/cop-api/src/backup-restore-erasure.ts": "42a79e1b5d875da841d59d4001fea67c4f813c414562f255d3518fcc76ffd7f0",
+    "apps/cop-api/src/backup-restore-erasure.test.ts": "7785f7300192878095a2768479cbfb86330a041d945b701199a11541b6370afe",
+    "scripts/test-backup-restore-erasure.mjs": "56a45e9257f9087cd3cc1a18aef793e6ef042bfede84bb0fc1382f9a0501e808"
+  },
+  "checks": {
+    "actualPostgresqlGroupsPassed": 5,
+    "actualPgDumpAndPgRestore": true,
+    "independentJournalUnchanged": true,
+    "originalAccountOperationDateAndDatasetChecked": true,
+    "missingEncryptedPrincipalRemainsPending": true,
+    "onlyExistingFreshVerifiedActorRecoveryUsed": true,
+    "oldRuntimeAfterTransitionDenied": true,
+    "syntheticOwnedAContentRowCleanedAfterRestore": true,
+    "syntheticBPreserved": true,
+    "targetedEslint": "passed",
+    "ownedFixtureRemoved": true
+  },
+  "limits": [
+    "Other providers are explicitly synthetic in this run.",
+    "No physical deletion or contents audit of production PBS copies is claimed.",
+    "A trusted operator must quarantine restores and preserve the independent journal.",
+    "No Proxmox policy, production database, permission, secret or service was changed.",
+    "Whole-provider acceptance and production deployment are separate gates."
+  ],
+  "productionContacted": false,
+  "productionChanged": false,
+  "wholeAccountReady": false
+}

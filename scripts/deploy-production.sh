@@ -24,22 +24,31 @@ export COP_STORAGE_LOCK_FD=9
 python3 scripts/cop-storage.py preflight >/dev/null
 build_only=false
 deploy_only=false
+edge_deploy_only=false
+edge_image=
+edge_revision=
 api_build_context=
 api_source_explicit=false
 api_profile_args=()
+api_erasure_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --build-only) build_only=true; shift ;;
     --api-build-context)
       [[ $# -ge 2 && -z "$api_build_context" && -n "$2" && "$2" != --* ]] || { echo 'API build context requires one value' >&2; exit 1; }
       api_build_context="$2"; shift 2 ;;
-    --api-image|--api-source|--api-attestation|--api-profile)
+    --edge-image|--edge-source)
+      [[ $# -ge 2 && -n "$2" && "$2" != --* ]] || { echo 'Edge deployment option requires a value' >&2; exit 1; }
+      if [[ "$1" == --edge-image ]]; then edge_image="$2"; edge_deploy_only=true; else edge_revision="$2"; fi
+      shift 2 ;;
+    --api-image|--api-source|--api-attestation|--api-profile|--api-erasure-config)
       [[ $# -ge 2 ]] || { echo 'API deployment option requires a value' >&2; exit 1; }
       case "$1" in
         --api-image) api_image="$2"; deploy_only=true ;;
         --api-source) api_revision="$2"; api_source_explicit=true ;;
         --api-attestation) COP_API_RUNTIME_ATTESTATION="$2" ;;
         --api-profile) api_profile_args=(--profile "$2") ;;
+        --api-erasure-config) api_erasure_args=(--account-erasure-config "$2") ;;
       esac
       shift 2 ;;
     *) break ;;
@@ -51,6 +60,11 @@ if [[ -n "$api_build_context" ]]; then
   for service in "$@"; do context_args+=(--service "$service"); done
   python3 scripts/cop-api-build-context.py validate --context "$api_build_context" \
     --revision "${api_revision:-}" --build-only "$build_only" --deploy-only "$deploy_only" "${context_args[@]}" >/dev/null
+fi
+if $edge_deploy_only; then
+  [[ $# -eq 0 && "$build_only" == false && "$deploy_only" == false && -n "$edge_revision" && -z "$api_build_context" ]] || { echo 'Immutable Edge activation must be Edge-only with a source pin' >&2; exit 1; }
+  set -- cop-edge
+elif [[ -n "$edge_revision" ]]; then echo 'Edge source requires its immutable image' >&2; exit 1
 fi
 if $deploy_only; then
   [[ $# -eq 0 && "$build_only" == false && -n "${api_revision:-}" ]] || { echo 'Immutable API activation must be API-only with a source pin' >&2; exit 1; }
@@ -69,14 +83,38 @@ for service in "$@"; do
   case "$service" in cop-api|cop-web|cop-chat|cop-edge|cop-mcp) ;; *) echo 'Unknown COP service' >&2; exit 1;; esac
 done
 api_requested=false
+edge_requested=false
 other_services=()
 for service in "$@"; do
   if [[ "$service" == cop-api ]]; then api_requested=true; else other_services+=("$service"); fi
+  if [[ "$service" == cop-edge ]]; then edge_requested=true; fi
 done
 if $api_requested; then
   # Missing, corrupt or interrupted profiles stop every mixed API deployment.
-  api_state=$(python3 scripts/cop-api-runtime.py validate)
-  api_generation=$(python3 -c 'import json,sys;print(json.load(sys.stdin)["generation"])' <<< "$api_state")
+  if [[ ${#api_erasure_args[@]} -gt 0 ]]; then
+    $deploy_only && [[ "$build_only" == false ]] || { echo 'Account erasure configuration requires an immutable API-only release' >&2; exit 1; }
+    # Read only a CAS precondition from the Root-owned proof. The runtime gate
+    # independently validates the complete proof/configuration before mutation.
+    api_generation=$(python3 - "${api_erasure_args[1]}" <<'PYERASURE'
+import json,os,re,stat,sys
+fd=os.open(sys.argv[1],os.O_RDONLY|os.O_NOFOLLOW)
+try:
+    meta=os.fstat(fd)
+    if not stat.S_ISREG(meta.st_mode) or meta.st_uid!=0 or stat.S_IMODE(meta.st_mode)!=0o640 or meta.st_nlink!=1 or meta.st_size>65536:
+        raise SystemExit('Invalid Root account erasure proof')
+    value=json.loads(os.read(fd,65537))
+    generation=value.get('previous',{}).get('generation','')
+    if value.get('contractVersion')!='cop-api-account-erasure-config-v1' or not isinstance(generation,str) or not re.fullmatch(r'[a-f0-9]{32}',generation):
+        raise SystemExit('Invalid Root account erasure CAS generation')
+    print(generation)
+finally:
+    os.close(fd)
+PYERASURE
+)
+  else
+    api_state=$(python3 scripts/cop-api-runtime.py validate)
+    api_generation=$(python3 -c 'import json,sys;print(json.load(sys.stdin)["generation"])' <<< "$api_state")
+  fi
   if ! $build_only; then
     [[ -n "${COP_API_RUNTIME_ATTESTATION:-}" ]] || { echo 'Fresh API owner attestation is required' >&2; exit 1; }
   fi
@@ -93,6 +131,15 @@ PYSOURCE
 )
   fi
 fi
+if $edge_requested && ! $edge_deploy_only; then
+  edge_revision=$(python3 - <<'PYEDGESOURCE'
+import subprocess,sys
+records=subprocess.check_output(['git','status','--porcelain=v1','--untracked-files=all','-z']).split(b'\0')
+if any(value and value not in {b'?? .storage.lock',b'?? docker-compose.ai-router.yml'} for value in records):sys.exit('Edge source has uncommitted or untracked build input')
+print(subprocess.check_output(['git','rev-parse','HEAD']).decode().strip())
+PYEDGESOURCE
+)
+fi
 python3 scripts/cop-storage.py snapshot --exclude-env "${backup[@]}"
 job=$(python3 scripts/cop-storage.py new-job staging | python3 -c 'import json,sys;print(json.load(sys.stdin)["job"])')
 cachejob=$(python3 scripts/cop-storage.py new-job cache | python3 -c 'import json,sys;print(json.load(sys.stdin)["job"])')
@@ -106,7 +153,7 @@ if [[ -n "$api_build_context" ]]; then
   python3 scripts/cop-api-build-context.py pin --context "$api_build_context" --revision "$api_revision" \
     --pin-file "$job/api-build-context-pin.json"
 fi
-if ! $deploy_only; then
+if ! $deploy_only && ! $edge_deploy_only; then
 # COP's dedicated builder is backed by a bind volume on X5. Never use/prune a
 # shared builder or reconfigure the daemon. Provisioning is in the runbook.
 export BUILDX_BUILDER=cop-x5
@@ -124,6 +171,13 @@ with open(sys.argv[1], 'x') as handle:
     json.dump({'services': {'cop-api': {'build': build}}}, handle)
 PYLABEL
   build_compose+=(-f "$job/api-build-label.json")
+fi
+if $edge_requested; then
+  python3 - "$job/edge-build-label.json" "$edge_revision" <<'PYEDGELABEL'
+import json,sys
+with open(sys.argv[1],'x') as handle:json.dump({'services':{'cop-edge':{'build':{'labels':{'org.opencontainers.image.revision':sys.argv[2]}}}}},handle)
+PYEDGELABEL
+  build_compose+=(-f "$job/edge-build-label.json")
 fi
 if [[ -n "$api_build_context" ]]; then
   python3 scripts/cop-api-build-context.py verify --context "$api_build_context" --revision "$api_revision" \
@@ -160,6 +214,10 @@ if $build_only; then
     docker image inspect --format '{{.Id}}' delta-acr-cop-api:local
     echo "API source revision: $api_revision"
   fi
+  if $edge_requested; then
+    docker image inspect --format '{{.Id}}' delta-acr-cop-edge:local
+    echo "Edge source revision: $edge_revision"
+  fi
   python3 scripts/cop-health-gate.py verify "$job/baseline-health.json"
 else
 if $api_requested; then
@@ -167,17 +225,19 @@ if $api_requested; then
   if ! $deploy_only; then api_image=$(docker image inspect --format '{{.Id}}' delta-acr-cop-api:local); fi
   api_binding=$(python3 scripts/cop-api-runtime.py prepare --image "$api_image" \
     --revision "$api_revision" --attestation "$COP_API_RUNTIME_ATTESTATION" \
-    --expect-active "$api_generation" "${api_profile_args[@]}")
+    --expect-active "$api_generation" "${api_profile_args[@]}" "${api_erasure_args[@]}")
   api_release=$(python3 -c 'import json,sys;print(json.load(sys.stdin)["releaseId"])' <<< "$api_binding")
 fi
 # Compatibility preparation finishes before mutating any selected service.
-if [[ ${#other_services[@]} -gt 0 ]]; then
+if $edge_deploy_only; then
+  python3 scripts/cop-edge-release.py --image "$edge_image" --revision "$edge_revision" --job "$job"
+elif [[ ${#other_services[@]} -gt 0 ]]; then
   docker compose --project-name cop "${compose[@]}" up -d --no-build --pull never --no-deps "${other_services[@]}" >/dev/null
 fi
 if $api_requested; then
   python3 scripts/cop-api-runtime.py activate --release "$api_release" --expect-active "$api_generation"
 fi
-python3 scripts/cop-health-gate.py verify "$job/baseline-health.json" --allow-added-dependency safety-notification-worker
+python3 scripts/cop-health-gate.py verify "$job/baseline-health.json" --allow-added-dependency safety-notification-worker --allow-added-dependency cop-account-erasure-owners
 fi
 flock -u 8
 exec 8>&-

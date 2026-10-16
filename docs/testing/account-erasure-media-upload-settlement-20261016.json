@@ -1,0 +1,43 @@
+{
+  "contractVersion": "cop-media-upload-settlement-verification-v1",
+  "date": "2026-10-16",
+  "sourceOnly": true,
+  "productionChanged": false,
+  "productionLegacyClosureEnrolled": false,
+  "factory": "createMediaUploadSettlementFromEnv",
+  "authorityMode": "database_v2",
+  "uploadTransport": "cop_api",
+  "independentGuardTable": "cop_safety_v2.media_upload_closures",
+  "runtimePermissions": ["SELECT"],
+  "binding": ["bucket", "endpoint", "serverCredentialFingerprint", "applicationStoreId", "incarnationId", "currentRestoreGeneration"],
+  "objectVerification": ["same durable content-admission transaction lock", "exact existing owned-media manifest", "matching issuer/subject ownership hash", "matching immutable owner fence and deletion operation", "no unsettled admitted write lease", "independent binding recheck after local transaction"],
+  "postgres": {
+    "actualVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+    "ownedLoopbackOnlyFixture": true,
+    "newDatabaseScenariosPassed": 7,
+    "storageScenariosPassed": 23,
+    "totalPassed": 30,
+    "observations": ["missing closure refuses even with zero leases and expired/fenced object", "only exact owned object and operation accepted", "unknown durable write survives verifier restart", "actual pending admission transaction blocks verification", "different local incarnation, independent restore generation or server credential refuses", "runtime cannot enroll or mutate closure; immutable trigger also rejects administrator mutation", "operation mismatch and cancellation refuse"],
+    "providerReceiptInPostgresFixture": "synthetic fixture metadata; separate real provider test below"
+  },
+  "provider": {
+    "actualVersion": "4.45 79b872021",
+    "digest": "sha256:fc9f76fa993ad69966ffeb2f65d0318fcae39c6f8e20cf68ef7b3a5cb97769e5",
+    "isolatedOwnedFixture": true,
+    "productionProviderRestarted": false,
+    "providerStoppedAt": "2026-10-16T11:40:38.628Z",
+    "providerRestartedAt": "2026-10-16T11:40:41.842561007Z",
+    "oldCredentialDeniedAt": "2026-10-16T11:41:00.663Z",
+    "legacySlowBodyTerminated": true,
+    "legacySignatureDeniedAfterRestart": true,
+    "secondAccountPreserved": true,
+    "otherIdentityAndBucketPreserved": true,
+    "newCredentialWorks": true,
+    "evidenceDigest": "837f61be91930bee1103a7812edac2d1aa2e733098aed46fd02cc5c5d318f753",
+    "finalMetadataFaultInjection": false,
+    "method": "actual partial 1MiB PUT admitted with HTTP100-continue; stop and inspect Running=false/Pid=0; replace only cop-production credential; start same container/image; old unexpired presign403; new credential write/read; second account and other identity/bucket read unchanged"
+  },
+  "checks": { "apiTypeScriptBuild": "passed", "targetedEslint": "passed" },
+  "remaining": ["joint whole-account test combines the actual provider with COP controller and all SIM owners", "coordinated production COP writer pause and shared provider stop/credential closure/restart", "administrator enrollment of actual closure only after runtime and credential readback", "physical iPhone upload/account-deletion acceptance"],
+  "wholeAccountReady": false
+}

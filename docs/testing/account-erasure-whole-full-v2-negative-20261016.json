@@ -1,0 +1,56 @@
+{
+  "contractVersion": "cop-account-erasure-whole-negative-evidence-v1",
+  "observedAt": "2026-10-16T14:53:00Z",
+  "case": "cop-whole-full-20261016",
+  "fixtureScope": "owned_isolated_two_synthetic_accounts_only",
+  "messagingProfile": "messaging_approved_joint_full_v2.freeze-v3.json",
+  "sourceArchiveSha256": "0aed0b1bfa86777c68e092910fa2b71b636467e7a7e8f4accc5c8545c31fe189",
+  "actualInitialConfirmation": {
+    "httpStatus": 503,
+    "code": "ERASURE_ADAPTER_UNAVAILABLE",
+    "operationId": "8ae200c2-a433-4867-82b1-831689b637ad",
+    "requestedAt": "2026-10-16T14:41:30.283Z"
+  },
+  "actualProviderReadback": {
+    "httpStatus": 202,
+    "status": "pending",
+    "scopeMatches": true,
+    "remaining": [
+      "owner_state_stream_cache_unclassified"
+    ],
+    "unclassifiedCacheRecords": 26,
+    "nativeTypedCacheClassificationMissing": 24,
+    "credentialInvalidationsWithoutEstablishedCurrentOwnership": 2
+  },
+  "completedOwners": [
+    "ai_router",
+    "cop_devices",
+    "backup_restore",
+    "moderation_audit",
+    "sim_measurements",
+    "cop_sessions_profiles"
+  ],
+  "otherUser": {
+    "businessFingerprintUnchanged": true,
+    "actualFinalReadbackCount": 69,
+    "preDeletionCheckpointCount": 69
+  },
+  "preDeletionSnapshots": {
+    "actualDatabases": 5,
+    "archiveCatalogsVerified": true,
+    "checksumsVerified": true,
+    "independentGuardExcluded": true
+  },
+  "initialNormal202Verified": false,
+  "controlledCrashVerified": false,
+  "restoreExecuted": false,
+  "wholeAccountAccepted": false,
+  "productionChanged": false,
+  "realAccountsDeleted": false,
+  "frozenCaseMustNotBeRelabeledOrReseeded": true,
+  "nextRequiredWork": [
+    "exact_pinned_native_cache_type_classification",
+    "durable_numeric_credential_stream_ownership_before_native_destruction",
+    "separate_new_actual_whole_crash_recovery_restore_case"
+  ]
+}

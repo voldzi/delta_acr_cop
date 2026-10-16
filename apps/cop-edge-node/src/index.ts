@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, unlink, lstat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ServiceTokenProvider, type ServiceAuthMode } from "@cop/core/service-token";
+import { EdgeErasureError, edgeErasurePreflight, edgeResourcesDigest, edgeErasureProof, edgeEventAllowed, eraseEdgeCopies, installEdgeErasureFence, parseEdgeErasureRequest, validateEdgeErasureJournal, type EdgeErasureState } from "./account-erasure.js";
 
 type EdgeMode = "ONLINE" | "DEGRADED" | "OFFLINE";
 type EdgeHealth = "degraded" | "offline" | "ok";
@@ -120,7 +121,7 @@ interface EdgeStoredEvent {
   replayOffset: number;
 }
 
-interface EdgeState {
+interface EdgeState extends EdgeErasureState {
   contractVersion: "cop-edge-node-state-v1";
   cursor: {
     lastAckedOffset: number;
@@ -210,6 +211,7 @@ export class EdgeRuntime {
   private readonly centralAuth: ServiceTokenProvider;
   private state: EdgeState;
   private syncInProgress = false;
+  private serialQueue: Promise<unknown> = Promise.resolve();
 
   private constructor(
     private readonly config: EdgeConfig,
@@ -231,7 +233,9 @@ export class EdgeRuntime {
     await mkdir(config.dataDir, { recursive: true });
     const statePath = path.join(config.dataDir, "state.json");
     const state = await readStateFile(statePath, config);
-    return new EdgeRuntime(config, state);
+    const runtime = new EdgeRuntime(config, state);
+    await runtime.persist();
+    return runtime;
   }
 
   getStatus(): EdgeNodeStatus {
@@ -269,6 +273,10 @@ export class EdgeRuntime {
   }
 
   async queueOutboxEvent(value: unknown): Promise<EdgeQueuedEvent> {
+    return this.exclusive(() => this.queueOutboxEventLocked(value));
+  }
+
+  private async queueOutboxEventLocked(value: unknown): Promise<EdgeQueuedEvent> {
     const now = new Date().toISOString();
     const record = isRecord(value) ? value : {};
     const clientEventId = stringValue(record.clientEventId) || stringValue(record.eventId) || stringValue(record.id) || randomUUID();
@@ -299,12 +307,17 @@ export class EdgeRuntime {
       event,
       status: "pending"
     };
+    if (!edgeEventAllowed(this.state, event)) { await this.persist(); throw new EdgeErasureError(403, "EDGE_ERASURE_FENCED"); }
     this.state.outbox.push(queued);
     await this.persist();
     return queued;
   }
 
   async syncOnce(): Promise<EdgeSyncResult> {
+    return this.exclusive(() => this.syncOnceLocked());
+  }
+
+  private async syncOnceLocked(): Promise<EdgeSyncResult> {
     if (this.syncInProgress) {
       return {
         flushed: { accepted: 0, duplicate: 0, rejected: 0 },
@@ -437,6 +450,7 @@ export class EdgeRuntime {
     const items = replay.items ?? [];
     const known = new Set(this.state.inboundEvents.map((item) => item.eventId));
     for (const item of items) {
+      if (!edgeEventAllowed(this.state, item)) continue;
       const eventId = typeof item.id === "string" ? item.id : randomUUID();
       if (known.has(eventId)) {
         continue;
@@ -525,11 +539,74 @@ export class EdgeRuntime {
     return readCentralResponseText(response, signal, this.config.centralMaxResponseBytes ?? 16 * 1024 * 1024);
   }
 
+  private exclusive<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.serialQueue.then(work);
+    this.serialQueue = result.catch(() => undefined);
+    return result;
+  }
+
+  private async diskReadback(): Promise<void> {
+    const bytes = await readFile(this.statePath, "utf8");
+    if (JSON.stringify(JSON.parse(bytes)) !== JSON.stringify(this.state)) throw new EdgeErasureError(503, "EDGE_ERASURE_STATE_READBACK_FAILED");
+  }
+
+  async accountErasureCapabilities(): Promise<Record<string, unknown>> {
+    return this.exclusive(async () => {
+      await this.diskReadback();
+      return { contractVersion: "cop-edge-account-erasure-v1", nodeId: this.config.nodeId, writerFenceInstalled: true, stateReadbackVerified: true };
+    });
+  }
+
+  async eraseAccount(value: unknown): Promise<Record<string, unknown>> {
+    const input = parseEdgeErasureRequest(value);
+    return this.exclusive(async () => {
+      await this.diskReadback();
+      const result = { contractVersion: "cop-edge-account-erasure-v1", nodeId: this.config.nodeId, accountKey: input.accountKey,
+        operationId: input.operationId, datasetBinding: input.datasetBinding, resourcesDigest: edgeResourcesDigest(input.resources) };
+      if (input.phase === "preflight") {
+        const ready = edgeErasurePreflight(this.state, input);
+        return { ...result, state: ready ? "ready" : "pending", ...(!ready ? { reason: "ownership_unresolved" } : {}) };
+      }
+      const fence = installEdgeErasureFence(this.state, input);
+      // Persist the fence before touching payload copies. Crash at either point
+      // remains pending and is recoverable by the original operation only.
+      await this.persist();
+      const absent = eraseEdgeCopies(this.state, fence);
+      await this.persist();
+      await this.removeObsoleteStateCopies();
+      await this.diskReadback();
+      if (!absent) return { ...result, state: "pending", reason: "ownership_unresolved" };
+      fence.proofId = edgeErasureProof(this.state, fence, this.config.nodeId);
+      await this.persist(); await this.diskReadback();
+      return { ...result, state: "completed", proofId: fence.proofId };
+    });
+  }
+
+  private async removeObsoleteStateCopies(): Promise<void> {
+    // This directory is exclusively owned by this single edge service. These
+    // are only its known abandoned atomic-write snapshots, never user files.
+    const names = await readdir(this.config.dataDir);
+    if (names.length > 10000) throw new EdgeErasureError(503, "EDGE_ERASURE_STATE_COPIES_UNVERIFIED");
+    for (const name of names) {
+      if (!/^state\.json\.[0-9]+\.[0-9]+(?:\.[a-f0-9-]+)?\.tmp$/u.test(name)) continue;
+      const target = path.join(this.config.dataDir, name), metadata = await lstat(target);
+      if (!metadata.isFile() || metadata.nlink !== 1) throw new EdgeErasureError(503, "EDGE_ERASURE_STATE_COPIES_UNVERIFIED");
+      await unlink(target);
+    }
+  }
+
   private async persist(): Promise<void> {
     this.state.updatedAt = new Date().toISOString();
-    const tmpPath = `${this.statePath}.${process.pid}.${Date.now()}.tmp`;
-    await writeFile(tmpPath, `${JSON.stringify(this.state, null, 2)}\n`, "utf8");
+    const tmpPath = `${this.statePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
+    const file = await open(tmpPath, "wx", 0o600);
+    try { await file.writeFile(`${JSON.stringify(this.state, null, 2)}\n`, "utf8"); await file.sync(); } finally { await file.close(); }
     await rename(tmpPath, this.statePath);
+    if (this.state.accountErasure?.fences.length) {
+      const marker = await open(path.join(this.config.dataDir, ".erasure-fence-v1"), "a", 0o600);
+      try { await marker.sync(); } finally { await marker.close(); }
+    }
+    const directory = await open(this.config.dataDir, "r");
+    try { await directory.sync(); } finally { await directory.close(); }
   }
 }
 
@@ -548,11 +625,10 @@ export async function startEdgeServer(config: EdgeConfig = readEdgeConfig()): Pr
     try {
       await handleRequest(config, runtime, request, response);
     } catch (error) {
-      sendJson(response, 500, {
-        error: {
-          code: "INTERNAL_ERROR",
-          message: errorMessage(error)
-        }
+      sendJson(response, error instanceof EdgeErasureError ? error.status : 500, {
+        error: { code: error instanceof EdgeErasureError ? error.code : "INTERNAL_ERROR",
+          message: error instanceof EdgeErasureError ? "Edge account operation is unavailable." : errorMessage(error),
+          ...(error instanceof EdgeErasureError ? { correlationId: randomUUID() } : {}) }
       });
     }
   });
@@ -576,10 +652,27 @@ export async function startEdgeServer(config: EdgeConfig = readEdgeConfig()): Pr
   process.once("SIGTERM", shutdown);
 }
 
-async function handleRequest(config: EdgeConfig, runtime: EdgeRuntime, request: IncomingMessage, response: ServerResponse): Promise<void> {
+export async function handleRequest(config: EdgeConfig, runtime: EdgeRuntime, request: IncomingMessage, response: ServerResponse): Promise<void> {
   const method = request.method?.toUpperCase() ?? "GET";
   const url = new URL(request.url ?? "/", "http://edge.local");
   const route = normalizeRoute(url.pathname);
+
+  if (route === "/internal/account-erasure/capabilities" && method === "GET" || route === "/internal/account-erasure" && method === "POST") {
+    if (!isAdminAuthorized(config, request)) { sendJson(response, 401, { error: { code: "UNAUTHORIZED", message: "Edge admin token is required.", correlationId: randomUUID() } }); return; }
+    try {
+      let input: unknown;
+      if (method === "POST") {
+        try { input = await readJsonBody(request); }
+        catch { throw new EdgeErasureError(400, "EDGE_ERASURE_REQUEST_INVALID"); }
+      }
+      const result = method === "GET" ? await runtime.accountErasureCapabilities() : await runtime.eraseAccount(input);
+      sendJson(response, result.state === "pending" ? 202 : 200, result);
+    } catch (error) {
+      sendJson(response, error instanceof EdgeErasureError ? error.status : 503,
+        { error: { code: error instanceof EdgeErasureError ? error.code : "EDGE_ERASURE_STATE_UNAVAILABLE", message: "Edge account erasure is unavailable.", correlationId: randomUUID() } });
+    }
+    return;
+  }
 
   if (method === "OPTIONS") {
     sendJson(response, 204, {});
@@ -664,10 +757,11 @@ async function readStateFile(statePath: string, config: EdgeConfig): Promise<Edg
         }
       };
     }
+    throw new EdgeErasureError(503, "EDGE_STATE_FILE_INVALID");
   } catch (error) {
-    if (!isNodeErrorCode(error, "ENOENT")) {
-      console.warn(JSON.stringify({ event: "edge-state-load-failed", message: errorMessage(error) }));
-    }
+    if (!isNodeErrorCode(error, "ENOENT")) throw new EdgeErasureError(503, "EDGE_STATE_FILE_INVALID");
+    try { await readFile(path.join(config.dataDir, ".erasure-fence-v1")); throw new EdgeErasureError(503, "EDGE_ERASURE_STATE_MISSING"); }
+    catch (markerError) { if (!isNodeErrorCode(markerError, "ENOENT")) throw new EdgeErasureError(503, "EDGE_ERASURE_STATE_MISSING"); }
   }
   const timestamp = new Date().toISOString();
   return {
@@ -699,11 +793,19 @@ function isValidState(value: unknown): value is EdgeState {
   return isRecord(value)
     && value.contractVersion === "cop-edge-node-state-v1"
     && isRecord(value.cursor)
-    && Array.isArray(value.deadLetters)
-    && Array.isArray(value.inboundEvents)
+    && Array.isArray(value.deadLetters) && value.deadLetters.every(validQueuedStateRow)
+    && Array.isArray(value.inboundEvents) && value.inboundEvents.every(row => isRecord(row) && isRecord(row.event) &&
+      typeof row.eventId === "string" && row.eventId.length > 0 && typeof row.receivedAt === "string" &&
+      Number.isFinite(Date.parse(row.receivedAt)) && Number.isSafeInteger(row.replayOffset) && Number(row.replayOffset) >= 0)
     && isRecord(value.node)
-    && Array.isArray(value.outbox)
-    && isRecord(value.sync);
+    && Array.isArray(value.outbox) && value.outbox.every(validQueuedStateRow)
+    && isRecord(value.sync)
+    && (value.accountErasure === undefined || validateEdgeErasureJournal(value.accountErasure));
+}
+
+function validQueuedStateRow(value: unknown): boolean {
+  return isRecord(value) && isRecord(value.event) && typeof value.clientEventId === "string" && value.clientEventId.length > 0 &&
+    typeof value.createdAt === "string" && Number.isFinite(Date.parse(value.createdAt)) && ["pending", "rejected"].includes(String(value.status));
 }
 
 function normalizeRoute(pathname: string): string {

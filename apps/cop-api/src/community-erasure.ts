@@ -7,6 +7,7 @@ import type { MediaStorage } from "./media-storage.js";
 import { assertContentWriter, contentOwnerKey, contentTransaction, ContentErasureStoreError,
   assertGlobalContentWriter, ContentSerialLock, ContentWriterGuardBinding, contentSubjectKey, fenceContentOwner, requireContentActor, type ContentErasureComponent } from "./content-erasure.js";
 import type { CommunityGroupRecord, CommunityReportAttachmentRecord, CommunityReportRecord } from "./community-report-store.js";
+import { assertNoLegacyNonAccountWrite, isVerifiedLegacyNonAccount, verifiedLegacyNonAccountRows } from "./legacy-nonaccount-provenance.js";
 
 type Witness = { subjectId: string; issuer?: string };
 type ObjectValue = Record<string, unknown>;
@@ -129,6 +130,14 @@ export class PostgresCommunityErasureBoundary {
       const owner = writer(method, args), input = object(args[0]);
       if (owner) await assertContentWriter(client, owner, this.writerBinding.guard);
       const ownedTarget = ownerAuthorizedTarget(method, args, owner);
+      const classifiedTargets = ownedTarget ? [ownedTarget] : [];
+      // Protect the immutable lab parent too: a new member/confirmation cannot
+      // be used to adopt or mutate an administratively classified system row.
+      if (["updateReport", "deleteReport", "deleteReportForDemoScenario", "submitReport", "resolveReport", "withdrawReport", "upsertReportConfirmation"].includes(method)) classifiedTargets.push({ kind: "report", rowKey: String(args[0]) });
+      if (method === "createAttachment") classifiedTargets.push({ kind: "report", rowKey: String(input.reportId) });
+      if (["deleteGroup", "deleteGroupForDemoScenario", "leaveGroup", "removeGroupMember", "requestGroupMembership"].includes(method)) classifiedTargets.push({ kind: "group", rowKey: String(args[0]) });
+      if (["upsertGroupMember", "updateGroupMetadata"].includes(method)) classifiedTargets.push({ kind: "group", rowKey: String(input.groupId) });
+      await assertNoLegacyNonAccountWrite(client, classifiedTargets);
       if (ownedTarget && owner) {
         const existingOwner = await client.query<{ subject_id: string; issuer: string | null }>("SELECT subject_id,issuer FROM cop_community_erasure_ownership WHERE kind=$1 AND row_key=$2", [ownedTarget.kind, ownedTarget.rowKey]);
         const existing = existingOwner.rows[0];
@@ -200,9 +209,13 @@ export class PostgresCommunityErasureBoundary {
   component(options: { media?: MediaStorage; projections?: CommunityProjectionEraser; now?: () => Date } = {}): ContentErasureComponent {
     return { component: "community_reports:postgres", ready: async () => {
       try { return await contentTransaction(this.pool, async client => {
-        if ((await client.query("SELECT 1 FROM cop_community_erasure_ownership WHERE issuer IS NULL UNION ALL SELECT 1 FROM cop_community_owned_media WHERE issuer IS NULL UNION ALL SELECT 1 FROM cop_community_metadata_owners WHERE issuer IS NULL LIMIT 1")).rowCount) return false;
+        const nonAccounts = await verifiedLegacyNonAccountRows(client);
+        if ((await client.query("SELECT 1 FROM cop_community_owned_media WHERE issuer IS NULL UNION ALL SELECT 1 FROM cop_community_metadata_owners WHERE issuer IS NULL LIMIT 1")).rowCount) return false;
+        const nullableWitnesses = await client.query<{ kind: string; row_key: string }>("SELECT kind,row_key FROM cop_community_erasure_ownership WHERE issuer IS NULL LIMIT 1001");
+        if (nullableWitnesses.rows.length > 1000 || nullableWitnesses.rows.some(row => !isVerifiedLegacyNonAccount(nonAccounts, row.kind, row.row_key))) return false;
         for (const [kind, table, key] of [["report", "cop_community_reports", "r.report_id::text"], ["attachment", "cop_community_report_attachments", "r.attachment_id::text"], ["group", "cop_community_groups", "r.group_id::text"], ["membership", "cop_community_group_members", "r.group_id::text||':'||r.subject_id"], ["confirmation", "cop_community_report_confirmations", "r.report_id::text||':'||r.subject_id"]]) {
-          if ((await client.query(`SELECT 1 FROM ${table} r LEFT JOIN cop_community_erasure_ownership o ON o.kind=$1 AND o.row_key=${key} WHERE o.issuer IS NULL LIMIT 1`, [kind])).rowCount) return false;
+          const unresolved = await client.query<{ row_key: string }>(`SELECT ${key} AS row_key FROM ${table} r LEFT JOIN cop_community_erasure_ownership o ON o.kind=$1 AND o.row_key=${key} WHERE o.issuer IS NULL LIMIT 1001`, [kind]);
+          if (unresolved.rows.length > 1000 || unresolved.rows.some(row => !isVerifiedLegacyNonAccount(nonAccounts, kind!, row.row_key))) return false;
         }
         return true;
       }); } catch { return false; }

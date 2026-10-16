@@ -8,18 +8,19 @@ import { InMemorySketchDrawingStore } from "./sketch-store.js";
 import { MemoryMobilityStore } from "./mobility-store.js";
 import type { AuthenticatedActor } from "./security.js";
 import type { MediaStorage } from "./media-storage.js";
+import type { CommunityProjectionEraser } from "./community-erasure.js";
 const now = new Date("2026-10-14T00:00:00Z");
 const actor: AuthenticatedActor = { authMode: "oidc", issuer: "https://identity.test/cop", subjectId: "synthetic-account", authTime: now.getTime() / 1000, displayName: "Synthetic", username: "Synthetic" };
 const media: MediaStorage = { name: "synthetic-unversioned-fixture", close: async () => {}, init: async () => {},
   createUploadSlot: vi.fn(), createReadUrl: vi.fn(), getObject: vi.fn(), putObject: vi.fn(), eraseVerifiedObject: vi.fn(async () => "absent" as const), verifiedErasureReady: async () => true };
 const projections = { preflight: async () => ({ ready: true as const, version: "synthetic-projection-v1" }), ready: async () => true, erase: vi.fn(async () => true) };
-function fixture() {
+function fixture(projectionErase: CommunityProjectionEraser["erase"] = projections.erase) {
   const community = new InMemoryCommunityReportStore("primary"), fallback = new InMemoryCommunityReportStore("fallback");
   const sketch = new InMemorySketchDrawingStore("primary"), sketchFallback = new InMemorySketchDrawingStore("fallback"), store = new MemoryMobilityStore();
   const incidents = new InMemoryIncidentStore("primary"), incidentFallback = new InMemoryIncidentStore("fallback");
   let controller: AccountErasureService | undefined, block = false, haltCleanup = false, projectionAvailable = true, entered!: () => void, release!: () => void;
   const wait = new Promise<void>(resolve => { entered = resolve; }), pause = new Promise<void>(resolve => { release = resolve; });
-  const content = createCOPContentMediaErasureAdapter({ communityStores: [community, fallback], sketchStores: [sketch, sketchFallback], incidentStores: [incidents, incidentFallback], media, projections: { ...projections, ready: async () => projectionAvailable },
+  const content = createCOPContentMediaErasureAdapter({ communityStores: [community, fallback], sketchStores: [sketch, sketchFallback], incidentStores: [incidents, incidentFallback], media, projections: { ...projections, erase: projectionErase, ready: async () => projectionAvailable },
     usesAdmissionGuard: guard => controller?.usesAdmissionGuard(guard) === true,
     assertAllowed: value => controller!.assertAllowed({ ...actor, ...value }) });
   const otherAdapters: AccountErasureAdapter[] = ACCOUNT_ERASURE_ADAPTER_IDS.filter(id => id !== "cop_content_media").map(id => ({ id,
@@ -52,6 +53,21 @@ describe("whole COP content boundary and atomic admission", () => {
     expect(await f.content.adapter.erase(actor, context)).toEqual(proof);
     expect(await f.community.getReport(primary.reportId)).toBeNull(); expect(await f.fallback.getReport(fallback.reportId)).toBeNull();
     expect(await f.sketch.get(draw.id)).toBeNull(); expect(await f.sketchFallback.get(fallbackDraw.id)).toBeNull();
+  });
+  it("collects independent manifests after a pending component and completes only on a subsequent verified retry", async () => {
+    let reportSeen = false, drawingSeen = false;
+    const eraseProjection = vi.fn(async (resources: { reportIds: string[]; drawingIds?: string[] }) => {
+      reportSeen ||= resources.reportIds.length > 0;
+      drawingSeen ||= (resources.drawingIds?.length ?? 0) > 0;
+      return reportSeen && drawingSeen;
+    });
+    const f = fixture(eraseProjection), own = await report(f.community);
+    const drawing = await f.sketch.create({ actor, kind: "point", geometry: { type: "Point", coordinates: [15, 50] }, visibility: "public" }, now);
+    const context = { operationId: randomUUID(), requestedAt: now.toISOString(), accountKey: "synthetic-account-key", signal: new AbortController().signal };
+    expect(await f.content.adapter.erase(actor, context)).toMatchObject({ status: "pending" });
+    expect(reportSeen && drawingSeen).toBe(true);
+    expect(await f.content.adapter.erase(actor, context)).toMatchObject({ status: "completed" });
+    expect(await f.community.getReport(own.reportId)).toBeNull(); expect(await f.sketch.get(drawing.id)).toBeNull();
   });
   it("holds admission locks through actual global fence commit and rejects a previously started group write afterwards", async () => {
     const f = fixture(), own = await report(f.community), operation = randomUUID();

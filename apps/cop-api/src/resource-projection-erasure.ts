@@ -126,15 +126,16 @@ export function createCommunityProjectionEraser(options: {
   stores: readonly ResourceProjectionStore[];
   state: ProjectionStateOwner;
   /** Must reflect actual configured external stream/edge subscribers. */
-  remoteRequired: boolean;
+  remoteRequired: boolean | (() => boolean);
   remote?: ProjectionRemoteOwner;
   /** Compare actual producer/controller guard pointer, not an environment label. */
   producerFenceInstalled(): boolean;
 }) {
+  const remoteRequired = () => typeof options.remoteRequired === "function" ? options.remoteRequired() : options.remoteRequired;
   return {
     async ready(): Promise<boolean> {
       try {
-        if (!options.producerFenceInstalled() || !await options.state.ready() || (options.remoteRequired && (!options.remote || !await options.remote.ready()))) return false;
+        if (!options.producerFenceInstalled() || !await options.state.ready() || (remoteRequired() && (!options.remote || !await options.remote.ready()))) return false;
         for (const store of options.stores) if (!await store.projectionErasureReady()) return false;
         return true;
       } catch { return false; }
@@ -152,7 +153,7 @@ export function createCommunityProjectionEraser(options: {
       requireRuntimeOwner(context.actor); context.signal.throwIfAborted();
       let complete = await options.state.erase(resources, context);
       for (const store of options.stores) { context.signal.throwIfAborted(); if (!await store.eraseResourceProjections(resources, context)) complete = false; }
-      if (options.remoteRequired && (!options.remote || !await options.remote.erase(resources, context))) complete = false;
+      if (remoteRequired() && (!options.remote || !await options.remote.erase(resources, context))) complete = false;
       context.signal.throwIfAborted();
       return complete;
     }

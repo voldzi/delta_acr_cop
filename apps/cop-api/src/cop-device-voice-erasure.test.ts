@@ -126,6 +126,12 @@ describe("COP voice / LiveKit erasure boundary", () => {
     clock = new Date("2026-10-14T01:00:29.000Z");
     expect((await adapter.erase(actor, context)).status).toBe("pending");
     clock = new Date("2026-10-14T01:00:30.000Z");
+    expect((await adapter.erase(actor, context)).status).toBe("pending");
+    clock = new Date("2026-10-14T01:01:00.000Z");
+    expect((await adapter.erase(actor, context)).status).toBe("pending");
+    clock = new Date("2026-10-14T01:01:29.000Z");
+    expect((await adapter.erase(actor, context)).status).toBe("pending");
+    clock = new Date("2026-10-14T01:01:30.000Z");
     expect((await adapter.erase(actor, context)).status).toBe("completed");
     const retained = await store.get(call.callId);
     expect(retained?.initiatorSubjectId).toBe("erased-account");
@@ -185,7 +191,7 @@ describe("COP voice / LiveKit erasure boundary", () => {
     await fencing;
     await expect(issuing).rejects.toMatchObject({ code: "ACCOUNT_REVOKED" });
     const result = await store.fenceActor(owner, context.operationId, now);
-    expect(result.notBefore).toBe("2026-10-14T01:00:30.000Z");
+    expect(result.notBefore).toBe("2026-10-14T01:01:30.000Z");
   });
   it("does not hand out media grants to an unaccepted recipient or to a stale terminal call", async () => {
     const store = new InMemoryVoiceCallStore(), call = await store.create(callInput());

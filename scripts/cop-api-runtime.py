@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fixed COP API image/profile bindings. Never prints resolved config or secrets."""
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import importlib.util
@@ -40,6 +41,87 @@ HEALTH_URLS = ('http://127.0.0.1:4310/health/live', 'http://127.0.0.1:4310/healt
                'http://127.0.0.1:4310/health/dependencies',
                'https://cop.zeleznalady.cz/demo/flood-central-bohemia')
 HEALTH_STATES = {'ok', 'online', 'degraded', 'unavailable', 'offline', 'disabled', 'skipped'}
+
+# Finite Root-reviewed account-erasure installation scope. Existing actor/HMAC
+# identity, authentication, business DB routes and other features stay unchanged.
+ERASURE_CONFIG_KEYS = frozenset({
+    'COP_ACCOUNT_ERASURE_ENABLED', 'COP_ACCOUNT_ERASURE_SECRET',
+    'COP_ACCOUNT_SAFETY_GUARD_REQUIRED', 'COP_ACCOUNT_SAFETY_AUTHORITY_MODE',
+    'COP_ACCOUNT_SAFETY_GUARD_DATABASE_URL', 'COP_ACCOUNT_SAFETY_GUARD_STORE_ID',
+    'COP_ACCOUNT_SAFETY_INCARNATION_ID', 'COP_ACCOUNT_SAFETY_STORE_ID',
+    'COP_ACCOUNT_SAFETY_RUNTIME_ATTESTATION',
+    'COP_KEYCLOAK_ERASURE_CLIENT_ID', 'COP_KEYCLOAK_ERASURE_CLIENT_SECRET',
+    'COP_KEYCLOAK_COP_SCOPE_AUTHORITY_ACCEPTED', 'COP_SIM_ERASURE_ROUTER_URL',
+    'COP_SIM_ERASURE_ROUTER_TOKEN', 'COP_SIM_ERASURE_DRIVER_URL',
+    'COP_SIM_ERASURE_DRIVER_TOKEN', 'COP_LIVEKIT_ADMIN_URL',
+    'COP_LIVEKIT_ERASURE_RELAY_URL', 'COP_MEDIA_UPLOAD_TRANSPORT',
+    'COP_MEDIA_S3_ACCESS_KEY_ID', 'COP_MEDIA_S3_SECRET_ACCESS_KEY',
+    'COP_ACCOUNT_ERASURE_EDGE_URL', 'COP_EDGE_ADMIN_TOKEN', 'COP_EDGE_NODE_ID'})
+ERASURE_FIXED = {
+    'COP_ACCOUNT_SAFETY_GUARD_REQUIRED': 'true',
+    'COP_ACCOUNT_SAFETY_AUTHORITY_MODE': 'database_v2',
+    'COP_ACCOUNT_SAFETY_RUNTIME_ATTESTATION': 'account-safety-guard-v1',
+    'COP_KEYCLOAK_COP_SCOPE_AUTHORITY_ACCEPTED': 'true',
+    'COP_KEYCLOAK_ERASURE_CLIENT_ID': 'cop-account-erasure-worker',
+    'COP_MEDIA_UPLOAD_TRANSPORT': 'cop_api',
+    'COP_ACCOUNT_ERASURE_EDGE_URL': 'http://cop-edge:4312',
+    'COP_EDGE_NODE_ID': 'node_edge_pilot_01'}
+ERASURE_PROOF_CHECKS = {'jointSyntheticAcceptance', 'providerClosureVerified',
+                        'preservesSharedIdentity', 'restoreReplayVerified'}
+
+
+def environment_metadata(path, uid):
+    """CAS for the one existing secrets file; no copy or digest of secrets."""
+    require(not any(p.is_symlink() for p in (path, *path.parents)), 'erasure_env_path_invalid')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == uid
+                and stat.S_IMODE(info.st_mode) == 0o600 and info.st_nlink == 1
+                and info.st_size <= 1048576, 'erasure_env_permissions')
+        return {'device': info.st_dev, 'inode': info.st_ino, 'size': info.st_size,
+                'mtimeNs': info.st_mtime_ns, 'ctimeNs': info.st_ctime_ns}
+    finally:
+        os.close(fd)
+
+
+def erasure_target_environment(target, operation):
+    require(all(target.get(k) == v for k, v in ERASURE_FIXED.items()), 'erasure_target_fixed_config')
+    intake = target.get('COP_ACCOUNT_ERASURE_ENABLED')
+    require(intake in {'true', 'false'} and (operation == 'maintain' or
+            intake == ('true' if operation == 'enable' else 'false')), 'erasure_target_intake')
+    for key in ('COP_ACCOUNT_SAFETY_GUARD_STORE_ID', 'COP_ACCOUNT_SAFETY_INCARNATION_ID',
+                'COP_ACCOUNT_SAFETY_STORE_ID'):
+        require(isinstance(target.get(key), str) and PROFILE_UUID.fullmatch(target[key]), 'erasure_target_binding')
+    for key in ('COP_ACCOUNT_ERASURE_SECRET', 'COP_KEYCLOAK_ERASURE_CLIENT_SECRET',
+                'COP_SIM_ERASURE_ROUTER_TOKEN', 'COP_SIM_ERASURE_DRIVER_TOKEN',
+                'COP_SIM_ERASURE_ACTOR_SECRET'):
+        require(isinstance(target.get(key), str) and 32 <= len(target[key]) <= 16384
+                and not any(ord(c) < 32 for c in target[key]), 'erasure_target_credential_missing')
+    for key in ('COP_ACCOUNT_SAFETY_GUARD_DATABASE_URL', 'COP_SIM_ERASURE_ROUTER_URL',
+                'COP_SIM_ERASURE_DRIVER_URL', 'COP_LIVEKIT_ERASURE_RELAY_URL',
+                'COP_MEDIA_S3_ACCESS_KEY_ID', 'COP_MEDIA_S3_SECRET_ACCESS_KEY', 'COP_EDGE_ADMIN_TOKEN'):
+        require(isinstance(target.get(key), str) and 0 < len(target[key]) <= 16384
+                and not any(ord(c) < 32 for c in target[key]), 'erasure_target_owner_missing')
+    require(not target.get('COP_LIVEKIT_ADMIN_URL'), 'erasure_livekit_transport_conflict')
+
+
+def erasure_environment_changes(actual, desired, proof):
+    """Compare complete actual/effective environments only in RAM."""
+    changed = {key for key in set(actual) | set(desired)
+               if (key in actual) != (key in desired) or actual.get(key) != desired.get(key)}
+    require(changed == set(proof['changedKeys']), 'erasure_configuration_delta_mismatch')
+    operation = proof['operation']
+    erasure_target_environment(desired, operation)
+    if operation == 'prepare':
+        require(bool(changed) and actual.get('COP_ACCOUNT_ERASURE_ENABLED', 'false') == 'false'
+                and actual.get('COP_ACCOUNT_SAFETY_GUARD_REQUIRED', 'false') == 'false', 'erasure_first_install_only')
+    elif operation in {'enable', 'pause'}:
+        require(changed == {'COP_ACCOUNT_ERASURE_ENABLED'}
+                and actual.get('COP_ACCOUNT_ERASURE_ENABLED') == ('false' if operation == 'enable' else 'true'),
+                'erasure_intake_transition_invalid')
+    else:
+        require(operation == 'maintain' and not changed, 'erasure_maintain_config_changed')
 
 
 class RuntimeError(Exception):
@@ -540,14 +622,35 @@ class Docker:
         excluded = set(ENV) | {'COP_DATABASE_POOL_MODE'}
         expected = {key: value for key, value in desired.items() if key not in excluded}
         relevant = {key: value for key, value in actual.items() if key not in excluded}
-        require(relevant == expected, 'non_profile_environment_drift')
+        scope = getattr(self, 'account_erasure_scope', None)
+        if scope is not None and current['Id'] == scope['containerId']:
+            changed = {key for key in set(relevant) | set(expected)
+                       if (key in relevant) != (key in expected) or relevant.get(key) != expected.get(key)}
+            require(changed <= set(scope['changedKeys']), 'non_profile_environment_drift')
+        else:
+            require(relevant == expected, 'non_profile_environment_drift')
+
+    def erasure_edge_credential(self, directory, target):
+        edge_id = self.peers(directory)['cop-edge']
+        require(re.fullmatch(r'[0-9a-f]{64}', edge_id), 'erasure_edge_identity_unavailable')
+        edge = json.loads(self.run(['docker', 'inspect', edge_id]))[0]
+        labels = edge['Config'].get('Labels', {})
+        environment = dict(line.split('=', 1) for line in edge['Config'].get('Env', []) if '=' in line)
+        require(edge['Id'] == edge_id and edge['State'].get('Running') is True
+                and labels.get('com.docker.compose.project') == 'cop'
+                and labels.get('com.docker.compose.service') == 'cop-edge'
+                and environment.get('COP_EDGE_ADMIN_TOKEN') == target['COP_EDGE_ADMIN_TOKEN']
+                and environment.get('COP_EDGE_NODE_ID', 'node_edge_pilot_01') == target['COP_EDGE_NODE_ID'],
+                'erasure_existing_edge_credential_changed')
+        return edge_id
 
     def up(self, directory, profile):
         self.run(self.compose(directory, profile) + ['up', '-d', '--no-build', '--pull', 'never', '--no-deps', 'cop-api'])
 
     def health(self, action, path):
         return self.run(['python3', str(self.source / 'scripts/cop-health-gate.py'), action,
-                         *([str(path), '--allow-added-dependency', 'safety-notification-worker'] if action == 'verify' else [])])
+                         *([str(path), '--allow-added-dependency', 'safety-notification-worker',
+                            '--allow-added-dependency', 'cop-account-erasure-owners'] if action == 'verify' else [])])
 
 
 class Store:
@@ -681,14 +784,107 @@ class Store:
                     'compatibility_not_accepted')
         return sha(raw), contract, value['legacyContainerId'], value['legacyEnvPresence']
 
+    def erasure_config_proof(self, path, binding, digest=None):
+        require(path.parent == self.protected_root / binding['profileGeneration']
+                and re.fullmatch(r'account-erasure-[0-9a-f-]{36}\.json', path.name), 'erasure_proof_path')
+        self.protected_directory(self.protected_root); self.protected_directory(path.parent)
+        raw = private_read(path, self.protected_uid, mode=0o640, gid=self.protected_gid)
+        if digest is not None:
+            require(sha(raw) == digest, 'erasure_proof_changed')
+        value = json.loads(raw)
+        require(isinstance(value, dict) and set(value) == {'contractVersion', 'transitionId', 'operation',
+                'previous', 'target', 'changedKeys', 'environmentMetadata', 'composeHashes', 'ownerAcceptance', 'checks'}
+                and value['contractVersion'] == 'cop-api-account-erasure-config-v1'
+                and isinstance(value['transitionId'], str) and PROFILE_UUID.fullmatch(value['transitionId'])
+                and path.name == 'account-erasure-' + value['transitionId'] + '.json'
+                and value['operation'] in {'prepare', 'enable', 'pause', 'maintain'}
+                and value['ownerAcceptance'] is True, 'erasure_proof_schema')
+        require(isinstance(value['target'], dict) and set(value['target']) ==
+                {'imageId', 'sourceRevision', 'profileGeneration'}
+                and all(value['target'][key] == binding[key] for key in value['target']), 'erasure_proof_target')
+        previous = value['previous']
+        require(isinstance(previous, dict) and set(previous) == {'contractVersion', 'generation', 'releaseId',
+                'profileId', 'profileGeneration', 'imageId', 'containerId'}
+                and previous['contractVersion'] == 'cop-api-runtime-active-v1'
+                and isinstance(previous['generation'], str) and GENERATION.fullmatch(previous['generation'])
+                and isinstance(previous['containerId'], str) and re.fullmatch(r'[0-9a-f]{64}', previous['containerId'])
+                and previous['profileGeneration'] == binding['profileGeneration']
+                and previous['profileId'] == binding['profileId']
+                and previous['releaseId'] == binding['previousReleaseId'], 'erasure_proof_previous')
+        keys = value['changedKeys']
+        require(isinstance(keys, list) and all(isinstance(k, str) for k in keys)
+                and keys == sorted(set(keys)) and set(keys) <= ERASURE_CONFIG_KEYS, 'erasure_proof_keys')
+        require(isinstance(value['composeHashes'], dict) and set(value['composeHashes']) == set(FILES)
+                and all(isinstance(v, str) and re.fullmatch(r'[0-9a-f]{64}', v) for v in value['composeHashes'].values()),
+                'erasure_proof_compose_scope')
+        if 'composeHashes' in binding:
+            require(value['composeHashes'] == binding['composeHashes'], 'erasure_proof_compose_changed')
+        metadata = value['environmentMetadata']
+        require(isinstance(metadata, dict) and set(metadata) == {'device', 'inode', 'size', 'mtimeNs', 'ctimeNs'}
+                and all(type(v) is int and v >= 0 for v in metadata.values()), 'erasure_proof_environment_metadata')
+        require(isinstance(value['checks'], dict) and set(value['checks']) == ERASURE_PROOF_CHECKS
+                and all(v is True for v in value['checks'].values()), 'erasure_proof_acceptance_missing')
+        return sha(raw), value
+
+    def assert_erasure_environment(self, binding):
+        reference = binding.get('accountErasureConfig')
+        if reference is None:
+            return
+        _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
+        require(not (ERASURE_CONFIG_KEYS & set(os.environ)), 'erasure_shell_override_forbidden')
+        require(environment_metadata(self.source / '.env', self.uid) == proof['environmentMetadata'], 'erasure_env_cas_changed')
+        scope = getattr(self.docker, 'account_erasure_scope', None)
+        if scope is not None and scope.get('edgeContainerId') is not None:
+            require(self.docker.peers(self.root / 'releases' / binding['releaseId'])['cop-edge'] == scope['edgeContainerId'],
+                    'erasure_edge_peer_changed')
+
+    @contextmanager
+    def erasure_configuration_scope(self, directory, binding, profile, previous, owned_target=False):
+        reference = binding.get('accountErasureConfig')
+        if reference is None:
+            yield
+            return
+        _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
+        require(proof['previous'] == previous, 'erasure_previous_cas_changed')
+        self.assert_erasure_environment(binding)
+        current = self.docker.current(directory)
+        api = self.docker.config(directory, profile['directory'])['services']['cop-api']
+        image_config = json.loads(self.docker.run(['docker', 'image', 'inspect', binding['imageId']]))[0]['Config']
+        target = dict(line.split('=', 1) for line in image_config.get('Env', []) if '=' in line)
+        target.update(api.get('environment', {}))
+        erasure_target_environment(target, proof['operation'])
+        if owned_target and current['Image'] == binding['imageId'] and current['Config'].get('Labels', {}).get(
+                'com.cop.runtime.release') == binding['releaseId']:
+            yield  # Normal pending recovery still requires its exact saved CID and complete target parity.
+            return
+        require(current['Id'] == previous['containerId'], 'erasure_source_container_changed')
+        actual = dict(line.split('=', 1) for line in current['Config'].get('Env', []) if '=' in line)
+        erasure_environment_changes(actual, target, proof)
+        edge_id = self.docker.erasure_edge_credential(directory, target) if proof['operation'] == 'prepare' else None
+        require(getattr(self.docker, 'account_erasure_scope', None) is None, 'erasure_scope_nested')
+        self.docker.account_erasure_scope = {'containerId': current['Id'], 'changedKeys': proof['changedKeys'],
+                                            'edgeContainerId': edge_id}
+        try:
+            yield
+            self.assert_erasure_environment(binding)
+        finally:
+            self.docker.account_erasure_scope = None
+
     def binding(self, identifier, probe_mounts=True):
         require(ID.fullmatch(identifier) is not None, 'release_id_invalid')
         directory = self.directory(self.root / 'releases' / identifier)
         binding = private_json(directory / 'release.json', self.uid)
-        require(set(binding) == {'contractVersion', 'releaseId', 'imageId', 'sourceRevision', 'profileId',
+        release_keys = {'contractVersion', 'releaseId', 'imageId', 'sourceRevision', 'profileId',
                 'profileGeneration', 'kind', 'attestationPath', 'previousReleaseId', 'attestationSha256',
                 'driverContract', 'legacyContainerId', 'legacyEnvPresence', 'legacyEnvironment', 'composeHashes',
-                'acceptedHealthSha256'}, 'release_schema_invalid')
+                'acceptedHealthSha256'}
+        require(set(binding) in (release_keys, release_keys | {'accountErasureConfig'}), 'release_schema_invalid')
+        if 'accountErasureConfig' in binding:
+            reference = binding['accountErasureConfig']
+            require(isinstance(reference, dict) and set(reference) == {'path', 'sha256'}
+                    and isinstance(reference['path'], str) and isinstance(reference['sha256'], str)
+                    and re.fullmatch(r'[0-9a-f]{64}', reference['sha256']), 'erasure_reference_invalid')
+            self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
         require(set(binding['composeHashes']) == set(FILES), 'release_compose_scope')
         require(binding.get('contractVersion') == 'cop-api-runtime-release-v1'
                 and binding.get('releaseId') == identifier and IMAGE.fullmatch(binding.get('imageId', ''))
@@ -727,7 +923,7 @@ class Store:
             self.accepted_health(directory, binding)
         return pointer, directory, binding, profile
 
-    def prepare(self, image, revision, attestation, expected, profile_id=None, baseline=False):
+    def prepare(self, image, revision, attestation, expected, profile_id=None, baseline=False, erasure_config=None):
         self.clean(); pointer = self.check_cas(expected)
         require(IMAGE.fullmatch(image) and (revision is None if baseline else isinstance(revision, str)
                 and REVISION.fullmatch(revision)), 'candidate_identity_invalid')
@@ -747,6 +943,17 @@ class Store:
             require(active_binding['driverContract'] == contract, 'active_profile_contract_changed')
         binding.update(attestationSha256=receipt_sha, driverContract=contract, legacyContainerId=witness,
                        legacyEnvPresence=presence, legacyEnvironment=None, acceptedHealthSha256=None)
+        if pointer:
+            old_binding = self.active()[2]
+            require(not old_binding.get('accountErasureConfig') or erasure_config is not None,
+                    'guarded_release_requires_root_config_review')
+        if erasure_config is not None:
+            require(pointer is not None and not baseline, 'erasure_candidate_required')
+            digest, proof = self.erasure_config_proof(Path(erasure_config), binding)
+            require(proof['previous'] == pointer, 'erasure_previous_cas_changed')
+            require(environment_metadata(self.source / '.env', self.uid) == proof['environmentMetadata'], 'erasure_env_cas_changed')
+            binding['accountErasureConfig'] = {'path': str(erasure_config), 'sha256': digest}
+            self.assert_erasure_environment(binding)
         self.docker.image(image, baseline=baseline, revision=revision)
         self.check_mounts(binding, profile)
         # Validate unresolved source in RAM before any release artifact is
@@ -757,6 +964,11 @@ class Store:
             require(not path.is_symlink() and path.is_file(), 'approved_compose_missing')
             sources[name] = path.read_bytes()
             require(len(sources[name]) <= 65536, 'approved_compose_too_large')
+        if 'accountErasureConfig' in binding:
+            _, reviewed = self.erasure_config_proof(Path(binding['accountErasureConfig']['path']), binding,
+                                                   binding['accountErasureConfig']['sha256'])
+            require({name: sha(raw) for name, raw in sources.items()} == reviewed['composeHashes'],
+                    'erasure_proof_compose_changed')
         raw_config = self.docker.source_config()
         require(all((self.source / name).read_bytes() == raw for name, raw in sources.items()), 'compose_source_changed')
         for service in raw_config['services'].values():
@@ -848,6 +1060,14 @@ class Store:
 
     def activate(self, release, expected, adopt=False, rollback=False):
         self.clean(); previous = self.check_cas(expected)
+        directory, binding, profile = self.binding(release, probe_mounts=False)
+        guarded = binding.get('accountErasureConfig') or (self.active(probe_mounts=False)[2].get('accountErasureConfig') if previous else None)
+        require(not rollback or not guarded, 'guarded_rollback_requires_intake_pause')
+        with self.erasure_configuration_scope(directory, binding, profile, previous):
+            return self._activate(release, expected, adopt, rollback)
+
+    def _activate(self, release, expected, adopt=False, rollback=False):
+        self.clean(); previous = self.check_cas(expected)
         directory, binding, profile = self.binding(release)
         require(adopt == (binding['kind'] == 'accepted-baseline' and previous is None), 'activation_kind_invalid')
         require(not rollback or previous is not None and not adopt, 'rollback_kind_invalid')
@@ -895,6 +1115,7 @@ class Store:
         require(actual['Id'] == previous['containerId'], 'live_container_changed')
         self.docker.preserve(directory, profile['directory'], actual)
         self.docker.unchanged(old_dir, actual)
+        self.assert_erasure_environment(binding)
         self.docker.up(directory, profile['directory'])
         self.docker.live(directory, binding, profile)
         pending['targetContainerId'] = self.docker.current(directory)['Id']
@@ -907,6 +1128,7 @@ class Store:
         self.docker.unchanged(directory, actual)
         self.record_accepted_health(directory, binding, actual, verified)
         self.docker.unchanged(directory, actual)
+        self.assert_erasure_environment(binding)
         pointer = self.commit_pointer(binding, expected, pending['targetContainerId'])
         self.finish_pending()
         return pointer
@@ -918,6 +1140,18 @@ class Store:
         self.sync(self.root)
 
     def recover(self, expected, rollback=False):
+        self.directory(self.root); self.check_cas(expected)
+        pending = private_json(self.root / 'pending.json', self.uid)
+        require(isinstance(pending, dict) and isinstance(pending.get('targetReleaseId'), str)
+                and isinstance(pending.get('previous'), dict), 'pending_invalid')
+        directory, binding, profile = self.binding(pending['targetReleaseId'], probe_mounts=False)
+        old_binding = self.binding(pending['previous']['releaseId'], probe_mounts=False)[1]
+        require(not rollback or not (binding.get('accountErasureConfig') or old_binding.get('accountErasureConfig')),
+                'guarded_rollback_requires_intake_pause')
+        with self.erasure_configuration_scope(directory, binding, profile, pending['previous'], owned_target=True):
+            return self._recover(expected, rollback)
+
+    def _recover(self, expected, rollback=False):
         self.directory(self.root); current = self.check_cas(expected)
         pending = private_json(self.root / 'pending.json', self.uid)
         require(set(pending) == {'contractVersion', 'previous', 'targetReleaseId', 'targetContainerId',
@@ -961,6 +1195,7 @@ class Store:
         self.docker.preserve(directory, profile['directory'], actual)
         self.docker.unchanged(directory, actual)
         if rollback and target_running:
+            self.assert_erasure_environment(binding)
             self.docker.up(directory, profile['directory'])
         require(rollback or target_running, 'activation_did_not_start')
         self.docker.live(directory, binding, profile,
@@ -978,6 +1213,7 @@ class Store:
         self.docker.unchanged(directory, actual)
         self.record_accepted_health(directory, binding, actual, verified)
         self.docker.unchanged(directory, actual)
+        self.assert_erasure_environment(binding)
         pointer = self.commit_pointer(binding, expected, owned_id)
         self.finish_pending()
         return pointer
@@ -992,6 +1228,7 @@ def main():
         prepare.add_argument('--' + name, required=True)
     prepare.add_argument('--revision')
     prepare.add_argument('--profile'); prepare.add_argument('--baseline', action='store_true')
+    prepare.add_argument('--account-erasure-config')
     activate = commands.add_parser('activate')
     activate.add_argument('--release', required=True); activate.add_argument('--expect-active', required=True)
     activate.add_argument('--adopt', action='store_true')
@@ -1011,7 +1248,7 @@ def main():
                 result = pointer
             elif args.action == 'prepare':
                 result = store.prepare(args.image, args.revision, Path(args.attestation), args.expect_active,
-                                       args.profile, args.baseline)
+                                       args.profile, args.baseline, args.account_erasure_config)
             elif args.action == 'activate':
                 result = store.activate(args.release, args.expect_active, args.adopt, args.rollback)
             else:

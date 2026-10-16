@@ -10,16 +10,13 @@
  */
 import assert from 'node:assert/strict';
 import {execFile, fork} from 'node:child_process';
-import {createServer, connect} from 'node:net';
 import {once} from 'node:events';
 import {createHash, createHmac, generateKeyPairSync, randomBytes, randomUUID} from 'node:crypto';
 import {existsSync, readFileSync} from 'node:fs';
 import {chmod, chown, lstat, mkdir, readFile, readdir, unlink, writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {networkInterfaces} from 'node:os';
-import {join} from 'node:path';
-import {checkServerIdentity,createSecureContext,TLSSocket,connect as tlsConnect} from 'node:tls';
-import {pathToFileURL} from 'node:url';
+import {checkServerIdentity} from 'node:tls';
 import {promisify} from 'node:util';
 import {certificates} from './certificates.mjs';
 
@@ -33,11 +30,11 @@ const clients = new Set(), events = [], specs = {
     request: () => ({owner: 'sim_driver_measurements', scope: 'online_driver_scope', purpose: 'capability'})},
   sim_ai_router: {scope: 'cop_router_primary_database', profile: 'ai-router-control', user: 'sim_ai_guard_control', directory: 'ai-clients', registration: 'ai-router-client-registration'},
 };
-const startedAt = new Date().toISOString(), deadline = setTimeout(() => {process.stderr.write('ROOT_OWNER_FIXTURE_DEADLINE\n'); process.exit(2);}, 260000);
+const deadline = setTimeout(() => {process.stderr.write('ROOT_OWNER_FIXTURE_DEADLINE\n'); process.exit(2);}, 260000);
 const env = {PATH: '/usr/local/bin:/usr/bin:/bin', HOME: PGROOT, LANG: 'C', LC_ALL: 'C', TZ: 'UTC'};
 let canonical, canonicalJson, verifyRootRecord, issueRootRecord, issueRootJws, storeRootRecord;
-let app, broker, proxy, brokerFailure;
-const pendingCommands=new Map(), proxySockets=new Set();
+let app;
+const pendingCommands=new Map();
 let pgUser, tls, started = false, admin, registry, driver, ai, driverAdmin, aiAdmin, hostTimer, brokerSelf, stage = 'preconditions';
 const pausedHost = new Set(), ids = {guard: randomUUID(), epoch: randomUUID(), config: randomUUID(), policy: hash('synthetic independent Root policy'),
   frontier: hash('synthetic independent initial prefix'), owners: Object.fromEntries(Object.keys(specs).map((owner, i) => [owner, {
@@ -85,7 +82,7 @@ async function hostFact(owner) {
   storeRootRecord(PRIVATE + '/runtime-observations/' + owner + '.json', record.bytes, {replace: true});
 }
 async function targetFacts(owner) {
-  const o = ids.owners[owner], client = owner === 'sim_driver_measurements' ? driver : ai;
+  const client = owner === 'sim_driver_measurements' ? driver : ai;
   let request = specs[owner].request?.();
   if (!request) {
     const cp = (await aiAdmin.query("SELECT checkpoint_id,checkpoint_generation::text AS generation FROM ai_router_erasure_checkpoint WHERE id=1")).rows[0];
@@ -173,26 +170,6 @@ async function seedAcceptance(owner) {
   }, 300000, acceptanceId);
   o.receiptId = receiptId; o.acceptanceId = acceptanceId;
   o.original = original; await refresh(owner);
-}
-async function nextAcceptance(owner) {
-  const o = ids.owners[owner], previous = (await registry.query('SELECT * FROM cop_guard.checkpoint_acceptances WHERE dataset_binding_id=$1 ORDER BY generation DESC LIMIT 1', [o.dataset])).rows[0];
-  const original = o.original, receiptId = randomUUID(), acceptanceId = randomUUID();
-  await registry.query(`INSERT INTO cop_guard.owner_receipts(receipt_id,replay_operation_id,source_proof_id,source_proof_jws_digest,binding_id,owner_id,
-    expected_checkpoint_id,expected_checkpoint_generation,expected_fence_sequence,expected_fence_digest,expected_cleanup_sequence,expected_cleanup_digest,expected_cleanup_status,
-    fence_sequence,fence_digest,cleanup_sequence,cleanup_digest,cleanup_status,coverage_evidence_ref,readback_evidence_ref,attempt,observed_at)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8,0,$9,0,$9,'complete',0,$9,0,$9,'complete','synthetic-covered','synthetic-readback',2,clock_timestamp())`,
-  [receiptId, original.operationId, original.proofId, original.record.digest, o.runtime, owner, previous.acceptance_id, previous.generation, ids.frontier]);
-  await registry.query(`INSERT INTO cop_guard.checkpoint_acceptances(acceptance_id,dataset_binding_id,generation,previous_acceptance_id,receipt_id,policy_generation,policy_digest,
-    protected_config_id,admission_policy_id,continuity_epoch,accepted_frontier_sequence,accepted_frontier_digest,fence_sequence,fence_digest,cleanup_sequence,cleanup_digest,cleanup_status,root_evidence_ref)
-    VALUES($1::uuid,$2,$3,$4,$5,1,$6,$7,'synthetic-fixture-v1',$8,0,$9,0,$9,0,$9,'complete',($1::uuid)::text)`,
-  [acceptanceId, o.dataset, String(BigInt(previous.generation) + 1n), previous.acceptance_id, receiptId, ids.policy, ids.config, ids.epoch, ids.frontier]);
-  const digest = async (table, key, value) => (await registry.query('SELECT encode(sha256(convert_to(to_jsonb(t)::text,\'UTF8\')),\'hex\') AS digest FROM cop_guard.' + table + ' t WHERE ' + key + '=$1', [value])).rows[0].digest;
-  const next = await signFile(STATE + '/checkpoint-acceptances/' + acceptanceId + '.json', 'checkpoint-acceptance', {
-    acceptanceId, datasetBindingId: o.dataset, receiptId, replayOperationId: original.operationId, sourceProofId: original.proofId,
-    acceptanceDigest: await digest('checkpoint_acceptances', 'acceptance_id', acceptanceId), receiptDigest: await digest('owner_receipts', 'receipt_id', receiptId),
-    replayDigest: await digest('replay_operations', 'operation_id', original.operationId),
-  }, 300000, acceptanceId);
-  return {next, receiptId, acceptanceId};
 }
 async function bootstrap() {
   stage = 'bootstrap.platform-node';
@@ -371,7 +348,7 @@ async function bootstrap() {
 }
 
 async function check(name,work){stage=name;await work();events.push({case:name,passed:true});process.stdout.write('PASS '+name+'\n');}
-let success=false,result,pins,cop,copReader,identity,driverIdentity,keyProfile,actors,requests,profiles,actorModule,readers,derived;
+let success=false,result,pins,cop,identity,driverIdentity,keyProfile,actors,requests,profiles,actorModule,derived;
 const issuer='https://identity.synthetic.invalid/realms/cop';
 const ago=n=>new Date(Date.now()-n*86400000).toISOString().slice(0,10);
 const record=ref=>verifyRootRecord(readFileSync(PRIVATE+'/owner-authority/'+ref.recordId+'.json'),canonicalJson(readFileSync(ETC+'/public/verification-keys.json')),
@@ -485,7 +462,7 @@ try{
   });
 
   const mutation=await import(OPT+'/root-driver-mutation-intent.mjs');
-  const erasurePure=await import(OPT+'/driver-account-erasure.js');
+  await import(OPT+'/driver-account-erasure.js');
   const eraseScope=(i,body=requests[i],changes={})=>{
     const a=actors[i],now=Math.floor(Date.now()/1000),claim={iss:a.iss,sub:a.sub,aud:'sim-account-erasure',iat:now,exp:now+60,
       operationId:body.operationId,routerUserId:a.routerUserId,...changes};

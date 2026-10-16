@@ -1,0 +1,21 @@
+{
+  "contractVersion": "cop-business-erasure-schema-verification-v1",
+  "date": "2026-10-16",
+  "productionChanged": false,
+  "wholeFixturesChanged": false,
+  "productionApplyExecuted": false,
+  "source": "scripts/account-safety/prepare-business-erasure-schema.mjs",
+  "sourceSha256": "b0c6374d6efd87ed0056739d6b7945ebabfcc6aedfb5572d6ace8fc9131be916",
+  "export": "prepareBusinessErasureSchema({mode:'check'|'apply',password})",
+  "placement": "after successful explicit first database_v2 provisioning, before media closure preflight",
+  "actualSchemaExports": ["contentErasureSchema", "communityErasureSchema", "runtimeOwnerFenceTableSql"],
+  "uniqueTables": 9,
+  "secondaryIndexes": 2,
+  "productionScope": ["fixed Root Node24 on docker host", "existing private /srv/cop/.env and active read-only runtime profile", "exact three existing profile database DSNs in RAM; guard configuration remains from host env", "existing verified CA", "fixed haproxy.home.cz:5000/cop and cop_account_safety_guard", "existing application owner only", "first enrollment with no accepted jobs or journal entries", "guard and local dataset/config CAS before and after short transaction", "strict existing table/column/PK/FK/index/owner/RLS/trigger/rule validation", "actual zero unsettled leases"],
+  "profileEnvironmentDependency": {"source": "scripts/account-safety/operator-profile-environment.mjs", "sourceSha256": "3f6b6db04a722d16d1ec24c75453c5f650dd15625406a8220baa1da5030b75b7", "targetedTestsPassed": 5, "secretValuesReturned": false},
+  "doesNotPerform": ["application/server startup", "broader store init", "issuer or historical ownership backfill", "data deletion", "GRANT", "new roles", "secret rotation", "production invocation"],
+  "missingTableCheck": {"schemaReady": false, "zeroWriteLeases": null},
+  "postgres": {"actualVersion": "18.6 (Debian 18.6-1.pgdg13+2)", "passed": 12, "failed": 0, "isolatedOwnedLoopbackFixture": true, "fixtureRemoved": true},
+  "scenarios": ["check reports missing tables without inventing zero leases", "actual exported DDL and idempotent catalog readback", "existing contribution B and role grants preserved", "column drift refuses before creation", "FK/index drift refuses", "changed owner refuses", "RLS/rewrite rule refuses", "unknown lease preserved with full DDL rollback", "changed independent/local binding refuses", "progressed journal/jobs/local erasure state refuses", "actual guard row lock timeout without partial DDL", "non-owned test route refuses before connection"],
+  "remaining": ["parent installer final source pinning and host custody acceptance", "actual Root production execution after full joint acceptance"]
+}

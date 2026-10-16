@@ -3,6 +3,7 @@ import { type Pool as PgPool, type PoolConfig, type QueryResultRow } from "pg";
 import { createCopPgPool } from "./cop-pg-pool.js";
 import { randomUUID } from "node:crypto";
 import { contentErasureSchema, type ContentErasureComponent } from "./content-erasure.js";
+import { legacyNonAccountProvenanceSchema } from "./legacy-nonaccount-provenance.js";
 import { communityErasureSchema, MemoryCommunityErasureBoundary, PostgresCommunityErasureBoundary, withVerifiedCommunityActor, type CommunityProjectionEraser } from "./community-erasure.js";
 import type { AuthenticatedActor } from "./security.js";
 import type { MediaStorage } from "./media-storage.js";
@@ -899,6 +900,7 @@ export class PostgresCommunityReportStore implements CommunityReportStore {
     await this.database.query(roadEnrichmentSchema);
     await this.database.query(contentErasureSchema);
     await this.database.query(communityErasureSchema);
+    await this.database.query(legacyNonAccountProvenanceSchema);
   }
   withVerifiedActor<T>(actor: AuthenticatedActor, run: () => T): T { return withVerifiedCommunityActor(actor, run); }
   accountErasureComponent(options: { media?: MediaStorage; projections?: CommunityProjectionEraser; now?: () => Date } = {}): ContentErasureComponent { return this.erasure.component(options); }

@@ -25,6 +25,9 @@ import { createCOPDriverMeasurementsErasureAdapter } from "./cop-driver-consent-
 import { createCommunityProjectionEraser, boundedProjectionJSON, canonicalProjectionReference, projectionPayloadMatch, projectionReferences,
   type ProjectionStateOwner, type ProjectionRemoteOwner, type ResourceProjectionStore } from "./resource-projection-erasure.js";
 import { runtimeAssessment, type RuntimeOwner, type RuntimeOwnerAssessment } from "./runtime-owner-erasure.js";
+import { createEdgeProjectionRemoteOwner, externalProjectionNodes } from "./edge-projection-erasure.js";
+import { createUnconfiguredModerationErasureAdapter } from "./unconfigured-moderation-erasure.js";
+import { createAccountErasureReadinessHealth } from "./account-erasure-readiness-health.js";
 import { createAiRetainedCopiesErasure, attachAiSemanticDocumentProvenance } from "./ai-retained-copies-erasure.js";
 import { createProviderCopiesErasure, ProviderCopiesUnavailableError, type ProviderCopiesOwner, type ProviderLocalCopiesSource } from "./provider-copies-erasure.js";
 import { MediaNewsSourceAdapter } from "./media-news-source.js";
@@ -1228,6 +1231,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   let aiRetainedProjectionOwner: (ProjectionStateOwner & { init(): Promise<void> }) | undefined;
   let providerCopiesProjectionOwner: ProviderCopiesOwner | undefined;
   const streamProjectionStore = streamBus.projectionErasureStore?.();
+  const remoteProjectionOwner = options.contentRemoteProjectionOwner ?? createEdgeProjectionRemoteOwner({
+    nodes: () => state.federatedNodes.values(),
+    uncontrolledStream: () => streamBus.name !== "memory" && !streamProjectionStore,
+    assertCopAccessFenced: async (actor, context) => accountErasure?.operationFenceConfirmed(actor, context) ?? false
+  });
   const projectionStores = [trackHistoryStore, federationRuntimeStore, safetyNotificationStore, streamProjectionStore].filter(Boolean) as ResourceProjectionStore[];
   const loadActualProjectionFences = async () => {
     const frontiers = [];
@@ -1422,7 +1430,9 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         providerEffects: createMessagingMobilityProviderEffects({ issuer, config: messagingProvider.config, verifyConfiguredOwner: options.messagingErasureOwnerVerifier,
           authorityMode: process.env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE === "database_v2" ? "database_v2" : "native_v1",
           verifyActorScope: options.messagingErasureActorScopeVerifier }) })] : []),
-      ...(communicationSafety ? [communicationSafety.accountErasureAdapter()] : []),
+      ...(communicationSafety ? [communicationSafety.accountErasureAdapter()]
+        : !communicationSafetyEnabled ? [createUnconfiguredModerationErasureAdapter({ store: accountSafetyStore, issuer,
+          assertCopAccessFenced: async (actor, context) => accountErasure?.operationFenceConfirmed(actor, context) ?? false })] : []),
       ...(process.env.COP_KEYCLOAK_ERASURE_CLIENT_ID && process.env.COP_KEYCLOAK_ERASURE_CLIENT_SECRET
         ? [createKeycloakAccountErasureAdapter({ issuer, clientId: process.env.COP_KEYCLOAK_ERASURE_CLIENT_ID,
           clientSecret: process.env.COP_KEYCLOAK_ERASURE_CLIENT_SECRET,
@@ -1662,8 +1672,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       await stateProjectionOwner.init();
       localProjectionEraser = createCommunityProjectionEraser({ stores: projectionStores, state: stateProjectionOwner,
         producerFenceInstalled: () => stateProjectionOwner?.usesState(state) === true && stateProjectionOwner.producerBindingInstalled(),
-        remoteRequired: (streamBus.name !== "memory" && !streamProjectionStore) || [...state.federatedNodes.values()].some(node => node.nodeId !== "node_central_cop"),
-        remote: options.contentRemoteProjectionOwner });
+        remoteRequired: () => Boolean(process.env.COP_ACCOUNT_ERASURE_EDGE_URL) || (streamBus.name !== "memory" && !streamProjectionStore) || externalProjectionNodes(state.federatedNodes.values()).length > 0,
+        remote: remoteProjectionOwner });
     }
     if (communicationSafety) await communicationSafety.init();
     if (openAiMcpAssistant) {
@@ -1791,6 +1801,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (options.logger) setCopPgPoolErrorSink();
   });
 
+  const accountErasureReadinessHealth = createAccountErasureReadinessHealth(() => accountErasure);
   registerHealthRoutes(app, {
     live: async () => ({
       status: "ok",
@@ -1800,7 +1811,11 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const ready = mobilityDependency().status !== "unavailable";
       return reply.code(ready ? 200 : 503).send({ status: ready ? "ok" : "unavailable", timestamp: new Date().toISOString() });
     },
-    dependencies: async () => {
+    dependencies: async (_request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      const erasureOwners = await withDependencyTimeout("cop-account-erasure-owners", accountErasureReadinessHealth(), {
+        name: "cop-account-erasure-owners", status: "unavailable", detail: "Read-only owner readiness check is pending."
+      });
       const messaging = await withDependencyTimeout("csm-messaging-provider", messagingDependency(), {
         detail: `Messaging provider dependency check timed out after ${healthDependencyTimeoutMs()} ms.`,
         name: "csm-messaging-provider",
@@ -1824,6 +1839,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         status: mobilityDependency().status === "unavailable" ? "degraded" : "ok",
         dependencies: [
           mobilityDependency(),
+          erasureOwners,
           { name: "source-registry", status: "ok" },
           { name: "in-memory-cop-state", status: "ok" },
           { name: "cop-stream-bus", status: streamBusDependencyStatus(), detail: streamBusDependencyDetail() },
@@ -2375,7 +2391,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     };
   }
 
-  function withDependencyTimeout<T extends { detail?: string; name: string; status: DependencyStatus }>(
+  function withDependencyTimeout<T extends { detail?: string; name: string; status: DependencyStatus | "unavailable" }>(
     dependencyName: string,
     operation: Promise<T>,
     fallback: T,

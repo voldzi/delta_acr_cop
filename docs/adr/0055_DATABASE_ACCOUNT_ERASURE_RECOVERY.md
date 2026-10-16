@@ -46,6 +46,25 @@ port. Unknown transport or unavailable scope fails closed. Selecting both
 transports is a configuration error. This relay does not establish whole-account
 readiness or replace private Synapse cleanup and restore acceptance.
 
+## Simplified completion scope — 16 October
+
+The approved completion path does not reconstruct a missing principal from an
+immutable seal, account MAC, operation inventory or provider evidence. A missing
+or mismatching original identity leaves the operation pending and the affected
+restore quarantined. The existing flow may resume only after a freshly verified
+original actor re-establishes the exact account binding; it never adopts another
+account. This narrows the implementation under review without weakening fences,
+provider readback, retention or shared SIM identity preservation.
+
+The production entrypoint binds the actual database continuity instance to the
+restore owner and the media settlement verifier. The restore checkpoint proves
+live suppression through the independent journal and actual SQL replay, not
+physical removal of retained Proxmox/PBS copies. A trusted operator must preserve
+the independent evidence and quarantine every affected dataset restore. See
+[the executable restore procedure](../runbooks/26_ACCOUNT_ERASURE_BACKUP_RESTORE.md).
+No change to an image label, environment flag or backup catalog can replace these
+checks. Intake stays off until joint provider acceptance and production binding.
+
 ## Independent evidence
 
 Migration `scripts/account-safety/010_database_safety_v2.sql` creates only the
@@ -172,3 +191,12 @@ are additive in the binding OpenAPI and do not introduce another credential.
 This is not acceptance of legacy credential revocation, provider drain or backup
 restore. Those require real independent evidence; the settlement verifier remains
 mandatory and cannot be replaced by this configuration flag.
+
+### LiveKit expiry settlement
+
+The actual LiveKit1.13.3 probe accepted a join JWT after its nominal expiry
+and first rejected it about60 seconds later. Voice cleanup therefore waits for
+the one-hour maximum issuer lifetime plus90 seconds (provider tolerance plus
+30 seconds clock margin), and at least90 seconds after every durably recorded
+grant expiry. The shared acceptance also requires an actual401 for the original
+join token; a locally decoded `exp` is insufficient.

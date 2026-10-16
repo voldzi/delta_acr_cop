@@ -13,6 +13,7 @@ function failure(request: FastifyRequest, reply: FastifyReply, error: unknown) {
 
 /** Register after the bearer signature guard. Receipt recovery is an explicit fence exception. */
 export function registerAccountErasureRoutes(app: FastifyInstance, service?: AccountErasureService) {
+  let checkOwnerReadinessRateLimit: ReturnType<FastifyInstance["createRateLimit"]> | undefined;
   app.get(path + "/receipts/:operationId", { exposeHeadRoute: false }, async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     try {
@@ -35,6 +36,26 @@ export function registerAccountErasureRoutes(app: FastifyInstance, service?: Acc
     reply.header("Cache-Control", "no-store");
     const actor = actorFromRequest(request);
     if (actor?.authMode !== "oidc") return failure(request, reply, new AccountErasureError(401, "UNAUTHORIZED"));
+    const query = request.query as Record<string, unknown>;
+    if (Object.keys(query).some(key => key !== "includeOwnerReadiness") ||
+      (Object.hasOwn(query, "includeOwnerReadiness") && query.includeOwnerReadiness !== "true"))
+      return failure(request, reply, new AccountErasureError(400, "VALIDATION_ERROR"));
+    if (query.includeOwnerReadiness === "true") {
+      checkOwnerReadinessRateLimit ??= app.createRateLimit({ max: 5, timeWindow: "1 minute" });
+      const limit = await checkOwnerReadinessRateLimit(request);
+      if (!limit.isAllowed && limit.isExceeded) {
+        reply.header("Retry-After", limit.ttlInSeconds);
+        return failure(request, reply, new AccountErasureError(429, "RATE_LIMIT_EXCEEDED"));
+      }
+      const capabilities = service?.options.accepted
+        ? await service.capabilities()
+        : service ? { contractVersion: "cop-account-erasure-v1", accountDeletion: false, unavailableReason: "not_accepted" }
+          : { contractVersion: "cop-account-erasure-v1", accountDeletion: false, unavailableReason: "not_enabled" };
+      const ownerReadiness = service ? await service.ownerReadiness() : {
+        contractVersion: "cop-account-erasure-owner-readiness-v1", ready: false, checkedAt: new Date().toISOString(), unavailableReason: "required_adapters_missing"
+      };
+      return { ...capabilities, ownerReadiness };
+    }
     return service?.capabilities() ?? { contractVersion: "cop-account-erasure-v1", accountDeletion: false, unavailableReason: "not_enabled" };
   });
   app.post(path + "/preflight", { bodyLimit: 1024, config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {

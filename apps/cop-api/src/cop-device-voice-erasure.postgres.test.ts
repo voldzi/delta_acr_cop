@@ -68,7 +68,7 @@ describe.skipIf(!connectionString)("real PostgreSQL device/voice account erasure
       await first.recordMediaGrant(owner, own.callId, "2026-10-14T00:10:00.000Z", now);
       expect((await first.preflightActorErasure(owner)).ready).toBe(true);
       const outcomes = await Promise.allSettled([first.recordMediaGrant(owner, own.callId, "2026-10-14T00:20:00.000Z", now), second.fenceActor(owner, operationId, now)]);
-      expect(outcomes[1]).toMatchObject({ status: "fulfilled", value: { notBefore: "2026-10-14T01:00:30.000Z" } });
+      expect(outcomes[1]).toMatchObject({ status: "fulfilled", value: { notBefore: "2026-10-14T01:01:30.000Z" } });
       await expect(first.recordMediaGrant(owner, own.callId, "2026-10-14T00:30:00.000Z", now)).rejects.toMatchObject({ code: "ACCOUNT_REVOKED" });
       await expect(first.transition(own.callId, { action: "accept", actorSubjectId: "synthetic-other", endpointId: "synthetic-endpoint", now })).rejects.toMatchObject({ code: "ACCOUNT_REVOKED" });
       const stored = (await f.admin.query(`SELECT * FROM ${f.schema}.cop_voice_media_grants`)).rows;

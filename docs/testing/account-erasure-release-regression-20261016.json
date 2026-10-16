@@ -1,0 +1,30 @@
+{
+  "contractVersion": "cop-account-erasure-release-regression-v1",
+  "observedAt": "2026-10-16T15:24:48.347683+00:00",
+  "sourceRevision": "a1973e6220543584373a0d3ee9c8659137c616c1",
+  "sourceWorkingTreeDirty": true,
+  "unitTests": {
+    "passedFiles": 245,
+    "skippedFiles": 25,
+    "passed": 2508,
+    "skipped": 105,
+    "logSha256": "5928b850a391440345c1a6db71b81dbca6296fdb06fa7f26a0f494dcc8757b72"
+  },
+  "typeCheckPassed": true,
+  "eslintPassed": true,
+  "skeletonPassed": true,
+  "jsonSchemasValidated": 11,
+  "openapiValid": true,
+  "openapiExistingWarnings": 24,
+  "publicAnalyticsDefaultOffAndPrivatePathRejectionPassed": true,
+  "wholeAccountAccepted": false,
+  "productionChanged": false,
+  "realAccountsDeleted": false,
+  "physicalDeviceAcceptance": false,
+  "compiledApiClosureSha256": "b6702bfbb9962035497758a970726c68bb05ddb1eb084da2e5ede625ad8f1fd3",
+  "sourceChangesAfterThisReceiptRequireRevalidation": true,
+  "productionBuildPassed": true,
+  "runtimeResourceClosureSha256": "d05ff9e973e6e9ab3a1d718c324cbdf6fc8fa733aba4632ce0163f3117903584",
+  "compiledWorkspaceClosureSha256": "6d820186c7cae2caf9aa58c1c8bd4e4da6375138dea268ddacf413283ff8c500",
+  "revalidatedAfterExactLabConfirmationKind": true
+}

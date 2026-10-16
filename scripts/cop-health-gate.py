@@ -93,7 +93,7 @@ def main():
     verify = commands.add_parser('verify')
     verify.add_argument('baseline')
     verify.add_argument('--allow-added-dependency', action='append', default=[],
-                        choices=['safety-notification-worker'])
+                        choices=['safety-notification-worker', 'cop-account-erasure-owners'])
     args = parser.parse_args()
     if args.action == 'capture':
         value = capture(time.monotonic() + 45)

@@ -85,14 +85,19 @@ export function createCOPContentMediaErasureAdapter(options: {
       requireContentActor(actor); context.signal.throwIfAborted();
       if (!complete || !writerBindingsMatch() || !options.usesAdmissionGuard(admissionGuard)) return { status: "pending", remaining: "cleanup_pending" };
       const proofs: string[] = [];
+      let allCompleted = true;
       // Provider/object erasure runs outside admission locks and never holds a
       // long transaction while waiting for external storage or projection cleanup.
       for (let i = 0; i < components.length; i++) {
         context.signal.throwIfAborted(); const proof = await components[i]!.erase(actor, context);
-        if (proof.status !== "completed") return { status: "pending", remaining: "cleanup_pending" };
+        // Every independent component must contribute its owned manifest. An
+        // earlier pending projection can need references discovered by a later
+        // component; returning early would prevent the next safe retry forever.
+        if (proof.status !== "completed") { allCompleted = false; continue; }
         proofs.push(`${i}:${components[i]!.component}:${proof.proofId}`);
       }
       context.signal.throwIfAborted();
+      if (!allCompleted) return { status: "pending", remaining: "cleanup_pending" };
       return { status: "completed", proofId: createHash("sha256").update(JSON.stringify([context.operationId, proofs])).digest("hex") };
     }
   };

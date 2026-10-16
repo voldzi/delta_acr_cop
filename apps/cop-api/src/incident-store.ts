@@ -744,7 +744,7 @@ function readPositiveInteger(value: string | undefined, fallback: number): numbe
 function readSslConfig(env: Record<string, string | undefined>): PoolConfig["ssl"] {
   const enabled = (env.COP_DATABASE_SSL ?? "false").trim().toLowerCase();
   if (!["1", "true", "yes", "on"].includes(enabled)) {
-    return undefined;
+    return false;
   }
   const rejectUnauthorized = (env.COP_DATABASE_SSL_REJECT_UNAUTHORIZED ?? "true").trim().toLowerCase();
   return { rejectUnauthorized: !["0", "false", "no", "off"].includes(rejectUnauthorized) };

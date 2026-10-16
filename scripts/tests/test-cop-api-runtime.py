@@ -54,12 +54,16 @@ class FakeDocker:
         self.health_unobservable = False
         self.verified_baselines = []
         self.health_verify_failure = False
+        self.edge_token = 'synthetic-stable-edge-token-' + '9' * 32
 
     def config(self, directory, profile=None, raw=False):
         value = copy.deepcopy(self.base)
         value['services']['cop-api'].update(self.release_overrides.get(directory.name, {}))
         if raw:
             value['services']['cop-api']['environment'].update({key: '${' + key + '}' for key in m.ENV})
+            for key in getattr(self, 'raw_variable_keys', set()):
+                if key in value['services']['cop-api']['environment']:
+                    value['services']['cop-api']['environment'][key] = '${' + key + '}'
         if profile:
             data = json.loads((directory / 'release.json').read_text()) if (directory / 'release.json').exists() else None
             image_env = dict(line.removesuffix("'").split("='", 1) for line in (directory / 'image.env').read_text().splitlines())
@@ -86,7 +90,7 @@ class FakeDocker:
         return self.config(Path('synthetic-source'), raw=True)
 
     def peers(self, directory):
-        return {s: s + '-stable' for s in ('cop-web', 'cop-chat', 'cop-edge', 'cop-mcp')}
+        return {s: ('e' * 64 if s == 'cop-edge' else s + '-stable') for s in ('cop-web', 'cop-chat', 'cop-edge', 'cop-mcp')}
 
     def current(self, directory):
         return copy.deepcopy(self.live_container)  # docker inspect is a snapshot.
@@ -95,14 +99,17 @@ class FakeDocker:
         # Exercise the real inspection checks against a fake immutable container.
         real = m.Docker()
         real.current = self.current; real.config = self.config; real.run = self.run
+        real.account_erasure_scope = getattr(self, 'account_erasure_scope', None)
         real.live(directory, binding, profile, require_label)
 
     def non_profile(self, directory, profile, current=None):
         real = m.Docker(); real.current = self.current; real.config = self.config; real.run = self.run
+        real.account_erasure_scope = getattr(self, 'account_erasure_scope', None)
         real.non_profile(directory, profile, current)
 
     def preserve(self, directory, profile, current):
         real = m.Docker(); real.current = self.current; real.config = self.config; real.run = self.run
+        real.account_erasure_scope = getattr(self, 'account_erasure_scope', None)
         real.preserve(directory, profile, current)
 
     def unchanged(self, directory, witnessed):
@@ -112,7 +119,15 @@ class FakeDocker:
     def run(self, argv):
         if argv[:3] == ['docker', 'image', 'inspect']:
             return json.dumps([{'Config': self.image_configs.get(argv[3], {})}]).encode()
+        if argv[:2] == ['docker', 'inspect'] and argv[2] == 'e' * 64:
+            return json.dumps([{'Id': argv[2], 'State': {'Running': True}, 'Config': {
+                'Labels': {'com.docker.compose.project': 'cop', 'com.docker.compose.service': 'cop-edge'},
+                'Env': ['COP_EDGE_ADMIN_TOKEN=' + self.edge_token, 'COP_EDGE_NODE_ID=node_edge_pilot_01']}}]).encode()
         raise AssertionError('Unexpected fake command; never call real Docker')
+
+    def erasure_edge_credential(self, directory, target):
+        real = m.Docker(); real.peers = self.peers; real.run = self.run
+        return real.erasure_edge_credential(directory, target)
 
     def up(self, directory, profile):
         self.up_calls.append(directory.name)
@@ -866,5 +881,248 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(self.docker.live_container['Config']['Cmd'], defaults['Cmd'])
         self.assertEqual(self.docker.live_container['Config']['Entrypoint'], defaults['Entrypoint'])
 
+
+
+    def erasure_initial(self):
+        self.docker.raw_variable_keys = set(m.ERASURE_CONFIG_KEYS) | {'COP_SIM_ERASURE_ACTOR_SECRET', 'COP_AI_CHAT_ROUTER_USER_ID_SECRET'}
+        base = self.docker.base['services']['cop-api']['environment']
+        base['COP_SIM_ERASURE_ACTOR_SECRET'] = 'synthetic-stable-actor-secret-' + 'a' * 32
+        base['COP_AI_CHAT_ROUTER_USER_ID_SECRET'] = 'synthetic-stable-router-secret-' + 'b' * 32
+        base['COP_MEDIA_S3_ACCESS_KEY_ID'] = 'synthetic-old-media'
+        base['COP_MEDIA_S3_SECRET_ACCESS_KEY'] = 'synthetic-old-media-secret'
+        current = self.compatible_direct()
+        base.update({**m.ERASURE_FIXED, 'COP_ACCOUNT_ERASURE_ENABLED': 'false',
+            'COP_ACCOUNT_ERASURE_SECRET': 'synthetic-new-erasure-secret-' + 'c' * 32,
+            'COP_ACCOUNT_SAFETY_GUARD_DATABASE_URL': 'postgresql://synthetic.invalid/cop_account_safety_guard',
+            'COP_ACCOUNT_SAFETY_GUARD_STORE_ID': str(uuid.uuid4()),
+            'COP_ACCOUNT_SAFETY_INCARNATION_ID': str(uuid.uuid4()),
+            'COP_ACCOUNT_SAFETY_STORE_ID': str(uuid.uuid4()),
+            'COP_KEYCLOAK_ERASURE_CLIENT_SECRET': 'synthetic-new-keycloak-secret-' + 'd' * 32,
+            'COP_SIM_ERASURE_ROUTER_TOKEN': 'synthetic-new-router-token-' + 'e' * 32,
+            'COP_SIM_ERASURE_DRIVER_TOKEN': 'synthetic-new-driver-token-' + 'f' * 32,
+            'COP_SIM_ERASURE_ROUTER_URL': 'http://synthetic-router.invalid/account-erasure',
+            'COP_SIM_ERASURE_DRIVER_URL': 'http://synthetic-driver.invalid/account-erasure',
+            'COP_LIVEKIT_ADMIN_URL': '', 'COP_LIVEKIT_ERASURE_RELAY_URL': 'https://synthetic-messaging.invalid/erasure',
+            'COP_MEDIA_S3_ACCESS_KEY_ID': 'synthetic-new-media',
+            'COP_MEDIA_S3_SECRET_ACCESS_KEY': 'synthetic-new-media-secret',
+            'COP_EDGE_ADMIN_TOKEN': self.docker.edge_token})
+        (self.source / '.env').write_text('SYNTHETIC_CONFIG=prepared-only-no-production-data\n')
+        (self.source / '.env').chmod(0o600)
+        return current
+
+    def erasure_proof(self, current, operation='prepare', image=LATER):
+        directory, _, profile = self.store.binding(current['releaseId'])
+        target = self.docker.config(directory, profile['directory'])['services']['cop-api']['environment']
+        actual = dict(item.split('=', 1) for item in self.docker.live_container['Config']['Env'])
+        changed = sorted(k for k in set(actual) | set(target)
+                         if (k in actual) != (k in target) or actual.get(k) != target.get(k))
+        transition = str(uuid.uuid4())
+        value = {'contractVersion': 'cop-api-account-erasure-config-v1', 'transitionId': transition,
+            'operation': operation, 'previous': current,
+            'target': {'imageId': image, 'sourceRevision': REV, 'profileGeneration': current['profileGeneration']},
+            'changedKeys': changed, 'environmentMetadata': m.environment_metadata(self.source / '.env', os.geteuid()),
+            'composeHashes': {name: m.sha((self.source / name).read_bytes()) for name in m.FILES},
+            'ownerAcceptance': True, 'checks': {name: True for name in m.ERASURE_PROOF_CHECKS}}
+        path = self.protected / current['profileGeneration'] / ('account-erasure-' + transition + '.json')
+        write(path, value, 0o640)
+        return path, value
+
+    def erasure_candidate(self, current, path, image=LATER):
+        profile = (current['profileGeneration'], self.store.active()[2]['driverContract'])
+        return self.store.prepare(image, REV, self.receipt(profile, image), current['generation'], erasure_config=path)
+
+    def test_erasure_root_reviewed_prepare_preserves_profile_and_other_services(self):
+        current = self.erasure_initial(); path, proof = self.erasure_proof(current)
+        binding = self.erasure_candidate(current, path)
+        accepted = self.store.activate(binding['releaseId'], current['generation'])
+        self.assertEqual(accepted['profileId'], current['profileId'])
+        env = dict(item.split('=', 1) for item in self.docker.live_container['Config']['Env'])
+        self.assertEqual(env['COP_ACCOUNT_ERASURE_ENABLED'], 'false')
+        self.assertEqual(env['COP_ACCOUNT_SAFETY_GUARD_REQUIRED'], 'true')
+        self.assertEqual(self.store.active()[2]['accountErasureConfig']['sha256'], m.sha(path.read_bytes()))
+        for file in (self.root / 'releases').rglob('*'):
+            if file.is_file():
+                self.assertNotIn('synthetic-new-erasure-secret-', file.read_text())
+                self.assertNotIn('synthetic-new-keycloak-secret-', file.read_text())
+        self.assertNotIn('COP_SIM_ERASURE_ACTOR_SECRET', proof['changedKeys'])
+
+    def test_erasure_config_cannot_be_activated_as_ordinary_image_swap(self):
+        current = self.erasure_initial()
+        binding = self.candidate(current, LATER)
+        count = len(self.docker.up_calls)
+        with self.assertRaisesRegex(m.RuntimeError, 'non_profile_environment_drift'):
+            self.store.activate(binding['releaseId'], current['generation'])
+        self.assertEqual(len(self.docker.up_calls), count)
+
+    def test_erasure_enable_pause_and_maintain_require_fresh_exact_root_review(self):
+        current = self.erasure_initial(); path, _ = self.erasure_proof(current)
+        binding = self.erasure_candidate(current, path)
+        current = self.store.activate(binding['releaseId'], current['generation'])
+        with self.assertRaisesRegex(m.RuntimeError, 'guarded_release_requires_root_config_review'):
+            self.candidate(current, 'sha256:' + '4' * 64)
+        for operation, enabled in [('enable', 'true'), ('pause', 'false'), ('maintain', 'false')]:
+            self.docker.base['services']['cop-api']['environment']['COP_ACCOUNT_ERASURE_ENABLED'] = enabled
+            (self.source / '.env').write_text('SYNTHETIC_CONFIG=' + operation + '\n')
+            path, proof = self.erasure_proof(current, operation)
+            self.assertEqual(proof['changedKeys'], [] if operation == 'maintain' else ['COP_ACCOUNT_ERASURE_ENABLED'])
+            binding = self.erasure_candidate(current, path)
+            current = self.store.activate(binding['releaseId'], current['generation'])
+        with self.assertRaisesRegex(m.RuntimeError, 'guarded_rollback_requires_intake_pause'):
+            self.store.activate(binding['previousReleaseId'], current['generation'], rollback=True)
+
+    def test_erasure_authentication_or_existing_actor_identity_change_is_never_allowed(self):
+        for forbidden in ['COP_AUTH_MODE', 'COP_SIM_ERASURE_ACTOR_SECRET', 'COP_AI_CHAT_ROUTER_USER_ID_SECRET']:
+            with self.subTest(forbidden=forbidden):
+                current = self.erasure_initial()
+                self.docker.base['services']['cop-api']['environment'][forbidden] = 'synthetic-unapproved-change'
+                path, value = self.erasure_proof(current)
+                with self.assertRaisesRegex(m.RuntimeError, 'erasure_proof_keys'):
+                    self.erasure_candidate(current, path)
+                self.setUp()
+
+    def test_erasure_unlisted_historical_configuration_drift_is_rejected(self):
+        current = self.erasure_initial(); path, _ = self.erasure_proof(current)
+        self.docker.base['services']['cop-api']['environment']['COP_AUTH_MODE'] = 'lab'
+        binding = self.erasure_candidate(current, path)
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_configuration_delta_mismatch'):
+            self.store.activate(binding['releaseId'], current['generation'])
+
+    def test_erasure_manifest_cannot_expand_allowlist_or_skip_owner_acceptance(self):
+        current = self.erasure_initial(); path, value = self.erasure_proof(current)
+        value['changedKeys'].append('COP_DATABASE_URL'); value['changedKeys'].sort(); write(path, value, 0o640)
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_proof_keys'):
+            self.erasure_candidate(current, path)
+        value['changedKeys'].remove('COP_DATABASE_URL'); value['checks']['providerClosureVerified'] = False; write(path, value, 0o640)
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_proof_acceptance_missing'):
+            self.erasure_candidate(current, path)
+
+    def test_erasure_root_review_is_bound_to_exact_container_image_source_and_profile(self):
+        current = self.erasure_initial(); path, value = self.erasure_proof(current)
+        for field, replacement in [('imageId', NEW), ('sourceRevision', 'c' * 40), ('profileGeneration', self.transaction[0])]:
+            wrong = copy.deepcopy(value); wrong['target'][field] = replacement; write(path, wrong, 0o640)
+            with self.subTest(field=field), self.assertRaisesRegex(m.RuntimeError, 'erasure_proof_target'):
+                self.erasure_candidate(current, path)
+        value['previous']['containerId'] = '0' * 64; write(path, value, 0o640)
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_previous_cas_changed'):
+            self.erasure_candidate(current, path)
+
+    def test_erasure_env_metadata_change_stops_before_recreation(self):
+        current = self.erasure_initial(); path, _ = self.erasure_proof(current)
+        binding = self.erasure_candidate(current, path); count = len(self.docker.up_calls)
+        (self.source / '.env').write_text('SYNTHETIC_CONFIG=changed-after-root-review\n')
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_env_cas_changed'):
+            self.store.activate(binding['releaseId'], current['generation'])
+        self.assertEqual(len(self.docker.up_calls), count)
+
+    def test_erasure_compose_change_requires_new_root_review(self):
+        current = self.erasure_initial(); path, _ = self.erasure_proof(current)
+        (self.source / m.FILES[0]).write_text('# changed after Root review\n')
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_proof_compose_changed'):
+            self.erasure_candidate(current, path)
+
+    def test_erasure_shell_cannot_override_root_reviewed_secrets_file(self):
+        current = self.erasure_initial(); path, _ = self.erasure_proof(current)
+        with mock.patch.dict(os.environ, {'COP_ACCOUNT_ERASURE_ENABLED': 'true'}):
+            with self.assertRaisesRegex(m.RuntimeError, 'erasure_shell_override_forbidden'):
+                self.erasure_candidate(current, path)
+
+    def test_erasure_proof_tampering_and_non_root_file_mode_stop_before_recreation(self):
+        current = self.erasure_initial(); path, value = self.erasure_proof(current)
+        path.chmod(0o600)
+        with self.assertRaisesRegex(m.RuntimeError, 'private_file_permissions'):
+            self.erasure_candidate(current, path)
+        write(path, value, 0o640); binding = self.erasure_candidate(current, path)
+        value['operation'] = 'enable'; write(path, value, 0o640)
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_proof_changed'):
+            self.store.activate(binding['releaseId'], current['generation'])
+
+    def test_erasure_missing_credential_or_unsafe_fixed_mode_fails_closed(self):
+        current = self.erasure_initial(); base = self.docker.base['services']['cop-api']['environment']
+        base['COP_SIM_ERASURE_ROUTER_TOKEN'] = ''; path, _ = self.erasure_proof(current)
+        binding = self.erasure_candidate(current, path)
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_target_credential_missing'):
+            self.store.activate(binding['releaseId'], current['generation'])
+        base['COP_SIM_ERASURE_ROUTER_TOKEN'] = 'synthetic-router-token-' + 'e' * 32
+        base['COP_ACCOUNT_SAFETY_GUARD_REQUIRED'] = 'false'; path, _ = self.erasure_proof(current)
+        binding = self.erasure_candidate(current, path)
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_target_fixed_config'):
+            self.store.activate(binding['releaseId'], current['generation'])
+
+    def test_erasure_network_or_mount_change_is_not_a_configuration_permission(self):
+        current = self.erasure_initial(); path, _ = self.erasure_proof(current)
+        binding = self.erasure_candidate(current, path)
+        self.docker.release_overrides[binding['releaseId']] = {'volumes': [
+            {'type': 'bind', 'source': '/synthetic/foreign', 'target': '/foreign'}]}
+        with self.assertRaisesRegex(m.RuntimeError, 'live_mount_parity_mismatch'):
+            self.store.activate(binding['releaseId'], current['generation'])
+
+    def test_erasure_interrupted_target_recovers_once_without_legacy_rollback(self):
+        current = self.erasure_initial(); path, _ = self.erasure_proof(current)
+        binding = self.erasure_candidate(current, path); self.docker.interrupt = True
+        with self.assertRaises(KeyboardInterrupt): self.store.activate(binding['releaseId'], current['generation'])
+        count = len(self.docker.up_calls)
+        with self.assertRaisesRegex(m.RuntimeError, 'guarded_rollback_requires_intake_pause'):
+            self.store.recover(current['generation'], rollback=True)
+        accepted = self.store.recover(current['generation'])
+        self.assertEqual(accepted['releaseId'], binding['releaseId'])
+        self.assertEqual(len(self.docker.up_calls), count)
+        self.assertFalse((self.root / 'pending.json').exists())
+
+    def test_erasure_env_change_during_acceptance_never_publishes_new_active_pointer(self):
+        current = self.erasure_initial(); path, _ = self.erasure_proof(current)
+        binding = self.erasure_candidate(current, path); health = self.docker.health
+        def changed(action, file):
+            result = health(action, file)
+            if action == 'verify': (self.source / '.env').write_text('SYNTHETIC_CONFIG=changed-during-acceptance\n')
+            return result
+        self.docker.health = changed
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_env_cas_changed'):
+            self.store.activate(binding['releaseId'], current['generation'])
+        self.assertEqual(self.store.pointer(), current)
+        self.assertTrue((self.root / 'pending.json').exists())
+
+
+    def test_erasure_edge_forwarding_cannot_rotate_the_existing_peer_credential(self):
+        current = self.erasure_initial()
+        self.docker.base['services']['cop-api']['environment']['COP_EDGE_ADMIN_TOKEN'] = 'synthetic-wrong-edge-token-' + '8' * 32
+        path, _ = self.erasure_proof(current); binding = self.erasure_candidate(current, path)
+        count = len(self.docker.up_calls)
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_existing_edge_credential_changed'):
+            self.store.activate(binding['releaseId'], current['generation'])
+        self.assertEqual(len(self.docker.up_calls), count)
+
+    def test_erasure_edge_origin_and_node_are_fixed_not_caller_selected(self):
+        for key, value in [('COP_ACCOUNT_ERASURE_EDGE_URL', 'https://foreign.invalid'), ('COP_EDGE_NODE_ID', 'another-node')]:
+            current = self.erasure_initial(); self.docker.base['services']['cop-api']['environment'][key] = value
+            path, _ = self.erasure_proof(current); binding = self.erasure_candidate(current, path)
+            with self.assertRaisesRegex(m.RuntimeError, 'erasure_target_fixed_config'):
+                self.store.activate(binding['releaseId'], current['generation'])
+            self.setUp()
+
+    def test_erasure_pause_does_not_require_a_fresh_edge_probe_when_provider_is_down(self):
+        current = self.erasure_initial(); path, _ = self.erasure_proof(current)
+        binding = self.erasure_candidate(current, path); current = self.store.activate(binding['releaseId'], current['generation'])
+        self.docker.base['services']['cop-api']['environment']['COP_ACCOUNT_ERASURE_ENABLED'] = 'true'
+        path, _ = self.erasure_proof(current, 'enable'); binding = self.erasure_candidate(current, path)
+        current = self.store.activate(binding['releaseId'], current['generation'])
+        self.docker.erasure_edge_credential = lambda *_: (_ for _ in ()).throw(AssertionError('No probe needed for unchanged credential'))
+        self.docker.base['services']['cop-api']['environment']['COP_ACCOUNT_ERASURE_ENABLED'] = 'false'
+        path, _ = self.erasure_proof(current, 'pause'); binding = self.erasure_candidate(current, path)
+        self.assertEqual(self.store.activate(binding['releaseId'], current['generation'])['releaseId'], binding['releaseId'])
+
+
+    def test_erasure_prepare_pins_the_same_edge_peer_until_api_activation(self):
+        current = self.erasure_initial(); path, _ = self.erasure_proof(current)
+        binding = self.erasure_candidate(current, path); original = self.docker.erasure_edge_credential
+        peers = self.docker.peers
+        def replaced(directory, target):
+            edge_id = original(directory, target)
+            self.docker.peers = lambda selected: {**peers(selected), 'cop-edge': 'f' * 64}
+            return edge_id
+        self.docker.erasure_edge_credential = replaced
+        count = len(self.docker.up_calls)
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_edge_peer_changed'):
+            self.store.activate(binding['releaseId'], current['generation'])
+        self.assertEqual(len(self.docker.up_calls), count)
 
 if __name__ == '__main__': unittest.main()

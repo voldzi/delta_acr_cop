@@ -741,8 +741,10 @@ function tokenNotBefore(requestedAt: string, expiries: string[]): string {
   const requested = Date.parse(requestedAt);
   if (!Number.isFinite(requested)) throw new Error("Invalid erasure time");
   // Previously issued, unused JWTs are not revoked by removing an active participant.
-  // The existing issuer caps JWT lifetime at one hour; add clock-skew margin.
-  return new Date(Math.max(requested + 3_630_000, ...expiries.map(value => Date.parse(value) + 30_000))).toISOString();
+  // The issuer caps JWT lifetime at one hour. LiveKit1.13.3 still accepts
+  // a token for60s after exp (verified against the actual provider); retain
+  // another30s clock margin before acknowledging irreversible cleanup.
+  return new Date(Math.max(requested + 3_690_000, ...expiries.map(value => Date.parse(value) + 90_000))).toISOString();
 }
 function removeVoiceActor(record: VoiceCallRecord, subjectId: string, requestedAt: string): VoiceCallRecord | null {
   const initiatorSubjectId = record.initiatorSubjectId === subjectId ? "erased-account" : record.initiatorSubjectId;

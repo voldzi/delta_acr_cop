@@ -140,3 +140,93 @@ a nedokazuje ukončení starých uploadů. Samotný přepínač nemění
 false. Před aktivací mazání je nutné ověřené uzavření staré cesty, skutečné
 dokončení zápisů a samostatná zkouška obnovených dat. Viz
 [evidence](../testing/account-erasure-media-api-transport-20261016.json).
+
+## Ověření ukončení uploadů pro mazání účtu — implementace16října
+
+Zjednodušený `database_v2` režim používá
+`PostgresMediaUploadSettlement` z `media-upload-settlement.ts`.
+Produkční factory `createMediaUploadSettlementFromEnv()` vrací verifier pouze
+při explicitním `COP_MEDIA_UPLOAD_TRANSPORT=cop_api`. Připojuje se stávající
+ověřenou session cestou s `verify-full` a stávající CA; nevytváří nový socket,
+privilegovaný broker ani veřejný port. `close()` zavře jeho dva malé pooly.
+
+Migrace `scripts/account-safety/011_media_upload_closure.sql` přidává jedinou
+neměnitelnou tabulku v nezávislé databázi ochrany. COP runtime má pouze SELECT.
+Ověření vyžaduje skutečný administrátorský záznam jednorázového uzavření staré
+cesty; kontroluje bucket, endpoint, otisk aktuálního serverového credential,
+identitu úložiště COP a aktuální incarnation/generaci obnovy. Změna credential
+nebo obnova generace starý záznam zneplatní. Záznam neobsahuje klíč ani obsah.
+
+Pro každý konkrétní objekt navíc proběhne kontrola skutečného manifestu,
+původního vlastníka a odpovídajícího mazacího fence/operation ID pod stejným
+transakčním zámkem, který přijímá API zápisy. Přítomný trvalý write lease
+znamená čekající operaci. Neznámý výsledek se nemaže podle věku, restartu,
+vypršení podpisu ani krátkodobé404. Po kontrole se znovu ověří nezávislá vazba.
+Teprve potom stávající S3 adaptér provede DELETE a opakované absence readback.
+
+### Jednorázový koordinovaný provozní krok
+
+Produkční provider je jeden sdílený monolit: S3, filer, master i volume proces
+běží ve stejném kontejneru. Samotné odebrání credential nezastaví již přijatý
+background commit. Nejmenší ověřená cesta proto vyžaduje krátkou koordinovanou
+odstávku tohoto úložiště. Bez odsouhlasení vlastníkem a kontroly ostatních
+klientů se sdílená služba nezastavuje.
+
+1. Ponechat příjem nových mazání vypnutý. Pozastavit všechny instance COP API
+   a konverzní writery; zaznamenat přesné existující trvalé leases a aktuální
+   dataset binding. Připravit `cop_api` pro následující start.
+2. Ověřit přesný image, příkaz, původní mounty a zvlášť všechny S3 identity.
+   Vstupní secrets se nesmějí vypisovat ani kopírovat do pracovního archivu.
+   Nový náhodný credential se přenese pouze mezi produkčními secrets soubory.
+3. Zastavit původní monolit a ověřit skutečný konec procesu (`Running=false`,
+   `Pid=0`). Teprve potom nahradit credential pouze identity `cop-production`,
+   se zachováním všech ostatních identit, oprávnění, image, argumentů a dat.
+   Nový credential patří výhradně serverovému API; nikdy do klientského descriptoru.
+4. Spustit původní provider. Ověřit novým credential skutečný syntetický
+   upload/readback, původním dosud nevypršelým podpisem odmítnutí403 a zachování
+   druhého účtu i jiného klienta/bucketu. Do evidence zaznamenat image,
+   konec/start procesu, čas odmítnutí původního credential, původní/nový otisk,
+   aktuální binding a otisk přesného provozního protokolu.
+5. Správce vloží tento konkrétní záznam do `media_upload_closures` pro aktuální
+   generaci; runtime jej nemůže vytvořit. Pouze leases zachycené před prokázaným
+   zastavením všech COP writerů a provideru lze při této koordinované operaci
+   odstranit jako ukončené. Každý pozdější nebo neznámý lease zůstává čekající.
+   Spustit COP v `cop_api`, ověřit readiness a celý společný syntetický test.
+
+Vrácení původního credential nebo přímých presigned uploadů zneplatňuje tuto
+cestu. Při rollbacku se nejdříve zastaví příjem nových mazání a zachová evidence
+rozpracovaných operací. Nesmažou se fence, leases ani nezávislé záznamy.
+
+Izolovaný PostgreSQL18.6 test ověřil7 nových skutečných databázových scénářů;
+spolu se stávajícím storage testem30/30. Samostatná skutečná SeaweedFS4.45
+zkouška ověřila přerušený částečný upload, konec procesu, scoped výměnu klíče,
+restart stejného image a odmítnutí starého podpisu i zachování druhého klienta.
+Neprovedla řízené zastavení přímo uvnitř finálního metadata commitu. Nejde o
+společnou akceptaci celého účtu ani o již provedenou produkční odstávku.
+Přesná evidence: [výsledky](../testing/account-erasure-media-upload-settlement-20261016.json).
+
+### Ověřený přechod se zachováním starého procesu
+
+Izolovaný skutečný test 2026-10-16 použil starý produkční COP image
+`sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f`
+a připnutý SeaweedFS4.45/79b872021. API skutečně inicializovalo media storage,
+provedlo úspěšný PUT a bylo pozastaveno přes Docker pause. Po zastavení
+provideru (PID0), výměně pouze COP klíče a restartu stejného provider CID/image
+se obnovil přesně stejný API CID, PID a StartedAt. Všechny tři health endpointy
+vracely200 před i po přechodu; stará instance S3 v RAM vracela pro skutečný
+PUT403, nová identita úspěšně zapisovala i četla. B i jiná identita zůstaly
+zachované. Cached health starého procesu tedy nepotvrzuje funkčnost jeho
+starého klíče; funkční nový přístup musí potvrdit navazující kandidát.
+
+Stejný test zavolal přesné exporty produkčního instalačního podkladu:
+ListObjectVersions200 s jednou `null` verzí, DELETE konkrétní `versionId=null`
+vrátil204, nový seznam verzí byl prázdný a HEAD404. První actual zkouška
+odhalila standardní číselné XML entity v odpovědi; parser byl opraven a celý
+rozšířený test poté prošel. Plošný úklid ani obecný privileged broker nevznikly.
+
+Zdroj: `scripts/account-safety/run-old-api-media-pause-probe.py`.
+Přesný výsledek: `docs/testing/account-erasure-old-api-media-pause-20261016.json`.
+Nové vlastní syntetické kontejnery a volumes byly uklizeny; produkce a sdílené
+whole fixtures se tímto testem neměnily. Produkční Docker imageID se musí vždy
+načíst na skutečném storage hostu; samotná reference nebo imageID z jiného
+Docker hostu jej nenahrazují.

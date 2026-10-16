@@ -23,3 +23,10 @@
 - [20 COP code health: security, performance and dependencies](20_COP_CODE_HEALTH.md)
 - [22 Standalone chat release and joint SIM acceptance](22_COP_CHAT_RELEASE_20261010.md)
 - [24 COP API immutable image/runtime profile and recovery](24_COP_API_RUNTIME_PROFILE.md)
+- [26 COP account erasure backup and restore](26_ACCOUNT_ERASURE_BACKUP_RESTORE.md)
+- [27 COP account erasure configuration transition](27_ACCOUNT_ERASURE_CONFIG_TRANSITION.md)
+- [28. Root account-erasure preflight and proof production](28_ACCOUNT_ERASURE_ROOT_INSTALL.md)
+- [29. COP Edge account erasure](29_COP_EDGE_ACCOUNT_ERASURE.md)
+
+- [30. Whole COP account erasure fixture](30_ACCOUNT_ERASURE_WHOLE_FIXTURE.md)
+- [31. Historical account provenance and safe schema preparation](31_ACCOUNT_ERASURE_LEGACY_PROVENANCE.md)
