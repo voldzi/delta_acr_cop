@@ -378,3 +378,14 @@ key/policy change; missing config with old reports/marker fails startup. Never
 clear these markers to bypass a failed rollout.
 
 Prepared account-erasure P1 repairs: 300-second actor-specific plan, 30-day content-free read capability, Keycloak cleanup barrier, fair pending retries and continued accepted workers with intake disabled. Guard lookup is independent of the mobility flag; guard-only max=1 pool has no Dispatch lease and needs a separately reviewed future profile/budget. Native helper 49ca96be does not enforce the new protected store/image binding, so activation remains blocked. No production `.env`, image, store identity or account was changed. See ADR 0051/runbook 25; technical TTL does not define personal-data retention.
+
+### Clean reset operator identity and candidate binding (17 October)
+
+The finite reset uses an existing Root SSH key for `voldzi@comm.home.cz`,
+with strict existing host verification, no agent forwarding, password fallback
+or key installation. COMM currently disables password authentication. A missing
+Root key stops preparation before any writer freeze; Mac access alone is not
+Root transport evidence. The sealed dependency runtime remains image `2e61857`,
+while the reviewed API candidate is `80bee6a` (image `28648cde`). These are
+separate pins; the whole-provider report must bind the actual API image.
+This source update does not install keys or activate production erasure.

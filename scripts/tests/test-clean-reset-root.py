@@ -11,7 +11,7 @@ m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 def plan():
  return {'contractVersion':'cop-sim-clean-reset-root-plan-v1','resetEpoch':'10000000-0000-4000-8000-000000000001','tokensNotBefore':int(time.time())-1,
- 'candidateImages':{k:('sha256:2e61857d00f7fe0326a7b50a8f96f0cb4563d4d9028645dc08efe51b84e800df' if k=='cop_api' else 'sha256:'+'b'*64) for k in ['cop_api','cop_web','sim_api','sim_web','ai_router','situation_data','messaging_api','synapse','voice_proxy']},'operatorRuntime':{'root':'/srv/x5-production/staging/cop/clean-operator-2e61857','imageId':'sha256:2e61857d00f7fe0326a7b50a8f96f0cb4563d4d9028645dc08efe51b84e800df','nodeSha256':'c8726a01ce4ac245ea9e5cb483992a90e628e5847d98f9a9f3be048d09a50d75','loaderSha256':'38d022ce7425ff105ccfb53598f606e6e5f5f0a34bfbc793d65e6f34c9d72806'},'scope':'cop_sim_shared_identity_v1','runtimeBinding':{'contractVersion':'cop-api-runtime-active-v1','generation':'a'*32,'containerId':'a'*64,'imageId':'sha256:'+'b'*64,'profileId':'10000000-0000-4000-8000-000000000002','profileGeneration':'10000000-0000-4000-8000-000000000002','releaseId':'release-'+'c'*32},'localWriters':{n:{'id':'a'*64,'image':'sha256:'+'b'*64} for n in m.LOCAL_WRITERS},
+ 'candidateImages':{k:('sha256:28648cded21fbd52602a197693d0b0dc9eb213cd2bd84d6227b7da34c0cbab86' if k=='cop_api' else 'sha256:'+'b'*64) for k in ['cop_api','cop_web','sim_api','sim_web','ai_router','situation_data','messaging_api','synapse','voice_proxy']},'operatorRuntime':{'root':'/srv/x5-production/staging/cop/clean-operator-2e61857','imageId':'sha256:2e61857d00f7fe0326a7b50a8f96f0cb4563d4d9028645dc08efe51b84e800df','nodeSha256':'c8726a01ce4ac245ea9e5cb483992a90e628e5847d98f9a9f3be048d09a50d75','loaderSha256':'38d022ce7425ff105ccfb53598f606e6e5f5f0a34bfbc793d65e6f34c9d72806'},'scope':'cop_sim_shared_identity_v1','runtimeBinding':{'contractVersion':'cop-api-runtime-active-v1','generation':'a'*32,'containerId':'a'*64,'imageId':'sha256:'+'b'*64,'profileId':'10000000-0000-4000-8000-000000000002','profileGeneration':'10000000-0000-4000-8000-000000000002','releaseId':'release-'+'c'*32},'localWriters':{n:{'id':'a'*64,'image':'sha256:'+'b'*64} for n in m.LOCAL_WRITERS},
  'remoteWriters':{n:{'id':'c'*64,'image':'sha256:'+'d'*64} for n in m.REMOTE_WRITERS},
  'sources':{n:{'revision':'e'*40,'root':('/srv/x5-production/staging/cop/clean-operator-2e61857/app' if n=='cop' else '/srv/x5-production/staging/cop/root-reviewed-'+n),'files':{'reviewed.mjs':'f'*64}} for n in ['cop','sim','messaging']},
  'reviewedPlanDigests':{n:'a'*64 for n in ['cop','ai','driver','files','keycloak','messaging','media','edge','sim_app_files','sim_user_install','cop_safety_install']},
@@ -21,6 +21,15 @@ class RootAdmissionTest(unittest.TestCase):
  def test_fixed_complete_plan_is_validated_without_granting_admission(self):
   p=plan();self.assertIs(m.validate_plan(p),p)
   with self.assertRaisesRegex(RuntimeError,'RESET_ROOT_CONTEXT'):m.RootResetAdmission(object(),object())
+ def test_actual_api_candidate_is_separate_from_the_sealed_dependency_runtime(self):
+  p=plan();self.assertNotEqual(p['candidateImages']['cop_api'],p['operatorRuntime']['imageId']);m.validate_plan(p)
+  p['candidateImages']['cop_api']=p['operatorRuntime']['imageId']
+  with self.assertRaisesRegex(RuntimeError,'OPERATOR_SOURCE'):m.validate_plan(p)
+ def test_comm_transport_uses_only_existing_root_keys_without_password_or_forwarding(self):
+  source=(Path(__file__).parents[1]/'account-safety/clean-reset-root.py').read_text().split('class CommunicationResetTransport:',1)[1]
+  self.assertIn('PreferredAuthentications=publickey',source);self.assertIn('PasswordAuthentication=no',source)
+  self.assertIn('BatchMode=yes',source);self.assertIn('ForwardAgent=no',source);self.assertIn('StrictHostKeyChecking=yes',source)
+  self.assertNotIn('PreferredAuthentications=password',source);self.assertNotIn('ssh-copy-id',source)
  def test_unknown_scope_future_cutoff_and_arbitrary_writer_are_rejected(self):
   for key,value in [('scope','old_scope'),('tokensNotBefore',int(time.time())+10000),('resetEpoch','not-an-epoch')]:
    p=plan();p[key]=value
