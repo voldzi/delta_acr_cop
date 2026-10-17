@@ -1,0 +1,21 @@
+{
+  "contractVersion": "cop-sim-app-clean-joint-component-v1",
+  "checks": 14,
+  "actualCopAdapter": true,
+  "actualSimMainRouterRelay": true,
+  "actualOwnedPostgres": true,
+  "actualSimOidcVerification": true,
+  "actualKeycloak": false,
+  "realRootAdmission": false,
+  "wholeAccountAcceptance": false,
+  "productionTouched": false,
+  "externalProviderAttempts": 0,
+  "sourcePins": {
+    "scripts/fixtures/clean-whole-sim-v1.mjs": "3aa56b28d2282d05cfcdbd21284fbf04322c83f0b6b374b12431cc95707b09ac",
+    "scripts/fixtures/clean-whole-sim-user-data-v2.mjs": "b18963223776e323d57e4504f364cc6c8050cf873e46205471d0f384942800b2",
+    "apps/simulator-api/dist/user-data.js": "b18c637515e4c85ae5271f3416cda4f480a37ee3d6105c578809d617dceb8eaf",
+    "apps/ai-router-api/dist/sim-user-history.js": "c6bd19f956a2b96ac3e0f1ec9c229a8e9f0927afffa1392b3109616b6ff70772",
+    "apps/situation-data-api/dist/sim-user-data-relay.js": "a310a2150b68895282d1b5deaf9550baaab1bc44791e00a6136e518fd45204da"
+  },
+  "sourceState": "SIM working candidate; rerun required after source freeze and publication"
+}

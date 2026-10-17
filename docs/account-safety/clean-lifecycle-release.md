@@ -133,3 +133,13 @@ reset rejection. The reset marker grants only SELECT to the existing business
 owner; the test verifies that role cannot UPDATE it. The COP reset test remains
 48 passing assertions with an actual restart. This does not establish a finished
 production release coordinator or whole-provider acceptance.
+
+The actual COP `sim_user_data` adapter was exercised against the new actual SIM
+main app, Router, restricted relay and owned PostgreSQL: 14 assertions passed.
+A data disappeared while B's scenario remained; owner-bound status, wrong token,
+wrong issuer, repeated deletion and fresh readback were checked. The SIM endpoint
+verified actual RSA/OIDC test tokens; no actual Keycloak server was used. External
+provider attempts were zero. SIM source/compiled pins were unchanged before/after
+this run, but SIM was still a working candidate, so rerun after its final source
+publication is required. This is component integration, not twelve-provider or
+production acceptance. Evidence: `docs/testing/account-erasure-sim-app-component-20261017.json`.
