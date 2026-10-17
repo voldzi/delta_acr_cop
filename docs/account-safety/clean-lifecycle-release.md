@@ -367,3 +367,9 @@ configuration, mount, network and real health checks. Normal deployments and
 rollback handling retain their previous paths. Eighty-four runtime-consumer
 tests passed, including the stopped-source path and rejection of mismatched or
 stale proof. The final Root coordinator and production execution remain pending.
+
+The release report retains the actual public COP states: initial HTTP202 with
+`status=deleting`/`accountDeleted=false`, and final HTTP200 with
+`status=deleted`/`accountDeleted=true`. Provider-local `pending`/`completed`
+labels cannot substitute for those public fields. Eight parser rejection tests
+cover the report, including rejection of mismatched public states and booleans.

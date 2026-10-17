@@ -15,14 +15,18 @@ def example():
  r={'contractVersion':'cop-sim-whole-clean-acceptance-v2','kind':'isolated_whole_provider','deletionScope':'cop_sim_shared_identity_v1',
  'productionTouched':False,'externalProviderCalls':0,'actorCount':2,'candidateImages':images,
  'checkedAt':datetime.datetime.fromtimestamp(NOW,datetime.timezone.utc).isoformat().replace('+00:00','Z'),
- 'operation':{'operationId':OP,'initialHttpStatus':202,'initialStatus':'pending','finalHttpStatus':200,'finalStatus':'completed','finalContractVersion':'cop-account-erasure-v2','requiredOwners':sorted(m.OWNERS)},
+ 'operation':{'operationId':OP,'initialHttpStatus':202,'initialStatus':'deleting','initialAccountDeleted':False,'finalHttpStatus':200,'finalStatus':'deleted','finalAccountDeleted':True,'finalContractVersion':'cop-account-erasure-v2','requiredOwners':sorted(m.OWNERS)},
  'providerReadbacks':{k:{'operationId':OP,'status':'completed','userARemaining':0,'userBStateBefore':'b'*64,'userBStateAfter':'b'*64,'readbackDigest':'c'*64} for k in m.OWNERS},
  'identityReadback':{'userAGetStatus':404,'userARefreshStatus':400,'userALoginStatus':400,'userBProfileStatus':200,'userBRefreshStatus':200,'deletedAfterProviderProofs':True},
- 'recoveryReadbacks':{k:{'operationId':OP,'finalUserARemaining':0,'userBPreserved':True,'readbackDigest':'d'*64,'dependencyHttpStatus':503,'operationStatus':'pending','httpStatus':503,'rowsRecreated':0,'restoredRows':1} for k in ['router_outage','messaging_outage','worker_restart','restored_user_data','late_write']},
+ 'recoveryReadbacks':{k:{'operationId':OP,'finalUserARemaining':0,'userBPreserved':True,'readbackDigest':'d'*64,'dependencyHttpStatus':503,'operationStatus':'deleting','httpStatus':503,'rowsRecreated':0,'restoredRows':1} for k in ['router_outage','messaging_outage','worker_restart','restored_user_data','late_write']},
  'testedSourceDigests':{k:'e'*64 for k in ['cop','sim','messaging','producer']}}
  return r,images
 
 class AcceptanceTest(unittest.TestCase):
+ def test_actual_public_status_and_account_deleted_fields_are_required(self):
+  for key,value in [('initialStatus','pending'),('finalStatus','completed'),('initialAccountDeleted',True),('finalAccountDeleted',False)]:
+   r,i=example();r['operation'][key]=value
+   with self.assertRaises(RuntimeError):m.validate_clean_whole_report(r,i,NOW)
  def test_structured_parser_does_not_grant_root_custody(self):
   r,i=example();self.assertEqual(m.validate_clean_whole_report(r,i,NOW)['operationId'],OP)
   self.assertNotIn('reportSha256',m.validate_clean_whole_report(r,i,NOW))

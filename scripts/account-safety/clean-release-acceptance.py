@@ -45,8 +45,10 @@ def validate_clean_whole_report(report, expected_images, now):
     need(0 <= now - checked <= 24*3600, 'CLEAN_WHOLE_TIME')
     op = report.get('operation')
     need(isinstance(op, dict) and isinstance(op.get('operationId'), str) and UUID.fullmatch(op['operationId'])
-         and op.get('initialHttpStatus') == 202 and op.get('initialStatus') == 'pending'
-         and op.get('finalHttpStatus') == 200 and op.get('finalStatus') == 'completed'
+         and op.get('initialHttpStatus') == 202 and op.get('initialStatus') == 'deleting'
+         and op.get('initialAccountDeleted') is False
+         and op.get('finalHttpStatus') == 200 and op.get('finalStatus') == 'deleted'
+         and op.get('finalAccountDeleted') is True
          and op.get('finalContractVersion') == 'cop-account-erasure-v2'
          and op.get('requiredOwners') == sorted(OWNERS))
     owners = report.get('providerReadbacks')
@@ -70,7 +72,7 @@ def validate_clean_whole_report(report, expected_images, now):
              and value.get('finalUserARemaining') == 0 and value.get('userBPreserved') is True
              and isinstance(value.get('readbackDigest'), str) and HEX.fullmatch(value['readbackDigest']))
         if name in {'router_outage', 'messaging_outage'}:
-            need(value.get('dependencyHttpStatus') == 503 and value.get('operationStatus') == 'pending')
+            need(value.get('dependencyHttpStatus') == 503 and value.get('operationStatus') == 'deleting')
         if name == 'late_write':
             need(value.get('httpStatus') in (401, 403, 409, 410, 503) and value.get('rowsRecreated') == 0)
         if name == 'restored_user_data':
