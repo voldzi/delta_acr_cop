@@ -30,6 +30,14 @@ class RootAdmissionTest(unittest.TestCase):
   self.assertIn('PreferredAuthentications=publickey',source);self.assertIn('PasswordAuthentication=no',source)
   self.assertIn('BatchMode=yes',source);self.assertIn('ForwardAgent=no',source);self.assertIn('StrictHostKeyChecking=yes',source)
   self.assertNotIn('PreferredAuthentications=password',source);self.assertNotIn('ssh-copy-id',source)
+ def test_approved_temporary_identity_keeps_strict_non_forwarding_ssh(self):
+  transport=m.CommunicationResetTransport.__new__(m.CommunicationResetTransport)
+  with patch.object(transport,'_temporary_identity',return_value={'approved':'synthetic'}):
+   args=transport._args()
+  self.assertIn('IdentitiesOnly=yes',args);self.assertIn('ForwardAgent=no',args)
+  self.assertIn('StrictHostKeyChecking=yes',args)
+  self.assertEqual(args[args.index('-i')+1],'/run/cop-clean-reset-comm/id_ed25519')
+  self.assertNotIn('StrictHostKeyChecking=no',args)
  def test_unknown_scope_future_cutoff_and_arbitrary_writer_are_rejected(self):
   for key,value in [('scope','old_scope'),('tokensNotBefore',int(time.time())+10000),('resetEpoch','not-an-epoch')]:
    p=plan();p[key]=value

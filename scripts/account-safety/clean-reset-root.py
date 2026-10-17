@@ -4,6 +4,9 @@ No HTTP listener, password storage, Docker socket delegation or automatic reset.
 The joint controller must keep this object/lock alive through every DB/file step.
 """
 import fcntl
+import datetime
+import time
+import importlib.util
 from contextlib import contextmanager
 import hashlib
 import json
@@ -281,8 +284,8 @@ class RootResetAdmission:
 
 
 class CommunicationResetTransport:
-    """One existing Root SSH key/sudo identity; no credential provisioning.
-    No key installation, trust-on-first-use, agent forwarding or new listener.
+    """Existing Root identity or the explicitly approved one-release RAM key.
+    This transport never installs keys, changes trust or forwards an agent.
     """
     directory = Path('/run/cop-clean-reset-comm')
     control = directory / 'master.sock'
@@ -290,17 +293,36 @@ class CommunicationResetTransport:
     def __init__(self):
         need(os.getuid() == 0 and socket.gethostname().split('.')[0] == 'docker', 'RESET_ROOT_CONTEXT')
         self.identity = None
+        self.temporary_key = None
+
+    def _temporary_identity(self):
+        marker = self.directory / 'temporary-identity.json'
+        if not marker.exists():
+            need(self.temporary_key is None, 'RESET_COMM_TEMPORARY_KEY_LOST')
+            return None
+        spec = importlib.util.spec_from_file_location('root_temporary_comm_key', Path(__file__).with_name('temporary-comm-key.py'))
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        value = module.identity()
+        need(datetime.datetime.fromisoformat(value['expiresAt']).timestamp() > time.time(), 'RESET_COMM_TEMPORARY_KEY_EXPIRED')
+        binding = sha(json.dumps(value,sort_keys=True,separators=(',',':')).encode())
+        need(self.temporary_key in (None,binding), 'RESET_COMM_TEMPORARY_KEY_CHANGED')
+        self.temporary_key = binding
+        return value
 
     def _args(self):
-        return ['/usr/bin/ssh', '-F', '/dev/null', '-S', str(self.control),
+        temporary = self._temporary_identity()
+        identity_args = ['-o','IdentitiesOnly=yes','-i',str(self.directory/'id_ed25519')] if temporary else []
+        return ['/usr/bin/ssh', *identity_args, '-F', '/dev/null', '-S', str(self.control),
                 '-o', 'UserKnownHostsFile=/home/voldzi/.ssh/known_hosts',
                 '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'StrictHostKeyChecking=yes',
                 '-o', 'UpdateHostKeys=no', '-o', 'ForwardAgent=no', '-o', 'ForwardX11=no',
                 '-o', 'ClearAllForwardings=yes', '-o', 'ConnectTimeout=8']
 
     def open(self):
-        need(not self.directory.exists(), 'RESET_COMM_TRANSPORT_BUSY')
-        self.directory.mkdir(mode=0o700)
+        if self.directory.exists():
+            need(self._temporary_identity() is not None and not self.control.exists(), 'RESET_COMM_TRANSPORT_BUSY')
+        else:
+            self.directory.mkdir(mode=0o700)
         meta = self.directory.lstat()
         self.identity = (meta.st_dev, meta.st_ino)
         try:
@@ -319,6 +341,7 @@ class CommunicationResetTransport:
             raise
 
     def _custody(self):
+        self._temporary_identity()
         need(self.identity is not None, 'RESET_COMM_TRANSPORT_CLOSED')
         d, c = self.directory.lstat(), self.control.lstat()
         need(stat.S_ISDIR(d.st_mode) and (d.st_dev, d.st_ino) == self.identity and d.st_uid == c.st_uid == 0
@@ -346,7 +369,8 @@ class CommunicationResetTransport:
                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, env=ENV, timeout=10, check=False)
             self.control.unlink(missing_ok=True)
-            self.directory.rmdir()
+            if self.temporary_key is None:
+                self.directory.rmdir()
         except FileNotFoundError:
             try:
                 d = self.directory.lstat()

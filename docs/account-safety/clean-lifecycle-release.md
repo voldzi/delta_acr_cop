@@ -443,3 +443,29 @@ erasure flags remain false. Reporting and app-device flags remain unchanged.
 The source has seven parser/configuration boundary tests; a real Root execution
 and production readiness are still required. It is not an activation endpoint
 and cannot fall back to the old unprotected images.
+
+## Restore completion and approved temporary transport
+
+The actual restore repeated with Messaging `969a751` image
+`sha256:b14037387b410dc8647f84fb992e050bd6ac339f75a14fdf05374aed436fab8e`
+finished at 2026-10-17T14:41:41Z: the original receipt was
+200/deleted/accountDeleted=true and all twelve fresh owner readbacks reported
+zero removable A data with unchanged B fingerprints. Before restart the original
+snapshot had physically restored A's native account, token and two devices.
+Independent COP and Messaging guard hashes remained unchanged. No manual reset
+of the erasure job or fresh seed was used. The preceding c66885a restore attempt
+exposed owner-lock contention consuming the retry budget; it is not a successful
+final-image restore result.
+
+The operator explicitly approved a one-release Root Docker to COMM SSH identity
+after existing Root and user identities both failed public-key authentication.
+`temporary-comm-key.py` prepares it only in Root-owned tmpfs
+`/run/cop-clean-reset-comm`; its public receipt is
+`/home/voldzi/cop-clean-release-comm-public.json`. COMM authorization is restricted
+to source IP 192.168.10.116, has no forwarding/agent/PTY and expires after two
+hours. `temporary-comm-authorize.py` edits only that exact public line while
+preserving existing keys. The private key never leaves Docker. Inner transport
+close preserves the identity across release phases; the outer release finally
+must invoke `cleanup_temporary_comm_key(host)` to remove the exact authorization
+and RAM identity. Cleanup failure is an error, never release success. No password
+login, host trust bypass, new listener or existing-key transfer is permitted.
