@@ -417,3 +417,29 @@ input and its exact digest from existing identity keys and direct human decision
 It performs no I/O, database inspection or enrollment and explicitly makes no
 readiness claim. Its three boundary tests pass; the actual provisioner must still
 validate the current database under the held Root reset admission.
+
+## Final Messaging candidate and disabled-start bridge (2026-10-17)
+
+Messaging `c66885a` was built as immutable image
+`sha256:038b5b89ef6a1101038ab20b8fa42867807fdd5573a5440ba1a8d766632e39c8`.
+On the original two-actor fresh956 databases and operation, with
+`CSM_COMMUNICATION_SAFETY_ENABLED=false`, the actual owner B preflight returned
+200/ready and the original owner A operation returned 200/completed with an empty
+remaining list. All twelve independent owner readbacks reported zero removable A
+data and preserved B. A request using the original pre-deletion Matrix token
+returned 401/M_UNKNOWN_TOKEN; a new readback remained zero. No production data or
+OpenAI requests were involved. The earlier pending voice/identity description
+above records the earlier stage; the full original receipt now returns
+200/deleted/accountDeleted=true. This is isolated acceptance, not deployment.
+
+`start-messaging-disabled.py` supplies the Root-only post-reset two-service start.
+It requires the exact completed twelve-phase reset receipt, held Root admission,
+stopped previous containers and matching image bindings. It transfers public
+images directly between servers, derives the guard connection only on COMM from
+the existing runtime secret, and writes no private values to Git or stdout. It
+preserves each service's existing Compose chain, public ports and networks;
+only the reviewed erasure environment and public CA mount change. All four
+erasure flags remain false. Reporting and app-device flags remain unchanged.
+The source has seven parser/configuration boundary tests; a real Root execution
+and production readiness are still required. It is not an activation endpoint
+and cannot fall back to the old unprotected images.
