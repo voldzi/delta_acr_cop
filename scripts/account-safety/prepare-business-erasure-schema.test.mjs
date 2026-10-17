@@ -18,6 +18,7 @@ describe('actual owned PostgreSQL narrow first-enrollment DDL',{skip:!url,concur
    CREATE TABLE cop_safety_v2.dataset_replays(owner text,store_id uuid,incarnation_id uuid,restore_generation bigint,replay_sequence bigint,replay_digest text);CREATE TABLE cop_safety_v2.fences(sequence bigint);`);
  });
  beforeEach(async()=>{
+  await business.query('DROP TABLE IF EXISTS public.cop_clean_reset_epoch');
   await business.query('DROP TABLE IF EXISTS '+tables.map(v=>'public.'+v).join(',')+' CASCADE');
   await business.query('TRUNCATE cop_mobility_v1');
   await business.query('INSERT INTO cop_mobility_v1 VALUES($1,$2),($3,$4)',[
@@ -39,5 +40,21 @@ describe('actual owned PostgreSQL narrow first-enrollment DDL',{skip:!url,concur
  it('rejects changed independent and local bindings',async()=>{await guard.query("UPDATE cop_safety_v2.configuration SET configuration_fingerprint=repeat('c',64)");await assert.rejects(run('apply'),/BUSINESS_GUARD_BINDING_CHANGED/);assert.equal(await missing(),9);await guard.query('UPDATE cop_safety_v2.configuration SET configuration_fingerprint=$1',[expected.configurationFingerprint]);await business.query("UPDATE cop_mobility_v1 SET value=jsonb_set(value,'{incarnationId}',to_jsonb('abc86018-23e3-4d0f-9d66-291139d40bd8'::text)) WHERE key='account-safety:store-identity-v1'");await assert.rejects(run('apply'),/BUSINESS_LOCAL_BINDING_CHANGED/);});
  it('refuses progressed journal, accepted jobs and local erasure evidence',async()=>{await guard.query('INSERT INTO cop_safety_v2.fences VALUES(1)');await assert.rejects(run('apply'),/BUSINESS_NOT_FIRST_ENROLLMENT/);await guard.query('TRUNCATE cop_safety_v2.fences');await business.query("INSERT INTO cop_mobility_v1 VALUES('account-erasure:job:synthetic','{}')");await assert.rejects(run('apply'),/BUSINESS_NOT_FIRST_ENROLLMENT/);await business.query("DELETE FROM cop_mobility_v1 WHERE key LIKE 'account-erasure:job:%'");await run('apply');await business.query("INSERT INTO cop_runtime_owner_fences VALUES('synthetic','hash','hash','operation',now())");await assert.rejects(run('apply'),/BUSINESS_EXISTING_ERASURE_STATE/);});
  it('uses the actual guard row lock and times out without partial DDL',async()=>{const c=await guard.connect();try{await c.query('BEGIN');await c.query('UPDATE cop_safety_v2.configuration SET singleton=singleton');await assert.rejects(run('apply'),/BUSINESS_ERASURE_SCHEMA_UNPROVEN/);assert.equal(await missing(),9);}finally{await c.query('ROLLBACK');c.release();}});
+ it('clean scope requires its actual reset witness and rolls back DDL when live admission is lost',async()=>{
+  const clean={...expected,deletionScope:'cop_sim_shared_identity_v1',resetEpoch:'10000000-0000-4000-8000-000000000001',tokensNotBefore:1792195200};
+  const options={mode:'apply',business,guard,expected:clean,appRole:'cop_business_schema_test_app'};
+  await assert.rejects(prepareBusinessErasureSchemaFixture(options),/BUSINESS_CLEAN_ADMISSION_REQUIRED/);
+  await business.query("UPDATE cop_mobility_v1 SET value=jsonb_set(value,'{deletionScope}',to_jsonb('cop_sim_shared_identity_v1'::text)) WHERE key='account-erasure:configuration-v1'");
+  await business.query('CREATE TABLE public.cop_clean_reset_epoch(singleton boolean,reset_epoch uuid,tokens_not_before bigint,scope text); GRANT SELECT ON public.cop_clean_reset_epoch TO cop_business_schema_test_app');
+  await business.query('INSERT INTO public.cop_clean_reset_epoch VALUES(true,$1,$2,$3)',[clean.resetEpoch,clean.tokensNotBefore,clean.deletionScope]);
+  let calls=0;
+  await assert.rejects(prepareBusinessErasureSchemaFixture({...options,admission:{async assertCurrent(){if(++calls===2)throw Error('BUSINESS_SYNTHETIC_ADMISSION_LOST')}}}),/BUSINESS_SYNTHETIC_ADMISSION_LOST/);
+  assert.equal(await missing(),9);
+  const admission={async assertCurrent(){}};
+  await assert.rejects(prepareBusinessErasureSchemaFixture({...options,expected:{...clean,tokensNotBefore:clean.tokensNotBefore+1},admission}),/BUSINESS_CLEAN_RESET_UNPROVEN/);
+  assert.equal(await missing(),9);
+  const r=await prepareBusinessErasureSchemaFixture({...options,admission});assert.equal(r.schemaReady,true);assert.equal(await missing(),0);
+  const reader=await business.connect();try{await reader.query('SET ROLE cop_business_schema_test_app');assert.equal((await reader.query('SELECT scope FROM public.cop_clean_reset_epoch')).rows[0].scope,clean.deletionScope);await assert.rejects(reader.query('UPDATE public.cop_clean_reset_epoch SET tokens_not_before=1'),error=>error.code==='42501');}finally{await reader.query('RESET ROLE');reader.release();}
+ });
  it('refuses a non-owned fixture route before connecting',async()=>{await assert.rejects(prepareBusinessErasureSchemaFixture({mode:'apply',business:{options:{connectionString:'postgresql://cop_business_schema_test_admin@production.invalid:5432/cop_business_schema_test'}},guard,expected,appRole:'cop_business_schema_test_app'}),/BUSINESS_FIXTURE_ONLY/);});
 });

@@ -37,13 +37,20 @@ export function profileOperatorEnvironment(hostEnvironment,profileValues){
  const selected=validateProfileProbe({...values,COP_DATABASE_POOL_MODE:'transaction'});
  return {...hostEnvironment,...selected};
 }
-export function loadOperatorEnvironment(){
+function loadReviewedEnvironment(clean){
  need(process.getuid?.()===0&&hostname().split('.')[0]==='docker'&&Number(process.versions.node.split('.')[0])===24&&!process.env.NODE_OPTIONS&&!process.env.NODE_PATH,'OPERATOR_PROFILE_CONTEXT');
- const raw=read(ROOT+'/.env',{uid:1000,mode:0o600,max:1048576}),planRaw=read(ROOT+'/runtime/account-erasure-install/release-plan.json',{uid:0,mode:0o600,max:1048576}),plan=JSON.parse(planRaw),active=plan.expectedActive;
- need(plan.contractVersion==='cop-production-erasure-install-v1'&&/^[a-f0-9]{40}$/u.test(plan.sourceRevision)&&/^sha256:[a-f0-9]{64}$/u.test(plan.imageId),'OPERATOR_PROFILE_BINDING');
+ const planPath=ROOT+(clean?'/runtime/clean-reset/plan.json':'/runtime/account-erasure-install/release-plan.json');
+ const raw=read(ROOT+'/.env',{uid:1000,mode:0o600,max:1048576}),planRaw=read(planPath,{uid:0,mode:0o600,max:1048576}),plan=JSON.parse(planRaw),active=clean?plan.runtimeBinding:plan.expectedActive;
+ if(clean)need(plan.contractVersion==='cop-sim-clean-reset-root-plan-v1'&&plan.scope==='cop_sim_shared_identity_v1'&&/^[a-f0-9]{40}$/u.test(plan.sources?.cop?.revision??'')&&active?.containerId===plan.localWriters?.['cop-cop-api-1']?.id&&active?.imageId===plan.localWriters?.['cop-cop-api-1']?.image,'OPERATOR_PROFILE_BINDING');
+ else need(plan.contractVersion==='cop-production-erasure-install-v1'&&/^[a-f0-9]{40}$/u.test(plan.sourceRevision)&&/^sha256:[a-f0-9]{64}$/u.test(plan.imageId),'OPERATOR_PROFILE_BINDING');
  const directory=operatorProfileDirectory(active),d=lstatSync(directory);need(d.isDirectory()&&!d.isSymbolicLink()&&d.uid===0&&d.gid===1000&&(d.mode&0o777)===0o750,'OPERATOR_PROFILE_DIRECTORY_CUSTODY');
  const profileRaw=read(directory+'/runtime.env',{uid:0,gid:1000,mode:0o640,max:16384});
  const profileValues={};for(const line of profileRaw.toString().split(/\r?\n/u)){if(!line.trim()||line.startsWith('#'))continue;const m=/^(COP_API_RUNTIME_[A-Z_]+)='([^'\r\n]*)'$/u.exec(line);need(m&&!Object.hasOwn(profileValues,m[1]),'OPERATOR_PROFILE_SYNTAX');profileValues[m[1]]=m[2];}
  const env=profileOperatorEnvironment(parseOperatorHostEnvironment(raw.toString()),profileValues);
- need(read(ROOT+'/.env',{uid:1000,mode:0o600,max:1048576}).equals(raw)&&read(ROOT+'/runtime/account-erasure-install/release-plan.json',{uid:0,mode:0o600,max:1048576}).equals(planRaw)&&read(directory+'/runtime.env',{uid:0,gid:1000,mode:0o640,max:16384}).equals(profileRaw),'OPERATOR_PROFILE_INPUT_CHANGED');return env;
+ need(read(ROOT+'/.env',{uid:1000,mode:0o600,max:1048576}).equals(raw)&&read(planPath,{uid:0,mode:0o600,max:1048576}).equals(planRaw)&&read(directory+'/runtime.env',{uid:0,gid:1000,mode:0o640,max:16384}).equals(profileRaw),'OPERATOR_PROFILE_INPUT_CHANGED');return env;
 }
+
+/** Separate Root-reviewed clean scope. Never consumes the former v1 release
+ * plan as authority for a shared-identity clean deployment. Secrets stay in RAM. */
+export function loadOperatorEnvironment(){return loadReviewedEnvironment(false)}
+export function loadCleanOperatorEnvironment(){return loadReviewedEnvironment(true)}

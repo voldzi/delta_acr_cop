@@ -75,6 +75,11 @@ export async function applyCopUserReset(pool, plan, authorization) {
     await c.query("ALTER TABLE public.cop_user_profiles ADD CONSTRAINT cop_clean_profile_issuer CHECK(issuer ~ '^https://[^[:space:]]+/realms/[A-Za-z0-9_.-]+$')");
     await c.query("ALTER TABLE public.cop_user_profiles ADD CONSTRAINT cop_clean_profile_subject CHECK(subject_id ~ '^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$')");
     await c.query('CREATE TABLE public.cop_clean_reset_epoch(singleton boolean PRIMARY KEY CHECK(singleton), reset_epoch uuid NOT NULL, tokens_not_before bigint NOT NULL CHECK(tokens_not_before>0), scope text NOT NULL CHECK(scope=\'cop_sim_shared_identity_v1\'), completed_at timestamptz NOT NULL DEFAULT clock_timestamp())');
+    const epochReader=(await c.query("SELECT pg_get_userbyid(c.relowner) role FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname='cop_user_profiles'")).rows[0]?.role;
+    if(typeof epochReader!=='string'||!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(epochReader))throw Error('RESET_EPOCH_READER_UNPROVEN');
+    // Existing application owner can verify the nonsecret baseline, but cannot
+    // update or replace the administrator-owned reset witness.
+    await c.query('GRANT SELECT ON public.cop_clean_reset_epoch TO "'+epochReader+'"');
     await c.query("INSERT INTO public.cop_clean_reset_epoch(singleton,reset_epoch,tokens_not_before,scope) VALUES(true,$1,$2,'cop_sim_shared_identity_v1')",[authorization.resetEpoch,authorization.tokensNotBefore]);
     const after=await inventory(c);
     if(Object.values(after.counts).some(n=>n!==0)||Object.values(after.sideCounts).some(n=>n!==null&&n!==0)||after.audits?.user_audits>0||after.audits?.other_events!==plan.audits?.other_events||after.kv.user_rows!==0||sha(after.control)!==sha(plan.control))throw Error('RESET_READBACK_FAILED');

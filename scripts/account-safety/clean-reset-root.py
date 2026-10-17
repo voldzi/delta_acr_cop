@@ -4,6 +4,7 @@ No HTTP listener, password storage, Docker socket delegation or automatic reset.
 The joint controller must keep this object/lock alive through every DB/file step.
 """
 import fcntl
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -91,9 +92,19 @@ def assert_stopped(actual, expected):
              'RESET_WRITER_NOT_STOPPED')
 
 
+def assert_freeze_targets(actual, expected):
+    need(set(actual) == set(expected), 'RESET_WRITER_SET_CHANGED')
+    for name, item in actual.items():
+        need(item['id'] == expected[name]['id'] and item['image'] == expected[name]['image']
+             and item['restarting'] is False
+             and ((item['running'] is True and item['status'] == 'running' and item['pid'] > 0)
+                  or (item['running'] is False and item['status'] == 'exited' and item['pid'] == 0)),
+             'RESET_FREEZE_TARGET_CHANGED')
+
+
 def validate_plan(plan):
     keys = {'contractVersion', 'resetEpoch', 'tokensNotBefore', 'sources', 'localWriters',
-            'remoteWriters', 'reviewedPlanDigests', 'producerInventorySha256', 'operationLockMetadata', 'scope'}
+            'remoteWriters', 'reviewedPlanDigests', 'producerInventorySha256', 'operationLockMetadata', 'runtimeBinding', 'scope'}
     need(isinstance(plan, dict) and set(plan) == keys
          and plan['contractVersion'] == 'cop-sim-clean-reset-root-plan-v1'
          and plan['scope'] == 'cop_sim_shared_identity_v1', 'RESET_ROOT_PLAN_SCOPE')
@@ -106,6 +117,15 @@ def validate_plan(plan):
         for item in plan[key].values():
             need(set(item) == {'id', 'image'} and HEX.fullmatch(item['id'])
                  and IMAGE.fullmatch(item['image']), 'RESET_ROOT_PLAN_WRITER_BINDING')
+    active = plan['runtimeBinding']
+    need(isinstance(active, dict) and active.get('contractVersion') == 'cop-api-runtime-active-v1'
+         and isinstance(active.get('generation'), str) and re.fullmatch(r'[a-f0-9]{32}', active['generation'])
+         and active.get('containerId') == plan['localWriters']['cop-cop-api-1']['id']
+         and active.get('imageId') == plan['localWriters']['cop-cop-api-1']['image']
+         and isinstance(active.get('profileId'), str) and active.get('profileGeneration') == active['profileId']
+         and str(uuid.UUID(active['profileId'])) == active['profileId']
+         and isinstance(active.get('releaseId'), str) and re.fullmatch(r'release-[a-f0-9]{32}', active['releaseId']),
+         'RESET_ROOT_RUNTIME_BINDING')
     need(isinstance(plan['sources'], dict) and set(plan['sources']) == {'cop', 'sim', 'messaging'},
          'RESET_ROOT_PLAN_SOURCE_SET')
     for item in plan['sources'].values():
@@ -145,17 +165,47 @@ class RootResetAdmission:
         self.fd = None
         self.open = False
 
+    def _acquire(self):
+        need(not self.open and self.fd is None, 'RESET_ADMISSION_ALREADY_OPEN')
+        self.fd = os.open('/srv/cop/.storage.lock', os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW)
+        self._lock_current()
+        fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        self.open = True
+
     def __enter__(self):
         try:
-            self.fd = os.open('/srv/cop/.storage.lock', os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW)
-            self._lock_current()
-            fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            self.open = True
+            self._acquire()
             self.assert_current()
             return self
         except BaseException:
             self.__exit__(None, None, None)
             raise
+
+    @classmethod
+    @contextmanager
+    def freeze_reviewed(cls, remote, producers):
+        """Explicit final-release step only. Freeze exactly the Root-reviewed
+        instances, under the existing deployment lock. No automatic restart.
+        """
+        value = cls(remote, producers)
+        try:
+            value._acquire()
+            value._assert_files()
+            local = inspect_writers(command, LOCAL_WRITERS)
+            distant = inspect_writers(remote.run, REMOTE_WRITERS)
+            assert_freeze_targets(local, value.plan['localWriters'])
+            assert_freeze_targets(distant, value.plan['remoteWriters'])
+            # Only the already-inventoried report cron is paused. A still-running
+            # report task blocks; it is never killed by a guessed process name.
+            need(producers.freeze() == value.plan['producerInventorySha256'], 'RESET_PRODUCER_PLAN_MISMATCH')
+            command(['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock',
+                     'stop', '--time', '30', *LOCAL_WRITERS], timeout=90)
+            remote.run(['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock',
+                        'stop', '--time', '30', *REMOTE_WRITERS])
+            value.assert_current()
+            yield value
+        finally:
+            value.__exit__(None, None, None)
 
     def _lock_current(self):
         need(self.fd is not None, 'RESET_OPERATION_LOCK_CLOSED')
@@ -164,7 +214,7 @@ class RootResetAdmission:
         need(stat.S_ISREG(item.st_mode) and stat.S_ISREG(path.st_mode) and item.st_nlink == path.st_nlink == 1
              and fields(item) == fields(path) == self.plan['operationLockMetadata'], 'RESET_OPERATION_LOCK_CUSTODY')
 
-    def assert_current(self):
+    def _assert_files(self):
         need(self.open and self.fd is not None, 'RESET_ADMISSION_CLOSED')
         self._lock_current()
         need(protected(PLAN) == self.plan_raw, 'RESET_ROOT_PLAN_CHANGED')
@@ -178,6 +228,8 @@ class RootResetAdmission:
                 p = base / leaf
                 need(hashlib.sha256(protected(p, mode=(0o444,0o555))).hexdigest() == digest,
                      'RESET_SOURCE_CHANGED')
+    def assert_current(self):
+        self._assert_files()
         assert_stopped(inspect_writers(command, LOCAL_WRITERS), self.plan['localWriters'])
         self.remote.assert_stopped(self.plan['remoteWriters'])
         self.producers.assert_stopped(self.plan['producerInventorySha256'])

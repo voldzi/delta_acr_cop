@@ -11,7 +11,7 @@ m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 def plan():
  return {'contractVersion':'cop-sim-clean-reset-root-plan-v1','resetEpoch':'10000000-0000-4000-8000-000000000001','tokensNotBefore':int(time.time())-1,
- 'scope':'cop_sim_shared_identity_v1','localWriters':{n:{'id':'a'*64,'image':'sha256:'+'b'*64} for n in m.LOCAL_WRITERS},
+ 'scope':'cop_sim_shared_identity_v1','runtimeBinding':{'contractVersion':'cop-api-runtime-active-v1','generation':'a'*32,'containerId':'a'*64,'imageId':'sha256:'+'b'*64,'profileId':'10000000-0000-4000-8000-000000000002','profileGeneration':'10000000-0000-4000-8000-000000000002','releaseId':'release-'+'c'*32},'localWriters':{n:{'id':'a'*64,'image':'sha256:'+'b'*64} for n in m.LOCAL_WRITERS},
  'remoteWriters':{n:{'id':'c'*64,'image':'sha256:'+'d'*64} for n in m.REMOTE_WRITERS},
  'sources':{n:{'revision':'e'*40,'root':'/srv/x5-production/staging/cop/root-reviewed-'+n,'files':{'reviewed.mjs':'f'*64}} for n in ['cop','sim','messaging']},
  'reviewedPlanDigests':{n:'a'*64 for n in ['cop','ai','driver','files','keycloak','messaging','media','edge']},
@@ -33,12 +33,21 @@ class RootAdmissionTest(unittest.TestCase):
   for path in ['/srv/cop','/tmp/reviewed','/srv/x5-production/staging/cop/../reviewed']:
    p=plan();p['sources']['cop']['root']=path
    with self.assertRaisesRegex(RuntimeError,'SOURCE_PATH'):m.validate_plan(p)
+ def test_runtime_profile_must_belong_to_the_same_reviewed_cop_instance(self):
+  p=plan();p['runtimeBinding']['containerId']='f'*64
+  with self.assertRaisesRegex(RuntimeError,'RUNTIME_BINDING'):m.validate_plan(p)
  def test_stopped_witness_requires_exact_containers_images_and_zero_processes(self):
   expected=plan()['localWriters'];actual={n:{**x,'running':False,'restarting':False,'status':'exited','pid':0} for n,x in expected.items()}
   m.assert_stopped(actual,expected)
   for field,value in [('running',True),('pid',42),('status','paused'),('id','0'*64),('image','sha256:'+'0'*64),('restarting',True)]:
    bad=copy.deepcopy(actual);bad[m.LOCAL_WRITERS[0]][field]=value
    with self.assertRaisesRegex(RuntimeError,'WRITER_NOT_STOPPED'):m.assert_stopped(bad,expected)
+ def test_freeze_admits_only_the_exact_reviewed_running_or_already_stopped_instances(self):
+  expected=plan()['localWriters'];actual={n:{**x,'running':True,'restarting':False,'status':'running','pid':42} for n,x in expected.items()}
+  m.assert_freeze_targets(actual,expected)
+  for field,value in [('id','0'*64),('image','sha256:'+'0'*64),('status','paused'),('restarting',True),('pid',0)]:
+   changed=copy.deepcopy(actual);changed[m.LOCAL_WRITERS[0]][field]=value
+   with self.assertRaisesRegex(RuntimeError,'FREEZE_TARGET_CHANGED'):m.assert_freeze_targets(changed,expected)
  def test_container_reader_never_requests_environment_or_accepts_missing_containers(self):
   args=[]
   def run(command):

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { hostname } from 'node:os';
-import { loadOperatorEnvironment } from './operator-profile-environment.mjs';
+import { loadOperatorEnvironment, loadCleanOperatorEnvironment } from './operator-profile-environment.mjs';
 const need=(v,code='BUSINESS_ERASURE_SCHEMA_UNPROVEN')=>{if(!v)throw Error(code);};
 const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
@@ -72,11 +72,17 @@ async function binding(g,b,expected,locking){
  need((await g.query('SELECT count(*)::int n FROM cop_safety_v2.fences')).rows[0].n===0,'BUSINESS_NOT_FIRST_ENROLLMENT');
  const actual=(await b.query("SELECT key,value FROM public.cop_mobility_v1 WHERE key IN ('account-safety:store-identity-v1','account-erasure:configuration-v1') ORDER BY key")).rows;
  const local=actual.find(x=>x.key==='account-erasure:configuration-v1')?.value,marker=actual.find(x=>x.key==='account-safety:store-identity-v1')?.value;
+ if(expected.deletionScope!==undefined){
+  need(expected.deletionScope==='cop_sim_shared_identity_v1'&&uuid.test(expected.resetEpoch??'')&&Number.isSafeInteger(expected.tokensNotBefore)&&expected.tokensNotBefore>0&&local?.deletionScope===expected.deletionScope,'BUSINESS_CLEAN_SCOPE_UNPROVEN');
+  const epoch=(await b.query('SELECT reset_epoch,tokens_not_before,scope FROM public.cop_clean_reset_epoch WHERE singleton')).rows;
+  need(epoch.length===1&&epoch[0].reset_epoch===expected.resetEpoch&&Number(epoch[0].tokens_not_before)===expected.tokensNotBefore&&epoch[0].scope===expected.deletionScope,'BUSINESS_CLEAN_RESET_UNPROVEN');
+ }
  need(local?.version===4&&local.storeId===expected.applicationStoreId&&local.fingerprint===expected.configurationFingerprint&&local.datasetBinding?.incarnationId===expected.incarnationId&&local.datasetBinding.restoreGeneration===Number(v.restore_generation)&&marker?.storeId===expected.applicationStoreId&&marker.incarnationId===expected.incarnationId,'BUSINESS_LOCAL_BINDING_CHANGED');
  need((await b.query("SELECT count(*)::int n FROM public.cop_mobility_v1 WHERE key LIKE 'account-erasure:job:%'")).rows[0].n===0,'BUSINESS_NOT_FIRST_ENROLLMENT');
  return hash({guard:rows[0],local,marker});
 }
-async function prepare({mode,business,guard,expected,appRole}){
+async function prepare({mode,business,guard,expected,appRole,admission}){
+ if(expected?.deletionScope!==undefined){need(typeof admission?.assertCurrent==='function','BUSINESS_CLEAN_ADMISSION_REQUIRED');await admission.assertCurrent();}
  need(['check','apply'].includes(mode)&&[expected.guardStoreId,expected.applicationStoreId,expected.incarnationId].every(v=>uuid.test(v??''))&&hex.test(expected.configurationFingerprint??'')&&/^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/u.test(appRole),'BUSINESS_PREP_SCOPE');
  const ddl=await schemas(),g=await guard.connect(),b=await business.connect();let gt=false,bt=false;
  try{
@@ -100,19 +106,22 @@ async function prepare({mode,business,guard,expected,appRole}){
   need(beforeBinding===await binding(g,b,expected,mode==='apply'),'BUSINESS_BINDING_MOVED');
   const result={contractVersion:'cop-business-erasure-schema-preparation-v1',mode,schemaReady:after.missing.length===0,missingTables:after.missing,tableCount:names.length,
    createdTables:mode==='apply'?before.missing:[],zeroWriteLeases,firstEnrollmentConfirmed:true,bindingDigest:beforeBinding,catalogDigest:after.digest,exportedSchemasDigest:ddl.digest};
+  if(admission)await admission.assertCurrent();
   await b.query('COMMIT');bt=false;await g.query('COMMIT');gt=false;return result;
  }catch(error){if(bt)await b.query('ROLLBACK').catch(()=>{});if(gt)await g.query('ROLLBACK').catch(()=>{});throw Error(typeof error?.message==='string'&&/^BUSINESS_[A-Z_]+$/u.test(error.message)?error.message:'BUSINESS_ERASURE_SCHEMA_UNPROVEN');}
  finally{b.release();g.release();}
 }
-export async function prepareBusinessErasureSchema({mode,password}={}){
- need(['check','apply'].includes(mode),'BUSINESS_FIXED_MODE');need(process.getuid?.()===0&&hostname().split('.')[0]==='docker'&&Number(process.versions.node.split('.')[0])===24&&!process.env.NODE_OPTIONS&&!process.env.NODE_PATH,'BUSINESS_ROOT_CONTEXT');const env=loadOperatorEnvironment();need(env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE==='database_v2'&&(!env.COP_ACCOUNT_ERASURE_ENABLED||env.COP_ACCOUNT_ERASURE_ENABLED==='false')&&(env.COP_ACCOUNT_ERASURE_SECRET??'').length>=32,'BUSINESS_PRODUCTION_SCOPE');
+export async function prepareBusinessErasureSchema({mode,password,cleanReset=false,admission}={}){
+ need(typeof cleanReset==='boolean','BUSINESS_FIXED_MODE');
+ need(['check','apply'].includes(mode),'BUSINESS_FIXED_MODE');need(process.getuid?.()===0&&hostname().split('.')[0]==='docker'&&Number(process.versions.node.split('.')[0])===24&&!process.env.NODE_OPTIONS&&!process.env.NODE_PATH,'BUSINESS_ROOT_CONTEXT');const env=cleanReset?loadCleanOperatorEnvironment():loadOperatorEnvironment();need(env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE==='database_v2'&&(!env.COP_ACCOUNT_ERASURE_ENABLED||env.COP_ACCOUNT_ERASURE_ENABLED==='false')&&(env.COP_ACCOUNT_ERASURE_SECRET??'').length>=32,'BUSINESS_PRODUCTION_SCOPE');
+ if(cleanReset){need(env.COP_ACCOUNT_ERASURE_SCOPE==='cop_sim_shared_identity_v1'&&typeof admission?.assertCurrent==='function','BUSINESS_CLEAN_ADMISSION_REQUIRED');await admission.assertCurrent();}
  const ca=readFileSync('/etc/vcode-cop-pgbouncer/postgres-ca.crt');need(createHash('sha256').update(ca).digest('hex')===CA_SHA,'BUSINESS_CA_CHANGED');
  const{databaseContinuityEndpoints}=await import('../../apps/cop-api/dist/account-erasure-continuity-production.js');const routes=databaseContinuityEndpoints(env);
  const{Pool}=createRequire(new URL('../../apps/cop-api/package.json',import.meta.url))('pg');const pools=[];
  const pool=(value,database,admin)=>{const u=new URL(value);need(['postgres:','postgresql:'].includes(u.protocol)&&u.hostname==='haproxy.home.cz'&&u.port==='5000'&&u.pathname==='/'+database&&!u.hash&&[...u.searchParams.keys()].every(k=>k==='application_name'),'BUSINESS_DATABASE_ROUTE');
   if(admin)need(typeof password==='string'&&password.length>0&&!/[\r\n\0]/u.test(password),'BUSINESS_ADMIN_PASSWORD_REQUIRED');
   const p=new Pool({host:'haproxy.home.cz',port:5000,database,user:admin?'postgres':decodeURIComponent(u.username),password:admin?password:decodeURIComponent(u.password),max:1,connectionTimeoutMillis:3000,query_timeout:20000,ssl:{ca:ca.toString(),rejectUnauthorized:true,servername:'haproxy.home.cz'},application_name:'cop-business-schema-prep'});p.on('error',()=>{});pools.push(p);return p;};
- try{return await prepare({mode,business:pool(routes.targetUrl,'cop',mode==='apply'),guard:pool(routes.guardUrl,'cop_account_safety_guard',mode==='apply'),appRole:decodeURIComponent(new URL(routes.targetUrl).username),expected:{guardStoreId:env.COP_ACCOUNT_SAFETY_GUARD_STORE_ID,applicationStoreId:env.COP_ACCOUNT_SAFETY_STORE_ID,incarnationId:env.COP_ACCOUNT_SAFETY_INCARNATION_ID,configurationFingerprint:createHash('sha256').update('cop-account-erasure-config-v1\0'+env.COP_ACCOUNT_ERASURE_SECRET).digest('hex')}});}finally{await Promise.all(pools.map(p=>p.end()));}
+ try{return await prepare({mode,business:pool(routes.targetUrl,'cop',mode==='apply'),guard:pool(routes.guardUrl,'cop_account_safety_guard',mode==='apply'),appRole:decodeURIComponent(new URL(routes.targetUrl).username),admission,expected:{...(cleanReset?{deletionScope:env.COP_ACCOUNT_ERASURE_SCOPE,resetEpoch:env.COP_USER_RESET_EPOCH,tokensNotBefore:Number(env.COP_USER_RESET_TOKENS_NOT_BEFORE)}:{}),guardStoreId:env.COP_ACCOUNT_SAFETY_GUARD_STORE_ID,applicationStoreId:env.COP_ACCOUNT_SAFETY_STORE_ID,incarnationId:env.COP_ACCOUNT_SAFETY_INCARNATION_ID,configurationFingerprint:createHash('sha256').update('cop-account-erasure-config-v1\0'+env.COP_ACCOUNT_ERASURE_SECRET).digest('hex')}});}finally{await Promise.all(pools.map(p=>p.end()));}
 }
 /** Import-only seam refuses every non-owned loopback fixture before connecting. */
 export async function prepareBusinessErasureSchemaFixture(options){

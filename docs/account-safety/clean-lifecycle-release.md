@@ -117,3 +117,19 @@ A separate build-only script for API revision `6c5c9855b29644cdc6e86b5b66166c861
 was staged on the server for operator execution. It seals only the fresh public
 X5 checkout and builds through the existing guarded deployment path; it does not
 reset data, activate a release or enable account deletion.
+
+The concrete Root admission now also binds the actual protected runtime-profile
+pointer to the reviewed COP container/image. Its explicit `freeze_reviewed`
+composition acquires the existing deployment lock, verifies all exact targets,
+pauses only the known report cron and stops the finite reviewed writer set.
+Unknown/replaced/paused instances block before stop; no failure path restarts
+writers. Ten isolated Root protocol checks pass; no live stop was performed.
+
+Clean business-schema preparation now reads the separate clean Root plan rather
+than the historical v1 release plan. It verifies the actual database reset marker
+and exact clean scope, and rechecks live admission before committing DDL. Thirteen
+owned PostgreSQL tests pass, including lost-admission rollback and mismatched
+reset rejection. The reset marker grants only SELECT to the existing business
+owner; the test verifies that role cannot UPDATE it. The COP reset test remains
+48 passing assertions with an actual restart. This does not establish a finished
+production release coordinator or whole-provider acceptance.
