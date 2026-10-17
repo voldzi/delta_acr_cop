@@ -121,7 +121,7 @@ def validate_plan(plan):
     gate.validate_candidate_images(plan['candidateImages'])
     runtime = plan['operatorRuntime']
     need(isinstance(runtime, dict) and set(runtime) == {'root', 'imageId', 'nodeSha256', 'loaderSha256'}
-         and runtime['root'] == '/srv/x5-production/staging/cop/clean-operator-2e61857'
+         and runtime['root'] == '/srv/x5-production/staging/cop/clean-operator-shared-v3'
          and runtime['imageId'] == 'sha256:2e61857d00f7fe0326a7b50a8f96f0cb4563d4d9028645dc08efe51b84e800df'
          and runtime['nodeSha256'] == 'c8726a01ce4ac245ea9e5cb483992a90e628e5847d98f9a9f3be048d09a50d75'
          and runtime['loaderSha256'] == '38d022ce7425ff105ccfb53598f606e6e5f5f0a34bfbc793d65e6f34c9d72806',

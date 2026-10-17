@@ -430,3 +430,11 @@ extra phase in its exact sequence. The Node reset workers do not receive the
 Messaging enrollment root key. This is source preparation until the fresh
 PostgreSQL/Synapse integration test and Root production invocation succeed;
 unit/syntax checks do not establish successful production installation.
+
+The final Root bootstrap uses the new fixed
+`/srv/x5-production/staging/cop/clean-operator-shared-v3` directory. It must be
+created and sealed by Root from pinned images/archives; the older UID1000
+`clean-operator-2e61857` export is neither adopted nor deleted. The immutable
+dependency runtime stays separately pinned to image2e61857 and the app/dist
+content to the actual API candidate28648cde. Existing occupied targets fail
+preflight instead of being silently trusted.
