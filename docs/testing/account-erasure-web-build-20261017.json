@@ -1,0 +1,11 @@
+{
+  "contractVersion": "cop-clean-web-build-v1",
+  "sourceRevision": "6c5c9855b29644cdc6e86b5b66166c861226cdba",
+  "imageId": "sha256:6481b7c29d462b10e365692231c19b1b88a631693a09826003333106771b7329",
+  "sourceInputDigest": "fdcb83da92aaef997b68bf42756d8113eb5dca6c0698bd0e0463be4def502618",
+  "runtimeUnchanged": true,
+  "accountDeletionEnabled": false,
+  "buildOnly": true,
+  "publicDemoAnalyticsPreserved": true,
+  "ownerReconfirmationDate": "2026-10-17"
+}

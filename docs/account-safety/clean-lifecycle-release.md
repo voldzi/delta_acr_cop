@@ -183,3 +183,20 @@ must remain unchanged. This build requires the existing enabled flag and
 website ID; it cannot select another measurement scope.
 It writes a candidate-only image tag and verifies that both live API/web instances
 remain unchanged. It cannot deploy, change configuration or enable deletion.
+
+
+### Final SIM component rerun and matching web image
+
+The actual COP app-data adapter rerun passed all 14 checks against published
+clean SIM `a337cfc1aa3dc8ef3fd49a84b6e2fb94a651ee4d`. Compiled/source pins
+remained unchanged throughout; A was removed, B's scenario remained, owner-bound
+status and wrong issuer/token rejection passed, external-provider attempts zero.
+This replaces the earlier working-candidate evidence for this component only;
+it is not whole-provider/actual Keycloak/Root production acceptance.
+
+The matching immutable web image built successfully:
+`sha256:6481b7c29d462b10e365692231c19b1b88a631693a09826003333106771b7329`,
+API/web source `6c5c9855b29644cdc6e86b5b66166c861226cdba`.
+Both current production API/web instance IDs and images remained unchanged.
+Existing public-demo analytics was preserved after the owner's explicit current
+approval. Evidence: [web build](../testing/account-erasure-web-build-20261017.json).

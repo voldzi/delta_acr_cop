@@ -11,11 +11,12 @@
   "productionTouched": false,
   "externalProviderAttempts": 0,
   "sourcePins": {
-    "scripts/fixtures/clean-whole-sim-v1.mjs": "3aa56b28d2282d05cfcdbd21284fbf04322c83f0b6b374b12431cc95707b09ac",
-    "scripts/fixtures/clean-whole-sim-user-data-v2.mjs": "b18963223776e323d57e4504f364cc6c8050cf873e46205471d0f384942800b2",
-    "apps/simulator-api/dist/user-data.js": "b18c637515e4c85ae5271f3416cda4f480a37ee3d6105c578809d617dceb8eaf",
-    "apps/ai-router-api/dist/sim-user-history.js": "c6bd19f956a2b96ac3e0f1ec9c229a8e9f0927afffa1392b3109616b6ff70772",
-    "apps/situation-data-api/dist/sim-user-data-relay.js": "a310a2150b68895282d1b5deaf9550baaab1bc44791e00a6136e518fd45204da"
+    "scripts/fixtures/clean-whole-sim-v1.mjs": "5c2a7410b9276fc4dfbaedee75b2c747392aae074c684b2559daaf66ae3b74b4",
+    "scripts/fixtures/clean-whole-sim-user-data-v2.mjs": "e80c417265a71fa4ef7304acb92f5729df81ceb121dfde8d3e948e78575ab09d",
+    "apps/simulator-api/dist/user-data.js": "0b6ca995687e3279e7b4517c1b664ca0d2e324db40aeb1856ab27c5f0d499d8b",
+    "apps/ai-router-api/dist/sim-user-history.js": "b7856d77c7ec527cb13c67a9bf1705daa22f9f0b9fd31b71c13e3280494ed933",
+    "apps/situation-data-api/dist/sim-user-data-relay.js": "420a6ad91e09331f99a493cc77f8cae2ec8e327871ae673e1c50698bee3dc4e3"
   },
-  "sourceState": "SIM working candidate; rerun required after source freeze and publication"
+  "sourceState": "published clean SIM revision; actual COP adapter rerun passed with unchanged source pins",
+  "simSourceRevision": "a337cfc1aa3dc8ef3fd49a84b6e2fb94a651ee4d"
 }
