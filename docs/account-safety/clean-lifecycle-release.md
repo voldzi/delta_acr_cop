@@ -392,3 +392,28 @@ voice token lifetime and final identity removal. Do not call this complete or
 deployed. SIM's actual recovery in the separate 9aff case uses the same immutable
 application bundle as fresh956; fresh956 itself did not capture a pre-deletion
 SIM content snapshot and is not a SIM restoration test.
+
+## Actual three-database restore attempt and corrections
+
+The original pre-confirmation fresh956 dumps were physically restored into the
+three isolated COP/metadata/native target databases. Current schema-only dumps
+preserved original object owners/ACL; native creation also requires the original
+`LC_COLLATE=C` and `LC_CTYPE=C` from the fixture's source. No unsafe-locale flag
+was used. Independent COP fences, Messaging journal and first-use evidence hashes
+were equal before/after; none of those databases was restored. A profile/device,
+a native active account/token/devices and its original encrypted mapping really
+returned. This was not a reseed. The local COP job was absent in the dump.
+
+That actual replay exposed a receipt-access bug: the restored expired
+confirmation plan caused background pruning to remove the still-valid read
+capability, despite the same accepted job already being replayed. Pruning now
+preserves read access only for that exact accepted operation; unconfirmed plans,
+foreign operations and the existing30-day access expiry remain enforced.
+Two new regression cases and the targeted account/transport suite pass62 tests.
+This does not turn the pending overall restore/voice/identity check into GO.
+
+`prepare-clean-cop-manifest.mjs` prepares only the missing public first-enrollment
+input and its exact digest from existing identity keys and direct human decisions.
+It performs no I/O, database inspection or enrollment and explicitly makes no
+readiness claim. Its three boundary tests pass; the actual provisioner must still
+validate the current database under the held Root reset admission.

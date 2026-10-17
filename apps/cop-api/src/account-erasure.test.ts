@@ -243,6 +243,30 @@ describe("clean shared COP/SIM lifecycle v2", () => {
     expect(await store.transact([], tx => tx.scan("account-erasure:job:"))).toHaveLength(1);
     await restarted.assertAllowed(actor("owner-b"));
   });
+  it("keeps the original read capability when a restored expired plan belongs to the replayed accepted operation", async () => {
+    const f = setup(true); let now = new Date(instant);
+    const options = { ...f.options, now: () => now };
+    const service = new AccountErasureService(options), principal = { ...actor(), tokenIssuedAt: instant.getTime() / 1000 };
+    const prepared = await service.preflight(principal, operation);
+    const snapshot = await f.store.transact([], tx => tx.scan("account-erasure:plan:"));
+    await service.request(principal, operation, confirm, { planId: prepared.response.planId!, capability: prepared.capability! });
+    await f.store.transact([], async tx => { for (const row of snapshot) await tx.set(row.key, row.value); });
+    now = new Date(instant.getTime() + 6 * 60_000);
+    const restarted = new AccountErasureService(options); await restarted.resumePending();
+    expect(await restarted.readWithCapability(operation, prepared.capability!)).toMatchObject({ accountDeleted: true });
+    await expect(restarted.readWithCapability(otherOperation, prepared.capability!)).rejects.toMatchObject({ status: 401 });
+    now = new Date(instant.getTime() + 31 * 86_400_000); await restarted.resumePending();
+    await expect(restarted.readWithCapability(operation, prepared.capability!)).rejects.toMatchObject({ status: 401 });
+  });
+  it("still expires an unconfirmed restored plan without authorizing a deletion", async () => {
+    const f = setup(true); let now = new Date(instant);
+    const options = { ...f.options, now: () => now }, service = new AccountErasureService(options);
+    const prepared = await service.preflight({ ...actor(), tokenIssuedAt: instant.getTime() / 1000 }, operation);
+    now = new Date(instant.getTime() + 6 * 60_000);
+    const restarted = new AccountErasureService(options); await restarted.resumePending();
+    await expect(restarted.readWithCapability(operation, prepared.capability!)).rejects.toMatchObject({ status: 401 });
+    for (const adapter of f.adapters) expect(adapter.erase).not.toHaveBeenCalled();
+  });
   it("refuses to reinterpret an accepted v1 store as shared identity deletion", async () => {
     const { service, options } = setup();
     await startErasure(service, actor(), operation, confirm);

@@ -537,7 +537,13 @@ export class AccountErasureService {
     await this.assertContinuityCurrent();
     await this.options.store.transact([], async tx => {
       for (const entry of await tx.scan<Plan>(PLAN)) if (!validUntil(entry.value.confirmBy, this.now().getTime())) {
-        await tx.remove(ACCESS + entry.value.receiptHash); await tx.remove(entry.key);
+        // A pre-confirmation snapshot can restore an expired plan alongside a
+        // still-valid receipt capability. Independent continuity has already
+        // replayed the accepted job above. Expired confirmation is not expiry
+        // of read-only access to that exact confirmed operation.
+        const job = await tx.get<Job>(PREFIX + entry.key.slice(PLAN.length));
+        if (job?.operationId !== entry.value.operationId) await tx.remove(ACCESS + entry.value.receiptHash);
+        await tx.remove(entry.key);
       }
       for (const entry of await tx.scan<ReceiptAccess>(ACCESS)) if (!validUntil(entry.value.expiresAt, this.now().getTime())) await tx.remove(entry.key);
     });
