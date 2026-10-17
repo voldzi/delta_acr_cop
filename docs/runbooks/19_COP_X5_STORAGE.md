@@ -349,3 +349,24 @@ Při obnově staršího obrazu z uvedeného `images.tar.gz` načtěte archiv př
 Docker, porovnejte ID a vrstvy s privátní `verification.json` a teprve pak
 explicitně vyberte požadované ID pro danou službu. Archiv je bez mutable
 tagů; nezaměňuje běžící tagy a nepředstavuje pokyn ke spuštění celého stacku.
+
+## Missing dedicated builder container (verified 2026-10-17)
+
+A missing `buildx_buildkit_cop-x50` container is different from a stopped one.
+The unchanged verifier deliberately blocks when it cannot inspect the runtime.
+Do not bypass it or recreate/delete the cache volume. The narrow operator helper
+`scripts/recover-cop-builder.py --recover-missing` first verifies X5, the existing
+local bind volume, exact single COP node and the installed BuildKit image, while
+holding `/srv/cop/.storage.lock`. It changes only that node's image option to the
+already-installed registry digest and sets `restart-policy=no`, preserving its
+existing GC settings. Buildx itself supplies the existing network-host entitlement;
+the helper accounts only for its known duplicate after an interrupted create.
+It refuses unknown flags/options and never accepts a general configuration delta.
+
+The helper then bootstraps only this node and runs the unchanged verifier,
+including the actual filesystem device inside BuildKit. It does not prune,
+create/delete a volume, change Docker data-root or touch another builder. On
+17 October the runtime check passed, the existing cache was preserved and no
+application was restarted. The helper is an explicit recovery operation, not a
+replacement for the normal pre-build check. Keep the image pin under review when
+intentionally upgrading BuildKit; do not silently accept a different image.

@@ -143,3 +143,11 @@ provider attempts were zero. SIM source/compiled pins were unchanged before/afte
 this run, but SIM was still a working candidate, so rerun after its final source
 publication is required. This is component integration, not twelve-provider or
 production acceptance. Evidence: `docs/testing/account-erasure-sim-app-component-20261017.json`.
+
+The first operator build-only attempt stopped at the dedicated builder check:
+its registration and X5 cache remained, but the container was absent. The scoped
+recovery restored only this COP container using the already-installed pinned
+BuildKit image, verified actual X5 device/restart=no, preserved the cache and did
+not restart any application. The candidate build was then restarted through the
+same guarded build-only path. Build completion is recorded separately; this
+recovery does not activate account deletion.
