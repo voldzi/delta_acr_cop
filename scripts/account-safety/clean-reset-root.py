@@ -322,12 +322,12 @@ class CommunicationResetTransport:
              and stat.S_IMODE(d.st_mode) == 0o700 and not stat.S_IMODE(c.st_mode) & 0o077
              and stat.S_ISSOCK(c.st_mode), 'RESET_COMM_TRANSPORT_CHANGED')
 
-    def run(self, args):
+    def run(self, args, *, input=None, timeout=45):
         import shlex
         self._custody()
         raw = command(self._args() + ['-o', 'BatchMode=yes', '-o', 'ControlMaster=no',
                       '-o', 'ProxyCommand=/usr/bin/false', 'voldzi@comm.home.cz',
-                      shlex.join(['/usr/bin/sudo', '-n', *args])])
+                      shlex.join(['/usr/bin/sudo', '-n', *args])], input=input, timeout=timeout)
         self._custody()
         return raw
 

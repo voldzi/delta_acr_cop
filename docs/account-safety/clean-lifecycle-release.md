@@ -256,3 +256,53 @@ restart/late-writer and actual restored-row cleanup evidence within24hours. The
 Root freeze itself calls the gate before pausing any producer or service; a
 component14 receipt cannot admit a stop. Seven parser rejection tests pass. No
 actual full12 report exists yet: this source does not mint one or authorize GO.
+
+### Remaining provider composition (source, not production acceptance)
+
+`clean-remaining-reset.py` now provides the concrete
+`prepare_remaining_reset(plan, private_config, remote)` context and
+`run_remaining_reset(admission, private_config)` phase. Provider inventories,
+TLS connection scopes and storage authentication are checked before the common
+controller may freeze writers. The same live Root admission remains held through
+metadata/native SQL commits, native-media removal, Edge reset, storage credential
+rotation, media-closure enrollment and fresh readbacks. Missing or changed plans
+refuse the operation. A failure does not resume application writers.
+
+The confirmed native-media bind is `/srv/csm-messaging/matrix/data` to Synapse
+`/data`. Edge uses the existing `cop_cop-edge-data` named volume. Its helper
+receives only that volume, without network, Docker socket, extra capabilities or
+production secret files. Docker internal filesystem paths are never opened.
+Read-only inspection confirmed only `state.json`, UID0, mode0644. The selected
+Synapse candidate supplies Python3.13; its isolated no-mount/no-network smoke passed.
+
+`clean-reset-s3.py` handles only `cop-community-media`. Unknown/versioned storage,
+ambiguous XML, partial inventories, traversal keys, changed plans or unavailable
+services cannot become an empty-bucket result. The existing finite storage
+process performs the approved same-image stop/rotation/start without calling
+the superseded whole11 installer. Only the existing COP credential is rotated;
+other storage identities are preserved. New credentials go only into the existing
+COP and storage production secrets files, never receipts, command arguments or Git.
+
+The actual closure result is enrolled into `cop_safety_v2.media_upload_closures`
+under the current target/guard binding. The application remains SELECT-only.
+Eight owned PostgreSQL assertions passed: wrong-binding rejection, rollback when
+live admission disappears, restricted-role read/denied mutation, and immutable
+evidence. This SQL test uses synthetic provider evidence; it is not live storage
+or whole-provider acceptance. Eight S3 inventory boundary tests and five
+composition configuration tests pass. The combined wrapper, credential rotation
+and Root deployment have not been executed in production.
+
+### Fresh whole12 namespace
+
+A new network-none namespace `cop-clean-whole12-9aff26e65b74` has actual Keycloak
+users A/B in realm `cop`, real tokens with `SIM_ADMIN`, and the exact erasure
+service client. The holder uses COP API candidate `2e61857`; Keycloak uses the
+existing immutable optimized test image `74ae260e7c0d`. No public ports are
+published; previous fixtures and production identities remain unchanged.
+Generated credentials exist only in private container tmpfs/server process RAM.
+A scan verified they did not enter Docker configuration metadata.
+
+Entrypoints are `prepare-clean-whole12-fixture.py` and
+`clean-whole12-keycloak-seed.mjs`. This proves namespace/identity preparation,
+not completed deletion. SIM is preparing unchanged-production-bootstrap TLS
+composition for this namespace. Full12 and production enablement remain pending.
