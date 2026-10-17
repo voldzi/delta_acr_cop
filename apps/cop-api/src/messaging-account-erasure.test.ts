@@ -55,10 +55,11 @@ describe("Messaging whole and exact mobility owner adapters", () => {
     expect(f.requests.every(r => r.headers.authorization === "Bearer " + f.options.config.token)).toBe(true);
   });
   it.each([
-    ["database_v2", "cop-messaging-full-v2-credential-synthetic-candidate", "completed"],
-    ["native_v1", "cop-messaging-full-v2-credential-synthetic-candidate", "pending"],
+    ["database_v2", "cop-messaging-minimal-technical-retention", "completed"],
+    ["native_v1", "cop-messaging-minimal-technical-retention", "pending"],
     ["database_v2", "unknown-policy", "pending"],
-    ["database_v2", "cop-messaging-full-v2-credential-synthetic-candidate-extra", "pending"]
+    ["database_v2", "cop-messaging-full-v2-credential-synthetic-candidate", "pending"],
+    ["database_v2", "cop-messaging-minimal-technical-retention-extra", "pending"]
   ] as const)("binds the exact reviewed policy to authority %s: %s", async (authorityMode, policy, status) => {
     const f = await fixture(r => ({ body: r.path.endsWith("preflight") ? readiness() : r.path.endsWith("capabilities") ? capabilities()
       : { ...whole(), technicalRetentionPolicyId: policy } }));

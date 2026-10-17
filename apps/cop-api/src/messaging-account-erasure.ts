@@ -30,7 +30,7 @@ export interface MessagingAccountErasureOptions {
 const WHOLE = "csm-account-erasure-owner-v2", READINESS = "csm-account-erasure-owner-readiness-v1";
 const EFFECTS = "csm-cop-mobility-effects-erasure-v1", POLICY = "matrix-opaque-protocol-tombstones-v1";
 // Exact reviewed full-scope policy identifier published by Messaging.
-const DATABASE_POLICY = "cop-messaging-full-v2-credential-synthetic-candidate";
+const DATABASE_POLICY = "cop-messaging-minimal-technical-retention";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const HEX = /^[0-9a-f]{64}$/u;
 const preflightReasons = new Set(["ownership_unresolved", "historical_provenance", "native_acceptance", "native_owner_scope", "provider_unavailable"]);

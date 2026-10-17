@@ -382,7 +382,7 @@ fenced owners). Messaging 08ca70a separates exact-operation continuation from
 first-use registration; original HTTP operation completed, and a different
 operation was rejected with 409. COP additionally recognized only the legacy
 retention ID. The adapter now recognizes the exact published
-`cop-messaging-full-v2-credential-synthetic-candidate` identifier only under
+`cop-messaging-minimal-technical-retention` identifier only under
 `database_v2`; unknown or extended identifiers remain pending. This identifier
 is a technical policy identifier, not a statement of production acceptance.
 
