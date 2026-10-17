@@ -104,7 +104,7 @@ def assert_freeze_targets(actual, expected):
 
 def validate_plan(plan):
     keys = {'contractVersion', 'resetEpoch', 'tokensNotBefore', 'sources', 'localWriters',
-            'remoteWriters', 'reviewedPlanDigests', 'producerInventorySha256', 'operationLockMetadata', 'runtimeBinding', 'scope'}
+            'remoteWriters', 'reviewedPlanDigests', 'producerInventorySha256', 'operationLockMetadata', 'runtimeBinding', 'operatorRuntime', 'scope'}
     need(isinstance(plan, dict) and set(plan) == keys
          and plan['contractVersion'] == 'cop-sim-clean-reset-root-plan-v1'
          and plan['scope'] == 'cop_sim_shared_identity_v1', 'RESET_ROOT_PLAN_SCOPE')
@@ -117,6 +117,15 @@ def validate_plan(plan):
         for item in plan[key].values():
             need(set(item) == {'id', 'image'} and HEX.fullmatch(item['id'])
                  and IMAGE.fullmatch(item['image']), 'RESET_ROOT_PLAN_WRITER_BINDING')
+    runtime = plan['operatorRuntime']
+    need(isinstance(runtime, dict) and set(runtime) == {'root', 'imageId', 'nodeSha256', 'loaderSha256'}
+         and runtime['root'] == '/srv/x5-production/staging/cop/clean-operator-2e61857'
+         and runtime['imageId'] == 'sha256:2e61857d00f7fe0326a7b50a8f96f0cb4563d4d9028645dc08efe51b84e800df'
+         and runtime['nodeSha256'] == 'c8726a01ce4ac245ea9e5cb483992a90e628e5847d98f9a9f3be048d09a50d75'
+         and runtime['loaderSha256'] == '38d022ce7425ff105ccfb53598f606e6e5f5f0a34bfbc793d65e6f34c9d72806',
+         'RESET_ROOT_OPERATOR_RUNTIME')
+    need(isinstance(plan.get('sources'), dict) and isinstance(plan['sources'].get('cop'), dict)
+         and plan['sources']['cop'].get('root') == runtime['root'] + '/app', 'RESET_ROOT_OPERATOR_SOURCE')
     active = plan['runtimeBinding']
     need(isinstance(active, dict) and active.get('contractVersion') == 'cop-api-runtime-active-v1'
          and isinstance(active.get('generation'), str) and re.fullmatch(r'[a-f0-9]{32}', active['generation'])
@@ -140,7 +149,7 @@ def validate_plan(plan):
             need(not rel.is_absolute() and '..' not in rel.parts and HEX.fullmatch(digest),
                  'RESET_ROOT_PLAN_SOURCE_FILE')
     need(isinstance(plan['reviewedPlanDigests'], dict)
-         and set(plan['reviewedPlanDigests']) == {'cop', 'ai', 'driver', 'files', 'keycloak', 'messaging', 'media', 'edge', 'sim_app_files', 'sim_user_install'}
+         and set(plan['reviewedPlanDigests']) == {'cop', 'ai', 'driver', 'files', 'keycloak', 'messaging', 'media', 'edge', 'sim_app_files', 'sim_user_install', 'cop_safety_install'}
          and all(isinstance(x, str) and HEX.fullmatch(x) for x in plan['reviewedPlanDigests'].values())
          and HEX.fullmatch(plan['producerInventorySha256']), 'RESET_ROOT_PLAN_REVIEWED_SCOPE')
     lock = plan['operationLockMetadata']
@@ -222,6 +231,15 @@ class RootResetAdmission:
              'RESET_X5_FILESYSTEM_REQUIRED')
         need(command(['/usr/bin/findmnt', '-n', '-o', 'UUID', '--mountpoint', str(X5)]).decode().strip() == UUID,
              'RESET_X5_UUID_REQUIRED')
+        runtime = self.plan['operatorRuntime']
+        base = Path(runtime['root']) / 'runtime'
+        for leaf, key in [('usr/local/bin/node', 'nodeSha256'), ('lib/ld-musl-x86_64.so.1', 'loaderSha256')]:
+            need(hashlib.sha256(protected(base / leaf, mode=(0o444, 0o555), max_bytes=200*1024*1024)).hexdigest() == runtime[key],
+                 'RESET_ROOT_OPERATOR_RUNTIME_CHANGED')
+        for leaf in ['usr/lib/libstdc++.so.6.0.34', 'usr/lib/libgcc_s.so.1']:
+            protected(base / leaf, mode=(0o444, 0o555), max_bytes=16*1024*1024)
+        need(os.readlink(base / 'usr/lib/libstdc++.so.6') == 'libstdc++.so.6.0.34'
+             and os.readlink(base / 'lib/libc.musl-x86_64.so.1') == 'ld-musl-x86_64.so.1', 'RESET_ROOT_OPERATOR_LIBRARY_CHANGED')
         for source in self.plan['sources'].values():
             base = Path(source['root'])
             for leaf, digest in source['files'].items():

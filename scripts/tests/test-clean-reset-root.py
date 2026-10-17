@@ -11,10 +11,10 @@ m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 def plan():
  return {'contractVersion':'cop-sim-clean-reset-root-plan-v1','resetEpoch':'10000000-0000-4000-8000-000000000001','tokensNotBefore':int(time.time())-1,
- 'scope':'cop_sim_shared_identity_v1','runtimeBinding':{'contractVersion':'cop-api-runtime-active-v1','generation':'a'*32,'containerId':'a'*64,'imageId':'sha256:'+'b'*64,'profileId':'10000000-0000-4000-8000-000000000002','profileGeneration':'10000000-0000-4000-8000-000000000002','releaseId':'release-'+'c'*32},'localWriters':{n:{'id':'a'*64,'image':'sha256:'+'b'*64} for n in m.LOCAL_WRITERS},
+ 'operatorRuntime':{'root':'/srv/x5-production/staging/cop/clean-operator-2e61857','imageId':'sha256:2e61857d00f7fe0326a7b50a8f96f0cb4563d4d9028645dc08efe51b84e800df','nodeSha256':'c8726a01ce4ac245ea9e5cb483992a90e628e5847d98f9a9f3be048d09a50d75','loaderSha256':'38d022ce7425ff105ccfb53598f606e6e5f5f0a34bfbc793d65e6f34c9d72806'},'scope':'cop_sim_shared_identity_v1','runtimeBinding':{'contractVersion':'cop-api-runtime-active-v1','generation':'a'*32,'containerId':'a'*64,'imageId':'sha256:'+'b'*64,'profileId':'10000000-0000-4000-8000-000000000002','profileGeneration':'10000000-0000-4000-8000-000000000002','releaseId':'release-'+'c'*32},'localWriters':{n:{'id':'a'*64,'image':'sha256:'+'b'*64} for n in m.LOCAL_WRITERS},
  'remoteWriters':{n:{'id':'c'*64,'image':'sha256:'+'d'*64} for n in m.REMOTE_WRITERS},
- 'sources':{n:{'revision':'e'*40,'root':'/srv/x5-production/staging/cop/root-reviewed-'+n,'files':{'reviewed.mjs':'f'*64}} for n in ['cop','sim','messaging']},
- 'reviewedPlanDigests':{n:'a'*64 for n in ['cop','ai','driver','files','keycloak','messaging','media','edge','sim_app_files','sim_user_install']},
+ 'sources':{n:{'revision':'e'*40,'root':('/srv/x5-production/staging/cop/clean-operator-2e61857/app' if n=='cop' else '/srv/x5-production/staging/cop/root-reviewed-'+n),'files':{'reviewed.mjs':'f'*64}} for n in ['cop','sim','messaging']},
+ 'reviewedPlanDigests':{n:'a'*64 for n in ['cop','ai','driver','files','keycloak','messaging','media','edge','sim_app_files','sim_user_install','cop_safety_install']},
  'producerInventorySha256':'b'*64,'operationLockMetadata':{'device':1,'inode':2,'uid':1000,'gid':1000,'mode':0o664}}
 
 class RootAdmissionTest(unittest.TestCase):
@@ -32,7 +32,7 @@ class RootAdmissionTest(unittest.TestCase):
   with self.assertRaisesRegex(RuntimeError,'REVIEWED_SCOPE'):m.validate_plan(p)
   for path in ['/srv/cop','/tmp/reviewed','/srv/x5-production/staging/cop/../reviewed']:
    p=plan();p['sources']['cop']['root']=path
-   with self.assertRaisesRegex(RuntimeError,'SOURCE_PATH'):m.validate_plan(p)
+   with self.assertRaisesRegex(RuntimeError,'SOURCE_PATH|OPERATOR_SOURCE'):m.validate_plan(p)
  def test_runtime_profile_must_belong_to_the_same_reviewed_cop_instance(self):
   p=plan();p['runtimeBinding']['containerId']='f'*64
   with self.assertRaisesRegex(RuntimeError,'RUNTIME_BINDING'):m.validate_plan(p)

@@ -224,3 +224,24 @@ a fixed host `fileReadback` operation, with no path/command parameters and no
 new listener, Docker volume, host device or application mount. The Root controller
 checks admission before/after the nested readback. This has protocol/syntax
 verification only; actual production Root execution is still outstanding.
+
+
+### Narrow host operator runtime (2026-10-17)
+
+Automatic review rejected a proposed broad production `/srv/cop` bind and extra
+container capabilities. That proposal was not applied. The narrower replacement
+uses a direct child process of the existing Root operator and creates no privileged
+container, secret bind, listener or application permission. Public Node24 and its
+dependencies were exported from the already verified COP candidate image onto X5.
+Actual unprivileged host execution passed with Node24.22.0 and pg8.23.1. No production
+configuration was read. The exported tree is still UID1000 preparation and must
+be independently verified and sealed by Root before privileged execution.
+
+The Root plan now binds this exact runtime/image and binary/loader hashes. All
+workers use it directly on the host; filesystem checks see the actual X5 mount.
+The COP safety install phase reads its fixed Root manifest, normalizes only the
+two previously inventoried duplicate keys without changing effective values, and
+calls the existing bounded SQL installer. Live admission is rechecked before
+secret persistence and both database commits. The actual owned PostgreSQL clean
+suite passed29 checks, including rollback of both databases and role creation
+when admission was lost before guard commit. This is not production enrollment.

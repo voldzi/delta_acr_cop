@@ -1,0 +1,17 @@
+{
+  "contractVersion": "cop-public-operator-runtime-v1",
+  "imageId": "sha256:2e61857d00f7fe0326a7b50a8f96f0cb4563d4d9028645dc08efe51b84e800df",
+  "sourceRevision": "6c5c9855b29644cdc6e86b5b66166c861226cdba",
+  "root": "/srv/x5-production/staging/cop/clean-operator-2e61857",
+  "loaderSha256": "38d022ce7425ff105ccfb53598f606e6e5f5f0a34bfbc793d65e6f34c9d72806",
+  "nodeSha256": "c8726a01ce4ac245ea9e5cb483992a90e628e5847d98f9a9f3be048d09a50d75",
+  "probe": {
+    "node": "24.22.0",
+    "pg": "8.23.1",
+    "uid": 1000,
+    "hostExecution": true
+  },
+  "rootSealed": false,
+  "productionConfigurationRead": false,
+  "applicationChanged": false
+}

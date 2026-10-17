@@ -362,6 +362,17 @@ async function main() {
     assert.deepEqual(await readFile(envPath), before);
     assert.equal((await admin.query("SELECT to_regnamespace('cop_safety_v2') value")).rows[0].value, null);
   });
+  if(cleanProfile) await pass("lost_root_admission_before_guard_commit_rolls_back_both_databases", async () => {
+    const before=await readFile(envPath);let assertions=0;
+    await refusal(()=>apply({rootAdmission:{assertCurrent:async()=>{if(++assertions===3)throw Error("SYNTHETIC_ROOT_ADMISSION_LOST");}}}),["DATABASE_STAGE_FAILED"]);
+    assert.equal(assertions,3);
+    assert.equal((await admin.query("SELECT to_regnamespace('cop_safety_v2') present")).rows[0].present,null);
+    assert.equal((await admin.query("SELECT count(*)::int n FROM pg_roles WHERE rolname IN('cop_safety_v2_owner','cop_safety_v2_runtime')")).rows[0].n,0);
+    assert.equal((await business.query("SELECT count(*)::int n FROM cop_mobility_v1 WHERE key LIKE 'account-safety:%' OR key LIKE 'account-erasure:%'")).rows[0].n,0);
+    // Only this owned fixture resets its interrupted secret file. Production
+    // preserves generated credentials for an explicit guarded retry.
+    await saveEnv(before.toString('utf8'));
+  });
   await pass("first_enrollment_locks_real_business_table", async () => {
     await business.query("INSERT INTO cop_mobility_v1 VALUES('fixture:unrelated-business','{\"keep\":true}',now())");
     const blocker = await admin.connect();

@@ -74,6 +74,7 @@ const ERROR_CODES = new Set([
   "PRIVILEGE_CONFLICT",
   "RUNTIME_CREDENTIALS_REJECTED",
   "DATABASE_STAGE_FAILED",
+  "CLEAN_ROOT_ADMISSION_REQUIRED",
   "ENV_CHANGED"
 ]);
 export class ProvisionError extends Error {
@@ -151,7 +152,8 @@ function atomic(path, original, bytes) {
       current.gid === original.stat.gid &&
       (current.mode & 0o777) === 0o600 &&
       current.nlink === 1,
-    "ENV_CHANGED"
+    "CLEAN_ROOT_ADMISSION_REQUIRED",
+  "ENV_CHANGED"
   );
   const temporary = path + ".database-v2-" + randomBytes(12).toString("hex");
   let fd;
@@ -913,6 +915,13 @@ async function provisionInternal(options) {
   }
   const env = parseEnvironment(file.bytes.toString("utf8"));
   verifyIdentity(env, manifest);
+  const cleanAdmission = manifest.contractVersion === "cop-database-safety-provision-clean-v1";
+  const currentAdmission = async () => {
+    if (!cleanAdmission) return;
+    need(s.synthetic || typeof options.rootAdmission?.assertCurrent === "function", "CLEAN_ROOT_ADMISSION_REQUIRED");
+    if (options.rootAdmission) await options.rootAdmission.assertCurrent();
+  };
+  await currentAdmission();
   let migrationBytes;
   try {
     migrationBytes = readFileSync(SOURCE_SQL);
@@ -1044,12 +1053,14 @@ async function provisionInternal(options) {
     const proposed = appendFields(file, fields);
     // Persist new credentials before the independent transaction can commit. A
     // later interrupted retry reuses these exact bytes; no password is rotated.
+    await currentAdmission();
     if (!proposed.equals(file.bytes)) atomic(s.envPath, file, proposed);
     if (beforeGuard === "absent") await createGuard(guard, migration, manifest, config, password);
     need((await guardState(guard, manifest, config, migration)) === "same_enrollment", "GUARD_STATE_CONFLICT");
     await roleState(guard);
     await verifyPrivileges(guard);
     need(privateFile(s.envPath).bytes.equals(proposed), "ENV_CHANGED");
+    await currentAdmission();
     await guard.query("COMMIT");
     guardTx = false;
     // Keep the real table/advisory locks held after the independent COMMIT and
@@ -1063,6 +1074,7 @@ async function provisionInternal(options) {
       ]);
     }
     need((await businessState(business, manifest, config)) === "same_enrollment", "BUSINESS_STATE_CONFLICT");
+    await currentAdmission();
     await business.query("COMMIT");
     businessTx = false;
     phase = "runtime_verification";

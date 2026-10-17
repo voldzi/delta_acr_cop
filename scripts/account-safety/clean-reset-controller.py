@@ -14,7 +14,7 @@ import uuid
 _spec = importlib.util.spec_from_file_location('clean_reset_host', Path(__file__).with_name('clean-reset-root.py'))
 host = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(host)
-PHASE_PLAN = {'identity': 'keycloak', 'cop': 'cop', 'ai': 'ai', 'driver': 'driver', 'files': 'files', 'sim_app_files': 'sim_app_files', 'sim_user_install': 'sim_user_install'}
+PHASE_PLAN = {'identity': 'keycloak', 'cop': 'cop', 'ai': 'ai', 'driver': 'driver', 'files': 'files', 'sim_app_files': 'sim_app_files', 'sim_user_install': 'sim_user_install', 'cop_safety_install': 'cop_safety_install'}
 READBACK_PHASES = {'readback', 'file_readback'}
 HOST_FILE_PHASES = {'files', 'sim_app_files', 'file_readback'}
 
@@ -55,7 +55,7 @@ class PrivateWorkerDispatch:
                      'RESET_CONTROLLER_PLAN_MISMATCH')
                 need('phase' not in context or context['phase'] == self.phase, 'RESET_CONTROLLER_PHASE_INVALID')
                 need('lane' not in context or context['lane'] == self.phase, 'RESET_CONTROLLER_PHASE_INVALID')
-                if self.phase == 'sim_user_install':
+                if self.phase in {'sim_user_install', 'cop_safety_install'}:
                     need(context.get('resetEpoch') == self.admission.plan['resetEpoch']
                          and context.get('tokensNotBefore') == self.admission.plan['tokensNotBefore'], 'RESET_CONTROLLER_EPOCH_MISMATCH')
                 if self.phase in {'ai', 'driver'}:
@@ -112,32 +112,21 @@ def run_private_worker(admission, config):
     need(isinstance(config, dict) and config.get('contractVersion') == 'cop-sim-clean-reset-worker-v1'
          and config.get('phase') in (set(PHASE_PLAN) | READBACK_PHASES) and config.get('resetEpoch') == plan['resetEpoch']
          and config.get('tokensNotBefore') == plan['tokensNotBefore'] and config.get('simSource') == '/reviewed/sim'
-         and config.get('reviewedPlanDigests') == {k: plan['reviewedPlanDigests'][k] for k in ['cop', 'ai', 'driver', 'files', 'keycloak', 'sim_app_files', 'sim_user_install']},
+         and config.get('reviewedPlanDigests') == {k: plan['reviewedPlanDigests'][k] for k in ['cop', 'ai', 'driver', 'files', 'keycloak', 'sim_app_files', 'sim_user_install', 'cop_safety_install']},
          'RESET_CONTROLLER_CONFIG_BINDING')
     dispatch = PrivateWorkerDispatch(admission, config['phase'])
     if config['phase'] == 'readback':
         dispatch.file_readback_config = {**config, 'phase': 'file_readback'}
-    name = 'cop-clean-reset-worker-' + str(uuid.uuid4())
-    image = plan['localWriters']['cop-cop-api-1']['image']
-    args = ['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock', 'run', '--rm', '-i', '--name', name,
-            '--log-driver', 'none', '--label', 'cop.clean.reset=' + plan['resetEpoch'],
-            '--network', 'host', '--read-only', '--cap-drop', 'ALL',
-            '--security-opt', 'no-new-privileges', '--memory', '256m', '--cpus', '1', '--pids-limit', '64',
-            '--user', '0:0', '--tmpfs', '/tmp:rw,nosuid,nodev,noexec,size=8m']
-    for key in ['cop', 'sim']:
-        args += ['--mount', 'type=bind,source=' + plan['sources'][key]['root'] + ',target=/reviewed/' + key + ',readonly']
-    args += ['--mount', 'type=bind,source=/etc/vcode-cop-pgbouncer/postgres-ca.crt,target=/etc/vcode-cop-pgbouncer/postgres-ca.crt,readonly',
-             '--entrypoint', 'node', image, '/reviewed/cop/scripts/account-safety/clean-reset-worker.mjs', '--root-pipe']
     host_files = config['phase'] in HOST_FILE_PHASES
+    runtime = Path(plan['operatorRuntime']['root']) / 'runtime'
+    args = [str(runtime / 'lib/ld-musl-x86_64.so.1'), '--library-path',
+            str(runtime / 'lib') + ':' + str(runtime / 'usr/lib'), str(runtime / 'usr/local/bin/node'),
+            plan['sources']['cop']['root'] + '/scripts/account-safety/' +
+            ('clean-files-host-worker.mjs' if host_files else 'clean-reset-worker.mjs'), '--root-pipe']
     if host_files:
-        # Actual host filesystem/UUID checks cannot be replaced by container
-        # bind metadata. Keep the existing host Node only for pure filesystem
-        # modules; no dependencies, listener or application runtime change.
-        args = ['/usr/bin/node', plan['sources']['cop']['root'] +
-                '/scripts/account-safety/clean-files-host-worker.mjs', '--root-pipe']
         config = {k: config[k] for k in ['contractVersion', 'phase', 'resetEpoch', 'tokensNotBefore',
                                         'reviewedPlanDigests', 'reviewedPlans', 'expectedImages', 'expectedMainImage']}
-        config['simSource'] = plan['sources']['sim']['root']
+    config = {**config, 'simSource': plan['sources']['sim']['root']}
     child = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=host.ENV)
     deadline = time.monotonic() + 240
     try:
@@ -177,11 +166,6 @@ def run_private_worker(admission, config):
         if child.poll() is None:
             child.kill()
             child.wait(timeout=10)
-        probe = None if host_files else subprocess.run(['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock', 'inspect', '--format',
-                                '{{.Image}} {{index .Config.Labels "cop.clean.reset"}}', name],
-                               capture_output=True, env=host.ENV, timeout=15, check=False)
-        if probe is not None and probe.returncode == 0 and probe.stdout.decode().strip() == image + ' ' + plan['resetEpoch']:
-            subprocess.run(['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock', 'rm', '-f', name],
-                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                           env=host.ENV, timeout=15, check=False)
-        # No automatic restart or writer unfreeze on success or failure here.
+        # The worker is a direct child of this Root operator. No privileged
+        # container, secret bind, additional capability or listener is created.
+        # No automatic writer restart or unfreeze follows success or failure.
