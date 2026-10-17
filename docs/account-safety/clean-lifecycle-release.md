@@ -211,3 +211,16 @@ its unchanged manifest. Seven controller and ten Root protocol tests pass; these
 are protocol/source checks, not production enrollment or whole-provider proof.
 The concrete SIM install module is being completed separately before this phase
 can be executed. Credentials remain private pipe input and are not test evidence.
+
+
+The filesystem worker now executes on the actual docker host, through the same
+private Root pipe and continuously checked admission. It uses existing host
+Node22/24 solely for pure filesystem modules; the app and SQL worker remain
+Node24. This fixes the real container boundary: the SQL image has neither the
+host filesystem layout nor host `findmnt` UUID evidence. The host child receives
+no database, Keycloak or runtime credentials. `files` and `sim_app_files` retain
+separate reviewed digests and exact stopped-writer checks. SQL readback requests
+a fixed host `fileReadback` operation, with no path/command parameters and no
+new listener, Docker volume, host device or application mount. The Root controller
+checks admission before/after the nested readback. This has protocol/syntax
+verification only; actual production Root execution is still outstanding.

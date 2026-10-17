@@ -75,8 +75,7 @@ export async function runCleanResetWorker(config,host){
     }
     const plan=await ops.inspectPlan(c,lane);need(plan.state==='known-new'&&Object.values(plan.data.deleteCounts).every(x=>x===0),'RESET_WORKER_SIM_NOT_EMPTY');return {catalogDigest:plan.catalogDigest,preserved:plan.data.preserve};
    });
-   const f=files.inspectResetFiles();need(f.counts.copRoutes===0&&f.counts.reports===0,'RESET_WORKER_FILES_NOT_EMPTY');output.files={counts:f.counts,planDigest:f.planDigest};
-   const appFilesReadback=appFiles.inspectSimAppReset();need(Object.values(appFilesReadback.counts).every(n=>n===0),'RESET_WORKER_SIM_APP_NOT_EMPTY');output.sim_app_files={counts:appFilesReadback.counts,planDigest:appFilesReadback.planDigest};
+   const fileReadback=await host('fileReadback',{});need(fileReadback?.contractVersion==='cop-clean-host-file-readback-v1'&&fileReadback.resetEpoch===epoch,'RESET_WORKER_FILES_NOT_EMPTY');output.files=fileReadback.files;output.sim_app_files=fileReadback.sim_app_files;
    need(config.simUserInstall?.resetEpoch===epoch&&config.simUserInstall.tokensNotBefore===cutoff&&config.simUserInstall.reviewedPlan?.planDigest===config.reviewedPlanDigests.sim_user_install,'RESET_WORKER_SIM_INSTALL_BINDING');
    const {runSimUserInstall}=await import(pathToFileURL('/reviewed/sim/scripts/lib/sim-user-data-private-install.mjs'));
    output.sim_user_install=await runSimUserInstall({...config.simUserInstall,phase:'readback'},{Pool,rootGate:gate,assertWritersStopped:()=>admission.assertCurrent()});
@@ -86,7 +85,7 @@ export async function runCleanResetWorker(config,host){
   throw Error('RESET_WORKER_OPERATION_INVALID');
  }finally{await Promise.all([...pools.values()].map(p=>p.end().catch(()=>{})))}
 }
-async function main(){
+export async function runRootPipe(runWork=runCleanResetWorker){
  need(process.argv.length===3&&process.argv[2]==='--root-pipe'&&!process.env.NODE_OPTIONS&&!process.env.NODE_PATH,'RESET_WORKER_FIXED_PIPE');
  const lines=createInterface({input:process.stdin,crlfDelay:Infinity}),pending=new Map();
  let configResolve,configReject,got=false,closed=false;
@@ -106,12 +105,12 @@ async function main(){
  lines.on('close',()=>closeWith('RESET_ROOT_PIPE_CLOSED'));
  const host=(operation,payload)=>new Promise((resolve,reject)=>{
   if(closed){reject(Error('RESET_ROOT_PIPE_CLOSED'));return}
-  const requestId=randomUUID(),timer=setTimeout(()=>{pending.delete(requestId);reject(Error('RESET_ROOT_REPLY_TIMEOUT'))},15000);
+  const requestId=randomUUID(),timer=setTimeout(()=>{pending.delete(requestId);reject(Error('RESET_ROOT_REPLY_TIMEOUT'))},operation==='fileReadback'?120000:15000);
   pending.set(requestId,{resolve:v=>{clearTimeout(timer);resolve(v)},reject:e=>{clearTimeout(timer);reject(e)}});
   process.stdout.write(JSON.stringify({contractVersion:'cop-clean-reset-root-rpc-v1',requestId,operation,payload})+'\n');
  });
- try{const value=await runCleanResetWorker(await initial,host);process.stdout.write(JSON.stringify({contractVersion:'cop-clean-reset-worker-result-v1',ok:true,value})+'\n')}
+ try{const value=await runWork(await initial,host);process.stdout.write(JSON.stringify({contractVersion:'cop-clean-reset-worker-result-v1',ok:true,value})+'\n')}
  catch(error){const code=/^[A-Z][A-Z0-9_]{4,80}$/.test(error.message)?error.message:'RESET_WORKER_FAILED';process.stdout.write(JSON.stringify({contractVersion:'cop-clean-reset-worker-result-v1',ok:false,code})+'\n');process.exitCode=2}
  finally{clearTimeout(firstTimer);closeWith('RESET_ROOT_PIPE_CLOSED')}
 }
-if(process.argv[1]&&pathToFileURL(process.argv[1]).href===import.meta.url)main();
+if(process.argv[1]&&pathToFileURL(process.argv[1]).href===import.meta.url)runRootPipe();

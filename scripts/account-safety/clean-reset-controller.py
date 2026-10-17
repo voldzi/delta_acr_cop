@@ -15,6 +15,8 @@ _spec = importlib.util.spec_from_file_location('clean_reset_host', Path(__file__
 host = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(host)
 PHASE_PLAN = {'identity': 'keycloak', 'cop': 'cop', 'ai': 'ai', 'driver': 'driver', 'files': 'files', 'sim_app_files': 'sim_app_files', 'sim_user_install': 'sim_user_install'}
+READBACK_PHASES = {'readback', 'file_readback'}
+HOST_FILE_PHASES = {'files', 'sim_app_files', 'file_readback'}
 
 
 def need(value, code):
@@ -24,12 +26,13 @@ def need(value, code):
 
 class PrivateWorkerDispatch:
     def __init__(self, admission, phase):
-        need(type(admission) is host.RootResetAdmission and phase in {*PHASE_PLAN, 'readback'}, 'RESET_CONTROLLER_ROOT_OWNER_REQUIRED')
+        need(type(admission) is host.RootResetAdmission and phase in (set(PHASE_PLAN) | READBACK_PHASES), 'RESET_CONTROLLER_ROOT_OWNER_REQUIRED')
         admission.assert_current()
         self.admission, self.phase = admission, phase
         self.lease = None
         self.seen = set()
         self.closed = False
+        self.file_readback_config = None
 
     def dispatch(self, frame):
         need(not self.closed and isinstance(frame, dict) and set(frame) == {'contractVersion', 'requestId', 'operation', 'payload'}
@@ -45,8 +48,8 @@ class PrivateWorkerDispatch:
             need(self.lease is None and set(payload) == {'phase', 'context'} and payload['phase'] == self.phase
                  and isinstance(payload['context'], dict), 'RESET_CONTROLLER_PHASE_INVALID')
             context = payload['context']
-            if self.phase == 'readback':
-                need(context == {'phase': 'readback'}, 'RESET_CONTROLLER_READBACK_INVALID')
+            if self.phase in READBACK_PHASES:
+                need(context == {'phase': self.phase}, 'RESET_CONTROLLER_READBACK_INVALID')
             else:
                 need(context.get('planDigest') == self.admission.plan['reviewedPlanDigests'][PHASE_PLAN[self.phase]],
                      'RESET_CONTROLLER_PLAN_MISMATCH')
@@ -70,6 +73,11 @@ class PrivateWorkerDispatch:
             if operation == 'end':
                 self.lease = None
             value = {'verified': True}
+        elif operation == 'fileReadback':
+            need(self.phase == 'readback' and self.lease is not None and payload == {}
+                 and self.file_readback_config is not None, 'RESET_CONTROLLER_FILE_READBACK_SCOPE')
+            value = run_private_worker(self.admission, self.file_readback_config)
+            self.admission.assert_current()
         elif operation == 'inspectWriter':
             legacy = (self.lease is None and self.phase in {'ai', 'driver', 'files'}
                       and payload.get('name') in {'csm-sim-ai-router-api', 'csm-sim-situation-data-api'})
@@ -102,11 +110,13 @@ def run_private_worker(admission, config):
     admission.assert_current()
     plan = admission.plan
     need(isinstance(config, dict) and config.get('contractVersion') == 'cop-sim-clean-reset-worker-v1'
-         and config.get('phase') in {*PHASE_PLAN, 'readback'} and config.get('resetEpoch') == plan['resetEpoch']
+         and config.get('phase') in (set(PHASE_PLAN) | READBACK_PHASES) and config.get('resetEpoch') == plan['resetEpoch']
          and config.get('tokensNotBefore') == plan['tokensNotBefore'] and config.get('simSource') == '/reviewed/sim'
          and config.get('reviewedPlanDigests') == {k: plan['reviewedPlanDigests'][k] for k in ['cop', 'ai', 'driver', 'files', 'keycloak', 'sim_app_files', 'sim_user_install']},
          'RESET_CONTROLLER_CONFIG_BINDING')
     dispatch = PrivateWorkerDispatch(admission, config['phase'])
+    if config['phase'] == 'readback':
+        dispatch.file_readback_config = {**config, 'phase': 'file_readback'}
     name = 'cop-clean-reset-worker-' + str(uuid.uuid4())
     image = plan['localWriters']['cop-cop-api-1']['image']
     args = ['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock', 'run', '--rm', '-i', '--name', name,
@@ -118,6 +128,16 @@ def run_private_worker(admission, config):
         args += ['--mount', 'type=bind,source=' + plan['sources'][key]['root'] + ',target=/reviewed/' + key + ',readonly']
     args += ['--mount', 'type=bind,source=/etc/vcode-cop-pgbouncer/postgres-ca.crt,target=/etc/vcode-cop-pgbouncer/postgres-ca.crt,readonly',
              '--entrypoint', 'node', image, '/reviewed/cop/scripts/account-safety/clean-reset-worker.mjs', '--root-pipe']
+    host_files = config['phase'] in HOST_FILE_PHASES
+    if host_files:
+        # Actual host filesystem/UUID checks cannot be replaced by container
+        # bind metadata. Keep the existing host Node only for pure filesystem
+        # modules; no dependencies, listener or application runtime change.
+        args = ['/usr/bin/node', plan['sources']['cop']['root'] +
+                '/scripts/account-safety/clean-files-host-worker.mjs', '--root-pipe']
+        config = {k: config[k] for k in ['contractVersion', 'phase', 'resetEpoch', 'tokensNotBefore',
+                                        'reviewedPlanDigests', 'reviewedPlans', 'expectedImages', 'expectedMainImage']}
+        config['simSource'] = plan['sources']['sim']['root']
     child = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=host.ENV)
     deadline = time.monotonic() + 240
     try:
@@ -157,10 +177,10 @@ def run_private_worker(admission, config):
         if child.poll() is None:
             child.kill()
             child.wait(timeout=10)
-        probe = subprocess.run(['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock', 'inspect', '--format',
+        probe = None if host_files else subprocess.run(['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock', 'inspect', '--format',
                                 '{{.Image}} {{index .Config.Labels "cop.clean.reset"}}', name],
                                capture_output=True, env=host.ENV, timeout=15, check=False)
-        if probe.returncode == 0 and probe.stdout.decode().strip() == image + ' ' + plan['resetEpoch']:
+        if probe is not None and probe.returncode == 0 and probe.stdout.decode().strip() == image + ' ' + plan['resetEpoch']:
             subprocess.run(['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock', 'rm', '-f', name],
                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            env=host.ENV, timeout=15, check=False)
