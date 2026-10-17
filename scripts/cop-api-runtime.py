@@ -340,6 +340,12 @@ def overlay(binding, mode):
                         if binding['kind'] != 'accepted-baseline' else binding['legacyEnvironment']),
         'labels': {'com.cop.runtime.release': binding['releaseId'],
                    'com.cop.runtime.profile-generation': binding['profileGeneration']}}
+    if binding.get('accountErasureConfig', {}).get('cleanScope') == 'cop_sim_shared_identity_v1':
+        # The approved clean proof carries these additional server settings.
+        # Keep the deployment's base Compose files unchanged; only the API's
+        # guarded release overlay gains exact .env references, never values.
+        service['environment'].update({name: '${' + name + '?Clean lifecycle setting is required}'
+            for name in sorted(CLEAN_ERASURE_CONFIG_KEYS)})
     if mode == 'transaction':
         service['group_add'] = ['982']
         service['volumes'] = [
@@ -360,7 +366,7 @@ def overlay_bytes(binding, mode):
         json.dumps(item, sort_keys=True) + '\n' for key, item in api.items())).encode()
 
 
-def verify_api_diff(base, desired, values, mode, image, presence=None):
+def verify_api_diff(base, desired, values, mode, image, presence=None, clean_values=None):
     """Compare resolved values in RAM; all non-API services/topology stay equal."""
     require(set(base) == set(desired), 'compose_topology_changed')
     for key in base:
@@ -376,6 +382,9 @@ def verify_api_diff(base, desired, values, mode, image, presence=None):
             require(old.get(key) == new.get(key), 'api_non_profile_field_changed')
     require(old.get('environment', {}).get('COP_STREAM_BUS', 'memory') == 'memory', 'stream_contract_not_approved')
     expected_env = {**old.get('environment', {}), **values}
+    if clean_values is not None:
+        require(isinstance(clean_values, dict) and set(clean_values) == CLEAN_ERASURE_CONFIG_KEYS, 'clean_overlay_scope')
+        expected_env.update(clean_values)
     if presence is not None:
         for key, included in presence.items():
             if not included:
@@ -968,10 +977,12 @@ class Store:
         require(set(binding) in (release_keys, release_keys | {'accountErasureConfig'}), 'release_schema_invalid')
         if 'accountErasureConfig' in binding:
             reference = binding['accountErasureConfig']
-            require(isinstance(reference, dict) and set(reference) == {'path', 'sha256'}
+            require(isinstance(reference, dict) and set(reference) in ({'path', 'sha256'}, {'path', 'sha256', 'cleanScope'})
+                    and reference.get('cleanScope', 'cop_sim_shared_identity_v1') == 'cop_sim_shared_identity_v1'
                     and isinstance(reference['path'], str) and isinstance(reference['sha256'], str)
                     and re.fullmatch(r'[0-9a-f]{64}', reference['sha256']), 'erasure_reference_invalid')
-            self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
+            _, config_proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
+            require(('cleanScope' in reference) == (config_proof['contractVersion'] == CLEAN_ERASURE_PROOF_VERSION), 'erasure_reference_scope')
         require(set(binding['composeHashes']) == set(FILES), 'release_compose_scope')
         require(binding.get('contractVersion') == 'cop-api-runtime-release-v1'
                 and binding.get('releaseId') == identifier and IMAGE.fullmatch(binding.get('imageId', ''))
@@ -1010,6 +1021,16 @@ class Store:
             self.accepted_health(directory, binding)
         return pointer, directory, binding, profile
 
+    def clean_runtime_values(self, binding, config):
+        reference = binding.get('accountErasureConfig', {})
+        if reference.get('cleanScope') != 'cop_sim_shared_identity_v1':
+            return None
+        _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
+        values = config['services']['cop-api']['environment']
+        erasure_target_environment(values, proof['operation'], proof['cleanReset'])
+        require(CLEAN_ERASURE_CONFIG_KEYS <= set(values), 'clean_overlay_missing')
+        return {key: values[key] for key in CLEAN_ERASURE_CONFIG_KEYS}
+
     def prepare(self, image, revision, attestation, expected, profile_id=None, baseline=False, erasure_config=None):
         self.clean(); pointer = self.check_cas(expected)
         require(IMAGE.fullmatch(image) and (revision is None if baseline else isinstance(revision, str)
@@ -1040,6 +1061,8 @@ class Store:
             require(proof['previous'] == pointer, 'erasure_previous_cas_changed')
             require(environment_metadata(self.source / '.env', self.uid) == proof['environmentMetadata'], 'erasure_env_cas_changed')
             binding['accountErasureConfig'] = {'path': str(erasure_config), 'sha256': digest}
+            if proof['contractVersion'] == CLEAN_ERASURE_PROOF_VERSION:
+                binding['accountErasureConfig']['cleanScope'] = 'cop_sim_shared_identity_v1'
             self.assert_erasure_environment(binding)
         self.docker.image(image, baseline=baseline, revision=revision)
         self.check_mounts(binding, profile)
@@ -1080,7 +1103,8 @@ class Store:
         self.write(directory / 'compose.runtime.yml', overlay_bytes(binding, profile['mode']))
         self.write(directory / 'image.env', self.image_env(binding, profile['mode']))
         verify_api_diff(self.docker.config(directory), self.docker.config(directory, profile['directory']),
-                        profile['values'], profile['mode'], image, presence)
+                        profile['values'], profile['mode'], image, presence,
+                        self.clean_runtime_values(binding, self.docker.config(directory, profile['directory'])))
         self.write(directory / 'release.json', encoded(binding))
         self.check_cas(expected)
         return binding
@@ -1188,7 +1212,8 @@ class Store:
         self.docker.image(binding['imageId'], baseline=binding['kind'] == 'accepted-baseline',
                           revision=binding['sourceRevision'])
         verify_api_diff(self.docker.config(directory), self.docker.config(directory, profile['directory']),
-                        profile['values'], profile['mode'], binding['imageId'], binding['legacyEnvPresence'])
+                        profile['values'], profile['mode'], binding['imageId'], binding['legacyEnvPresence'],
+                        self.clean_runtime_values(binding, self.docker.config(directory, profile['directory'])))
         if adopt:
             actual = self.docker.current(directory)
             require(actual['Id'] == binding['legacyContainerId'], 'legacy_container_witness_mismatch')
@@ -1302,7 +1327,8 @@ class Store:
         self.docker.image(binding['imageId'], baseline=binding['kind'] == 'accepted-baseline',
                           revision=binding['sourceRevision'])
         verify_api_diff(self.docker.config(directory), self.docker.config(directory, profile['directory']),
-                        profile['values'], profile['mode'], binding['imageId'], binding['legacyEnvPresence'])
+                        profile['values'], profile['mode'], binding['imageId'], binding['legacyEnvPresence'],
+                        self.clean_runtime_values(binding, self.docker.config(directory, profile['directory'])))
         self.docker.preserve(directory, profile['directory'], actual)
         self.docker.unchanged(directory, actual)
         if rollback and target_running:

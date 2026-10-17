@@ -1142,6 +1142,17 @@ class RuntimeTests(unittest.TestCase):
         write(path, proof, 0o640)
         return path, proof
 
+    def test_clean_overlay_contains_only_reviewed_environment_references(self):
+        current = self.erasure_initial(); path, proof = self.clean_erasure_proof(current)
+        binding = self.erasure_candidate(current, path)
+        env = m.overlay(binding, 'direct')['services']['cop-api']['environment']
+        self.assertEqual(binding['accountErasureConfig']['cleanScope'], 'cop_sim_shared_identity_v1')
+        for key in m.CLEAN_ERASURE_CONFIG_KEYS:
+            self.assertEqual(env[key], '${' + key + '?Clean lifecycle setting is required}')
+        self.assertNotIn('COP_AUTH_MODE', env)
+        plain = dict(binding); plain.pop('accountErasureConfig')
+        self.assertNotIn('COP_USER_RESET_EPOCH', m.overlay(plain, 'direct')['services']['cop-api']['environment'])
+
     def test_clean_reset_requires_separate_root_proof_and_preserves_the_runtime_profile(self):
         current = self.erasure_initial(); path, proof = self.clean_erasure_proof(current)
         before = len(self.docker.up_calls)
@@ -1179,8 +1190,8 @@ class RuntimeTests(unittest.TestCase):
         current = self.erasure_initial(); path, proof = self.clean_erasure_proof(current)
         before = len(self.docker.up_calls)
         proof['cleanReset']['resetEpoch'] = str(uuid.uuid4()); write(path, proof, 0o640)
-        candidate = self.erasure_candidate(current, path)
         with self.assertRaisesRegex(m.RuntimeError, 'clean_erasure_target_binding'):
+            candidate = self.erasure_candidate(current, path)
             self.store.activate(candidate['releaseId'], current['generation'])
         self.assertEqual(len(self.docker.up_calls), before)
 

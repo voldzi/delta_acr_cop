@@ -469,3 +469,31 @@ close preserves the identity across release phases; the outer release finally
 must invoke `cleanup_temporary_comm_key(host)` to remove the exact authorization
 and RAM identity. Cleanup failure is an error, never release success. No password
 login, host trust bypass, new listener or existing-key transfer is permitted.
+
+## Complete COP activation bridge
+
+`activate-clean-cop.py` connects the existing protected runtime Store to the
+common Root release. Before the writer freeze it runs the existing real image
+probes (Sharp, X5 positive/negative cases, read-only database routes), writes the
+Root:GID1000 attestation and captures actual API/dependency/public-demo health.
+After the exact twelve-phase reset, verified SIM readiness and Messaging native
+acceptance, it prepares the finite configuration and a separate clean-scope
+proof. The actual Store prepare/activate runs as the existing deployment UID1000;
+secrets remain in production files and Compose resolution stays in RAM.
+
+The clean proof now adds only the reviewed lifecycle configuration references to
+the API's guarded overlay. Base Compose files are unchanged. Unknown environment
+changes and ordinary unreviewed overlays are rejected. It restarts only the
+exact reset Edge/MCP containers, deploys the pinned API with erasure disabled,
+and updates only the pinned web image after comparing its effective configuration
+and preserving ports, networks, mounts and API/peer containers. Only a fresh
+`cop-account-erasure-owners=ok` probe permits the separate enable transition.
+Failures pause intake and stop only the guarded candidate; old unprotected API
+images, deleted data and revoked storage credentials are never restored.
+
+The new runtime/health operator sources are installed from the sealed verified
+source so future ordinary deployments understand the clean binding. Their prior
+hashes are captured first; the locally modified `deploy-production.sh` and other
+checkout files are preserved. This is a scoped source installation, not a claim
+that the production Git HEAD moved. Boundary tests and guarded Store tests do
+not replace actual Root execution or production acceptance.
