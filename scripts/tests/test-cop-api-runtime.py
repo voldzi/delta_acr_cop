@@ -1125,4 +1125,59 @@ class RuntimeTests(unittest.TestCase):
             self.store.activate(binding['releaseId'], current['generation'])
         self.assertEqual(len(self.docker.up_calls), count)
 
+    def clean_erasure_proof(self, current):
+        self.docker.raw_variable_keys |= m.CLEAN_ERASURE_CONFIG_KEYS
+        reset = {'resetEpoch': str(uuid.uuid4()), 'tokensNotBefore': 1792195200, 'receiptSha256': '9' * 64}
+        self.docker.base['services']['cop-api']['environment'].update({
+            'COP_ACCOUNT_ERASURE_SCOPE': 'cop_sim_shared_identity_v1',
+            'COP_KEYCLOAK_SHARED_IDENTITY_DELETE_ACCEPTED': 'true',
+            'COP_USER_RESET_EPOCH': reset['resetEpoch'],
+            'COP_USER_RESET_TOKENS_NOT_BEFORE': str(reset['tokensNotBefore'])})
+        path, proof = self.erasure_proof(current)
+        proof.update(contractVersion=m.CLEAN_ERASURE_PROOF_VERSION, cleanReset=reset,
+                     checks={key: True for key in m.CLEAN_ERASURE_PROOF_CHECKS})
+        write(path, proof, 0o640)
+        return path, proof
+
+    def test_clean_reset_requires_separate_root_proof_and_preserves_the_runtime_profile(self):
+        current = self.erasure_initial(); path, proof = self.clean_erasure_proof(current)
+        before = len(self.docker.up_calls)
+        candidate = self.erasure_candidate(current, path)
+        accepted = self.store.activate(candidate['releaseId'], current['generation'])
+        env = dict(item.split('=', 1) for item in self.docker.live_container['Config']['Env'])
+        self.assertEqual(accepted['profileId'], current['profileId'])
+        self.assertEqual(env['COP_ACCOUNT_ERASURE_SCOPE'], 'cop_sim_shared_identity_v1')
+        self.assertEqual(env['COP_ACCOUNT_ERASURE_ENABLED'], 'false')
+        self.assertEqual(env['COP_USER_RESET_EPOCH'], proof['cleanReset']['resetEpoch'])
+
+    def test_old_identity_preserving_proof_cannot_authorize_clean_reset_flags(self):
+        current = self.erasure_initial(); path, proof = self.clean_erasure_proof(current)
+        before = len(self.docker.up_calls)
+        proof.pop('cleanReset'); proof['contractVersion'] = 'cop-api-account-erasure-config-v1'
+        proof['checks'] = {key: True for key in m.ERASURE_PROOF_CHECKS}; write(path, proof, 0o640)
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_proof_keys'):
+            self.erasure_candidate(current, path)
+        self.assertEqual(len(self.docker.up_calls), before)
+
+    def test_clean_reset_epoch_must_match_the_exact_root_confirmed_receipt(self):
+        current = self.erasure_initial(); path, proof = self.clean_erasure_proof(current)
+        before = len(self.docker.up_calls)
+        proof['cleanReset']['resetEpoch'] = str(uuid.uuid4()); write(path, proof, 0o640)
+        candidate = self.erasure_candidate(current, path)
+        with self.assertRaisesRegex(m.RuntimeError, 'clean_erasure_target_binding'):
+            self.store.activate(candidate['releaseId'], current['generation'])
+        self.assertEqual(len(self.docker.up_calls), before)
+
+    def test_clean_reset_still_rejects_missing_joint_acceptance_and_actor_key_rotation(self):
+        current = self.erasure_initial(); path, proof = self.clean_erasure_proof(current)
+        before = len(self.docker.up_calls)
+        proof['checks']['jointSyntheticAcceptance'] = False; write(path, proof, 0o640)
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_proof_acceptance_missing'):
+            self.erasure_candidate(current, path)
+        proof['checks']['jointSyntheticAcceptance'] = True
+        proof['changedKeys'] = sorted(proof['changedKeys'] + ['COP_SIM_ERASURE_ACTOR_SECRET']); write(path, proof, 0o640)
+        with self.assertRaisesRegex(m.RuntimeError, 'erasure_proof_keys'):
+            self.erasure_candidate(current, path)
+        self.assertEqual(len(self.docker.up_calls), before)
+
 if __name__ == '__main__': unittest.main()

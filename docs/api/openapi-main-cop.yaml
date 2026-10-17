@@ -24446,7 +24446,9 @@ components:
         - accountDeletion
       properties:
         contractVersion:
-          const: cop-account-erasure-v1
+          enum:
+            - cop-account-erasure-v1
+            - cop-account-erasure-v2
         accountDeletion:
           type: boolean
         ownerReadiness:
@@ -24486,6 +24488,9 @@ components:
                     - not_accepted
                     - required_adapters_missing
                     - adapter_unavailable
+      description: Explicit versioned erasure contract. V2 is enabled only after a clean user-data reset
+        and separate shared-identity authority acceptance; v1 semantics remain unchanged. HTTP202 is
+        a durable fenced request, not completed erasure.
     AccountErasureOwnerReadiness:
       type: object
       additionalProperties: false
@@ -24547,12 +24552,16 @@ components:
         - pendingReasons
       properties:
         contractVersion:
-          const: cop-account-erasure-v1
+          enum:
+            - cop-account-erasure-v1
+            - cop-account-erasure-v2
         deletionScope:
           type: string
-          const: cop_jizda_preserve_shared_identity_sim
-          description: COP/Jizda data and access only; shared identity, SIM profile, roles and sessions are
-            outside erasure scope.
+          description: V1 preserves the shared identity. V2 deletes the shared Keycloak identity and SIM
+            access, after verified COP/SIM cleanup. Server-selected scope; not caller input.
+          enum:
+            - cop_jizda_preserve_shared_identity_sim
+            - cop_sim_shared_identity_v1
         operationId:
           type: string
           format: uuid
@@ -24702,6 +24711,21 @@ components:
                 const: false
               remaining:
                 minItems: 1
+        - if:
+            properties:
+              contractVersion:
+                const: cop-account-erasure-v2
+          then:
+            properties:
+              deletionScope:
+                const: cop_sim_shared_identity_v1
+          else:
+            properties:
+              deletionScope:
+                const: cop_jizda_preserve_shared_identity_sim
+      description: Explicit versioned erasure contract. V2 is enabled only after a clean user-data reset
+        and separate shared-identity authority acceptance; v1 semantics remain unchanged. HTTP202 is
+        a durable fenced request, not completed erasure.
     AccountErasurePreflight:
       type: object
       additionalProperties: false
@@ -24714,12 +24738,16 @@ components:
       properties:
         contractVersion:
           type: string
-          const: cop-account-erasure-preflight-v1
+          enum:
+            - cop-account-erasure-preflight-v1
+            - cop-account-erasure-preflight-v2
         deletionScope:
           type: string
-          const: cop_jizda_preserve_shared_identity_sim
-          description: COP/Jizda data and access only; shared identity, SIM profile, roles and sessions are
-            outside erasure scope.
+          description: V1 preserves the shared identity. V2 deletes the shared Keycloak identity and SIM
+            access, after verified COP/SIM cleanup. Server-selected scope; not caller input.
+          enum:
+            - cop_jizda_preserve_shared_identity_sim
+            - cop_sim_shared_identity_v1
         operationId:
           type: string
           format: uuid
@@ -24797,6 +24825,21 @@ components:
                     confirmBy:
                       type: string
                       format: date-time
+        - if:
+            properties:
+              contractVersion:
+                const: cop-account-erasure-preflight-v2
+          then:
+            properties:
+              deletionScope:
+                const: cop_sim_shared_identity_v1
+          else:
+            properties:
+              deletionScope:
+                const: cop_jizda_preserve_shared_identity_sim
+      description: Explicit versioned erasure contract. V2 is enabled only after a clean user-data reset
+        and separate shared-identity authority acceptance; v1 semantics remain unchanged. HTTP202 is
+        a durable fenced request, not completed erasure.
     EdgeAccountErasureRequest:
       type: object
       additionalProperties: false

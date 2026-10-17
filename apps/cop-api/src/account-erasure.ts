@@ -8,6 +8,8 @@ export const ACCOUNT_ERASURE_ADAPTER_IDS = [
   "cop_content_media", "mobility_dispatch", "sim_measurements", "ai_router", "moderation_audit", "backup_restore"
 ] as const;
 export const ACCOUNT_ERASURE_SCOPE = "cop_jizda_preserve_shared_identity_sim" as const;
+export const SHARED_ACCOUNT_ERASURE_SCOPE = "cop_sim_shared_identity_v1" as const;
+export type AccountErasureScope = typeof ACCOUNT_ERASURE_SCOPE | typeof SHARED_ACCOUNT_ERASURE_SCOPE;
 export type AccountErasureAdapterId = typeof ACCOUNT_ERASURE_ADAPTER_IDS[number];
 export type AccountErasurePendingReason = "cleanup_pending" | "adapter_missing" | "adapter_unavailable" | "not_accepted";
 export type AccountErasurePreflightReason = "ownership_unresolved" | "choice_required" | "adapter_preflight_missing" | "adapter_unavailable";
@@ -19,6 +21,7 @@ export interface AccountErasureOperationContext {
   /** Actual administrator-enrolled recovery binding, never browser input.
    * Owners with durable sub-checkpoints must also reverify them after restore. */
   datasetBinding?: AccountErasureDatasetBinding;
+  identityPreflightVersion?: string;
 }
 export interface AccountErasureAdapter {
   readonly id: AccountErasureAdapterId;
@@ -44,8 +47,8 @@ export interface AccountErasureOwnerReadiness {
   unavailableReason?: "required_adapters_missing" | "adapter_unavailable";
 }
 export interface AccountErasureReceipt {
-  contractVersion: "cop-account-erasure-v1";
-  deletionScope: typeof ACCOUNT_ERASURE_SCOPE;
+  contractVersion: "cop-account-erasure-v1" | "cop-account-erasure-v2";
+  deletionScope: AccountErasureScope;
   operationId: string;
   status: "deleting" | "deleted";
   requestedAt: string;
@@ -60,11 +63,12 @@ interface Job {
   operationId: string; requestedAt: string; completedAt?: string; required: AccountErasureAdapterId[];
   checkpoints: Partial<Record<AccountErasureAdapterId, Checkpoint>>;
   sealedPrincipal?: string;
+  identityPreflightVersion?: string;
   lease?: { token: string; expiresAt: number };
   lastAttemptAt?: string;
 }
 export interface AccountErasurePreflight {
-  contractVersion: "cop-account-erasure-preflight-v1"; deletionScope: typeof ACCOUNT_ERASURE_SCOPE; operationId: string; canConfirm: boolean;
+  contractVersion: "cop-account-erasure-preflight-v1" | "cop-account-erasure-preflight-v2"; deletionScope: AccountErasureScope; operationId: string; canConfirm: boolean;
   planId?: string; confirmBy?: string;
   blockers: Array<{ domain: AccountErasureAdapterId; reason: AccountErasurePreflightReason }>;
 }
@@ -102,16 +106,20 @@ export class AccountErasureService {
   }
   constructor(readonly options: { store: MobilityStore; identitySecret: string; issuer: string;
     requiredAdapters: readonly AccountErasureAdapterId[]; adapters: readonly AccountErasureAdapter[];
-    accepted: boolean; expectedGuardStoreId?: string; allowUnboundSyntheticStore?: boolean; adapterTimeoutMs?: number; now?: () => Date;
+    accepted: boolean; deletionScope?: AccountErasureScope; expectedGuardStoreId?: string; allowUnboundSyntheticStore?: boolean; adapterTimeoutMs?: number; now?: () => Date;
     admissionGuard?: AccountErasureAdmissionGuard; continuity?: AccountErasureContinuity; continuityRequired?: boolean }) {
     this.required = [...options.requiredAdapters];
-    if (options.identitySecret.length < 32 || !options.issuer || this.required.length !== ACCOUNT_ERASURE_ADAPTER_IDS.length ||
+    if ((options.deletionScope !== undefined && ![ACCOUNT_ERASURE_SCOPE, SHARED_ACCOUNT_ERASURE_SCOPE].includes(options.deletionScope)) || options.identitySecret.length < 32 || !options.issuer || this.required.length !== ACCOUNT_ERASURE_ADAPTER_IDS.length ||
         new Set(this.required).size !== this.required.length || ACCOUNT_ERASURE_ADAPTER_IDS.some(id => !this.required.includes(id)) ||
         options.adapters.some(adapter => !this.required.includes(adapter.id)) || new Set(options.adapters.map(a => a.id)).size !== options.adapters.length) {
       throw new Error("Account erasure requires the explicit complete provider boundary and dedicated identity secret.");
     }
     this.adapters = new Map(options.adapters.map(adapter => [adapter.id, adapter]));
     this.sealKey = createHash("sha256").update("cop-account-erasure-principal-v1\0").update(options.identitySecret).digest();
+  }
+  get deletionScope(): AccountErasureScope { return this.options.deletionScope ?? ACCOUNT_ERASURE_SCOPE; }
+  get contractVersion(): "cop-account-erasure-v1" | "cop-account-erasure-v2" {
+    return this.deletionScope === SHARED_ACCOUNT_ERASURE_SCOPE ? "cop-account-erasure-v2" : "cop-account-erasure-v1";
   }
   private get timeoutMs() { return Math.max(1, Math.min(adapterTimeoutMs, this.options.adapterTimeoutMs ?? adapterTimeoutMs)); }
   usesAdmissionGuard(guard: AccountErasureAdmissionGuard): boolean { return this.options.admissionGuard === guard; }
@@ -147,15 +155,25 @@ export class AccountErasureService {
     this.datasetBinding = undefined;
   }
   private validateReplayEntry(entry: AccountErasureFenceEntry): void {
-    if (!entry || entry.contractVersion !== "cop-erasure-fence-entry-v1" ||
+    const shared = this.deletionScope === SHARED_ACCOUNT_ERASURE_SCOPE;
+    if (!entry || entry.contractVersion !== (shared ? "cop-erasure-fence-entry-v2" : "cop-erasure-fence-entry-v1") ||
       entry.applicationStoreId !== this.options.expectedGuardStoreId || entry.configurationFingerprint !== this.configurationFingerprint() ||
       !/^[0-9a-f]{64}$/u.test(entry.accountKey) || Object.keys(entry).sort().join(",") !==
-        "accountKey,applicationStoreId,configurationFingerprint,contractVersion,job" ||
-      Object.keys(entry.job ?? {}).sort().join(",") !== "checkpoints,operationId,requestedAt,required" ||
+        (shared ? "accountKey,applicationStoreId,configurationFingerprint,contractVersion,deletionScope,job" : "accountKey,applicationStoreId,configurationFingerprint,contractVersion,job") ||
+      (shared && entry.deletionScope !== SHARED_ACCOUNT_ERASURE_SCOPE) ||
+      Object.keys(entry.job ?? {}).sort().join(",") !== (shared ? "checkpoints,identityPreflightVersion,operationId,requestedAt,required,sealedPrincipal" : "checkpoints,operationId,requestedAt,required") ||
       !entry.job.checkpoints || Array.isArray(entry.job.checkpoints) || Object.keys(entry.job.checkpoints).length !== 0 ||
       !Number.isFinite(Date.parse(entry.job.requestedAt)) ||
       new Date(entry.job.requestedAt).toISOString() !== entry.job.requestedAt) throw new AccountErasureError(503, "ERASURE_REPLAY_UNPROVEN");
     this.validateBoundary(entry.job);
+    if (shared) {
+      if (typeof entry.job.identityPreflightVersion !== "string" || !entry.job.identityPreflightVersion || entry.job.identityPreflightVersion.length > 256 ||
+        typeof entry.job.sealedPrincipal !== "string" || entry.job.sealedPrincipal.length > 4096)
+        throw new AccountErasureError(503, "ERASURE_REPLAY_UNPROVEN");
+      const principal = this.open(entry.job.sealedPrincipal);
+      if (this.accountKey(principal) !== entry.accountKey || !Number.isSafeInteger(principal.tokenIssuedAt))
+        throw new AccountErasureError(503, "ERASURE_REPLAY_UNPROVEN");
+    }
   }
   private async assertContinuityCurrent(): Promise<void> {
     if (!this.options.continuityRequired && !this.options.continuity) return;
@@ -195,7 +213,7 @@ export class AccountErasureService {
       if (saved && saved.fingerprint !== fingerprint) throw new AccountErasureError(503, "ERASURE_CONFIGURATION_CHANGED");
       const issuerFingerprint = createHash("sha256").update(this.options.issuer).digest("hex");
       const version = required ? 4 : 3;
-      if (saved && (saved.version !== version || saved.deletionScope !== ACCOUNT_ERASURE_SCOPE || !saved.storeId || saved.issuerFingerprint !== issuerFingerprint)) throw new AccountErasureError(503, "ERASURE_CONFIGURATION_UNSUPPORTED");
+      if (saved && (saved.version !== version || saved.deletionScope !== this.deletionScope || !saved.storeId || saved.issuerFingerprint !== issuerFingerprint)) throw new AccountErasureError(503, "ERASURE_CONFIGURATION_UNSUPPORTED");
       if (saved && this.options.expectedGuardStoreId && saved.storeId !== this.options.expectedGuardStoreId) throw new AccountErasureError(503, "ERASURE_STORE_ID_MISMATCH");
       const jobs = await tx.scan<Job>(PREFIX);
       const hadDataset = !!saved && Object.hasOwn(saved, "datasetBinding");
@@ -208,14 +226,15 @@ export class AccountErasureService {
       if (restored && (dataset!.restoreGeneration <= saved!.datasetBinding!.restoreGeneration ||
         dataset!.incarnationId === saved!.datasetBinding!.incarnationId))
         throw new AccountErasureError(503, "ERASURE_DATASET_HISTORY_UNPROVEN");
-      if (!saved) await tx.set(CONFIG, { fingerprint, issuerFingerprint, version, deletionScope: ACCOUNT_ERASURE_SCOPE,
+      if (!saved) await tx.set(CONFIG, { fingerprint, issuerFingerprint, version, deletionScope: this.deletionScope,
         storeId: this.options.expectedGuardStoreId ?? randomUUID(), accepted: false, ...(dataset ? { datasetBinding: dataset } : {}) });
       else if (dataset) await tx.set(CONFIG, { ...saved, datasetBinding: dataset });
       for (const entry of replay?.entries ?? []) {
         const key = PREFIX + entry.accountKey, existing = await tx.get<Job>(key);
         if (existing) {
           this.validateBoundary(existing);
-          if (existing.operationId !== entry.job.operationId || existing.requestedAt !== entry.job.requestedAt)
+          if (existing.operationId !== entry.job.operationId || existing.requestedAt !== entry.job.requestedAt ||
+            (this.deletionScope === SHARED_ACCOUNT_ERASURE_SCOPE && existing.identityPreflightVersion !== entry.job.identityPreflightVersion))
             throw new AccountErasureError(503, "ERASURE_REPLAY_CONFLICT");
           if (restored) {
             // A receipt/checkpoint copied from the restored dataset cannot prove
@@ -248,16 +267,16 @@ export class AccountErasureService {
     await this.initialized;
   }
   async capabilities() {
-    if (!this.options.accepted) return { contractVersion: "cop-account-erasure-v1", accountDeletion: false, unavailableReason: "not_accepted" };
-    if (this.required.some(id => !this.adapters.get(id)?.preflight)) return { contractVersion: "cop-account-erasure-v1", accountDeletion: false, unavailableReason: "required_adapters_missing" };
+    if (!this.options.accepted) return { contractVersion: this.contractVersion, accountDeletion: false, unavailableReason: "not_accepted" };
+    if (this.required.some(id => !this.adapters.get(id)?.preflight)) return { contractVersion: this.contractVersion, accountDeletion: false, unavailableReason: "required_adapters_missing" };
     try {
       await this.init();
       await this.assertContinuityCurrent();
       for (const id of this.required) if (!(await bounded(this.adapters.get(id)!.ready(), AbortSignal.timeout(this.timeoutMs)))) {
-        return { contractVersion: "cop-account-erasure-v1", accountDeletion: false, unavailableReason: "adapter_unavailable" };
+        return { contractVersion: this.contractVersion, accountDeletion: false, unavailableReason: "adapter_unavailable" };
       }
-      return { contractVersion: "cop-account-erasure-v1", accountDeletion: true };
-    } catch { return { contractVersion: "cop-account-erasure-v1", accountDeletion: false, unavailableReason: "adapter_unavailable" }; }
+      return { contractVersion: this.contractVersion, accountDeletion: true };
+    } catch { return { contractVersion: this.contractVersion, accountDeletion: false, unavailableReason: "adapter_unavailable" }; }
   }
   /** Diagnostic readiness remains independent of permission to accept new erasure.
    * It never initializes/replays jobs, changes acceptance or publishes a fence. */
@@ -287,7 +306,7 @@ export class AccountErasureService {
           const config = await tx.get<{ fingerprint?: string; storeId?: string; issuerFingerprint?: string; version?: number;
             accepted?: boolean; deletionScope?: string; datasetBinding?: AccountErasureDatasetBinding }>(CONFIG);
           if (!config || config.fingerprint !== this.configurationFingerprint() || config.version !== (required ? 4 : 3) ||
-            config.deletionScope !== ACCOUNT_ERASURE_SCOPE || typeof config.storeId !== "string" || !config.storeId ||
+            config.deletionScope !== this.deletionScope || typeof config.storeId !== "string" || !config.storeId ||
             typeof config.accepted !== "boolean" || config.issuerFingerprint !== createHash("sha256").update(this.options.issuer).digest("hex") ||
             (this.options.expectedGuardStoreId && config.storeId !== this.options.expectedGuardStoreId) ||
             (!this.options.expectedGuardStoreId && !this.options.allowUnboundSyntheticStore)) throw new Error();
@@ -368,7 +387,7 @@ export class AccountErasureService {
     const accountKey = this.accountKey(actor);
     if (await this.options.store.transact([], tx => tx.get<Job>(PREFIX + accountKey))) throw new AccountErasureError(409, "ERASURE_ALREADY_REQUESTED");
     const assessed = await this.assess(actor, operationId.toLowerCase());
-    const response: AccountErasurePreflight = { contractVersion: "cop-account-erasure-preflight-v1", deletionScope: ACCOUNT_ERASURE_SCOPE, operationId: operationId.toLowerCase(), canConfirm: assessed.blockers.length === 0, blockers: assessed.blockers };
+    const response: AccountErasurePreflight = { contractVersion: this.deletionScope === SHARED_ACCOUNT_ERASURE_SCOPE ? "cop-account-erasure-preflight-v2" : "cop-account-erasure-preflight-v1", deletionScope: this.deletionScope, operationId: operationId.toLowerCase(), canConfirm: assessed.blockers.length === 0, blockers: assessed.blockers };
     if (!response.canConfirm) return { response };
     this.requireActor(actor, true);
     const capability = randomBytes(32).toString("base64url"), receiptHash = this.accessHash(capability);
@@ -465,17 +484,22 @@ export class AccountErasureService {
         }
         this.requireActor(actor, true);
         let value: Job = { operationId: operationId.toLowerCase(), requestedAt: this.now().toISOString(),
-          required: [...this.required], checkpoints: {}, sealedPrincipal: this.seal(actor) };
+          required: [...this.required], checkpoints: {}, sealedPrincipal: this.seal(actor),
+          ...(this.deletionScope === SHARED_ACCOUNT_ERASURE_SCOPE ? { identityPreflightVersion: currentPlan.versions.keycloak } : {}) };
         if (this.options.continuityRequired || this.options.continuity) {
           if (!this.options.continuity || !this.options.expectedGuardStoreId) throw new AccountErasureError(503, "ERASURE_CONTINUITY_UNAVAILABLE");
           try {
-            const published = await this.options.continuity.publishFence({ contractVersion: "cop-erasure-fence-entry-v1",
+            const shared = this.deletionScope === SHARED_ACCOUNT_ERASURE_SCOPE;
+            const published = await this.options.continuity.publishFence({
+              contractVersion: shared ? "cop-erasure-fence-entry-v2" : "cop-erasure-fence-entry-v1",
+              ...(shared ? { deletionScope: SHARED_ACCOUNT_ERASURE_SCOPE } : {}),
               applicationStoreId: this.options.expectedGuardStoreId, configurationFingerprint: this.configurationFingerprint(),
-              accountKey, job: { operationId: value.operationId, requestedAt: value.requestedAt, required: value.required, checkpoints: {} } });
+              accountKey, job: { operationId: value.operationId, requestedAt: value.requestedAt, required: value.required, checkpoints: {},
+                ...(shared ? { sealedPrincipal: value.sealedPrincipal!, identityPreflightVersion: value.identityPreflightVersion! } : {}) } });
             this.validateReplayEntry(published.entry);
             if (published.entry.accountKey !== accountKey || published.entry.job.operationId !== operationId.toLowerCase())
               throw new AccountErasureError(503, "ERASURE_REPLAY_UNPROVEN");
-            value = { ...published.entry.job, sealedPrincipal: this.seal(actor) };
+            value = { ...published.entry.job, sealedPrincipal: published.entry.job.sealedPrincipal ?? this.seal(actor) };
           } finally { this.invalidateContinuity(); }
         }
         await tx.set(key, value); // Durable global tombstone before every downstream handoff.
@@ -496,7 +520,9 @@ export class AccountErasureService {
       const job = this.options.admissionGuard && !existing
         ? await this.options.admissionGuard.run(actor, AbortSignal.timeout(180_000), admit)
         : await admit();
-      if (job.completedAt) return this.receipt(job);
+      // V2 acknowledges the committed fence, not synchronous downstream work.
+      // The durable worker resumes after logout and across process restarts.
+      if (job.completedAt || this.deletionScope === SHARED_ACCOUNT_ERASURE_SCOPE) return this.receipt(job);
       return await this.run(accountKey);
     } catch (error) { throw known(error); }
   }
@@ -564,6 +590,7 @@ export class AccountErasureService {
               ready = await bounded(adapter.readyForAcceptedOperation(actor, { accountKey,
                 operationId: claimed.job.operationId, requestedAt: claimed.job.requestedAt,
                 ...(this.datasetBinding ? { datasetBinding: structuredClone(this.datasetBinding) } : {}),
+                ...(claimed.job.identityPreflightVersion ? { identityPreflightVersion: claimed.job.identityPreflightVersion } : {}),
                 signal: readinessSignal }), readinessSignal);
             if (!ready) { reason = "adapter_unavailable"; unavailable = true; }
             else {
@@ -571,7 +598,8 @@ export class AccountErasureService {
               const signal = timedSignal(workerSignal, this.timeoutMs);
               proof = await bounded(adapter.erase(actor, { accountKey, operationId: claimed.job.operationId,
                 ...(this.datasetBinding ? { datasetBinding: structuredClone(this.datasetBinding) } : {}),
-                requestedAt: claimed.job.requestedAt, signal }), signal);
+                requestedAt: claimed.job.requestedAt,
+                ...(claimed.job.identityPreflightVersion ? { identityPreflightVersion: claimed.job.identityPreflightVersion } : {}), signal }), signal);
               validateProof(proof);
             }
           } catch { proof = undefined; reason = "adapter_unavailable"; unavailable = true; }
@@ -621,7 +649,7 @@ export class AccountErasureService {
     const remaining = job.required.filter(id => !completeCheckpoint(job.checkpoints[id]));
     const accountDeleted = !!job.completedAt && remaining.length === 0 && job.required.length === ACCOUNT_ERASURE_ADAPTER_IDS.length &&
       ACCOUNT_ERASURE_ADAPTER_IDS.every(id => job.required.includes(id) && completeCheckpoint(job.checkpoints[id]));
-    return { contractVersion: "cop-account-erasure-v1", deletionScope: ACCOUNT_ERASURE_SCOPE, operationId: job.operationId, requestedAt: job.requestedAt,
+    return { contractVersion: this.contractVersion, deletionScope: this.deletionScope, operationId: job.operationId, requestedAt: job.requestedAt,
       status: accountDeleted ? "deleted" : "deleting", accountDeleted, revocationEnforced: true, remaining,
       ...(accountDeleted ? { completedAt: job.completedAt } : {}),
       pendingReasons: Object.fromEntries(remaining.map(id => [id, job.checkpoints[id]?.reason ?? "cleanup_pending"])) };
@@ -636,13 +664,13 @@ export class AccountErasureService {
   }
   private seal(actor: AuthenticatedActor) {
     const iv = randomBytes(12), cipher = createCipheriv("aes-256-gcm", this.sealKey, iv);
-    const bytes = Buffer.concat([cipher.update(JSON.stringify({ issuer: actor.issuer, subjectId: actor.subjectId })), cipher.final()]);
+    const bytes = Buffer.concat([cipher.update(JSON.stringify({ issuer: actor.issuer, subjectId: actor.subjectId, ...(actor.tokenIssuedAt === undefined ? {} : { tokenIssuedAt: actor.tokenIssuedAt }) })), cipher.final()]);
     return Buffer.concat([iv, cipher.getAuthTag(), bytes]).toString("base64");
   }
   private open(value: string): AuthenticatedActor {
     const bytes = Buffer.from(value, "base64"), decipher = createDecipheriv("aes-256-gcm", this.sealKey, bytes.subarray(0, 12));
     decipher.setAuthTag(bytes.subarray(12, 28));
-    const principal = JSON.parse(Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString("utf8")) as { issuer: string; subjectId: string };
+    const principal = JSON.parse(Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString("utf8")) as { issuer: string; subjectId: string; tokenIssuedAt?: number };
     const actor: AuthenticatedActor = { ...principal, authMode: "oidc", username: "", displayName: "" };
     this.requireActor(actor); return actor;
   }

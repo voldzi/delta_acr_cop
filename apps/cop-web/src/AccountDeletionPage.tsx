@@ -212,8 +212,8 @@ export default function AccountDeletionPage() {
         <a href="/">Zpět do COP</a>
         <h1 id="deletion-title">Odstranění celého účtu</h1>
         <p>
-          Odstranění účtu COP je nevratné a ukončí přístup do COP, COP Mobile a Jízdy. Společné přihlášení a přístup do
-          SIM zůstanou zachovány.
+          Odstranění účtu je nevratné. Odstraníme vaše údaje v COP a SIM i společný přihlašovací účet. Zanikne také
+          přístup do Jízdy a dalších aplikací využívajících toto přihlášení.
         </p>
         {receipt ? (
           <div role="status" aria-live="polite">
@@ -221,7 +221,7 @@ export default function AccountDeletionPage() {
             <p>
               {receipt.accountDeleted
                 ? "Všechny služby potvrdily dokončení."
-                : "Přístup účtu je zablokovaný. Čekáme na skutečné dokončení zbývajících částí:"}
+                : "Byli jste odhlášeni a přístup účtu je zablokovaný. Server dokončí mazání automaticky; tuto stránku můžete zavřít. Zbývající části:"}
             </p>
             {!receipt.accountDeleted && (
               <ul>
@@ -312,7 +312,7 @@ export default function AccountDeletionPage() {
                           onChange={(event) => setConfirmed(event.target.checked)}
                         />{" "}
                         Rozumím, že nevratně odstraním účet COP/Jízdy {identity.email ?? identity.subjectId} a své
-                        příspěvky. Přihlášení do SIM zůstane zachováno.
+                        příspěvky. Společné přihlášení i přístup do SIM zaniknou.
                       </label>
                       <button
                         type="button"

@@ -183,3 +183,5 @@ Controlled COP Edge copies, strict owner manifests and persisted writer fences: 
 Actual two-user, all-provider deletion and isolated restore fixture: [runbook 30](runbooks/30_ACCOUNT_ERASURE_WHOLE_FIXTURE.md).
 
 Reviewed historical provenance and bounded schema preparation: [runbook 31](runbooks/31_ACCOUNT_ERASURE_LEGACY_PROVENANCE.md).
+
+- [Clean COP/SIM lifecycle release](account-safety/clean-lifecycle-release.md): explicit v2 scope, reset and acceptance progress.

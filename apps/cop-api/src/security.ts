@@ -32,6 +32,8 @@ export interface JwtPayload {
 }
 
 export interface AuthenticatedActor {
+  /** Original signed access-token iat; preserved only in the sealed deletion worker principal. */
+  tokenIssuedAt?: number;
   /** Authentication time from the signed OIDC claim, never token issue/refresh time. */
   authTime?: number;
   issuer?: string;
@@ -138,6 +140,14 @@ export async function verifyOidcToken(token: string): Promise<boolean> {
   if (!decoded || !validJwtClaims(decoded.payload)) {
     return false;
   }
+  // A clean reset invalidates old native/BFF JWTs even while their signatures
+  // and exp remain valid. The cutoff is an operator-enrolled epoch, never a
+  // request field. Missing iat cannot enter a configured clean baseline.
+  const resetCutoff = process.env.COP_USER_RESET_TOKENS_NOT_BEFORE;
+  if (resetCutoff !== undefined && resetCutoff !== "") {
+    if (!/^[1-9][0-9]{0,12}$/u.test(resetCutoff) || !Number.isSafeInteger(Number(resetCutoff)) ||
+      !Number.isSafeInteger(decoded.payload.iat) || Number(decoded.payload.iat) <= Number(resetCutoff)) return false;
+  }
   if (typeof decoded.payload.sub !== "string" || !decoded.payload.sub.trim()) return false;
   if (decoded.header.alg !== "RS256") {
     return false;
@@ -204,6 +214,7 @@ export function actorFromRequest(request: FastifyRequest): AuthenticatedActor | 
     authMode: "oidc",
     ...(Number.isSafeInteger(decoded.payload.auth_time) && Number(decoded.payload.auth_time) >= 0
       ? { authTime: decoded.payload.auth_time } : {}),
+    ...(Number.isSafeInteger(decoded.payload.iat) ? { tokenIssuedAt: decoded.payload.iat } : {}),
     issuer: decoded.payload.iss,
     ...(decoded.payload.azp ? { authorizedParty: decoded.payload.azp } : {}),
     emailVerified: decoded.payload.email_verified === true,

@@ -1,6 +1,7 @@
 # ADR 0053: COP/Jizda erasure preserves shared identity and SIM
 
-Status: human scope approved; source implementation and local verification;
+Status: historical v1 scope, superseded for the new v2 implementation by ADR0056.
+Original status: human scope approved; source implementation and local verification;
 production activation requires independent provider and restore acceptance.
 Date: 2026-10-14.
 

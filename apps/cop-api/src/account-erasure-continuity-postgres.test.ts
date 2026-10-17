@@ -1,8 +1,10 @@
+import { createSharedIdentityErasureAdapter } from "./keycloak-shared-identity-erasure.js";
+import { createBackupRestoreErasureAdapter } from "./backup-restore-erasure.js";
 import { readFile } from "node:fs/promises";
 import { createHash, createHmac, createSign, generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureService } from "./account-erasure.js";
+import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureService, type AccountErasureAdapter } from "./account-erasure.js";
 import { PostgresMobilityStore } from "./mobility-store.js";
 import { PostgresDriverMeasurementConsentStore } from "./driver-measurement-consent-store.js";
 import { opaqueUserId } from "./ai-router-chat.js";
@@ -74,6 +76,64 @@ describe.skipIf(!url || !local)("actual PostgreSQL independent deletion journal 
   });
   afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); clearJwksCacheForTests();
     await Promise.all(open.splice(0).map(c => c.close())); await admin?.end(); await target?.end(); });
+  it("recovers shared identity v2 after local job loss without another login, using the actual independent PostgreSQL journal", async () => {
+    const principal = { authMode: "oidc" as const, issuer: identityIssuer, subjectId: randomUUID(), username: "", displayName: "",
+      authTime: Math.floor(Date.now() / 1000), tokenIssuedAt: Math.floor(Date.now() / 1000) };
+    await target.query("CREATE TABLE IF NOT EXISTS fixture_shared_user_data(owner_id text PRIMARY KEY, payload text NOT NULL)");
+    await target.query("TRUNCATE fixture_shared_user_data");
+    await target.query("INSERT INTO fixture_shared_user_data VALUES($1,'synthetic A'),('synthetic-b','synthetic B')", [principal.subjectId]);
+    const stores: PostgresMobilityStore[] = [];
+    const storage = () => { const value = new PostgresMobilityStore({ connectionString: local!, max: 2 }, {}, undefined, true); stores.push(value); return value; };
+    const cleanup = vi.fn(async (owner: typeof principal) => {
+      expect(owner.subjectId).toBe(principal.subjectId); expect(owner.tokenIssuedAt).toBe(principal.tokenIssuedAt);
+      await target.query("DELETE FROM fixture_shared_user_data WHERE owner_id=$1", [owner.subjectId]);
+      expect((await target.query("SELECT count(*) FROM fixture_shared_user_data WHERE owner_id=$1", [owner.subjectId])).rows[0].count).toBe("0");
+      return { status: "completed" as const, proofId: "synthetic_real_database_cleanup" };
+    });
+    let identityPresent = true; let deletes = 0;
+    const nativeFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const u = new URL(String(input)); expect(u.origin).toBe(new URL(identityIssuer).origin);
+      if (u.pathname.endsWith("/token")) return Response.json({ access_token: "synthetic-only", token_type: "Bearer" });
+      expect(u.pathname.endsWith("/users/" + principal.subjectId)).toBe(true);
+      if (init?.method === "DELETE") { identityPresent = false; deletes++; return new Response(null, { status: 204 }); }
+      return identityPresent ? Response.json({ id: principal.subjectId, createdTimestamp: 123 }) : new Response(null, { status: 404 });
+    });
+    const ports = ACCOUNT_ERASURE_ADAPTER_IDS.filter(id => id !== "backup_restore" && id !== "keycloak").map(id => ({ id, ready: async () => true,
+      preflight: async () => ({ ready: true as const, version: "synthetic_real_owner" }), erase: cleanup }));
+    const make = (store: PostgresMobilityStore, bridge: PostgresAccountErasureContinuity) => {
+      let service: AccountErasureService;
+      const identityAdapter = createSharedIdentityErasureAdapter({ issuer: identityIssuer, clientId: "cop-account-erasure-worker",
+        clientSecret: "synthetic-only", authorityAccepted: true,
+        assertCopAccessFenced: (owner, context) => service.operationFenceConfirmed(owner, context) }, store);
+      service = new AccountErasureService({
+        store, identitySecret: secret, issuer: identityIssuer, requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS,
+        adapters: [...ports, identityAdapter, createBackupRestoreErasureAdapter({ continuity: bridge, issuer: identityIssuer, identitySecret: secret })] as AccountErasureAdapter[],
+        accepted: true, expectedGuardStoreId: binding.applicationStoreId, continuityRequired: true, continuity: bridge, deletionScope: "cop_sim_shared_identity_v1" });
+      return service;
+    };
+    try {
+      const firstStore = storage(); await firstStore.init(); const first = make(firstStore, client());
+      const op = randomUUID(), plan = await first.preflight(principal, op);
+      expect(plan.response.canConfirm).toBe(true);
+      expect((await first.request(principal, op, { confirmAccountDeletion: true }, { planId: plan.response.planId!, capability: plan.capability! })).accountDeleted).toBe(false);
+      await first.resumePending(); expect((await first.read(principal, op)).accountDeleted).toBe(true);
+      const entry = (await admin.query("SELECT entry FROM cop_safety_v2.fences WHERE operation_id=$1", [op])).rows[0].entry;
+      expect(entry.contractVersion).toBe("cop-erasure-fence-entry-v2"); expect(entry.job.sealedPrincipal).toEqual(expect.any(String));
+      expect(JSON.stringify(entry)).not.toContain(principal.subjectId); expect(JSON.stringify(entry)).not.toContain(identityIssuer);
+      // Model an application DB restored before the deletion. The separately
+      // protected journal survives, and the actual user data reappears locally.
+      await firstStore.close(); stores.splice(stores.indexOf(firstStore), 1);
+      await target.query("DELETE FROM cop_mobility_v1 WHERE key <> 'account-safety:store-identity-v1'");
+      await target.query("INSERT INTO fixture_shared_user_data VALUES($1,'synthetic restored A')", [principal.subjectId]);
+      const restoredStore = storage(); await restoredStore.init(); const restored = make(restoredStore, client());
+      await expect(restored.assertAllowed(principal)).rejects.toMatchObject({ code: "ACCOUNT_ERASURE_FENCED" });
+      await restored.resumePending(); expect((await restored.read(principal, op)).accountDeleted).toBe(true);
+      expect((await target.query("SELECT owner_id FROM fixture_shared_user_data ORDER BY owner_id")).rows).toEqual([{ owner_id: "synthetic-b" }]);
+      expect((await admin.query("SELECT count(*) FROM cop_safety_v2.fences")).rows[0].count).toBe("1");
+      expect(cleanup).toHaveBeenCalledTimes(18); expect(deletes).toBe(1); expect(identityPresent).toBe(false);
+    } finally { globalThis.fetch = nativeFetch; await Promise.all(stores.map(value => value.close())); }
+  });
   it("commits immutable exact-account evidence, serializes two clients and recovers the original operation", async () => {
     const a = client(), b = client(); await a.snapshot(); await b.snapshot();
     const input = entry(); const results = await Promise.all([a.publishFence(input), b.publishFence({ ...input, job: { ...input.job, requestedAt: new Date(Date.now() + 10).toISOString() } })]);

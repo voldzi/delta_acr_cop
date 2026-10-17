@@ -78,3 +78,5 @@ published paths are preserved for integration references.
 
 - [0053: COP/Jizda erasure preserves shared identity and SIM](0053_COP_ERASURE_PRESERVES_SHARED_SIM_IDENTITY.md)
 - [0054: Independent pseudonymous erasure journal](0054_INDEPENDENT_PSEUDONYMOUS_ERASURE_JOURNAL.md): original fence recovery, expiring admission and private Root delivery; source/tests before production enrollment.
+
+- [0056 — Clean user reset and shared identity deletion](0056_CLEAN_USER_RESET_AND_SHARED_IDENTITY_DELETION.md)

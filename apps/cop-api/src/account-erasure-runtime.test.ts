@@ -80,4 +80,24 @@ describe("production account erasure owner lifecycle", () => {
     expect(createMediaUploadSettlementFromEnv).not.toHaveBeenCalled();
     await runtime.close(); expect(native.close).toHaveBeenCalledTimes(1);
   });
+  it("refuses the native alternative for shared identity deletion before opening any owner", async () => {
+    vi.stubEnv("COP_ACCOUNT_ERASURE_SCOPE", "cop_sim_shared_identity_v1");
+    vi.stubEnv("COP_ACCOUNT_SAFETY_AUTHORITY_MODE", "native_v1");
+    await expect(loadAccountErasureRuntime()).rejects.toThrow("independent database journal");
+    expect(loadAccountErasureContinuity).not.toHaveBeenCalled();
+  });
+  it("binds shared deletion only to the actual PostgreSQL bridge, never an authority label", async () => {
+    vi.stubEnv("COP_ACCOUNT_ERASURE_SCOPE", "cop_sim_shared_identity_v1");
+    vi.stubEnv("COP_ACCOUNT_SAFETY_AUTHORITY_MODE", "database_v2");
+    const native = { snapshot: vi.fn(), assertCurrent: vi.fn(), publishFence: vi.fn(), close: vi.fn(async () => undefined) };
+    vi.mocked(loadAccountErasureContinuity).mockResolvedValue(native);
+    await expect(loadAccountErasureRuntime()).rejects.toThrow("actual independent database journal");
+    expect(native.close).toHaveBeenCalledOnce();
+    const f = fixture(); vi.mocked(loadAccountErasureContinuity).mockResolvedValue(f.continuity);
+    const runtime = await loadAccountErasureRuntime();
+    expect(runtime.serverOptions.accountErasureContinuity).toBe(f.continuity);
+    expect(runtime.serverOptions.backupRestoreErasureAdapter?.id).toBe("backup_restore");
+    await runtime.close();
+  });
+
 });

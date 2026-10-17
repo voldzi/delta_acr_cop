@@ -48,8 +48,8 @@ function profileReply(value: unknown = canonical, extraHeaders: Record<string, s
   });
 }
 const pending = {
-  contractVersion: "cop-account-erasure-v1",
-  deletionScope: "cop_jizda_preserve_shared_identity_sim",
+  contractVersion: "cop-account-erasure-v2",
+  deletionScope: "cop_sim_shared_identity_v1",
   operationId: id,
   requestedAt: "2026-10-14T08:00:00Z",
   status: "deleting",
@@ -58,8 +58,8 @@ const pending = {
   remaining: ["ai_router"]
 };
 const plan = {
-  contractVersion: "cop-account-erasure-preflight-v1",
-  deletionScope: "cop_jizda_preserve_shared_identity_sim",
+  contractVersion: "cop-account-erasure-preflight-v2",
+  deletionScope: "cop_sim_shared_identity_v1",
   operationId: id,
   canConfirm: true,
   planId: other,

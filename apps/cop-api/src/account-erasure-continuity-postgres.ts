@@ -58,10 +58,12 @@ export class PostgresAccountErasureContinuity implements AccountErasureContinuit
     } catch { return { reviewed: false }; }
   }
   private validateEntry(entry: AccountErasureFenceEntry): void {
-    need(entry && typeof entry === "object" && exact(entry, ["contractVersion", "applicationStoreId", "configurationFingerprint", "accountKey", "job"]) &&
-      entry.contractVersion === "cop-erasure-fence-entry-v1" && entry.applicationStoreId === this.expected.applicationStoreId &&
+    const shared = entry?.contractVersion === "cop-erasure-fence-entry-v2";
+    need(entry && typeof entry === "object" && exact(entry, ["contractVersion", "applicationStoreId", "configurationFingerprint", "accountKey", "job", ...(shared ? ["deletionScope"] : [])]) &&
+      (shared ? entry.deletionScope === "cop_sim_shared_identity_v1" : entry.contractVersion === "cop-erasure-fence-entry-v1") && entry.applicationStoreId === this.expected.applicationStoreId &&
       entry.configurationFingerprint === this.expected.configurationFingerprint && hex.test(entry.accountKey) && entry.job &&
-      exact(entry.job, ["operationId", "requestedAt", "required", "checkpoints"]) && uuid.test(entry.job.operationId) &&
+      exact(entry.job, ["operationId", "requestedAt", "required", "checkpoints", ...(shared ? ["sealedPrincipal", "identityPreflightVersion"] : [])]) &&
+      (!shared || typeof entry.job.identityPreflightVersion === "string" && entry.job.identityPreflightVersion.length > 0 && entry.job.identityPreflightVersion.length <= 256 && typeof entry.job.sealedPrincipal === "string" && entry.job.sealedPrincipal.length <= 4096 && /^[A-Za-z0-9+/]+={0,2}$/u.test(entry.job.sealedPrincipal)) && uuid.test(entry.job.operationId) &&
       Number.isFinite(Date.parse(entry.job.requestedAt)) && new Date(entry.job.requestedAt).toISOString() === entry.job.requestedAt &&
       entry.job.checkpoints && exact(entry.job.checkpoints, []) && Array.isArray(entry.job.required) &&
       entry.job.required.length === ACCOUNT_ERASURE_ADAPTER_IDS.length && new Set(entry.job.required).size === ACCOUNT_ERASURE_ADAPTER_IDS.length &&

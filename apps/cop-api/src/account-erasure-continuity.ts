@@ -3,10 +3,13 @@ import type { AccountErasureAdapterId } from "./account-erasure.js";
 export interface AccountErasureFrontier { sequence: number; digest: string }
 /** Administrator-enrolled dataset identity, not a completion/provider proof. */
 export interface AccountErasureDatasetBinding { incarnationId: string; restoreGeneration: number }
-/** Permanent fence metadata only. No recoverable principal, name, email, user
- * text or provider key. The account MAC is pseudonymous, not anonymous. */
+/** Permanent recovery metadata. V1 has no recoverable principal. V2 retains
+ * only the encrypted issuer/subject/iat needed to reapply deletion after restore
+ * when the shared login identity is already gone, plus its original preflight
+ * fingerprint; no tokens or user content. */
 export interface AccountErasureFenceEntry {
-  contractVersion: "cop-erasure-fence-entry-v1";
+  contractVersion: "cop-erasure-fence-entry-v1" | "cop-erasure-fence-entry-v2";
+  deletionScope?: "cop_sim_shared_identity_v1";
   applicationStoreId: string;
   configurationFingerprint: string;
   accountKey: string;
@@ -15,6 +18,8 @@ export interface AccountErasureFenceEntry {
     requestedAt: string;
     required: AccountErasureAdapterId[];
     checkpoints: Record<string, never>;
+    sealedPrincipal?: string;
+    identityPreflightVersion?: string;
   };
 }
 export interface AccountErasureReplay {

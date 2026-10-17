@@ -1,3 +1,4 @@
+import { signedCleanLifecycleActor, validateCleanLifecycleConfig, type CleanLifecycleActorConfig } from "./clean-lifecycle-actor.js";
 import { contributorIdDay as deriveContributorIdDay, DRIVER_MEASUREMENT_SIM_VERSION } from "./driver-measurement-contract.js";
 import { z } from "zod";
 import { createHmac } from "node:crypto";
@@ -33,16 +34,17 @@ export class DriverMeasurementSourceError extends Error {
 }
 
 export interface DriverMeasurementSource {
-  send(batch: Record<string, unknown>): Promise<SimDriverReceipt>;
+  send(batch: Record<string, unknown>, identity?: { subjectId: string; contributorDay: string; tokenIssuedAt?: number }): Promise<SimDriverReceipt>;
   delete(contributorIdDay: string, identity?: DriverRevocationIdentity): Promise<void>;
 }
 
 export class HttpDriverMeasurementSource implements DriverMeasurementSource {
   private readonly root: string;
   private readonly revocation?: DriverRevocationSigning;
-  constructor(baseUrl: string, private readonly token: string, private readonly timeoutMs = 10_000, revocation?: DriverRevocationSigning) {
+  constructor(baseUrl: string, private readonly token: string, private readonly timeoutMs = 10_000, revocation?: DriverRevocationSigning, private readonly cleanLifecycle?: CleanLifecycleActorConfig) {
     if (!baseUrl || !token || !/^https?:\/\//.test(baseUrl)) throw new Error("Driver measurement SIM connection is incomplete.");
     this.root = baseUrl.replace(/\/$/, "");
+    if (cleanLifecycle) { validateCleanLifecycleConfig(cleanLifecycle); if (!revocation) throw new Error("Clean measurement writes require contributor signing configuration"); }
     if (revocation !== undefined) {
       try {
         const issuer = new URL(revocation.issuer);
@@ -80,8 +82,16 @@ export class HttpDriverMeasurementSource implements DriverMeasurementSource {
     }
     return response;
   }
-  async send(batch: Record<string, unknown>): Promise<SimDriverReceipt> {
-    const response = await this.request("/batches", "POST", batch);
+  async send(batch: Record<string, unknown>, identity?: { subjectId: string; contributorDay: string; tokenIssuedAt?: number }): Promise<SimDriverReceipt> {
+    let headers: Record<string, string> = {};
+    if (this.cleanLifecycle) {
+      if (!identity || !this.revocation || batch.contributorDay !== identity.contributorDay ||
+        !z.iso.date().safeParse(identity.contributorDay).success ||
+        batch.contributorIdDay !== deriveContributorIdDay(this.revocation.contributorSecret, identity.subjectId, identity.contributorDay))
+        throw new DriverMeasurementSourceError(503);
+      headers = signedCleanLifecycleActor(this.cleanLifecycle, identity.subjectId, { resourceId: String(batch.contributorIdDay), tokenIssuedAt: identity.tokenIssuedAt });
+    }
+    const response = await this.request("/batches", "POST", batch, headers);
     let receipt: unknown;
     try { receipt = JSON.parse(await readBoundedBody(response, 65_536)); }
     catch { throw new DriverMeasurementSourceError(503); }

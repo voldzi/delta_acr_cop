@@ -1,3 +1,4 @@
+import { signedCleanLifecycleActor, type CleanLifecycleActorConfig } from "./clean-lifecycle-actor.js";
 import { createHmac } from "node:crypto";
 import { readBoundedBody } from "./bounded-upstream.js";
 
@@ -8,6 +9,7 @@ const REGION = /^CZ(?:\d{3})?$/u;
 const UNITS = new Set(["count", "percent", "minutes", "km", "index"]);
 
 export interface CopRouterChatConfig {
+  cleanLifecycle?: CleanLifecycleActorConfig;
   baseUrl: string;
   token: string;
   userIdSecret: string;
@@ -39,7 +41,7 @@ export type ReviewedMinimizedItem =
   | { kind: "source_health"; sourceId: string; status: "up" | "degraded" | "down" }
   | { kind: "operational_metric"; metricId: string; regionCode: string; value: number; unit: "count" | "percent" | "minutes" | "km" | "index"; sampleSize: number };
 
-export type CopRouterChatRequest =
+export type CopRouterChatRequest = (
   | { kind: "internal"; actorSubjectId: string; question: string; items?: ReviewedInternalItem[] }
   | { kind: "internal_minimized"; actorSubjectId: string; reviewedQuestion: string; externalApproval: true; items?: ReviewedMinimizedItem[] }
   | { kind: "synthetic"; actorSubjectId: string; scenario: ReviewedSyntheticScenario; intent: "summarize" | "explain" }
@@ -48,7 +50,7 @@ export type CopRouterChatRequest =
       actorSubjectId: string;
       aggregates: ReviewedPublicAggregate[];
       intent: "summarize" | "compare";
-    };
+    }) & { tokenIssuedAt?: number };
 
 export interface CopRouterChatResult {
   requestId: string;
@@ -199,6 +201,7 @@ function requestBody(input: CopRouterChatRequest, userId: string): Record<string
     const keys = input.items === undefined
       ? ["kind", "actorSubjectId", "reviewedQuestion", "externalApproval"]
       : ["kind", "actorSubjectId", "reviewedQuestion", "externalApproval", "items"];
+    if (Object.hasOwn(input, "tokenIssuedAt")) keys.push("tokenIssuedAt");
     if (!exactKeys(input, keys) || input.externalApproval !== true || !validQuestion(input.reviewedQuestion) ||
       (input.items !== undefined && (!Array.isArray(input.items) || input.items.length < 1 ||
         input.items.length > 12 || !input.items.every(validMinimizedItem)))) fail();
@@ -301,7 +304,8 @@ export class CopAiRouterChatAdapter {
     try {
       response = await fetch(new URL("/api/v1/ai-router/generate", this.url), {
         method: "POST",
-        headers: { authorization: `Bearer ${this.config.token}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${this.config.token}`, "content-type": "application/json",
+          ...(this.config.cleanLifecycle ? signedCleanLifecycleActor(this.config.cleanLifecycle, input.actorSubjectId, { tokenIssuedAt: input.tokenIssuedAt }) : {}) },
         body: JSON.stringify(body),
         redirect: "error",
         signal: AbortSignal.timeout(input.kind === "internal" ? 100_000 : 30_000)

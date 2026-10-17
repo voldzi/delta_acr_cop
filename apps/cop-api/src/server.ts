@@ -1,3 +1,5 @@
+import { cleanLifecycleActorConfigFromEnv } from "./clean-lifecycle-actor.js";
+import { createSimCleanLifecycleErasureAdapter } from "./sim-clean-lifecycle-erasure.js";
 import { COMMUNICATION_SAFETY_CONFIG_KEY, CommunicationSafetyService, CommunicationSafetyError, MessagingCommunicationPolicy, registerCommunicationSafetyRoutes } from "./communication-safety.js";
 import { JizdaAppLinkService, disconnectJizdaMessaging, registerJizdaAppLinkRoutes } from "./jizda-app-link.js";
 import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureError, AccountErasureService, type AccountErasureAdapter } from "./account-erasure.js";
@@ -8,6 +10,7 @@ import { createCOPSessionsProfilesErasureAdapter } from "./cop-sessions-profiles
 import { createCOPDevicesErasureAdapter } from "./cop-devices-erasure.js";
 import { createVoiceLiveKitErasureAdapter, LiveKitVoiceErasureProvider } from "./voice-livekit-erasure.js";
 import { MessagingLiveKitErasureProvider } from "./voice-livekit-erasure-relay.js";
+import { createSharedIdentityErasureAdapter } from "./keycloak-shared-identity-erasure.js";
 import { createKeycloakAccountErasureAdapter } from "./keycloak-account-erasure.js";
 import { MobilityAccountErasureAdapter } from "./mobility-account-erasure.js";
 import { SharedMobilityService } from "./mobility-invitations.js";
@@ -21,7 +24,7 @@ import { installCopStateProjectionOwner, runWithProjectionActor, runWithProjecti
 import { createMessagingAccountErasureAdapter, createMessagingMobilityProviderEffects, type MessagingAccountErasureOptions } from "./messaging-account-erasure.js";
 import { createSimRouterAccountErasureAdapter,
   type SimAccountErasureOptions, type SimMeasurementsErasureOptions } from "./sim-account-erasure.js";
-import { createCOPDriverMeasurementsErasureAdapter } from "./cop-driver-consent-erasure.js";
+import { createCOPDriverMeasurementsErasureAdapter, composeCOPDriverConsentErasureAdapter } from "./cop-driver-consent-erasure.js";
 import { createCommunityProjectionEraser, boundedProjectionJSON, canonicalProjectionReference, projectionPayloadMatch, projectionReferences,
   type ProjectionStateOwner, type ProjectionRemoteOwner, type ResourceProjectionStore } from "./resource-projection-erasure.js";
 import { runtimeAssessment, type RuntimeOwner, type RuntimeOwnerAssessment } from "./runtime-owner-erasure.js";
@@ -898,7 +901,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const routerChatConfig = {
     baseUrl: process.env.COP_AI_ROUTER_URL ?? "",
     token: process.env.COP_AI_ROUTER_TOKEN ?? "",
-    userIdSecret: process.env.COP_AI_CHAT_ROUTER_USER_ID_SECRET ?? ""
+    userIdSecret: process.env.COP_AI_CHAT_ROUTER_USER_ID_SECRET ?? "",
+    cleanLifecycle: cleanLifecycleActorConfigFromEnv(process.env.COP_AI_ROUTER_ACTOR_SECRET ?? "")
   };
   const routerChat = routerChatEnabled || routerChatFullEnabled
     ? new CopAiRouterChatAdapter({
@@ -967,7 +971,8 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       process.env.COP_DRIVER_MEASUREMENTS_SIM_URL ?? "",
       process.env.COP_DRIVER_MEASUREMENTS_SIM_TOKEN ?? "", 10_000,
       process.env.COP_SIM_ERASURE_ACTOR_SECRET ? { issuer: process.env.COP_OIDC_ISSUER ?? "",
-        actorSecret: process.env.COP_SIM_ERASURE_ACTOR_SECRET, contributorSecret: driverMeasurementSecret, now } : undefined
+        actorSecret: process.env.COP_SIM_ERASURE_ACTOR_SECRET, contributorSecret: driverMeasurementSecret, now } : undefined,
+      cleanLifecycleActorConfigFromEnv(process.env.COP_SIM_ERASURE_ACTOR_SECRET ?? "")
     )
     : undefined;
   const trackLifecycle = options.trackLifecycle ?? createTrackLifecycleConfig();
@@ -1405,7 +1410,13 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       createMessagingAccountErasureAdapter({ issuer, config: messagingProvider.config, verifyConfiguredOwner: options.messagingErasureOwnerVerifier,
         authorityMode: process.env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE === "database_v2" ? "database_v2" : "native_v1",
         verifyActorScope: options.messagingErasureActorScopeVerifier }),
-      createSimRouterAccountErasureAdapter({ issuer, baseUrl: process.env.COP_SIM_ERASURE_ROUTER_URL ?? "", token: process.env.COP_SIM_ERASURE_ROUTER_TOKEN ?? "",
+      ...(process.env.COP_ACCOUNT_ERASURE_SCOPE === "cop_sim_shared_identity_v1" ? [
+        createSimCleanLifecycleErasureAdapter({ ...cleanLifecycleActorConfigFromEnv(process.env.COP_AI_ROUTER_ACTOR_SECRET ?? "")!,
+          baseUrl: process.env.COP_SIM_ERASURE_ROUTER_URL ?? "", token: process.env.COP_SIM_ERASURE_ROUTER_TOKEN ?? "", component: "ai", now }),
+        composeCOPDriverConsentErasureAdapter(createSimCleanLifecycleErasureAdapter({
+          ...cleanLifecycleActorConfigFromEnv(process.env.COP_SIM_ERASURE_ACTOR_SECRET ?? "")!,
+          baseUrl: process.env.COP_SIM_ERASURE_DRIVER_URL ?? "", token: process.env.COP_SIM_ERASURE_DRIVER_TOKEN ?? "", component: "driver", now }), driverMeasurementStore, issuer)
+      ] : [createSimRouterAccountErasureAdapter({ issuer, baseUrl: process.env.COP_SIM_ERASURE_ROUTER_URL ?? "", token: process.env.COP_SIM_ERASURE_ROUTER_TOKEN ?? "",
         authorityMode: process.env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE === "database_v2" ? "database_v2" : "native_v1",
         actorSecret: process.env.COP_SIM_ERASURE_ACTOR_SECRET ?? "", userIdSecret: process.env.COP_AI_CHAT_ROUTER_USER_ID_SECRET ?? "", now,
         verifyConfiguredOwner: options.simErasureOwnerVerifier, reviewExistingIdentity: options.simErasureIdentityReview }),
@@ -1418,7 +1429,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
             context.signal.throwIfAborted();
             if (actor.authMode !== "oidc" || actor.issuer !== issuer || !actor.subjectId) return null;
             return driverMeasurementStore.accountErasureInventory!({ issuer: actor.issuer, subjectId: actor.subjectId });
-          } : undefined) }, driverMeasurementStore),
+          } : undefined) }, driverMeasurementStore)]),
       contentErasure.adapter,
       createVoiceLiveKitErasureAdapter({ issuer, stores: [voiceCallStore], now,
         provider: process.env.COP_LIVEKIT_ERASURE_RELAY_URL
@@ -1435,17 +1446,22 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         : !communicationSafetyEnabled ? [createUnconfiguredModerationErasureAdapter({ store: accountSafetyStore, issuer,
           assertCopAccessFenced: async (actor, context) => accountErasure?.operationFenceConfirmed(actor, context) ?? false })] : []),
       ...(process.env.COP_KEYCLOAK_ERASURE_CLIENT_ID && process.env.COP_KEYCLOAK_ERASURE_CLIENT_SECRET
-        ? [createKeycloakAccountErasureAdapter({ issuer, clientId: process.env.COP_KEYCLOAK_ERASURE_CLIENT_ID,
+        ? [(process.env.COP_ACCOUNT_ERASURE_SCOPE === "cop_sim_shared_identity_v1" ? createSharedIdentityErasureAdapter : createKeycloakAccountErasureAdapter)({ issuer, clientId: process.env.COP_KEYCLOAK_ERASURE_CLIENT_ID,
           clientSecret: process.env.COP_KEYCLOAK_ERASURE_CLIENT_SECRET,
-          authorityAccepted: process.env.COP_KEYCLOAK_COP_SCOPE_AUTHORITY_ACCEPTED === "true",
+          authorityAccepted: process.env.COP_ACCOUNT_ERASURE_SCOPE === "cop_sim_shared_identity_v1"
+            ? process.env.COP_KEYCLOAK_SHARED_IDENTITY_DELETE_ACCEPTED === "true"
+            : process.env.COP_KEYCLOAK_COP_SCOPE_AUTHORITY_ACCEPTED === "true",
           assertCopAccessFenced: async (actor, context) => accountErasure?.operationFenceConfirmed(actor, context) ?? false }, accountSafetyStore)] : []),
       ...(backupRestoreErasureAdapter ? [backupRestoreErasureAdapter] : [])
     ];
     accountErasure = new AccountErasureService({ store: accountSafetyStore, identitySecret: erasureSecret, expectedGuardStoreId: erasureStoreId,
-      issuer, requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS, adapters: options.accountErasureAdapters ?? localAdapters,
+      issuer, deletionScope: process.env.COP_ACCOUNT_ERASURE_SCOPE === "cop_sim_shared_identity_v1" ? "cop_sim_shared_identity_v1" : undefined,
+      requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS, adapters: options.accountErasureAdapters ?? localAdapters,
       continuity: options.accountErasureContinuity, continuityRequired: erasureEnabled || process.env.COP_ACCOUNT_SAFETY_GUARD_REQUIRED === "true",
       admissionGuard: contentErasure.admissionGuard, accepted: erasureEnabled, now });
   }
+  if (process.env.COP_ACCOUNT_ERASURE_SCOPE && !["cop_sim_shared_identity_v1", "cop_jizda_preserve_shared_identity_sim"].includes(process.env.COP_ACCOUNT_ERASURE_SCOPE))
+    throw new Error("Unsupported account erasure scope");
   registerAccountErasureRoutes(app, accountErasure);
   let communicationRetentionTimer: ReturnType<typeof setInterval> | undefined;
   let communicationRetentionRunning: Promise<void> | undefined;
@@ -11316,7 +11332,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (!routerUserCredential) return { available: false, configured: false, provider: "openai", routingEnabled: false };
     try {
       return { available: true, provider: "openai", routingEnabled: routerChatByokRoutingEnabled,
-        ...(await routerUserCredential.status(actor.subjectId)) };
+        ...(await routerUserCredential.status(actor.subjectId, actor.tokenIssuedAt)) };
     } catch {
       return sendError(reply, 503, "AI_ROUTER_UNAVAILABLE", "AI credential status is unavailable.",
         correlationIdFrom(request.headers["x-correlation-id"]));
@@ -11334,7 +11350,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       return sendError(reply, 400, "VALIDATION_ERROR", "Provide an OpenAI API key only.", correlationId);
     }
     try {
-      const result = await routerUserCredential.putKey(actor.subjectId, body.apiKey);
+      const result = await routerUserCredential.putKey(actor.subjectId, body.apiKey, actor.tokenIssuedAt);
       appendAudit(state, "AI_USER_CREDENTIAL_REGISTERED", { actorSubjectId: actor.subjectId, provider: "openai" }, correlationId);
       return { available: true, provider: "openai", routingEnabled: routerChatByokRoutingEnabled, ...result };
     } catch (error) {
@@ -11351,7 +11367,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     const correlationId = correlationIdFrom(request.headers["x-correlation-id"]);
     if (!routerUserCredential) return sendError(reply, 503, "AI_ROUTER_UNAVAILABLE", "User AI credentials are disabled.", correlationId);
     try {
-      const result = await routerUserCredential.deleteKey(actor.subjectId);
+      const result = await routerUserCredential.deleteKey(actor.subjectId, actor.tokenIssuedAt);
       appendAudit(state, "AI_USER_CREDENTIAL_REMOVED", { actorSubjectId: actor.subjectId, provider: "openai" }, correlationId);
       return { available: true, provider: "openai", routingEnabled: routerChatByokRoutingEnabled, ...result };
     } catch {
@@ -11372,6 +11388,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const result = await routerChat.generate({
         kind: "internal_minimized",
         actorSubjectId: actor.subjectId,
+        tokenIssuedAt: actor.tokenIssuedAt,
         reviewedQuestion: question,
         externalApproval: true
       });
@@ -11415,6 +11432,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
       const result = await routerChat.generate({
         kind: "synthetic",
         actorSubjectId: actor.subjectId,
+        tokenIssuedAt: actor.tokenIssuedAt,
         intent: body.intent,
         scenario: {
           scenarioId: floodDemoScenarioId,
@@ -11496,7 +11514,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     if (routerChatByokRoutingEnabled) {
       if (!routerUserCredential) return sendError(reply, 503, "AI_ROUTER_UNAVAILABLE", "User AI chat is unavailable.", correlationId);
       try {
-        const result = await routerUserCredential.chat(actor.subjectId, body.question, body.automaticContext);
+        const result = await routerUserCredential.chat(actor.subjectId, body.question, body.automaticContext, actor.tokenIssuedAt);
         const response: AiCopResponse = {
           requestId: aiRequestId(body.requestId), status: "NEEDS_HUMAN_REVIEW", provider: "openai",
           model: result.model, auditId: randomUUID(),
@@ -11746,6 +11764,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         const result = await routerChat.generate({
           kind: "internal",
           actorSubjectId: actor.subjectId,
+          tokenIssuedAt: actor.tokenIssuedAt,
           question: effectiveQuestion.length <= 1200 ? effectiveQuestion : question,
           ...(items.length ? { items } : {})
         });

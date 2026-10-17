@@ -1,3 +1,4 @@
+import { signedCleanLifecycleActor } from "./clean-lifecycle-actor.js";
 import { createHmac } from "node:crypto";
 import { opaqueUserId, type CopRouterChatConfig } from "./ai-router-chat.js";
 import { readBoundedBody } from "./bounded-upstream.js";
@@ -41,34 +42,34 @@ export class CopByokRouterClient {
   private readonly url: URL;
   constructor(private readonly config: CopByokConfig) { this.url = routerUrl(config); }
 
-  async status(subjectId: string): Promise<{ configured: boolean }> {
-    const response = await this.call("GET", "/api/v1/ai-router/cop/users/me/openai-key", subjectId);
+  async status(subjectId: string, tokenIssuedAt?: number): Promise<{ configured: boolean }> {
+    const response = await this.call("GET", "/api/v1/ai-router/cop/users/me/openai-key", subjectId, undefined, tokenIssuedAt);
     const data = await this.json(response);
     if (typeof data.configured !== "boolean") throw new CopByokError("invalid_response");
     return { configured: data.configured };
   }
 
-  async putKey(subjectId: string, apiKey: unknown): Promise<{ configured: true }> {
+  async putKey(subjectId: string, apiKey: unknown, tokenIssuedAt?: number): Promise<{ configured: true }> {
     if (typeof apiKey !== "string" || !/^sk-[A-Za-z0-9_-]{17,509}$/u.test(apiKey) || apiKey.length > 512) {
       throw new CopByokError("invalid_input");
     }
-    const response = await this.call("PUT", "/api/v1/ai-router/cop/users/me/openai-key", subjectId, { apiKey });
+    const response = await this.call("PUT", "/api/v1/ai-router/cop/users/me/openai-key", subjectId, { apiKey }, tokenIssuedAt);
     const data = await this.json(response);
     if (data.configured !== true) throw new CopByokError("invalid_response");
     return { configured: true };
   }
 
-  async deleteKey(subjectId: string): Promise<{ configured: false }> {
-    const response = await this.call("DELETE", "/api/v1/ai-router/cop/users/me/openai-key", subjectId);
+  async deleteKey(subjectId: string, tokenIssuedAt?: number): Promise<{ configured: false }> {
+    const response = await this.call("DELETE", "/api/v1/ai-router/cop/users/me/openai-key", subjectId, undefined, tokenIssuedAt);
     if (response.status !== 204) throw new CopByokError("invalid_response");
     return { configured: false };
   }
 
-  async chat(subjectId: string, question: unknown, automaticContext?: unknown) {
+  async chat(subjectId: string, question: unknown, automaticContext?: unknown, tokenIssuedAt?: number) {
     if (!validQuestion(question) || automaticContext !== undefined) throw new CopByokError("invalid_input");
     const response = await this.call("POST", "/api/v1/ai-router/cop/chat", subjectId, {
       contractVersion: "cop-chat-byok-v1", billingSource: "user_openai_key", question, allowExternal: true
-    });
+    }, tokenIssuedAt);
     const data = await this.json(response);
     const usage = data.usage && typeof data.usage === "object" && !Array.isArray(data.usage)
       ? data.usage as Record<string, unknown> : null;
@@ -83,8 +84,9 @@ export class CopByokRouterClient {
       usage: { inputTokens: number; outputTokens: number; estimatedMicrousd: number; actualProviderChargesVerified: false } };
   }
 
-  private async call(method: string, path: string, subjectId: string, body?: object): Promise<Response> {
-    const actorHeaders = signedCopActor(this.config, subjectId);
+  private async call(method: string, path: string, subjectId: string, body?: object, tokenIssuedAt?: number): Promise<Response> {
+    const actorHeaders = { ...signedCopActor(this.config, subjectId),
+      ...(this.config.cleanLifecycle ? signedCleanLifecycleActor(this.config.cleanLifecycle, subjectId, { tokenIssuedAt }) : {}) };
     let response: Response;
     try {
       response = await fetch(new URL(path, this.url), {

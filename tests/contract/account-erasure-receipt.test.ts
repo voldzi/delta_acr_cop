@@ -61,3 +61,14 @@ describe("preflight and independent receipt capability contract",()=>{
     expect(openapi.paths["/api/v1/me/account-deletion"].post.security).toEqual([{bearerAuth:[]}]);
   });
 });
+
+
+describe("shared identity v2 is explicit and cannot reuse v1 meaning", () => {
+  it("accepts only matching contract and deletion scope pairs", () => {
+    const validate = compile({ $ref: "#/components/schemas/AccountErasureReceipt" });
+    const shared = { ...pending, contractVersion: "cop-account-erasure-v2", deletionScope: "cop_sim_shared_identity_v1" };
+    expect(validate(shared)).toBe(true);
+    expect(validate({ ...shared, contractVersion: "cop-account-erasure-v1" })).toBe(false);
+    expect(validate({ ...pending, contractVersion: "cop-account-erasure-v2" })).toBe(false);
+  });
+});

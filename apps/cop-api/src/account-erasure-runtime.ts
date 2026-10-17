@@ -15,6 +15,8 @@ export interface AccountErasureRuntime {
  * callback when a configured owner cannot initialize. */
 export async function loadAccountErasureRuntime(): Promise<AccountErasureRuntime> {
   const env = { ...process.env };
+  if (env.COP_ACCOUNT_ERASURE_SCOPE === "cop_sim_shared_identity_v1" && env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE !== "database_v2")
+    throw new Error("Shared identity erasure requires the independent database journal");
   if (env.COP_ACCOUNT_ERASURE_ENABLED !== "true" && env.COP_ACCOUNT_SAFETY_GUARD_REQUIRED !== "true")
     return { serverOptions: {}, close: async () => undefined };
   const continuity = await loadAccountErasureContinuity();
@@ -26,6 +28,8 @@ export async function loadAccountErasureRuntime(): Promise<AccountErasureRuntime
     await Promise.all([continuity.close?.(), settlement?.close()]);
   };
   try {
+    if (env.COP_ACCOUNT_ERASURE_SCOPE === "cop_sim_shared_identity_v1" && !(continuity instanceof PostgresAccountErasureContinuity))
+      throw new Error("Shared identity erasure requires the actual independent database journal");
     const serverOptions: AccountErasureRuntime["serverOptions"] = { accountErasureContinuity: continuity };
     if (continuity instanceof PostgresAccountErasureContinuity) {
       const issuer = env.COP_OIDC_ISSUER ?? "";

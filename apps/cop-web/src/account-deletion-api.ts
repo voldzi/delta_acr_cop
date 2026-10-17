@@ -1,7 +1,7 @@
 import type { AuthConfig, AuthSession } from "./auth";
 
 const path = "/api/v1/me/account-deletion";
-const deletionScope = "cop_jizda_preserve_shared_identity_sim";
+const deletionScope = "cop_sim_shared_identity_v1";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const domains = [
   "keycloak",
@@ -59,7 +59,7 @@ function operation(value: string): string {
 export function parseDeletionPreflight(value: unknown, operationId: string): DeletionPreflight {
   const v = object(value);
   if (
-    v.contractVersion !== "cop-account-erasure-preflight-v1" ||
+    v.contractVersion !== "cop-account-erasure-preflight-v2" ||
     v.deletionScope !== deletionScope ||
     v.operationId !== operation(operationId) ||
     typeof v.canConfirm !== "boolean" ||
@@ -103,7 +103,7 @@ export function parseDeletionReceipt(value: unknown, operationId: string, status
   const v = object(value),
     id = operation(operationId);
   if (
-    v.contractVersion !== "cop-account-erasure-v1" ||
+    v.contractVersion !== "cop-account-erasure-v2" ||
     v.deletionScope !== deletionScope ||
     v.operationId !== id ||
     v.revocationEnforced !== true ||
@@ -185,7 +185,7 @@ async function request(relativePath: string, session?: AuthSession, init: Reques
 export async function deletionAvailable(session: AuthSession): Promise<boolean> {
   const { status, value } = await request(path + "/capabilities", session),
     v = object(value);
-  if (status !== 200 || v.contractVersion !== "cop-account-erasure-v1" || typeof v.accountDeletion !== "boolean")
+  if (status !== 200 || v.contractVersion !== "cop-account-erasure-v2" || typeof v.accountDeletion !== "boolean")
     throw new DeletionRequestError(503, "INVALID_REPLY");
   return v.accountDeletion;
 }

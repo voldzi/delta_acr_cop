@@ -68,6 +68,14 @@ ERASURE_FIXED = {
     'COP_EDGE_NODE_ID': 'node_edge_pilot_01'}
 ERASURE_PROOF_CHECKS = {'jointSyntheticAcceptance', 'providerClosureVerified',
                         'preservesSharedIdentity', 'restoreReplayVerified'}
+# Separate reviewed clean-reset scope. An old v1 proof never authorizes these.
+CLEAN_ERASURE_CONFIG_KEYS = ERASURE_CONFIG_KEYS | frozenset({
+    'COP_ACCOUNT_ERASURE_SCOPE', 'COP_KEYCLOAK_SHARED_IDENTITY_DELETE_ACCEPTED',
+    'COP_USER_RESET_EPOCH', 'COP_USER_RESET_TOKENS_NOT_BEFORE'})
+CLEAN_ERASURE_PROOF_CHECKS = {'jointSyntheticAcceptance', 'providerClosureVerified',
+                             'sharedIdentityDeletionApproved', 'cleanResetVerified', 'restoreReplayVerified'}
+CLEAN_ERASURE_PROOF_VERSION = 'cop-api-account-erasure-clean-config-v1'
+
 
 
 def environment_metadata(path, uid):
@@ -85,8 +93,15 @@ def environment_metadata(path, uid):
         os.close(fd)
 
 
-def erasure_target_environment(target, operation):
-    require(all(target.get(k) == v for k, v in ERASURE_FIXED.items()), 'erasure_target_fixed_config')
+def erasure_target_environment(target, operation, clean=None):
+    fixed = {k: v for k, v in ERASURE_FIXED.items() if not clean or k != 'COP_KEYCLOAK_COP_SCOPE_AUTHORITY_ACCEPTED'}
+    require(all(target.get(k) == v for k, v in fixed.items()), 'erasure_target_fixed_config')
+    if clean is not None:
+        require(target.get('COP_ACCOUNT_ERASURE_SCOPE') == 'cop_sim_shared_identity_v1'
+                and target.get('COP_KEYCLOAK_SHARED_IDENTITY_DELETE_ACCEPTED') == 'true'
+                and target.get('COP_USER_RESET_EPOCH') == clean['resetEpoch']
+                and target.get('COP_USER_RESET_TOKENS_NOT_BEFORE') == str(clean['tokensNotBefore']),
+                'clean_erasure_target_binding')
     intake = target.get('COP_ACCOUNT_ERASURE_ENABLED')
     require(intake in {'true', 'false'} and (operation == 'maintain' or
             intake == ('true' if operation == 'enable' else 'false')), 'erasure_target_intake')
@@ -112,7 +127,8 @@ def erasure_environment_changes(actual, desired, proof):
                if (key in actual) != (key in desired) or actual.get(key) != desired.get(key)}
     require(changed == set(proof['changedKeys']), 'erasure_configuration_delta_mismatch')
     operation = proof['operation']
-    erasure_target_environment(desired, operation)
+    clean = proof.get('cleanReset') if proof.get('contractVersion') == CLEAN_ERASURE_PROOF_VERSION else None
+    erasure_target_environment(desired, operation, clean)
     if operation == 'prepare':
         require(bool(changed) and actual.get('COP_ACCOUNT_ERASURE_ENABLED', 'false') == 'false'
                 and actual.get('COP_ACCOUNT_SAFETY_GUARD_REQUIRED', 'false') == 'false', 'erasure_first_install_only')
@@ -792,13 +808,22 @@ class Store:
         if digest is not None:
             require(sha(raw) == digest, 'erasure_proof_changed')
         value = json.loads(raw)
-        require(isinstance(value, dict) and set(value) == {'contractVersion', 'transitionId', 'operation',
-                'previous', 'target', 'changedKeys', 'environmentMetadata', 'composeHashes', 'ownerAcceptance', 'checks'}
-                and value['contractVersion'] == 'cop-api-account-erasure-config-v1'
+        clean = isinstance(value, dict) and value.get('contractVersion') == CLEAN_ERASURE_PROOF_VERSION
+        fields = {'contractVersion', 'transitionId', 'operation', 'previous', 'target', 'changedKeys',
+                  'environmentMetadata', 'composeHashes', 'ownerAcceptance', 'checks'} | ({'cleanReset'} if clean else set())
+        require(isinstance(value, dict) and set(value) == fields
+                and value['contractVersion'] in {'cop-api-account-erasure-config-v1', CLEAN_ERASURE_PROOF_VERSION}
                 and isinstance(value['transitionId'], str) and PROFILE_UUID.fullmatch(value['transitionId'])
                 and path.name == 'account-erasure-' + value['transitionId'] + '.json'
                 and value['operation'] in {'prepare', 'enable', 'pause', 'maintain'}
                 and value['ownerAcceptance'] is True, 'erasure_proof_schema')
+        if clean:
+            reset = value['cleanReset']
+            require(isinstance(reset, dict) and set(reset) == {'resetEpoch', 'tokensNotBefore', 'receiptSha256'}
+                    and isinstance(reset['resetEpoch'], str) and PROFILE_UUID.fullmatch(reset['resetEpoch'])
+                    and type(reset['tokensNotBefore']) is int and reset['tokensNotBefore'] > 0
+                    and isinstance(reset['receiptSha256'], str) and re.fullmatch(r'[0-9a-f]{64}', reset['receiptSha256']),
+                    'clean_erasure_reset_proof')
         require(isinstance(value['target'], dict) and set(value['target']) ==
                 {'imageId', 'sourceRevision', 'profileGeneration'}
                 and all(value['target'][key] == binding[key] for key in value['target']), 'erasure_proof_target')
@@ -813,7 +838,7 @@ class Store:
                 and previous['releaseId'] == binding['previousReleaseId'], 'erasure_proof_previous')
         keys = value['changedKeys']
         require(isinstance(keys, list) and all(isinstance(k, str) for k in keys)
-                and keys == sorted(set(keys)) and set(keys) <= ERASURE_CONFIG_KEYS, 'erasure_proof_keys')
+                and keys == sorted(set(keys)) and set(keys) <= (CLEAN_ERASURE_CONFIG_KEYS if clean else ERASURE_CONFIG_KEYS), 'erasure_proof_keys')
         require(isinstance(value['composeHashes'], dict) and set(value['composeHashes']) == set(FILES)
                 and all(isinstance(v, str) and re.fullmatch(r'[0-9a-f]{64}', v) for v in value['composeHashes'].values()),
                 'erasure_proof_compose_scope')
@@ -822,7 +847,7 @@ class Store:
         metadata = value['environmentMetadata']
         require(isinstance(metadata, dict) and set(metadata) == {'device', 'inode', 'size', 'mtimeNs', 'ctimeNs'}
                 and all(type(v) is int and v >= 0 for v in metadata.values()), 'erasure_proof_environment_metadata')
-        require(isinstance(value['checks'], dict) and set(value['checks']) == ERASURE_PROOF_CHECKS
+        require(isinstance(value['checks'], dict) and set(value['checks']) == (CLEAN_ERASURE_PROOF_CHECKS if clean else ERASURE_PROOF_CHECKS)
                 and all(v is True for v in value['checks'].values()), 'erasure_proof_acceptance_missing')
         return sha(raw), value
 

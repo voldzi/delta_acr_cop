@@ -24,7 +24,7 @@ vi.mock("./auth", () => ({
 }));
 const operationId = "1a0e80dc-9c45-4988-a6f6-56b7ac9b5c66";
 const planId = "6a141b4c-a6ca-4d29-9537-fa3b78d6869e";
-const scope = "cop_jizda_preserve_shared_identity_sim";
+const scope = "cop_sim_shared_identity_v1";
 const profile = (subjectId = "synthetic-a", email: string | null = "a@example.test") => ({
   contractVersion: "cop-account-profile-v1",
   subjectId,
@@ -55,11 +55,11 @@ function transport(current: () => ReturnType<typeof profile>, onPreflight?: () =
   return vi.fn(async (url: string, init?: RequestInit) => {
     if (url === "/api/v1/me/profile") return reply(current());
     if (url.endsWith("/capabilities"))
-      return reply({ contractVersion: "cop-account-erasure-v1", accountDeletion: true });
+      return reply({ contractVersion: "cop-account-erasure-v2", accountDeletion: true });
     if (url.endsWith("/preflight")) {
       onPreflight?.();
       return reply({
-        contractVersion: "cop-account-erasure-preflight-v1",
+        contractVersion: "cop-account-erasure-preflight-v2",
         deletionScope: scope,
         operationId: new Headers(init?.headers).get("Idempotency-Key"),
         canConfirm: true,
@@ -71,7 +71,7 @@ function transport(current: () => ReturnType<typeof profile>, onPreflight?: () =
     if (url === "/api/v1/me/account-deletion" || url.includes("/receipts/")) {
       return reply(
         {
-          contractVersion: "cop-account-erasure-v1",
+          contractVersion: "cop-account-erasure-v2",
           deletionScope: scope,
           operationId: operationId,
           requestedAt: "2026-10-14T08:00:00Z",

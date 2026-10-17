@@ -49,7 +49,7 @@ export function registerAccountErasureRoutes(app: FastifyInstance, service?: Acc
       }
       const capabilities = service?.options.accepted
         ? await service.capabilities()
-        : service ? { contractVersion: "cop-account-erasure-v1", accountDeletion: false, unavailableReason: "not_accepted" }
+        : service ? { contractVersion: service.contractVersion, accountDeletion: false, unavailableReason: "not_accepted" }
           : { contractVersion: "cop-account-erasure-v1", accountDeletion: false, unavailableReason: "not_enabled" };
       const ownerReadiness = service ? await service.ownerReadiness() : {
         contractVersion: "cop-account-erasure-owner-readiness-v1", ready: false, checkedAt: new Date().toISOString(), unavailableReason: "required_adapters_missing"

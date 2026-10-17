@@ -14,7 +14,7 @@ const actor = (subjectId = "synthetic-secret-subject", authTime: number | undefi
 const complete = (): AccountErasureProof => ({ status: "completed", proofId: "fixture-proof-v1" });
 function setup() {
   const store = new MemoryMobilityStore();
-  const adapters = ACCOUNT_ERASURE_ADAPTER_IDS.map(id => ({ id, ready: vi.fn(async () => true), preflight: async () => ({ ready: true as const, version: "fixture_preflight_v1" }), erase: vi.fn(async () => complete()) }));
+  const adapters = ACCOUNT_ERASURE_ADAPTER_IDS.map(id => ({ id, ready: vi.fn(async () => true), preflight: async () => ({ ready: true as const, version: "fixture_preflight_v1" }), erase: vi.fn(async (..._args: Parameters<AccountErasureAdapter["erase"]>) => complete()) }));
   const options = { store, allowUnboundSyntheticStore: true, identitySecret: "fixture-dedicated-erasure-secret-32-characters", issuer,
     requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS, adapters, accepted: true, now: () => instant };
   return { store, adapters, options, service: new AccountErasureService(options) };
@@ -205,3 +205,36 @@ async function startErasure(service: AccountErasureService, principal: Parameter
   } catch (error) { if (!(error instanceof Error) || error.message !== "ERASURE_ALREADY_REQUESTED") throw error; }
   return service.request(principal, operationId, body, authorization);
 }
+
+
+describe("clean shared COP/SIM lifecycle v2", () => {
+  it("returns a durable pending receipt before any cleanup; resumes automatically after logout and restart", async () => {
+    const { options, adapters, store } = setup();
+    const shared = { ...options, deletionScope: "cop_sim_shared_identity_v1" as const };
+    const service = new AccountErasureService(shared);
+    const original = { ...actor("owner-a"), tokenIssuedAt: instant.getTime() / 1000 };
+    const first = await startErasure(service, original, operation, confirm);
+    expect(first).toMatchObject({ contractVersion: "cop-account-erasure-v2", deletionScope: "cop_sim_shared_identity_v1", status: "deleting", accountDeleted: false });
+    for (const adapter of adapters) expect(adapter.erase).not.toHaveBeenCalled();
+    await expect(service.assertAllowed(actor("owner-a"))).rejects.toMatchObject({ status: 403 });
+    await service.assertAllowed(actor("owner-b"));
+    const order: string[] = [];
+    for (const adapter of adapters) adapter.erase.mockImplementation(async (principal: AuthenticatedActor) => { expect(principal.tokenIssuedAt).toBe(original.tokenIssuedAt); order.push(adapter.id); return complete(); });
+    adapters.find(a => a.id === "ai_router")!.erase.mockRejectedValueOnce(Error("synthetic outage"));
+    const restarted = new AccountErasureService(shared);
+    await restarted.resumePending();
+    expect((await restarted.read(actor("owner-a"), operation)).accountDeleted).toBe(false);
+    expect(order).not.toContain("keycloak");
+    await restarted.resumePending();
+    expect((await restarted.read(actor("owner-a"), operation))).toMatchObject({ accountDeleted: true, contractVersion: "cop-account-erasure-v2" });
+    expect(order.at(-1)).toBe("keycloak");
+    expect(await store.transact([], tx => tx.scan("account-erasure:job:"))).toHaveLength(1);
+    await restarted.assertAllowed(actor("owner-b"));
+  });
+  it("refuses to reinterpret an accepted v1 store as shared identity deletion", async () => {
+    const { service, options } = setup();
+    await startErasure(service, actor(), operation, confirm);
+    const changed = new AccountErasureService({ ...options, deletionScope: "cop_sim_shared_identity_v1" });
+    await expect(changed.init()).rejects.toMatchObject({ code: "ERASURE_CONFIGURATION_UNSUPPORTED" });
+  });
+});

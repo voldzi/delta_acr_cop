@@ -211,7 +211,7 @@ export function registerDriverMeasurementRoutes(app: FastifyInstance, config: Dr
         if (Buffer.byteLength(JSON.stringify(upstreamBatch), "utf8") > 1_048_576) {
           throw new DriverMeasurementSourceError(413);
         }
-        const receipt = await source!.send(upstreamBatch);
+        const receipt = await source!.send(upstreamBatch, { subjectId, contributorDay: batch.contributorDay, tokenIssuedAt: principal.tokenIssuedAt });
         return { invalid: false as const, receipt: {
           ...receipt, contractVersion: DRIVER_MEASUREMENT_MOBILE_VERSION, batchId: batch.batchId
         } };

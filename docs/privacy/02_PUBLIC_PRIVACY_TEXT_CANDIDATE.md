@@ -69,3 +69,12 @@ Do not substitute a support email, generic account console, sign-out or202.
 The COP administrator is the selected moderation owner. The confirmed public
 contact and approved report retention must be included; erasure exceptions,
 other retention and backup policy remain required publication fields.
+
+
+## New account-deletion scope approved 2026-10-17 — not deployed
+
+Po nasazení nové funkce bude odstranění účtu dostupné na webu COP. Uživatel ověří přihlášený účet, znovu se přihlásí a potvrdí odstranění. Následně se zablokuje přístup a server dokončí mazání i po zavření stránky. Přijatý požadavek není potvrzení úplného dokončení.
+
+Nový rozsah zahrnuje údaje v COP a SIM i společnou přihlašovací identitu; zanikne také přístup do dalších aplikací používajících toto přihlášení. Tyto další aplikace spravují svá data samostatně. Nezbytná pseudonymní evidence mazání a šifrovaná technická vazba se uchovají pro zabránění návratu smazaných dat po obnově, dokud existují příslušné obnovitelné kopie nebo nedokončené doručení. Nejde o anonymní data. Evidence neobsahuje zprávy, přístupové tokeny ani uživatelský OpenAI klíč.
+
+This candidate must remain conditional until the actual deployment and whole-service acceptance are recorded. The owner also approved a one-time reset of current test-user data without a new backup; this does not change shared Proxmox backup configuration or establish a new general retention period.

@@ -81,3 +81,30 @@ describe("OIDC signing-key availability boundary", () => {
     expect(await verifyOidcToken(token)).toBe(false);
   });
 });
+
+
+describe("clean user reset admission cutoff", () => {
+  function signed(iat: number | undefined) {
+    const now = Math.floor(Date.now() / 1000);
+    const content = [ { alg: "RS256", kid: jwk.kid }, { iss: issuer, azp: "cop-web", sub: "synthetic-user", exp: now + 300, ...(iat === undefined ? {} : { iat }) } ]
+      .map(value => Buffer.from(JSON.stringify(value)).toString("base64url")).join(".");
+    return content + "." + createSign("RSA-SHA256").update(content).sign(pair.privateKey).toString("base64url");
+  }
+  it("rejects pre-reset, boundary-second and absent issue times despite otherwise valid JWT signatures", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    process.env.COP_USER_RESET_TOKENS_NOT_BEFORE = String(now - 10);
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ keys: [jwk] })));
+    for (const value of [now - 11, now - 10, undefined]) expect(await verifyOidcToken(signed(value))).toBe(false);
+    expect(await verifyOidcToken(signed(now))).toBe(true);
+  });
+  it("does not bypass signature verification and fails closed on an invalid configured cutoff", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    process.env.COP_USER_RESET_TOKENS_NOT_BEFORE = String(now - 10);
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ keys: [jwk] })));
+    const valid = signed(now); expect(await verifyOidcToken(valid.slice(0,-10) + "AAAAAAAAAA")).toBe(false);
+    for(const bad of ["0", "-1", "NaN", "1.2", "not-enrolled"]) {
+      process.env.COP_USER_RESET_TOKENS_NOT_BEFORE = bad;
+      expect(await verifyOidcToken(valid)).toBe(false);
+    }
+  });
+});

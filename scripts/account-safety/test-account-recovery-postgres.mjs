@@ -1,0 +1,16 @@
+/** Owned actual PostgreSQL journal tests; no remote URL accepted. */
+import assert from 'node:assert/strict';import {execFile,spawn} from 'node:child_process';import {promisify} from 'node:util';
+import {mkdtemp,mkdir,chmod,rm} from 'node:fs/promises';import {statSync,realpathSync} from 'node:fs';import {createRequire} from 'node:module';import {join,dirname,resolve} from 'node:path';import {createServer} from 'node:net';import {fileURLToPath} from 'node:url';
+if(process.argv.length!==3||process.argv[2]!=='--run')throw Error('Only --run; no targets accepted');
+const {Pool}=createRequire(new URL('../../apps/cop-api/package.json',import.meta.url))('pg');const exec=promisify(execFile),bin='/opt/homebrew/opt/postgresql@18/bin',source=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
+const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['PATH','HOME','USER','LOGNAME','LANG','LC_ALL','TMPDIR'].includes(k)));
+const oldUmask=process.umask(0o077),root=await mkdtemp('/private/tmp/cop-account-recovery-pg-');await chmod(root,0o700);await mkdir(join(root,'s'),{mode:0o700});let started=false,admin;
+const port=await new Promise((resolve,reject)=>{const s=createServer();s.once('error',reject);s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(e=>e?reject(e):resolve(p))})});
+function owned(){assert.equal(dirname(realpathSync(root)),'/private/tmp');assert.equal(statSync(root).uid,process.getuid());assert.equal(statSync(root).mode&0o777,0o700)}
+try{owned();await exec(join(bin,'initdb'),['-D',join(root,'db'),'-U','cop_safety_test_admin','--auth-local=trust','--auth-host=trust','--no-locale'],{env});await exec(join(bin,'pg_ctl'),['-D',join(root,'db'),'-l',join(root,'pg.log'),'-o',`-k ${join(root,'s')} -p ${port} -c listen_addresses=127.0.0.1 -c cluster_name=cop_erasure_owned_test`,'-w','start'],{env});started=true;
+ admin=new Pool({host:'127.0.0.1',port,user:'cop_safety_test_admin',database:'postgres'});const proof=(await admin.query("SELECT current_setting('data_directory') d,host(inet_server_addr()) a,current_setting('cluster_name') n")).rows[0];assert.equal(proof.d,join(root,'db'));assert.equal(proof.a,'127.0.0.1');assert.equal(proof.n,'cop_erasure_owned_test');
+ for(const db of ['cop_account_safety_guard','cop_erasure_test'])await admin.query('CREATE DATABASE '+db);
+ const url=db=>'postgresql://cop_safety_test_admin@127.0.0.1:'+port+'/'+db;
+ const status=await new Promise((resolve,reject)=>{const child=spawn(join(source,'node_modules/.bin/vitest'),['run','apps/cop-api/src/account-erasure-continuity-postgres.test.ts'],{cwd:source,stdio:'inherit',env:{...env,COP_SAFETY_V2_TEST_DATABASE_URL:url('cop_account_safety_guard'),COP_ERASURE_TEST_DATABASE_URL:url('cop_erasure_test')}});child.once('error',reject);child.once('exit',resolve)});
+ if(status!==0)throw Error('OWNED_PG_RECOVERY_TEST_FAILED');console.log(JSON.stringify({contractVersion:'cop-account-recovery-postgres-test-v1',actualIndependentJournal:true,ownedLocalCluster:true,productionTouched:false}));
+}finally{await admin?.end();if(started){owned();await exec(join(bin,'pg_ctl'),['-D',join(root,'db'),'-m','fast','-w','stop'],{env})}owned();await rm(root,{recursive:true,force:true});process.umask(oldUmask)}

@@ -256,3 +256,46 @@ describe("independent fence controller recovery", () => {
     expect(journal.entries).toEqual([]);
   });
 });
+
+
+describe("shared identity deletion recovery without a surviving login", () => {
+  it("replays the original encrypted worker principal after complete local job loss and redoes real owner checkpoints", async () => {
+    const f = await setup();
+    const originalActor = { ...actor, subjectId: "10000000-0000-4000-8000-000000000001", tokenIssuedAt: instant.getTime() / 1000 };
+    const options = { ...f.options, deletionScope: "cop_sim_shared_identity_v1" as const };
+    const service = new AccountErasureService(options);
+    const plan = await service.preflight(originalActor, operationId);
+    await service.request(originalActor, operationId, { confirmAccountDeletion: true }, { planId: plan.response.planId!, capability: plan.capability! });
+    await service.resumePending();
+    expect((await service.read(originalActor, operationId)).accountDeleted).toBe(true);
+    const entry = f.journal.entries[0]!;
+    expect(entry.contractVersion).toBe("cop-erasure-fence-entry-v2");
+    expect(entry.deletionScope).toBe("cop_sim_shared_identity_v1");
+    expect(entry.job.sealedPrincipal).toEqual(expect.any(String));
+    expect(JSON.stringify(entry)).not.toContain(originalActor.subjectId);
+    expect(JSON.stringify(entry)).not.toContain(issuer);
+    // New empty application DB represents a restoration predating the request.
+    // The independent journal survived; no interactive account/login remains.
+    const restored = new MemoryMobilityStore();
+    await restored.transact([], tx => tx.set("account-safety:store-identity-v1", { storeId }));
+    for (const adapter of f.adapters) adapter.erase.mockImplementation(async (principal) => {
+      expect(principal.subjectId).toBe(originalActor.subjectId);
+      expect(principal.tokenIssuedAt).toBe(originalActor.tokenIssuedAt);
+      return { status: "completed", proofId: "restored_owner_readback" };
+    });
+    const restarted = new AccountErasureService({ ...options, store: restored });
+    await expect(restarted.assertAllowed(originalActor)).rejects.toMatchObject({ code: "ACCOUNT_ERASURE_FENCED" });
+    await restarted.resumePending();
+    expect((await restarted.read(originalActor, operationId)).accountDeleted).toBe(true);
+    for (const adapter of f.adapters) expect(adapter.erase).toHaveBeenCalledTimes(2);
+  });
+  it("refuses corrupted encrypted replay principals and v1 fences in the v2 scope", async () => {
+    const f = await setup();
+    await start(f.service);
+    await expect(new AccountErasureService({ ...f.options, deletionScope: "cop_sim_shared_identity_v1", store: new MemoryMobilityStore() }).init()).rejects.toMatchObject({ status: 503 });
+    const first = f.journal.entries[0]!;
+    Object.assign(first, { contractVersion: "cop-erasure-fence-entry-v2", deletionScope: "cop_sim_shared_identity_v1" });
+    first.job.sealedPrincipal = "broken";
+    await expect(new AccountErasureService({ ...f.options, deletionScope: "cop_sim_shared_identity_v1", store: new MemoryMobilityStore() }).init()).rejects.toMatchObject({ status: 503 });
+  });
+});

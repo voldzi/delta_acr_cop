@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { AccountErasureAdapter, AccountErasureAssessment, AccountErasureProof } from "./account-erasure.js";
 import type { AuthenticatedActor } from "./security.js";
 import type { DriverConsentOwner, DriverMeasurementConsentStore } from "./driver-measurement-consent-store.js";
-import { createSimMeasurementsAccountErasureAdapter, type SimMeasurementsErasureAdapter, type SimMeasurementsErasureOptions } from "./sim-account-erasure.js";
+import { createSimMeasurementsAccountErasureAdapter, type SimMeasurementsErasureOptions } from "./sim-account-erasure.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const pending = (): AccountErasureProof => ({ status: "pending", remaining: "cleanup_pending" });
@@ -36,7 +36,7 @@ export function createCOPDriverMeasurementsErasureAdapter(options: SimMeasuremen
 
 /** Separately exported to exercise the real local store with an isolated owner
  * fixture. Production uses the strict HTTP SIM adapter above. */
-export function composeCOPDriverConsentErasureAdapter(remote: AccountErasureAdapter & Partial<Pick<SimMeasurementsErasureAdapter, "verifiedCompletedOperationProof">>,
+export function composeCOPDriverConsentErasureAdapter(remote: AccountErasureAdapter & { verifiedCompletedOperationProof?: (actor: AuthenticatedActor, context: Parameters<AccountErasureAdapter["erase"]>[1]) => Promise<AccountErasureProof> },
   store: DriverMeasurementConsentStore | undefined, issuer: string): AccountErasureAdapter {
   if (remote.id !== "sim_measurements" || !issuer) throw new Error("Explicit SIM measurement owner required");
   const implemented = () => !!store?.erasureReady && !!store.preflightActorErasure && !!store.erasureCheckpoint
