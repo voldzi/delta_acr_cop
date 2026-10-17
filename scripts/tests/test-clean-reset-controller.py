@@ -88,6 +88,29 @@ class ControllerProtocolTest(unittest.TestCase):
         dispatch.dispatch(self.frame('end', {'leaseId': lease}))
         dispatch.finish()
 
+    def test_sim_install_lease_binds_epoch_and_each_original_sim_instance(self):
+        self.admission.plan['reviewedPlanDigests']['sim_user_install'] = 'c' * 64
+        names = ['csm-sim-api', 'csm-sim-ai-router-api', 'csm-sim-situation-data-api']
+        expected = {'id': 'd' * 64, 'image': 'sha256:' + 'e' * 64}
+        self.admission.plan['localWriters'] = {n: dict(expected) for n in names}
+        dispatch = m.PrivateWorkerDispatch(self.admission, 'sim_user_install')
+        context = {'planDigest': 'c' * 64, 'resetEpoch': self.admission.plan['resetEpoch'], 'tokensNotBefore': 123}
+        for field, value in [('resetEpoch', str(uuid.uuid4())), ('tokensNotBefore', 124), ('planDigest', 'f' * 64)]:
+            with self.assertRaises(RuntimeError):
+                dispatch.dispatch(self.frame('begin', {'phase': 'sim_user_install', 'context': {**context, field: value}}))
+        lease = dispatch.dispatch(self.frame('begin', {'phase': 'sim_user_install', 'context': context}))['value']['leaseId']
+        for name in names:
+            stopped = {**expected, 'running': False, 'restarting': False, 'status': 'exited', 'pid': 0}
+            with patch.object(m.host, 'inspect_writers', return_value={name: stopped}):
+                self.assertEqual(dispatch.dispatch(self.frame('inspectWriter', {'name': name}))['value']['Id'], expected['id'])
+            with patch.object(m.host, 'inspect_writers', return_value={name: {**stopped, 'pid': 5}}):
+                with self.assertRaisesRegex(RuntimeError, 'WRITER_NOT_STOPPED'):
+                    dispatch.dispatch(self.frame('inspectWriter', {'name': name}))
+        with self.assertRaisesRegex(RuntimeError, 'WRITER_SCOPE'):
+            dispatch.dispatch(self.frame('inspectWriter', {'name': 'other-app'}))
+        dispatch.dispatch(self.frame('end', {'leaseId': lease}))
+        dispatch.finish()
+
     def test_a_named_fake_admission_does_not_pass_the_production_factory(self):
         fake = type('RootResetAdmission', (), {'assert_current': lambda _: None})()
         with self.assertRaisesRegex(RuntimeError, 'ROOT_OWNER_REQUIRED'):

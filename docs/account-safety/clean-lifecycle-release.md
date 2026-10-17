@@ -200,3 +200,14 @@ API/web source `6c5c9855b29644cdc6e86b5b66166c861226cdba`.
 Both current production API/web instance IDs and images remained unchanged.
 Existing public-demo analytics was preserved after the owner's explicit current
 approval. Evidence: [web build](../testing/account-erasure-web-build-20261017.json).
+
+
+The private Root worker now wires `sim_user_install` to the concrete SIM installer
+module. Its reviewed plan, reset epoch and token cutoff are checked before apply;
+inside the one live lease only the three exact stopped SIM instances can be
+inspected. Global readback validates the exact new AI catalog from the new SIM
+manifest plus zero COP request/key/audit/billing counts, while driver still uses
+its unchanged manifest. Seven controller and ten Root protocol tests pass; these
+are protocol/source checks, not production enrollment or whole-provider proof.
+The concrete SIM install module is being completed separately before this phase
+can be executed. Credentials remain private pipe input and are not test evidence.

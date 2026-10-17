@@ -14,7 +14,7 @@ import uuid
 _spec = importlib.util.spec_from_file_location('clean_reset_host', Path(__file__).with_name('clean-reset-root.py'))
 host = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(host)
-PHASE_PLAN = {'identity': 'keycloak', 'cop': 'cop', 'ai': 'ai', 'driver': 'driver', 'files': 'files', 'sim_app_files': 'sim_app_files'}
+PHASE_PLAN = {'identity': 'keycloak', 'cop': 'cop', 'ai': 'ai', 'driver': 'driver', 'files': 'files', 'sim_app_files': 'sim_app_files', 'sim_user_install': 'sim_user_install'}
 
 
 def need(value, code):
@@ -52,6 +52,9 @@ class PrivateWorkerDispatch:
                      'RESET_CONTROLLER_PLAN_MISMATCH')
                 need('phase' not in context or context['phase'] == self.phase, 'RESET_CONTROLLER_PHASE_INVALID')
                 need('lane' not in context or context['lane'] == self.phase, 'RESET_CONTROLLER_PHASE_INVALID')
+                if self.phase == 'sim_user_install':
+                    need(context.get('resetEpoch') == self.admission.plan['resetEpoch']
+                         and context.get('tokensNotBefore') == self.admission.plan['tokensNotBefore'], 'RESET_CONTROLLER_EPOCH_MISMATCH')
                 if self.phase in {'ai', 'driver'}:
                     enrollment = context.get('enrollment', {})
                     need(enrollment.get('resetEpoch') == self.admission.plan['resetEpoch']
@@ -72,7 +75,9 @@ class PrivateWorkerDispatch:
                       and payload.get('name') in {'csm-sim-ai-router-api', 'csm-sim-situation-data-api'})
             app_reset = (self.phase == 'sim_app_files' and self.lease is not None
                          and payload.get('name') == 'csm-sim-api')
-            need(set(payload) == {'name'} and (legacy or app_reset), 'RESET_CONTROLLER_WRITER_SCOPE')
+            app_install = (self.phase == 'sim_user_install' and self.lease is not None
+                           and payload.get('name') in {'csm-sim-api', 'csm-sim-ai-router-api', 'csm-sim-situation-data-api'})
+            need(set(payload) == {'name'} and (legacy or app_reset or app_install), 'RESET_CONTROLLER_WRITER_SCOPE')
             name = payload['name']
             item = host.inspect_writers(host.command, [name])[name]
             expected = {name: self.admission.plan['localWriters'][name]}
@@ -99,7 +104,7 @@ def run_private_worker(admission, config):
     need(isinstance(config, dict) and config.get('contractVersion') == 'cop-sim-clean-reset-worker-v1'
          and config.get('phase') in {*PHASE_PLAN, 'readback'} and config.get('resetEpoch') == plan['resetEpoch']
          and config.get('tokensNotBefore') == plan['tokensNotBefore'] and config.get('simSource') == '/reviewed/sim'
-         and config.get('reviewedPlanDigests') == {k: plan['reviewedPlanDigests'][k] for k in ['cop', 'ai', 'driver', 'files', 'keycloak', 'sim_app_files']},
+         and config.get('reviewedPlanDigests') == {k: plan['reviewedPlanDigests'][k] for k in ['cop', 'ai', 'driver', 'files', 'keycloak', 'sim_app_files', 'sim_user_install']},
          'RESET_CONTROLLER_CONFIG_BINDING')
     dispatch = PrivateWorkerDispatch(admission, config['phase'])
     name = 'cop-clean-reset-worker-' + str(uuid.uuid4())

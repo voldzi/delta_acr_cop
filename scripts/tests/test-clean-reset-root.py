@@ -14,7 +14,7 @@ def plan():
  'scope':'cop_sim_shared_identity_v1','runtimeBinding':{'contractVersion':'cop-api-runtime-active-v1','generation':'a'*32,'containerId':'a'*64,'imageId':'sha256:'+'b'*64,'profileId':'10000000-0000-4000-8000-000000000002','profileGeneration':'10000000-0000-4000-8000-000000000002','releaseId':'release-'+'c'*32},'localWriters':{n:{'id':'a'*64,'image':'sha256:'+'b'*64} for n in m.LOCAL_WRITERS},
  'remoteWriters':{n:{'id':'c'*64,'image':'sha256:'+'d'*64} for n in m.REMOTE_WRITERS},
  'sources':{n:{'revision':'e'*40,'root':'/srv/x5-production/staging/cop/root-reviewed-'+n,'files':{'reviewed.mjs':'f'*64}} for n in ['cop','sim','messaging']},
- 'reviewedPlanDigests':{n:'a'*64 for n in ['cop','ai','driver','files','keycloak','messaging','media','edge','sim_app_files']},
+ 'reviewedPlanDigests':{n:'a'*64 for n in ['cop','ai','driver','files','keycloak','messaging','media','edge','sim_app_files','sim_user_install']},
  'producerInventorySha256':'b'*64,'operationLockMetadata':{'device':1,'inode':2,'uid':1000,'gid':1000,'mode':0o664}}
 
 class RootAdmissionTest(unittest.TestCase):
