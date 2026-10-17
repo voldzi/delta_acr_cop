@@ -172,3 +172,12 @@ Six controller and ten Root protocol tests pass. These isolated protocol tests
 do not establish actual production Root admission or whole-account acceptance.
 The remaining final coordinator still has to compose SIM continuity enrollment,
 provider closure, credential provisioning, deployment and acceptance before enable.
+
+
+The matching web candidate has a separate fixed build-only entrypoint
+`scripts/account-safety/build-clean-web-candidate.py`. It uses the same already
+sealed revision6c5c985 checkout, the verified dedicated X5 builder and the existing
+deployment lock. Only the explicit public frontend build arguments are passed
+to the build; the full Compose output stays in memory. Analytics must remain off.
+It writes a candidate-only image tag and verifies that both live API/web instances
+remain unchanged. It cannot deploy, change configuration or enable deletion.
