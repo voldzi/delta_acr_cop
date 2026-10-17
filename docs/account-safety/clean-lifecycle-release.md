@@ -245,3 +245,14 @@ calls the existing bounded SQL installer. Live admission is rechecked before
 secret persistence and both database commits. The actual owned PostgreSQL clean
 suite passed29 checks, including rollback of both databases and role creation
 when admission was lost before guard commit. This is not production enrollment.
+
+
+A concrete read-only full12 gate is now in
+`scripts/account-safety/clean-release-acceptance.py` (`validate_for_plan(plan)`).
+It requires the actual Root0600 `whole12-acceptance.json` under the clean release
+directory, matching all nine candidate images, the v2 shared scope, twelve fresh
+provider readbacks, A removal/B unchanged, real identity removal, outage503,
+restart/late-writer and actual restored-row cleanup evidence within24hours. The
+Root freeze itself calls the gate before pausing any producer or service; a
+component14 receipt cannot admit a stop. Seven parser rejection tests pass. No
+actual full12 report exists yet: this source does not mint one or authorize GO.

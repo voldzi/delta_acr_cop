@@ -104,7 +104,7 @@ def assert_freeze_targets(actual, expected):
 
 def validate_plan(plan):
     keys = {'contractVersion', 'resetEpoch', 'tokensNotBefore', 'sources', 'localWriters',
-            'remoteWriters', 'reviewedPlanDigests', 'producerInventorySha256', 'operationLockMetadata', 'runtimeBinding', 'operatorRuntime', 'scope'}
+            'remoteWriters', 'reviewedPlanDigests', 'producerInventorySha256', 'operationLockMetadata', 'runtimeBinding', 'operatorRuntime', 'candidateImages', 'scope'}
     need(isinstance(plan, dict) and set(plan) == keys
          and plan['contractVersion'] == 'cop-sim-clean-reset-root-plan-v1'
          and plan['scope'] == 'cop_sim_shared_identity_v1', 'RESET_ROOT_PLAN_SCOPE')
@@ -117,6 +117,8 @@ def validate_plan(plan):
         for item in plan[key].values():
             need(set(item) == {'id', 'image'} and HEX.fullmatch(item['id'])
                  and IMAGE.fullmatch(item['image']), 'RESET_ROOT_PLAN_WRITER_BINDING')
+    gate = _acceptance_module()
+    gate.validate_candidate_images(plan['candidateImages'])
     runtime = plan['operatorRuntime']
     need(isinstance(runtime, dict) and set(runtime) == {'root', 'imageId', 'nodeSha256', 'loaderSha256'}
          and runtime['root'] == '/srv/x5-production/staging/cop/clean-operator-2e61857'
@@ -126,6 +128,7 @@ def validate_plan(plan):
          'RESET_ROOT_OPERATOR_RUNTIME')
     need(isinstance(plan.get('sources'), dict) and isinstance(plan['sources'].get('cop'), dict)
          and plan['sources']['cop'].get('root') == runtime['root'] + '/app', 'RESET_ROOT_OPERATOR_SOURCE')
+    need(plan['candidateImages']['cop_api'] == runtime['imageId'], 'RESET_ROOT_OPERATOR_SOURCE')
     active = plan['runtimeBinding']
     need(isinstance(active, dict) and active.get('contractVersion') == 'cop-api-runtime-active-v1'
          and isinstance(active.get('generation'), str) and re.fullmatch(r'[a-f0-9]{32}', active['generation'])
@@ -159,6 +162,14 @@ def validate_plan(plan):
     return plan
 
 
+def _acceptance_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('clean_acceptance', Path(__file__).with_name('clean-release-acceptance.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class RootResetAdmission:
     """Concrete host custody. Remote and producer objects must be the fixed
     production transports, never worker-supplied callbacks or stored booleans.
@@ -173,6 +184,7 @@ class RootResetAdmission:
         self.plan = validate_plan(json.loads(self.plan_raw))
         self.fd = None
         self.open = False
+        self.pre_stop_acceptance = None
 
     def _acquire(self):
         need(not self.open and self.fd is None, 'RESET_ADMISSION_ALREADY_OPEN')
@@ -184,6 +196,7 @@ class RootResetAdmission:
     def __enter__(self):
         try:
             self._acquire()
+            self.pre_stop_acceptance = _acceptance_module().verified_pre_stop_acceptance(self.plan['candidateImages'])
             self.assert_current()
             return self
         except BaseException:
@@ -200,12 +213,14 @@ class RootResetAdmission:
         try:
             value._acquire()
             value._assert_files()
+            value.pre_stop_acceptance = _acceptance_module().verified_pre_stop_acceptance(value.plan['candidateImages'])
             local = inspect_writers(command, LOCAL_WRITERS)
             distant = inspect_writers(remote.run, REMOTE_WRITERS)
             assert_freeze_targets(local, value.plan['localWriters'])
             assert_freeze_targets(distant, value.plan['remoteWriters'])
             # Only the already-inventoried report cron is paused. A still-running
             # report task blocks; it is never killed by a guessed process name.
+            need(_acceptance_module().verified_pre_stop_acceptance(value.plan['candidateImages']) == value.pre_stop_acceptance, 'RESET_WHOLE_ACCEPTANCE_CHANGED')
             need(producers.freeze() == value.plan['producerInventorySha256'], 'RESET_PRODUCER_PLAN_MISMATCH')
             command(['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock',
                      'stop', '--time', '30', *LOCAL_WRITERS], timeout=90)
@@ -248,6 +263,7 @@ class RootResetAdmission:
                      'RESET_SOURCE_CHANGED')
     def assert_current(self):
         self._assert_files()
+        need(isinstance(self.pre_stop_acceptance, dict) and hashlib.sha256(protected(_acceptance_module().REPORT)).hexdigest() == self.pre_stop_acceptance.get('reportSha256'), 'RESET_WHOLE_ACCEPTANCE_CHANGED')
         assert_stopped(inspect_writers(command, LOCAL_WRITERS), self.plan['localWriters'])
         self.remote.assert_stopped(self.plan['remoteWriters'])
         self.producers.assert_stopped(self.plan['producerInventorySha256'])
