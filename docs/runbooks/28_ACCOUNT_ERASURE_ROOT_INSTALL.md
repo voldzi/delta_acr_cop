@@ -1,4 +1,15 @@
-# 28. Concrete Root installation and proof production
+# 28. Original v1 Root installation and proof production
+
+## Scope notice — current clean v2 release uses a separate procedure
+
+This runbook describes the original identity-preserving v1 deployment and legacy
+provenance enrollment. It does **not** activate the owner-approved clean reset
+and shared COP/SIM identity deletion selected on 17 October. Do not run the
+`--complete-release` command below for that new scope, or treat its old receipts
+as v2 acceptance. Current implementation, tests and remaining production steps
+are tracked in [clean lifecycle release](../account-safety/clean-lifecycle-release.md).
+The separate build-only operator step builds a candidate and does not activate
+either deletion scope.
 
 Status: fixed source and offline preflight tests. No production execution.
 The coordinator must finish the actual shared provider/voice/restore run before

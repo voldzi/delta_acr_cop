@@ -1,5 +1,11 @@
 # Root driver origin executor
 
+Scope: original native executor component. The current owner-approved clean
+COP/SIM v2 deployment uses database continuity and separate finite reset
+components; see [current release evidence](../../docs/account-safety/clean-lifecycle-release.md).
+This legacy component is not a missing production prerequisite for that new
+route and must not be installed as an implicit fallback.
+
 This is a real, separately privileged SQL executor component. It is **not yet
 installed or connected to either application**, and is not the whole account
 erasure/restore authority. No production activation follows from these files.

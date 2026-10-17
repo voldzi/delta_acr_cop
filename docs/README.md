@@ -176,7 +176,7 @@ deletion or authorize a production deployment.
 
 Account-erasure deployment configuration transition: [runbook 27](runbooks/27_ACCOUNT_ERASURE_CONFIG_TRANSITION.md).
 
-Root account-erasure preflight, credential preparation and proof production: [runbook 28](runbooks/28_ACCOUNT_ERASURE_ROOT_INSTALL.md).
+Original v1 Root account-erasure preflight and legacy enrollment: [runbook 28](runbooks/28_ACCOUNT_ERASURE_ROOT_INSTALL.md). Current clean shared-identity v2 progress: [clean lifecycle release](account-safety/clean-lifecycle-release.md).
 
 Controlled COP Edge copies, strict owner manifests and persisted writer fences: [runbook 29](runbooks/29_COP_EDGE_ACCOUNT_ERASURE.md).
 
