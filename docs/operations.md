@@ -389,3 +389,24 @@ Root transport evidence. The sealed dependency runtime remains image `2e61857`,
 while the reviewed API candidate is `80bee6a` (image `28648cde`). These are
 separate pins; the whole-provider report must bind the actual API image.
 This source update does not install keys or activate production erasure.
+
+Keycloak browser login denial is verified through the real authorization-code
+flow. Keycloak 26.8 returns HTTP 200 with its login error form for a removed
+user, rather than a token endpoint 401. Acceptance requires both the recognized
+error and absence of a successful code redirect, plus user GET 404 and refused
+refresh. HTTP 200 alone is never deletion or login-denial proof.
+
+### Verified isolated deletion and remaining production work
+
+The [17 October actual restore and identity evidence](archive/2026-10-17_ACCOUNT_ERASURE_ACTUAL_RESTORE_AND_IDENTITY.json)
+records the original two-account case reaching HTTP200/deleted, with all twelve
+provider readbacks at zero for A and unchanged for B before normal B login.
+Actual pre-deletion COP, Messaging and Synapse database dumps were restored;
+the independent journal was preserved and original receipt capability remained
+usable. This is not a whole Proxmox restore or production deployment receipt.
+
+The production Messaging full-profile/independent-guard/first-use enrollment is
+still missing from the finite reset installer. The metadata/native reset must
+not be presented as that installation. The old SIM Router also crashed under
+a real idle database disconnect; its corrected immutable image needs real
+outage acceptance. Do not enable production deletion from this progress record.

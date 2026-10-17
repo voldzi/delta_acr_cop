@@ -62,7 +62,10 @@ def validate_clean_whole_report(report, expected_images, now):
     identity = report.get('identityReadback')
     need(isinstance(identity, dict) and identity.get('userAGetStatus') == 404
          and identity.get('userARefreshStatus') in (400, 401)
-         and identity.get('userALoginStatus') in (400, 401)
+         and (identity.get('userALoginStatus') in (400, 401)
+              or identity.get('userALoginStatus') == 200
+              and identity.get('userALoginDenied') is True
+              and identity.get('userALoginKnownError') is True)
          and identity.get('userBProfileStatus') == 200 and identity.get('userBRefreshStatus') == 200
          and identity.get('deletedAfterProviderProofs') is True)
     cases = report.get('recoveryReadbacks')

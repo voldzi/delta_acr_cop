@@ -47,6 +47,14 @@ class AcceptanceTest(unittest.TestCase):
   for key,value in [('userAGetStatus',200),('userBRefreshStatus',400),('deletedAfterProviderProofs',False)]:
    r,i=example();r['identityReadback'][key]=value
    with self.assertRaises(RuntimeError):m.validate_clean_whole_report(r,i,NOW)
+ def test_keycloak_browser_error_page_is_denial_only_with_explicit_error_and_no_code(self):
+  r,i=example();r['identityReadback'].update(userALoginStatus=200,userALoginDenied=True,userALoginKnownError=True)
+  m.validate_clean_whole_report(r,i,NOW)
+  for name in ['userALoginDenied','userALoginKnownError']:
+   bad=copy.deepcopy(r);del bad['identityReadback'][name]
+   with self.assertRaises(RuntimeError):m.validate_clean_whole_report(bad,i,NOW)
+  r['identityReadback']['userALoginDenied']=False
+  with self.assertRaises(RuntimeError):m.validate_clean_whole_report(r,i,NOW)
  def test_outage_is_not_a_user_denial_and_restore_must_have_real_rows(self):
   r,i=example();r['recoveryReadbacks']['router_outage']['dependencyHttpStatus']=403
   with self.assertRaises(RuntimeError):m.validate_clean_whole_report(r,i,NOW)

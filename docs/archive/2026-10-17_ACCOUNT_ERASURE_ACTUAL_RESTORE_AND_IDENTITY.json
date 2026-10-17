@@ -1,0 +1,150 @@
+{
+  "contractVersion": "cop-erasure-verified-progress-v1",
+  "productionDeployed": false,
+  "productionErasureEnabled": false,
+  "rootActivationAccepted": false,
+  "syntheticAccountsOnly": true,
+  "operationId": "b1c21024-0c2f-4a3d-afad-911f95d73c1b",
+  "copApiSource": "80bee6ae9483a8ca3ed2dc2de5a24e132de320cf",
+  "copApiImage": "sha256:28648cded21fbd52602a197693d0b0dc9eb213cd2bd84d6227b7da34c0cbab86",
+  "messagingImage": "sha256:9861b10de773e5461e1f10d8ce37cbf085e803a5d71a5e014f6d5ebee7e27f3e",
+  "finalReceiptObserved": {
+    "httpStatus": 200,
+    "status": "deleted",
+    "accountDeleted": true,
+    "remaining": []
+  },
+  "allTwelveReadbackObservedBeforeControlLogin": {
+    "deletedAccountRemaining": 0,
+    "otherAccountPreserved": true,
+    "owners": [
+      "keycloak",
+      "cop_sessions_profiles",
+      "cop_devices",
+      "voice_livekit",
+      "mobility_dispatch",
+      "moderation_audit",
+      "backup_restore",
+      "sim_measurements",
+      "ai_router",
+      "sim_user_data",
+      "messaging_matrix",
+      "cop_content_media"
+    ],
+    "source": "actual whole12-check.mjs readback invocation on original isolated namespace"
+  },
+  "actualEvidence": {
+    "whole12-final-nine-readback.json": {
+      "operationId": "b1c21024-0c2f-4a3d-afad-911f95d73c1b",
+      "checkedAt": "2026-10-17T13:07:38.792Z",
+      "owners": {
+        "keycloak": {
+          "remainingA": 0,
+          "bPreserved": true,
+          "readbackDigest": "5a82e3071b3ec80e51b8df8e552021fda9f73c0b527136dba19ec260917e2e0c"
+        },
+        "cop_sessions_profiles": {
+          "remainingA": 0,
+          "bPreserved": true,
+          "readbackDigest": "953ad049af204ddfd1c0c11624a5ee67ee8cf2b9929c28e09d5fb7d7730c039b"
+        },
+        "cop_devices": {
+          "remainingA": 0,
+          "bPreserved": true,
+          "readbackDigest": "9b868c018c75b80f3532fe81dffa9b12f79c3a4b062b663e60c203e5165a6ac5"
+        },
+        "voice_livekit": {
+          "remainingA": 0,
+          "bPreserved": true,
+          "readbackDigest": "edebe5339a54746bb8fa8b3a1f4550644ab7d7decf891ca4158d39a239a2513a"
+        },
+        "mobility_dispatch": {
+          "remainingA": 0,
+          "bPreserved": true,
+          "readbackDigest": "1bcb8d903075bf1db7583695dabfa6ef353300dec51ba28afafca9e26b8f559b"
+        },
+        "moderation_audit": {
+          "remainingA": 0,
+          "bPreserved": true,
+          "readbackDigest": "b994c36a4be53887a69ae7ab12451e28f7c44dfab5d1ccfdab81054ca5adca19"
+        },
+        "backup_restore": {
+          "remainingA": 0,
+          "bPreserved": true,
+          "readbackDigest": "2d79d746d359d92ca084039ea7724db873ae7708ca0daee13fc1d4991ac63e00"
+        },
+        "messaging_matrix": {
+          "remainingA": 0,
+          "bPreserved": true,
+          "readbackDigest": "7708cbb395c19792cb9ed537da353fa5ae25a42f1347a15ee45e68cf6a6ec7be"
+        },
+        "cop_content_media": {
+          "remainingA": 0,
+          "bPreserved": true,
+          "readbackDigest": "cdc1f6fc9fd66c10febfb0ce8ab8a08418bd93d2a5b7a153e55eaec4f40b92b9"
+        }
+      },
+      "productionTouched": false
+    },
+    "whole12-final-identity.json": {
+      "operationId": "b1c21024-0c2f-4a3d-afad-911f95d73c1b",
+      "checkedAt": "2026-10-17T13:09:34.403Z",
+      "userAGetStatus": 404,
+      "userARefreshStatus": 400,
+      "userALoginStatus": 200,
+      "userALoginDenied": true,
+      "userALoginKnownError": true,
+      "userBProfileStatus": 200,
+      "userBRefreshStatus": 200,
+      "controlAfterPreservationReadback": true,
+      "productionTouched": false
+    },
+    "whole12-messaging-outage.json": {
+      "operationId": "b1c21024-0c2f-4a3d-afad-911f95d73c1b",
+      "dependencyHttpStatus": 503,
+      "receiptHttpStatus": 200,
+      "operationStatus": "deleting",
+      "accountDeleted": false,
+      "actualNativeProcessStopped": true,
+      "productionTouched": false,
+      "checkedAt": "2026-10-17T12:59:51.899Z"
+    },
+    "whole12-restored-positive.json": {
+      "operationId": "b1c21024-0c2f-4a3d-afad-911f95d73c1b",
+      "copRestored": {
+        "profiles": 1,
+        "devices": 1,
+        "localJobs": 0
+      },
+      "nativeRestored": {
+        "access_tokens": 1,
+        "devices": 2,
+        "e2e_one_time_keys_json": 0,
+        "nativeActive": 1,
+        "metadataOriginalSecretPresent": true
+      },
+      "restoredRows": 5,
+      "noReseed": true,
+      "independentGuardRestored": false,
+      "productionTouched": false
+    }
+  },
+  "restoreScope": {
+    "actualPreDeletionDumpsRestored": [
+      "cop_erasure_test",
+      "csm_messaging",
+      "csm_synapse"
+    ],
+    "independentGuardRestored": false,
+    "reseed": false,
+    "originalOperationAndReceiptRetained": true,
+    "wholeProxmoxRestoreVerified": false,
+    "simRestoreSameOperationVerified": false
+  },
+  "remainingBeforeProduction": [
+    "Complete production Messaging full-profile/guard/first-use enrollment and join to the held reset admission. Existing reset alone does not install it.",
+    "Validate corrected immutable SIM Router image under actual database disconnect; old image crashed instead of returning503.",
+    "Obtain actual existing Root SSH custody docker-to-COMM and storage. No interactive sudo is available to the automation account.",
+    "Complete Root-sealed final preparation, whole-provider acceptance and activation. No production user reset has run."
+  ]
+}
