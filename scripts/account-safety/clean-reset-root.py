@@ -295,7 +295,7 @@ class CommunicationResetTransport:
         self.identity = None
         self.temporary_key = None
 
-    def _temporary_identity(self):
+    def _temporary_identity(self, check_expiry=True):
         marker = self.directory / 'temporary-identity.json'
         if not marker.exists():
             need(self.temporary_key is None, 'RESET_COMM_TEMPORARY_KEY_LOST')
@@ -303,14 +303,15 @@ class CommunicationResetTransport:
         spec = importlib.util.spec_from_file_location('root_temporary_comm_key', Path(__file__).with_name('temporary-comm-key.py'))
         module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
         value = module.identity()
-        need(datetime.datetime.fromisoformat(value['expiresAt']).timestamp() > time.time(), 'RESET_COMM_TEMPORARY_KEY_EXPIRED')
+        if check_expiry:
+            need(datetime.datetime.fromisoformat(value['expiresAt']).timestamp() > time.time(), 'RESET_COMM_TEMPORARY_KEY_EXPIRED')
         binding = sha(json.dumps(value,sort_keys=True,separators=(',',':')).encode())
         need(self.temporary_key in (None,binding), 'RESET_COMM_TEMPORARY_KEY_CHANGED')
         self.temporary_key = binding
         return value
 
     def _args(self):
-        temporary = self._temporary_identity()
+        temporary = self._temporary_identity(check_expiry=self.identity is None)
         identity_args = ['-o','IdentitiesOnly=yes','-i',str(self.directory/'id_ed25519')] if temporary else []
         return ['/usr/bin/ssh', *identity_args, '-F', '/dev/null', '-S', str(self.control),
                 '-o', 'UserKnownHostsFile=/home/voldzi/.ssh/known_hosts',
@@ -341,7 +342,9 @@ class CommunicationResetTransport:
             raise
 
     def _custody(self):
-        self._temporary_identity()
+        # Expiration rejects new authentication, but must not prevent closing
+        # an already authenticated control socket during final cleanup.
+        self._temporary_identity(check_expiry=False)
         need(self.identity is not None, 'RESET_COMM_TRANSPORT_CLOSED')
         d, c = self.directory.lstat(), self.control.lstat()
         need(stat.S_ISDIR(d.st_mode) and (d.st_dev, d.st_ino) == self.identity and d.st_uid == c.st_uid == 0

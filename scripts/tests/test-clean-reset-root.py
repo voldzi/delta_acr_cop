@@ -32,6 +32,7 @@ class RootAdmissionTest(unittest.TestCase):
   self.assertNotIn('PreferredAuthentications=password',source);self.assertNotIn('ssh-copy-id',source)
  def test_approved_temporary_identity_keeps_strict_non_forwarding_ssh(self):
   transport=m.CommunicationResetTransport.__new__(m.CommunicationResetTransport)
+  transport.identity=None
   with patch.object(transport,'_temporary_identity',return_value={'approved':'synthetic'}):
    args=transport._args()
   self.assertIn('IdentitiesOnly=yes',args);self.assertIn('ForwardAgent=no',args)
