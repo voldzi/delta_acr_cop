@@ -1,0 +1,41 @@
+{
+  "contractVersion": "cop-voice-image-explicit-equivalence-v1",
+  "observedAt": "2026-10-17T14:29:00Z",
+  "kind": "identical_rootfs_and_launch",
+  "testedImageId": "sha256:167d906458e1f695853cf62f1cc2270324d4508e01e508221114a51710cd6a32",
+  "candidateImageId": "sha256:05909abc87ca68db1810e6180ddfc655438688ace86cde5a1443a053d651d517",
+  "testedRootFsDiffIds": [
+    "sha256:74d97c428c51a828f9051a7a40a53ff1fc99e54fc30323ce36760701b0b7f711",
+    "sha256:e9b27461705215f85aaabc8172e6c1adaffae6dd4147a62d391d7e2acd2d0b7f",
+    "sha256:b537e539c7abaa19019ae9a1f8bf78ea18ee89707a519018e520394dd63cad42",
+    "sha256:e6fbe1913eeac14534af5a113e42eb658a67bee994f98a08394876480f36aab8"
+  ],
+  "candidateRootFsDiffIds": [
+    "sha256:74d97c428c51a828f9051a7a40a53ff1fc99e54fc30323ce36760701b0b7f711",
+    "sha256:e9b27461705215f85aaabc8172e6c1adaffae6dd4147a62d391d7e2acd2d0b7f",
+    "sha256:b537e539c7abaa19019ae9a1f8bf78ea18ee89707a519018e520394dd63cad42",
+    "sha256:e6fbe1913eeac14534af5a113e42eb658a67bee994f98a08394876480f36aab8"
+  ],
+  "testedLaunch": {
+    "entrypoint": [
+      "/usr/local/bin/livekit-erasure-proxy"
+    ],
+    "cmd": null,
+    "workingDir": "/",
+    "user": "1000:1000",
+    "envSha256": "1c24775fadba31bd348800df91e54a100f1b2e4936bd629e5a36e89c5c8f51f7"
+  },
+  "candidateLaunch": {
+    "entrypoint": [
+      "/usr/local/bin/livekit-erasure-proxy"
+    ],
+    "cmd": null,
+    "workingDir": "/",
+    "user": "1000:1000",
+    "envSha256": "1c24775fadba31bd348800df91e54a100f1b2e4936bd629e5a36e89c5c8f51f7"
+  },
+  "sameImageId": false,
+  "actualReadOnlyDockerImageInspects": true,
+  "productionChanged": false,
+  "wholeAccountAccepted": false
+}
