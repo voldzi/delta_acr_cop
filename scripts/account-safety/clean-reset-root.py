@@ -368,9 +368,14 @@ class CommunicationResetTransport:
             return
         try:
             self._custody()
-            subprocess.run(self._args() + ['-O', 'exit', 'voldzi@comm.home.cz'],
+            stopped=subprocess.run(self._args() + ['-O', 'exit', 'voldzi@comm.home.cz'],
                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, env=ENV, timeout=10, check=False)
+            need(stopped.returncode==0, 'RESET_COMM_CONTROL_CLOSE_UNPROVEN')
+            checked=subprocess.run(self._args() + ['-O', 'check', 'voldzi@comm.home.cz'],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, env=ENV, timeout=10, check=False)
+            need(checked.returncode!=0, 'RESET_COMM_CONTROL_STILL_ACTIVE')
             self.control.unlink(missing_ok=True)
             if self.temporary_key is None:
                 self.directory.rmdir()

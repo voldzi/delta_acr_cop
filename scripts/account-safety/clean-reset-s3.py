@@ -17,6 +17,7 @@ import stat
 import subprocess
 import tempfile
 import time
+import types
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -240,11 +241,37 @@ class ProductionStorage:
         found = re.findall(pattern, raw.decode(), re.S)
         need(len(found) == 1, 'RESET_S3_PROVIDER_SOURCE_MISSING')
         self.program = found[0]
+        self.plan = plan
+        self.peer_binding = None
+        self.connected = False
         self.reviewed = None
         self.owner = None
 
+    def _peer_identity(self, check_expiry=True):
+        # Explicit separate two-peer receipt, never a password-failure fallback.
+        if not os.path.lexists('/run/cop-clean-reset-peers'):
+            need(self.peer_binding is None, 'RESET_S3_PEER_IDENTITY_LOST')
+            return None
+        relative = 'scripts/account-safety/temporary-release-key.py'
+        source = self.plan['sources']['cop'];path = Path(source['root'])/relative
+        need(path.resolve()==path and relative in source['files'], 'RESET_S3_PEER_SOURCE_SCOPE')
+        raw = path.read_bytes()
+        need(hashlib.sha256(raw).hexdigest()==source['files'][relative], 'RESET_S3_PEER_SOURCE_CHANGED')
+        helper=types.ModuleType('sealed_storage_peer_identity');helper.__file__=str(path)
+        exec(compile(raw,str(path),'exec'),helper.__dict__)
+        value=helper.identity_for_peer('storage.home.cz',check_expiry=check_expiry)
+        need(isinstance(value,dict) and set(value)=={'identityFile','fingerprint','authorizedLineSha256','expiresAt','host'}
+             and value['identityFile']=='/run/cop-clean-reset-comm/id_ed25519' and value['host']=='storage.home.cz'
+             and re.fullmatch(r'[a-f0-9]{64}',value['authorizedLineSha256']), 'RESET_S3_PEER_IDENTITY_SCOPE')
+        binding=digest(value)
+        need(self.peer_binding in (None,binding), 'RESET_S3_PEER_IDENTITY_CHANGED')
+        self.peer_binding=binding
+        return value
+
     def args(self):
-        return ['/usr/bin/ssh', '-F', '/dev/null', '-S', str(self.directory/'master.sock'),
+        peer=self._peer_identity(check_expiry=not self.connected)
+        identity=['-o','IdentitiesOnly=yes','-o','IdentityAgent=none','-i',peer['identityFile']] if peer else []
+        return ['/usr/bin/ssh', *identity, '-F', '/dev/null', '-S', str(self.directory/'master.sock'),
                 '-o', 'UserKnownHostsFile=/home/voldzi/.ssh/known_hosts', '-o', 'GlobalKnownHostsFile=/dev/null',
                 '-o', 'StrictHostKeyChecking=yes', '-o', 'UpdateHostKeys=no', '-o', 'ForwardAgent=no',
                 '-o', 'ForwardX11=no', '-o', 'ClearAllForwardings=yes', '-o', 'ConnectTimeout=8']
@@ -256,22 +283,30 @@ class ProductionStorage:
              and d.st_uid == s.st_uid == 0 and stat.S_IMODE(d.st_mode) == 0o700
              and stat.S_ISSOCK(s.st_mode) and not stat.S_IMODE(s.st_mode) & 0o077,
              'RESET_S3_TRANSPORT_CUSTODY')
+        self._peer_identity(check_expiry=False)
 
     def open(self, reviewed):
         need(not self.directory.exists() and re.fullmatch(r'[a-f0-9]{64}', reviewed['containerId'])
              and re.fullmatch(r'sha256:[a-f0-9]{64}', reviewed['providerImageId']), 'RESET_S3_TRANSPORT_PLAN')
+        peer=self._peer_identity(check_expiry=True)
         self.reviewed = reviewed
         self.directory.mkdir(mode=0o700)
         s = self.directory.lstat(); self.owner = (s.st_dev, s.st_ino)
         try:
-            args = self.args()+['-M', '-o', 'ControlPersist=15m', '-o', 'BatchMode=no',
+            auth=['-o','BatchMode=yes','-o','PubkeyAuthentication=yes','-o','PasswordAuthentication=no',
+                  '-o','PreferredAuthentications=publickey','-o','KbdInteractiveAuthentication=no'] if peer else ['-o', 'BatchMode=no',
                 '-o', 'PubkeyAuthentication=no', '-o', 'PreferredAuthentications=password',
-                '-o', 'KbdInteractiveAuthentication=no', '-o', 'NumberOfPasswordPrompts=1',
-                'voldzi@storage.home.cz', '/usr/bin/sudo', '-n', '/usr/bin/id', '-u']
-            with open('/dev/tty', 'r+b', buffering=0) as tty:
-                result = subprocess.run(args, stdin=tty, stdout=subprocess.PIPE, stderr=tty,
-                    env=PROCESS_ENV, timeout=120, check=False)
+                '-o', 'KbdInteractiveAuthentication=no', '-o', 'NumberOfPasswordPrompts=1']
+            args = self.args()+['-M', '-o', 'ControlPersist=15m', *auth,
+                    'voldzi@storage.home.cz', '/usr/bin/sudo', '-n', '/usr/bin/id', '-u']
+            if peer:
+                result=subprocess.run(args,stdin=subprocess.DEVNULL,capture_output=True,env=PROCESS_ENV,timeout=20,check=False)
+            else:
+                with open('/dev/tty', 'r+b', buffering=0) as tty:
+                    result = subprocess.run(args, stdin=tty, stdout=subprocess.PIPE, stderr=tty,
+                        env=PROCESS_ENV, timeout=120, check=False)
             need(result.returncode == 0 and result.stdout == b'0\n', 'RESET_S3_STORAGE_AUTH_REQUIRED')
+            self.connected=True
             self.custody()
             return self
         except BaseException:
@@ -301,8 +336,12 @@ class ProductionStorage:
         if self.owner is None: return
         try:
             self.custody()
-            subprocess.run(self.args()+['-O', 'exit', 'voldzi@storage.home.cz'], stdin=subprocess.DEVNULL,
+            stopped=subprocess.run(self.args()+['-O', 'exit', 'voldzi@storage.home.cz'], stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=PROCESS_ENV, timeout=10, check=False)
+            need(stopped.returncode==0,'RESET_S3_CONTROL_CLOSE_UNPROVEN')
+            checked=subprocess.run(self.args()+['-O','check','voldzi@storage.home.cz'],stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,env=PROCESS_ENV,timeout=10,check=False)
+            need(checked.returncode!=0,'RESET_S3_CONTROL_STILL_ACTIVE')
             (self.directory/'master.sock').unlink(missing_ok=True)
             self.directory.rmdir()
         except FileNotFoundError:
@@ -311,6 +350,7 @@ class ProductionStorage:
                 self.directory.rmdir()
         finally:
             self.owner = None
+            self.connected = False
 
 
 def inspect_s3_reset(storage):

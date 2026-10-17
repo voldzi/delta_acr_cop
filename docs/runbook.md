@@ -133,3 +133,33 @@ rollback; recipients can use the verified inbox. Device delivery remains best
 effort. See integration/35_MOBILITY_INVITATION_NOTIFICATIONS.md.
 
 For identity lookup failures, preserve403/404versus503 and never retry through provisioning resolve. Do not clamp DM count to2. Missing verified incoming caller names are generic COP kontakt. Deployment and acceptance: [integration42](integration/42_VERIFIED_MATRIX_IDENTITIES.md).
+
+## Temporary transport for the approved clean account release
+
+The separate `cop-release-peer-identity-v1` operator contract authorizes only
+`comm.home.cz` and `storage.home.cz` for this release. It does not extend the
+existing COMM-only contract implicitly. The operator creates a fresh Ed25519
+identity in Root-owned tmpfs, `/run/cop-clean-reset-comm`; the additional exact
+peer binding is `/run/cop-clean-reset-peers/peer-authorizations.json` (Root 0600,
+parent 0700). Only public metadata is published for installing the two exact
+public authorization lines. Both lines restrict source to `192.168.10.116`,
+expire after two hours, and disable PTY and forwarding. Private key material
+never leaves Docker Root RAM. Existing account passwords and SSH configuration
+are unchanged.
+
+The explicit peer receipt selects public-key authentication with password
+fallback disabled. Existing password transport behavior remains available only
+when no peer contract exists. Failure or disappearance of a bound receipt must
+stop the release. Do not retry the deployment with an expired or missing key.
+
+The outer release cleanup attempts removal on both hosts independently before
+wiping local private authority; failure on one host must not skip the other.
+A successful cleanup requires both exact public lines absent, both fixed SSH
+control sessions closed and local private identity removed. Never unlink a
+control socket to conceal a failed session shutdown. An incomplete remote cleanup must be reported and resolved
+through existing authenticated administration; expiration alone is not evidence
+of removal. Preserve all other authorized keys. Transport preparation does not
+prove deployment or enable account deletion. Verify actual production versions,
+owner capabilities and final release receipts separately.
+
+Targeted regression tests: `python3 scripts/test-temporary-release-key.py`.
