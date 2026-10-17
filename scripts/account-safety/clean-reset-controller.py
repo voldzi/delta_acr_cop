@@ -14,7 +14,7 @@ import uuid
 _spec = importlib.util.spec_from_file_location('clean_reset_host', Path(__file__).with_name('clean-reset-root.py'))
 host = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(host)
-PHASE_PLAN = {'identity': 'keycloak', 'cop': 'cop', 'ai': 'ai', 'driver': 'driver', 'files': 'files'}
+PHASE_PLAN = {'identity': 'keycloak', 'cop': 'cop', 'ai': 'ai', 'driver': 'driver', 'files': 'files', 'sim_app_files': 'sim_app_files'}
 
 
 def need(value, code):
@@ -68,8 +68,11 @@ class PrivateWorkerDispatch:
                 self.lease = None
             value = {'verified': True}
         elif operation == 'inspectWriter':
-            need(self.lease is None and self.phase in {'ai', 'driver', 'files'} and set(payload) == {'name'}
-                 and payload['name'] in {'csm-sim-ai-router-api', 'csm-sim-situation-data-api'}, 'RESET_CONTROLLER_WRITER_SCOPE')
+            legacy = (self.lease is None and self.phase in {'ai', 'driver', 'files'}
+                      and payload.get('name') in {'csm-sim-ai-router-api', 'csm-sim-situation-data-api'})
+            app_reset = (self.phase == 'sim_app_files' and self.lease is not None
+                         and payload.get('name') == 'csm-sim-api')
+            need(set(payload) == {'name'} and (legacy or app_reset), 'RESET_CONTROLLER_WRITER_SCOPE')
             name = payload['name']
             item = host.inspect_writers(host.command, [name])[name]
             expected = {name: self.admission.plan['localWriters'][name]}
@@ -96,7 +99,7 @@ def run_private_worker(admission, config):
     need(isinstance(config, dict) and config.get('contractVersion') == 'cop-sim-clean-reset-worker-v1'
          and config.get('phase') in {*PHASE_PLAN, 'readback'} and config.get('resetEpoch') == plan['resetEpoch']
          and config.get('tokensNotBefore') == plan['tokensNotBefore'] and config.get('simSource') == '/reviewed/sim'
-         and config.get('reviewedPlanDigests') == {k: plan['reviewedPlanDigests'][k] for k in ['cop', 'ai', 'driver', 'files', 'keycloak']},
+         and config.get('reviewedPlanDigests') == {k: plan['reviewedPlanDigests'][k] for k in ['cop', 'ai', 'driver', 'files', 'keycloak', 'sim_app_files']},
          'RESET_CONTROLLER_CONFIG_BINDING')
     dispatch = PrivateWorkerDispatch(admission, config['phase'])
     name = 'cop-clean-reset-worker-' + str(uuid.uuid4())

@@ -1,0 +1,23 @@
+{
+  "contractVersion": "cop-clean-api-build-evidence-v1",
+  "sourceRevision": "6c5c9855b29644cdc6e86b5b66166c861226cdba",
+  "candidateImageId": "sha256:2e61857d00f7fe0326a7b50a8f96f0cb4563d4d9028645dc08efe51b84e800df",
+  "buildOnly": true,
+  "actualLinuxSharpConversionPassed": true,
+  "conversionStorageGuardPresent": true,
+  "x5PreflightPassed": true,
+  "healthAndPublicDemoPreserved": true,
+  "healthStatuses": {
+    "live": 200,
+    "ready": 200,
+    "dependencies": 200,
+    "publicDemo": 200
+  },
+  "existingAiGatewayStatus": "degraded",
+  "productionContainerUnchanged": true,
+  "productionContainerId": "b4e1c9d7bf45efdab931d0c24bed056f4a65341ed7fc77348d6735a940503ddc",
+  "productionImageId": "sha256:a06c103764701e7debc6434e3dd98e9a6d5f218d30831cb62aad566265db392f",
+  "databaseResetPerformed": false,
+  "accountDeletionEnabled": false,
+  "wholeAccountAcceptance": false
+}

@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import unittest
 import uuid
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('controller', Path(__file__).parents[1] / 'account-safety/clean-reset-controller.py')
 m = importlib.util.module_from_spec(spec)
@@ -60,6 +61,32 @@ class ControllerProtocolTest(unittest.TestCase):
                                    ('producers', {'leaseId': str(uuid.uuid4())})]:
             with self.assertRaises(RuntimeError):
                 self.dispatch.dispatch(self.frame(operation, payload))
+
+    def test_sim_app_reset_has_a_separate_review_and_only_exact_stopped_main(self):
+        self.admission.plan['reviewedPlanDigests']['sim_app_files'] = 'c' * 64
+        expected = {'id': 'd' * 64, 'image': 'sha256:' + 'e' * 64}
+        self.admission.plan['localWriters'] = {'csm-sim-api': expected}
+        dispatch = m.PrivateWorkerDispatch(self.admission, 'sim_app_files')
+        for context in [{'planDigest': 'a' * 64}, {'planDigest': 'c' * 64, 'lane': 'ai'}]:
+            with self.assertRaises(RuntimeError):
+                dispatch.dispatch(self.frame('begin', {'phase': 'sim_app_files', 'context': context}))
+        with self.assertRaisesRegex(RuntimeError, 'WRITER_SCOPE'):
+            dispatch.dispatch(self.frame('inspectWriter', {'name': 'csm-sim-api'}))
+        lease = dispatch.dispatch(self.frame('begin', {'phase': 'sim_app_files', 'context': {'planDigest': 'c' * 64}}))['value']['leaseId']
+        stopped = {**expected, 'running': False, 'restarting': False, 'status': 'exited', 'pid': 0}
+        with patch.object(m.host, 'inspect_writers', return_value={'csm-sim-api': stopped}):
+            proof = dispatch.dispatch(self.frame('inspectWriter', {'name': 'csm-sim-api'}))['value']
+            self.assertEqual(proof['Id'], expected['id'])
+        for field, bad in [('id', 'f' * 64), ('image', 'sha256:' + 'f' * 64), ('running', True), ('pid', 12)]:
+            changed = {**stopped, field: bad}
+            with patch.object(m.host, 'inspect_writers', return_value={'csm-sim-api': changed}):
+                with self.assertRaisesRegex(RuntimeError, 'WRITER_NOT_STOPPED'):
+                    dispatch.dispatch(self.frame('inspectWriter', {'name': 'csm-sim-api'}))
+        for name in ['csm-sim-ai-router-api', 'cop-cop-api-1', 'other-app']:
+            with self.assertRaisesRegex(RuntimeError, 'WRITER_SCOPE'):
+                dispatch.dispatch(self.frame('inspectWriter', {'name': name}))
+        dispatch.dispatch(self.frame('end', {'leaseId': lease}))
+        dispatch.finish()
 
     def test_a_named_fake_admission_does_not_pass_the_production_factory(self):
         fake = type('RootResetAdmission', (), {'assert_current': lambda _: None})()

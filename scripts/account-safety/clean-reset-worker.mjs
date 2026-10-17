@@ -9,7 +9,7 @@ import {randomUUID} from 'node:crypto';
 import {inspectCopUserReset,applyCopUserReset} from './clean-user-reset.mjs';
 import {createCleanKeycloakReset} from './clean-keycloak-reset.mjs';
 const need=(x,code)=>{if(!x)throw Error(code)};
-const phases=['inspect','identity','cop','ai','driver','files','readback'];
+const phases=['inspect','identity','cop','ai','driver','files','sim_app_files','readback'];
 const allowed=(x,keys)=>x&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).sort().join()===keys.sort().join();
 export async function runCleanResetWorker(config,host){
  need(config?.contractVersion==='cop-sim-clean-reset-worker-v1'&&phases.includes(config.phase),'RESET_WORKER_SCOPE');
@@ -19,6 +19,7 @@ export async function runCleanResetWorker(config,host){
  const {Pool}=createRequire('/app/apps/cop-api/package.json')('pg');
  const ops=await import(pathToFileURL('/reviewed/sim/scripts/lib/clean-reset-ops.mjs'));
  const files=await import(pathToFileURL('/reviewed/sim/scripts/lib/clean-reset-files.mjs'));
+ const appFiles=await import(pathToFileURL('/reviewed/sim/scripts/lib/sim-user-data-reset-files.mjs'));
  const pools=new Map(),epoch=config.resetEpoch,cutoff=config.tokensNotBefore;
  const pool=lane=>{if(!pools.has(lane)){const p=new Pool({...config.connections[lane],max:1,connectionTimeoutMillis:5000,idleTimeoutMillis:1000});p.on('error',()=>{});pools.set(lane,p)}return pools.get(lane)};
  const gate={async withResetAdmission(context,work){
@@ -34,9 +35,9 @@ export async function runCleanResetWorker(config,host){
  try{
   if(config.phase==='inspect')return {contractVersion:'cop-sim-clean-reset-private-plans-v1',
    cop:await inspectCopUserReset(pool('cop')),ai:await simClient('ai',c=>ops.inspectPlan(c,'ai')),
-   driver:await simClient('driver',c=>ops.inspectPlan(c,'driver')),files:files.inspectResetFiles(),keycloak:await identity.inspect()};
+   driver:await simClient('driver',c=>ops.inspectPlan(c,'driver')),files:files.inspectResetFiles(),sim_app_files:appFiles.inspectSimAppReset(),keycloak:await identity.inspect()};
   const plans=config.reviewedPlans;
-  need(plans&&config.reviewedPlanDigests&&['cop','ai','driver','files','keycloak'].every(k=>config.reviewedPlanDigests[k]===(k==='keycloak'?plans[k]?.inventoryDigest:plans[k]?.planDigest)),'RESET_WORKER_REVIEW_REQUIRED');
+  need(plans&&config.reviewedPlanDigests&&['cop','ai','driver','files','keycloak','sim_app_files'].every(k=>config.reviewedPlanDigests[k]===(k==='keycloak'?plans[k]?.inventoryDigest:plans[k]?.planDigest)),'RESET_WORKER_REVIEW_REQUIRED');
   if(config.phase==='identity')return gate.withResetAdmission({phase:'identity',planDigest:plans.keycloak.inventoryDigest},async admission=>{
    await admission.assertCurrent();const result=await identity.apply(plans.keycloak,{contractVersion:'cop-keycloak-test-reset-authorization-v1',allTestHumanIdentitiesApproved:true,copSimWritersStopped:true,createOldDataBackup:false,resetEpoch:epoch});await admission.assertCurrent();return result;
   });
@@ -49,6 +50,7 @@ export async function runCleanResetWorker(config,host){
    return simClient(lane,c=>ops.applyReset(c,lane,{reviewedPlan:plans[lane],expectedPlanDigest:config.reviewedPlanDigests[lane],writerReceipt:receipt,enrollment,rootGate:gate}));
   }
   if(config.phase==='files')return files.purgeResetFiles({reviewedPlan:plans.files,writerReceipt:await writerReceipt(),rootGate:gate});
+  if(config.phase==='sim_app_files')return appFiles.resetSimAppFiles({reviewedPlan:plans.sim_app_files,rootGate:gate,expectedMainImage:config.expectedMainImage,inspectMain:name=>host('inspectWriter',{name})});
   if(config.phase==='readback')return gate.withResetAdmission({phase:'readback'},async admission=>{
    await admission.assertCurrent();const cop=await inspectCopUserReset(pool('cop'));
    const row=(await pool('cop').query('SELECT reset_epoch,tokens_not_before,scope FROM public.cop_clean_reset_epoch WHERE singleton')).rows;
@@ -57,6 +59,7 @@ export async function runCleanResetWorker(config,host){
    const output={contractVersion:'cop-sim-clean-reset-worker-readback-v1',resetEpoch:epoch,copEmpty:true,wholeAccountComplete:false};
    for(const lane of ['ai','driver'])output[lane]=await simClient(lane,async c=>{const plan=await ops.inspectPlan(c,lane);need(plan.state==='known-new'&&Object.values(plan.data.deleteCounts).every(x=>x===0),'RESET_WORKER_SIM_NOT_EMPTY');return {catalogDigest:plan.catalogDigest,preserved:plan.data.preserve}});
    const f=files.inspectResetFiles();need(f.counts.copRoutes===0&&f.counts.reports===0,'RESET_WORKER_FILES_NOT_EMPTY');output.files={counts:f.counts,planDigest:f.planDigest};
+   const appFilesReadback=appFiles.inspectSimAppReset();need(Object.values(appFilesReadback.counts).every(n=>n===0),'RESET_WORKER_SIM_APP_NOT_EMPTY');output.sim_app_files={counts:appFilesReadback.counts,planDigest:appFilesReadback.planDigest};
    const k=await identity.inspect();need(k.humanCount===0,'RESET_WORKER_IDENTITIES_NOT_EMPTY');output.keycloak={humanCount:k.humanCount,serviceCount:k.serviceCount};
    await admission.assertCurrent();return output;
   });

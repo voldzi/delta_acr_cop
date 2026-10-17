@@ -151,3 +151,24 @@ BuildKit image, verified actual X5 device/restart=no, preserved the cache and di
 not restart any application. The candidate build was then restarted through the
 same guarded build-only path. Build completion is recorded separately; this
 recovery does not activate account deletion.
+
+
+### Completed candidate build and SIM reset composition (2026-10-17)
+
+The guarded build-only run completed for API revision `6c5c9855b29644cdc6e86b5b66166c861226cdba`.
+Immutable image: `sha256:2e61857d00f7fe0326a7b50a8f96f0cb4563d4d9028645dc08efe51b84e800df`.
+The exact Linux image passed actual Sharp conversion and conversion-storage
+source guard checks. X5 preflight and the existing health/public demo baseline
+passed; the pre-existing AI gateway remains degraded. Read-only Docker inspection
+confirmed the old API container/image was still running. No database reset or
+account-deletion activation occurred. Evidence: [candidate build](../testing/account-erasure-api-build-20261017.json).
+
+The Root private worker now also composes the finite SIM legacy app-file reset,
+with its own `sim_app_files` reviewed digest. It can inspect only the exact stopped
+`csm-sim-api` instance while that phase owns a live Root lease. Different image,
+container, live PID, wrong phase and unreviewed digest are rejected. Readback
+requires scenarios, drafts, publisher items and legacy audit bytes all zero.
+Six controller and ten Root protocol tests pass. These isolated protocol tests
+do not establish actual production Root admission or whole-account acceptance.
+The remaining final coordinator still has to compose SIM continuity enrollment,
+provider closure, credential provisioning, deployment and acceptance before enable.
