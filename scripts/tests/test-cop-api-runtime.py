@@ -1132,7 +1132,10 @@ class RuntimeTests(unittest.TestCase):
             'COP_ACCOUNT_ERASURE_SCOPE': 'cop_sim_shared_identity_v1',
             'COP_KEYCLOAK_SHARED_IDENTITY_DELETE_ACCEPTED': 'true',
             'COP_USER_RESET_EPOCH': reset['resetEpoch'],
-            'COP_USER_RESET_TOKENS_NOT_BEFORE': str(reset['tokensNotBefore'])})
+            'COP_USER_RESET_TOKENS_NOT_BEFORE': str(reset['tokensNotBefore']),
+            'COP_SIM_USER_DATA_ERASURE_URL': 'http://sim-main.synthetic.invalid:4310',
+            'COP_SIM_USER_DATA_ERASURE_TOKEN': 'synthetic-app-service-token-' + 'x' * 32,
+            'COP_SIM_USER_DATA_ERASURE_ACTOR_SECRET': 'synthetic-app-actor-secret-' + 'y' * 32})
         path, proof = self.erasure_proof(current)
         proof.update(contractVersion=m.CLEAN_ERASURE_PROOF_VERSION, cleanReset=reset,
                      checks={key: True for key in m.CLEAN_ERASURE_PROOF_CHECKS})
@@ -1149,6 +1152,19 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(env['COP_ACCOUNT_ERASURE_SCOPE'], 'cop_sim_shared_identity_v1')
         self.assertEqual(env['COP_ACCOUNT_ERASURE_ENABLED'], 'false')
         self.assertEqual(env['COP_USER_RESET_EPOCH'], proof['cleanReset']['resetEpoch'])
+
+    def test_clean_reset_cannot_activate_without_sim_application_erasure_credentials(self):
+        current = self.erasure_initial()
+        for key in ('COP_SIM_USER_DATA_ERASURE_TOKEN', 'COP_SIM_USER_DATA_ERASURE_ACTOR_SECRET', 'COP_SIM_USER_DATA_ERASURE_URL'):
+            path, proof = self.clean_erasure_proof(current)
+            self.docker.base['services']['cop-api']['environment'][key] = ''
+            # Bind the actual intended delta, then exercise the production target validator.
+            proof['changedKeys'] = sorted(set(proof['changedKeys']) | {key}); write(path, proof, 0o640)
+            count = len(self.docker.up_calls)
+            with self.assertRaises(m.RuntimeError):
+                candidate = self.erasure_candidate(current, path)
+                self.store.activate(candidate['releaseId'], current['generation'])
+            self.assertEqual(len(self.docker.up_calls), count)
 
     def test_old_identity_preserving_proof_cannot_authorize_clean_reset_flags(self):
         current = self.erasure_initial(); path, proof = self.clean_erasure_proof(current)

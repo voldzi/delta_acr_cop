@@ -20,10 +20,10 @@ function claims(headers: Record<string,string>) {
   expect(value.exp-value.iat).toBe(60); return value;
 }
 afterEach(() => vi.unstubAllGlobals());
-describe.each(["ai","driver"] as const)("SIM clean lifecycle %s boundary", component => {
-  const prefix = component === "ai" ? "/api/v1/ai-router/internal/user-lifecycle/v1" : "/api/v1/internal/user-lifecycle/v1";
-  const receipt = {contractVersion:"cop-sim-user-lifecycle-v1",scope:"cop_sim_shared_identity_v1",resetEpoch:config.resetEpoch,operationId:context.operationId,state:"deletion_pending",component,wholeAccountComplete:false};
-  function fixture(options: {state?:string;postStatus?:number;wrongEpoch?:boolean;wrongComponent?:boolean;wrongOp?:boolean;noStore?:boolean;extra?:boolean}={}) {
+describe.each(["ai","driver","sim_user_data"] as const)("SIM clean lifecycle %s boundary", component => {
+  const prefix = component === "sim_user_data" ? "/api/v1/internal/sim-user-data/v1" : component === "ai" ? "/api/v1/ai-router/internal/user-lifecycle/v1" : "/api/v1/internal/user-lifecycle/v1";
+  const receipt = {contractVersion:component === "sim_user_data" ? "cop-sim-user-data-v1" : "cop-sim-user-lifecycle-v1",scope:"cop_sim_shared_identity_v1",resetEpoch:config.resetEpoch,operationId:context.operationId,state:"deletion_pending",component,wholeAccountComplete:false};
+  function fixture(options: {state?:string;postStatus?:number;wrongEpoch?:boolean;wrongComponent?:boolean;wrongOp?:boolean;noStore?:boolean;extra?:boolean;pendingSubcomponent?:boolean;missingSubcomponents?:boolean;wrongSubcomponent?:boolean}={}) {
     const mock=vi.fn(async(input:URL|string,init?:RequestInit)=>{
       const url=new URL(String(input));expect(url.origin).toBe(config.baseUrl);expect(init?.redirect).toBe("error");expect(init?.signal).toBeInstanceOf(AbortSignal);
       const headers=init?.headers as Record<string,string>;expect(headers.authorization).toBe("Bearer "+config.token);
@@ -32,7 +32,13 @@ describe.each(["ai","driver"] as const)("SIM clean lifecycle %s boundary", compo
       const claim=claims(headers);expect(claim.oidcSubject).toBe(actor.subjectId);expect(claim.operationId).toBe(context.operationId);expect(claim.oidcIat).toBe(actor.tokenIssuedAt);
       expect(url.pathname.startsWith(prefix)).toBe(true);
       if(init?.method==='POST')expect(JSON.parse(String(init.body))).toEqual({contractVersion:receipt.contractVersion,scope:receipt.scope,resetEpoch:config.resetEpoch,operationId:context.operationId,requestedAt:context.requestedAt});
-      return Response.json({...receipt,state:options.state??'deletion_pending',...(options.wrongEpoch?{resetEpoch:randomUUID()}:{}),...(options.wrongComponent?{component:component==='ai'?'driver':'ai'}:{}),...(options.wrongOp?{operationId:randomUUID()}:{}),...(options.extra?{subjectId:actor.subjectId}:{})},{status:init?.method==='POST'?(options.postStatus??202):200,headers:responseHeaders});
+      const state = options.state ?? 'deletion_pending';
+      const subcomponents = component === 'sim_user_data' && !options.missingSubcomponents ? {subcomponents:{
+        app_store:state === 'deleted' ? 'deleted' : 'pending',
+        audit_and_publisher: options.pendingSubcomponent ? 'pending' : state === 'deleted' ? 'deleted' : 'pending',
+        router_sim_history: options.wrongSubcomponent ? 'complete' : state === 'deleted' ? 'deleted' : 'pending'
+      }} : {};
+      return Response.json({...receipt,...subcomponents,state:options.state??'deletion_pending',...(options.wrongEpoch?{resetEpoch:randomUUID()}:{}),...(options.wrongComponent?{component:component==='ai'?'driver':'ai'}:{}),...(options.wrongOp?{operationId:randomUUID()}:{}),...(options.extra?{subjectId:actor.subjectId}:{})},{status:init?.method==='POST'?(options.postStatus??202):200,headers:responseHeaders});
     });vi.stubGlobal('fetch',mock);return {mock,adapter:createSimCleanLifecycleErasureAdapter({...config,component})};
   }
   it('signs the exact verified owner and retains202 as pending; uses separate endpoints',async()=>{
@@ -45,6 +51,9 @@ describe.each(["ai","driver"] as const)("SIM clean lifecycle %s boundary", compo
   });
   it.each([{wrongEpoch:true},{wrongComponent:true},{wrongOp:true},{noStore:true},{extra:true},{state:'deleted',postStatus:202}])('refuses unproven completion %j',async options=>{
     const f=fixture(options);await expect(f.adapter.erase(actor,context)).rejects.toThrow();
+  });
+  if (component === 'sim_user_data') it.each([{pendingSubcomponent:true},{missingSubcomponents:true},{wrongSubcomponent:true}])('requires all three typed SIM subcomponent readbacks %j',async options=>{
+    const f=fixture({...options,state:'deleted',postStatus:200});await expect(f.adapter.erase(actor,context)).rejects.toThrow();
   });
   it('does not turn outage or404 into completed erasure and never calls a provider',async()=>{
     const fetcher=vi.fn(async()=>new Response(null,{status:503}));vi.stubGlobal('fetch',fetcher);

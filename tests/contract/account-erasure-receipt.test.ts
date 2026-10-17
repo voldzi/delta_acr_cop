@@ -68,6 +68,8 @@ describe("shared identity v2 is explicit and cannot reuse v1 meaning", () => {
     const validate = compile({ $ref: "#/components/schemas/AccountErasureReceipt" });
     const shared = { ...pending, contractVersion: "cop-account-erasure-v2", deletionScope: "cop_sim_shared_identity_v1" };
     expect(validate(shared)).toBe(true);
+    expect(validate({ ...shared, remaining: ["sim_user_data"], pendingReasons: { sim_user_data: "cleanup_pending" } })).toBe(true);
+    expect(validate({ ...pending, remaining: ["sim_user_data"], pendingReasons: { sim_user_data: "cleanup_pending" } })).toBe(false);
     expect(validate({ ...shared, contractVersion: "cop-account-erasure-v1" })).toBe(false);
     expect(validate({ ...pending, contractVersion: "cop-account-erasure-v2" })).toBe(false);
   });

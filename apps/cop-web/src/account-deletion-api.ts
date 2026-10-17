@@ -14,7 +14,8 @@ const domains = [
   "sim_measurements",
   "ai_router",
   "moderation_audit",
-  "backup_restore"
+  "backup_restore",
+  "sim_user_data"
 ];
 type Json = Record<string, unknown>;
 export interface DeletionPreflight {

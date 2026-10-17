@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureError } from "./account-erasure.js";
+import { accountErasureAdapterIds, AccountErasureError } from "./account-erasure.js";
 import type { AccountErasureContinuity, AccountErasureFenceEntry, AccountErasureFrontier, AccountErasureReplay } from "./account-erasure-continuity.js";
 import type { AuthenticatedActor } from "./security.js";
 import { opaqueUserId } from "./ai-router-chat.js";
@@ -59,6 +59,7 @@ export class PostgresAccountErasureContinuity implements AccountErasureContinuit
   }
   private validateEntry(entry: AccountErasureFenceEntry): void {
     const shared = entry?.contractVersion === "cop-erasure-fence-entry-v2";
+    const expected = accountErasureAdapterIds(shared ? "cop_sim_shared_identity_v1" : undefined);
     need(entry && typeof entry === "object" && exact(entry, ["contractVersion", "applicationStoreId", "configurationFingerprint", "accountKey", "job", ...(shared ? ["deletionScope"] : [])]) &&
       (shared ? entry.deletionScope === "cop_sim_shared_identity_v1" : entry.contractVersion === "cop-erasure-fence-entry-v1") && entry.applicationStoreId === this.expected.applicationStoreId &&
       entry.configurationFingerprint === this.expected.configurationFingerprint && hex.test(entry.accountKey) && entry.job &&
@@ -66,8 +67,8 @@ export class PostgresAccountErasureContinuity implements AccountErasureContinuit
       (!shared || typeof entry.job.identityPreflightVersion === "string" && entry.job.identityPreflightVersion.length > 0 && entry.job.identityPreflightVersion.length <= 256 && typeof entry.job.sealedPrincipal === "string" && entry.job.sealedPrincipal.length <= 4096 && /^[A-Za-z0-9+/]+={0,2}$/u.test(entry.job.sealedPrincipal)) && uuid.test(entry.job.operationId) &&
       Number.isFinite(Date.parse(entry.job.requestedAt)) && new Date(entry.job.requestedAt).toISOString() === entry.job.requestedAt &&
       entry.job.checkpoints && exact(entry.job.checkpoints, []) && Array.isArray(entry.job.required) &&
-      entry.job.required.length === ACCOUNT_ERASURE_ADAPTER_IDS.length && new Set(entry.job.required).size === ACCOUNT_ERASURE_ADAPTER_IDS.length &&
-      ACCOUNT_ERASURE_ADAPTER_IDS.every(id => entry.job.required.includes(id)) && Buffer.byteLength(canonical(entry)) <= 16384);
+      entry.job.required.length === expected.length && new Set(entry.job.required).size === expected.length &&
+      expected.every(id => entry.job.required.includes(id)) && Buffer.byteLength(canonical(entry)) <= 16384);
   }
   private async binding(client: PoolClient): Promise<{ config: Configuration; replay: ReplayBinding; key: string }> {
     const config = (await client.query<Configuration>("SELECT contract_version,guard_store_id,application_store_id,configuration_fingerprint,initial_digest FROM cop_safety_v2.configuration WHERE singleton")).rows[0];

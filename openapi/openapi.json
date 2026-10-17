@@ -34231,7 +34231,7 @@
           "remaining": {
             "type": "array",
             "uniqueItems": true,
-            "maxItems": 11,
+            "maxItems": 12,
             "items": {
               "type": "string",
               "enum": [
@@ -34245,7 +34245,8 @@
                 "sim_measurements",
                 "ai_router",
                 "moderation_audit",
-                "backup_restore"
+                "backup_restore",
+                "sim_user_data"
               ]
             }
           },
@@ -34351,6 +34352,15 @@
                   "adapter_unavailable",
                   "not_accepted"
                 ]
+              },
+              "sim_user_data": {
+                "type": "string",
+                "enum": [
+                  "cleanup_pending",
+                  "adapter_missing",
+                  "adapter_unavailable",
+                  "not_accepted"
+                ]
               }
             }
           }
@@ -34425,12 +34435,27 @@
               "properties": {
                 "deletionScope": {
                   "const": "cop_jizda_preserve_shared_identity_sim"
+                },
+                "remaining": {
+                  "maxItems": 11,
+                  "items": {
+                    "not": {
+                      "const": "sim_user_data"
+                    }
+                  }
+                },
+                "pendingReasons": {
+                  "not": {
+                    "required": [
+                      "sim_user_data"
+                    ]
+                  }
                 }
               }
             }
           }
         ],
-        "description": "Explicit versioned erasure contract. V2 is enabled only after a clean user-data reset and separate shared-identity authority acceptance; v1 semantics remain unchanged. HTTP202 is a durable fenced request, not completed erasure."
+        "description": "Explicit versioned erasure contract. V2 is enabled only after a clean user-data reset and separate shared-identity authority acceptance; v1 semantics remain unchanged. HTTP202 is a durable fenced request, not completed erasure. V2 requires SIM application data (scenarios, drafts, derived publications, audit and SIM AI history) in addition to the COP Router and measurement domains."
       },
       "AccountErasurePreflight": {
         "type": "object",
@@ -34496,7 +34521,8 @@
                     "sim_measurements",
                     "ai_router",
                     "moderation_audit",
-                    "backup_restore"
+                    "backup_restore",
+                    "sim_user_data"
                   ]
                 },
                 "reason": {
@@ -34593,6 +34619,17 @@
               "properties": {
                 "deletionScope": {
                   "const": "cop_jizda_preserve_shared_identity_sim"
+                },
+                "blockers": {
+                  "items": {
+                    "properties": {
+                      "domain": {
+                        "not": {
+                          "const": "sim_user_data"
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }

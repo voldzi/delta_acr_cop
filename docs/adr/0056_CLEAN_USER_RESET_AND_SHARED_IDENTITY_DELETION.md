@@ -22,3 +22,12 @@ Verification and production progress are recorded in `docs/account-safety/clean-
 The new scope publishes only `cop-erasure-fence-entry-v2` to the independent journal. It adds an encrypted minimal worker principal (issuer, subject, original signed iat), bound to the same account MAC and immutable operation. No OAuth token, API key, name, email or message is retained there. V1 entries still forbid this field. This necessary technical binding allows a restored application DB to replay cleanup without a login which no longer exists. The entry remains until every referring backup has expired under the already approved technical erasure-ledger retention. Restore quarantine and independent journal preservation remain required; a copied reset epoch alone is not proof of safe restoration.
 
 The v2 independent fence also retains the original server-verified Keycloak preflight fingerprint. It binds cleanup to the identity authorized at confirmation, rejects an identity recreated with another creation timestamp, and allows verified provider absence after restoring a local database that lost its checkpoint. A first404 without that accepted witness remains pending. The fingerprint is technical pseudonymous recovery evidence, not user content.
+
+## SIM application-data boundary
+
+The unreleased v2 scope requires twelve independent domains, including `sim_user_data`.
+The original v1 list of eleven domains is unchanged. SIM application data is not
+covered by the COP Router or driver measurement receipts. The twelfth adapter
+requires a combined readback for owned application stores, audit/publisher data
+and SIM AI history. A missing adapter blocks confirmation; a missing or pending
+subcomponent blocks completion and the final Keycloak DELETE.

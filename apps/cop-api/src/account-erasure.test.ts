@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
-import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureService, type AccountErasureAdapter, type AccountErasureProof } from "./account-erasure.js";
+import { accountErasureAdapterIds, SHARED_ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureService, type AccountErasureAdapter, type AccountErasureProof } from "./account-erasure.js";
 import { MemoryMobilityStore } from "./mobility-store.js";
 import type { AuthenticatedActor } from "./security.js";
 
@@ -12,11 +12,12 @@ const confirm = { confirmAccountDeletion: true };
 const actor = (subjectId = "synthetic-secret-subject", authTime: number | undefined = instant.getTime() / 1000): AuthenticatedActor =>
   ({ authMode: "oidc", issuer, subjectId, username: "synthetic", displayName: "Synthetic", authTime });
 const complete = (): AccountErasureProof => ({ status: "completed", proofId: "fixture-proof-v1" });
-function setup() {
+function setup(shared = false) {
+  const ids = accountErasureAdapterIds(shared ? "cop_sim_shared_identity_v1" : undefined);
   const store = new MemoryMobilityStore();
-  const adapters = ACCOUNT_ERASURE_ADAPTER_IDS.map(id => ({ id, ready: vi.fn(async () => true), preflight: async () => ({ ready: true as const, version: "fixture_preflight_v1" }), erase: vi.fn(async (..._args: Parameters<AccountErasureAdapter["erase"]>) => complete()) }));
+  const adapters = ids.map(id => ({ id, ready: vi.fn(async () => true), preflight: async () => ({ ready: true as const, version: "fixture_preflight_v1" }), erase: vi.fn(async (..._args: Parameters<AccountErasureAdapter["erase"]>) => complete()) }));
   const options = { store, allowUnboundSyntheticStore: true, identitySecret: "fixture-dedicated-erasure-secret-32-characters", issuer,
-    requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS, adapters, accepted: true, now: () => instant };
+    deletionScope: shared ? "cop_sim_shared_identity_v1" as const : undefined, requiredAdapters: ids, adapters, accepted: true, now: () => instant };
   return { store, adapters, options, service: new AccountErasureService(options) };
 }
 
@@ -208,8 +209,19 @@ async function startErasure(service: AccountErasureService, principal: Parameter
 
 
 describe("clean shared COP/SIM lifecycle v2", () => {
+  it("requires SIM application data independently of the Router and measurement adapters", async () => {
+    const legacy = setup();
+    expect(() => new AccountErasureService({ ...legacy.options, deletionScope: "cop_sim_shared_identity_v1" })).toThrow();
+    const f = setup(true);
+    const service = new AccountErasureService({ ...f.options, deletionScope: "cop_sim_shared_identity_v1",
+      adapters: f.adapters.filter(adapter => adapter.id !== "sim_user_data") });
+    const plan = await service.preflight({ ...actor(), tokenIssuedAt: instant.getTime() / 1000 }, operation);
+    expect(plan.response.canConfirm).toBe(false);
+    expect(plan.response.blockers).toContainEqual({ domain: "sim_user_data", reason: "adapter_preflight_missing" });
+    for (const adapter of f.adapters) expect(adapter.erase).not.toHaveBeenCalled();
+  });
   it("returns a durable pending receipt before any cleanup; resumes automatically after logout and restart", async () => {
-    const { options, adapters, store } = setup();
+    const { options, adapters, store } = setup(true);
     const shared = { ...options, deletionScope: "cop_sim_shared_identity_v1" as const };
     const service = new AccountErasureService(shared);
     const original = { ...actor("owner-a"), tokenIssuedAt: instant.getTime() / 1000 };
@@ -234,7 +246,7 @@ describe("clean shared COP/SIM lifecycle v2", () => {
   it("refuses to reinterpret an accepted v1 store as shared identity deletion", async () => {
     const { service, options } = setup();
     await startErasure(service, actor(), operation, confirm);
-    const changed = new AccountErasureService({ ...options, deletionScope: "cop_sim_shared_identity_v1" });
+    const changed = new AccountErasureService({ ...options, requiredAdapters: SHARED_ACCOUNT_ERASURE_ADAPTER_IDS, deletionScope: "cop_sim_shared_identity_v1" });
     await expect(changed.init()).rejects.toMatchObject({ code: "ERASURE_CONFIGURATION_UNSUPPORTED" });
   });
 });

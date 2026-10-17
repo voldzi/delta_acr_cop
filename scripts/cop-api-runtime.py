@@ -71,7 +71,9 @@ ERASURE_PROOF_CHECKS = {'jointSyntheticAcceptance', 'providerClosureVerified',
 # Separate reviewed clean-reset scope. An old v1 proof never authorizes these.
 CLEAN_ERASURE_CONFIG_KEYS = ERASURE_CONFIG_KEYS | frozenset({
     'COP_ACCOUNT_ERASURE_SCOPE', 'COP_KEYCLOAK_SHARED_IDENTITY_DELETE_ACCEPTED',
-    'COP_USER_RESET_EPOCH', 'COP_USER_RESET_TOKENS_NOT_BEFORE'})
+    'COP_USER_RESET_EPOCH', 'COP_USER_RESET_TOKENS_NOT_BEFORE',
+    'COP_SIM_USER_DATA_ERASURE_URL', 'COP_SIM_USER_DATA_ERASURE_TOKEN',
+    'COP_SIM_USER_DATA_ERASURE_ACTOR_SECRET'})
 CLEAN_ERASURE_PROOF_CHECKS = {'jointSyntheticAcceptance', 'providerClosureVerified',
                              'sharedIdentityDeletionApproved', 'cleanResetVerified', 'restoreReplayVerified'}
 CLEAN_ERASURE_PROOF_VERSION = 'cop-api-account-erasure-clean-config-v1'
@@ -102,6 +104,14 @@ def erasure_target_environment(target, operation, clean=None):
                 and target.get('COP_USER_RESET_EPOCH') == clean['resetEpoch']
                 and target.get('COP_USER_RESET_TOKENS_NOT_BEFORE') == str(clean['tokensNotBefore']),
                 'clean_erasure_target_binding')
+        for key in ('COP_SIM_USER_DATA_ERASURE_TOKEN', 'COP_SIM_USER_DATA_ERASURE_ACTOR_SECRET'):
+            require(isinstance(target.get(key), str) and 32 <= len(target[key]) <= 16384
+                    and not any(ord(c) < 32 for c in target[key]), 'clean_erasure_app_credential_missing')
+        from urllib.parse import urlsplit
+        app_url = urlsplit(target.get('COP_SIM_USER_DATA_ERASURE_URL', ''))
+        require(app_url.scheme in {'http', 'https'} and bool(app_url.hostname)
+                and not app_url.username and not app_url.password and not app_url.query
+                and not app_url.fragment and app_url.path in {'', '/'}, 'clean_erasure_app_url_invalid')
     intake = target.get('COP_ACCOUNT_ERASURE_ENABLED')
     require(intake in {'true', 'false'} and (operation == 'maintain' or
             intake == ('true' if operation == 'enable' else 'false')), 'erasure_target_intake')

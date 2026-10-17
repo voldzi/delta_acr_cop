@@ -55,3 +55,34 @@ SIM published `52f54cee152c5b869bc8d74cc0e08802ee3fc4f4` on `codex/sim-clean-lif
 The runbook is SIM `docs/runbooks/21_CLEAN_COP_SIM_RESET_OPERATOR.md`. The exact known-old guard replacement and enrollment are atomic per database, with restricted finite table/file scope. Two databases plus files are not one distributed transaction: partial failure must keep all writers and producers stopped. There is no automatic apply endpoint or privileged installer in that SIM component.
 
 File inventory covers one confirmed COP precomputed route file; the other 911 route files have different actors and must remain byte-preserved. Absence of report files or a lock is not proof that a producer is stopped. The common production controller, actual Root admission/freeze and whole-provider acceptance remain outstanding. Do not use the historical v1 `--complete-release` procedure to claim the new v2 scope is enabled.
+
+## Additional SIM ownership gap found during final inventory
+
+SIM reported eleven scenarios, four drafts and an audit file with mutable actor
+labels; their source does not establish canonical issuer/subject ownership.
+The three SIM AI history records are also potentially user-linked. They must not
+be described as public/provider data or silently preserved while claiming whole
+account deletion. The approved finite test-data reset must cover these legacy
+user datasets; new writes require verified owner provenance and a durable fence.
+
+COP v2 now requires `sim_user_data` in addition to the previous eleven domains.
+Its source-only adapter uses SIM main `/api/v1/internal/sim-user-data/v1`,
+`cop-sim-user-data-v1`, and the existing short-lived signed canonical actor format.
+It requires `app_store`, `audit_and_publisher`, `router_sim_history` all `deleted`
+in a fresh no-store HTTP200 readback. The three new server-only settings are
+`COP_SIM_USER_DATA_ERASURE_URL`, `COP_SIM_USER_DATA_ERASURE_TOKEN` and
+`COP_SIM_USER_DATA_ERASURE_ACTOR_SECRET`. Empty settings leave the adapter absent
+and block confirmation. No new credential has been created or transferred and
+production has not been changed. SIM implementation and joint acceptance remain
+in progress; the Root deployment configuration permission must explicitly bind
+these fields before they can be activated.
+
+The bot-specific approval was received and the fixed `cop.ai.agent` admission
+implementation is published in Messaging `76f60be`; it preserves the original
+service mapping and token and cannot create/reactivate a missing native identity.
+Its actual owned database and synthetic HTTP tests passed. Production service
+enrollment has not run. COP's additional boundary tests: 85 passed; server
+composition tests: 12 passed; types and OpenAPI passed (25 existing warnings).
+The updated offline runtime suite passed 77 tests; the old scope cannot authorize
+the new SIM app credentials. This is source/test evidence, not whole-service or
+production acceptance.

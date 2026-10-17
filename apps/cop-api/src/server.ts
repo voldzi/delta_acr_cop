@@ -2,7 +2,7 @@ import { cleanLifecycleActorConfigFromEnv } from "./clean-lifecycle-actor.js";
 import { createSimCleanLifecycleErasureAdapter } from "./sim-clean-lifecycle-erasure.js";
 import { COMMUNICATION_SAFETY_CONFIG_KEY, CommunicationSafetyService, CommunicationSafetyError, MessagingCommunicationPolicy, registerCommunicationSafetyRoutes } from "./communication-safety.js";
 import { JizdaAppLinkService, disconnectJizdaMessaging, registerJizdaAppLinkRoutes } from "./jizda-app-link.js";
-import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureError, AccountErasureService, type AccountErasureAdapter } from "./account-erasure.js";
+import { accountErasureAdapterIds, AccountErasureError, AccountErasureService, type AccountErasureAdapter } from "./account-erasure.js";
 import { registerAccountErasureRoutes } from "./account-erasure-routes.js";
 import type { AccountErasureContinuity } from "./account-erasure-continuity.js";
 import { isAccountErasureReceiptRead } from "./account-erasure-transport.js";
@@ -1411,6 +1411,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
         authorityMode: process.env.COP_ACCOUNT_SAFETY_AUTHORITY_MODE === "database_v2" ? "database_v2" : "native_v1",
         verifyActorScope: options.messagingErasureActorScopeVerifier }),
       ...(process.env.COP_ACCOUNT_ERASURE_SCOPE === "cop_sim_shared_identity_v1" ? [
+        ...(process.env.COP_SIM_USER_DATA_ERASURE_URL && process.env.COP_SIM_USER_DATA_ERASURE_TOKEN && process.env.COP_SIM_USER_DATA_ERASURE_ACTOR_SECRET ? [
+          createSimCleanLifecycleErasureAdapter({ ...cleanLifecycleActorConfigFromEnv(process.env.COP_SIM_USER_DATA_ERASURE_ACTOR_SECRET)!,
+            baseUrl: process.env.COP_SIM_USER_DATA_ERASURE_URL, token: process.env.COP_SIM_USER_DATA_ERASURE_TOKEN, component: "sim_user_data", now })
+        ] : []),
         createSimCleanLifecycleErasureAdapter({ ...cleanLifecycleActorConfigFromEnv(process.env.COP_AI_ROUTER_ACTOR_SECRET ?? "")!,
           baseUrl: process.env.COP_SIM_ERASURE_ROUTER_URL ?? "", token: process.env.COP_SIM_ERASURE_ROUTER_TOKEN ?? "", component: "ai", now }),
         composeCOPDriverConsentErasureAdapter(createSimCleanLifecycleErasureAdapter({
@@ -1456,7 +1460,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
     ];
     accountErasure = new AccountErasureService({ store: accountSafetyStore, identitySecret: erasureSecret, expectedGuardStoreId: erasureStoreId,
       issuer, deletionScope: process.env.COP_ACCOUNT_ERASURE_SCOPE === "cop_sim_shared_identity_v1" ? "cop_sim_shared_identity_v1" : undefined,
-      requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS, adapters: options.accountErasureAdapters ?? localAdapters,
+      requiredAdapters: accountErasureAdapterIds(process.env.COP_ACCOUNT_ERASURE_SCOPE === "cop_sim_shared_identity_v1" ? "cop_sim_shared_identity_v1" : undefined), adapters: options.accountErasureAdapters ?? localAdapters,
       continuity: options.accountErasureContinuity, continuityRequired: erasureEnabled || process.env.COP_ACCOUNT_SAFETY_GUARD_REQUIRED === "true",
       admissionGuard: contentErasure.admissionGuard, accepted: erasureEnabled, now });
   }

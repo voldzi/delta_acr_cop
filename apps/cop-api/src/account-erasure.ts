@@ -10,7 +10,11 @@ export const ACCOUNT_ERASURE_ADAPTER_IDS = [
 export const ACCOUNT_ERASURE_SCOPE = "cop_jizda_preserve_shared_identity_sim" as const;
 export const SHARED_ACCOUNT_ERASURE_SCOPE = "cop_sim_shared_identity_v1" as const;
 export type AccountErasureScope = typeof ACCOUNT_ERASURE_SCOPE | typeof SHARED_ACCOUNT_ERASURE_SCOPE;
-export type AccountErasureAdapterId = typeof ACCOUNT_ERASURE_ADAPTER_IDS[number];
+export const SHARED_ACCOUNT_ERASURE_ADAPTER_IDS = [...ACCOUNT_ERASURE_ADAPTER_IDS, "sim_user_data"] as const;
+export type AccountErasureAdapterId = typeof SHARED_ACCOUNT_ERASURE_ADAPTER_IDS[number];
+export function accountErasureAdapterIds(scope?: AccountErasureScope): readonly AccountErasureAdapterId[] {
+  return scope === SHARED_ACCOUNT_ERASURE_SCOPE ? SHARED_ACCOUNT_ERASURE_ADAPTER_IDS : ACCOUNT_ERASURE_ADAPTER_IDS;
+}
 export type AccountErasurePendingReason = "cleanup_pending" | "adapter_missing" | "adapter_unavailable" | "not_accepted";
 export type AccountErasurePreflightReason = "ownership_unresolved" | "choice_required" | "adapter_preflight_missing" | "adapter_unavailable";
 export type AccountErasureAssessment = { ready: true; version: string; transactionVersion?: string } | { ready: false; reason: AccountErasurePreflightReason };
@@ -109,8 +113,9 @@ export class AccountErasureService {
     accepted: boolean; deletionScope?: AccountErasureScope; expectedGuardStoreId?: string; allowUnboundSyntheticStore?: boolean; adapterTimeoutMs?: number; now?: () => Date;
     admissionGuard?: AccountErasureAdmissionGuard; continuity?: AccountErasureContinuity; continuityRequired?: boolean }) {
     this.required = [...options.requiredAdapters];
-    if ((options.deletionScope !== undefined && ![ACCOUNT_ERASURE_SCOPE, SHARED_ACCOUNT_ERASURE_SCOPE].includes(options.deletionScope)) || options.identitySecret.length < 32 || !options.issuer || this.required.length !== ACCOUNT_ERASURE_ADAPTER_IDS.length ||
-        new Set(this.required).size !== this.required.length || ACCOUNT_ERASURE_ADAPTER_IDS.some(id => !this.required.includes(id)) ||
+    const expected = accountErasureAdapterIds(options.deletionScope);
+    if ((options.deletionScope !== undefined && ![ACCOUNT_ERASURE_SCOPE, SHARED_ACCOUNT_ERASURE_SCOPE].includes(options.deletionScope)) || options.identitySecret.length < 32 || !options.issuer || this.required.length !== expected.length ||
+        new Set(this.required).size !== this.required.length || expected.some(id => !this.required.includes(id)) ||
         options.adapters.some(adapter => !this.required.includes(adapter.id)) || new Set(options.adapters.map(a => a.id)).size !== options.adapters.length) {
       throw new Error("Account erasure requires the explicit complete provider boundary and dedicated identity secret.");
     }
@@ -637,8 +642,8 @@ export class AccountErasureService {
   }
   private finalize(job: Job): boolean {
     this.validateBoundary(job);
-    if (!job.completedAt && job.required.length === ACCOUNT_ERASURE_ADAPTER_IDS.length &&
-        ACCOUNT_ERASURE_ADAPTER_IDS.every(id => job.required.includes(id) && completeCheckpoint(job.checkpoints[id]))) {
+    if (!job.completedAt && job.required.length === accountErasureAdapterIds(this.deletionScope).length &&
+        accountErasureAdapterIds(this.deletionScope).every(id => job.required.includes(id) && completeCheckpoint(job.checkpoints[id]))) {
       job.completedAt = this.now().toISOString(); delete job.sealedPrincipal;
       return true;
     }
@@ -647,16 +652,16 @@ export class AccountErasureService {
   private receipt(job: Job): AccountErasureReceipt {
     this.validateBoundary(job);
     const remaining = job.required.filter(id => !completeCheckpoint(job.checkpoints[id]));
-    const accountDeleted = !!job.completedAt && remaining.length === 0 && job.required.length === ACCOUNT_ERASURE_ADAPTER_IDS.length &&
-      ACCOUNT_ERASURE_ADAPTER_IDS.every(id => job.required.includes(id) && completeCheckpoint(job.checkpoints[id]));
+    const accountDeleted = !!job.completedAt && remaining.length === 0 && job.required.length === accountErasureAdapterIds(this.deletionScope).length &&
+      accountErasureAdapterIds(this.deletionScope).every(id => job.required.includes(id) && completeCheckpoint(job.checkpoints[id]));
     return { contractVersion: this.contractVersion, deletionScope: this.deletionScope, operationId: job.operationId, requestedAt: job.requestedAt,
       status: accountDeleted ? "deleted" : "deleting", accountDeleted, revocationEnforced: true, remaining,
       ...(accountDeleted ? { completedAt: job.completedAt } : {}),
       pendingReasons: Object.fromEntries(remaining.map(id => [id, job.checkpoints[id]?.reason ?? "cleanup_pending"])) };
   }
   private validateBoundary(job: Job): void {
-    if (!Array.isArray(job.required) || job.required.length !== ACCOUNT_ERASURE_ADAPTER_IDS.length ||
-        new Set(job.required).size !== job.required.length || ACCOUNT_ERASURE_ADAPTER_IDS.some(id => !job.required.includes(id)) ||
+    if (!Array.isArray(job.required) || job.required.length !== accountErasureAdapterIds(this.deletionScope).length ||
+        new Set(job.required).size !== job.required.length || accountErasureAdapterIds(this.deletionScope).some(id => !job.required.includes(id)) ||
         typeof job.operationId !== "string" || !UUID.test(job.operationId) || !job.checkpoints || typeof job.checkpoints !== "object" ||
         !Number.isFinite(Date.parse(job.requestedAt)) || (job.completedAt && !Number.isFinite(Date.parse(job.completedAt)))) {
       throw new AccountErasureError(503, "ERASURE_CHECKPOINT_INVALID");

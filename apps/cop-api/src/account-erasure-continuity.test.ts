@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureService, type AccountErasureAdapter, type AccountErasureProof } from "./account-erasure.js";
+import { ACCOUNT_ERASURE_ADAPTER_IDS, accountErasureAdapterIds, SHARED_ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureService, type AccountErasureAdapter, type AccountErasureProof } from "./account-erasure.js";
 import type { AccountErasureContinuity, AccountErasureDatasetBinding, AccountErasureFenceEntry } from "./account-erasure-continuity.js";
 import { MemoryMobilityStore, type MobilityTransaction } from "./mobility-store.js";
 import type { AuthenticatedActor } from "./security.js";
@@ -46,14 +46,15 @@ class InterruptedStore extends MemoryMobilityStore {
     } }));
   }
 }
-async function setup() {
+async function setup(shared = false) {
+  const ids = accountErasureAdapterIds(shared ? "cop_sim_shared_identity_v1" : undefined);
   const store = new InterruptedStore(), journal = new SyntheticJournal();
   await store.transact([], tx => tx.set("account-safety:store-identity-v1", { storeId }));
-  const adapters = ACCOUNT_ERASURE_ADAPTER_IDS.map(id => ({ id, ready: async () => true,
+  const adapters = ids.map(id => ({ id, ready: async () => true,
     preflight: async () => ({ ready: true as const, version: "synthetic_preflight" }),
     erase: vi.fn(async (..._args: Parameters<AccountErasureAdapter["erase"]>): Promise<AccountErasureProof> =>
       ({ status: "completed", proofId: "synthetic_proof" })) }));
-  const options = { store, identitySecret: secret, issuer, requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS, adapters,
+  const options = { store, identitySecret: secret, issuer, deletionScope: shared ? "cop_sim_shared_identity_v1" as const : undefined, requiredAdapters: ids, adapters,
     accepted: true, expectedGuardStoreId: storeId, continuityRequired: true, continuity: journal, now: () => instant };
   return { store, journal, adapters, options, service: new AccountErasureService(options) };
 }
@@ -260,7 +261,7 @@ describe("independent fence controller recovery", () => {
 
 describe("shared identity deletion recovery without a surviving login", () => {
   it("replays the original encrypted worker principal after complete local job loss and redoes real owner checkpoints", async () => {
-    const f = await setup();
+    const f = await setup(true);
     const originalActor = { ...actor, subjectId: "10000000-0000-4000-8000-000000000001", tokenIssuedAt: instant.getTime() / 1000 };
     const options = { ...f.options, deletionScope: "cop_sim_shared_identity_v1" as const };
     const service = new AccountErasureService(options);
@@ -292,10 +293,10 @@ describe("shared identity deletion recovery without a surviving login", () => {
   it("refuses corrupted encrypted replay principals and v1 fences in the v2 scope", async () => {
     const f = await setup();
     await start(f.service);
-    await expect(new AccountErasureService({ ...f.options, deletionScope: "cop_sim_shared_identity_v1", store: new MemoryMobilityStore() }).init()).rejects.toMatchObject({ status: 503 });
+    await expect(new AccountErasureService({ ...f.options, requiredAdapters: SHARED_ACCOUNT_ERASURE_ADAPTER_IDS, deletionScope: "cop_sim_shared_identity_v1", store: new MemoryMobilityStore() }).init()).rejects.toMatchObject({ status: 503 });
     const first = f.journal.entries[0]!;
     Object.assign(first, { contractVersion: "cop-erasure-fence-entry-v2", deletionScope: "cop_sim_shared_identity_v1" });
     first.job.sealedPrincipal = "broken";
-    await expect(new AccountErasureService({ ...f.options, deletionScope: "cop_sim_shared_identity_v1", store: new MemoryMobilityStore() }).init()).rejects.toMatchObject({ status: 503 });
+    await expect(new AccountErasureService({ ...f.options, requiredAdapters: SHARED_ACCOUNT_ERASURE_ADAPTER_IDS, deletionScope: "cop_sim_shared_identity_v1", store: new MemoryMobilityStore() }).init()).rejects.toMatchObject({ status: 503 });
   });
 });

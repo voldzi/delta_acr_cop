@@ -7,18 +7,26 @@ import type { AuthenticatedActor } from "./security.js";
 const version = "cop-sim-user-lifecycle-v1", scope = "cop_sim_shared_identity_v1";
 const receiptSchema = z.strictObject({ contractVersion: z.literal(version), scope: z.literal(scope), resetEpoch: z.uuid(),
   operationId: z.uuid(), state: z.enum(["deletion_pending", "deleted"]), component: z.enum(["ai", "driver"]), wholeAccountComplete: z.literal(false) });
+const appVersion = "cop-sim-user-data-v1";
+const appReceiptSchema = z.strictObject({ contractVersion: z.literal(appVersion), scope: z.literal(scope), resetEpoch: z.uuid(),
+  operationId: z.uuid(), state: z.enum(["deletion_pending", "deleted"]), component: z.literal("sim_user_data"),
+  subcomponents: z.strictObject({ app_store: z.enum(["pending", "deleted"]), audit_and_publisher: z.enum(["pending", "deleted"]),
+    router_sim_history: z.enum(["pending", "deleted"]) }), wholeAccountComplete: z.literal(false) });
+const appCapSchema = z.strictObject({ contractVersion: z.literal(appVersion), scope: z.literal(scope), resetEpoch: z.uuid(),
+  component: z.literal("sim_user_data"), ready: z.boolean(), wholeAccountComplete: z.literal(false) });
 const capSchema = z.strictObject({ contractVersion: z.literal(version), scope: z.literal(scope), resetEpoch: z.uuid(),
   component: z.enum(["ai", "driver"]), ready: z.boolean(), wholeAccountComplete: z.literal(false) });
-interface Config extends CleanLifecycleActorConfig { baseUrl: string; token: string; component: "ai" | "driver"; now?: () => Date }
+interface Config extends CleanLifecycleActorConfig { baseUrl: string; token: string; component: "ai" | "driver" | "sim_user_data"; now?: () => Date }
 export function createSimCleanLifecycleErasureAdapter(config: Config): AccountErasureAdapter & { verifiedCompletedOperationProof(actor: AuthenticatedActor, context: AccountErasureOperationContext): Promise<import("./account-erasure.js").AccountErasureProof> } {
   validateCleanLifecycleConfig(config);
   const root = new URL(config.baseUrl);
   if (!["http:", "https:"].includes(root.protocol) || root.username || root.password || root.search || root.hash || root.pathname !== "/" ||
     config.token.length < 32 || /[\u0000-\u001f\u007f]/u.test(config.token)) throw Error("CLEAN_SIM_CONFIG_INVALID");
-  const path = config.component === "ai" ? "/api/v1/ai-router/internal/user-lifecycle/v1" : "/api/v1/internal/user-lifecycle/v1";
+  const selectedVersion = config.component === "sim_user_data" ? appVersion : version;
+  const path = config.component === "sim_user_data" ? "/api/v1/internal/sim-user-data/v1" : config.component === "ai" ? "/api/v1/ai-router/internal/user-lifecycle/v1" : "/api/v1/internal/user-lifecycle/v1";
   async function call(suffix: string, signal: AbortSignal, actor?: AuthenticatedActor, context?: AccountErasureOperationContext) {
     if (actor && (actor.authMode !== "oidc" || actor.issuer !== config.issuer || !context)) throw Error("CLEAN_SIM_OWNER_INVALID");
-    const body = suffix === "/deletions" && context ? { contractVersion: version, scope, resetEpoch: config.resetEpoch,
+    const body = suffix === "/deletions" && context ? { contractVersion: selectedVersion, scope, resetEpoch: config.resetEpoch,
       operationId: context.operationId, requestedAt: context.requestedAt } : undefined;
     const headers = actor && context ? signedCleanLifecycleActor(config, actor.subjectId,
       { operationId: context.operationId, requestedAt: context.requestedAt, now: config.now?.(), tokenIssuedAt: actor.tokenIssuedAt }) : {};
@@ -33,13 +41,14 @@ export function createSimCleanLifecycleErasureAdapter(config: Config): AccountEr
     }
     const value: unknown = JSON.parse((await readBoundedBody(response, 16384)).toString("utf8"));
     if (!context) {
-      const cap = capSchema.parse(value);
+      const cap = config.component === "sim_user_data" ? appCapSchema.parse(value) : capSchema.parse(value);
       if (cap.resetEpoch !== config.resetEpoch || cap.component !== config.component || !cap.ready) throw Error("CLEAN_SIM_NOT_READY");
       return cap;
     }
-    const receipt = receiptSchema.parse(value);
+    const receipt = config.component === "sim_user_data" ? appReceiptSchema.parse(value) : receiptSchema.parse(value);
     if (receipt.resetEpoch !== config.resetEpoch || receipt.operationId !== context.operationId || receipt.component !== config.component ||
-      (response.status === 202 && receipt.state === "deleted")) throw Error("CLEAN_SIM_UNPROVEN");
+      (response.status === 202 && receipt.state === "deleted") ||
+      (receipt.state === "deleted" && "subcomponents" in receipt && Object.values(receipt.subcomponents).some(state => state !== "deleted"))) throw Error("CLEAN_SIM_UNPROVEN");
     return receipt;
   }
   async function ready(): Promise<boolean> { try { await call("/capabilities", AbortSignal.timeout(10000)); return true; } catch { return false; } }
@@ -49,11 +58,11 @@ export function createSimCleanLifecycleErasureAdapter(config: Config): AccountEr
       ? { status: "completed" as const, proofId: createHash("sha256").update(JSON.stringify([context.accountKey,current])).digest("hex") }
       : { status: "pending" as const, remaining: "cleanup_pending" as const };
   }
-  return { id: config.component === "ai" ? "ai_router" : "sim_measurements", ready, verifiedCompletedOperationProof,
+  return { id: config.component === "sim_user_data" ? "sim_user_data" : config.component === "ai" ? "ai_router" : "sim_measurements", ready, verifiedCompletedOperationProof,
     async preflight(actor, context) {
       if (actor.authMode !== "oidc" || actor.issuer !== config.issuer) return { ready: false, reason: "ownership_unresolved" };
       try { signedCleanLifecycleActor(config, actor.subjectId, { tokenIssuedAt: actor.tokenIssuedAt }); await call("/capabilities", context.signal);
-        return { ready: true, version: createHash("sha256").update(JSON.stringify([version,config.resetEpoch,config.component,actor.issuer,actor.subjectId])).digest("hex") };
+        return { ready: true, version: createHash("sha256").update(JSON.stringify([selectedVersion,config.resetEpoch,config.component,actor.issuer,actor.subjectId])).digest("hex") };
       } catch { return { ready: false, reason: "adapter_unavailable" }; }
     },
     async erase(actor, context) {

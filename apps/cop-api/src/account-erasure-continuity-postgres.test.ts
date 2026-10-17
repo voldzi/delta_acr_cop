@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { createHash, createHmac, createSign, generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureService, type AccountErasureAdapter } from "./account-erasure.js";
+import { ACCOUNT_ERASURE_ADAPTER_IDS, SHARED_ACCOUNT_ERASURE_ADAPTER_IDS, AccountErasureService, type AccountErasureAdapter } from "./account-erasure.js";
 import { PostgresMobilityStore } from "./mobility-store.js";
 import { PostgresDriverMeasurementConsentStore } from "./driver-measurement-consent-store.js";
 import { opaqueUserId } from "./ai-router-chat.js";
@@ -99,7 +99,7 @@ describe.skipIf(!url || !local)("actual PostgreSQL independent deletion journal 
       if (init?.method === "DELETE") { identityPresent = false; deletes++; return new Response(null, { status: 204 }); }
       return identityPresent ? Response.json({ id: principal.subjectId, createdTimestamp: 123 }) : new Response(null, { status: 404 });
     });
-    const ports = ACCOUNT_ERASURE_ADAPTER_IDS.filter(id => id !== "backup_restore" && id !== "keycloak").map(id => ({ id, ready: async () => true,
+    const ports = SHARED_ACCOUNT_ERASURE_ADAPTER_IDS.filter(id => id !== "backup_restore" && id !== "keycloak").map(id => ({ id, ready: async () => true,
       preflight: async () => ({ ready: true as const, version: "synthetic_real_owner" }), erase: cleanup }));
     const make = (store: PostgresMobilityStore, bridge: PostgresAccountErasureContinuity) => {
       let service: AccountErasureService;
@@ -107,7 +107,7 @@ describe.skipIf(!url || !local)("actual PostgreSQL independent deletion journal 
         clientSecret: "synthetic-only", authorityAccepted: true,
         assertCopAccessFenced: (owner, context) => service.operationFenceConfirmed(owner, context) }, store);
       service = new AccountErasureService({
-        store, identitySecret: secret, issuer: identityIssuer, requiredAdapters: ACCOUNT_ERASURE_ADAPTER_IDS,
+        store, identitySecret: secret, issuer: identityIssuer, requiredAdapters: SHARED_ACCOUNT_ERASURE_ADAPTER_IDS,
         adapters: [...ports, identityAdapter, createBackupRestoreErasureAdapter({ continuity: bridge, issuer: identityIssuer, identitySecret: secret })] as AccountErasureAdapter[],
         accepted: true, expectedGuardStoreId: binding.applicationStoreId, continuityRequired: true, continuity: bridge, deletionScope: "cop_sim_shared_identity_v1" });
       return service;
@@ -131,7 +131,7 @@ describe.skipIf(!url || !local)("actual PostgreSQL independent deletion journal 
       await restored.resumePending(); expect((await restored.read(principal, op)).accountDeleted).toBe(true);
       expect((await target.query("SELECT owner_id FROM fixture_shared_user_data ORDER BY owner_id")).rows).toEqual([{ owner_id: "synthetic-b" }]);
       expect((await admin.query("SELECT count(*) FROM cop_safety_v2.fences")).rows[0].count).toBe("1");
-      expect(cleanup).toHaveBeenCalledTimes(18); expect(deletes).toBe(1); expect(identityPresent).toBe(false);
+      expect(cleanup).toHaveBeenCalledTimes(20); expect(deletes).toBe(1); expect(identityPresent).toBe(false);
     } finally { globalThis.fetch = nativeFetch; await Promise.all(stores.map(value => value.close())); }
   });
   it("commits immutable exact-account evidence, serializes two clients and recovers the original operation", async () => {
