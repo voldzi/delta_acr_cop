@@ -32,7 +32,12 @@ try{
  await db.query("INSERT INTO cop_mobility_v1 VALUES('identity:synthetic-a','{}'),('vehicle:synthetic-a','{}'),('system-configuration','{\"keep\":true}')");
  await db.query("CREATE TABLE cop_community_erasure_ownership(id int PRIMARY KEY,subject_id text); INSERT INTO cop_community_erasure_ownership VALUES(1,'synthetic A')");
  await db.query("CREATE TABLE cop_domain_events(id int PRIMARY KEY,entity_type text NOT NULL,payload text); INSERT INTO cop_domain_events VALUES(1,'auditRecord','synthetic user audit'),(2,'sensorObservation','preserved provider sentinel')");
- const auth={contractVersion:'cop-clean-user-reset-authorization-v1',allCopWritersStopped:true,oldIdentityAdmissionClosed:true,testDataDestructionApproved:true,createOldDataBackup:false,resetEpoch:randomUUID(),tokensNotBefore:1792195200};
+ await db.query("CREATE TABLE cop_incidents(id int PRIMARY KEY,record text); CREATE TABLE cop_incident_tasks(id int PRIMARY KEY REFERENCES cop_incidents(id),record text); CREATE TABLE cop_edge_replay_cursors(id int PRIMARY KEY,updated_by text); CREATE TABLE cop_domain_dead_letters(id int PRIMARY KEY,body_json text); CREATE TABLE cop_openai_mcp_usage(id int PRIMARY KEY,scope text)");
+ await db.query("INSERT INTO cop_incidents VALUES(1,'synthetic incident'); INSERT INTO cop_incident_tasks VALUES(1,'synthetic task'); INSERT INTO cop_edge_replay_cursors VALUES(1,'synthetic user')");
+ const auth={rootAdmission:{assertCurrent:async()=>{}},contractVersion:'cop-clean-user-reset-authorization-v1',allCopWritersStopped:true,oldIdentityAdmissionClosed:true,testDataDestructionApproved:true,createOldDataBackup:false,resetEpoch:randomUUID(),tokensNotBefore:1792195200};
+ await db.query("INSERT INTO cop_domain_dead_letters VALUES(1,'synthetic unclassified queue')");
+ await assert.rejects(inspectCopUserReset(db),/RESET_UNCLASSIFIED_QUEUE_OR_BILLING_DATA/);checks++;
+ await db.query('DELETE FROM cop_domain_dead_letters');
  const p=await inspectCopUserReset(db);check(p.kv.user_rows===2&&p.kv.total===3);
  await assert.rejects(applyCopUserReset(db,p,{...auth,testDataDestructionApproved:false}),/RESET_AUTHORIZATION_REQUIRED/);checks++;
  await assert.rejects(applyCopUserReset(db,{...p,counts:{}},auth),/RESET_AUTHORIZATION_REQUIRED/);checks++;
@@ -50,9 +55,12 @@ try{
  check(Number((await db.query('SELECT count(*) n FROM cop_user_profiles')).rows[0].n)===2);
  check(Number((await db.query('SELECT count(*) n FROM cop_mobility_v1')).rows[0].n)===3);
  await db.query('ALTER TABLE cop_user_profiles DROP CONSTRAINT cop_clean_profile_issuer');
+ let calls=0;
+ await assert.rejects(applyCopUserReset(db,await inspectCopUserReset(db),{...auth,rootAdmission:{assertCurrent:async()=>{if(++calls===2)throw Error('synthetic admission lost')}}}),/synthetic admission lost/);checks++;
+ check(Number((await db.query('SELECT count(*) n FROM cop_user_profiles')).rows[0].n)===2);
  const result=await applyCopUserReset(db,await inspectCopUserReset(db),auth);
- check(result.removedRows===userTables.length+5&&result.configurationPreserved&&result.oldDataBackupCreated===false);
- for(const t of userTables)check(Number((await db.query('SELECT count(*) n FROM '+t)).rows[0].n)===0);
+ check(result.removedRows===userTables.length+8&&result.configurationPreserved&&result.oldDataBackupCreated===false);
+ for(const t of [...userTables,'cop_incident_tasks','cop_incidents','cop_edge_replay_cursors'])check(Number((await db.query('SELECT count(*) n FROM '+t)).rows[0].n)===0);
  check((await db.query('SELECT key FROM cop_mobility_v1')).rows[0].key==='system-configuration');
  check(Number((await db.query('SELECT count(*) n FROM cop_community_erasure_ownership')).rows[0].n)===0);
  check((await db.query('SELECT entity_type,payload FROM cop_domain_events')).rows[0].payload==='preserved provider sentinel');

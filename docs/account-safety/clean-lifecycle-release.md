@@ -86,3 +86,34 @@ composition tests: 12 passed; types and OpenAPI passed (25 existing warnings).
 The updated offline runtime suite passed 77 tests; the old scope cannot authorize
 the new SIM app credentials. This is source/test evidence, not whole-service or
 production acceptance.
+
+## Root reset components, not yet one production release
+
+The current finite COP reset additionally covers optional incident/task tables
+and regenerated Edge replay cursors. Live read-only inventory found those
+incident/task tables empty, dead letters empty, legacy MCP usage empty, one
+cursor and six audit events. Unknown nonempty dead letters or MCP billing now
+block the reset instead of being silently deleted. Official track data remains
+outside the reset. The updated owned PostgreSQL test passed 48 assertions,
+including transaction rollback, writer-admission loss and an actual restart.
+
+The Synapse schema94 reset component passed 177 assertions against an owned
+PostgreSQL cluster compiled from the exact schema-only export. It preserves only
+configured server/control state, the original bot identity/password binding and
+the configured administrator credential. Messaging metadata preserves only the
+original fixed bot mapping. This test did not invoke live Synapse HTTP.
+
+Separate native-media, Edge-state and Root protocol components have 4, 5, 8 and
+5 isolated checks respectively. Edge keeps node configuration, clears disposable
+event copies/cursors/errors, refuses accepted fence files and uses atomic replace.
+The Root private worker/controller checks exact plans, live stopped writers,
+producer custody and nonreplayable leases; credentials travel only over stdin.
+These components have no standalone apply CLI. The final release coordinator,
+all-provider acceptance, SIM application-data production enrollment and Root
+activation remain unfinished. Do not present these component tests as a
+production reset or account-deletion acceptance.
+
+A separate build-only script for API revision `6c5c9855b29644cdc6e86b5b66166c861226cdba`
+was staged on the server for operator execution. It seals only the fresh public
+X5 checkout and builds through the existing guarded deployment path; it does not
+reset data, activate a release or enable account deletion.

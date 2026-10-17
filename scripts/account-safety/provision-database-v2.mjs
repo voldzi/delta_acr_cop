@@ -208,6 +208,7 @@ function appendFields(original, fields) {
   return Buffer.from(out);
 }
 export function validateManifest(v) {
+  const clean = v?.contractVersion === "cop-database-safety-provision-clean-v1";
   need(
     exact(v, [
       "contractVersion",
@@ -220,12 +221,15 @@ export function validateManifest(v) {
       "initialDigest",
       "identityEvidenceDigest",
       "identityBinding",
-      "postgresCaSha256"
+      "postgresCaSha256",
+      ...(clean ? ["deletionScope", "resetEpoch", "tokensNotBefore"] : [])
     ]),
     "MANIFEST_INVALID"
   );
   need(
-    v.contractVersion === "cop-database-safety-provision-v1" &&
+    (v.contractVersion === "cop-database-safety-provision-v1" || clean) &&
+      (!clean || v.deletionScope === "cop_sim_shared_identity_v1" && UUID.test(v.resetEpoch ?? "") &&
+        Number.isSafeInteger(v.tokensNotBefore) && v.tokensNotBefore > 0 && v.tokensNotBefore <= Math.floor(Date.now()/1000)) &&
       v.firstEnrollment === true &&
       typeof v.allowGenerateErasureSecret === "boolean" &&
       v.restoreGeneration === 1 &&
@@ -455,13 +459,20 @@ function expectedConfig(manifest, secret) {
     fingerprint: hash("cop-account-erasure-config-v1\0" + secret),
     issuerFingerprint: hash(manifest.identityBinding.issuer),
     version: 4,
-    deletionScope: "cop_jizda_preserve_shared_identity_sim",
+    deletionScope: manifest.contractVersion === "cop-database-safety-provision-clean-v1" ? "cop_sim_shared_identity_v1" : "cop_jizda_preserve_shared_identity_sim",
     storeId: manifest.applicationStoreId,
     datasetBinding: { incarnationId: manifest.incarnationId, restoreGeneration: manifest.restoreGeneration },
     accepted: false
   };
 }
 async function businessState(client, manifest, config) {
+  if (manifest.contractVersion === "cop-database-safety-provision-clean-v1") {
+    need((await client.query("SELECT to_regclass('public.cop_clean_reset_epoch') IS NOT NULL present")).rows[0].present, "BUSINESS_STATE_CONFLICT");
+    const rows = (await client.query("SELECT reset_epoch,tokens_not_before,scope FROM public.cop_clean_reset_epoch WHERE singleton")).rows;
+    need(rows.length === 1 && rows[0].reset_epoch === manifest.resetEpoch && Number(rows[0].tokens_not_before) === manifest.tokensNotBefore &&
+      rows[0].scope === manifest.deletionScope, "BUSINESS_STATE_CONFLICT");
+  }
+
   const rows = (
     await client.query("SELECT key,value FROM public.cop_mobility_v1 WHERE key=ANY($1::text[])", [[STORE, CONFIG]])
   ).rows;

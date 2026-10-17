@@ -11,6 +11,8 @@ import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { mkdtemp, chmod, mkdir, writeFile, readFile, rm, realpath, rename, symlink } from "node:fs/promises";
 import { join } from "node:path";
+const cleanProfile = process.argv.length === 3 && process.argv[2] === "--clean";
+assert.ok(process.argv.length === 2 || cleanProfile);
 const require = createRequire(new URL("../apps/cop-api/package.json", import.meta.url));
 const run = promisify(execFile);
 const BIN = "/opt/homebrew/Cellar/postgresql@18/18.3/bin";
@@ -293,6 +295,11 @@ async function main() {
     },
     postgresCaSha256: hash("synthetic-ca-not-used-over-owned-loopback")
   };
+  if (cleanProfile) {
+    Object.assign(manifest,{contractVersion:"cop-database-safety-provision-clean-v1",deletionScope:"cop_sim_shared_identity_v1",resetEpoch:randomUUID(),tokensNotBefore:Math.floor(Date.now()/1000)-1});
+    await business.query("CREATE TABLE cop_clean_reset_epoch(singleton boolean PRIMARY KEY,reset_epoch uuid NOT NULL,tokens_not_before bigint NOT NULL,scope text NOT NULL)");
+    await business.query("INSERT INTO cop_clean_reset_epoch VALUES(true,$1,$2,$3)",[manifest.resetEpoch,manifest.tokensNotBefore,manifest.deletionScope]);
+  }
   await saveEnv();
   await saveManifest();
 

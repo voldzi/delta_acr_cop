@@ -104,7 +104,7 @@ try:
         raise SystemExit('Invalid Root account erasure proof')
     value=json.loads(os.read(fd,65537))
     generation=value.get('previous',{}).get('generation','')
-    if value.get('contractVersion')!='cop-api-account-erasure-config-v1' or not isinstance(generation,str) or not re.fullmatch(r'[a-f0-9]{32}',generation):
+    if value.get('contractVersion') not in ('cop-api-account-erasure-config-v1', 'cop-api-account-erasure-clean-config-v1') or not isinstance(generation,str) or not re.fullmatch(r'[a-f0-9]{32}',generation):
         raise SystemExit('Invalid Root account erasure CAS generation')
     print(generation)
 finally:
