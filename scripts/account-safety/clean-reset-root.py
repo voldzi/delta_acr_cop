@@ -156,7 +156,7 @@ def validate_plan(plan):
             need(not rel.is_absolute() and '..' not in rel.parts and HEX.fullmatch(digest),
                  'RESET_ROOT_PLAN_SOURCE_FILE')
     need(isinstance(plan['reviewedPlanDigests'], dict)
-         and set(plan['reviewedPlanDigests']) == {'cop', 'ai', 'driver', 'files', 'keycloak', 'messaging', 'media', 'edge', 'sim_app_files', 'sim_user_install', 'cop_safety_install'}
+         and set(plan['reviewedPlanDigests']) == {'cop', 'ai', 'driver', 'files', 'keycloak', 'messaging', 'media', 'edge', 'sim_app_files', 'sim_user_install', 'cop_safety_install', 'messaging_install'}
          and all(isinstance(x, str) and HEX.fullmatch(x) for x in plan['reviewedPlanDigests'].values())
          and HEX.fullmatch(plan['producerInventorySha256']), 'RESET_ROOT_PLAN_REVIEWED_SCOPE')
     lock = plan['operationLockMetadata']

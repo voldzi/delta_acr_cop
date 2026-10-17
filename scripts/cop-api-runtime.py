@@ -79,7 +79,7 @@ CLEAN_ERASURE_PROOF_CHECKS = {'jointSyntheticAcceptance', 'providerClosureVerifi
 CLEAN_ERASURE_PROOF_VERSION = 'cop-api-account-erasure-clean-config-v1'
 CLEAN_RESET_DIRECTORY = SOURCE / 'runtime/clean-reset'
 CLEAN_RESET_PHASES = ['identity', 'cop', 'ai', 'driver', 'files', 'sim_app_files',
-                      'sim_user_install', 'cop_safety_install', 'remaining', 'readback', 'sim_config']
+                      'sim_user_install', 'cop_safety_install', 'remaining', 'messaging_install', 'readback', 'sim_config']
 
 
 

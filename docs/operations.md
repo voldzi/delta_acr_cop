@@ -410,3 +410,23 @@ still missing from the finite reset installer. The metadata/native reset must
 not be presented as that installation. The old SIM Router also crashed under
 a real idle database disconnect; its corrected immutable image needs real
 outage acceptance. Do not enable production deletion from this progress record.
+
+### Concrete Messaging initial schema stage
+
+`scripts/account-safety/clean-messaging-install.py` supplies the missing initial
+schema/binding stage for the measured production layout (only private native
+schema present; metadata/independent guard not enrolled). It uses three existing
+Root administrator connections, verifies the exact untouched source/configuration
+plan, then installs the published native, metadata and guard SQL under the held
+finite reset admission. It retains the original fixed service mapping and uses
+the existing restricted `csm_messaging` login with scoped guard grants. The
+metadata store table is transferred to the administrator before runtime grants.
+No credential, role, account, network, backup or public port is created.
+
+The separate SIM `messaging_install` phase performs exactly one real first-use
+baseline commit after this stage and after reset, before final readback. Root
+review requires a dedicated twelfth digest; the activation receipt requires the
+extra phase in its exact sequence. The Node reset workers do not receive the
+Messaging enrollment root key. This is source preparation until the fresh
+PostgreSQL/Synapse integration test and Root production invocation succeed;
+unit/syntax checks do not establish successful production installation.

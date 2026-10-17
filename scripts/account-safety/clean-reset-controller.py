@@ -112,11 +112,14 @@ def run_private_worker(admission, config):
     need(isinstance(config, dict) and config.get('contractVersion') == 'cop-sim-clean-reset-worker-v1'
          and config.get('phase') in (set(PHASE_PLAN) | READBACK_PHASES) and config.get('resetEpoch') == plan['resetEpoch']
          and config.get('tokensNotBefore') == plan['tokensNotBefore'] and config.get('simSource') == '/reviewed/sim'
-         and config.get('reviewedPlanDigests') == {k: plan['reviewedPlanDigests'][k] for k in ['cop', 'ai', 'driver', 'files', 'keycloak', 'sim_app_files', 'sim_user_install', 'cop_safety_install']},
+         and config.get('reviewedPlanDigests') == {k: plan['reviewedPlanDigests'][k] for k in ['cop', 'ai', 'driver', 'files', 'keycloak', 'sim_app_files', 'sim_user_install', 'cop_safety_install', 'messaging_install']},
          'RESET_CONTROLLER_CONFIG_BINDING')
     dispatch = PrivateWorkerDispatch(admission, config['phase'])
     if config['phase'] == 'readback':
         dispatch.file_readback_config = {**config, 'phase': 'file_readback'}
+    # The Messaging initial-enrollment root key belongs only to its Python
+    # Root phase; do not forward it to unrelated Node reset workers.
+    config = {k: v for k, v in config.items() if k != 'messagingInstall'}
     host_files = config['phase'] in HOST_FILE_PHASES
     runtime = Path(plan['operatorRuntime']['root']) / 'runtime'
     args = [str(runtime / 'lib/ld-musl-x86_64.so.1'), '--library-path',
