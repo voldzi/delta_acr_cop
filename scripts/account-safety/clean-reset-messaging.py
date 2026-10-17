@@ -32,6 +32,9 @@ def canonical_principal(server):
 
 def profile():
     raw = PROFILE.read_bytes()
+    need(hashlib.sha256(raw).hexdigest() ==
+         '6c3e89ea8ebd90c2f7f89b0fb30c8fdf795199a31b8504380769f42cef6919e6',
+         'RESET_NATIVE_PROFILE_BYTES_CHANGED')
     p = json.loads(raw)
     need(p['contractVersion'] == 'cop-native-clean-reset-profile-v1' and p['schemaVersion'] == 94
          and len(p['configurationTables']) + len(p['dataTables']) == p['publicTableCount']

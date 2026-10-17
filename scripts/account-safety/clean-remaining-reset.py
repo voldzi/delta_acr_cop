@@ -271,6 +271,7 @@ def prepare_remaining_reset(plan, private_config, remote):
     need(_prepared is None and os.getuid() == 0 and socket.gethostname().split('.')[0] == 'docker',
          'RESET_REMAINING_ROOT_REQUIRED')
     value = validate_configuration(plan, private_config)
+    source(plan, 'scripts/account-safety/native94-reset-profile.json')
     messaging = load(plan, 'clean-reset-messaging.py', 'remaining_messaging')
     s3 = load(plan, 'clean-reset-s3.py', 'remaining_s3')
     connections = {}

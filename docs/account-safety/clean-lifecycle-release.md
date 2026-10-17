@@ -304,5 +304,34 @@ A scan verified they did not enter Docker configuration metadata.
 
 Entrypoints are `prepare-clean-whole12-fixture.py` and
 `clean-whole12-keycloak-seed.mjs`. This proves namespace/identity preparation,
-not completed deletion. SIM is preparing unchanged-production-bootstrap TLS
-composition for this namespace. Full12 and production enablement remain pending.
+not completed deletion. SIM's unchanged-production-bootstrap TLS composition is
+running in this namespace. Full12 and production enablement remain pending.
+
+The actual additional fixtures now include Synapse 1.156.0 with its reviewed
+provider, Messaging image `9d7fc989`, PostGIS 18.6/3.6.4, SeaweedFS 4.45, Edge,
+LiveKit and its Unix socket proxy. Actual Matrix startup SQL/catalog checks,
+provider capability/acceptance and hydration passed. The HTTPS fixture proxy
+must forward `/_synapse/client/cop/` as well as Matrix/admin paths; omitting it
+returned a real 404 and correctly prevented hydration. The private Unix socket
+also requires the actual Messaging process UID 1000; root without capabilities
+cannot traverse its owner-only directory. Both fixture errors were corrected.
+
+Actual S3 checks verified interruption of an admitted old-key upload, old-key
+denial, new-key access and preservation of the other synthetic identity/bucket.
+Actual LiveKit room create/list/delete passed. COP generated real A/B profiles,
+devices, consents, mobility rows, one-hour voice JWTs, reports and guarded S3
+uploads. Matrix metadata was created by six real HTTP producer calls. A helper
+failure after those calls was recovered from the six unique actual records;
+requests were not replayed to manufacture a successful seed checkpoint.
+
+`fixtures/whole12-check.mjs` uses actual provider/SQL readbacks and fresh Keycloak
+PKCE logins. Its current preflight rejects the driver because the SIM TLS
+fixture omitted the real worker start; a SQL readback alone is insufficient.
+SIM is correcting that fixture. The full deletion and post-restore cleanup
+tests are not yet accepted. No production services, identities or switches were
+changed by these fixtures.
+
+The reviewed native reset profile is now pinned by its complete raw SHA-256,
+not only its own claimed digest and table count. A two-case boundary test proves
+that reclassifying a configuration table as user data is rejected even when the
+total table count and embedded export labels remain unchanged.
