@@ -67,6 +67,10 @@ try{
   }
  }else if(action==='confirm'||action==='retry'){
   const c=read('whole12-before.json');
+  const snapshot=read('whole12-snapshot.json');
+  assert.equal(snapshot.contractVersion,'cop-clean-whole12-pre-deletion-snapshot-v1');
+  assert.equal(snapshot.operationId,c.operationId);assert.equal(snapshot.independentGuardIncluded,false);
+  assert.equal(snapshot.dumps.length,3);
   const r=await request('POST',path,{confirmAccountDeletion:true},{...headers('a'),'idempotency-key':c.operationId,
    'x-cop-erasure-plan':c.planId,'x-cop-erasure-receipt-capability':c.receiptCapability});
   save('whole12-'+action+'-'+randomUUID()+'.json',{operationId:c.operationId,status:r.status,value:r.value,checkedAt:new Date().toISOString()});
@@ -74,6 +78,15 @@ try{
    contractVersion:r.value?.contractVersion,status:r.value?.status,accountDeleted:r.value?.accountDeleted,
    errorCode:r.value?.error?.code,productionTouched:false}));
   assert([202,503].includes(r.status));
+ }else if(action==='cross_account'){
+  const c=read('whole12-before.json');
+  const profile=await request('GET','/api/v1/me/preferences',null,headers('b'));
+  assert.equal(profile.status,200);
+  const r=await request('POST',path,{confirmAccountDeletion:true},{...headers('b'),'idempotency-key':c.operationId,
+   'x-cop-erasure-plan':c.planId,'x-cop-erasure-receipt-capability':c.receiptCapability});
+  assert([409,503].includes(r.status));
+  save('whole12-cross-account.json',{operationId:c.operationId,profileStatus:profile.status,rejectedStatus:r.status});
+  console.log(JSON.stringify({phase:'whole12_actual_cross_account_rejected',httpStatus:r.status,controlProfileStatus:profile.status,productionTouched:false}));
  }else if(action==='receipt'){
   const c=read('whole12-before.json');const r=await request('GET',path+'/receipts/'+c.operationId,null,{'x-cop-erasure-receipt-capability':c.receiptCapability});
   console.log(JSON.stringify({phase:'whole12_actual_receipt',operationId:c.operationId,httpStatus:r.status,

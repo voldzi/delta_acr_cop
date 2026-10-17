@@ -77,6 +77,9 @@ CLEAN_ERASURE_CONFIG_KEYS = ERASURE_CONFIG_KEYS | frozenset({
 CLEAN_ERASURE_PROOF_CHECKS = {'jointSyntheticAcceptance', 'providerClosureVerified',
                              'sharedIdentityDeletionApproved', 'cleanResetVerified', 'restoreReplayVerified'}
 CLEAN_ERASURE_PROOF_VERSION = 'cop-api-account-erasure-clean-config-v1'
+CLEAN_RESET_DIRECTORY = SOURCE / 'runtime/clean-reset'
+CLEAN_RESET_PHASES = ['identity', 'cop', 'ai', 'driver', 'files', 'sim_app_files',
+                      'sim_user_install', 'cop_safety_install', 'remaining', 'readback', 'sim_config']
 
 
 
@@ -278,6 +281,55 @@ def health_statuses(value):
                             for key, state in dependencies.items()), 'health_witness_status_invalid')
     require(value[HEALTH_URLS[0]]['httpStatus'] == 200, 'health_witness_status_invalid')
     return value
+
+
+def stopped_clean_baseline(proof, previous, actual, receipt_raw, baseline_raw, now=None):
+    """Validate actual Root-owned reset output before using pre-stop health.
+    This never authorizes an old-image restart or manufactures a healthy state.
+    The normal live source path does not use this exceptional reset transition.
+    """
+    require(proof.get('contractVersion') == CLEAN_ERASURE_PROOF_VERSION
+            and proof.get('operation') == 'prepare', 'clean_stopped_source_scope')
+    reset = proof.get('cleanReset', {})
+    require(sha(receipt_raw) == reset.get('receiptSha256'), 'clean_reset_receipt_changed')
+    receipt, baseline = json.loads(receipt_raw), json.loads(baseline_raw)
+    require(isinstance(receipt, dict) and set(receipt) == {
+        'contractVersion', 'resetEpoch', 'preStopReportSha256', 'completedPhases',
+        'simConfiguration', 'servicesRestarted', 'runtimeFlagsEnabled', 'wholeAccountComplete'}
+        and receipt['contractVersion'] == 'cop-sim-common-reset-fenced-v1'
+        and receipt['resetEpoch'] == reset.get('resetEpoch')
+        and receipt['completedPhases'] == CLEAN_RESET_PHASES
+        and receipt['servicesRestarted'] is False and receipt['runtimeFlagsEnabled'] is False
+        and receipt['wholeAccountComplete'] is False
+        and re.fullmatch(r'[0-9a-f]{64}', receipt['preStopReportSha256'] or ''),
+        'clean_reset_receipt_incomplete')
+    staged = receipt['simConfiguration']
+    require(isinstance(staged, dict) and set(staged) == {'contractVersion', 'environmentSha256',
+        'overlaySha256', 'intakeEnabled', 'baseCleanEnabled', 'servicesStarted'}
+        and staged['contractVersion'] == 'sim-clean-runtime-config-staged-v1'
+        and all(re.fullmatch(r'[0-9a-f]{64}', staged[k] or '') for k in ('environmentSha256', 'overlaySha256'))
+        and all(staged[k] is False for k in ('intakeEnabled', 'baseCleanEnabled', 'servicesStarted')),
+        'clean_reset_configuration_incomplete')
+    require(isinstance(baseline, dict) and set(baseline) == {
+        'contractVersion', 'resetEpoch', 'containerId', 'imageId',
+        'preStopReportSha256', 'checkedAt', 'statuses'}
+        and baseline['contractVersion'] == 'cop-clean-pre-stop-health-v1'
+        and baseline['resetEpoch'] == receipt['resetEpoch']
+        and baseline['preStopReportSha256'] == receipt['preStopReportSha256']
+        and baseline['containerId'] == previous['containerId'] == actual['Id']
+        and baseline['imageId'] == previous['imageId'] == actual['Image'],
+        'clean_reset_health_binding')
+    state = actual.get('State', {})
+    require(state.get('Running') is False and state.get('Restarting') is False
+            and state.get('Status') == 'exited' and state.get('Pid') == 0,
+            'clean_reset_source_not_stopped')
+    stamp = baseline['checkedAt']
+    require(isinstance(stamp, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', stamp),
+            'clean_reset_health_time')
+    checked = datetime.strptime(stamp, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc).timestamp()
+    current = datetime.now(timezone.utc).timestamp() if now is None else now
+    require(0 <= current - checked <= 3600, 'clean_reset_health_time')
+    return encoded(health_statuses(baseline['statuses']))
 
 
 def overlay(binding, mode):
@@ -1101,6 +1153,17 @@ class Store:
         with self.erasure_configuration_scope(directory, binding, profile, previous):
             return self._activate(release, expected, adopt, rollback)
 
+    def stopped_reset_health(self, binding, previous, actual):
+        reference = binding.get('accountErasureConfig')
+        require(reference is not None, 'clean_stopped_source_scope')
+        _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
+        self.protected_directory(CLEAN_RESET_DIRECTORY)
+        receipt = private_read(CLEAN_RESET_DIRECTORY / 'reset-result.json', self.protected_uid,
+                               mode=0o640, gid=self.protected_gid)
+        baseline = private_read(CLEAN_RESET_DIRECTORY / 'pre-stop-health.json', self.protected_uid,
+                                mode=0o640, gid=self.protected_gid)
+        return stopped_clean_baseline(proof, previous, actual, receipt, baseline)
+
     def _activate(self, release, expected, adopt=False, rollback=False):
         self.clean(); previous = self.check_cas(expected)
         directory, binding, profile = self.binding(release)
@@ -1139,8 +1202,21 @@ class Store:
             return self.commit_pointer(binding, expected, binding['legacyContainerId'])
         require(previous is not None, 'accepted_baseline_pair_required')
         self.docker.preserve(directory, profile['directory'], self.docker.current(old_dir))
-        baseline = (self.accepted_health(directory, binding) if restore_direct
-                    else self.docker.health('capture', None))
+        source = self.docker.current(old_dir)
+        clean = False
+        reference = binding.get('accountErasureConfig')
+        if reference:
+            _, proof = self.erasure_config_proof(Path(reference['path']), binding, reference['sha256'])
+            clean = proof.get('contractVersion') == CLEAN_ERASURE_PROOF_VERSION
+        if clean and source.get('State', {}).get('Running') is False:
+            # Global test-data reset has already closed the old writer. It must
+            # remain stopped; use its bound real pre-stop health, then verify
+            # the new candidate against that same baseline after recreation.
+            require(not rollback and not restore_direct, 'clean_stopped_source_scope')
+            baseline = self.stopped_reset_health(binding, previous, source)
+        else:
+            baseline = (self.accepted_health(directory, binding) if restore_direct
+                        else self.docker.health('capture', None))
         self.write(self.root / 'pending-health.json', baseline)
         pending = {'contractVersion': 'cop-api-runtime-pending-v1', 'previous': previous,
                    'targetReleaseId': release, 'targetContainerId': None,

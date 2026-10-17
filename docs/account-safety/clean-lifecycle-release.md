@@ -325,13 +325,45 @@ failure after those calls was recovered from the six unique actual records;
 requests were not replayed to manufacture a successful seed checkpoint.
 
 `fixtures/whole12-check.mjs` uses actual provider/SQL readbacks and fresh Keycloak
-PKCE logins. Its current preflight rejects the driver because the SIM TLS
-fixture omitted the real worker start; a SQL readback alone is insufficient.
-SIM is correcting that fixture. The full deletion and post-restore cleanup
-tests are not yet accepted. No production services, identities or switches were
-changed by these fixtures.
+PKCE logins. The missing driver worker start was corrected. All twelve owners
+then passed preflight; the real COP endpoint accepted operation
+`b6fe7a68-d7a2-49e0-a9da-6dd7bcb01a4e` with HTTP202. Before acceptance, three
+target databases were snapshotted without their independent guard. The unrelated
+user retained access and could not confirm the other user's operation. Nine
+domains subsequently read back zero removable A records and unchanged B state.
+
+This case has not completed. Two unclassified native credential invalidations
+already occur in its pre-deletion snapshot, which was seeded before full native
+admission. The provider correctly refuses a completion claim. Messaging revision
+`e2dfbf3` repairs native single-token/device-token deletion ordering; its eight
+installed-upstream regression cases passed. The new fixture actions
+`--bootstrap-clean` and `--seed-admitted-native` prepare an empty managed baseline
+and create both accounts through the actual admitted Messaging HTTP endpoint.
+They must not be used to overwrite the result of the historical-seed case.
+
+The full deletion and post-restore cleanup tests are not yet accepted. No
+production services, identities or switches were changed by these fixtures.
 
 The reviewed native reset profile is now pinned by its complete raw SHA-256,
 not only its own claimed digest and table count. A two-case boundary test proves
 that reclassifying a configuration table as user data is rejected even when the
 total table count and embedded export labels remain unchanged.
+
+### Deploying after the common reset has stopped the old API
+
+The runtime consumer must not restart the old unguarded API to capture a health
+baseline. `cop-api-runtime.py` accepts the stopped-source path only for a clean
+Root deployment proof. Root must capture the actual pre-stop health response in
+`/srv/cop/runtime/clean-reset/pre-stop-health.json` and persist the actual common
+reset result in `reset-result.json`, both Root-owned mode0640/group1000 within
+the protected directory. Neither file contains credentials. The proof binds the
+reset result's exact SHA256, original container/image, reset epoch and accepted
+whole-test report SHA256. The health record is usable for at most one hour.
+
+The source container must actually be exited, without a process or restart in
+progress. All eleven common-reset phases and staged SIM configuration must be
+present with intake still disabled. The new API still has to pass the existing
+configuration, mount, network and real health checks. Normal deployments and
+rollback handling retain their previous paths. Eighty-four runtime-consumer
+tests passed, including the stopped-source path and rejection of mismatched or
+stale proof. The final Root coordinator and production execution remain pending.

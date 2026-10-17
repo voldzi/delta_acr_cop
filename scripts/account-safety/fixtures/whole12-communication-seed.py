@@ -152,7 +152,7 @@ def validate_bootstrap(cfg):
     return all_actors,clients
 
 
-def bootstrap():
+def bootstrap(clean=False):
     global BOOTSTRAP_STAGE
     if Path.cwd() != Path("/data") or PRIVATE.exists() or Path("homeserver.yaml").exists():
         raise ValueError("JOINT_FRESH_OWNED_DATA_REQUIRED")
@@ -236,12 +236,15 @@ def bootstrap():
                 (IDS["provider"], IDS["providerIncarnation"], POLICY, scope, SERVER))
     BOOTSTRAP_STAGE = "actual_synthetic_registration"
     control = fixture.register("joint-synthetic-control", True)["access_token"]
-    actors = [fixture.register(name) for name in fixture.names]
+    # The clean-release case must exercise actual first-use admission. Its
+    # metadata/usage baseline therefore contains no managed identity, and no
+    # managed native user or token is created through the legacy admin seed.
+    actors = [] if clean else [fixture.register(name) for name in fixture.names]
     for index, actor in enumerate(actors):
         BOOTSTRAP_STAGE = "actual_personal_seed_" + str(index)
         fixture.seed_personal_state(actor, index, control)
     BOOTSTRAP_STAGE = "actual_shared_room"
-    room = fixture.seed_shared_room(*actors)
+    room = None if clean else fixture.seed_shared_room(*actors)
     BOOTSTRAP_STAGE = "activate_candidate_after_primary_seed"
     # This is the child process created above in the NEW owned case, never an
     # old case or production service. Preserve seed logs and the same DB/data.
@@ -275,10 +278,73 @@ def bootstrap():
         "messagingBaseUrl": "http://127.0.0.1:4000",
         "synapseBaseUrl": "http://127.0.0.1:8008"})
     private_write(PRIVATE, {**common, "actors": actors, "sharedRoom": room,
-                            "otherOwnerSnapshot": fixture.owner_snapshot(actors[1])})
+                            "cleanFirstUse": clean,
+                            "otherOwnerSnapshot": None if clean else fixture.owner_snapshot(actors[1])})
     # The running provider process and all data live only in this owned tmpfs.
     print(json.dumps({"status": "bootstrapped", "actualProvider": True,
-                      "targets": 2, "privatePath": str(PRIVATE)}))
+                      "targets": len(actors), "cleanFirstUse": clean,
+                      "privatePath": str(PRIVATE)}))
+
+
+def seed_admitted_native():
+    """Real HTTP first use only, after all actual guards are ready.
+
+    The private result is written only after both admitted users and their rich
+    native state exist. A failed/partial case cannot be silently retried.
+    """
+    cfg = json.loads(PRIVATE.read_text())
+    marker = Path('/data/admitted-native-seed-started.json')
+    if cfg.get('cleanFirstUse') is not True or cfg['actors'] or marker.exists():
+        raise ValueError('JOINT_FRESH_ADMITTED_NATIVE_REQUIRED')
+    private_write(marker, {'started': True})
+    actors = []
+    for label in ('a', 'b'):
+        result = messaging_request(cfg, cfg['subjects'][label], 'POST', '/api/v1/matrix/token',
+            {'deviceId': 'COPIOS.WHOLE.'+label})
+        if result.get('userId') != principal(cfg['subjects'][label]) or not result.get('accessToken'):
+            raise ValueError('JOINT_REAL_NATIVE_ADMISSION_FAILED')
+        actors.append({'user_id': result['userId'], 'device_id': result['deviceId'],
+                       'access_token': result['accessToken']})
+    spec = importlib.util.spec_from_file_location('admitted_native_seed_helpers',
+        SOURCE/'test/provider/synapse_account_state_v2_probe.py')
+    legacy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(legacy)
+    # Attach the seed producer to the already running real native server. Do
+    # not call Fixture.__init__/start/register, replace a store, or mint proof.
+    fixture = object.__new__(legacy.Fixture)
+    fixture.admin = connect('csm_synapse')
+    fixture.runtime = connect('csm_synapse', 'csm_synapse')
+    fixture.config = yaml.safe_load(Path('/data/homeserver.yaml').read_text())
+    fixture.users = tuple(a['user_id'] for a in actors)
+    fixture.connections = []
+    fixture.request = lambda method, path, body=None, token=None, expected=200, content_type='application/json', extra_headers=None, json_response=True: _admitted_native_request(method,path,body,token,expected,content_type,extra_headers,json_response)
+    try:
+        for index, actor in enumerate(actors):
+            fixture.seed_personal_state(actor,index,cfg['matrixAdminToken'])
+        room = fixture.seed_shared_room(*actors)
+        after = {**cfg, 'actors':actors, 'sharedRoom':room,
+                 'otherOwnerSnapshot':fixture.owner_snapshot(actors[1])}
+        encoded = json.dumps(after,default=str).encode()
+        fd = os.open(PRIVATE,os.O_WRONLY|os.O_TRUNC|os.O_NOFOLLOW)
+        with os.fdopen(fd,'wb') as out: out.write(encoded)
+    finally:
+        fixture.admin.close();fixture.runtime.close()
+    print(json.dumps({'phase':'admitted_native_seed_complete','actualMessagingHttp':True,
+        'actualNativeHttp':True,'managedAccounts':2,'legacyManagedRegistration':False,
+        'productionTouched':False,'wholeAccountAccepted':False}))
+
+
+def _admitted_native_request(method,path,body,token,expected,content_type,extra_headers,json_response):
+    headers={'content-type':content_type,**(extra_headers or {})}
+    if token: headers['authorization']='Bearer '+token
+    raw=body if isinstance(body,bytes) else None if body is None else json.dumps(body).encode()
+    try: response=urlopen(Request('http://127.0.0.1:8008'+path,data=raw,method=method,headers=headers),timeout=25)
+    except HTTPError as error: response=error
+    with response:
+        raw=response.read(1048577)
+        if response.code != expected or len(raw)>1048576:
+            raise ValueError('JOINT_ADMITTED_NATIVE_SEED_REQUEST_FAILED')
+        return (json.loads(raw) if raw else {}) if json_response else raw
 
 
 def seed_metadata(cfg, actors):
@@ -539,7 +605,8 @@ def assert_unenrolled():
 
 if __name__ == "__main__":
     try:
-        actions = {"--bootstrap": bootstrap, "--seed-messaging": seed_messaging,
+        actions = {"--bootstrap": bootstrap, "--bootstrap-clean": lambda: bootstrap(clean=True),
+            "--seed-admitted-native": seed_admitted_native, "--seed-messaging": seed_messaging,
             "--verify-preserved": verify_preserved, "--hold-enrollment": hold_enrollment,
             "--enrollment-status": lambda: print(json.dumps(enrollment_status())),
             "--release-enrollment": release_enrollment, "--crash-ready": crash_ready,

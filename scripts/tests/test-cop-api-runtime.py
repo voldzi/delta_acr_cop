@@ -1196,4 +1196,87 @@ class RuntimeTests(unittest.TestCase):
             self.erasure_candidate(current, path)
         self.assertEqual(len(self.docker.up_calls), before)
 
+    def test_stopped_clean_source_is_replaced_without_restarting_or_probing_old_api(self):
+        current=self.erasure_initial(); path,proof=self.clean_erasure_proof(current)
+        data=StoppedCleanSourceHealth();data.setUp()
+        data.proof=proof;data.receipt['resetEpoch']=proof['cleanReset']['resetEpoch']
+        data.baseline.update(resetEpoch=proof['cleanReset']['resetEpoch'],containerId=current['containerId'],
+            imageId=current['imageId'],checkedAt=m.datetime.now(m.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
+        proof['cleanReset']['receiptSha256']=m.sha(m.encoded(data.receipt));write(path,proof,0o640)
+        candidate=self.erasure_candidate(current,path)
+        self.docker.live_container['State']={'Running':False,'Restarting':False,'Status':'exited','Pid':0}
+        directory=self.home/'reset-proof';directory.mkdir(mode=0o750)
+        write(directory/'reset-result.json',data.receipt,0o640)
+        write(directory/'pre-stop-health.json',data.baseline,0o640)
+        old_health=self.docker.health
+        def health(action,selected):
+            if action=='capture':raise AssertionError('Old stopped source must not be probed or restarted')
+            return old_health(action,selected)
+        self.docker.health=health;count=len(self.docker.up_calls)
+        with mock.patch.object(m,'CLEAN_RESET_DIRECTORY',directory):
+            result=self.store.activate(candidate['releaseId'],current['generation'])
+        self.assertEqual(result['releaseId'],candidate['releaseId'])
+        self.assertEqual(len(self.docker.up_calls),count+1)
+        self.assertEqual(self.docker.verified_baselines[-1],HEALTH)
+
+
+class StoppedCleanSourceHealth(unittest.TestCase):
+    def setUp(self):
+        self.epoch = str(uuid.uuid4())
+        self.receipt = {'contractVersion':'cop-sim-common-reset-fenced-v1',
+            'resetEpoch':self.epoch,'preStopReportSha256':'6'*64,
+            'completedPhases':m.CLEAN_RESET_PHASES.copy(),'simConfiguration':{
+                'contractVersion':'sim-clean-runtime-config-staged-v1','environmentSha256':'4'*64,
+                'overlaySha256':'5'*64,'intakeEnabled':False,'baseCleanEnabled':False,'servicesStarted':False},
+            'servicesRestarted':False,'runtimeFlagsEnabled':False,'wholeAccountComplete':False}
+        self.previous = {'containerId':CID,'imageId':OLD}
+        self.actual = {'Id':CID,'Image':OLD,'State':{
+            'Running':False,'Restarting':False,'Status':'exited','Pid':0}}
+        self.baseline = {'contractVersion':'cop-clean-pre-stop-health-v1',
+            'resetEpoch':self.epoch,'preStopReportSha256':'6'*64,
+            'containerId':CID,'imageId':OLD,'checkedAt':'2026-10-17T10:00:00Z',
+            'statuses':copy.deepcopy(HEALTH)}
+        self.now = m.datetime(2026,10,17,10,30,tzinfo=m.timezone.utc).timestamp()
+        self.proof = {'contractVersion':m.CLEAN_ERASURE_PROOF_VERSION,'operation':'prepare',
+            'cleanReset':{'resetEpoch':self.epoch,'receiptSha256':m.sha(m.encoded(self.receipt))}}
+
+    def run_check(self):
+        return m.stopped_clean_baseline(self.proof,self.previous,self.actual,
+            m.encoded(self.receipt),m.encoded(self.baseline),self.now)
+
+    def test_exact_stopped_reset_uses_actual_recorded_health(self):
+        self.assertEqual(json.loads(self.run_check()),HEALTH)
+
+    def test_changed_or_incomplete_reset_receipt_is_rejected(self):
+        self.receipt['completedPhases'].remove('remaining')
+        with self.assertRaisesRegex(m.RuntimeError,'clean_reset_receipt_changed'):self.run_check()
+        self.proof['cleanReset']['receiptSha256']=m.sha(m.encoded(self.receipt))
+        with self.assertRaisesRegex(m.RuntimeError,'clean_reset_receipt_incomplete'):self.run_check()
+
+    def test_other_container_image_epoch_or_acceptance_cannot_supply_baseline(self):
+        for key,value in [('containerId','b'*64),('imageId',NEW),('resetEpoch',str(uuid.uuid4())),('preStopReportSha256','7'*64)]:
+            original=self.baseline[key];self.baseline[key]=value
+            with self.assertRaisesRegex(m.RuntimeError,'clean_reset_health_binding'):self.run_check()
+            self.baseline[key]=original
+
+    def test_running_restarting_or_unknown_source_is_rejected(self):
+        for state in [{'Running':True},{'Restarting':True},{'Pid':123},{'Status':'dead'}]:
+            old=copy.deepcopy(self.actual['State']);self.actual['State'].update(state)
+            with self.assertRaisesRegex(m.RuntimeError,'clean_reset_source_not_stopped'):self.run_check()
+            self.actual['State']=old
+
+    def test_stale_future_or_unknown_health_is_rejected(self):
+        for stamp in ['2026-10-17T08:00:00Z','2026-10-17T11:00:00Z']:
+            self.baseline['checkedAt']=stamp
+            with self.assertRaisesRegex(m.RuntimeError,'clean_reset_health_time'):self.run_check()
+        self.baseline['checkedAt']='2026-10-17T10:00:00Z'
+        self.baseline['statuses'][m.HEALTH_URLS[0]]['httpStatus']=503
+        with self.assertRaisesRegex(m.RuntimeError,'health_witness_status_invalid'):self.run_check()
+
+    def test_legacy_proof_or_enable_cannot_use_stopped_source_exception(self):
+        self.proof['operation']='enable'
+        with self.assertRaisesRegex(m.RuntimeError,'clean_stopped_source_scope'):self.run_check()
+        self.proof['operation']='prepare';self.proof['contractVersion']='cop-api-account-erasure-config-v1'
+        with self.assertRaisesRegex(m.RuntimeError,'clean_stopped_source_scope'):self.run_check()
+
 if __name__ == '__main__': unittest.main()
