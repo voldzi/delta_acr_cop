@@ -29,6 +29,8 @@ export interface MessagingAccountErasureOptions {
 }
 const WHOLE = "csm-account-erasure-owner-v2", READINESS = "csm-account-erasure-owner-readiness-v1";
 const EFFECTS = "csm-cop-mobility-effects-erasure-v1", POLICY = "matrix-opaque-protocol-tombstones-v1";
+// Exact reviewed full-scope policy identifier published by Messaging.
+const DATABASE_POLICY = "cop-messaging-full-v2-credential-synthetic-candidate";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const HEX = /^[0-9a-f]{64}$/u;
 const preflightReasons = new Set(["ownership_unresolved", "historical_provenance", "native_acceptance", "native_owner_scope", "provider_unavailable"]);
@@ -165,11 +167,11 @@ class Transport {
     return { ready: false, reason: (value.remaining as string[]).includes("ownership_unresolved") ? "ownership_unresolved" : "adapter_unavailable" };
   }
 }
-function wholeProof(status: number, value: Record<string, unknown>, operationId: string, scopeVersion: string): AccountErasureProof {
+function wholeProof(status: number, value: Record<string, unknown>, operationId: string, scopeVersion: string, databaseAuthority = false): AccountErasureProof {
   if (!exact(value, ["contractVersion", "operationId", "status", "wholeAccountErased", "localOwnerDataErased", "externalCopiesErased", "revocationEnforced", "remaining", "proofId"], ["technicalRetentionPolicyId", ...scopeFields]) ||
       value.contractVersion !== WHOLE || value.operationId !== operationId || value.externalCopiesErased !== false || value.revocationEnforced !== true) return pending();
   if (status === 200 && scopeProof(value, scopeVersion) && value.status === "completed" && value.wholeAccountErased === true && value.localOwnerDataErased === true &&
-      value.technicalRetentionPolicyId === POLICY && reasons(value.remaining, wholeReasons, true) && typeof value.proofId === "string" && HEX.test(value.proofId)) return { status: "completed", proofId: value.proofId };
+      (value.technicalRetentionPolicyId === POLICY || databaseAuthority && value.technicalRetentionPolicyId === DATABASE_POLICY) && reasons(value.remaining, wholeReasons, true) && typeof value.proofId === "string" && HEX.test(value.proofId)) return { status: "completed", proofId: value.proofId };
   return pending();
 }
 function normalizeManifest(input: MobilityProviderManifest): MobilityProviderManifest {
@@ -217,7 +219,7 @@ export function createMessagingAccountErasureAdapter(options: MessagingAccountEr
         const response = await transport.call("/api/v1/communication/account-erasure/owner-v2", signal, actor, {}, op);
         if (!await transport.authority("whole_owner", signal)) return pending();
         const after = await transport.actorScope(actor, "whole_owner", signal, op);
-        return after?.scopeVersion === scope.scopeVersion ? wholeProof(response.status, response.value, op, scope.scopeVersion) : pending();
+        return after?.scopeVersion === scope.scopeVersion ? wholeProof(response.status, response.value, op, scope.scopeVersion, bound.authorityMode === "database_v2") : pending();
       } catch { return pending(); }
     }
   };

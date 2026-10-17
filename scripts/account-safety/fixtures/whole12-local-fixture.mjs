@@ -5,7 +5,7 @@ import { createHash, createHmac, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 const { Pool } = createRequire("/app/apps/cop-api/package.json")("pg");
 const { RoomServiceClient } = createRequire("/app/apps/cop-api/package.json")("livekit-server-sdk");
-const api = "file:///dev/shm/cop-whole/apps/cop-api/dist/";
+const api = "file:///app/apps/cop-api/dist/";
 const { PostgresUserProfileStore } = await import(api + "user-profile-store.js");
 const { PostgresWebSessionStore } = await import(api + "web-session-store.js");
 const { PostgresMobileDeviceStore } = await import(api + "mobile-device-store.js");

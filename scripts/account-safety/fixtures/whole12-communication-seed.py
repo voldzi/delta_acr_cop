@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from urllib.parse import quote
@@ -388,12 +389,15 @@ def seed_metadata(cfg, actors):
             sql(guard, "INSERT INTO messaging_safety_v2.dataset_replays VALUES(%s,%s,%s,1,0,%s)", (dataset, store, incarnation, "0" * 64))
         sql(guard, "GRANT USAGE ON SCHEMA messaging_safety_v2 TO messaging_joint_guard; GRANT SELECT ON ALL TABLES IN SCHEMA messaging_safety_v2 TO messaging_joint_guard; GRANT INSERT ON messaging_safety_v2.journal TO messaging_joint_guard; GRANT UPDATE(replay_sequence,replay_digest) ON messaging_safety_v2.dataset_replays TO messaging_joint_guard; GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA messaging_safety_v2 TO messaging_joint_guard")
         sql(guard, "REVOKE EXECUTE ON FUNCTION messaging_safety_v2.begin_dataset_restore(text,uuid,uuid,bigint,uuid,bigint) FROM messaging_joint_guard")
-        sql(guard, "GRANT USAGE ON SCHEMA messaging_usage_v1 TO messaging_joint_guard; GRANT SELECT ON messaging_usage_v1.baselines,messaging_usage_v1.owners,messaging_usage_v1.admissions TO messaging_joint_guard; GRANT EXECUTE ON FUNCTION messaging_usage_v1.reserve(uuid,text,text,text,uuid,text,uuid) TO messaging_joint_guard")
+        sql(guard, "GRANT USAGE ON SCHEMA messaging_usage_v1 TO messaging_joint_guard; GRANT SELECT ON messaging_usage_v1.baselines,messaging_usage_v1.owners,messaging_usage_v1.admissions,messaging_usage_v1.service_admissions TO messaging_joint_guard; GRANT EXECUTE ON FUNCTION messaging_usage_v1.reserve(uuid,text,text,text,uuid,text,uuid) TO messaging_joint_guard")
 
 
 def messaging_request(cfg, owner, method, path, body=None, expected=200, idempotency=None):
     headers = {"content-type": "application/json", "authorization": "Bearer " + cfg["serviceToken"],
                "x-csm-user-id": owner, "x-csm-oidc-issuer": cfg["issuer"]}
+    if path == '/api/v1/matrix/token':
+        headers.update({'x-csm-app-client-id':'csm-mobile',
+                        'x-csm-installation-id':str(uuid.uuid5(uuid.NAMESPACE_URL,'cop-owned-test:'+owner))})
     if idempotency:
         headers["idempotency-key"] = idempotency
     call = Request("http://127.0.0.1:4000" + path, method=method, headers=headers,

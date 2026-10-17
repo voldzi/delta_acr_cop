@@ -373,3 +373,22 @@ The release report retains the actual public COP states: initial HTTP202 with
 `status=deleted`/`accountDeleted=true`. Provider-local `pending`/`completed`
 labels cannot substitute for those public fields. Eight parser rejection tests
 cover the report, including rejection of mismatched public states and booleans.
+
+## Composed fresh956 correction (2026-10-17)
+
+The real accepted operation reached native Matrix completion but Messaging
+rejected its own retry through the first-use preview (which correctly rejects
+fenced owners). Messaging 08ca70a separates exact-operation continuation from
+first-use registration; original HTTP operation completed, and a different
+operation was rejected with 409. COP additionally recognized only the legacy
+retention ID. The adapter now recognizes the exact published
+`cop-messaging-full-v2-credential-synthetic-candidate` identifier only under
+`database_v2`; unknown or extended identifiers remain pending. This identifier
+is a technical policy identifier, not a statement of production acceptance.
+
+The independent fresh956 readbacks show zero removable Matrix and COP media
+data, and preserve B. The full COP receipt is still pending the actual issued
+voice token lifetime and final identity removal. Do not call this complete or
+deployed. SIM's actual recovery in the separate 9aff case uses the same immutable
+application bundle as fresh956; fresh956 itself did not capture a pre-deletion
+SIM content snapshot and is not a SIM restoration test.

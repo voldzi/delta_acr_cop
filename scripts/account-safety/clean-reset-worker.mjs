@@ -73,7 +73,16 @@ export async function runCleanResetWorker(config,host){
      const {verifiedUserMigrations}=await import(pathToFileURL(config.simSource+'/scripts/lib/sim-user-data-enroll.mjs'));
      const {inspectUserDataProfile}=await import(pathToFileURL(config.simSource+'/scripts/lib/sim-user-data-profile.mjs'));
      need(config.simUserInstall?.manifest,'RESET_WORKER_SIM_INSTALL_BINDING');await verifiedUserMigrations(config.simUserInstall.manifest);
-     const profile=await inspectUserDataProfile(c,config.simUserInstall.manifest),data=await ops.dataSnapshot(c,lane);
+     const replayMode=config.simUserInstall.completedReplayMode??'disabled';
+     let profile;
+     if(replayMode==='same-epoch-completed-content-replay-v1'){
+      const {verifiedCompletedReplayProfile,inspectCompletedReplayProfile}=await import(pathToFileURL(config.simSource+'/scripts/lib/completed-replay-install.mjs'));
+      profile=await inspectCompletedReplayProfile(c,await verifiedCompletedReplayProfile(replayMode));
+     }else{
+      need(replayMode==='disabled','RESET_WORKER_REPLAY_MODE_UNPROVEN');
+      profile=await inspectUserDataProfile(c,config.simUserInstall.manifest);
+     }
+     const data=await ops.dataSnapshot(c,lane);
      need(profile.state==='known-new-unused'&&Object.values(data.deleteCounts).every(x=>x===0),'RESET_WORKER_SIM_NOT_EMPTY');
      return {catalogDigest:profile.digest,baseCatalogDigest:profile.baseCatalogDigest,preserved:data.preserve};
     }
