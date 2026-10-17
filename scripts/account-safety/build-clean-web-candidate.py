@@ -74,7 +74,10 @@ def main():
         arguments = configuration['services']['cop-web']['build']['args']
         need(set(arguments) == ALLOWED_ARGS and all(isinstance(v, str) and len(v) < 8192 and '\x00' not in v for v in arguments.values()),
              'CLEAN_WEB_BUILD_ARGUMENTS_CHANGED')
-        need(arguments['VITE_COP_PUBLIC_ANALYTICS_ENABLED'] == 'false', 'CLEAN_WEB_ANALYTICS_NOT_APPROVED')
+        # Human approval in the current task confirms retaining existing public-demo analytics.
+        need(arguments['VITE_COP_PUBLIC_ANALYTICS_ENABLED'] == 'true'
+             and arguments['VITE_COP_PUBLIC_ANALYTICS_WEBSITE_ID'] == '59b949ec-6052-41c7-82fe-955258ddb7e1',
+             'CLEAN_WEB_EXISTING_ANALYTICS_CONFIGURATION_CHANGED')
         args = ['/usr/bin/docker', 'buildx', 'build', '--builder', 'cop-x5', '--load', '--label',
                 'org.opencontainers.image.revision=' + REVISION, '--tag', IMAGE, '--file', str(SOURCE / 'Dockerfile.web')]
         for name in sorted(arguments):
