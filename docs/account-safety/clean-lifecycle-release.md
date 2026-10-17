@@ -47,3 +47,11 @@ The actual independent PostgreSQL journal fixture passed 10 tests (one separate 
 A Keycloak reset component has four HTTP-mock tests. It enumerates native service-account IDs through clients before classifying humans, disables/removes only the approved test humans, requires actual GET404, preserves clients/realm/service accounts, and rejects inventory drift. Production credentials and users have not been used by those tests.
 
 Final source regression after the recovery-witness fix: 2,571 tests passed, 106 skipped; typecheck/lint and build passed. The joint COP/SIM fixture was rerun against SIM 6238345 using native restricted AI/driver login roles and the actual grant migrations; 35 assertions passed. No administrator runtime or disabled privilege check was used. Production activation remains pending whole-service acceptance and the protected Root install.
+
+## SIM operator candidate, independently checked
+
+SIM published `52f54cee152c5b869bc8d74cc0e08802ee3fc4f4` on `codex/sim-clean-lifecycle-v1`. COP independently verified the remote ref, clean source checkout and reset manifest SHA-256 `de4548fad17c1bc978d91951f59ec5bd8648b2711f5d168f517efe332aedd09d`. COP reran its owned PostgreSQL reset test (87 assertions, one actual restart) and synthetic filesystem test (13 assertions); both passed with `productionWrites=0` / `productionFilesChanged=0` and `realRootAdmission=false`.
+
+The runbook is SIM `docs/runbooks/21_CLEAN_COP_SIM_RESET_OPERATOR.md`. The exact known-old guard replacement and enrollment are atomic per database, with restricted finite table/file scope. Two databases plus files are not one distributed transaction: partial failure must keep all writers and producers stopped. There is no automatic apply endpoint or privileged installer in that SIM component.
+
+File inventory covers one confirmed COP precomputed route file; the other 911 route files have different actors and must remain byte-preserved. Absence of report files or a lock is not proof that a producer is stopped. The common production controller, actual Root admission/freeze and whole-provider acceptance remain outstanding. Do not use the historical v1 `--complete-release` procedure to claim the new v2 scope is enabled.
