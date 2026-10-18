@@ -247,3 +247,24 @@ producer code and all historical/live custody requirements remain unchanged.
 The root bootstrap still verifies every imported file against its sealed source
 inventory, and the new operator manifest pins the exact COP/SIM archives.
 There is no unbounded revision allowance or caller-selected producer profile.
+
+
+#### Keycloak ordinary-user and service-account inventories
+
+A server-side read-only check with the dedicated worker found 11 ordinary users
+and three service identities obtained from the client endpoints; none of those
+service IDs was included by the ordinary `/users` list. All HTTP requests and
+binding checks succeeded. The previous whole-test-user reset incorrectly
+required the ordinary list to contain every service account.
+
+The reset now builds the complete snapshot from both authoritative sources. It
+rejects duplicate users, duplicate service/client bindings, unknown service
+markers and timestamp/binding conflicts. Its plan fingerprint and final service
+preservation check include each service UUID, creation time, internal client
+UUID and public client ID. Services are never selected as humans. Both the
+pre-disable and pre-delete reads reject a service-account marker. These reads
+are not an atomic Keycloak compare-and-swap: no administrator may manually
+change realm users or clients during the coordinated reset.
+
+Additional test suites were not run under the operator's explicit instruction.
+Source syntax and independent review do not claim production activation.
