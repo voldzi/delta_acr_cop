@@ -171,3 +171,26 @@ executes the actual metadata-binding function; mocking that entire function
 would conceal a runtime NameError. Its digest uses `hashlib.sha256` directly.
 Never edit a previously sealed operator bundle in place to apply a source fix;
 keep operator-version transition evidence separate from account reset evidence.
+
+### Already retired measurement-report producer
+
+`known-retired-v1` is an explicit alternative to the unchanged exact legacy
+cron custody. Missing legacy cron alone never authorizes a reset. The alternative
+requires the Root-owned disabled-installation receipts under
+`/srv/sim/.sim-erasure-cutover`, bound to source `ca1fd6b`, retired cron digest
+`c46a03...` and original inventory `12e5f8...`, with matching clear post-stop
+inventories. Unknown or changed evidence fails closed.
+
+The first binding uses the sealed SIM report inventory and pinned Node runtime
+to check protected report storage, no initial report lock and no selected
+scheduled/running producer. Every subsequent custody assertion rereads the Root
+receipts, scans the same five scheduler roots and checks current processes.
+Scheduler/receipt digests must remain unchanged. Report-file contents are not a
+producer digest: deletion and temporary file locks belong to the separately
+admitted reset worker while application writers remain stopped. No legacy cron
+is recreated and no comment marker is manufactured.
+
+For this operator change the user explicitly cancelled further test suites.
+Only syntax/global-name inspection and independent source review were performed;
+the final Root command must enforce actual retirement and producer preflight
+before changing account data. This is not evidence of production activation.

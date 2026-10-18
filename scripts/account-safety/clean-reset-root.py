@@ -400,6 +400,19 @@ class DriverReportProducerCustody:
     original_sha = 'c46a03b13ee8d39860fb7bd72df740006f8762fd421ded44e1b2cac990d15d78'
     prefix = b'# COP clean reset paused: '
 
+    def __init__(self):
+        self.retired = None
+
+    def _retired_inventory(self):
+        if self.retired is None:
+            path = Path(__file__).with_name('retired-report-producer.py')
+            raw = protected(path, mode=(0o444, 0o555))
+            module = __import__('types').ModuleType('sealed_retired_report_custody')
+            module.__file__ = str(path)
+            exec(compile(raw, str(path), 'exec'), module.__dict__)
+            self.retired = module.Custody()
+        return self.retired.inventory()
+
     def _inventory(self):
         raw = command(['/usr/bin/crontab', '-u', 'voldzi', '-l'])
         matches = []
@@ -410,7 +423,11 @@ class DriverReportProducerCustody:
             elif not line.lstrip().startswith(b'#') and (
                 b'driver-measurement' in line or b'driver_measurement' in line):
                 raise RuntimeError('RESET_UNKNOWN_REPORT_PRODUCER')
-        need(len(matches) == 1, 'RESET_REPORT_CRON_INVENTORY_CHANGED')
+        if not matches:
+            # Absence is accepted only through the separately verified Root
+            # retirement lineage and continuously clear global producers.
+            return raw, (True, None), self._retired_inventory()
+        need(self.retired is None and len(matches) == 1, 'RESET_REPORT_CRON_INVENTORY_CHANGED')
         active = []
         for path in Path('/proc').glob('[0-9]*/cmdline'):
             try:
