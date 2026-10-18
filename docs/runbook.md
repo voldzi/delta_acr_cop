@@ -220,3 +220,19 @@ keys; it does not normalize the host environment or broaden duplicate handling.
 The original standalone installer and immutable source bundle remain unchanged.
 Additional test suites were not run, per the operator's explicit cancellation;
 syntax/static review is not a claim of completed production provisioning.
+
+
+#### Keycloak successful empty response and interrupted provisioning
+
+A role-mapping POST returns HTTP 204 without a body. The original preparation
+transport incorrectly required a response reader for that success status. The
+observed installation created the worker and assigned its four management roles
+but stopped before assigning its client scope mappings. The preparation helper
+now explicitly accepts a null body for HTTP 204; bounded JSON parsing for other
+responses and all role/scope/token checks remain unchanged.
+
+The two existing worker environment fields are not proof of completed provider
+setup. Reconciliation must be an explicit operator mode using the same stored
+secret and the same fixed worker client. It must complete only the originally
+approved mappings and read back the effective token authority. Never rotate the
+secret, remove the client, or skip provider readback to resume this failure.

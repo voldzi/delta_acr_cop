@@ -35,6 +35,9 @@ function replace(original,updates) {
  const final=parse(readPrivate().bytes);for(const[k,v]of updates)check(final.get(k)===v);
 }
 async function boundedJson(response) {
+ // A successful role-mapping write returns 204. Fetch exposes no body for
+ // this status; it is not a malformed JSON response or a provider failure.
+ if(response.status===204){check(response.body===null);return null;}
  const reader=response.body?.getReader();check(reader);let size=0;const chunks=[];
  try{while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>1048576){await reader.cancel();throw Error();}chunks.push(part.value);}}
  finally{reader.releaseLock();}
