@@ -46,6 +46,27 @@ preparation over those existing plans or infer a reset from the prepared summary
 Any recovery must preserve the original evidence and establish that the exact
 plans were not applied before replacing their abandoned RAM-only preparation.
 
+`preserve-prepared-v11.py` is a finite Root module, with no standalone apply CLI.
+The reviewed launcher must request an explicit retirement confirmation and invoke
+it while the old v11 source bundle is still sealed. It binds the old manifest,
+epoch hash, twelve plan digests and exact six control files. Under the existing
+deployment lock it requires every original local and COMM writer to be running,
+unpaused and unrestarted since the pre-stop baseline, with identical IDs, PIDs
+and start times across readback. The pinned old freeze code requires stopping
+these writers before any private reset phase, so this observed state excludes
+that operation having advanced through its mandatory freeze. It additionally
+requires no production private worker, continuously clear retired report
+producers, the original identity inventory with all eleven humans enabled, and
+absence of the COP reset marker through a read-only SQL transaction.
+
+Only then can it rename the complete old control directory without replacement
+to `clean-reset-prepared-v11-310bcdf2`, preserve all six files and their metadata,
+and establish a new control directory containing only the identical original
+whole-provider proof. It does not adopt old credentials, rewrite a plan, delete
+user data or enable an application. Any failed check keeps recovery blocked.
+The ordinary no-prior-plan preparation guard remains unchanged. This source
+implementation and its manual review are not evidence of a completed Root run.
+
 The Root-owned X5 staging parent remains protected; ordinary COP staging jobs
 use its separately provisioned `work` child, as documented in the
 [X5 runbook](../runbooks/19_COP_X5_STORAGE.md). The guarded deployment installs
