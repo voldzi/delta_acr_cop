@@ -18,6 +18,23 @@ HEX = re.compile(r'[a-f0-9]{64}')
 IMAGE = re.compile(r'sha256:[a-f0-9]{64}')
 UUID = re.compile(r'[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}')
 
+# Operator-approved on 2026-10-18 for this one unchanged release. This is an
+# exception to report age only, never a replacement or refreshed acceptance.
+APPROVED_REPORT_SHA256 = '66b6fb13c8a52c3d06f6aecafe3c9b101e5376cda3049988843e9d4961e0e38a'
+APPROVED_REPORT_STAMP = '2026-10-17T15:22:13Z'
+APPROVED_REPORT_DEADLINE = '2026-10-19T15:22:00Z'
+APPROVED_RELEASE_IMAGES = {
+    'cop_api': 'sha256:28648cded21fbd52602a197693d0b0dc9eb213cd2bd84d6227b7da34c0cbab86',
+    'cop_web': 'sha256:6481b7c29d462b10e365692231c19b1b88a631693a09826003333106771b7329',
+    'sim_api': 'sha256:4076069b3f8c935c0cd07ea2bf95d92703270b72197ff2b74a27d1aee8c6bdf0',
+    'sim_web': 'sha256:fea1f5c2d508392a509486fb9b4881a5524936a32967748c52583640bad878f7',
+    'ai_router': 'sha256:3fcc09192e451c9a45f839271055e93f7b5250b6e05c6e122223e964ee0247a6',
+    'situation_data': 'sha256:3c07a98618867f6bfe3712f6156c8100808d9f9d08f7f8a63e9e5f64b6719d94',
+    'messaging_api': 'sha256:b14037387b410dc8647f84fb992e050bd6ac339f75a14fdf05374aed436fab8e',
+    'synapse': 'sha256:a91dfb8de38a87d4cb9ccbc2008b99b397d3f64a4a5363cec65f41716132db19',
+    'voice_proxy': 'sha256:05909abc87ca68db1810e6180ddfc655438688ace86cde5a1443a053d651d517',
+}
+
 
 def need(value, code='CLEAN_WHOLE_ACCEPTANCE_UNPROVEN'):
     if not value:
@@ -85,7 +102,7 @@ def validate_completed_outage_v3(value, operation):
          'CLEAN_WHOLE_COMPLETED_FINAL')
 
 
-def _validate_clean_whole_report(report, expected_images, now, version):
+def _validate_clean_whole_report(report, expected_images, now, version, *, raw_sha256=None):
     validate_candidate_images(expected_images)
     need(isinstance(report, dict) and report.get('contractVersion') == 'cop-sim-whole-clean-acceptance-v'+str(version)
          and report.get('deletionScope') == 'cop_sim_shared_identity_v1'
@@ -99,7 +116,12 @@ def _validate_clean_whole_report(report, expected_images, now, version):
     stamp = report.get('checkedAt')
     need(isinstance(stamp, str) and stamp.endswith('Z'), 'CLEAN_WHOLE_TIME')
     checked = datetime.datetime.fromisoformat(stamp.replace('Z', '+00:00')).timestamp()
-    need(0 <= now - checked <= 24*3600, 'CLEAN_WHOLE_TIME')
+    deadline = datetime.datetime.fromisoformat(APPROVED_REPORT_DEADLINE.replace('Z', '+00:00')).timestamp()
+    approved_age = (version == 3 and raw_sha256 == APPROVED_REPORT_SHA256
+                    and stamp == APPROVED_REPORT_STAMP
+                    and expected_images == APPROVED_RELEASE_IMAGES
+                    and checked <= now <= deadline)
+    need(0 <= now - checked <= 24*3600 or approved_age, 'CLEAN_WHOLE_TIME')
     op = report.get('operation')
     need(isinstance(op, dict) and isinstance(op.get('operationId'), str) and UUID.fullmatch(op['operationId'])
          and op.get('initialHttpStatus') == 202 and op.get('initialStatus') == 'deleting'
@@ -166,6 +188,20 @@ def validate_clean_whole_report_v3(report, expected_images, now):
     return _validate_clean_whole_report(report,expected_images,now,3)
 
 
+def validate_clean_whole_report_bytes(raw, expected_images, now):
+    """Validate original bytes; callers must enforce custody before this gate.
+
+    Only an exact byte digest can use the finite approved age exception. Dict
+    validators keep their normal 24-hour limit and cannot opt into it.
+    """
+    need(isinstance(raw, bytes), 'CLEAN_WHOLE_REPORT_BYTES')
+    report = json.loads(raw)
+    version = 3 if isinstance(report, dict) and report.get('contractVersion') == 'cop-sim-whole-clean-acceptance-v3' else 2
+    digest = hashlib.sha256(raw).hexdigest()
+    value = _validate_clean_whole_report(report, expected_images, now, version, raw_sha256=digest)
+    return {**value, 'reportSha256': digest}
+
+
 def verified_pre_stop_acceptance(expected_images):
     # Use the same actual Root custody reader as the production controller.
     import importlib.util
@@ -174,10 +210,7 @@ def verified_pre_stop_acceptance(expected_images):
     spec.loader.exec_module(root)
     need(root.os.getuid() == 0, 'CLEAN_WHOLE_ROOT_REQUIRED')
     raw = root.protected(REPORT)
-    report=json.loads(raw)
-    validator=validate_clean_whole_report_v3 if report.get('contractVersion')=='cop-sim-whole-clean-acceptance-v3' else validate_clean_whole_report
-    value = validator(report, expected_images, datetime.datetime.now(datetime.timezone.utc).timestamp())
-    return {**value, 'reportSha256': hashlib.sha256(raw).hexdigest()}
+    return validate_clean_whole_report_bytes(raw, expected_images, datetime.datetime.now(datetime.timezone.utc).timestamp())
 
 
 def validate_for_plan(plan):

@@ -16,6 +16,26 @@ Preserve configuration, service accounts, map/provider data, secrets and other a
 
 Two synthetic users; A deletion including identity/SIM access, B unchanged; immediate request fence; asynchronous retry after service outage and process restart; actual provider readback; removal of retained copies; data reset and epoch verified; normal login/chat/maps healthy. Report each actual test separately. A mock HTTP test or successful build is not production acceptance.
 
+### One-release acceptance age exception (2026-10-18)
+
+The operator cancelled additional tests and explicitly approved using the original
+successful whole-provider proof for the same release until **2026-10-19T15:22:00Z**
+(17:22 Europe/Prague). Its original `checkedAt=2026-10-17T15:22:13Z` is unchanged.
+This is not a new or refreshed acceptance result and does not claim production
+activation. The protected original bytes must have SHA-256
+`66b6fb13c8a52c3d06f6aecafe3c9b101e5376cda3049988843e9d4961e0e38a`,
+use the v3 contract and bind all nine exact image IDs pinned in
+`clean-release-acceptance.py`. Any other proof, changed image or later time keeps
+the ordinary 24-hour limit. There is no environment variable or CLI age waiver.
+
+The bytes validator computes the digest itself; production callers first enforce
+Root custody. The old-public-bundle transition must use this same, hash-pinned new
+validator from the verified source archive before preserving the old bundle.
+All original proof-content checks, Root plan/no-adoption guards, live readiness,
+source, authentication and restore checks remain required. The exception changes
+neither application images nor the original proof and authorizes only this exact
+release, including a retry stopped before its reset plan exists.
+
 ## Rollback
 
 Disable new deletion intake if necessary; retain pending jobs, fences and original operation IDs. Deploy only a version which understands the new scope/epoch. Never restore the removed user data or silently start a v1 worker over v2 jobs.
