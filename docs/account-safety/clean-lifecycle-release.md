@@ -84,6 +84,17 @@ custody, fingerprint, module loading, connection and read-only SQL failures
 without printing stderr, credentials or SQL. Syntax/manual review does not
 establish a successful production connection or activation.
 
+The v13 run passed that recovery and prepared a new operation, but stopped at
+`COMMON_DEPLOY_GUARD_SOURCE` before remote admission or writer freeze. Its SIM
+bootstrap inventory excluded `scripts/deploy-docker-home.sh`, although the
+coordinator requires that exact source entry. The original v11 archive must
+remain unchanged; v11 recovery must not be reused for the v13 plans.
+`preserve-prepared-v13.py` separately binds only the reported v13 manifest,
+epoch digest, twelve plan digests and 2026-10-18T19:43:02Z baseline. It requires
+the same unchanged writers, identity inventory, read-only absence of the reset
+marker and protected-file custody before preserving the abandoned preparation.
+This is source preparation, not evidence of an executed v13 recovery or release.
+
 The Root-owned X5 staging parent remains protected; ordinary COP staging jobs
 use its separately provisioned `work` child, as documented in the
 [X5 runbook](../runbooks/19_COP_X5_STORAGE.md). The guarded deployment installs
