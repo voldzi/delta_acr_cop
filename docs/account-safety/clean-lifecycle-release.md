@@ -71,6 +71,19 @@ The report-producer custody admits the exact reviewed SIM revision
 pins; source hashes, retirement lineage and continuous producer checks remain
 mandatory. This does not admit arbitrary future SIM revisions.
 
+The v12 Root read-only diagnostic stopped at `database_ca`, before any
+preservation or activation. This locates the failed gate but does not prove
+whether metadata or the fingerprint caused it. Recovery now follows the
+existing trusted-CA policy: fixed path, Root ownership, regular single-link
+file, stable metadata/bytes, at most 65536 bytes, and modes `0400`, `0440`,
+`0444`, `0600`, `0640` or `0644`. The profile fingerprint and actual certificate
+must both equal the approved PostgreSQL CA fingerprint. No certificate,
+permissions or TLS settings are changed; hostname verification and
+`rejectUnauthorized` remain mandatory. Fixed diagnostic codes distinguish CA
+custody, fingerprint, module loading, connection and read-only SQL failures
+without printing stderr, credentials or SQL. Syntax/manual review does not
+establish a successful production connection or activation.
+
 The Root-owned X5 staging parent remains protected; ordinary COP staging jobs
 use its separately provisioned `work` child, as documented in the
 [X5 runbook](../runbooks/19_COP_X5_STORAGE.md). The guarded deployment installs
