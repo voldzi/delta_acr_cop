@@ -194,3 +194,29 @@ For this operator change the user explicitly cancelled further test suites.
 Only syntax/global-name inspection and independent source review were performed;
 the final Root command must enforce actual retirement and producer preflight
 before changing account data. This is not evidence of production activation.
+
+
+### Clean-release Keycloak preparation ordering (2026-10-18)
+
+The clean-release pre-freeze inspector requires the dedicated
+`cop-account-erasure-worker` identity. The previous orchestration assumed this
+identity had already been provisioned, so absent host configuration caused
+`RELEASE_NODE_PREPARATION_FAILED` before database inspection.
+
+The external hash-bound release launcher must call
+`scripts/keycloak/install-clean-erasure-client.mjs --apply` before requesting
+the PostgreSQL administrator password when both worker configuration fields
+are absent. A partial configuration is an error; it must not generate or rotate
+a replacement secret. This external operator helper uses the pure provisioner
+and canonical host-environment parser from the verified immutable COP bundle.
+It preserves the original host file bytes and ownership except the existing
+three approved Keycloak preparation fields. Administrator credentials stay in
+the interactive Root terminal and process memory; only the dedicated worker
+secret is persisted in `/srv/cop/.env`. No account reset, application restart,
+or erasure activation is performed by this preparation.
+
+The helper accepts only the canonical parser's two existing allowed duplicate
+keys; it does not normalize the host environment or broaden duplicate handling.
+The original standalone installer and immutable source bundle remain unchanged.
+Additional test suites were not run, per the operator's explicit cancellation;
+syntax/static review is not a claim of completed production provisioning.
