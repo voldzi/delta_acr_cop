@@ -66,6 +66,10 @@ whole-provider proof. It does not adopt old credentials, rewrite a plan, delete
 user data or enable an application. Any failed check keeps recovery blocked.
 The ordinary no-prior-plan preparation guard remains unchanged. This source
 implementation and its manual review are not evidence of a completed Root run.
+The report-producer custody admits the exact reviewed SIM revision
+`e5b8128c4087f078117815fe12e2e110096f15dc` in addition to its two historical
+pins; source hashes, retirement lineage and continuous producer checks remain
+mandatory. This does not admit arbitrary future SIM revisions.
 
 The Root-owned X5 staging parent remains protected; ordinary COP staging jobs
 use its separately provisioned `work` child, as documented in the
