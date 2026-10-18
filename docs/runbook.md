@@ -163,3 +163,11 @@ prove deployment or enable account deletion. Verify actual production versions,
 owner capabilities and final release receipts separately.
 
 Targeted regression tests: `python3 scripts/test-temporary-release-key.py`.
+
+For the clean release, run
+`python3 scripts/tests/test-clean-release-global-names.py` together with
+`python3 scripts/tests/test-clean-reset-root.py`. The temporary identity test
+executes the actual metadata-binding function; mocking that entire function
+would conceal a runtime NameError. Its digest uses `hashlib.sha256` directly.
+Never edit a previously sealed operator bundle in place to apply a source fix;
+keep operator-version transition evidence separate from account reset evidence.

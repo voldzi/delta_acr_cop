@@ -305,7 +305,7 @@ class CommunicationResetTransport:
         value = module.identity()
         if check_expiry:
             need(datetime.datetime.fromisoformat(value['expiresAt']).timestamp() > time.time(), 'RESET_COMM_TEMPORARY_KEY_EXPIRED')
-        binding = sha(json.dumps(value,sort_keys=True,separators=(',',':')).encode())
+        binding = hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
         need(self.temporary_key in (None,binding), 'RESET_COMM_TEMPORARY_KEY_CHANGED')
         self.temporary_key = binding
         return value

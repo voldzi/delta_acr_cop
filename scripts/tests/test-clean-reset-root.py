@@ -3,6 +3,8 @@ import importlib.util
 import json
 from pathlib import Path
 import time
+import tempfile
+import types
 import unittest
 from unittest.mock import patch
 
@@ -39,6 +41,21 @@ class RootAdmissionTest(unittest.TestCase):
   self.assertIn('StrictHostKeyChecking=yes',args)
   self.assertEqual(args[args.index('-i')+1],'/run/cop-clean-reset-comm/id_ed25519')
   self.assertNotIn('StrictHostKeyChecking=no',args)
+ def test_real_temporary_identity_function_hashes_and_binds_metadata(self):
+  with tempfile.TemporaryDirectory()as directory:
+   transport=m.CommunicationResetTransport.__new__(m.CommunicationResetTransport)
+   transport.directory=Path(directory);transport.temporary_key=None
+   (transport.directory/'temporary-identity.json').write_text('{}')
+   value={'expiresAt':m.datetime.datetime.fromtimestamp(time.time()+3600,m.datetime.timezone.utc).isoformat(),'publicKey':'synthetic','privateSha256':'synthetic-not-a-key'}
+   helper=types.SimpleNamespace(identity=lambda:dict(value))
+   spec=types.SimpleNamespace(loader=types.SimpleNamespace(exec_module=lambda _:None))
+   with patch.object(m.importlib.util,'spec_from_file_location',return_value=spec),patch.object(m.importlib.util,'module_from_spec',return_value=helper):
+    self.assertEqual(transport._temporary_identity(),value)
+    expected=m.hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    self.assertEqual(transport.temporary_key,expected)
+    self.assertEqual(transport._temporary_identity(),value)
+    value['publicKey']='different-synthetic'
+    with self.assertRaisesRegex(RuntimeError,'RESET_COMM_TEMPORARY_KEY_CHANGED'):transport._temporary_identity()
  def test_unknown_scope_future_cutoff_and_arbitrary_writer_are_rejected(self):
   for key,value in [('scope','old_scope'),('tokensNotBefore',int(time.time())+10000),('resetEpoch','not-an-epoch')]:
    p=plan();p[key]=value
